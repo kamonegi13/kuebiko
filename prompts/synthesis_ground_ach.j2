@@ -1,0 +1,68 @@
+あなたは CTI のシニア分析官です。判定「{{ claim }}」を、**以下のソース本文だけ**に基づいて
+評価してください。事前知識や推測でなく、本文に書かれた証拠で判断します。
+
+【ソース本文】(【過去の文脈】= 対象期間より前の同一アクター/CVE/被害組織の記事。前例・パターン・
+新規性の判定材料。現在の事象そのものではない)
+{% for s in sources %}
+--- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.historical is defined and s.historical %} | 【過去の文脈】{% endif %}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+{{ s.text }}
+{% endfor %}
+
+【手順】
+1) ACH (競合仮説分析): 下記メニューの**全仮説**を hypotheses に含め、各々について本文の
+   証拠で consistent (整合) と inconsistent (反整合) の件数を数える。**反整合が最少の仮説**を
+   leading とする。**仮説の見落としが ACH の最大の欠陥** — 無関係に見える仮説も採点して
+   反証で落とすこと (証拠がどちらにも全く触れない仮説のみ 0/0 とする)。
+{% for h in hypotheses %}
+   - {{ h.id }} ({{ h.label }}): {{ h.description }}
+     支持例: {{ h.supports }} / 反証例: {{ h.refutes }}
+{% endfor %}
+
+2) 証拠台帳 (**最も効く 8 件まで・excerpt は各 100 字以内** — 全ソースの網羅は不要。
+   出力が長すぎると切断され全体が無効になる): 本文中の重要な事実を抽出し、各々に付与する:
+   - article_id: 出典 (上の id)
+   - attribution_basis: 帰属の根拠を 1 つ選ぶ: {{ attribution_options }}
+   - excerpt: 本文からの短い根拠抜粋 (要約でなく該当箇所)
+   - polarity: **手順1で選んだ leading 仮説に対し** supports / contradicts / neutral
+   **不在の事実も必ず含める** — leading を支持する不在事実と、leading を否定する不在事実の
+   **双方**を対称に拾う (例: leading が偶発なら「意図的な横展開の痕跡がない」=偶発を supports、
+   「調達/設定不備の根拠がない」=偶発を contradicts。leading が組織的作戦なら「窃取・外部通信の
+   証拠がない」=organized を contradicts)。脅威側・穏当側のどちらにも偏らせない。
+
+3) confidence: leading 仮説の確度 (high / moderate / low)。
+   **証拠が薄い・単一ソース・帰属がツール類似や自称・国営主張のみ → low**。
+
+4) key_assumptions / missing_evidence (まだ無い決定的証拠) / indicators (今後観測されれば
+   判定が変わる監視指標) を各 1-3 件。**すべて日本語で書く** (英語の断片を混ぜない)。あわせて:
+   - claim_type: この判定の性質。ongoing_activity (継続中の活動・キャンペーン) /
+     discrete_event (単発の事象・攻撃・発表) / structural (制度・規制・構造変化) から 1 つ。
+   - implication: 含意 (だから何か) を 1-2 文。**上の証拠から言える範囲のみ**で、日本の防衛・
+     セキュリティ運用への意味を書く (確度を超えた断定をしない。言えることが無ければ空文字)。
+
+5) 時系列 (発生日時の前後関係): 各ソース見出しの「報道日/事象日」を使う。
+   - **事象日が報道日より大きく前 (再浮上) なら reporting_artifact (旧事案の再報道) を疑う**。
+   - 応答系仮説 (reciprocal_response 等) は、本文が示す出来事の**前後関係**で weigh する
+     (先行行為の後に起きたか)。
+   - **ただし単なる時系列 (先後) だけから因果を断定しない**。日付は事実として扱い、
+     因果は本文の明示的根拠がある場合のみ。日付不明は不明として扱い、憶測で埋めない。
+
+6) 過去の文脈 (【過去の文脈】ソース): 同一アクター/CVE/被害組織の**対象期間より前**の記事。
+   - **前例・既知パターンとの整合**を見る (組織的作戦なら「このアクターの既知 TTP と一致するか」、
+     ばらまき型なら「同種の汎用マルウェアが以前も無差別拡散したか」)。
+   - **新規性の判定**: 過去に同一事象があれば reporting_artifact / 継続、無ければ新規動向。
+   - 過去ソースは**背景証拠**であり現在の事象そのものではない。過去から因果を断定しない。
+   - key_assumptions / indicators には「過去との差分」を反映してよい (例: 「従来と異なり X」)。
+
+原則 (厳守・最重要):
+- 証拠に従う。**脅威にも穏当にも、いずれの結論にも寄せない** (対称)。
+- organized_state_op は、強い帰属証拠 (govt_confirmed / vendor_confirmed / researcher_assessed /
+  victim_disclosed) があれば**選んでよい**。ツール類似・自称・噂だけでは leading にしても高確度にしない。
+- 逆に、本物の標的型を示す証拠 (標的選定・窃取/C2 の実証・公式帰属) があれば**穏当仮説に逃げない**。
+
+出力 JSON (これ以外を出さない):
+{"evidence": [{"article_id": "<id>", "attribution_basis": "<basis>", "excerpt": "<抜粋>", "polarity": "supports|contradicts|neutral"}],
+ "hypotheses": [{"hypothesis": "<仮説id>", "consistent": <int>, "inconsistent": <int>}],
+ "leading_hypothesis": "<仮説id>",
+ "confidence": "high|moderate|low",
+ "key_assumptions": ["..."], "missing_evidence": ["..."], "indicators": ["..."],
+ "claim_type": "ongoing_activity|discrete_event|structural", "implication": "<含意 1-2 文 or 空>"}

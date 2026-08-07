@@ -1,0 +1,64 @@
+# 初回 seed 専用。runtime SSoT は DB (config_store, key=watchers)。UI 編集は DB に版保存され、
+# このファイルは更新されない。SOURCES_CONFIG_DB=0 で yaml 直読み/直書きの旧挙動に rollback 可。
+watchers:
+- name: enisa
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://www.enisa.europa.eu/sitemap.xml
+  url_include_pattern: ^https://www\.enisa\.europa\.eu/(news|publications)/[\w\-]+
+  feed_title: ENISA (EU Cybersecurity Agency)
+  max_posts_per_run: 8
+- name: ccdcoe
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://ccdcoe.org/sitemap.xml
+  url_include_pattern: ^https://ccdcoe\.org/(news|library/publications|exercises)/[\w\-/]+
+  feed_title: NATO CCDCOE
+  max_posts_per_run: 8
+- name: isw
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://understandingwar.org/sitemap_index.xml
+  url_include_pattern: ^https://understandingwar\.org/(research|backgrounder|publication|analysis)/[\w\-/]+
+  url_exclude_pattern: /wp-content/|/feed/|/category/|/tag/|/author/
+  feed_title: ISW (Institute for the Study of War)
+  max_posts_per_run: 10
+- name: acled
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://acleddata.com/sitemap.xml?page=1
+  - https://acleddata.com/sitemap.xml?page=2
+  url_include_pattern: ^https://acleddata\.com/update/[\w\-]+
+  url_exclude_pattern: https://acleddata\.com/(am|ar|fr|es|pt|zh)/
+  feed_title: ACLED
+  max_posts_per_run: 10
+- name: orf-india
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://www.orfonline.org/expert-speak-sitemap.xml
+  - https://www.orfonline.org/research-sitemap.xml
+  url_include_pattern: ^https://www\.orfonline\.org/(expert-speak|research)/[\w\-]+
+  feed_title: ORF India
+  max_posts_per_run: 10
+- name: nicter-blog
+  type: sitemap
+  enabled: true
+  sitemap_urls:
+  - https://blog.nicter.jp/sitemap.xml
+  url_include_pattern: ^https://blog\.nicter\.jp/\d{4}/\d{1,2}/[\w\-]+/?$
+  feed_title: NICTER blog
+  max_posts_per_run: 8
+- name: hudson
+  type: sitemap
+  enabled: false
+  sitemap_urls:
+  - https://www.hudson.org/sitemap.xml
+  url_include_pattern: ^https?://www\.hudson\.org/(national-security-defense|foreign-policy|defense-strategy|security-alliances|terrorism|missile-defense|arms-control-nonproliferation|technology)/[\w\-/]+
+  url_exclude_pattern: /(events|experts|node)/
+  feed_title: Hudson Institute
+  max_posts_per_run: 8

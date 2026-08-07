@@ -1,0 +1,6 @@
+# git blame から除外する「体裁専用」コミット。
+# 使い方: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (または git blame --ignore-revs-file .git-blame-ignore-revs <file>)
+
+# style: ruff format をリポジトリ全体に適用 (2026-07-21)
+1b13620bc54f16e73af49237f64885ca16794dad

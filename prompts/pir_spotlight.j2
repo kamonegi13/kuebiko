@@ -1,0 +1,141 @@
+{# PIR Spotlight: PIR 縦断 narrative。
+
+   global synthesis (P+M+E+S+I+T 横断) と棲み分け:
+   - global: 戦略レベル、軸間連鎖、上位 stakeholders 報告用
+   - spotlight: 戦術-作戦レベル、1 PIR 領域の深掘り、analyst 作業用
+
+   出力構造 (hybrid 案):
+   - headline: 状況総括 (150-280 字、actor+TTP+標的の三点セット)
+   - key_events: 直近 N 件の match article から重要 5-8 件を LLM が選定
+   - outlook: 展望 (600-1000 字、4 観点 a/b/c/d)、来週見るべき指標
+
+   入力 context:
+   - pir: 当該 PIR の title + description + strong_signals
+   - candidate_articles: PIR にマッチした直近 article list (max 30 件)
+#}
+
+{% include ["_persona_local.j2", "_persona.j2"] %}
+**ある特定の PIR (Priority Intelligence Requirement)** に絞り込んだ縦断 narrative を生成してください。
+全体的 (P+M+E+S+I+T) な総括ではなく、**この PIR 領域の戦術-作戦レベル深掘り** が目的です。
+
+## 対象 PIR
+
+- ID: {{ pir.id }}
+- Title: {{ pir.title }}
+- Description:
+{{ pir.description }}
+{%- if pir.strong_signals.actors %}
+- 主要 actors: {{ pir.strong_signals.actors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.sectors %}
+- 対象 sectors: {{ pir.strong_signals.sectors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.countries %}
+- 対象 countries: {{ pir.strong_signals.countries | join(", ") }}
+{%- endif %}
+
+## 期間
+{{ period_label }}
+
+## この PIR にマッチした直近の article ({{ candidate_articles | length }} 件)
+
+{% for art in candidate_articles -%}
+[{{ loop.index }}] **{{ art.title }}** ({{ art.feed_title }}, importance={{ art.importance }}, 信頼度={{ art.reliability }}, {{ art.created_at_jst }})
+  article_id: {{ art.article_id }}
+  url: {{ art.url }}
+  {%- if art.summary %}
+  summary: {{ art.summary[:300] }}
+  {%- endif %}
+  {%- if art.ttps %}
+  観測技術 (MITRE ATT&CK, この記事から抽出済): {{ art.ttps | join(", ") }}
+  {%- endif %}
+
+{% endfor %}
+{% if previous_spotlight %}
+## 前期 ({{ previous_spotlight.period_label }}) のこの PIR の見立て
+
+- headline: {{ previous_spotlight.headline }}
+{%- if previous_spotlight.key_event_titles %}
+- 前期の key events: {{ previous_spotlight.key_event_titles | join(" / ") }}
+{%- endif %}
+- outlook(抜粋): {{ previous_spotlight.outlook }}
+
+**事象は過去・未来に連なる**。今期は前期からの **継続 / 変化 / エスカレーション / 沈静化** を必ず評価し、
+前期 outlook で挙げた監視指標が今期どうなったか (実現 / 不発 / 部分的) を outlook (a)(b) に織り込むこと。
+単発スナップショットにしない。
+{% endif %}
+{% if ledger_situations %}
+## 情勢台帳の確定判定 (canonical estimate — 証拠接地 ACH + 敵対的検証を経た判定)
+
+この PIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
+{% for s in ledger_situations %}
+- 「{{ s.claim }}」 見立て={{ s.leading_hypothesis }} / 確度={{ s.confidence }} / 直近の変化={{ s.delta_type }}{% if s.delta_note %} ({{ s.delta_note }}){% endif %}{% if s.implication %} / 含意: {{ s.implication }}{% endif %}
+{% endfor %}
+
+**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその PIR 縦断の射影)。
+台帳より高い確度で断定しない。台帳に無い新たな帰属を創作しない — 候補記事から読み取れる事実の
+記述に留める。
+{% endif %}
+{% if nation_correlation %}
+## 横断情勢 context (報告ストリーム基準・実発生時刻ではない)
+
+サイバー↔地政学の状況 (帰属サイバー / サイバー言及〔政策中心・帰属なし〕/ 標的 / 地政学):
+{% for n in nation_correlation -%}
+- {{ n.label }} ({{ n.role }}): 帰属{{ n.attributed_cyber }} / 言及{{ n.cyber_mention }} / 標的{{ n.cyber_target }} / 地政学{{ n.geopol }}{% if n.top_actors %} — actors: {{ n.top_actors | join(", ") }}{% endif %}
+{% endfor %}
+**「言及」レーンは ~65% が政策・態勢の言及 (帰属なし)。実作戦と混同せず「姿勢シグナル」として扱う**こと。
+件数差から時間的因果を推論しない (報告時刻であり実発生ではない)。この PIR に関係する国を中心に読む。
+{% endif %}
+{% if forecast_indicators %}
+## 構造予測 (FC2: 直近の定量スパイク、未検証)
+{% for f in forecast_indicators -%}
+- {{ f.scope }}={{ f.target }} {{ f.direction }} (z={{ f.z }}, 件数{{ f.count }})
+{% endfor %}
+outlook (b) で来週の監視指標を述べる際、これら定量予測との整合 / 矛盾を意識すること。
+{% endif %}
+{% if freshness and freshness.dated %}
+## 鮮度 (報道時刻 vs 発生時刻)
+
+当期 dated {{ freshness.dated }} 件中、振り返り報道 (発生から 30 日超) {{ freshness.retrospective }} 件 ({{ freshness.retrospective_pct }}%)。
+**報道急増 ≠ 新規活動増** の可能性 (収集網が過去を掘り起こす)。新規 campaign と再報道を区別すること。
+{% endif %}
+
+## 出力
+
+JSON で以下の構造で出力してください:
+
+```json
+{
+  "headline": "2-3 文 (150-280 字) で「今週この PIR 領域で何が最も重要だったか」を要約",
+  "key_events": [
+    {
+      "index": "上の候補一覧の [N] 番号 (整数)。article_id ではなく番号で指定すること",
+      "rationale": "なぜこれが key event なのか (30-60 字)"
+    }
+  ],
+  "outlook": "600-1000 字で書く。次の 4 観点をそれぞれ十分な情報量で展開すること:\n\n(a) 今週の事案から見える pattern / TTP 進化 / 帰属の動き — 具体的な actor 名 / バックドア名 / TTP ID (MITRE ATT&CK) / 標的セクター・国 を必ず明示。表面的な「活動活発化」のような generic 表現は禁止、必ず固有名詞と具体的 datapoint で書く。\n\n(b) 来週警戒すべき指標 — continuing campaign の方向性、報復可能性、周辺アクター連動、地政学イベント (選挙 / 軍事演習 / 重要会合) との連動を具体的に列挙。複数の monitoring 指標を箇条書きで挙げる。\n\n(c) 我々 (日本 CTI 担当者) が取るべき注視点 / 対応 / 情報収集の追加 — 具体的な IoC 監視ターゲット、検知ルール、外部連携 (JPCERT, NISC 等) の必要性、国内対象組織への通知判断基準。\n\n(d) 全体 synthesis ではカバーしきれない、この PIR 特有の深い文脈 — 軍事・諜報戦略 / 経済安保 / サプライチェーン / 国際法 / 政治的レイヤー 等の上位文脈を 1-2 段落で論じる。"
+}
+```
+
+### 出力ルール
+
+- **key_events は 5-8 件**選定。**候補一覧の [N] 番号 (index)** で参照すること (長い article_id をコピーせず番号で選ぶ。一覧に無い番号の創作禁止)
+- importance=high の event を **優先的に**選ぶ (high が 3+ 件あれば最低 3 件は high)、low/medium でも narrative 上重要なら採用
+- **重複を避ける**: 同じ事象を別 source が報じているなら 1 件に集約
+- **headline は固有名詞ベース** — "活動が活発" のような generic ではなく "Volt Typhoon が日本通信事業者 2 社を新規標的化、FDMTP バックドアによる lateral movement を確認" のような **actor 名 + TTP + 標的の三点セット**で書く
+- outlook は LLM の知識ではなく **provided articles** からの推論に限る (hallucination 禁止)
+- **MITRE ATT&CK の technique ID (T####/T####.###) は、各記事の「観測技術」に挙がったものだけ引用すること。自分の知識から ID を作ったり補完したりしない** (記憶からの ID は番号・名称がずれるため)。観測技術が無い記事については ID を付けず、手口は自然語で説明する
+- **情報の確度・信頼度の較正 (NATO Admiralty Code 準拠 — 厳守)**: 主張を 2 軸で評価し断定の強さを調整する。
+  記号 (A1/B2) は本文に書かず自然語で表現:
+  - **信頼度 (各候補の `信頼度=` tier を使う。事前計算済なので自力推測せずこれに従う)**:
+    一次 / 研究 = 高 (CISA KEV / JPCERT / NCSC / ベンダ CVE / Mandiant / Dragos / ESET 等) /
+    ニュース = 中 (一般報道) / SNS = 低 (未裏取り、Grok / X 単一投稿) /
+    国営 = framing 割引 (RT / Sputnik 等、内容が客観報道でも一方的 framing を警戒し断定に賭けない) /
+    不明 = 中扱いで慎重に
+  - **確度 (裏付くか)**: 高 = 複数 source 一致・公式 CVE/KEV あり / 中 = 単一 source / 低 = 技術的に非現実的・誇張疑い
+  - **断定形 + 強い推奨 (緊急パッチ等) は信頼度・確度ともに高い時のみ**。低信頼/単一/未裏取りは
+    「単一 source (Grok) の未確認情報だが」「公式 CVE 未登録」等で必ずヘッジし、確定口調にしない。
+  - **技術的に疑わしい単一報** (例: nginx の無設定 unauth RCE) は懐疑を明記し緊急対応の根拠にしない (まず裏取り推奨)。
+  - 特に (c) 対応推奨では、強い行動 (緊急パッチ・通知) を弱い source 1 本に依存させない。
+- **CTI doctrine 用語を意識的に使う**: "pre-positioning", "lateral movement", "C2 infrastructure", "TTP evolution", "supply chain compromise", "attribution confidence" 等の専門用語が適切な場面では使用すること
+- 出力は **JSON のみ**、前後に説明文不要

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}CTI Briefing{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"
+          integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+<header>
+  <h1>CTI Briefing</h1>
+  <nav>
+    <a href="/app/dashboard" {% if request.url.path == "/" or request.url.path.startswith("/app/dashboard") %}class="active"{% endif %}>ダッシュボード</a>
+    <a href="/history" {% if request.url.path.startswith("/history") %}class="active"{% endif %}>履歴</a>
+    <a href="/app/runs" {% if request.url.path.startswith("/runs") or request.url.path.startswith("/app/runs") or request.url.path.startswith("/app/run/") %}class="active"{% endif %}>即時実行</a>
+    <a href="/prompts" {% if request.url.path.startswith("/prompts") %}class="active"{% endif %}>プロンプト</a>
+    <a href="/config" {% if request.url.path.startswith("/config") %}class="active"{% endif %}>設定</a>
+    <a href="/schedule" {% if request.url.path.startswith("/schedule") %}class="active"{% endif %}>スケジュール</a>
+    <a href="/subscriptions" {% if request.url.path.startswith("/subscriptions") %}class="active"{% endif %}>購読</a>
+    <a href="/app/" {% if request.url.path.startswith("/app") or request.url.path.startswith("/intel-graph") %}class="active"{% endif %}>Intel Graph</a>
+    <a href="/health" {% if request.url.path.startswith("/health") %}class="active"{% endif %}>死活</a>
+    <a href="/stix" {% if request.url.path.startswith("/stix") %}class="active"{% endif %}>STIX</a>
+  </nav>
+</header>
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

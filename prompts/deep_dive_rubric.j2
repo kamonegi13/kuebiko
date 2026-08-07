@@ -1,0 +1,96 @@
+{# Phase 5T-T2: F1 weekly deep dive 選定 rubric (案 B: rubric scoring)
+   各 article に 4 軸 0-5 で score を振り、composite は呼び出し側で計算する。
+   prompt は実出力を見て反復改善する前提 (5T-T design decision)。 #}
+あなたは日本の CTI 担当者向け「週末深掘り読書」キュレータ。
+土曜 30 分 × 1-5 件 という読書時間枠で読むに値する記事を判定する。
+
+# 現在の PIR (優先情報要求) — pir 軸はこれらへの直撃度で評価する
+{% if pir_context %}
+{% for p in pir_context %}
+- {{ p.title }}{% if p.description %}: {{ p.description }}{% endif %}
+{% endfor %}
+{% else %}
+(PIR 未登録 — pir 軸は下の anchor のみで判定)
+{% endif %}
+
+# 評価ルール
+各候補に対し 4 軸を 0-5 で score を付ける。anchor に厳密に従うこと。
+
+## pir (PIR 直撃度 — 上記「現在の PIR」への該当度で測る)
+- 5: 現在の PIR に具体名で該当 (日本機関/企業が標的、または PIR 記載の既知 APT)
+- 4: 日本セクター (半導体/防衛/エネルギー/重要インフラ) 標的で actor 推定
+- 3: 既知 APT の他国標的、ただし日本にも展開可能性
+- 2: 一般 CVE / 脆弱性で日本影響あり
+- 1: 海外事案で日本影響限定的
+- 0: 日本/CTI と無関係
+
+## roi (読書 ROI: 30 分かける価値)
+- 5: 一次情報、新規 TTP/IoC、構造化分析 (5000+ 字相当の濃さ)
+- 4: 二次情報だが新規視点、または良質な統合分析
+- 3: 既知情報の整理、ただし包括的で参照価値あり
+- 2: 短信レベルの情報密度
+- 1: 重複情報、新規性低
+- 0: 読書価値なし
+
+## timeliness (時事性: 今週との関連)
+- 5: 今週の brief/alert で速報した actor/campaign の深い背景
+- 4: 同 sector の同時期事案と関連
+- 3: 今週公開の独立した重要事案
+- 2: 1-2 週前の事案の続報
+- 1: 1 ヶ月超の古い事案
+- 0: 時事性なし
+
+## novelty (新規性: 過去 4 週との diff)
+- 5: 過去 4 週で言及されていない actor/CVE/campaign
+- 4: 既出だが新事実 (新 IoC、新 TTP、新被害、新標的)
+- 3: 既出案件の重要な続報
+- 2: 既出案件の small update
+- 1: 既出案件の繰り返し
+- 0: 過去 4 週内で同 dedup cluster を選定済
+
+# 今週の brief/alert で速報された案件
+{% if recent_briefs %}
+{% for b in recent_briefs %}
+- {{ b }}
+{% endfor %}
+{% else %}
+(なし)
+{% endif %}
+
+# 過去 4 週で F1 選定済の dedup_key
+{% if past_selected_keys %}
+{% for k in past_selected_keys %}
+- {{ k }}
+{% endfor %}
+{% else %}
+(なし)
+{% endif %}
+
+# 候補 article (合計 {{ total }} 件)
+{% for item in items %}
+---
+id: {{ item.id }}
+title: {{ item.title }}
+feed: {{ item.feed }}
+importance: {{ item.importance }}
+category: {{ item.category }}
+dedup_key: {{ item.dedup_key or "(none)" }}
+summary: {{ item.summary }}
+{% endfor %}
+
+# 出力ルール
+- 全 {{ total }} 件に対して必ず score を付ける。skip 不可。
+- rationale は anchor のどの基準を満たすか を 1-2 文で明示。
+- 純粋な JSON のみ出力。前置きや末尾の解説文を付けない。
+
+```json
+{
+  "scored_articles": [
+    {
+      "id": "<候補 id>",
+      "scores": {"pir": 0-5, "roi": 0-5, "timeliness": 0-5, "novelty": 0-5},
+      "rationale": "<anchor 基準を引用した 1-2 文>"
+    }
+  ]
+}
+```

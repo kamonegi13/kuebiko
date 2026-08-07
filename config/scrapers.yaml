@@ -1,0 +1,86 @@
+# 初回 seed 専用。runtime SSoT は DB (config_store, key=scrapers)。UI 編集は DB に版保存され、
+# このファイルは更新されない。SOURCES_CONFIG_DB=0 で yaml 直読み/直書きの旧挙動に rollback 可。
+scrapers:
+- name: merics-org
+  enabled: true
+  listing_url: https://merics.org/en/analysis
+  article_link_selector: .field--name-title a
+  feed_title: MERICS
+  max_posts_per_run: 8
+- name: seculligence-com
+  enabled: true
+  listing_url: https://seculligence.com/news/all/
+  article_link_selector: article.c-card a.c-card__link
+  feed_title: Seculligence
+  max_posts_per_run: 8
+  title_selector: .c-card__title
+  folder: news_en
+- name: ifri-org
+  enabled: true
+  listing_url: https://www.ifri.org/fr
+  article_link_selector: .flux-item a[rel='bookmark']
+  feed_title: IFRI
+  max_posts_per_run: 8
+  title_selector: span
+  folder: news_en
+- name: ja-nozominetworks-com
+  enabled: true
+  listing_url: https://ja.nozominetworks.com/blog
+  article_link_selector: .w-dyn-item a.blog-page-link-block
+  feed_title: Nozomi Networks (OT ブログ)
+  max_posts_per_run: 8
+  title_selector: h2.resource-page-resource-block-item-header
+  folder: news_en
+- name: claroty-team82
+  enabled: true
+  listing_url: https://claroty.com/team82/research
+  article_link_selector: a.entry-card
+  feed_title: Claroty Team82
+  max_posts_per_run: 8
+  title_selector: h2
+  folder: news_en
+- name: dragos-com
+  enabled: true
+  listing_url: https://www.dragos.com/blog
+  article_link_selector: .SearchResultsModule-results .SearchResultsModule-results-item
+  feed_title: Dragos
+  max_posts_per_run: 8
+  title_selector: .PagePromo-title a
+  folder: news_en
+- name: csa-gov-sg
+  enabled: true
+  listing_url: https://www.csa.gov.sg/alerts-and-advisories
+  article_link_selector: a.group.flex.border-b
+  feed_title: Cyber Security Agency of Singapore
+  max_posts_per_run: 8
+  title_selector: h3 span
+  folder: news_en
+- name: wilsoncenter-org
+  enabled: true
+  listing_url: https://www.wilsoncenter.org/insight-analysis?_page=1&keywords=&_tab=insight-analysis&_limit=10&_order=desc&_sort=date
+  article_link_selector: a.js-link-event-link
+  feed_title: Wilson Center
+  max_posts_per_run: 8
+  folder: news_en
+- name: bsi-bund-de
+  enabled: true
+  listing_url: https://www.bsi.bund.de/SiteGlobals/Forms/Suche/BSI/Sicherheitswarnungen/Sicherheitswarnungen_Formular.html?nn=133020&cl2Categories_DocType=callforbids
+  article_link_selector: ul.c-search-results__list li.c-teaser-wrapper a
+  feed_title: BSI  -  Sicherheitshinweise
+  max_posts_per_run: 8
+  title_selector: .c-security-alert__headline
+  folder: news_en
+- name: ncsc-govt-nz
+  enabled: true
+  listing_url: https://www.ncsc.govt.nz/news/
+  article_link_selector: a.card__link
+  feed_title: NCSC
+  max_posts_per_run: 8
+  folder: news_en
+- name: lookout-com
+  enabled: true
+  listing_url: https://www.lookout.com/threat-intelligence
+  article_link_selector: a.threats_filter_link-wrap
+  feed_title: lookout
+  max_posts_per_run: 8
+  folder: news_en

@@ -1,0 +1,35 @@
+{# PIR Daily Focus: 1 PIR の直近 24h match から、本日この PIR で「押さえるべき要点」を 1-2 文生成。
+
+   出力ルール:
+   - 80-160 字、平叙文 1-2 文
+   - actor 名 / 標的 / TTP 等の固有名詞を優先 (generic な「活動が活発化」禁止)
+   - 24h 横並びの記事から共通 pattern が読めるなら指摘
+   - わからない部分は推測せず "報道に留まる" と書く
+   - 出力は要点本文のみ、前置きや見出し不要
+#}
+
+{% include ["_persona_local.j2", "_persona.j2"] %}
+**ある特定の PIR (Priority Intelligence Requirement)** に直近 24h で match した article を分析し、
+**本日この PIR 領域で押さえるべき要点** を 1-2 文 (80-160 字) で書いてください。
+
+## 対象 PIR
+- ID: {{ pir.id }}
+- Title: {{ pir.title }}
+{%- if pir.description %}
+- Description: {{ pir.description }}
+{%- endif %}
+
+## 直近 24h で match した article ({{ matches | length }} 件、上位)
+{% for m in matches -%}
+- [{{ m.importance }}] **{{ m.title }}** ({{ m.feed_title }})
+{%- if m.summary %}
+  要約: {{ m.summary[:240] }}
+{%- endif %}
+{% endfor %}
+
+## 出力ルール
+- **80-160 字**、平叙文 **1-2 文**
+- actor 名 / TTP / 標的セクター・国 など **固有名詞優先**。「活動が活発化」「注意が必要」のような generic 表現は禁止
+- 横並びの記事から共通 pattern (同 actor / 同 sector / 同 TTP) が見えれば 1 文で指摘
+- 推測は禁止、article で言及されている事実のみ使用
+- 出力は **要点本文のみ**、見出し / 前置き / 箇条書き禁止

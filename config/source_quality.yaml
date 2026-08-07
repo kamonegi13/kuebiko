@@ -1,0 +1,15 @@
+# source-level quality signal (Phase 5T-V → Phase B-cal で content-based 化)。
+# **このファイルは Web UI (情報フロー → brief 配信調整) の構造化フォームから編集する。**
+# brief_cap_24h: brief ch の 24h 投稿上限 (importance=high は cap 無視)。
+# high_threat_brief_categories: importance=high のうち style 降格より優先して brief へ上げる
+#   「実 actionable な脅威」カテゴリ (Phase B-cal R3.5)。
+
+brief_cap_24h: 15
+high_threat_brief_categories:
+  - "apt"
+  - "apt_leak"
+  - "vulnerability"
+  - "malware"
+  - "incident"
+  - "breach"
+  - "advisory"

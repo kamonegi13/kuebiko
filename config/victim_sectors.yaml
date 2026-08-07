@@ -1,0 +1,320 @@
+# Phase H: Diamond Model "Victim" vertex の sector 正規化辞書 (2026-05-19)
+#
+# enrichment LLM が出した raw text を canonical id にマッチング。
+# 未知値は articles.victim_sector_canonical = "uncategorized" + raw を保存し、
+# weekly-taxonomy-review pipeline (月曜 10:00 JST) で LLM 提案 → user 承認で
+# alias 追加 or 新カテゴリ作成 (Web UI /intel-graph/taxonomy-review)。
+
+canonical:
+  financial:
+    display: 金融
+    aliases:
+      - 金融
+      - finance
+      - banking
+      - bank
+      - fintech
+      - 証券
+      - 暗号資産
+      - crypto
+      - "cryptocurrency exchange"
+      - cryptocurrency
+
+  healthcare:
+    display: 医療
+    aliases:
+      - 医療
+      - healthcare
+      - hospital
+      - 病院
+      - pharma
+      - 製薬
+      - pharmaceutical
+
+  energy:
+    display: エネルギー
+    aliases:
+      - エネルギー
+      - energy
+      - electric
+      - power
+      - 電力
+      - oil
+      - gas
+      - utility
+
+  manufacturing:
+    display: 製造
+    aliases:
+      - 製造
+      - 製造業
+      - manufacturing
+      - manufacturing industry
+      - critical manufacturing
+      - automotive
+      - semiconductor
+      - 半導体
+      - industrial
+      - semiconductor industry
+      - heavy industry
+      - electronics
+      - 化学
+      - chemical
+      - chemicals
+      - 化学工業
+      - 化学メーカー
+
+  government:
+    display: 政府
+    aliases:
+      - 政府
+      - government
+      - ministry
+      - agency
+      - public_sector
+      - public sector
+      - public services
+      - 公共機関
+      - 公共サービス
+      - 政府・公共サービス
+      - government and public sector
+
+  defense:
+    display: 防衛
+    aliases:
+      - 防衛
+      - military
+      - defense
+      - 自衛隊
+      - JSDF
+      - armed_forces
+
+  telecom:
+    display: 通信
+    aliases:
+      - 通信
+      - telecom
+      - telecommunications
+      - telecommunication
+      - ISP
+      - carrier
+      - NTT
+      - KDDI
+      - network infrastructure
+      - ネットワークインフラ
+
+  critical_infra:
+    display: 重要インフラ
+    aliases:
+      - 重要インフラ
+      - critical_infrastructure
+      - critical infrastructure
+      - water
+      - water utility
+      - utilities
+      - transportation
+      - transport
+      - logistics
+      - 物流
+      - ロジスティクス
+      - 鉄道
+      - 港湾
+      - maritime
+      - 海運
+      - shipping
+      - 上下水道
+      - web infrastructure
+      - telecommunications and critical infrastructure
+      - 交通
+      - 運輸
+      - 交通・運輸
+      - 航空
+      - aviation
+      - airline
+      - airlines
+      - 空港
+      - airport
+      - rail
+      - railway
+      - railways
+      - trucking
+      - freight
+
+  retail:
+    display: 小売
+    aliases:
+      - 小売
+      - retail
+      - "e-commerce"
+      - ecommerce
+
+  food_agriculture:
+    display: 食品・農業
+    aliases:
+      - 食品
+      - 農業
+      - 農林水産
+      - food
+      - food production
+      - food industry
+      - "food & beverage"
+      - food and beverage
+      - 飲料・食品
+      - beverage
+      - agriculture
+      - agriculture and food production
+      - agribusiness
+      - farming
+
+  technology:
+    display: IT
+    aliases:
+      - "IoT infrastructure"
+      - "AI infrastructure"
+      - "AI/ML Infrastructure"
+      - IT
+      - technology
+      - software
+      - software development
+      - software supply chain
+      - software development ecosystem
+      - software development and cloud infrastructure
+      - software development / e-commerce / crypto
+      - software development / DevOps
+      - devops
+      - web services
+      - SaaS
+      - cloud
+      - tech
+      - it services
+      - it infrastructure
+      - internet services
+      - it / internet services
+      - managed service provider
+      - it managed service provider (msp)
+      - msp
+      - cybersecurity
+      - サイバーセキュリティ
+      - security vendor
+
+  education:
+    display: 教育
+    aliases:
+      - 教育
+      - education
+      - university
+      - 大学
+      - academic
+
+  media:
+    display: メディア
+    aliases:
+      - メディア
+      - media
+      - news
+      - journalism
+      - entertainment
+      - エンタメ
+      - gaming
+      - ゲーム
+      - 娯楽
+      - エンターテインメント
+      - エンターテイメント
+
+  ngo:
+    display: NGO
+    aliases:
+      - NGO
+      - civil_society
+      - 非政府組織
+      - non-profit
+      - nonprofit
+      - non profit
+
+  space:
+    display: 宇宙
+    aliases:
+      - space
+      - space industry
+      - space and telecommunications
+      - aerospace
+      - 宇宙
+      - satellite
+      - 衛星
+
+  research:
+    display: 研究機関
+    aliases:
+      - research
+      - 研究機関
+      - research/academia
+      - academia
+      - 学術
+      - think tank
+
+  national_security:
+    display: 国家安全保障
+    aliases:
+      - national security
+      - 国家安全保障
+      - intelligence community
+      - national defense
+      - national assets and corporate networks
+
+  professional_services:
+    display: 専門サービス
+    aliases:
+      - professional services
+      - professional services firm
+      - legal
+      - law firm
+      - 法務
+      - 法律事務所
+      - consulting
+      - コンサル
+      - コンサルティング
+      - accounting
+      - 会計
+      - audit
+      - business services
+
+  enterprise:
+    display: 企業全般
+    aliases:
+      - enterprise
+      - 企業全般
+      - corporate
+      - business
+      - private sector
+      - public sector, academia, enterprise
+      - consumer services
+      - サービス業
+      - services
+      - construction
+      - 建設
+      - 建設業
+      - hospitality
+      - 宿泊・観光
+      - hospitality and tourism
+      - tourism
+      - 観光
+      - 不動産
+      - real estate
+      - 不動産業
+
+  multi_sector:
+    display: 複数セクター
+    aliases:
+      - multi-sector
+      - multi sector
+      - multisector
+      - 複数セクター
+      - 複数業種
+      - cross-sector
+      - cross sector
+      - multiple sectors
+      - various sectors
+
+  other:
+    display: その他
+    aliases: []

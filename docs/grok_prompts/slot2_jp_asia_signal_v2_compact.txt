@@ -1,0 +1,59 @@
+目的: 過去 24h の X 投稿で日本+東アジア regional または日本語 CTI source を JSONL 収集。要約・翻訳・narrative・カテゴリ集計 一切なし。Inoreader (115 件購読) に出ない X-only 価値が目的。news aggregator (RSS等価) より個人研究者・組織 self-disclosure・海外言語 source を優先。
+
+# 収集対象 (J1-J6 いずれか、各 0 件 OK)
+
+J1) 日本企業・組織 breach/incident 速報。優先順位:
+1) 企業公式 X account 自己開示 (「お知らせ」「お詫び」「お客様情報流出に関するご報告」)
+2) 被害組織 CISO/IT責任者/中の人 個人発信 (PR 前リーク)
+3) 海外メディア/researcher の JP 言及 (en/ko/zh 原文ママ)
+4) (上記乏しい場合のみ) 報道アカウント — 合計 max 2 件 (@ScanNetSecurity, @itmedia_cs, @cybersecurityjp, @nikkei_xtech, @asciijp_sec 等 RSS 等価は合算 2 件上限)
+判定: 日本組織が攻撃・侵害・被害の当事者として明示の場合のみ。「日本周辺諸国も対象」「日本研究者が解説」「汎用 vendor 警告」は除外。
+
+J2) JPCERT/IPA/NISC/警察庁 cyber 関連注意喚起。公式: @JPCERTCC, @JapanIPA, @nisc_forecast, @NPA_KOHO。
+cyber keyword 必須 (text に「サイバー」「不正アクセス」「マルウェア」「ランサム」「脆弱性」「情報漏えい」「JVN」「CVE」「DDoS」「フィッシング」「標的型」「情報セキュリティ」のいずれか)。特殊詐欺統計/交通安全/防犯一般は除外 (@NPA_KOHO 投稿でも cyber 無関係なら drop)。
+query: "JPCERT 注意喚起", "JPCERT-CC", "IPA 重要", "IPA 注意喚起", "警察庁 サイバー", "NISC 通知", "JVN"
+
+J3) 日本人研究者 technical 解析。handle: @piyokango, @hyzm6, @piedey, @MasaomiYamane, @MaltraffickFu, @kitagawa_takuji, @0x0SojalSec, @ozuma5119, @kazumihirose
+判定: CVE分析/actor動向/TTP解説/IoC共有 等 technical 内容 100 字以上必須。news link 単独 share/opinion piece は除外。
+
+J4) DPRK APT 動向 (JP/KR/US 影響含む)。
+actor: Lazarus, Kimsuky, Andariel, APT37, APT38, ScarCruft, BeaverTail, ContagiousInterview, IT worker scheme, Famous Chollima
+handle: @issuemakerslab, @hyzm6, @piyokango
+多言語 query: "북한 해킹", "라자루스", "DPRK 사이버", "Lazarus DPRK", "Kimsuky activity"
+判定: 新規 victim/malware family/IT worker 発覚/crypto theft 等 event-driven のみ。review/opinion は除外。
+
+J5) 中国系 APT/国家戦略 cyber 動向。
+actor: Volt Typhoon, Salt Typhoon, Flax Typhoon, FDMTP, BRICKSTORM, APT41, APT10, APT31, MustangPanda, Mustang Panda, Earth (Trend Micro naming)
+handle: @PSJay, @drunkbinary, @darkwebinformer, @MalwareJake
+多言語 query: "Volt Typhoon Japan", "Salt Typhoon target", "Chinese APT campaign", "网络间谍", "国家级 APT"
+判定: 新規 campaign/backdoor/attribution update/telco infrastructure 侵入 等 event-driven のみ。generic「中国 APT 注意」「活動活発化」は除外。
+
+J6) 東アジア (TW/HK/KR) cyber 事件。
+台湾: @TWCERTCC, "中華電信", "台湾 サイバー攻撃", "Taiwan cyber", "台灣 駭客"
+香港: "Hong Kong cyber", "香港 駭客", "香港 個人情報"
+韓国 (DPRK は J4): "한국 사이버", "한국 해킹 사고", 韓国企業名+breach
+
+# 量・出力ルール
+
+- 上限 30 件、engagement.retweet+like 降順 truncate
+- 件数下限なし、5 件未満でも質優先、無理に埋めない
+- 24h 以内のみ、1 tweet を複数 record に分けない
+- diversity: 1 author_handle 最大 6 件。news aggregator (@ScanNetSecurity, @itmedia_cs, @cybersecurityjp, @nikkei_xtech, @asciijp_sec, @TheHackersNews_jp, @SecurityNEXTjp 等) 合算 max 2 件
+- engagement field 全 record で必ず取得記録 (filter は行わない、pipeline 側で処理)
+- 同一事案複数報道は両方含めて OK (pipeline で dedup)
+- text 原文ママ、要約/翻訳/抜粋/注釈禁止
+- media_urls/external_urls は実在 URL のみ、fabricate 禁止
+- tweet を fabricate しない、実在 tweet のみ
+- narrative/全体傾向/今日のまとめ/category 集計を出力したら違反 → 出力全体を `[]` に置換 (self-check)
+- 監視 handle は参考、x_semantic_search で広く拾うことを優先
+
+# 出力形式
+
+JSONL (1 行 1 record)。最初の文字 `{`、最後の文字 `}`。前後に説明文・見出しを出さない。
+
+Schema (この field 以外追加禁止):
+{"tweet_id":"string","url":"https://x.com/handle/status/...","author_handle":"@handle","author_name":"Display Name","posted_at":"ISO 8601 UTC","lang":"ja|en|ko|zh|...","text":"原文ママ (改行は \\n)","is_retweet":true|false,"retweeted_tweet_id":"string|null","is_quote":true|false,"quoted_tweet_id":"string|null","quoted_text":"string|null","reply_to_tweet_id":"string|null","media_urls":["string"],"external_urls":["string"],"engagement":{"like":0,"retweet":0,"quote":0,"reply":0},"matched_theme":"J1|J2|J3|J4|J5|J6"}
+
+Few-shot 例:
+{"tweet_id":"1791234567890","url":"https://x.com/JPCERTCC/status/1791234567890","author_handle":"@JPCERTCC","author_name":"JPCERT/CC","posted_at":"2026-05-25T03:00:00Z","lang":"ja","text":"【注意喚起】Apache Tomcat の脆弱性 (CVE-2026-XXXX) に関する技術情報を公開しました。\\n詳細は JVN を参照ください。","is_retweet":false,"retweeted_tweet_id":null,"is_quote":false,"quoted_tweet_id":null,"quoted_text":null,"reply_to_tweet_id":null,"media_urls":[],"external_urls":["https://jvn.jp/jp/JVNVU99999999/"],"engagement":{"like":120,"retweet":45,"quote":3,"reply":2},"matched_theme":"J2"}
+{"tweet_id":"1791345678901","url":"https://x.com/piyokango/status/1791345678901","author_handle":"@piyokango","author_name":"piyokango","posted_at":"2026-05-25T05:00:00Z","lang":"ja","text":"CVE-2026-9082 (Drupal Core SQLi) 解析。匿名ユーザーから悪用可能、PostgreSQL 影響大。ITW 確認済。","is_retweet":false,"retweeted_tweet_id":null,"is_quote":false,"quoted_tweet_id":null,"quoted_text":null,"reply_to_tweet_id":null,"media_urls":[],"external_urls":[],"engagement":{"like":85,"retweet":34,"quote":2,"reply":5},"matched_theme":"J3"}

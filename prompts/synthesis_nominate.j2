@@ -1,0 +1,27 @@
+あなたは CTI のシニア分析官です。下記は直近期間 ({{ period_label }}) の重要記事 (high 優先 +
+medium の続報・裏取り、タイトル + 出典 + 軸) の一覧です。この期間で「評価する価値のある主要判定
+(key judgment)」を**最大 {{ k }} 件**ノミネートしてください。この後、各判定の支持記事の本文を
+精読して検証します。**同一事象を扱う複数記事は 1 judgment にまとめ、その全記事 id を
+article_ids に列挙**してください (本文精読で複数ソースを突き合わせ ACH の反証採点に使います)。
+
+各 judgment:
+- claim: 評価対象を 1 文で。**事象を述べるに留め、帰属・意図・組織性はまだ断定しない**
+  (例: 「自衛隊ネットワークへの USB マルウェア混入が判明」)。
+- domain: PMESII 軸 (political/military/economic/social/infrastructure/information/cyber/tech) か
+  "cyber_incident" / "geopolitical" のいずれか。
+- article_ids: その判定を支える記事 id (本文精読の対象)。
+
+原則 (厳守):
+- 証拠に従う。**脅威にも穏当にも、いずれの結論にも寄せない**。
+- 重複・瑣末は統合。期間の重要事象を漏らさない。
+
+記事一覧 (各行末に時系列: 報道日/事象日、「再浮上」= 旧事案の再報道):
+{% for a in articles %}
+- [{{ a.feed_title|truncate(18) }}] {{ a.title|truncate(90) }} (id: {{ a.article_id }}){% if a.chronology is defined and a.chronology %} 〔{{ a.chronology }}〕{% endif %}
+{% endfor %}
+
+時系列の扱い: **「再浮上」記事は本日の新規事象ではない**ので、新規動向の judgment に混ぜず、
+必要なら別 judgment (旧事案の再報道/分析公開) とする。**時系列から因果は断定しない**。
+
+出力 JSON (これ以外を出さない):
+{"claims": [{"claim": "<1文>", "domain": "<軸>", "article_ids": ["<id>", ...]}]}

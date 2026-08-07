@@ -1,0 +1,448 @@
+# 初回 seed 専用 (ツール同梱の既定購読リスト)。
+# runtime SSoT は DB (config_store, key=feeds)。UI 編集は DB に版保存され、このファイルは
+# 更新されない。SOURCES_CONFIG_DB=0 で yaml 直読み/直書きの旧挙動に rollback 可。
+feeds:
+- name: BleepingComputer
+  url: https://www.bleepingcomputer.com/feed/
+  enabled: true
+  folder: news_en
+- name: Krebs on Security
+  url: https://krebsonsecurity.com/feed/
+  enabled: true
+  folder: news_en
+- name: DataBreaches.net
+  url: https://databreaches.net/feed/
+  enabled: true
+  folder: news_en
+- name: The Hacker News
+  url: https://feeds.feedburner.com/TheHackersNews
+  enabled: true
+  folder: news_en
+- name: SANS Internet Storm Center
+  url: https://isc.sans.edu/rssfeed.xml
+  enabled: true
+  folder: advisory
+- name: Trail of Bits
+  url: https://blog.trailofbits.com/feed/
+  enabled: true
+  folder: research
+- name: Hudson Institute
+  url: https://www.hudson.org/rss.xml
+  enabled: true
+  folder: thinktank
+- name: Project Zero
+  url: https://projectzero.google/feed.xml
+  enabled: true
+  folder: research
+- name: NICTER Blog
+  url: https://blog.nicter.jp/index.xml
+  enabled: true
+  folder: research_jp
+- name: LAC Watch
+  url: https://www.lac.co.jp/lacwatch/feed.xml
+  enabled: true
+  folder: advisory_jp
+- name: Bunnie Studios
+  url: https://www.bunniestudios.com/blog/?feed=rss2
+  enabled: true
+  folder: inoreader_import
+- name: ASPI Strategist
+  url: https://www.aspistrategist.org.au/feed/
+  enabled: true
+  folder: inoreader_import
+- name: JPCERT/CC 注意喚起
+  url: https://www.jpcert.or.jp/rss/jpcert.rdf
+  enabled: true
+  folder: inoreader_import
+- name: RAND Blog
+  url: https://www.rand.org/blog.xml
+  enabled: true
+  folder: inoreader_import
+- name: Recorded Future
+  url: https://www.recordedfuture.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: ITmedia エンタープライズ Security
+  url: https://rss.itmedia.co.jp/rss/2.0/enterprise.xml
+  enabled: true
+  folder: inoreader_import
+- name: arXiv cs.CR (Cryptography and Security)
+  url: https://arxiv.org/rss/cs.CR
+  enabled: true
+  folder: inoreader_import
+- name: JVN (English)
+  url: https://jvn.jp/en/rss/jvn.rdf
+  enabled: true
+  folder: inoreader_import
+- name: セキュリティは楽しいかね？ Part 2
+  url: https://negi.hatenablog.com/feed
+  enabled: true
+  folder: inoreader_import
+- name: USNI News (US Naval Institute)
+  url: https://news.usni.org/feed
+  enabled: true
+  folder: inoreader_import
+- name: ESET WeLiveSecurity
+  url: https://www.welivesecurity.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: War on the Rocks
+  url: https://warontherocks.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Quarkslab
+  url: https://blog.quarkslab.com/feeds/all.atom.xml
+  enabled: true
+  folder: inoreader_import
+- name: JPCERT/CC 統合 RSS
+  url: https://www.jpcert.or.jp/rss/jpcert-all.rdf
+  enabled: true
+  folder: inoreader_import
+- name: Breaking Defense
+  url: https://breakingdefense.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Securelist - Kaspersky
+  url: https://securelist.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Cloudflare Blog
+  url: https://blog.cloudflare.com/rss/
+  enabled: true
+  folder: inoreader_import
+- name: RT (Russia Today)
+  url: https://www.rt.com/rss/news/
+  enabled: true
+  folder: inoreader_import
+- name: The Diplomat » Regions » East Asia
+  url: https://thediplomat.com/regions/east-asia/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Foreign Policy
+  url: https://foreignpolicy.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Forescout
+  url: https://www.forescout.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: SpaceNews
+  url: https://spacenews.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Long War Journal
+  url: https://www.longwarjournal.org/feed
+  enabled: true
+  folder: inoreader_import
+- name: AWS Security Bulletins
+  url: https://aws.amazon.com/security/security-bulletins/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Sysdig
+  url: https://sysdig.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Just Security
+  url: https://www.justsecurity.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: CEPA RSS
+  url: http://cepa.org/rss/
+  enabled: true
+  folder: inoreader_import
+- name: CSIS Beyond Parallel
+  url: https://beyondparallel.csis.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: CSIS ChinaPower
+  url: https://chinapower.csis.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Jamestown China Brief
+  url: https://jamestown.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: EU vs Disinfo
+  url: https://euvsdisinfo.eu/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Lowy Interpreter (Australia)
+  url: https://www.lowyinstitute.org/the-interpreter/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: Global Times (China)
+  url: https://www.globaltimes.cn/rss/outbrain.xml
+  enabled: true
+  folder: inoreader_import
+- name: GBHackers On Security
+  url: https://gbhackers.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: iHLS
+  url: https://i-hls.com/feed
+  enabled: true
+  folder: inoreader_import
+- name: NK News
+  url: https://www.nknews.org/feed
+  enabled: true
+  folder: inoreader_import
+- name: ANSSI France (CERT-FR)
+  url: https://www.cert.ssi.gouv.fr/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Red Canary Blog
+  url: https://redcanary.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: '@IT セキュリティ'
+  url: https://rss.itmedia.co.jp/rss/2.0/ait_security.xml
+  enabled: true
+  folder: inoreader_import
+- name: CIS Center for Internet Security
+  url: https://www.cisecurity.org/feed
+  enabled: true
+  folder: inoreader_import
+- name: Zero Day Initiative (ZDI) Blog
+  url: https://www.zerodayinitiative.com/blog?format=rss
+  enabled: true
+  folder: inoreader_import
+- name: Snyk
+  url: https://snyk.io/blog/feed
+  enabled: true
+  folder: inoreader_import
+- name: Unit42 - Palo Alto Networks
+  url: https://unit42.paloaltonetworks.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Naval News
+  url: https://www.navalnews.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: piyolog
+  url: https://piyolog.hatenadiary.jp/feed
+  enabled: true
+  folder: inoreader_import
+- name: Ploofpoint
+  url: https://www.proofpoint.com/us/threat-insight-blog.xml
+  enabled: true
+  folder: inoreader_import
+- name: FDD (Foundation for Defense of Democracies)
+  url: https://www.fdd.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: NCSC UK All Advisories
+  url: https://www.ncsc.gov.uk/api/1/services/v1/all-rss-feed.xml
+  enabled: true
+  folder: inoreader_import
+- name: Atlantic Council
+  url: https://www.atlanticcouncil.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: CNIL France
+  url: https://www.cnil.fr/rss
+  enabled: true
+  folder: inoreader_import
+- name: Security NEXT
+  url: https://www.security-next.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: The Record by Recorded Future
+  url: https://therecord.media/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Indo-Pacific Defense Forum
+  url: https://ipdefenseforum.com/ja/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Volexity Blog
+  url: https://www.volexity.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: AhnLab ASEC (Korea, English)
+  url: https://asec.ahnlab.com/en/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Team T5
+  url: https://teamt5.org/jp/posts/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: ESTsecurity ESRC (Korea, DPRK)
+  url: https://blog.alyac.co.kr/rss
+  enabled: true
+  folder: inoreader_import
+- name: S2W TALON (Korea, DPRK/crypto)
+  url: https://medium.com/feed/s2wblog
+  enabled: true
+  folder: inoreader_import
+- name: NSHC ThreatRecon (Korea, DPRK)
+  url: https://threatrecon.nshc.net/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Genians (Korea, DPRK)
+  url: https://www.genians.co.kr/blog/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: Natto Thoughts (China cyber)
+  url: https://nattothoughts.substack.com/feed
+  enabled: true
+  folder: inoreader_import
+- name: Huntress Blog
+  url: https://www.huntress.com/blog/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: GCP Security Bulletins
+  url: https://cloud.google.com/feeds/google-cloud-security-bulletins.xml
+  enabled: true
+  folder: inoreader_import
+- name: Symantec Enterprise Blogs
+  url: https://sed-cms.broadcom.com/rss/v1/blogs/rss.xml/221
+  enabled: true
+  folder: inoreader_import
+- name: Labs – SentinelOne
+  url: https://www.sentinelone.com/labs/feed/
+  enabled: true
+  folder: inoreader_import
+- name: CISA Alerts
+  url: https://www.cisa.gov/uscert/ncas/alerts.xml
+  enabled: true
+  folder: inoreader_import
+- name: セキュリティ研究センターブログ
+  url: https://security.macnica.co.jp/atom.xml
+  enabled: true
+  folder: inoreader_import
+- name: CERT Polska
+  url: https://cert.pl/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: RUSI Commentary (UK)
+  url: https://www.rusi.org/rss/latest-commentary.xml
+  enabled: true
+  folder: inoreader_import
+- name: Research, News, and Perspective
+  url: https://www.trendmicro.com/ja_jp/research.tagSearch.xml
+  enabled: true
+  folder: inoreader_import
+- name: DefenseScoop
+  url: https://defensescoop.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Wiz Threat Intel
+  url: https://www.wiz.io/blog/rss
+  enabled: true
+  folder: inoreader_import
+- name: Cisco Talos Blog
+  url: https://blog.talosintelligence.com/rss/
+  enabled: true
+  folder: inoreader_import
+- name: ScanNetSecurity
+  url: https://scan.netsecurity.ne.jp/rss20/index.rdf
+  enabled: true
+  folder: inoreader_import
+- name: CISA Cybersecurity Advisories (incl. KEV)
+  url: https://www.cisa.gov/cybersecurity-advisories/all.xml
+  enabled: true
+  folder: inoreader_import
+- name: Sputnik Globe (Russia)
+  url: https://sputnikglobe.com/export/rss2/archive/index.xml
+  enabled: true
+  folder: inoreader_import
+- name: Articles
+  url: https://www.lawfaremedia.org/feeds/articles
+  enabled: true
+  folder: inoreader_import
+- name: Ransomware.live
+  url: https://ransomware.live/rss
+  enabled: true
+  folder: inoreader_import
+- name: Chainalysis
+  url: https://www.chainalysis.com/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Defense News
+  url: https://www.defensenews.com/arc/outboundfeeds/rss/
+  enabled: true
+  folder: inoreader_import
+- name: Threat intelligence | Microsoft Security Blog
+  url: https://www.microsoft.com/en-us/security/blog/topic/threat-intelligence/feed/
+  enabled: true
+  folder: inoreader_import
+- name: The War Zone
+  url: https://www.twz.com/feed
+  enabled: true
+  folder: inoreader_import
+- name: Sygnia
+  url: https://www.sygnia.co/feed/
+  enabled: true
+  folder: inoreader_import
+- name: 2024 Sonatype Blog
+  url: https://www.sonatype.com/blog/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: Dark Web Informer
+  url: https://darkwebinformer.com/rss/
+  enabled: true
+  folder: inoreader_import
+- name: Crisis Group
+  url: https://www.crisisgroup.org/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: Google Intelligence
+  url: https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v
+  enabled: true
+  folder: inoreader_import
+- name: セキュリティニュース - 合同会社ロケットボーイズ
+  url: https://rocket-boys.co.jp/blog/category/security-news/feed/
+  enabled: true
+  folder: inoreader_import
+- name: OWASP GenAI Security
+  url: https://genai.owasp.org/feed/
+  enabled: true
+  folder: inoreader_import
+- name: Zimperium
+  url: https://zimperium.com/blog/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: South China Morning Post
+  url: https://www.scmp.com/rss/feed/
+  enabled: true
+  folder: inoreader_import
+- name: The Insider (Russia, 英)
+  url: https://theins.ru/en/feed
+  enabled: true
+  folder: inoreader_import
+- name: Pravda Netherlands
+  url: https://netherlands.news-pravda.com/en/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: Bishop Fox
+  url: https://bishopfox.com/blog/feed
+  enabled: true
+  folder: inoreader_import
+- name: Council on Foreign Relations
+  url: https://www.cfr.org/feed
+  enabled: true
+  folder: inoreader_import
+- name: StealthMole Intelligence Hub
+  url: https://stealthmole-intelligence-hub.blogspot.com/feeds/posts/default
+  enabled: true
+  folder: inoreader_import
+- name: Distributed Denial of Secrets Recently Published Articles
+  url: https://ddosecrets.org/feed/rss.xml
+  enabled: true
+  folder: inoreader_import
+- name: JVN iPedia (English) - New entries
+  url: https://jvndb.jvn.jp/rss/en/jvndb_new.rdf
+  enabled: true
+  folder: inoreader_import
+- name: The DFIR Report
+  url: https://thedfirreport.com/feed/
+  enabled: true
+  folder: news_en
+- name: FortiGuard Labs Threat Research
+  url: https://feeds.fortinet.com/fortinet/blog/threat-research
+  enabled: true
+  folder: news_en
+- name: watchTowr Labs
+  url: https://labs.watchtowr.com/rss/
+  enabled: true
+  folder: news_en

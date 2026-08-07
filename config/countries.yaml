@@ -1,0 +1,493 @@
+# Phase H: Diamond Model "Victim" vertex の country 正規化辞書 (2026-05-19)
+#
+# ISO 3166-1 alpha-2 を canonical。display は日本語化。
+# 2026-06-17 拡充: CTI 報道で頻出する主要国を 20 → 約 80 ヶ国に拡大。
+#   victim_country の解決率改善 (Italy / Lebanon / Singapore 等が null になっていた) と
+#   地図 (geocoder.py) の plot 対象拡大が目的。新国は引き続き LLM 提案で週次追加可。
+#
+# 各 canonical は ISO2 自身も alias として自動登録される (taxonomy_normalizer)。
+# aliases は小文字照合。日本語名 / 英語名 / ISO3 / 慣用表記を網羅する。
+# **座標は src/cti/geocoder.py の _COUNTRY_CENTROIDS に首都点として持つ** (両者の ISO 集合は
+# tests/unit/test_geocoder.py の drift-guard で同期を強制)。
+
+canonical:
+  # ===== 東アジア =====
+  JP:
+    display: 日本
+    aliases: [日本, Japan, 日系, JP, JPN]
+
+  CN:
+    display: 中国
+    aliases: [中国, China, PRC, CN, CHN, 中華人民共和国]
+
+  TW:
+    display: 台湾
+    aliases: [台湾, Taiwan, TW, TWN, 台湾省, ROC]
+
+  KR:
+    display: 韓国
+    aliases: [韓国, "South Korea", ROK, KR, KOR, "S. Korea"]
+
+  KP:
+    display: 北朝鮮
+    aliases: [北朝鮮, "North Korea", DPRK, KP, PRK, "N. Korea"]
+
+  HK:
+    display: 香港
+    aliases: [香港, "Hong Kong", HK, HKG]
+
+  MN:
+    display: モンゴル
+    aliases: [モンゴル, Mongolia, MN, MNG]
+
+  # ===== 東南アジア =====
+  VN:
+    display: ベトナム
+    aliases: [ベトナム, Vietnam, VN, VNM]
+
+  PH:
+    display: フィリピン
+    aliases: [フィリピン, Philippines, PH, PHL]
+
+  TH:
+    display: タイ
+    aliases: [タイ, Thailand, TH, THA]
+
+  ID:
+    display: インドネシア
+    aliases: [インドネシア, Indonesia, ID, IDN]
+
+  MY:
+    display: マレーシア
+    aliases: [マレーシア, Malaysia, MY, MYS]
+
+  SG:
+    display: シンガポール
+    aliases: [シンガポール, Singapore, SG, SGP]
+
+  KH:
+    display: カンボジア
+    aliases: [カンボジア, Cambodia, KH, KHM]
+
+  MM:
+    display: ミャンマー
+    aliases: [ミャンマー, Myanmar, Burma, MM, MMR]
+
+  LA:
+    display: ラオス
+    aliases: [ラオス, Laos, LA, LAO]
+
+  # ===== 南アジア =====
+  IN:
+    display: インド
+    aliases: [インド, India, IN, IND]
+
+  PK:
+    display: パキスタン
+    aliases: [パキスタン, Pakistan, PK, PAK]
+
+  BD:
+    display: バングラデシュ
+    aliases: [バングラデシュ, Bangladesh, BD, BGD]
+
+  LK:
+    display: スリランカ
+    aliases: [スリランカ, "Sri Lanka", LK, LKA]
+
+  NP:
+    display: ネパール
+    aliases: [ネパール, Nepal, NP, NPL]
+
+  AF:
+    display: アフガニスタン
+    aliases: [アフガニスタン, Afghanistan, AF, AFG]
+
+  # ===== 中央アジア =====
+  KZ:
+    display: カザフスタン
+    aliases: [カザフスタン, Kazakhstan, KZ, KAZ]
+
+  KG:
+    display: キルギス
+    aliases: [キルギス, Kyrgyzstan, KG, KGZ]
+
+  UZ:
+    display: ウズベキスタン
+    aliases: [ウズベキスタン, Uzbekistan, UZ, UZB]
+
+  TJ:
+    display: タジキスタン
+    aliases: [タジキスタン, Tajikistan, TJ, TJK]
+
+  TM:
+    display: トルクメニスタン
+    aliases: [トルクメニスタン, Turkmenistan, TM, TKM]
+
+  # ===== 中東 =====
+  IR:
+    display: イラン
+    aliases: [イラン, Iran, IR, IRN]
+
+  IL:
+    display: イスラエル
+    aliases: [イスラエル, Israel, IL, ISR]
+
+  SA:
+    display: サウジアラビア
+    aliases: [サウジアラビア, "Saudi Arabia", SA, SAU]
+
+  AE:
+    display: アラブ首長国連邦
+    aliases: [アラブ首長国連邦, UAE, "United Arab Emirates", AE, ARE]
+
+  QA:
+    display: カタール
+    aliases: [カタール, Qatar, QA, QAT]
+
+  KW:
+    display: クウェート
+    aliases: [クウェート, Kuwait, "Kuwait City", KW, KWT]
+
+  OM:
+    display: オマーン
+    aliases: [オマーン, Oman, OM, OMN]
+
+  BH:
+    display: バーレーン
+    aliases: [バーレーン, Bahrain, BH, BHR]
+
+  JO:
+    display: ヨルダン
+    aliases: [ヨルダン, Jordan, JO, JOR]
+
+  LB:
+    display: レバノン
+    aliases: [レバノン, Lebanon, LB, LBN]
+
+  SY:
+    display: シリア
+    aliases: [シリア, Syria, SY, SYR]
+
+  IQ:
+    display: イラク
+    aliases: [イラク, Iraq, IQ, IRQ]
+
+  YE:
+    display: イエメン
+    aliases: [イエメン, Yemen, YE, YEM]
+
+  PS:
+    display: パレスチナ
+    aliases: [パレスチナ, Palestine, "Palestinian Territories", Gaza, PS, PSE]
+
+  TR:
+    display: トルコ
+    aliases: [トルコ, Turkey, Türkiye, Turkiye, TR, TUR]
+
+  # ===== ヨーロッパ =====
+  GB:
+    display: 英国
+    aliases: [英国, UK, "United Kingdom", Britain, GB, GBR]
+
+  DE:
+    display: ドイツ
+    aliases: [ドイツ, Germany, DE, DEU]
+
+  FR:
+    display: フランス
+    aliases: [フランス, France, FR, FRA]
+
+  NL:
+    display: オランダ
+    aliases: [オランダ, Netherlands, NL, NLD]
+
+  PL:
+    display: ポーランド
+    aliases: [ポーランド, Poland, PL, POL]
+
+  IT:
+    display: イタリア
+    aliases: [イタリア, Italy, IT, ITA]
+
+  ES:
+    display: スペイン
+    aliases: [スペイン, Spain, ES, ESP]
+
+  PT:
+    display: ポルトガル
+    aliases: [ポルトガル, Portugal, PT, PRT]
+
+  BE:
+    display: ベルギー
+    aliases: [ベルギー, Belgium, BE, BEL]
+
+  CH:
+    display: スイス
+    aliases: [スイス, Switzerland, CH, CHE]
+
+  AT:
+    display: オーストリア
+    aliases: [オーストリア, Austria, AT, AUT]
+
+  SE:
+    display: スウェーデン
+    aliases: [スウェーデン, Sweden, SE, SWE]
+
+  "NO":  # YAML 1.1 は無引用 NO を false と解釈するため必ず quote
+    display: ノルウェー
+    aliases: [ノルウェー, Norway, "NO", NOR]
+
+  DK:
+    display: デンマーク
+    aliases: [デンマーク, Denmark, DK, DNK]
+
+  FI:
+    display: フィンランド
+    aliases: [フィンランド, Finland, FI, FIN]
+
+  IE:
+    display: アイルランド
+    aliases: [アイルランド, Ireland, IE, IRL]
+
+  IS:
+    display: アイスランド
+    aliases: [アイスランド, Iceland, IS, ISL]
+
+  LU:
+    display: ルクセンブルク
+    aliases: [ルクセンブルク, Luxembourg, LU, LUX]
+
+  CZ:
+    display: チェコ
+    aliases: [チェコ, Czechia, "Czech Republic", CZ, CZE]
+
+  SK:
+    display: スロバキア
+    aliases: [スロバキア, Slovakia, SK, SVK]
+
+  HU:
+    display: ハンガリー
+    aliases: [ハンガリー, Hungary, HU, HUN]
+
+  RO:
+    display: ルーマニア
+    aliases: [ルーマニア, Romania, RO, ROU]
+
+  BG:
+    display: ブルガリア
+    aliases: [ブルガリア, Bulgaria, BG, BGR]
+
+  GR:
+    display: ギリシャ
+    aliases: [ギリシャ, Greece, GR, GRC]
+
+  HR:
+    display: クロアチア
+    aliases: [クロアチア, Croatia, HR, HRV]
+
+  SI:
+    display: スロベニア
+    aliases: [スロベニア, Slovenia, SI, SVN]
+
+  RS:
+    display: セルビア
+    aliases: [セルビア, Serbia, RS, SRB]
+
+  EE:
+    display: エストニア
+    aliases: [エストニア, Estonia, EE, EST]
+
+  LV:
+    display: ラトビア
+    aliases: [ラトビア, Latvia, LV, LVA]
+
+  LT:
+    display: リトアニア
+    aliases: [リトアニア, Lithuania, LT, LTU]
+
+  BY:
+    display: ベラルーシ
+    aliases: [ベラルーシ, Belarus, BY, BLR]
+
+  MD:
+    display: モルドバ
+    aliases: [モルドバ, Moldova, MD, MDA]
+
+  MC:
+    display: モナコ
+    aliases: [モナコ, Monaco, MC, MCO]
+
+  UA:
+    display: ウクライナ
+    aliases: [ウクライナ, Ukraine, UA, UKR]
+
+  RU:
+    display: ロシア
+    aliases: [ロシア, Russia, "Russian Federation", RU, RUS]
+
+  ME:
+    display: モンテネグロ
+    aliases: [モンテネグロ, Montenegro, ME, MNE]
+
+  # ===== コーカサス =====
+  GE:
+    display: ジョージア
+    aliases: [ジョージア, Georgia, GE, GEO]
+
+  AM:
+    display: アルメニア
+    aliases: [アルメニア, Armenia, AM, ARM]
+
+  AZ:
+    display: アゼルバイジャン
+    aliases: [アゼルバイジャン, Azerbaijan, AZ, AZE]
+
+  # ===== アフリカ =====
+  EG:
+    display: エジプト
+    aliases: [エジプト, Egypt, EG, EGY]
+
+  ZA:
+    display: 南アフリカ
+    aliases: [南アフリカ, "South Africa", ZA, ZAF]
+
+  NG:
+    display: ナイジェリア
+    aliases: [ナイジェリア, Nigeria, NG, NGA]
+
+  DZ:
+    display: アルジェリア
+    aliases: [アルジェリア, Algeria, DZ, DZA]
+
+  MA:
+    display: モロッコ
+    aliases: [モロッコ, Morocco, MA, MAR]
+
+  # 2026-07-16 監査 4e: 実データで victim_country_raw に現れながら正規化されず
+  # 盤外 (unplaced) に落ちていた尾部を補完 (アフリカ 3 + 中南米 4 + 欧州 1)。
+  GH:
+    display: ガーナ
+    aliases: [ガーナ, Ghana, GH, GHA]
+
+  ML:
+    display: マリ
+    aliases: [マリ, Mali, ML, MLI]
+
+  BW:
+    display: ボツワナ
+    aliases: [ボツワナ, Botswana, BW, BWA]
+
+  TN:
+    display: チュニジア
+    aliases: [チュニジア, Tunisia, TN, TUN]
+
+  LY:
+    display: リビア
+    aliases: [リビア, Libya, LY, LBY]
+
+  SD:
+    display: スーダン
+    aliases: [スーダン, Sudan, SD, SDN]
+
+  ET:
+    display: エチオピア
+    aliases: [エチオピア, Ethiopia, ET, ETH]
+
+  KE:
+    display: ケニア
+    aliases: [ケニア, Kenya, KE, KEN]
+
+  TZ:
+    display: タンザニア
+    aliases: [タンザニア, Tanzania, TZ, TZA]
+
+  CD:
+    display: コンゴ民主共和国
+    aliases: [コンゴ民主共和国, "Democratic Republic of the Congo", DRC, CD, COD]
+
+  CF:
+    display: 中央アフリカ共和国
+    aliases: [中央アフリカ共和国, "Central African Republic", CAR, CF, CAF]
+
+  GQ:
+    display: 赤道ギニア
+    aliases: [赤道ギニア, "Equatorial Guinea", GQ, GNQ]
+
+  # ===== 北米 =====
+  US:
+    display: 米国
+    aliases: [米国, USA, アメリカ, "United States", US, USA, "U.S.", "U.S.A."]
+
+  CA:
+    display: カナダ
+    aliases: [カナダ, Canada, CA, CAN]
+
+  MX:
+    display: メキシコ
+    aliases: [メキシコ, Mexico, MX, MEX]
+
+  # ===== 中南米 =====
+  BR:
+    display: ブラジル
+    aliases: [ブラジル, Brazil, BR, BRA]
+
+  AR:
+    display: アルゼンチン
+    aliases: [アルゼンチン, Argentina, AR, ARG]
+
+  CL:
+    display: チリ
+    aliases: [チリ, Chile, CL, CHL]
+
+  CO:
+    display: コロンビア
+    aliases: [コロンビア, Colombia, CO, COL]
+
+  PE:
+    display: ペルー
+    aliases: [ペルー, Peru, PE, PER]
+
+  VE:
+    display: ベネズエラ
+    aliases: [ベネズエラ, Venezuela, VE, VEN]
+
+  BO:
+    display: ボリビア
+    aliases: [ボリビア, Bolivia, BO, BOL]
+
+  EC:
+    display: エクアドル
+    aliases: [エクアドル, Ecuador, EC, ECU]
+
+  CU:
+    display: キューバ
+    aliases: [キューバ, Cuba, CU, CUB]
+
+  PA:
+    display: パナマ
+    aliases: [パナマ, Panama, PA, PAN]
+
+  PY:
+    display: パラグアイ
+    aliases: [パラグアイ, Paraguay, PY, PRY]
+
+  UY:
+    display: ウルグアイ
+    aliases: [ウルグアイ, Uruguay, UY, URY]
+
+  DO:
+    display: ドミニカ共和国
+    aliases: [ドミニカ共和国, "Dominican Republic", DO, DOM]
+
+  HN:
+    display: ホンジュラス
+    aliases: [ホンジュラス, Honduras, HN, HND]
+
+  # ===== オセアニア =====
+  AU:
+    display: 豪州
+    aliases: [豪州, オーストラリア, Australia, AU, AUS]
+
+  NZ:
+    display: ニュージーランド
+    aliases: [ニュージーランド, "New Zealand", NZ, NZL]

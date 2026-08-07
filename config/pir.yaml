@@ -1,0 +1,862 @@
+version: 1
+priorities:
+- id: pir_china_apt
+  title: 中国系 APT 動向 (Volt Typhoon, APT41 系)
+  description: 中国系 APT (Volt Typhoon, Salt Typhoon, Silk Typhoon, APT41, APT10, APT40, MSS/PLA 直轄系) の動向を最優先で検知。PLA/MSS 系の事前配置
+    (pre-positioning)、台湾標的、サプライチェーン汚染も含む。
+  enabled: true
+  strong_signals:
+    keywords: []
+    actors:
+    - Volt Typhoon
+    - Salt Typhoon
+    - Silk Typhoon
+    - Flax Typhoon
+    - Storm-0558
+    - APT41
+    - APT10
+    - APT40
+    - Mustang Panda
+    sectors: []
+    countries: []
+    actor_nations:
+    - CN
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: true
+    title: 🇨🇳 中国 APT 動向
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838300Z'
+    updated_at: '2026-05-24T04:36:28.838460Z'
+    migrated_from: article_triage.py:hardcoded:pir_china_apt
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_dprk_apt
+  title: 北朝鮮系 APT 動向 (Lazarus, Kimsuky 等)
+  description: 北朝鮮系 APT (Lazarus, Kimsuky, Andariel) の動向。金融・暗号資産窃取、政策諜報、海外 IT 労働者偽装も含む。特に日本対象なら最優先。
+  enabled: true
+  strong_signals:
+    keywords: []
+    actors:
+    - Lazarus
+    - Kimsuky
+    - Andariel
+    - APT38
+    sectors: []
+    countries: []
+    actor_nations:
+    - KP
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: true
+    title: 🇰🇵 北朝鮮 APT 動向
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838585Z'
+    updated_at: '2026-05-24T04:36:28.838585Z'
+    migrated_from: article_triage.py:hardcoded:pir_dprk_apt
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_russia_apt
+  title: ロシア系 APT 動向 (Sandworm, APT28, APT29 等)
+  description: ロシア系 APT (Sandworm, APT28, APT29, GRU/SVR 直轄系) の動向。destructive operations / 諜報 / 影響力工作。特に日本対象なら最優先。
+  enabled: true
+  strong_signals:
+    keywords: []
+    actors:
+    - Sandworm
+    - APT28
+    - APT29
+    - Cozy Bear
+    - Fancy Bear
+    - Gamaredon
+    sectors: []
+    countries: []
+    actor_nations:
+    - RU
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: true
+    title: 🇷🇺 ロシア APT 動向
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838599Z'
+    updated_at: '2026-05-24T04:36:28.838599Z'
+    migrated_from: article_triage.py:hardcoded:pir_russia_apt
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_jp_targeted
+  title: 日本標的の攻撃 (国家系 APT + その他アクター)
+  description: イラン系・犯罪集団等を含むあらゆるアクターによる日本標的の攻撃事案。日本企業・日本政府・日本国内重要インフラを標的とする active threat 全般。
+  enabled: true
+  strong_signals:
+    keywords:
+    - 日本標的
+    - 日本企業
+    - 国内重要インフラ
+    - 日系大手
+    actors: []
+    sectors: []
+    countries:
+    - JP
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: true
+    title: 🇯🇵 日本標的
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838608Z'
+    updated_at: '2026-05-24T04:36:28.838608Z'
+    migrated_from: article_triage.py:hardcoded:pir_jp_targeted
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_critical_infra
+  title: 防衛・政府・重要インフラ標的
+  description: OT/ICS/SCADA、発電・送電、上下水道、鉄道、通信/5G、防衛産業基盤、AI/宇宙・電磁波アセット、衛星・宇宙資産。広く重要インフラへの脅威。
+  enabled: true
+  strong_signals:
+    keywords:
+    - OT
+    - ICS
+    - SCADA
+    - 重要インフラ
+    - 防衛産業
+    actors: []
+    sectors:
+    - defense
+    - government
+    - energy
+    - telecom
+    - transportation
+    - critical_infra
+    countries: []
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838618Z'
+    updated_at: '2026-05-24T04:36:28.838619Z'
+    migrated_from: article_triage.py:hardcoded:pir_critical_infra
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_state_ransomware
+  title: 国家・政府レベルに影響のランサムウェア
+  description: 金銭目的でも医療・電力・自治体等の停止を伴うランサムウェア。国家機能や社会インフラに影響する大規模事案。
+  enabled: true
+  strong_signals:
+    keywords:
+    - ransomware
+    - ランサムウェア
+    actors: []
+    sectors:
+    - healthcare
+    - energy
+    - government
+    countries: []
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838629Z'
+    updated_at: '2026-05-24T04:36:28.838629Z'
+    migrated_from: article_triage.py:hardcoded:pir_state_ransomware
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_apt_leak
+  title: APT 内部情報漏洩 (i-Soon / Vulkan 級)
+  description: APT 関連企業や国家系サイバー組織の内部情報漏洩。i-Soon リーク、Vulkan files、Conti chat leaks 級の APT 実態暴露。
+  enabled: true
+  strong_signals:
+    keywords:
+    - 内部漏洩
+    - leak
+    - i-Soon
+    - Vulkan
+    - Conti chat
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838639Z'
+    updated_at: '2026-05-24T04:36:28.838640Z'
+    migrated_from: article_triage.py:hardcoded:pir_apt_leak
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_supply_chain_broad
+  title: 広域影響セキュリティ企業 / MSSP / 認証基盤侵害
+  description: SolarWinds 級の連鎖侵害、Okta/Microsoft Entra/Cisco 等の 認証基盤 / MSSP / セキュリティ企業侵害で広域に波及するもの。
+  enabled: true
+  strong_signals:
+    keywords:
+    - supply chain
+    - サプライチェーン
+    - 認証基盤
+    - MSSP
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles:
+    - Okta
+    - Microsoft Security
+    - Cisco
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838648Z'
+    updated_at: '2026-05-24T04:36:28.838649Z'
+    migrated_from: article_triage.py:hardcoded:pir_supply_chain_broad
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_sw_supply_chain
+  title: 広域影響ソフトウェアサプライチェーン汚染 (log4j/xz 級)
+  description: log4j 級、xz utils 級のソフトウェアサプライチェーン汚染。1 component の侵害が広域に波及するもの。
+  enabled: true
+  strong_signals:
+    keywords:
+    - log4j
+    - xz
+    - npm package
+    - PyPI
+    - supply chain attack
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838657Z'
+    updated_at: '2026-05-24T04:36:28.838658Z'
+    migrated_from: article_triage.py:hardcoded:pir_sw_supply_chain
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_integrated_cyber_ops
+  title: 統合サイバー作戦 (AI攻撃/宇宙電磁波)
+  description: AI を活用した攻撃/防御、宇宙・電磁波サイバー、サイバー物理融合、軍事先端技術関連の統合作戦。
+  enabled: true
+  strong_signals:
+    keywords:
+    - AI攻撃
+    - サイバー物理
+    - 宇宙サイバー
+    - 電磁波
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838666Z'
+    updated_at: '2026-05-24T04:36:28.838666Z'
+    migrated_from: article_triage.py:hardcoded:pir_integrated_cyber_ops
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_apt_attribution
+  title: 中国・北朝鮮・ロシア APT への帰属公表
+  description: 五眼同盟合同 attribution、警察庁・防衛省・NSC 発表、米財務省 OFAC 制裁、DOJ 起訴等の APT 帰属公表。
+  enabled: true
+  strong_signals:
+    keywords:
+    - attribution
+    - 帰属
+    - OFAC
+    - indictment
+    - 起訴
+    - 制裁
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles:
+    - DOJ
+    - OFAC
+    - 警察庁
+    - NSC
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838677Z'
+    updated_at: '2026-05-24T04:36:28.838677Z'
+    migrated_from: article_triage.py:hardcoded:pir_apt_attribution
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_emergency_alerts
+  title: 緊急度の高い国家機関アラート
+  description: CISA Emergency Directive、JPCERT 緊急、ED-XX 級の国家機関緊急アラート。緊急度低い更新は除く。
+  enabled: true
+  strong_signals:
+    keywords:
+    - Emergency Directive
+    - JPCERT 緊急
+    - ED-
+    - 緊急
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles:
+    - CISA
+    - JPCERT
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ⚡ Emergency Alerts
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838686Z'
+    updated_at: '2026-05-24T04:36:28.838686Z'
+    migrated_from: article_triage.py:hardcoded:pir_emergency_alerts
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_geopolitical_cyber
+  title: 国家戦略 / 地政学的サイバー分析
+  description: 日本・同盟国 (米英豪韓)・東アジア敵対国 (中朝露) の 国家戦略 / 地政学的サイバー分析。
+  enabled: true
+  strong_signals:
+    keywords:
+    - geopolitical
+    - cyber strategy
+    - 国家戦略
+    - doctrine
+    actors: []
+    sectors: []
+    countries:
+    - JP
+    - US
+    - GB
+    - AU
+    - KR
+    - CN
+    - KP
+    - RU
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: true
+    title: ⚔️ 地政学・国家戦略サイバー
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838774Z'
+    updated_at: '2026-05-24T04:36:28.838774Z'
+    migrated_from: article_triage.py:hardcoded:pir_geopolitical_cyber
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_disinfo
+  title: 中露の影響力工作・偽情報作戦 (DISINFO/IO)
+  description: 中露の影響力工作・偽情報作戦 (DISINFO/IO)。サイバー作戦とは別軸で重要、選挙干渉や認知戦も含む。
+  enabled: true
+  strong_signals:
+    keywords:
+    - DISINFO
+    - IO
+    - influence operation
+    - 偽情報
+    - 影響力工作
+    actors: []
+    sectors: []
+    countries: []
+    actor_nations:
+    - CN
+    - RU
+    feed_titles: []
+  target_importance: high
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838785Z'
+    updated_at: '2026-05-24T04:36:28.838786Z'
+    migrated_from: article_triage.py:hardcoded:pir_disinfo
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_jp_company_breach
+  title: 日本企業 / 日本国内組織への ransomware / breach / 不正アクセス
+  description: '日本企業・日本国内組織への ransomware / breach / 不正アクセス / 情報漏洩。規模・業種を問わず最低 medium。CTI mission の本筋。例: ホクヨーへのランサムウェア、エネサンスHD
+    漏洩、CAMPFIRE 不正アクセス等。'
+  enabled: true
+  strong_signals:
+    keywords:
+    - 不正アクセス
+    - 情報漏洩
+    - ランサムウェア攻撃
+    - breach
+    - ransomware
+    actors: []
+    sectors: []
+    countries:
+    - JP
+    feed_titles:
+    - ScanNetSecurity
+    - Security NEXT
+    - セキュリティニュース
+    - ITmedia エンタープライズ
+    - '@IT セキュリティ'
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: 🇯🇵 JP company breach
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838795Z'
+    updated_at: '2026-05-24T04:36:28.838795Z'
+    migrated_from: article_triage.py:hardcoded:pir_jp_company_breach
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_known_threat_followup
+  title: 既知脅威の継続フォローアップ
+  description: 既存報告された threat の続報・展開・新詳細。
+  enabled: true
+  strong_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838804Z'
+    updated_at: '2026-05-24T04:36:28.838804Z'
+    migrated_from: article_triage.py:hardcoded:pir_known_threat_followup
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_new_poc_vuln
+  title: 新 PoC 公開 / 業界注目脆弱性
+  description: 新規 PoC 公開や業界が注目する脆弱性 (KEV 未掲載でも)。
+  enabled: true
+  strong_signals:
+    keywords:
+    - PoC
+    - proof of concept
+    - 脆弱性
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T04:36:28.838812Z'
+    updated_at: '2026-05-24T04:36:28.838812Z'
+    migrated_from: article_triage.py:hardcoded:pir_new_poc_vuln
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_ally_cyber_event
+  title: 同盟国・東アジアでの一般的サイバー出来事 (日本標的でない)
+  description: 米英豪韓・台湾・東アジア諸国における一般的なサイバー出来事 / advisory / 脅威分析。日本標的ではないが地政学的に関連がある事案 (米中緊張下のサイバー作戦、台湾標的、韓国 NK 関連等)。
+  enabled: true
+  strong_signals:
+    keywords:
+    - advisory
+    - cyber operation
+    - サイバー作戦
+    actors: []
+    sectors: []
+    countries:
+    - US
+    - GB
+    - AU
+    - KR
+    - TW
+    feed_titles: []
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T07:54:40.024937Z'
+    updated_at: '2026-05-24T07:54:40.024938Z'
+    migrated_from: article_triage.py:hardcoded:pir_ally_cyber_event
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_minor_security_vendor_breach
+  title: 影響範囲が限定的なセキュリティ企業侵害
+  description: SolarWinds / Okta 級でない、影響範囲が限定的なセキュリティ企業侵害 / MSSP 侵害 / 一社限定の不正アクセス。広域連鎖侵害ではないもの。
+  enabled: true
+  strong_signals:
+    keywords:
+    - security vendor
+    - MSSP
+    - EDR
+    - セキュリティ企業
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T07:54:40.024947Z'
+    updated_at: '2026-05-24T07:54:40.024947Z'
+    migrated_from: article_triage.py:hardcoded:pir_minor_security_vendor_breach
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_general_agency_alert
+  title: 一般的な国家機関アラート (緊急度低い更新等)
+  description: CISA / JPCERT / ENISA / NCSC 等の国家機関による一般的なアラート・更新。Emergency Directive 級ではなく、advisory の routine update / awareness
+    系。
+  enabled: true
+  strong_signals:
+    keywords:
+    - advisory
+    - alert
+    - guidance
+    - 注意喚起
+    - 公開
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles:
+    - CISA
+    - JPCERT
+    - ENISA
+    - NCSC
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T07:54:40.024955Z'
+    updated_at: '2026-05-24T07:54:40.024956Z'
+    migrated_from: article_triage.py:hardcoded:pir_general_agency_alert
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'
+- id: pir_minor_supply_chain
+  title: 一般的なサプライチェーン攻撃事例 (広域影響でない)
+  description: log4j / xz utils 級ではない、特定 sw / library / npm package 等の 限定的サプライチェーン侵害事例。広域連鎖を伴わないもの。
+  enabled: true
+  strong_signals:
+    keywords:
+    - npm
+    - PyPI
+    - supply chain
+    - dependency
+    - サプライチェーン
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  target_importance: medium
+  target_channel: auto
+  spotlight:
+    enabled: false
+    title: ''
+    window: weekly
+  valid_from: null
+  valid_until: null
+  tags: []
+  weak_signals:
+    keywords: []
+    actors: []
+    sectors: []
+    countries: []
+    feed_titles: []
+  exclude_signals:
+    keywords: []
+    article_types: []
+  metadata:
+    created_at: '2026-05-24T07:54:40.024966Z'
+    updated_at: '2026-05-24T07:54:40.024966Z'
+    migrated_from: article_triage.py:hardcoded:pir_minor_supply_chain
+    approved_by_user: true
+    rationale: '自動 migration: hardcoded triage criteria から PIR 化。user が UI で内容を確認・修正・承認してください。'

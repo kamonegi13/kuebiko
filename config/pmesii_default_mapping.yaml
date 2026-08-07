@@ -1,0 +1,116 @@
+# Phase H: PMESII-PT 軸の default mapping (2026-05-19)
+#
+# enrichment LLM 判定がない / 部分的な article でも軸タグ付けする fallback。
+# 最終 axes = LLM 判定 ∪ feed_default ∪ category_default (union 戦略、Recall 重視)。
+#
+# 編集は Web UI から (CLAUDE.md §12 allowlist 内)。
+
+# feed_title 完全一致 → default axes
+feed_to_axes:
+  # P (Political) - 政府機関 advisory
+  "CISA Cybersecurity Advisories (incl. KEV)": [P, I-cyber]
+  "NCSC UK All Advisories": [P, I-cyber]
+  "NCSC New Zealand": [P, I-cyber]
+  "JPCERT/CC 統合 RSS": [P, I-cyber]
+  "JVN (English)": [P, I-cyber]
+  "JVN iPedia (English) - New entries": [P, I-cyber]
+  "ANSSI France (CERT-FR)": [P, I-cyber]
+  "BSI Germany": [P, I-cyber]
+  "ENISA": [I-infra, P]
+  "CSA Singapore": [P, I-cyber]
+  "IPA": [P, I-cyber]
+  "CERT.PL": [P, I-cyber]
+  "CCDCOE": [P, M]
+
+  # M (Military) - APT / state actor research
+  "Mandiant": [M, I-cyber]
+  "Talos": [M, I-cyber]
+  "Volexity": [M, I-cyber]
+  "Crowdstrike": [M, I-cyber]
+  "Microsoft Security Blog": [M, I-cyber]
+  "Google TAG": [M, I-cyber]
+  "ESET WeLiveSecurity": [I-cyber, M]
+  "AhnLab ASEC (Korea, English)": [I-cyber, M]
+  "Red Canary": [I-cyber, M]
+  "Project Zero": [I-cyber]
+
+  # I-infra (Critical Infrastructure)
+  "Dragos": [I-infra, M]
+  "Nozomi": [I-infra]
+  "Claroty": [I-infra]
+  "Forescout": [I-infra]
+
+  # E (Economic) - cybercrime / ransomware tracker
+  "GBHackers On Security": [I-cyber, E]
+  "BleepingComputer.com": [I-cyber, E]
+  "The Hacker News": [I-cyber, E]
+  "Krebs on Security": [I-cyber, E]
+  "Ransomware.live": [E, I-cyber]
+  "Huntress Blog": [E, I-cyber]
+  "Blog - SOCRadar": [I-cyber, E]
+  "Hudson Rock": [E, I-cyber]
+
+  # S (Social) - InfoOps / propaganda
+  "Sputnik Globe (Russia)": [S, P]
+  "RT (Russia Today)": [S, P]
+  "Pravda Netherlands": [S, P]
+  "安全内参 | 决策者的网络安全知识库": [P, S]
+  "Global Times (China)": [S, P]
+
+  # P-env / P (geopolitical)
+  "Crisis Group": [P, P-env]
+  "RAND Blog": [P, P-env]
+  "ISW": [M, P-env]
+  "FDD (Foundation for Defense of Democracies)": [P, M]
+  "Naval News": [M, P-env]
+  "Breaking Defense": [M]
+  "RUSI Commentary (UK)": [P, M]
+  "Atlantic Council": [P]
+  "Council on Foreign Relations": [P]
+  "Jamestown China Brief": [M, P-env]
+  "ORF (Observer Research Foundation)": [P, P-env]
+  "ASPI Strategist": [P, M]
+  "Hudson Institute": [P, M]
+  "ACLED": [P-env, M]
+  "Wilson Center": [P, P-env]
+  "IFRI": [P, P-env]
+  "NK News": [P, P-env]
+
+  # I-cyber (vulnerability research)
+  "Cloudflare Blog": [I-cyber]
+  "Zero Day Initiative (ZDI) Blog": [I-cyber]
+  "Threat Intelligence recent news | Dark Reading": [I-cyber, M]
+  "セキュリティニュース - 合同会社ロケットボーイズ": [I-cyber]
+  "The Record by Recorded Future": [I-cyber, E]
+  "Zimperium": [I-cyber]
+
+  # Academic / research
+  "arXiv cs.CR (Cryptography and Security)": [I-cyber]
+  "CERT Polska": [I-cyber, P]
+
+  # Watchers (web_scraper 系)
+  "LAC Watch": [I-cyber]
+  "NICTER": [I-cyber, I-infra]
+  "NICTER Blog": [I-cyber]
+  "Hudson Hudson Institute": [P, M]
+  "Lookout": [I-cyber, I-infra]
+
+# LLM 判定 category → default axes (feed mapping がない場合の fallback)
+category_to_axes:
+  apt: [M, I-cyber]
+  apt_leak: [M, I-cyber]
+  # vulnerability/malware は category 既定では I-cyber のみ (2026-06-04 修正)。
+  # 旧 [I-cyber, P] / [I-cyber, M] は全 CVE→政治・全 malware→軍事 を強制し
+  # M/P 軸を routine cyber で汚染していた。政治(govt-CERT)/軍事(state-vendor) の
+  # 文脈は feed_default と LLM 判定が付与する (union のため本物は失われない)。
+  vulnerability: [I-cyber]
+  breach: [E, I-cyber]
+  malware: [I-cyber]
+  advisory: [P, I-cyber]
+  policy: [P, I-cyber]
+  geopolitical: [M, P]
+  incident: [I-cyber]
+  research: [I-cyber]
+  pir_daily_focus: [I-cyber]
+  weekly_recap: [I-cyber]
+  other: []

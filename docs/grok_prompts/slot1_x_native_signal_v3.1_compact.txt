@@ -1,0 +1,59 @@
+目的: 過去 24h の X 投稿で以下の領域 (A-F) のいずれかに該当するものを JSONL 収集。要約・翻訳・narrative・カテゴリ集計 一切なし。
+
+# 収集対象 (A-F いずれか、各 0 件 OK)
+
+A) Vendor 研究者の事前 teaser/初出言及。
+公式: @MsftSecIntel, @Mandiant, @CrowdStrike, @TalosSecurity, @Volexity, @Wiz_io, @SophosLabs, @ESETresearch, @AhnLab_ASEC, @InsiktGroup, @TrendMicroRSRCH, @GroupIB_GIB
+個人: @MalwareJake, @vxunderground, @bushidotoken, @SwiftOnSecurity, @jamieantisocial, @KostasTsale, @malwrhunterteam, @GossiTheDog, @InQuest
+判定: 「blog post coming」「writeup soon」等の事前 teaser、または新規 actor/malware/TTP の初出言及。学者・コンサル blog 告知は除外。
+
+B) リークサイト・extortion site の被害者掲載速報。
+@FalconFeedsio / @RansomFeed / @DataBreaches / @ransom_db / @AlvieriD / @hackmanac / @RansomwareLive の "Group X listed Y as new victim" 投稿。
+diversity: 1 author_handle 最大 6 件、7 件目以降は別 source 必ず探索。
+
+C) 法執行アクション速報。
+公式: @FBI, @Europol, @TheJusticeDept, @CISACyber, @CISAgov, @JPCERTCC, @nisc_forecast, @NPA_KOHO, @ICSCERT, @NCSC
+explicit query (必ず実行):
+英: "FBI announces seized", "FBI cybercrime indictment", "DOJ indictment cybercrime", "Europol operation takedown", "law enforcement seized infrastructure", "international cybercrime operation"
+日: "JPCERT 注意喚起", "JPCERT-CC", "IPA 重要", "IPA 注意喚起", "警察庁 サイバー", "NISC 通知"
+
+D) 被害組織関係者の自己開示。CISO/IT 部門責任者/中の人 が PR 前に X で「侵入された」「ランサム被害」を発信したと推測される投稿。ニュース報道の RT は含めない。
+
+E) Scan/honeypot 異常観測。
+@GreyNoiseIO, @Shadowserver, @badpackets, @SANSPenTest, @ISCHandlers, @TrustedSec の「新 exploit attempt 急増」「scan velocity スパイク」「mass exploitation observed」発信。
+
+F) Active exploitation 確証 (以下の具体 event のみ):
+- CISA KEV catalog への新 CVE 追加
+- vendor advisory が "actively exploited in the wild"/"ITW" 明記
+- PoC コードが GitHub/X で公開 (URL or screenshot 付き)
+- 「mass exploitation observed」「exploitation imminent」と CTI 専門家が明記
+単なる CVE 言及/一般論評は F ではない。
+
+日本語 source 重視: theme C/D/F は必ず以下を探索。
+handle: @JPCERTCC, @JapanIPA, @piyokango, @piedey
+keyword: "JPCERT", "IPA", "NISC", "警察庁", "サイバー攻撃", "ランサム", "標的型", "情報流出", "不正アクセス"
+
+# 量・出力ルール
+
+- 上限 30 件、engagement.retweet+like 降順 truncate
+- 件数下限なし、10 件未満でも質優先、無理に埋めない
+- 24h 以内のみ、1 tweet を複数 record に分けない
+- B diversity: 1 author_handle 最大 6 件
+- engagement field 全 record で必ず取得記録 (filter は行わない、pipeline 側で処理)
+- 同一事案の複数報道は両方含めて OK (異なる source からの同一事案も含める、pipeline で dedup)
+- text 原文ママ、要約/翻訳/抜粋/注釈禁止
+- media_urls/external_urls は実在 URL のみ、fabricate 禁止
+- tweet を fabricate しない、実在 tweet のみ
+- narrative/全体傾向/今日のまとめ/category 集計を出力したら違反 → 出力全体を `[]` に置換 (self-check)
+- 監視 handle は参考、x_semantic_search で広く拾うことを優先
+
+# 出力形式
+
+JSONL (1 行 1 record)。最初の文字 `{`、最後の文字 `}`。前後に説明文・見出しを出さない。
+
+Schema (この field 以外追加禁止):
+{"tweet_id":"string","url":"https://x.com/handle/status/...","author_handle":"@handle","author_name":"Display Name","posted_at":"ISO 8601 UTC","lang":"ja|en|ko|ru|zh|...","text":"原文ママ (改行は \\n)","is_retweet":true|false,"retweeted_tweet_id":"string|null","is_quote":true|false,"quoted_tweet_id":"string|null","quoted_text":"string|null","reply_to_tweet_id":"string|null","media_urls":["string"],"external_urls":["string"],"engagement":{"like":0,"retweet":0,"quote":0,"reply":0},"matched_theme":"A|B|C|D|E|F"}
+
+Few-shot 例:
+{"tweet_id":"1791234567890","url":"https://x.com/MalwareJake/status/1791234567890","author_handle":"@MalwareJake","author_name":"Jake Williams","posted_at":"2026-05-25T02:15:00Z","lang":"en","text":"More details coming on the recent BRICKSTORM activity targeting telecoms in APAC. Blog post in the works.","is_retweet":false,"retweeted_tweet_id":null,"is_quote":false,"quoted_tweet_id":null,"quoted_text":null,"reply_to_tweet_id":null,"media_urls":[],"external_urls":[],"engagement":{"like":342,"retweet":89,"quote":12,"reply":18},"matched_theme":"A"}
+{"tweet_id":"1791345678901","url":"https://x.com/FalconFeedsio/status/1791345678901","author_handle":"@FalconFeedsio","author_name":"FalconFeeds.io","posted_at":"2026-05-25T03:42:00Z","lang":"en","text":"#Cyberattack alert\\nAkira ransomware group has listed Acme Industries as a new victim.","is_retweet":false,"retweeted_tweet_id":null,"is_quote":false,"quoted_tweet_id":null,"quoted_text":null,"reply_to_tweet_id":null,"media_urls":[],"external_urls":["https://akira.example.onion"],"engagement":{"like":127,"retweet":54,"quote":3,"reply":7},"matched_theme":"B"}

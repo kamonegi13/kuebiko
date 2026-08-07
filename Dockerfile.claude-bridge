@@ -1,0 +1,28 @@
+# claude-bridge sidecar — claude CLI を volume 自己更新で持つ薄い殻 (2026-07-24)。
+#
+# 設計: イメージには CLI を焼き込まない。entrypoint が /data (永続 volume) へ
+# ネイティブバイナリをインストール/自己更新するため、CLI 更新にイメージ再ビルドは不要。
+# 認証は UI で貼付した CLAUDE_CODE_OAUTH_TOKEN (.env、read-only mount) を呼出ごとに注入。
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# bridge の実行に必要な最小依存 (アプリ本体の uv 環境は持ち込まない)。
+# ollama は llm_client (denylist の import 元) がモジュールレベルで import するため必要
+RUN pip install --no-cache-dir "fastapi>=0.110" "uvicorn>=0.29" "pydantic>=2.7" \
+    "httpx>=0.27" "structlog>=24.1" "ollama>=0.3"
+
+# denylist (src/tools/llm_client) と logging を bridge が import するため src を同梱
+COPY src/ /app/src/
+COPY scripts/claude_code_bridge.py /app/scripts/claude_code_bridge.py
+COPY scripts/claude_bridge_entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh && mkdir -p /data && chown -R 1001:1001 /app /data
+
+ENV PYTHONPATH=/app
+USER 1001:1001
+
+ENTRYPOINT ["/app/entrypoint.sh"]

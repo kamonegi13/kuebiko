@@ -1,0 +1,100 @@
+version: 2
+# Discord 投稿先ルーティングルール (語彙統一モデル、2026-06-14)。
+#
+# 評価モデル: 上から順に評価し、**最初に when 条件が一致した rule の channel を採用**
+# (first-match)。順序が tier を、AND がゲートを表現する。ROUTING_RULES_ENGINE=1 のとき有効。
+#
+# 条件 (when) は「型付きプロパティ」の boolean 式に一元化 (旧 flag/記事属性 の分離を撤廃):
+#   葉:  {property: <id>, op: <op>, value: <val>}
+#     boolean (旧 flag): op = is_true | is_false       (例: kev, zero_day, japan_critical)
+#     str:               op = eq | ne | in | not_in    (category は in_config も可)
+#     set:               op = in | not_in              (actor_nation, keyword_list)
+#     number:            op = gte | gt | lte | lt | eq  (max_cvss)
+#   結合: {all: [...]} (AND) / {any: [...]} (OR) / {not: <葉|結合>} / {always: true}
+#   条件 0 個 / {always: true} = 全件該当 (catch-all)
+#
+# 旧形 ({flag: x} / {field: {op: val}}) も load 時に正規化され動作する (後方互換)。
+# プロパティ一覧は src/cti/routing_rules.py の PROPERTY_CATALOG が SSoT。
+rules:
+  # ---- R8: APT 内部リーク → 即応 ----
+  - id: R8.alert_apt_leak
+    channel: alert
+    when:
+      all:
+        - {property: apt_leak, op: is_true}
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+
+  # ---- R2: 即応条件 (脅威カテゴリ限定) ----
+  - id: R2.inoreader.alert_japan_critical_apt
+    channel: alert
+    when:
+      all:
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+        - {property: category, op: in_config, value: high_threat_brief_categories}
+        - {property: japan_critical, op: is_true}
+        - {property: known_apt, op: is_true}
+  - id: R2.inoreader.alert_breaking_kev
+    channel: alert
+    when:
+      all:
+        - {property: article_type, op: eq, value: breaking}
+        - {property: category, op: in_config, value: high_threat_brief_categories}
+        - any:
+            - {property: kev, op: is_true}
+            - {property: zero_day, op: is_true}
+
+  # ---- R3: 日本関連弱信号 → japan_watch ----
+  - id: R3.inoreader.japan_watch
+    channel: japan_watch
+    when:
+      all:
+        - {property: japan_relevant, op: is_true}
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+
+  # ---- R3.5: 高重要度の脅威 → brief (形式降格より優先) ----
+  - id: R3.5.high_threat_brief
+    channel: brief
+    when:
+      all:
+        - {property: importance, op: eq, value: high}
+        - {property: category, op: in_config, value: high_threat_brief_categories}
+        - {property: stance, op: ne, value: propaganda}
+
+  # ---- R4: 読み物形式は観察送り (衛生・降格) ----
+  - id: R4.watch_article_type_demote
+    channel: watch
+    when: {property: article_type, op: in, value: [recap, tutorial, opinion, press, research]}
+
+  # ---- R5: 信頼性 all-low (衛生・降格) ----
+  - id: R5.watch_low_confidence
+    # 供給 flag は誕生時から到達不能・全期間発火 0 (7/18 無効化。再設計条件は memory 参照)
+    enabled: false
+    channel: watch
+    when: {property: confidence_all_low, op: is_true}
+
+  # ---- R5b: propaganda (衛生・降格) ----
+  - id: R5b.propaganda_demote
+    channel: watch
+    when: {property: stance, op: eq, value: propaganda}
+
+  # ---- R6: 朝読 (brief) + 量制御 cap ----
+  - id: R6.cap_demote
+    # 6/28 通知モデル再設計で brief per-article 投稿が廃止され cap 到達不能 + 効果空 (7/18 無効化)
+    enabled: false
+    channel: watch
+    when:
+      all:
+        - {property: importance, op: eq, value: medium}
+        - {property: security_relevant, op: is_true}
+        - {property: brief_cap_reached, op: is_true}
+  - id: R6.brief_importance
+    channel: brief
+    when:
+      all:
+        - {property: importance, op: in, value: [high, medium]}
+        - {property: security_relevant, op: is_true}
+
+  # ---- R7: フォールバック ----
+  - id: R7.fallback
+    channel: watch
+    when: {always: true}

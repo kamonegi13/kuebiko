@@ -1,0 +1,243 @@
+channel_routing:
+  importance_map:
+    high: alert
+    medium: brief
+    low: watch
+  system_notify_enabled: true
+llm_enrichment:
+  enabled: true
+  generate_incident_heading: true
+  generate_tldr: true
+  generate_followup_action: true
+  score_relevance: true
+  extract_iocs_with_context: true
+  semantic_dedup_across_briefings: true
+  concurrency: 5
+pipelines:
+- name: direct-rss-fetch
+  schedule:
+    enabled: true
+    interval_minutes: 60
+  source:
+    type: rss
+    # 2026-07-29: 100 だと 1 run で処理しきれず 30 分 subprocess timeout → 0 件 persist →
+    # 未読のまま backlog 累積 → 毎 run timeout の「死のスパイラル」に陥った (デプロイ recreate が
+    # run を殺し backlog を作ったのが発端)。run が確実に完走し seen 登録される値に下げて drain する。
+    # 完走さえすれば処理済みが seen 登録され backlog は縮む。安定後に戻すことを検討。
+    # 60 でも node/25231 (276 IoC 生成で ~7 分) 込みで 30 分 borderline だったため 45 に。
+    # 1 記事 ~27 秒 (要約+判定+IoC検証の 3 LLM 呼出) × 45 ≒ 20 分で確実に完走する。
+    max_articles: 45
+    rss_http_timeout: 30.0
+    rss_per_feed_limit: 50
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+    triage_enabled: true
+    triage_keep_importance:
+    - high
+    - medium
+    triage_max_keep: 50
+    similarity_threshold_hard: 0.92
+    similarity_threshold_cluster: 0.82
+    dedup_window_hours_hard: 168
+    dedup_window_hours_cluster: 48
+- name: grok-briefing
+  schedule:
+    enabled: true
+    hour: 6
+    minute: 0
+  source:
+    type: grok_email
+    max_articles: 5
+    grok_sender_filters:
+    - x.ai
+    grok_subject_filters: []
+    grok_lookback_minutes: 1440
+    grok_unseen_only: true
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+    similarity_threshold_hard: 0.92
+    similarity_threshold_cluster: 0.82
+    dedup_window_hours_hard: 168
+    dedup_window_hours_cluster: 48
+- name: web-scraper-watchers
+  schedule:
+    enabled: true
+    interval_minutes: 60
+    # rss (:00) は恒常的に 5 分超過 (実測 5-16 分) し単一パイプラインロックを保持するため、
+    # 旧 offset=5 では watcher が "実行中" で skip されていた (実測 ~42% skip)。:30 にずらして
+    # rss 完了後に起動 (rss の投稿永続化後に dedup する目的も維持)。
+    interval_offset_minutes: 30
+  source:
+    type: web_scraper_cluster
+    # 統合再設計: yaml 定義ソース (scrapers.yaml/watchers.yaml) は registry から
+    # enabled な全件を auto-collect する (build_source 参照)。ここには yaml に
+    # 持ち場の無い custom .py scraper のみ明示列挙する (enabled はここが SSoT)。
+    scrapers:
+    - name: 38north
+      enabled: false
+    - name: nicter
+      enabled: true
+    max_articles: 80
+    max_articles_per_scraper: 8
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+    triage_enabled: true
+    triage_keep_importance:
+    - high
+    - medium
+    triage_max_keep: 30
+    similarity_threshold_hard: 0.92
+    similarity_threshold_cluster: 0.82
+    dedup_window_hours_hard: 168
+    dedup_window_hours_cluster: 48
+- name: morning-brief
+  # 段4(a) 朝レンダー統合: synthesis(daily,31B) ナラティブ + PIR daily focus(26B) ドリルダウンを
+  # 1 製品に合成し #brief へ 1 投稿。旧 pir-daily-focus(06:30) + daily-status-synthesis-morning(07:30)
+  # の重複投稿を解消。synthesis record は従来どおり status_synthesis に永続化 (UI/Retrospect/
+  # evening auto-trigger 用)。evening synthesis(19:30) は独立維持。
+  schedule:
+    enabled: true
+    hour: 6
+    minute: 30
+  source:
+    type: morning_brief
+    max_articles: 1
+    digest_lookback_hours: 24
+    digest_max_items: 10
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: weekly-recap
+  # 案2 (深夜バッチ化): 日曜夕方 → 月曜未明 02:00 に移動。日中フロー/夕方の操作と競合せず idle 時間に。
+  # recap は 168h lookback ゆえ月曜未明実行でも前週をほぼ覆う (period 境界問題なし)。
+  schedule:
+    enabled: true
+    hour: 2
+    minute: 0
+    day_of_week: mon
+  source:
+    type: digest_weekly_recap
+    max_articles: 30
+    digest_lookback_hours: 168
+    digest_max_items: 30
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+# 段4(a)/朝刊夕刊: 旧 daily-status-synthesis-morning(07:30) は morning-brief(06:30) に統合・廃止。
+# 旧 daily-status-synthesis-evening(19:30) は evening-brief に改称 (朝刊/夕刊で名称統一)。
+# daily synthesis の朝生成=morning-brief 内 / 夕生成=evening-brief 内。
+- name: evening-brief
+  # 夕刊: 夕方の #brief。source.type=morning_brief を朝夕共用し orchestrator が slot を pipeline 名で判定。
+  # 夕刊 = daily synthesis のみ (PIR focus なし = 夕方の状況更新)、タイトル「夕ブリーフィング」。
+  schedule:
+    enabled: true
+    hour: 19
+    minute: 30
+  source:
+    type: morning_brief
+    max_articles: 1
+    digest_lookback_hours: 24
+    digest_max_items: 1
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: weekly-status-synthesis
+  # 案2: 日 18:30 → 月 02:45 (深夜)。generator の _resolve_period prev-period 化により月曜未明実行で
+  # 「完結した前週」を総括 (period_start=前週月曜)。recap(02:00) の後に連鎖。
+  schedule:
+    enabled: true
+    hour: 2
+    minute: 45
+    day_of_week: mon
+  source:
+    type: status_synthesis
+    max_articles: 1
+    digest_lookback_hours: 168
+    digest_max_items: 1
+    # 段3 (真の月次): weekly のみ生成。旧来は synthesis_periods 未指定で runner が
+    # ("weekly","monthly") に fallback し monthly を毎週 UPSERT する「便乗 rolling」だった。
+    # monthly は専用 monthly-status-synthesis (月末) に分離 → 便乗生成を断つ。
+    synthesis_periods:
+    - weekly
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: monthly-status-synthesis
+  # 段3 (真の月次) + 案2 (深夜化): 1 日未明 03:00 JST に実行。_resolve_period prev-period 化で
+  # 「完結した前月」を総括 (period_start=前月1日)。_load_previous_synthesis(monthly) が前々月の
+  # forecasts を採点 → 月次の予測 track record (過去参照×将来予測の戦略高度版)。
+  schedule:
+    enabled: true
+    hour: 3
+    minute: 0
+    day: "1"
+  source:
+    type: status_synthesis
+    max_articles: 1
+    digest_lookback_hours: 720
+    digest_max_items: 1
+    synthesis_periods:
+    - monthly
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: pir-spotlight
+  # 案2: 月 09:00 → 月 03:30 (深夜)。最も重い 31B×5PIR (~45分)、朝に読む必要なし。
+  # _resolve_period prev-period 化で月曜未明実行でも前週を覆う。weekly-synthesis(02:45) の後に連鎖。
+  schedule:
+    enabled: true
+    hour: 3
+    minute: 30
+    day_of_week: mon
+  source:
+    type: pir_spotlight
+    max_articles: 1
+    digest_lookback_hours: 168
+    digest_max_items: 1
+    synthesis_periods:
+    - weekly
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: weekly-taxonomy-review
+  # 案2: 月 10:00 → 月 04:30 (深夜)。LLM 提案生成 (人間レビュー用) で時刻非依存。
+  schedule:
+    enabled: true
+    hour: 4
+    minute: 30
+    day_of_week: mon
+  source:
+    type: taxonomy_review
+    max_articles: 1
+    digest_lookback_hours: 720
+    digest_max_items: 1
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja
+- name: mitre-actor-sync
+  # 案2: 火 09:00 → 火 03:00 (深夜)。MITRE→Actor 辞書同期 (LLM 和訳)、時刻非依存。
+  schedule:
+    enabled: true
+    hour: 3
+    minute: 0
+    day_of_week: tue
+  source:
+    type: mitre_actor_sync
+    max_articles: 1
+  processor:
+    extract_method: trafilatura
+    extract_min_length: 200
+    target_language: ja

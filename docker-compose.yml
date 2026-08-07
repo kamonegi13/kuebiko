@@ -1,0 +1,284 @@
+# Kuebiko (久延毘古) — CTI briefing pipeline。単一コンテナ運用 (Phase 1.5)
+#
+# CLAUDE.md §12 に準拠:
+# - ports は 127.0.0.1:8000 のみ (LAN/外部公開禁止)
+# - restart: unless-stopped でクラッシュ自動復旧
+# - ホストネイティブ Ollama に host.docker.internal:11434 で接続
+# - 設定 / プロンプト / ログを volume でホスト共有
+
+# compose プロジェクト名をディレクトリ名 (auto-post) から独立させて固定 (2026-07-31)。
+# OrbStack 等のグループ表示・ビルドイメージ接頭辞・ネットワーク名が kuebiko になる。
+# ローカル dir は memory/session 紐づけのため据え置き (リネームしない) の方針とセット。
+name: kuebiko
+
+services:
+  # Phase Y: PostgreSQL service (SQLite からの移行先)。
+  # macOS virtiofs bind mount での SQLite WAL 衝突 corruption (2026-05-26 実例)
+  # への根本対処として PostgreSQL を採用。data は named volume 経由で virtiofs
+  # を回避し、concurrent write 安全性を確保する。
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kuebiko
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cti_local_dev}
+      POSTGRES_DB: kuebiko
+      # initdb args: locale を設定し UTF-8 安定
+      LANG: ja_JP.UTF-8
+      LC_COLLATE: C
+      LC_CTYPE: C.UTF-8
+    ports:
+      # 127.0.0.1 のみバインド (LAN/外部公開禁止)
+      # host から psql で覗くために 5433 に expose (既存 pg と衝突回避)
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # virtiofs を避けるため named volume を使う (bind mount 不使用)
+      - kuebiko_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kuebiko -d kuebiko"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # Phase 0 F1: PostgreSQL 日次バックアップ sidecar (decoupled、app 障害時も動く)。
+  # postgres:16-alpine は pg_dump 内蔵。./data/backups に -Fc dump を出力し 14 日 rotation。
+  # 復元は scripts/restore_db.sh。
+  backup:
+    image: postgres:16-alpine
+    container_name: backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-cti_local_dev}
+      BACKUP_RETENTION_DAYS: "14"
+    volumes:
+      - ./data/backups:/backups
+      - ./scripts/backup_loop.sh:/backup_loop.sh:ro
+    entrypoint: ["sh", "/backup_loop.sh"]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  kuebiko:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kuebiko:latest
+    container_name: kuebiko
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    # 127.0.0.1 のみバインド (LAN/外部からは到達不可)
+    # ホスト側 8001 → コンテナ内 8000 (uvicorn デフォルト) にマップ
+    ports:
+      - "127.0.0.1:8001:8000"
+
+    restart: unless-stopped
+
+    # ホストの Ollama に到達可能に (Linux/Mac 互換)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      TZ: Asia/Tokyo
+      LANG: ja_JP.UTF-8
+      LC_ALL: ja_JP.UTF-8
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # コンテナから host の Ollama に届く既定。UI (モデルタブ) の編集が .env に保存され、
+      # コンテナ再作成時にここへ補間される (設定・死活の画面統合 P3 — .env が SSoT)。
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # PostgreSQL 接続先 (Phase Y 移行済・本番の SSoT。未設定時のみ SQLite fallback)
+      DATABASE_URL: postgresql://kuebiko:${POSTGRES_PASSWORD:-cti_local_dev}@postgres:5432/kuebiko
+      # 案 B: Discord 投稿先を config 駆動 rule engine (DB の routing ルール) で決定。
+      # 既定 0=旧ハードコード ladder。1=engine (seed は legacy と等価、UI で編集可)。
+      ROUTING_RULES_ENGINE: ${ROUTING_RULES_ENGINE:-1}
+      # synthesis 信頼性再設計: 証拠駆動パイプライン (証拠接地→ACH→敵対的検証→較正→射影)。
+      # 0 (既定)=現行 single-pass / 1=証拠駆動 / shadow=旧出力維持+grounded 並走 log 比較。
+      SYNTHESIS_GROUNDED: ${SYNTHESIS_GROUNDED:-0}
+      # Situation Ledger (状況台帳): 持続する情勢ライン (割当/増分ACH/detect-new/lifecycle)。
+      # 0 (既定)=無効 / shadow=旧経路出力+台帳のみ更新 (段A) /
+      # 1=台帳駆動が出力源 (段B: 割当→増分ACH→PIR注入detect-new→adversarial→射影)。
+      SYNTHESIS_STATE: ${SYNTHESIS_STATE:-0}
+      # Actor Recall Layer: 辞書未収録の新興アクター候補を採取 (暗定 entity + 週次 proposal)。
+      # 0 (既定)=無効 / 1=採取有効。確定アクター層・routing には無影響 (deploy-dark)。
+      ACTOR_CANDIDATE_HARVEST: ${ACTOR_CANDIDATE_HARVEST:-0}
+      # 常設情報要求 standing situations (段A): prepositioning posture の seed 開設 + 収穫のみ。
+      # 0 (既定)=無効 / 1=収穫有効 (評価接続は段B)。設計: docs/prepositioning_posture_ledger_design.md
+      STANDING_SITUATIONS: ${STANDING_SITUATIONS:-0}
+      # PIR signal-first 照合: PIR match を生キーワード OR ではなく取込 LLM の意味プロパティ
+      # (category/intent/victim_sector/is_ransomware) 述語で判定。0 (既定)=旧 strong_signals
+      # keyword / 1=signal-first (match ツリーを持つ PIR のみ切替、他は keyword)。
+      # 設計: docs/pir_signal_first_matching_design.md
+      PIR_SIGNAL_FIRST: ${PIR_SIGNAL_FIRST:-1}
+      # 概念 PIR の LLM 主題判定 (0 で候補ゲートのみに degrade)。
+      # 設計: docs/pir_concept_llm_judge_design.md
+      PIR_LLM_JUDGE: ${PIR_LLM_JUDGE:-1}
+      # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
+      # ローカル専用) が、設定画面が「公開面の認証が設定済みか」を正しく表示するために
+      # 同じ値を渡す。認証の実施は readonly instance のみ。
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      # (通知再設計 web-only disposition は channel レジストリの push 属性=情報フローで設定。
+      #  env フラグは廃止し制御面を routing/flow に一本化した)
+      # (GIT_AUTHOR/COMMITTER env は撤去: アプリの git auto-commit は廃止済 = git を触らない)
+
+    # 設定・プロンプト・データを bind mount で共有
+    # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する
+    volumes:
+      - ./data:/app/data:rw
+      - ./config:/app/config:rw
+      - ./prompts:/app/prompts:rw
+      - ./.env:/app/.env:rw
+      # (.git マウントは撤去 [有機的結合監査 L2]: アプリの git auto-commit 廃止に伴い
+      #  runtime で git を触るコードはゼロ。開発リポジトリの container 内露出も解消)
+      # Phase 2: Playwright セッション state (data/playwright/state.json) は data/ に
+      # 含まれるので追加マウント不要
+
+    # リソース上限 (M5 Max 128GB のうち 6GB を上限に。
+    # Phase 2 から Playwright Chromium が同居するため 4g → 6g に拡張)
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/api/health', timeout=3.0).raise_for_status()"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Phase Diamond verify-mobile: 外部公開 (Cloudflare Tunnel 経由) 向けの read-only instance。
+  # 同じ image / DB / config を共有するが、READ_ONLY=1 で write 全 API を 403 で block。
+  # ports は 127.0.0.1:8002 にバインド (cloudflared がこの 8002 を proxy する)。
+  readonly:
+    image: kuebiko:latest
+    container_name: readonly
+    # 起動を full instance の healthy まで待って直列化する。
+    # 短縮形 (start のみ待つ) だと full と readonly の lifespan が同じ PG に対して
+    # seed/migration を並行実行し DeadlockDetected で片方が落ちていた (自己回復はするが
+    # deploy 毎に 1 restart)。full が seed/migration を終え healthy になってから readonly を
+    # 起動すれば readonly 側は冪等 no-op になり競合しない。
+    depends_on:
+      kuebiko:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8002:8000"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      TZ: Asia/Tokyo
+      LANG: ja_JP.UTF-8
+      LC_ALL: ja_JP.UTF-8
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      READ_ONLY: "1"
+      DATABASE_URL: postgresql://kuebiko:${POSTGRES_PASSWORD:-cti_local_dev}@postgres:5432/kuebiko
+      # 閲覧専用インスタンスでも PIR 表示を full と一致させる (signal-first / LLM 判定同期)。
+      PIR_SIGNAL_FIRST: ${PIR_SIGNAL_FIRST:-1}
+      PIR_LLM_JUDGE: ${PIR_LLM_JUDGE:-1}
+      # Tier1 認証 (2026-08-01)。両方セットしたときだけ Cloudflare Access 検証が有効になり、
+      # 認証済み利用者に運用系ページの閲覧と即時実行を解放する (未設定 = 匿名閲覧のみ)。
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      # 認証済み即時実行の転送先 (write の実行主体は常に full instance)
+      FULL_INSTANCE_URL: ${FULL_INSTANCE_URL:-http://kuebiko:8000}
+    volumes:
+      # readonly side は config / prompts / .env を :ro でマウント (改変防止の二重防御)
+      # data は SQLite WAL を共有のため :rw (read のみだが lock 用)
+      - ./data:/app/data:rw
+      - ./config:/app/config:ro
+      - ./prompts:/app/prompts:ro
+      - ./.env:/app/.env:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/api/health', timeout=3.0).raise_for_status()"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Claude Code サブスク bridge sidecar (2026-07-24 — ホスト LaunchAgent 常駐の解消)。
+  # claude CLI は永続 volume (./data/claude-bridge) に自己インストール/更新され、
+  # イメージ再ビルド不要。認証は UI で貼付する CLAUDE_CODE_OAUTH_TOKEN (.env)。
+  # ポートはホストに公開しない (compose 内部ネットワークのみ)。
+  # app 側の接続切替: .env の CLAUDE_CODE_BRIDGE_URL=http://claude-bridge:8010
+  # (rollback = この行を外してホスト LaunchAgent bridge に戻す)。
+  claude-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude-bridge
+    image: kuebiko-claude-bridge:latest
+    container_name: claude-bridge
+    restart: unless-stopped
+    environment:
+      BRIDGE_ENV_FILE: /app/.env
+      BRIDGE_USAGE_FILE: /data/claude_bridge_usage.jsonl
+      # CLI 自己更新 (0 で版固定)
+      CLAUDE_BRIDGE_AUTOUPDATE: ${CLAUDE_BRIDGE_AUTOUPDATE:-1}
+    volumes:
+      - ./data/claude-bridge:/data:rw
+      - ./.env:/app/.env:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # Phase Diamond verify-mobile: Cloudflare Tunnel sidecar。
+  # readonly (port 8000 in container) を quick tunnel で外部公開。
+  # supervisor 内で flag file (data/.mobile_tunnel_enabled) を監視し real-time toggle。
+  # UI から POST /api/v1/mobile-tunnel/{enable,disable} で制御。
+  # URL 取得時に DISCORD_WEBHOOK_OPS に通知。
+  tunnel:
+    build:
+      context: ./cloudflared
+    image: kuebiko-tunnel:latest
+    container_name: tunnel
+    depends_on:
+      readonly:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      TUNNEL_TARGET: http://readonly:8000
+      DISCORD_WEBHOOK_OPS: ${DISCORD_WEBHOOK_OPS:-}
+      # 初回 deploy 時の default 状態 (以降は UI toggle で永続管理)
+      MOBILE_TUNNEL_DEFAULT_ENABLED: ${MOBILE_TUNNEL_DEFAULT_ENABLED:-1}
+      # named tunnel の token / hostname は **env で注入しない** (2026-07-30, C2)。
+      # 理由: cloudflared は起動時に CLOUDFLARE_* env を INF ログにダンプするため、env 注入は
+      # token を docker logs に露出させる。代わりに UI から data/ ファイル (0600) に保存し、
+      # launcher が --token 引数で渡す (src/tools/mobile_tunnel_files.py が契約 SSoT)。
+      # launcher には env→ファイル seed のフォールバックもあるが、それは CLOUDFLARE_TUNNEL_TOKEN が
+      # コンテナ env に在る場合のみ発火する (ここで注入しないので通常は不発)。既存環境からの移行は
+      # data/ ファイルへ直接書いて行う (docs/mobile-access.md)。
+    volumes:
+      # M1 (least-privilege 2026-07-30): tunnel コンテナには **専用サブディレクトリだけ** を
+      # mount する (flag / url / token / hostname の交換場所)。./data 全体 (SQLite / playwright
+      # state 等) は最前線コンテナに渡さない。app とは host の ./data/mobile_tunnel/ を共有。
+      - ./data/mobile_tunnel:/app/data/mobile_tunnel:rw
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+volumes:
+  # Phase Y: PostgreSQL data (named volume、virtiofs 回避)
+  kuebiko_pgdata:
+    # 実 volume 名を project prefix (dir 名) から独立させる (dir リネームでも不変)
+    name: kuebiko_pgdata
+    driver: local

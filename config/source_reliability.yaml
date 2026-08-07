@@ -1,0 +1,217 @@
+# Source 信頼度ティア (briefing 評価層 — confidence 算出の入力)。
+#
+# 用途: synthesis / spotlight の確度バッジ・cross-source 検証 (S1/S4) が「各 source の
+# 信頼度」を判定するための SSoT。NATO Admiralty Code の「信頼度 (source reliability)」軸。
+#
+# レイヤ分離 (重要): これは **briefing 評価層の表示用**で routing には使わない。routing の
+# 信頼性判定は Phase B-cal で content-based (editorial_stance) に一本化済 (source_quality.yaml
+# 参照)。ここは抑制・降格でなく「読者に各主張の足場を提示する」目的に限定する。
+#
+# マッチ規則:
+#   - hosts: host suffix 一致 ("cloudflare.com" は "blog.cloudflare.com" にマッチ)
+#   - titles: feed_title の部分一致 (小文字、host 不明 source の補助)
+#   - 判定順: social → official → research → (列挙外) news → (title/url 共に空) unknown
+#   - 列挙外は news (default)。
+#
+# **編集可** (config/ は UI allowlist 内)。新 source 追加時はここに分類を足すと
+# コード変更なしで confidence が正確になる。迷ったら news のまま (過大評価しない方が安全)。
+
+# ── 一次 advisory / 公式機関 (Admiralty A 相当) ──
+official:
+  hosts:
+    - cisa.gov
+    - jpcert.or.jp
+    - jvn.jp            # JVN / JVN iPedia (jvndb.jvn.jp も suffix で含む)
+    - ipa.go.jp
+    - ncsc.gov.uk
+    - ncsc.govt.nz
+    - ssi.gouv.fr       # ANSSI France (CERT-FR)
+    - bsi.bund.de
+    - cert.pl
+    - enisa.europa.eu
+    - csa.gov.sg
+    - cnil.fr
+    - cisecurity.org    # CIS (security benchmarks)
+    - cyber.gc.ca
+    - us-cert.gov
+    - aws.amazon.com    # AWS Security Bulletins
+  titles:
+    - cisa
+    - jpcert
+    - "jvn"
+    - anssi
+    - "cert-fr"
+    - "cert polska"
+    - enisa
+    - "ncsc"
+    - bsi
+    - ipa
+    - "cyber security agency of singapore"
+    - cnil
+
+# ── 確立した脅威リサーチ / 分析機関 (Admiralty B 相当) ──
+research:
+  hosts:
+    # threat-intel / security vendors
+    - mandiant.com
+    - dragos.com
+    - eset.com
+    - welivesecurity.com
+    - paloaltonetworks.com    # Unit42
+    - talosintelligence.com   # Cisco Talos
+    - cisco.com
+    - sentinelone.com
+    - crowdstrike.com
+    - kaspersky.com
+    - securelist.com
+    - trendmicro.com
+    - checkpoint.com
+    - microsoft.com           # Microsoft Security Blog
+    - secureworks.com
+    - volexity.com
+    - recordedfuture.com
+    - claroty.com
+    - nozominetworks.com
+    - huntress.com
+    - redcanary.com
+    - cloudflare.com
+    - cloud.google.com        # Google Cloud Threat Intel (Mandiant)
+    - forescout.com
+    - fortinet.com            # FortiGuard Labs
+    - ahnlab.com              # AhnLab ASEC
+    - chainalysis.com
+    - snyk.io
+    - sysdig.com
+    - sonatype.com            # supply chain
+    - bishopfox.com
+    - trailofbits.com
+    - quarkslab.com
+    - watchtowr.com
+    - zerodayinitiative.com   # ZDI
+    - zimperium.com
+    - wiz.io
+    - sygnia.co
+    - teamt5.org
+    - seculligence.com
+    - stealthmole-intelligence-hub.blogspot.com
+    - sans.edu                # SANS ISC
+    - owasp.org
+    - nicter.jp               # NICT NICTER
+    - lac.co.jp               # LAC Watch
+    - merics.org
+    - rand.org
+    # 地政学 / 政策シンクタンク (分析的権威)
+    - acleddata.com           # ACLED conflict data
+    - understandingwar.org    # ISW
+    - aspistrategist.org.au   # ASPI
+    - atlanticcouncil.org
+    - cfr.org                 # Council on Foreign Relations
+    - crisisgroup.org
+    - fdd.org
+    - hudson.org
+    - ifri.org
+    - jamestown.org
+    - justsecurity.org
+    - lawfaremedia.org
+    - longwarjournal.org
+    - lowyinstitute.org
+    - orfonline.org
+    - rusi.org
+    - wilsoncenter.org
+    - warontherocks.com
+    - ccdcoe.org              # NATO CCDCOE
+    - cepa.org
+    - euvsdisinfo.eu
+    - arxiv.org               # academic (cs.CR)
+    - bellingcat.com          # OSINT 調査報道
+  titles:
+    - mandiant
+    - dragos
+    - eset
+    - "unit 42"
+    - unit42
+    - talos
+    - sentinelone
+    - crowdstrike
+    - kaspersky
+    - securelist
+    - "trend micro"
+    - "check point"
+    - secureworks
+    - volexity
+    - "recorded future"
+    - team82
+    - claroty
+    - nozomi
+    - huntress
+    - "red canary"
+    - flashpoint
+    - socradar
+    - fortiguard
+    - ahnlab
+    - chainalysis
+    - "bishop fox"
+    - "trail of bits"
+    - quarkslab
+    - watchtowr
+    - "zero day initiative"
+    - "google intelligence"
+    - "google cloud blog"
+    - "microsoft security"
+    - symantec
+    - sysdig
+    - snyk
+    - sonatype
+    - "team t5"
+    - stealthmole
+    - sygnia
+    - seculligence
+    - "sans internet storm"
+    - merics
+    - "rand "
+    - isw
+    - aspi
+    - "atlantic council"
+    - "council on foreign relations"
+    - "crisis group"
+    - hudson
+    - ifri
+    - jamestown
+    - "just security"
+    - lawfare
+    - "long war journal"
+    - lowy
+    - "orf india"
+    - rusi
+    - "wilson center"
+    - "war on the rocks"
+    - ccdcoe
+    - cepa
+
+# ── SNS / 単一投稿 (Admiralty D-F 相当、未裏取り扱い) ──
+social:
+  hosts:
+    - grok.com
+    - x.com
+    - twitter.com
+    - t.co
+    - mastodon.social
+    - bsky.app
+    - reddit.com
+  titles:
+    - grok
+
+# ── 国営メディア / 影響工作 (framing バイアス。信頼度軸でなく「事実は報じうるが意図・
+#    責任帰属の framing をそのまま採らない」印)。収集は維持し synthesis で割引する。
+#    判定原則 = **国籍でなく国家統制/出資**で分類する。独立系の敵国発ソース
+#    (The Insider=反クレムリン調査報道 / NK News=独立 NK ウォッチャー 等) は **含めない**。
+#    SubscriptionsPage の tier ピッカーから随時 追加/解除できる (ここは seed)。
+state_media:
+  hosts:
+    - rt.com
+    - sputnikglobe.com
+    - sputniknews.com
+  titles:
+    - russia today
+    - sputnik
+    - pravda            # Pravda/Portal Kombat 影響工作網 (偽装ローカル名・蘭の正規紙でない)

@@ -1,0 +1,127 @@
+# 環境変数 (絶対に除外)
+.env
+.env.local
+.env.*.local
+.envrc
+
+# 認証情報・セッション
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.pfx
+*.p12
+# SSH 鍵
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+id_ecdsa
+id_ecdsa.*
+*.ppk
+# Cookie / セッション / トークン dump
+cookies.txt
+*cookies*.json
+**/storage_state.json
+playwright/.auth/
+*.token
+*.secret
+secrets.yaml
+secrets.yml
+secrets/
+# クラウド資格情報
+*service-account*.json
+gcloud-creds*.json
+.aws/
+.gcp/
+.azure/
+# その他認証
+.netrc
+_netrc
+*.ovpn
+
+# データ (default-deny: data/ 配下は原則すべて追跡しない)
+data/*
+!data/.gitkeep
+
+# ログ
+logs/
+*.log
+
+# CTI 業務で扱う機密フォーマット (リポジトリ全域)
+*.eml
+*.mbox
+*.har
+*.pcap
+*.pcapng
+samples/
+iocs/
+evidence/
+tlp-amber/
+tlp-red/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.tox/
+.nox/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+.ipynb_checkpoints/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.DocumentRevisions-V100
+.TemporaryItems
+
+# 一時ファイル
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Claude Code session state (per-machine、共有不要)
+.claude/
+
+# Phase 5T-T2 dry-run / debug output (記事タイトル等を含むため commit 除外)
+scripts/dry_run_output.json
+config/actor_aliases.enriched.yaml
+config/actor_aliases.translated.yaml
+
+# 運用者ローカルの私的コンテキスト (公開リポに含めない)
+CLAUDE.local.md
+prompts/_persona_local.j2*

@@ -1,0 +1,268 @@
+"""Grounded synthesis の LLM パス: 段0 claim ノミネート / 段1+2 証拠接地 + ACH。
+
+設計: docs/synthesis_reliability_redesign.md。対称客観性 (原則0) をプロンプトに明示。
+**source_tier と確度上限はコード側で決定論的に付与し LLM に委ねない**。parse は
+generate_structured (pydantic 検証 + 修復) で頑健化し、未知値はコードで正規化する。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, cast
+
+import jinja2
+from pydantic import BaseModel, Field
+
+from src.logging_config import get_logger
+from src.synthesis.grounded.estimate import (
+    AttributionBasis,
+    Confidence,
+    EvidenceItem,
+    HypothesisScore,
+    Polarity,
+    derive_verdict,
+)
+from src.synthesis.grounded.hypotheses import Hypothesis, hypotheses_for_domain, is_known_hypothesis
+from src.tools.llm_client import LLMClient
+
+_log = get_logger(__name__)
+_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+
+_TEMPERATURE = 0.2
+_MAX_TOKENS = 8_000
+_MAX_BODY_CHARS = 4_000  # ソース本文の 1 記事あたり上限 (prompt 肥大防止)
+
+_ATTRIBUTION_OPTIONS = (
+    "govt_confirmed(政府/CERT確認) / vendor_confirmed(セキュリティベンダ確認) / "
+    "victim_disclosed(被害組織の公表) / researcher_assessed(研究者の分析評価) / "
+    "tooling_similarity(ツール/TTP類似のみ) / claimed_by_actor(攻撃者の自称) / "
+    "state_media_claim(国営メディアの主張) / unattributed(帰属なし) / speculation(推測)"
+)
+
+_VALID_BASIS: frozenset[str] = frozenset(
+    {
+        "govt_confirmed",
+        "vendor_confirmed",
+        "victim_disclosed",
+        "researcher_assessed",
+        "tooling_similarity",
+        "claimed_by_actor",
+        "state_media_claim",
+        "unattributed",
+        "speculation",
+    }
+)
+_VALID_POLARITY: frozenset[str] = frozenset({"supports", "contradicts", "neutral"})
+_VALID_CONF: frozenset[str] = frozenset({"high", "moderate", "low"})
+
+
+def _render(template: str, **ctx: object) -> str:
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(str(_PROMPTS_DIR)),
+        autoescape=False,
+        undefined=jinja2.StrictUndefined,
+    )
+    return env.get_template(template).render(**ctx)
+
+
+def _norm_basis(b: str) -> AttributionBasis:
+    return cast(AttributionBasis, b) if b in _VALID_BASIS else "unattributed"
+
+
+def _norm_polarity(p: str) -> Polarity:
+    return cast(Polarity, p) if p in _VALID_POLARITY else "neutral"
+
+
+def _norm_conf(c: str) -> Confidence:
+    return cast(Confidence, c) if c in _VALID_CONF else "low"
+
+
+# ---------- 段0: claim ノミネート ----------
+
+
+class _WireNomination(BaseModel):
+    model_config = {"extra": "ignore"}
+    claim: str = ""
+    domain: str = ""
+    article_ids: list[str] = Field(default_factory=list)
+
+
+class _WireNominationResult(BaseModel):
+    model_config = {"extra": "ignore"}
+    claims: list[_WireNomination] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class NominatedClaim:
+    claim: str
+    domain: str
+    article_ids: tuple[str, ...]
+
+
+async def nominate_claims(
+    *, llm: LLMClient, articles: list[dict[str, object]], period_label: str, k: int
+) -> list[NominatedClaim]:
+    """段0: 集約から key judgment 候補を最大 k 件ノミネート (各々に支持 article_id)。"""
+    if not articles:
+        return []
+    prompt = _render("synthesis_nominate.j2", articles=articles, period_label=period_label, k=k)
+    result = await llm.generate_structured(
+        prompt, _WireNominationResult, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
+    )
+    out: list[NominatedClaim] = []
+    for c in result.claims[:k]:
+        claim = c.claim.strip()
+        ids = tuple(a for a in c.article_ids if a)
+        if claim and ids:
+            # domain 不明は "unclassified" (cyber_incident に倒すと非サイバー事象に
+            # cyber framing を被せる bias になる)。
+            out.append(
+                NominatedClaim(
+                    claim=claim, domain=c.domain.strip() or "unclassified", article_ids=ids
+                )
+            )
+    return out
+
+
+# ---------- 段1+2: 証拠接地 + ACH ----------
+
+
+class _WireEvidence(BaseModel):
+    model_config = {"extra": "ignore"}
+    article_id: str = ""
+    attribution_basis: str = "unattributed"
+    excerpt: str = ""
+    polarity: str = "neutral"
+
+
+class _WireHypothesis(BaseModel):
+    model_config = {"extra": "ignore"}
+    hypothesis: str = ""
+    consistent: int = 0
+    inconsistent: int = 0
+
+
+class _WireAnalysis(BaseModel):
+    model_config = {"extra": "ignore"}
+    evidence: list[_WireEvidence] = Field(default_factory=list)
+    hypotheses: list[_WireHypothesis] = Field(default_factory=list)
+    leading_hypothesis: str = ""  # 既定は空 (実体 id にすると parse 欠落が確定判定に化ける)
+    confidence: str = "low"
+    key_assumptions: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    indicators: list[str] = Field(default_factory=list)
+    # 段B: 判定の性質と含意 (証拠接地・確度準拠)。欠落時は空で後方互換。
+    claim_type: str = ""
+    implication: str = ""
+
+
+_VALID_CLAIM_TYPES: frozenset[str] = frozenset({"ongoing_activity", "discrete_event", "structural"})
+
+
+def norm_claim_type(v: str) -> str:
+    """claim_type の未知値は ongoing_activity に倒す (減衰対象側 = 保守的)。"""
+    return v if v in _VALID_CLAIM_TYPES else "ongoing_activity"
+
+
+@dataclass(frozen=True)
+class ClaimAnalysis:
+    evidence: tuple[EvidenceItem, ...]
+    hypotheses: tuple[HypothesisScore, ...]
+    leading_hypothesis: str
+    llm_confidence: Confidence
+    key_assumptions: tuple[str, ...]
+    missing_evidence: tuple[str, ...]
+    indicators: tuple[str, ...]
+    claim_type: str = "ongoing_activity"
+    implication: str = ""
+
+
+def _verdict(
+    h: _WireHypothesis, leading: str
+) -> Literal["leading", "viable", "refuted", "unscored"]:
+    # 導出実装は estimate.derive_verdict が SSoT (二重表現の整合不変量)。
+    return derive_verdict(
+        hypothesis=h.hypothesis,
+        consistent=h.consistent,
+        inconsistent=h.inconsistent,
+        leading=leading,
+    )
+
+
+async def ground_and_score(
+    *,
+    llm: LLMClient,
+    claim: str,
+    domain: str,
+    sources: list[dict[str, str]],
+    tier_by_id: dict[str, str],
+    hypotheses_override: tuple[Hypothesis, ...] | None = None,
+) -> ClaimAnalysis:
+    """段1+2: ソース本文を読み、証拠台帳 + ACH 採点を得る。
+
+    sources: ``[{article_id, feed_title, text}]`` (text は本文 or summary)。
+    tier_by_id: article_id → source_tier (コードが classify_source_tier で算出済、LLM 不信)。
+    domain: nominate の domain。サイバー/地政学で ACH 仮説セットを切り替える。
+    """
+    prompt = _render(
+        "synthesis_ground_ach.j2",
+        claim=claim,
+        sources=sources,
+        attribution_options=_ATTRIBUTION_OPTIONS,
+        hypotheses=hypotheses_override or hypotheses_for_domain(domain),
+    )
+    a = await llm.generate_structured(
+        prompt, _WireAnalysis, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
+    )
+    if is_known_hypothesis(a.leading_hypothesis):
+        leading = a.leading_hypothesis
+    else:
+        # parse 欠落/未知 id → unverified_or_false に倒すが silent にしない (品質監視)
+        _log.warning("grounded_leading_unknown", claim=claim[:60], raw=a.leading_hypothesis[:40])
+        leading = "unverified_or_false"
+    evidence = tuple(
+        EvidenceItem(
+            article_id=e.article_id,
+            source_tier=tier_by_id.get(e.article_id, "unknown"),  # tier はコードが付与
+            attribution_basis=_norm_basis(e.attribution_basis),
+            excerpt=e.excerpt.strip()[:500],
+            polarity=_norm_polarity(e.polarity),
+        )
+        for e in a.evidence
+        if e.excerpt.strip()
+    )
+    hyps = tuple(
+        HypothesisScore(
+            hypothesis=h.hypothesis,
+            consistent=max(0, h.consistent),
+            inconsistent=max(0, h.inconsistent),
+            verdict=_verdict(h, leading),
+        )
+        for h in a.hypotheses
+        if is_known_hypothesis(h.hypothesis)
+    )
+    return ClaimAnalysis(
+        evidence=evidence,
+        hypotheses=hyps,
+        leading_hypothesis=leading,
+        llm_confidence=_norm_conf(a.confidence),
+        key_assumptions=tuple(s.strip() for s in a.key_assumptions[:3] if s.strip()),
+        missing_evidence=tuple(s.strip() for s in a.missing_evidence[:3] if s.strip()),
+        indicators=tuple(s.strip() for s in a.indicators[:3] if s.strip()),
+        claim_type=norm_claim_type(a.claim_type.strip()),
+        implication=a.implication.strip()[:400],
+    )
+
+
+def truncate_body(text: str, *, max_chars: int = _MAX_BODY_CHARS) -> str:
+    """ソース本文を prompt 用に上限まで切り詰める (文境界優先で中途切断を緩和)。
+
+    過去文脈ソースは max_chars を短くして prompt 肥大を抑える (現在の事象を主に読む)。
+    """
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    # 上限手前の最後の文末/改行で切る (なければハード切断)
+    boundary = max(cut.rfind("。"), cut.rfind("\n"), cut.rfind(". "))
+    return cut[: boundary + 1] if boundary >= max_chars - 500 else cut

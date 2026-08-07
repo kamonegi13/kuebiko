@@ -1,0 +1,88 @@
+# 記事タグ レジストリ (SSoT) — 2026-06-20
+#
+# 目的: タグはフェーズごとに有機的に堆積し、保存形式 (列/entity/lookup)・正規化・付与プロセスが
+# 散在していた ([[tag_landscape_audit]])。この1枚で**全タグを宣言的に俯瞰**し、不整合の可視化と
+# 将来の統合を導く。CTI の適切な姿 = **記事中心の3層** (STIX は export 投影のまま、内部 schema に
+# しない)。STIX は L2 脅威コアを境界で投影する先。MISP 式の curated 語彙で正規化する。
+#
+# 各タグの宣言: storage(column/entity/lookup) / card(single|multi) / domain(enum|dict|regex|free) /
+#   norm(正規化 seam の有無) / assign(付与プロセス) / gate(品質ゲート)。
+# ※ これは宣言的 SSoT (現状の正の記述)。コード強制は test_tag_registry が entity_type の網羅を検証。
+
+# ── L1: 記事エンベロープ (報告そのものについての注釈。STIX なら report/marking) ──
+envelope:
+  importance:        {storage: column, card: single, domain: enum,  norm: -,           assign: triage_llm(PIR駆動), gate: -}
+  category:          {storage: column, card: single, domain: enum,  norm: -,           assign: triage_llm,          gate: -}
+  is_ransomware:     {storage: column, card: single, domain: bool,  norm: -,           assign: dict(ransom_group)+ransomware.live, gate: -}
+  editorial_stance:  {storage: column, card: single, domain: enum,  norm: -,           assign: summarizer_llm,      gate: -}
+  feed_url:          {storage: column, card: single, domain: free,  norm: -,           assign: source(ingest),      gate: -}
+  feed_title:        {storage: column, card: single, domain: free,  norm: -,           assign: source(ingest),      gate: -}
+  posted_channel:    {storage: column, card: single, domain: enum,  norm: -,           assign: routing_engine,      gate: -}
+  routing_rule_id:   {storage: column, card: single, domain: free,  norm: -,           assign: routing_engine,      gate: -}
+  routing_reason:    {storage: column, card: single, domain: free,  norm: -,           assign: routing_engine,      gate: -}
+  dedup_key:         {storage: column, card: single, domain: free,  norm: -,           assign: dedup(cluster),      gate: -}
+  published_at:      {storage: column, card: single, domain: time,  norm: -,           assign: source(ingest),      gate: -}
+  created_at:        {storage: column, card: single, domain: time,  norm: -,           assign: pipeline,            gate: -}
+  # gap: confidence(Admiralty/ICD-203) は per-article 化されず importance/synthesis に内包。
+  # gap: PIR-match は evaluator が post-hoc 計算するが**未永続化** (タグ化候補)。
+
+# ── L2: 脅威コア (Diamond/STIX 整合。"何が起きたか"。ここだけ STIX SDO に投影) ──
+threat_core:
+  # Adversary
+  actor:             {storage: entity, card: multi,  domain: dict,  norm: actor_normalizer(canonical), assign: registry.find_all(body), gate: R-A context gate(cyber category)}
+  actor_provisional: {storage: entity, card: multi,  domain: free,  norm: -(暫定=辞書ゲート外), assign: actor recall harvest(C2), gate: 確定 actor と type 分離・人承認で辞書昇格}
+  # Campaign (STIX Campaign SDO 相当。Situation Ledger の強 anchor / same_campaign relation の基盤)
+  campaign:          {storage: entity, card: multi,  domain: regex, norm: '"Operation <Name>" 正規形', assign: regex(mention_tagger 決定論), gate: 一般語 blocklist(Operation Center 等)。「〜作戦」型は精度不足で不採用}
+  # Capability
+  malware_family:    {storage: entity, card: multi,  domain: dict,  norm: malware_normalizer(2026-06-20), assign: summarizer_llm, gate: tool再分類/noise drop}
+  tool:              {storage: entity, card: multi,  domain: dict,  norm: malware_normalizer,          assign: summarizer_llm, gate: malware混入の再分類}
+  ttp:               {storage: entity, card: multi,  domain: regex, norm: T形式(catalog未照合=gap),    assign: summarizer_llm, gate: -}
+  cve:               {storage: entity, card: multi,  domain: regex, norm: upper,        assign: summarizer_llm+本文regex, gate: -}
+  cvss:              {storage: lookup, card: single, domain: float, norm: -,            assign: NVD lookup(nvd_client),   gate: -}
+  kev:               {storage: lookup, card: single, domain: bool,  norm: -,            assign: CISA KEV catalog,         gate: -}
+  # P2 (実地調査 2026-07): is_ransomware の一般化。malware_aliases.yaml の type 列から辞書導出
+  malware_type:      {storage: entity, card: multi,  domain: enum,  norm: malware_aliases.yaml type列, assign: dict(malware_normalizer.type_of), gate: 辞書未宣言の family には付けない}
+  # P1 (実地調査 全会一致 gap): 影響ベンダ/製品。NVD CPE 逆引き (cache のみ・決定論)
+  affected_vendor:   {storage: entity, card: multi,  domain: dict,  norm: NVD CPE,      assign: cve→nvd_client.get_cached, gate: cache 未収録は付けない (backfill が回収)}
+  affected_product:  {storage: entity, card: multi,  domain: dict,  norm: NVD CPE,      assign: cve→nvd_client.get_cached, gate: 同上・上限6/記事}
+  # Infrastructure
+  ioc_domain:        {storage: entity, card: multi,  domain: regex, norm: url_normalizer, assign: regex(ioc_extractor),   gate: benign filter+LLM verifier}
+  ioc_ip:            {storage: entity, card: multi,  domain: regex, norm: -,            assign: regex,                    gate: benign filter}
+  ioc_url:           {storage: entity, card: multi,  domain: regex, norm: -,            assign: 本文regex,                gate: benign(出典host除外)+LLM verifier}
+  ioc_md5:           {storage: entity, card: multi,  domain: regex, norm: lower,        assign: regex,                    gate: -}
+  ioc_sha1:          {storage: entity, card: multi,  domain: regex, norm: lower,        assign: regex,                    gate: -}
+  ioc_sha256:        {storage: entity, card: multi,  domain: regex, norm: lower,        assign: regex,                    gate: -}
+  # Victim (★ 概念は1 object。保存は基数で分割: 単数=列 / 複数=entity)
+  victim_country:    {storage: column, card: single, domain: dict,  norm: taxonomy_normalizer(ISO), assign: summarizer_llm, gate: -}
+  victim_sector:     {storage: column, card: single, domain: dict,  norm: taxonomy_normalizer,      assign: summarizer_llm, gate: -}
+  victim_org:        {storage: entity, card: multi,  domain: free,  norm: -(未正規化=gap),          assign: summarizer_llm, gate: 被害者のみ(ベンダ/攻撃者除外)}
+  victim_city:       {storage: entity, card: multi,  domain: free,  norm: -(geocode別),             assign: summarizer_llm, gate: 明示時のみ}
+  # Course of Action (P4 第1弾 2026-07-04): 本文に明示された対処のみ (一般論の創作は prompt で禁止)
+  remediation:       {storage: column, card: single, domain: free,  norm: -, assign: summarizer_llm, gate: 本文明示のみ・なければ null}
+  # gap: impact(流出データ種別/規模) 未タグ (P4 第2弾候補)。
+  # Meta (Diamond meta-feature)
+  socio_political_intent:   {storage: column, card: single, domain: enum, norm: -, assign: summarizer_llm, gate: -}
+  socio_political_rationale: {storage: column, card: single, domain: free, norm: -, assign: summarizer_llm, gate: -}
+  technical_axis_summary:   {storage: column, card: single, domain: free, norm: -, assign: summarizer_llm, gate: -}
+
+# ── L3: 戦略オーバーレイ (分析レンズ。STIX 外) ──
+strategic:
+  pmesii_p:     {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_m:     {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_e:     {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_s:     {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_i_infra: {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_i_cyber: {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_p_env: {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  pmesii_t:     {storage: column, card: single, domain: bool, norm: -, assign: summarizer_llm, gate: -}
+  # 国家ブリッジ (サイバー↔地政学相関 / Situation Ledger 割当キー)。当事と言及は type 分離 (意味論を混ぜない)
+  involved_country:  {storage: entity, card: multi, domain: dict, norm: taxonomy_normalizer(ISO), assign: summarizer_llm(当事国), gate: 未知国は捨てる}
+  mentioned_country: {storage: entity, card: multi, domain: dict, norm: nation_gazetteer(ISO), assign: regex(mention_tagger 決定論・title+summary 言及), gate: 当事国と重複する ISO は付与しない (involvement ⊃ mention)}
+  # PIR リンク (evaluator の post-hoc 計算を entity 永続化したもの。検索 facet / Ledger pir_ids の源)
+  pir:               {storage: entity, card: multi, domain: enum, norm: -, assign: pir evaluator(match 永続化), gate: -}
+
+# ── 既知の構造的不整合 (将来の統合対象) ──
+# - Victim が列(country/sector)と entity(org/city)に分割 = 基数由来だが宣言で明示化済(上記)。
+# - 未正規化 = victim_org / ttp(catalog未照合)。curated 語彙化の候補。
+# - タグが untyped msg.metadata dict 経由で persist される (typed schema 化が望ましい)。
+# - entity_type は main.py に magic string で散在 = この registry を将来 SSoT に昇格し参照させる。
