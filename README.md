@@ -4,8 +4,9 @@
 Discord に BLUF 形式で投稿する個人運用パイプライン。常駐 Web UI (React SPA) から
 設定編集・ログ可視化・プロンプトチューニング・即時実行・スケジューラ管理・情勢分析を行える。
 
-> **Private / 個人運用専用**。UI は `127.0.0.1` のみバインドし、外部公開しない
-> (閲覧専用インスタンスのみ Cloudflare Tunnel 経由でモバイル閲覧を許容)。
+> **個人運用向け設計** (single-analyst)。フル機能 UI は `127.0.0.1` のみバインドし、
+> 外部公開しない (閲覧専用インスタンスのみ Cloudflare Tunnel + Cloudflare Access 経由の
+> モバイル閲覧を許容)。
 
 ---
 
@@ -15,8 +16,10 @@ Discord に BLUF 形式で投稿する個人運用パイプライン。常駐 We
 - **利用者**: 単独運用 (single-analyst, single-Mac)
 - **稼働環境**: MacBook Pro を常駐サーバとし、ホストネイティブ Ollama (Metal 加速) +
   Docker コンテナ (FastAPI + APScheduler + PostgreSQL) のハイブリッド構成
-- **原則**: 解析・要約・翻訳はすべて**ローカル LLM** で完結 (クラウド LLM に記事本文を送らない)。
-  **中国系 LLM / Embedding は不使用** (防衛 CTI で中華系 APT を主敵とするサプライチェーン要件)
+- **原則**: 解析・要約・翻訳は**既定でローカル LLM** で完結。外部 LLM (Anthropic) は利用者が
+  モデルティアへ明示割当した場合のみ使用 (ツールが勝手に外部送信しない。embedding は常にローカル)。
+  **中国系 LLM / Embedding は不使用** (中華系 APT を主要監視対象とする CTI 業務の
+  サプライチェーン要件)
 
 ### データフロー
 
@@ -50,10 +53,14 @@ per-article 要約・triage・抽出は **fast ティア (MoE, 高速)**、状�
   台帳駆動アセスメント (日次 / 週次 / 月次)
 - **情勢分析 UI**: Intel Graph (状況総括・地図・タイムライン・アクターグラフ)、
   サイバー×地政学相関、被害状況コレクタ
+- **本文の日本語全訳**: 記事詳細のオンデマンド翻訳 + 毎時の自動バックログ翻訳。
+  チャンク単位の resumable 設計で長文・失敗・時間切れから続きを再開
 - **運用コンソール**: 実行履歴・ライブログ (SSE)、背景ジョブの統一制御面、
   死活監視 (各対象画面 + ダッシュボード widget に統合)、
   情報フロー (ルーティング/配信) の可視化と調整
-- **モバイル閲覧**: 閲覧専用インスタンス (write は middleware で 403) を Cloudflare Tunnel で公開
+- **モバイル閲覧**: 閲覧専用インスタンス (write は middleware で 403) を Cloudflare Tunnel で
+  公開。公開面は 3 層 — 匿名=閲覧のみ / Cloudflare Access 認証=運用系 read + ジョブ即時実行 /
+  それ以外の write=ローカル専用 (認証イベントは DB に監査記録)
 
 ---
 
@@ -130,7 +137,7 @@ flowchart TB
 
     subgraph OUT["⑥ 提示層"]
         DC["Discord<br/>(push=true の channel のみ)"]
-        WEBUI["Web UI (React SPA + 27 JSON API)<br/>全データを pull 閲覧"]
+        WEBUI["Web UI (React SPA + 30+ JSON API)<br/>全データを pull 閲覧"]
     end
 
     RSS --> SR
@@ -170,7 +177,7 @@ flowchart TB
 | 製品 | `src/digest` | 朝・夕ブリーフ合成 (高脅威 Recall 安全網 + 総括要点 + PIR daily focus + Web リンク)・週次 recap (deep-dive) | DB 集約 → `daily_briefs` + Discord 1 通 |
 | 製品 | `src/spotlight` / `src/taxonomy` / `src/forecast` | PIR 縦断 narrative (週次) / 分類辞書の改善提案 (人承認キュー) / 予測分析の API サービス | DB → 各テーブル |
 | 対話 | `src/assistant` / `src/search` | 分析チャット (plan→接地回答、read-only ツール) / entity facet 検索 | 質問 → 接地回答 / 検索結果 |
-| 提示 | `src/ui` + `frontend/` | FastAPI (27 JSON API + WebSocket) + React SPA (ダッシュボード / News / Intel Graph / 台帳 / 情報フロー / ジョブ管理 / 設定編集)。脅威アクターのミッション脅威評価 (関連度×能力の透明ティア、90d 決定論) + 週次供給網監査 (fill-rate / routing ルール発火) | DB → 画面 |
+| 提示 | `src/ui` + `frontend/` | FastAPI (30+ JSON API + WebSocket) + React SPA (ダッシュボード / News / Intel Graph / 台帳 / 情報フロー / ジョブ管理 / 設定編集)。脅威アクターのミッション脅威評価 (関連度×能力の透明ティア、90d 決定論) + 週次供給網監査 (fill-rate / routing ルール発火) | DB → 画面 |
 | 基盤 | `src/storage` | PG16 (SQLite fallback) への統一アクセス: run_history facade (runs/articles/dedup/synthesis/knowledge) + config_store (運用 config の DB SSoT・版履歴) + dialect 自動翻訳 | — |
 | 基盤 | `src/scheduler` | APScheduler ラッパ + JobDef registry (pipeline/bespoke/reactive の統一制御面、メタ=コード所有・schedule=DB) | — |
 
@@ -236,24 +243,34 @@ flowchart LR
 
 ### 背景ジョブ一覧 (JobDef registry が SSoT / UI「実行管理」で制御)
 
-| ジョブ | 種別 | スケジュール (JST) | 実体 | 出力先 |
+> **実行時刻の SSoT は DB (UI「実行管理」の schedule)** — 本表は既定サイクルの目安のみ記す
+> (時刻を文書に複製すると実スケジュールと乖離するため)。
+
+| ジョブ | 種別 | 既定サイクル | 実体 | 出力先 |
 |---|---|---|---|---|
-| direct-rss-fetch | pipeline | 毎時 :00 | run_pipeline (rss) | articles + 即時 Discord |
-| web-scraper-watchers | pipeline | 毎時 :30 | run_pipeline (scraper cluster) | 同上 |
-| grok-briefing | pipeline | 06:00 | run_pipeline (grok_email) | 同上 |
-| morning-brief | pipeline (heavy) | 06:30 | 総括 (31B) + PIR focus + 高脅威 → 1 通 | status_synthesis / daily_briefs / #brief |
-| evening-brief | pipeline (heavy) | 19:30 | 総括 + 高脅威 (PIR なし) | 同上 |
-| weekly-recap | pipeline | 月 02:00 | deep-dive digest (168h) | weekly_recaps / #brief |
-| weekly-status-synthesis | pipeline | 月 02:45 | 週次総括 + 予測 indicator snapshot | status_synthesis / forecast_indicators / #brief |
-| monthly-status-synthesis | pipeline | 毎月 1 日 03:00 | 月次総括 | status_synthesis / #brief |
-| pir-spotlight | pipeline | 月 03:30 | PIR 縦断 narrative | pir_spotlight (web-only) |
-| weekly-taxonomy-review | pipeline | 月 04:30 | 分類辞書の改善提案 | taxonomy_review_proposals (UI 承認) |
-| mitre-actor-sync | pipeline | 火 03:00 | MITRE → actor 辞書同期 | actor_aliases.yaml + actor_update_proposals |
+| direct-rss-fetch | pipeline | 毎時 | run_pipeline (rss) | articles + 即時 Discord |
+| web-scraper-watchers | pipeline | 毎時 | run_pipeline (scraper cluster) | 同上 |
+| body-refetch-backlog | bespoke | 毎時 | 切り株本文の全文再取得 + 再エンリッチ | articles (body 差替え) |
+| body-translate-backlog | bespoke | 毎時 | 未訳本文の自動日本語訳 (チャンク resumable) | articles.body_ja |
+| pir-judge-hourly | bespoke | 毎時 | PIR 主題判定の増分評価 | article_entities (pir) |
+| grok-briefing | pipeline | 朝 | run_pipeline (grok_email) | articles + Discord |
+| morning-brief | pipeline (heavy) | 朝 06:30 帯 | 総括 + PIR focus + 高脅威 → 1 通 | status_synthesis / daily_briefs / #brief |
+| evening-brief | pipeline (heavy) | 夕 19:30 帯 | 総括 + 高脅威 (PIR なし) | 同上 |
 | ransomware-live-ingest | bespoke | 3h 毎 | 被害公表 ingest | articles (JP は #japan_watch) |
-| pir-entity-rebuild | bespoke | 03:05 | 記事×PIR の夜間再評価 | article_entities (pir) |
-| daily-maintenance | bespoke | 03:17 | retention purge (90 日) | — |
-| daily-heartbeat | bespoke | 08:00 | 稼働サマリ + 沈黙 feed + 被覆番兵 | #ops (dead-man's switch) |
-| weekly-fill-rate-audit | bespoke | 月 08:10 | タグ被覆 + routing ルール発火の急落・空振り検知 (決定論) | #ops (必ず 1 通) |
+| daily-maintenance | bespoke | 日次 (深夜帯) | retention purge (90 日) ほか DB 保守 | — |
+| pir-entity-rebuild | bespoke | 日次 (深夜帯) | 記事×PIR の夜間 reconcile | article_entities (pir) |
+| ledger-deep-review | bespoke | 日次 (深夜帯) | 台帳 ACH の夜間精査 (再評価飢餓の解消) | situation_revisions |
+| actor-history-distill | bespoke | 日次 (深夜帯) | アクター行動史の月次期間行を蒸留 | actor_observed_profile |
+| ua-health-check | bespoke | 日次 (深夜帯) | 取得 UA の自己修復 (block されたソースの再試験) | fetch_policy 状態 |
+| daily-heartbeat | bespoke | 朝 | 稼働サマリ + 沈黙 feed + 被覆番兵 | #ops (dead-man's switch) |
+| weekly-recap | pipeline | 週次 (深夜帯) | deep-dive digest (168h) | weekly_recaps / #brief |
+| weekly-status-synthesis | pipeline | 週次 (深夜帯) | 週次総括 + 予測 indicator snapshot | status_synthesis / forecast_indicators / #brief |
+| monthly-status-synthesis | pipeline | 月次 (深夜帯) | 月次総括 | status_synthesis / #brief |
+| pir-spotlight | pipeline | 週次 (深夜帯) | PIR 縦断 narrative | pir_spotlight (web-only) |
+| weekly-taxonomy-review | pipeline | 週次 (深夜帯) | 分類辞書の改善提案 | taxonomy_review_proposals (UI 承認) |
+| mitre-actor-sync | pipeline | 週次 (深夜帯) | MITRE → actor 辞書同期 (追加=自動 / 衝突=人承認) | actor_aliases.yaml + actor_update_proposals |
+| weekly-fill-rate-audit | bespoke | 週次 (朝) | タグ被覆 + routing ルール発火の急落・空振り検知 (決定論) | #ops (必ず 1 通) |
+| job-recovery-watchdog | bespoke | 30 分毎 | 周期ジョブの成功実績を検査し自動再実行 (3 回 cap) | — |
 | auto-trigger-synthesis | reactive | 収集完了後 (debounce 6h) | daily 総括の near-realtime 更新 | status_synthesis |
 
 収集ジョブは heavy ジョブ (brief/総括) の実行区間と重なるときだけ動的に抑止される。
@@ -410,7 +427,7 @@ uv run pytest tests/unit -q         # unit のみ
 # Lint / Format / 型
 uv run ruff check src/ tests/
 uv run ruff format src/
-uv run mypy --strict src/
+uv run mypy src/ tests/            # strict は pyproject 既定 (tests/ も型ゲート対象)
 
 # フロントエンド
 cd frontend && npm run build        # Vite build (Docker ビルドでも実行される)
