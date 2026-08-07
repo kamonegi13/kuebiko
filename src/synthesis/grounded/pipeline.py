@@ -331,6 +331,22 @@ async def generate_grounded_synthesis(
             )
         except Exception as e:  # noqa: BLE001 — 射影補助の失敗で報告を止めない
             _log.warning("forecast_context_failed", error=str(e))
+    # 反復抑制 (2026-08-07): 前回 (同 period_type、別 period_start) の headline 判定 id を
+    # tradecraft から回収し、quiet 日の同一 standing 再掲を継続表記へ置き換える材料にする。
+    # 同日 regenerate の自己比較を避けるため period_start 一致行は読み飛ばす。
+    prev_headline_judgment_id: str | None = None
+    try:
+        import json as _json
+
+        for _prev in repo.list_synthesis(period_type=period_type, limit=3):
+            if _prev.period_start.date() == _start.date():
+                continue
+            if _prev.tradecraft:
+                _v = _json.loads(_prev.tradecraft).get("headline_judgment_id")
+                prev_headline_judgment_id = str(_v) if _v else None
+            break
+    except Exception as e:  # noqa: BLE001 — 反復抑制の材料欠落で報告を止めない
+        _log.warning("prev_headline_lookup_failed", error=str(e))
     # render (台帳→報告書の射影整形) も構造化分析側 — think ティア分離後も挙動保存
     # (narrative 側へ移すかは ACH think A/B の結果で判断)。
     record = await render_record(
@@ -339,5 +355,6 @@ async def generate_grounded_synthesis(
         period_label=label,
         article_count=article_count,
         forecast_ctx=forecast_ctx,
+        prev_headline_judgment_id=prev_headline_judgment_id,
     )
     return SynthesisGenerationResult(record=record, raw_response="grounded", error=None)

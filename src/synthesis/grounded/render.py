@@ -181,6 +181,37 @@ def _compose_headline(head: KeyJudgment, mode: str) -> str:
     return lead + head.implication if head.implication else lead
 
 
+def _next_grounded_candidate(ranked: list[KeyJudgment], head: KeyJudgment) -> KeyJudgment | None:
+    """headline 筆頭以外で接地ゲートを通る salience 次点 (反復抑制の「次いで注視」用)。"""
+    from src.assessment.salience import is_headline_grounded
+
+    for j in ranked:
+        if j.id != head.id and is_headline_grounded(j):
+            return j
+    return None
+
+
+def _compose_quiet_repeat_headline(head: KeyJudgment, nxt: KeyJudgment | None) -> str:
+    """静穏日に同一 standing 判定が連日 headline に立つ場合の決定論合成 (2026-08-07)。
+
+    実測 (07-08/09、07-18/19) で quiet 日の headline が前日とほぼ同文で再掲され、
+    読者に「また同じ見出し」の既視感と話題偏りの誤知覚を与えていた。同一判定の
+    再掲時は「前日から継続」を明示して短縮し、salience 次点の判定を「次いで注視」
+    として立てる — 継続表示の正直さ (最重要判定は変えない) と新規性を両立する。
+    """
+    conf = _CONF_JA.get(head.confidence, head.confidence)
+    lead = (
+        f"本期間も確度をもって報告できる大きな変化はない"
+        f" (最重要判定は前日から継続: {head.claim} [{conf}])。"
+    )
+    if nxt is None:
+        return lead + head.implication if head.implication else lead
+    n_conf = _CONF_JA.get(nxt.confidence, nxt.confidence)
+    n_label = _hyp_label(nxt.leading_hypothesis)
+    tail = f"次いで注視: {nxt.claim} ({n_label}、{n_conf})。"
+    return lead + tail + nxt.implication if nxt.implication else lead + tail
+
+
 def _guard_headline(sections: _WireSections, head: KeyJudgment | None, mode: str) -> _WireSections:
     """headline の決定論 floor ガード (LLM 自由文への sanity ガードの一環)。"""
     if head is None or len(sections.headline.strip()) >= _HEADLINE_MIN_CHARS:
@@ -250,11 +281,19 @@ def _pir_rollup(judgments: tuple[KeyJudgment, ...]) -> list[dict[str, Any]]:
     return out[:6]
 
 
-async def render_sections(*, llm: LLMClient, est: Estimate, period_label: str) -> _WireSections:
+async def render_sections(
+    *,
+    llm: LLMClient,
+    est: Estimate,
+    period_label: str,
+    prev_headline_judgment_id: str | None = None,
+) -> _WireSections:
     """Estimate のみを入力に、制約付きで narrative セクションを LLM render する。
 
     段C: 判定は salience 決定論順、headline 対象もコードが指名する (LLM は順位を選ばない)。
     新規/変化/継続のグルーピングも決定論 (delta_type) — LLM は変化の散文化のみ。
+    ``prev_headline_judgment_id`` = 前回 (daily は前日) の headline に立った判定 id。
+    quiet 日に同一判定が再掲される場合は決定論の継続表記へ置き換える (反復抑制)。
     """
     from src.assessment.salience import pick_headline, rank_judgments
 
@@ -291,7 +330,25 @@ async def render_sections(*, llm: LLMClient, est: Estimate, period_label: str) -
     sections = await llm.generate_structured(
         prompt, _WireSections, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
     )
-    return _guard_headline(sections, head, mode)
+    sections = _guard_headline(sections, head, mode)
+    # 反復抑制 (2026-08-07): daily の quiet 日に前日と同一の standing 判定が headline へ
+    # 再掲される場合、決定論の「前日から継続 + 次いで注視」合成に置き換える。
+    # moved (実変化) の連日報告は情報価値があるため対象外。
+    if (
+        est.period_type == "daily"
+        and mode == "quiet"
+        and head is not None
+        and prev_headline_judgment_id is not None
+        and head.id == prev_headline_judgment_id
+    ):
+        sections = sections.model_copy(
+            update={
+                "headline": _compose_quiet_repeat_headline(
+                    head, _next_grounded_candidate(ranked, head)
+                )
+            }
+        )
+    return sections
 
 
 async def render_record(
@@ -301,16 +358,29 @@ async def render_record(
     period_label: str,
     article_count: int = 0,
     forecast_ctx: dict[str, Any] | None = None,
+    prev_headline_judgment_id: str | None = None,
 ) -> StatusSynthesisRecord:
     """Estimate を StatusSynthesisRecord に射影 (後方互換のため既存スキーマに乗せる)。
 
     tradecraft=決定論投影、sections=制約付き LLM render。canonical な estimate 本体は
     別途 estimate JSONB に保存する (段5)。axes_evidence は grounded では空 (UI は estimate を見る)。
     """
-    sections = await render_sections(llm=llm, est=est, period_label=period_label)
+    from src.assessment.salience import pick_headline as _pick
+
+    sections = await render_sections(
+        llm=llm,
+        est=est,
+        period_label=period_label,
+        prev_headline_judgment_id=prev_headline_judgment_id,
+    )
     tradecraft = project_tradecraft(est, forecast_ctx=forecast_ctx)
     # canonical estimate を tradecraft に埋め込む (schema 変更回避。段7 UI が ACH/証拠を表示)。
     tradecraft["grounded_estimate"] = estimate_to_dict(est)
+    # 反復抑制用のメタ (schema 変更回避で tradecraft に埋める): 次回生成が
+    # 「前回どの判定が headline に立ったか」を参照する。
+    _head = _pick(est.judgments)
+    if _head is not None:
+        tradecraft["headline_judgment_id"] = _head.id
     return StatusSynthesisRecord(
         period_type=est.period_type,
         period_start=est.period_start,

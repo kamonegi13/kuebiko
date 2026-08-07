@@ -236,6 +236,73 @@ def _daily(*judgments: KeyJudgment) -> Estimate:
     )
 
 
+class TestQuietRepeatSuppression:
+    """静穏日の同一 standing 再掲は「前日から継続 + 次いで注視」へ置換 (2026-08-07)。"""
+
+    @pytest.mark.asyncio
+    async def test_repeat_quiet_headline_is_replaced_with_continuation(self) -> None:
+        est = _daily(
+            _j(
+                id="s-top",
+                claim="中国系APTのスパイ活動が継続",
+                delta_type="no_change",
+                confidence="high",
+            ),
+            _j(id="s-next", claim="Mirai系ボットネットの拡散", delta_type="no_change"),
+        )
+        llm = FakeLLM()
+        out = await render_sections(
+            llm=llm,  # type: ignore[arg-type]
+            est=est,
+            period_label="L",
+            prev_headline_judgment_id="s-top",
+        )
+        assert "前日から継続" in out.headline
+        assert "中国系APTのスパイ活動が継続" in out.headline
+        # salience 次点が「次いで注視」で新規性を供給する
+        assert "次いで注視" in out.headline
+        assert "Mirai系ボットネットの拡散" in out.headline
+
+    @pytest.mark.asyncio
+    async def test_first_quiet_day_is_not_suppressed(self) -> None:
+        # 前日の headline が別判定 (または初日) なら通常の quiet render のまま
+        est = _daily(_j(id="s-top", claim="継続中の情勢", delta_type="no_change"))
+        llm = FakeLLM()
+        out = await render_sections(
+            llm=llm,  # type: ignore[arg-type]
+            est=est,
+            period_label="L",
+            prev_headline_judgment_id="different-id",
+        )
+        assert out.headline == _OK_HEADLINE
+
+    @pytest.mark.asyncio
+    async def test_moved_day_repeat_is_not_suppressed(self) -> None:
+        # 実変化 (moved) の連日報告は情報価値がある — 同一判定でも置換しない
+        est = _daily(_j(id="m1", claim="悪用が拡大", delta_type="escalated"))
+        llm = FakeLLM()
+        out = await render_sections(
+            llm=llm,  # type: ignore[arg-type]
+            est=est,
+            period_label="L",
+            prev_headline_judgment_id="m1",
+        )
+        assert out.headline == _OK_HEADLINE
+
+    @pytest.mark.asyncio
+    async def test_repeat_without_next_candidate_still_marks_continuation(self) -> None:
+        est = _daily(_j(id="s-top", claim="唯一の継続判定", delta_type="no_change"))
+        llm = FakeLLM()
+        out = await render_sections(
+            llm=llm,  # type: ignore[arg-type]
+            est=est,
+            period_label="L",
+            prev_headline_judgment_id="s-top",
+        )
+        assert "前日から継続" in out.headline
+        assert "次いで注視" not in out.headline
+
+
 class TestHeadlineContract:
     """headline の書式モードはコードが決定論指名する (moved/quiet/plain)。"""
 
