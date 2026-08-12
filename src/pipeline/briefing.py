@@ -238,7 +238,14 @@ async def _summarize_and_build(
         _pid = str((summary.routing_flags or {}).get("named_primary_actor") or "").strip()
         provisional_actor_candidates = [
             {"key": c.key, "name": c.raw_name, "signal": c.signal, "excerpt": c.excerpt}
-            for c in harvest_candidates(body=body, primary_actor_id=_pid, registry=actor_registry)
+            for c in harvest_candidates(
+                body=body,
+                primary_actor_id=_pid,
+                registry=actor_registry,
+                # カテゴリ混同遮断 (2026-08-13): 同記事で malware/tool として抽出済みの
+                # 名前が主体名フィールド経由でアクター候補化されるのを自己整合で防ぐ
+                known_non_actor_names=[*summary.malware_families, *summary.tools],
+            )
         ]
     if len(merged_iocs) > len(summary.iocs) or len(merged_techs) > len(summary.mitre_techniques):
         _log.info(

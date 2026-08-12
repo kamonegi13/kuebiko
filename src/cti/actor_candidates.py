@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -69,6 +70,101 @@ _GEOPOLITICAL_EXTRA: frozenset[str] = frozenset(
     {"u.s", "u.s.", "u.k", "e.u", "nato", "un", "eu", "hezbollah", "houthis", "hamas", "taliban"}
 )
 
+# named_primary_actor 由来の非アクター汚染対策 (2026-08-13 カテゴリ混同監査):
+# 承認キュー実測で 人物 (Putin/Kim Jong Un)・政党・一般企業/防衛産業/AI 企業・AI モデル名・
+# 形容詞的総称が新興アクター候補に混入していた。列挙不能な长尾は人レビューに残すが、
+# 実測で頻出した曖昧さゼロの非アクターのみここで決定論遮断する (SSoT、purge script と共有)。
+_KNOWN_NON_ACTOR_NAMES: frozenset[str] = frozenset(
+    {
+        # AI 企業・モデル名 (AI 記事で LLM が主体として答えがち)
+        "openai",
+        "anthropic",
+        "claude",
+        "chatgpt",
+        "gemini",
+        "copilot",
+        "mythos",
+        "mythos 5",
+        "poison claude",
+        "grok",
+        # 一般企業・防衛産業 (被害/供給側であり攻撃主体ではない)
+        "microsoft",
+        "google",
+        "apple",
+        "amazon",
+        "meta",
+        "boeing",
+        "lockheed martin",
+        "l3harris",
+        "spacex",
+        "alibaba",
+        "tencent",
+        "shield ai",
+        "edge group",
+        "iai",
+        "silent push",
+        # 人物 (政治家・要人)
+        "trump",
+        "donald trump",
+        "putin",
+        "vladimir putin",
+        "kim jong un",
+        "kim yo jong",
+        "xi jinping",
+        "biden",
+        # 政府・軍の総称 (suffix 一致で拾えない形)
+        "pentagon",
+        "pla",
+        "chinese communist party",
+        # 形容詞的総称
+        "russian",
+        "chinese",
+        "iranian",
+        "north korean",
+        "russian hackers",
+        "chinese hackers",
+        "iranian hackers",
+        "north korean hackers",
+    }
+)
+
+# 既知アクターの版数亜種 ("LockBit5"/"LockBit 3.0" 等) を親名へ畳む正規表現。
+# 末尾の v?数字(.数字)? を 1 回だけ剥がし、剥がした残りが辞書一致なら候補化しない。
+_VERSION_SUFFIX_RE = re.compile(r"[\s\-_]*v?\d+(?:\.\d+)?$")
+
+
+def _malware_vocab_knows(name: str) -> bool:
+    """config/malware_aliases.yaml の malware/tool 語彙に一致するか (ツール名遮断)。
+
+    「tool/malware として抽出されるべき語彙がアクター候補に流れる」カテゴリ混同
+    (ConsentFix v3 事案) のグローバル辞書側の防波堤。per-article の抽出結果は
+    ``harvest_candidates(known_non_actor_names=...)`` で併せて突合する。
+    """
+    try:
+        from src.cti.malware_normalizer import load_malware_normalizer
+
+        return load_malware_normalizer().knows_name(name)
+    except Exception:  # noqa: BLE001 — 語彙欠落で harvest 自体は殺さない
+        return False
+
+
+def is_known_non_actor(key: str, registry: ActorAliasRegistry | None = None) -> bool:
+    """正規化済み候補 key が「アクターではない」と決定論判定できるか (純粋関数)。
+
+    取込 filter (harvest_candidates) / 掃除 script (scripts/purge_non_actor_provisional.py)
+    が共有する SSoT。判定: 常套句・頻出非アクター (企業/人物/AI モデル)・malware/tool 語彙・
+    既知アクターの版数亜種 (registry 指定時、"LockBit5" → lockbit)。
+    """
+    if key in _NON_ACTOR_TOKENS or key in _KNOWN_NON_ACTOR_NAMES:
+        return True
+    if _malware_vocab_knows(key):
+        return True
+    if registry is not None:
+        stripped = _VERSION_SUFFIX_RE.sub("", key).strip()
+        if stripped and stripped != key and registry.knows_name(stripped):
+            return True
+    return False
+
 
 @lru_cache(maxsize=1)
 def _country_name_keys() -> frozenset[str]:
@@ -119,18 +215,29 @@ def _excerpt(body: str, name: str) -> str:
 
 
 def harvest_candidates(
-    *, body: str, primary_actor_id: str, registry: ActorAliasRegistry
+    *,
+    body: str,
+    primary_actor_id: str,
+    registry: ActorAliasRegistry,
+    known_non_actor_names: Collection[str] = (),
 ) -> list[ActorCandidate]:
     """1 記事から辞書未収録の新興アクター候補を採取する (登場順・dedup 済み)。
 
     既知アクター (ambiguous 含む) は ``registry.knows_name`` で除外。確定帰属は辞書ゲートのまま。
+    ``known_non_actor_names`` = 同じ記事から malware/tool として抽出済みの名前群 —
+    LLM が主体名フィールドにツール名を返すカテゴリ混同 (ConsentFix v3 事案 2026-08-13) を
+    記事内の自己整合で遮断する。加えて ``is_known_non_actor`` (頻出非アクター・malware 語彙・
+    版数亜種) を全信号に適用する。
     """
     out: list[ActorCandidate] = []
     seen: set[str] = set()
+    article_non_actor = {normalize_actor_key(n) for n in known_non_actor_names if n.strip()}
 
     def _add(raw: str, signal: str) -> None:
         key = normalize_actor_key(raw)
-        if len(key) < _MIN_KEY_LEN or key in seen or key in _NON_ACTOR_TOKENS:
+        if len(key) < _MIN_KEY_LEN or key in seen or key in article_non_actor:
+            return
+        if is_known_non_actor(key, registry):
             return
         if registry.knows_name(raw):  # 既に辞書にある actor は候補化しない
             return

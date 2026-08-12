@@ -59,6 +59,59 @@ class TestHarvest:
         )
         assert cands == []
 
+
+class TestNonActorGuards:
+    """カテゴリ混同遮断 (2026-08-13): ツール/人物/企業/AI モデル名をアクター候補にしない。"""
+
+    def test_same_article_tool_name_not_harvested(self) -> None:
+        # ConsentFix v3 事案: LLM が主体名にツールキット名を返しても、同記事の
+        # malware/tool 抽出結果との突合で遮断する
+        cands = harvest_candidates(
+            body="A new toolkit ConsentFix v3 was released on a criminal forum.",
+            primary_actor_id="ConsentFix v3",
+            registry=_registry(),
+            known_non_actor_names=["ConsentFix v3", "SpecterPortal"],
+        )
+        assert all(c.key != "consentfix v3" for c in cands)
+
+    def test_global_malware_vocab_not_harvested(self) -> None:
+        # config/malware_aliases.yaml の語彙 (PlayCrypt = Play ransomware) は候補化しない
+        cands = harvest_candidates(
+            body="PlayCrypt continues to spread.",
+            primary_actor_id="PlayCrypt",
+            registry=_registry(),
+        )
+        assert cands == []
+
+    def test_version_suffix_of_known_actor_absorbed(self) -> None:
+        # 既知アクターの版数亜種 ("Salt Typhoon 2") は新顔として拾わない
+        cands = harvest_candidates(
+            body="Researchers describe Salt Typhoon 2 activity.",
+            primary_actor_id="Salt Typhoon 2",
+            registry=_registry(),
+        )
+        assert cands == []
+
+    def test_known_non_actor_names_blocked(self) -> None:
+        # 頻出の非アクター (AI 企業・人物・形容詞的総称) は決定論遮断
+        for name in ("OpenAI", "Vladimir Putin", "Russian Hackers", "Pentagon"):
+            cands = harvest_candidates(
+                body=f"{name} was mentioned in the report.",
+                primary_actor_id=name,
+                registry=_registry(),
+            )
+            assert cands == [], name
+
+    def test_legit_new_actor_still_harvested(self) -> None:
+        # 遮断の副作用で正当な新顔まで殺していないこと
+        cands = harvest_candidates(
+            body="A group calling itself Crimson Mantis claimed the intrusion.",
+            primary_actor_id="Crimson Mantis",
+            registry=_registry(),
+            known_non_actor_names=["SpecterPortal"],
+        )
+        assert any(c.key == "crimson mantis" and c.signal == "llm_primary" for c in cands)
+
     def test_known_alias_not_harvested(self) -> None:
         cands = harvest_candidates(
             body="The actor GhostEmperor returned.",
