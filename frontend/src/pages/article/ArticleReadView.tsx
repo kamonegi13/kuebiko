@@ -453,6 +453,13 @@ export function ArticleReadView({
                   : "未評価"}
               </div>
             )}
+            {/* 主題判定の根拠 (2026-08-13): 「正しい未帰属」を取りこぼしと区別できるようにする。
+                title 層確定時は出さない (根拠文は LLM 層の判定説明のため齟齬しうる)。 */}
+            {a.subject_actor_rationale && a.subject_actor_source !== "title" && (
+              <div className="text-fg-subtle text-xs mt-1 leading-relaxed">
+                └ 判定根拠: {a.subject_actor_rationale}
+              </div>
+            )}
           </div>
           {data.entities.length === 0 && (
             <div className="text-fg-subtle text-sm">抽出されたエンティティはありません</div>

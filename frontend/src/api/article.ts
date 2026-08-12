@@ -58,6 +58,8 @@ export interface ArticleDetail {
   subject_actors: { id: string; label: string }[];
   subject_actor_source: string | null;
   subject_actor_confidence: string | null;
+  /** 主題判定の根拠 (LLM 層、2026-08-13)。「正しい未帰属」の理由を可視化する。 */
+  subject_actor_rationale: string | null;
   // 記事タイプ (breaking/advisory/recap/…、judgment_classifier 由来)。
   article_type: string | null;
 }

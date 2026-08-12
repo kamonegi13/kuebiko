@@ -92,6 +92,16 @@ METRICS: tuple[FillMetric, ...] = (
         "a.llm_primary_actor_raw IS NOT NULL AND a.llm_primary_actor_raw <> ''",
         _CYBER,
     ),
+    # 主題判定の根拠文 (2026-08-13 可視化、新分析列の 3 点セット規約): 消費者=記事詳細の
+    # 判定根拠表示。プロンプトは「主題なし時は必須」— 供給が枯れると「正しい未帰属」が
+    # また取りこぼしと区別できなくなるため充足率を常設監視する。cyber 系のみ対象
+    # (判定分類器の走る母集団に合わせる)。
+    FillMetric(
+        "subject_rationale",
+        "主題判定根拠",
+        "a.subject_actor_rationale IS NOT NULL AND a.subject_actor_rationale <> ''",
+        _CYBER,
+    ),
     # 本文完全性 (2026-07-27, docs/body_extraction_and_entity_integrity_redesign.md §2.3):
     # 全文取得の成功率を常設監視。切り株 (feed_summary) が「生まれつき 0%」(GBHackers 型) の
     # 供給断や、UA 陳腐化による急落を検出する。full=全文取得済 (full/playwright/prefetch/scraper)。

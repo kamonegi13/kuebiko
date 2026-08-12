@@ -496,6 +496,10 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
             "subject_actors": subject_actors,
             "subject_actor_source": a.subject_actor_source,
             "subject_actor_confidence": a.subject_actor_confidence,
+            # 主題判定の根拠文 (2026-08-13 可視化)。「正しい未帰属」を取りこぼしと
+            # 区別できるようにする (ConsentFix v3 事案)。title 層確定時は表示しない
+            # (根拠は LLM 層の判定説明のため) — 出し分けは frontend。
+            "subject_actor_rationale": a.subject_actor_rationale,
             # 記事タイプ (breaking/advisory/recap/…、judgment_classifier 由来)。
             "article_type": a.article_type,
             "victim_sector": a.victim_sector_canonical,

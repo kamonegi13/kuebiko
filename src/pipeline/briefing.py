@@ -148,6 +148,9 @@ async def _summarize_and_build(
         # recap は多アクター列挙で単一主体を持たないため付けない。
         if _j.named_primary_actor and _j.article_type != "recap":
             _rf["named_primary_actor"] = _j.named_primary_actor
+        # 主題判定の根拠 (2026-08-13 可視化): 特に「主題なし」の理由を記事詳細へ届ける
+        if _j.subject_rationale and _j.article_type != "recap":
+            _rf["subject_rationale"] = _j.subject_rationale
         summary = summary.model_copy(
             update={
                 "editorial_stance": _j.editorial_stance,

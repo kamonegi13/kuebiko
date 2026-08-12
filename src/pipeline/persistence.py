@@ -118,6 +118,7 @@ def _persist_article_outcomes(
         # 承認時に全期間の LLM 出力へ遡及帰属でき、層の死活も fill-rate 監査で観測できる。
         llm_primary_raw_val: str | None = None
         llm_primary_conf_val: str | None = None
+        subject_rationale_val: str | None = None
         if msg is not None:
             axes_obj = msg.metadata.get("pmesii_axes")
             if isinstance(axes_obj, list):
@@ -166,6 +167,8 @@ def _persist_article_outcomes(
                 # gated primary_actor_id を入れていたため cyber 記事で 0.35% に枯死していた。
                 llm_primary_raw_val = str(_rf.get("named_primary_actor") or "").strip() or None
                 llm_primary_conf_val = str(_rf.get("confidence") or "").strip() or None
+                # 主題判定の根拠文 (2026-08-13 可視化)。特に「主題なし」の理由を記事詳細へ
+                subject_rationale_val = str(_rf.get("subject_rationale") or "").strip() or None
                 _det_raw = msg.metadata.get("detected_actor_ids")
                 _det = [str(x) for x in _det_raw] if isinstance(_det_raw, list) else []
                 _subj = determine_subject_actors(
@@ -258,6 +261,7 @@ def _persist_article_outcomes(
                     # D1: LLM 層の生入力 (辞書解決前) — 再導出・遡及帰属・監査の基盤
                     llm_primary_actor_raw=llm_primary_raw_val,
                     llm_primary_confidence=llm_primary_conf_val,
+                    subject_actor_rationale=subject_rationale_val,
                     # 記事タイプ (judgment_classifier 由来、metadata 経由)。記事詳細で表示。
                     article_type=(
                         str(msg.metadata.get("article_type"))

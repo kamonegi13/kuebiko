@@ -688,6 +688,9 @@ CREATE INDEX IF NOT EXISTS idx_alias_usage_actor
 -- 被害国スコープ (監査 2026-08-01 ⑥): ISO2 に解決できない "global"/"EU"/複数国の受け皿。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS victim_country_scope TEXT;
 
+-- 主題判定の根拠文 (2026-08-13 可視化): 特に「主題なし」の理由を記事詳細に表示する。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS subject_actor_rationale TEXT;
+
 -- 本文日本語訳のチャンク単位キャッシュ (2026-08-06 resumable 翻訳)。
 -- 詳細コメントは schema_sql.py の同表を参照 (SQLite と対)。
 CREATE TABLE IF NOT EXISTS body_ja_chunks (

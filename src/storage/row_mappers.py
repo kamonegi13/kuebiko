@@ -213,6 +213,7 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         # アクター辞書 D1 (2026-07-26): LLM 層生入力 (保存開始以降のみ非 NULL)
         llm_primary_actor_raw=_opt_text("llm_primary_actor_raw"),
         llm_primary_confidence=_opt_text("llm_primary_confidence"),
+        subject_actor_rationale=_opt_text("subject_actor_rationale"),
         # 本文完全性 (2026-07-27): body の由来 + 全文取得失敗理由 (NULL=保存開始前 or heuristic 前)
         body_source=_opt_text("body_source"),
         extraction_failure_reason=_opt_text("extraction_failure_reason"),

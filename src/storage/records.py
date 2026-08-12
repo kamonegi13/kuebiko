@@ -147,6 +147,9 @@ class ArticleRecord(BaseModel):
     # 全期間の LLM 出力へ遡及帰属できる (docs/actor_observed_history_design.md)。
     llm_primary_actor_raw: str | None = None
     llm_primary_confidence: str | None = None
+    # 主題判定の根拠文 (2026-08-13 可視化)。特に subject_actor_source='none' の理由
+    # (候補アクターは背景言及、等) を記事詳細 UI に表示する。
+    subject_actor_rationale: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None
     socio_political_rationale: str | None = None

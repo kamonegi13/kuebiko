@@ -35,6 +35,8 @@ _ARTICLE_TYPES = ("breaking", "advisory", "recap", "tutorial", "research", "pres
 # 本文がこれ未満なら summary_text を代替入力にする (旧 analysis_axes 分類器と同値)
 _SHORT_BODY_CHARS = 200
 _CONF = ("high", "medium", "low")
+# subject_rationale の表示用上限 (プロンプトは 80 字指示、暴走出力の防御は倍余裕)
+_RATIONALE_MAX_CHARS = 200
 
 
 class JudgmentOut(BaseModel):
@@ -58,6 +60,10 @@ class JudgmentOut(BaseModel):
     # subject_actor_id (候補ゲート = 辞書内のみ) と別。辞書未収録のブランド名アクター
     # (CyberAv3ngers 等) を harvest → provisional → 人承認 → 辞書 の発見経路に載せる。
     named_primary_actor: str = ""
+    # 主題判定の根拠 (2026-08-13 可視化)。特に主題なし時に「候補アクターは背景言及」等の
+    # 理由を残す — 正しい判定でも根拠が見えないと利用者は取りこぼしと区別できない
+    # (ConsentFix v3 事案)。記事詳細 UI に表示する。
+    subject_rationale: str = ""
 
     def to_diamond_dict(self) -> dict[str, object]:
         """SummaryOutput.diamond と同形 (既存 parse_diamond_axes に流すため — 下流互換)。"""
@@ -136,11 +142,16 @@ OT・ICS・SCADA) への攻撃・脅威・防護・政策に **実質的に** �
 研究者)・国家/政党/軍組織そのもの・「Russian hackers」等の形容詞的総称**。
 「集団としての攻撃主体の固有名」のみ。攻撃者が明確でなければ空文字。
 
+# subject_rationale — 主題判定の根拠 (日本語 1〜2 文、80 字以内)
+なぜその主題判定なのかを簡潔に。**主題なし (subject_actor_id が空) の場合は必須**:
+候補アクターが本文でどういう位置付けか (出自・比較・過去事例などの背景言及なのか) と、
+記事の実際の主語が何かを書く。
+
 # 出力 (JSON のみ、前置き禁止)
 {{"editorial_stance":"...","article_type":"...","intent":"...","confidence":"low",
 "rationale":null,"technical":null,"event_date":null,"event_date_basis":null,
 "compromise_date":null,"i_infra":false,"subject_actor_id":"","subject_confidence":"low",
-"named_primary_actor":""}}
+"named_primary_actor":"","subject_rationale":""}}
 
 # 記事
 カテゴリ: {category}
@@ -217,6 +228,10 @@ async def classify_judgment(
     cleaned_named = _sanitize_named_actor(out.named_primary_actor)
     if cleaned_named != out.named_primary_actor:
         out = out.model_copy(update={"named_primary_actor": cleaned_named})
+    # 根拠文は表示用の短文に制限 (暴走出力の防御。UI は 1〜2 文想定)
+    rationale = " ".join(out.subject_rationale.split())[:_RATIONALE_MAX_CHARS]
+    if rationale != out.subject_rationale:
+        out = out.model_copy(update={"subject_rationale": rationale})
     return out
 
 

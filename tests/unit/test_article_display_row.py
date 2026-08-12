@@ -79,6 +79,27 @@ def test_duplicate_only_article_falls_back_to_newest(repo: RunHistoryRepository)
     assert row.title == "dup 新"
 
 
+def test_subject_actor_rationale_roundtrip(repo: RunHistoryRepository) -> None:
+    # 主題判定の根拠文 (2026-08-13): ArticleRecord → INSERT → mapper の往復
+    rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))
+    repo.add_article(
+        ArticleRecord(
+            run_id=rid,
+            article_id="r1",
+            title="t",
+            url="u",
+            status="posted",
+            subject_actor_source="none",
+            subject_actor_rationale="候補アクターは出自の背景言及であり、記事の主語はツールの解析のため。",
+            created_at=datetime.now(UTC),
+        ),
+    )
+    row = repo.get_article("r1")
+    assert row is not None
+    assert row.subject_actor_rationale is not None
+    assert "背景言及" in row.subject_actor_rationale
+
+
 def test_body_readers_follow_display_row(repo: RunHistoryRepository) -> None:
     _add_row(repo, "a1", status="posted", title="t", summary="s", age_minutes=60)
     _add_row(repo, "a1", status="skipped_duplicate", title="t2", summary=None, age_minutes=1)

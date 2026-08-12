@@ -55,6 +55,26 @@ async def test_out_of_candidate_subject_is_cleared() -> None:
     assert res.subject_actor_id == ""
 
 
+async def test_subject_rationale_preserved_and_trimmed() -> None:
+    # 根拠文 (2026-08-13 可視化) は保持し、暴走出力は表示用上限に切り詰める
+    out = JudgmentOut(
+        subject_actor_id="",
+        subject_rationale="  記事の主語はツールの解析であり、\n候補は背景言及のため。  ",
+    )
+    res = await classify_judgment(
+        _llm(out), title="t", category="apt", body="b", published=None, candidates=_CANDS
+    )
+    assert res is not None
+    assert res.subject_rationale == "記事の主語はツールの解析であり、 候補は背景言及のため。"
+
+    long_out = JudgmentOut(subject_rationale="あ" * 500)
+    res2 = await classify_judgment(
+        _llm(long_out), title="t", category="apt", body="b", published=None, candidates=_CANDS
+    )
+    assert res2 is not None
+    assert len(res2.subject_rationale) == 200
+
+
 async def test_invalid_enums_normalized() -> None:
     out = JudgmentOut(editorial_stance="garbage", article_type="nonsense", confidence="???")
     res = await classify_judgment(

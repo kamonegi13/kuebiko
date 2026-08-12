@@ -288,6 +288,7 @@ class TestArticleRecording:
             "subject_actor_confidence": "high",
             "llm_primary_actor_raw": "Qilin",
             "llm_primary_confidence": "high",
+            "subject_actor_rationale": "候補は背景言及のため主題なし",
             "remediation": "patch",
             "socio_political_rationale": "r",
             "technical_axis_summary": "tech",

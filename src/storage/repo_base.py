@@ -260,7 +260,12 @@ class RunHistoryRepositoryBase:
         # アクター辞書 D1 (2026-07-26): 主題判定 LLM 層の生入力 (summarizer 出力) の永続化。
         # 判定の再導出・新アクター承認時の全期間遡及帰属・層の fill-rate 監査に使う。
         # 行 SELECT + LIKE 走査 (再帰属時のみ) のため index 不要。
-        for col in ("llm_primary_actor_raw", "llm_primary_confidence"):
+        # subject_actor_rationale (2026-08-13): 主題判定の根拠文 (記事詳細で可視化)。
+        for col in (
+            "llm_primary_actor_raw",
+            "llm_primary_confidence",
+            "subject_actor_rationale",
+        ):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
 
