@@ -389,7 +389,7 @@ class TestPostureCards:
         )
         _harvest(store)
 
-        cards = build_standing_posture(db_path=store._repo.db_path)  # noqa: SLF001
+        cards = build_standing_posture(db_path=store._repo.db_path, now=_NOW)  # noqa: SLF001
         assert [c["nation"] for c in cards] == ["cn", "kp", "ru", "ir"]  # seed 順
         cn = cards[0]
         assert cn["assessed"] is True

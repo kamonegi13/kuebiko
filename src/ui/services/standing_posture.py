@@ -26,10 +26,17 @@ _TRAJECTORY_LIMIT = 12
 _EVIDENCE_WINDOW_DAYS = 30
 
 
-def build_standing_posture(db_path: Path = DEFAULT_DB_PATH) -> list[dict[str, Any]]:
-    """常設 4 件の posture カード payload (seed 順、未開設は除外)。"""
+def build_standing_posture(
+    db_path: Path = DEFAULT_DB_PATH, *, now: datetime | None = None
+) -> list[dict[str, Any]]:
+    """常設 4 件の posture カード payload (seed 順、未開設は除外)。
+
+    ``now`` = 30 日証拠窓の基準時刻 (既定は実時刻)。テストは fixture の固定時刻を
+    渡す — 実時刻直書きだと fixture 日付 + 30 日で失効する時限テストになる
+    (2026-08-13 に実際に失効した)。
+    """
     store = SituationStore(db_path=db_path)
-    since = (datetime.now(UTC) - timedelta(days=_EVIDENCE_WINDOW_DAYS)).isoformat()
+    since = ((now or datetime.now(UTC)) - timedelta(days=_EVIDENCE_WINDOW_DAYS)).isoformat()
     cards: list[dict[str, Any]] = []
     for seed in STANDING_SEEDS:
         row = store.get_situation(seed.situation_id)
