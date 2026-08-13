@@ -2761,6 +2761,7 @@ actors:
   - 0ktapus
   - Roasted 0ktapus
   - Storm-0875
+  - Scatter Swine
   description: ソーシャルエンジニアリング多用、英語圏標的の若年層集団
   family: spider
   mitre_group: G1015
@@ -6448,6 +6449,7 @@ actors:
   canonical: UNC6671
   aliases:
   - BlackFile
+  - CL-CRI-1116
   kind: group
   family: null
   mitre_group: null
@@ -7168,3 +7170,99 @@ actors:
   aliases: []
   kind: group
   family: ''
+- id: orova
+  canonical: Orova
+  aliases: []
+  kind: group
+  family: ''
+- id: dark_project
+  canonical: Dark Project
+  aliases: []
+  kind: group
+  family: ''
+- id: panzer
+  canonical: Panzer
+  aliases: []
+  kind: group
+  family: ''
+- id: helix
+  canonical: Helix
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_1175
+  canonical: Storm-1175
+  aliases: []
+  kind: group
+  family: ''
+- id: unc6353
+  canonical: UNC6353
+  aliases: []
+  kind: group
+  family: ''
+- id: ransom_cartel
+  canonical: Ransom Cartel
+  aliases: []
+  kind: group
+  family: ''
+- id: uta0533
+  canonical: Uta0533
+  aliases: []
+  kind: group
+  family: ''
+- id: stac4749
+  canonical: Stac4749
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_0249
+  canonical: Storm-0249
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_0842
+  canonical: Storm-0842
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_2561
+  canonical: Storm-2561
+  aliases: []
+  kind: group
+  family: ''
+- id: aur0ra
+  canonical: Aur0ra
+  aliases: []
+  kind: group
+  family: ''
+- id: toy_ghouls
+  canonical: Toy Ghouls
+  aliases: []
+  kind: group
+  family: ''
+- id: nimbus_manticore
+  canonical: Nimbus Manticore
+  aliases: []
+  kind: group
+  family: ''
+- id: nso_group
+  canonical: NSO Group
+  aliases: []
+  kind: contractor
+  family: null
+  mitre_group: null
+  nation: null
+  sponsor: null
+  sponsor_org: null
+  description: イスラエルの商用スパイウェアベンダ (Pegasus 開発元)。政府顧客への監視ツール供給者として追跡
+  ambiguous: false
+  context_cues: []
+  summary: ''
+  motivation: null
+  first_seen: null
+  target_sectors: []
+  target_regions: []
+  associated_malware:
+  - Pegasus
+  notable_campaigns: []
+  references: []
