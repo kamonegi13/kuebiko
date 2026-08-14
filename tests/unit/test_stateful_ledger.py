@@ -126,6 +126,50 @@ class TestIncrementalGroundAndScore:
         assert got.analysis.implication.startswith("日本の関連企業")
 
     @pytest.mark.asyncio
+    async def test_fired_indicators_not_truncated_to_three(self) -> None:
+        """持ち越しで提示数が増えた分、発火の受理上限も上げる (2026-08-14)。
+
+        旧実装は fired_indicators[:3] 固定だった。20 件提示して 5 件発火した場合に
+        [:3] のままだと 2 件を切り捨て、「照会したのに hit にならない」新たな
+        誤判定を作る。
+        """
+        fired = [f"指標{i}" for i in range(5)]
+        inc = _WireIncremental(
+            leading_hypothesis="organized_state_op", claim="c", fired_indicators=fired
+        )
+        got = await incremental_ground_and_score(
+            llm=FakeLLM(incremental=inc),  # type: ignore[arg-type]
+            situation_title="t",
+            prior=_prior(indicators=tuple(f"指標{i}" for i in range(20))),
+            domain="cyber_incident",
+            sources=[{"article_id": "a1", "feed_title": "f", "text": "本文"}],
+            tier_by_id={},
+        )
+        assert got.fired_indicators == tuple(fired)
+
+    @pytest.mark.asyncio
+    async def test_carried_indicators_reach_the_prompt(self) -> None:
+        """持ち越した古い指標が実際に prompt へ載る (載らなければ照会になっていない)。"""
+        llm = FakeLLM(incremental=_WireIncremental(leading_hypothesis="organized_state_op"))
+        seen: list[str] = []
+        orig = llm.generate_structured
+
+        async def spy(prompt: str, schema: type, **kw: Any) -> Any:
+            seen.append(prompt)
+            return await orig(prompt, schema, **kw)
+
+        llm.generate_structured = spy  # type: ignore[method-assign]
+        await incremental_ground_and_score(
+            llm=llm,  # type: ignore[arg-type]
+            situation_title="t",
+            prior=_prior(indicators=("直近の指標", "3件上限で押し出された古い指標")),
+            domain="cyber_incident",
+            sources=[{"article_id": "a1", "feed_title": "f", "text": "本文"}],
+            tier_by_id={},
+        )
+        assert "3件上限で押し出された古い指標" in seen[0]
+
+    @pytest.mark.asyncio
     async def test_garbled_claim_revision_is_rejected(self) -> None:
         # 実測 (2026-07-04 本番 run): 31B が改訂 claim に簡体字/CJK拡張を混入して保存された
         from src.synthesis.grounded.incremental import is_sane_japanese_claim

@@ -351,10 +351,17 @@ _REGISTRY: dict[str, Vocabulary] = {
         {"increasing": "増加", "decreasing": "減少", "stable": "横ばい"},
         canonical=frozenset({"increasing", "decreasing", "stable"}),
     ),
+    # unevaluated = 情勢が再評価されず指標を一度も照会できなかった (外れではない)。
+    # 的中率の分母から外す — 判定規則の SSoT は assessment/forecast.py `_terminal_status`。
     "forecast_verdict": _vocab(
         "forecast_verdict",
-        {"realized": "現実化", "partial": "部分的", "missed": "外れ"},
-        canonical=frozenset({"realized", "partial", "missed"}),
+        {
+            "realized": "現実化",
+            "partial": "部分的",
+            "missed": "外れ",
+            "unevaluated": "未照会",
+        },
+        canonical=frozenset({"realized", "partial", "missed", "unevaluated"}),
     ),
     # ACH 仮説ラベルは hypotheses.py (値の源泉) から導出 — 静的複製は POSTURE 系 3 仮説の
     # 欠落 (生 ID が UI に漏出) を起こした (2026-07-23)。仮説追加は自動で配信に載る。

@@ -6,7 +6,7 @@
 - claim_type: {{ prior.claim_type }}
 - leading 仮説: {{ prior.leading_hypothesis }} / 確度: {{ prior.confidence }}
 - ACH 集計: {% for h in prior.hypotheses %}{{ h.hypothesis }}(整合{{ h.consistent }}/反整合{{ h.inconsistent }}) {% endfor %}
-- 監視指標 (indicators): {% for i in prior.indicators %}「{{ i }}」 {% endfor %}
+- 監視指標 (indicators, 追跡中の全件・新しい順): {% for i in prior.indicators %}「{{ i }}」 {% endfor %}
 {% if prior.key_excerpts %}- 既存の主要証拠抜粋:
 {% for e in prior.key_excerpts %}  - [{{ e.polarity }}] 「{{ e.excerpt }}」
 {% endfor %}{% endif %}
@@ -31,8 +31,11 @@
    不在の事実 (leading を支持する不在・否定する不在) も対称に拾う。
    **evidence は判定に最も効く 6 件まで・excerpt は各 80 字以内** (全ソースの網羅は不要 —
    出力が長すぎると切断され全体が無効になる。重要度順に絞る)。
-3) 指標照合 (I&W): 前回の監視指標のうち、**新着ソースが該当する事実を含むもの**を
+3) 指標照合 (I&W): 上記の監視指標のうち、**新着ソースが該当する事実を含むもの**を
    fired_indicators に列挙する (該当なしなら空)。指標の文言をそのまま使う。
+   **一覧は直近だけでなく追跡中の全指標**なので、古い指標にも必ず目を通す
+   (件数の上限はない — 該当するものはすべて挙げる)。発火は「観測されたか」だけで
+   判断し、指標の古さを理由に見送らない。
 4) 拡大判定: 新着が**被害・標的・地理・手口の拡大**を示すか (scope_expanded: true/false)。
    単なる続報・再報道は false。
 5) confidence / claim / claim_type / implication:

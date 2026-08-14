@@ -398,6 +398,8 @@ const _VERDICT_TONE: Record<string, string> = {
   realized: "text-accent",
   partial: "text-warning",
   missed: "text-critical",
+  // 未照会は「外れ」ではないので critical にしない (的中率の分母からも外れている)
+  unevaluated: "text-fg-subtle",
 };
 
 function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy }) {
@@ -414,6 +416,16 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
               {" "}
               (現{acc.realized}/部{acc.partial}/外{acc.missed})
             </span>
+            {/* 未照会は分母外。件数を出さないと「測っていない分」が的中率から黙って消える */}
+            {acc.unevaluated > 0 && (
+              <span
+                className="text-fg-subtle"
+                title="情勢が再評価されず、指標を一度も照会できなかった予測。外れではないため的中率の分母から除外している。"
+              >
+                {" "}
+                ＋未照会{acc.unevaluated}(分母外)
+              </span>
+            )}
           </span>
         )}
       </h4>

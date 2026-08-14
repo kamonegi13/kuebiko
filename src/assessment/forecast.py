@@ -7,7 +7,53 @@ render に列挙するだけで、当たったか外れたかを誰も採点し�
 
 - **open**: active Situation の最新 revision の indicator ごとに open forecast を 1 本張る
 - **hit**: 後続 revision の fired_indicators (I&W 照合、既存) に一致 → 的中
-- **expired**: horizon (既定 30 日) 発現なし、または Situation close → 未発現
+- **expired**: 再評価されたが発現しなかった → 真の未発現 (= 外れ)
+- **unevaluated**: 一度も再照会されないまま horizon 到来 / Situation close → **未照会**
+
+較正バグ修正 (2026-08-14)
+------------------------
+hit は「後続 revision の fired_indicators」経由でしか立たない。後続 revision は
+その情勢に新しい記事が来たときにしか生まれないため、**後続 revision が 1 本も無い
+予測は構造的に hit が不可能**。旧実装はこれを expired (= 外れ) と採点していたため、
+的中率が体系的に過小評価されていた。
+
+実測 (2026-08-14, production PG):
+
+===========================  =====  ==========
+区分                          件数   hit
+===========================  =====  ==========
+hit                            235   —
+expired / 後続 revision あり   204   235 件と同母集団
+expired / 後続 revision なし    36   **0 件 (構造的必然)**
+===========================  =====  ==========
+
+的中率 235/475 = 49.5% → 未照会 36 件を分母から外して 235/439 = **53.5%**。
+open 1261 件のうち 231 件が同じ経路 (後続 revision なし) にあり、放置すると
+今後さらに乖離する。
+
+未照会は realized にも missed にも混ぜない (前者は過確信、後者は過小評価)。
+第 3 の verdict として **件数を明示** し、分母から外す — 「測っていないものを
+測ったことにしない」という台帳の正直さ原則に合わせる。
+
+根本治療: 指標の持ち越し (2026-08-14 第 2 弾)
+--------------------------------------------
+上の「照会ゼロ」は病理の極端な端にすぎなかった。増分 ACH が LLM に再提示するのは
+**直前 revision の indicators (最大 3 件)** だけで、revision ごとに 1-3 件が新規生成
+されるため、古い指標は「もう起きない」と判断されたのではなく **3 件上限に押し出されて**
+消える。結果:
+
+    予測の horizon   : 30 日
+    実効的な照会窓   : 直前 revision 1 本分 (実質 1-2 日)
+
+この 28 日のギャップが過小評価の本体だった (open 1261 件中 733 件 = 58% が該当)。
+対処として ``SituationStore.open_indicators_for`` が open な指標を horizon の間
+持ち越して毎回提示し、``mark_forecasts_presented`` が提示の事実を記録する。
+採点は revision の有無からの推測をやめ、この実測カウンタだけを見る。
+
+prompt 肥大の実測 (2026-08-14、reasoning ティア = claudecode:sonnet):
+最悪ケース (open 90 件の情勢を cap=20 で提示) で prompt 10,022 → 10,790 字 (+7.7%)、
+所要は中央 48.4s → 37.4s と**むしろ短く、差は run 間変動に埋没**。出力字数も
+約 2,200 で不変。中央的な情勢 (open 6 件) では +143 字 (+1.4%)。
 
 採点結果は tradecraft (forecast_scorecard) に射影され、既存 UI (ForecastScorecard) と
 forecast_accuracy KPI (較正の実測) がそのまま復活する。LLM は一切呼ばない。
@@ -37,6 +83,12 @@ _MAX_FORECASTS_IN_REPORT = 6
 _STALE_EVIDENCE_DAYS = 7
 
 _CONF_TO_UI = {"high": "high", "moderate": "medium", "low": "low"}
+# forecast の終端状態 → UI/KPI 契約の verdict (語彙 SSoT: vocab registry "forecast_verdict")
+_STATUS_TO_VERDICT = {
+    "hit": "realized",
+    "expired": "missed",
+    "unevaluated": "unevaluated",
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +98,7 @@ class ForecastSyncResult:
     opened: int = 0
     hit: int = 0
     expired: int = 0
+    unevaluated: int = 0
 
 
 def _parse_iso(raw: str) -> datetime | None:
@@ -54,6 +107,22 @@ def _parse_iso(raw: str) -> datetime | None:
         return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return None
+
+
+def _terminal_status(*, presented_count: int, reason: str) -> tuple[str, str]:
+    """未発火の予測を終端状態に落とす (status, note)。判定規則の SSoT。
+
+    ``presented_count`` = この指標を LLM に提示した回数 (store が実測記録)。
+    0 なら照会の機会が一度も無かった = hit は構造的に不可能だったので、
+    外れ (expired) ではなく未照会 (unevaluated) とする。
+
+    当初は「予測を開いた後に revision があったか」で推測していたが、prompt の
+    cap で載せ切れなかった指標を「照会済み」と誤判定するため、提示の事実を
+    直接記録する方式に置き換えた (2026-08-14)。
+    """
+    if presented_count > 0:
+        return "expired", reason
+    return "unevaluated", "指標を一度も照会できないまま終了 (未照会)"
 
 
 def update_forecasts(
@@ -74,8 +143,16 @@ def update_forecasts(
     close 起因の expiry は close イベントと意味的に結び付くため cap 対象外。
     """
     now_iso = now.isoformat()
-    opened = hit = expired = 0
+    opened = hit = 0
     horizon_expired = 0
+    terminal_counts = {"expired": 0, "unevaluated": 0}
+
+    def _score_terminal(row: dict[str, str | int], reason: str) -> None:
+        status, note = _terminal_status(
+            presented_count=int(row.get("presented_count", 0) or 0), reason=reason
+        )
+        store.score_forecast(int(row["id"]), status=status, note=note, scored_at=now_iso)
+        terminal_counts[status] += 1
 
     for row in store.open_forecast_rows():
         sid = str(row["situation_id"])
@@ -91,26 +168,14 @@ def update_forecasts(
             hit += 1
             continue
         if sid in closed_sids:
-            store.score_forecast(
-                int(row["id"]),
-                status="expired",
-                note="情勢クローズにより未発現のまま終了",
-                scored_at=now_iso,
-            )
-            expired += 1
+            _score_terminal(row, "情勢クローズにより未発現のまま終了")
             continue
         if horizon_expired >= max_horizon_expiry:
             continue  # cap 超過分は open のまま次 run で採点 (バースト平準化)
         opened_at = _parse_iso(str(row["opened_at"]))
         horizon = timedelta(days=int(row["horizon_days"]))
         if opened_at is not None and now - opened_at > horizon:
-            store.score_forecast(
-                int(row["id"]),
-                status="expired",
-                note=f"{int(row['horizon_days'])} 日以内に発現せず",
-                scored_at=now_iso,
-            )
-            expired += 1
+            _score_terminal(row, f"{int(row['horizon_days'])} 日以内に発現せず")
             horizon_expired += 1
 
     # 新規 open (既存 open との重複は indicator 完全一致で防止)
@@ -131,12 +196,18 @@ def update_forecasts(
             still_open.add((sid, ind))
             opened += 1
 
-    result = ForecastSyncResult(opened=opened, hit=hit, expired=expired)
+    result = ForecastSyncResult(
+        opened=opened,
+        hit=hit,
+        expired=terminal_counts["expired"],
+        unevaluated=terminal_counts["unevaluated"],
+    )
     _log.info(
         "forecasts_synced",
         opened=opened,
         hit=hit,
-        expired=expired,
+        expired=result.expired,
+        unevaluated=result.unevaluated,
         open_total=len(still_open),
     )
     return result
@@ -201,19 +272,27 @@ def build_forecast_context(
     scorecard = [
         {
             "claim": _label(s["situation_id"], s["indicator"]),
-            "verdict": "realized" if s["status"] == "hit" else "missed",
+            "verdict": _STATUS_TO_VERDICT.get(s["status"], "missed"),
             "reason": s["note"],
         }
         for s in scored
     ]
 
     n_hit = sum(1 for s in scored if s["status"] == "hit")
-    n_miss = len(scored) - n_hit
+    n_unevaluated = sum(1 for s in scored if s["status"] == "unevaluated")
+    n_miss = len(scored) - n_hit - n_unevaluated
     if scored:
         alignment = (
             f"本期間に監視指標 {n_hit} 件が発火 (予測的中)、"
             f"{n_miss} 件が未発現のまま期限切れ。open 予測 {len(open_rows)} 件を追跡中。"
         )
+        if n_unevaluated:
+            # 未照会を黙って落とすと「測っていないもの」が的中率から消えるだけになる。
+            # 件数を明示して、分母から外したことを読者に見えるようにする。
+            alignment += (
+                f" 別に {n_unevaluated} 件は情勢が再評価されず未照会のまま終了 "
+                "(的中率の分母から除外)。"
+            )
     else:
         alignment = (
             f"本期間に採点対象の予測はない (open 予測 {len(open_rows)} 件を追跡中)。"

@@ -133,7 +133,11 @@ CREATE TABLE IF NOT EXISTS situation_forecasts (
     horizon_days INTEGER NOT NULL DEFAULT 30,
     status       TEXT    NOT NULL DEFAULT 'open',
     scored_at    TEXT,
-    note         TEXT
+    note         TEXT,
+    -- 較正 (2026-08-14): この指標を LLM に何回提示したか。0 = 一度も照会していない
+    -- → 未発火でも外れとは採点できない (unevaluated)。判定 SSoT は forecast.py
+    -- _terminal_status。revision の有無から推測せず「提示した事実」を直接記録する。
+    presented_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_situation_forecasts_open

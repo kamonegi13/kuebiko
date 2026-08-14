@@ -62,6 +62,7 @@ from src.synthesis.grounded.estimate import (
 )
 from src.synthesis.grounded.hypotheses import POSTURE_HYPOTHESES
 from src.synthesis.grounded.incremental import (
+    CARRIED_INDICATORS_MAX,
     PriorJudgmentView,
     detect_new_claims,
     incremental_ground_and_score,
@@ -145,7 +146,18 @@ def _select_sweep_targets(
     return selected, len(candidates) - len(selected)
 
 
-def _prior_view(rev: RevisionRow, excerpts: list[dict[str, str]]) -> PriorJudgmentView:
+def _prior_view(
+    rev: RevisionRow,
+    excerpts: list[dict[str, str]],
+    *,
+    carried: tuple[str, ...] = (),
+) -> PriorJudgmentView:
+    """台帳の latest revision から増分 prompt 用の前回判定ビューを作る。
+
+    ``carried`` = まだ open な監視指標 (horizon 内)。直前 revision の indicators を
+    先頭に置き、持ち越し分を後ろに重複排除して連結する — 最新の watch list を
+    優先しつつ、押し出された過去指標も照会対象に残す。
+    """
     hyps = tuple(
         {
             "hypothesis": str(h.get("hypothesis", "")),
@@ -160,7 +172,14 @@ def _prior_view(rev: RevisionRow, excerpts: list[dict[str, str]]) -> PriorJudgme
         leading_hypothesis=rev.leading_hypothesis,
         confidence=rev.confidence,
         hypotheses=hyps,
-        indicators=tuple(json.loads(rev.indicators_json or "[]")),
+        indicators=tuple(
+            dict.fromkeys(
+                [
+                    *(str(i) for i in json.loads(rev.indicators_json or "[]")),
+                    *carried,
+                ]
+            )
+        )[:CARRIED_INDICATORS_MAX],
         key_excerpts=tuple(excerpts),
     )
 
@@ -731,11 +750,19 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 }
             )
             continue
+        # 指標の持ち越し: open な予測は horizon の間ずっと再提示する。直前 revision の
+        # 3 件だけを見せる旧挙動では、3 件上限に押し出された指標が照会されないまま
+        # 30 日後に「外れ」と採点されていた ([[forecast.py]] module docstring 参照)。
+        prior_view = _prior_view(
+            prev,
+            store.evidence_excerpts(sid),
+            carried=store.open_indicators_for(sid, limit=CARRIED_INDICATORS_MAX),
+        )
         try:
             inc = await incremental_ground_and_score(
                 llm=llm,
                 situation_title=row.title,
-                prior=_prior_view(prev, store.evidence_excerpts(sid)),
+                prior=prior_view,
                 domain=row.domain,
                 sources=sources,
                 tier_by_id=tier_by_id,
@@ -744,6 +771,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))
             continue
+        # 提示できた指標だけに印を付ける (cap で載らなかった分は未照会のまま = 外れにしない)
+        store.mark_forecasts_presented(sid, prior_view.indicators)
         pending.append(
             {
                 "kind": "update",

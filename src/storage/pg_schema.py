@@ -546,6 +546,9 @@ CREATE TABLE IF NOT EXISTS situation_forecasts (
     scored_at    TEXT,
     note         TEXT
 );
+-- 較正 (2026-08-14): この指標を LLM に何回提示したか。0 = 一度も照会していない
+-- → 未発火でも外れとは採点できない (unevaluated)。判定 SSoT は forecast.py _terminal_status。
+ALTER TABLE situation_forecasts ADD COLUMN IF NOT EXISTS presented_count INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_situation_forecasts_open
     ON situation_forecasts(situation_id, status);
 CREATE INDEX IF NOT EXISTS idx_situation_forecasts_scored

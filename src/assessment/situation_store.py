@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -340,6 +341,21 @@ class SituationStore:
         if r is None:
             return None
         return self._row_to_revision(r)
+
+    def revision_latest_created_at(self) -> dict[str, str]:
+        """situation_id → 最新 revision の created_at (revision の無い sid は含まない)。
+
+        forecast 採点で「予測を開いた後にその情勢が再評価されたか」を判定するのに使う
+        (較正バグ修正 2026-08-14)。全 situation を 1 クエリで返す — 対象は数百件規模で、
+        sid ごとの N+1 クエリを避ける。集約 + GROUP BY のみなので PG/SQLite 双方で可搬
+        (bare column の GROUP BY は PG で落ちるため使わない)。
+        """
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT situation_id, MAX(created_at) AS last_created_at"
+                " FROM situation_revisions GROUP BY situation_id"
+            ).fetchall()
+        return {str(r["situation_id"]): str(r["last_created_at"] or "") for r in rows}
 
     def latest_revision(self, situation_id: str) -> RevisionRow | None:
         with self._repo._connect() as conn:  # noqa: SLF001
@@ -692,7 +708,7 @@ class SituationStore:
         """status='open' の forecast 全件 (採点と重複防止の照合用)。"""
         with self._repo._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
-                "SELECT id, situation_id, indicator, opened_at, horizon_days "
+                "SELECT id, situation_id, indicator, opened_at, horizon_days, presented_count "
                 "FROM situation_forecasts WHERE status = 'open'"
             ).fetchall()
         return [
@@ -702,9 +718,45 @@ class SituationStore:
                 "indicator": str(r["indicator"]),
                 "opened_at": str(r["opened_at"]),
                 "horizon_days": int(r["horizon_days"]),
+                "presented_count": int(r["presented_count"] or 0),
             }
             for r in rows
         ]
+
+    def open_indicators_for(self, situation_id: str, *, limit: int) -> tuple[str, ...]:
+        """まだ発火/期限切れしていない監視指標を新しい順に返す (増分 ACH の持ち越し用)。
+
+        直前 revision の indicators (最大 3 件) だけを LLM に再提示していた旧挙動では、
+        指標は 3 件上限に押し出されて 1 回照会されたきり 30 日の horizon を待つだけになり、
+        「30 日の予測を 1 日しか見ない」不整合が生じていた。open な予測は horizon の間
+        持ち越して毎回照会する。``limit`` は prompt 有界化のための上限。
+        """
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT indicator FROM situation_forecasts"
+                " WHERE situation_id = ? AND status = 'open'"
+                " ORDER BY opened_at DESC, id DESC LIMIT ?",
+                (situation_id, limit),
+            ).fetchall()
+        return tuple(str(r["indicator"]) for r in rows)
+
+    def mark_forecasts_presented(self, situation_id: str, indicators: Sequence[str]) -> int:
+        """指定の指標を「LLM に提示した」と記録する (presented_count += 1)。返り値=更新行数。
+
+        採点規則がこのカウンタを見るため、**実際に prompt に載せた指標だけ**を渡すこと
+        (cap で載せ切れなかった分に印を付けると、照会していない予測を外れと採点してしまう)。
+        """
+        names = [i.strip() for i in indicators if i.strip()]
+        if not names:
+            return 0
+        placeholders = ",".join("?" for _ in names)
+        with self._repo._connect() as conn:  # noqa: SLF001
+            cur = conn.execute(
+                "UPDATE situation_forecasts SET presented_count = presented_count + 1"
+                f" WHERE situation_id = ? AND status = 'open' AND indicator IN ({placeholders})",
+                (situation_id, *names),
+            )
+            return int(cur.rowcount if cur.rowcount is not None else 0)
 
     def open_forecast(
         self,
@@ -722,7 +774,11 @@ class SituationStore:
             )
 
     def score_forecast(self, forecast_id: int, *, status: str, note: str, scored_at: str) -> None:
-        """open forecast を hit/expired に採点する。"""
+        """open forecast を hit/expired/unevaluated に採点する。
+
+        unevaluated = 一度も再照会されないまま終了 (外れではない)。
+        判定規則は forecast.py の ``_terminal_status`` が SSoT。
+        """
         with self._repo._connect() as conn:  # noqa: SLF001
             conn.execute(
                 "UPDATE situation_forecasts SET status = ?, note = ?, scored_at = ? "
@@ -736,7 +792,8 @@ class SituationStore:
             rows = conn.execute(
                 "SELECT situation_id, indicator, status, note, scored_at "
                 "FROM situation_forecasts "
-                "WHERE status IN ('hit', 'expired') AND scored_at >= ? AND scored_at < ? "
+                "WHERE status IN ('hit', 'expired', 'unevaluated') "
+                "AND scored_at >= ? AND scored_at < ? "
                 "ORDER BY scored_at DESC",
                 (start_iso, end_iso),
             ).fetchall()

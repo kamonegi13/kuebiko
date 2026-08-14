@@ -400,7 +400,7 @@ async def get_synthesis(period_type: str = "weekly") -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — overlay 失敗で synthesis 表示自体は壊さない
         _log.warning("synthesis_ledger_overlay_failed", error=str(e)[:150])
     # B(2): 直近 forecast_scorecard を集計し予測の的中率 (calibration) を返す。
-    realized = partial = missed = 0
+    realized = partial = missed = unevaluated = 0
     try:
         for rec in repo.list_synthesis(period_type=period_type, limit=10):
             tc = json.loads(rec.tradecraft) if rec.tradecraft else {}
@@ -412,13 +412,20 @@ async def get_synthesis(period_type: str = "weekly") -> dict[str, Any]:
                     partial += 1
                 elif verdict == "missed":
                     missed += 1
+                elif verdict == "unevaluated":
+                    unevaluated += 1
     except (json.JSONDecodeError, ValueError, TypeError):
         pass
+    # 較正バグ修正 (2026-08-14): unevaluated は「情勢が再評価されず指標を一度も
+    # 照会できなかった」= 構造的に hit 不能だった予測。外れとして分母に入れると
+    # 的中率が体系的に過小評価される (詳細: assessment/forecast.py の module docstring)。
+    # 分母から外し、除外件数は別項として返す (黙って落とさない)。
     scored = realized + partial + missed
     forecast_accuracy = {
         "realized": realized,
         "partial": partial,
         "missed": missed,
+        "unevaluated": unevaluated,
         "scored": scored,
         # partial は半分カウント (realized + 0.5*partial) / scored。
         "hit_rate_pct": round(100 * (realized + 0.5 * partial) / scored) if scored else None,

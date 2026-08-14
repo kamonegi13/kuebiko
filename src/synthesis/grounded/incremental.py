@@ -42,6 +42,11 @@ _log = get_logger(__name__)
 
 # 増分 prompt に含める既存証拠抜粋の上限 (prompt 有界化。全証拠は DB にあり UI で参照可)
 _PRIOR_EXCERPTS_MAX = 5
+# 増分 ACH に再提示する監視指標の上限/Situation (持ち越しの prompt 有界化、2026-08-14)。
+# 提示数の上限であると同時に fired_indicators の受理上限でもある (提示した分は
+# すべて発火しうる)。active 情勢の open 予測は中央 6 / p90 22 / 最大 90 件で、
+# 20 なら 9 割の情勢を全量カバーする。実測負荷は forecast.py の module docstring 参照。
+CARRIED_INDICATORS_MAX = 20
 _DETECT_OPEN_MAX = 5  # 1 run の新規開設上限 (超過分は log、翌 run に再浮上して回復可能)
 
 # claim 改訂の文字化けガード (実測: 31B が改訂 claim に簡体字/拡張漢字を混入し
@@ -200,7 +205,12 @@ async def incremental_ground_and_score(
     return IncrementalAnalysis(
         analysis=analysis,
         claim=revised or prior.claim,
-        fired_indicators=tuple(s.strip() for s in a.fired_indicators[:3] if s.strip()),
+        # 発火は提示した指標数まで許す。持ち越し導入前は提示が最大 3 件だったため
+        # [:3] で足りていたが、そのままだと 4 件目以降の発火を切り捨てて
+        # 「照会したのに hit にならない」新たな誤判定を作る (2026-08-14)。
+        fired_indicators=tuple(
+            s.strip() for s in a.fired_indicators[:CARRIED_INDICATORS_MAX] if s.strip()
+        ),
         scope_expanded=bool(a.scope_expanded),
     )
 

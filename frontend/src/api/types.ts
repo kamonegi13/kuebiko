@@ -315,6 +315,8 @@ export interface ForecastAccuracy {
   realized: number;
   partial: number;
   missed: number;
+  /** 情勢が再評価されず指標を一度も照会できなかった件数。scored (分母) には含まれない。 */
+  unevaluated: number;
   scored: number;
   hit_rate_pct: number | null;
 }
