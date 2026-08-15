@@ -59,6 +59,8 @@ READ_ONLY_GET_DENYLIST: tuple[str, ...] = (
     "/api/v1/product-routing",
     # 監査証跡そのものを公開面に出さない (2026-08-02)
     "/api/v1/access-audit",
+    # 収集関心の詳細 (Grok タスクプロンプト写し) を公開面に出さない (2026-08-15)
+    "/api/v1/grok/tasks",
 )
 
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に

@@ -16,6 +16,7 @@ import { AddSourceWizardV2 } from "../components/AddSourceWizardV2";
 // 設定・死活の画面統合 P2/P4: 旧 /app/health から移設し、ソースと同じ画面で一体管理。
 import { GrokMailCard } from "../components/GrokMailCard";
 import { GrokSessionCard } from "../components/GrokSessionCard";
+import { GrokTasksCard } from "../components/GrokTasksCard";
 import { Spinner } from "../components/Spinner";
 import { formatJstDate } from "../utils/date";
 import { useChannelMeta } from "../components/channel";
@@ -239,6 +240,7 @@ export function SubscriptionsPage() {
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <GrokMailCard readOnly={read_only} />
         <GrokSessionCard />
+        <GrokTasksCard readOnly={read_only} />
       </div>
 
       {/* Phase D: Bulk action toolbar — selected > 0 で出現 (readonly では非表示) */}

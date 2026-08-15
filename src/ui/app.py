@@ -604,6 +604,7 @@ def create_app() -> FastAPI:
     from src.ui.api.geo import geo_api
     from src.ui.api.grok_mail import grok_mail_api
     from src.ui.api.grok_session import grok_session_api
+    from src.ui.api.grok_tasks import grok_tasks_api
     from src.ui.api.jobs import jobs_api
     from src.ui.api.jp_ci_board import jp_ci_board_api
     from src.ui.api.jp_ci_operators import jp_ci_operators_api
@@ -633,6 +634,7 @@ def create_app() -> FastAPI:
     app.include_router(channels_api)
     app.include_router(grok_mail_api)
     app.include_router(grok_session_api)
+    app.include_router(grok_tasks_api)
     app.include_router(product_routing_api)
     app.include_router(model_tiers_api)
     app.include_router(jp_ci_board_api)

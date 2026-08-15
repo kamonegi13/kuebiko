@@ -36,6 +36,24 @@ async function getJson<T>(path: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+// Grok タスク定義 (外部 Grok 側スケジュールタスクの写し、2026-08-15)。
+// SSoT は Grok 側 — kuebiko は記録用の写しを DB 版保存するのみ。
+export interface GrokTaskDef {
+  id: string;
+  name: string;
+  schedule: string;
+  window: string;
+  prompt: string;
+  note: string;
+  synced_at: string;
+}
+
+export interface GrokTasksResponse {
+  tasks: GrokTaskDef[];
+  version?: number;
+  saved_at?: string;
+}
+
 export const grokApi = {
   sessionStatus: () => getJson<GrokSessionStatus>("/api/v1/grok/session"),
   verify: async (): Promise<GrokVerifyResult> => {
@@ -45,5 +63,19 @@ export const grokApi = {
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json() as Promise<GrokVerifyResult>;
+  },
+  tasks: () => getJson<GrokTasksResponse>("/api/v1/grok/tasks"),
+  saveTasks: async (tasks: GrokTaskDef[]): Promise<{ saved: boolean; version: number }> => {
+    const r = await fetch("/api/v1/grok/tasks", {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks }),
+    });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => "");
+      throw new Error(`HTTP ${r.status}${detail ? `: ${detail}` : ""}`);
+    }
+    return r.json() as Promise<{ saved: boolean; version: number }>;
   },
 };

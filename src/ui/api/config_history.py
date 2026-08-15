@@ -40,6 +40,7 @@ _KNOWN_KEYS: dict[str, str] = {
     "llm_endpoints": "LLM 接続先 (OpenAI 互換エンドポイント)",
     "jp_ci_operators": "重要インフラ 指定事業者名簿",
     "dashboard_layout": "ダッシュボード レイアウト (widget 配置 + 共有既定 config)",
+    "grok_tasks": "Grok タスク定義 (外部 Grok 側設定の写し)",
 }
 
 # 一覧で版数を数える上限 (config 保存は低頻度なので十分大きい固定値)。
