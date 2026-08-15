@@ -337,3 +337,70 @@ class TestExposedFlags:
         s2 = _sig(mentions_japan=False)
         d2 = evaluate_routing_rules(s2, get_source_quality(), {}, rules=rules)
         assert d2 is not None and d2.channel == "watch"
+
+
+class TestEarlyWarningRules:
+    """早期警戒 (I&W) の alert 経路 (2026-08-15)。
+
+    alert が「確証済み (KEV/実環境悪用)」だけを扱い、速報・兆候が届かない構造だった。
+    既に算出済みで未配線だった llm_breaking_critical と keyword_list を配線する。
+    希釈を避けるため **日本関連 or 敵性国家アクター** との接続を必須にしている。
+    """
+
+    def _rules(self) -> list[dict[str, object]]:
+        return load_seed_from_yaml()
+
+    def _decide(self, sig: RoutingSignals) -> str:
+        sq = get_source_quality()
+        d = evaluate_routing_rules(sig, sq, {}, rules=self._rules())
+        return d.channel if d else "なし"
+
+    def test_breaking_critical_with_japan_goes_alert(self) -> None:
+        sig = _sig(
+            importance="high",
+            llm_is_breaking_critical=True,
+            is_japan_security_relevant=True,
+            mentions_japan=True,
+            category="incident",
+        )
+        assert self._decide(sig) == "alert"
+
+    def test_early_warning_keyword_with_japan_goes_alert(self) -> None:
+        # 初期アクセス売買・作戦予告など「起きる前」の兆候
+        sig = _sig(
+            article_type="news",
+            mentions_japan=True,
+            category="other",
+            matched_keyword_lists=frozenset({"early_warning"}),
+        )
+        assert self._decide(sig) == "alert"
+
+    def test_early_warning_with_adversary_nation_goes_alert(self) -> None:
+        sig = _sig(
+            article_type="news",
+            category="vulnerability",
+            threat_actor_nations=frozenset({"cn"}),
+            matched_keyword_lists=frozenset({"early_warning"}),
+        )
+        assert self._decide(sig) == "alert"
+
+    def test_early_warning_without_our_interest_stays_watch(self) -> None:
+        # 希釈防止: 日本にも敵性国家にも接続しない兆候は alert に上げない
+        sig = _sig(
+            article_type="news",
+            category="other",
+            matched_keyword_lists=frozenset({"early_warning"}),
+        )
+        assert self._decide(sig) != "alert"
+
+    def test_reading_material_never_alerts(self) -> None:
+        # opinion/recap 等の読み物は速報級判定でも alert に上げない (既存規約の維持)
+        sig = _sig(
+            importance="high",
+            article_type="opinion",
+            llm_is_breaking_critical=True,
+            is_japan_security_relevant=True,
+            mentions_japan=True,
+            category="incident",
+        )
+        assert self._decide(sig) != "alert"

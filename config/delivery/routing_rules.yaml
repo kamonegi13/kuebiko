@@ -43,6 +43,31 @@ rules:
             - {property: kev, op: is_true}
             - {property: zero_day, op: is_true}
 
+  # ---- R2e/R2f: 早期警戒 (I&W) — 確証前の兆候を alert へ (2026-08-15) ----
+  # alert が「確証済み (KEV/実環境悪用)」専用で、速報・予告・売買広告といった
+  # 「まだ起きていないが起きそう」が届かなかった。既に算出済みで未配線だった
+  # llm_breaking_critical / keyword_list を配線する。希釈防止のため
+  # **日本関連 or 敵性国家アクター** との接続を必須にする。
+  - id: R2e.alert_breaking_japan
+    channel: alert
+    when:
+      all:
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+        - {property: llm_breaking_critical, op: is_true}
+        - any:
+            - {property: japan_relevant, op: is_true}
+            - {property: japan_critical, op: is_true}
+  - id: R2f.alert_early_warning
+    channel: alert
+    when:
+      all:
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+        - {property: keyword_list, op: in, value: [early_warning]}
+        - any:
+            - {property: japan_mentioned, op: is_true}
+            - {property: japan_relevant, op: is_true}
+            - {property: actor_nation, op: in, value: [cn, ru, kp, ir]}
+
   # ---- R3: 日本関連弱信号 → japan_watch ----
   - id: R3.inoreader.japan_watch
     channel: japan_watch
