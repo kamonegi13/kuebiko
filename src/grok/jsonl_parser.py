@@ -206,8 +206,11 @@ def parse_jsonl(body: str) -> JsonlParseResult:
             skipped.append(line_stripped[:200])
             continue
 
-        # 事象ゼロ窓のハートビート (追加ルール①)。record でも失敗でもない正常信号
-        if data.get("status") == "no_events" and "tweet_id" not in data:
+        # 事象ゼロ窓のハートビート (追加ルール①)。record でも失敗でもない正常信号。
+        # Grok が key/value の underscore を落とす揺らぎ ("noevents") を実地観測 (2026-08-15)
+        # したため、正規化して許容する
+        status_normalized = str(data.get("status") or "").replace("_", "")
+        if status_normalized == "noevents" and "tweet_id" not in data:
             heartbeats += 1
             _log.info("jsonl_no_events_heartbeat", window=data.get("window_minutes"))
             continue

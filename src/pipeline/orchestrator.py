@@ -451,10 +451,10 @@ async def run_pipeline(
                     brief_count_24h=brief_count_24h_snapshot,
                 )
                 if not expanded:
-                    # 静穏時間 (ハートビートあり・レコードなし) は障害でない (2026-08-15)。
-                    # extract_failed にすると購読 feed の「本文取得エラー」層別を汚染する
-                    # (9 タスク hourly では静穏レポートが日に 100+ 件出る) ため、
-                    # 記事 row を作らず run_logs のハートビートのみを記録として残す。
+                    # Grok 報告 (親) は briefing ゼロなら記事 row を一切作らない (2026-08-15)。
+                    # 報告の実体はチャットページであり、記事テーブル = 検索面に残骸
+                    # (「No X posts collected - Grok」等) を置く場所ではない。
+                    # 障害の可視性は run_logs (下記 warning + heartbeat) と枯渇監視が担保する。
                     from src.pipeline.grok_convert import grok_report_is_quiet
 
                     if grok_report_is_quiet(article):
@@ -463,20 +463,13 @@ async def run_pipeline(
                             article_id=article.id,
                             url=article.url,
                         )
-                        continue
-                    _log.info(
-                        "grok_article_yielded_no_briefings",
-                        article_id=article.id,
-                        url=article.url,
-                    )
-                    article_outcomes.append(
-                        {
-                            "article_id": article.id,
-                            "msg": None,
-                            "status": "extract_failed",
-                            "failure_reason": "grok_article_yielded_no_briefings",
-                        },
-                    )
+                    else:
+                        # ハートビート無しの空/散文応答 = プロンプト違反 or 生成不全の疑い
+                        _log.warning(
+                            "grok_article_yielded_no_briefings",
+                            article_id=article.id,
+                            url=article.url,
+                        )
                     continue
                 for idx, msg in enumerate(expanded):
                     # per-tweet 一意 id (親共有による body/entity 混載バグの修正)

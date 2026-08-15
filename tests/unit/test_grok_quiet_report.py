@@ -40,3 +40,8 @@ class TestGrokReportIsQuiet:
         # 完全な空出力 = ハートビート無し → 従来どおり障害疑い (extract_failed)
         assert grok_report_is_quiet(_grok_article("")) is False
         assert grok_report_is_quiet(_grok_article("[]")) is False
+
+    def test_malformed_heartbeat_variant_is_quiet(self) -> None:
+        # Grok が underscore を落とす揺らぎ ("noevents") の実地観測 (2026-08-15) を許容
+        malformed = '{"status":"noevents","windowminutes":90}'
+        assert grok_report_is_quiet(_grok_article(malformed)) is True
