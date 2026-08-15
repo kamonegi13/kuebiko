@@ -19,7 +19,9 @@ def test_find_entry_parses_named_entry(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("SOURCES_CONFIG_DB", "0")
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "scrapers.yaml").write_text(
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
+    (cfg / "sources/scrapers.yaml").write_text(
         "scrapers:\n- name: merics-org\n  listing_url: https://merics.org/en/analysis\n"
         "  article_link_selector: .field--name-title a\n",
         encoding="utf-8",
@@ -34,7 +36,9 @@ def test_find_entry_missing_returns_none(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setenv("SOURCES_CONFIG_DB", "0")
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "scrapers.yaml").write_text("scrapers:\n- name: other\n", encoding="utf-8")
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
+    (cfg / "sources/scrapers.yaml").write_text("scrapers:\n- name: other\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     assert lp._find_entry("html_scraper", "merics-org") is None
     # ファイルが無い transport も None (空 list)

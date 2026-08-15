@@ -36,8 +36,8 @@ _log = get_logger(__name__)
 DEFAULT_DB_PATH = Path("data/run_history.db")
 
 # 表示ラベルは yaml (countries / victim_sectors) を SSoT に。ハードコード重複を避ける。
-_COUNTRIES_YAML = Path("config/countries.yaml")
-_SECTORS_YAML = Path("config/victim_sectors.yaml")
+_COUNTRIES_YAML = Path("config/cti/countries.yaml")
+_SECTORS_YAML = Path("config/cti/victim_sectors.yaml")
 
 # actor nation コード → 表示ラベル (SSoT = diamond_model.NATION_LABELS_JA、M3 複製解消)。
 _NATION_LABELS: dict[str, str] = NATION_LABELS_JA

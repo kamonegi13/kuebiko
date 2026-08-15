@@ -75,7 +75,7 @@ class TestNonActorGuards:
         assert all(c.key != "consentfix v3" for c in cands)
 
     def test_global_malware_vocab_not_harvested(self) -> None:
-        # config/malware_aliases.yaml の語彙 (PlayCrypt = Play ransomware) は候補化しない
+        # config/cti/malware_aliases.yaml の語彙 (PlayCrypt = Play ransomware) は候補化しない
         cands = harvest_candidates(
             body="PlayCrypt continues to spread.",
             primary_actor_id="PlayCrypt",

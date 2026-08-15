@@ -42,7 +42,7 @@ per-article 要約・triage・抽出は **fast ティア (MoE, 高速)**、状�
 ## 主な機能
 
 - **自動ブリーフィング**: 朝 (06:30) の通読ブリーフ + 夕方 (19:30) の状況更新を Discord に投稿
-- **マルチソース収集**: 自前 RSS (`config/feeds.yaml`) / sitemap・HTML スクレイパ
+- **マルチソース収集**: 自前 RSS (`config/sources/feeds.yaml`) / sitemap・HTML スクレイパ
   (`watchers.yaml` / `scrapers.yaml`) / Grok レポート (メール通知 → Playwright 取得) を統一処理
 - **重複排除**: URL 正規化 + SHA-256、および Embedding によるベクトルコサイン類似度 (多言語横断)
 - **CTI メタデータ**: 脅威アクター正規化 (エイリアス辞書 + MITRE ATT&CK 週次同期)、IOC 抽出
@@ -286,7 +286,7 @@ readonly インスタンスは scheduler を起動しない (二重発火防止)
 | 製品スナップショット | PG `status_synthesis` / `daily_briefs` / `weekly_recaps` / `pir_spotlight` / `forecast_indicators` ほか | Web が pull 描画 |
 | 人承認キュー | PG `taxonomy_review_proposals` / `actor_update_proposals` | 逆流はここだけ (人が裁く) |
 | 運用 config (routing/channels/product/PIR/sources/model tiers/match lists/レイアウト等) | PG `config_store` + `app_config_versions` (版履歴・revert) | yaml は初回 seed 専用。**稼働アプリは git を触らない** |
-| ツール同梱の知識辞書 | `config/actor_aliases.yaml` (git 管理) ほか | MITRE 同期が atomic write (+.bak)。禁止モデル denylist はコード所有 |
+| ツール同梱の知識辞書 | `config/cti/actor_aliases.yaml` (git 管理) ほか | MITRE 同期が atomic write (+.bak)。禁止モデル denylist はコード所有 |
 | シークレット | `.env` (UI 編集はマスク + atomic write) | ログ/レスポンスは機密マスク二重防御 |
 
 ### 設計原則 (全体ロジックの不変条件) と評価

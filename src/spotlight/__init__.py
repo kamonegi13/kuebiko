@@ -4,7 +4,7 @@ global synthesis (P+M+E+S+I+T 横断) と補完関係:
 - global: 戦略レベル、cross-axis 連鎖、上位 stakeholders 説明用
 - spotlight: 戦術 - 作戦レベル、1 PIR 領域の深掘り、analyst 作業用
 
-config/pir.yaml で spotlight.enabled=true な PIR each に対し、
+config/delivery/pir.yaml で spotlight.enabled=true な PIR each に対し、
 weekly cron で narrative を生成して spotlight 表に永続化。
 UI Synthesis tab の sub-tab で表示。
 

@@ -257,7 +257,7 @@ class TestSubjectGate:
     """主題ゲート (docs/subject_actor_attribution_design.md §5)。
 
     契機 = FSB 第16センター記事が Salt Typhoon への比較言及で中国系 APT PIR に
-    誤分類されたインシデント (2026-07-17)。実辞書 (config/actor_aliases.yaml) を使う。
+    誤分類されたインシデント (2026-07-17)。実辞書 (config/cti/actor_aliases.yaml) を使う。
     """
 
     def _fsb_article(

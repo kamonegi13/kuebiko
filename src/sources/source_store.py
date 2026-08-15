@@ -34,9 +34,9 @@ TransportT = Literal["rss", "sitemap", "html_scraper"]
 # transport → (config_store key, yaml path, root list key)。
 # yaml path は各 loader / writer の定数と同値 (config/ 直下の安定 literal)。
 _SPEC: dict[str, tuple[str, Path, str]] = {
-    "rss": ("feeds", Path("config/feeds.yaml"), "feeds"),
-    "sitemap": ("watchers", Path("config/watchers.yaml"), "watchers"),
-    "html_scraper": ("scrapers", Path("config/scrapers.yaml"), "scrapers"),
+    "rss": ("feeds", Path("config/sources/feeds.yaml"), "feeds"),
+    "sitemap": ("watchers", Path("config/sources/watchers.yaml"), "watchers"),
+    "html_scraper": ("scrapers", Path("config/sources/scrapers.yaml"), "scrapers"),
 }
 
 _ENV_FLAG = "SOURCES_CONFIG_DB"

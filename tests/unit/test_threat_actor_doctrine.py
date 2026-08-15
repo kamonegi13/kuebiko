@@ -85,7 +85,7 @@ class TestDoctrineDictionaryConsistency:
         from src.cti.actor_normalizer import load_actor_aliases
 
         reg = load_actor_aliases()
-        assert reg.actors, "辞書 seed (config/actor_aliases.yaml) がロードできない"
+        assert reg.actors, "辞書 seed (config/cti/actor_aliases.yaml) がロードできない"
         return {n.lower() for a in reg.actors for n in a.all_names}
 
     def test_state_actor_sectors_keys_resolve(self) -> None:

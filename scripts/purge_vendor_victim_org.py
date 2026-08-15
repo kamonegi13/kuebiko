@@ -2,7 +2,7 @@
 
 AI 記事 (prompt injection / jailbreak / モデル汚染の研究・解説) で OpenAI/Anthropic/
 Hugging Face 等が「被害組織」として抽出され、victim 台帳と地図 (組織本社 tier の偽点)
-を汚していた。プロンプト側の除外指示 (summarizer.j2 ⑤) と対で過去分を掃除する。
+を汚していた。プロンプト側の除外指示 (briefing/summarizer.j2 ⑤) と対で過去分を掃除する。
 
 保守則: denylist 該当でも **category が breach/incident の行は残す** — そのベンダ自身が
 実際に侵害された記事 (OpenAI 社内 Slack 侵害等) を巻き込まないため。dry-run で対象記事の

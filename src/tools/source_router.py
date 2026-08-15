@@ -453,7 +453,7 @@ def build_source(
         )
     if stype == "rss":
         # Phase X-1: Inoreader 廃止に向けた直接 RSS fetcher。
-        # ``config/feeds.yaml`` から feed list を load して並列 fetch する。
+        # ``config/sources/feeds.yaml`` から feed list を load して並列 fetch する。
         from src.tools.direct_rss_source import (
             DEFAULT_UNSEEN_MAX_AGE_DAYS,
             DirectRssSource,

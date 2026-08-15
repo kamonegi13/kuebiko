@@ -1,6 +1,6 @@
 """LLM 出力スキーマ + summary 関連の純粋ヘルパ (src.main から分割)。
 
-- ``SummaryOutput`` (summarizer.j2 の JSON 構造)
+- ``SummaryOutput`` (briefing/summarizer.j2 の JSON 構造)
 - 日本語判定 / IOC self-URL 除去 / importance cap / event_date 正規化。
 """
 
@@ -138,7 +138,7 @@ ArticleType = Literal[
 
 
 class SummaryOutput(BaseModel):
-    """``prompts/summarizer.j2`` で LLM に生成させる JSON 構造。"""
+    """``prompts/briefing/summarizer.j2`` で LLM に生成させる JSON 構造。"""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
@@ -211,7 +211,7 @@ class SummaryOutput(BaseModel):
 
 # vulnerability/advisory の importance は LLM (高速 26B) が一律 high に過大評価する
 # 傾向がある (実データ監査で vuln 82% high / low 0%、パッチ済み CVE まで high)。
-# summarizer.j2 の基準では high = KEV 級 / 実悪用中 / 0day のみ。悪用シグナルが
+# briefing/summarizer.j2 の基準では high = KEV 級 / 実悪用中 / 0day のみ。悪用シグナルが
 # title+summary+本文に無い high は medium に降格する決定的ガード。
 # PoC 公開のみ・パッチ済み・未悪用は high に値しない (medium 以下が正)。
 # 監査 2026-07-05 P1: 悪用の**事実断定形**のみ通す。旧 regex は接尾グループ全 optional

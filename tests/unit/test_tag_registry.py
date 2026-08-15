@@ -38,7 +38,7 @@ KNOWN_ENTITY_TYPES = {
 
 
 def _registry_tag_names() -> set[str]:
-    raw = yaml.safe_load(Path("config/tag_registry.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load(Path("config/cti/tag_registry.yaml").read_text(encoding="utf-8"))
     names: set[str] = set()
     for layer in ("envelope", "threat_core", "strategic"):
         names |= set((raw.get(layer) or {}).keys())

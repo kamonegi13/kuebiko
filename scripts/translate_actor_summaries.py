@@ -10,7 +10,7 @@ Stage 2 の enrich で MITRE 英語 summary がそのまま入った actor を�
 
 使い方:
     uv run python scripts/translate_actor_summaries.py            # review 出力 (.translated.yaml)
-    uv run python scripts/translate_actor_summaries.py --apply    # config/actor_aliases.yaml に適用
+    uv run python scripts/translate_actor_summaries.py --apply    # config/cti/actor_aliases.yaml に適用
     uv run python scripts/translate_actor_summaries.py --limit 3  # 動作確認 (先頭 3 件のみ)
 """
 
@@ -78,17 +78,17 @@ async def _run(apply: bool, limit: int | None) -> None:
 
     content = render_actors_yaml(data)
     if apply:
-        Path("config/actor_aliases.yaml").write_text(content, encoding="utf-8")
-        print("\n✅ config/actor_aliases.yaml に適用しました", file=sys.stderr)
+        Path("config/cti/actor_aliases.yaml").write_text(content, encoding="utf-8")
+        print("\n✅ config/cti/actor_aliases.yaml に適用しました", file=sys.stderr)
     else:
-        out = Path("config/actor_aliases.translated.yaml")
+        out = Path("config/cti/actor_aliases.translated.yaml")
         out.write_text(content, encoding="utf-8")
         print(f"\n📝 review 出力: {out} (確認後 --apply で適用)", file=sys.stderr)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true", help="config/actor_aliases.yaml に直接書き込む")
+    ap.add_argument("--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む")
     ap.add_argument("--limit", type=int, default=None, help="先頭 N 件のみ翻訳 (動作確認用)")
     args = ap.parse_args()
     asyncio.run(_run(apply=args.apply, limit=args.limit))

@@ -8,7 +8,7 @@
 設計方針:
     - SitemapWatcher と同 interface (``fetch_articles`` / ``init_seen`` /
       ``read_state``) を提供し、 ``WebScraperClusterSource`` から透過利用可能
-    - selectors は ``config/scrapers.yaml`` で declarative 宣言
+    - selectors は ``config/sources/scrapers.yaml`` で declarative 宣言
     - seen 状態は ``data/<name>_seen.json`` で SitemapWatcher と同一 schema
     - 本文と公開日は後段 trafilatura が URL から取得 (per-article LLM 投入時)
 """

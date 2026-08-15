@@ -7,7 +7,7 @@ synthesis / spotlight に注入することで、tool 挙動を PIR-driven に�
 
 主要モジュール:
     models    Pydantic schema (Pir, StrongSignals 等)
-    loader    config/pir.yaml の読み書き
+    loader    config/delivery/pir.yaml の読み書き
     evaluator article x PIR の match 判定 (preview / KPI で共有)
     compiler  LLM 経由で description → structured fields 生成
     integration  triage / synthesis prompt への注入

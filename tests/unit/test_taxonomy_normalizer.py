@@ -20,8 +20,10 @@ from src.cti.taxonomy_normalizer import (
 def tmp_config_dir(tmp_path: Path) -> Path:
     config = tmp_path / "config"
     config.mkdir()
+    for _sub in ("sources", "cti", "delivery"):
+        (config / _sub).mkdir(exist_ok=True)
 
-    sectors_yaml = config / "victim_sectors.yaml"
+    sectors_yaml = config / "cti/victim_sectors.yaml"
     sectors_yaml.write_text(
         yaml.safe_dump(
             {
@@ -42,7 +44,7 @@ def tmp_config_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
 
-    countries_yaml = config / "countries.yaml"
+    countries_yaml = config / "cti/countries.yaml"
     countries_yaml.write_text(
         yaml.safe_dump(
             {
@@ -56,7 +58,7 @@ def tmp_config_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
 
-    mapping_yaml = config / "pmesii_default_mapping.yaml"
+    mapping_yaml = config / "cti/pmesii_default_mapping.yaml"
     mapping_yaml.write_text(
         yaml.safe_dump(
             {
@@ -236,7 +238,7 @@ class TestSectorCanonicalList:
 
 
 def test_real_config_new_sector_aliases() -> None:
-    """config/victim_sectors.yaml に追加した安全 alias が正しい canonical に写ること (回帰)。
+    """config/cti/victim_sectors.yaml に追加した安全 alias が正しい canonical に写ること (回帰)。
 
     実 config を読む (fixture でなく)。辞書から alias が消えたら uncategorized に戻り検知できる。
     """
@@ -294,7 +296,7 @@ class TestNullSentinels:
 class TestNormalizeCountryScope:
     """victim_country スコープ判定 (監査 2026-08-01 ⑥)。
 
-    summarizer.j2 は複数国攻撃に "global"/"EU"/"APAC" を指示しているのに正規化器に
+    briefing/summarizer.j2 は複数国攻撃に "global"/"EU"/"APAC" を指示しているのに正規化器に
     受け皿が無く、月 175 件が黙って iso=NULL に落ちていた断線の閉鎖。ISO2 の意味
     (単一国) は不変 — スコープは別値で表現する。
     """

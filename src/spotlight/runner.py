@@ -1,6 +1,6 @@
 """PIR Spotlight pipeline runner。
 
-config/pir.yaml の spotlight.enabled=true な PIR each に対して narrative 生成、
+config/delivery/pir.yaml の spotlight.enabled=true な PIR each に対して narrative 生成、
 pir_spotlight 表に UPSERT。weekly cron / 手動 trigger 共通 entrypoint。
 """
 

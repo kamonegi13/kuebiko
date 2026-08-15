@@ -37,7 +37,7 @@ _RULES_ENGINE_ENV = "ROUTING_RULES_ENGINE"
 
 
 def is_rules_engine_enabled() -> bool:
-    """config/routing_rules.yaml の rule engine を使うか (既定 False)。"""
+    """config/delivery/routing_rules.yaml の rule engine を使うか (既定 False)。"""
     return os.environ.get(_RULES_ENGINE_ENV, "0").strip().lower() in ("1", "true", "yes", "on")
 
 
@@ -70,7 +70,7 @@ def _load_source_quality_db_first() -> SourceQualityConfig:
 def get_source_quality(force_reload: bool = False) -> SourceQualityConfig:
     """source_quality をプロセスキャッシュ越しに取得 (Phase 5T-V / DB 化)。
 
-    DB を正とし、未保存時のみ config/source_quality.yaml (seed) に fallback。
+    DB を正とし、未保存時のみ config/sources/source_quality.yaml (seed) に fallback。
     Web UI で編集された場合は force_reload=True で再読込する。
     """
     global _SOURCE_QUALITY_CACHE
@@ -87,7 +87,7 @@ def seed_source_quality_if_absent() -> bool:
         return seed_config_if_absent(
             SOURCE_QUALITY_CONFIG_KEY,
             load_source_quality().model_dump(mode="json"),
-            note="初期 seed (config/source_quality.yaml)",
+            note="初期 seed (config/sources/source_quality.yaml)",
         )
     except Exception as e:  # noqa: BLE001
         _log.warning("source_quality_seed_failed", error=str(e))
@@ -183,7 +183,7 @@ def _route_priority(
     # ---------- R8: APT leak (PIR 3) → alert (Phase 5N) ----------
     # APT 組織自体の内部資料・ツール・通信内容のリーク事案 (i-Soon, NTC Vulkan 等)。
     # アトリビューション材料として CTI 業界では超高価値、即応 ch にエスカレート。
-    # category は LLM が summarizer.j2 で判定する。
+    # category は LLM が briefing/summarizer.j2 で判定する。
     if signals.is_apt_leak and signals.article_type not in (
         "recap",
         "tutorial",

@@ -197,7 +197,7 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     added: bool
     transport: TransportLiteral
-    target_yaml: str  # config/feeds.yaml / scrapers.yaml / watchers.yaml
+    target_yaml: str  # config/sources/feeds.yaml / scrapers.yaml / watchers.yaml
     total_in_yaml: int
     appended_to_cluster: bool = False  # html_scraper 時 pipelines.yaml 追記成否
     commit: str | None = None

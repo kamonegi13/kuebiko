@@ -447,7 +447,7 @@ def _persist_article_entities(
             entities.append(("ttp", t))
 
     # IoC (msg.iocs は本文から抽出された raw value list、ioc_type は値から判別)
-    # Phase B-cal: summarizer.j2 は CVE を mitre_techniques ではなく iocs 配列に
+    # Phase B-cal: briefing/summarizer.j2 は CVE を mitre_techniques ではなく iocs 配列に
     # 出力する。旧実装は mitre_techniques しか見ず、_classify_ioc_type にも cve 分岐が
     # 無かったため CVE entity がほぼ永続化されていなかった (監査: 322 記事中 cve=1)。
     # ここで iocs 内の CVE を拾って entity_type='cve' に正規化する。
@@ -466,7 +466,7 @@ def _persist_article_entities(
         if kind:
             entities.append((kind, v))
 
-    # CVE は summary 本文にも原文引用される (summarizer.j2 の指示)。iocs 配列が
+    # CVE は summary 本文にも原文引用される (briefing/summarizer.j2 の指示)。iocs 配列が
     # 取りこぼした分の保険として summary からも regex で補完する。
     # ただし iocs/mitre が CVE を curate 済み (seen_cve 非空) の場合は summary scrape を
     # 行わない: summary は narrative なので過去事案・他社事例の CVE を文中で言及することがあり

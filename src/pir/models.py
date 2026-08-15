@@ -133,7 +133,7 @@ class Pir(BaseModel):
 
 
 class PirConfig(BaseModel):
-    """config/pir.yaml の root schema。"""
+    """config/delivery/pir.yaml の root schema。"""
 
     model_config = ConfigDict(extra="forbid")
 

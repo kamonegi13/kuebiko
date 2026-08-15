@@ -59,10 +59,12 @@ feeds:
 def _cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config"
     cfg.mkdir()
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
     (cfg / "pipelines.yaml").write_text(_PIPELINES, encoding="utf-8")
-    (cfg / "scrapers.yaml").write_text(_SCRAPERS, encoding="utf-8")
-    (cfg / "watchers.yaml").write_text(_WATCHERS, encoding="utf-8")
-    (cfg / "feeds.yaml").write_text(_FEEDS, encoding="utf-8")
+    (cfg / "sources/scrapers.yaml").write_text(_SCRAPERS, encoding="utf-8")
+    (cfg / "sources/watchers.yaml").write_text(_WATCHERS, encoding="utf-8")
+    (cfg / "sources/feeds.yaml").write_text(_FEEDS, encoding="utf-8")
     (tmp_path / "data").mkdir()  # SQLite fallback (config_store) の置き場
     monkeypatch.chdir(tmp_path)
     return cfg

@@ -183,7 +183,7 @@ class SourceConfig(BaseModel):
     scraper_name: str | None = None
 
     # ---- Phase X-1: direct RSS source (旧 Inoreader 経路の置換) ----
-    # config/feeds.yaml の path (None なら default config/feeds.yaml)
+    # config/sources/feeds.yaml の path (None なら default config/sources/feeds.yaml)
     feeds_config_path: str | None = None
     rss_http_timeout: float | None = None  # default 30.0 sec
     rss_per_feed_limit: int | None = None  # default 50 entries/feed
@@ -401,7 +401,7 @@ class StixAttachPolicy(BaseModel):
 class SourceQualityConfig(BaseModel):
     """Phase 5T-V: source-level quality signal の YAML スキーマ。
 
-    config/source_quality.yaml の内容を表す。Web UI から編集可能。
+    config/sources/source_quality.yaml の内容を表す。Web UI から編集可能。
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -421,7 +421,7 @@ class SourceQualityConfig(BaseModel):
     )
 
 
-DEFAULT_SOURCE_QUALITY_PATH = Path("config/source_quality.yaml")
+DEFAULT_SOURCE_QUALITY_PATH = Path("config/sources/source_quality.yaml")
 
 
 class ChannelRouting(BaseModel):
@@ -550,7 +550,7 @@ def load_source_quality(
 
 
 # brief routing UI (ブリーフ設定) の checklist 用カテゴリ語彙。triage 出力の SSoT は
-# prompts/summarizer.j2。geopolitical/research/other は非脅威系 (通常 high_threat に含めない)。
+# prompts/briefing/summarizer.j2。geopolitical/research/other は非脅威系。
 KNOWN_ARTICLE_CATEGORIES: tuple[str, ...] = (
     "apt",
     "apt_leak",

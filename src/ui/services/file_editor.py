@@ -1,7 +1,7 @@
 """ファイル編集サービス (Phase 1.5)。
 
 CLAUDE.md §12 のセキュリティポリシーに従う:
-- 編集対象 allowlist: ``prompts/*.j2``, ``config/*.yaml``, ``.env`` のみ
+- 編集対象 allowlist: ``prompts/**/*.j2``, ``config/**/*.yaml``, ``.env`` のみ
 - path traversal 防止: ``Path.resolve()`` してから許可ディレクトリ配下を確認
 - 編集前 ``*.bak`` 自動生成
 - 入力検証 (pydantic スキーマ) → atomic write (.bak のみ、git auto-commit は廃止済み)
@@ -41,7 +41,7 @@ class FileEditor:
     def list_prompts(self) -> list[Path]:
         if not self._prompts_dir.exists():
             return []
-        return sorted(p for p in self._prompts_dir.glob("*.j2") if p.is_file())
+        return sorted(p for p in self._prompts_dir.rglob("*.j2") if p.is_file())
 
     def list_yaml_configs(self) -> list[Path]:
         if not self._config_dir.exists():
@@ -133,13 +133,15 @@ class FileEditor:
         )
 
         if kind == "prompt":
-            if target.parent != self._prompts_dir or target.suffix != ".j2":
+            # 区分サブディレクトリ (prompts/briefing/ 等) を許可 (2026-08-15 物理再編)。
+            # resolve() 済みパスに対する is_relative_to 判定なので path traversal は不可
+            if not target.is_relative_to(self._prompts_dir) or target.suffix != ".j2":
                 raise EditError(
                     f"保存先として許可されていません: {path} "
                     "(prompts 配下の .j2 ファイルのみ編集できます)",
                 )
         elif kind == "yaml":
-            if target.parent != self._config_dir or target.suffix != ".yaml":
+            if not target.is_relative_to(self._config_dir) or target.suffix != ".yaml":
                 raise EditError(
                     f"保存先として許可されていません: {path} "
                     "(config 配下の .yaml ファイルのみ編集できます)",

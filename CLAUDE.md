@@ -18,8 +18,8 @@
 ### 情報源
 
 1. **Grok タスクのレポート** — Grok が生成するレポート URL がメールで通知される。IMAP で受信し、Playwright で本文取得 (Phase 2)
-2. **直接 RSS フィード** — `config/feeds.yaml` で宣言した 100+ feed を httpx 並列 fetch (Phase X-1)。 旧 Inoreader 経路は Phase Y 完了後 (2026-05-26) に完全撤去
-3. **Web scraper (sitemap)** — `config/watchers.yaml` で宣言した RSS のない一次ソース (ENISA / IPA / ISW 等) を sitemap 経由で監視 (Phase X-2)
+2. **直接 RSS フィード** — `config/sources/feeds.yaml` で宣言した 100+ feed を httpx 並列 fetch (Phase X-1)。 旧 Inoreader 経路は Phase Y 完了後 (2026-05-26) に完全撤去
+3. **Web scraper (sitemap)** — `config/sources/watchers.yaml` で宣言した RSS のない一次ソース (ENISA / IPA / ISW 等) を sitemap 経由で監視 (Phase X-2)
 
 ### 主処理パイプライン
 
@@ -81,11 +81,11 @@
 ```
 src/
 ├── main.py                  # エントリポイント、パイプラインオーケストレータ
-├── config_loader.py         # 設定 (.env + config/*.yaml) ロード
+├── config_loader.py         # 設定 (.env + config/**/*.yaml) ロード
 ├── logging_config.py        # structlog 構造化ログ + 機密マスク
 ├── tools/                   # 汎用 I/O アダプタ (CTI ドメイン非依存)
 │   ├── article_model.py     # Article 正規化モデル (source 横断、 Phase X-1)
-│   ├── direct_rss_source.py # 自前 RSS fetcher (config/feeds.yaml、 Phase X-1)
+│   ├── direct_rss_source.py # 自前 RSS fetcher (config/sources/feeds.yaml、 Phase X-1)
 │   ├── content_extractor.py # trafilatura
 │   ├── llm_client.py        # Ollama (中華系ホワイトリスト)
 │   ├── embedding_client.py  # Ollama embedding (Phase 3b)
@@ -166,7 +166,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 - **イミュータブル優先**: `dataclass(frozen=True)` / `pydantic.BaseModel(frozen=True)` を既定とする
 - 関数 50 行以下、ファイル 400 行を目安、800 行を上限
 - 早期 return でネスト 4 段以下
-- マジックナンバー禁止 → `config/*.yaml` か定数モジュールへ
+- マジックナンバー禁止 → `config/**/*.yaml` か定数モジュールへ
 
 ### テスト方針
 
@@ -246,7 +246,7 @@ kuebiko/
 │   ├── pipelines.yaml
 │   └── agents.yaml
 ├── prompts/
-│   └── summarizer.j2
+│   └── briefing/summarizer.j2
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                # CLI entry (debug 用、CrewAI Tool 化想定)
@@ -316,7 +316,7 @@ kuebiko/
 | Phase 4 | CTI 観点メタデータ付与 (脅威アクター, MITRE ATT&CK, IOC) | 未着手 |
 | Phase 5 | CrewAI エージェント主導化 + 責務別パッケージへの再構成 | 未着手 |
 
-> **Phase 1 における「翻訳」の位置付け**: 翻訳は独立ステップではなく、要約 (BLUF + 重要度 + カテゴリ) と同一の LLM プロンプト内で同時実行する (`prompts/summarizer.j2`)。
+> **Phase 1 における「翻訳」の位置付け**: 翻訳は独立ステップではなく、要約 (BLUF + 重要度 + カテゴリ) と同一の LLM プロンプト内で同時実行する (`prompts/briefing/summarizer.j2`)。
 
 各 Phase の完了条件:
 
@@ -386,7 +386,7 @@ kuebiko/
   1. **消費者を 1 つ以上同時に実装** (表示/フィルタ/KPI のいずれか。write-only 列を作らない)
   2. **fill-rate 週次監査へ登録** (`src/ui/services/fill_rate_audit.py` の METRICS に 1 行)
   3. **ラベルは SSoT を参照** (intent/nation=`src/cti/diamond_model.py`、sector=
-     `config/victim_sectors.yaml`、victim 国=`config/countries.yaml`、日本判定=
+     `config/cti/victim_sectors.yaml`、victim 国=`config/cti/countries.yaml`、日本判定=
      `src/cti/japan_relevance.py`、キーワード照合=`src/cti/keyword_match.py`。複製辞書を作らない)
 - **デプロイは app service 限定で** (2026-07-05): `docker compose up -d --build` を全 service に
   かけると **tunnel が毎回再作成され quick tunnel の URL が変わる** (→ 毎デプロイ ops に
@@ -490,7 +490,7 @@ kuebiko/
 - **実行履歴** `/history`: SQLite の run_history を ページ付きで一覧。重要度・カテゴリでフィルタ。`/runs/{id}` 詳細ページへリンク
 - **即時実行** `/runs`: dry-run プレビュー、本番投稿。**run_id 中心の API** で `/runs/{id}` 詳細ページへ遷移
 - **実行詳細** `/runs/{id}`: live_log を SSE でリアルタイム配信。タブ離脱・再起動でも DB から復元。Last-Event-ID で再接続
-- **プロンプト編集** `/prompts`: `prompts/*.j2` の編集。保存前 dry-run 必須、`*.j2.bak` 自動生成、git auto-commit
+- **プロンプト編集** `/prompts`: `prompts/**/*.j2` の編集。保存前 dry-run 必須、`*.j2.bak` 自動生成、git auto-commit
 - **設定編集** `/config`: タブは**種類で 3 群**に分ける (2026-08-02 整理。同列に並べると「設定・エスケープハッチ・記録」が混ざって見通しが落ちる):
   **【設定】** 接続 (webhook/IMAP/LLM/モバイル公開 = **外部と繋ぐものだけ**) / モデル (ティア・接続先) /
   プロンプト / システム (LOG_LEVEL・TZ・**ホスト復旧 watchdog** = この端末固有) —
@@ -544,7 +544,7 @@ kuebiko/
       消える。同日 40 時間分を実際に失った)。§4 により **email は保存しない**
       (識別は subject の SHA-256 先頭 12 桁)。参照は `GET /api/v1/access-audit`
       (denylist 対象 = 公開面には出さない)、retention 180 日
-- [ ] **編集対象 allowlist**: `prompts/*.j2`, `config/*.yaml`, `.env` のみ。それ以外のファイルは Web から編集不可
+- [ ] **編集対象 allowlist**: `prompts/**/*.j2`, `config/**/*.yaml`, `.env` のみ。それ以外のファイルは Web から編集不可
 - [ ] **シークレットマスク**: `.env` 表示時に常に「先頭 4 文字 + ***」(structlog の機密マスクと同形式)
 - [ ] **編集前バックアップ**: ファイル編集前に同階層 `*.bak` を必ず生成
 - [ ] **入力検証**: pydantic スキーマで検証 → atomic rename で書き出し
@@ -621,7 +621,7 @@ PIR_DRIVEN_TRIAGE=0
 ### PIR Spotlight (Phase Diamond verify-spotlight)
 
 global synthesis (P+M+E+S+I+T 横断) と棲み分ける **PIR 縦断 narrative**。
-config/pir.yaml の `spotlight.enabled=true` な PIR each に対して週次で
+config/delivery/pir.yaml の `spotlight.enabled=true` な PIR each に対して週次で
 narrative を生成し、Intel Graph の Synthesis tab "Spotlight" sub-tab に表示。
 
 - **pipeline**: `pir-spotlight` (月曜 03:30 JST cron)

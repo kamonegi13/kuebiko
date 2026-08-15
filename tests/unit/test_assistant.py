@@ -129,7 +129,7 @@ class TestTools:
 
 
 class TestActorProfile:
-    """actor_profile: 別名→正規名の辞書解決 (実 config/actor_aliases.yaml に依存)。"""
+    """actor_profile: 別名→正規名の辞書解決 (実 config/cti/actor_aliases.yaml に依存)。"""
 
     @pytest.mark.asyncio
     async def test_alias_resolves_to_canonical(self, ctx: ToolContext) -> None:

@@ -25,7 +25,7 @@ class _StanceOut(BaseModel):
     editorial_stance: EditorialStance
 
 
-# 判定基準 (summarizer.j2 と同義だが stance 単機能に凝縮)。地政学の客観報道を
+# 判定基準 (briefing/summarizer.j2 と同義だが stance 単機能に凝縮)。地政学の客観報道を
 # factual_report に倒すのが要点 (summarizer は unknown に逃げていた)。
 _PROMPT = """次の記事の編集スタンスを判定。**source 名でなく内容 (rhetorical 性質) で判定**。
 - factual_report: 客観的な事実・事象報道 (who/what/when/where)。サイバー advisory/CVE/breach に加え

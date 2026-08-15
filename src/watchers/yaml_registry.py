@@ -1,13 +1,13 @@
 """yaml 駆動の watcher registry (Phase X-2: site .py の廃止)。
 
 旧 src/watchers/{enisa,ipa,ccdcoe,...}.py の per-site インスタンス化を
-config/watchers.yaml の declarative 宣言に集約する。framework
+config/sources/watchers.yaml の declarative 宣言に集約する。framework
 (SitemapWatcher in sitemap_base.py) は core に残す。
 
 設計方針:
 - yaml load は eager (module 起動時)、cache する
 - 旧 site .py との後方互換: name で lookup できれば yaml registry を優先
-- 公開 repo 公開時は config/watchers.yaml を sample (空 or 代表 3-5 件) に差替
+- 公開 repo 公開時は config/sources/watchers.yaml を sample (空 or 代表 3-5 件) に差替
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from src.watchers.sitemap_base import SitemapWatcher, WatcherState
 
 _log = get_logger(__name__)
 
-DEFAULT_WATCHERS_YAML = Path("config/watchers.yaml")
+DEFAULT_WATCHERS_YAML = Path("config/sources/watchers.yaml")
 DEFAULT_STATE_DIR = Path("data")
 
 
@@ -47,7 +47,7 @@ class WatcherDef(BaseModel):
 
 
 class WatchersConfig(BaseModel):
-    """config/watchers.yaml の root schema。"""
+    """config/sources/watchers.yaml の root schema。"""
 
     model_config = ConfigDict(extra="forbid")
 

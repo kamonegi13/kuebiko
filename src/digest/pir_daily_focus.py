@@ -37,7 +37,7 @@ DAILY_FOCUS_TARGET_CHANNEL: DiscordChannel = "brief"
 _MAX_ARTICLES_PER_PIR = 3
 
 # LLM が "本日の要点" 1-2 文生成 (per-PIR で 1 call)
-_PROMPT_TEMPLATE = "pir_daily_focus.j2"
+_PROMPT_TEMPLATE = "digest/pir_daily_focus.j2"
 _LLM_MAX_TOKENS = 256
 _LLM_TEMPERATURE = 0.3
 

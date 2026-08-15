@@ -210,7 +210,7 @@ def test_cybercrime_generic_group_words_are_gated_in_real_yaml() -> None:
     curated = set(GENERIC_ALIAS_WORDS)
     # denylist SSoT に載っていること (guard test / mitre filter / editor 警告を効かせる)
     assert curated <= GENERIC_ALIAS_WORDS, "curated 一般語が generic_alias_words の SSoT に無い"
-    reg = load_actor_aliases(Path("config/actor_aliases.yaml"))
+    reg = load_actor_aliases(Path("config/cti/actor_aliases.yaml"))
     by_key = {a.id: a for a in reg.actors} | {a.canonical.lower(): a for a in reg.actors}
     for word in curated:
         actor = by_key.get(word)
@@ -221,7 +221,7 @@ def test_cybercrime_generic_group_words_are_gated_in_real_yaml() -> None:
 
 def test_seeded_hacktivists_present_in_real_yaml() -> None:
     # Part A: 実 yaml にハクティビストが seed され、辞書照合で拾えること
-    reg = load_actor_aliases(Path("config/actor_aliases.yaml"))
+    reg = load_actor_aliases(Path("config/cti/actor_aliases.yaml"))
     ids = {a.id for a in reg.actors}
     assert {"noname05716", "killnet", "anonymous_sudan", "it_army_ukraine", "anonymous"} <= ids
     # 数字付き/複合名は文脈 cue 無しでも安全に検出
@@ -335,7 +335,7 @@ actors:
 
 
 def test_real_actor_aliases_yaml_loads() -> None:
-    """実プロジェクトの ``config/actor_aliases.yaml`` が壊れていないこと。"""
+    """実プロジェクトの ``config/cti/actor_aliases.yaml`` が壊れていないこと。"""
     r = load_actor_aliases()
     if r.actors:
         # 最低限、Volt Typhoon と APT29 と Lazarus は登録されているはず

@@ -26,8 +26,8 @@ def _init_git(root: Path) -> None:
 
 
 def _bootstrap_project(tmp_path: Path) -> Path:
-    (tmp_path / "prompts").mkdir()
-    (tmp_path / "prompts" / "summarizer.j2").write_text("test prompt", encoding="utf-8")
+    (tmp_path / "prompts" / "briefing").mkdir(parents=True)
+    (tmp_path / "prompts" / "briefing/summarizer.j2").write_text("test prompt", encoding="utf-8")
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "pipelines.yaml").write_text(
         "pipelines:\n  - name: direct-rss-fetch\n"

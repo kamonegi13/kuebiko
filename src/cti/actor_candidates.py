@@ -134,7 +134,7 @@ _VERSION_SUFFIX_RE = re.compile(r"[\s\-_]*v?\d+(?:\.\d+)?$")
 
 
 def _malware_vocab_knows(name: str) -> bool:
-    """config/malware_aliases.yaml の malware/tool 語彙に一致するか (ツール名遮断)。
+    """config/cti/malware_aliases.yaml の malware/tool 語彙に一致するか (ツール名遮断)。
 
     「tool/malware として抽出されるべき語彙がアクター候補に流れる」カテゴリ混同
     (ConsentFix v3 事案) のグローバル辞書側の防波堤。per-article の抽出結果は

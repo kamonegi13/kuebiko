@@ -23,9 +23,9 @@ from src.ui.api._source_models import SourceCandidate
 
 _log = get_logger(__name__)
 
-FEEDS_YAML = Path("config/feeds.yaml")
-WATCHERS_YAML = Path("config/watchers.yaml")
-SCRAPERS_YAML = Path("config/scrapers.yaml")
+FEEDS_YAML = Path("config/sources/feeds.yaml")
+WATCHERS_YAML = Path("config/sources/watchers.yaml")
+SCRAPERS_YAML = Path("config/sources/scrapers.yaml")
 PIPELINES_YAML = Path("config/pipelines.yaml")
 SCRAPER_CLUSTER_NAME = "web-scraper-watchers"
 

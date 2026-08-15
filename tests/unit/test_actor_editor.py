@@ -35,7 +35,8 @@ actors:
 
 @pytest.fixture
 def path(tmp_path: Path) -> Path:
-    p = tmp_path / "actor_aliases.yaml"
+    p = tmp_path / "cti/actor_aliases.yaml"
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(_SAMPLE, encoding="utf-8")
     return p
 

@@ -1,6 +1,6 @@
 """案 B / Stage 1: config 駆動 routing rule engine のテスト。
 
-核心は **等価性**: seed (config/routing_rules.yaml) を使った engine が、現行ハードコード
+核心は **等価性**: seed (config/delivery/routing_rules.yaml) を使った engine が、現行ハードコード
 ladder (_route_legacy) と同じ決定 (channel + rule_id) を返すこと (briefing 経路)。
 """
 

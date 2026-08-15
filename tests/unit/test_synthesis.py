@@ -850,7 +850,7 @@ class TestSynthesisPromptPirWiring:
         assert "PIR 未登録" in out
 
     def test_render_prompt_uses_real_pir_config(self) -> None:
-        # _render_prompt は config/pir.yaml から pir_context を構築する。
+        # _render_prompt は config/delivery/pir.yaml から pir_context を構築する。
         from src.pir.integration import invalidate_cache
         from src.synthesis.generator import _render_prompt
 

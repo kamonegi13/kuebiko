@@ -462,7 +462,7 @@ def _build_briefing(
         metadata["victim_country_raw"] = country_raw
     # 被害国スコープ (監査 2026-08-01 ⑥): ISO2 に解決できない "global"/"EU"/複数国は
     # scope として保持 (従来は正規化器が黙って捨てて iso=NULL 落ちしていた —
-    # summarizer.j2 が指示している語彙なのに受け皿が無かった断線)。
+    # briefing/summarizer.j2 が指示している語彙なのに受け皿が無かった断線)。
     country_scope: str | None = None
     if country_iso is None and country_raw:
         country_scope, _scope_isos = _taxonomy.normalize_country_scope(country_raw)

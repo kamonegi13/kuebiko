@@ -450,7 +450,7 @@ async def _run_pir_spotlight_default(
 ) -> PipelineRunResult:
     """Phase Diamond verify-spotlight: PIR Spotlight pipeline。
 
-    config/pir.yaml の spotlight.enabled=true な PIR each に対して narrative
+    config/delivery/pir.yaml の spotlight.enabled=true な PIR each に対して narrative
     生成。timeout は per-PIR LLM call で 600s 設定 (synthesis より軽量、26B/31B
     どちらでも完走想定)。
     """
@@ -575,7 +575,7 @@ async def _run_mitre_actor_sync_default(
 
     def _write_yaml(content: str, commit_message: str) -> None:
         editor.write_file(
-            "config/actor_aliases.yaml",
+            "config/cti/actor_aliases.yaml",
             content,
             kind="yaml",
             commit_message=commit_message,

@@ -44,7 +44,7 @@ class GeoPoint:
 
 
 # 主要国の代表点 = 首都座標 (国スケール事象 / 詳細不明時の honest な点)。
-# **config/countries.yaml の canonical 全件と 1:1 で同期する** (drift は
+# **config/cti/countries.yaml の canonical 全件と 1:1 で同期する** (drift は
 # tests/unit/test_geocoder.py の guard で検知)。GeoNames 取込後も国レベルはこの定数を正と
 # する (決定的・再現可能)。IL は係争のため代表点として用いる。
 _COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {

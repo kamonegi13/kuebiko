@@ -1,6 +1,6 @@
 """Subscription 統計集計 (Phase 5T-Q)。
 
-config/feeds.yaml の購読 list と当ツールの articles table を join して、
+config/sources/feeds.yaml の購読 list と当ツールの articles table を join して、
 各 feed の運用統計 (post 件数 / channel 振分け / importance 分布 /
 dedup skip 率) を出して低貢献 feed を見える化する。
 """

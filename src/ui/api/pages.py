@@ -554,13 +554,23 @@ def _list_prompts(editor: FileEditor) -> list[str]:
     base = editor.env_path().parent / "prompts"
     if not base.exists():
         return []
-    return sorted(str(p.relative_to(base.parent)) for p in base.glob("*.j2"))
+    return sorted(str(p.relative_to(base.parent)) for p in base.rglob("*.j2"))
 
 
 @pages_api.get("/prompts")
 async def prompts_list(request: Request) -> dict[str, Any]:
     editor: FileEditor = request.app.state.file_editor
-    return {"files": _list_prompts(editor)}
+    from src.ui.services.file_catalog import (
+        PROMPT_CATALOG,
+        PROMPT_CATEGORY_ORDER,
+        annotate_files,
+    )
+
+    files = _list_prompts(editor)
+    return {
+        "files": files,
+        "groups": annotate_files(files, PROMPT_CATALOG, PROMPT_CATEGORY_ORDER),
+    }
 
 
 @pages_api.get("/prompts/file")
@@ -604,7 +614,17 @@ def _list_yaml_files(editor: FileEditor) -> list[str]:
     base = editor.env_path().parent / "config"
     if not base.exists():
         return []
-    return sorted(str(p.relative_to(base.parent)) for p in base.glob("*.yaml"))
+    return sorted(str(p.relative_to(base.parent)) for p in base.rglob("*.yaml"))
+
+
+def _yaml_groups(editor: FileEditor) -> list[dict[str, Any]]:
+    from src.ui.services.file_catalog import (
+        CONFIG_CATALOG,
+        CONFIG_CATEGORY_ORDER,
+        annotate_files,
+    )
+
+    return annotate_files(_list_yaml_files(editor), CONFIG_CATALOG, CONFIG_CATEGORY_ORDER)
 
 
 # secret 名パターン: env_editor の secret 集合に未登録でも、名前が secret 風なら
@@ -649,6 +669,7 @@ async def config_get(request: Request) -> dict[str, Any]:
         "env_values": safe_values,
         "env_masked": {k: mask_value(parsed.get(k, "")) for k in secret_keys},
         "yaml_files": _list_yaml_files(editor),
+        "yaml_groups": _yaml_groups(editor),
     }
 
 
@@ -893,7 +914,7 @@ async def actors_update(request: Request, actor_id: str, body: ActorEditRequest)
     editor: FileEditor = request.app.state.file_editor
     try:
         editor.write_file(
-            "config/actor_aliases.yaml",
+            "config/cti/actor_aliases.yaml",
             content,
             kind="yaml",
             commit_message=f"chore(ui): edit actor {actor_id}",
@@ -1111,7 +1132,7 @@ async def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, A
     editor: FileEditor = request.app.state.file_editor
     try:
         editor.write_file(
-            "config/actor_aliases.yaml",
+            "config/cti/actor_aliases.yaml",
             render_actors_yaml(new_data),
             kind="yaml",
             commit_message=commit_msg,
@@ -1356,7 +1377,11 @@ def _reload_scheduler_for_pipeline(request: Request, job_id: str) -> None:
         return
     if sched.is_interval:
         assert sched.interval_minutes is not None
-        scheduler.update_interval(interval_minutes=sched.interval_minutes, job_id=job_id)
+        scheduler.update_interval(
+            interval_minutes=sched.interval_minutes,
+            job_id=job_id,
+            offset_minutes=sched.interval_offset_minutes,
+        )
     else:
         scheduler.update_cron(
             hour=sched.hour,

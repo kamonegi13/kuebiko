@@ -4,7 +4,7 @@
 から呼ばれる共通モジュール。
 
 設計の階層 (Phase 5L-3 改修):
-    - Primary 信号: prompts/summarizer.j2 で LLM が出した routing_flags
+    - Primary 信号: prompts/briefing/summarizer.j2 で LLM が出した routing_flags
       (japan_targeted / is_breaking_critical / primary_actor_id / dedup_key /
       confidence)。LLM は本文全体を読んで文脈判断するため精度が高い。
     - Fallback 信号: 本ファイルで定義する regex (_JAPAN_GENERAL/CRITICAL_PATTERNS,
@@ -368,7 +368,7 @@ def extract_signals_from_briefing(
         max_cvss=_max_cvss_for(msg, full_text),
         is_security_relevant=is_security_relevant,
         confidence_all_low=False,
-        # Phase 5N: APT leak は LLM 判定 category に依存。判定基準は summarizer.j2
+        # Phase 5N: APT leak は LLM 判定 category に依存。判定基準は briefing/summarizer.j2
         is_apt_leak=is_apt_leak,
         llm_japan_targeted=llm_flags.japan_targeted,
         llm_is_breaking_critical=llm_flags.is_breaking_critical,

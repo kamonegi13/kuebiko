@@ -18,9 +18,11 @@ def _init_git(root: Path) -> None:
 
 @pytest.fixture
 def project_root(tmp_path: Path) -> Path:
-    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "briefing").mkdir(parents=True)
     (tmp_path / "config").mkdir()
-    (tmp_path / "prompts" / "summarizer.j2").write_text("hello {{ name }}", encoding="utf-8")
+    (tmp_path / "prompts" / "briefing/summarizer.j2").write_text(
+        "hello {{ name }}", encoding="utf-8"
+    )
     (tmp_path / "config" / "pipelines.yaml").write_text("pipelines: []\n", encoding="utf-8")
     (tmp_path / ".env").write_text("FOO=bar\n", encoding="utf-8")
     _init_git(tmp_path)
@@ -38,6 +40,7 @@ class TestListing:
         prompts = editor.list_prompts()
         assert len(prompts) == 1
         assert prompts[0].name == "summarizer.j2"
+        assert prompts[0].parent.name == "briefing"  # 区分サブディレクトリを rglob で拾う
 
     def test_list_yaml(self, project_root: Path) -> None:
         editor = FileEditor(project_root)
@@ -49,7 +52,7 @@ class TestListing:
 class TestRead:
     def test_read_prompt(self, project_root: Path) -> None:
         editor = FileEditor(project_root)
-        text = editor.read_file("prompts/summarizer.j2", kind="prompt")
+        text = editor.read_file("prompts/briefing/summarizer.j2", kind="prompt")
         assert text == "hello {{ name }}"
 
     def test_read_yaml(self, project_root: Path) -> None:
@@ -84,15 +87,15 @@ class TestWriteWithBackupAndCommit:
     def test_write_creates_backup(self, project_root: Path) -> None:
         editor = FileEditor(project_root)
         editor.write_file(
-            "prompts/summarizer.j2",
+            "prompts/briefing/summarizer.j2",
             "new content {{ name }}",
             kind="prompt",
             commit_message="test edit",
         )
-        backup = project_root / "prompts" / "summarizer.j2.bak"
+        backup = project_root / "prompts" / "briefing/summarizer.j2.bak"
         assert backup.exists()
         assert "hello" in backup.read_text(encoding="utf-8")
-        assert "new content" in (project_root / "prompts" / "summarizer.j2").read_text(
+        assert "new content" in (project_root / "prompts" / "briefing/summarizer.j2").read_text(
             encoding="utf-8",
         )
 
@@ -109,7 +112,7 @@ class TestWriteWithBackupAndCommit:
         ).stdout.strip()
         editor = FileEditor(project_root)
         editor.write_file(
-            "prompts/summarizer.j2",
+            "prompts/briefing/summarizer.j2",
             "edited content {{ name }}",
             kind="prompt",
             commit_message="ui edit summarizer",
@@ -122,7 +125,14 @@ class TestWriteWithBackupAndCommit:
         ).stdout.strip()
         assert head_after == head_before  # 新規コミットなし
         status = subprocess.run(
-            ["git", "-C", str(project_root), "status", "--porcelain", "prompts/summarizer.j2"],
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "status",
+                "--porcelain",
+                "prompts/briefing/summarizer.j2",
+            ],
             capture_output=True,
             text=True,
             check=True,

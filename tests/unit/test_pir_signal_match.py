@@ -326,7 +326,7 @@ def test_has_match_criteria_accepts_tree_only_pir() -> None:
 
 
 # ---- actor / actor_nation leaf (Tier 1 の移植、authoring 統一 §3.1) ----
-# 実辞書 (config/actor_aliases.yaml) を使う — test_pir_evaluator.TestSubjectGate と同じ流儀。
+# 実辞書 (config/cti/actor_aliases.yaml) を使う — test_pir_evaluator.TestSubjectGate と同じ流儀。
 
 _APT_TREE = {
     "any": [

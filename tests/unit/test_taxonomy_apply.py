@@ -165,7 +165,7 @@ class TestApplyTaxonomyProposal:
             {"kind": "add_alias", "alias": "gaming", "canonical": "technology"}
         )
         assert result["applied"] == "yaml_updated"
-        assert _lookup(writes["config/victim_sectors.yaml"])["gaming"] == "technology"
+        assert _lookup(writes["config/cti/victim_sectors.yaml"])["gaming"] == "technology"
 
     def test_add_alias_already_known_no_write(self) -> None:
         result, writes = self._run(
@@ -184,7 +184,7 @@ class TestApplyTaxonomyProposal:
             }
         )
         assert result["applied"] == "yaml_updated"
-        assert _lookup(writes["config/victim_sectors.yaml"])["aviation"] == "aviation"
+        assert _lookup(writes["config/cti/victim_sectors.yaml"])["aviation"] == "aviation"
 
     def test_new_actor_appends_to_dictionary(self) -> None:
         result, writes = self._run(
@@ -200,7 +200,7 @@ class TestApplyTaxonomyProposal:
             "actor_id": "uat_11795",
             "target_yaml": "actor_aliases",
         }
-        written = yaml.safe_load(writes["config/actor_aliases.yaml"])
+        written = yaml.safe_load(writes["config/cti/actor_aliases.yaml"])
         added = next(a for a in written["actors"] if a["id"] == "uat_11795")
         assert added["canonical"] == "UAT-11795"
         # canonical と同名 alias は重複させない
@@ -211,7 +211,7 @@ class TestApplyTaxonomyProposal:
             {"kind": "new_actor", "suggested_id": "cloud", "canonical": "Cloud", "aliases": []}
         )
         assert result["applied"] == "yaml_updated"
-        written = yaml.safe_load(writes["config/actor_aliases.yaml"])
+        written = yaml.safe_load(writes["config/cti/actor_aliases.yaml"])
         added = next(a for a in written["actors"] if a["id"] == "cloud")
         assert added["ambiguous"] is True
 

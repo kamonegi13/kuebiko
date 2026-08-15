@@ -25,7 +25,7 @@ from src.tools.llm_client import LLMClient, LLMResponse
 _log = get_logger(__name__)
 
 PROMPTS_DIR = Path("prompts")
-RUBRIC_TEMPLATE = "deep_dive_rubric.j2"
+RUBRIC_TEMPLATE = "digest/deep_dive_rubric.j2"
 # 出力は候補数×~40tok。chunk あたり RUBRIC_CHUNK_SIZE 件なので ~5000tok で num_predict
 # 12000 に十分収まる。
 RUBRIC_MAX_TOKENS = 12_000

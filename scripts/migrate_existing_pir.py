@@ -9,9 +9,9 @@
 
 Usage:
     uv run python scripts/migrate_existing_pir.py             # 標準出力に preview
-    uv run python scripts/migrate_existing_pir.py --apply    # config/pir.yaml に書込み
+    uv run python scripts/migrate_existing_pir.py --apply    # config/delivery/pir.yaml に書込み
 
-注意: --apply 時、既に config/pir.yaml に PIR がある場合は merge せず追加する。
+注意: --apply 時、既に config/delivery/pir.yaml に PIR がある場合は merge せず追加する。
 重複 id があれば追加せずスキップ。
 """
 
@@ -303,12 +303,12 @@ def main() -> None:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="config/pir.yaml に実際に書き込む (default は preview のみ)",
+        help="config/delivery/pir.yaml に実際に書き込む (default は preview のみ)",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("config/pir.yaml"),
+        default=Path("config/delivery/pir.yaml"),
         help="書き込み先 yaml (--apply 時)",
     )
     args = parser.parse_args()

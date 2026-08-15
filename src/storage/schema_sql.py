@@ -283,7 +283,7 @@ CREATE INDEX IF NOT EXISTS idx_synthesis_period
     ON status_synthesis(period_type, period_start DESC);
 
 -- Phase Diamond verify-spotlight: PIR Spotlight (PIR 縦断 narrative) の永続化。
--- weekly pir-spotlight pipeline が config/pir.yaml の spotlight.enabled=true な
+-- weekly pir-spotlight pipeline が config/delivery/pir.yaml の spotlight.enabled=true な
 -- PIR each に対して narrative 生成 → UPSERT。global synthesis との補完関係。
 CREATE TABLE IF NOT EXISTS pir_spotlight (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -3,7 +3,7 @@
 **抽出ギャップ対策**: entity_type='involved_country' は per-article LLM 要約の
 involved_countries フィールド頼みで、地政学・軍事記事の 4 割超で未抽出
 (実測 2026-07-03: プール 1162 件中 no-anchor 490 件)。国名はタイトルに明示される
-ことが多いため、config/countries.yaml の alias 辞書 (SSoT) を gazetteer として
+ことが多いため、config/cti/countries.yaml の alias 辞書 (SSoT) を gazetteer として
 テキスト走査し、割当キー (nation anchor) を LLM なしで補完する。
 
 article_entities には書き戻さない (LLM 抽出の provenance を汚さない)。

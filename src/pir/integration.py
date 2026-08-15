@@ -1,6 +1,6 @@
 """PIR を triage / synthesis に注入する hook layer。
 
-各 layer は config/pir.yaml が空 / 不在の場合は **既存挙動を維持** する (no-op default)。
+各 layer は config/delivery/pir.yaml が空 / 不在の場合は **既存挙動を維持** する (no-op default)。
 これにより migration 前後で挙動が同じことを保証する。
 
 routing への直接注入 (R0 = target_channel override) は 2026-06-13 に撤去。
@@ -21,7 +21,7 @@ _log = get_logger(__name__)
 # 環境変数で PIR-driven triage を無効化可能 (緊急 rollback 用)
 _PIR_DRIVEN_TRIAGE_ENV = "PIR_DRIVEN_TRIAGE"
 
-# 運用 config として DB を正とする (案 B 拡張)。config/pir.yaml は初回 seed 専用。
+# 運用 config として DB を正とする (案 B 拡張)。config/delivery/pir.yaml は初回 seed 専用。
 PIR_CONFIG_KEY = "pir"
 
 # Cache (in-process、container 再起動で reload)
@@ -31,7 +31,7 @@ _cached_config: PirConfig | None = None
 def load_current_pir_config() -> PirConfig:
     """DB (config_store) 優先で PIR config をロード (fresh, 非 cache)。
 
-    未保存/障害/破損時は config/pir.yaml (seed) に fallback。read-modify-write する
+    未保存/障害/破損時は config/delivery/pir.yaml (seed) に fallback。read-modify-write する
     UI endpoint と get_pir_config の loader が使う。
     """
     raw: object = None
@@ -83,14 +83,14 @@ def persist_pir_config(config: PirConfig) -> int:
 
 
 def seed_pir_if_absent() -> bool:
-    """DB 未投入なら config/pir.yaml seed を version 1 として取り込む (起動時)。"""
+    """DB 未投入なら config/delivery/pir.yaml seed を version 1 として取り込む (起動時)。"""
     try:
         from src.storage.config_store import seed_config_if_absent
 
         return seed_config_if_absent(
             PIR_CONFIG_KEY,
             load_pir_config().model_dump(mode="json", exclude_none=False),
-            note="初期 seed (config/pir.yaml)",
+            note="初期 seed (config/delivery/pir.yaml)",
         )
     except Exception as e:  # noqa: BLE001
         _log.warning("pir_seed_failed", error=str(e))

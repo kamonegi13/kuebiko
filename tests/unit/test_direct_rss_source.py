@@ -35,7 +35,8 @@ feeds:
     enabled: false
     folder: "research"
 """
-        p = tmp_path / "feeds.yaml"
+        p = tmp_path / "sources/feeds.yaml"
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(yaml_text)
         cfg = load_feeds_config(p)
         assert len(cfg.feeds) == 2
@@ -49,7 +50,8 @@ feeds:
         assert cfg.feeds == []
 
     def test_returns_empty_when_yaml_has_no_feeds(self, tmp_path: Path) -> None:
-        p = tmp_path / "feeds.yaml"
+        p = tmp_path / "sources/feeds.yaml"
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("feeds: []")
         cfg = load_feeds_config(p)
         assert cfg.feeds == []

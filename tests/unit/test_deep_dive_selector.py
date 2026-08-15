@@ -318,7 +318,8 @@ class TestPirContextInjection:
         assert "PIR 未登録" in out
 
     async def test_select_injects_real_pir_config(self) -> None:
-        # select_deep_dive_articles が config/pir.yaml から pir_context を構築し prompt に注入する
+        # select_deep_dive_articles が config/delivery/pir.yaml から
+        # pir_context を構築し prompt に注入する
         # (死にコードでない保証)。LLM をモックし prompt を捕捉。
         from src.pir.integration import invalidate_cache
 

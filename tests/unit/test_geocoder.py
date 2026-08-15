@@ -23,7 +23,7 @@ def test_centroids_in_sync_with_countries_yaml() -> None:
     yaml に国を足して centroid を忘れると resolve できても plot 不能になる
     (逆も labels 不在で plot しても国名が出ない)。両者の集合一致を強制する。
     """
-    raw = yaml.safe_load(Path("config/countries.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load(Path("config/cti/countries.yaml").read_text(encoding="utf-8"))
     yaml_isos = set((raw or {}).get("canonical", {}).keys())
     centroid_isos = set(_COUNTRY_CENTROIDS.keys())
     missing_centroid = sorted(yaml_isos - centroid_isos)

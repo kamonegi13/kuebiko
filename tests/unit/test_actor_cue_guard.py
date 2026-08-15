@@ -14,7 +14,7 @@ import yaml
 
 from src.cti.actor_normalizer import GENRE_CUE_WORDS
 
-_YAML = Path("config/actor_aliases.yaml")
+_YAML = Path("config/cti/actor_aliases.yaml")
 
 
 def _load_actors() -> list[dict[str, Any]]:

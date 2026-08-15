@@ -1,7 +1,7 @@
 """LLM 出力の routing 用構造化フラグ (Phase 5L-3)。
 
 router が LLM の自由文を regex でパースしていた弱さ (Phase 5K の japan_watch
-誤分類) を解消するため、prompts/summarizer.j2 で LLM に直接構造化フラグを
+誤分類) を解消するため、prompts/briefing/summarizer.j2 で LLM に直接構造化フラグを
 出させ、router はこれを primary シグナルとして利用する。
 
 regex は ``confidence == "low"`` のときのみ補助 (二重防御) として残す。

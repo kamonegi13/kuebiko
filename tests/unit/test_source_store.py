@@ -26,11 +26,13 @@ _FEEDS_SEED = {
 def _env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "feeds.yaml").write_text(
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
+    (cfg / "sources/feeds.yaml").write_text(
         yaml.safe_dump(_FEEDS_SEED, allow_unicode=True), encoding="utf-8"
     )
-    (cfg / "watchers.yaml").write_text("watchers: []\n", encoding="utf-8")
-    (cfg / "scrapers.yaml").write_text("scrapers: []\n", encoding="utf-8")
+    (cfg / "sources/watchers.yaml").write_text("watchers: []\n", encoding="utf-8")
+    (cfg / "sources/scrapers.yaml").write_text("scrapers: []\n", encoding="utf-8")
     (tmp_path / "data").mkdir()
     monkeypatch.chdir(tmp_path)
     return tmp_path
@@ -72,7 +74,7 @@ def test_yaml_mode_writes_and_reads_file(_env: Path, monkeypatch: pytest.MonkeyP
     version = source_store.save_entries("rss", new, note="t")
     assert version is None  # yaml mode は version を返さない
     # yaml file が書き換わっている
-    raw = yaml.safe_load((_env / "config" / "feeds.yaml").read_text())
+    raw = yaml.safe_load((_env / "config" / "sources/feeds.yaml").read_text())
     assert raw["feeds"] == new
     assert source_store.load_entries("rss") == new
 

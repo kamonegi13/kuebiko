@@ -1,6 +1,6 @@
 """既存 article の PMESII 8 軸を新 prompt で再分類して UPDATE。
 
-prompt 修正 (summarizer.j2 で I-infra / T の definition broader 化) を既存 4,648
+prompt 修正 (briefing/summarizer.j2 で I-infra / T の definition broader 化) を既存 4,648
 件に反映するための軽量 LLM 再走 script。
 
 input: articles テーブル (title + summary + body 先頭 1500 char)

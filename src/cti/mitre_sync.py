@@ -1,7 +1,7 @@
 """MITRE ATT&CK → Actor 辞書の逐次同期 (Actors Stage 4)。
 
 weekly cron (pipelines.yaml の ``mitre-actor-sync``) で MITRE ATT&CK enterprise STIX を
-取得し、``config/actor_aliases.yaml`` との差分を検出する。
+取得し、``config/cti/actor_aliases.yaml`` との差分を検出する。
 
 適用ポリシー (ハイブリッド):
 - **自動適用**: MITRE 一次データ由来の追加系差分 — alias 追加 / 使用マルウェア追加 /

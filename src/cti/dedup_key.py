@@ -1,7 +1,7 @@
 """同事象クラスタリング用 dedup_key の生成 (Phase 5L-4 + 5L-7)。
 
 ``compute_dedup_key``:
-    - LLM が prompts/summarizer.j2 で出力する ``dedup_key`` を一級信号
+    - LLM が prompts/briefing/summarizer.j2 で出力する ``dedup_key`` を一級信号
     - LLM 不在時は CVE-ID 抽出 → article_id ハッシュにフォールバック
 
 旧 Grok markdown 経路の ``compute_grok_section_dedup_key`` は Grok JSONL 化

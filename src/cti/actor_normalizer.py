@@ -5,7 +5,7 @@ CTI 報道では同じアクターが複数の名前で呼ばれる:
     - APT41 = Wicked Panda = Barium = Winnti
     - APT29 = Cozy Bear = Midnight Blizzard
 
-このモジュールは ``config/actor_aliases.yaml`` をロードし、与えられた
+このモジュールは ``config/cti/actor_aliases.yaml`` をロードし、与えられた
 テキストから既知アクターを検出して正規名 + エイリアス + MITRE Group ID
 を返す。長い別名から優先的に試すことで誤検出を抑える。
 
@@ -139,7 +139,7 @@ def _text_has_cue(text_lower: str, cues: tuple[str, ...]) -> bool:
     return any(cue.lower() in text_lower for cue in cues)
 
 
-DEFAULT_ALIASES_PATH = Path("config/actor_aliases.yaml")
+DEFAULT_ALIASES_PATH = Path("config/cti/actor_aliases.yaml")
 
 
 class ActorAlias(BaseModel):

@@ -348,7 +348,7 @@ def test_template_renders_without_headline_mode_variable() -> None:
     from src.synthesis.grounded.passes import _render
 
     prompt = _render(
-        "synthesis_render.j2",
+        "synthesis/render.j2",
         period_label="L",
         headline_id="a",
         headline_view=None,

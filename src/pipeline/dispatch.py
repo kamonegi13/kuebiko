@@ -43,7 +43,7 @@ from src.tools.source_router import build_source
 
 _log = get_logger(__name__)
 
-DEFAULT_TEMPLATE_PATH = Path("prompts/summarizer.j2")
+DEFAULT_TEMPLATE_PATH = Path("prompts/briefing/summarizer.j2")
 DEFAULT_PIPELINE_NAME = "daily-briefing"
 
 RUN_RESULTS_DIR = Path("data/run_results")
@@ -221,8 +221,15 @@ def _find_pipeline(
 def _load_template(path: Path = DEFAULT_TEMPLATE_PATH) -> jinja2.Template:
     if not path.exists():
         raise FileNotFoundError(f"Jinja2 テンプレートが見つかりません: {path.resolve()}")
+    # loader root は [テンプレートの親, prompts root] の 2 段。区分サブディレクトリ
+    # (prompts/briefing/ 等) 配下でも共有パーツ ({% include "_persona.j2" %}) が
+    # prompts/ 直下から解決できるようにする (2026-08-15 物理再編)。
+    roots = [str(path.parent)]
+    prompts_root = path.parent.parent if path.parent.name != "prompts" else path.parent
+    if str(prompts_root) not in roots:
+        roots.append(str(prompts_root))
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(path.parent)),
+        loader=jinja2.FileSystemLoader(roots),
         autoescape=False,  # noqa: S701  プロンプトはテキストでありエスケープしない
         keep_trailing_newline=True,
         undefined=jinja2.StrictUndefined,

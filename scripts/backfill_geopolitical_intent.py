@@ -2,7 +2,7 @@
 """socio_political_intent が null の地政学/政策記事を、ローカル LLM で動機補完する。
 
 Phase Geopolitical-Intent (2026-06-21): intent 軸をサイバー↔地政学を貫く統一軸に拡張し、
-summarizer.j2 も「地政学事案でも intent を埋めよ」に変更した (前方の新記事は埋まる)。
+briefing/summarizer.j2 も「地政学事案でも intent を埋めよ」に変更した (前方の新記事は埋まる)。
 本スクリプトは **地図に乗る既存バックログ** を救済して脅威マップを即座に動機色分けする。
 
 設計 ([[diamond_axes_design]] / [[news_search_consolidation]] / CLAUDE.md §4):

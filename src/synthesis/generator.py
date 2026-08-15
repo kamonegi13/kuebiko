@@ -3,7 +3,7 @@
 Pipeline:
     1. 軸別構造集計 (intel_graph_analytics の fetch_axis_dashboard を再利用)
     2. trend cluster 集計 (trend_aggregator の aggregate_trends を再利用)
-    3. prompts/status_synthesis.j2 で LLM call
+    3. prompts/synthesis/status_synthesis.j2 で LLM call
     4. JSON 出力を parse → StatusSynthesisRecord に変換
     5. 呼び出し側 (runner) が repo に UPSERT
 
@@ -34,7 +34,7 @@ from src.ui.services.intel_graph_analytics import (
 _log = get_logger(__name__)
 
 PROMPTS_DIR = Path("prompts")
-SYNTHESIS_TEMPLATE = "status_synthesis.j2"
+SYNTHESIS_TEMPLATE = "synthesis/status_synthesis.j2"
 SYNTHESIS_MAX_TOKENS = 12_000
 SYNTHESIS_TEMPERATURE = 0.25
 
@@ -239,7 +239,7 @@ def _render_prompt(
     )
     template = env.get_template(SYNTHESIS_TEMPLATE)
 
-    # Phase Diamond verify-pir-driven: config/pir.yaml の PIR list を context として注入。
+    # Phase Diamond verify-pir-driven: config/delivery/pir.yaml の PIR list を context として注入。
     # 空 / 不在なら pir_context=[] で legacy 挙動 (template 側で空 list を扱う)。
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config

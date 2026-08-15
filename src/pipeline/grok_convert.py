@@ -46,7 +46,7 @@ async def _grok_article_to_briefings(
     *,
     enrichment: object | None = None,  # LlmEnrichment, untyped to keep call sites flexible
     llm: LLMClient | None = None,  # full enrichment 用 (summarizer LLM)
-    template: jinja2.Template | None = None,  # summarizer.j2
+    template: jinja2.Template | None = None,  # briefing/summarizer.j2
     brief_count_24h: int = 0,
 ) -> list[BriefingMessage]:
     """Grok レポート (JSONL output) を tweet 単位の BriefingMessage に展開する。

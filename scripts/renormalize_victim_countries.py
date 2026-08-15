@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """2026-06-17 countries.yaml 拡充: victim_country_iso を最新 yaml で再正規化。
 
-config/countries.yaml に約 60 ヶ国を追加した後、既存 articles で
+config/cti/countries.yaml に約 60 ヶ国を追加した後、既存 articles で
 ``victim_country_iso IS NULL`` だが ``victim_country_raw`` が新 alias に match する
 record を救済する (Italy / Lebanon / Singapore 等が null のまま埋もれていた)。
 

@@ -3,7 +3,7 @@
 src/digest/db_filter.py で取得した article リストを LLM に渡して、
 動的セクション分けされた Markdown digest を生成する。
 
-LLM プロンプト (prompts/weekly_recap.j2 等) は
+LLM プロンプト (prompts/digest/weekly_recap.j2 等) は
 セクション固定でなく LLM 動的判定 (今週の重点を反映)。
 """
 
@@ -108,7 +108,7 @@ async def generate_digest(
     Args:
         llm: LLM クライアント
         candidates: digest 集約対象 article のリスト
-        template_name: Jinja2 テンプレート名 (例: "weekly_recap.j2")
+        template_name: Jinja2 テンプレート名 (例: "digest/weekly_recap.j2")
         period_label: digest の対象期間ラベル (例: "今日 (2026-05-17)")
         think: LLM thinking モード ON/OFF/既定
     """

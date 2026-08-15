@@ -41,7 +41,7 @@ _log = get_logger(__name__)
 # digest_research は pir_daily_focus に置き換わったため削除済 (Phase Diamond pir-daily-focus)。
 _DIGEST_SPECS = {
     "digest_weekly_recap": {
-        "template": "weekly_recap.j2",
+        "template": "digest/weekly_recap.j2",
         "title_prefix": "週次深掘りダイジェスト",
         "category": "weekly_recap",
         "importance": "medium",

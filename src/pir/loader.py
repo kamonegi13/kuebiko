@@ -1,4 +1,4 @@
-"""config/pir.yaml の読み書き。
+"""config/delivery/pir.yaml の読み書き。
 
 書き込みは atomic rename (temp file → rename) で半端な状態を作らない。
 yaml は YAML 1.1 互換 (PyYAML safe_load)。
@@ -14,7 +14,7 @@ import yaml
 
 from src.pir.models import PirConfig
 
-DEFAULT_PIR_YAML_PATH = Path("config/pir.yaml")
+DEFAULT_PIR_YAML_PATH = Path("config/delivery/pir.yaml")
 
 # 旧 schema の残存キー (Pir は extra="forbid" のため validate 前に除去が必要)。
 # target_channel: R0 配信 override (2026-06-13 撤去、全 PIR が auto のまま未使用だった)
@@ -73,7 +73,7 @@ def strip_legacy_pir_keys(raw: dict[str, object]) -> dict[str, object]:
 
 
 def load_pir_config(path: Path | None = None) -> PirConfig:
-    """config/pir.yaml を読み込んで PirConfig に validate。
+    """config/delivery/pir.yaml を読み込んで PirConfig に validate。
 
     ファイル不在時は空 PirConfig を返す (default behavior 互換性)。
     """

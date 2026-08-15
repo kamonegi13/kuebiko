@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """victim_sector_canonical を最新 yaml で再正規化 (PG/sqlite 両対応・dry-run 既定)。
 
-config/victim_sectors.yaml に alias/canonical を追加した後、``victim_sector_canonical=
+config/cti/victim_sectors.yaml に alias/canonical を追加した後、``victim_sector_canonical=
 'uncategorized'`` だが raw 値が新 alias に match する既存 record を正しい canonical に
 更新する (**additive only** = 既に分類済みの record は触らず、純粋に救済のみ)。
 

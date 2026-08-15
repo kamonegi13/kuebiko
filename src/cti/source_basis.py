@@ -122,7 +122,7 @@ _RESEARCH_TITLE = (
 )
 # 国営メディア / 影響工作 (信頼度の軸でなく framing バイアスを示す。事実は報じうるが
 # 意図・責任帰属の framing をそのまま採らない。収集は維持し synthesis で割引)。
-# seed のみ。判定は config/source_reliability.yaml + UI 上書きで自由に再分類できる
+# seed のみ。判定は config/sources/source_reliability.yaml + UI 上書きで自由に再分類できる
 # (国籍でなく国家統制/出資で分類。独立系の The Insider / NK News 等は含めない)。
 _STATE_MEDIA_HOSTS = (
     "rt.com",
@@ -144,14 +144,14 @@ def _title_match(title: str, kws: tuple[str, ...]) -> bool:
     return any(k in title for k in kws)
 
 
-# ── managed config (config/source_reliability.yaml) ──
+# ── managed config (config/sources/source_reliability.yaml) ──
 # コード内の上記 tuple は built-in default (config 欠落時の fallback)。config が存在すれば
 # その host/title を **追加マージ** する (実 feed 群を網羅。news catch-all 誤分類の是正)。
 _CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
-_RELIABILITY_CONFIG_PATH = _CONFIG_DIR / "source_reliability.yaml"
+_RELIABILITY_CONFIG_PATH = _CONFIG_DIR / "sources/source_reliability.yaml"
 # per-source 上書き (UI 専用・機械管理)。手編集せず SubscriptionsPage から編集する。
 # patterns (curated default、コメント付き) と分離し、こちらは comment 無しで安全に rewrite。
-_OVERRIDES_PATH = _CONFIG_DIR / "source_reliability_overrides.yaml"
+_OVERRIDES_PATH = _CONFIG_DIR / "sources/source_reliability_overrides.yaml"
 
 # UI で選べる明示ティア (override 値の検証用)。
 ASSIGNABLE_TIERS: tuple[SourceTier, ...] = (

@@ -4,7 +4,7 @@
 情勢ブリッジ (2026-06-22): サイバー↔地政学を「国家」で相関するには、地政学事象に
 **当事国 (主体国)** のタグが要る (victim_country=被害国・サイバー用とは別軸)。これが
 無いと地政学記事の ~2% (サイバーAPT actor 経由) しか国家に紐づかず、相関が始まらない。
-summarizer.j2 に involved_countries を追加済 (前方の新記事は埋まる)。本スクリプトは
+briefing/summarizer.j2 に involved_countries を追加済 (前方の新記事は埋まる)。本スクリプトは
 **既存バックログ**を救済し、actor.nation 経由のサイバー↔地政学相関を解禁する。
 
 設計 ([[news_search_consolidation]] / CLAUDE.md §4):

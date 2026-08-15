@@ -6,9 +6,9 @@
 再帰属まで実装済みだったため、同じ終端保証を taxonomy 承認にも与える。
 
 3 kind を適用する:
-- add_alias     → config/victim_sectors.yaml の canonical に alias 追記
+- add_alias     → config/cti/victim_sectors.yaml の canonical に alias 追記
 - new_canonical → 同 yaml に新カテゴリ block 追記
-- new_actor     → config/actor_aliases.yaml へ辞書化 (actor_editor 再利用 + 一般語ゲート)
+- new_actor     → config/cti/actor_aliases.yaml へ辞書化 (actor_editor 再利用 + 一般語ゲート)
 
 victim_sectors.yaml はコメント保持のためテキスト外科編集とし、適用後に round-trip
 検証 (yaml parse → alias が canonical に解決) を通す fail-closed。書込は呼出側
@@ -29,8 +29,8 @@ from src.storage.records import TaxonomyProposalRecord
 
 _log = get_logger(__name__)
 
-SECTORS_YAML_RELPATH = "config/victim_sectors.yaml"
-ACTORS_YAML_RELPATH = "config/actor_aliases.yaml"
+SECTORS_YAML_RELPATH = "config/cti/victim_sectors.yaml"
+ACTORS_YAML_RELPATH = "config/cti/actor_aliases.yaml"
 
 # 新カテゴリ id の形式 (yaml key / DB canonical 値になるため厳格に)
 _CANONICAL_ID_RE = re.compile(r"^[a-z0-9_]{1,32}$")

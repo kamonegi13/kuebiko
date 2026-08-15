@@ -5,7 +5,7 @@
 解決する。既存記事の多くは victim_city 未抽出のため、被害国 (victim_country_iso) を持つ
 cyber 記事に対し title+summary から **明記された都市のみ** を抽出して補完する。
 
-設計 (CLAUDE.md §4 / summarizer.j2 の victim_city 規約と同じ):
+設計 (CLAUDE.md §4 / briefing/summarizer.j2 の victim_city 規約と同じ):
   - **ローカル LLM のみ** (Ollama)。外部送信なし。送るのは見出し+要約のみ。
   - **保守的**: 記事に都市が **明記されている時だけ** 補完。本社所在地を推測で埋めない
     (偽の点を出さない)。明記が無ければ ``NONE`` → skip。

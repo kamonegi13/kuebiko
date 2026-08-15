@@ -95,7 +95,7 @@ class ArticleTriage:
         """Triage prompt を構築。PIR yaml が active なら PIR-driven、不在なら legacy。
 
         PIR-driven path:
-            config/pir.yaml の enabled PIR の title + description を、判定基準
+            config/delivery/pir.yaml の enabled PIR の title + description を、判定基準
             (high / medium) として動的注入。low は exclusion 性質のため hardcoded のまま。
             既存挙動との互換は migration 時の PIR yaml 内容で担保 (verify_pir_migration.py)。
 

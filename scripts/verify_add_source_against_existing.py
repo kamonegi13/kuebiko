@@ -26,7 +26,7 @@ import httpx
 import yaml
 
 API_URL = "http://127.0.0.1:8001/api/v1/sources/auto_detect"
-FEEDS_YAML = Path("config/feeds.yaml")
+FEEDS_YAML = Path("config/sources/feeds.yaml")
 TIMEOUT = 120.0  # 一部 site (Ransomware.live / iHLS 等) は probe が時間掛かる
 
 # 第三者 hosted feed: site top probe で見つかるはずがない (除外集計)

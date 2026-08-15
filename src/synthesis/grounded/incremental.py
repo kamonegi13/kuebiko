@@ -134,7 +134,7 @@ async def incremental_ground_and_score(
 ) -> IncrementalAnalysis:
     """前回判定 + 新着ソースで判定を増分更新する (対称再評価・ACH 集計は加算)。"""
     prompt = _render(
-        "synthesis_ground_incremental.j2",
+        "synthesis/ground_incremental.j2",
         situation_title=situation_title,
         prior=prior,
         sources=sources,
@@ -263,7 +263,7 @@ async def detect_new_claims(
     if not articles:
         return DetectResult(open=(), rejected=(), overflow=0)
     prompt = _render(
-        "synthesis_detect_new.j2",
+        "synthesis/detect_new.j2",
         articles=articles,
         active_titles=active_titles,
         pir_context=pir_context,

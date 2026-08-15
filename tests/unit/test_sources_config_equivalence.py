@@ -81,11 +81,15 @@ _SCRAPERS = {
 def _cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "feeds.yaml").write_text(yaml.safe_dump(_FEEDS, allow_unicode=True), encoding="utf-8")
-    (cfg / "watchers.yaml").write_text(
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
+    (cfg / "sources/feeds.yaml").write_text(
+        yaml.safe_dump(_FEEDS, allow_unicode=True), encoding="utf-8"
+    )
+    (cfg / "sources/watchers.yaml").write_text(
         yaml.safe_dump(_WATCHERS, allow_unicode=True), encoding="utf-8"
     )
-    (cfg / "scrapers.yaml").write_text(
+    (cfg / "sources/scrapers.yaml").write_text(
         yaml.safe_dump(_SCRAPERS, allow_unicode=True), encoding="utf-8"
     )
     (tmp_path / "data").mkdir()

@@ -10,7 +10,7 @@
 
 使い方:
     uv run python scripts/enrich_actors_from_mitre.py            # review 出力 (.enriched.yaml)
-    uv run python scripts/enrich_actors_from_mitre.py --apply    # config/actor_aliases.yaml に適用
+    uv run python scripts/enrich_actors_from_mitre.py --apply    # config/cti/actor_aliases.yaml に適用
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _enrich_existing(actor: dict[str, Any], grp: MitreGroup) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true", help="config/actor_aliases.yaml に直接書き込む")
+    ap.add_argument("--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む")
     args = ap.parse_args()
 
     data = load_actors_raw()
@@ -130,10 +130,10 @@ def main() -> None:
 
     content = render_actors_yaml(data)
     if args.apply:
-        Path("config/actor_aliases.yaml").write_text(content, encoding="utf-8")
-        print("\n✅ config/actor_aliases.yaml に適用しました", file=sys.stderr)
+        Path("config/cti/actor_aliases.yaml").write_text(content, encoding="utf-8")
+        print("\n✅ config/cti/actor_aliases.yaml に適用しました", file=sys.stderr)
     else:
-        out = Path("config/actor_aliases.enriched.yaml")
+        out = Path("config/cti/actor_aliases.enriched.yaml")
         out.write_text(content, encoding="utf-8")
         print(
             f"\n📝 review 出力: {out} (確認後 --apply で適用、または diff で精査)", file=sys.stderr

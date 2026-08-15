@@ -73,7 +73,7 @@ def test_build_synthesis_pir_context() -> None:
 
 
 class TestPirDbFirst:
-    """PIR も DB 正・未保存時 config/pir.yaml seed fallback (運用 config DB 化)。"""
+    """PIR も DB 正・未保存時 config/delivery/pir.yaml seed fallback (運用 config DB 化)。"""
 
     def test_load_current_prefers_db(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import src.storage.config_store as cstore

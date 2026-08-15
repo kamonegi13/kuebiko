@@ -344,10 +344,10 @@ class TestPipelineAttachesStix:
         )
 
         env = jinja2.Environment(
-            loader=jinja2.DictLoader({"summarizer.j2": "{{ body }}"}),
+            loader=jinja2.DictLoader({"briefing/summarizer.j2": "{{ body }}"}),
             autoescape=False,
         )
-        template = env.get_template("summarizer.j2")
+        template = env.get_template("briefing/summarizer.j2")
 
         pipeline = PipelineConfig(
             name="daily-briefing",
@@ -448,10 +448,10 @@ class TestPipelineAttachesStix:
         )
 
         env = jinja2.Environment(
-            loader=jinja2.DictLoader({"summarizer.j2": "{{ body }}"}),
+            loader=jinja2.DictLoader({"briefing/summarizer.j2": "{{ body }}"}),
             autoescape=False,
         )
-        template = env.get_template("summarizer.j2")
+        template = env.get_template("briefing/summarizer.j2")
 
         pipeline = PipelineConfig(
             name="daily-briefing",

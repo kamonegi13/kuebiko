@@ -1,4 +1,4 @@
-"""config/scrapers.yaml の declarative loader (Phase E-3)。
+"""config/sources/scrapers.yaml の declarative loader (Phase E-3)。
 
 HTML scraper を yaml_registry と並列で管理。 setup は SitemapWatcher の
 yaml_registry を踏襲し、 source_router._resolve_scraper から透過利用される。
@@ -18,7 +18,7 @@ from src.watchers.sitemap_base import WatcherState
 
 _log = get_logger(__name__)
 
-DEFAULT_SCRAPERS_YAML = Path("config/scrapers.yaml")
+DEFAULT_SCRAPERS_YAML = Path("config/sources/scrapers.yaml")
 DEFAULT_STATE_DIR = Path("data")
 
 
@@ -46,7 +46,7 @@ class ScraperDef(BaseModel):
 
 
 class ScrapersConfig(BaseModel):
-    """config/scrapers.yaml の root schema。"""
+    """config/sources/scrapers.yaml の root schema。"""
 
     model_config = ConfigDict(extra="forbid")
 

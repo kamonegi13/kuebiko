@@ -1,7 +1,7 @@
 """PIR Spotlight 生成 (LLM-driven narrative)。
 
 1 PIR + 直近 article matches → SpotlightRecord (headline / key_events / outlook)。
-prompt template は ``prompts/pir_spotlight.j2``。
+prompt template は ``prompts/spotlight/pir_spotlight.j2``。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
 
-_PROMPT_TEMPLATE = "pir_spotlight.j2"
+_PROMPT_TEMPLATE = "spotlight/pir_spotlight.j2"
 _CANDIDATE_LIMIT = 30  # LLM に渡す article 候補数 (prompt サイズ制御)
 _KEY_EVENTS_MIN = 1
 _KEY_EVENTS_MAX = 10

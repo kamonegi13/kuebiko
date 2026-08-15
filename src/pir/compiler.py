@@ -139,7 +139,7 @@ def _load_known_actors(config_dir: Path = _CONFIG_DIR) -> list[str]:
 
     schema は ``actors:`` の下に {id: {canonical: "...", aliases: [...], ...}} 形式。
     """
-    path = config_dir / "actor_aliases.yaml"
+    path = config_dir / "cti/actor_aliases.yaml"
     if not path.exists():
         return []
     with path.open("r", encoding="utf-8") as f:
@@ -168,7 +168,7 @@ def _load_known_sectors(config_dir: Path = _CONFIG_DIR) -> list[str]:
 
     schema は ``canonical:`` の下に {sector_id: {display, aliases, ...}}。
     """
-    path = config_dir / "victim_sectors.yaml"
+    path = config_dir / "cti/victim_sectors.yaml"
     fallback = ["defense", "government", "finance", "energy", "telecom", "healthcare"]
     if not path.exists():
         return fallback

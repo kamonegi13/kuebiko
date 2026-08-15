@@ -54,7 +54,7 @@ async def adversarial_review(
     """全 judgment を 1 バッチで red-team レビューし judgment_id → 結果 を返す。"""
     if not judgments:
         return {}
-    prompt = _render("synthesis_adversarial.j2", judgments=judgments)
+    prompt = _render("synthesis/adversarial.j2", judgments=judgments)
     parsed = await llm.generate_structured(
         prompt, _WireReviews, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
     )

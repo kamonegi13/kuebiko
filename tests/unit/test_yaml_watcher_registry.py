@@ -32,7 +32,8 @@ watchers:
     url_include_pattern: '^https://b\\.example/'
     feed_title: "Test B"
 """
-        p = tmp_path / "watchers.yaml"
+        p = tmp_path / "sources/watchers.yaml"
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(yaml_text)
         cfg = load_watchers_config(p)
         assert len(cfg.watchers) == 2
@@ -88,7 +89,7 @@ class TestBuildSitemapWatcher:
 
 
 class TestProductionYamlIntegrity:
-    """config/watchers.yaml が実 watcher 数と一致するか。"""
+    """config/sources/watchers.yaml が実 watcher 数と一致するか。"""
 
     def test_production_yaml_loads(self) -> None:
         reset_cache()

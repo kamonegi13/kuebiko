@@ -23,8 +23,8 @@ def _init_git(root: Path) -> None:
 
 
 def _bootstrap_project(tmp_path: Path) -> Path:
-    (tmp_path / "prompts").mkdir()
-    (tmp_path / "prompts" / "summarizer.j2").write_text("test prompt", encoding="utf-8")
+    (tmp_path / "prompts" / "briefing").mkdir(parents=True)
+    (tmp_path / "prompts" / "briefing/summarizer.j2").write_text("test prompt", encoding="utf-8")
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "pipelines.yaml").write_text(
         "pipelines:\n  - name: direct-rss-fetch\n"
@@ -153,14 +153,14 @@ def test_api_v1_prompts_lists_summarizer(client: TestClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert "files" in data
-    assert any("summarizer.j2" in f for f in data["files"])
+    assert any("briefing/summarizer.j2" in f for f in data["files"])
 
 
 def test_api_v1_prompts_file_returns_content(client: TestClient) -> None:
-    resp = client.get("/api/v1/prompts/file", params={"path": "prompts/summarizer.j2"})
+    resp = client.get("/api/v1/prompts/file", params={"path": "prompts/briefing/summarizer.j2"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["path"] == "prompts/summarizer.j2"
+    assert data["path"] == "prompts/briefing/summarizer.j2"
     assert "test prompt" in data["content"]
 
 
@@ -303,14 +303,14 @@ def test_404_returns_html(client: TestClient) -> None:
 def test_prompt_save_creates_backup_and_commit(client: TestClient) -> None:
     resp = client.post(
         "/api/v1/prompts/save",
-        data={"path": "prompts/summarizer.j2", "content": "edited!"},
+        data={"path": "prompts/briefing/summarizer.j2", "content": "edited!"},
     )
     assert resp.status_code == 200
     assert resp.json()["saved"] is True
 
     project_root = Path.cwd()
-    assert (project_root / "prompts" / "summarizer.j2.bak").exists()
-    assert "edited!" in (project_root / "prompts" / "summarizer.j2").read_text(
+    assert (project_root / "prompts" / "briefing/summarizer.j2.bak").exists()
+    assert "edited!" in (project_root / "prompts" / "briefing/summarizer.j2").read_text(
         encoding="utf-8",
     )
 

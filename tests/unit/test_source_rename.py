@@ -20,14 +20,16 @@ from src.ui.api import _source_manager as sm
 def _cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "feeds.yaml").write_text(
+    for _sub in ("sources", "cti", "delivery"):
+        (cfg / _sub).mkdir(exist_ok=True)
+    (cfg / "sources/feeds.yaml").write_text(
         yaml.safe_dump(
             {"feeds": [{"name": "Old RSS Name", "url": "https://e/rss", "enabled": True}]},
             allow_unicode=True,
         ),
         encoding="utf-8",
     )
-    (cfg / "scrapers.yaml").write_text(
+    (cfg / "sources/scrapers.yaml").write_text(
         yaml.safe_dump(
             {
                 "scrapers": [
@@ -44,7 +46,7 @@ def _cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ),
         encoding="utf-8",
     )
-    (cfg / "watchers.yaml").write_text(
+    (cfg / "sources/watchers.yaml").write_text(
         yaml.safe_dump(
             {
                 "watchers": [

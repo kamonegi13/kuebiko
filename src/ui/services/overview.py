@@ -106,7 +106,7 @@ def _is_roundup(title: str) -> bool:
     return any(m in t for m in _ROUNDUP_MARKERS)
 
 
-# victim_sector_canonical → 表示ラベル。SSoT = config/victim_sectors.yaml の display
+# victim_sector_canonical → 表示ラベル。SSoT = config/cti/victim_sectors.yaml の display
 # (M3: ハードコード複製が yaml 更新に追従せず、food_agriculture 等が生 id のまま UI に
 # 漏れていた)。読み込みは geo_cyber_map と同じ cache 済みヘルパを共有する。
 def _sector_labels() -> dict[str, str]:

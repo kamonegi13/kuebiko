@@ -2,7 +2,7 @@
 
 実害 (2026-07-17 検出): APT10 の旧 Microsoft 名 ``POTASSIUM`` が化学元素カリウムを
 扱う記事に誤帰属し、対象 actor の entity の 53% が汚染された。旧 Microsoft の元素名系
-actor 名は単独使用が稀で実務では併記が通例のため、辞書 (config/actor_aliases.yaml)
+actor 名は単独使用が稀で実務では併記が通例のため、辞書 (config/cti/actor_aliases.yaml)
 から除去した。
 
 しかし MITRE ATT&CK は同じ名前を group の alias として保持しているため、週次同期

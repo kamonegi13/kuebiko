@@ -57,7 +57,7 @@ NULL_SENTINELS: frozenset[str] = frozenset(
     }
 )
 
-# victim_country のスコープ語 (監査 2026-08-01 ⑥)。summarizer.j2 が複数国攻撃に
+# victim_country のスコープ語 (監査 2026-08-01 ⑥)。briefing/summarizer.j2 が複数国攻撃に
 # 指示している語彙 + 実データ raw 上位 (global 107 / eu 13 件/30日)。ISO2 には
 # 写像しない (countries.yaml の意味 = 単一国を保つ) — victim_country_scope 列で持つ。
 _SCOPE_GLOBAL_TOKENS: frozenset[str] = frozenset(
@@ -200,7 +200,7 @@ class TaxonomyNormalizer:
     def normalize_country_scope(self, raw: str | None) -> tuple[str | None, tuple[str, ...]]:
         """ISO2 に解決できない victim_country raw の「スコープ」を判定する。
 
-        監査 2026-08-01 ⑥: summarizer.j2 は複数国攻撃に "global"/"EU"/"APAC" を
+        監査 2026-08-01 ⑥: briefing/summarizer.j2 は複数国攻撃に "global"/"EU"/"APAC" を
         出すよう指示しているのに正規化器に受け皿が無く、月 175 件が黙って
         victim_country_iso=NULL に落ちていた断線への対処。ISO2 の意味 (単一国) は
         不変のまま、スコープを別値で表現する (countries.yaml へ疑似コードを足すと
@@ -287,12 +287,12 @@ def _canonical_display(raw: dict[str, object]) -> dict[str, str]:
 
 def load_sector_display(config_dir: Path = DEFAULT_CONFIG_DIR) -> dict[str, str]:
     """canonical sector id → 日本語 display (victim_sectors.yaml)。表示 vocab の SSoT。"""
-    return _canonical_display(_load_yaml_dict(config_dir / "victim_sectors.yaml"))
+    return _canonical_display(_load_yaml_dict(config_dir / "cti/victim_sectors.yaml"))
 
 
 def load_country_display(config_dir: Path = DEFAULT_CONFIG_DIR) -> dict[str, str]:
     """canonical ISO2 → 日本語 display (countries.yaml)。表示 vocab の SSoT (nation も再利用)。"""
-    return _canonical_display(_load_yaml_dict(config_dir / "countries.yaml"))
+    return _canonical_display(_load_yaml_dict(config_dir / "cti/countries.yaml"))
 
 
 def _build_alias_lookup(
@@ -328,9 +328,9 @@ def load_normalizer(config_dir: Path = DEFAULT_CONFIG_DIR) -> TaxonomyNormalizer
 
     yaml 不在時は空の lookup で動作 (uncategorized で受ける)。
     """
-    sectors_raw = _load_yaml_dict(config_dir / "victim_sectors.yaml")
-    countries_raw = _load_yaml_dict(config_dir / "countries.yaml")
-    mapping_raw = _load_yaml_dict(config_dir / "pmesii_default_mapping.yaml")
+    sectors_raw = _load_yaml_dict(config_dir / "cti/victim_sectors.yaml")
+    countries_raw = _load_yaml_dict(config_dir / "cti/countries.yaml")
+    mapping_raw = _load_yaml_dict(config_dir / "cti/pmesii_default_mapping.yaml")
 
     sector_lookup, sector_ids = _build_alias_lookup(sectors_raw)
     country_lookup, country_ids = _build_alias_lookup(countries_raw)

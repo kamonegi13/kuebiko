@@ -106,7 +106,7 @@ async def nominate_claims(
     """段0: 集約から key judgment 候補を最大 k 件ノミネート (各々に支持 article_id)。"""
     if not articles:
         return []
-    prompt = _render("synthesis_nominate.j2", articles=articles, period_label=period_label, k=k)
+    prompt = _render("synthesis/nominate.j2", articles=articles, period_label=period_label, k=k)
     result = await llm.generate_structured(
         prompt, _WireNominationResult, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
     )
@@ -206,7 +206,7 @@ async def ground_and_score(
     domain: nominate の domain。サイバー/地政学で ACH 仮説セットを切り替える。
     """
     prompt = _render(
-        "synthesis_ground_ach.j2",
+        "synthesis/ground_ach.j2",
         claim=claim,
         sources=sources,
         attribution_options=_ATTRIBUTION_OPTIONS,

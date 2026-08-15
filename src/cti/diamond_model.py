@@ -19,7 +19,7 @@ Diamond Model (Caltagirone+ 2013) は侵入分析を 4 頂点
 設計方針:
     - intent は editorial_stance と同じ **閉じた語彙** のため、開語彙の sector
       (taxonomy_normalizer の yaml) と違いモジュール定数で持つ (KISS)。
-    - LLM が ``summarizer.j2`` の同一パスで 4 頂点と同時に 2 軸を要約する
+    - LLM が ``briefing/summarizer.j2`` の同一パスで 4 頂点と同時に 2 軸を要約する
       (per-article の追加 LLM 呼び出しは無し)。
     - 欠落 / 不正値に強い防御的パーサ (parse_routing_flags と同形式)。
     - intent → STIX ``attack-motivation-ov`` への近似クロスウォークを提供
@@ -93,7 +93,7 @@ INTENT_LABELS_JA: dict[str, str] = {
 
 # actor 辞書 nation コード (小文字) → 日本語ラベル。overview / geo_cyber_map /
 # standing_posture が共有する SSoT (有機的結合監査 M3: 4 箇所複製と収録国差異の解消)。
-# victim 国 (108 ヶ国) の SSoT は config/countries.yaml で別物 — こちらは actor 帰属国のみ。
+# victim 国 (108 ヶ国) の SSoT は config/cti/countries.yaml で別物 — こちらは actor 帰属国のみ。
 NATION_LABELS_JA: dict[str, str] = {
     "cn": "中国",
     "ru": "ロシア",
@@ -305,7 +305,7 @@ class SocioPoliticalAxis(BaseModel):
 class DiamondAxes(BaseModel):
     """Diamond Model の 2 meta-feature 軸をまとめた構造 (frozen)。
 
-    LLM が ``summarizer.j2`` の ``diamond`` オブジェクトとして出力した値を
+    LLM が ``briefing/summarizer.j2`` の ``diamond`` オブジェクトとして出力した値を
     ``parse_diamond_axes`` で正規化・型検証した結果。
     """
 

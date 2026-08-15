@@ -46,7 +46,7 @@ _log = get_logger(__name__)
 
 ASSESSMENT_WINDOW_DAYS = 90
 
-# 防衛/政府 nexus の sector canonical 値 (config/victim_sectors.yaml の語彙)
+# 防衛/政府 nexus の sector canonical 値 (config/cti/victim_sectors.yaml の語彙)
 DEFGOV_SECTORS: frozenset[str] = frozenset({"defense", "government"})
 
 # 日本の防衛/政府被害は単発でも重大 (JAXA 型の実事象は稀かつ決定的) — 閾値 1。

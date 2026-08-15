@@ -16,7 +16,7 @@ import httpx
 import yaml
 
 API_URL = "http://127.0.0.1:8001/api/v1/sources/discover"
-FEEDS_YAML = Path("config/feeds.yaml")
+FEEDS_YAML = Path("config/sources/feeds.yaml")
 TIMEOUT = 120.0
 
 THIRD_PARTY_HOSTS = {

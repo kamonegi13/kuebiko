@@ -108,7 +108,7 @@ class TestTaxonomyProposalRecordPersistence:
                 run_id=run_id,
                 proposal_type="pattern_1",
                 tier="tier_3_strategic",
-                target_yaml="config/victim_sectors.yaml",
+                target_yaml="config/cti/victim_sectors.yaml",
                 target_canonical=None,  # 新規 canonical 提案は既存を指さない
                 proposed_change='{"kind":"new_canonical","name":"space_defense"}',
                 rationale="新規セクター候補",
@@ -120,7 +120,7 @@ class TestTaxonomyProposalRecordPersistence:
         # None で検索 → NULL 同士が一致する
         found = repo.find_pending_proposal(
             proposal_type="pattern_1",
-            target_yaml="config/victim_sectors.yaml",
+            target_yaml="config/cti/victim_sectors.yaml",
             target_canonical=None,
             proposed_change='{"kind":"new_canonical","name":"space_defense"}',
         )
@@ -129,7 +129,7 @@ class TestTaxonomyProposalRecordPersistence:
         # 非 None で検索 → NULL 行には一致しない (意味的に別物)
         other = repo.find_pending_proposal(
             proposal_type="pattern_1",
-            target_yaml="config/victim_sectors.yaml",
+            target_yaml="config/cti/victim_sectors.yaml",
             target_canonical="space_defense",
             proposed_change='{"kind":"new_canonical","name":"space_defense"}',
         )

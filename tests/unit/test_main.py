@@ -95,11 +95,11 @@ def _extraction_failure(reason: str = "http_error_404") -> ExtractionResult:
 def template() -> jinja2.Template:
     """テスト用に最小限のプロンプトテンプレ。"""
     env = jinja2.Environment(
-        loader=jinja2.DictLoader({"summarizer.j2": "{{ article.title }}\n{{ body }}"}),
+        loader=jinja2.DictLoader({"briefing/summarizer.j2": "{{ article.title }}\n{{ body }}"}),
         autoescape=False,
         undefined=jinja2.StrictUndefined,
     )
-    return env.get_template("summarizer.j2")
+    return env.get_template("briefing/summarizer.j2")
 
 
 @pytest.fixture
@@ -2067,7 +2067,7 @@ class TestArticlePersistenceWithRunId:
 class TestPersistArticleEntitiesCVE:
     """Phase B-cal: CVE entity 永続バグの回帰テスト。
 
-    summarizer.j2 は CVE を ``iocs`` 配列に出力するが、旧実装は ``mitre_techniques``
+    briefing/summarizer.j2 は CVE を ``iocs`` 配列に出力するが、旧実装は ``mitre_techniques``
     しか見ず ``_classify_ioc_type`` にも cve 分岐が無かったため CVE が捨てられていた
     (監査: 322 記事中 cve entity=1)。iocs / summary 由来の CVE を拾えることを確認。
     """

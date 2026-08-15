@@ -6,7 +6,7 @@ Inoreader と並列で動かして coverage 比較した後、最終的に Inore
 
 設計方針:
 - ``ArticleSource`` Protocol 実装、既存 pipeline にそのまま挿入可能
-- ``config/feeds.yaml`` で feed list を宣言、site 固有 hardcode なし
+- ``config/sources/feeds.yaml`` で feed list を宣言、site 固有 hardcode なし
 - feedparser library で RSS 1.0 / 2.0 / Atom 1.0 を統一処理
 - per-feed エラーは drop + log (1 feed 失敗で全体停止しない)
 - async httpx で 並列 fetch、feedparser parse は to_thread で sync→async
@@ -37,7 +37,7 @@ from src.tools.url_normalizer import url_hash
 
 _log = get_logger(__name__)
 
-DEFAULT_FEEDS_YAML = Path("config/feeds.yaml")
+DEFAULT_FEEDS_YAML = Path("config/sources/feeds.yaml")
 DEFAULT_USER_AGENT = "kuebiko/1.0 (+https://github.com/kamonegi13/kuebiko)"
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_PER_FEED_LIMIT = 50
@@ -63,7 +63,7 @@ class FeedDef(BaseModel):
 
 
 class FeedsConfig(BaseModel):
-    """``config/feeds.yaml`` の root schema。"""
+    """``config/sources/feeds.yaml`` の root schema。"""
 
     model_config = ConfigDict(extra="forbid")
 

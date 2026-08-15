@@ -17,7 +17,7 @@ def test_load_missing_file_returns_empty(tmp_path: Path) -> None:
 
 
 def test_save_and_load_round_trip(tmp_path: Path) -> None:
-    path = tmp_path / "pir.yaml"
+    path = tmp_path / "delivery/pir.yaml"
     original = PirConfig(
         version=1,
         priorities=[
@@ -39,7 +39,7 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
 
 def test_save_atomic_no_partial(tmp_path: Path) -> None:
     """save 中の例外で半端な書き込みが残らないこと。"""
-    path = tmp_path / "pir.yaml"
+    path = tmp_path / "delivery/pir.yaml"
     cfg = PirConfig(version=1, priorities=[Pir(id="x", title="x")])
     save_pir_config(cfg, path)
     initial_content = path.read_text()
@@ -93,9 +93,9 @@ class TestActorNationMigration:
         assert "actor_nations" not in ss
 
     def test_seed_yaml_loads_with_actor_nations(self) -> None:
-        # 実 seed (config/pir.yaml) が現行 schema で validate でき、APT 系 PIR の
+        # 実 seed (config/delivery/pir.yaml) が現行 schema で validate でき、APT 系 PIR の
         # actor_nations が立っていること (意味反転の再発防止)
-        cfg = load_pir_config(Path("config/pir.yaml"))
+        cfg = load_pir_config(Path("config/delivery/pir.yaml"))
         by_id = {p.id: p for p in cfg.priorities}
         assert by_id["pir_china_apt"].strong_signals.actor_nations == ["CN"]
         assert by_id["pir_china_apt"].strong_signals.countries == []

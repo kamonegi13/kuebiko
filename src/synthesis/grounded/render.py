@@ -317,7 +317,7 @@ async def render_sections(
     ][:8]
     mode = _headline_mode(head)
     prompt = _render(
-        "synthesis_render.j2",
+        "synthesis/render.j2",
         period_label=period_label,
         headline_id=head.id if head else "",
         headline_view=_judgment_view(head) if head else None,

@@ -1,6 +1,6 @@
 """config 駆動の routing rule engine (案 B / Stage 1)。
 
-``config/routing_rules.yaml`` の順序付きルールを上から評価し、最初に ``when`` が
+``config/delivery/routing_rules.yaml`` の順序付きルールを上から評価し、最初に ``when`` が
 一致した rule の channel を採用する (first-match)。現行ハードコード ladder (R2-R7) の
 「順次 return」と等価で、**順序が tier を、AND がゲートを表現**する。
 
@@ -27,7 +27,7 @@ from src.logging_config import get_logger
 
 _log = get_logger(__name__)
 
-DEFAULT_RULES_PATH = Path("config/routing_rules.yaml")
+DEFAULT_RULES_PATH = Path("config/delivery/routing_rules.yaml")
 
 # 運用 config DB store の key (案 B: yaml/git を runtime の正にしない)。
 CONFIG_KEY = "routing_rules"
@@ -54,7 +54,7 @@ _RULES_CACHE: list[dict[str, Any]] | None = None
 
 
 def load_seed_from_yaml(path: Path = DEFAULT_RULES_PATH) -> list[dict[str, Any]]:
-    """config/routing_rules.yaml (初期 seed) を読む。壊れていれば空 list (fail-safe)。
+    """config/delivery/routing_rules.yaml (初期 seed) を読む。壊れていれば空 list (fail-safe)。
 
     DB が正 (config_store) になった後は seed/フォールバック用途のみ。
     """
@@ -104,7 +104,7 @@ def seed_routing_rules_if_absent() -> bool:
         return seed_config_if_absent(
             CONFIG_KEY,
             load_seed_from_yaml(),
-            note="初期 seed (config/routing_rules.yaml)",
+            note="初期 seed (config/delivery/routing_rules.yaml)",
         )
     except Exception as e:  # noqa: BLE001
         _log.warning("routing_rules_seed_failed", error=str(e))
