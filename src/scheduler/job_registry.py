@@ -411,6 +411,26 @@ def default_jobs() -> list[JobDef]:
             minute=40,
         ),
         JobDef(
+            id="nvd-cvss-refresh",
+            kind="bespoke",
+            title="CVSS 補給 (NVD)",
+            description=(
+                "直近記事の CVE について NVD から CVSS を bounded に取得し cache を温める。"
+                "routing の深刻度ゲート (max_cvss) と記事表示が参照する。"
+                "従来は app 起動時に 8 件だけだったため未取得が 1,700 件超に滞留し、"
+                "深刻度で alert を絞る判定が事実上機能していなかった (2026-08-15)。"
+            ),
+            disable_impact=(
+                "CVSS が埋まらず、深刻度ゲートの alert 判定が「不明」に倒れて "
+                "重大脆弱性を watch に落とす (取りこぼし方向の劣化)。"
+            ),
+            protection="optional",
+            schedule_type="interval",
+            # 毎時 (NVD レート制限を尊重し 1 回あたり少量)。収集ジョブと衝突しない :50。
+            interval_minutes=60,
+            offset_minutes=50,
+        ),
+        JobDef(
             id="daily-maintenance",
             kind="bespoke",
             title="日次 DB 保守",

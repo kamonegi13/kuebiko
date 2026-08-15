@@ -404,3 +404,34 @@ class TestEarlyWarningRules:
             category="incident",
         )
         assert self._decide(sig) != "alert"
+
+
+class TestAlertQualifier:
+    """alert の絞り込み (案 D、2026-08-15)。
+
+    alert 657 件/30日 のうち日本関連は 6% で、大半が「世界のどこかで悪用」だった。
+    実環境悪用/KEV に **日本関連 or CVSS9+ or APT 活動** の限定を課して
+    22 件/日 → 7.5 件/日 に絞る。CVSS 不明は watch へ落ちるため、
+    nvd-cvss-refresh ジョブによる cache 補給が前提 (補給が枯れると取りこぼす)。
+    """
+
+    def _decide(self, **kw: object) -> str:
+        kw.setdefault("article_type", "breaking")
+        kw.setdefault("importance", "high")
+        sig = _sig(is_security_relevant=True, **kw)
+        d = evaluate_routing_rules(sig, get_source_quality(), {}, rules=load_seed_from_yaml())
+        return d.channel if d else "なし"
+
+    def test_japan_related_exploit_alerts(self) -> None:
+        assert (
+            self._decide(
+                category="vulnerability",
+                has_kev_or_active_exploit=True,
+                is_japan_security_relevant=True,
+            )
+            == "alert"
+        )
+
+    def test_apt_activity_alerts_without_cve(self) -> None:
+        # CVE を持たない APT 活動 (最重要ミッション) は CVSS 不問で残す
+        assert self._decide(category="apt", has_kev_or_active_exploit=True) == "alert"
