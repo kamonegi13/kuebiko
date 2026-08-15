@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 from src.grok.jsonl_parser import (
     TweetEngagement,
     TweetRecord,
-    detect_grok_task_from_records,
     filter_records,
     is_jsonl_output,
     parse_jsonl,
@@ -161,39 +160,6 @@ class TestFilterRecords:
             now=datetime.now(UTC) + timedelta(seconds=1),
         )
         assert len(filtered) == 0
-
-
-class TestDetectGrokTask:
-    def test_detects_slot1_when_a_to_f_dominates(self) -> None:
-        records = [
-            TweetRecord(
-                tweet_id=str(i),
-                url=f"https://x.com/test/status/{i}",
-                author_handle="@x",
-                posted_at="2026-05-25T00:00:00Z",
-                text="x",
-                matched_theme=t,
-            )
-            for i, t in enumerate(["A", "B", "C"])
-        ]
-        assert detect_grok_task_from_records(records) == "slot1"
-
-    def test_detects_slot2_when_j1_to_j6_dominates(self) -> None:
-        records = [
-            TweetRecord(
-                tweet_id=str(i),
-                url=f"https://x.com/test/status/{i}",
-                author_handle="@x",
-                posted_at="2026-05-25T00:00:00Z",
-                text="x",
-                matched_theme=t,
-            )
-            for i, t in enumerate(["J1", "J2", "J3"])
-        ]
-        assert detect_grok_task_from_records(records) == "slot2"
-
-    def test_unknown_when_empty(self) -> None:
-        assert detect_grok_task_from_records([]) == "unknown"
 
 
 class TestTweetRecord:

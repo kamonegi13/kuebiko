@@ -4,12 +4,10 @@
 
 1. ``AppConfig``: ``.env`` および環境変数から読むランタイム設定 (pydantic-settings)
 2. ``PipelineConfig``: ``config/pipelines.yaml`` のパイプライン定義 (pyyaml)
-3. ``AgentsConfig``: ``config/agents.yaml`` の CrewAI エージェント定義 (pyyaml)
 
 公開関数:
     ``load_app_config()`` -> ``AppConfig``
     ``load_pipelines(path=...)`` -> ``list[PipelineConfig]``
-    ``load_agents(path=...)`` -> ``AgentsConfig``
 
 エラーは可能な限り「どのファイル / どのキーが原因か」を判別できる
 ``FileNotFoundError`` または ``ValueError`` (元の例外を ``__cause__`` に保持)
@@ -459,36 +457,9 @@ class ChannelRouting(BaseModel):
         return v
 
 
-# ---------- AgentsConfig (config/agents.yaml) ----------
-
-
-class AgentDefinition(BaseModel):
-    """CrewAI エージェント 1 体の定義。"""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    role: str = Field(min_length=1)
-    goal: str = Field(min_length=1)
-    backstory: str = Field(min_length=1)
-    llm_model: str = Field(min_length=1)
-
-
-class AgentsConfig(BaseModel):
-    """CrewAI エージェント全体 (Phase 5 で本格利用)。"""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    collector: AgentDefinition
-    curator: AgentDefinition
-    analyst: AgentDefinition
-    editor: AgentDefinition
-    publisher: AgentDefinition
-
-
 # ---------- 公開関数 ----------
 
 DEFAULT_PIPELINES_PATH = Path("config/pipelines.yaml")
-DEFAULT_AGENTS_PATH = Path("config/agents.yaml")
 
 
 def load_app_config() -> AppConfig:
@@ -576,16 +547,6 @@ _SOURCE_QUALITY_HEADER = """\
 """
 
 
-def render_source_quality_yaml(config: SourceQualityConfig) -> str:
-    """SourceQualityConfig を doc コメント付き yaml 文字列に整形 (UI 保存用)。"""
-    if config.high_threat_brief_categories:
-        items = "\n".join(f'  - "{c}"' for c in config.high_threat_brief_categories)
-        cats_block = f"high_threat_brief_categories:\n{items}\n"
-    else:
-        cats_block = "high_threat_brief_categories: []\n"
-    return f"{_SOURCE_QUALITY_HEADER}\nbrief_cap_24h: {config.brief_cap_24h}\n{cats_block}"
-
-
 def load_channel_routing(
     path: str | Path = DEFAULT_PIPELINES_PATH,
 ) -> ChannelRouting:
@@ -657,17 +618,3 @@ def load_llm_enrichment(
         return LlmEnrichment(**enrich_raw)
     except ValidationError as e:
         raise ValueError(f"{p} の llm_enrichment スキーマが不正です:\n{e}") from e
-
-
-def load_agents(path: str | Path = DEFAULT_AGENTS_PATH) -> AgentsConfig:
-    """``config/agents.yaml`` から ``AgentsConfig`` をロードする。"""
-    p = Path(path)
-    raw = _load_yaml(p)
-    if not isinstance(raw, dict):
-        raise ValueError(
-            f"{p} のトップレベルは dict である必要があります (現在: {type(raw).__name__})",
-        )
-    try:
-        return AgentsConfig(**raw)
-    except ValidationError as e:
-        raise ValueError(f"{p} のスキーマが不正です:\n{e}") from e

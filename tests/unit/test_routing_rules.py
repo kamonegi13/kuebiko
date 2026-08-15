@@ -252,19 +252,6 @@ class TestHarvestedConditions:
         assert any("actor_nation" in e for e in errs)
 
 
-class TestRenderRoundTrip:
-    def test_render_yaml_round_trips(self) -> None:
-        import yaml
-
-        from src.cti.routing_rules import load_seed_from_yaml, render_routing_rules_yaml
-
-        rules = load_seed_from_yaml()
-        text = render_routing_rules_yaml(rules)
-        parsed = yaml.safe_load(text)
-        assert parsed["rules"] == rules
-        assert text.lstrip().startswith("#")  # header comment
-
-
 class TestPreviewDiff:
     """Stage 2: 代表シナリオの 旧 vs 新 差分検出。"""
 

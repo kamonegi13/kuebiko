@@ -651,27 +651,3 @@ def load_actor_families(
     if key is not None:
         _families_cache[path] = (key, {fam_id: dict(info) for fam_id, info in out.items()})
     return out
-
-
-def normalize_actor(
-    raw: str | None,
-    registry: ActorAliasRegistry,
-) -> str:
-    """生の actor 文字列を正規化して Discord 表示用文字列に変換する。
-
-    - registry にヒットすれば ``canonical (別名: ...; MITRE: G...)`` 形式
-    - ヒットしなければ raw をそのまま返す (LLM や parser が拾った原文を尊重)
-    - ``None`` / 空文字列 / "N/A" 系は空文字列を返す
-    """
-    if not raw:
-        return ""
-    cleaned = raw.strip()
-    if not cleaned or cleaned.lower() in {"n/a", "na", "-", "none", "なし", "未確認"}:
-        return ""
-    actor = registry.find(cleaned)
-    if actor is None:
-        return cleaned
-    return actor.display_with_aliases()
-
-
-_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[\s\-][A-Za-z0-9]+)*")

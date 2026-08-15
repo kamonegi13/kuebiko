@@ -273,11 +273,6 @@ def normalize_intent(raw: object) -> SocioPoliticalIntent:
     return "unknown"
 
 
-def intent_label_ja(intent: str) -> str:
-    """canonical intent の日本語ラベルを返す (未知は「不明」)。"""
-    return INTENT_LABELS_JA.get(intent, INTENT_LABELS_JA["unknown"])
-
-
 def intent_to_stix_motivation(intent: str) -> str | None:
     """intent を STIX ``attack-motivation-ov`` 値に写像する (該当なしは None)。"""
     return _INTENT_TO_STIX_MOTIVATION.get(intent)

@@ -116,6 +116,9 @@ data/                        # SQLite 実体、Playwright state (gitignore)
 ### Phase 5B (将来検討、保留)
 
 CrewAI 化 (エージェント協調) は現要件で明確な ROI がないため保留。必要が出てから着手。
+**2026-08-15: 保留の残骸 (config/agents.yaml + AgentsConfig/load_agents) を削除済**。
+値は一切使われず、記載モデル名がティア SSoT (`src/tools/model_tiers.py`) と矛盾して
+「ここを編集すればモデルが変わる」誤認を招いていた。着手時はスケルトンから書き直す。
 理由: 現プロセスは決定的かつ 7 分以内で完了しており、エージェント化は複雑性増加 / LLM コスト爆発 / 再現性低下のデメリットの方が大きい。
 
 ### LLM スタック
@@ -243,13 +246,12 @@ kuebiko/
 ├── docker-compose.yml
 ├── .dockerignore
 ├── config/
-│   ├── pipelines.yaml
-│   └── agents.yaml
+│   └── pipelines.yaml
 ├── prompts/
 │   └── briefing/summarizer.j2
 ├── src/
 │   ├── __init__.py
-│   ├── main.py                # CLI entry (debug 用、CrewAI Tool 化想定)
+│   ├── main.py                # CLI entry (debug 用)
 │   ├── config_loader.py
 │   ├── logging_config.py      # structlog → stdout
 │   ├── tools/                 # Phase 1 で実装済み (Phase X-1 で RSS 一本化)
@@ -314,7 +316,7 @@ kuebiko/
 | Phase 3a | URL 正規化 + SHA-256 ハッシュベースの重複排除 (SQLite dedup_seen_urls) | 完了 |
 | Phase 3b | Embedding + SQLite blob + numpy コサイン類似度 | 完了 (実機は OLLAMA_EMBED_MODEL 設定後) |
 | Phase 4 | CTI 観点メタデータ付与 (脅威アクター, MITRE ATT&CK, IOC) | 未着手 |
-| Phase 5 | CrewAI エージェント主導化 + 責務別パッケージへの再構成 | 未着手 |
+| Phase 5 | 責務別パッケージへの再構成 (完了) / CrewAI 化は保留・残骸撤去済 (2026-08-15) | 一部完了 |
 
 > **Phase 1 における「翻訳」の位置付け**: 翻訳は独立ステップではなく、要約 (BLUF + 重要度 + カテゴリ) と同一の LLM プロンプト内で同時実行する (`prompts/briefing/summarizer.j2`)。
 

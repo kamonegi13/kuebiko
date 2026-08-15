@@ -18,7 +18,6 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
 
 from src.config_loader import (
-    AgentsConfig,
     PipelineConfig,
     ScraperEntry,
     load_app_config,
@@ -762,9 +761,7 @@ def _validate_yaml_schema(path: str, content: str) -> str | None:
         return f"YAML 構文エラー: {e}"
     name = Path(path).name
     try:
-        if name == "agents.yaml":
-            AgentsConfig(**(data or {}))
-        elif name == "pipelines.yaml":
+        if name == "pipelines.yaml":
             if not isinstance(data, dict) or "pipelines" not in data:
                 return "pipelines.yaml は { pipelines: [...] } の形式である必要があります"
             for item in data["pipelines"]:

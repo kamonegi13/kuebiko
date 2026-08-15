@@ -324,20 +324,3 @@ def filter_records(
         output_count=len(out),
     )
     return out
-
-
-def detect_grok_task_from_records(records: list[TweetRecord]) -> str:
-    """record list の matched_theme から task type を推定。
-
-    Returns:
-        "slot1" (= x_native_signal), "slot2" (= jp_asia_signal), or "unknown"
-    """
-    if not records:
-        return "unknown"
-    slot1_count = sum(1 for r in records if r.is_slot1_theme)
-    slot2_count = sum(1 for r in records if r.is_slot2_theme)
-    if slot1_count > slot2_count:
-        return "slot1"
-    if slot2_count > slot1_count:
-        return "slot2"
-    return "unknown"

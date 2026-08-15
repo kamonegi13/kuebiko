@@ -24,13 +24,3 @@ def is_ics_technique(tid: str | None) -> bool:
     if m is None:
         return False
     return m.group(1).startswith("0")
-
-
-def technique_matrix(tid: str | None) -> str:
-    """テクニック ID → matrix ("ics" | "enterprise" | "unknown")。"""
-    if not tid:
-        return "unknown"
-    m = _TID_RE.match(tid.strip().upper())
-    if m is None:
-        return "unknown"
-    return "ics" if m.group(1).startswith("0") else "enterprise"

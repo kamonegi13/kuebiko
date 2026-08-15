@@ -8,7 +8,6 @@ from src.cti.diamond_model import (
     SOCIO_POLITICAL_INTENTS,
     DiamondAxes,
     SocioPoliticalAxis,
-    intent_label_ja,
     intent_to_stix_motivation,
     normalize_intent,
     parse_diamond_axes,
@@ -98,17 +97,6 @@ def test_normalize_intent_result_always_canonical() -> None:
     # 出力は必ず canonical 集合の要素
     for raw in ["espionage", "garbage", "ransomware", None]:
         assert normalize_intent(raw) in SOCIO_POLITICAL_INTENTS
-
-
-# ---------- intent_label_ja ----------
-
-
-@pytest.mark.unit
-def test_intent_label_ja_known_and_unknown() -> None:
-    assert intent_label_ja("espionage") == "諜報・情報窃取"
-    assert intent_label_ja("financial") == "金銭目的"
-    # 未知 canonical でも「不明」に倒れて KeyError にしない
-    assert intent_label_ja("nonexistent") == "不明"
 
 
 # ---------- intent_to_stix_motivation ----------

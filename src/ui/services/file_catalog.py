@@ -151,11 +151,6 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "パイプライン宣言",
         "実行パイプラインの宣言 (bespoke scraper 含む、git 管理のまま = DB 移行対象外)",
     ),
-    "config/agents.yaml": FileInfo(
-        "パイプライン",
-        "エージェント定義",
-        "LLM ステップのエージェント設定 (config_loader が読む)",
-    ),
     "config/cti/actor_aliases.yaml": FileInfo(
         "CTI 辞書・語彙",
         "アクター辞書",

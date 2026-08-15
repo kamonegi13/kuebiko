@@ -26,7 +26,6 @@ import asyncio
 import os
 import sys
 
-from src.config_loader import load_agents
 from src.logging_config import get_logger
 
 # ---------- 後方互換 re-export (旧 src.main の公開面を維持) ----------
@@ -240,13 +239,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.debug:
         os.environ["LOG_LEVEL"] = "DEBUG"
-
-    # config_loader の load_agents は Phase 5 まで未参照だが、スケルトンの
-    # 整合性チェックとして起動時に 1 度評価する。失敗しても続行。
-    try:
-        load_agents()
-    except Exception as e:  # noqa: BLE001
-        _log.warning("agents_yaml_load_failed", error=str(e))
 
     result = asyncio.run(
         run_default(

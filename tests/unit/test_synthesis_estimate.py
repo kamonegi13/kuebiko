@@ -11,7 +11,6 @@ from src.synthesis.grounded.estimate import (
     EvidenceItem,
     Polarity,
     attribution_confidence_cap,
-    cap_confidence,
     evidence_ceiling,
     final_confidence,
     has_strong_attribution,
@@ -31,33 +30,6 @@ def _ev(
     return EvidenceItem(
         article_id="a", source_tier=tier, attribution_basis=basis, excerpt="x", polarity=polarity
     )
-
-
-class TestCapConfidence:
-    def test_weak_source_caps_high_to_low(self) -> None:
-        capped, reason = cap_confidence("high", "low")
-        assert capped == "low"
-        assert reason  # 抑制理由が付く
-
-    def test_medium_source_caps_high_to_moderate(self) -> None:
-        capped, reason = cap_confidence("high", "medium")
-        assert capped == "moderate"
-        assert reason
-
-    def test_high_source_allows_high(self) -> None:
-        capped, reason = cap_confidence("high", "high")
-        assert capped == "high"
-        assert reason == ""
-
-    def test_low_llm_conf_unchanged_even_with_high_source(self) -> None:
-        # cap は上限であって下限ではない (LLM が低いと言えば低いまま)
-        capped, reason = cap_confidence("low", "high")
-        assert capped == "low"
-        assert reason == ""
-
-    def test_unknown_source_conf_defaults_to_moderate_ceiling(self) -> None:
-        capped, _ = cap_confidence("high", "garbage")
-        assert capped == "moderate"
 
 
 class TestAttributionGuardrail:

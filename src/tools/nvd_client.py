@@ -102,45 +102,6 @@ def get_affected(cve_id: str) -> tuple[list[str], list[str]]:
     )
 
 
-def affected_vendors(cve_ids: list[str]) -> list[str]:
-    """CVE-ID list 全体の affected vendor 集合 (cache 由来、exposure 判定用)。"""
-    out: set[str] = set()
-    for c in cve_ids:
-        out.update(get_affected(c)[0])
-    return sorted(out)
-
-
-def cves_for_vendor(vendor: str) -> list[str]:
-    """affected vendor が ``vendor`` (大小無視) を含む CVE-ID リスト (cache 逆引き)。
-
-    affected_vendor facet (vendor → CVE 群 → 記事) の 1 hop 目。cache のみ参照
-    (network なし)。cache 未取得の CVE は対象外 (warming で増える)。
-    """
-    v = vendor.strip().lower()
-    if not v:
-        return []
-    out: list[str] = []
-    for cve, entry in _load_cache().items():
-        if not isinstance(entry, dict):
-            continue
-        vendors = entry.get("vendors")
-        if isinstance(vendors, list) and any(str(x).strip().lower() == v for x in vendors):
-            out.append(cve)
-    return sorted(out)
-
-
-def all_vendors() -> list[str]:
-    """cache に出現する全 affected vendor (facet autocomplete 用、sorted unique)。"""
-    out: set[str] = set()
-    for entry in _load_cache().values():
-        if not isinstance(entry, dict):
-            continue
-        vendors = entry.get("vendors")
-        if isinstance(vendors, list):
-            out.update(str(x).strip() for x in vendors if str(x).strip())
-    return sorted(out)
-
-
 def cves_for_affected(term: str) -> list[str]:
     """affected **vendor または product** が ``term`` (大小無視) に一致する CVE-ID リスト。
 

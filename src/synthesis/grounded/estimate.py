@@ -178,18 +178,6 @@ def estimate_to_dict(est: Estimate) -> dict[str, Any]:
     return d
 
 
-def cap_confidence(llm_conf: Confidence, source_basis_conf: str) -> tuple[Confidence, str]:
-    """LLM が ACH から導いた確度を source_basis 由来の決定論的上限で抑える。
-
-    弱いソース (single social / state_media = low) に高確度を付けさせない (ICD 203 #5)。
-    返り値: (capped_confidence, 抑制理由 or '')。
-    """
-    ceiling = _SB_CEILING.get(source_basis_conf, "moderate")
-    if _CONF_RANK[llm_conf] <= _CONF_RANK[ceiling]:
-        return llm_conf, ""
-    return ceiling, f"source_basis({source_basis_conf})上限により {llm_conf}→{ceiling} に抑制"
-
-
 def has_strong_attribution(evidence: tuple[EvidenceItem, ...]) -> bool:
     """**leading 仮説を支持する**強い帰属根拠 (公式/ベンダ/研究/被害公表) が最低 1 つあるか。
 

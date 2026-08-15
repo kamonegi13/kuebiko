@@ -17,10 +17,8 @@ import yaml
 from pydantic import ValidationError
 
 from src.config_loader import (
-    AgentsConfig,
     ChannelRouting,
     PipelineConfig,
-    load_agents,
     load_app_config,
     load_channel_routing,
     load_pipelines,
@@ -339,76 +337,6 @@ class TestMonthlySynthesisPipeline:
         assert result[0].processor.dedup_window_hours_cluster == 48
 
 
-# --------- load_agents ---------
-
-VALID_AGENTS: dict[str, dict[str, str]] = {
-    role: {
-        "role": f"{role}-role",
-        "goal": "do something useful",
-        "backstory": "a story",
-        "llm_model": "gemma4:31b",
-    }
-    for role in ("collector", "curator", "analyst", "editor", "publisher")
-}
-
-
-class TestLoadAgents:
-    def test_loads_valid_yaml(self, tmp_path: Path) -> None:
-        p = tmp_path / "agents.yaml"
-        _write_yaml(p, VALID_AGENTS)
-        result = load_agents(p)
-        assert isinstance(result, AgentsConfig)
-        assert result.collector.role == "collector-role"
-        assert result.publisher.llm_model == "gemma4:31b"
-
-    def test_file_not_found_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError, match="見つかりません"):
-            load_agents(tmp_path / "missing.yaml")
-
-    def test_invalid_yaml_raises(self, tmp_path: Path) -> None:
-        p = tmp_path / "broken.yaml"
-        p.write_text("{invalid: [unclosed", encoding="utf-8")
-        with pytest.raises(ValueError, match="YAML パースに失敗"):
-            load_agents(p)
-
-    def test_top_level_must_be_dict(self, tmp_path: Path) -> None:
-        p = tmp_path / "list.yaml"
-        _write_yaml(p, ["not", "a", "dict"])
-        with pytest.raises(ValueError, match="dict"):
-            load_agents(p)
-
-    def test_missing_role_raises(self, tmp_path: Path) -> None:
-        p = tmp_path / "agents.yaml"
-        partial = copy.deepcopy(VALID_AGENTS)
-        del partial["analyst"]
-        _write_yaml(p, partial)
-        with pytest.raises(ValueError, match="スキーマが不正"):
-            load_agents(p)
-
-    def test_extra_role_is_forbidden(self, tmp_path: Path) -> None:
-        p = tmp_path / "agents.yaml"
-        bad = copy.deepcopy(VALID_AGENTS)
-        bad["spy"] = {"role": "x", "goal": "y", "backstory": "z", "llm_model": "m"}
-        _write_yaml(p, bad)
-        with pytest.raises(ValueError, match="スキーマが不正"):
-            load_agents(p)
-
-    def test_empty_role_value_raises(self, tmp_path: Path) -> None:
-        p = tmp_path / "agents.yaml"
-        bad = copy.deepcopy(VALID_AGENTS)
-        bad["collector"]["role"] = ""
-        _write_yaml(p, bad)
-        with pytest.raises(ValueError, match="スキーマが不正"):
-            load_agents(p)
-
-    def test_agents_config_is_frozen(self, tmp_path: Path) -> None:
-        p = tmp_path / "agents.yaml"
-        _write_yaml(p, VALID_AGENTS)
-        result = load_agents(p)
-        with pytest.raises(ValidationError):
-            result.collector = result.editor
-
-
 # --------- 同梱スケルトン (config/*.yaml) のサニティ ---------
 
 
@@ -422,12 +350,6 @@ class TestSkeletonFiles:
         assert len(result) >= 1
         names = [p.name for p in result]
         assert "direct-rss-fetch" in names
-
-    def test_agents_yaml_skeleton_loads(self) -> None:
-        repo_root = Path(__file__).resolve().parents[2]
-        result = load_agents(repo_root / "config" / "agents.yaml")
-        assert result.collector.llm_model
-        assert result.publisher.role
 
 
 # --------- Phase 5C: ChannelRouting ---------

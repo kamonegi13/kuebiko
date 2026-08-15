@@ -35,14 +35,6 @@ def _bootstrap_project(tmp_path: Path) -> Path:
         "    processor: {}\n",
         encoding="utf-8",
     )
-    (tmp_path / "config" / "agents.yaml").write_text(
-        "collector:\n  role: r\n  goal: g\n  backstory: b\n  llm_model: m\n"
-        "curator:\n  role: r\n  goal: g\n  backstory: b\n  llm_model: m\n"
-        "analyst:\n  role: r\n  goal: g\n  backstory: b\n  llm_model: m\n"
-        "editor:\n  role: r\n  goal: g\n  backstory: b\n  llm_model: m\n"
-        "publisher:\n  role: r\n  goal: g\n  backstory: b\n  llm_model: m\n",
-        encoding="utf-8",
-    )
     (tmp_path / "data").mkdir()
     (tmp_path / ".env").write_text(
         "DISCORD_WEBHOOK_ALERT=https://discord.com/api/webhooks/1/a\n"

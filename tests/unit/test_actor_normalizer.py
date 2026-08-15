@@ -10,7 +10,6 @@ from src.cti.actor_normalizer import (
     ActorAlias,
     ActorAliasRegistry,
     load_actor_aliases,
-    normalize_actor,
     resolve_ambiguous_cues,
 )
 from src.cti.generic_alias_words import GENERIC_ALIAS_WORDS, is_generic_alias
@@ -256,36 +255,6 @@ def test_display_truncates_aliases() -> None:
     assert "a3" in s
     # 4 件目以降は表示されない (3 件まで)
     assert "a4" not in s
-
-
-# ---------- normalize_actor ----------
-
-
-def test_normalize_actor_known() -> None:
-    r = _registry()
-    out = normalize_actor("Volt Typhoon", r)
-    assert "Volt Typhoon" in out
-    assert "G1017" in out
-
-
-def test_normalize_actor_unknown_returns_raw() -> None:
-    r = _registry()
-    assert normalize_actor("UnknownAPT99", r) == "UnknownAPT99"
-
-
-def test_normalize_actor_handles_none() -> None:
-    r = _registry()
-    assert normalize_actor(None, r) == ""
-    assert normalize_actor("", r) == ""
-    assert normalize_actor("N/A", r) == ""
-    assert normalize_actor("none", r) == ""
-    assert normalize_actor("なし", r) == ""
-
-
-def test_normalize_actor_strips() -> None:
-    r = _registry()
-    out = normalize_actor("  Volt Typhoon  ", r)
-    assert "Volt Typhoon" in out
 
 
 # ---------- load_actor_aliases ----------

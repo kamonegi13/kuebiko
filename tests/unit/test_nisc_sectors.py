@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.cti.attack_catalog import is_ics_technique, technique_matrix
+from src.cti.attack_catalog import is_ics_technique
 from src.cti.nisc_sectors import (
     NISC_SECTORS,
     nisc_sector_for,
@@ -146,17 +146,14 @@ class TestIcsTechnique:
     @pytest.mark.parametrize("tid", ["T0883", "T0889", "T0800", "t0836"])
     def test_ics_detected(self, tid: str) -> None:
         assert is_ics_technique(tid) is True
-        assert technique_matrix(tid) == "ics"
 
     @pytest.mark.parametrize("tid", ["T1566", "T1190", "T1059.001"])
     def test_enterprise_not_ics(self, tid: str) -> None:
         assert is_ics_technique(tid) is False
-        assert technique_matrix(tid) == "enterprise"
 
     def test_invalid(self) -> None:
         assert is_ics_technique("not a tid") is False
         assert is_ics_technique(None) is False
-        assert technique_matrix(None) == "unknown"
 
 
 class TestSystemDomain:

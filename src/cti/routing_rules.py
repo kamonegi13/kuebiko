@@ -483,22 +483,6 @@ def validate_routing_rules(
     return errs
 
 
-def render_routing_rules_yaml(rules: list[dict[str, Any]]) -> str:
-    """ルールセットを yaml 文字列に描画 (UI 保存用)。"""
-    header = (
-        "# Discord 投稿先ルーティングルール (UI 管理、案 B)。\n"
-        "# 上から評価・最初に when 一致した rule の channel を採用 (first-match)。\n"
-        "# ROUTING_RULES_ENGINE=1 のとき有効 (既定 0 = 旧ハードコード ladder)。\n"
-    )
-    body = yaml.safe_dump(
-        {"version": 1, "rules": rules},
-        allow_unicode=True,
-        sort_keys=False,
-        default_flow_style=False,
-    )
-    return header + body
-
-
 # Stage 2 プレビュー用の代表シナリオ (name, RoutingSignals kwargs)。
 # 旧 vs 新ルールの挙動差を即座に・決定的に見せる (DB 不要)。
 PREVIEW_SCENARIOS: list[tuple[str, dict[str, Any]]] = [
