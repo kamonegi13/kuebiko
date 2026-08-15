@@ -92,6 +92,14 @@ _SLOT1_ROUTING: dict[str, ThemeRouting] = {
         channel="alert",
         badge="🚪",
     ),
+    # K 相乗り (2026-08-15): 速報でなく背景知識のため watch (alert に流さない)
+    "K": ThemeRouting(
+        code="K",
+        label="人物特定・訴追後日談・エコシステム深掘り",
+        importance="medium",
+        channel="watch",
+        badge="🔍",
+    ),
 }
 
 # Slot 2: JP / East Asia Signal (J1-J6)

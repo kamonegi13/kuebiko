@@ -228,3 +228,8 @@ class TestExpandedThemes:
     def test_theme_i2_hacktivist_to_japan_watch(self) -> None:
         r = get_routing("I2")
         assert r is not None and (r.importance, r.channel) == ("high", "japan_watch")
+
+    def test_theme_k_attribution_to_watch(self) -> None:
+        # K 相乗り (2026-08-15): 後日談・深掘りは背景知識 → alert でなく watch
+        r = get_routing("K")
+        assert r is not None and (r.importance, r.channel) == ("medium", "watch")
