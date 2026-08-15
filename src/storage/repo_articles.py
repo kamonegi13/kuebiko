@@ -512,6 +512,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "unsafe_url",
         ),
         max_attempts: int = 3,
+        retention_days: int = 90,
     ) -> list[tuple[str, str]]:
         """全文再取得すべき記事 (article_id, url) を返す (2026-07-27, A4)。
 
@@ -520,6 +521,12 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         (heuristic 分類で failure_reason=NULL) と ②新規切り株 (403/timeout 等) の両方を拾い、
         paywall/404 等の再取得しても無駄な恒久失敗のみ除外する。高 importance・新しい順。
         同一 article_id は run 横断で複数行あるため GROUP BY で重複排除する。
+
+        ⚠ ``body_source='none'`` は **2 つの状態を兼ねている** (2026-08-15 に判明):
+        「一度も本文が取れなかった (extract_failed)」と「90 日 retention で purge した」。
+        purge も body_source を 'none' に整合させるため、一律除外すると **抽出失敗した
+        記事が永久に再取得されない** (実測 158 件が滞留)。retention 期間内 = purge され
+        得ない、を使って前者だけを対象に戻す。
         """
         perm_ph = ",".join("?" for _ in permanent_reasons)
         sql = (
@@ -535,8 +542,11 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             # B3b: 試行回数上限に達した恒久失敗を除外 (WAF/timeout の無限 churn 停止)。
             "AND refetch_attempts < ? "
             "AND ("
-            # NULL body = 未取得。ただし blocked (WAF/bot 壁) と none (purge 済) は再取得しない。
-            "  (body IS NULL AND (body_source IS NULL OR body_source NOT IN ('blocked','none'))) "
+            # NULL body = 未取得。blocked (WAF/bot 壁) は再取得しない。
+            "  (body IS NULL AND (body_source IS NULL OR body_source <> 'blocked') "
+            # 'none' は「未取得」と「purge 済」の両方を指すため、purge され得ない
+            # retention 期間内のものだけ再取得する (古い purge 済を掘り起こさない)。
+            "   AND (body_source <> 'none' OR created_at >= datetime('now', ?))) "
             "  OR (body_source='feed_summary' AND ("
             "       extraction_failure_reason IS NULL "
             f"       OR extraction_failure_reason NOT IN ({perm_ph})"  # noqa: S608
@@ -545,7 +555,15 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "GROUP BY article_id ORDER BY is_high DESC, latest DESC LIMIT ?"
         )
         with self._connect() as conn:
-            rows = conn.execute(sql, (int(max_attempts), *permanent_reasons, int(limit))).fetchall()
+            rows = conn.execute(
+                sql,
+                (
+                    int(max_attempts),
+                    f"-{int(retention_days)} days",
+                    *permanent_reasons,
+                    int(limit),
+                ),
+            ).fetchall()
         return [(str(r["article_id"]), str(r["url"])) for r in rows]
 
     def get_entities_by_article(self, article_id: str) -> list[tuple[str, str]]:

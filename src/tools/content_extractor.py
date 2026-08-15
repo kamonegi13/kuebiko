@@ -14,6 +14,7 @@ Phase 1 は trafilatura ベースの Layer 1 のみ。Phase 2 で Playwright
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from datetime import datetime
@@ -26,6 +27,7 @@ from pydantic import BaseModel, ConfigDict
 
 from src.logging_config import get_logger
 from src.tools.fetch_policy import BLOCK_ESCALATION_STATUSES, looks_like_js_challenge
+from src.tools.pdf_text import extract_pdf_text, looks_like_pdf
 from src.tools.url_guard import (
     UnsafeUrlError,
     assert_safe_public_url,
@@ -129,6 +131,8 @@ PAYWALL_KEYWORDS: tuple[str, ...] = (
 )
 
 EXTRACTION_METHOD_TRAFILATURA = "trafilatura"
+# PDF でしか勧告を出さない一次ソース (BSI / CSA 等) 用 (2026-08-15)
+EXTRACTION_METHOD_PDF = "pdf"
 
 
 class ExtractionResult(BaseModel):
@@ -271,6 +275,12 @@ class ContentExtractor:
                 f"http_error_{resp.status_code}",
                 status=resp.status_code,
             )
+
+        # 1.5 PDF はここで分岐する。trafilatura は HTML 専用で、PDF を渡すと本文 0 文字
+        #     → extract_failed で終端し、要約も重要度判定もされないまま配信されない
+        #     (BSI Cybersicherheitswarnungen が実際にこの状態だった)。
+        if looks_like_pdf(content_type=resp.headers.get("content-type", ""), body=resp.content):
+            return await self._extract_pdf(url, resp.content)
 
         html = resp.text
 
@@ -509,6 +519,26 @@ class ContentExtractor:
         return result
 
     # --- internal helpers ---
+
+    async def _extract_pdf(self, url: str, body: bytes) -> ExtractionResult:
+        """PDF 本文を抽出する (テキスト PDF のみ。スキャン画像は OCR しない)。
+
+        pypdf は CPU 同期処理なので、他ソースの並列取得を止めないよう thread に逃がす。
+        """
+        text = await asyncio.to_thread(extract_pdf_text, body)
+        if not text:
+            # 空 = スキャン画像 / 暗号化 / 破損。UA 再試行でも直らないので区別して記録する。
+            return self._fail(url, "pdf_no_text", size=len(body))
+        if len(text) < self._min_content_length:
+            return self._fail(url, "content_too_short", length=len(text))
+        _log.info("content_extract_success", url=url, length=len(text), method="pdf")
+        return ExtractionResult(
+            url=url,
+            text=text,
+            success=True,
+            failure_reason=None,
+            extraction_method=EXTRACTION_METHOD_PDF,
+        )
 
     def _fail(self, url: str, reason: str, **extra: Any) -> ExtractionResult:
         _log.info("content_extract_failed", url=url, reason=reason, **extra)

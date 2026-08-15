@@ -170,7 +170,7 @@ class TestCardLayoutTitles:
         return [(a.title, a.url) for a in arts]
 
     def test_empty_wrapper_anchor_does_not_win(self) -> None:
-        out = dict((u, t) for t, u in self._apply(".featured-items a[href*='/news/']"))
+        out = {u: t for t, u in self._apply(".featured-items a[href*='/news/']")}
         assert out["https://e.example/news/alpha-report"] == "Alpha Report on Threats"
         assert out["https://e.example/news/beta-brief"] == "Beta Brief"
 

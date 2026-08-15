@@ -122,3 +122,42 @@ async def test_reprocess_refetch_failure_leaves_stump(tmp_path: Path) -> None:
     assert repo.get_article_body("stump") == "short feed"
     rec = repo.get_article("stump")
     assert rec is not None and rec.body_source == "feed_summary"
+
+
+def test_extract_failed_none_is_retried_within_retention(tmp_path: Path) -> None:
+    """本文ゼロで終端した記事 (body_source='none') も再取得対象に戻す (2026-08-15)。
+
+    'none' は「一度も取れなかった」と「90 日 retention で purge した」を兼ねており、
+    一律除外していたため **抽出失敗が永久に再取得されなかった** (実測 158 件滞留)。
+    PDF 対応のように抽出側が直っても、対象に入らなければ救済されない。
+    """
+    repo = _repo(tmp_path)
+    _add(repo, "pdf_failed", url="https://ex.com/advisory.pdf")
+    _add(repo, "blocked")
+    # production の形 (body NULL + body_source) を再現する。update_article_body は
+    # body='' を書くため、抽出ゼロで終端した行の形にならない。
+    with repo._connect() as conn:
+        conn.execute("UPDATE articles SET body_source='none' WHERE article_id='pdf_failed'")
+        conn.execute("UPDATE articles SET body_source='blocked' WHERE article_id='blocked'")
+
+    targets = {aid for aid, _ in repo.list_articles_needing_refetch(limit=50)}
+    assert "pdf_failed" in targets
+    assert "blocked" not in targets
+
+
+def test_purged_body_is_not_resurrected(tmp_path: Path) -> None:
+    """retention で purge した古い記事は掘り起こさない (retention 期間で切り分ける)。"""
+    repo = _repo(tmp_path)
+    _add(repo, "purged")
+    _add(repo, "recent_failure")
+    with repo._connect() as conn:
+        # retention (90 日) より古い = purge され得た記事
+        conn.execute(
+            "UPDATE articles SET body_source='none',"
+            " created_at=datetime('now','-200 days') WHERE article_id='purged'"
+        )
+        conn.execute("UPDATE articles SET body_source='none' WHERE article_id='recent_failure'")
+
+    targets = {aid for aid, _ in repo.list_articles_needing_refetch(limit=50)}
+    assert "purged" not in targets
+    assert "recent_failure" in targets  # 期間内の抽出失敗は対象
