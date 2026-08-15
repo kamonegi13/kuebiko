@@ -246,7 +246,7 @@ function YamlEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
-      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden max-h-[700px] overflow-y-auto">
+      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-15rem)] min-h-[24rem] overflow-y-auto">
         <FileGroupList
           groups={data.yaml_groups ?? []}
           selected={selected}
@@ -265,7 +265,7 @@ function YamlEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
         <textarea
           value={content}
           onChange={(e) => { setContent(e.target.value); setDirty(true); }}
-          className="w-full h-[640px] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
+          className="w-full h-[calc(100vh-18rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
           spellCheck={false}
         />
       </div>
@@ -316,7 +316,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
-      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden max-h-[640px] overflow-y-auto">
+      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-15rem)] min-h-[24rem] overflow-y-auto">
         <FileGroupList
           groups={list.groups ?? []}
           selected={selected}
@@ -345,7 +345,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
         <textarea
           value={content}
           onChange={(e) => { setContent(e.target.value); setDirty(true); }}
-          className="w-full h-[600px] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
+          className="w-full h-[calc(100vh-18rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
           spellCheck={false}
         />
       </div>
