@@ -4,9 +4,42 @@
 // SSoT は Grok 側 — ここで編集しても Grok には反映されない (synced_at を利用者が記録)。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ClipboardList, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
+  ClipboardList,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { grokApi, type GrokTaskDef } from "../api/grok";
+
+function CopyPromptButton({ prompt }: { prompt: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      title="プロンプト本文をコピー (Grok 側へ貼り付け用)"
+      className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[11px] text-fg hover:bg-surface-3 shrink-0"
+      onClick={(e) => {
+        e.stopPropagation();
+        void navigator.clipboard.writeText(prompt);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-success" />
+      ) : (
+        <ClipboardCopy className="h-3 w-3" />
+      )}
+      コピー
+    </button>
+  );
+}
 
 const EMPTY_TASK: GrokTaskDef = {
   id: "",
@@ -22,17 +55,23 @@ function TaskView({ task }: { task: GrokTaskDef }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-md border border-border-subtle bg-surface-2">
-      <button
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-fg hover:bg-surface-3"
+      <div
+        role="button"
+        tabIndex={0}
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs text-fg hover:bg-surface-3"
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => e.key === "Enter" && setOpen((v) => !v)}
       >
         {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         <span className="font-semibold">{task.name}</span>
         <span className="text-fg-subtle font-mono">{task.id}</span>
         {task.schedule && <span className="text-fg-muted">{task.schedule}</span>}
         {task.window && <span className="text-fg-muted">窓: {task.window}</span>}
-        {task.synced_at && <span className="ml-auto text-fg-subtle">同期: {task.synced_at}</span>}
-      </button>
+        <span className="ml-auto inline-flex items-center gap-2">
+          {task.synced_at && <span className="text-fg-subtle">同期: {task.synced_at}</span>}
+          <CopyPromptButton prompt={task.prompt} />
+        </span>
+      </div>
       {open && (
         <div className="border-t border-border-subtle px-3 py-2">
           {task.note && <p className="m-0 mb-2 text-xs text-fg-muted">{task.note}</p>}
