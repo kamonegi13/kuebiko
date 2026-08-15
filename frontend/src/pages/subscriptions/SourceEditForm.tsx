@@ -19,6 +19,7 @@ import {
 } from "../../api/sources_v2";
 import { Spinner } from "../../components/Spinner";
 import { VisualSelectorPicker } from "../../components/VisualSelectorPicker";
+import { FolderSelect } from "../../components/FolderSelect";
 
 // 取得先 URL の呼び名は transport で違う (同じ「URL」でも意味が別物)。
 const URL_LABEL: Record<string, string> = {
@@ -28,8 +29,6 @@ const URL_LABEL: Record<string, string> = {
   html_scraper: "一覧ページ URL",
 };
 
-const NEW_FOLDER = "__new__";
-
 type TestState =
   | { status: "idle" }
   | { status: "running" }
@@ -38,12 +37,10 @@ type TestState =
 
 export function SourceEditForm({
   feedId,
-  folders,
   onSaved,
   onCancel,
 }: {
   feedId: string;
-  folders: string[];
   onSaved: (nextFeedId: string) => void;
   onCancel: () => void;
 }) {
@@ -53,7 +50,6 @@ export function SourceEditForm({
     queryFn: () => sourcesV2Api.getEditable(feedId),
   });
   const [form, setForm] = useState<EditableSource | null>(null);
-  const [newFolder, setNewFolder] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [test, setTest] = useState<TestState>({ status: "idle" });
@@ -206,47 +202,8 @@ export function SourceEditForm({
       <div className="flex gap-3 flex-wrap">
         <div className="flex-1 min-w-[140px]">
           <label className={label}>フォルダ (分類)</label>
-          {/* 既存フォルダは選ぶだけ (打ち間違いで似たフォルダが増えるのを防ぐ)。
-              新設したいときだけ入力欄を出す。 */}
-          <select
-            value={newFolder !== null ? NEW_FOLDER : form.folder}
-            onChange={(e) => {
-              if (e.target.value === NEW_FOLDER) {
-                setNewFolder("");
-                setForm({ ...form, folder: "" });
-                return;
-              }
-              setNewFolder(null);
-              setForm({ ...form, folder: e.target.value });
-            }}
-            className={field}
-          >
-            <option value="">未分類</option>
-            {folders.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-            <option value={NEW_FOLDER}>＋ 新しいフォルダ…</option>
-          </select>
-          {newFolder !== null && (
-            <div className="mt-1.5">
-              <input
-                autoFocus
-                value={newFolder}
-                onChange={(e) => {
-                  const v = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_");
-                  setNewFolder(v);
-                  setForm({ ...form, folder: v });
-                }}
-                placeholder="新しいフォルダ名 (英小文字・数字・_)"
-                className={`${field} font-mono text-xs`}
-              />
-              <p className="m-0 mt-1 text-[11px] text-fg-subtle">
-                保存すると、このソースを最初の 1 件として新しいフォルダが作られます
-              </p>
-            </div>
-          )}
+          {/* 候補・新規作成の扱いは登録ウィザードと同じ部品を共用する。 */}
+          <FolderSelect value={form.folder} onChange={(v) => setForm({ ...form, folder: v })} />
         </div>
         {form.max_posts_per_run != null && (
           <div className="w-36">

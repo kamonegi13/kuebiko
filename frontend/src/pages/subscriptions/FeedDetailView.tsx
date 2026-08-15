@@ -2,7 +2,7 @@
 // SubscriptionsPage.tsx が 800 行上限を超えたため verbatim 分割 (2026-08-15)。
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Pencil, Settings2, Trash2, X } from "lucide-react";
+import { Check, Pencil, Repeat, Settings2, Trash2, X } from "lucide-react";
 import { sourcesV2Api } from "../../api/sources_v2";
 import { Spinner } from "../../components/Spinner";
 import { useChannelMeta } from "../../components/channel";
@@ -11,7 +11,18 @@ import { formatJstDate } from "../../utils/date";
 import { SourceEditForm } from "./SourceEditForm";
 import { LOW_CONTRIB_LABELS, QualityBadge, type EnrichedFeed } from "./shared";
 
-export function FeedDetailView({ feed: f, folders, onDeleted, readOnly = false }: { feed: EnrichedFeed; folders: string[]; onDeleted: () => void; readOnly?: boolean }) {
+export function FeedDetailView({
+  feed: f,
+  onDeleted,
+  onSwitchTransport,
+  readOnly = false,
+}: {
+  feed: EnrichedFeed;
+  onDeleted: () => void;
+  /** 取得方式の変更 = 別方式で登録し直す (ウィザードを開く) */
+  onSwitchTransport?: (url: string, feedId: string, title: string, folder: string) => void;
+  readOnly?: boolean;
+}) {
   const st = f.stats;
   const chMeta = useChannelMeta();
   const qc = useQueryClient();
@@ -99,6 +110,22 @@ export function FeedDetailView({ feed: f, folders, onDeleted, readOnly = false }
                   >
                     <Settings2 className="h-3.5 w-3.5" /> 取得設定
                   </button>
+                  {onSwitchTransport && (
+                    <button
+                      onClick={() =>
+                        onSwitchTransport(
+                          f.html_url || f.url,
+                          f.feed_id,
+                          f.title,
+                          f.folder_labels[0] ?? "",
+                        )
+                      }
+                      title="RSS / サイトマップ / スクレイパー を切り替える (別方式で登録し直す)"
+                      className="text-fg-subtle hover:text-accent text-xs shrink-0 inline-flex items-center gap-1"
+                    >
+                      <Repeat className="h-3.5 w-3.5" /> 取得方式を変更
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -118,7 +145,6 @@ export function FeedDetailView({ feed: f, folders, onDeleted, readOnly = false }
       {editingSettings && !readOnly && (
         <SourceEditForm
           feedId={f.feed_id}
-          folders={folders}
           onSaved={() => {
             setEditingSettings(false);
             onDeleted(); // Drawer を閉じて一覧を再取得 (URL 変更で feed_id が変わるため)

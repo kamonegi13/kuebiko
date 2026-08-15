@@ -16,6 +16,7 @@ import { AddSourceWizardV2 } from "../components/AddSourceWizardV2";
 // 設定・死活の画面統合 P2/P4: 旧 /app/health から移設し、ソースと同じ画面で一体管理。
 import { GrokHubCard } from "../components/GrokHubCard";
 import { FeedDetailView } from "./subscriptions/FeedDetailView";
+import { FolderSelect } from "../components/FolderSelect";
 import { QualityBadge, type EnrichedFeed, type GroupKey } from "./subscriptions/shared";
 import { Spinner } from "../components/Spinner";
 import { formatJstDate } from "../utils/date";
@@ -79,6 +80,13 @@ export function SubscriptionsPage() {
   // Phase F: 単一 wizard
   const [sourceWizardOpen, setSourceWizardOpen] = useState(false);
   const [sourceWizardInitialUrl, setSourceWizardInitialUrl] = useState<string>("");
+  // 取得方式の変更 (RSS ⇄ サイトマップ ⇄ スクレイパー) は「別方式で登録し直す」= ウィザード
+  // の再利用で行う (方式ごとに必要な情報が違い、確認手順もウィザード側にあるため)。
+  const [wizardReplacing, setWizardReplacing] = useState<{
+    feedId: string;
+    title: string;
+    folder: string;
+  } | null>(null);
   // Phase F+: multi-select は feed_id キー (全 transport 横断)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkFolder, setBulkFolder] = useState("");
@@ -108,8 +116,12 @@ export function SubscriptionsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["subscriptions"] }),
   });
 
-  function openSourceWizard(url = "") {
+  function openSourceWizard(
+    url = "",
+    replacing: { feedId: string; title: string; folder: string } | null = null,
+  ) {
     setSourceWizardInitialUrl(url);
+    setWizardReplacing(replacing);
     setSourceWizardOpen(true);
   }
   function toggleSelected(feedId: string) {
@@ -253,17 +265,14 @@ export function SubscriptionsPage() {
             <Trash2 className="h-3.5 w-3.5" /> 削除
           </button>
           <span className="text-fg-subtle text-xs mx-1">|</span>
-          <input
-            type="text"
-            list="folder-suggestions"
-            value={bulkFolder}
-            onChange={(e) => setBulkFolder(e.target.value.toLowerCase())}
-            placeholder="folder (空で解除)"
-            className="bg-surface-2 border border-border-subtle rounded px-2 py-1 text-xs w-32 font-mono"
-          />
-          <datalist id="folder-suggestions">
-            {folders.map((fl) => <option key={fl} value={fl} />)}
-          </datalist>
+          {/* 一括設定も 1 件編集・登録と同じ選択部品を使う (フォルダの入口を揃える)。 */}
+          <div className="w-44">
+            <FolderSelect
+              value={bulkFolder}
+              onChange={setBulkFolder}
+              className="w-full bg-surface-2 border border-border-subtle rounded px-2 py-1 text-xs text-fg"
+            />
+          </div>
           <button
             onClick={() => folderMut.mutate()}
             disabled={folderMut.isPending}
@@ -465,7 +474,10 @@ export function SubscriptionsPage() {
         >
           <FeedDetailView
             feed={open}
-            folders={folders}
+            onSwitchTransport={(url, feedId, title, folder) => {
+              setOpen(null);
+              openSourceWizard(url, { feedId, title, folder });
+            }}
             readOnly={read_only}
             onDeleted={() => {
               setOpen(null);
@@ -482,8 +494,10 @@ export function SubscriptionsPage() {
           onClose={() => {
             setSourceWizardOpen(false);
             setSourceWizardInitialUrl("");
+            setWizardReplacing(null);
           }}
           initialUrl={sourceWizardInitialUrl}
+          replacing={wizardReplacing ?? undefined}
         />
       )}
     </div>

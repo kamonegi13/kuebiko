@@ -167,6 +167,12 @@ export const sourcesV2Api = {
       { url: string; kind: string; url_include_pattern: string },
       LivePreviewResponse
     >("/api/v1/sources/preview_url", { url, kind, url_include_pattern }),
+  // 実際に使われているフォルダ一覧 (分類候補の SSoT。固定リストは stale 化する)。
+  folders: async (): Promise<{ folders: string[] }> => {
+    const r = await fetch("/api/v1/sources/folders", { credentials: "same-origin" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return (await r.json()) as { folders: string[] };
+  },
   // 1 ソースの編集可能フィールド (取得設定フォームの初期値)。
   getEditable: async (feed_id: string): Promise<EditableSource> => {
     const r = await fetch(`/api/v1/sources/editable?feed_id=${encodeURIComponent(feed_id)}`, {

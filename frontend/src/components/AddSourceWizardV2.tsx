@@ -13,6 +13,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Drawer } from "./Drawer";
 import { Spinner, ButtonSpinner, LLMProgress, PulseSkeleton } from "./Spinner";
 import { VisualSelectorPicker } from "./VisualSelectorPicker";
+import { FolderSelect } from "./FolderSelect";
 import { Check, AlertTriangle, Sparkles } from "lucide-react";
 import {
   sourcesV2Api,
@@ -32,28 +33,33 @@ type Step =
   | { kind: "html_picker"; listingUrl: string; initialSelector?: string }
   | { kind: "confirm"; candidate: SourceCandidate }
   | { kind: "registering"; candidate: SourceCandidate }
-  | { kind: "done"; result: { name: string; commit: string | null; target_yaml: string; transport: string; appended: boolean } };
+  | {
+      kind: "done";
+      result: {
+        name: string;
+        commit: string | null;
+        target_yaml: string;
+        transport: string;
+        appended: boolean;
+        // 取得方式の変更で旧設定を置き換えたときだけセット
+        replaced?: { title: string; removed: boolean; error?: string };
+      };
+    };
 
 // detected_via (候補の検出経路) の日本語ラベルは backend vocab "detected_via" (vocabLabel) を
 // SSoT に解決する (静的 value→label マップは持たない)。
-
-const FOLDER_SUGGESTIONS = [
-  "news_en",
-  "research",
-  "research_jp",
-  "advisory",
-  "advisory_jp",
-  "thinktank",
-] as const;
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   /** Discovery panel 等から起動するとき URL pre-fill */
   initialUrl?: string;
+  /** 取得方式の変更 (RSS ⇄ サイトマップ ⇄ スクレイパー) で置き換える既存ソース。
+   *  登録が成功したあとに旧設定を削除する (削除は登録成功後 = 取りこぼしを作らない)。 */
+  replacing?: { feedId: string; title: string; folder: string };
 }
 
-export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "" }: Props) {
+export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing }: Props) {
   const qc = useQueryClient();
   const [step, setStep] = useState<Step>({ kind: "url" });
   const [url, setUrl] = useState("");
@@ -63,8 +69,15 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "" }: Props) {
   // confirm form
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState(""); // 購読一覧に表示される名称
-  const [folder, setFolder] = useState("news_en");
+  const [folder, setFolder] = useState("");
   const [enabled, setEnabled] = useState(true);
+
+  // 取り直し (取得方式の変更) では既存の分類・表示名を初期値にする。
+  useEffect(() => {
+    if (!isOpen || !replacing) return;
+    setFolder((cur) => cur || replacing.folder);
+    setDisplayName((cur) => cur || replacing.title);
+  }, [isOpen, replacing]);
 
   // initialUrl 注入 (Discovery → openSourceWizard 経路)
   useEffect(() => {
@@ -122,8 +135,27 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "" }: Props) {
   const registerMut = useMutation({
     mutationFn: (req: { candidate: SourceCandidate; name: string; folder: string; enabled: boolean }) =>
       sourcesV2Api.register(req),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       setError(null);
+      // 取得方式の変更なら、新設定の登録に成功したあとで旧設定を消す
+      // (先に消すと登録に失敗したときソースが丸ごと消えてしまう)。
+      let replaced: { title: string; removed: boolean; error?: string } | undefined;
+      if (replacing) {
+        try {
+          const del = await sourcesV2Api.deleteSource(replacing.feedId);
+          replaced = {
+            title: replacing.title,
+            removed: del.removed,
+            error: del.error ?? undefined,
+          };
+        } catch (e: unknown) {
+          replaced = {
+            title: replacing.title,
+            removed: false,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+      }
       setStep({
         kind: "done",
         result: {
@@ -132,6 +164,7 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "" }: Props) {
           target_yaml: res.target_yaml,
           transport: res.transport,
           appended: res.appended_to_cluster,
+          replaced,
         },
       });
       qc.invalidateQueries({ queryKey: ["subscriptions"] });
@@ -143,8 +176,19 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "" }: Props) {
   });
 
   return (
-    <Drawer isOpen={isOpen} onClose={handleClose} title="ソースを追加" widthClass="md:w-[48rem]">
+    <Drawer
+      isOpen={isOpen}
+      onClose={handleClose}
+      title={replacing ? "取得方式を変更" : "ソースを追加"}
+      widthClass="md:w-[48rem]"
+    >
       <div className="space-y-4">
+        {replacing && (
+          <div className="rounded border border-accent/40 bg-accent-subtle px-3 py-2 text-xs text-fg-muted">
+            <strong className="text-fg">{replacing.title}</strong> を別の方式で取り直します。
+            新しい設定の登録に成功したら、古い設定は自動で削除します。
+          </div>
+        )}
         <StepIndicator step={step} />
 
         {error && (
@@ -910,24 +954,16 @@ function Step6Confirm({
           )}
         </div>
 
-        {(candidate.transport === "rss" || candidate.transport === "atom") && (
-          <div>
-            <label className="block text-xs text-fg-muted mb-1">フォルダ (任意)</label>
-            <input
-              type="text"
-              list="folder-suggestions-v2"
-              value={folder}
-              onChange={(e) => setFolder(e.target.value)}
-              placeholder="例: news_en, research, advisory_jp"
-              className="w-full bg-surface-2 border border-border-subtle rounded px-3 py-2 text-sm"
-            />
-            <datalist id="folder-suggestions-v2">
-              {FOLDER_SUGGESTIONS.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
-          </div>
-        )}
+        {/* フォルダは transport に依らず共通 (RSS だけに出していたため sitemap /
+            スクレイパーが未分類のまま登録されていた)。候補は実データ由来。 */}
+        <div>
+          <label className="block text-xs text-fg-muted mb-1">フォルダ (分類)</label>
+          <FolderSelect
+            value={folder}
+            onChange={setFolder}
+            className="w-full bg-surface-2 border border-border-subtle rounded px-3 py-2 text-sm text-fg"
+          />
+        </div>
 
         <label className="flex items-center gap-2 text-sm text-fg">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
@@ -976,6 +1012,7 @@ function Step7Done({
     target_yaml: string;
     transport: string;
     appended: boolean;
+    replaced?: { title: string; removed: boolean; error?: string };
   };
   onClose: () => void;
   onAddAnother: () => void;
@@ -991,6 +1028,19 @@ function Step7Done({
           <div className="text-xs text-success mt-1 inline-flex items-center gap-1">
             <Check className="h-3.5 w-3.5 shrink-0" />
             スクレイパー監視ジョブに自動追加しました
+          </div>
+        )}
+        {result.replaced?.removed && (
+          <div className="text-xs text-success mt-1 inline-flex items-center gap-1">
+            <Check className="h-3.5 w-3.5 shrink-0" />
+            古い設定「{result.replaced.title}」を削除しました
+          </div>
+        )}
+        {result.replaced && !result.replaced.removed && (
+          <div className="text-xs text-warning mt-1">
+            ⚠ 古い設定「{result.replaced.title}」を削除できませんでした
+            {result.replaced.error ? `: ${result.replaced.error}` : ""}。
+            二重取得になるため購読一覧から手動で削除してください
           </div>
         )}
       </div>

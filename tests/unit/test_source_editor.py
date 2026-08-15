@@ -209,3 +209,19 @@ class TestUpdateValidation:
         from src.ui.api.sources import _validate_update
 
         _validate_update(self._req(url="https://example.com/feed.xml", folder="news_sec"))  # type: ignore[arg-type]
+
+
+class TestFolderVocabulary:
+    """フォルダ候補は実データから引く (固定リストは分類を変えると stale 化する)。"""
+
+    def test_lists_folders_actually_in_use(self, _cfg: Path) -> None:
+        from src.ui.api.sources import list_folders
+
+        # fixture: rss の Acme Feed だけ folder=news_sec、他は未設定
+        assert list_folders() == {"folders": ["news_sec"]}
+
+    def test_new_folder_appears_after_assignment(self, _cfg: Path) -> None:
+        from src.ui.api.sources import list_folders
+
+        update_source("scraper:acme-scraper", SourcePatch(folder="vendor_research"))
+        assert list_folders()["folders"] == ["news_sec", "vendor_research"]

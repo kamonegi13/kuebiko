@@ -258,6 +258,22 @@ def set_display_name_endpoint(req: RenameSourceRequest) -> RenameSourceResponse:
     return RenameSourceResponse(affected=affected, commit=commit)
 
 
+@sources_api.get("/folders")
+def list_folders() -> dict[str, list[str]]:
+    """登録済みソースで実際に使われているフォルダ一覧 (分類の SSoT)。
+
+    候補をコード側に固定すると分類を変えたときに stale 化する (旧 news_en/advisory_jp
+    のハードコードが実データと乖離していた) ため、常に実データから引く。
+    """
+    from src.ui.api._source_manager import list_sources
+
+    try:
+        return {"folders": sorted({s.folder for s in list_sources() if s.folder})}
+    except Exception as e:  # noqa: BLE001 — 一覧取得失敗で登録フローを止めない
+        _log.warning("list_folders_failed", error=str(e))
+        return {"folders": []}
+
+
 @sources_api.get("/editable", response_model=EditableSourceResponse)
 def get_editable_endpoint(feed_id: str) -> EditableSourceResponse:
     """1 ソースの編集可能フィールドを返す (編集フォームの初期値)。"""
