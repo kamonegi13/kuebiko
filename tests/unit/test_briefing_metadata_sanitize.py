@@ -52,3 +52,26 @@ class TestTruncatedTagTail:
     def test_partial_tag_with_underscore_removed(self) -> None:
         # LLM が JSON schema 名を吐いた残骸 (`</is_ransomware` 途中切れ) も末尾断片として除去
         assert sanitize_for_display("再確認が重要である。</is_").strip() == "再確認が重要である。"
+
+
+class TestResidueAuditWiring:
+    """事後検証関数 (has_html_residue) の消費者が存在することを固定する。
+
+    2026-08-15 調査: 関数は「運用ログで残存検出」を謳いながら production から
+    一度も呼ばれていなかった (テストのみ)。write-only 化の再発を防ぐ。
+    """
+
+    def test_briefing_uses_residue_check_at_runtime(self) -> None:
+        import inspect
+
+        from src.pipeline import briefing
+
+        src = inspect.getsource(briefing)
+        assert "has_html_residue" in src, "取込時の残渣検出が消えている"
+        assert "metadata_html_residue_detected" in src, "残渣検出の警告ログが消えている"
+
+    def test_weekly_audit_watches_text_cleanliness(self) -> None:
+        from src.ui.services.fill_rate_audit import METRICS
+
+        keys = {m.key for m in METRICS}
+        assert "text_clean" in keys, "保存後の清浄率が週次監査から外れている"

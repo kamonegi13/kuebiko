@@ -21,7 +21,7 @@ from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, ExtractionResult
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
-from src.tools.text_sanitizer import sanitize_for_display
+from src.tools.text_sanitizer import has_html_residue, sanitize_for_display
 from src.tools.text_utils import strip_html as _strip_html
 
 # LLM が自由記述で埋める metadata キー (HTML 残渣の一括除去対象)。
@@ -543,15 +543,27 @@ def _build_briefing(
         metadata["remediation"] = sanitize_for_display(summary.remediation).strip()[:300]
     if diamond_axes.technical:
         metadata["technical_axis_summary"] = diamond_axes.technical
-    # LLM 自由記述の HTML 残渣を一括除去 (2026-08-15)。
+    # LLM 自由記述の HTML 残渣を一括除去 + 未登録キーの検出 (2026-08-15)。
     # title/summary/analyst_note は上で個別 sanitize 済だが、後から増えた
     # metadata 側の自由記述 (remediation 等) が漏れ、本文末尾の閉じタグ列
     # (`</p></div>...`) を LLM が引きずった値が UI に露出していた。
-    # 個別追加は同じ漏れを繰り返すため、キー集合を SSoT として一括適用する。
+    # 個別追加は同じ漏れを繰り返すため、(1) 既知キーを SSoT として一括 sanitize し、
+    # (2) **全 metadata 文字列を事後検証**して漏れたキーを名指しで警告する。
+    # (2) が無いと「新しい自由記述キーを足したが SSoT 登録を忘れた」を誰も検知できない。
     for _key in LLM_FREE_TEXT_METADATA_KEYS:
         _val = metadata.get(_key)
         if isinstance(_val, str) and _val:
             metadata[_key] = sanitize_for_display(_val)
+    _residue_keys = [
+        k for k, v in metadata.items() if isinstance(v, str) and has_html_residue(v)
+    ]
+    if _residue_keys:
+        _log.warning(
+            "metadata_html_residue_detected",
+            article_id=article.id,
+            keys=_residue_keys,
+            hint="LLM_FREE_TEXT_METADATA_KEYS への登録漏れ、または sanitizer の不足",
+        )
     # 時間軸レイヤ b/c: 事象発生日 / 基準 / 侵害開始日 (報道時刻と分離)。報道日 +1d を上限に
     # 検証し、偽の日付は捨てる。reference = published or now (事象は報道後に起きえない)。
     _ref_dt = article.published or datetime.now(UTC)

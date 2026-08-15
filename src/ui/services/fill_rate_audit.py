@@ -197,6 +197,21 @@ METRICS: tuple[FillMetric, ...] = (
     # ランサム識別フラグ。breach カテゴリ内 share で監視 (全カテゴリでは希釈されて
     # baseline 10% を割り、永久 skip になるため)。
     FillMetric("is_ransomware", "is_ransomware(breach)", "a.is_ransomware = 1", ("breach",)),
+    # 表示テキストの清浄率 (2026-08-15)。他の指標と違い「充足」でなく「汚染されていない」を
+    # 数える (常時 100% が正常、低下 = HTML 残渣の混入経路が生えた)。
+    # remediation に本文末尾の閉じタグ列が 61 件混入していた実害を受けて常設監視化する。
+    # runtime 側 (briefing.py の metadata_html_residue_detected) が取込時に検知し、
+    # 本指標は **取込経路を通らない書込 (backfill / 直接更新)** も含めた保存後の網。
+    FillMetric(
+        "text_clean",
+        "表示テキスト清浄率",
+        "(a.summary IS NULL OR (a.summary NOT LIKE '%</%' AND a.summary NOT LIKE '%<p>%'))"
+        " AND (a.remediation IS NULL OR (a.remediation NOT LIKE '%</%'"
+        " AND a.remediation NOT LIKE '%<p>%'))"
+        " AND (a.technical_axis_summary IS NULL OR a.technical_axis_summary NOT LIKE '%</%')"
+        " AND (a.socio_political_rationale IS NULL OR a.socio_political_rationale NOT LIKE '%</%')",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)
