@@ -725,7 +725,9 @@ def _schedule_changed(j: JobDef, d: JobDef) -> bool:
 def apply_schedule_to_scheduler(scheduler: Any, j: JobDef) -> None:
     """1 ジョブの schedule を稼働中スケジューラに reschedule する (cron/interval)。"""
     if j.schedule_type == "interval" and j.interval_minutes:
-        scheduler.update_interval(j.interval_minutes, job_id=j.id)
+        scheduler.update_interval(
+            j.interval_minutes, job_id=j.id, offset_minutes=j.offset_minutes or 0
+        )
     elif j.schedule_type == "cron" and j.hour is not None:
         scheduler.update_cron(
             j.hour, j.minute or 0, job_id=j.id, day_of_week=j.day_of_week, day=j.day

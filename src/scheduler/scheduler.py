@@ -285,10 +285,10 @@ class BriefingScheduler:
                 # 整列点 (例: 60 分なら HH:00、30 分なら HH:00/:30) に start_date
                 # を合わせる。
                 assert sp.interval_minutes is not None
-                start_date = _next_aligned_time(sp.interval_minutes, self._timezone)
-                if sp.interval_offset_minutes:
-                    # clock-aligned (:00 等) からオフセットして同時刻 race を避ける
-                    start_date = start_date + timedelta(minutes=sp.interval_offset_minutes)
+                # clock-aligned + offset で同時刻 race を避ける (update_interval と同一)
+                start_date = _aligned_start_with_offset(
+                    sp.interval_minutes, sp.interval_offset_minutes, self._timezone
+                )
                 trigger = IntervalTrigger(
                     minutes=sp.interval_minutes,
                     start_date=start_date,
@@ -371,9 +371,9 @@ class BriefingScheduler:
     def _register_periodic_jobs(self) -> None:
         """bespoke 定期タスク (被害状況コレクタ等) を interval job として登録する。"""
         for job_id, func, interval_minutes, offset_minutes in self._periodic_tasks:
-            start_date = _next_aligned_time(interval_minutes, self._timezone)
-            if offset_minutes:
-                start_date = start_date + timedelta(minutes=offset_minutes)
+            start_date = _aligned_start_with_offset(
+                interval_minutes, offset_minutes, self._timezone
+            )
             trigger = IntervalTrigger(
                 minutes=interval_minutes,
                 start_date=start_date,
@@ -526,9 +526,16 @@ class BriefingScheduler:
         interval_minutes: int,
         *,
         job_id: str = DAILY_JOB_ID,
+        offset_minutes: int = 0,
     ) -> None:
-        """interval 実行に切替えて reschedule する (Phase 3.1、clock-aligned)。"""
-        start_date = _next_aligned_time(interval_minutes, self._timezone)
+        """interval 実行に切替えて reschedule する (Phase 3.1、clock-aligned + offset)。
+
+        offset_minutes は起動時経路 (start) と同じ意味 — clock-aligned (:00 等) から
+        ずらして同時刻 race を避ける。2026-08-15 まで本経路が offset を捨てており、
+        runtime reschedule で :00 に丸まるバグがあった (DB には offset が残るため
+        再起動で直る、という分かりにくい挙動になっていた)。
+        """
+        start_date = _aligned_start_with_offset(interval_minutes, offset_minutes, self._timezone)
         self._scheduler.reschedule_job(
             job_id,
             trigger=IntervalTrigger(
@@ -541,11 +548,38 @@ class BriefingScheduler:
             "scheduler_interval_updated",
             job_id=job_id,
             interval_minutes=interval_minutes,
+            offset_minutes=offset_minutes,
             next_aligned=start_date.isoformat(),
         )
 
 
-def _next_aligned_time(interval_minutes: int, timezone: str) -> datetime:
+def _aligned_start_with_offset(
+    interval_minutes: int,
+    offset_minutes: int,
+    timezone: str,
+    *,
+    now: datetime | None = None,
+) -> datetime:
+    """clock-aligned 境界 + offset の「次に来る」時刻を返す。
+
+    単純に「次の境界 + offset」とすると、境界直後 (例: 23:05 に 60 分 +20 分を
+    設定) は 00:20 まで飛んでしまう。直前境界の offset スロット (23:20) が
+    まだ未来ならそちらを使い、最大 1 interval の取りこぼしを防ぐ。
+    """
+    tz = ZoneInfo(timezone)
+    current = now if now is not None else datetime.now(tz)
+    start = _next_aligned_time(interval_minutes, timezone, now=current)
+    if offset_minutes:
+        start = start + timedelta(minutes=offset_minutes)
+        earlier = start - timedelta(minutes=interval_minutes)
+        if earlier > current:
+            start = earlier
+    return start
+
+
+def _next_aligned_time(
+    interval_minutes: int, timezone: str, *, now: datetime | None = None
+) -> datetime:
     """指定 timezone での次の clock-aligned 時刻を返す (Phase 3.1)。
 
     UNIX epoch を ``interval_minutes * 60`` 秒で量子化することで、
@@ -555,8 +589,8 @@ def _next_aligned_time(interval_minutes: int, timezone: str) -> datetime:
     特殊ケース: 現在時刻がちょうど境界上なら次の境界 (interval_minutes 後) を返す。
     """
     tz = ZoneInfo(timezone)
-    now = datetime.now(tz)
+    current = now if now is not None else datetime.now(tz)
     quantum_seconds = interval_minutes * 60
-    now_epoch = now.timestamp()
+    now_epoch = current.timestamp()
     next_epoch = math.floor(now_epoch / quantum_seconds + 1) * quantum_seconds
     return datetime.fromtimestamp(next_epoch, tz=tz)

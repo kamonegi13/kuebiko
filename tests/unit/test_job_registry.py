@@ -266,8 +266,10 @@ class TestApplyToScheduler:
             ) -> None:
                 calls.append(("cron", (job_id, hour, minute)))
 
-            def update_interval(self, interval_minutes: int, *, job_id: str) -> None:
-                calls.append(("interval", (job_id, interval_minutes)))
+            def update_interval(
+                self, interval_minutes: int, *, job_id: str, offset_minutes: int = 0
+            ) -> None:
+                calls.append(("interval", (job_id, interval_minutes, offset_minutes)))
 
         jobs = jr.default_jobs()
         # morning-brief を無効 + 時刻変更、reactive はスケジューラ非対象
@@ -282,3 +284,31 @@ class TestApplyToScheduler:
         assert ("cron", ("morning-brief", 7, 0)) in calls
         # reactive (auto-trigger) は pause/reschedule されない
         assert all(c[1] != "auto-trigger-synthesis" for c in calls if isinstance(c[1], str))
+
+    def test_apply_passes_interval_offset(self) -> None:
+        # 2026-08-15 バグ修正の回帰固定: runtime reschedule 経路で offset_minutes が
+        # 捨てられ :00 aligned に丸まっていた (再起動でのみ DB の offset が効く挙動)
+        calls: list[tuple[str, object]] = []
+
+        class FakeScheduler:
+            def resume(self, *, job_id: str) -> None:
+                calls.append(("resume", job_id))
+
+            def pause(self, *, job_id: str) -> None:
+                calls.append(("pause", job_id))
+
+            def update_interval(
+                self, interval_minutes: int, *, job_id: str, offset_minutes: int = 0
+            ) -> None:
+                calls.append(("interval", (job_id, interval_minutes, offset_minutes)))
+
+        job = next(j for j in jr.default_jobs() if j.kind == "pipeline")
+        job = job.model_copy(
+            update={
+                "schedule_type": "interval",
+                "interval_minutes": 60,
+                "offset_minutes": 20,
+            }
+        )
+        jr.apply_schedule_to_scheduler(FakeScheduler(), job)
+        assert ("interval", (job.id, 60, 20)) in calls
