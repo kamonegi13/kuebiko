@@ -1,6 +1,6 @@
-"""Watchers: 主パイプライン (Inoreader / Grok) 経由で扱えないソース専用の監視器。
+"""Watchers: 主パイプライン (RSS / Grok) 経由で扱えないソース専用の監視器。
 
-Inoreader が parse 不能な broken feed (例: Project Zero の 13MB malformed Atom) や、
+標準の feed parser が扱えない broken feed (例: 13MB malformed Atom) や、
 そもそも RSS を提供しないソースを、HTML スクレイピング等で個別に取得し、
 直接 Discord に投稿する仕組み。
 

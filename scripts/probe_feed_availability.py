@@ -4,7 +4,7 @@
   1. RSS feed の有無 (標準 path + HTML <link rel="alternate"> 抽出)
   2. sitemap.xml の有無
   3. Cloudflare anti-bot 検出
-  4. 推奨 migration strategy (Inoreader RSS / Web Feed / 自前 watcher 維持)
+  4. 推奨 migration strategy (RSS 購読 / Web Feed / 自前 watcher 維持)
 
 出力: markdown レポート (stdout)。
 
@@ -86,7 +86,7 @@ class ProbeResult:
         if self.error:
             return f"⚠ 調査失敗: {self.error}"
         if self.has_rss:
-            return f"✅ **Inoreader RSS 購読追加** ({len(self.rss_urls)} 候補)"
+            return f"✅ **RSS 購読追加** ({len(self.rss_urls)} 候補)"
         if self.cloudflare_blocking:
             return "🚧 Cloudflare ブロック → 自前 watcher 維持"
         if self.sitemap_url:

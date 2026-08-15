@@ -51,9 +51,9 @@ if [ ! -f "${PROJECT_ROOT}/.env" ]; then
         cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
         echo "==> .env を .env.example から複製しました"
         echo "    編集して必要な認証情報を埋めてください:"
-        echo "      - INOREADER_APP_ID / APP_KEY / REFRESH_TOKEN"
-        echo "      - DISCORD_WEBHOOK_PRIORITY/DAILY/RESEARCH/SYSTEM"
-        echo "      - IMAP_USER / IMAP_PASSWORD (Phase 2 以降)"
+        echo "      - DISCORD_WEBHOOK_ALERT/BRIEF/WATCH/OPS/JAPAN_WATCH"
+        echo "      - POSTGRES_PASSWORD"
+        echo "      - IMAP_USER / IMAP_PASSWORD (Grok レポート取込を使う場合)"
     else
         echo "WARNING: .env.example が見つかりません。.env を手動作成してください。" >&2
     fi
@@ -79,13 +79,12 @@ cat <<EOF
 ==> 次の手順
   1. .env を編集して認証情報を記入
      vim .env
-  2. Inoreader OAuth トークンを取得
-     uv run python scripts/inoreader_oauth.py
-  3. コンテナをビルドして起動
+  2. コンテナをビルドして起動
      docker compose build
      docker compose up -d
-  4. ブラウザで管理画面を開く
+  3. ブラウザで管理画面を開く
      open http://127.0.0.1:8001/
+     購読ソース (RSS / sitemap / scraper) は同梱の初期リストが自動投入される
 
 ==> 運用コマンド
   - ログ:        docker compose logs -f

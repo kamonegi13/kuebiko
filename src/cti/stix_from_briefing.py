@@ -7,7 +7,7 @@ Discord 投稿に STIX bundle を **添付** するための薄いラッパ。
 設計:
 - ``BriefingMessage`` は ``iocs`` / ``mitre_techniques`` を **flat な文字列**
   で保持しているため、ここで再分類 (refang → 種別判定) して
-  ``ExtractedIocs`` を再構築する。Inoreader 経路で既に extractor を通って
+  ``ExtractedIocs`` を再構築する。RSS 経路で既に extractor を通って
   いるが、Grok 経路では生 string しかないため統一的に再構築するのが楽。
 - 既知アクターは ``BriefingMessage.metadata["detected_actor_ids"]`` (新規)
   に list[str] として保存する。``ActorAliasRegistry.by_id()`` で

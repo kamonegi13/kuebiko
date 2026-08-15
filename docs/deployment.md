@@ -18,7 +18,7 @@ CTI Briefing Pipeline の Docker ベース運用ガイド。
   - **OrbStack** (推奨): Apple Silicon ネイティブ、起動 2 秒、メモリ ~200MB
   - **Colima**: `brew install colima && colima start`
   - **Docker Desktop**: 商用ライセンスに注意
-- `.env` が記入済み (16 キー、`scripts/inoreader_oauth.py` で `INOREADER_REFRESH_TOKEN` 取得済み)
+- `.env` が記入済み (`.env.example` からコピー。Discord webhook 5 本 + `POSTGRES_PASSWORD` が必須)
 - ホストに `git` (UI からの auto-commit 用)
 
 ### Claude Code サブスク連携 (任意、2026-07-24 sidecar 化)
@@ -222,7 +222,7 @@ docker compose up -d
 docker compose logs kuebiko | tail -50
 ```
 よくある原因:
-- `.env` の必須項目が空 (Inoreader / Discord 4 webhooks)
+- `.env` の必須項目が空 (Discord webhook 5 本 / `POSTGRES_PASSWORD`)
 - `data/` への書き込み権限が UID 1001 にない
   → ホストで `chown -R 1001:1001 data logs` (Linux) もしくは
     Docker 側で USER 1001 マウントの調整
@@ -232,9 +232,10 @@ docker compose logs kuebiko | tail -50
 - `curl http://localhost:11434/api/tags` でホストから疎通確認
 - コンテナから: `docker compose exec kuebiko curl http://host.docker.internal:11434/api/tags`
 
-### 10.3 Inoreader の 401 (`refresh_token が無効`)
-- `scripts/inoreader_oauth.py` で再取得し `.env` を更新
-- Inoreader アプリの scope が `read+write` であることを確認
+### 10.3 RSS フィードが取得できない (`購読ソース` が赤)
+- 購読ソース画面の疎通ドットで層別に切り分ける (取得成功 / 本文抽出失敗)
+- 403 が続く場合は `src/tools/fetch_policy.py` の UA エスカレーションを確認
+- feed URL 自体の廃止は `uv run python scripts/verify_feed_urls.py` で一括検査
 
 ### 10.4 Discord 投稿が `webhook 投稿失敗: HTTP 401`
 - webhook URL が再生成された可能性

@@ -263,6 +263,9 @@ export function ArticleReadView({
   // 言及 (mention) actor 群から主題 id を除いて表示するための集合 (役割三分割、B1)。
   const subjectIdSet = new Set(a.subject_actor_ids);
   const activePmesii = PMESII_LABELS.filter((p) => a.pmesii[p.key]);
+  // 配信判定の表示は「ルール名」優先。解決できない (削除済みルール / route() 非経由) 記事は
+  // 生の理由文にフォールバックする。
+  const routingDetail = a.routing_rule_label || a.routing_reason;
 
   return (
     <div className="space-y-5">
@@ -396,9 +399,11 @@ export function ArticleReadView({
                 <dt className="text-fg-subtle w-24 shrink-0">配信判定</dt>
                 <dd className="text-fg-muted">
                   {a.posted_channel && <span className="text-fg">{chMeta(a.posted_channel).label}</span>}
-                  {a.routing_reason && (
-                    <span className={a.posted_channel ? "ml-1" : ""}>
-                      {a.posted_channel ? `— ${a.routing_reason}` : a.routing_reason}
+                  {/* 表示はルール名 (label)。内部 id を含む生の理由は tooltip に退避する
+                      — 画面に "rules-engine: R2.…" が出ると何のルールか読めないため。 */}
+                  {routingDetail && (
+                    <span className={a.posted_channel ? "ml-1" : ""} title={a.routing_reason ?? undefined}>
+                      {a.posted_channel ? `— ${routingDetail}` : routingDetail}
                     </span>
                   )}
                 </dd>

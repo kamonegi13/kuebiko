@@ -59,14 +59,14 @@ def test_routing_audit_round_trip(repo: RunHistoryRepository) -> None:
     _add(
         repo,
         article_id="a",
-        rule_id="R2.inoreader.alert_japan_critical_apt",
+        rule_id="R2.alert_japan_critical_apt",
         reason="日本の重要インフラを標的にした APT 活動",
     )
     # Act
     rows = repo.list_articles(limit=10)
     # Assert
     assert len(rows) == 1
-    assert rows[0].routing_rule_id == "R2.inoreader.alert_japan_critical_apt"
+    assert rows[0].routing_rule_id == "R2.alert_japan_critical_apt"
     assert rows[0].routing_reason == "日本の重要インフラを標的にした APT 活動"
 
 

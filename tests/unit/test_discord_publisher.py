@@ -493,13 +493,13 @@ class TestRichEmbed:
         self,
         mock_webhook_class: tuple[Any, list[MagicMock]],
     ) -> None:
-        """Inoreader 経路の自由文字列カテゴリは国旗もタグも出さず色重要度のみ。"""
+        """RSS 経路の自由文字列カテゴリは国旗もタグも出さず色重要度のみ。"""
         _, instances = mock_webhook_class
         pub = DiscordPublisher(webhook_url=WEBHOOK_URL)
         pub._build_webhooks(
             _make_message(
                 importance="high",
-                category="apt",  # Inoreader 経路の LLM 出力例
+                category="apt",  # RSS 経路の LLM 出力例
                 title="BlueNoroff Fake Zoom Calls",
             ),
         )
@@ -565,7 +565,7 @@ class TestRichEmbed:
         self,
         mock_webhook_class: tuple[Any, list[MagicMock]],
     ) -> None:
-        """Inoreader 経路の自由文字列カテゴリでは author を出さない。"""
+        """RSS 経路の自由文字列カテゴリでは author を出さない。"""
         _, instances = mock_webhook_class
         pub = DiscordPublisher(webhook_url=WEBHOOK_URL)
         pub._build_webhooks(_make_message(category="apt"))
@@ -669,7 +669,7 @@ class TestDescriptionBlufDeduplication:
         assert "継続中の中国系活動" in desc
 
     def test_bluf_distinct_from_summary_keeps_both(self) -> None:
-        """BLUF と summary が別物 (Inoreader 経路) なら両方出す。"""
+        """BLUF と summary が別物 (RSS 経路) なら両方出す。"""
         from src.tools.discord_publisher import DiscordPublisher
 
         pub = DiscordPublisher(webhook_url=WEBHOOK_URL)
@@ -782,7 +782,7 @@ class TestDisplay28aImprovements:
         self,
         mock_webhook_class: tuple[Any, list[MagicMock]],
     ) -> None:
-        """Inoreader 経路 (chat_url なし) では CTA を出さない。"""
+        """RSS 経路 (chat_url なし) では CTA を出さない。"""
         _, instances = mock_webhook_class
         pub = DiscordPublisher(webhook_url=WEBHOOK_URL)
         pub._build_webhooks(_make_message(category="apt"))

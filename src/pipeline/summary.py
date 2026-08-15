@@ -144,7 +144,7 @@ class SummaryOutput(BaseModel):
 
     # Phase 5J-2: title_ja を required に格上げ (MoE 系で optional 省略を防ぐ)。
     title_ja: str = Field(min_length=1, max_length=120)
-    # Phase 5T-O: Inoreader 経路では BLUF が title と重複するため LLM 生成を廃止。
+    # Phase 5T-O: RSS 経路では BLUF が title と重複するため LLM 生成を廃止。
     # field は後方互換のため optional として残す (Grok 経路の機械的 BLUF 生成では引き続き使用)。
     bluf: str = ""
     importance: Importance

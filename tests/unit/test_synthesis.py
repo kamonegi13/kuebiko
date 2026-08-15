@@ -264,27 +264,12 @@ class TestCoercePirSection:
 
 
 class TestSanitizeArticleId:
-    """LLM が article_id に挿入した transcription noise を除去。"""
+    """LLM が article_id に付けた前後空白を落とす (それ以外は素通し)。"""
 
-    def test_strips_rag_prefix_noise(self) -> None:
-        # 実際に観測された壊れた id: 'tag:google.com,2005:rag:reader/item/...'
-        bad = "tag:google.com,2005:rag:reader/item/0000000b79f60a65"
-        assert _sanitize_article_id(bad) == ("tag:google.com,2005:reader/item/0000000b79f60a65")
+    def test_strips_surrounding_whitespace(self) -> None:
+        assert _sanitize_article_id("  grok:x_japan_watch:123  ") == "grok:x_japan_watch:123"
 
-    def test_strips_year_mutation_noise(self) -> None:
-        # 2 回目の観測例: 年が "200ical" に化け
-        bad = "tag:google.com,200ical:reader/item/0000000b7949067f"
-        assert _sanitize_article_id(bad) == ("tag:google.com,2005:reader/item/0000000b7949067f")
-
-    def test_strips_multi_prefix_noise(self) -> None:
-        bad = "tag:google.com,2005:foo:bar:reader/item/0000000babc"
-        assert _sanitize_article_id(bad) == ("tag:google.com,2005:reader/item/0000000babc")
-
-    def test_clean_id_passthrough(self) -> None:
-        good = "tag:google.com,2005:reader/item/0000000b79f60a65"
-        assert _sanitize_article_id(good) == good
-
-    def test_non_google_id_passthrough(self) -> None:
+    def test_id_passthrough(self) -> None:
         assert _sanitize_article_id("grok:state_apt:123") == "grok:state_apt:123"
 
     def test_empty_returns_empty(self) -> None:
@@ -358,19 +343,13 @@ class TestSanitizeAxesEvidence:
                     {
                         "label": "Supply Chain",
                         "summary": "西側部品流用",
-                        "article_ids": [
-                            "tag:google.com,2005:rag:reader/item/abc",
-                            "tag:google.com,2005:reader/item/def",
-                        ],
+                        "article_ids": ["  grok:x_china_apt:abc  ", "grok:x_china_apt:def"],
                     },
                 ],
             },
         )
         ids = out["M"][0]["article_ids"]
-        assert ids == [
-            "tag:google.com,2005:reader/item/abc",
-            "tag:google.com,2005:reader/item/def",
-        ]
+        assert ids == ["grok:x_china_apt:abc", "grok:x_china_apt:def"]
 
     def test_non_dict_returns_empty(self) -> None:
         assert _sanitize_axes_evidence("not a dict") == {}

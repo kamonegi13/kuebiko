@@ -20,7 +20,7 @@ def _signals(**kwargs: object) -> RoutingSignals:
     return RoutingSignals(**defaults)  # type: ignore[arg-type]
 
 
-# ---------- Inoreader 経路 ----------
+# ---------- RSS 経路 ----------
 
 
 class TestR35HighThreatBrief:
@@ -109,7 +109,7 @@ class TestGeopoliticalStaysOutOfCyberChannels:
         assert d.channel == "watch"
 
 
-class TestInoreaderRouting:
+class TestRssRouting:
     def test_japan_critical_with_known_apt_routes_to_alert(self) -> None:
         s = _signals(
             category="incident",
@@ -119,7 +119,7 @@ class TestInoreaderRouting:
         )
         d = route(s)
         assert d.channel == "alert"
-        assert d.rule_id == "R2.inoreader.alert_japan_critical_apt"
+        assert d.rule_id == "R2.alert_japan_critical_apt"
 
     def test_breaking_kev_routes_to_alert(self) -> None:
         s = _signals(
@@ -129,13 +129,13 @@ class TestInoreaderRouting:
         )
         d = route(s)
         assert d.channel == "alert"
-        assert d.rule_id == "R2.inoreader.alert_breaking_kev"
+        assert d.rule_id == "R2.alert_breaking_kev"
 
     def test_breaking_zero_day_routes_to_alert(self) -> None:
         s = _signals(category="vulnerability", article_type="breaking", is_zero_day=True)
         d = route(s)
         assert d.channel == "alert"
-        assert d.rule_id == "R2.inoreader.alert_breaking_kev"
+        assert d.rule_id == "R2.alert_breaking_kev"
 
 
 class TestR2AlertCategoryGuard:
@@ -208,7 +208,7 @@ class TestR2AlertCategoryGuard:
         s = _signals(is_japan_security_relevant=True, mentions_japan=True)
         d = route(s)
         assert d.channel == "japan_watch"
-        assert d.rule_id == "R3.inoreader.japan_watch"
+        assert d.rule_id == "R3.japan_watch"
 
     def test_japan_recap_does_not_route_to_japan_watch(self) -> None:
         """日本関連でも recap なら watch (digest 系は japan_watch を汚染しない)。"""

@@ -21,7 +21,7 @@ class RoutingDecision:
 
     属性:
         channel: 決定された Discord チャンネル
-        rule_id: マッチした規則 ID (例: "R2.inoreader.alert_japan_critical_apt")
+        rule_id: マッチした規則 ID (例: "R2.alert_japan_critical_apt")
         reason: 判定理由 (人向け短文、ログ・UI 用)
         signals_snapshot: 判定に用いた主要シグナル (デバッグ用、空 dict でも可)
     """

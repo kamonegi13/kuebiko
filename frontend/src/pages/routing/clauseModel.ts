@@ -16,6 +16,8 @@ export type Condition =
 
 export interface EditRule {
   id: string;
+  // 人向け表示名 (ルール一覧・記事の配信判定はこれを主表示にする)。空なら id を出す。
+  label: string;
   channel: string;
   root: Condition;
 }

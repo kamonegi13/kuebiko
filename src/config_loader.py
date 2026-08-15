@@ -180,7 +180,7 @@ class SourceConfig(BaseModel):
     # src/watchers/<scraper_name>.py を呼ぶ。現状: "project-zero" / "lac-watch"
     scraper_name: str | None = None
 
-    # ---- Phase X-1: direct RSS source (旧 Inoreader 経路の置換) ----
+    # ---- direct RSS source (自前 fetcher、config/sources/feeds.yaml 駆動) ----
     # config/sources/feeds.yaml の path (None なら default config/sources/feeds.yaml)
     feeds_config_path: str | None = None
     rss_http_timeout: float | None = None  # default 30.0 sec

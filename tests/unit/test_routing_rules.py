@@ -12,8 +12,11 @@ import pytest
 
 from src.cti.router import _route_legacy, get_source_quality
 from src.cti.routing_rules import (
+    LEGACY_RULE_ID_ALIASES,
+    canonical_rule_id,
     evaluate_routing_rules,
     load_seed_from_yaml,
+    validate_routing_rules,
 )
 from src.cti.routing_signals import RoutingSignals
 
@@ -35,9 +38,9 @@ class TestRulesLoad:
         # 現行 ladder の rule_id がすべて seed に存在
         for rid in [
             "R8.alert_apt_leak",
-            "R2.inoreader.alert_japan_critical_apt",
-            "R2.inoreader.alert_breaking_kev",
-            "R3.inoreader.japan_watch",
+            "R2.alert_japan_critical_apt",
+            "R2.alert_breaking_kev",
+            "R3.japan_watch",
             "R3.5.high_threat_brief",
             "R4.watch_article_type_demote",
             "R5.watch_low_confidence",
@@ -467,3 +470,42 @@ class TestEmergencyDirective:
             article_type="opinion",
             matched_keyword_lists=frozenset({"emergency_directives"}),
         ) != "alert"
+
+
+class TestRuleLabels:
+    """ルールの表示名 (label) — UI の主表示であり、id は識別子に退く。"""
+
+    def test_every_seed_rule_has_label(self) -> None:
+        # 名前のないルールが混じると、画面には条件式か内部 id しか出せなくなる。
+        unnamed = [r["id"] for r in load_seed_from_yaml() if not str(r.get("label") or "").strip()]
+        assert not unnamed, f"label 未設定のルール: {unnamed}"
+
+    def test_invalid_label_is_rejected(self) -> None:
+        errs = validate_routing_rules(
+            [{"id": "R1.x", "label": "  ", "channel": "watch", "when": {"always": True}}],
+            {"apt"},
+        )
+        assert any("label" in e for e in errs)
+
+    def test_missing_label_is_allowed(self) -> None:
+        # 自作ルール / 旧版ルールは label 無しでも保存できる (UI は id にフォールバック)。
+        errs = validate_routing_rules(
+            [{"id": "R1.x", "channel": "watch", "when": {"always": True}}], {"apt"}
+        )
+        assert errs == []
+
+
+class TestLegacyRuleIdAliases:
+    """改名前の rule id (過去記事に記録済み) を現行ルールへ解決する。"""
+
+    def test_renamed_id_resolves_to_current(self) -> None:
+        assert canonical_rule_id("R2.inoreader.alert_breaking_kev") == "R2.alert_breaking_kev"
+
+    def test_unknown_id_passthrough(self) -> None:
+        assert canonical_rule_id("R99.custom") == "R99.custom"
+
+    def test_alias_targets_exist_in_seed(self) -> None:
+        # 別名の指す先が seed から消えていたら、過去記事の配信理由が名前解決できなくなる。
+        seed_ids = {r["id"] for r in load_seed_from_yaml()}
+        missing = [v for v in LEGACY_RULE_ID_ALIASES.values() if v not in seed_ids]
+        assert not missing, f"別名の解決先が seed に無い: {missing}"

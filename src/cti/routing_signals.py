@@ -1,6 +1,6 @@
 """BriefingMessage → RoutingSignals 抽出 (Phase 5K, 5L-3 で LLM フラグ駆動化)。
 
-ルーティング判定の入力となる客観的シグナルを集約する。Inoreader / Grok 両経路
+ルーティング判定の入力となる客観的シグナルを集約する。RSS / Grok 両経路
 から呼ばれる共通モジュール。
 
 設計の階層 (Phase 5L-3 改修):
@@ -120,7 +120,7 @@ class RoutingSignals:
     llm_confidence: Literal["high", "medium", "low"] = "low"
 
     # Phase 5T-V: source-level quality signal
-    # feed_title (Inoreader 経由のみセット、Grok は空)。R5b propaganda の reason ログ用。
+    # feed_title (RSS / scraper 経由のみセット、Grok は空)。R5b propaganda の reason ログ用。
     feed_title: str = ""
     # 直近 24h の brief 投稿件数 snapshot (R6 cap 判定用、0 なら cap 無効)
     brief_count_24h_snapshot: int = 0

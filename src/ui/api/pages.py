@@ -454,7 +454,6 @@ async def subscriptions_list() -> dict[str, Any]:
                     "url": s.url,
                     "html_url": None,
                     "folder_labels": [s.folder] if s.folder else [],
-                    "first_item_msec": None,
                     "transport": s.transport,
                     "enabled": s.enabled,
                     # S3: briefing 信頼度ティア (override → pattern の実効値)

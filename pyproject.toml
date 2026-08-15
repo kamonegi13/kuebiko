@@ -1,15 +1,15 @@
 [project]
 name = "kuebiko"
 version = "0.2.0"
-description = "Personal CTI briefing automation: Inoreader/Grok/RSS to Discord via local LLM, with web management UI"
+description = "Personal CTI briefing automation: RSS/scraper/Grok to Discord via local LLM, with web management UI"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "kamonegi13" }]
-keywords = ["cti", "threat-intelligence", "automation", "inoreader", "discord", "ollama"]
+keywords = ["cti", "threat-intelligence", "automation", "rss", "discord", "ollama"]
 
 dependencies = [
-    # HTTP クライアント (Inoreader / Discord / Ollama / 記事 URL fetch)
+    # HTTP クライアント (RSS / Discord / Ollama / 記事 URL fetch)
     "httpx>=0.27,<1.0",
     # 本文抽出
     "trafilatura>=2.0,<3.0",
@@ -103,6 +103,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
-    "integration: live Ollama/Inoreader/Discord/IMAP に接続するテスト (CI では除外可)",
+    "integration: live Ollama/RSS/Discord/IMAP に接続するテスト (CI では除外可)",
     "e2e: full pipeline スモーク (要 Ollama 稼働)",
 ]

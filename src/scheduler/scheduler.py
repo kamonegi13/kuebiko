@@ -93,7 +93,7 @@ class ScheduledWatcher:
     """Phase 5Q-2: APScheduler に登録する watcher 定義。
 
     Pipeline と異なり cron 1 日 1 回起動のみサポート (interval 不要)。
-    Watcher は主パイプライン (Inoreader / Grok) で扱えないソース
+    Watcher は主パイプライン (RSS / Grok) で扱えないソース
     (例: Project Zero の壊れた feed) を直接処理する。
     """
 

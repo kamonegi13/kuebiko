@@ -43,8 +43,8 @@ class TestSanitizeForDisplay:
         text = "日本企業へのサプライチェーン攻撃"
         assert sanitize_for_display(text) == text
 
-    def test_realistic_inoreader_title_with_td_residue(self) -> None:
-        """Inoreader feed で観測された </td> 末尾混入の典型例。"""
+    def test_realistic_feed_title_with_td_residue(self) -> None:
+        """RSS feed で観測された </td> 末尾混入の典型例。"""
         text = "Conti および Akira の提携者が 8 年の禁錮刑</td>"
         assert sanitize_for_display(text) == "Conti および Akira の提携者が 8 年の禁錮刑"
 

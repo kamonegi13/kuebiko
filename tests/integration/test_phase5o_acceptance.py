@@ -115,7 +115,7 @@ class TestPhase5OAcceptance:
         signals = extract_signals_from_briefing(msg, body_text="東北大学 治験患者 漏洩")
         decision = route(signals)
         assert decision.channel == "japan_watch"
-        assert decision.rule_id == "R3.inoreader.japan_watch"
+        assert decision.rule_id == "R3.japan_watch"
 
     def test_denso_apt_breach_routes_to_alert(self) -> None:
         """日本企業 (デンソー) APT 侵害事案は alert (R2)。"""
@@ -143,7 +143,7 @@ class TestPhase5OAcceptance:
         decision = route(signals)
         # R2: japan_critical + known APT → alert
         assert decision.channel == "alert"
-        assert decision.rule_id == "R2.inoreader.alert_japan_critical_apt"
+        assert decision.rule_id == "R2.alert_japan_critical_apt"
 
     def test_global_cve_advisory_routes_to_brief(self) -> None:
         """グローバル製品の CVE advisory (Apache 等) は brief 行き、japan_watch には流れない。"""

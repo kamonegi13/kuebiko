@@ -14,7 +14,6 @@ LLM は軸別 article 統計 + trend cluster + PIR を context として受け�
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -302,27 +301,14 @@ def _load_previous_synthesis(
     return None
 
 
-# LLM が転記時に挿入する Inoreader id の noise パターンを救済。
-# 観測例:
-#   - "tag:google.com,2005:rag:reader/item/<hex>"   (rag: 挿入)
-#   - "tag:google.com,200ical:reader/item/<hex>"    (年が "200ical" に化け)
-#   - "tag:google.com,2005:foo:bar:reader/item/<hex>" (複数 prefix)
-# canonical form: "tag:google.com,2005:reader/item/<hex>"
-_INOREADER_ID_RE = re.compile(
-    r"^tag:google\.com,[^/]*reader/item/([0-9a-f]+)\s*$",
-    re.IGNORECASE,
-)
-
-
 def _sanitize_article_id(raw: str) -> str:
-    """LLM が転記時に noise を挿入した article_id を正規化。"""
-    if not raw:
-        return raw
-    s = raw.strip()
-    m = _INOREADER_ID_RE.match(s)
-    if m:
-        return f"tag:google.com,2005:reader/item/{m.group(1).lower()}"
-    return s
+    """LLM が転記時に付けた前後の空白を落とす。
+
+    以前は撤去済み feed 集約サービスの id 形式 (tag:google.com,2005:reader/item/…) に
+    LLM が挿入する noise を救済していたが、その形式の記事は 2026-05-26 を最後に
+    増えず synthesis の対象窓 (7/30 日) にも入らないため撤去した。
+    """
+    return raw.strip() if raw else raw
 
 
 def _axis_min_events(total_current: int) -> int:

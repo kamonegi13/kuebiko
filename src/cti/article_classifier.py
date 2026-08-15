@@ -6,9 +6,9 @@ LLM が `SummaryOutput.article_type` で示す主観判定と、タイトル正�
 役割:
     - 「Weekly Recap」「Top 10 ...」のような digest 系記事を確実に検出
     - LLM 判定が "breaking" でも title regex で "recap" 検出 → recap に格下げ
-    - 両ソース (Inoreader / Grok) で共有可能
+    - 両ソース (RSS / Grok) で共有可能
 
-Inoreader 経路: title + body から判定。LLM の article_type を hint として使う。
+RSS 経路: title + body から判定。LLM の article_type を hint として使う。
 Grok 経路: GrokSection は元々構造化されているため、ここを通る必要は少ない
            (state_apt summary などはセクション ID で判定可能)。
 """

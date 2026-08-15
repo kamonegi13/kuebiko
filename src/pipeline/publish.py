@@ -17,7 +17,7 @@ def _resolve_channel(
     """BriefingMessage から target_channel を決定する。
 
     優先順 (Phase 5K):
-      1. ``msg.metadata['target_channel']`` (Grok / Inoreader が router で決定済の値)
+      1. ``msg.metadata['target_channel']`` (router が決定済の値)
       2. ``importance_map[msg.importance]`` (router 経由でない場合の安全網)
 
     衛生ゲート (2026-06-16): alert は最優先 (即応) channel。enriched importance=low の

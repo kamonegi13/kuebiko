@@ -53,8 +53,6 @@ class FeedStats:
     extract_failed_count: int = 0
     # Phase 5T-R: 当ツール articles 表での初回観測時刻 (ISO 8601 string、未観測なら None)
     first_seen_at: str | None = None
-    # Phase 5T-R: Inoreader 側 firstitemmsec から導出した datetime (微妙な意味合いで参考程度)
-    inoreader_first_item_at: datetime | None = None
 
     @property
     def total_articles(self) -> int:
@@ -98,22 +96,19 @@ class FeedStats:
     def is_recently_subscribed(self) -> bool:
         """Phase 5T-R: 新規 subscription かを判定。
 
-        判定の優先順:
-            1. articles 表初回観測が _NEW_SUBSCRIPTION_DAYS 日内 → 新規
-            2. inoreader_first_item_at が _NEW_SUBSCRIPTION_DAYS 日内 → 新規
-            3. どちらも無い OR 古い → 既存
+        articles 表での初回観測が _NEW_SUBSCRIPTION_DAYS 日内なら新規。
+        初回観測が無い / 古ければ既存とみなす。
         """
         cutoff = datetime.now(UTC) - timedelta(days=_NEW_SUBSCRIPTION_DAYS)
-        if self.first_seen_at:
-            try:
-                first_dt = datetime.fromisoformat(self.first_seen_at.replace("Z", "+00:00"))
-                if first_dt.tzinfo is None:
-                    first_dt = first_dt.replace(tzinfo=UTC)
-                if first_dt >= cutoff:
-                    return True
-            except (ValueError, TypeError):
-                pass
-        return bool(self.inoreader_first_item_at and self.inoreader_first_item_at >= cutoff)
+        if not self.first_seen_at:
+            return False
+        try:
+            first_dt = datetime.fromisoformat(self.first_seen_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return False
+        if first_dt.tzinfo is None:
+            first_dt = first_dt.replace(tzinfo=UTC)
+        return first_dt >= cutoff
 
     @property
     def quality_score(self) -> int:
@@ -183,7 +178,7 @@ def fetch_all_feed_stats(
 
     Returns:
         {feed_title: FeedStats} — articles table に出現した feed_title のみ。
-        Inoreader subscription に存在しても articles に出ていない feed は含まれない。
+        購読登録済みでも articles に出ていない feed は含まれない。
     """
     # Phase 5T-R: first_seen_at は全期間で取得 (lookback_days に依存しない)。
     # lookback 期間の集計と JOIN で「初回観測」を毎 feed に付与。

@@ -1,6 +1,6 @@
 """表示用テキストの sanitizer (Phase 5L-2)。
 
-Inoreader feed の summary_html や LLM 翻訳出力に紛れ込む HTML タグ、
+RSS feed の summary_html や LLM 翻訳出力に紛れ込む HTML タグ、
 HTML エンティティ、制御文字、Unicode 非正規形を一箇所で除去する。
 
 役割:

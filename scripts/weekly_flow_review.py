@@ -40,16 +40,24 @@ def main() -> None:
     section(f"1. alert 件数とルール別内訳 (直近 {args.days} 日)")
     rows = conn.execute(
         translate_sql(
-            "SELECT routing_reason, COUNT(*) AS n FROM articles"
+            "SELECT routing_rule_id, routing_reason, COUNT(*) AS n FROM articles"
             " WHERE posted_channel='alert' AND created_at > datetime('now', ?)"
-            " GROUP BY routing_reason ORDER BY n DESC"
+            " GROUP BY routing_rule_id, routing_reason ORDER BY n DESC"
         ),
         (win,),
     ).fetchall()
-    total = sum(int(r["n"]) for r in rows)
-    print(f"  alert 合計 {total} 件 ({total / args.days:.1f} 件/日)  ※目標帯 7-8 件/日")
+    # 改名前の rule id (旧 Inoreader 命名) を現行 id に寄せてから集計する。
+    # 寄せないと同じルールの発火が改名日を境に 2 行に割れて読めなくなる。
+    from src.cti.routing_rules import canonical_rule_id, rule_label
+
+    tally: collections.Counter[str] = collections.Counter()
     for r in rows:
-        print(f"    {str(r['routing_reason'] or '-'):52} {int(r['n']):4}")
+        rid = str(r["routing_rule_id"] or r["routing_reason"] or "-")
+        tally[canonical_rule_id(rid)] += int(r["n"])
+    total = sum(tally.values())
+    print(f"  alert 合計 {total} 件 ({total / args.days:.1f} 件/日)  ※目標帯 7-8 件/日")
+    for rid, n in tally.most_common():
+        print(f"    {(rule_label(rid) or rid):40} {rid:38} {n:4}")
 
     section("2. 初報 watch → 続報 alert の昇格実例")
     rows = conn.execute(

@@ -463,13 +463,25 @@ export function RuleEditorFields({
   const rootGroup = coerceRootGroup(rule.root);
   return (
     <div className="space-y-3">
+      {/* 名前 = 一覧・記事の配信判定に出る表示名。ID は識別子 (監査ログ・履歴の突合用)。 */}
+      <div>
+        <div className="mb-1 text-xs text-fg-subtle">名前 (一覧と記事の配信判定に表示)</div>
+        <input
+          value={rule.label}
+          disabled={readOnly}
+          onChange={(e) => onChange({ label: e.target.value })}
+          className="w-full rounded border border-border-subtle bg-surface-1 px-2 py-1 text-sm text-fg"
+          placeholder="例: KEV・ゼロデイの速報"
+        />
+      </div>
       <div className="flex items-center gap-2">
         <input
           value={rule.id}
           disabled={readOnly}
           onChange={(e) => onChange({ id: e.target.value })}
-          className="min-w-0 flex-1 rounded border border-border-subtle bg-surface-1 px-2 py-1 text-sm text-fg"
-          placeholder="ルール ID"
+          className="min-w-0 flex-1 rounded border border-border-subtle bg-surface-1 px-2 py-1 font-mono text-xs text-fg-muted"
+          placeholder="ルール ID (識別子)"
+          title="監査ログ・実行履歴と突合するための識別子。変更すると過去記事との対応が切れます"
         />
         <span className="text-xs text-fg-subtle">→</span>
         <select

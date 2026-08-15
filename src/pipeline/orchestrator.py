@@ -197,7 +197,8 @@ async def run_pipeline(
     try:
         articles = await source.fetch(max_count=effective_max)
     except Exception as e:  # noqa: BLE001
-        # Phase 5P: 中途エラーで取得済み件数を回収 (Inoreader が partial_count を立てる)
+        # Phase 5P: 中途エラーでも取得済み件数を回収する (例外が partial_count を
+        # 持つ場合のみ。現行 source はいずれも立てないため実質 0)
         partial_count = int(getattr(e, "partial_count", 0) or 0)
         partial_note = (
             f"partial_fetch={partial_count}/{effective_max}" if partial_count > 0 else None
@@ -238,8 +239,8 @@ async def run_pipeline(
     # 区別は、成果ではなく取得行為の記録によってのみ可能 (早期 return は例外時のみ)。
     _persist_feed_health(source, dedup_repo)
 
-    # 投稿せずに既読化する Inoreader article id を集約 (重複判定 / triage 切り捨て)。
-    # 投稿成功 ID と合わせて mark_as_read に渡し、Inoreader 側の未読肥大を防ぐ。
+    # 投稿せず終端した article id を集約 (重複判定 / triage 切り捨て)。
+    # dedup_seen_urls に既読登録して次 run の再 fetch→再評価リサイクルを止める。
     # LLM/post 失敗はリトライ余地を残すため対象外。
     skipped_for_mark_read: list[str] = []
 
@@ -313,7 +314,7 @@ async def run_pipeline(
             )
 
     # 1.8. Phase 3.1: 軽量 LLM による事前 triage (重要度判定 → フィルタ)
-    # Inoreader 100 件規模を高速に絞り込む。本要約 (gemma4:31b 15s/記事) の
+    # 1 run 100 件規模を高速に絞り込む。本要約 (gemma4:31b 15s/記事) の
     # 前に title+概要のみで 1-3s/記事の triage を回し、threshold 以上のみ通す。
     # Grok 経路は元から重要度を内包するので triage 対象外 (フィルタしない)。
     triage_error_count = 0
@@ -346,7 +347,7 @@ async def run_pipeline(
         )
         skipped_for_mark_read.extend(skipped_triage_ids)
         # 評価済み・不採用 (importance 不足) は URL 既読化する — 「既読」の状態機械に
-        # 欠けていた終端状態 (2026-07-12 根治)。旧 Inoreader の「skip→既読化」が Phase X-1
+        # 欠けていた終端状態 (2026-07-12 根治)。旧経路の「skip→既読化」が Phase X-1
         # 撤去で受け皿を失い、落選記事が毎時 再選抜→再triage→再落選 をリサイクルしていた
         # (実測: 未見プール ~650 が恒常滞留、毎時 ~87 件を再評価 = 26B 呼出 ~2000/日の浪費、
         # 低頻度 feed は落選常連が公平枠を塞ぎ続け記事が一生出ない)。
@@ -706,9 +707,8 @@ async def run_pipeline(
                 outcome["failure_reason"] = f"no publisher for channel {channel}"
             continue
         # Phase 5L-4: ch 横断 dedup チェック
-        # Phase 5L-8: skip された article id を skipped_for_mark_read にも追加し
-        # Inoreader 側で既読化させる (未読肥大ループ防止)。Grok 由来は
-        # 既存の "grok:" prefix フィルタで mark_as_read 対象から外れるので無害。
+        # Phase 5L-8: skip された article id も既読化対象に加える
+        # (同一 URL の再 fetch→再評価リサイクル防止)。
         msg_dedup_key = msg.metadata.get("dedup_key")
         if isinstance(msg_dedup_key, str) and msg_dedup_key:
             if msg_dedup_key in cross_channel_seen_keys:
@@ -942,7 +942,7 @@ async def run_pipeline(
                 outcome["status"] = "post_failed"
                 outcome["failure_reason"] = f"{type(e).__name__}: {e}"[:500]
 
-    # Phase X-1: Inoreader 廃止に伴い mark_as_read を撤去。 dedup は URL 正規化
+    # Phase X-1 で外部サービス側の既読化 API を撤去。dedup は URL 正規化
     # SHA-256 ハッシュ (dedup_seen_urls) で担保される。
     marked = 0
 

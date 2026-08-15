@@ -25,6 +25,9 @@ export type WhenCondition = Record<string, unknown>;
 
 export interface RoutingRule {
   id: string;
+  // 表示名 (backend の routing_rules.yaml / DB ルールセットが持つ label)。
+  // 未設定のルール (旧版・自作) もあるため optional。UI は label || id を表示する。
+  label?: string;
   channel: string;
   when: WhenCondition;
 }

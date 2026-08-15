@@ -26,7 +26,7 @@ def _filter_duplicates(
     """URL ハッシュベースで既出記事を除外する (Phase 3a)。
 
     戻り値: (重複を除いた記事リスト, スキップ件数, スキップした article id リスト)。
-    skipped_ids は呼び出し側で Inoreader 既読化対象に含める用途。
+    skipped_ids は呼び出し側で dedup 既読化 (次 run の再評価リサイクル防止) に使う。
     """
     # まず article ごとに hash を計算してバルク問い合わせ
     hashes = [url_hash(a.url) for a in articles]
@@ -71,7 +71,7 @@ async def _filter_by_triage(
         survivors: triage 通過した記事リスト
         skipped: フィルタで落とした件数 (Grok 記事を除く全記事 - 通過分)
         skipped_ids: フィルタで落とした article id リスト
-            (呼び出し側で Inoreader 既読化対象に含める用途)
+            (呼び出し側で dedup 既読化に使う)
         triage_error_count: LLM 失敗で medium fail-open した件数 (Phase 5P)
         rejected: **評価の結果 importance 不足で不採用**とした記事 (skipped の部分集合)。
             呼び出し側が URL 既読化する = 判断済みの終端状態 (2026-07-12)。
@@ -82,7 +82,7 @@ async def _filter_by_triage(
 
     triage = ArticleTriage(llm, think=think)
 
-    # Grok 記事はバイパス (重要度判定済)、Inoreader 等のみ triage する
+    # Grok 記事はバイパス (重要度判定済)、RSS / scraper 由来のみ triage する
     grok_articles: list[Article] = []
     triage_targets: list[Article] = []
     for a in articles:
@@ -208,7 +208,7 @@ async def _filter_semantic_duplicates(
         survivors: 重複でない記事リスト
         skipped: スキップ件数
         embeddings_to_persist: 投稿後に保存する {article_id: (model, vector)} マップ
-        skipped_ids: スキップした article id リスト (Inoreader 既読化対象)
+        skipped_ids: スキップした article id リスト (dedup 既読化対象)
     """
     survivors: list[Article] = []
     skipped_ids: list[str] = []

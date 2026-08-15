@@ -15,9 +15,13 @@ version: 2
 #
 # 旧形 ({flag: x} / {field: {op: val}}) も load 時に正規化され動作する (後方互換)。
 # プロパティ一覧は src/cti/routing_rules.py の PROPERTY_CATALOG が SSoT。
+#
+# label = 「このルールが何をするか」の人向け表示名 (UI の主表示。id は識別子・監査用)。
+# 省略可だが、省略すると画面には id しか出せず条件式から意図を読む羽目になる。
 rules:
   # ---- R8: APT 内部リーク → 即応 ----
   - id: R8.alert_apt_leak
+    label: "APT 内部情報のリーク"
     channel: alert
     when:
       all:
@@ -25,7 +29,8 @@ rules:
         - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
 
   # ---- R2: 即応条件 (脅威カテゴリ限定) ----
-  - id: R2.inoreader.alert_japan_critical_apt
+  - id: R2.alert_japan_critical_apt
+    label: "日本の重要インフラ × 既知 APT"
     channel: alert
     when:
       all:
@@ -33,7 +38,8 @@ rules:
         - {property: category, op: in_config, value: high_threat_brief_categories}
         - {property: japan_critical, op: is_true}
         - {property: known_apt, op: is_true}
-  - id: R2.inoreader.alert_breaking_kev
+  - id: R2.alert_breaking_kev
+    label: "KEV・ゼロデイの速報"
     channel: alert
     when:
       all:
@@ -53,12 +59,14 @@ rules:
   # 案 D 限定の相互作用で「日本非言及の緊急指令が watch に落ちる」穴があった。
   # 稀少 (年数回) かつ絶対に落とせないクラスのため無条件で上げる。
   - id: R2g.alert_emergency_directive
+    label: "政府機関の緊急指令 (ED / 緊急注意喚起)"
     channel: alert
     when:
       all:
         - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
         - {property: keyword_list, op: in, value: [emergency_directives]}
   - id: R2e.alert_breaking_japan
+    label: "日本関連の速報級 (LLM 判定)"
     channel: alert
     when:
       all:
@@ -68,6 +76,7 @@ rules:
             - {property: japan_relevant, op: is_true}
             - {property: japan_critical, op: is_true}
   - id: R2f.alert_early_warning
+    label: "早期警戒: 予告・アクセス売買・悪用切迫"
     channel: alert
     when:
       all:
@@ -79,7 +88,8 @@ rules:
             - {property: actor_nation, op: in, value: [cn, ru, kp, ir]}
 
   # ---- R3: 日本関連弱信号 → japan_watch ----
-  - id: R3.inoreader.japan_watch
+  - id: R3.japan_watch
+    label: "日本関連の弱信号"
     channel: japan_watch
     when:
       all:
@@ -88,6 +98,7 @@ rules:
 
   # ---- R3.5: 高重要度の脅威 → brief (形式降格より優先) ----
   - id: R3.5.high_threat_brief
+    label: "高重要度の脅威 (形式降格より優先)"
     channel: brief
     when:
       all:
@@ -97,11 +108,13 @@ rules:
 
   # ---- R4: 読み物形式は観察送り (衛生・降格) ----
   - id: R4.watch_article_type_demote
+    label: "読み物形式は観察送り"
     channel: watch
     when: {property: article_type, op: in, value: [recap, tutorial, opinion, press, research]}
 
   # ---- R5: 信頼性 all-low (衛生・降格) ----
   - id: R5.watch_low_confidence
+    label: "信頼度がすべて低い"
     # 供給 flag は誕生時から到達不能・全期間発火 0 (7/18 無効化。再設計条件は memory 参照)
     enabled: false
     channel: watch
@@ -109,11 +122,13 @@ rules:
 
   # ---- R5b: propaganda (衛生・降格) ----
   - id: R5b.propaganda_demote
+    label: "プロパガンダは観察送り"
     channel: watch
     when: {property: stance, op: eq, value: propaganda}
 
   # ---- R6: 朝読 (brief) + 量制御 cap ----
   - id: R6.cap_demote
+    label: "朝刊が 1 日の上限に到達"
     # 6/28 通知モデル再設計で brief per-article 投稿が廃止され cap 到達不能 + 効果空 (7/18 無効化)
     enabled: false
     channel: watch
@@ -123,6 +138,7 @@ rules:
         - {property: security_relevant, op: is_true}
         - {property: brief_cap_reached, op: is_true}
   - id: R6.brief_importance
+    label: "重要度 高・中のセキュリティ記事"
     channel: brief
     when:
       all:
@@ -131,5 +147,6 @@ rules:
 
   # ---- R7: フォールバック ----
   - id: R7.fallback
+    label: "どれにも当てはまらない記事"
     channel: watch
     when: {always: true}

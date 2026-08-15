@@ -11,7 +11,7 @@ CTI 報道では同じアクターが複数の名前で呼ばれる:
 
 主用途:
     1. Grok 経路: ``GrokIncident.related_actor`` を正規化
-    2. Inoreader 経路: LLM 要約結果のアクター名を正規化
+    2. RSS 経路: LLM 要約結果のアクター名を正規化
     3. Discord 投稿で「Volt Typhoon (別名: Vanguard Panda; MITRE: G1017)」と表示
 """
 

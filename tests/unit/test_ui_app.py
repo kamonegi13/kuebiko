@@ -390,9 +390,6 @@ def test_lifespan_runs_vacuum_when_sentinel_missing(
     project = _bootstrap_project(tmp_path)
     monkeypatch.setenv("CTI_PROJECT_ROOT", str(project))
     monkeypatch.chdir(project)
-    monkeypatch.setenv("INOREADER_APP_ID", "1000000000")
-    monkeypatch.setenv("INOREADER_APP_KEY", "k" * 32)
-    monkeypatch.setenv("INOREADER_REFRESH_TOKEN", "t" * 40)
     monkeypatch.setenv("DISCORD_WEBHOOK_ALERT", "https://discord.com/api/webhooks/1/a")
     monkeypatch.setenv("DISCORD_WEBHOOK_BRIEF", "https://discord.com/api/webhooks/2/b")
     monkeypatch.setenv("DISCORD_WEBHOOK_WATCH", "https://discord.com/api/webhooks/3/w")
@@ -608,7 +605,7 @@ def test_article_detail_endpoint(
             summary="要約テキスト",
             socio_political_intent="financial",
             socio_political_rationale="暗号資産窃取が動機",
-            routing_rule_id="R2.inoreader.alert_japan_critical_apt",
+            routing_rule_id="R2.alert_japan_critical_apt",
             routing_reason="日本の重要インフラを標的にした APT 活動",
             discord_message_id="msg123",
             discord_channel_id="ch456",
@@ -629,7 +626,7 @@ def test_article_detail_endpoint(
     assert art["body"].startswith("本文テキスト")
     assert art["socio_political_intent"] == "financial"
     # flow Phase 3: 「なぜこのチャンネルか」(投稿先決定の監査情報) が detail に出る
-    assert art["routing_rule_id"] == "R2.inoreader.alert_japan_critical_apt"
+    assert art["routing_rule_id"] == "R2.alert_japan_critical_apt"
     assert art["routing_reason"] == "日本の重要インフラを標的にした APT 活動"
     # Discord deep-link が guild + channel + message から組まれる
     assert data["discord_url"] == "https://discord.com/channels/999000/ch456/msg123"

@@ -191,7 +191,7 @@ class BriefingMessage(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     title: str
-    # Phase 5T-O: Inoreader 経路は廃止 (title と重複)、Grok 経路は機械的に生成して使用。
+    # Phase 5T-O: RSS 経路は廃止 (title と重複)、Grok 経路は機械的に生成して使用。
     # 空文字なら BLUF 部分はレンダリングされない (renderer 側で skip)。
     bluf: str = ""
     importance: Importance

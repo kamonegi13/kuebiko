@@ -627,7 +627,7 @@ def _build_briefing(
                 )
                 display_title = article.title
     # Phase 5L-2: 表示用テキスト sanitize (二重防御)
-    # Inoreader summary_html や LLM 出力に紛れる HTML タグ (例: </td>) や
+    # feed の summary_html や LLM 出力に紛れる HTML タグ (例: </td>) や
     # HTML エンティティを除去。LLM 翻訳が元タイトルの HTML を引きずるケースを
     # 観測したため post-LLM にも適用する (import は module-level に統一 — 関数内 import は
     # 同名の module-level 束縛を隠し UnboundLocalError を招く)。
@@ -655,7 +655,7 @@ def _build_briefing(
         )
     msg = BriefingMessage(
         title=display_title,
-        # Phase 5T-O: Inoreader 経路は 1 記事 = 1 incident で BLUF が title と重複するため廃止。
+        # Phase 5T-O: RSS 経路は 1 記事 = 1 incident で BLUF が title と重複するため廃止。
         # LLM がプロンプト変更後も誤って返した bluf 値は受け取らず空文字で固定。
         bluf="",
         importance=capped_importance,

@@ -1,4 +1,4 @@
-"""Inoreader 購読候補 URL の事前一括検証 (Phase 5Q-3)。
+"""購読候補 feed URL の事前一括検証 (Phase 5Q-3)。
 
 バッチ 1 で MSRC 403 / Volexity HTML / Project Zero 13MB malformed と
 3 連続でハマった教訓から、subscribe 前に全 URL を以下の観点で検証する:

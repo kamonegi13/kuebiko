@@ -1,6 +1,6 @@
 """複数情報源 (RSS / Grok email + Playwright / web scraper) を統一する Source 層 (Phase 2)。
 
-Phase 1 は Inoreader 単独だったが、Phase 2 から Grok 通知メールが入ったため、
+Phase 1 は RSS 単独だったが、Phase 2 から Grok 通知メールが入ったため、
 ``run_pipeline`` が複数の取得経路を扱えるよう Article への正規化層を新設する。
 
 設計方針:
@@ -452,7 +452,7 @@ def build_source(
             url_host_allowlist=source_config.grok_url_host_allowlist,
         )
     if stype == "rss":
-        # Phase X-1: Inoreader 廃止に向けた直接 RSS fetcher。
+        # 直接 RSS fetcher (config/sources/feeds.yaml 駆動)。
         # ``config/sources/feeds.yaml`` から feed list を load して並列 fetch する。
         from src.tools.direct_rss_source import (
             DEFAULT_UNSEEN_MAX_AGE_DAYS,

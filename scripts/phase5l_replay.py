@@ -1,6 +1,6 @@
 """Phase 5L 効果検証: 過去 24h の posted article を新パイプラインに通して旧分類と比較する。
 
-dry-run mode (Discord 投稿なし、DB 書き込みなし、Inoreader mark-as-read なし)。
+dry-run mode (Discord 投稿なし、DB 書き込みなし、既読化なし)。
 Ollama を実機で叩いて新 prompt + 新 router が現実のコンテンツに対してどう動くかを測定する。
 
 実行:

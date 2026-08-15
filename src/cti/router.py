@@ -1,7 +1,7 @@
 """ルーティングエンジン (Phase 5L-1: RoutingDecision 構造化版)。
 
 RoutingSignals → RoutingDecision (channel + rule_id + reason + signals_snapshot)
-の決定。Inoreader / Grok 両経路から呼ばれる共通モジュール。
+の決定。RSS / Grok 両経路から呼ばれる共通モジュール。
 
 設計 (B1: 役割別 3 層に整理。順序は従来 R1-R8 ラダーと同一で挙動不変):
     - **優先層** (``_route_priority``): トピック優先度による escalation。PIR が literal
@@ -106,7 +106,7 @@ def route(signals: RoutingSignals) -> RoutingDecision:
     legacy ルール優先順 (上から評価、最初にマッチした rule を返す):
 
         R2. 即応 → alert (japan_critical+APT, breaking+KEV/0day)
-        R3. Inoreader 日本関連弱信号 → japan_watch
+        R3. 日本関連弱信号 → japan_watch
         R4. recap/tutorial/opinion/press/research → watch
         R5. 信頼性 all-low → watch
         R5b. source_low_reliability + demote category → watch (Phase 5T-V)
@@ -197,7 +197,7 @@ def _route_priority(
             signals_snapshot=snap,
         )
 
-    # ---------- R2: Inoreader 即応条件 ----------
+    # ---------- R2: 即応条件 ----------
     # Phase B-cal2 (2026-06-04): alert escalation は cyber-threat category に限定する。
     # 背景: research / geopolitical / other / policy は KEV/0day/APT 語が "話題として"
     # 本文に登場するだけ (例: 脅威を論じる arXiv 論文の "ゼロデイ"/"in-the-wild"、TI
@@ -212,8 +212,8 @@ def _route_priority(
         if signals.mentions_japan_critical and signals.has_known_apt:
             return RoutingDecision(
                 channel="alert",
-                rule_id="R2.inoreader.alert_japan_critical_apt",
-                reason="inoreader japan_critical + known APT",
+                rule_id="R2.alert_japan_critical_apt",
+                reason="japan_critical + known APT",
                 signals_snapshot=snap,
             )
         if signals.article_type == "breaking" and (
@@ -221,12 +221,12 @@ def _route_priority(
         ):
             return RoutingDecision(
                 channel="alert",
-                rule_id="R2.inoreader.alert_breaking_kev",
-                reason="inoreader breaking + KEV/0day",
+                rule_id="R2.alert_breaking_kev",
+                reason="breaking + KEV/0day",
                 signals_snapshot=snap,
             )
 
-    # ---------- R3: Inoreader 日本関連弱信号 ----------
+    # ---------- R3: 日本関連弱信号 ----------
     if signals.is_japan_security_relevant and signals.article_type not in (
         "recap",
         "tutorial",
@@ -235,8 +235,8 @@ def _route_priority(
     ):
         return RoutingDecision(
             channel="japan_watch",
-            rule_id="R3.inoreader.japan_watch",
-            reason="inoreader japan-relevant",
+            rule_id="R3.japan_watch",
+            reason="japan-relevant",
             signals_snapshot=snap,
         )
 

@@ -423,6 +423,17 @@ def _days_between(later_iso: str | None, earlier_iso: str | None) -> int | None:
         return None
 
 
+def _routing_rule_label(rule_id: str | None) -> str | None:
+    """配信ルール id → 表示名。解決できなければ None (UI は id にフォールバック)。"""
+    try:
+        from src.cti.routing_rules import rule_label
+
+        return rule_label(rule_id)
+    except Exception as e:  # noqa: BLE001 — 表示名の解決失敗で記事詳細を壊さない
+        _log.warning("routing_rule_label_failed", error=str(e))
+        return None
+
+
 @articles_feed_api.get("/articles/{article_id:path}")
 async def get_article_detail(request: Request, article_id: str) -> dict[str, Any]:
     """1 記事の全 enrichment を返す deep-view (Phase 2 K4)。
@@ -506,7 +517,10 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
             "status": a.status,
             "posted_channel": a.posted_channel,
             # flow Phase 3: 「なぜこのチャンネルか」(投稿先決定の監査情報)。
+            # label = 現行ルールセットの表示名 (2026-08-15)。id は発火時のまま保持し、
+            # 改名前の id も LEGACY_RULE_ID_ALIASES 経由で現行ルールに解決する。
             "routing_rule_id": a.routing_rule_id,
+            "routing_rule_label": _routing_rule_label(a.routing_rule_id),
             "routing_reason": a.routing_reason,
             "summary": a.summary,
             "body": body,

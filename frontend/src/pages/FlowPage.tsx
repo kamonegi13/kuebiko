@@ -322,6 +322,7 @@ export function FlowPage() {
     if (!ruleDraft || !rules) return null;
     const built: RoutingRule = {
       id: ruleDraft.rule.id,
+      label: ruleDraft.rule.label.trim() || undefined,
       channel: ruleDraft.rule.channel,
       when: emitWhen(ruleDraft.rule.root),
     };
@@ -361,14 +362,22 @@ export function FlowPage() {
     const r = rules?.[idx];
     if (!r) return;
     setRulePreview(null);
-    setRuleDraft({ index: idx, rule: { id: r.id, channel: r.channel, root: parseWhen(r.when) } });
+    setRuleDraft({
+      index: idx,
+      rule: { id: r.id, label: r.label ?? "", channel: r.channel, root: parseWhen(r.when) },
+    });
   };
   const openNewRuleDrawer = () => {
     const ch = vocab?.channels[0] ?? "watch";
     setRulePreview(null);
     setRuleDraft({
       index: null,
-      rule: { id: "new_rule", channel: ch, root: { kind: "group", mode: "all", children: [], negated: false } },
+      rule: {
+        id: "new_rule",
+        label: "",
+        channel: ch,
+        root: { kind: "group", mode: "all", children: [], negated: false },
+      },
     });
   };
   const openChannelDrawer = (id: string) => {
@@ -562,11 +571,13 @@ export function FlowPage() {
                     <span className="tnum w-4 shrink-0 text-right text-[11px] text-fg-subtle">
                       {i + 1}
                     </span>
-                    <span
-                      className="min-w-0 flex-1 truncate text-xs text-fg-muted"
-                      title={`${r.id}: ${summarizeWhen(r.when)}`}
-                    >
-                      {summarizeWhen(r.when)}
+                    {/* 主表示はルール名。条件式は 2 行目に添える (名前が無いと 14 本の
+                        ルールが条件式の羅列になり、どれが何か読めなくなる)。 */}
+                    <span className="min-w-0 flex-1" title={`${r.id}: ${summarizeWhen(r.when)}`}>
+                      <span className="block truncate text-xs text-fg">{r.label || r.id}</span>
+                      <span className="block truncate text-[11px] text-fg-subtle">
+                        {summarizeWhen(r.when)}
+                      </span>
                     </span>
                     <select
                       value={r.channel}

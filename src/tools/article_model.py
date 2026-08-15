@@ -1,6 +1,6 @@
 """記事 1 件の正規化モデル (source 横断で共有)。
 
-Phase X-1 で Inoreader 廃止と並行して inoreader_client.py から切り出し。
+source 横断の正規化モデル (Phase X-1 で取得層から切り出し)。
 RSS / Grok / web scraper など全 source は本モデルに変換した上で
 ``run_pipeline()`` に渡す。
 """

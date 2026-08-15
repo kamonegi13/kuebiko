@@ -348,7 +348,6 @@ export interface Subscription {
   url: string;
   html_url: string | null;
   folder_labels: string[];
-  first_item_msec: number | null;
   // Phase F: rss(=feeds.yaml) / html_scraper(=scrapers.yaml) / sitemap(=watchers.yaml)
   transport?: "rss" | "html_scraper" | "sitemap";
   enabled?: boolean;
@@ -600,7 +599,6 @@ export interface FeedStats {
   medium_count: number;
   low_count: number;
   first_seen_at: string | null;
-  inoreader_first_item_at: string | null;
   // Phase C
   quality_score?: number;
   low_contrib_labels?: string[];

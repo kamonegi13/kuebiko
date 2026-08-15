@@ -1,5 +1,9 @@
 # Grok Tasks Prompts (Phase Diamond Grok Redesign)
 
+> **⚠ 歴史記録 (2026-08-15 時点で現行ではない)**。運用中のプロンプトは
+> **ツール内 (購読ソース → Grok タスク、DB `grok_tasks`)** が正で、
+> 2 slot → 9 タスク (hourly) 体制に再構築済み。本文書は 2 slot 時代の設計記録。
+
 ## 概要
 
 xAI Grok Tasks の 2 slot を使った X-only signal collection 用 prompts。

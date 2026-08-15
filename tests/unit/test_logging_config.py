@@ -60,7 +60,7 @@ class TestMaskEventDict:
             "API_KEY",
             "Api_Key",
             "x_api_key",
-            "INOREADER_OAUTH_TOKEN",
+            "SERVICE_OAUTH_TOKEN",
             "refresh_token",
             "ACCESS_TOKEN",
             "bearer_token",

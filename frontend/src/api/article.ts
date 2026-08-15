@@ -22,6 +22,8 @@ export interface ArticleDetail {
   posted_channel: string | null;
   // flow Phase 3: 「なぜこのチャンネルか」(投稿先決定の監査情報、route() 非経由なら null)。
   routing_rule_id: string | null;
+  // 現行ルールセットで解決した表示名 (2026-08-15)。削除済みルール由来なら null。
+  routing_rule_label: string | null;
   routing_reason: string | null;
   summary: string | null;
   body: string | null;

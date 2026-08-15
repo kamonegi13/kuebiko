@@ -769,9 +769,6 @@ function FeedDetailView({ feed: f, onDeleted, readOnly = false }: { feed: Enrich
               <tr><th>{chMeta("brief").label}</th><td>{st.brief_count}</td></tr>
               <tr><th>{chMeta("watch").label}</th><td>{st.watch_count}</td></tr>
               <tr><th>初回検出</th><td className="text-fg-subtle">{formatJstDate(st.first_seen_at)}</td></tr>
-              {st.inoreader_first_item_at && (
-                <tr><th>初回取り込み</th><td className="text-fg-subtle">{formatJstDate(st.inoreader_first_item_at)}</td></tr>
-              )}
             </tbody>
           </table></div>
         </div>

@@ -1,8 +1,7 @@
-"""Direct RSS / Atom feed fetcher (Phase X-1: Inoreader 廃止に向けた parallel run)。
+"""Direct RSS / Atom feed fetcher (Phase X-1)。
 
-Inoreader API を介さず HTTP で直接 RSS / Atom feed を fetch、Article に変換する。
-Inoreader と並列で動かして coverage 比較した後、最終的に Inoreader 経路を廃止する
-ロードマップの第 1 段階。
+外部の feed 集約サービスを介さず HTTP で直接 RSS / Atom feed を fetch し、
+Article に変換する。本パイプラインの主たる収集経路。
 
 設計方針:
 - ``ArticleSource`` Protocol 実装、既存 pipeline にそのまま挿入可能

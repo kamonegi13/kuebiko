@@ -1,6 +1,6 @@
 """src.main のテスト (Step 8)。
 
-各 I/O ツール (Inoreader / ContentExtractor / LLM / DiscordPublisher) を
+各 I/O ツール (ArticleSource / ContentExtractor / LLM / DiscordPublisher) を
 ``AsyncMock`` で差し替え、End-to-End フローをモック越しに検証する。
 """
 
@@ -131,12 +131,6 @@ def _post_mock(pub: DiscordPublisher) -> AsyncMock:
     読むための cast。fixture は production 型 (dict[..., DiscordPublisher]) で注釈して
     run_pipeline にそのまま渡すため、call_count 等の mock 属性はここを経由して参照する。"""
     return cast(AsyncMock, pub.post)
-
-
-def _build_inoreader(articles: list[Article]) -> AsyncMock:
-    inoreader = AsyncMock()
-    inoreader.get_unread_articles.return_value = articles
-    return inoreader
 
 
 def _build_source(articles: list[Article], side_effect: object | None = None) -> AsyncMock:
@@ -412,7 +406,7 @@ class TestBuildBriefing:
         assert msg.metadata.get("original_title") == "Cool article"
         assert msg.importance == "high"
         assert msg.category == "apt"
-        # Phase 5T-O: Inoreader 経路は BLUF を生成しない (title と重複していたため)
+        # Phase 5T-O: RSS 経路は BLUF を生成しない (title と重複していたため)
         assert msg.bluf == ""
         assert msg.iocs == ["1.2.3.4"]
         assert msg.mitre_techniques == ["T1566.001"]
@@ -904,7 +898,7 @@ class TestCrossChannelDedupSkipPersistAndMarkRead:
 
     - cross-channel dedup で skip された article が articles テーブルに
       ``status='skipped_duplicate'`` で永続化される (Bug 1)
-    - skip された article が Inoreader mark_as_read 対象に含まれる (Bug 2)
+    - skip された article が dedup 既読化の対象に含まれる (Bug 2)
     """
 
     @pytest.mark.asyncio
@@ -1877,7 +1871,7 @@ class TestSummaryOutput:
             )
 
     def test_bluf_now_optional_phase_5t_o(self) -> None:
-        """Phase 5T-O: bluf field は optional になった (Inoreader 経路で title と重複していたため)。
+        """Phase 5T-O: bluf field は optional になった (RSS 経路で title と重複していたため)。
         空文字でも construct 可能 (旧テスト test_empty_bluf_rejected を反転)。"""
         out = SummaryOutput(
             title_ja="t",

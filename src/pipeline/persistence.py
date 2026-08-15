@@ -74,7 +74,7 @@ def _persist_article_outcomes(
         # 背景: Grok は 1 レポート (article.url=grok.com/chat の JSON ページ) から N 件の
         # tweet briefing を展開するため、article.url のままだと全件が grok.com/chat を指し
         # daily-focus / Web UI のリンクが JSON ページに飛んでいた。msg.sources[0].url は
-        # 各 tweet の X パーマリンク (Inoreader では article.url と同一なので無影響)。
+        # 各 tweet の X パーマリンク (RSS 経路では article.url と同一なので無影響)。
         display_url = article.url
         if msg is not None and msg.sources and msg.sources[0].url:
             display_url = msg.sources[0].url

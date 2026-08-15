@@ -117,6 +117,36 @@ def invalidate_rules_cache() -> None:
     _RULES_CACHE = None
 
 
+# 旧 id → 現行 id の別名 (2026-08-15: 撤去済み外部サービス名を id から除去)。
+# 過去記事の routing_rule_id は **実際に発火した id のまま保持** する (監査証跡は
+# 書き換えない)。表示・集計はここを通して現行ルールへ解決する。
+LEGACY_RULE_ID_ALIASES: dict[str, str] = {
+    "R2.inoreader.alert_japan_critical_apt": "R2.alert_japan_critical_apt",
+    "R2.inoreader.alert_breaking_kev": "R2.alert_breaking_kev",
+    "R3.inoreader.japan_watch": "R3.japan_watch",
+}
+
+
+def canonical_rule_id(rule_id: str) -> str:
+    """改名前の rule id を現行 id に解決する (未知の id はそのまま返す)。"""
+    return LEGACY_RULE_ID_ALIASES.get(rule_id, rule_id)
+
+
+def rule_label(rule_id: str | None) -> str | None:
+    """rule id → 表示名 (label)。現行ルールセットに無い / label 未設定なら None。
+
+    label は「ルールが何をするか」を人が読める形で持つ唯一の場所 (id は識別子)。
+    UI は label を主表示にし、id は監査用に併記する。
+    """
+    if not rule_id:
+        return None
+    target = canonical_rule_id(rule_id)
+    for rule in load_routing_rules():
+        if str(rule.get("id") or "") == target:
+            return str(rule.get("label") or "").strip() or None
+    return None
+
+
 def _brief_cap_reached(signals: RoutingSignals, sq: SourceQualityConfig) -> bool:
     """brief 24h cap 到達 (R6.cap_demote 用、現行ロジックと同一)。"""
     return sq.brief_cap_24h > 0 and signals.brief_count_24h_snapshot >= sq.brief_cap_24h
@@ -474,6 +504,9 @@ def validate_routing_rules(
             errs.append(f"rule[{i}]: dict が必要")
             continue
         rid = r.get("id") or f"#{i}"
+        label = r.get("label")
+        if label is not None and (not isinstance(label, str) or not label.strip()):
+            errs.append(f"rule[{rid}]: label は空でない文字列 (省略可)")
         ch = r.get("channel")
         if not ch:
             errs.append(f"rule[{rid}]: channel 必須")

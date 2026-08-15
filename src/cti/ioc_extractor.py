@@ -18,7 +18,7 @@
     - Hash: MD5 / SHA-1 / SHA-256
     - Email アドレス
 
-CTI 業務の現場では Grok や Inoreader の記事本文に IOC が記述されているが、
+CTI 業務の現場では Grok や RSS 記事の本文に IOC が記述されているが、
 LLM 要約だけでは抽出漏れが多い。この層で網羅性を担保する。
 """
 
