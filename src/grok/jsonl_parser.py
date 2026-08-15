@@ -72,6 +72,9 @@ class TweetRecord(BaseModel):
     external_urls: list[str] = Field(default_factory=list)
     engagement: TweetEngagement = Field(default_factory=TweetEngagement)
     matched_theme: str  # A-F or J1-J6
+    # hourly 運用対応 (2026-08-15): author の種別。投稿直後 (engagement 未蓄積) でも
+    # 信頼種別なら filter を通すために使う。旧レポートには無いフィールド (空 = 未分類)。
+    account_class: str = ""
 
     @property
     def posted_at_dt(self) -> datetime | None:
@@ -100,6 +103,9 @@ class JsonlParseResult:
     total_lines: int  # 試行した行数
     parsed_count: int  # 成功 record 数
     skipped_lines: list[str]  # parse 失敗行 (先頭 200 chars)
+    # 事象ゼロ窓のハートビート行 ({"status":"no_events",...}) の数。
+    # 0 records でもこれが 1 以上なら「静穏」、0 なら「空出力 = 障害疑い」と区別できる。
+    heartbeat_count: int = 0
 
 
 def is_jsonl_output(body: str) -> bool:
@@ -178,6 +184,7 @@ def parse_jsonl(body: str) -> JsonlParseResult:
 
     records: list[TweetRecord] = []
     skipped: list[str] = []
+    heartbeats = 0
 
     for line in lines:
         line_stripped = line.strip()
@@ -199,6 +206,12 @@ def parse_jsonl(body: str) -> JsonlParseResult:
             skipped.append(line_stripped[:200])
             continue
 
+        # 事象ゼロ窓のハートビート (追加ルール①)。record でも失敗でもない正常信号
+        if data.get("status") == "no_events" and "tweet_id" not in data:
+            heartbeats += 1
+            _log.info("jsonl_no_events_heartbeat", window=data.get("window_minutes"))
+            continue
+
         try:
             record = TweetRecord.model_validate(data)
         except ValidationError as e:
@@ -218,6 +231,7 @@ def parse_jsonl(body: str) -> JsonlParseResult:
         total_lines=len(lines),
         parsed_count=len(records),
         skipped_count=len(skipped),
+        heartbeat_count=heartbeats,
     )
 
     return JsonlParseResult(
@@ -225,7 +239,16 @@ def parse_jsonl(body: str) -> JsonlParseResult:
         total_lines=len(lines),
         parsed_count=len(records),
         skipped_lines=skipped,
+        heartbeat_count=heartbeats,
     )
+
+
+# engagement floor をバイパスする account_class (追加ルール③、2026-08-15)。
+# hourly 収集では投稿から 30-90 分しか経たず engagement が構造的に低いため、
+# 発信者の信頼種別を主要シグナルとする (無名アカウントは従来どおり floor 適用)。
+TRUSTED_ACCOUNT_CLASSES: frozenset[str] = frozenset(
+    {"vendor_official", "gov_official", "analyst_known", "affected_party"}
+)
 
 
 def filter_records(
@@ -266,7 +289,19 @@ def filter_records(
             )
             continue
 
-        # engagement floor
+        # engagement floor — 信頼種別は投稿直後 (拡散未蓄積) でも通す (追加ルール③)
+        if r.account_class in TRUSTED_ACCOUNT_CLASSES:
+            if r.engagement.signal_score < (
+                engagement_floor_theme_b if r.matched_theme == "B" else engagement_floor_default
+            ):
+                _log.info(
+                    "jsonl_filter_trusted_bypass",
+                    tweet_id=r.tweet_id,
+                    account_class=r.account_class,
+                    theme=r.matched_theme,
+                )
+            out.append(r)
+            continue
         floor = engagement_floor_theme_b if r.matched_theme == "B" else engagement_floor_default
         if r.engagement.signal_score < floor:
             _log.info(

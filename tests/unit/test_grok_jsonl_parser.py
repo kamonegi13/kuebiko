@@ -230,3 +230,68 @@ class TestTweetEngagement:
 
     def test_signal_score_zero_when_empty(self) -> None:
         assert TweetEngagement().signal_score == 0
+
+
+class TestHourlyAdditions:
+    """hourly 運用対応 (2026-08-15): no_events ハートビート + account_class バイパス。"""
+
+    def test_heartbeat_line_recognized_not_counted_as_failure(self) -> None:
+        # 事象ゼロの窓で「静穏」と「タスク死」を区別するための 1 行 (追加ルール①)
+        body = '{"status":"no_events","window_minutes":90}'
+        result = parse_jsonl(body)
+        assert result.records == []
+        assert result.heartbeat_count == 1
+        assert result.skipped_lines == []
+
+    def test_heartbeat_mixed_with_records(self) -> None:
+        body = _make_jsonl_line() + "\n" + '{"status":"no_events","window_minutes":90}'
+        result = parse_jsonl(body)
+        assert len(result.records) == 1
+        assert result.heartbeat_count == 1
+
+    def test_account_class_parsed_and_defaults_empty(self) -> None:
+        line = _make_jsonl_line().replace(
+            '"matched_theme"', '"account_class":"vendor_official","matched_theme"'
+        )
+        rec = parse_jsonl(line).records[0]
+        assert rec.account_class == "vendor_official"
+        assert parse_jsonl(_make_jsonl_line()).records[0].account_class == ""
+
+    def _record(self, *, account_class: str, like: int = 0) -> TweetRecord:
+        now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return TweetRecord(
+            tweet_id="42",
+            url="https://x.com/t/status/42",
+            author_handle="@t",
+            posted_at=now_iso,
+            text="fresh signal",
+            engagement=TweetEngagement(like=like, retweet=0),
+            matched_theme="F",
+            account_class=account_class,
+        )
+
+    def test_trusted_account_bypasses_engagement_floor(self) -> None:
+        # hourly では投稿直後で拡散が未蓄積 → 信頼種別は engagement 0 でも通す (追加ルール③)
+        for cls in ("vendor_official", "gov_official", "analyst_known", "affected_party"):
+            out = filter_records([self._record(account_class=cls)])
+            assert len(out) == 1, f"{cls} は engagement floor をバイパスするべき"
+
+    def test_untrusted_account_still_subject_to_floor(self) -> None:
+        for cls in ("aggregator", "other", ""):
+            out = filter_records([self._record(account_class=cls)])
+            assert out == [], f"{cls} は従来どおり engagement floor で落ちるべき"
+
+    def test_trusted_bypass_does_not_skip_age_window(self) -> None:
+        # バイパスは engagement のみ — 24h 窓は信頼種別でも適用される
+        old = (datetime.now(UTC) - timedelta(hours=48)).isoformat().replace("+00:00", "Z")
+        rec = TweetRecord(
+            tweet_id="43",
+            url="https://x.com/t/status/43",
+            author_handle="@t",
+            posted_at=old,
+            text="stale",
+            engagement=TweetEngagement(like=0, retweet=0),
+            matched_theme="F",
+            account_class="vendor_official",
+        )
+        assert filter_records([rec]) == []
