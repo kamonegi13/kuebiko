@@ -130,6 +130,10 @@ def default_jobs() -> list[JobDef]:
             schedule_type="cron",
             hour=6,
             minute=0,
+            # 既定 5 分では実態と合わない (実測 2-6.2 分で既に超過)。2026-08-16 に
+            # 収集元タスクを「窓 90 分 × 多数」→「窓 12 時間 × 少数」へ再設計したため
+            # 1 通あたりの処理量が増える見込み。夕ブリーフ直前の回が食い込まないよう余裕を取る。
+            max_runtime_minutes=12,
         ),
         JobDef(
             id="ransomware-live-ingest",
