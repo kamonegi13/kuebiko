@@ -43,9 +43,7 @@ _PROBE_TIMEOUT = 12.0
 
 
 def _chrome_ua(major: int, *, windows: bool = False) -> str:
-    platform = (
-        "Windows NT 10.0; Win64; x64" if windows else "Macintosh; Intel Mac OS X 10_15_7"
-    )
+    platform = "Windows NT 10.0; Win64; x64" if windows else "Macintosh; Intel Mac OS X 10_15_7"
     return (
         f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
         f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"

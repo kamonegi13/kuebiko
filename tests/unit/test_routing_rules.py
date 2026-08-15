@@ -456,20 +456,26 @@ class TestEmergencyDirective:
 
     def test_ed_without_japan_mention_alerts(self) -> None:
         # 穴だったケースそのもの: advisory 分類・日本非言及・アクター名なし
-        assert self._decide(
-            category="advisory",
-            article_type="breaking",
-            has_kev_or_active_exploit=True,
-            matched_keyword_lists=frozenset({"emergency_directives"}),
-        ) == "alert"
+        assert (
+            self._decide(
+                category="advisory",
+                article_type="breaking",
+                has_kev_or_active_exploit=True,
+                matched_keyword_lists=frozenset({"emergency_directives"}),
+            )
+            == "alert"
+        )
 
     def test_ed_opinion_piece_stays_out(self) -> None:
         # 緊急指令を「語る」読み物は対象外 (従来規約の維持)
-        assert self._decide(
-            category="advisory",
-            article_type="opinion",
-            matched_keyword_lists=frozenset({"emergency_directives"}),
-        ) != "alert"
+        assert (
+            self._decide(
+                category="advisory",
+                article_type="opinion",
+                matched_keyword_lists=frozenset({"emergency_directives"}),
+            )
+            != "alert"
+        )
 
 
 class TestRuleLabels:

@@ -554,9 +554,7 @@ def _build_briefing(
         _val = metadata.get(_key)
         if isinstance(_val, str) and _val:
             metadata[_key] = sanitize_for_display(_val)
-    _residue_keys = [
-        k for k, v in metadata.items() if isinstance(v, str) and has_html_residue(v)
-    ]
+    _residue_keys = [k for k, v in metadata.items() if isinstance(v, str) and has_html_residue(v)]
     if _residue_keys:
         _log.warning(
             "metadata_html_residue_detected",

@@ -72,12 +72,16 @@ class TestNamedTunnelHostnameFile:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         self._hostname_file(monkeypatch, tmp_path, "kuebiko.example")
-        assert resolve_public_base_url(url_file=_url_file(tmp_path, None)) == "https://kuebiko.example"
+        assert (
+            resolve_public_base_url(url_file=_url_file(tmp_path, None)) == "https://kuebiko.example"
+        )
 
     def test_file_wins_over_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         self._hostname_file(monkeypatch, tmp_path, "kuebiko.example")
         monkeypatch.setenv(_ENV, "old-env-host.example.com")
-        assert resolve_public_base_url(url_file=_url_file(tmp_path, None)) == "https://kuebiko.example"
+        assert (
+            resolve_public_base_url(url_file=_url_file(tmp_path, None)) == "https://kuebiko.example"
+        )
 
     def test_file_wins_over_quick_url(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
