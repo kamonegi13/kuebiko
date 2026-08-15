@@ -41,6 +41,26 @@ def _strip_html_keep_newlines(raw: str) -> str:
     return raw
 
 
+def grok_report_is_quiet(article: Article) -> bool:
+    """レポートがハートビートのみ (事象ゼロの静穏) か。
+
+    orchestrator が「静穏 (記事 row 不生成)」と「本当の抽出失敗 (extract_failed)」を
+    判別するために使う。本文の導出は本 module の展開経路 (``summary_html`` →
+    ``_strip_html_keep_newlines``) と**同一**にする — 2026-08-15 に orchestrator 側が
+    ``body_text`` (grok 記事では常に空) を見て判定が発火しない不具合があった。
+    """
+    from src.grok.jsonl_parser import parse_jsonl
+
+    raw = _strip_html_keep_newlines(article.summary_html)
+    if not raw.strip():
+        return False
+    try:
+        result = parse_jsonl(raw)
+    except Exception:  # noqa: BLE001 — 判定不能は「静穏でない」side に倒す (失敗扱い維持)
+        return False
+    return result.heartbeat_count > 0
+
+
 async def _grok_article_to_briefings(
     article: Article,
     *,

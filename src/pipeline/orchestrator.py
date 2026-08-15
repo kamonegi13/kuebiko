@@ -455,13 +455,9 @@ async def run_pipeline(
                     # extract_failed にすると購読 feed の「本文取得エラー」層別を汚染する
                     # (9 タスク hourly では静穏レポートが日に 100+ 件出る) ため、
                     # 記事 row を作らず run_logs のハートビートのみを記録として残す。
-                    from src.grok.jsonl_parser import parse_jsonl as _parse_jsonl
+                    from src.pipeline.grok_convert import grok_report_is_quiet
 
-                    try:
-                        is_quiet = _parse_jsonl(article.body_text or "").heartbeat_count > 0
-                    except Exception:  # noqa: BLE001 — 判定不能なら従来どおり失敗扱い
-                        is_quiet = False
-                    if is_quiet:
+                    if grok_report_is_quiet(article):
                         _log.info(
                             "grok_article_quiet_no_events",
                             article_id=article.id,
