@@ -139,3 +139,47 @@ def test_truncates_to_budget() -> None:
     # Assert
     assert out.endswith("... [truncated]")
     assert len(out) <= HTML_FOR_LLM_MAX + len("... [truncated]")
+
+
+class TestCardLayoutTitles:
+    """カード型 (画像ラッパ a + 見出し a) で無題にならないこと。
+
+    ENISA 実例: 1 記事に空の a と h3>a の 2 本が張られ、先勝ちだと全記事が無題になった。
+    """
+
+    HTML = """
+    <div class="featured-items">
+      <div class="card">
+        <div><a href="/news/alpha-report"><img src="x.png"></a></div>
+        <h3><a href="/news/alpha-report">Alpha Report on Threats</a></h3>
+      </div>
+      <div class="card">
+        <div><a href="/news/beta-brief"><img src="y.png"></a></div>
+        <h3><a href="/news/beta-brief">Beta Brief</a></h3>
+      </div>
+      <a href="/topics/tagging">Tagging</a>
+    </div>
+    """
+
+    def _apply(self, selector: str, scope: str = "") -> list[tuple[str, str]]:
+        from src.ui.api._source_html_preview import _apply_selectors_html
+
+        arts = _apply_selectors_html(
+            self.HTML, selector, "h3 a", "https://e.example/news", 10, scope
+        )
+        return [(a.title, a.url) for a in arts]
+
+    def test_empty_wrapper_anchor_does_not_win(self) -> None:
+        out = dict((u, t) for t, u in self._apply(".featured-items a[href*='/news/']"))
+        assert out["https://e.example/news/alpha-report"] == "Alpha Report on Threats"
+        assert out["https://e.example/news/beta-brief"] == "Beta Brief"
+
+    def test_scope_pattern_drops_non_article_links(self) -> None:
+        urls = [u for _t, u in self._apply(".featured-items a", scope="/news/")]
+        assert all("/news/" in u for u in urls)
+        assert "https://e.example/topics/tagging" not in urls
+
+    def test_without_scope_tag_links_are_kept(self) -> None:
+        # 絞り込み無しなら記事以外も入る = 範囲指定が必要という前提の裏取り
+        urls = [u for _t, u in self._apply(".featured-items a")]
+        assert "https://e.example/topics/tagging" in urls

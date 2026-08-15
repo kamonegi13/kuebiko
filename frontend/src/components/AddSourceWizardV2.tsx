@@ -14,7 +14,7 @@ import { Drawer } from "./Drawer";
 import { Spinner, ButtonSpinner, LLMProgress, PulseSkeleton } from "./Spinner";
 import { VisualSelectorPicker } from "./VisualSelectorPicker";
 import { FolderSelect } from "./FolderSelect";
-import { SitemapScopeField } from "./SitemapScopeField";
+import { ScopeField } from "./ScopeField";
 import { Check, AlertTriangle, Sparkles } from "lucide-react";
 import {
   sourcesV2Api,
@@ -315,7 +315,8 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
                   ...step.candidate,
                   source_name: displayName.trim() || step.candidate.source_name,
                   url_include_pattern:
-                    step.candidate.transport === "sitemap"
+                    step.candidate.transport === "sitemap" ||
+                    step.candidate.transport === "html_scraper"
                       ? scopePattern.trim()
                       : step.candidate.url_include_pattern,
                 },
@@ -974,12 +975,14 @@ function Step6Confirm({
           )}
         </div>
 
-        {candidate.transport === "sitemap" && (
-          <SitemapScopeField
-            sitemapUrl={candidate.fetch_url}
+        {(candidate.transport === "sitemap" || candidate.transport === "html_scraper") && (
+          <ScopeField
+            mode={candidate.transport === "sitemap" ? "sitemap" : "scraper"}
+            url={candidate.fetch_url}
             hints={candidate.path_hints ?? []}
             value={scopePattern}
             onChange={setScopePattern}
+            articleLinkSelector={candidate.article_link_selector ?? ""}
           />
         )}
 

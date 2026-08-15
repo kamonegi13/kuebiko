@@ -107,8 +107,10 @@ def get_editable(feed_id: str) -> EditableSource | None:
             if transport == "html_scraper"
             else None
         ),
+        # 範囲指定は sitemap / html_scraper の共通概念 (どちらも「サイトの URL 群から
+        # 記事だけを選ぶ」問題を持つ)。rss は feed が既に記事の列なので対象外。
         url_include_pattern=(
-            str(entry.get("url_include_pattern", "") or "") if transport == "sitemap" else None
+            str(entry.get("url_include_pattern", "") or "") if transport != "rss" else None
         ),
         max_posts_per_run=(int(max_posts) if isinstance(max_posts, int) else None),
         url_is_identity=transport == "rss",
@@ -133,7 +135,7 @@ def _patched(entry: dict[str, Any], transport: TransportT, patch: SourcePatch) -
         out["enabled"] = patch.enabled
     if patch.article_link_selector and transport == "html_scraper":
         out["article_link_selector"] = patch.article_link_selector
-    if patch.url_include_pattern is not None and transport == "sitemap":
+    if patch.url_include_pattern is not None and transport != "rss":
         if patch.url_include_pattern:
             out["url_include_pattern"] = patch.url_include_pattern
         else:

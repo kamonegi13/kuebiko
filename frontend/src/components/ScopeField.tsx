@@ -1,9 +1,10 @@
-// サイトマップ購読の「取り込む範囲」を決める欄 (登録ウィザードの確認ステップ)。
+// 購読の「取り込む範囲」を決める欄 (サイトマップ / スクレイパー共通)。
 //
-// サイトマップはサイト全部の URL を含むため、絞り込まないと採用情報・イベント告知・
-// 固定ページまで CTI として取り込まれる (ENISA は 2,945 URL 中、最新 40 件の 1/4 が
-// recruitment だった)。どの区分が対象かは機械的に決められないので、区分を選択肢として
-// 出し、選んだ結果を実サンプルで確認できるようにする。
+// どちらも「サイトの URL 群から記事だけを選ぶ」問題を持つ。絞り込まないと採用情報・
+// タグページ・対象者リンクまで CTI として取り込まれる (ENISA は sitemap 2,945 URL の
+// 最新 40 件の 1/4 が recruitment、一覧ページは /topics/ /audience/ が混入)。
+// どの区分が対象かは機械的に決められないので、区分を選択肢として出し、選んだ結果を
+// 実サンプルで確認できるようにする。
 import { useState } from "react";
 import { sourcesV2Api, type PreviewArticle } from "../api/sources_v2";
 import { Check, Spline } from "lucide-react";
@@ -15,20 +16,26 @@ function patternFor(host: string, segments: string[]): string {
   return `^https?://${h}/(${segments.join("|")})/.+`;
 }
 
-export function SitemapScopeField({
-  sitemapUrl,
+export function ScopeField({
+  mode,
+  url,
   hints,
   value,
   onChange,
+  articleLinkSelector = "",
 }: {
-  sitemapUrl: string;
+  mode: "sitemap" | "scraper";
+  /** サイトマップ URL または一覧ページ URL */
+  url: string;
   hints: string[];
   value: string;
   onChange: (pattern: string) => void;
+  /** scraper のサンプル取得に必要 (sitemap では未使用) */
+  articleLinkSelector?: string;
 }) {
   const host = (() => {
     try {
-      return new URL(sitemapUrl).host;
+      return new URL(url).host;
     } catch {
       return "";
     }
@@ -49,7 +56,18 @@ export function SitemapScopeField({
     setBusy(true);
     setError(null);
     try {
-      const res = await sourcesV2Api.previewUrl(sitemapUrl, "sitemap", value);
+      if (mode === "scraper") {
+        const res = await sourcesV2Api.previewHtmlListingExplicit(
+          url,
+          articleLinkSelector,
+          "",
+          value,
+        );
+        if (res.error || !res.candidate) setError(res.error ?? "この条件では記事が取れません");
+        else setItems(res.candidate.preview_articles);
+        return;
+      }
+      const res = await sourcesV2Api.previewUrl(url, "sitemap", value);
       if (!res.ok) setError(res.error ?? "この条件では記事が取れません");
       else setItems(res.items);
     } catch (e: unknown) {
@@ -65,8 +83,10 @@ export function SitemapScopeField({
         <Spline className="h-3.5 w-3.5" /> 取り込む範囲
       </div>
       <p className="m-0 text-[11px] text-fg-muted">
-        サイトマップはサイト全体の URL を含みます。区分を選ばないと
-        <strong>採用情報やイベント告知まで取り込まれます</strong>。
+        {mode === "sitemap"
+          ? "サイトマップはサイト全体の URL を含みます。"
+          : "一覧ページには記事以外のリンク (タグ・対象者) も並びます。"}
+        区分を選ばないと<strong>記事でないページまで取り込まれます</strong>。
       </p>
       {hints.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

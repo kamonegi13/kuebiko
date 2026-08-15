@@ -127,14 +127,21 @@ export const sourcesV2Api = {
     listing_url: string,
     article_link_selector: string,
     title_selector = "",
+    url_include_pattern = "",
   ) =>
     postJson<
-      { listing_url: string; article_link_selector: string; title_selector: string },
+      {
+        listing_url: string;
+        article_link_selector: string;
+        title_selector: string;
+        url_include_pattern: string;
+      },
       PreviewHtmlListingResponse
     >("/api/v1/sources/preview_html_listing_explicit", {
       listing_url,
       article_link_selector,
       title_selector,
+      url_include_pattern,
     }),
   // visual picker iframe 用の same-origin proxy URL を組み立てる。
   proxyPageUrl: (listing_url: string, render: "auto" | "static" | "js" = "auto") =>

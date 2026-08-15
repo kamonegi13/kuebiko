@@ -67,22 +67,30 @@ def _apply_selectors_html(
     title_selector: str,
     page_url: str,
     max_preview: int,
+    url_include_pattern: str = "",
 ) -> list[PreviewArticle]:
     try:
         from bs4 import BeautifulSoup
     except ImportError as e:
         raise RuntimeError(f"beautifulsoup4 not available: {e}") from e
+    from src.tools.link_title import is_better_title, resolve_link_title
+
+    url_filter = None
+    if url_include_pattern.strip():
+        try:
+            url_filter = re.compile(url_include_pattern)
+        except re.error as e:
+            raise RuntimeError(f"取り込む範囲の指定が不正です: {e}") from e
     soup = BeautifulSoup(html, "html.parser")
-    out: list[PreviewArticle] = []
-    seen_urls: set[str] = set()
+    # 同一 URL が複数回一致する (画像ラッパ a と見出し a) ため、URL をキーに保持して
+    # **より良いタイトルが後から来たら差し替える** (先勝ちだと無題で固定される)。
+    found: dict[str, str] = {}
     try:
         links = soup.select(link_selector)
     except Exception as e:  # noqa: BLE001
         _log.warning("source_html_preview_invalid_selector", selector=link_selector, error=str(e))
         raise RuntimeError("リンクの抽出ルールが不正です") from e
     for el in links:
-        if len(out) >= max_preview:
-            break
         href = el.get("href")
         if not href:
             inner = el.find("a")
@@ -90,29 +98,17 @@ def _apply_selectors_html(
                 href = inner.get("href")
         if not href:
             continue
-        full_url = urljoin(page_url, str(href))
-        if full_url in seen_urls:
+        full_url = urljoin(page_url, str(href))[:500]
+        # 一覧ページのリンクには記事以外 (タグ / 対象者 / パンくず) が混ざる。
+        # 取り込む範囲を指定されていれば、ここで落として **見えているもの = 入るもの** にする。
+        if url_filter is not None and not url_filter.search(full_url):
             continue
-        seen_urls.add(full_url)
-        title = ""
-        if title_selector:
-            try:
-                t_el = el.select_one(title_selector)
-                if t_el is not None:
-                    title = t_el.get_text(" ", strip=True)
-            except Exception:  # noqa: BLE001
-                title = ""
-        if not title:
-            title = el.get_text(" ", strip=True)
-        if len(title) > 200:
-            title = title[:200]
-        out.append(
-            PreviewArticle(
-                title=title or "(no title)",
-                url=full_url[:500],
-            )
-        )
-    return out
+        if full_url not in found and len(found) >= max_preview:
+            continue
+        title = resolve_link_title(el, title_selector, url=full_url)
+        if full_url not in found or is_better_title(title, found[full_url], url=full_url):
+            found[full_url] = title
+    return [PreviewArticle(title=t or "(no title)", url=u) for u, t in found.items()]
 
 
 async def preview_html_listing(
@@ -182,6 +178,18 @@ async def preview_html_listing(
     )
 
 
+def _path_hints(urls: list[str]) -> list[str]:
+    """URL 群の第 1 パス区分を頻度順に返す (取り込む範囲の選択肢)。"""
+    from collections import Counter
+
+    counter: Counter[str] = Counter()
+    for u in urls:
+        seg = urlparse(u).path.strip("/").split("/")[0]
+        if seg:
+            counter[seg] += 1
+    return [seg for seg, _n in counter.most_common(6)]
+
+
 def _detect_source_name(html: str, listing_url: str) -> str:
     """<title> から source_name を推測。失敗時は netloc。"""
     source_name = urlparse(listing_url).netloc
@@ -208,6 +216,7 @@ def _build_candidate_from_selectors(
     rationale: str,
     detected_via: str,
     max_preview: int,
+    url_include_pattern: str = "",
 ) -> SourceCandidate:
     """html + 明示 selector から SourceCandidate を組み立てる (LLM 非依存)。"""
     preview = _apply_selectors_html(
@@ -216,7 +225,11 @@ def _build_candidate_from_selectors(
         title_selector,
         listing_url,
         max_preview,
+        url_include_pattern,
     )
+    # 絞り込みの選択肢: 抽出できた URL のパス区分 (記事とタグを分けるのに使う)。
+    all_links = _apply_selectors_html(html, article_link_selector, title_selector, listing_url, 60)
+    hints = _path_hints([a.url for a in all_links])
     health = 80 if len(preview) >= 5 else max(20, len(preview) * 15)
     return SourceCandidate(
         transport="html_scraper",
@@ -234,6 +247,8 @@ def _build_candidate_from_selectors(
         article_link_selector=article_link_selector,
         title_selector=title_selector,
         rationale=rationale,
+        url_include_pattern=url_include_pattern or None,
+        path_hints=hints,
     )
 
 
@@ -242,6 +257,7 @@ async def preview_html_listing_explicit(
     article_link_selector: str,
     title_selector: str = "",
     max_preview: int = 5,
+    url_include_pattern: str = "",
 ) -> SourceCandidate:
     """ユーザがビジュアルピッカー / 手動入力で指定した selector で preview を返す。
 
@@ -262,4 +278,5 @@ async def preview_html_listing_explicit(
         rationale="ユーザがビジュアルピッカー / 手動で指定した selector",
         detected_via="html_scrape_visual_picker",
         max_preview=max_preview,
+        url_include_pattern=url_include_pattern,
     )

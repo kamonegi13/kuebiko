@@ -85,6 +85,12 @@ def _rss(url: str) -> dict[str, object]:
 
 
 class TestGetEditable:
+    def test_rss_has_no_scope_or_selector(self, _cfg: Path) -> None:
+        # rss は feed が既に記事の列なので、セレクタも範囲指定も持たない
+        src = get_editable("https://acme.example/rss")
+        assert src is not None
+        assert src.article_link_selector is None and src.url_include_pattern is None
+
     def test_rss_marks_url_as_identity(self, _cfg: Path) -> None:
         src = get_editable("https://acme.example/rss")
         assert src is not None
@@ -97,12 +103,13 @@ class TestGetEditable:
         assert src.url_is_identity is True
         assert src.article_link_selector is None and src.url_include_pattern is None
 
-    def test_scraper_exposes_selector_only(self, _cfg: Path) -> None:
+    def test_scraper_exposes_selector_and_scope(self, _cfg: Path) -> None:
         src = get_editable("scraper:acme-scraper")
         assert src is not None
         assert src.article_link_selector == "a.old"
         assert src.url == "https://acme.example/list"
-        assert src.url_include_pattern is None
+        # 一覧ページもタグ / 対象者リンクが混ざるので範囲指定を持てる (未設定なら空文字)
+        assert src.url_include_pattern == ""
         assert src.url_is_identity is False
 
     def test_sitemap_exposes_first_url_and_pattern(self, _cfg: Path) -> None:

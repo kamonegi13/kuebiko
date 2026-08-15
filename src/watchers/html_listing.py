@@ -119,9 +119,12 @@ class HtmlListingWatcher:
         except ImportError as e:
             _log.error("html_listing_bs4_missing", watcher=self.name, error=str(e))
             return []
+        from src.tools.link_title import is_better_title, resolve_link_title
+
         soup = BeautifulSoup(html, "html.parser")
-        out: list[tuple[str, str]] = []
-        seen_urls: set[str] = set()
+        # 同一 URL が複数回一致する (画像ラッパ a と見出し a) 前提で、後から来た
+        # 良いタイトルに差し替える。preview と同じ規則を使う (見た目と取込を一致させる)。
+        found: dict[str, str] = {}
         try:
             elements = soup.select(self.article_link_selector)
         except Exception as e:  # noqa: BLE001
@@ -153,24 +156,10 @@ class HtmlListingWatcher:
                     )
                 except _re.error as e:
                     _log.warning("html_listing_rewrite_invalid", watcher=self.name, error=str(e))
-            if full_url in seen_urls:
-                continue
-            seen_urls.add(full_url)
-            # title 抽出
-            title = ""
-            if self.title_selector:
-                try:
-                    t_el = el.select_one(self.title_selector)
-                    if t_el is not None:
-                        title = t_el.get_text(" ", strip=True)
-                except Exception:  # noqa: BLE001
-                    title = ""
-            if not title:
-                title = el.get_text(" ", strip=True)
-            if len(title) > 200:
-                title = title[:200]
-            out.append((full_url, title or full_url))
-        return out
+            title = resolve_link_title(el, self.title_selector, url=full_url)
+            if full_url not in found or is_better_title(title, found[full_url], url=full_url):
+                found[full_url] = title
+        return [(u, t or u) for u, t in found.items()]
 
     def _filter_urls(self, items: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """include / exclude regex で再 filter (selector 漏れを後追い除外)。"""

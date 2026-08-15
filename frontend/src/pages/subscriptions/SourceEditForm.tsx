@@ -133,6 +133,8 @@ export function SourceEditForm({
         const res = await sourcesV2Api.previewHtmlListingExplicit(
           form.url,
           form.article_link_selector ?? "",
+          "",
+          form.url_include_pattern ?? "",
         );
         if (res.error || !res.candidate)
           setTest({ status: "error", error: res.error ?? "記事を取得できませんでした" });
@@ -254,7 +256,7 @@ export function SourceEditForm({
 
       {form.url_include_pattern != null && (
         <div>
-          <label className={label}>取り込む URL パターン (正規表現)</label>
+          <label className={label}>取り込む範囲 (URL の正規表現)</label>
           <input
             value={form.url_include_pattern}
             onChange={(e) => editFetching({ ...form, url_include_pattern: e.target.value })}
@@ -262,7 +264,8 @@ export function SourceEditForm({
             spellCheck={false}
           />
           <p className="m-0 mt-1 text-[11px] text-fg-subtle">
-            サイトマップ内の URL のうち、この正規表現に一致するものだけを記事として取り込む
+            一致した URL だけを記事として取り込む (例 <code>/news/</code>)。
+            記事以外のリンク (タグ・対象者・採用情報) を落とすのに使う
           </p>
         </div>
       )}

@@ -113,6 +113,7 @@ async def preview_html_listing_explicit_endpoint(
             article_link_selector=req.article_link_selector,
             title_selector=req.title_selector,
             max_preview=5,
+            url_include_pattern=req.url_include_pattern,
         )
         return PreviewHtmlListingResponse(candidate=candidate, error=None)
     except Exception as e:  # noqa: BLE001

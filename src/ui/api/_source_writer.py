@@ -133,6 +133,10 @@ def _add_to_scrapers_yaml(
     }
     if candidate.title_selector:
         entry["title_selector"] = candidate.title_selector
+    # 一覧ページにはタグ / 対象者リンクが混ざるため、範囲指定があれば保存する
+    # (runtime の HtmlListingWatcher は以前から url_include_pattern を解釈する)。
+    if candidate.url_include_pattern:
+        entry["url_include_pattern"] = candidate.url_include_pattern
     if folder:
         entry["folder"] = folder
     new_entries = entries + [entry]

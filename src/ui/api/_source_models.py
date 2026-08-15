@@ -110,6 +110,7 @@ class PreviewExplicitRequest(BaseModel):
     listing_url: str
     article_link_selector: str
     title_selector: str = ""
+    url_include_pattern: str = ""  # 記事以外のリンク (タグ / 対象者) を落とす
 
 
 class LivePreviewRequest(BaseModel):
