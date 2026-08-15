@@ -426,6 +426,9 @@ def default_jobs() -> list[JobDef]:
             ),
             protection="optional",
             schedule_type="interval",
+            # 未取得 CVE を毎時少しずつ消化する定常キュー処理。実行時刻に運用上の意味は
+            # 無い (:50 は収集ジョブと衝突しないだけ) ので専用 swimlane は持たせない。
+            upkeep=True,
             # 毎時 (NVD レート制限を尊重し 1 回あたり少量)。収集ジョブと衝突しない :50。
             interval_minutes=60,
             offset_minutes=50,

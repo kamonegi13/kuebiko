@@ -312,3 +312,25 @@ class TestApplyToScheduler:
         )
         jr.apply_schedule_to_scheduler(FakeScheduler(), job)
         assert ("interval", (job.id, 60, 20)) in calls
+
+
+class TestUpkeepClassification:
+    """定常キュー処理は専用 swimlane を持たず「定常処理」に畳まれる (UI の SSoT)。"""
+
+    def test_queue_draining_jobs_are_upkeep(self) -> None:
+        by_id = {j.id: j for j in jr.default_jobs()}
+        # 「残っている仕事を少しずつ消化する」型 = 実行時刻に運用上の意味がない
+        for jid in (
+            "pir-judge-hourly",
+            "body-translate-backlog",
+            "body-refetch-backlog",
+            "job-recovery-watchdog",
+            "nvd-cvss-refresh",
+        ):
+            assert by_id[jid].upkeep, f"{jid} は定常処理に分類されるべき"
+
+    def test_collection_jobs_keep_their_own_lane(self) -> None:
+        by_id = {j.id: j for j in jr.default_jobs()}
+        # 収集は「いつ走ったか」が運用上の意味を持つため畳まない
+        for jid in ("direct-rss-fetch", "web-scraper-watchers"):
+            assert not by_id[jid].upkeep, f"{jid} は独立行のままであるべき"
