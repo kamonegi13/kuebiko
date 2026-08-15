@@ -17,13 +17,18 @@ from src.logging_config import get_logger
 
 _log = get_logger(__name__)
 
-# 1 回あたりの取得上限。NVD の公開 API は無認証で 5 req/30s 程度が目安のため、
-# 毎時 20 件 (= 1 日 480 件) で滞留 1,700 件を約 4 日で解消できる水準に置く。
-MAX_FETCH_PER_RUN = 20
+# 1 回あたりの取得上限。NVD の公開 API は無認証で 5 req/30s が目安のため、
+# 15 件/90 秒 = ちょうど上限ペースに揃える (毎時 15 件 = 1 日 360 件)。
+MAX_FETCH_PER_RUN = 15
 DEADLINE_SECONDS = 90.0
 # 補給対象とする記事の遡り日数 (古い CVE は表示需要が低く routing も過ぎている)。
 LOOKBACK_DAYS = 30
-CANDIDATE_LIMIT = 500
+# 候補上限。⚠ 500 だと頻度上位しか候補に入らず、単発言及の CVE (~1,200 件) が
+# 恒久的に「CVSS 不明」のまま残る (2026-08-15 再評価で判明)。30 日窓の全 CVE
+# (~2,000) を覆う 2000 に設定 — 定常負荷は TTL 30 日の再取得 ~67/日 + 新規 ~70/日
+# ≈ 140/日 < 取得能力 360/日 で持続可能。候補は頻度降順なので、続報が出た
+# 重要 CVE ほど先に温まる (「重要なら続報が出る」原理と整合)。
+CANDIDATE_LIMIT = 2000
 
 
 async def run_cvss_refresh() -> None:

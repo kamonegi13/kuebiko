@@ -48,6 +48,16 @@ rules:
   # 「まだ起きていないが起きそう」が届かなかった。既に算出済みで未配線だった
   # llm_breaking_critical / keyword_list を配線する。希釈防止のため
   # **日本関連 or 敵性国家アクター** との接続を必須にする。
+  # R2g: 国家機関の緊急指令 (CISA ED / JPCERT 緊急 / IPA 緊急対策情報) は
+  # 日本関連・敵性国家の限定なしで alert (2026-08-15 再評価)。advisory 一律除外 ×
+  # 案 D 限定の相互作用で「日本非言及の緊急指令が watch に落ちる」穴があった。
+  # 稀少 (年数回) かつ絶対に落とせないクラスのため無条件で上げる。
+  - id: R2g.alert_emergency_directive
+    channel: alert
+    when:
+      all:
+        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
+        - {property: keyword_list, op: in, value: [emergency_directives]}
   - id: R2e.alert_breaking_japan
     channel: alert
     when:

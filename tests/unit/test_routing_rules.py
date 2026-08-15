@@ -435,3 +435,35 @@ class TestAlertQualifier:
     def test_apt_activity_alerts_without_cve(self) -> None:
         # CVE を持たない APT 活動 (最重要ミッション) は CVSS 不問で残す
         assert self._decide(category="apt", has_kev_or_active_exploit=True) == "alert"
+
+
+class TestEmergencyDirective:
+    """R2g: 緊急指令の無条件 alert (2026-08-15 再評価の穴塞ぎ)。
+
+    advisory 一律除外 × 案 D 限定の相互作用で、日本非言及の CISA Emergency
+    Directive (advisory 分類・CVSS 9.8) が watch に落ちる穴があった。
+    緊急指令語彙は日本関連・敵性国家の限定なしで alert に上げる。
+    """
+
+    def _decide(self, **kw: object) -> str:
+        kw.setdefault("importance", "high")
+        sig = _sig(is_security_relevant=True, **kw)
+        d = evaluate_routing_rules(sig, get_source_quality(), {}, rules=load_seed_from_yaml())
+        return d.channel if d else "なし"
+
+    def test_ed_without_japan_mention_alerts(self) -> None:
+        # 穴だったケースそのもの: advisory 分類・日本非言及・アクター名なし
+        assert self._decide(
+            category="advisory",
+            article_type="breaking",
+            has_kev_or_active_exploit=True,
+            matched_keyword_lists=frozenset({"emergency_directives"}),
+        ) == "alert"
+
+    def test_ed_opinion_piece_stays_out(self) -> None:
+        # 緊急指令を「語る」読み物は対象外 (従来規約の維持)
+        assert self._decide(
+            category="advisory",
+            article_type="opinion",
+            matched_keyword_lists=frozenset({"emergency_directives"}),
+        ) != "alert"
