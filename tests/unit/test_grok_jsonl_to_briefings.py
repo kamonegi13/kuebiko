@@ -212,3 +212,19 @@ class TestRecordsToBriefings:
 
     def test_empty_records_yields_empty(self) -> None:
         assert records_to_briefings([]) == []
+
+
+class TestExpandedThemes:
+    """9 タスク拡張 (2026-08-15) の新テーマ routing。"""
+
+    def test_theme_g_ot_ics_to_watch(self) -> None:
+        r = get_routing("G")
+        assert r is not None and (r.importance, r.channel) == ("medium", "watch")
+
+    def test_theme_h_iab_to_alert(self) -> None:
+        r = get_routing("H")
+        assert r is not None and (r.importance, r.channel) == ("high", "alert")
+
+    def test_theme_i2_hacktivist_to_japan_watch(self) -> None:
+        r = get_routing("I2")
+        assert r is not None and (r.importance, r.channel) == ("high", "japan_watch")

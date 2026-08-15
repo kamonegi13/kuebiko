@@ -77,6 +77,21 @@ _SLOT1_ROUTING: dict[str, ThemeRouting] = {
         channel="alert",
         badge="🔥",
     ),
+    # 9 タスク拡張 (2026-08-15、SuperGrok 化): グローバル系の新テーマ
+    "G": ThemeRouting(
+        code="G",
+        label="OT・ICS 界隈 chatter",
+        importance="medium",
+        channel="watch",
+        badge="🏭",
+    ),
+    "H": ThemeRouting(
+        code="H",
+        label="Initial Access Broker 売買広告",
+        importance="high",
+        channel="alert",
+        badge="🚪",
+    ),
 }
 
 # Slot 2: JP / East Asia Signal (J1-J6)
@@ -122,6 +137,14 @@ _SLOT2_ROUTING: dict[str, ThemeRouting] = {
         importance="medium",
         channel="brief",
         badge="🌏",
+    ),
+    # 9 タスク拡張 (2026-08-15): 日本・同盟国標的の新テーマ
+    "I2": ThemeRouting(
+        code="I2",
+        label="ハクティビスト作戦予告 (日本・同盟国)",
+        importance="high",
+        channel="japan_watch",
+        badge="📣",
     ),
 }
 

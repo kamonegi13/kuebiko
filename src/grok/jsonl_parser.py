@@ -87,12 +87,12 @@ class TweetRecord(BaseModel):
     @property
     def is_slot1_theme(self) -> bool:
         """slot 1 (A-F) の theme か。"""
-        return self.matched_theme in {"A", "B", "C", "D", "E", "F"}
+        return self.matched_theme in {"A", "B", "C", "D", "E", "F", "G", "H"}
 
     @property
     def is_slot2_theme(self) -> bool:
         """slot 2 (J1-J6) の theme か。"""
-        return self.matched_theme in {"J1", "J2", "J3", "J4", "J5", "J6"}
+        return self.matched_theme in {"J1", "J2", "J3", "J4", "J5", "J6", "I2"}
 
 
 @dataclass(frozen=True)
