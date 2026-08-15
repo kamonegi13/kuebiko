@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { pagesApi, type ModelTiersResponse, type TierMeta } from "../api/pages";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { ConnectionsPanel } from "./config/ConnectionsPanel";
+import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
 import { HostWatchdogCard } from "../components/HostWatchdogCard";
@@ -245,11 +246,13 @@ function YamlEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
-      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-        <div className="px-3 py-2 text-xs uppercase text-fg-muted border-b border-border-subtle font-semibold">files</div>
-        {data.yaml_files.map((f) => (
-          <div key={f} onClick={() => setSelected(f)} className={`px-3 py-2 cursor-pointer text-sm font-mono border-b border-border-subtle ${selected === f ? "bg-accent-subtle text-accent-hover" : "hover:bg-surface-2 text-fg"}`}>{f.replace(/^config\//, "")}</div>
-        ))}
+      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden max-h-[700px] overflow-y-auto">
+        <FileGroupList
+          groups={data.yaml_groups ?? []}
+          selected={selected}
+          onSelect={setSelected}
+          stripPrefix="config/"
+        />
       </aside>
       <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border-subtle flex items-center justify-between">
@@ -314,18 +317,12 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
       <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden max-h-[640px] overflow-y-auto">
-        <div className="px-3 py-2 text-xs uppercase tracking-wider font-semibold text-fg-muted border-b border-border-subtle">prompts</div>
-        {list.files.map((p) => (
-          <div
-            key={p}
-            onClick={() => setSelected(p)}
-            className={`px-3 py-2 cursor-pointer text-sm border-b border-border-subtle font-mono ${
-              selected === p ? "bg-accent-subtle text-accent-hover" : "hover:bg-surface-2 text-fg"
-            }`}
-          >
-            {p.replace(/^prompts\//, "")}
-          </div>
-        ))}
+        <FileGroupList
+          groups={list.groups ?? []}
+          selected={selected}
+          onSelect={setSelected}
+          stripPrefix="prompts/"
+        />
       </aside>
 
       <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">

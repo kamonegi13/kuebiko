@@ -1,5 +1,7 @@
 // 残り全 page 用 API client。
 
+import type { FileGroup } from "../components/FileGroupList";
+
 async function getJson<T>(path: string): Promise<T> {
   const r = await fetch(path, { credentials: "same-origin" });
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${path}`);
@@ -55,7 +57,7 @@ export const pagesApi = {
   // subscriptions
   subscriptions: () => getJson<SubscriptionsResponse>("/api/v1/subscriptions"),
   // prompts
-  promptsList: () => getJson<{ files: string[] }>("/api/v1/prompts"),
+  promptsList: () => getJson<{ files: string[]; groups: FileGroup[] }>("/api/v1/prompts"),
   promptsFile: (path: string) => getJson<PromptFile>(`/api/v1/prompts/file?path=${encodeURIComponent(path)}`),
   promptsSave: (path: string, content: string) => {
     const f = new FormData();
@@ -633,6 +635,7 @@ export interface ConfigResponse {
   env_values: Record<string, string>;
   env_masked: Record<string, string>;
   yaml_files: string[];
+  yaml_groups: FileGroup[];
 }
 
 export interface ClusterMember {
