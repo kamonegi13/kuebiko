@@ -17,6 +17,32 @@ async function postJson<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
 
 export type Transport = "rss" | "atom" | "sitemap" | "html_scraper";
 
+// 1 ソースの編集可能フィールド。transport 固有のものは該当しないと null
+// (UI はその欄自体を出さない)。backend: src/ui/api/_source_editor.py。
+export interface EditableSource {
+  feed_id: string;
+  transport: Transport;
+  display_name: string;
+  url: string;
+  folder: string;
+  enabled: boolean;
+  article_link_selector: string | null;
+  url_include_pattern: string | null;
+  max_posts_per_run: number | null;
+  // rss のみ true = URL が識別子。変更すると運用統計の連続性が切れる。
+  url_is_identity: boolean;
+}
+
+export interface SourceUpdate {
+  feed_id: string;
+  url?: string;
+  folder?: string;
+  enabled?: boolean;
+  article_link_selector?: string;
+  url_include_pattern?: string;
+  max_posts_per_run?: number;
+}
+
 export interface PreviewArticle {
   title: string;
   url: string;
@@ -134,6 +160,20 @@ export const sourcesV2Api = {
       { feed_ids: string[]; folder: string },
       { affected: number; commit: string | null; error: string | null }
     >("/api/v1/sources/set_folder", { feed_ids, folder }),
+  // 1 ソースの編集可能フィールド (取得設定フォームの初期値)。
+  getEditable: async (feed_id: string): Promise<EditableSource> => {
+    const r = await fetch(`/api/v1/sources/editable?feed_id=${encodeURIComponent(feed_id)}`, {
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    return (await r.json()) as EditableSource;
+  },
+  // 1 ソースの取得設定を更新 (未指定 = 変更しない)。rss は URL 変更で feed_id も変わる。
+  update: (patch: SourceUpdate) =>
+    postJson<SourceUpdate, { updated: boolean; feed_id: string; error: string | null }>(
+      "/api/v1/sources/update",
+      patch,
+    ),
   setDisplayName: (feed_id: string, display_name: string) =>
     postJson<
       { feed_id: string; display_name: string },

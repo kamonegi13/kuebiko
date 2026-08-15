@@ -59,6 +59,14 @@ def _key_of(entry: dict[str, Any], transport: TransportT) -> str:
     return str(entry.get("url" if transport == "rss" else "name", ""))
 
 
+def _to_feed_id(entry: dict[str, Any], transport: TransportT) -> str:
+    """entry から feed_id (UI/API の識別子) を組み立てる。``_resolve`` の逆写像。"""
+    if transport == "rss":
+        return str(entry.get("url", ""))
+    prefix = "scraper:" if transport == "html_scraper" else "watcher:"
+    return f"{prefix}{entry.get('name', '')}"
+
+
 def _group(feed_ids: list[str]) -> dict[TransportT, list[str]]:
     """feed_id 群を transport 別の ident list に振り分ける。"""
     out: dict[TransportT, list[str]] = {}

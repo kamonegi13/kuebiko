@@ -182,6 +182,43 @@ class RenameSourceResponse(BaseModel):
     error: str | None = None
 
 
+class EditableSourceResponse(BaseModel):
+    """GET /api/v1/sources/editable の出力 (編集フォームの初期値)。
+
+    transport 固有フィールドは該当しない transport では null (UI は欄を出さない)。
+    """
+
+    feed_id: str
+    transport: TransportLiteral
+    display_name: str
+    url: str
+    folder: str
+    enabled: bool
+    article_link_selector: str | None = None
+    url_include_pattern: str | None = None
+    max_posts_per_run: int | None = None
+    url_is_identity: bool = False
+
+
+class UpdateSourceRequest(BaseModel):
+    """POST /api/v1/sources/update の入力。null のフィールドは変更しない。"""
+
+    feed_id: str
+    url: str | None = None
+    folder: str | None = None
+    enabled: bool | None = None
+    article_link_selector: str | None = None
+    url_include_pattern: str | None = None
+    max_posts_per_run: int | None = None
+
+
+class UpdateSourceResponse(BaseModel):
+    updated: bool
+    # URL 変更で識別子が変わる (rss) ため、更新後の feed_id を返す
+    feed_id: str
+    error: str | None = None
+
+
 class RegisterRequest(BaseModel):
     """POST /api/v1/sources/register の入力。
 

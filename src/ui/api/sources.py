@@ -34,6 +34,7 @@ from src.ui.api._source_models import (
     DeleteSourceResponse,
     DiscoverRequest,
     DiscoverResponse,
+    EditableSourceResponse,
     LivePreviewRequest,
     LivePreviewResponse,
     PreviewExplicitRequest,
@@ -45,6 +46,8 @@ from src.ui.api._source_models import (
     RenameSourceResponse,
     SetFolderRequest,
     SetFolderResponse,
+    UpdateSourceRequest,
+    UpdateSourceResponse,
 )
 from src.ui.api._source_proxy import build_proxy_html
 from src.ui.api._source_writer import register_source, unregister_source
@@ -229,6 +232,89 @@ def set_display_name_endpoint(req: RenameSourceRequest) -> RenameSourceResponse:
     if affected == 0:
         return RenameSourceResponse(affected=0, error="該当ソースが見つかりません")
     return RenameSourceResponse(affected=affected, commit=commit)
+
+
+@sources_api.get("/editable", response_model=EditableSourceResponse)
+def get_editable_endpoint(feed_id: str) -> EditableSourceResponse:
+    """1 ソースの編集可能フィールドを返す (編集フォームの初期値)。"""
+    from src.ui.api._source_editor import get_editable
+
+    src = get_editable(feed_id)
+    if src is None:
+        raise HTTPException(status_code=404, detail="該当ソースが見つかりません")
+    return EditableSourceResponse(**vars(src))
+
+
+# 1 回あたり取得件数の上限。大きすぎる値で 1 ソースが run 時間を食い潰すのを防ぐ。
+_MAX_POSTS_CEILING = 50
+_MAX_SELECTOR_LEN = 200
+
+
+def _validate_update(req: UpdateSourceRequest) -> None:
+    """入力を境界で検証する。壊れた設定を保存させない (取得は次 run まで走らないため)。"""
+    import re as _re
+
+    if req.url is not None:
+        url = req.url.strip()
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=400, detail="URL は http:// または https:// で始めてください"
+            )
+        try:
+            from src.tools.url_guard import assert_safe_public_url
+
+            assert_safe_public_url(url)
+        except UnsafeUrlError as e:
+            raise HTTPException(status_code=400, detail=f"安全でない URL です: {e}") from e
+    if req.folder is not None and not _re.match(r"^[a-z0-9_]*$", req.folder.strip()):
+        raise HTTPException(status_code=400, detail="folder は英小文字+数字+_ のみ (空可)")
+    if req.article_link_selector is not None:
+        sel = req.article_link_selector.strip()
+        if not sel or len(sel) > _MAX_SELECTOR_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=f"記事リンクのセレクタは 1〜{_MAX_SELECTOR_LEN} 文字で指定してください",
+            )
+    if req.url_include_pattern:
+        try:
+            _re.compile(req.url_include_pattern)
+        except _re.error as e:
+            raise HTTPException(status_code=400, detail=f"URL パターンが不正です: {e}") from e
+    if req.max_posts_per_run is not None and not (1 <= req.max_posts_per_run <= _MAX_POSTS_CEILING):
+        raise HTTPException(
+            status_code=400,
+            detail=f"1 回あたり取得件数は 1〜{_MAX_POSTS_CEILING} で指定してください",
+        )
+
+
+@sources_api.post("/update", response_model=UpdateSourceResponse)
+def update_source_endpoint(req: UpdateSourceRequest) -> UpdateSourceResponse:
+    """1 ソースの取得設定を更新する (削除→再登録なしで直せるようにする)。"""
+    if not req.feed_id.strip():
+        raise HTTPException(status_code=400, detail="対象のソースを選択してください")
+    _validate_update(req)
+    from src.ui.api._source_editor import SourcePatch, update_source
+
+    patch = SourcePatch(
+        url=req.url.strip() if req.url is not None else None,
+        folder=req.folder.strip() if req.folder is not None else None,
+        enabled=req.enabled,
+        article_link_selector=(
+            req.article_link_selector.strip() if req.article_link_selector is not None else None
+        ),
+        url_include_pattern=(
+            req.url_include_pattern.strip() if req.url_include_pattern is not None else None
+        ),
+        max_posts_per_run=req.max_posts_per_run,
+    )
+    try:
+        new_feed_id, changed = update_source(req.feed_id, patch)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 — 保存失敗を 500 にせず UI にそのまま見せる
+        _log.warning("update_source_failed", error=f"{type(e).__name__}: {e}")
+        return UpdateSourceResponse(updated=False, feed_id=req.feed_id, error=str(e))
+    return UpdateSourceResponse(updated=changed, feed_id=new_feed_id)
 
 
 @sources_api.post("/register", response_model=RegisterResponse)
