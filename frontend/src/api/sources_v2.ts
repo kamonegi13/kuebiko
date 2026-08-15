@@ -67,6 +67,9 @@ export interface SourceCandidate {
   detected_via: string;
   article_link_selector?: string | null;
   title_selector?: string | null;
+  // sitemap のみ: 取り込む URL の絞り込みと、その候補となるパス区分。
+  url_include_pattern?: string | null;
+  path_hints?: string[];
   rationale?: string | null;
 }
 

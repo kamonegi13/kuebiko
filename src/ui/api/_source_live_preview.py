@@ -15,7 +15,6 @@ url_guard の public 検証を通す** (private / loopback / metadata は fetch 
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any
 
@@ -25,7 +24,11 @@ from src.tools.url_guard import assert_safe_public_url
 from src.ui.api._source_html_preview import preview_html_listing_explicit
 from src.ui.api._source_http import detect_kind, fetch_bytes, fetch_text
 from src.ui.api._source_models import LivePreviewResponse, PreviewArticle
-from src.ui.api._source_validate import validate_feed_body
+from src.ui.api._source_validate import (
+    fetch_page_title,
+    parse_sitemap_locs,
+    validate_feed_body,
+)
 
 _MAX_ITEMS = 5
 
@@ -93,46 +96,6 @@ async def _preview_scraper(name: str) -> LivePreviewResponse:
     )
 
 
-def _parse_sitemap_locs_with_lastmod(body: bytes) -> list[tuple[str, datetime | None]]:
-    """sitemap urlset から (loc, lastmod) を抽出。lastmod は ISO8601 を parse。"""
-    out: list[tuple[str, datetime | None]] = []
-    try:
-        root = ET.fromstring(body)
-    except ET.ParseError:
-        return out
-    for url_el in root.findall(".//{*}url"):
-        loc_el = url_el.find("{*}loc")
-        if loc_el is None or not loc_el.text:
-            continue
-        loc = loc_el.text.strip()
-        lastmod: datetime | None = None
-        lm_el = url_el.find("{*}lastmod")
-        if lm_el is not None and lm_el.text:
-            try:
-                lastmod = datetime.fromisoformat(lm_el.text.strip())
-            except ValueError:
-                lastmod = None
-        out.append((loc, lastmod))
-    return out
-
-
-def _fetch_page_title(url: str) -> str | None:
-    """ページの <title> を best-effort で取得 (sitemap は title を持たないため)。"""
-    try:
-        status, html, _, _ = fetch_text(url, timeout=8.0)
-    except Exception:  # noqa: BLE001
-        return None
-    if status >= 400 or not html:
-        return None
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.DOTALL | re.IGNORECASE)
-    if not m:
-        return None
-    title = re.sub(r"\s+", " ", m.group(1)).strip()
-    # 「ページ名 | IPA ...」のサイト名 suffix を落とす
-    title = re.split(r"\s*[|｜]\s*", title)[0].strip()
-    return title[:120] or None
-
-
 def _preview_sitemap(name: str) -> LivePreviewResponse:
     e = _find_entry("sitemap", name)
     if e is None:
@@ -157,7 +120,7 @@ def _preview_sitemap_url(sitemap_url: str, pattern: str) -> LivePreviewResponse:
             error=f"HTTP {status}",
             fetch_stage=stage,
         )
-    locs = _parse_sitemap_locs_with_lastmod(body)
+    locs = parse_sitemap_locs(body)
     matched = [(u, lm) for (u, lm) in locs if not pattern or re.search(pattern, u)]
     # lastmod 降順 (None は最後) で「最新」を優先。document 順だと evergreen
     # ページ (websecurity 解説等) が並び、最新の注意喚起が出ない。
@@ -167,7 +130,7 @@ def _preview_sitemap_url(sitemap_url: str, pattern: str) -> LivePreviewResponse:
     )
     items = [
         PreviewArticle(
-            title=_fetch_page_title(u) or (u.rstrip("/").split("/")[-1] or u),
+            title=fetch_page_title(u) or (u.rstrip("/").split("/")[-1] or u),
             url=u,
             published=lm,
         )

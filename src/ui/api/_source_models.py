@@ -58,6 +58,11 @@ class SourceCandidate(BaseModel):
     # html_scraper transport の場合のみ使用
     article_link_selector: str | None = None
     title_selector: str | None = None
+    # sitemap transport の場合のみ使用。sitemap は「サイト全部の URL」なので、
+    # 採用情報・イベント告知まで取り込まないよう **登録時に絞り込む** 必要がある。
+    url_include_pattern: str | None = None
+    # 最新 URL に多く出るパス区分 (例 news / publications)。UI が絞り込み候補として出す。
+    path_hints: list[str] = Field(default_factory=list)
     rationale: str | None = None  # LLM が selector を提案した根拠
 
 

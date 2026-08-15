@@ -11,7 +11,8 @@ from typing import cast
 import pytest
 
 from src.ui.api import _source_live_preview as lp
-from src.ui.api._source_models import LivePreviewResponse
+from src.ui.api import _source_validate as sv
+from src.ui.api._source_models import LivePreviewResponse, SourceCandidate
 
 
 def test_find_entry_parses_named_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,7 +81,7 @@ def test_parse_sitemap_lastmod() -> None:
       <url><loc>https://x/b.html</loc><lastmod>2026-05-20T10:00:00+09:00</lastmod></url>
       <url><loc>https://x/c.html</loc></url>
     </urlset>"""
-    locs = lp._parse_sitemap_locs_with_lastmod(xml)
+    locs = sv.parse_sitemap_locs(xml)
     assert len(locs) == 3
     by_url = dict(locs)
     assert by_url["https://x/a.html"] is not None
@@ -108,7 +109,7 @@ def test_sitemap_preview_sorts_newest_first(monkeypatch: pytest.MonkeyPatch) -> 
     )
     monkeypatch.setattr(lp, "fetch_bytes", lambda *a, **k: (200, xml, {}, "bot"))
     monkeypatch.setattr(lp, "assert_safe_public_url", lambda *a, **k: None)
-    monkeypatch.setattr(lp, "_fetch_page_title", lambda u: None)  # title fetch skip
+    monkeypatch.setattr(lp, "fetch_page_title", lambda u: None)  # title fetch skip
     res = lp._preview_sitemap("ipa")
     assert res.ok
     assert res.items[0].url.endswith("latest.html")  # 最新が先頭
@@ -149,7 +150,7 @@ class TestPreviewUrlBeforeSave:
         </urlset>"""
         monkeypatch.setattr(lp, "assert_safe_public_url", lambda *a, **k: None)
         monkeypatch.setattr(lp, "fetch_bytes", lambda *a, **k: (200, xml, {}, "bot"))
-        monkeypatch.setattr(lp, "_fetch_page_title", lambda u: None)
+        monkeypatch.setattr(lp, "fetch_page_title", lambda u: None)
         res = lp.preview_url(
             "sitemap",
             "https://e.example/sitemap.xml",
@@ -163,3 +164,45 @@ class TestPreviewUrlBeforeSave:
         # 登録済みソースの確認経路 (preview_subscription) の制約は維持されていること
         monkeypatch.setattr(lp, "load_feeds_config", lambda: type("C", (), {"feeds": []})())
         assert lp._preview_rss("https://new.example/feed.xml").error == "未登録の feed です"
+
+
+class TestSitemapCandidatePreview:
+    """sitemap 候補のプレビューは **実際の取り込み順** を見せる (確認 gate として機能させる)。"""
+
+    XML = b"""<?xml version="1.0"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url><loc>https://e.example/publications/2020-old-report</loc>
+        <lastmod>2020-01-01T00:00:00+00:00</lastmod></url>
+      <url><loc>https://e.example/recruitment/job-a</loc>
+        <lastmod>2026-08-10T00:00:00+00:00</lastmod></url>
+      <url><loc>https://e.example/news/latest-advisory</loc>
+        <lastmod>2026-08-14T00:00:00+00:00</lastmod></url>
+    </urlset>"""
+
+    def _build(self, monkeypatch: pytest.MonkeyPatch) -> SourceCandidate:
+        from src.ui.api import _source_discovery as sd
+
+        monkeypatch.setattr(sd, "fetch_page_title", lambda u: None)
+        c = sd._build_sitemap_candidate(
+            "https://e.example/sitemap.xml", self.XML, "sitemap_probe", 5
+        )
+        assert c is not None
+        return c
+
+    def test_preview_is_newest_first_not_document_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        c = self._build(monkeypatch)
+        # document 順の先頭は 2020 年の古い文書。lastmod 降順なら最新が先頭になる。
+        assert c.preview_articles[0].url.endswith("latest-advisory")
+
+    def test_path_hints_expose_sections_to_choose_from(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        c = self._build(monkeypatch)
+        # 雑音 (recruitment) も候補として見せる — 取捨は人が決める
+        assert set(c.path_hints) == {"news", "recruitment", "publications"}
+
+    def test_default_pattern_is_host_wide(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        c = self._build(monkeypatch)
+        assert c.url_include_pattern == r"^https?://e\.example/.+"

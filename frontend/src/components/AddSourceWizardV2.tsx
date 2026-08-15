@@ -14,6 +14,7 @@ import { Drawer } from "./Drawer";
 import { Spinner, ButtonSpinner, LLMProgress, PulseSkeleton } from "./Spinner";
 import { VisualSelectorPicker } from "./VisualSelectorPicker";
 import { FolderSelect } from "./FolderSelect";
+import { SitemapScopeField } from "./SitemapScopeField";
 import { Check, AlertTriangle, Sparkles } from "lucide-react";
 import {
   sourcesV2Api,
@@ -70,6 +71,8 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState(""); // 購読一覧に表示される名称
   const [folder, setFolder] = useState("");
+  // sitemap の取り込み範囲 (絞り込み正規表現)。候補選択時に既定値を入れる。
+  const [scopePattern, setScopePattern] = useState("");
   const [enabled, setEnabled] = useState(true);
 
   // 取り直し (取得方式の変更) では既存の分類・表示名を初期値にする。
@@ -95,6 +98,13 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
     setFolder("news_en");
     setEnabled(true);
   }
+  // 確認ステップに進むときに sitemap の既定範囲を用意する (transport ごとの分岐は
+  // ここ 1 箇所に閉じ、確認ステップ自体は全 transport 共通のままにする)。
+  function goConfirm(candidate: SourceCandidate) {
+    setScopePattern(candidate.url_include_pattern ?? "");
+    setStep({ kind: "confirm", candidate });
+  }
+
   function handleClose() {
     reset();
     onClose();
@@ -217,7 +227,7 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
             result={step.result}
             onPick={(c) => {
               suggestNameFromCandidate(c, setName, setDisplayName);
-              setStep({ kind: "confirm", candidate: c });
+              goConfirm(c);
             }}
             onHtmlMode={() =>
               setStep({
@@ -258,7 +268,7 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
             candidate={step.candidate}
             onPick={() => {
               suggestNameFromCandidate(step.candidate, setName, setDisplayName);
-              setStep({ kind: "confirm", candidate: step.candidate });
+              goConfirm(step.candidate);
             }}
             onRefine={() => setStep({ kind: "html_url_input", reason: "user_intent" })}
             onVisualPick={() =>
@@ -277,7 +287,7 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
             initialSelector={step.initialSelector}
             onConfirm={(candidate) => {
               suggestNameFromCandidate(candidate, setName, setDisplayName);
-              setStep({ kind: "confirm", candidate });
+              goConfirm(candidate);
             }}
             onBack={() => setStep({ kind: "html_url_input", reason: "user_intent" })}
           />
@@ -292,6 +302,8 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
             setDisplayName={setDisplayName}
             folder={folder}
             setFolder={setFolder}
+            scopePattern={scopePattern}
+            setScopePattern={setScopePattern}
             enabled={enabled}
             setEnabled={setEnabled}
             loading={registerMut.isPending}
@@ -302,6 +314,10 @@ export function AddSourceWizardV2({ isOpen, onClose, initialUrl = "", replacing 
                 candidate: {
                   ...step.candidate,
                   source_name: displayName.trim() || step.candidate.source_name,
+                  url_include_pattern:
+                    step.candidate.transport === "sitemap"
+                      ? scopePattern.trim()
+                      : step.candidate.url_include_pattern,
                 },
                 name: name.trim(),
                 folder: folder.trim(), enabled,
@@ -861,6 +877,8 @@ function Step6Confirm({
   setDisplayName,
   folder,
   setFolder,
+  scopePattern,
+  setScopePattern,
   enabled,
   setEnabled,
   loading,
@@ -874,6 +892,8 @@ function Step6Confirm({
   setDisplayName: (v: string) => void;
   folder: string;
   setFolder: (v: string) => void;
+  scopePattern: string;
+  setScopePattern: (v: string) => void;
   enabled: boolean;
   setEnabled: (v: boolean) => void;
   loading: boolean;
@@ -953,6 +973,15 @@ function Step6Confirm({
             </div>
           )}
         </div>
+
+        {candidate.transport === "sitemap" && (
+          <SitemapScopeField
+            sitemapUrl={candidate.fetch_url}
+            hints={candidate.path_hints ?? []}
+            value={scopePattern}
+            onChange={setScopePattern}
+          />
+        )}
 
         {/* フォルダは transport に依らず共通 (RSS だけに出していたため sitemap /
             スクレイパーが未分類のまま登録されていた)。候補は実データ由来。 */}

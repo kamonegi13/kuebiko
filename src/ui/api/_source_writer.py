@@ -71,27 +71,29 @@ def _add_to_watchers_yaml(
     feed_title: str,
     enabled: bool,
     folder: str = "",
+    url_include_pattern: str = "",
 ) -> tuple[int, list[Path]]:
     """sitemap candidate を watcher entry list に登録。
 
-    include_pattern は user URL の host 前置を default に (subcategory 限定的)。
+    ⚠ sitemap は「サイト全部の URL」なので **絞り込みが本質**。指定が無いときだけ
+    host 全体に fallback するが、それは採用情報・イベント告知まで取り込む設定である
+    (登録 UI で区分を選ばせる)。
     """
     _validate_kebab(name)
     entries = source_store.load_entries("sitemap")
     if any(e.get("name") == name for e in entries):
         raise ValueError(f"watcher name は既登録: {name}")
 
-    # default include pattern: sitemap host の article-like URL を緩く allow
     host = urlparse(sitemap_url).netloc
     safe_host = re.escape(host)
-    default_include = rf"^https?://{safe_host}/.+"
+    include = url_include_pattern.strip() or rf"^https?://{safe_host}/.+"
 
     entry: dict[str, Any] = {
         "name": name,
         "type": "sitemap",
         "enabled": enabled,
         "sitemap_urls": [sitemap_url],
-        "url_include_pattern": default_include,
+        "url_include_pattern": include,
         "feed_title": feed_title or host,
         "max_posts_per_run": 8,
     }
@@ -231,6 +233,7 @@ def register_source(
             candidate.source_name,
             enabled,
             folder,
+            candidate.url_include_pattern or "",
         )
         return str(WATCHERS_YAML), total, False, None
 

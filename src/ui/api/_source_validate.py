@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 import feedparser  # type: ignore[import-untyped]
 
+from src.ui.api._source_http import fetch_text
 from src.ui.api._source_models import PreviewArticle
 
 # Phase E-4: 404 placeholder pattern
@@ -122,8 +124,6 @@ def parse_sitemap_xml(body: bytes) -> tuple[str, list[str], list[str]]:
 
     kind: "urlset" | "sitemapindex" | "unknown"
     """
-    import xml.etree.ElementTree as ET
-
     try:
         root = ET.fromstring(body)
     except ET.ParseError:
@@ -142,3 +142,43 @@ def parse_sitemap_xml(body: bytes) -> tuple[str, list[str], list[str]]:
                 subs.append(loc.text.strip())
         return "sitemapindex", urls, subs
     return "unknown", [], []
+
+
+def parse_sitemap_locs(body: bytes) -> list[tuple[str, datetime | None]]:
+    """sitemap urlset から (loc, lastmod) を抽出。lastmod は ISO8601 を parse。"""
+    out: list[tuple[str, datetime | None]] = []
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return out
+    for url_el in root.findall(".//{*}url"):
+        loc_el = url_el.find("{*}loc")
+        if loc_el is None or not loc_el.text:
+            continue
+        loc = loc_el.text.strip()
+        lastmod: datetime | None = None
+        lm_el = url_el.find("{*}lastmod")
+        if lm_el is not None and lm_el.text:
+            try:
+                lastmod = datetime.fromisoformat(lm_el.text.strip())
+            except ValueError:
+                lastmod = None
+        out.append((loc, lastmod))
+    return out
+
+
+def fetch_page_title(url: str) -> str | None:
+    """ページの <title> を best-effort で取得 (sitemap は title を持たないため)。"""
+    try:
+        status, html, _, _ = fetch_text(url, timeout=8.0)
+    except Exception:  # noqa: BLE001
+        return None
+    if status >= 400 or not html:
+        return None
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return None
+    title = re.sub(r"\s+", " ", m.group(1)).strip()
+    # 「ページ名 | IPA ...」のサイト名 suffix を落とす
+    title = re.split(r"\s*[|｜]\s*", title)[0].strip()
+    return title[:120] or None

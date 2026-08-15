@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import Counter
 from datetime import UTC, datetime
 from urllib.parse import urljoin, urlparse
 
@@ -31,7 +32,9 @@ from src.ui.api._source_models import (
     TransportLiteral,
 )
 from src.ui.api._source_validate import (
+    fetch_page_title,
     is_nav_url,
+    parse_sitemap_locs,
     parse_sitemap_xml,
     validate_feed_body,
 )
@@ -228,6 +231,27 @@ def _extract_alternate_links(html: str, base_url: str) -> list[tuple[str, str | 
     return out
 
 
+# lastmod 未設定 URL を末尾に送るための番兵 (naive/aware 混在を避けるため UTC 固定)。
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+# 絞り込み候補として出すパス区分の母数と個数。
+_HINT_SAMPLE = 40
+_HINT_MAX = 6
+
+
+def _path_hints(urls: list[str]) -> list[str]:
+    """最新 URL に多く出る第 1 パス区分を返す (絞り込みの選択肢)。
+
+    どれが CTI 対象かは機械的に決められない (ENISA は news/publications が対象で
+    recruitment/events は雑音) ため、**判断は人に委ね、選択肢だけ提示する**。
+    """
+    counter: Counter[str] = Counter()
+    for u in urls[:_HINT_SAMPLE]:
+        seg = urlparse(u).path.strip("/").split("/")[0]
+        if seg:
+            counter[seg] += 1
+    return [seg for seg, _n in counter.most_common(_HINT_MAX)]
+
+
 def _build_sitemap_candidate(
     url: str,
     body: bytes,
@@ -242,11 +266,16 @@ def _build_sitemap_candidate(
         real_urls = [u for u in urls if not is_nav_url(u)]
         if not real_urls:
             return None
-        # sitemap の preview は先頭 5 URL を「title 不明、 URL のみ」 として展開
-        # (trafilatura 抽出は重いので preview には含めない、 register 後の pipeline が処理)
+        # **取り込み順と同じ並び (lastmod 降順) で見せる**。document 順の先頭を見せると
+        # 数年前の文書が並び、「実際に何が入るか」の確認 gate として機能しない。
+        locs = [(u, lm) for (u, lm) in parse_sitemap_locs(body) if not is_nav_url(u)]
+        locs.sort(key=lambda x: (x[1] is not None, x[1] or _EPOCH), reverse=True)
+        newest = [u for (u, _lm) in locs] or real_urls
+        last_updated = next((lm for (_u, lm) in locs if lm), None)
+        # title は sitemap に無いので先頭数件だけ実ページから取る (残りは slug)。
         preview = [
-            PreviewArticle(title=_path_display(u).split("/")[-1] or u, url=u)
-            for u in real_urls[:max_preview]
+            PreviewArticle(title=fetch_page_title(u) or _path_display(u).split("/")[-1] or u, url=u)
+            for u in newest[:max_preview]
         ]
         host = urlparse(url).netloc
         return SourceCandidate(
@@ -254,10 +283,12 @@ def _build_sitemap_candidate(
             fetch_url=url,
             source_name=f"{host} sitemap ({len(real_urls)} URLs)",
             path_display=_path_display(url),
-            last_updated=None,
+            last_updated=last_updated,
             quality=_compute_quality(len(real_urls), None),
             preview_articles=preview,
             detected_via=detected_via,
+            url_include_pattern=rf"^https?://{re.escape(host)}/.+",
+            path_hints=_path_hints(newest),
         )
     if kind == "sitemapindex":
         if not subs:
