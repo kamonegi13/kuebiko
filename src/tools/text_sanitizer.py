@@ -25,6 +25,9 @@ import unicodedata
 
 # HTML タグを丸ごと除去 (greedy にしない: <a>...</a> の中身は残す)
 _HTML_TAG = re.compile(r"<[^>]+>")
+# 末尾で切断された不完全タグ (例: 300 字 truncate で `</div>` が `</d` になった残骸)。
+# 完全タグ除去後に残るため個別に落とす (2026-08-15 に remediation で実害)。
+_TRUNCATED_TAG_TAIL = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9_-]*\s*$")
 # 連続する空白 / 改行を 1 つに畳む (collapse=True 時)
 _WHITESPACE_RUN = re.compile(r"\s+")
 # 制御文字 (NUL, ESC, BEL 等。改行/タブは保持しない場合は \x09\x0a\x0d も削る)
@@ -49,8 +52,9 @@ def sanitize_for_display(
     """
     if not text:
         return ""
-    # 1. HTML タグ除去
+    # 1. HTML タグ除去 (+ 切り詰めで生じた末尾の不完全タグ)
     out = _HTML_TAG.sub("", text)
+    out = _TRUNCATED_TAG_TAIL.sub("", out)
     # 2. HTML エンティティ復元 (&amp; → &)
     out = html.unescape(out)
     # 3. Unicode NFKC 正規化 (全角英数 → 半角、特殊空白 → 通常空白 等)

@@ -21,7 +21,19 @@ from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, ExtractionResult
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
+from src.tools.text_sanitizer import sanitize_for_display
 from src.tools.text_utils import strip_html as _strip_html
+
+# LLM が自由記述で埋める metadata キー (HTML 残渣の一括除去対象)。
+# 新しい自由記述フィールドを metadata に足したらここにも 1 行足す
+# (個別 sanitize は漏れる — 2026-08-15 に remediation で実害が出た)。
+LLM_FREE_TEXT_METADATA_KEYS: tuple[str, ...] = (
+    "remediation",
+    "technical_axis_summary",
+    "socio_political_rationale",
+    "victim_city",
+    "subject_rationale",
+)
 
 _log = get_logger(__name__)
 
@@ -527,9 +539,19 @@ def _build_briefing(
     # 監査 2026-07-05 P1: 96fde6c のインデント混入 (rationale/confidence が remediation
     # 存在時のみ永続化される退行) を復元 — rationale は intent 判定に付随する。
     if summary.remediation and summary.remediation.strip():
-        metadata["remediation"] = summary.remediation.strip()[:300]
+        # sanitize してから切り詰める (逆順だとタグ途中で切れた断片 `</d` が残る)
+        metadata["remediation"] = sanitize_for_display(summary.remediation).strip()[:300]
     if diamond_axes.technical:
         metadata["technical_axis_summary"] = diamond_axes.technical
+    # LLM 自由記述の HTML 残渣を一括除去 (2026-08-15)。
+    # title/summary/analyst_note は上で個別 sanitize 済だが、後から増えた
+    # metadata 側の自由記述 (remediation 等) が漏れ、本文末尾の閉じタグ列
+    # (`</p></div>...`) を LLM が引きずった値が UI に露出していた。
+    # 個別追加は同じ漏れを繰り返すため、キー集合を SSoT として一括適用する。
+    for _key in LLM_FREE_TEXT_METADATA_KEYS:
+        _val = metadata.get(_key)
+        if isinstance(_val, str) and _val:
+            metadata[_key] = sanitize_for_display(_val)
     # 時間軸レイヤ b/c: 事象発生日 / 基準 / 侵害開始日 (報道時刻と分離)。報道日 +1d を上限に
     # 検証し、偽の日付は捨てる。reference = published or now (事象は報道後に起きえない)。
     _ref_dt = article.published or datetime.now(UTC)
@@ -595,9 +617,8 @@ def _build_briefing(
     # Phase 5L-2: 表示用テキスト sanitize (二重防御)
     # Inoreader summary_html や LLM 出力に紛れる HTML タグ (例: </td>) や
     # HTML エンティティを除去。LLM 翻訳が元タイトルの HTML を引きずるケースを
-    # 観測したため post-LLM にも適用する。
-    from src.tools.text_sanitizer import sanitize_for_display
-
+    # 観測したため post-LLM にも適用する (import は module-level に統一 — 関数内 import は
+    # 同名の module-level 束縛を隠し UnboundLocalError を招く)。
     display_title = sanitize_for_display(display_title, max_length=120, collapse_whitespace=True)
     summary_clean = sanitize_for_display(summary.summary)
     analyst_note_clean = (

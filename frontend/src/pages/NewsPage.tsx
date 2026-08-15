@@ -11,9 +11,8 @@ import { Check } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { articlesApi } from "../api/articles";
-import { pagesApi } from "../api/pages";
 import { pirApi } from "../api/pir";
-import { fetchSearch, fetchAffectedVendors, fetchActorOptions, type SearchFacets } from "../api/search";
+import { fetchSearch, fetchAffectedVendors, fetchActorOptions, fetchFeedOptions, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
@@ -193,10 +192,15 @@ export function NewsPage() {
   const activePivot = pivot ?? autoPivot;
   const view: "browse" | "search" | "pivot" = activePivot ? "pivot" : search ? "search" : "browse";
 
-  const { data: subs } = useQuery({ queryKey: ["news-subs"], queryFn: () => pagesApi.subscriptions(), staleTime: 10 * 60_000 });
+  // 情報源 facet は実データ由来 (購読一覧だと Grok 等の購読外経路が選べない — 2026-08-15)
+  const { data: feedList } = useQuery({
+    queryKey: ["news-feed-options"],
+    queryFn: () => fetchFeedOptions(),
+    staleTime: 10 * 60_000,
+  });
   const feedOpts = useMemo(
-    () => (subs?.subscriptions ?? []).map((s) => s.title).sort((a, b) => a.localeCompare(b)),
-    [subs],
+    () => (feedList ?? []).map((f) => f.title).sort((a, b) => a.localeCompare(b)),
+    [feedList],
   );
 
   // PIR facet 選択肢 (enabled な PIR のみ。id→title)。

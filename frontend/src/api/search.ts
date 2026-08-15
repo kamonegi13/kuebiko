@@ -86,3 +86,16 @@ export async function fetchActorOptions(): Promise<ActorOption[]> {
   const j = (await r.json()) as { actors: ActorOption[] };
   return j.actors ?? [];
 }
+
+// 情報源 facet の選択肢。購読ソース一覧でなく**実データ由来**にすることで、
+// 購読外の取込経路 (Grok 等) でも絞り込める (2026-08-15)。
+export interface FeedOption {
+  title: string;
+  count: number;
+}
+export async function fetchFeedOptions(): Promise<FeedOption[]> {
+  const r = await fetch(`/api/v1/feed-options`, { credentials: "same-origin" });
+  if (!r.ok) throw new Error(`feed-options failed: ${r.status}`);
+  const j = (await r.json()) as { feeds: FeedOption[] };
+  return j.feeds ?? [];
+}

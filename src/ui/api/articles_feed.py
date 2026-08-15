@@ -300,6 +300,33 @@ async def actor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
     return {"actors": actors}
 
 
+@articles_feed_api.get("/feed-options")
+async def feed_options(request: Request, days: int = 90) -> dict[str, Any]:  # noqa: ARG001
+    """情報源 (feed) facet の選択肢を**実データから**返す。read-only。
+
+    購読ソース一覧 (subscriptions) 由来だと Grok のような購読外の取込経路
+    (grok_email 等) が選択肢に現れず絞り込めなかった (2026-08-15 利用者指摘)。
+    記事に実在する feed_title を数え、多い順に返す。
+    """
+    from src.storage.db_backend import connect, translate_sql
+
+    window_days = max(1, min(int(days), 365))
+    conn = connect()
+    rows = conn.execute(
+        translate_sql(
+            "SELECT feed_title, COUNT(*) AS n FROM articles "
+            "WHERE feed_title IS NOT NULL AND feed_title <> '' "
+            "AND created_at > datetime('now', ?) "
+            "GROUP BY feed_title ORDER BY n DESC, feed_title ASC"
+        ),
+        (f"-{window_days} days",),
+    ).fetchall()
+    return {
+        "feeds": [{"title": str(r[0]), "count": int(r[1])} for r in rows],
+        "window_days": window_days,
+    }
+
+
 @articles_feed_api.get("/pivot")
 async def entity_pivot(
     request: Request,
