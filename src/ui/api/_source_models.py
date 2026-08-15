@@ -131,6 +131,18 @@ class LivePreviewResponse(BaseModel):
     fetch_stage: str = "bot"
 
 
+class PreviewUrlRequest(BaseModel):
+    """POST /api/v1/sources/preview_url の入力 (保存前の取得テスト)。
+
+    編集中でまだ保存していない URL を対象にするため、config 解決ではなく
+    request の URL を fetch する (SSRF は url_guard で塞ぐ)。
+    """
+
+    url: str
+    kind: Literal["rss", "sitemap"]
+    url_include_pattern: str = ""  # sitemap のみ
+
+
 class DeleteSourceRequest(BaseModel):
     """POST /api/v1/sources/delete の入力。feed_id でソースを特定して削除する。"""
 

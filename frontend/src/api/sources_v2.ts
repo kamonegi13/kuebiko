@@ -160,6 +160,13 @@ export const sourcesV2Api = {
       { feed_ids: string[]; folder: string },
       { affected: number; commit: string | null; error: string | null }
     >("/api/v1/sources/set_folder", { feed_ids, folder }),
+  // 保存前の取得テスト (編集中の URL をその場で取得)。html_scraper は
+  // セレクタと一体で確認する必要があるため previewHtmlListingExplicit を使う。
+  previewUrl: (url: string, kind: "rss" | "sitemap", url_include_pattern = "") =>
+    postJson<
+      { url: string; kind: string; url_include_pattern: string },
+      LivePreviewResponse
+    >("/api/v1/sources/preview_url", { url, kind, url_include_pattern }),
   // 1 ソースの編集可能フィールド (取得設定フォームの初期値)。
   getEditable: async (feed_id: string): Promise<EditableSource> => {
     const r = await fetch(`/api/v1/sources/editable?feed_id=${encodeURIComponent(feed_id)}`, {

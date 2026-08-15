@@ -40,6 +40,7 @@ from src.ui.api._source_models import (
     PreviewExplicitRequest,
     PreviewHtmlListingRequest,
     PreviewHtmlListingResponse,
+    PreviewUrlRequest,
     RegisterRequest,
     RegisterResponse,
     RenameSourceRequest,
@@ -156,6 +157,29 @@ async def live_preview(req: LivePreviewRequest) -> LivePreviewResponse:
         return LivePreviewResponse(ok=False, error=f"unsafe url: {e}")
     except Exception as e:  # noqa: BLE001
         _log.warning("live_preview_failed", feed_id=req.feed_id, error=str(e))
+        return LivePreviewResponse(ok=False, error=str(e))
+
+
+@sources_api.post("/preview_url", response_model=LivePreviewResponse)
+def preview_url_endpoint(req: PreviewUrlRequest) -> LivePreviewResponse:
+    """保存前の取得テスト: 編集中の URL を今その場で取得して中身を返す。
+
+    「URL を直したが本当に取れるのか」を保存前に確かめられるようにする
+    (壊れた設定を保存すると、次の定期実行まで無音で気付けないため)。
+    """
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=400, detail="URL は http:// または https:// で始めてください"
+        )
+    try:
+        from src.ui.api._source_live_preview import preview_url
+
+        return preview_url(req.kind, url, url_include_pattern=req.url_include_pattern.strip())
+    except UnsafeUrlError as e:
+        return LivePreviewResponse(ok=False, error=f"安全でない URL です: {e}")
+    except Exception as e:  # noqa: BLE001
+        _log.warning("preview_url_failed", error=f"{type(e).__name__}: {e}")
         return LivePreviewResponse(ok=False, error=str(e))
 
 

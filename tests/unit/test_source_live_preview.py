@@ -126,3 +126,40 @@ async def test_dispatch_rss_for_bare_url(monkeypatch: pytest.MonkeyPatch) -> Non
     res = await lp.preview_subscription("https://example.com/feed/")
     assert res.kind == "rss"
     assert called["url"] == "https://example.com/feed/"
+
+
+class TestPreviewUrlBeforeSave:
+    """保存前の取得テスト — 編集中 (= config に未登録) の URL を対象にする経路。"""
+
+    def test_rss_url_not_yet_registered_is_fetched(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # 登録済みチェックを通さない (通すと「未登録の feed です」で常に失敗する)
+        feed = """<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
+          <item><title>記事1</title><link>https://e.example/a</link></item>
+          </channel></rss>"""
+        monkeypatch.setattr(lp, "assert_safe_public_url", lambda *a, **k: None)
+        monkeypatch.setattr(lp, "fetch_text", lambda *a, **k: (200, feed, {}, "bot"))
+        res = lp.preview_url("rss", "https://new.example/feed.xml")
+        assert res.ok and res.checked_url == "https://new.example/feed.xml"
+
+    def test_sitemap_uses_edited_pattern(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        xml = b"""<?xml version="1.0"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url><loc>https://e.example/news/a.html</loc></url>
+          <url><loc>https://e.example/other/b.html</loc></url>
+        </urlset>"""
+        monkeypatch.setattr(lp, "assert_safe_public_url", lambda *a, **k: None)
+        monkeypatch.setattr(lp, "fetch_bytes", lambda *a, **k: (200, xml, {}, "bot"))
+        monkeypatch.setattr(lp, "_fetch_page_title", lambda u: None)
+        res = lp.preview_url(
+            "sitemap",
+            "https://e.example/sitemap.xml",
+            url_include_pattern=r"^https://e\.example/news/",
+        )
+        assert res.ok and [i.url for i in res.items] == ["https://e.example/news/a.html"]
+
+    def test_registered_rss_still_requires_registration(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 登録済みソースの確認経路 (preview_subscription) の制約は維持されていること
+        monkeypatch.setattr(lp, "load_feeds_config", lambda: type("C", (), {"feeds": []})())
+        assert lp._preview_rss("https://new.example/feed.xml").error == "未登録の feed です"

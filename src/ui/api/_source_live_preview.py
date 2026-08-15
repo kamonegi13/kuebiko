@@ -3,9 +3,13 @@
 一覧でソースをクリックした際、今もそのソースが機能しているか (記事が取れるか)
 を確認するため最新情報をライブ取得する。
 
-セキュリティ: fetch 先 URL は request ではなく config (feeds/scrapers/watchers.yaml)
-から解決する。任意 URL を fetch させないことで SSRF を防ぐ。さらに解決した URL も
-url_guard で public 検証する。
+保存前の取得テスト (``preview_url``) も同じ描画を使う。編集途中の URL は config に
+まだ無いため、こちらだけは request 由来の URL を fetch する (登録ウィザードの
+discover / preview_html_listing と同じ扱い)。
+
+セキュリティ: 登録済みソースの確認 (``preview_subscription``) は fetch 先を config
+(feeds/scrapers/watchers.yaml) から解決する。保存前テストを含め **全経路で
+url_guard の public 検証を通す** (private / loopback / metadata は fetch しない)。
 """
 
 from __future__ import annotations
@@ -39,6 +43,11 @@ def _preview_rss(feed_url: str) -> LivePreviewResponse:
     cfg = load_feeds_config()
     if not any(f.url == feed_url for f in cfg.feeds):
         return LivePreviewResponse(ok=False, error="未登録の feed です")
+    return _preview_rss_url(feed_url)
+
+
+def _preview_rss_url(feed_url: str) -> LivePreviewResponse:
+    """feed URL を直接取得して中身を返す (登録の有無を問わない)。"""
     assert_safe_public_url(feed_url)
     status, body, headers, stage = fetch_text(feed_url)
     if status >= 400:
@@ -133,8 +142,11 @@ def _preview_sitemap(name: str) -> LivePreviewResponse:
     urls = e.get("sitemap_urls") or []
     if not urls:
         return LivePreviewResponse(ok=False, error="sitemap_urls が空です")
-    sitemap_url = str(urls[0])
-    pattern = str(e.get("url_include_pattern", ""))
+    return _preview_sitemap_url(str(urls[0]), str(e.get("url_include_pattern", "")))
+
+
+def _preview_sitemap_url(sitemap_url: str, pattern: str) -> LivePreviewResponse:
+    """サイトマップ URL を直接取得し、pattern に一致する URL を記事として返す。"""
     assert_safe_public_url(sitemap_url)
     status, body, _, stage = fetch_bytes(sitemap_url)
     if status >= 400:
@@ -181,3 +193,18 @@ async def preview_subscription(feed_id: str) -> LivePreviewResponse:
     if feed_id.startswith("watcher:"):
         return _preview_sitemap(feed_id[len("watcher:") :])
     return _preview_rss(feed_id)
+
+
+def preview_url(kind: str, url: str, *, url_include_pattern: str = "") -> LivePreviewResponse:
+    """**保存前**の取得テスト: 編集中の URL をその場で取得して中身を返す。
+
+    編集途中の URL は config にまだ無いため、``preview_subscription`` と違い
+    request 由来の URL を fetch する (登録ウィザードと同じ扱い)。SSRF は
+    ``assert_safe_public_url`` + fetch 層の guard で塞ぐ。
+
+    html_scraper はセレクタと一体で確認する必要があるため対象外
+    (UI は ``preview_html_listing_explicit`` を使う)。
+    """
+    if kind == "sitemap":
+        return _preview_sitemap_url(url, url_include_pattern)
+    return _preview_rss_url(url)
