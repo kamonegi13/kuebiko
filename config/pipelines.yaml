@@ -49,7 +49,9 @@ pipelines:
     minute: 0
   source:
     type: grok_email
-    max_articles: 5
+    # 9 タスク × hourly 体制 (2026-08-15): 毎時 9 通 + 停止復帰時のキャッチアップ分を
+    # 1 run で吸収できる値にする (5 のままだと毎時 4 通ずつ恒久滞留する)
+    max_articles: 15
     grok_sender_filters:
     - x.ai
     grok_subject_filters: []
