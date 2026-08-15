@@ -119,8 +119,11 @@ pip-delete-this-directory.txt
 
 # Phase 5T-T2 dry-run / debug output (記事タイトル等を含むため commit 除外)
 scripts/dry_run_output.json
-config/actor_aliases.enriched.yaml
-config/actor_aliases.translated.yaml
+# 2026-08-15 の config/ 区分再編でパスが変わった (生成物なので追跡しない)。
+# ⚠ ファイル移動時は .gitignore のパスも同時に直す — 直さないと除外が外れ、
+# 生成物や運用データが public リポに紛れ込む (実際に混入しかけた)。
+config/cti/actor_aliases.enriched.yaml
+config/cti/actor_aliases.translated.yaml
 
 # 運用者ローカルの私的コンテキスト (公開リポに含めない)
 CLAUDE.local.md
