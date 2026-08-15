@@ -295,3 +295,11 @@ class TestHourlyAdditions:
             account_class="vendor_official",
         )
         assert filter_records([rec]) == []
+
+    def test_heartbeat_only_body_detected_for_quiet_classification(self) -> None:
+        # orchestrator が「静穏 (row 不生成)」と「本当の失敗 (extract_failed)」を
+        # body 再パースで判別する経路の回帰固定
+        quiet = parse_jsonl('{"status":"no_events","window_minutes":90}')
+        assert quiet.heartbeat_count > 0 and quiet.records == []
+        failed = parse_jsonl("")  # 完全な空出力 = ハートビート無し → 障害扱いのまま
+        assert failed.heartbeat_count == 0
