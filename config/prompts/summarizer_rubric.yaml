@@ -494,7 +494,7 @@ examples:
         "iocs": [],
         "mitre_techniques": [],
         "analyst_note": "",
-        "article_type": "informational",
+        "article_type": "opinion",
         "routing_flags": {
           "japan_targeted": false,
           "is_breaking_critical": false,
