@@ -31,7 +31,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -52,6 +52,7 @@ _log = get_logger(__name__)
 DEFAULT_USER_AGENT = "kuebiko/1.0 (+sitemap-watcher)"
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_MAX_POSTS_PER_RUN = 10
+DEFAULT_UNSEEN_MAX_AGE_DAYS = 14
 
 # Sitemap 0.9 spec は http:// namespace を正規としているが、
 # 一部サイト (IPA 等) は https:// 版で宣言しているため、
@@ -66,6 +67,44 @@ def _findall_localname(root: ET.Element, path: list[str]) -> list[ET.Element]:
     """
     xpath = ".//" + "/".join(f"{{*}}{p}" for p in path)
     return list(root.findall(xpath))
+
+
+# (記事 URL, lastmod)。lastmod は sitemap が持たない場合 None。
+SitemapEntry = tuple[str, datetime | None]
+
+
+def parse_lastmod(text: str | None) -> datetime | None:
+    """``<lastmod>`` を aware datetime に正規化する (解釈できなければ None)。
+
+    ⚠ 同一 sitemap 内で ``2026-07-30`` (日付のみ) と ``2026-07-30T12:00:00+09:00``
+    が混在するサイトが実在するため、**naive は UTC とみなして必ず aware に揃える**。
+    揃えないと後段の比較が ``can't compare offset-naive and offset-aware`` で落ちる。
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _parse_urlset_entries(root: ET.Element) -> list[SitemapEntry]:
+    """``<urlset>`` から (loc, lastmod) を取り出す。
+
+    ``<loc>`` だけを平坦に拾うと lastmod との対応が失われるため、``<url>`` 単位で読む。
+    """
+    entries: list[SitemapEntry] = []
+    for url_el in root.findall(".//{*}url"):
+        loc_el = url_el.find("{*}loc")
+        if loc_el is None or not loc_el.text:
+            continue
+        lastmod_el = url_el.find("{*}lastmod")
+        entries.append(
+            (loc_el.text, parse_lastmod(lastmod_el.text if lastmod_el is not None else None))
+        )
+    return entries
 
 
 class WatcherState(BaseModel):
@@ -104,6 +143,11 @@ class SitemapWatcher:
     max_posts_per_run: int = DEFAULT_MAX_POSTS_PER_RUN
     user_agent: str = DEFAULT_USER_AGENT
     http_timeout: float = DEFAULT_HTTP_TIMEOUT
+    # 未見でも lastmod がこれより古い URL は取り込まない (direct_rss_source と同じ安全弁)。
+    # 新規ソース登録時に sitemap 全件 (数千件・数年分) が「新着」として流入するのを防ぐ。
+    # ⚠ init_seen() は bespoke watcher からしか呼ばれず、UI 登録経路では走らないため
+    # この guard が唯一の防波堤。lastmod が無い URL は判定できないので通す。
+    unseen_max_age_days: int = DEFAULT_UNSEEN_MAX_AGE_DAYS
     # 死活観測 (2026-08-02)。frozen dataclass だが中身は可変ホルダなので記録できる。
     # 詳細と設計理由は src/tools/source_fetch_outcome.py を参照。
     observation: FetchObservation = field(
@@ -117,7 +161,7 @@ class SitemapWatcher:
 
     # ---- URL 取得 ----
 
-    async def _fetch_sitemap(self, client: httpx.AsyncClient, url: str) -> list[str]:
+    async def _fetch_sitemap(self, client: httpx.AsyncClient, url: str) -> list[SitemapEntry]:
         """1 つの sitemap URL から ``<url><loc>`` の値を取り出す。
 
         sitemap index (``<sitemapindex>``) が返された場合は 1 階層だけ再帰して
@@ -174,7 +218,7 @@ class SitemapWatcher:
             sub_urls = [
                 loc.text or "" for loc in _findall_localname(root, ["sitemap", "loc"]) if loc.text
             ]
-            results: list[str] = []
+            results: list[SitemapEntry] = []
             for sub_url in sub_urls:
                 # 再帰呼び出しは 1 階層のみ (深さ制御のため局所処理)。
                 # sub_url は sitemap 本文由来 = 攻撃者制御可能なので fetch 前に SSRF 検証する
@@ -184,11 +228,7 @@ class SitemapWatcher:
                     sub_resp = await client.get(sub_url)
                     sub_resp.raise_for_status()
                     sub_root = ET.fromstring(sub_resp.text)
-                    results.extend(
-                        loc.text or ""
-                        for loc in _findall_localname(sub_root, ["url", "loc"])
-                        if loc.text
-                    )
+                    results.extend(_parse_urlset_entries(sub_root))
                 except (httpx.HTTPError, ET.ParseError, UnsafeUrlError) as e:
                     _log.warning(
                         "sitemap_sub_fetch_failed",
@@ -199,15 +239,15 @@ class SitemapWatcher:
             return results
 
         if local == "urlset":
-            return [loc.text or "" for loc in _findall_localname(root, ["url", "loc"]) if loc.text]
+            return _parse_urlset_entries(root)
 
         _log.warning("sitemap_unknown_root", watcher=self.name, tag=tag)
         return []
 
-    async def _collect_all_urls(self) -> list[str]:
-        """全 sitemap_urls から URL を集約 (重複排除済)。"""
+    async def _collect_all_entries(self) -> list[SitemapEntry]:
+        """全 sitemap_urls から (URL, lastmod) を集約 (URL 重複排除済)。"""
         seen_dedup: set[str] = set()
-        out: list[str] = []
+        out: list[SitemapEntry] = []
         # UA ヘッダは fetch_policy が per-request で組む (client 既定 UA は持たない)
         async with httpx.AsyncClient(
             timeout=self.http_timeout,
@@ -221,21 +261,21 @@ class SitemapWatcher:
         for result in results:
             if isinstance(result, BaseException):
                 continue
-            for url in result:
+            for url, lastmod in result:
                 if url not in seen_dedup:
                     seen_dedup.add(url)
-                    out.append(url)
+                    out.append((url, lastmod))
         return out
 
-    def _filter_urls(self, urls: list[str]) -> list[str]:
+    def _filter_entries(self, entries: list[SitemapEntry]) -> list[SitemapEntry]:
         """include / exclude regex で URL を篩う。"""
-        out: list[str] = []
-        for u in urls:
+        out: list[SitemapEntry] = []
+        for u, lastmod in entries:
             if not self.url_include_pattern.search(u):
                 continue
             if self.url_exclude_pattern and self.url_exclude_pattern.search(u):
                 continue
-            out.append(u)
+            out.append((u, lastmod))
         return out
 
     # ---- seen state ----
@@ -259,21 +299,29 @@ class SitemapWatcher:
 
     # ---- Article 変換 ----
 
-    def _url_to_article(self, url: str) -> Article:
-        """URL を ``Article`` に変換。本文と公開日は後段 trafilatura が取得する。"""
+    def _url_to_article(self, url: str, lastmod: datetime | None = None) -> Article:
+        """URL を ``Article`` に変換。``published`` は sitemap の lastmod を使う。
+
+        ⚠ 以前は無条件に ``datetime.now()`` を入れており、コメントは「後段で trafilatura が
+        取得し直す」と書いていたが **その再取得は配線されていなかった** (extract 側の
+        ``published_date`` は消費者ゼロ)。結果、sitemap/scraper 由来の記事は
+        ``published_at`` = 取込時刻になり、**何年も前の記事が「今日」として入っていた**
+        (実測: 該当ソースの 100% が published≈created。RSS 系の自然な同時刻率は 21%)。
+        published_at は地図の時間窓・ブリーフ・台帳の基準なので影響範囲が広い。
+        """
         article_id = f"{self.name}:{hashlib.sha1(url.encode()).hexdigest()[:16]}"
         # 暫定 title は URL の最後の slug
         slug = url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ")
         title = slug[:200] if slug else url
-        # 公開日は後段で trafilatura が取得し直すので暫定で current time
-        published = datetime.now().astimezone()
         return Article(
             id=article_id,
             title=title,
             url=url,
             summary_html="",
             author=None,
-            published=published,
+            # lastmod が無い sitemap のみ取込時刻へ fallback (placeholder であることを明示)。
+            published=lastmod or datetime.now().astimezone(),
+            published_is_placeholder=lastmod is None,
             feed_title=self.feed_title,
             feed_url=self.sitemap_urls[0] if self.sitemap_urls else "",
         )
@@ -288,13 +336,13 @@ class SitemapWatcher:
         """
         cap = min(max_count or self.max_posts_per_run, self.max_posts_per_run)
 
-        all_urls = await self._collect_all_urls()
+        all_urls = await self._collect_all_entries()
         if not all_urls:
             _log.warning("sitemap_no_urls", watcher=self.name)
             self.observation.record_failure("sitemap を取得できないか URL が 0 件です")
             return []
 
-        filtered = self._filter_urls(all_urls)
+        filtered = self._filter_entries(all_urls)
         if not filtered:
             # sitemap は取れているのに include/exclude に 1 件も一致しない = パターン
             # 陳腐化 (年別パスの年跨ぎ / サイト構造変更)。無音で死ぬ経路なので失敗扱い。
@@ -305,7 +353,8 @@ class SitemapWatcher:
             return []
         self.observation.record_success(len(filtered))
         seen = self._load_seen()
-        new_urls = [u for u in filtered if u not in seen]
+        unseen = [(u, lm) for (u, lm) in filtered if u not in seen]
+        fresh, stale = self._partition_stale(unseen)
 
         _log.info(
             "sitemap_fetch",
@@ -313,33 +362,53 @@ class SitemapWatcher:
             total=len(all_urls),
             filtered=len(filtered),
             seen=len(seen),
-            new=len(new_urls),
+            new=len(fresh),
+            dropped_stale=len(stale),
         )
 
-        if not new_urls:
-            return []
-
-        if len(new_urls) > cap:
+        if len(fresh) > cap:
             _log.warning(
                 "sitemap_too_many_new_capping",
                 watcher=self.name,
-                new=len(new_urls),
+                new=len(fresh),
                 cap=cap,
             )
-            new_urls = new_urls[:cap]
+            fresh = fresh[:cap]
 
         # seen 更新は fetch 時 (主パイプラインの mark_as_read と同設計、
-        # crash 時は再試行されないトレードオフを許容)
-        seen.update(new_urls)
-        self._save_seen(seen)
+        # crash 時は再試行されないトレードオフを許容)。
+        # 既読化するのは「今回返す分」と「古くて捨てた分」だけ。
+        # ⚠ cap 超過分を既読化してはいけない — 次回以降に取れなくなり記事を永久に失う。
+        # ⚠ 逆に捨てた分を既読化しないと、毎回 lastmod 比較をやり直して同じログが出続ける
+        #   (dedup と同じ「不採用も既読という終端状態にする」設計)。
+        newly_seen = {u for (u, _) in stale} | {u for (u, _) in fresh}
+        if newly_seen:
+            seen.update(newly_seen)
+            self._save_seen(seen)
 
-        return [self._url_to_article(u) for u in new_urls]
+        return [self._url_to_article(u, lm) for (u, lm) in fresh]
+
+    def _partition_stale(
+        self, entries: list[SitemapEntry]
+    ) -> tuple[list[SitemapEntry], list[SitemapEntry]]:
+        """未見 URL を (取り込む, 古すぎて捨てる) に分ける。
+
+        lastmod が無い URL は古さを判定できないので通す (fail-open)。
+        """
+        if self.unseen_max_age_days <= 0:
+            return entries, []
+        cutoff = datetime.now(UTC) - timedelta(days=self.unseen_max_age_days)
+        fresh: list[SitemapEntry] = []
+        stale: list[SitemapEntry] = []
+        for url, lastmod in entries:
+            (stale if lastmod is not None and lastmod < cutoff else fresh).append((url, lastmod))
+        return fresh, stale
 
     async def init_seen(self) -> int:
         """現状の全 URL を seen として記録する (初回 false-positive 防止)。"""
-        all_urls = await self._collect_all_urls()
-        filtered = self._filter_urls(all_urls)
-        urls = set(filtered)
+        all_urls = await self._collect_all_entries()
+        filtered = self._filter_entries(all_urls)
+        urls = {u for (u, _) in filtered}
         self._save_seen(urls)
         _log.info("sitemap_init", watcher=self.name, marked_seen=len(urls))
         return len(urls)

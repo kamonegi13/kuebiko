@@ -259,6 +259,7 @@ class PlaywrightWatcher:
         article_id = f"{self.name}:{hashlib.sha1(url.encode()).hexdigest()[:16]}"  # noqa: S324
         slug = url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").replace("_", " ")
         title = slug[:200] if slug else url
+        # 一覧 DOM に公開日が無いので取込時刻を代用 (旗で実公開日でないことを明示)。
         published = datetime.now().astimezone()
         return Article(
             id=article_id,
@@ -267,6 +268,7 @@ class PlaywrightWatcher:
             summary_html="",
             author=None,
             published=published,
+            published_is_placeholder=True,
             feed_title=self.feed_title,
             feed_url=self.target_url,
         )

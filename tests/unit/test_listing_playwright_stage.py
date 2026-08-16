@@ -64,7 +64,7 @@ async def test_sitemap_blocked_challenge_recovers_via_playwright(
     urls = await w._fetch_sitemap(cast(httpx.AsyncClient, SimpleNamespace()), w.sitemap_urls[0])
 
     assert called["url"] == w.sitemap_urls[0]
-    assert urls == ["https://understandingwar.org/research/some-report"]
+    assert urls == [("https://understandingwar.org/research/some-report", None)]
 
 
 @pytest.mark.asyncio

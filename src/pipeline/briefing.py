@@ -71,6 +71,7 @@ async def _process_article(
     else:
         extraction = await extractor.extract(article.url)
         body, body_source, extraction_failure_reason = _resolve_body(article, extraction)
+        article = _resolve_published(article, extraction)
     degenerate = _degenerate_body_reason(body)
     if degenerate is not None:
         # 取得側の失敗理由 (http_error_403 等) を運ぶ — raise で破棄すると初回
@@ -344,6 +345,26 @@ def body_source_for_extraction(extraction: ExtractionResult) -> str:
         if extraction.extraction_method == "playwright+trafilatura"
         else "full_extract"
     )
+
+
+def _resolve_published(article: Article, extraction: ExtractionResult) -> Article:
+    """``published`` が代用値の記事に、抽出したページ公開日を充てる (2026-08-16)。
+
+    sitemap(lastmod なし) / HTML 一覧 / Playwright 一覧は取得時点で公開日を知れないため
+    取込時刻を入れている。``ContentExtractor`` は ``published_date`` を取っていたが
+    **消費者がゼロ (write-only) で、実公開日は捨てられていた**。その結果 published_at =
+    取込時刻となり、何年も前の記事が「今日」として台帳・地図・ブリーフに載っていた。
+
+    実公開日が判った時点で置き換え、旗を下ろす。抽出が日付を取れなければ代用値のまま
+    (旗も立てたまま) にして、「判らない」を「今日」と偽らない。
+    """
+    if not article.published_is_placeholder:
+        return article
+    extracted = extraction.published_date
+    if extracted is None:
+        return article
+    resolved = extracted if extracted.tzinfo else extracted.replace(tzinfo=UTC)
+    return article.model_copy(update={"published": resolved, "published_is_placeholder": False})
 
 
 def _resolve_body(article: Article, extraction: ExtractionResult) -> tuple[str, str, str | None]:

@@ -29,3 +29,8 @@ class Article(BaseModel):
     # triage 精度向上のため、ここに本文があれば triage / 本処理がこれを優先利用する
     # (本処理での再抽出を回避)。通常の fetch 時点では None。
     body_text: str | None = None
+    # ``published`` が source から得た実公開日でなく取込時刻の代用値か (2026-08-16)。
+    # sitemap の lastmod 無し / HTML 一覧のように、取得時点で公開日が判らない経路が
+    # True を立てる。**「published が信用できるか」を後段が判定できるようにするための旗**で、
+    # これが無いと取込時刻と実公開日が区別できず、古い記事が「今日」として扱われる。
+    published_is_placeholder: bool = False

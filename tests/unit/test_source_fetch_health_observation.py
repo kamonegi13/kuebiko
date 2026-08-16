@@ -145,7 +145,10 @@ class TestSitemapObservation:
     ) -> None:
         w = _sitemap_watcher(tmp_path)
         urls = ["https://example.com/news/1", "https://example.com/news/2"]
-        monkeypatch.setattr(SitemapWatcher, "_collect_all_urls", AsyncMock(return_value=urls))
+        entries = [(u, None) for u in urls]
+        monkeypatch.setattr(
+            SitemapWatcher, "_collect_all_entries", AsyncMock(return_value=entries)
+        )
         w._save_seen(set(urls))
 
         articles = await w.fetch_articles()
@@ -164,8 +167,8 @@ class TestSitemapObservation:
         w = _sitemap_watcher(tmp_path)
         monkeypatch.setattr(
             SitemapWatcher,
-            "_collect_all_urls",
-            AsyncMock(return_value=["https://example.com/articles/1"]),
+            "_collect_all_entries",
+            AsyncMock(return_value=[("https://example.com/articles/1", None)]),
         )
 
         await w.fetch_articles()
@@ -179,7 +182,7 @@ class TestSitemapObservation:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         w = _sitemap_watcher(tmp_path)
-        monkeypatch.setattr(SitemapWatcher, "_collect_all_urls", AsyncMock(return_value=[]))
+        monkeypatch.setattr(SitemapWatcher, "_collect_all_entries", AsyncMock(return_value=[]))
 
         await w.fetch_articles()
         outcome = w.last_fetch_outcome()

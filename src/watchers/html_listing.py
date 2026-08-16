@@ -207,7 +207,10 @@ class HtmlListingWatcher:
             url=url,
             summary_html="",
             author=None,
+            # HTML 一覧には公開日が無いので取込時刻を代用する。実公開日でないことを
+            # 旗で明示し、後段が「取込時刻を公開日として信用する」のを防ぐ (2026-08-16)。
             published=datetime.now().astimezone(),
+            published_is_placeholder=True,
             feed_title=self.feed_title,
             feed_url=self.listing_url,
         )
