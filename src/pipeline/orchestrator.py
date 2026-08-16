@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 
 import jinja2
 
@@ -84,6 +86,95 @@ _MIN_PROCESSING_BUDGET_RATIO = 0.5
 # CVE cap が除去済で、これは未知の暴走への保険。env PER_ARTICLE_TIMEOUT_SECONDS で
 # override (0 以下で無効)。
 _PER_ARTICLE_TIMEOUT_SECONDS_DEFAULT = 600.0
+
+
+# 記事処理の同時実行数 (2026-08-17)。既定 1 = 従来の逐次挙動。
+#
+# 実測 (gemma4:26b、入力 4,532 字、4 件): 並列化の効果は処理の形状で符号が逆転する。
+#   - prefill 主体 (triage 型、出力 16 tok):    逐次 7.48s → 並列 10.97s = 0.68x (悪化)
+#   - decode 主体 (summarizer 型、出力 400 tok): 逐次 43.49s → 並列 27.79s = 1.56x (改善)
+# prefill は単独で GPU 演算を飽和させるため束ねると競合し、decode はメモリ帯域律速で
+# 演算が余っているため束ねると効く。記事処理は decode 主体なのでここだけを並列化する。
+#
+# **単独では効かない**: Ollama は既定 1 スロットで同時要求を直列化するため、
+# ここを上げるだけでは実効並列度が上がらない。ホスト側 OLLAMA_NUM_PARALLEL の
+# 引き上げと対で運用する (詳細は docs/deployment.md)。
+_ARTICLE_CONCURRENCY_DEFAULT = 1
+_ARTICLE_CONCURRENCY_MAX = 8
+
+
+def _article_concurrency() -> int:
+    """記事処理の同時実行数を解決する (env override → 既定 1、壊れた値は安全側=逐次)。"""
+    raw = os.environ.get("ARTICLE_CONCURRENCY", "").strip()
+    if not raw:
+        return _ARTICLE_CONCURRENCY_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _ARTICLE_CONCURRENCY_DEFAULT
+    if value < 1:
+        return _ARTICLE_CONCURRENCY_DEFAULT
+    return min(value, _ARTICLE_CONCURRENCY_MAX)
+
+
+@dataclass(frozen=True)
+class _ArticleWork:
+    """記事 1 本の処理が生んだ寄与分。
+
+    共有 list を直接 append すると並列化で順序が非決定になるため、各記事は自分の
+    寄与だけを返し、呼び出し側が**入力順に**統合する。
+    """
+
+    briefings: tuple[tuple[str, BriefingMessage], ...]
+    outcomes: tuple[dict[str, object], ...]
+    errors: tuple[str, ...]
+    # (sub_id, 親 article) — Grok 展開時のみ非空
+    grok_subarticles: tuple[tuple[str, Article], ...]
+
+    @staticmethod
+    def empty() -> _ArticleWork:
+        return _ArticleWork(briefings=(), outcomes=(), errors=(), grok_subarticles=())
+
+
+async def _run_articles_bounded[T, R](
+    items: Sequence[T],
+    handler: Callable[[T], Awaitable[R]],
+    *,
+    concurrency: int,
+    should_stop: Callable[[], bool] | None,
+) -> tuple[list[R], int]:
+    """``items`` を入力順に取り出し、最大 ``concurrency`` 本を同時に処理する。
+
+    戻り値は ``(着手した分の結果を入力順に並べた list, 繰越件数)``。
+
+    ``should_stop`` は soft deadline 判定。**新規の着手だけを止め、実行中は完走させる**
+    (逐次ループの ``break`` と同じ意味 — 処理済み分は投稿/永続化に乗せて成果を確定する)。
+
+    ``handler`` は自分で例外を処理する契約。漏れた例外は握り潰さず伝播させる
+    (逐次ループでも run 全体へ伝播していたため、並列化で障害を隠さない)。
+    """
+    if not items:
+        return [], 0
+
+    results: dict[int, R] = {}
+    next_index = 0
+    deferred = 0
+
+    async def worker() -> None:
+        nonlocal next_index, deferred
+        while True:
+            # await を挟まないので index の取得と更新は不可分 (単一スレッドの asyncio)
+            if next_index >= len(items):
+                return
+            index = next_index
+            next_index += 1
+            if should_stop is not None and should_stop():
+                deferred += 1
+                continue
+            results[index] = await handler(items[index])
+
+    await asyncio.gather(*[worker() for _ in range(max(1, concurrency))])
+    return [results[i] for i in sorted(results)], deferred
 
 
 def _per_article_timeout_seconds() -> float | None:
@@ -428,18 +519,17 @@ async def run_pipeline(
         _log.warning("kev_refresh_failed", error=str(e))
 
     article_timeout = _per_article_timeout_seconds()
-    for article_index, article in enumerate(articles):
-        # soft deadline 超過 → 残記事を次 run へ繰越 (既読化しない = リトライ権保持)。
-        # 処理済み分は以降の投稿/既読化/永続化フローに乗り、成果として確定する。
-        if soft_deadline is not None and time.monotonic() >= soft_deadline:
-            deferred_count = len(articles) - article_index
-            _log.warning(
-                "pipeline_soft_deadline_reached",
-                processed=article_index,
-                deferred=deferred_count,
-                time_budget_seconds=time_budget_seconds,
-            )
-            break
+
+    async def _handle_article(article: Article) -> _ArticleWork:
+        """記事 1 本を処理し、**共有 list を触らずに**寄与分だけを返す。
+
+        並列化 (ARTICLE_CONCURRENCY) しても下流の突合が壊れないよう、結果は
+        呼び出し側が入力順に統合する。例外は従来どおりここで拾い切る。
+        """
+        briefings: list[tuple[str, BriefingMessage]] = []
+        article_outcomes: list[dict[str, object]] = []
+        errors: list[str] = []
+        grok_subarticles: list[tuple[str, Article]] = []
         try:
             if _is_grok_article(article):
                 # Grok レポート (JSONL output) を tweet 単位の briefing に展開する。
@@ -471,16 +561,16 @@ async def run_pipeline(
                             article_id=article.id,
                             url=article.url,
                         )
-                    continue
+                    return _ArticleWork.empty()
                 for idx, msg in enumerate(expanded):
                     # per-tweet 一意 id (親共有による body/entity 混載バグの修正)
                     sub_id = _grok_subarticle_id(article.id, msg, idx)
-                    grok_subarticles[sub_id] = article
                     # 2026-07-05 退行修正: persist 用 map にも登録する。65c5dc4 が
                     # ここを登録し忘れ、_persist_article_outcomes が sub_id を
                     # 「記事不明」で skip → Grok tweet が articles テーブル
                     # (web UI/検索/entity 層) から 6/17 以降消えていた。
-                    articles_by_id_local[sub_id] = article
+                    # (統合側で grok_subarticles / articles_by_id_local 双方へ入れる)
+                    grok_subarticles.append((sub_id, article))
                     briefings.append((sub_id, msg))
                     article_outcomes.append(
                         {
@@ -560,6 +650,36 @@ async def run_pipeline(
                     "transient_failure": is_transient,
                 },
             )
+        return _ArticleWork(
+            briefings=tuple(briefings),
+            outcomes=tuple(article_outcomes),
+            errors=tuple(errors),
+            grok_subarticles=tuple(grok_subarticles),
+        )
+
+    # soft deadline 超過 → 残記事を次 run へ繰越 (既読化しない = リトライ権保持)。
+    # 着手済みは完走させ、投稿/既読化/永続化フローに乗せて成果を確定する。
+    _works, deferred_count = await _run_articles_bounded(
+        articles,
+        _handle_article,
+        concurrency=_article_concurrency(),
+        should_stop=(None if soft_deadline is None else lambda: time.monotonic() >= soft_deadline),
+    )
+    if deferred_count:
+        _log.warning(
+            "pipeline_soft_deadline_reached",
+            processed=len(articles) - deferred_count,
+            deferred=deferred_count,
+            time_budget_seconds=time_budget_seconds,
+        )
+    # 入力順に統合する (並列でも下流の突合と投稿順が変わらない)
+    for _work in _works:
+        briefings.extend(_work.briefings)
+        article_outcomes.extend(_work.outcomes)
+        errors.extend(_work.errors)
+        for _sub_id, _parent in _work.grok_subarticles:
+            grok_subarticles[_sub_id] = _parent
+            articles_by_id_local[_sub_id] = _parent
 
     # 3. 投稿 (dry-run 時は stdout に整形プレビュー)
     if dry_run:
