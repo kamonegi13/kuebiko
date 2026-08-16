@@ -34,6 +34,8 @@ from structlog.types import EventDict
 
 # CLAUDE.md §4 で出力禁止と明示された値の格納先キー名。
 # 大文字小文字を無視した部分一致で検出する。追加が必要になったらここに足す。
+# 部分一致ゆえ ``input_tokens`` / ``email_count`` 等の数値テレメトリを巻き込むため、
+# 値が数値のときはマスクしない (``_is_numeric_telemetry`` に根拠)。
 SENSITIVE_KEYS: tuple[str, ...] = (
     "api_key",
     "token",
@@ -78,6 +80,22 @@ def _mask_value(value: Any) -> str:
     return value[:MASK_PREFIX_LEN] + MASK_SUFFIX
 
 
+def _is_numeric_telemetry(value: Any) -> bool:
+    """数値 (int / float / bool) か。True ならキー名が一致してもマスクしない。
+
+    CLAUDE.md §4 の出力禁止項目 (API キー / トークン / パスワード / メールアドレス /
+    IMAP 認証情報 / Discord webhook URL / 記事本文) はいずれも文字列であり、数値が
+    機密になる経路が無い。よって型で切り分けても二重防御の強度は落ちない。
+
+    背景 (2026-08-16): ``SENSITIVE_KEYS`` はキー名の部分一致で判定するため、
+    ``token`` が ``input_tokens`` / ``max_tokens`` を、``email`` が ``email_count``
+    を巻き添えにし、LLM のコスト計測に必要な実測値を 30 日で 44,281 件失っていた。
+    キー名の allowlist にすると新しい数値キーが再び黙って消えるため、値の型で
+    クラスごと塞ぐ。
+    """
+    return isinstance(value, (int, float))
+
+
 def _mask_text(text: str) -> str:
     """文字列内に埋め込まれた webhook URL / メールアドレスをマスクする (二重防御)。"""
     return _EMAIL_RE.sub(_MASKED_EMAIL, _WEBHOOK_URL_RE.sub(_MASKED_WEBHOOK, text))
@@ -89,7 +107,7 @@ def _mask_event_dict(d: EventDict) -> EventDict:
     for key, value in d.items():
         key_lc = key.lower()
         if any(s in key_lc for s in SENSITIVE_KEYS):
-            masked[key] = _mask_value(value)
+            masked[key] = value if _is_numeric_telemetry(value) else _mask_value(value)
         elif isinstance(value, str):
             masked[key] = _mask_text(value)
         elif isinstance(value, dict):

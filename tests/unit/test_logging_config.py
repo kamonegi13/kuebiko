@@ -117,6 +117,71 @@ class TestMaskEventDict:
         assert original == {"api_key": "1234567890"}
 
 
+# ----------------- 数値テレメトリの誤検知 (2026-08-16 回帰防止) -----------------
+
+
+class TestNumericTelemetryIsNotMasked:
+    """キー名の部分一致が数値テレメトリを巻き添えにしないことを固定する。
+
+    背景: ``token`` が ``input_tokens`` / ``max_tokens`` を、``email`` が
+    ``email_count`` をマスクし、LLM のコスト計測に必要な実測値を 30 日間で
+    44,281 件失っていた。CLAUDE.md §4 の禁止項目 (API キー / トークン /
+    パスワード / メールアドレス / IMAP 認証情報 / webhook URL / 記事本文) は
+    すべて文字列であり、数値が機密になる経路が無いため型で切り分ける。
+    """
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("input_tokens", 8366),
+            ("output_tokens", 519),
+            ("max_tokens", 4096),
+            ("email_count", 64),
+            ("prompt_token_count", 0),
+            ("duration_seconds_per_token", 0.0098),
+        ],
+    )
+    def test_numeric_value_under_sensitive_key_is_kept(self, key: str, value: object) -> None:
+        assert _mask_event_dict({key: value}) == {key: value}
+
+    def test_numeric_telemetry_survives_in_nested_dict(self) -> None:
+        out = _mask_event_dict({"usage": {"input_tokens": 8366, "api_key": "1234567890"}})
+        assert out["usage"]["input_tokens"] == 8366
+        assert out["usage"]["api_key"] == "1234***"
+
+    # --- ここから下は緩和してはいけない性質 (security pin) ---
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("token", "abcdef123456"),
+            ("input_tokens", "abcdef123456"),
+            ("api_key", "sk-1234567890"),
+            ("imap_user", "operator-account"),
+            ("email", "someone@example.com"),
+        ],
+    )
+    def test_string_value_under_sensitive_key_is_still_masked(self, key: str, value: str) -> None:
+        assert _mask_event_dict({key: value})[key].endswith(MASK_SUFFIX)
+
+    def test_ollama_response_shape_is_fully_observable(self) -> None:
+        """実際に失われていたログ形状が、そのまま観測できることを固定する。"""
+        out = _mask_event_dict(
+            {
+                "event": "ollama_response",
+                "model": "gemma4:26b",
+                "duration_seconds": 7.124,
+                "input_tokens": 8366,
+                "output_tokens": 519,
+                "output_chars": 604,
+                "structured": True,
+            },
+        )
+        assert out["input_tokens"] == 8366
+        assert out["output_tokens"] == 519
+        assert out["duration_seconds"] == 7.124
+
+
 # ----------------- 単体: structlog プロセッサシム -----------------
 
 
