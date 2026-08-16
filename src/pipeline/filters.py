@@ -21,13 +21,13 @@ _log = get_logger(__name__)
 
 # triage の同時実行数 (2026-08-17)。既定 5 = 従来どおり。
 #
-# triage は「長い入力 → ごく短い出力」= prefill 主体で、実測では並列化すると **遅くなる**
-# (gemma4:26b、4 件: 逐次 7.48s → 並列 10.97s = 0.68x)。prefill は単独で GPU 演算を
-# 飽和させるため束ねると競合するだけで、decode 主体の記事処理とは逆の性質を持つ。
+# triage は「長い入力 → ごく短い出力」= prefill 主体。prefill は 1 リクエストだけで
+# GPU 演算器を飽和させるため、束ねても **速くも遅くもならない**。実測 (gemma4:26b、
+# 4 件 x 3 往復 ABABAB、OLLAMA_NUM_PARALLEL=4): 逐次 9.84s / 並列 9.89s = 1.00x。
 #
-# 現状は Ollama が既定 1 スロットで同時要求を直列化する (実効並列度 1.02x) ため、
-# ここが 5 でも実害は出ていない。**ホスト側 OLLAMA_NUM_PARALLEL を上げるときは、
-# ここを 1 に落とす**こと (でないと triage だけが 0.68x で悪化する)。
+# ⚠ 当初「並列で 0.68x に悪化する」と記録したが、これは 1 回ずつの単発測定によるノイズで
+# 反復すると再現しなかった。**triage の並列度は速度上どちらでもよい** (既定 5 のまま)。
+# 速度に効くのは decode 主体の記事処理側 (ARTICLE_CONCURRENCY、実測 1.85x)。
 _TRIAGE_CONCURRENCY_DEFAULT = 5
 _TRIAGE_CONCURRENCY_MAX = 8
 
