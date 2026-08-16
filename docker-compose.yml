@@ -131,6 +131,15 @@ services:
       # (通知再設計 web-only disposition は channel レジストリの push 属性=情報フローで設定。
       #  env フラグは廃止し制御面を routing/flow に一本化した)
       # (GIT_AUTHOR/COMMITTER env は撤去: アプリの git auto-commit は廃止済 = git を触らない)
+      # LLM 呼出の同時実行数 (2026-08-17)。既定は現行挙動 (記事=逐次 / triage=5)。
+      # 実測: 並列化の効果は処理の形状で符号が逆転する (gemma4:26b、4 件)。
+      #   decode 主体 (記事処理、出力 400tok): 逐次 43.49s → 並列 27.79s = 1.56x (改善)
+      #   prefill 主体 (triage、出力 16tok):   逐次  7.48s → 並列 10.97s = 0.68x (悪化)
+      # **3 点セットで初めて効く**: ホストの OLLAMA_NUM_PARALLEL を上げる (既定 1 スロットは
+      # 同時要求を直列化する) + ARTICLE_CONCURRENCY を上げる + TRIAGE_CONCURRENCY を 1 に落とす。
+      # どれか 1 つだけ動かすと効かないか、triage が遅くなる。
+      ARTICLE_CONCURRENCY: ${ARTICLE_CONCURRENCY:-1}
+      TRIAGE_CONCURRENCY: ${TRIAGE_CONCURRENCY:-5}
 
     # 設定・プロンプト・データを bind mount で共有
     # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する
