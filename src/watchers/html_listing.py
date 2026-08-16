@@ -20,7 +20,6 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin
 
 import httpx
 
@@ -119,12 +118,20 @@ class HtmlListingWatcher:
         except ImportError as e:
             _log.error("html_listing_bs4_missing", watcher=self.name, error=str(e))
             return []
-        from src.tools.link_title import is_better_title, resolve_link_title
+        from src.tools.link_title import (
+            base_href_of,
+            is_better_title,
+            resolve_link_title,
+            resolve_link_url,
+        )
 
         soup = BeautifulSoup(html, "html.parser")
         # 同一 URL が複数回一致する (画像ラッパ a と見出し a) 前提で、後から来た
         # 良いタイトルに差し替える。preview と同じ規則を使う (見た目と取込を一致させる)。
         found: dict[str, str] = {}
+        # 相対 URL の基準は <base href> が宣言されていればそちら (HTML 標準)。
+        # preview 側と同じ規則を共有する (見えているもの = 取り込まれるもの)。
+        base_href = base_href_of(soup)
         try:
             elements = soup.select(self.article_link_selector)
         except Exception as e:  # noqa: BLE001
@@ -143,7 +150,7 @@ class HtmlListingWatcher:
                     href = inner.get("href")
             if not href:
                 continue
-            full_url = urljoin(self.listing_url, str(href))
+            full_url = resolve_link_url(str(href), self.listing_url, base_href)
             if self.url_rewrite_pattern:
                 import re as _re
 

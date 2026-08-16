@@ -1,4 +1,4 @@
-"""記事一覧ページのリンクから表示タイトルを解決する (HTML scraper 共通)。
+"""記事一覧ページのリンクから表示タイトルと URL を解決する (HTML scraper 共通)。
 
 カード型レイアウトでは 1 記事に **複数のリンク** が張られる (画像を包む空の a と、
 見出しの中の a)。素朴に「最初に一致した a のテキスト」を取ると、空のラッパ a を
@@ -16,14 +16,47 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
-__all__ = ["is_better_title", "resolve_link_title", "title_from_url"]
+__all__ = [
+    "base_href_of",
+    "is_better_title",
+    "resolve_link_title",
+    "resolve_link_url",
+    "title_from_url",
+]
 
 # カードの外側をどこまで遡るか (これ以上遡ると別記事のテキストを拾い始める)。
 _MAX_ANCESTORS = 3
 _HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 _MAX_TITLE_LEN = 200
+
+
+def base_href_of(soup: Any) -> str:
+    """``<base href>`` を返す (無ければ空文字)。
+
+    HTML 標準では相対 URL の基準は ``<base href>`` であって取得元 URL ではない。
+    """
+    try:
+        el = soup.find("base")
+    except Exception:  # noqa: BLE001 — parser 差異で find が無い場合も落とさない
+        return ""
+    if el is None:
+        return ""
+    return str(el.get("href") or "").strip()
+
+
+def resolve_link_url(href: str, page_url: str, base_href: str = "") -> str:
+    """一覧ページの相対 href を絶対 URL にする。
+
+    ⚠ ``<base href>`` を無視して取得元 URL で解決すると **存在しない URL を作る**。
+    実例 (BSI Pressemitteilungen): href が ``DE/Service-Navi/...`` (先頭スラッシュ無し) で
+    ``<base href="https://www.bsi.bund.de/">`` が宣言されているのに、取得元
+    ``.../SiteGlobals/Forms/Suche/...`` を基準にしたため
+    ``.../SiteGlobals/Forms/Suche/DE/Service-Navi/...`` になり全記事が 404 だった。
+    タイトルと URL は取れるので一覧層は正常に見え、**本文取得だけが静かに全滅する**。
+    """
+    return urljoin(base_href or page_url, href)
 
 
 def title_from_url(url: str) -> str:

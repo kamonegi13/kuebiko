@@ -12,7 +12,7 @@ SourceCandidate uniform schema で返す点が異なる。
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
@@ -73,7 +73,12 @@ def _apply_selectors_html(
         from bs4 import BeautifulSoup
     except ImportError as e:
         raise RuntimeError(f"beautifulsoup4 not available: {e}") from e
-    from src.tools.link_title import is_better_title, resolve_link_title
+    from src.tools.link_title import (
+        base_href_of,
+        is_better_title,
+        resolve_link_title,
+        resolve_link_url,
+    )
 
     url_filter = None
     if url_include_pattern.strip():
@@ -82,6 +87,8 @@ def _apply_selectors_html(
         except re.error as e:
             raise RuntimeError(f"取り込む範囲の指定が不正です: {e}") from e
     soup = BeautifulSoup(html, "html.parser")
+    # 相対 URL の基準は <base href> が宣言されていればそちら (HTML 標準)。
+    base_href = base_href_of(soup)
     # 同一 URL が複数回一致する (画像ラッパ a と見出し a) ため、URL をキーに保持して
     # **より良いタイトルが後から来たら差し替える** (先勝ちだと無題で固定される)。
     found: dict[str, str] = {}
@@ -98,7 +105,7 @@ def _apply_selectors_html(
                 href = inner.get("href")
         if not href:
             continue
-        full_url = urljoin(page_url, str(href))[:500]
+        full_url = resolve_link_url(str(href), page_url, base_href)[:500]
         # 一覧ページのリンクには記事以外 (タグ / 対象者 / パンくず) が混ざる。
         # 取り込む範囲を指定されていれば、ここで落として **見えているもの = 入るもの** にする。
         if url_filter is not None and not url_filter.search(full_url):
