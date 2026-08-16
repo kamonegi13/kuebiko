@@ -308,6 +308,62 @@ class TestEntityFields:
         assert types == {"cve": 2, "ioc_domain": 1}
 
 
+class TestWindowUpperBound:
+    """窓の上限 (``until``)。過去の窓を切り出す呼び手 (切替前後の比較) のための追加引数。"""
+
+    def test_articles_after_until_are_excluded(self, repo: RunHistoryRepository) -> None:
+        # Arrange: until を 2 時間前に置き、1 時間前の記事を窓の外にする
+        _add(repo, article_id="inside", importance="high", category="apt", hours_ago=5)
+        _add(repo, article_id="outside", importance="low", category="apt", hours_ago=1)
+
+        # Act
+        stats = build_field_stats(
+            7, db_path=repo.db_path, until=datetime.now(UTC) - timedelta(hours=2)
+        )
+
+        # Assert
+        assert stats["denominator"]["count"] == 1
+        dist = {b["value"]: b["count"] for b in _field(stats, "importance")["distribution"]}
+        assert dist == {"high": 1}
+        assert _field(stats, "title_ja")["coverage"]["total"] == 1
+
+    def test_entity_fields_respect_the_upper_bound(self, repo: RunHistoryRepository) -> None:
+        # Arrange: entity 側は EXISTS 内の articles 条件にも上限が要る (漏れると分母だけ減る)
+        for article_id, hours_ago in (("c1", 5.0), ("c2", 1.0)):
+            created = _add(repo, article_id=article_id, category="apt", hours_ago=hours_ago)
+            repo.add_article_entities(article_id, [("ttp", "T1566")], when=created)
+
+        # Act
+        stats = build_field_stats(
+            7, db_path=repo.db_path, until=datetime.now(UTC) - timedelta(hours=2)
+        )
+
+        # Assert: 窓内の 1 件だけが分子・分母の両方に入る
+        cov = _field(stats, "mitre_techniques")["coverage"]
+        assert (cov["filled"], cov["total"]) == (1, 1)
+
+    def test_window_payload_reports_the_given_until(self, repo: RunHistoryRepository) -> None:
+        # Arrange
+        until = datetime(2026, 8, 16, 7, 1, 26, tzinfo=UTC)
+
+        # Act
+        stats = build_field_stats(7, db_path=repo.db_path, until=until)
+
+        # Assert
+        assert stats["window"]["until"] == "2026-08-16T07:01:26Z"
+        assert stats["window"]["since"] == "2026-08-09T07:01:26Z"
+
+    def test_omitted_until_produces_the_legacy_sql(self) -> None:
+        # 既存 endpoint / cache の挙動を 1 文字も変えないことの検出器
+        sql_default, params_default, _ = _build_scalar_query("2026-08-01T00:00:00+00:00")
+        sql_bounded, params_bounded, _ = _build_scalar_query(
+            "2026-08-01T00:00:00+00:00", "2026-08-08T00:00:00+00:00"
+        )
+        assert "created_at < ?" not in sql_default
+        assert sql_bounded == sql_default + " AND a.created_at < ?"
+        assert params_bounded == [*params_default, "2026-08-08T00:00:00+00:00"]
+
+
 class TestCache:
     def test_second_call_within_ttl_does_not_query_db(
         self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch

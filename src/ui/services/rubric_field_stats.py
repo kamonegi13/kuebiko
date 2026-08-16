@@ -19,6 +19,9 @@
   GROUP BY は SQLite で通り PG で全滅する)。``translate_sql`` が触る構文
   (``substr(x,1,10)`` / ``GROUP_CONCAT`` / ``datetime()``) は使わない。
 - **ログに記事本文・タイトル・プロンプトを出さない** (days / 件数 / 所要 ms のみ)。
+- **窓は [until - days, until) の半開区間**。``until`` 既定は now で、その場合は上限条件を
+  SQL に**足さない** (従来と 1 文字も変わらない SQL のまま)。過去の窓を切り出したい呼び手
+  (プロンプト切替の前後比較など) だけが ``until`` を明示する。
 
 公開 API は ``build_field_stats`` (毎回集計) と ``field_stats_cached`` (TTL 5 分) の 2 本。
 同期関数として書く — 30〜90 日走査を ``async def`` に載せると event loop を占有して
@@ -125,6 +128,20 @@ class _Agg:
     params: tuple[str, ...] = ()
 
 
+def _until_clause(until_iso: str | None, alias: str = "a") -> str:
+    """窓の上限 (半開区間の右端) を表す SQL 断片。
+
+    ``until_iso`` が None のときは**空文字**を返す。既存の呼び出し (endpoint / cache) は
+    上限を渡さないため、生成される SQL は窓上限の導入前と完全に一致する。
+    """
+    return f" AND {alias}.created_at < ?" if until_iso else ""
+
+
+def _window_params(since_iso: str, until_iso: str | None) -> list[str]:
+    """``created_at >= ?`` (+ 任意で ``< ?``) に対応する bind 値。順序が SQL と対応する。"""
+    return [since_iso] if until_iso is None else [since_iso, until_iso]
+
+
 def _metric(key: str) -> FillMetric:
     """fill_rate_audit の同名 METRIC を引く (充足条件の定義を複製しないため)。"""
     for m in METRICS:
@@ -203,7 +220,9 @@ def _scalar_aggs() -> tuple[_Agg, ...]:
     return tuple(aggs)
 
 
-def _build_scalar_query(since_iso: str) -> tuple[str, list[str], tuple[_Agg, ...]]:
+def _build_scalar_query(
+    since_iso: str, until_iso: str | None = None
+) -> tuple[str, list[str], tuple[_Agg, ...]]:
     """Q1: 母数・全 coverage・summary 帯・PMESII 軸を 1 パスで数える。"""
     aggs = _scalar_aggs()
     params: list[str] = []
@@ -211,11 +230,12 @@ def _build_scalar_query(since_iso: str) -> tuple[str, list[str], tuple[_Agg, ...
     for agg in aggs:
         columns.append(f"COUNT(DISTINCT CASE WHEN {agg.cond} THEN a.article_id END) AS {agg.alias}")
         params.extend(agg.params)
-    params.append(since_iso)
+    params.extend(_window_params(since_iso, until_iso))
     sql = (
         "SELECT "
         + ", ".join(columns)
         + " FROM articles a WHERE a.status = 'posted' AND a.created_at >= ?"
+        + _until_clause(until_iso)
     )
     return (sql, params, aggs)
 
@@ -223,8 +243,8 @@ def _build_scalar_query(since_iso: str) -> tuple[str, list[str], tuple[_Agg, ...
 # ---------- クエリ実行 ----------
 
 
-def _fetch_scalars(con: Any, since_iso: str) -> dict[str, int]:
-    sql, params, aggs = _build_scalar_query(since_iso)
+def _fetch_scalars(con: Any, since_iso: str, until_iso: str | None) -> dict[str, int]:
+    sql, params, aggs = _build_scalar_query(since_iso, until_iso)
     row = con.execute(sql, params).fetchone()
     if row is None:
         return {"n_total": 0, **{a.alias: 0 for a in aggs}}
@@ -234,7 +254,9 @@ def _fetch_scalars(con: Any, since_iso: str) -> dict[str, int]:
     return out
 
 
-def _fetch_avg_lengths(con: Any, since_iso: str) -> tuple[float | None, float | None]:
+def _fetch_avg_lengths(
+    con: Any, since_iso: str, until_iso: str | None
+) -> tuple[float | None, float | None]:
     """summary / remediation の平均文字数 (article_id 単位に潰してから平均)。"""
     sql = (
         "SELECT AVG(CASE WHEN s_len > 0 THEN s_len END) AS avg_summary,"
@@ -243,9 +265,10 @@ def _fetch_avg_lengths(con: Any, since_iso: str) -> tuple[float | None, float | 
         " MAX(LENGTH(COALESCE(a.summary, ''))) AS s_len,"
         " MAX(LENGTH(COALESCE(a.remediation, ''))) AS r_len"
         " FROM articles a WHERE a.status = 'posted' AND a.created_at >= ?"
-        " GROUP BY a.article_id) t"
+        + _until_clause(until_iso)
+        + " GROUP BY a.article_id) t"
     )
-    row = con.execute(sql, [since_iso]).fetchone()
+    row = con.execute(sql, _window_params(since_iso, until_iso)).fetchone()
     if row is None:
         return (None, None)
     avg_summary = None if row[0] is None else float(row[0])
@@ -254,11 +277,15 @@ def _fetch_avg_lengths(con: Any, since_iso: str) -> tuple[float | None, float | 
 
 
 def _fetch_distribution(
-    con: Any, since_iso: str, column: str, categories: tuple[str, ...] | None = None
+    con: Any,
+    since_iso: str,
+    until_iso: str | None,
+    column: str,
+    categories: tuple[str, ...] | None = None,
 ) -> list[tuple[str, int]]:
     """列 1 本の値分布 (NULL は空文字バケット)。非集約列は GROUP BY に同じ式を入れる。"""
     bucket = f"COALESCE(a.{column}, '')"
-    params: list[str] = [since_iso]
+    params: list[str] = _window_params(since_iso, until_iso)
     cat_sql = ""
     if categories:
         clause, cat_params = _cat_clause(categories)
@@ -267,6 +294,7 @@ def _fetch_distribution(
     sql = (
         "SELECT " + bucket + " AS bucket, COUNT(DISTINCT a.article_id) AS n"
         " FROM articles a WHERE a.status = 'posted' AND a.created_at >= ?"
+        + _until_clause(until_iso)
         + cat_sql
         + " GROUP BY "
         + bucket
@@ -275,62 +303,84 @@ def _fetch_distribution(
     return sorted(((str(r[0]), int(r[1])) for r in rows), key=lambda x: (-x[1], x[0]))
 
 
-def _posted_exists(categories: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
+def _posted_exists(
+    categories: tuple[str, ...], until_iso: str | None
+) -> tuple[str, tuple[str, ...]]:
     clause, params = _cat_clause(categories)
     cond = (
         "EXISTS (SELECT 1 FROM articles a WHERE a.article_id = e.article_id"
-        f" AND a.status = 'posted' AND a.created_at >= ? AND {clause})"
+        f" AND a.status = 'posted' AND a.created_at >= ?{_until_clause(until_iso)} AND {clause})"
     )
     return (cond, params)
 
 
 def _fetch_entity_counts(
-    con: Any, since_iso: str, categories: tuple[str, ...]
+    con: Any, since_iso: str, until_iso: str | None, categories: tuple[str, ...]
 ) -> dict[str, tuple[int, int]]:
     """entity_type → (記事数, 値の件数)。scope 内の配信済み記事に限る。"""
-    exists_cond, cat_params = _posted_exists(categories)
+    exists_cond, cat_params = _posted_exists(categories, until_iso)
     sql = (
         "SELECT e.entity_type AS etype, COUNT(DISTINCT e.article_id) AS n_articles,"
         " COUNT(*) AS n_values"
         " FROM article_entities e"
-        " WHERE e.created_at >= ? AND " + exists_cond + " GROUP BY e.entity_type"
+        " WHERE e.created_at >= ?"
+        + _until_clause(until_iso, "e")
+        + " AND "
+        + exists_cond
+        + " GROUP BY e.entity_type"
     )
-    params: list[str] = [since_iso, since_iso, *cat_params]
+    params: list[str] = [
+        *_window_params(since_iso, until_iso),
+        *_window_params(since_iso, until_iso),
+        *cat_params,
+    ]
     rows = con.execute(sql, params).fetchall()
     return {str(r[0]): (int(r[1]), int(r[2])) for r in rows}
 
 
 def _fetch_entity_top(
-    con: Any, since_iso: str, categories: tuple[str, ...], entity_types: tuple[str, ...]
+    con: Any,
+    since_iso: str,
+    until_iso: str | None,
+    categories: tuple[str, ...],
+    entity_types: tuple[str, ...],
 ) -> dict[str, list[tuple[str, int]]]:
     """entity_type → 上位値。上位 N の切り出しは Python 側で行う (方言安全)。"""
     if not entity_types:
         return {}
-    exists_cond, cat_params = _posted_exists(categories)
+    exists_cond, cat_params = _posted_exists(categories, until_iso)
     type_placeholders = ", ".join("?" for _ in entity_types)
     sql = (
         "SELECT e.entity_type AS etype, e.value AS val, COUNT(DISTINCT e.article_id) AS n"
         " FROM article_entities e"
-        f" WHERE e.created_at >= ? AND e.entity_type IN ({type_placeholders}) AND "
+        " WHERE e.created_at >= ?"
+        + _until_clause(until_iso, "e")
+        + f" AND e.entity_type IN ({type_placeholders}) AND "
         + exists_cond
         + " GROUP BY e.entity_type, e.value"
         f" HAVING COUNT(*) >= {_MIN_TOP_COUNT}"
     )
-    params: list[str] = [since_iso, *entity_types, since_iso, *cat_params]
+    params: list[str] = [
+        *_window_params(since_iso, until_iso),
+        *entity_types,
+        *_window_params(since_iso, until_iso),
+        *cat_params,
+    ]
     out: dict[str, list[tuple[str, int]]] = {}
     for row in con.execute(sql, params).fetchall():
         out.setdefault(str(row[0]), []).append((str(row[1]), int(row[2])))
     return {k: sorted(v, key=lambda x: (-x[1], x[0]))[:_TOP_VALUES] for k, v in out.items()}
 
 
-def _fetch_title_kana(con: Any, since_iso: str) -> tuple[int, int, bool]:
+def _fetch_title_kana(con: Any, since_iso: str, until_iso: str | None) -> tuple[int, int, bool]:
     """(かなを含むタイトル数, 標本数, 標本上限に達したか)。判定は summary.py の SSoT を使う。"""
     sql = (
         "SELECT a.article_id AS aid, a.title AS title FROM articles a"
         " WHERE a.status = 'posted' AND a.created_at >= ?"
-        f" ORDER BY a.created_at DESC LIMIT {_TITLE_SAMPLE_LIMIT}"
+        + _until_clause(until_iso)
+        + f" ORDER BY a.created_at DESC LIMIT {_TITLE_SAMPLE_LIMIT}"
     )
-    rows = con.execute(sql, [since_iso]).fetchall()
+    rows = con.execute(sql, _window_params(since_iso, until_iso)).fetchall()
     seen: dict[str, str] = {}
     for row in rows:
         seen.setdefault(str(row[0]), str(row[1] or ""))
@@ -817,30 +867,37 @@ def _build_all_fields(ctx: _Ctx) -> dict[str, dict[str, Any]]:
 # ---------- 公開 API ----------
 
 
-def build_field_stats(days: int, *, db_path: Path | None = None) -> dict[str, Any]:
-    """直近 ``days`` 日の配信済み記事から、判定基準 24 フィールドの実出力統計を組み立てる。
+def build_field_stats(
+    days: int, *, db_path: Path | None = None, until: datetime | None = None
+) -> dict[str, Any]:
+    """``[until - days, until)`` の配信済み記事から、判定基準 24 フィールドの実出力統計を作る。
+
+    ``until`` 既定は now で、その場合は窓の上限条件を SQL に足さない (endpoint / cache の
+    既存挙動と完全に同一)。過去の窓を切り出す呼び手 (プロンプト切替の前後比較など) だけが
+    明示する。naive datetime は UTC とみなす。
 
     ``db_path`` は SQLite (dev / tests) 用の明示指定。production は DATABASE_URL の PG。
     """
     if days < MIN_DAYS or days > MAX_DAYS:
         raise ValueError(f"days は {MIN_DAYS}〜{MAX_DAYS} の範囲で指定してください (given: {days})")
     started = time.monotonic()
-    until = datetime.now(UTC)
-    since = until - timedelta(days=days)
+    now = datetime.now(UTC)
+    window_end, until_iso = _resolve_until(until, now)
+    since = window_end - timedelta(days=days)
     since_iso = since.isoformat()
     con = _connect(db_path)
     try:
-        ctx = _collect(con, days=days, since_iso=since_iso)
+        ctx = _collect(con, days=days, since_iso=since_iso, until_iso=until_iso)
     finally:
         con.close()
     payload = {
-        "window": {"days": days, "since": _iso_z(since), "until": _iso_z(until)},
+        "window": {"days": days, "since": _iso_z(since), "until": _iso_z(window_end)},
         "denominator": {
             "label": _DENOMINATOR_LABEL,
             "count": ctx.total,
             "note": _DENOMINATOR_NOTE,
         },
-        "generated_at": _iso_z(until),
+        "generated_at": _iso_z(now),
         "fields": _build_all_fields(ctx),
     }
     _log.info(
@@ -876,35 +933,49 @@ def _iso_z(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _collect(con: Any, *, days: int, since_iso: str) -> _Ctx:
+def _resolve_until(until: datetime | None, now: datetime) -> tuple[datetime, str | None]:
+    """(窓の右端, SQL に渡す上限 ISO or None) を返す。None のとき SQL に上限条件を足さない。"""
+    if until is None:
+        return (now, None)
+    aware = until if until.tzinfo is not None else until.replace(tzinfo=UTC)
+    return (aware, aware.isoformat())
+
+
+def _collect(con: Any, *, days: int, since_iso: str, until_iso: str | None = None) -> _Ctx:
     """全クエリを実行して素の数値を集める (組み立ては純粋関数側)。"""
-    scalars = _fetch_scalars(con, since_iso)
-    avg_summary, avg_remediation = _fetch_avg_lengths(con, since_iso)
+    scalars = _fetch_scalars(con, since_iso, until_iso)
+    avg_summary, avg_remediation = _fetch_avg_lengths(con, since_iso, until_iso)
     dist = {
-        "importance": _fetch_distribution(con, since_iso, "importance"),
-        "category": _fetch_distribution(con, since_iso, "category"),
-        "article_type": _fetch_distribution(con, since_iso, "article_type"),
-        "editorial_stance": _fetch_distribution(con, since_iso, "editorial_stance"),
-        "event_date_basis": _fetch_distribution(con, since_iso, "event_date_basis"),
-        "socio_political_intent": _fetch_distribution(con, since_iso, "socio_political_intent"),
+        "importance": _fetch_distribution(con, since_iso, until_iso, "importance"),
+        "category": _fetch_distribution(con, since_iso, until_iso, "category"),
+        "article_type": _fetch_distribution(con, since_iso, until_iso, "article_type"),
+        "editorial_stance": _fetch_distribution(con, since_iso, until_iso, "editorial_stance"),
+        "event_date_basis": _fetch_distribution(con, since_iso, until_iso, "event_date_basis"),
+        "socio_political_intent": _fetch_distribution(
+            con, since_iso, until_iso, "socio_political_intent"
+        ),
         "victim_sector_canonical": _fetch_distribution(
-            con, since_iso, "victim_sector_canonical", COVERAGE_CYBER
+            con, since_iso, until_iso, "victim_sector_canonical", COVERAGE_CYBER
         ),
         "victim_country_iso": _fetch_distribution(
-            con, since_iso, "victim_country_iso", COVERAGE_CYBER
+            con, since_iso, until_iso, "victim_country_iso", COVERAGE_CYBER
         ),
     }
-    kana, sample, truncated = _fetch_title_kana(con, since_iso)
+    kana, sample, truncated = _fetch_title_kana(con, since_iso, until_iso)
     return _Ctx(
         days=days,
         scalars=scalars,
         avg_summary_len=avg_summary,
         avg_remediation_len=avg_remediation,
         dist=dist,
-        ent_cyber=_fetch_entity_counts(con, since_iso, COVERAGE_CYBER),
-        ent_geo=_fetch_entity_counts(con, since_iso, COVERAGE_GEOPOLITICAL),
-        top_cyber=_fetch_entity_top(con, since_iso, COVERAGE_CYBER, _TOP_ENTITY_TYPES_CYBER),
-        top_geo=_fetch_entity_top(con, since_iso, COVERAGE_GEOPOLITICAL, _TOP_ENTITY_TYPES_GEO),
+        ent_cyber=_fetch_entity_counts(con, since_iso, until_iso, COVERAGE_CYBER),
+        ent_geo=_fetch_entity_counts(con, since_iso, until_iso, COVERAGE_GEOPOLITICAL),
+        top_cyber=_fetch_entity_top(
+            con, since_iso, until_iso, COVERAGE_CYBER, _TOP_ENTITY_TYPES_CYBER
+        ),
+        top_geo=_fetch_entity_top(
+            con, since_iso, until_iso, COVERAGE_GEOPOLITICAL, _TOP_ENTITY_TYPES_GEO
+        ),
         title_kana=kana,
         title_sample=sample,
         title_truncated=truncated,

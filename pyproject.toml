@@ -97,6 +97,7 @@ module = [
     "backfill_axes",
     "claude_code_bridge",
     "summarizer_diff_contract",
+    "verify_prompt_cutover",
     "verify_summarizer_rubric",
 ]
 ignore_missing_imports = true
