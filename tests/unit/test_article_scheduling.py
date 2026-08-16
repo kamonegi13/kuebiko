@@ -13,7 +13,33 @@ import asyncio
 
 import pytest
 
+from src.pipeline.filters import _triage_concurrency
 from src.pipeline.orchestrator import _article_concurrency, _run_articles_bounded
+
+
+class TestTriageConcurrencyEnv:
+    """triage は prefill 主体で並列化すると遅くなる (実測 0.68x)。
+
+    既定は従来どおり 5。Ollama が既定 1 スロットで直列化するため現状は実害が無いが、
+    OLLAMA_NUM_PARALLEL を上げるときはここを 1 に落とす運用になる。
+    """
+
+    def test_default_is_five(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TRIAGE_CONCURRENCY", raising=False)
+        assert _triage_concurrency() == 5
+
+    def test_can_be_lowered_to_serial(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TRIAGE_CONCURRENCY", "1")
+        assert _triage_concurrency() == 1
+
+    @pytest.mark.parametrize("raw", ["0", "-1", "abc", "   "])
+    def test_invalid_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        monkeypatch.setenv("TRIAGE_CONCURRENCY", raw)
+        assert _triage_concurrency() == 5
+
+    def test_upper_bound_is_clamped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("TRIAGE_CONCURRENCY", "999")
+        assert _triage_concurrency() == 8
 
 
 class TestArticleConcurrencyEnv:
