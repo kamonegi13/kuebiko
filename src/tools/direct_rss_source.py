@@ -37,7 +37,11 @@ from src.tools.url_normalizer import url_hash
 _log = get_logger(__name__)
 
 DEFAULT_FEEDS_YAML = Path("config/sources/feeds.yaml")
-DEFAULT_USER_AGENT = "kuebiko/1.0 (+https://github.com/kamonegi13/kuebiko)"
+# 礼儀正しい bot 識別は保つが、**運用者個人に辿れる URL は載せない** (2026-08-16)。
+# UA は購読先すべてに毎回送られるため、識別子を載せると「誰が・どのソースを・どの周期で
+# 購読しているか」= 収集網の構成が相手側のログに残る。収集対象を監視する立場では、
+# これは秘匿すべき情報。sitemap/html-listing/source-discovery と同じ役割名だけの形に揃える。
+DEFAULT_USER_AGENT = "kuebiko/1.0 (+rss-fetcher)"
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_PER_FEED_LIMIT = 50
 DEFAULT_CONCURRENT_FEEDS = 8

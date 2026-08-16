@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import re
+
 import httpx
 import pytest
 
@@ -193,3 +195,34 @@ class TestJsChallengeFingerprint:
         # 先頭 2000 字より後にだけ出る文言は照合しない (巨大記事の偶然一致を防ぐ)
         body = ("x" * 3000) + "javascript is required"
         assert looks_like_js_challenge(body) is False
+
+
+class TestBotIdentityDoesNotLeakOperator:
+    """bot UA は「役割」だけを名乗り、運用者に辿れる識別子を載せない (2026-08-16)。
+
+    UA は購読先すべてに毎回送られるため、個人/組織に紐づく URL を載せると
+    「誰が・どのソースを・どの周期で購読しているか」= 収集網の構成が相手側に残る。
+    かつて RSS 経路だけが運用者の GitHub URL を名乗っていた退行を、ここで固定する。
+    """
+
+    def _bot_user_agents(self) -> dict[str, str]:
+        from src.tools import direct_rss_source
+        from src.ui.api import _source_http
+        from src.watchers import html_listing, sitemap_base
+
+        return {
+            "rss": direct_rss_source.DEFAULT_USER_AGENT,
+            "sitemap": sitemap_base.DEFAULT_USER_AGENT,
+            "html_listing": html_listing.DEFAULT_USER_AGENT,
+            "source_discovery": _source_http.DEFAULT_USER_AGENT,
+        }
+
+    def test_no_url_or_account_in_bot_user_agent(self) -> None:
+        for path, ua in self._bot_user_agents().items():
+            for forbidden in ("http://", "https://", "github.com", "@"):
+                assert forbidden not in ua, f"{path} の bot UA に {forbidden!r} が含まれる: {ua}"
+
+    def test_bot_user_agent_is_role_only(self) -> None:
+        # 形式: "kuebiko/1.0 (+<役割>)" — 役割は英小文字/数字/ハイフンのみ。
+        for path, ua in self._bot_user_agents().items():
+            assert re.fullmatch(r"kuebiko/1\.0 \(\+[a-z0-9-]+\)", ua), f"{path}: {ua}"
