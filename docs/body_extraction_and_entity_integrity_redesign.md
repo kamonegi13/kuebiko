@@ -357,3 +357,56 @@ memory: [[subject-actor-attribution-2026-07-17]] [[actor-dictionary-design-2026-
 [[mitre-sync-generic-alias-regression-2026-07-21]] [[notification-push-pull-redesign]]
 [[vocabulary-label-architecture]] [[pir-signal-first-matching-2026-07-22]]
 [[session-handoff-2026-07-27]]。
+
+---
+
+## 10. 追記 (2026-08-16) — 一覧層に潜む 2 つの静かな欠陥
+
+P1「本文の完全性を不変条件にする」の続き。**取得の手前 (一覧層) が壊れていても
+死活は正常に見える**という、本文完全性の新しい失敗クラスが 2 件見つかった。
+
+### 10.1 `<base href>` 無視で全 URL が 404 (根治済)
+
+HTML 標準では相対 URL の基準は `<base href>` だが、一覧層は取得元 URL で解決していた。
+
+```
+href      = DE/Service-Navi/...          (先頭スラッシュ無し)
+base href = https://www.bsi.bund.de/
+誤 → .../SiteGlobals/Forms/Suche/DE/Service-Navi/...   404
+正 → .../DE/Service-Navi/...                           200
+```
+
+⚠ **タイトルと URL は取得できるので一覧層は健全に見え、本文取得だけが静かに全滅する。**
+死活記録 (§2.3) は「取得成立・N 件」を返し続けるため、この故障は死活監視をすり抜ける。
+実データでは該当ソースの `body_source='none'` が 88% に達していた。
+
+解決規則は `src/tools/link_title.py` に集約し、preview と runtime が共有する
+(「見えているもの = 取り込まれるもの」)。既存の `url_rewrite_pattern` は同症状への
+対症療法だったが、根本原因側を直したので不要になった。
+
+⚠ **副作用に注意**: URL の形が変わるため、壊れた URL に合わせて書かれた
+`url_include_pattern` は全件を捨てるようになる。根治と同時に絞り込み条件を見直すこと。
+
+### 10.2 公開日が「取込時刻」で固定されていた (根治 + 遡及修復済)
+
+sitemap / HTML 一覧の watcher は `published` に無条件で `datetime.now()` を入れ、
+コメントは「後段で trafilatura が取得し直す」と書いていたが、**その配線は存在しなかった**
+(`ContentExtractor.published_date` は消費者ゼロの write-only)。
+
+結果 `published_at` = 取込時刻となり、**2025 年 6 月の記事が「2026 年 6 月 27 日」として
+台帳・地図・ブリーフに載っていた**。実測で該当ソースの 100% が `published≈created`
+(RSS 系の自然な同時刻率は 21% なので明確な異常)。
+
+- sitemap は `<lastmod>` を使う。lastmod は日付のみ (naive) と TZ 付きが同一ファイルに
+  混在しうるため UTC に揃える
+- 公開日が判らない経路は `published_is_placeholder` を立て、抽出値で置き換える。
+  ⚠ **抽出値を無条件に信じない** — 実測で 1,863 日前という誤読があった。妥当域
+  (未来 +1 日 / 過去 365 日) を外れる値は棄却し代用値のまま残す (§ 正直さの原則)
+- 未見でも lastmod が 14 日より古い URL は取り込まない。`init_seen()` は bespoke
+  watcher からしか呼ばれず UI 登録経路では走らないため、これが新規登録時の流入を
+  防ぐ唯一の防波堤
+
+遡及修復は `scripts/backfill_sitemap_published.py` (冪等)。sitemap × lastmod で 689 件を
+修正し、ずれは 30 日超 596 件・最大 372 日だった。**HTML 一覧側の一括再抽出は見送った** —
+実測で 69% は既に正しく、補正は 1〜3 日、かつ誤抽出を混ぜ込むリスクの方が大きい
+(一覧は新着しか載せないので取込時刻 ≈ 公開時刻が実際に成立する)。

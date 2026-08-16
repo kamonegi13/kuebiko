@@ -45,6 +45,22 @@
 本文抽出の UA ローテーションは従来実装のまま、発火 status 集合のみ SSoT を参照する
 (本文だけ 406 を欠く、といった分岐を作らない)。
 
+### bot UA に載せてよい情報 (2026-08-16)
+
+**bot UA は「役割」だけを名乗り、運用者や組織に辿れる識別子を載せない。**
+形式は `kuebiko/1.0 (+<役割>)` — 例 `(+rss-fetcher)` / `(+sitemap-watcher)` /
+`(+html-listing-watcher)` / `(+source-discovery)`。
+
+UA は購読先すべてに毎回届くため、識別子を載せると「誰が・どのソースを・どの周期で
+購読しているか」= **収集網の構成**が相手側のログに残る。収集対象を監視する立場では
+これは秘匿すべき情報にあたる。⚠ 動的 IP でも UA は変わらないので、IP の匿名性とは
+別問題として扱う。
+
+かつて RSS 経路だけが運用者の GitHub アカウント URL を名乗っており、有効な全 feed へ
+毎時送出されていた。OSS の「礼儀正しい bot 識別」としては真っ当な実装だが、本ツールの
+脅威モデルでは意味が異なる。`tests/unit/test_fetch_policy.py` の
+`TestBotIdentityDoesNotLeakOperator` が 4 経路すべてを検査し、退行を防ぐ。
+
 ### 第 3 段 (Playwright) の発火条件 (2026-08-01 拡張)
 
 本文抽出の Playwright fallback は **status 集合 + 応答の実態 (JS チャレンジ指紋)** で

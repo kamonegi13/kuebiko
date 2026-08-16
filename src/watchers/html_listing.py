@@ -10,7 +10,12 @@
       ``read_state``) を提供し、 ``WebScraperClusterSource`` から透過利用可能
     - selectors は ``config/sources/scrapers.yaml`` で declarative 宣言
     - seen 状態は ``data/<name>_seen.json`` で SitemapWatcher と同一 schema
-    - 本文と公開日は後段 trafilatura が URL から取得 (per-article LLM 投入時)
+    - 本文は後段 trafilatura が URL から取得 (per-article LLM 投入時)
+    - 一覧に公開日が無いため ``published`` は取込時刻を代用し
+      ``published_is_placeholder`` を立てる。後段が抽出したページ公開日で置き換える
+      (妥当域を外れる抽出値は棄却し、代用値のまま残す)
+    - 相対リンクの解決は ``<base href>`` を基準にする (HTML 標準)。取得元 URL で
+      解決すると存在しない URL を作る — 実例は ``src/tools/link_title.py``
 """
 
 from __future__ import annotations

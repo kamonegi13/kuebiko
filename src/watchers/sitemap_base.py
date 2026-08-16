@@ -15,7 +15,11 @@
     - URL の filter は include regex + exclude regex で per-site 制御
     - seen 状態は ``data/<name>_seen.json`` に保存 (project_zero と同パターン)
     - ``fetch_articles()`` は ``Article`` (id/url/title placeholder) を返す。
-      本文と公開日は後段 trafilatura が URL から取得する
+      本文は後段 trafilatura が URL から取得する
+    - **公開日は sitemap の ``<lastmod>`` を使う**。lastmod が無いときだけ取込時刻を
+      代用し ``published_is_placeholder`` を立てる (後段が抽出日で置き換える)。
+      ⚠ 2026-08-16 まで「後段 trafilatura が公開日も取り直す」と書かれていたが
+      **その配線は存在せず**、何年も前の記事が「今日」として入っていた
 
 公開 API:
     - ``SitemapWatcher(name, sitemap_urls, url_include_regex, ...).fetch_articles()``
