@@ -19,14 +19,14 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.cti.category_scopes import COVERAGE_CYBER as _CYBER
+from src.cti.category_scopes import COVERAGE_CYBER_EVENT as _CYBER_EVENT
+from src.cti.category_scopes import COVERAGE_VULN as _VULN
 from src.logging_config import get_logger
 
 _log = get_logger(__name__)
 
-# サイバー系カテゴリ (audit_triage_calibration / backfill と同一区分)
-_CYBER = ("apt", "malware", "incident", "advisory", "vulnerability", "breach")
-_VULN = ("vulnerability", "advisory")
-_CYBER_EVENT = ("apt", "malware", "incident", "breach")
+# カテゴリ分母の定義は src/cti/category_scopes.py が SSoT (複製を作らない)。
 
 # WARN 判定: 過去週中央値がこの被覆以上のとき (=元々供給がある指標のみ監視)
 _BASELINE_MIN_PCT = 10.0

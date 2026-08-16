@@ -32,7 +32,7 @@ const IMPORTANCE_OPTS = [
 ];
 const SINCE_OPTS = [
   { value: "0", label: "全期間" }, { value: "24", label: "24時間" }, { value: "72", label: "3日" },
-  { value: "168", label: "7日" }, { value: "720", label: "30日" },
+  { value: "168", label: "7日" }, { value: "720", label: "30日" }, { value: "2160", label: "90日" },
 ];
 // 本文由来フィルタ: 全文取得できた記事 / 切り株 (フィード抜粋のみ・全文未取得) を絞る。
 const BODY_OPTS = [

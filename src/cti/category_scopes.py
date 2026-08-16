@@ -31,3 +31,33 @@ CYBER_THREAT_SCOPE: tuple[str, ...] = (
 CYBER_ATTACK_EVENTS: frozenset[str] = frozenset(
     {"breach", "incident", "apt", "apt_leak", "malware", "phishing"},
 )
+
+# ---------- 充足率レンズ (分析列がどれだけ埋まっているかを測る分母) ----------
+#
+# 上の 2 つが「どの記事を脅威として数えるか」なのに対し、こちらは「この列が本来
+# 埋まるべき記事はどれか」。全記事で測ると意味を失う (地政学記事に victim_sector が
+# 無いのは正常で、サイバー事案に無いのが異常) ため、指標ごとに分母を変える。
+#
+# ⚠ 上のレンズとは意図的に集合が違う (apt_leak / phishing / ransomware を含まない)。
+# fill_rate_audit が導入時から使っている区分で、audit_triage_calibration / backfill と
+# 揃えてある。統一すると過去の週次判定と地続きでなくなるため、名前を分けて併存させる。
+
+# サイバー系全般。victim_* / iocs / ttp など攻撃事案の属性の分母。
+COVERAGE_CYBER: tuple[str, ...] = (
+    "apt",
+    "malware",
+    "incident",
+    "advisory",
+    "vulnerability",
+    "breach",
+)
+
+# 脆弱性系。remediation / affected_vendor など「対処」を持つ記事の分母。
+COVERAGE_VULN: tuple[str, ...] = ("vulnerability", "advisory")
+
+# 侵入事案系。event_date / compromise_date の分母 — CVE 公表に「侵入日」の概念は
+# 構造的に無く、advisory/vulnerability を分母に入れると埋まらない分で沈黙崩壊を見落とす。
+COVERAGE_CYBER_EVENT: tuple[str, ...] = ("apt", "malware", "incident", "breach")
+
+# 地政学・政策系。involved_countries (当事国) の分母 — サイバー事案では空が正しい。
+COVERAGE_GEOPOLITICAL: tuple[str, ...] = ("geopolitical", "policy")

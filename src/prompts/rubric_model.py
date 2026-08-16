@@ -67,6 +67,38 @@ class ContractField:
     nullable: bool
 
 
+IssueSeverity = Literal["error", "warning"]
+IssueCode = Literal[
+    "duplicate_field_id",
+    "unknown_field",
+    "empty_rubric_body",
+    "example_json_invalid",
+    "example_not_object",
+    "example_schema_mismatch",
+    "render_failed",
+    "missing_fields",
+    "composed_longer_than_legacy",
+]
+
+
+@dataclass(frozen=True)
+class RubricIssue:
+    """検証結果 1 件を **局在化情報つき** で表したもの。
+
+    ``errors`` / ``warnings`` の平坦な文字列列は「どのカードの問題か」を持たないため、
+    UI がバナーからカードへ飛べない。issues はその位置情報 (``field_id`` /
+    ``example_index`` / ``keys``) を添える **追加** の表現で、文字列列はここから
+    同順で導出される (I-3: 文字列と順序は不変)。
+    """
+
+    severity: IssueSeverity
+    code: IssueCode
+    message: str
+    field_id: str = ""  # target=section のとき。それ以外は ""
+    example_index: int = 0  # target=example のとき 1-based。それ以外は 0
+    keys: tuple[str, ...] = ()  # example_schema_mismatch のとき不正だったキー名
+
+
 @dataclass(frozen=True)
 class RubricValidation:
     """保存前検証の結果 (error は保存拒否、warning は保存可だが表示する)。"""
@@ -77,6 +109,7 @@ class RubricValidation:
     missing_fields: tuple[str, ...]  # schema にあるが宣言が無い field
     composed_chars: int
     legacy_chars: int
+    issues: tuple[RubricIssue, ...] = ()  # errors/warnings の局在化つき表現 (同順)
 
     @property
     def is_valid(self) -> bool:
@@ -120,49 +153,100 @@ def contract_fields() -> tuple[ContractField, ...]:
     return tuple(fields)
 
 
-def _check_sections(rubric: SummarizerRubric) -> tuple[list[str], list[str], list[str]]:
-    """(errors, unknown_fields, missing_fields) を返す。"""
+def _check_sections(rubric: SummarizerRubric) -> tuple[list[RubricIssue], list[str], list[str]]:
+    """(issues, unknown_fields, missing_fields) を返す。"""
     known = summary_output_fields()
-    errors: list[str] = []
+    issues: list[RubricIssue] = []
     unknown: list[str] = []
     declared: set[str] = set()
     seen: set[str] = set()
     for section in rubric.sections:
         field_id = section.field_id
         if field_id in seen:
-            errors.append(f"field_id が重複しています: {field_id}")
+            issues.append(
+                RubricIssue(
+                    severity="error",
+                    code="duplicate_field_id",
+                    message=f"field_id が重複しています: {field_id}",
+                    field_id=field_id,
+                ),
+            )
         seen.add(field_id)
         if field_id in known:
             declared.add(field_id)
         else:
             unknown.append(field_id)
-            errors.append(f"未知のフィールドです: {field_id}")
+            issues.append(
+                RubricIssue(
+                    severity="error",
+                    code="unknown_field",
+                    message=f"未知のフィールドです: {field_id}",
+                    field_id=field_id,
+                ),
+            )
         if section.kind == "rubric" and not section.body.strip():
-            errors.append(f"kind=rubric の判定基準が空です: {field_id}")
+            issues.append(
+                RubricIssue(
+                    severity="error",
+                    code="empty_rubric_body",
+                    message=f"kind=rubric の判定基準が空です: {field_id}",
+                    field_id=field_id,
+                ),
+            )
     missing = sorted(known - declared)
-    return errors, list(dict.fromkeys(unknown)), missing
+    return issues, list(dict.fromkeys(unknown)), missing
 
 
-def _check_examples(rubric: SummarizerRubric) -> tuple[list[str], list[str]]:
-    """few-shot 例の JSON 妥当性を見る。壊れた JSON = error / schema 不一致 = warning。"""
-    errors: list[str] = []
-    warnings: list[str] = []
+def _check_examples(rubric: SummarizerRubric) -> list[RubricIssue]:
+    """few-shot 例の JSON 妥当性を見る。壊れた JSON = error / schema 不一致 = warning。
+
+    1 例につき issue は高々 1 件なので、error と warning が混在した順序のまま返しても
+    severity で射影すれば従来の 2 本のリストと同順になる (I-3)。
+    """
+    issues: list[RubricIssue] = []
     for index, example in enumerate(rubric.examples, 1):
         label = example.label or f"#{index}"
         try:
             parsed = json.loads(example.json_text)
         except json.JSONDecodeError as e:
-            errors.append(f"出力例 {index} ({label}) の JSON が不正です: {e.msg} (行 {e.lineno})")
+            issues.append(
+                RubricIssue(
+                    severity="error",
+                    code="example_json_invalid",
+                    message=(
+                        f"出力例 {index} ({label}) の JSON が不正です: {e.msg} (行 {e.lineno})"
+                    ),
+                    example_index=index,
+                ),
+            )
             continue
         if not isinstance(parsed, dict):
-            errors.append(f"出力例 {index} ({label}) が JSON オブジェクトではありません")
+            issues.append(
+                RubricIssue(
+                    severity="error",
+                    code="example_not_object",
+                    message=f"出力例 {index} ({label}) が JSON オブジェクトではありません",
+                    example_index=index,
+                ),
+            )
             continue
         try:
             SummaryOutput.model_validate(parsed)
         except ValidationError as e:
-            bad = ", ".join(sorted({str(d["loc"][0]) for d in e.errors() if d.get("loc")}))
-            warnings.append(f"出力例 {index} ({label}) が SummaryOutput 検証に失敗: {bad}")
-    return errors, warnings
+            bad_keys = tuple(sorted({str(d["loc"][0]) for d in e.errors() if d.get("loc")}))
+            issues.append(
+                RubricIssue(
+                    severity="warning",
+                    code="example_schema_mismatch",
+                    message=(
+                        f"出力例 {index} ({label}) が SummaryOutput 検証に失敗: "
+                        + ", ".join(bad_keys)
+                    ),
+                    example_index=index,
+                    keys=bad_keys,
+                ),
+            )
+    return issues
 
 
 def _read_legacy_chars(path: Path) -> int:
@@ -172,7 +256,7 @@ def _read_legacy_chars(path: Path) -> int:
         return 0
 
 
-def _check_render(rubric: SummarizerRubric, path: Path) -> str | None:
+def _check_render(rubric: SummarizerRubric, path: Path) -> RubricIssue | None:
     """合成テンプレートを実際に render する (I6: 保存前検証の最後の砦)。
 
     section body / intro / 例に混入した ``{{`` ``{%`` は compose() で verbatim に
@@ -188,7 +272,11 @@ def _check_render(rubric: SummarizerRubric, path: Path) -> str | None:
             body=SAMPLE_ARTICLE.body_text or "",
         )
     except Exception as e:  # noqa: BLE001 — 種類を問わず保存を拒否する
-        return f"合成テンプレートのレンダリングに失敗しました: {type(e).__name__}"
+        return RubricIssue(
+            severity="error",
+            code="render_failed",
+            message=f"合成テンプレートのレンダリングに失敗しました: {type(e).__name__}",
+        )
     return None
 
 
@@ -200,27 +288,40 @@ def validate_rubric(
     """保存前検証。合成まで行い legacy との文字数差も返す (枯死リスクの可視化)。"""
     from src.prompts.summarizer_composer import LEGACY_TEMPLATE_PATH, compose
 
-    section_errors, unknown, missing = _check_sections(rubric)
-    example_errors, warnings = _check_examples(rubric)
-    errors = section_errors + example_errors
-    render_error = _check_render(rubric, legacy_path or LEGACY_TEMPLATE_PATH)
-    if render_error:
-        errors.append(render_error)
+    section_issues, unknown, missing = _check_sections(rubric)
+    issues = section_issues + _check_examples(rubric)
+    render_issue = _check_render(rubric, legacy_path or LEGACY_TEMPLATE_PATH)
+    if render_issue:
+        issues.append(render_issue)
     if missing:
-        warnings.append("宣言の無いフィールドがあります: " + ", ".join(missing))
+        issues.append(
+            RubricIssue(
+                severity="warning",
+                code="missing_fields",
+                message="宣言の無いフィールドがあります: " + ", ".join(missing),
+            ),
+        )
 
     composed_chars = len(compose(rubric))
     legacy_chars = _read_legacy_chars(legacy_path or LEGACY_TEMPLATE_PATH)
     if legacy_chars and composed_chars > legacy_chars:
-        warnings.append(
-            f"合成後のプロンプトが legacy より {composed_chars - legacy_chars:,} 字"
-            "長くなっています (末尾フィールドの枯死リスク)",
+        issues.append(
+            RubricIssue(
+                severity="warning",
+                code="composed_longer_than_legacy",
+                message=(
+                    f"合成後のプロンプトが legacy より {composed_chars - legacy_chars:,} 字"
+                    "長くなっています (末尾フィールドの枯死リスク)"
+                ),
+            ),
         )
+    # errors / warnings は issues からの同順の射影 (I-3: 文字列と順序は不変)。
     return RubricValidation(
-        errors=tuple(errors),
-        warnings=tuple(warnings),
+        errors=tuple(i.message for i in issues if i.severity == "error"),
+        warnings=tuple(i.message for i in issues if i.severity == "warning"),
         unknown_fields=tuple(unknown),
         missing_fields=tuple(missing),
         composed_chars=composed_chars,
         legacy_chars=legacy_chars,
+        issues=tuple(issues),
     )

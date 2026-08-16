@@ -7,6 +7,8 @@ tmp SQLite (``rubric_store`` の WP1 テストと同じ fixture 形)。
 
 from __future__ import annotations
 
+import inspect
+import json
 import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -194,6 +196,17 @@ class TestGetRubric:
         # (GET 側に持つと消費者ゼロの write-only になるため返さない)。
         assert "declared" not in fields["title_ja"]
 
+    def test_guide_covers_every_section(self, client: TestClient) -> None:
+        """全セクションに group と「効く先」が付く (UI のグルーピングが欠けない)。"""
+        guide = client.get(_ENDPOINT).json()["guide"]
+
+        assert len(guide["fields"]) == 24
+        assert guide["unmapped_fields"] == []
+        by_id = {f["field_id"]: f for f in guide["fields"]}
+        assert by_id["importance"]["group"] == "classification"
+        assert by_id["importance"]["effect"]  # 空でない
+        assert by_id["diamond"]["group"] == "suppressed"  # kind=suppressed が優先される
+
 
 # ---------- ③ ④ PUT /rubric ----------
 
@@ -266,6 +279,43 @@ class TestPreviewRubric:
         assert body["valid"] is False
         assert any("victim_org" in e for e in body["errors"])
         assert body["composed"]
+        # issues は errors/warnings と同内容を局在化情報つきで返す (後方互換で両方存在)
+        unknown = [i for i in body["issues"] if i["code"] == "unknown_field"]
+        assert len(unknown) == 1
+        assert unknown[0]["field_id"] == "victim_org"
+        assert unknown[0]["severity"] == "error"
+        assert unknown[0]["message"] in body["errors"]
+
+    def test_example_mismatch_is_localised_to_the_example(self, client: TestClient) -> None:
+        """出力例の schema 不一致が「何番目の例のどのキーか」まで分かる形で返る。
+
+        実際に踏んだ欠陥の再現: 有効値に無い ``article_type`` を few-shot が教えていた。
+        他のキーは正しい例にして、報告が不正な 1 キーに絞られることを見る。
+        """
+        payload = _rubric_payload()
+        payload["examples"] = [
+            {
+                "label": "壊れた例",
+                "json_text": json.dumps(
+                    {
+                        "title_ja": "テスト記事",
+                        "importance": "low",
+                        "category": "geopolitical",
+                        "summary": "要約本文。",
+                        "article_type": "informational",  # ArticleType Literal に無い値
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
+
+        body = client.post(f"{_ENDPOINT}/preview", json={"rubric": payload}).json()
+
+        mismatch = [i for i in body["issues"] if i["code"] == "example_schema_mismatch"]
+        assert len(mismatch) == 1
+        assert mismatch[0]["example_index"] == 1
+        assert mismatch[0]["keys"] == ["article_type"]
+        assert mismatch[0]["severity"] == "warning"  # 保存は拒否しない
 
     def test_valid_rubric_renders_sample_with_persona(self, client: TestClient) -> None:
         resp = client.post(f"{_ENDPOINT}/preview", json={"rubric": _rubric_payload()})
@@ -363,9 +413,33 @@ class TestDryRunTest:
 # ---------- ⑧ ⑨ 公開面の遮断 ----------
 
 
+class TestFieldStats:
+    def test_returns_every_field(self, client: TestClient, _env: Path) -> None:
+        # 集計は既定 DB (cwd 配下の SQLite fallback) を見るので、そこに schema を作る。
+        RunHistoryRepository()
+        resp = client.get(f"{_ENDPOINT}/field-stats?days=30")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["fields"]) == 24  # カードから消えるフィールドを作らない
+        assert body["window"]["days"] == 30
+        assert body["denominator"]["note"]  # 母集団の説明が必ず付く (I-8)
+
+    def test_days_out_of_range_is_rejected(self, client: TestClient) -> None:
+        assert client.get(f"{_ENDPOINT}/field-stats?days=0").status_code == 422
+        assert client.get(f"{_ENDPOINT}/field-stats?days=91").status_code == 422
+
+    def test_endpoint_is_sync_def(self) -> None:
+        """重い集計を async で書くと event loop を占有し UI 全体が固まる (PIR 画面の教訓)。"""
+        assert inspect.iscoroutinefunction(prompt_rubric.field_stats) is False
+
+
 class TestReadOnlyExposure:
     def test_denylist_prefix_blocks_rubric_get(self) -> None:
         assert is_read_only_blocked_get(_ENDPOINT) is True
+
+    def test_denylist_prefix_blocks_field_stats(self) -> None:
+        assert is_read_only_blocked_get(f"{_ENDPOINT}/field-stats") is True
 
     def test_readonly_get_is_blocked_anonymously(self, readonly_client: TestClient) -> None:
         resp = readonly_client.get(_ENDPOINT)

@@ -7,10 +7,16 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from src.pipeline.summary import SummaryOutput
 from src.prompts.rubric_model import (
     RubricExample,
+    RubricIssue,
     RubricSection,
+    RubricValidation,
     SectionKind,
     SummarizerRubric,
     contract_fields,
@@ -124,3 +130,133 @@ def test_missing_fields_lists_undeclared_schema_fields() -> None:
     assert set(result.missing_fields) == summary_output_fields() - {"summary"}
     assert "compromise_date" in result.missing_fields
     assert any("宣言の無いフィールド" in w for w in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# issues 層 (WP-B2) — 局在化情報を持つ構造化された検証結果
+# ---------------------------------------------------------------------------
+
+_BROKEN_JSON = "{ not json"
+
+
+def _mixed_rubric() -> SummarizerRubric:
+    """error / warning を 1 通りずつ含む複合ケース (issues 導出の回帰基準)。"""
+    return SummarizerRubric(
+        sections=[
+            _section("summary"),
+            _section("summary"),  # 重複
+            _section("victim_org"),  # 未知フィールド
+            _section("category", body="   \n "),  # kind=rubric なのに空
+            _section("diamond", kind="suppressed", body=""),  # 空でも正常
+        ],
+        examples=[
+            RubricExample(label="壊れた例", json_text=_BROKEN_JSON),
+            RubricExample(label="配列の例", json_text="[]"),
+            RubricExample(label="型違反の例", json_text=_SCHEMA_VIOLATING_JSON),
+        ],
+    )
+
+
+def _issues_of(result: RubricValidation, code: str) -> tuple[RubricIssue, ...]:
+    return tuple(i for i in result.issues if i.code == code)
+
+
+def test_unknown_field_issue_carries_field_id() -> None:
+    # Arrange
+    rubric = SummarizerRubric(sections=[_section("victim_org")])
+
+    # Act
+    result = validate_rubric(rubric)
+
+    # Assert — バナーから当該カードへ飛ぶための位置情報が乗っている
+    found = _issues_of(result, "unknown_field")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert found[0].field_id == "victim_org"
+    assert found[0].example_index == 0
+
+
+def test_example_schema_mismatch_issue_carries_index_and_keys() -> None:
+    # Arrange — 3 件目だけが SummaryOutput 検証に失敗する
+    rubric = SummarizerRubric(
+        sections=[_section("summary")],
+        examples=[
+            RubricExample(label="正しい例 1", json_text=_VALID_EXAMPLE_JSON),
+            RubricExample(label="正しい例 2", json_text=_VALID_EXAMPLE_JSON),
+            RubricExample(label="型違反の例", json_text=_SCHEMA_VIOLATING_JSON),
+        ],
+    )
+
+    # Act
+    result = validate_rubric(rubric)
+
+    # Assert — 「どの例の・どのキーが」不正かがキー単位で局在化される
+    found = _issues_of(result, "example_schema_mismatch")
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert found[0].example_index == 3
+    assert found[0].keys == ("article_type",)
+    assert found[0].field_id == ""
+
+
+def test_empty_rubric_body_issue_carries_field_id() -> None:
+    rubric = SummarizerRubric(sections=[_section("summary", body="   \n  ")])
+
+    result = validate_rubric(rubric)
+
+    found = _issues_of(result, "empty_rubric_body")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert found[0].field_id == "summary"
+
+
+def test_render_failure_issue_is_global() -> None:
+    """レンダリング失敗は合成全体の問題なのでカードにも出力例にも紐付かない。"""
+    # Arrange — 判定基準の本文に閉じていない Jinja タグが混入したケース
+    rubric = SummarizerRubric(sections=[_section("summary", body="壊れた {{ tag")])
+
+    # Act
+    result = validate_rubric(rubric)
+
+    # Assert
+    found = _issues_of(result, "render_failed")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert found[0].field_id == ""
+    assert found[0].example_index == 0
+    # 本文をメッセージに含めない (CLAUDE.md §4: プロンプト本文を応答/ログに出さない)
+    assert "壊れた" not in found[0].message
+
+
+def test_errors_and_warnings_are_unchanged_and_derived_from_issues() -> None:
+    """I-3: ``errors`` / ``warnings`` の文字列と順序が issues 導入前と完全一致する。
+
+    PUT /rubric の 400 detail と UI の表示がこの文字列に依存しているため、issues は
+    **追加** であって置換ではないことを機械的に固定する (回帰ガード)。
+    """
+    # Arrange — 壊れた JSON のメッセージは stdlib 由来なので実測値から組み立てる
+    # (固定は「フォーマット」であって json モジュールの文言ではない)
+    rubric = _mixed_rubric()
+    with pytest.raises(json.JSONDecodeError) as exc:
+        json.loads(_BROKEN_JSON)
+    json_detail = f"{exc.value.msg} (行 {exc.value.lineno})"
+    missing = sorted(summary_output_fields() - {"summary", "category", "diamond"})
+
+    # Act
+    result = validate_rubric(rubric)
+
+    # Assert — 文字列と順序の完全一致
+    assert result.errors == (
+        "field_id が重複しています: summary",
+        "未知のフィールドです: victim_org",
+        "kind=rubric の判定基準が空です: category",
+        f"出力例 1 (壊れた例) の JSON が不正です: {json_detail}",
+        "出力例 2 (配列の例) が JSON オブジェクトではありません",
+    )
+    assert result.warnings == (
+        "出力例 3 (型違反の例) が SummaryOutput 検証に失敗: article_type",
+        "宣言の無いフィールドがあります: " + ", ".join(missing),
+    )
+    # errors / warnings は issues の同順の射影であること (二重の真実を作らない)
+    assert tuple(i.message for i in result.issues if i.severity == "error") == result.errors
+    assert tuple(i.message for i in result.issues if i.severity == "warning") == result.warnings

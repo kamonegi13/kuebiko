@@ -19,6 +19,8 @@ from typing import get_args
 
 from src.config_loader import IMPORTANCE_LEVELS, KNOWN_ARTICLE_CATEGORIES
 from src.cti.llm_routing_flags import EditorialStance
+from src.cti.taxonomy_normalizer import PMESII_AXES
+from src.prompts.rubric_guide import GROUPS
 from src.storage.records import ArticleStatus, RunStatus, TriggerSource
 from src.synthesis.grounded.hypotheses import HYPOTHESIS_MENU
 
@@ -512,6 +514,35 @@ _REGISTRY: dict[str, Vocabulary] = {
         "taxonomy_proposal_status",
         {"accepted": "採用", "rejected": "却下", "deferred": "保留", "pending": "未処理"},
         canonical=frozenset({"accepted", "rejected", "deferred", "pending"}),
+    ),
+    # rubric_group: 判定基準エディタのグループ (作業単位)。値の源泉は
+    # src/prompts/rubric_guide.GROUPS なので **導出** する (静的複製を作らない —
+    # 複製時代に ach_hypothesis で仮説 3 件が欠落し生 ID が UI に漏出した前例)。
+    # description を持つため _vocab ヘルパでなく Vocabulary を直接構築する。
+    "rubric_group": Vocabulary(
+        name="rubric_group",
+        items=tuple(
+            VocabItem(value=g.id, label=g.label, order=g.order, description=g.description)
+            for g in GROUPS
+        ),
+        canonical=frozenset(g.id for g in GROUPS),
+    ),
+    # pmesii_axis: PMESII-PT 軸。canonical = taxonomy_normalizer.PMESII_AXES (確定軸)。
+    # T 軸は 2026-07-16 に運用から外したが、正規値集合には残っている (過去データが持つ)
+    # ため値は保持し deprecated=True で「新規に付けない軸」と表示側に伝える。
+    "pmesii_axis": Vocabulary(
+        name="pmesii_axis",
+        items=(
+            VocabItem("P", "政治 (P)", 0),
+            VocabItem("M", "軍事 (M)", 1),
+            VocabItem("E", "経済 (E)", 2),
+            VocabItem("S", "社会 (S)", 3),
+            VocabItem("I-infra", "情報インフラ (I-infra)", 4),
+            VocabItem("I-cyber", "サイバー (I-cyber)", 5),
+            VocabItem("P-env", "物理環境 (P-env)", 6),
+            VocabItem("T", "時間 (T)", 7, deprecated=True),
+        ),
+        canonical=PMESII_AXES,
     ),
 }
 

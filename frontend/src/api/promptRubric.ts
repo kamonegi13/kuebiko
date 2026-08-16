@@ -79,10 +79,114 @@ export interface RuntimeInfo {
   saved_at: string;
 }
 
+// ===== UI 再設計 (rubric guide / issues / field-stats) の追加型。設計書 §2/§3/§4 が正。 =====
+
+// group の日本語ラベル・説明・表示順は useVocabOptions("rubric_group") から解決する
+// (I-5: ラベル SSoT)。ここではキー空間の型だけを持つ。
+export type RubricGroupId =
+  | "classification"
+  | "routing"
+  | "victim"
+  | "technical"
+  | "narrative"
+  | "suppressed"
+  | "other";
+
+// 1 フィールドの「効く先」ガイド。SSoT は backend `src/prompts/rubric_guide.py`。
+export interface RubricFieldGuide {
+  field_id: string;
+  group: RubricGroupId;
+  order: number;
+  effect: string;
+  sources: string[];
+}
+
+export interface RubricGuide {
+  fields: RubricFieldGuide[];
+  unmapped_fields: string[];
+}
+
+export type RubricIssueSeverity = "error" | "warning";
+export type RubricIssueCode =
+  | "duplicate_field_id"
+  | "unknown_field"
+  | "empty_rubric_body"
+  | "example_json_invalid"
+  | "example_not_object"
+  | "example_schema_mismatch"
+  | "render_failed"
+  | "missing_fields"
+  | "composed_longer_than_legacy";
+
+// 保存前検証 (preview) の 1 件。target=section のとき field_id、target=example のとき
+// example_index (1-based) が立つ。どちらも立たなければグローバル (intro / 全体構成) の issue。
+export interface RubricIssue {
+  severity: RubricIssueSeverity;
+  code: RubricIssueCode;
+  message: string;
+  field_id: string;
+  example_index: number;
+  keys: string[];
+}
+
+export type StatsDays = 7 | 30 | 90;
+export type FieldStatAvailability = "full" | "partial" | "none";
+
+export interface StatBucket {
+  value: string;
+  label: string | null;
+  vocab: string | null;
+  count: number;
+  share: number;
+  drilldown_query: string | null;
+}
+
+export interface StatSubMetric {
+  key: string;
+  label: string | null;
+  vocab: string | null;
+  filled: number;
+  total: number;
+  rate: number;
+  note: string;
+}
+
+export interface StatCoverage {
+  filled: number;
+  total: number;
+  rate: number;
+  scope_label: string;
+}
+
+export interface StatAverage {
+  label: string;
+  value: number;
+  unit: string;
+}
+
+export interface FieldStat {
+  field_id: string;
+  availability: FieldStatAvailability;
+  source_note: string;
+  notes: string[];
+  coverage: StatCoverage | null;
+  distribution: StatBucket[];
+  sub_metrics: StatSubMetric[];
+  average: StatAverage | null;
+}
+
+export interface FieldStatsResponse {
+  window: { days: number; since: string; until: string };
+  denominator: { label: string; count: number; note: string };
+  generated_at: string;
+  fields: Record<string, FieldStat>;
+}
+
 export interface RubricGetResponse {
   rubric: SummarizerRubric;
   contract: RubricContract;
   runtime: RuntimeInfo;
+  guide: RubricGuide;
 }
 
 export interface RubricSaveResponse {
@@ -103,6 +207,7 @@ export interface PreviewResult {
   composed_chars: number;
   legacy_chars: number;
   rendered_sample: string;
+  issues: RubricIssue[];
 }
 
 export interface TestResult {
@@ -133,4 +238,8 @@ export const promptRubricApi = {
       rubric: params.rubric ?? null,
       article_id: params.articleId ?? null,
     }),
+
+  // GET /api/v1/prompts/summarizer/rubric/field-stats?days=N — 直近 N 日の実出力統計。
+  // 保存では invalidate しない (統計は「その時々の基準で生成された履歴」— 設計書 §4)。
+  getFieldStats: (days: StatsDays) => getJson<FieldStatsResponse>(`${BASE}/field-stats?days=${days}`),
 };

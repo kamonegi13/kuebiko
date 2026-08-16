@@ -15,14 +15,16 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config_loader import load_app_config
 from src.logging_config import get_logger
 from src.pipeline.briefing import MAX_LLM_BODY_CHARS
 from src.pipeline.summary import SummaryOutput
+from src.prompts.rubric_guide import guide_payload
 from src.prompts.rubric_model import (
+    RubricIssue,
     RubricValidation,
     SummarizerRubric,
     contract_fields,
@@ -42,6 +44,7 @@ from src.storage import config_store
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.model_tiers import Step, build_llm_for
+from src.ui.services.rubric_field_stats import MAX_DAYS, MIN_DAYS, field_stats_cached
 
 _log = get_logger(__name__)
 
@@ -59,6 +62,18 @@ def _join_errors(errors: tuple[str, ...]) -> str:
 
 def _no_rubric_error() -> HTTPException:
     return HTTPException(status_code=500, detail="判定基準が見つかりません (seed 未投入)")
+
+
+def _issue_payload(issue: RubricIssue) -> dict[str, Any]:
+    """検証 issue 1 件を JSON 化する (UI がカードへ飛ぶための位置情報つき)。"""
+    return {
+        "severity": issue.severity,
+        "code": issue.code,
+        "message": issue.message,
+        "field_id": issue.field_id,
+        "example_index": issue.example_index,
+        "keys": list(issue.keys),
+    }
 
 
 # ---------- GET /rubric ----------
@@ -109,6 +124,12 @@ async def get_rubric() -> dict[str, Any]:
         "rubric": rubric.model_dump(),
         "contract": _contract_payload(),
         "runtime": _runtime_payload(),
+        # フィールドの分類と「効く先」。ラベル自体は rubric_group 語彙が SSoT なので
+        # ここでは group id のみを返す (UI に文言表を複製させない)。
+        "guide": guide_payload(
+            [s.field_id for s in rubric.sections],
+            {s.field_id: s.kind for s in rubric.sections},
+        ),
     }
 
 
@@ -186,6 +207,9 @@ async def preview_rubric(req: PreviewRubricRequest) -> dict[str, Any]:
         "valid": not errors,
         "errors": errors,
         "warnings": list(validation.warnings),
+        # errors/warnings と同内容を「どのカードの問題か」つきで返す (UI の局在化用)。
+        # 文字列列は後方互換のため残す (I-3)。
+        "issues": [_issue_payload(i) for i in validation.issues],
         "unknown_fields": list(validation.unknown_fields),
         "missing_fields": list(validation.missing_fields),
         "composed": composed[:_PREVIEW_CHAR_CAP],
@@ -193,6 +217,17 @@ async def preview_rubric(req: PreviewRubricRequest) -> dict[str, Any]:
         "legacy_chars": validation.legacy_chars,
         "rendered_sample": rendered_sample[:_PREVIEW_CHAR_CAP],
     }
+
+
+# ---------- GET /rubric/field-stats ----------
+
+
+# ⚠ **同期 def で定義する** (async にしない)。数十本の集計クエリが event loop を占有すると
+# UI 全体が固まる (PIR 一覧 18秒→2.5秒 の教訓)。FastAPI が threadpool に逃がす。
+@prompt_rubric_api.get("/rubric/field-stats")
+def field_stats(days: int = Query(30, ge=MIN_DAYS, le=MAX_DAYS)) -> dict[str, Any]:
+    """直近 ``days`` 日の実出力統計 (判定基準を直す前に現状を見るための接地)。"""
+    return field_stats_cached(days)
 
 
 # ---------- POST /rubric/test (LLM dry-run) ----------
