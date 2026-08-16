@@ -49,7 +49,10 @@ export function RubricToc({
   onCollapseAll,
 }: RubricTocProps) {
   return (
-    <nav className="space-y-3 text-sm lg:sticky lg:top-4">
+    // ⚠ ここで sticky にしない — 呼び出し側の aside ごと sticky にする。nav だけを
+    // sticky にすると、スクロール時に nav が兄弟要素 (分母の注記) の上へスライドして
+    // 文字が重なる。
+    <nav className="space-y-3 text-sm">
       <div className="relative">
         <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
         <input

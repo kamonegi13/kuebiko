@@ -419,7 +419,9 @@ export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditor
 
       {/* 目次 + 本文 の 2 カラム */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
-        <aside className="space-y-3">
+        {/* 目次と注記をまとめて 1 つの sticky 単位にする。目次だけを sticky にすると
+            スクロール時に注記へ重なる。項目数が多く画面高を超えるので自前でスクロールさせる。 */}
+        <aside className="space-y-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
           <RubricToc
             groups={tocGroups}
             exampleCount={draft.examples.length}
