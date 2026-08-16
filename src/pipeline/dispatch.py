@@ -219,6 +219,15 @@ def _find_pipeline(
 
 
 def _load_template(path: Path = DEFAULT_TEMPLATE_PATH) -> jinja2.Template:
+    # 層分け (2026-08-16): 判定基準の SSoT は DB (config_store, key=summarizer_rubric)。
+    # 合成に失敗したら **必ず** legacy .j2 に落ちる (WARNING を残す = 無音にしない)。
+    if path == DEFAULT_TEMPLATE_PATH:
+        from src.prompts.rubric_store import build_summarizer_template
+
+        composed = build_summarizer_template(path)
+        if composed is not None:
+            return composed
+    # ---- 以下、既存コード (rollback 経路) ----
     if not path.exists():
         raise FileNotFoundError(f"Jinja2 テンプレートが見つかりません: {path.resolve()}")
     # loader root は [テンプレートの親, prompts root] の 2 段。区分サブディレクトリ
