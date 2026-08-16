@@ -586,6 +586,30 @@ async def prompts_file(request: Request, path: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+_SUMMARIZER_TEMPLATE_PATH = "prompts/briefing/summarizer.j2"
+
+
+def _summarizer_rollback_notice(path: str) -> dict[str, Any]:
+    """summarizer.j2 を保存しても構造化編集が有効な間は無効であることを警告する。
+
+    判定基準 (rubric) の層分け (2026-08-16) 以降、判定基準の実体は DB 側の合成
+    テンプレートであり、この .j2 は rollback 用の据置コピーにすぎない。合成が
+    実際に有効か (``active_source``) を判定してから notice を出す — env flag だけを
+    見ると、合成が壊れて legacy にフォールバック中の状態を誤って「無効」と伝えてしまう。
+    """
+    if path != _SUMMARIZER_TEMPLATE_PATH:
+        return {}
+    from src.prompts.rubric_store import build_summarizer_template
+    from src.prompts.summarizer_composer import LEGACY_TEMPLATE_PATH
+
+    if build_summarizer_template(LEGACY_TEMPLATE_PATH) is None:
+        return {}
+    return {
+        "effective": False,
+        "notice": "構造化編集が有効なため、このファイルは現在 LLM に使われません (rollback 用)",
+    }
+
+
 @pages_api.post("/prompts/save")
 async def prompts_save(
     request: Request,
@@ -602,7 +626,7 @@ async def prompts_save(
         )
     except EditError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return {"saved": True, "path": path}
+    return {"saved": True, "path": path, **_summarizer_rollback_notice(path)}
 
 
 # ---------- /config ----------

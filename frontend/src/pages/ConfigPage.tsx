@@ -9,6 +9,11 @@ import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
 import { HostWatchdogCard } from "../components/HostWatchdogCard";
+import { SummarizerRubricEditor } from "./config/SummarizerRubricEditor";
+
+// summarizer プロンプトの層分け (WP3): 判定基準の SSoT は DB (rubric)。このパスだけ
+// PromptsEditor が構造化エディタに分岐する (他ファイルは既存の raw textarea のまま)。
+const SUMMARIZER_RUBRIC_PATH = "prompts/briefing/summarizer.j2";
 
 // 設定画面の整理 (2026-08-02): タブが **3 種類の異なるもの** を同列に並べていて
 // 「ごちゃごちゃ」していた。種類で群に分け、群内は概念順に並べる:
@@ -279,6 +284,8 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+  // summarizer.j2 選択時に raw editor を明示的に見たい場合のみ true (既定は構造化編集)。
+  const [showRaw, setShowRaw] = useState(false);
 
   const { data: list } = useQuery({
     queryKey: ["prompts-list"],
@@ -300,6 +307,12 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   useEffect(() => {
     if (!selected && list?.files.length) setSelected(list.files[0]);
   }, [list, selected]);
+
+  useEffect(() => {
+    setShowRaw(false);
+  }, [selected]);
+
+  const isSummarizerRubric = selected === SUMMARIZER_RUBRIC_PATH && !showRaw;
 
   const save = useMutation({
     mutationFn: () => pagesApi.promptsSave(selected!, content),
@@ -325,30 +338,42 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
         />
       </aside>
 
-      <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border-subtle flex items-center justify-between">
-          <div className="text-fg font-mono text-sm">{selected || "ファイルを選択..."}</div>
-          <div className="flex items-center gap-3">
-            {file?.backup_exists && <span className="text-fg-subtle text-xs">バックアップあり</span>}
-            {message && (
-              <span className={`text-xs px-2 py-0.5 rounded ${message.kind === "success" ? "bg-success-soft text-success" : "bg-critical-soft text-critical"}`}>{message.text}</span>
-            )}
-            <button
-              onClick={() => save.mutate()}
-              disabled={!dirty || save.isPending || !selected}
-              className="inline-flex items-center gap-1 bg-accent text-bg px-4 py-1.5 rounded-md font-semibold text-sm hover:bg-accent-hover disabled:opacity-40 transition-colors"
-            >
-              {save.isPending ? "保存中..." : <><Save className="h-4 w-4" /> 保存</>}
-            </button>
+      {isSummarizerRubric ? (
+        <SummarizerRubricEditor onSwitchToRaw={() => setShowRaw(true)} />
+      ) : (
+        <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border-subtle flex items-center justify-between">
+            <div className="text-fg font-mono text-sm">{selected || "ファイルを選択..."}</div>
+            <div className="flex items-center gap-3">
+              {selected === SUMMARIZER_RUBRIC_PATH && (
+                <button
+                  onClick={() => setShowRaw(false)}
+                  className="text-xs text-accent hover:underline"
+                >
+                  構造化編集に戻る
+                </button>
+              )}
+              {file?.backup_exists && <span className="text-fg-subtle text-xs">バックアップあり</span>}
+              {message && (
+                <span className={`text-xs px-2 py-0.5 rounded ${message.kind === "success" ? "bg-success-soft text-success" : "bg-critical-soft text-critical"}`}>{message.text}</span>
+              )}
+              <button
+                onClick={() => save.mutate()}
+                disabled={!dirty || save.isPending || !selected}
+                className="inline-flex items-center gap-1 bg-accent text-bg px-4 py-1.5 rounded-md font-semibold text-sm hover:bg-accent-hover disabled:opacity-40 transition-colors"
+              >
+                {save.isPending ? "保存中..." : <><Save className="h-4 w-4" /> 保存</>}
+              </button>
+            </div>
           </div>
+          <textarea
+            value={content}
+            onChange={(e) => { setContent(e.target.value); setDirty(true); }}
+            className="w-full h-[calc(100vh-18rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
+            spellCheck={false}
+          />
         </div>
-        <textarea
-          value={content}
-          onChange={(e) => { setContent(e.target.value); setDirty(true); }}
-          className="w-full h-[calc(100vh-18rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
-          spellCheck={false}
-        />
-      </div>
+      )}
     </div>
   );
 }

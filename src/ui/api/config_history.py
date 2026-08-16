@@ -41,6 +41,7 @@ _KNOWN_KEYS: dict[str, str] = {
     "jp_ci_operators": "重要インフラ 指定事業者名簿",
     "dashboard_layout": "ダッシュボード レイアウト (widget 配置 + 共有既定 config)",
     "grok_tasks": "Grok タスク定義 (外部 Grok 側設定の写し)",
+    "summarizer_rubric": "記事要約プロンプトの判定基準",
 }
 
 # 一覧で版数を数える上限 (config 保存は低頻度なので十分大きい固定値)。
@@ -97,6 +98,10 @@ def _invalidate(key: str) -> None:
         from src.tools.model_tiers import invalidate_model_tiers_cache
 
         invalidate_model_tiers_cache()
+    elif key == "summarizer_rubric":
+        from src.prompts.rubric_store import invalidate_summarizer_cache
+
+        invalidate_summarizer_cache()
 
 
 class RevertRequest(BaseModel):

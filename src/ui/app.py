@@ -376,6 +376,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from src.cti.router import seed_source_quality_if_absent
             from src.cti.routing_rules import seed_routing_rules_if_absent
             from src.pir.integration import seed_pir_if_absent
+            from src.prompts.rubric_store import seed_rubric_if_absent
             from src.scheduler.job_registry import seed_jobs_if_absent
             from src.sources.source_store import seed_all_if_absent as seed_sources_if_absent
             from src.tools.channel_registry import seed_channels_if_absent
@@ -399,6 +400,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _log.info("source_quality_seeded_from_yaml")
             if seed_pir_if_absent():
                 _log.info("pir_seeded_from_yaml")
+            if seed_rubric_if_absent():
+                _log.info("summarizer_rubric_seeded_from_yaml")
             sources_seeded = seed_sources_if_absent()
             if any(sources_seeded.values()):
                 _log.info("sources_seeded_from_yaml", seeded=sources_seeded)
@@ -616,6 +619,7 @@ def create_app() -> FastAPI:
     from src.ui.api.pages import pages_api
     from src.ui.api.pir import pir_api
     from src.ui.api.product_routing import product_routing_api
+    from src.ui.api.prompt_rubric import prompt_rubric_api
     from src.ui.api.routing_rules import routing_rules_api
     from src.ui.api.runs import dash_api, runs_api
     from src.ui.api.situations import situations_api
@@ -630,6 +634,7 @@ def create_app() -> FastAPI:
     app.include_router(runs_api)
     app.include_router(dash_api)
     app.include_router(pages_api)
+    app.include_router(prompt_rubric_api)
     app.include_router(pir_api)
     app.include_router(jobs_api)
     app.include_router(routing_rules_api)

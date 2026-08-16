@@ -29,6 +29,7 @@ CONFIG_CATEGORY_ORDER: tuple[str, ...] = (
     "パイプライン",
     "CTI 辞書・語彙",
     "配信・PIR",
+    "プロンプト",
     "その他",
 )
 
@@ -46,7 +47,9 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
     "prompts/briefing/summarizer.j2": FileInfo(
         "ブリーフィング",
         "記事要約・翻訳",
-        "daily-briefing の per-article 要約 + 和訳 + 重要度/カテゴリ判定 (記事ごとに 1 呼出)",
+        "daily-briefing の per-article 要約 + 和訳 + 重要度/カテゴリ判定。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の判定基準はプロンプトタブのカード編集)",
     ),
     "prompts/digest/pir_daily_focus.j2": FileInfo(
         "ダイジェスト",
@@ -195,6 +198,11 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "配信・PIR",
         "PIR (優先情報要件)",
         "PIR 定義 (初回 seed 専用 — runtime SSoT は DB、UI 編集は PIR 画面)",
+    ),
+    "config/prompts/summarizer_rubric.yaml": FileInfo(
+        "プロンプト",
+        "記事要約の判定基準",
+        "summarizer の判定基準 (初回 seed 専用 — runtime SSoT は DB、UI 編集はプロンプトタブ)",
     ),
 }
 
