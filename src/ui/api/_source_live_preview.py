@@ -15,7 +15,7 @@ url_guard の public 検証を通す** (private / loopback / metadata は fetch 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from src.sources import source_store
@@ -108,6 +108,20 @@ def _preview_sitemap(name: str) -> LivePreviewResponse:
     return _preview_sitemap_url(str(urls[0]), str(e.get("url_include_pattern", "")))
 
 
+def _lastmod_sort_key(lastmod: datetime | None) -> tuple[bool, datetime]:
+    """lastmod を比較可能な key に正規化する (None は最後)。
+
+    ⚠ **同一 sitemap 内に naive と aware が混在しうる** — ``<lastmod>2026-07-30</lastmod>``
+    (日付のみ = naive) と ``2026-07-30T12:00:00+00:00`` (TZ 付き = aware) が同じファイルに
+    並ぶサイトが実在する (実測: 261 件中 naive 134 / aware 127)。素の datetime 比較は
+    ``TypeError: can't compare offset-naive and offset-aware datetimes`` になり、
+    **取得テストが必須ゲートなのでそのソースを登録できなくなる**。naive は UTC とみなす。
+    """
+    if lastmod is None:
+        return (False, datetime.min.replace(tzinfo=UTC))
+    return (True, lastmod if lastmod.tzinfo else lastmod.replace(tzinfo=UTC))
+
+
 def _preview_sitemap_url(sitemap_url: str, pattern: str) -> LivePreviewResponse:
     """サイトマップ URL を直接取得し、pattern に一致する URL を記事として返す。"""
     assert_safe_public_url(sitemap_url)
@@ -124,10 +138,7 @@ def _preview_sitemap_url(sitemap_url: str, pattern: str) -> LivePreviewResponse:
     matched = [(u, lm) for (u, lm) in locs if not pattern or re.search(pattern, u)]
     # lastmod 降順 (None は最後) で「最新」を優先。document 順だと evergreen
     # ページ (websecurity 解説等) が並び、最新の注意喚起が出ない。
-    matched.sort(
-        key=lambda x: (x[1] is not None, x[1] or datetime.min.replace(tzinfo=None)),
-        reverse=True,
-    )
+    matched.sort(key=lambda x: _lastmod_sort_key(x[1]), reverse=True)
     items = [
         PreviewArticle(
             title=fetch_page_title(u) or (u.rstrip("/").split("/")[-1] or u),

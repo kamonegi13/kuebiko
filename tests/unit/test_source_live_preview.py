@@ -4,7 +4,7 @@
 yaml パースを検証する。
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -206,3 +206,33 @@ class TestSitemapCandidatePreview:
     def test_default_pattern_is_host_wide(self, monkeypatch: pytest.MonkeyPatch) -> None:
         c = self._build(monkeypatch)
         assert c.url_include_pattern == r"^https?://e\.example/.+"
+
+
+class TestLastmodSortKeyMixedTimezone:
+    """sitemap の lastmod は naive と aware が混在しうる (2026-08-16)。
+
+    実測 (devcore.tw): 261 件中 日付のみ 134 / TZ 付き 127。素の datetime 比較は
+    TypeError になり、**取得テストが登録の必須ゲートなのでソースを登録できなくなる**。
+    """
+
+    def test_mixed_naive_and_aware_sorts_without_error(self) -> None:
+        from src.ui.api._source_live_preview import _lastmod_sort_key
+
+        naive = datetime(2026, 7, 30)
+        aware = datetime(2026, 8, 1, tzinfo=UTC)
+        rows = [("u1", naive), ("u2", aware), ("u3", None)]
+
+        rows.sort(key=lambda x: _lastmod_sort_key(x[1]), reverse=True)
+
+        assert [u for (u, _) in rows] == ["u2", "u1", "u3"]
+
+    def test_none_sorts_last(self) -> None:
+        from src.ui.api._source_live_preview import _lastmod_sort_key
+
+        assert _lastmod_sort_key(None) < _lastmod_sort_key(datetime(2000, 1, 1))
+
+    def test_naive_treated_as_utc(self) -> None:
+        from src.ui.api._source_live_preview import _lastmod_sort_key
+
+        _, normalized = _lastmod_sort_key(datetime(2026, 7, 30))
+        assert normalized == datetime(2026, 7, 30, tzinfo=UTC)
