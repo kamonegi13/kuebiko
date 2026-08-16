@@ -45,6 +45,12 @@ _log = get_logger(__name__)
 # 走らせる — 保存 ⊇ 検出の保証 (2026-08-06、body_limits.py 参照)。
 MAX_LLM_BODY_CHARS = 40_000
 
+# 抽出した公開日の妥当域 (_is_plausible_published)。
+# 未来側は時計ずれ / TZ 表記ゆれの吸収分だけ許す。
+FUTURE_TOLERANCE = timedelta(days=1)
+# 過去側は「一覧に載る = 新着」という前提の緩い上限。実測の誤読は 1,863 日前だった。
+MAX_BACKDATE_DAYS = 365
+
 
 async def _process_article(
     article: Article,
@@ -357,6 +363,11 @@ def _resolve_published(article: Article, extraction: ExtractionResult) -> Articl
 
     実公開日が判った時点で置き換え、旗を下ろす。抽出が日付を取れなければ代用値のまま
     (旗も立てたまま) にして、「判らない」を「今日」と偽らない。
+
+    ⚠ **抽出日付を無条件に信じない** — 実測で Push Security の記事が 1,863 日前と
+    抽出された (ページ内の著作権表記等の誤読とみられる)。誤った日付を書くと記事が
+    時間軸の遥か下に沈んで実質消えるため、妥当性を外れた値は棄却して代用値のまま残す。
+    「判らない」を保つ方が、確信をもって誤るより後段が扱いやすい。
     """
     if not article.published_is_placeholder:
         return article
@@ -364,7 +375,28 @@ def _resolve_published(article: Article, extraction: ExtractionResult) -> Articl
     if extracted is None:
         return article
     resolved = extracted if extracted.tzinfo else extracted.replace(tzinfo=UTC)
+    if not _is_plausible_published(resolved, article.published):
+        _log.warning(
+            "published_date_rejected",
+            article_id=article.id,
+            extracted=resolved.isoformat(),
+            fallback=article.published.isoformat(),
+        )
+        return article
     return article.model_copy(update={"published": resolved, "published_is_placeholder": False})
+
+
+def _is_plausible_published(extracted: datetime, ingested_at: datetime) -> bool:
+    """抽出した公開日が採用に値するか (2026-08-16)。
+
+    - 未来 (時計ずれ分の猶予を超える) は誤り。「まだ公開されていない記事」になり
+      時間窓やソートから外れる
+    - 取込時刻より ``MAX_BACKDATE_DAYS`` 以上前は誤読を疑う。placeholder が付くのは
+      一覧/sitemap 由来で、一覧は新着しか載せないため大きく遡ることは通常ない
+    """
+    if extracted > ingested_at + FUTURE_TOLERANCE:
+        return False
+    return extracted >= ingested_at - timedelta(days=MAX_BACKDATE_DAYS)
 
 
 def _resolve_body(article: Article, extraction: ExtractionResult) -> tuple[str, str, str | None]:
