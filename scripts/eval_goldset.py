@@ -115,14 +115,35 @@ async def _run_one(llm: Any, template: Any, art: GoldArticle) -> dict[str, Any]:
     return {"article_id": art.article_id, **out.model_dump()}
 
 
-async def _run_all(articles: list[GoldArticle], label: str) -> Path:
-    from src.config_loader import load_config
-    from src.pipeline.dispatch import _load_template
+def _build_template(drop: list[str]) -> Any:
+    """評価用のテンプレートを組む。``drop`` 指定時は **DB に保存せず** 変種を使う。
+
+    本番の rubric を書き換えると production が即座に新版を使うため、
+    「もしこのフィールドを外したら」はメモリ上の変種で試す。
+    """
+    from src.pipeline.dispatch import DEFAULT_TEMPLATE_PATH, _load_template
+
+    if not drop:
+        return _load_template()  # 本番と同一経路
+    from src.eval.rubric_variant import drop_fields
+    from src.prompts.rubric_store import load_rubric
+    from src.prompts.summarizer_composer import build_template
+
+    rubric = load_rubric()
+    if rubric is None:
+        raise RuntimeError("DB から rubric を取得できないため変種を作れない")
+    return build_template(drop_fields(rubric, drop), path=DEFAULT_TEMPLATE_PATH)
+
+
+async def _run_all(articles: list[GoldArticle], label: str, drop: list[str]) -> Path:
+    from src.config_loader import load_app_config
     from src.tools.model_tiers import Step, build_llm_for
 
-    config = load_config()
+    config = load_app_config()
     llm = build_llm_for(Step.ARTICLE_SUMMARY, config)
-    template = _load_template("prompts/briefing/summarizer.j2")
+    template = _build_template(drop)
+    if drop:
+        print(f"変種で実行 (除外フィールド: {', '.join(drop)}) — DB は変更しない", file=sys.stderr)
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     path = RUNS_DIR / f"{label}.jsonl"
@@ -143,7 +164,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"gold set が無い。先に build を実行する: {GOLDSET_PATH}", file=sys.stderr)
         return 1
     articles = load_goldset(GOLDSET_PATH)
-    path = asyncio.run(_run_all(articles, args.label))
+    path = asyncio.run(_run_all(articles, args.label, args.drop_field or []))
     print(f"{len(articles)} 件を実行 → {path}")
     return 0
 
@@ -217,6 +238,11 @@ def main() -> int:
 
     r = sub.add_parser("run", help="凍結した標本を現行 rubric で走らせる")
     r.add_argument("--label", required=True, help="実行結果の名前 (例 baseline)")
+    r.add_argument(
+        "--drop-field",
+        action="append",
+        help="判定基準と出力例からこのフィールドを外して実行する (DB は変更しない)",
+    )
     r.set_defaults(func=cmd_run)
 
     c = sub.add_parser("compare", help="2 つの実行結果をフィールド別に突き合わせる")
