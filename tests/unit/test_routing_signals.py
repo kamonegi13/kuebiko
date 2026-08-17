@@ -1,4 +1,8 @@
-"""src.cti.routing_signals のテスト (Phase 5L-3: LLM フラグ駆動)。"""
+"""src.cti.routing_signals のテスト。
+
+Phase 5L-3 の「LLM フラグ駆動」は 2026-08-18 に撤去した (供給ゼロだったため)。
+日本標的の判定は regex + victim_country=JP が担う。
+"""
 
 from __future__ import annotations
 
@@ -45,12 +49,19 @@ class TestHarvestedSignals:
         assert signals.threat_actor_nations == frozenset()
 
 
-class TestLlmFlagsPrimary:
-    def test_llm_high_confidence_overrules_regex_japan_false_positive(self) -> None:
-        """LLM が japan_targeted=False (high) なら regex の汎用語誤検知を overrule。
+class TestLlmFlagsPassThrough:
+    """routing_flags は判定に使わず、値の受け渡しだけ行う (2026-08-18 以降)。
 
-        Phase 5L-1 で「国内」を regex から外したが、なお残る regex 由来の誤検知
-        (例: 「日本の研究者が解説」) を LLM の判断で打ち消す検証。
+    Phase 5L-3 は「LLM フラグを primary、regex を補助」に格下げする設計だったが、
+    summarizer がこのフラグを一度も返していなかった (gold set 258 件で返却ゼロ)。
+    primary 経路は撤去し、フラグは snapshot への保持のみ残す。
+    """
+
+    def test_regex_general_word_does_not_reach_critical(self) -> None:
+        """「日本の研究者が解説」のような汎用語は critical に上げない。
+
+        Phase 5L-1 で「国内」、Phase 5O で発信者語を regex から外した結果として
+        成立する — LLM の overrule に頼っていない。
         """
         body = "Linux kernel CVE。日本の研究者が解説した。"  # regex で「日本」match
         msg = _msg(
@@ -65,21 +76,20 @@ class TestLlmFlagsPrimary:
             },
         )
         signals = extract_signals_from_briefing(msg, body_text=body)
-        # LLM が False と言っているので regex に勝つ
         assert signals.mentions_japan_critical is False
-        # LLM フラグが metadata に保持されている
+        # フラグ自体は snapshot に保持される (判定には使わない)
         assert signals.llm_japan_targeted is False
         assert signals.llm_is_breaking_critical is True
         assert signals.llm_dedup_key == "cve-2026-31431"
         assert signals.llm_confidence == "high"
 
-    def test_llm_low_confidence_falls_back_to_regex(self) -> None:
-        """LLM confidence=low なら regex を採用 (フォールバック)。"""
+    def test_regex_decides_regardless_of_llm_confidence(self) -> None:
+        """confidence の値に関わらず regex が判定する (旧: low のときだけ regex)。"""
         body = "JPCERT が新たな日本企業侵害を報告した。"
         msg = _msg(
             metadata={
                 "routing_flags": {
-                    "japan_targeted": False,  # LLM は False と言っているが confidence=low
+                    "japan_targeted": False,  # 値が来ても判定には使わない
                     "is_breaking_critical": False,
                     "primary_actor_id": "",
                     "dedup_key": "",
@@ -88,11 +98,17 @@ class TestLlmFlagsPrimary:
             },
         )
         signals = extract_signals_from_briefing(msg, body_text=body)
-        # LLM 不確実なので regex フォールバック → JPCERT が critical に hit
+        # regex が判定 → 「日本企業侵害」が critical に hit
         assert signals.mentions_japan_critical is True
 
-    def test_llm_high_japan_targeted_true_drives_critical(self) -> None:
-        """LLM が japan_targeted=True (high) で日本標的判定が立つ。"""
+    def test_llm_japan_targeted_true_no_longer_drives_critical(self) -> None:
+        """japan_targeted=True が来ても日本標的判定は動かない (2026-08-18)。
+
+        summarizer はこのフラグを一度も返しておらず (gold set 258 件で返却ゼロ)、
+        primary 経路は「不在ゆえの False」で regex を握り潰すだけだった。判定は
+        regex + victim_country に一本化した。**主題アクター (judgment 由来) は生きた
+        データなので has_known_apt には効き続ける** — この差を固定する。
+        """
         msg = _msg(
             category="apt",
             metadata={
@@ -106,8 +122,8 @@ class TestLlmFlagsPrimary:
             },
         )
         signals = extract_signals_from_briefing(msg, body_text="活動報告")
-        assert signals.mentions_japan_critical is True
-        assert signals.has_known_apt is True
+        assert signals.mentions_japan_critical is False  # 本文に日本標的の語が無い
+        assert signals.has_known_apt is True  # judgment 由来の主題アクターは有効
         assert signals.llm_primary_actor_id == "salt-typhoon"
 
     def test_no_routing_flags_uses_regex_only(self) -> None:
@@ -140,7 +156,10 @@ class TestLlmFlagsPrimary:
 
 class TestJapanWatchPrecision:
     """2026-06-17: japan_watch 誤分類修正。is_japan_security_relevant は『日本が実際の
-    標的/被害』(LLM japan_targeted or victim_country=JP) のみ true。単なる言及では false。"""
+    標的/被害』のみ true で、単なる言及では false。
+
+    根拠は 2026-08-18 に victim_country=JP の抽出 1 本になった (LLM japan_targeted は
+    供給ゼロで、不在の False が regex を握り潰す副作用しか無かった)。"""
 
     def _flags(self, *, japan_targeted: bool, confidence: str = "high") -> dict[str, object]:
         return {
@@ -182,14 +201,19 @@ class TestJapanWatchPrecision:
         sig = extract_signals_from_briefing(msg, body_text="OpenSSL")
         assert sig.is_japan_security_relevant is False
 
-    def test_genuine_japan_target_via_llm_flag(self) -> None:
+    def test_llm_flag_alone_does_not_open_japan_watch(self) -> None:
+        """japan_targeted=True だけでは japan_watch に流さない (2026-08-18)。
+
+        このフラグは供給されないため、唯一の根拠は victim_country=JP の抽出になった
+        (下の test_genuine_japan_target_via_victim_country が本来の経路)。
+        """
         msg = _msg(
             category="breach",
             summary="日本企業X社が不正アクセスで顧客情報漏洩",
             metadata={**self._flags(japan_targeted=True)},
         )
         sig = extract_signals_from_briefing(msg, body_text="X社侵害")
-        assert sig.is_japan_security_relevant is True
+        assert sig.is_japan_security_relevant is False
 
     def test_genuine_japan_target_via_victim_country(self) -> None:
         # LLM confidence 低でも victim_country=JP なら japan_watch (ground truth)

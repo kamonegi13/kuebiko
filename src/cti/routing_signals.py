@@ -1,14 +1,18 @@
-"""BriefingMessage → RoutingSignals 抽出 (Phase 5K, 5L-3 で LLM フラグ駆動化)。
+"""BriefingMessage → RoutingSignals 抽出 (Phase 5K)。
 
 ルーティング判定の入力となる客観的シグナルを集約する。RSS / Grok 両経路
 から呼ばれる共通モジュール。
 
-設計の階層 (Phase 5L-3 改修):
-    - Primary 信号: prompts/briefing/summarizer.j2 で LLM が出した routing_flags
-      (japan_targeted / is_breaking_critical / primary_actor_id / dedup_key /
-      confidence)。LLM は本文全体を読んで文脈判断するため精度が高い。
-    - Fallback 信号: 本ファイルで定義する regex (_JAPAN_GENERAL/CRITICAL_PATTERNS,
-      _KEV_PATTERNS 等)。LLM confidence=low や routing_flags 欠落時のみ採用。
+判定の供給元 (2026-08-18 現在):
+    - regex (_JAPAN_GENERAL/CRITICAL_PATTERNS, _KEV_PATTERNS 等) + 抽出済
+      victim_country + CISA KEV catalog 照合 + 検出アクター。
+    - ``metadata["routing_flags"]`` は **judgment 分類器が注入する主題アクターと
+      その確度だけ** が実データ。summarizer 由来の japan_targeted /
+      is_breaking_critical / dedup_key は返却ゼロだった (gold set 258 件)。
+
+⚠ Phase 5L-3 は「LLM フラグを primary、regex を fallback へ格下げ」する設計だったが、
+その primary が一度も供給されないまま、judgment 由来の confidence で primary 経路が
+有効になり **不在ゆえの False が regex を握り潰していた**。primary 経路は撤去済。
 
 役割:
     - 日本標的の確度判定 (mentions_japan / mentions_japan_critical)
@@ -83,9 +87,8 @@ def _max_cvss_for(msg: BriefingMessage, full_text: str) -> float:
 class RoutingSignals:
     """ルーティング判定の入力となる客観的シグナルの集合。
 
-    Phase 5L-3: LLM が直接出力する routing_flags を primary シグナルとし、
-    regex を fallback (LLM confidence=low 時の補助) にした。
-    ``mentions_japan_critical`` 等の判定は両者の合議で決まる。
+    ``llm_*`` フィールドは snapshot への保持用で、判定には使わない
+    (``llm_primary_actor_id`` のみ judgment 由来の実データとして has_known_apt に効く)。
     """
 
     # 必須情報
@@ -93,7 +96,7 @@ class RoutingSignals:
     importance: Literal["high", "medium", "low"]
     article_type: ArticleType
 
-    # 日本関連 (LLM フラグ + regex の合議)
+    # 日本関連 (regex + 抽出 victim_country)
     mentions_japan: bool = False
     mentions_japan_critical: bool = False  # 日本企業/政府/防衛/重要インフラ
     is_japan_security_relevant: bool = False  # CTI 関連かつ日本
@@ -112,7 +115,8 @@ class RoutingSignals:
     # Phase 5N: APT 関連組織の内部リーク (PIR 3) — i-Soon, NTC Vulkan 等
     is_apt_leak: bool = False
 
-    # Phase 5L-3: LLM 構造化フラグ (primary 信号)
+    # routing_flags の保持 (判定には使わない。primary_actor_id / confidence のみ
+    # judgment 分類器が供給する実データ)
     llm_japan_targeted: bool = False
     llm_is_breaking_critical: bool = False
     llm_primary_actor_id: str = ""
@@ -172,8 +176,8 @@ _JAPAN_GENERAL_PATTERNS = re.compile(
 #   - 日本(政府|防衛|自衛隊)/日本企業/日本標的: 標的化を明示する用語
 #   - 日系大手/国内重要インフラ: 攻撃対象表現
 #   - 防衛省/防衛装備/自衛隊/JSDF: 国防機関 (発信者と被害が一致しやすい)
-# 発信者・ベンダー識別は **LLM japan_targeted フラグ** に委譲し、regex は補助として
-# 強い signal のみに絞る。
+# 発信者・ベンダーの識別は regex を強い signal に絞ることで担保する
+# (当初は LLM japan_targeted フラグへ委譲する設計だったが、供給ゼロのため 2026-08-18 に撤回)。
 _JAPAN_CRITICAL_PATTERNS = re.compile(
     r"(日本(政府|防衛|自衛隊)|日本企業|日本標的|"
     r"日系大手|国内重要インフラ|"
@@ -275,26 +279,25 @@ def extract_signals_from_briefing(
         llm_hint=str(msg.metadata.get("article_type", "")) or None,
     )
 
-    # Phase 5L-3: LLM 構造化フラグを primary シグナルとして取得
+    # routing_flags の中身。**summarizer は 1 つも返していない** (gold set 258 件で返却
+    # ゼロ、2026-08-18 実測) — 実際に値が入るのは judgment 分類器が briefing.py で
+    # 注入する primary_actor_id / confidence / named_primary_actor だけ。
     llm_flags = parse_routing_flags(msg.metadata.get("routing_flags"))
+    # ⚠ この confidence は **judgment の主題アクター確度** であって、
+    # 「LLM が routing 判定に自信がある」ではない。両者を混同しないこと。
+    judgment_actor_confident = llm_flags.confidence in ("high", "medium")
 
-    # regex 由来のシグナル (fallback / 補助)
     regex_japan_general = bool(_JAPAN_GENERAL_PATTERNS.search(full_text))
     regex_japan_critical = bool(_JAPAN_CRITICAL_PATTERNS.search(full_text))
 
-    # 合議: LLM が confidence=high|medium で出した判定を primary、
-    # confidence=low や LLM フラグ未提供時のみ regex を採用。
-    # Phase 5O: 「Japan-mentioned ≠ Japan-targeted」を厳格化。
-    use_llm_primary = llm_flags.confidence in ("high", "medium")
-    if use_llm_primary:
-        # LLM 主導: japan_targeted=True なら critical 確定。
-        # False の場合は regex で誤検知しても overrule (発信者・ベンダー言及の誤検知防止)。
-        japan_critical = llm_flags.japan_targeted
-        japan_general = llm_flags.japan_targeted or regex_japan_critical
-    else:
-        # LLM 不確実 → regex フォールバック
-        japan_critical = regex_japan_critical
-        japan_general = regex_japan_general
+    # Phase 5L-3 は「LLM の japan_targeted を primary、regex を補助へ格下げ」する設計
+    # だったが、その primary が一度も供給されていなかった。にもかかわらず judgment 由来の
+    # confidence で primary 経路が有効になり、**不在ゆえの False が regex を overrule** して
+    # いた (14 日で 51 件 = 主題アクターが確定した記事だけに発生 = 最重要層)。
+    # 供給の無い primary を捨て、regex + victim_country=JP (下の japan_targeted_actual) に
+    # 一本化する。Phase 5O の「Japan-mentioned ≠ Japan-targeted」の厳格化はそちらが担う。
+    japan_critical = regex_japan_critical
+    japan_general = regex_japan_general
 
     # Phase 5O: japan_security_relevant は「日本標的の **active threat / 被害事案**」
     # を意味するよう厳格化。category=vulnerability (ベンダー製品 advisory) は
@@ -306,13 +309,12 @@ def extract_signals_from_briefing(
     # 実例: FBI の Outsider Enterprise 摘発 (米)、OpenSSL advisory、韓国クーパン breach
     # (victim=KR だが本文に「日本企業も注意」等で『日本企業』が混入) が誤分類。
     # regex は critical 語 (日本企業 等) でも「韓国だけでなく日本企業も…」のような
-    # 非標的文脈で誤発火する。よって **「日本が実際の標的/被害」= (LLM japan_targeted /
-    # 抽出 victim_country==JP)** を要求し、regex 単独では japan_watch に流さない。
-    # 真の日本被害は victim_country=JP 抽出 or LLM japan_targeted でほぼ捕捉される。
+    # 非標的文脈で誤発火する。よって **「日本が実際の標的/被害」= 抽出 victim_country==JP**
+    # を要求し、regex 単独では japan_watch に流さない。
+    # (旧実装はここに LLM japan_targeted の or を持っていたが、供給ゼロのため
+    #  victim_country=JP だけが実働していた。2026-08-18 に条件から外して実態と一致させた。)
     victim_country_iso = str(msg.metadata.get("victim_country_iso") or "").upper()
-    japan_targeted_actual = (use_llm_primary and llm_flags.japan_targeted) or (
-        victim_country_iso == "JP"
-    )
+    japan_targeted_actual = victim_country_iso == "JP"
     # 2026-06-17: 事故・運用ミス起因の漏洩 (誤送信 等) は敵対的サイバー脅威でないので
     # japan_watch から除外。攻撃語 / 検出 actor があれば事故扱いしない (「設定ミスを突かれ
     # 攻撃」等は脅威)。これも「(日本の) インシデント ≠ サイバー攻撃」の precision 是正。
@@ -328,15 +330,16 @@ def extract_signals_from_briefing(
 
     # B2: 派生 signal を local に hoist し、constructor と PIR signals 条件評価の両方へ供給。
     has_kev = (
-        bool(_KEV_PATTERNS.search(full_text))
-        or (use_llm_primary and llm_flags.is_breaking_critical)
-        or _cve_on_kev(msg, full_text)
+        # is_breaking_critical は供給ゼロだったので条件から外した (2026-08-18)。
+        bool(_KEV_PATTERNS.search(full_text)) or _cve_on_kev(msg, full_text)
     )
     is_zero_day = bool(_ZERO_DAY_PATTERNS.search(full_text))
     has_known_apt = (
         bool(_KNOWN_APT_PATTERNS.search(full_text))
         or bool(msg.metadata.get("detected_actor_ids"))
-        or (use_llm_primary and bool(llm_flags.primary_actor_id))
+        # primary_actor_id は judgment 分類器が供給する実データ。確度つきで採る
+        # (両者は briefing.py で同時に設定されるので、この and は現行挙動と等価)。
+        or (judgment_actor_confident and bool(llm_flags.primary_actor_id))
     )
     is_security_relevant = msg.category in _SECURITY_RELEVANT_BROAD
     is_apt_leak = msg.category == "apt_leak"
