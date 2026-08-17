@@ -44,9 +44,11 @@ def test_seed_covers_every_summary_output_field(seed: SummarizerRubric) -> None:
 def test_seed_splits_rubric_and_suppressed(seed: SummarizerRubric) -> None:
     kinds = [s.kind for s in seed.sections]
 
-    assert kinds.count("rubric") == 18
-    assert kinds.count("suppressed") == 6
+    assert kinds.count("rubric") == 17
+    assert kinds.count("suppressed") == 7
     suppressed = {s.field_id for s in seed.sections if s.kind == "suppressed"}
+    # article_type は 2026-08-18 に rubric → suppressed へ移動 (出力が枯死しており
+    # judgment 分類器が model_copy で確定するため)。
     assert suppressed == {
         "editorial_stance",
         "bluf",
@@ -54,6 +56,7 @@ def test_seed_splits_rubric_and_suppressed(seed: SummarizerRubric) -> None:
         "event_date",
         "event_date_basis",
         "compromise_date",
+        "article_type",
     }
     # editorial_stance だけは legacy と同じ位置 (routing_flags と pmesii_axes の間) に残す
     order = [s.field_id for s in seed.sections]

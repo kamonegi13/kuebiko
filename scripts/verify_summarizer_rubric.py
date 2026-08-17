@@ -334,12 +334,14 @@ def main() -> int:
     )
     if not ok:
         print(
-            "NG: 意味を変える差分または契約逸脱があります (--print-diff で詳細表示)",
+            "NG: 差分表に無い差分または契約逸脱があります (--print-diff で詳細表示)",
             file=sys.stderr,
         )
         return 1
 
-    print("OK: 意味を変える差分はありません")
+    # 「意味を変えない」ではない — 差分表 §2 は意図的な rubric 変更を含む。
+    # ここが保証するのは「表に無い差分が 1 件も無い」こと。
+    print("OK: 差分はすべて差分表に載っています")
     return 0
 
 

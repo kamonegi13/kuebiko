@@ -226,18 +226,6 @@
   なければ空配列 (該当無し)。**疑わしいものは含めない**。
 - ``analyst_note``: 日本の CTI 担当者の視点での
   補足コメント (1 行、日本語、任意)。なければ ``null``。
-- ``article_type``: **必須**。記事の **タイプ**を以下から 1 つ選択。
-  記事の文体・時制・列挙構造で判定する (規範的判定基準):
-  * ``breaking``: 「先週/昨日確認された」「現在進行形」「進行中インシデント」
-    「速報」が読み取れる事案報告。
-  * ``advisory``: ベンダー Advisory、CVE 警告、KEV、脆弱性詳細解説 (PoC 含む)。
-  * ``recap``: 「Weekly」「Monthly」「Top N」「振り返り」「week of …」「Best of …」
-    のような期間まとめ・列挙系。
-  * ``tutorial``: 「How to」「入門」「列挙ガイド」「学び方」のような解説・チュートリアル。
-  * ``research``: 「論文」「分析レポート」「アカデミックな技術解析」。
-  * ``press``: 製品発表 / 企業ニュース / リリース文。
-  * ``opinion``: 「論説」「コラム」「業界動向考察」のような著者主観コンテンツ。
-  分類が難しい時は ``breaking`` を選ぶ。
 - ``routing_flags``: **必須**。ルーティング判定用の構造化フラグ。
   以下のサブフィールドをすべて出力:
   * ``japan_targeted`` (bool): **日本の組織が攻撃・侵害・被害の "当事者" として
@@ -345,7 +333,6 @@
   "mitre_techniques": ["T1071.001", "T1566.001"],
   "analyst_note": "国内製造業の SOC は当該 IOC のブロックを推奨。",
   "remediation": "ScreenConnect を 23.9.8 以降へ更新し、掲載 IOC (C2 ドメイン/IP) を遮断する。",
-  "article_type": "breaking",
   "routing_flags": {
     "japan_targeted": true,
     "is_breaking_critical": true,
@@ -367,7 +354,6 @@
   "iocs": ["CVE-2026-23918"],
   "mitre_techniques": [],
   "analyst_note": "国内外の Apache 利用者は速やかにパッチ適用を推奨。",
-  "article_type": "advisory",
   "routing_flags": {
     "japan_targeted": false,
     "is_breaking_critical": true,
@@ -389,7 +375,6 @@
   "iocs": [],
   "mitre_techniques": [],
   "analyst_note": "",
-  "article_type": "opinion",
   "routing_flags": {
     "japan_targeted": false,
     "is_breaking_critical": false,

@@ -142,13 +142,6 @@ _FIELD_GUIDES: tuple[FieldGuide, ...] = (
             "src/ui/services/overview.py",
         ),
     ),
-    FieldGuide(
-        field_id="article_type",
-        group="classification",
-        order=3,
-        effect="まとめ記事・チュートリアルを配信から外す判定と、記事詳細の種別表示。",
-        sources=("src/cti/routing_rules.py", "src/ui/api/articles_feed.py"),
-    ),
     # ---- routing: 届け先と戦略レンズ ----
     FieldGuide(
         field_id="routing_flags",
@@ -356,6 +349,20 @@ _FIELD_GUIDES: tuple[FieldGuide, ...] = (
         order=6,
         effect="(出力させない) 初期侵害日。event_date との差が滞留時間 (dwell) になります。",
         sources=("src/cti/analysis_axes_classifier.py", "src/pipeline/summary.py"),
+    ),
+    FieldGuide(
+        field_id="article_type",
+        group="suppressed",
+        order=7,
+        effect=(
+            "(出力させない) 記事の種別。まとめ・チュートリアルを配信から外す判定に使われますが、"
+            "確定するのは取込時の judgment 分類器です。"
+        ),
+        sources=(
+            "src/cti/routing_rules.py",
+            "src/pipeline/briefing.py",
+            "src/ui/api/articles_feed.py",
+        ),
     ),
 )
 

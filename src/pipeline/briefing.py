@@ -170,22 +170,15 @@ async def _summarize_and_build(
         # 主題判定の根拠 (2026-08-13 可視化): 特に「主題なし」の理由を記事詳細へ届ける
         if _j.subject_rationale and _j.article_type != "recap":
             _rf["subject_rationale"] = _j.subject_rationale
-        # eval 基盤 (2026-08-17): summarizer の article_type は次行で捨てられるため、
-        # 破棄する前に「LLM 同士の不一致」を記録に残す。summarizer は rubric の
-        # 入力トークンと出力トークンを毎回払っているので、**まだ breaking に枯死して
-        # いるなら rubric から外せる** (速度と品質の両方が改善する)。
-        # 列を足す前にログで測る — 枯死が続いていれば列は不要になるため。
-        _log.info(
-            "article_type_disagreement",
-            article_id=getattr(article, "id", None),
-            summarizer=summary.article_type,
-            judgment=_j.article_type,
-            agreed=summary.article_type == _j.article_type,
-        )
         summary = summary.model_copy(
             update={
                 "editorial_stance": _j.editorial_stance,
-                "article_type": _j.article_type,  # summarizer で 100% breaking に枯死→救済
+                # summarizer には出させない (rubric で suppressed、2026-08-18)。判定は
+                # judgment 分類器が単独で担う。summarizer 側は本番 134 件 / gold set 86 件
+                # とも 100% breaking に枯死しており、指示していた 498 字は無駄だった。
+                # _j が None の fallback 経路でも schema 既定値が同じ breaking なので
+                # 挙動は変わらない。
+                "article_type": _j.article_type,
                 "diamond": _j.to_diamond_dict(),
                 "event_date": _j.event_date,
                 "event_date_basis": _j.event_date_basis,

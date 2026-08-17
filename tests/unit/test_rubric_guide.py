@@ -67,14 +67,16 @@ def test_order_is_a_gapless_sequence_within_each_group() -> None:
     }
 
     assert offenders == {}
-    # §1 の決定表と同じ内訳 (3 + 2 + 5 + 4 + 4 + 6 = 24)
+    # §1 の決定表と同じ内訳 (2 + 2 + 5 + 4 + 4 + 7 = 24)。
+    # article_type は 2026-08-18 に classification → suppressed へ移動
+    # (summarizer 出力が 100% breaking に枯死しており judgment 分類器が確定するため)。
     assert {g: len(o) for g, o in by_group.items()} == {
-        "classification": 3,
+        "classification": 2,
         "routing": 2,
         "victim": 5,
         "technical": 4,
         "narrative": 4,
-        "suppressed": 6,
+        "suppressed": 7,
     }
 
 
@@ -131,8 +133,8 @@ def test_guide_payload_maps_every_seeded_section() -> None:
     assert len(fields) == len(section_ids) == 24
     assert payload["unmapped_fields"] == []
     assert {f["field_id"] for f in fields} == set(SummaryOutput.model_fields)
-    # kind=suppressed の 6 件は yaml の宣言どおり suppressed 群に入る
-    assert sum(1 for f in fields if f["group"] == "suppressed") == 6
+    # kind=suppressed の 7 件は yaml の宣言どおり suppressed 群に入る
+    assert sum(1 for f in fields if f["group"] == "suppressed") == 7
     assert all(f["effect"] for f in fields)
 
 
