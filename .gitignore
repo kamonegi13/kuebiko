@@ -1,5 +1,6 @@
 # 環境変数 (絶対に除外)
 .env
+.env.bak*
 .env.local
 .env.*.local
 .envrc
