@@ -11,12 +11,18 @@ Usage::
     # 1. 層化して標本を凍結 (data/eval/goldset.jsonl)
     uv run python scripts/eval_goldset.py build --per-stratum 3
 
-    # 2. 現行の rubric で走らせて基準を作る
+    # 2. 現行の rubric で **2 回** 走らせる (2 本目が揺らぎの床 = 対照)
     uv run python scripts/eval_goldset.py run --label baseline
+    uv run python scripts/eval_goldset.py run --label baseline2
 
-    # 3. rubric を編集した後、もう一度走らせて突き合わせる
-    uv run python scripts/eval_goldset.py run --label no-article-type
-    uv run python scripts/eval_goldset.py compare baseline no-article-type
+    # 3. 変種を走らせ、床つきで突き合わせる (--floor は必須)
+    uv run python scripts/eval_goldset.py run --label no-article-type --drop-field article_type
+    uv run python scripts/eval_goldset.py compare baseline no-article-type \
+        --floor baseline baseline2
+
+⚠ **対照 (--floor) を省くと止まる**。temperature 0.3 で出力は確率的なため、同一 rubric の
+2 回実行でも summary は 0%、analyst_note は 21% しか一致しない (2026-08-17 実測)。
+床を取らずに比べると揺らぎを効果と誤読する。
 
 exit code: 0=正常 / 1=エラー。**合否は出さない** — 何がどう変わったかを見せる道具で、
 閾値判定は用途ごとに人が決める (期間比較の閾値をここに複製しない)。
@@ -48,6 +54,9 @@ from src.eval.goldset import (  # noqa: E402
 
 GOLDSET_PATH = Path("data/eval/goldset.jsonl")
 RUNS_DIR = Path("data/eval/runs")
+# 床の下限 (pt)。86 件の標本では 1 件の増減が約 1.2pt なので、それ未満の差は
+# 対照が完全一致していても「変化」と呼ばない。
+_MIN_FLOOR_PT = 1.5
 
 
 # ---------------- build ----------------
@@ -189,33 +198,95 @@ def _norm(v: Any) -> str:
     return str(v)
 
 
+def _fill_rate(run: dict[str, dict[str, Any]], field: str, ids: list[str]) -> float:
+    """``ids`` のうち値が入っている割合 (0-1)。"""
+    if not ids:
+        return 0.0
+    return sum(1 for i in ids if _norm(run[i].get(field))) / len(ids)
+
+
+def _agreement(
+    x: dict[str, dict[str, Any]],
+    y: dict[str, dict[str, Any]],
+    field: str,
+    ids: list[str],
+) -> float:
+    if not ids:
+        return 1.0
+    return sum(1 for i in ids if _norm(x[i].get(field)) == _norm(y[i].get(field))) / len(ids)
+
+
+def _floor_error() -> int:
+    print(
+        "対照が指定されていません。--floor <同一設定の 2 実行> を付けてください。\n"
+        "  temperature 0.3 で出力は確率的です。同じ rubric の 2 回実行でも summary は 0%、\n"
+        "  analyst_note は 21% しか一致しません。床を取らずに変種と基準を比べると、\n"
+        "  揺らぎを効果と誤読します (2026-08-17 に実測)。\n"
+        "  例: compare 現行 変種 --floor baseline baseline2\n"
+        "  床を承知で生の差分だけ見るなら --no-floor を付けてください。",
+        file=sys.stderr,
+    )
+    return 2
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
+    if not args.floor and not args.no_floor:
+        return _floor_error()
+
     a, b = _load_run(args.label_a), _load_run(args.label_b)
     shared = sorted(set(a) & set(b))
     if not shared:
         print("共通の article_id が無い", file=sys.stderr)
         return 1
 
+    floor_x: dict[str, dict[str, Any]] | None = None
+    floor_y: dict[str, dict[str, Any]] | None = None
+    floor_ids: list[str] = []
+    if args.floor:
+        floor_x, floor_y = _load_run(args.floor[0]), _load_run(args.floor[1])
+        floor_ids = sorted(set(floor_x) & set(floor_y))
+        if not floor_ids:
+            print("対照の 2 実行に共通の article_id が無い", file=sys.stderr)
+            return 1
+
     fields = sorted({k for r in a.values() for k in r} - {"article_id", "_error"})
-    print(f"{args.label_a} vs {args.label_b}  (共通 {len(shared)} 件)\n")
-    print(f"{'フィールド':<24}{'一致':>6}{'変化':>6}  {'空→値':>6}{'値→空':>6}")
-    print("-" * 56)
+    head = f"{args.label_a} vs {args.label_b}  (共通 {len(shared)} 件)"
+    if args.floor:
+        head += f"\n対照: {args.floor[0]} vs {args.floor[1]}  (共通 {len(floor_ids)} 件)"
+    else:
+        head += "\n⚠ 対照なし — 差が効果か揺らぎか判定できません"
+    print(head + "\n")
+    print(f"{'フィールド':<22}{'一致':>6}{'床':>6}  {'充足率 A→B':>16}{'床の揺れ':>10}  判定")
+    print("-" * 74)
     changed_ids: dict[str, list[str]] = {}
     for fld in fields:
-        same = filled = emptied = 0
         for aid in shared:
-            va, vb = _norm(a[aid].get(fld)), _norm(b[aid].get(fld))
-            if va == vb:
-                same += 1
-            else:
+            if _norm(a[aid].get(fld)) != _norm(b[aid].get(fld)):
                 changed_ids.setdefault(fld, []).append(aid)
-                if not va and vb:
-                    filled += 1
-                elif va and not vb:
-                    emptied += 1
-        pct = same / len(shared) * 100
-        mark = "" if pct == 100 else " *"
-        print(f"{fld:<24}{pct:>5.0f}%{len(shared) - same:>6}  {filled:>6}{emptied:>6}{mark}")
+
+        agree = _agreement(a, b, fld, shared)
+        fill_a, fill_b = _fill_rate(a, fld, shared), _fill_rate(b, fld, shared)
+        delta_pt = (fill_b - fill_a) * 100
+
+        if floor_x is not None and floor_y is not None:
+            floor_agree = _agreement(floor_x, floor_y, fld, floor_ids)
+            floor_pt = (
+                abs(_fill_rate(floor_x, fld, floor_ids) - _fill_rate(floor_y, fld, floor_ids)) * 100
+            )
+            # 床は「同一設定でも動く幅」。最低 1pt は見る (標本 86 件で 1 件 = 1.2pt)。
+            verdict = "★ 変化" if abs(delta_pt) > max(floor_pt, _MIN_FLOOR_PT) else "床の内"
+            floor_cell = f"{floor_agree * 100:>5.0f}%"
+            floor_pt_cell = f"±{floor_pt:>4.1f}pt"
+        else:
+            verdict = "?"
+            floor_cell = f"{'-':>6}"
+            floor_pt_cell = f"{'-':>8}"
+
+        fill_cell = f"{fill_a * 100:>5.1f}→{fill_b * 100:>5.1f}%"
+        print(
+            f"{fld:<22}{agree * 100:>5.0f}%{floor_cell}  "
+            f"{fill_cell:>16}{floor_pt_cell:>10}  {verdict}"
+        )
 
     if args.show_ids:
         print("\n変化した article_id (フィールド別、先頭 10 件):")
@@ -248,6 +319,17 @@ def main() -> int:
     c = sub.add_parser("compare", help="2 つの実行結果をフィールド別に突き合わせる")
     c.add_argument("label_a")
     c.add_argument("label_b")
+    c.add_argument(
+        "--floor",
+        nargs=2,
+        metavar=("LABEL", "LABEL"),
+        help="同一設定の 2 実行 (揺らぎの床)。判定はこれを超えたかで行う",
+    )
+    c.add_argument(
+        "--no-floor",
+        action="store_true",
+        help="床を取らずに生の差分だけ見る (判定はできない)",
+    )
     c.add_argument("--show-ids", action="store_true", help="変化した article_id も出す")
     c.set_defaults(func=cmd_compare)
 

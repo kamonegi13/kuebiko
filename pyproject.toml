@@ -96,6 +96,7 @@ module = [
     "backfill_intent",
     "backfill_axes",
     "claude_code_bridge",
+    "eval_goldset",
     "summarizer_diff_contract",
     "verify_prompt_cutover",
     "verify_summarizer_rubric",
