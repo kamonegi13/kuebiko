@@ -266,6 +266,12 @@ async def _filter_semantic_duplicates(
             survivors.append(article)
             continue
 
+        # ⚠ **判定の前に記録する** (2026-08-19)。従来は survivor だけを記録していたため、
+        # 重複で落とした記事は 14 日 239 件すべて embedding が消え、「別の層なら捕まえ
+        # られたか」「閾値変更で新たに落ちた記事は妥当か」を後から検証できなかった。
+        # 落とす判断こそ根拠が要る。呼出側 (orchestrator) が skip 経路でも永続化する。
+        embeddings_to_persist[article.id] = (response.model, list(response.vector))
+
         # 1. hard 判定 (再投稿防止 / 長窓 + 高 threshold)
         match_hard = dedup_repo.find_similar_embedding(
             response.vector,
@@ -342,10 +348,6 @@ async def _filter_semantic_duplicates(
                 continue
 
         survivors.append(article)
-        embeddings_to_persist[article.id] = (
-            response.model,
-            list(response.vector),
-        )
         if nrm > 0.0:
             batch_units.append(unit)
             batch_ids.append(article.id)

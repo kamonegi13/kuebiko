@@ -211,3 +211,32 @@ async def test_intra_batch_semantic_dedup(tmp_path) -> None:  # type: ignore[no-
     assert "b1" in ids  # 別事案は生存
     assert "a2" in skipped_ids
     assert skipped == 1
+
+
+async def test_skipped_article_keeps_its_embedding(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """重複で落とした記事も判断根拠 (embedding) を返す (2026-08-19)。
+
+    従来は survivor だけを ``embeddings_to_persist`` に入れていたため、14 日 239 件の
+    skip 判定すべてで根拠が消えていた。**落とす判断こそ後から検証材料が要る** —
+    「別の層なら捕まえられたか」「閾値変更で新たに落ちた記事は妥当か」を測れない。
+    """
+    repo = RunHistoryRepository(db_path=tmp_path / "keep_evidence.db")
+    arts = [
+        _art("a1", "ALPHA 事案 第一報", "https://x.example/1"),
+        _art("a2", "ALPHA 事案 別ソース", "https://y.example/2"),  # intra-batch で落ちる
+    ]
+
+    survivors, skipped, persist, skipped_ids = await _filter_semantic_duplicates(
+        arts,
+        repo,
+        _FakeEmbedder(),
+        threshold_hard=0.92,
+        threshold_cluster=0.79,
+        window_hours_hard=168,
+        window_hours_cluster=48,
+    )
+
+    assert skipped_ids == ["a2"]
+    assert {a.id for a in survivors} == {"a1"}
+    assert "a2" in persist, "落とした記事の embedding が返っていない (根拠が消える)"
+    assert "a1" in persist

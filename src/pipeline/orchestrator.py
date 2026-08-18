@@ -208,9 +208,15 @@ def _mark_skipped_urls_seen(
     skipped_ids: list[str],
     articles_by_id: dict[str, Article],
     dedup_repo: RunHistoryRepository,
+    semantic_embeddings: dict[str, tuple[str, list[float]]] | None = None,
 ) -> int:
     """dedup skip 経路の URL を dedup_seen_urls に登録し、次 run の再 fetch→再評価
     リサイクル (取込履歴の毎時フラッド + 48h/24h 窓後の同一 URL 再投稿) を止める。
+
+    ⚠ **判断根拠 (embedding) も一緒に残す** (2026-08-19)。従来は投稿経路でしか
+    embedding を保存しておらず、重複で落とした記事は 14 日 239 件すべて根拠が消えていた。
+    そのため「別の層なら捕まえられたか」「閾値変更で新たに落ちた記事は妥当か」を
+    **後から検証できなかった**。落とす判断こそ検証材料が要る。
 
     posting-loop の cross-ch / CVE / content dedup は skipped_duplicate にするが URL を
     既読化しないため、RSS が同記事を再配信するたびに再評価→再 skip をリサイクルしていた。
@@ -225,12 +231,22 @@ def _mark_skipped_urls_seen(
         if article is None:
             continue
         try:
+            h = url_hash(article.url)
             dedup_repo.mark_url_seen(
-                url_hash=url_hash(article.url),
+                url_hash=h,
                 url=article.url,
                 article_id=skip_id,
                 title=article.title,
             )
+            emb = (semantic_embeddings or {}).get(skip_id)
+            if emb is not None:
+                dedup_repo.add_article_embedding(
+                    url_hash=h,
+                    url=article.url,
+                    vector=emb[1],
+                    model=emb[0],
+                    title=article.title,
+                )
             marked += 1
         except Exception as e:  # noqa: BLE001 — 既読化失敗は次 run 再評価で自癒
             _log.debug("dedup_skip_seen_mark_failed", article_id=skip_id, error=str(e))
@@ -393,12 +409,25 @@ async def run_pipeline(
                 if sem_a is None:
                     continue
                 try:
+                    sem_h = url_hash(sem_a.url)
                     dedup_repo.mark_url_seen(
-                        url_hash=url_hash(sem_a.url),
+                        url_hash=sem_h,
                         url=sem_a.url,
                         article_id=sem_id,
                         title=sem_a.title,
                     )
+                    # 判断根拠も残す (2026-08-19)。⚠ 最多の skip 経路 (7 日 670 件) が
+                    # ここ。embedding を捨てると「この閾値変更で新たに落ちた記事は
+                    # 妥当だったか」を後から一切検証できない。
+                    sem_emb = semantic_embeddings.get(sem_id)
+                    if sem_emb is not None:
+                        dedup_repo.add_article_embedding(
+                            url_hash=sem_h,
+                            url=sem_a.url,
+                            vector=sem_emb[1],
+                            model=sem_emb[0],
+                            title=sem_a.title,
+                        )
                 except Exception as e:  # noqa: BLE001 — 既読化失敗は次 run 再評価で自癒
                     _log.debug("semantic_dup_seen_mark_failed", article_id=sem_id, error=str(e))
         if skipped_dup_semantic > 0:
@@ -1075,7 +1104,9 @@ async def run_pipeline(
     # ここで一括担保する。将来の新 skip 層も append 先が同じなら自動でカバーされる。詳細は
     # _mark_skipped_urls_seen の docstring 参照。
     if not dry_run and dedup_repo is not None:
-        _mark_skipped_urls_seen(skipped_for_mark_read, articles_by_id, dedup_repo)
+        _mark_skipped_urls_seen(
+            skipped_for_mark_read, articles_by_id, dedup_repo, semantic_embeddings
+        )
 
     # 投稿結果が確定したので articles テーブルに永続化 (Phase 5A: dashboard 用)
     _persist_article_outcomes(
