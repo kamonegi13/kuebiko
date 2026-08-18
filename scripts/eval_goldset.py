@@ -197,13 +197,22 @@ async def _run_all(
     label: str,
     drop: list[str],
     target: str = "summarizer",
+    model: str | None = None,
 ) -> Path:
     from src.config_loader import load_app_config
-    from src.tools.model_tiers import Step, build_llm_for
+    from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref
 
     run_one, needs_template = _TARGETS[target]
     config = load_app_config()
-    llm = build_llm_for(Step.ARTICLE_SUMMARY, config)
+    # --model はティア解決を飛ばして明示 ref で組む (UI の一時 override と同じ経路)。
+    # 「上位モデルなら判断がどれだけ変わるか」= 伸びしろの測定に使う。
+    llm = (
+        build_llm_for_ref(model, Step.ARTICLE_SUMMARY, config)
+        if model
+        else build_llm_for(Step.ARTICLE_SUMMARY, config)
+    )
+    if model:
+        print(f"モデル override: {model}", file=sys.stderr)
     template = _build_template(drop) if needs_template else None
     if drop and not needs_template:
         raise SystemExit("--drop-field は summarizer のみ (judgment の判定基準はコード内)")
@@ -229,7 +238,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"gold set が無い。先に build を実行する: {GOLDSET_PATH}", file=sys.stderr)
         return 1
     articles = load_goldset(GOLDSET_PATH)
-    path = asyncio.run(_run_all(articles, args.label, args.drop_field or [], args.target))
+    path = asyncio.run(
+        _run_all(articles, args.label, args.drop_field or [], args.target, args.model)
+    )
     print(f"{len(articles)} 件を実行 → {path}")
     return 0
 
@@ -367,6 +378,10 @@ def main() -> int:
 
     r = sub.add_parser("run", help="凍結した標本を現行 rubric で走らせる")
     r.add_argument("--label", required=True, help="実行結果の名前 (例 baseline)")
+    r.add_argument(
+        "--model",
+        help="ティア解決を飛ばして使うモデル ref (例 claudecode:sonnet)。伸びしろの測定用",
+    )
     r.add_argument(
         "--target",
         choices=sorted(_TARGETS),

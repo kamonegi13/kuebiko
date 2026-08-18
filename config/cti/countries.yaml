@@ -491,3 +491,389 @@ canonical:
   NZ:
     display: ニュージーランド
     aliases: [ニュージーランド, "New Zealand", NZ, NZL]
+
+  # ===== CLDR 由来の一括拡充 (2026-08-19) =====
+  # 収録 117 か国では Albania / Botswana / Cyprus 等が解決できず、被害国が地図と
+  # 国別 KPI から静かに落ちていた (60 日で約 30 件)。国名は CLDR、座標は gazetteer。
+  # alias は LLM が返しうる表記 = 日本語名 / 英語名 / ISO2。
+  AD:
+    display: アンドラ
+    aliases: ["アンドラ", "Andorra", "AD"]
+  AG:
+    display: アンティグア・バーブーダ
+    aliases: ["アンティグア・バーブーダ", "Antigua & Barbuda", "AG"]
+  AI:
+    display: アンギラ
+    aliases: ["アンギラ", "Anguilla", "AI"]
+  AL:
+    display: アルバニア
+    aliases: ["アルバニア", "Albania", "AL"]
+  AO:
+    display: アンゴラ
+    aliases: ["アンゴラ", "Angola", "AO"]
+  AS:
+    display: 米領サモア
+    aliases: ["米領サモア", "American Samoa", "AS"]
+  AW:
+    display: アルバ
+    aliases: ["アルバ", "Aruba", "AW"]
+  AX:
+    display: オーランド諸島
+    aliases: ["オーランド諸島", "Åland Islands", "AX"]
+  BA:
+    display: ボスニア・ヘルツェゴビナ
+    aliases: ["ボスニア・ヘルツェゴビナ", "Bosnia & Herzegovina", "BA"]
+  BB:
+    display: バルバドス
+    aliases: ["バルバドス", "Barbados", "BB"]
+  BF:
+    display: ブルキナファソ
+    aliases: ["ブルキナファソ", "Burkina Faso", "BF"]
+  BI:
+    display: ブルンジ
+    aliases: ["ブルンジ", "Burundi", "BI"]
+  BJ:
+    display: ベナン
+    aliases: ["ベナン", "Benin", "BJ"]
+  BL:
+    display: サン・バルテルミー
+    aliases: ["サン・バルテルミー", "St. Barthélemy", "BL"]
+  BM:
+    display: バミューダ
+    aliases: ["バミューダ", "Bermuda", "BM"]
+  BN:
+    display: ブルネイ
+    aliases: ["ブルネイ", "Brunei", "BN"]
+  BQ:
+    display: オランダ領カリブ
+    aliases: ["オランダ領カリブ", "Caribbean Netherlands", "BQ"]
+  BS:
+    display: バハマ
+    aliases: ["バハマ", "Bahamas", "BS"]
+  BT:
+    display: ブータン
+    aliases: ["ブータン", "Bhutan", "BT"]
+  BZ:
+    display: ベリーズ
+    aliases: ["ベリーズ", "Belize", "BZ"]
+  CC:
+    display: ココス(キーリング)諸島
+    aliases: ["ココス(キーリング)諸島", "Cocos (Keeling) Islands", "CC"]
+  CG:
+    display: コンゴ共和国(ブラザビル)
+    aliases: ["コンゴ共和国(ブラザビル)", "Congo - Brazzaville", "CG"]
+  CI:
+    display: コートジボワール
+    aliases: ["コートジボワール", "Côte d’Ivoire", "CI"]
+  CK:
+    display: クック諸島
+    aliases: ["クック諸島", "Cook Islands", "CK"]
+  CM:
+    display: カメルーン
+    aliases: ["カメルーン", "Cameroon", "CM"]
+  CR:
+    display: コスタリカ
+    aliases: ["コスタリカ", "Costa Rica", "CR"]
+  CV:
+    display: カーボベルデ
+    aliases: ["カーボベルデ", "Cape Verde", "CV"]
+  CW:
+    display: キュラソー
+    aliases: ["キュラソー", "Curaçao", "CW"]
+  CX:
+    display: クリスマス島
+    aliases: ["クリスマス島", "Christmas Island", "CX"]
+  CY:
+    display: キプロス
+    aliases: ["キプロス", "Cyprus", "CY"]
+  DJ:
+    display: ジブチ
+    aliases: ["ジブチ", "Djibouti", "DJ"]
+  DM:
+    display: ドミニカ国
+    aliases: ["ドミニカ国", "Dominica", "DM"]
+  EH:
+    display: 西サハラ
+    aliases: ["西サハラ", "Western Sahara", "EH"]
+  ER:
+    display: エリトリア
+    aliases: ["エリトリア", "Eritrea", "ER"]
+  FJ:
+    display: フィジー
+    aliases: ["フィジー", "Fiji", "FJ"]
+  FK:
+    display: フォークランド諸島
+    aliases: ["フォークランド諸島", "Falkland Islands", "FK"]
+  FM:
+    display: ミクロネシア連邦
+    aliases: ["ミクロネシア連邦", "Micronesia", "FM"]
+  FO:
+    display: フェロー諸島
+    aliases: ["フェロー諸島", "Faroe Islands", "FO"]
+  GA:
+    display: ガボン
+    aliases: ["ガボン", "Gabon", "GA"]
+  GD:
+    display: グレナダ
+    aliases: ["グレナダ", "Grenada", "GD"]
+  GF:
+    display: 仏領ギアナ
+    aliases: ["仏領ギアナ", "French Guiana", "GF"]
+  GG:
+    display: ガーンジー
+    aliases: ["ガーンジー", "Guernsey", "GG"]
+  GI:
+    display: ジブラルタル
+    aliases: ["ジブラルタル", "Gibraltar", "GI"]
+  GL:
+    display: グリーンランド
+    aliases: ["グリーンランド", "Greenland", "GL"]
+  GM:
+    display: ガンビア
+    aliases: ["ガンビア", "Gambia", "GM"]
+  GN:
+    display: ギニア
+    aliases: ["ギニア", "Guinea", "GN"]
+  GP:
+    display: グアドループ
+    aliases: ["グアドループ", "Guadeloupe", "GP"]
+  GS:
+    display: サウスジョージア・サウスサンドウィッチ諸島
+    aliases: ["サウスジョージア・サウスサンドウィッチ諸島", "South Georgia & South Sandwich Islands", "GS"]
+  GT:
+    display: グアテマラ
+    aliases: ["グアテマラ", "Guatemala", "GT"]
+  GU:
+    display: グアム
+    aliases: ["グアム", "Guam", "GU"]
+  GW:
+    display: ギニアビサウ
+    aliases: ["ギニアビサウ", "Guinea-Bissau", "GW"]
+  GY:
+    display: ガイアナ
+    aliases: ["ガイアナ", "Guyana", "GY"]
+  HT:
+    display: ハイチ
+    aliases: ["ハイチ", "Haiti", "HT"]
+  IM:
+    display: マン島
+    aliases: ["マン島", "Isle of Man", "IM"]
+  JE:
+    display: ジャージー
+    aliases: ["ジャージー", "Jersey", "JE"]
+  JM:
+    display: ジャマイカ
+    aliases: ["ジャマイカ", "Jamaica", "JM"]
+  KI:
+    display: キリバス
+    aliases: ["キリバス", "Kiribati", "KI"]
+  KM:
+    display: コモロ
+    aliases: ["コモロ", "Comoros", "KM"]
+  KN:
+    display: セントクリストファー・ネーヴィス
+    aliases: ["セントクリストファー・ネーヴィス", "St. Kitts & Nevis", "KN"]
+  KY:
+    display: ケイマン諸島
+    aliases: ["ケイマン諸島", "Cayman Islands", "KY"]
+  LC:
+    display: セントルシア
+    aliases: ["セントルシア", "St. Lucia", "LC"]
+  LI:
+    display: リヒテンシュタイン
+    aliases: ["リヒテンシュタイン", "Liechtenstein", "LI"]
+  LR:
+    display: リベリア
+    aliases: ["リベリア", "Liberia", "LR"]
+  LS:
+    display: レソト
+    aliases: ["レソト", "Lesotho", "LS"]
+  MF:
+    display: サン・マルタン
+    aliases: ["サン・マルタン", "St. Martin", "MF"]
+  MG:
+    display: マダガスカル
+    aliases: ["マダガスカル", "Madagascar", "MG"]
+  MH:
+    display: マーシャル諸島
+    aliases: ["マーシャル諸島", "Marshall Islands", "MH"]
+  MK:
+    display: 北マケドニア
+    aliases: ["北マケドニア", "North Macedonia", "MK"]
+  MO:
+    display: 中華人民共和国マカオ特別行政区
+    aliases: ["中華人民共和国マカオ特別行政区", "Macao SAR China", "MO"]
+  MP:
+    display: 北マリアナ諸島
+    aliases: ["北マリアナ諸島", "Northern Mariana Islands", "MP"]
+  MQ:
+    display: マルティニーク
+    aliases: ["マルティニーク", "Martinique", "MQ"]
+  MR:
+    display: モーリタニア
+    aliases: ["モーリタニア", "Mauritania", "MR"]
+  MS:
+    display: モントセラト
+    aliases: ["モントセラト", "Montserrat", "MS"]
+  MT:
+    display: マルタ
+    aliases: ["マルタ", "Malta", "MT"]
+  MU:
+    display: モーリシャス
+    aliases: ["モーリシャス", "Mauritius", "MU"]
+  MV:
+    display: モルディブ
+    aliases: ["モルディブ", "Maldives", "MV"]
+  MW:
+    display: マラウイ
+    aliases: ["マラウイ", "Malawi", "MW"]
+  MZ:
+    display: モザンビーク
+    aliases: ["モザンビーク", "Mozambique", "MZ"]
+  NA:
+    display: ナミビア
+    aliases: ["ナミビア", "Namibia", "NA"]
+  NC:
+    display: ニューカレドニア
+    aliases: ["ニューカレドニア", "New Caledonia", "NC"]
+  NE:
+    display: ニジェール
+    aliases: ["ニジェール", "Niger", "NE"]
+  NF:
+    display: ノーフォーク島
+    aliases: ["ノーフォーク島", "Norfolk Island", "NF"]
+  NI:
+    display: ニカラグア
+    aliases: ["ニカラグア", "Nicaragua", "NI"]
+  NR:
+    display: ナウル
+    aliases: ["ナウル", "Nauru", "NR"]
+  NU:
+    display: ニウエ
+    aliases: ["ニウエ", "Niue", "NU"]
+  PF:
+    display: 仏領ポリネシア
+    aliases: ["仏領ポリネシア", "French Polynesia", "PF"]
+  PG:
+    display: パプアニューギニア
+    aliases: ["パプアニューギニア", "Papua New Guinea", "PG"]
+  PM:
+    display: サンピエール島・ミクロン島
+    aliases: ["サンピエール島・ミクロン島", "St. Pierre & Miquelon", "PM"]
+  PN:
+    display: ピトケアン諸島
+    aliases: ["ピトケアン諸島", "Pitcairn Islands", "PN"]
+  PR:
+    display: プエルトリコ
+    aliases: ["プエルトリコ", "Puerto Rico", "PR"]
+  PW:
+    display: パラオ
+    aliases: ["パラオ", "Palau", "PW"]
+  RE:
+    display: レユニオン
+    aliases: ["レユニオン", "Réunion", "RE"]
+  RW:
+    display: ルワンダ
+    aliases: ["ルワンダ", "Rwanda", "RW"]
+  SB:
+    display: ソロモン諸島
+    aliases: ["ソロモン諸島", "Solomon Islands", "SB"]
+  SC:
+    display: セーシェル
+    aliases: ["セーシェル", "Seychelles", "SC"]
+  SH:
+    display: セントヘレナ
+    aliases: ["セントヘレナ", "St. Helena", "SH"]
+  SJ:
+    display: スバールバル諸島・ヤンマイエン島
+    aliases: ["スバールバル諸島・ヤンマイエン島", "Svalbard & Jan Mayen", "SJ"]
+  SL:
+    display: シエラレオネ
+    aliases: ["シエラレオネ", "Sierra Leone", "SL"]
+  SM:
+    display: サンマリノ
+    aliases: ["サンマリノ", "San Marino", "SM"]
+  SN:
+    display: セネガル
+    aliases: ["セネガル", "Senegal", "SN"]
+  SO:
+    display: ソマリア
+    aliases: ["ソマリア", "Somalia", "SO"]
+  SR:
+    display: スリナム
+    aliases: ["スリナム", "Suriname", "SR"]
+  SS:
+    display: 南スーダン
+    aliases: ["南スーダン", "South Sudan", "SS"]
+  ST:
+    display: サントメ・プリンシペ
+    aliases: ["サントメ・プリンシペ", "São Tomé & Príncipe", "ST"]
+  SV:
+    display: エルサルバドル
+    aliases: ["エルサルバドル", "El Salvador", "SV"]
+  SX:
+    display: シント・マールテン
+    aliases: ["シント・マールテン", "Sint Maarten", "SX"]
+  SZ:
+    display: エスワティニ
+    aliases: ["エスワティニ", "Eswatini", "SZ"]
+  TC:
+    display: タークス・カイコス諸島
+    aliases: ["タークス・カイコス諸島", "Turks & Caicos Islands", "TC"]
+  TD:
+    display: チャド
+    aliases: ["チャド", "Chad", "TD"]
+  TF:
+    display: 仏領極南諸島
+    aliases: ["仏領極南諸島", "French Southern Territories", "TF"]
+  TG:
+    display: トーゴ
+    aliases: ["トーゴ", "Togo", "TG"]
+  TL:
+    display: 東ティモール
+    aliases: ["東ティモール", "Timor-Leste", "TL"]
+  TO:
+    display: トンガ
+    aliases: ["トンガ", "Tonga", "TO"]
+  TT:
+    display: トリニダード・トバゴ
+    aliases: ["トリニダード・トバゴ", "Trinidad & Tobago", "TT"]
+  TV:
+    display: ツバル
+    aliases: ["ツバル", "Tuvalu", "TV"]
+  UG:
+    display: ウガンダ
+    aliases: ["ウガンダ", "Uganda", "UG"]
+  VA:
+    display: バチカン市国
+    aliases: ["バチカン市国", "Vatican City", "VA"]
+  VC:
+    display: セントビンセント及びグレナディーン諸島
+    aliases: ["セントビンセント及びグレナディーン諸島", "St. Vincent & Grenadines", "VC"]
+  VG:
+    display: 英領ヴァージン諸島
+    aliases: ["英領ヴァージン諸島", "British Virgin Islands", "VG"]
+  VI:
+    display: 米領ヴァージン諸島
+    aliases: ["米領ヴァージン諸島", "U.S. Virgin Islands", "VI"]
+  VU:
+    display: バヌアツ
+    aliases: ["バヌアツ", "Vanuatu", "VU"]
+  WF:
+    display: ウォリス・フツナ
+    aliases: ["ウォリス・フツナ", "Wallis & Futuna", "WF"]
+  WS:
+    display: サモア
+    aliases: ["サモア", "Samoa", "WS"]
+  XK:
+    display: コソボ
+    aliases: ["コソボ", "Kosovo", "XK"]
+  YT:
+    display: マヨット
+    aliases: ["マヨット", "Mayotte", "YT"]
+  ZM:
+    display: ザンビア
+    aliases: ["ザンビア", "Zambia", "ZM"]
+  ZW:
+    display: ジンバブエ
+    aliases: ["ジンバブエ", "Zimbabwe", "ZW"]
