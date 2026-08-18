@@ -7,6 +7,7 @@ from src.tools.text_sanitizer import (
     has_html_residue,
     has_json_tail,
     sanitize_for_display,
+    title_similarity,
 )
 
 
@@ -108,3 +109,49 @@ class TestJsonTailCut:
 
     def test_empty_input_is_empty_string(self) -> None:
         assert cut_json_tail(None) == ""
+
+
+class TestTitleSimilarity:
+    """抽出本文が当該記事のものかを測る指標 (2026-08-18)。
+
+    取得は 200 でも別記事の本文が入ることがあり、「取得成功 N 件」しか見ていなかった
+    ため 2 か月検知できなかった。fetch の成否とは別の軸として測る。
+    """
+
+    def test_identical_titles_score_one(self) -> None:
+        t = "Worm Targets More Than 2,000 npm Package Versions"
+
+        assert title_similarity(t, t) == 1.0
+
+    def test_site_name_suffix_does_not_lower_the_score(self) -> None:
+        """短い側を分母にする理由 — サイト名の付加で不当に下げない。"""
+        assert (
+            title_similarity(
+                "Zoom Flaws Facilitate Zero-Click RCE",
+                "Zoom Flaws Facilitate Zero-Click RCE | DataBreachToday",
+            )
+            == 1.0
+        )
+
+    def test_different_articles_score_zero(self) -> None:
+        assert (
+            title_similarity(
+                "Worm Targets More Than 2,000 npm Package Versions",
+                "Open Secure AI Alliance Proposes AI Agent Security Rules",
+            )
+            == 0.0
+        )
+
+    def test_japanese_titles_are_measurable(self) -> None:
+        """⚠ 空白区切りの語トークンでは日本語 1 文が 1 トークンになり測れない。"""
+        score = title_similarity(
+            "不正アクセスによる情報漏えいの可能性",
+            "不正アクセスによる情報漏えいの可能性について",
+        )
+
+        assert score == 1.0
+
+    def test_empty_input_scores_zero_not_one(self) -> None:
+        """判定材料が無いのを「一致」と誤らせない (呼び出し側が None 扱いにする)。"""
+        assert title_similarity("", "something") == 0.0
+        assert title_similarity(None, None) == 0.0

@@ -11,7 +11,7 @@ from src.logging_config import get_logger
 from src.pipeline.grok_convert import _is_grok_article
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
-from src.tools.content_extractor import ContentExtractor
+from src.tools.content_extractor import ContentExtractor, check_extracted_identity
 from src.tools.embedding_client import EmbeddingClient, EmbeddingError
 from src.tools.llm_client import LLMClient
 from src.tools.text_utils import strip_html as _strip_html
@@ -201,6 +201,9 @@ async def _prefetch_thin_bodies(
             except Exception as e:  # noqa: BLE001
                 _log.info("thin_prefetch_failed", article_id=a.id, error=str(e))
                 return
+            # 取得成功でも **別記事の本文** が入ることがある (2026-08-18 実測 0.4%)。
+            # 現時点では棄却せず記録のみ — 閾値を勘で決めて良い記事を捨てないため。
+            check_extracted_identity(extraction, a.title, article_id=a.id)
             if extraction.success and extraction.text.strip():
                 enriched[idx] = a.model_copy(update={"body_text": extraction.text})
 

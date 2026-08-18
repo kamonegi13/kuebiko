@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict
 from src.logging_config import get_logger
 from src.tools.fetch_policy import BLOCK_ESCALATION_STATUSES, looks_like_js_challenge
 from src.tools.pdf_text import extract_pdf_text, looks_like_pdf
+from src.tools.text_sanitizer import title_similarity
 from src.tools.url_guard import (
     UnsafeUrlError,
     assert_safe_public_url,
@@ -605,3 +606,35 @@ def _parse_iso_date(date_str: str | None) -> datetime | None:
         return datetime.fromisoformat(cleaned)
     except ValueError:
         return None
+
+
+# 抽出本文と記事の同一性の下限 (2026-08-18)。**まだ棄却はしない — 観測のみ**。
+# 実測 (14 日 1,615 件) では別記事混入は 7 件 (0.4%) で、正解は 1.0 / 誤りは 0.0 と
+# はっきり分かれた。ただし「サイト側タイトルが取れない」ケースの分布が未知なので、
+# 本番ログを 1 日集めてから棄却に切り替える (勘で閾値を決めて良い記事を捨てない)。
+MIN_TITLE_SIMILARITY = 0.30
+
+
+def check_extracted_identity(
+    result: ExtractionResult,
+    expected_title: str | None,
+    *,
+    article_id: str = "",
+) -> float | None:
+    """抽出本文が **当該記事のものか** を測って記録する。``None`` = 判定材料なし。
+
+    取得の成否とは別の軸。fetch は 200 でも中身が別記事のことがあり
+    (databreachtoday の npm 記事に別記事の本文、The Register にナビ断片)、
+    「取得成功 N 件」しか見ていなかったため 2 か月検知できなかった。
+    """
+    if not result.success or not result.title or not expected_title:
+        return None
+    similarity = title_similarity(result.title, expected_title)
+    if similarity < MIN_TITLE_SIMILARITY:
+        _log.warning(
+            "extracted_body_title_mismatch",
+            article_id=article_id,
+            url=result.url,
+            similarity=round(similarity, 3),
+        )
+    return similarity

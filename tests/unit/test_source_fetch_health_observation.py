@@ -146,9 +146,7 @@ class TestSitemapObservation:
         w = _sitemap_watcher(tmp_path)
         urls = ["https://example.com/news/1", "https://example.com/news/2"]
         entries = [(u, None) for u in urls]
-        monkeypatch.setattr(
-            SitemapWatcher, "_collect_all_entries", AsyncMock(return_value=entries)
-        )
+        monkeypatch.setattr(SitemapWatcher, "_collect_all_entries", AsyncMock(return_value=entries))
         w._save_seen(set(urls))
 
         articles = await w.fetch_articles()

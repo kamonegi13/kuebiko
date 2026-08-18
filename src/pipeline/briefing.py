@@ -18,7 +18,7 @@ from src.pipeline.summary import (
     _normalize_temporal,
 )
 from src.tools.article_model import Article
-from src.tools.content_extractor import ContentExtractor, ExtractionResult
+from src.tools.content_extractor import ContentExtractor, ExtractionResult, check_extracted_identity
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
 from src.tools.text_sanitizer import (
@@ -104,6 +104,8 @@ async def _process_article(
         extraction_failure_reason: str | None = None
     else:
         extraction = await extractor.extract(article.url)
+        # prefetch 経路と同じ同一性チェック (記録のみ)。full_extract は 474/3,368 件。
+        check_extracted_identity(extraction, article.title, article_id=article.id)
         body, body_source, extraction_failure_reason = _resolve_body(article, extraction)
         article = _resolve_published(article, extraction)
     degenerate = _degenerate_body_reason(body)

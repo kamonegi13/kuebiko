@@ -108,3 +108,33 @@ def has_html_residue(text: str | None) -> bool:
         return True
     # 主要なエンティティが残っていないか (decimal/named いずれも)
     return bool(re.search(r"&(amp|lt|gt|quot|nbsp|#\d+);", text))
+
+
+# ---- 抽出本文と記事の同一性 (2026-08-18) ----
+#
+# 取得が成功していても **別記事の本文が入っている** ことがある (14 日で 7 件、0.4%)。
+# 実例: databreachtoday の npm ワーム記事に「Open Secure AI Alliance…」の本文、
+# The Register の記事にナビ断片 (`MOST POPULAR AI …`)。同じ URL を後から叩くと
+# 正しく取れるので**取得時点の過渡的な事象**であり、サイト構造の対処では防げない。
+#
+# ⚠ 「取得成功 N 件」しか見ていなかったため 2 か月検知できなかった。
+# fetch の成否とは別に **中身が当該記事か** を測る指標を持つ。
+_TITLE_NGRAM = 3
+
+
+def _char_ngrams(text: str, n: int = _TITLE_NGRAM) -> set[str]:
+    """空白を除いた文字 n-gram。⚠ 日本語は空白区切りの語トークンでは測れない。"""
+    compact = "".join((text or "").split())
+    return {compact[i : i + n] for i in range(len(compact) - n + 1)}
+
+
+def title_similarity(a: str | None, b: str | None) -> float:
+    """2 つのタイトルの近さ (0.0-1.0)。短い側を分母にする包含率。
+
+    サイト側タイトルは「記事名 | サイト名」のように付加語を持つことが多いので、
+    Jaccard ではなく短い側基準にする (付加語で不当に下がらない)。
+    """
+    ga, gb = _char_ngrams(a or ""), _char_ngrams(b or "")
+    if not ga or not gb:
+        return 0.0
+    return len(ga & gb) / min(len(ga), len(gb))
