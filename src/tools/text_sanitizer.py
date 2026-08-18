@@ -32,6 +32,14 @@ _TRUNCATED_TAG_TAIL = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9_-]*\s*$")
 _WHITESPACE_RUN = re.compile(r"\s+")
 # 制御文字 (NUL, ESC, BEL 等。改行/タブは保持しない場合は \x09\x0a\x0d も削る)
 _CTRL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# LLM が JSON 文字列を閉じ損ねると、後続フィールドの JSON が**そのまま値へ流れ込む**
+# (2026-08-18 に本番 33 件を確認。remediation の値に "article_type": ... 以降が丸ごと
+# 入り、300 字 truncate のおかげで「少し長い対処」に見えて 2 か月気付けなかった)。
+# 署名は「JSON のキーと値の開始」= 引用符で囲んだ ASCII 識別子 + コロン + 値の開始文字。
+# 日本語の散文がこの形になることは実質無いので、ここを境に後ろを捨てる。
+_JSON_TAIL = re.compile(r'"[A-Za-z_][A-Za-z0-9_]{2,30}"\s*:\s*(?:"|\[|\{|true|false|null|-?\d)')
+# 切断面に残る JSON の残骸 (`", ` / `、",` / 文字列としての `\n`)。
+_JSON_CUT_DEBRIS = re.compile(r'(?:\\n|[\s"\'、,\\])+$')
 
 
 def sanitize_for_display(
@@ -68,6 +76,25 @@ def sanitize_for_display(
     if max_length is not None and len(out) > max_length:
         out = out[:max_length]
     return out
+
+
+def cut_json_tail(text: str | None) -> str:
+    """値に流れ込んだ「JSON の続き」を切り落とす。
+
+    LLM が文字列を閉じ損ねたとき、後続フィールドの JSON がその値の一部になる。
+    先頭の正しい 1 文は救えるので、**捨てるのは署名以降だけ**にする。
+    """
+    if not text:
+        return ""
+    match = _JSON_TAIL.search(text)
+    if not match:
+        return text
+    return _JSON_CUT_DEBRIS.sub("", text[: match.start()])
+
+
+def has_json_tail(text: str | None) -> bool:
+    """値に JSON の続きが混入しているか (事後検証・監査用)。"""
+    return bool(text) and bool(_JSON_TAIL.search(text or ""))
 
 
 def has_html_residue(text: str | None) -> bool:

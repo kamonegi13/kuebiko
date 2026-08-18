@@ -21,7 +21,12 @@ from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, ExtractionResult
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
-from src.tools.text_sanitizer import has_html_residue, sanitize_for_display
+from src.tools.text_sanitizer import (
+    cut_json_tail,
+    has_html_residue,
+    has_json_tail,
+    sanitize_for_display,
+)
 from src.tools.text_utils import strip_html as _strip_html
 
 # LLM が自由記述で埋める metadata キー (HTML 残渣の一括除去対象)。
@@ -597,8 +602,12 @@ def _build_briefing(
     # 監査 2026-07-05 P1: 96fde6c のインデント混入 (rationale/confidence が remediation
     # 存在時のみ永続化される退行) を復元 — rationale は intent 判定に付随する。
     if summary.remediation and summary.remediation.strip():
-        # sanitize してから切り詰める (逆順だとタグ途中で切れた断片 `</d` が残る)
-        metadata["remediation"] = sanitize_for_display(summary.remediation).strip()[:300]
+        # 順序が肝: JSON 流入を切る → sanitize → 切り詰め。
+        # 切り詰めを先にすると署名 (`"article_type": …`) が切断面で壊れて検知できず、
+        # sanitize を先にするとタグ途中で切れた断片 `</d` が残る。
+        metadata["remediation"] = sanitize_for_display(cut_json_tail(summary.remediation)).strip()[
+            :300
+        ]
     if diamond_axes.technical:
         metadata["technical_axis_summary"] = diamond_axes.technical
     # LLM 自由記述の HTML 残渣を一括除去 + 未登録キーの検出 (2026-08-15)。
@@ -608,10 +617,19 @@ def _build_briefing(
     # 個別追加は同じ漏れを繰り返すため、(1) 既知キーを SSoT として一括 sanitize し、
     # (2) **全 metadata 文字列を事後検証**して漏れたキーを名指しで警告する。
     # (2) が無いと「新しい自由記述キーを足したが SSoT 登録を忘れた」を誰も検知できない。
+    # JSON 流入 (2026-08-18): LLM が文字列を閉じ損ねると後続フィールドの JSON が値に
+    # 流れ込む。HTML 残渣と同じく **一括で** 落とす — 個別対応は必ず漏れる。
     for _key in LLM_FREE_TEXT_METADATA_KEYS:
         _val = metadata.get(_key)
         if isinstance(_val, str) and _val:
+            if has_json_tail(_val):
+                _log.warning("llm_json_tail_cut", article_id=article.id, field=_key)
+                _val = cut_json_tail(_val)
             metadata[_key] = sanitize_for_display(_val)
+    _tail_keys = [k for k, v in metadata.items() if isinstance(v, str) and has_json_tail(v)]
+    if _tail_keys:
+        # 一括除去を通したのに残っている = SSoT (LLM_FREE_TEXT_METADATA_KEYS) の登録漏れ。
+        _log.warning("llm_json_tail_residue", article_id=article.id, keys=_tail_keys)
     _residue_keys = [k for k, v in metadata.items() if isinstance(v, str) and has_html_residue(v)]
     if _residue_keys:
         _log.warning(
@@ -688,9 +706,11 @@ def _build_briefing(
     # 観測したため post-LLM にも適用する (import は module-level に統一 — 関数内 import は
     # 同名の module-level 束縛を隠し UnboundLocalError を招く)。
     display_title = sanitize_for_display(display_title, max_length=120, collapse_whitespace=True)
-    summary_clean = sanitize_for_display(summary.summary)
+    # summary / analyst_note も自由記述なので JSON 流入の対象 (metadata 経由ではないため
+    # 上の一括処理に載らない — ここで同じ順序 (切る → sanitize) を通す)。
+    summary_clean = sanitize_for_display(cut_json_tail(summary.summary))
     analyst_note_clean = (
-        sanitize_for_display(summary.analyst_note) if summary.analyst_note else None
+        sanitize_for_display(cut_json_tail(summary.analyst_note)) if summary.analyst_note else None
     )
     # Phase B-cal2: vulnerability/advisory の high を悪用シグナル不在なら medium に降格。
     capped_importance = _cap_vuln_importance(
