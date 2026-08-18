@@ -230,6 +230,8 @@ class RunHistoryRepositoryBase:
             "intent_confidence",
             # P4: 対処 (CoA) の 1 文 (本文明示のみ)
             "remediation",
+            # アナリスト所見 (本文に無い判断)。remediation と対で表示する。
+            "analyst_note",
         ):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")

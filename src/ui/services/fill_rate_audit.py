@@ -146,6 +146,12 @@ METRICS: tuple[FillMetric, ...] = (
         _VULN,
     ),
     FillMetric(
+        "analyst_note",
+        "analyst_note",
+        "a.analyst_note IS NOT NULL AND a.analyst_note <> ''",
+        None,
+    ),
+    FillMetric(
         "editorial_stance",
         "editorial_stance",
         "a.editorial_stance IS NOT NULL AND a.editorial_stance <> 'unknown'",

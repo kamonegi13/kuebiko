@@ -114,7 +114,8 @@ class TestAvailability:
         stats = build_field_stats(7, db_path=repo.db_path)
 
         # Assert: 0% と「統計なし」を混同させない (数値を一切載せない)
-        for field_id in ("analyst_note", "bluf"):
+        # analyst_note は 2026-08-18 に列を持ったので対象から外れた (bluf は列が無いまま)。
+        for field_id in ("bluf",):
             stat = _field(stats, field_id)
             assert stat["availability"] == "none"
             assert stat["coverage"] is None
@@ -122,6 +123,16 @@ class TestAvailability:
             assert stat["sub_metrics"] == []
             assert stat["average"] is None
             assert stat["source_note"]
+
+    def test_persisted_analyst_note_reports_coverage(self, repo: RunHistoryRepository) -> None:
+        """列を持った以上「統計なし」ではなく充足率を出す (write-only を作らない)。"""
+        _add(repo, article_id="a1", importance="high", category="apt")
+
+        stats = build_field_stats(7, db_path=repo.db_path)
+
+        stat = _field(stats, "analyst_note")
+        assert stat["availability"] == "full"
+        assert stat["coverage"] is not None
 
     def test_all_summary_output_fields_are_present(self, repo: RunHistoryRepository) -> None:
         # Arrange

@@ -290,6 +290,7 @@ class TestArticleRecording:
             "llm_primary_confidence": "high",
             "subject_actor_rationale": "候補は背景言及のため主題なし",
             "remediation": "patch",
+            "analyst_note": "所見",
             "socio_political_rationale": "r",
             "technical_axis_summary": "tech",
             "editorial_stance": "factual_report",

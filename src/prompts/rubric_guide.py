@@ -261,7 +261,7 @@ _FIELD_GUIDES: tuple[FieldGuide, ...] = (
         field_id="analyst_note",
         group="narrative",
         order=3,
-        effect="Discord 投稿の「アナリスト所見」行。DB には保存されないため後から検索できません。",
+        effect="Discord 投稿と記事詳細の「所見」欄。本文に無い判断を担う唯一の欄です。",
         sources=("src/tools/discord_publisher.py", "src/pipeline/publish.py"),
     ),
     FieldGuide(

@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -57,6 +58,16 @@ RUNS_DIR = Path("data/eval/runs")
 # 床の下限 (pt)。86 件の標本では 1 件の増減が約 1.2pt なので、それ未満の差は
 # 対照が完全一致していても「変化」と呼ばない。
 _MIN_FLOOR_PT = 1.5
+
+
+def _binomial_sd_pt(rate: float, n: int) -> float:
+    """充足率 ``rate`` を n 件で測ったときの標本ばらつき (1 sd, pt)。
+
+    ⚠ **対照ペアから測った床は、充足率そのものが動くと転用できない**。二項分散は
+    p(1-p) なので、p=0.18 で測った床 (±1.2pt) を p=0.68 の比較に当てると
+    ノイズを「変化」と誤読する (2026-08-18 に実際にやった)。床と併記して両方見る。
+    """
+    return math.sqrt(max(rate * (1.0 - rate), 0.0) / max(n, 1)) * 100.0
 
 
 # ---------------- build ----------------
@@ -273,10 +284,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
             floor_pt = (
                 abs(_fill_rate(floor_x, fld, floor_ids) - _fill_rate(floor_y, fld, floor_ids)) * 100
             )
-            # 床は「同一設定でも動く幅」。最低 1pt は見る (標本 86 件で 1 件 = 1.2pt)。
-            verdict = "★ 変化" if abs(delta_pt) > max(floor_pt, _MIN_FLOOR_PT) else "床の内"
+            # 床 = 同一設定でも動く幅 / 二項 sd = この充足率で 86 件を引いたときの
+            # 標本ばらつき。**両方を超えて初めて「変化」**と呼ぶ。
+            noise_pt = max(floor_pt, _binomial_sd_pt(fill_a, len(shared)), _MIN_FLOOR_PT)
+            verdict = "★ 変化" if abs(delta_pt) > noise_pt else "ノイズ内"
             floor_cell = f"{floor_agree * 100:>5.0f}%"
-            floor_pt_cell = f"±{floor_pt:>4.1f}pt"
+            floor_pt_cell = f"±{noise_pt:>4.1f}pt"
         else:
             verdict = "?"
             floor_cell = f"{'-':>6}"

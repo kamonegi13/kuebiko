@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from eval_goldset import (  # noqa: E402
     _agreement,
+    _binomial_sd_pt,
     _fill_rate,
     cmd_compare,
 )
@@ -68,7 +69,7 @@ class TestFloorIsRequired:
 
 
 class TestVerdictUsesFloor:
-    """床を超えた変化だけ ★ を付ける (同じ差でも床が広ければ「床の内」)。"""
+    """床を超えた変化だけ ★ を付ける (同じ差でも床が広ければ「ノイズ内」)。"""
 
     def _setup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, floor_noise: bool) -> None:
         import eval_goldset
@@ -104,7 +105,7 @@ class TestVerdictUsesFloor:
         cmd_compare(_args(floor=["c1", "c2"]))
 
         line = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("note")][0]
-        assert "床の内" in line
+        assert "ノイズ内" in line
 
 
 class TestMetrics:
@@ -127,3 +128,38 @@ class TestMetrics:
         y = {"1": {"f": ""}}
 
         assert _agreement(x, y, "f", ["1"]) == 1.0
+
+
+class TestBinomialNoise:
+    """対照ペアの床は充足率が動くと転用できない (二項分散は p に依存する)。"""
+
+    def test_sd_peaks_at_half_and_vanishes_at_extremes(self) -> None:
+        assert _binomial_sd_pt(0.5, 86) > _binomial_sd_pt(0.18, 86)
+        assert _binomial_sd_pt(1.0, 86) == 0.0
+        assert _binomial_sd_pt(0.0, 86) == 0.0
+
+    def test_verdict_uses_binomial_when_floor_was_measured_at_low_rate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """床 ±0pt でも、充足率 50% 付近の 3pt 差は「変化」と呼ばない。
+
+        2026-08-18 に実際にやった誤読の再発防止 — 床は p=0.18 で測ったのに
+        p=0.68 の比較へ当てて、標本ばらつきを効果と読んだ。
+        """
+        import eval_goldset
+
+        monkeypatch.setattr(eval_goldset, "RUNS_DIR", tmp_path)
+        ids = [str(i) for i in range(100)]
+        # A は 50 件、B は 53 件で値あり = +3pt (二項 sd ±5pt の内)
+        _write_run(tmp_path, "a", [{"article_id": i, "f": "v" if int(i) < 50 else ""} for i in ids])
+        _write_run(tmp_path, "b", [{"article_id": i, "f": "v" if int(i) < 53 else ""} for i in ids])
+        # 対照は完全一致 = 床 0pt
+        for label in ("c1", "c2"):
+            _write_run(
+                tmp_path, label, [{"article_id": i, "f": "v" if int(i) < 50 else ""} for i in ids]
+            )
+
+        cmd_compare(_args(floor=["c1", "c2"]))
+
+        line = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("f ")][0]
+        assert "ノイズ内" in line

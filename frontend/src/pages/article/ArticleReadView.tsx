@@ -378,6 +378,12 @@ export function ArticleReadView({
                 <dd className="text-fg-muted">{a.remediation}</dd>
               </div>
             )}
+            {a.analyst_note && (
+              <div className="flex gap-2">
+                <dt className="text-fg-subtle w-24 shrink-0">所見</dt>
+                <dd className="text-fg-muted">{a.analyst_note}</dd>
+              </div>
+            )}
             {a.editorial_stance && (
               <div className="flex gap-2">
                 <dt className="text-fg-subtle w-24 shrink-0">論調</dt>

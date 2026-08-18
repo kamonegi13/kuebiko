@@ -34,7 +34,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    victim_sector_canonical, victim_sector_raw,
                    victim_country_iso, victim_country_raw, victim_country_scope,
                    is_ransomware,
-                   socio_political_intent, intent_confidence, remediation,
+                   socio_political_intent, intent_confidence, remediation, analyst_note,
                    socio_political_rationale,
                    technical_axis_summary,
                    editorial_stance, routing_rule_id, routing_reason,
@@ -45,7 +45,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    article_type, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.run_id,
@@ -81,6 +81,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.socio_political_intent,
                     record.intent_confidence,
                     record.remediation,
+                    record.analyst_note,
                     record.socio_political_rationale,
                     record.technical_axis_summary,
                     record.editorial_stance,
@@ -263,6 +264,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "socio_political_rationale",
             "technical_axis_summary",
             "remediation",
+            "analyst_note",
             "event_date",
             "event_date_basis",
             "compromise_date",

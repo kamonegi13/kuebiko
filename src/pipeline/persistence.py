@@ -100,6 +100,9 @@ def _persist_article_outcomes(
         # UnboundLocalError → article_record_persist_failed になっていた。兄弟変数と揃える。
         intent_conf: str | None = None
         remediation_val: str | None = None
+        # アナリスト所見 (2026-08-18 永続化)。BriefingMessage の直フィールドなので
+        # metadata 経由ではなく msg から直接取る。
+        analyst_note_val: str | None = None
         # flow Phase 3: route() が metadata に載せた投稿先決定の監査情報。
         # 「なぜこのチャンネルか」を記事単位で永続化する (route() 非経由なら None)。
         routing_rule_id_val: str | None = None
@@ -141,6 +144,8 @@ def _persist_article_outcomes(
             intent_conf = _spc if isinstance(_spc, str) else None
             _rmd = msg.metadata.get("remediation")
             remediation_val = _rmd if isinstance(_rmd, str) else None
+            _note = (msg.analyst_note or "").strip()
+            analyst_note_val = _note or None
             socio_rationale = _spr if isinstance(_spr, str) else None
             technical_summary = _tas if isinstance(_tas, str) else None
             _rri = msg.metadata.get("routing_rule_id")
@@ -239,6 +244,7 @@ def _persist_article_outcomes(
                     socio_political_intent=socio_intent,
                     intent_confidence=intent_conf,
                     remediation=remediation_val,
+                    analyst_note=analyst_note_val,
                     socio_political_rationale=socio_rationale,
                     technical_axis_summary=technical_summary,
                     routing_rule_id=routing_rule_id_val,

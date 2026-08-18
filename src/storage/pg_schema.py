@@ -331,6 +331,8 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS socio_political_intent TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS intent_confidence TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS remediation TEXT;
+-- アナリスト所見 (2026-08-18): Discord のみで永続化されず後から追えなかったため列を持つ。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS analyst_note TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS socio_political_rationale TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS technical_axis_summary TEXT;
 -- intent 集計 (actor×intent クロス) 高速化 partial index。上の ADD COLUMN の後に作る。

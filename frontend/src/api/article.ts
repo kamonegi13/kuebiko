@@ -38,6 +38,7 @@ export interface ArticleDetail {
   socio_political_rationale: string | null;
   technical_axis_summary: string | null;
   remediation: string | null; // 本文明示の対処 1 文 (M1: write-only 解消)
+  analyst_note: string | null; // 本文に無い判断 (2026-08-18 に永続化)
   editorial_stance: string | null;
   pmesii: ArticlePmesii;
   discord_message_id: string | null;

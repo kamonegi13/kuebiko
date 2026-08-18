@@ -152,6 +152,10 @@ class ArticleRecord(BaseModel):
     subject_actor_rationale: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None
+    # アナリスト所見 (2026-08-18 に永続化)。Discord 投稿だけに出て DB に残らず、
+    # JSON 流入事故で失われた分を後から追えなかった。remediation が「本文にある事実」、
+    # こちらは「本文に無い判断」— 対になる欄なので保存先も対にする。
+    analyst_note: str | None = None
     socio_political_rationale: str | None = None
     technical_axis_summary: str | None = None
     # Phase B-R5b 観察: LLM が判定した editorial_stance (None=未判定)

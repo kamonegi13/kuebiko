@@ -194,6 +194,7 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         socio_political_rationale=_opt_text("socio_political_rationale"),
         # M1: 対処 1 文 (7/04 新設)。記事詳細で表示する。
         remediation=_opt_text("remediation"),
+        analyst_note=_opt_text("analyst_note"),
         technical_axis_summary=_opt_text("technical_axis_summary"),
         editorial_stance=_opt_text("editorial_stance"),
         routing_rule_id=_opt_text("routing_rule_id"),

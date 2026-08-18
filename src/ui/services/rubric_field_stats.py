@@ -203,6 +203,7 @@ def _scalar_aggs() -> tuple[_Agg, ...]:
         _metric_agg("n_victim_sector", "victim_sector"),
         _metric_agg("n_victim_country", "victim_country"),
         _metric_agg("n_remediation", "remediation"),
+        _metric_agg("n_analyst_note", "analyst_note"),
         _metric_agg("n_event_date", "event_date_cyber"),
         _metric_agg("n_compromise_date", "compromise_date"),
         _metric_agg("n_primary_actor", "llm_primary_actor"),
@@ -769,9 +770,14 @@ def _narrative_fields(ctx: _Ctx) -> dict[str, dict[str, Any]]:
             distribution=bands,
             average=_average("平均文字数", ctx.avg_summary_len, "字"),
         ),
-        "analyst_note": _none_stat(
+        "analyst_note": _stat(
             "analyst_note",
-            "この項目は DB に列がありません (Discord 投稿にのみ使われ、永続化されていません)。",
+            source_note="articles.analyst_note",
+            notes=[
+                "2026-08-18 に永続化しました。それ以前の記事は Discord 投稿にのみ出ており、"
+                "DB には残っていません (遡って埋めることはできません)。",
+            ],
+            coverage=_coverage(ctx.n("n_analyst_note"), ctx.total, _SCOPE_LABEL_ALL),
         ),
         "remediation": _stat(
             "remediation",

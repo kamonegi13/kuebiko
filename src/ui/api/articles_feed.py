@@ -552,6 +552,7 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
             "socio_political_rationale": a.socio_political_rationale,
             "technical_axis_summary": a.technical_axis_summary,
             "remediation": a.remediation,
+            "analyst_note": a.analyst_note,
             "editorial_stance": a.editorial_stance,
             "pmesii": {
                 "p": a.pmesii_p,
