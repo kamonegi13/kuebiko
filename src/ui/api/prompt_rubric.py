@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.config_loader import load_app_config
 from src.logging_config import get_logger
-from src.pipeline.briefing import MAX_LLM_BODY_CHARS
+from src.pipeline.briefing import MAX_LLM_BODY_CHARS, SUMMARIZER_OVERRIDDEN_FIELDS
 from src.pipeline.summary import SummaryOutput
 from src.prompts.rubric_guide import guide_payload
 from src.prompts.rubric_model import (
@@ -129,6 +129,7 @@ async def get_rubric() -> dict[str, Any]:
         "guide": guide_payload(
             [s.field_id for s in rubric.sections],
             {s.field_id: s.kind for s in rubric.sections},
+            SUMMARIZER_OVERRIDDEN_FIELDS,
         ),
     }
 

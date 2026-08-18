@@ -97,6 +97,9 @@ export interface RubricFieldGuide {
   group: RubricGroupId;
   order: number;
   effect: string;
+  /** false = 下流が必ず上書きするため、本文を書いても捨てられる (入力欄を出さない)。
+   *  SSoT は backend の SUMMARIZER_OVERRIDDEN_FIELDS。 */
+  editable?: boolean;
   sources: string[];
 }
 

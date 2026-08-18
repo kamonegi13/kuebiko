@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.pipeline.briefing import SUMMARIZER_OVERRIDDEN_FIELDS
 from src.pipeline.summary import SummaryOutput
 from src.prompts.rubric_guide import (
     FIELD_GUIDE,
@@ -151,3 +152,41 @@ def test_guide_payload_flags_unknown_fields() -> None:
     assert unknown["order"] == UNMAPPED_ORDER
     assert unknown["effect"] == ""
     assert unknown["sources"] == []
+
+
+class TestEditability:
+    """下流が必ず上書きするフィールドは編集させない (2026-08-18)。
+
+    空の入力欄は「ここに書けば判定される」と誘うが、書いた結果は捨てられる。
+    触っても効かないものを触れるようにしない。
+    """
+
+    def test_overridden_fields_are_not_editable(self) -> None:
+        payload = guide_payload(
+            ["article_type", "summary"],
+            {"article_type": "suppressed", "summary": "rubric"},
+            SUMMARIZER_OVERRIDDEN_FIELDS,
+        )
+
+        fields = payload["fields"]
+        assert isinstance(fields, list)
+        editable = {f["field_id"]: f["editable"] for f in fields}
+        assert editable["article_type"] is False
+        assert editable["summary"] is True
+
+    def test_merged_fields_stay_editable(self) -> None:
+        """pmesii_axes / routing_flags は「今は頼んでいないだけで書けば効く」。
+
+        merge_axes は LLM 値と既定マッピングの union、dedup_key は LLM 値が第一候補。
+        上書きされる 7 件と混ぜると、生きている機構まで編集不能になる。
+        """
+        assert "pmesii_axes" not in SUMMARIZER_OVERRIDDEN_FIELDS
+        assert "routing_flags" not in SUMMARIZER_OVERRIDDEN_FIELDS
+
+    def test_defaults_to_editable_when_not_told(self) -> None:
+        """引数を渡さない呼び出し (既存経路) を壊さない。"""
+        payload = guide_payload(["article_type"], {"article_type": "suppressed"})
+
+        fields = payload["fields"]
+        assert isinstance(fields, list)
+        assert fields[0]["editable"] is True

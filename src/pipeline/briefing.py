@@ -29,6 +29,29 @@ from src.tools.text_sanitizer import (
 )
 from src.tools.text_utils import strip_html as _strip_html
 
+# summarizer の出力が下流で **必ず捨てられる** フィールド (2026-08-18)。
+#
+# ここに載るものは判定基準を書いても結果が 1 文字も変わらない。入力・出力トークンを
+# 払って捨てるだけなので、UI では本文欄を編集させない (空の入力欄は「ここに書けば
+# 判定される」と誤解させる — 触っても効かないものを触れるようにしない)。
+#
+# ⚠ **merge されるフィールドは含めない**。pmesii_axes は merge_axes が LLM 値と既定
+# マッピングの union を取り、routing_flags は dedup_key が LLM 値を第一候補に使う。
+# この 2 つは「今は頼んでいないだけで、書けば効く」ので編集可能なまま残す。
+SUMMARIZER_OVERRIDDEN_FIELDS: frozenset[str] = frozenset(
+    {
+        # 下の summary.model_copy(update=...) が judgment 分類器の値で置き換える
+        "article_type",
+        "editorial_stance",
+        "diamond",
+        "event_date",
+        "event_date_basis",
+        "compromise_date",
+        # BriefingMessage 構築時に bluf="" で固定 (RSS 経路では title と重複するため)
+        "bluf",
+    }
+)
+
 # LLM が自由記述で埋める metadata キー (HTML 残渣の一括除去対象)。
 # 新しい自由記述フィールドを metadata に足したらここにも 1 行足す
 # (個別 sanitize は漏れる — 2026-08-15 に remediation で実害が出た)。

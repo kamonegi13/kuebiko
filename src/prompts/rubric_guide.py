@@ -391,12 +391,19 @@ def resolve_group(field_id: str, kind: str) -> str:
 def guide_payload(
     section_ids: Sequence[str],
     kinds: Mapping[str, str],
+    overridden: frozenset[str] | None = None,
 ) -> dict[str, object]:
     """GET /rubric の ``guide`` キーを組み立てる。
 
     ``fields`` は **rubric に現存するセクションぶんだけ** 返す (契約全体ではない)。
     グループの label / description / 表示順は載せない — ``rubric_group`` 語彙が SSoT。
+
+    ``overridden`` = 下流で必ず上書きされるフィールド (SSoT は
+    ``src.pipeline.briefing.SUMMARIZER_OVERRIDDEN_FIELDS``)。本モジュールは src 配下を
+    import しない規約なので **呼び出し側から渡す**。載っているフィールドは
+    ``editable=False`` で返し、UI は本文欄を出さない (書いても捨てられるため)。
     """
+    overridden = overridden or frozenset()
     fields: list[dict[str, object]] = []
     unmapped: list[str] = []
     for field_id in dict.fromkeys(section_ids):  # 重複宣言は 1 件に畳む (順序は保持)
@@ -410,6 +417,7 @@ def guide_payload(
                 "order": guide.order if guide is not None else UNMAPPED_ORDER,
                 "effect": guide.effect if guide is not None else "",
                 "sources": list(guide.sources) if guide is not None else [],
+                "editable": field_id not in overridden,
             },
         )
     return {"fields": fields, "unmapped_fields": unmapped}

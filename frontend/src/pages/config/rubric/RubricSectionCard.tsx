@@ -193,7 +193,16 @@ export function RubricSectionCard({
               {issue.message}
             </div>
           ))}
-          <AutoGrowTextarea value={section.body} onChange={onChangeBody} />
+          {guide?.editable === false ? (
+            /* 下流が必ず上書きするフィールド。空の入力欄は「ここに書けば判定される」と
+               誤解させるので、書ける場所を出さずに理由を書く (2026-08-18)。 */
+            <p className="m-0 rounded border border-border-subtle bg-surface-2 px-2 py-1.5 text-[11px] leading-relaxed text-fg-muted">
+              この項目は取込時の分類器が確定するため、判定基準を書いても出力は上書きされます。
+              {guide.sources.length > 0 && <> 判定は <code className="text-fg-subtle">{guide.sources[0]}</code> にあります。</>}
+            </p>
+          ) : (
+            <AutoGrowTextarea value={section.body} onChange={onChangeBody} />
+          )}
           <div className="flex items-center justify-between text-[10px]">
             <button
               type="button"
