@@ -135,6 +135,43 @@ async def _run_one(llm: Any, template: Any, art: GoldArticle) -> dict[str, Any]:
     return {"article_id": art.article_id, **out.model_dump()}
 
 
+async def _run_one_judgment(llm: Any, _template: Any, art: GoldArticle) -> dict[str, Any]:
+    """取込時の統合判断分類器を 1 本走らせる (summarizer と同じ標本・同じ LLM ティア)。
+
+    本番 (``briefing.py``) の呼び出しを写す: 本文を LLM 上限で切り、辞書で候補アクターを
+    引き、category を渡す。**候補は本文言及集合に限る構造ゲート**なので、ここを省くと
+    subject_actor_id の挙動が本番と変わる。
+
+    ⚠ ``summary_text`` は渡さない。本番は summarizer の要約を渡すが、これは本文が
+    空/極短のときの代替入力であり、gold set は本文非空のみで構成されている。
+    """
+    from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.judgment_classifier import classify_judgment
+    from src.pipeline.briefing import MAX_LLM_BODY_CHARS
+    from src.pipeline.persistence import _relevant_actors
+
+    body = art.body[:MAX_LLM_BODY_CHARS]
+    candidates = _relevant_actors(load_actor_aliases().find_all(body), art.category)
+    out = await classify_judgment(
+        llm,
+        title=art.title,
+        category=art.category,
+        body=body,
+        published=art.published,
+        candidates=candidates,
+    )
+    if out is None:
+        return {"article_id": art.article_id, "_error": "classify_judgment returned None"}
+    return {"article_id": art.article_id, **out.model_dump()}
+
+
+# 評価対象 → (1 件を走らせる関数, テンプレートが要るか)。
+_TARGETS = {
+    "summarizer": (_run_one, True),
+    "judgment": (_run_one_judgment, False),
+}
+
+
 def _build_template(drop: list[str]) -> Any:
     """評価用のテンプレートを組む。``drop`` 指定時は **DB に保存せず** 変種を使う。
 
@@ -155,13 +192,21 @@ def _build_template(drop: list[str]) -> Any:
     return build_template(drop_fields(rubric, drop), path=DEFAULT_TEMPLATE_PATH)
 
 
-async def _run_all(articles: list[GoldArticle], label: str, drop: list[str]) -> Path:
+async def _run_all(
+    articles: list[GoldArticle],
+    label: str,
+    drop: list[str],
+    target: str = "summarizer",
+) -> Path:
     from src.config_loader import load_app_config
     from src.tools.model_tiers import Step, build_llm_for
 
+    run_one, needs_template = _TARGETS[target]
     config = load_app_config()
     llm = build_llm_for(Step.ARTICLE_SUMMARY, config)
-    template = _build_template(drop)
+    template = _build_template(drop) if needs_template else None
+    if drop and not needs_template:
+        raise SystemExit("--drop-field は summarizer のみ (judgment の判定基準はコード内)")
     if drop:
         print(f"変種で実行 (除外フィールド: {', '.join(drop)}) — DB は変更しない", file=sys.stderr)
 
@@ -170,7 +215,7 @@ async def _run_all(articles: list[GoldArticle], label: str, drop: list[str]) -> 
     with path.open("w", encoding="utf-8") as f:
         for i, art in enumerate(articles, 1):
             try:
-                rec = await _run_one(llm, template, art)
+                rec = await run_one(llm, template, art)
             except Exception as e:  # noqa: BLE001 — 1 件の失敗で評価全体を止めない
                 rec = {"article_id": art.article_id, "_error": f"{type(e).__name__}: {e}"[:200]}
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -184,7 +229,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"gold set が無い。先に build を実行する: {GOLDSET_PATH}", file=sys.stderr)
         return 1
     articles = load_goldset(GOLDSET_PATH)
-    path = asyncio.run(_run_all(articles, args.label, args.drop_field or []))
+    path = asyncio.run(_run_all(articles, args.label, args.drop_field or [], args.target))
     print(f"{len(articles)} 件を実行 → {path}")
     return 0
 
@@ -322,6 +367,12 @@ def main() -> int:
 
     r = sub.add_parser("run", help="凍結した標本を現行 rubric で走らせる")
     r.add_argument("--label", required=True, help="実行結果の名前 (例 baseline)")
+    r.add_argument(
+        "--target",
+        choices=sorted(_TARGETS),
+        default="summarizer",
+        help="評価する呼出 (summarizer / 取込時の judgment 分類器)",
+    )
     r.add_argument(
         "--drop-field",
         action="append",

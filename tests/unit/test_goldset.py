@@ -89,3 +89,23 @@ class TestSelectGoldset:
     def test_invalid_per_stratum_is_rejected(self, per_stratum: int) -> None:
         with pytest.raises(ValueError, match="per_stratum"):
             select_goldset([art("a")], per_stratum=per_stratum)
+
+
+class TestEvalTargets:
+    """評価対象の登録 (2026-08-18)。
+
+    summarizer だけでなく取込時の judgment 分類器も同じ標本・同じ器で測る。
+    judgment の判定基準はコード内にあるため ``--drop-field`` は使えない。
+    """
+
+    def test_both_calls_are_registered(self) -> None:
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+        from eval_goldset import _TARGETS
+
+        assert set(_TARGETS) == {"summarizer", "judgment"}
+        # summarizer だけがテンプレート (= 編集可能な判定基準) を持つ
+        assert _TARGETS["summarizer"][1] is True
+        assert _TARGETS["judgment"][1] is False
