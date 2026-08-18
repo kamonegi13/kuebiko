@@ -67,16 +67,17 @@ def test_order_is_a_gapless_sequence_within_each_group() -> None:
     }
 
     assert offenders == {}
-    # §1 の決定表と同じ内訳 (2 + 2 + 5 + 4 + 4 + 7 = 24)。
-    # article_type は 2026-08-18 に classification → suppressed へ移動
-    # (summarizer 出力が 100% breaking に枯死しており judgment 分類器が確定するため)。
+    # §1 の決定表と同じ内訳 (2 + 5 + 4 + 4 + 9 = 24)。
+    # 2026-08-18: LLM が実際には返していなかった 3 つを suppressed へ移動した。
+    # article_type (出力が 100% breaking に枯死) / routing_flags・pmesii_axes
+    # (gold set 258 件で返却ゼロ、値は決定論層と judgment 分類器が供給)。
+    # 「routing」群は所属 0 になったため定義ごと消えている。
     assert {g: len(o) for g, o in by_group.items()} == {
         "classification": 2,
-        "routing": 2,
         "victim": 5,
         "technical": 4,
         "narrative": 4,
-        "suppressed": 7,
+        "suppressed": 9,
     }
 
 
@@ -133,8 +134,8 @@ def test_guide_payload_maps_every_seeded_section() -> None:
     assert len(fields) == len(section_ids) == 24
     assert payload["unmapped_fields"] == []
     assert {f["field_id"] for f in fields} == set(SummaryOutput.model_fields)
-    # kind=suppressed の 7 件は yaml の宣言どおり suppressed 群に入る
-    assert sum(1 for f in fields if f["group"] == "suppressed") == 7
+    # kind=suppressed の 9 件は yaml の宣言どおり suppressed 群に入る
+    assert sum(1 for f in fields if f["group"] == "suppressed") == 9
     assert all(f["effect"] for f in fields)
 
 

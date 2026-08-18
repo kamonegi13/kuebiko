@@ -44,11 +44,12 @@ def test_seed_covers_every_summary_output_field(seed: SummarizerRubric) -> None:
 def test_seed_splits_rubric_and_suppressed(seed: SummarizerRubric) -> None:
     kinds = [s.kind for s in seed.sections]
 
-    assert kinds.count("rubric") == 17
-    assert kinds.count("suppressed") == 7
+    assert kinds.count("rubric") == 15
+    assert kinds.count("suppressed") == 9
     suppressed = {s.field_id for s in seed.sections if s.kind == "suppressed"}
-    # article_type は 2026-08-18 に rubric → suppressed へ移動 (出力が枯死しており
-    # judgment 分類器が model_copy で確定するため)。
+    # 2026-08-18: LLM が実際には返していなかった 3 つを suppressed へ移した。
+    # article_type = 出力が 100% breaking に枯死。routing_flags / pmesii_axes =
+    # gold set 258 件で返却ゼロ (値は決定論層と judgment 分類器が供給)。
     assert suppressed == {
         "editorial_stance",
         "bluf",
@@ -57,8 +58,12 @@ def test_seed_splits_rubric_and_suppressed(seed: SummarizerRubric) -> None:
         "event_date_basis",
         "compromise_date",
         "article_type",
+        "routing_flags",
+        "pmesii_axes",
     }
-    # editorial_stance だけは legacy と同じ位置 (routing_flags と pmesii_axes の間) に残す
+    # legacy と同じ並び (routing_flags → editorial_stance → pmesii_axes) は維持する。
+    # 3 つとも suppressed になった今は body が空でプロンプトには出ないが、
+    # 位置を動かすと config-history の diff が「並べ替え」で膨らむため据え置く。
     order = [s.field_id for s in seed.sections]
     assert order.index("routing_flags") + 1 == order.index("editorial_stance")
     assert order.index("editorial_stance") + 1 == order.index("pmesii_axes")

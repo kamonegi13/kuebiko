@@ -10,7 +10,9 @@ import re
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from src.cti.llm_routing_flags import EditorialStance
 from src.logging_config import get_logger
@@ -137,10 +139,48 @@ ArticleType = Literal[
 ]
 
 
+# LLM に **キーの出力そのものを義務づける** フィールド (2026-08-18)。
+#
+# 既定値を持つ field は JSON Schema の required に載らず、Ollama の構造化出力でも
+# 「途中で JSON を閉じる」ことが許される。実測ではこれが致命的だった: gold set 86 件 x 2
+# 設定 (172 件) で **analyst_note を書いた記事は victim_* を 1 つも埋めない** (重複 2 件)。
+# schema 順で analyst_note は 10 番目、victim_* は 15-19 番目なので、所見を書いた記事は
+# そこで閉じて被害の帰属に到達していなかった。required にすれば欠落自体ができなくなる。
+#
+# ⚠ **Python 側の既定値は残す** (内部生成・テスト・Grok 経路の後方互換)。
+# つまり「LLM にだけ厳しく、内部構築には寛容」という非対称を意図して作っている。
+# ⚠ 値を捏造させないため、対象は **null / [] を返せる型のみ** に限る。
+_LLM_REQUIRED_FIELDS = frozenset(
+    {
+        "iocs",
+        "mitre_techniques",
+        "malware_families",
+        "tools",
+        "analyst_note",
+        "victim_sector",
+        "victim_country",
+        "victim_city",
+        "involved_countries",
+        "victim_orgs",
+        "remediation",
+    }
+)
+
+
 class SummaryOutput(BaseModel):
     """``prompts/briefing/summarizer.j2`` で LLM に生成させる JSON 構造。"""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """LLM へ渡す schema でだけ ``required`` を広げる (上の定数の説明を参照)。"""
+        schema = handler(core_schema)
+        required = set(schema.get("required", ())) | _LLM_REQUIRED_FIELDS
+        schema["required"] = sorted(required)
+        return schema
 
     # Phase 5J-2: title_ja を required に格上げ (MoE 系で optional 省略を防ぐ)。
     title_ja: str = Field(min_length=1, max_length=120)

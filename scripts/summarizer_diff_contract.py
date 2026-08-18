@@ -40,6 +40,16 @@ _ARTICLE_TYPE_SUPPRESSED = (
     "gold set 86 件とも 100% breaking に枯死し、値は judgment 分類器が model_copy で "
     "上書きしていた。schema 既定値も breaking なので挙動は不変"
 )
+_ROUTING_FLAGS_SUPPRESSED = (
+    "routing_flags を suppressed 化 (2026-08-18)。gold set 258 件で返却ゼロ。"
+    "dedup_key=compute_dedup_key / primary_actor_id・confidence=judgment 分類器 / "
+    "japan_targeted・is_breaking_critical=regex + victim_country が実際の供給元"
+)
+_PMESII_SUPPRESSED = (
+    "pmesii_axes を suppressed 化 (2026-08-18)。gold set 258 件で返却ゼロ。"
+    "本番 14 日 3,511 件のうち category/feed 既定マッピング + judgment の I-infra で"
+    "説明できない軸を持つ記事は 2 件 (0.06%) のみ"
+)
 
 # legacy 行番号 → 削除理由。これ以外の削除は検証 fail。
 EXPECTED_DELETIONS: dict[int, str] = {
@@ -56,6 +66,16 @@ EXPECTED_DELETIONS: dict[int, str] = {
     348: _ARTICLE_TYPE_SUPPRESSED,
     370: _ARTICLE_TYPE_SUPPRESSED,
     392: _ARTICLE_TYPE_SUPPRESSED,
+    # routing_flags の判定基準 (L242-279) と出力例 3 件の object (L349-355 / 371-377 /
+    # 393-399)。例では最終キーになるため直前行の末尾カンマが消える = 下の REWRITES 側。
+    # ⚠ 空行 (L252/261/316) は除く — 分類は行番号でなく **行内容** で行うため、空文字を
+    # 削除許容リストに入れると文書中どこの空行削除でも「期待どおり」と誤分類される。
+    **dict.fromkeys([n for n in range(242, 280) if n not in (252, 261)], _ROUTING_FLAGS_SUPPRESSED),
+    **dict.fromkeys(range(349, 356), _ROUTING_FLAGS_SUPPRESSED),
+    **dict.fromkeys(range(371, 378), _ROUTING_FLAGS_SUPPRESSED),
+    **dict.fromkeys(range(393, 400), _ROUTING_FLAGS_SUPPRESSED),
+    # pmesii_axes の判定基準 (L281-331)。出力例には元から含まれていない。
+    **dict.fromkeys([n for n in range(281, 332) if n != 316], _PMESII_SUPPRESSED),
 }
 
 # legacy 行番号 → (legacy 原文, 合成後の期待文字列)。
@@ -128,33 +148,46 @@ EXPECTED_REWRITES: dict[int, tuple[str, str]] = {
         "- ``analyst_note`` (string | null): 日本の CTI 担当者の視点での",
         "- ``analyst_note``: 日本の CTI 担当者の視点での",
     ),
-    242: (
-        "- ``routing_flags`` (object, **必須**): ルーティング判定用の構造化フラグ。",
-        "- ``routing_flags``: **必須**。ルーティング判定用の構造化フラグ。",
-    ),
-    281: (
-        "- ``pmesii_axes`` (array of string, Phase H): CTI サイバー版 PMESII-PT 軸の",
-        "- ``pmesii_axes``: CTI サイバー版 PMESII-PT 軸の",
-    ),
     332: (
         "- ``remediation`` (string|null): **本文に明示された対処** "
         "(修正版/パッチ/回避策/緩和策/推奨対応)",
         "- ``remediation``: **本文に明示された対処** (修正版/パッチ/回避策/緩和策/推奨対応)",
     ),
+    # §2 由来: routing_flags を落とした結果、出力例で最終キーになった行の末尾カンマが消える。
+    347: (
+        '  "remediation": "ScreenConnect を 23.9.8 以降へ更新し、'
+        '掲載 IOC (C2 ドメイン/IP) を遮断する。",',
+        '  "remediation": "ScreenConnect を 23.9.8 以降へ更新し、'
+        '掲載 IOC (C2 ドメイン/IP) を遮断する。"',
+    ),
+    369: (
+        '  "analyst_note": "国内外の Apache 利用者は速やかにパッチ適用を推奨。",',
+        '  "analyst_note": "国内外の Apache 利用者は速やかにパッチ適用を推奨。"',
+    ),
+    391: (
+        '  "analyst_note": "",',
+        '  "analyst_note": ""',
+    ),
 }
 
 # 空白のみの差分の許容上限 (出力例見出し前の空行正規化 + legacy 末尾空行の削除)。
-MAX_WHITESPACE_DIFFS = 3
+# 3 → 5 (2026-08-18): routing_flags / pmesii_axes の判定基準に含まれていた空行 3 行が、
+# セクションごと消えたことで空白差分として数えられるようになったため。
+# ⚠ 空行を削除許容リスト側に入れて数を減らすのは不可 (行内容で分類するため、
+#   文書中どこの空行削除でも「期待どおり」になってしまう)。
+MAX_WHITESPACE_DIFFS = 5
 
-# EXPECTED_REWRITES に載っている行 (title_ja 見出し + 章見出し) = 18 のはずという自己検証。
-# 契約表そのものの改変ミス (行の消し忘れ等) を早期に検出する。
+# EXPECTED_REWRITES の自己検証。契約表そのものの改変ミス (行の消し忘れ等) を早期に検出する。
 # 19 → 18: article_type の見出しは「置換」ではなく「削除」へ移った (2026-08-18)。
-_EXPECTED_REWRITE_COUNT = 18
+# 18 → 19: routing_flags 除去で出力例 3 件の末尾カンマが消えた (同日)。
+# なお routing_flags / pmesii_axes の見出し置換 (旧 242 / 281) は削除側へ移動している。
+_EXPECTED_REWRITE_COUNT = 19
 assert len(EXPECTED_REWRITES) == _EXPECTED_REWRITE_COUNT, (
     f"EXPECTED_REWRITES は {_EXPECTED_REWRITE_COUNT} 行のはずだが {len(EXPECTED_REWRITES)} 行"
 )
-# 2 (§1 契約散文) + 15 (§2 article_type の suppressed 化) = 17。
-_EXPECTED_DELETION_COUNT = 17
+# 2 (§1 契約散文) + 15 (article_type) + 57 (routing_flags) + 50 (pmesii_axes) = 124。
+# 空行 3 行は含めない (上記の注意書き)。
+_EXPECTED_DELETION_COUNT = 124
 assert len(EXPECTED_DELETIONS) == _EXPECTED_DELETION_COUNT, (
     f"EXPECTED_DELETIONS は {_EXPECTED_DELETION_COUNT} 行のはずだが {len(EXPECTED_DELETIONS)} 行"
 )

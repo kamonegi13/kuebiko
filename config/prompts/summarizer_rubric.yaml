@@ -294,48 +294,10 @@ sections:
     body: ""
     note: "judgment_classifier が確定・上書き"
   - field_id: routing_flags
-    kind: rubric
+    kind: suppressed
     title: "ルーティング フラグ"
-    body: |-
-      **必須**。ルーティング判定用の構造化フラグ。
-        以下のサブフィールドをすべて出力:
-        * ``japan_targeted`` (bool): **日本の組織が攻撃・侵害・被害の "当事者" として
-          明示**されている場合のみ ``true``。次のすべては ``false``:
-          - **発信者**としての言及: 「JPCERT が advisory を公開」「警察庁が発表」「NISC が注意喚起」
-          - **製品ベンダー**としての言及: 「BUFFALO 製ルーター脆弱性」「NEC Aterm 脆弱性」
-            「Movable Type に SQL インジェクション」「Cybozu Garoon 脆弱性」
-          - 中立言及: 「日本のセキュリティ研究者が解説」「Japan-based researchers explain」
-          - 付随言及: 「日本周辺諸国も対象」「米国・日本・韓国を含む各国」「グローバルに影響」
-          - 汎用フレーズ: 「国内外」「重要インフラ全般」「日本標的の APT 動向 (一般論)」
-
-          判定の決め手 (重要):
-          - **被害事案**: 日本組織が「侵害された / 攻撃された / 漏洩した」
-            → ``true``: 「トヨタ海外子会社が Qilin に侵入された」「東北大学で個人情報漏洩」
-          - **製品脆弱性 advisory**: 日本ベンダー製品の脆弱性公開・パッチ情報
-            → ``false``: 「BUFFALO ルーターに脆弱性 (CVE-XXXX)」「ELECOM 製品 advisory」
-            これらは category=``vulnerability`` で brief 経路が正しい
-          - **発信者中立**: JPCERT/NISC/警察庁が advisory・report・統計を発表
-            → ``false``: 発信者であって被害組織ではない
-
-          例:
-          - true:  「デンソー海外子会社へ Qilin ランサム侵入 (DENSO 6902)」
-          - true:  「東北大学・東北大学病院 教員 PC 経由で治験患者情報漏洩」
-          - true:  「自衛隊機密情報を狙う APT41 活動を Mandiant が観測」
-          - false: 「BUFFALO 製無線 LAN ルーターに脆弱性 (JVN#XXXXXXXX)」
-          - false: 「JPCERT/CC が ELECOM 脆弱性 advisory を公開」
-          - false: 「Movable Type における SQL インジェクション脆弱性」
-        * ``is_breaking_critical`` (bool): 24h 以内に対応・分析が必要な進行中事案
-          なら ``true``。recap / 解説 / 政策動向 / 過去事案の振り返りは ``false``。
-        * ``primary_actor_id`` (string): 主要 APT アクター名 (例: ``"salt typhoon"``,
-          ``"lazarus"``, ``"volt typhoon"``)。複数アクターが同等に主要なら
-          最も活動が新しい方を選ぶ。判定不能なら空文字 ``""``。
-        * ``dedup_key`` (string): 同事象識別キー (60 字以内の slug)。
-          CVE-ID があれば ``"cve-2026-12345"`` の形式、無ければ
-          ``"{actor}-{verb}-{target}"`` (例: ``"salt-typhoon-supplychain-ibm-italy"``)。
-        * ``confidence`` ("high" | "medium" | "low"): 上記フラグへの自己評価。
-          本文から確実に判断できるなら ``high``、推定が混ざるなら ``medium``、
-          不明な部分が多ければ ``low``。
-    note: ""
+    body: ""
+    note: "dedup_key=自動生成 / primary_actor_id・confidence=judgment_classifier / japan_targeted・is_breaking_critical=決定論判定"
   - field_id: editorial_stance
     kind: suppressed
     title: "編集スタンス"
@@ -343,61 +305,10 @@ sections:
       **出力不要** (取得時に別途 focused 分類器が付与するため。出しても無視される)。
     note: "judgment_classifier が確定・上書き"
   - field_id: pmesii_axes
-    kind: rubric
+    kind: suppressed
     title: "PMESII 軸"
-    body: |-
-      CTI サイバー版 PMESII-PT 軸の
-        multi-label 分類。**該当する軸を 1〜3 個** 選択 (典型: 1-2 個):
-        * ``P`` (Political): サイバー政策・規制・attribution・国際協調 (CISA/NCSC 等の advisory)
-        * ``M`` (Military): 国家系 APT (PLA/GRU/IRGC/RGB)・cyber warfare doctrine
-        * ``E`` (Economic): cybercrime 経済・ransomware・サプライチェーン・制裁経済
-        * ``S`` (Social): ハクティビスト・情報操作 (InfoOps)・認知戦・ディスインフォ
-        * ``I-infra`` (Infrastructure): **民生重要インフラまたは重要インフラを運営する組織への攻撃 / 言及**。
-          - ✓ **立てる** (= 物理サービスを提供する組織への直接攻撃):
-            * 医療機関 (病院/製薬/治験/医療データセンター)
-            * 電力 (発電/送電/グリッド/再エネ施設)
-            * ガス / 水道 / 下水
-            * 通信 (キャリア/ISP/海底ケーブル/5G 基地局/データセンター運営)
-            * 交通 (鉄道/航空/港湾/物流/海運/Maersk 系)
-            * 金融 backend (決済 system / 銀行 core banking / SWIFT)
-            * 政府 services (戸籍/税務/マイナンバー/年金/警察 system)
-            * 防衛 industry (兵器製造企業の operational facility、 Lockheed / MHI 等)
-            * 半導体 fab (TSMC / Samsung / Intel 等の製造拠点)
-            * OT/ICS、 SCADA、 industrial control
-          - ✗ **立てない** (= negative examples、 LLM が誤判定しがち):
-            * 一般 enterprise IT 環境への攻撃 (= corporate breach、 ``[E]`` or ``[breach]``)
-            * AI 兵器そのもの (= 兵器の研究開発、 ``[M]`` or ``[I-cyber]``)
-            * 個別 CVE / 脆弱性解説 (= ``[I-cyber]``)
-            * SaaS / Cloud service の脆弱性 (= ``[I-cyber]`` unless 重要インフラが運用に使用)
-            * cybersecurity 企業の自社製品 release (= ``[I-cyber]``)
-          - 例:
-            * 「メディカ出版 ランサム」 → ``["I-infra", "E"]`` (医療データセンター)
-            * 「JR system 攻撃」 → ``["I-infra"]``
-            * 「Volt Typhoon 通信インフラ侵入」 → ``["I-infra", "M"]``
-            * 「Notepad++ RCE 脆弱性」 → ``["I-cyber"]`` のみ (✗ I-infra にしない)
-            * 「AI 兵器開発加速」 → ``["M", "I-cyber"]`` (✗ I-infra にしない)
-            * 「7-Eleven Salesforce breach」 → ``["E"]`` (一般企業 breach、 ✗ I-infra にしない)
-        * ``I-cyber`` (Information): TTP / IoC / 脆弱性 / malware (本 pipeline の主産物)
-        * ``P-env`` (Physical Env): 地政地理・データ主権・海底ケーブル・データセンター位置
-        該当なし / 判定不能なら空配列 ``[]``。(``T`` 軸は 2026-07-16 に廃止 — 出力しない。
-        時間次元は event_date / compromise_date が担う)
-
-        **代表的な判定例 (= LLM がこの参照表で判断できるよう)**:
-          | event sample                                  | axes                  |
-          |-----------------------------------------------|-----------------------|
-          | APT41 が日本製造業に侵入                       | [M, I-cyber]          |
-          | Dragos OT/ICS report (SCADA 攻撃)             | [I-infra, I-cyber]    |
-          | Sputnik の地政コラム                          | [S, P]                |
-          | CVE-2026-XXX advisory                         | [I-cyber, P]          |
-          | 病院 ransomware 64 万人漏洩                   | [I-infra, E]          |
-          | APT 6 ヶ月継続活動 report                     | [M, I-cyber]          |
-          | 2025Q1 cybercrime trend report                | [E, I-cyber]          |
-          | Volt Typhoon 米通信侵入                       | [I-infra, M]          |
-          | 7-Eleven Salesforce breach                    | [E]                   |
-          | Notepad++ RCE 脆弱性                          | [I-cyber]             |
-          | AI 兵器開発加速 (中国 LLM-driven autonomy)    | [M, I-cyber]          |
-          | 米軍機がイラン船舶攻撃                         | [M, P-env]            |
-    note: ""
+    body: ""
+    note: "category/feed 既定マッピング + judgment の I-infra が確定"
   - field_id: remediation
     kind: rubric
     title: "対処 (remediation)"
@@ -443,14 +354,7 @@ examples:
         "iocs": ["203.0.113.5", "evil-c2.example.com"],
         "mitre_techniques": ["T1071.001", "T1566.001"],
         "analyst_note": "国内製造業の SOC は当該 IOC のブロックを推奨。",
-        "remediation": "ScreenConnect を 23.9.8 以降へ更新し、掲載 IOC (C2 ドメイン/IP) を遮断する。",
-        "routing_flags": {
-          "japan_targeted": true,
-          "is_breaking_critical": true,
-          "primary_actor_id": "apt41",
-          "dedup_key": "apt41-c2-japan-manufacturing",
-          "confidence": "high"
-        }
+        "remediation": "ScreenConnect を 23.9.8 以降へ更新し、掲載 IOC (C2 ドメイン/IP) を遮断する。"
       }
   - label: "japan_targeted=false の境界事例: グローバル CVE のため"
     json_text: |-
@@ -461,14 +365,7 @@ examples:
         "summary": "(要約本文)",
         "iocs": ["CVE-2026-23918"],
         "mitre_techniques": [],
-        "analyst_note": "国内外の Apache 利用者は速やかにパッチ適用を推奨。",
-        "routing_flags": {
-          "japan_targeted": false,
-          "is_breaking_critical": true,
-          "primary_actor_id": "",
-          "dedup_key": "cve-2026-23918",
-          "confidence": "high"
-        }
+        "analyst_note": "国内外の Apache 利用者は速やかにパッチ適用を推奨。"
       }
   - label: "propaganda 判定: 国営メディアの一方的 framing"
     json_text: |-
@@ -479,12 +376,5 @@ examples:
         "summary": "(要約)",
         "iocs": [],
         "mitre_techniques": [],
-        "analyst_note": "",
-        "routing_flags": {
-          "japan_targeted": false,
-          "is_breaking_critical": false,
-          "primary_actor_id": "",
-          "dedup_key": "russia-mfa-eu-sanctions-loss-claim",
-          "confidence": "high"
-        }
+        "analyst_note": ""
       }

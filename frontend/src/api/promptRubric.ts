@@ -85,7 +85,6 @@ export interface RuntimeInfo {
 // (I-5: ラベル SSoT)。ここではキー空間の型だけを持つ。
 export type RubricGroupId =
   | "classification"
-  | "routing"
   | "victim"
   | "technical"
   | "narrative"

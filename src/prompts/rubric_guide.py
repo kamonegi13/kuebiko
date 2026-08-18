@@ -65,29 +65,26 @@ GROUPS: tuple[RubricGroup, ...] = (
         description="この記事が何であり、どれだけ重要か。ほぼ全ての下流分岐の起点です。",
         order=1,
     ),
-    RubricGroup(
-        id="routing",
-        label="配信・可視化の制御",
-        description="どのチャンネルへ届け、どの戦略レンズに載せるか。",
-        order=2,
-    ),
+    # 「配信・可視化の制御」群は 2026-08-18 に消滅した (routing_flags / pmesii_axes が
+    # ともに suppressed へ移動し、所属フィールドが 0 になったため)。空の見出しを
+    # UI に残さないよう定義ごと削除する。復活させるなら order を詰め直すこと。
     RubricGroup(
         id="victim",
         label="被害の帰属",
         description="誰が・どこでやられたか。脅威マップと国別 KPI の原料です。",
-        order=3,
+        order=2,
     ),
     RubricGroup(
         id="technical",
         label="技術指標の抽出",
         description="何を使って攻撃したか。記事横断のピボットに使われます。",
-        order=4,
+        order=3,
     ),
     RubricGroup(
         id="narrative",
         label="読み物の生成",
         description="人が読む文章。文字数と文体の基準です。",
-        order=5,
+        order=4,
     ),
     RubricGroup(
         id="suppressed",
@@ -96,7 +93,7 @@ GROUPS: tuple[RubricGroup, ...] = (
             "summarizer には出力させず、取込時の分類器が確定します。"
             "編集しても本文が空ならプロンプトに出ません。"
         ),
-        order=6,
+        order=5,
     ),
     RubricGroup(
         id=OTHER_GROUP_ID,
@@ -140,29 +137,6 @@ _FIELD_GUIDES: tuple[FieldGuide, ...] = (
             "src/cti/routing_rules.py",
             "src/pipeline/summary.py",
             "src/ui/services/overview.py",
-        ),
-    ),
-    # ---- routing: 届け先と戦略レンズ ----
-    FieldGuide(
-        field_id="routing_flags",
-        group="routing",
-        order=1,
-        effect="配信先チャンネルの決定 (日本標的 / 速報 / 主要アクター) と、同事象の重複抑制キー。",
-        sources=(
-            "src/cti/routing_rules.py",
-            "src/cti/router.py",
-            "src/pipeline/briefing.py",
-        ),
-    ),
-    FieldGuide(
-        field_id="pmesii_axes",
-        group="routing",
-        order=2,
-        effect="PMESII 戦略レンズのタブ表示と、軸別の記事の絞り込み。",
-        sources=(
-            "src/cti/taxonomy_normalizer.py",
-            "src/ui/services/intel_graph_analytics.py",
-            "src/ui/services/situation.py",
         ),
     ),
     # ---- victim: 誰が・どこでやられたか ----
@@ -362,6 +336,34 @@ _FIELD_GUIDES: tuple[FieldGuide, ...] = (
             "src/cti/routing_rules.py",
             "src/pipeline/briefing.py",
             "src/ui/api/articles_feed.py",
+        ),
+    ),
+    FieldGuide(
+        field_id="routing_flags",
+        group="suppressed",
+        order=8,
+        effect=(
+            "(出力させない) 配信の補助フラグ。dedup_key はタイトルから自動生成、"
+            "主要アクターと確度は judgment 分類器、日本標的と速報性は決定論判定が確定します。"
+        ),
+        sources=(
+            "src/cti/routing_signals.py",
+            "src/cti/dedup_key.py",
+            "src/pipeline/briefing.py",
+        ),
+    ),
+    FieldGuide(
+        field_id="pmesii_axes",
+        group="suppressed",
+        order=9,
+        effect=(
+            "(出力させない) PMESII 戦略レンズの軸。category / feed の既定マッピングと"
+            "judgment の重要インフラ判定が確定します。"
+        ),
+        sources=(
+            "src/cti/taxonomy_normalizer.py",
+            "config/cti/pmesii_default_mapping.yaml",
+            "src/ui/services/situation.py",
         ),
     ),
 )
