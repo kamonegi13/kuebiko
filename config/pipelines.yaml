@@ -39,7 +39,12 @@ pipelines:
     - medium
     triage_max_keep: 50
     similarity_threshold_hard: 0.92
-    similarity_threshold_cluster: 0.82
+    # 0.82 → 0.79 (2026-08-19): 別フィードが同一事案を報じたペアが 14 日で 106 件
+    # 素通りしていた実測に基づく。⚠ 0.78 まで下げると JVN / CISA の「文体が同じで
+    # 対象が違う」アドバイザリ (0.79 台に集中) を誤って落とすため 0.79 で止める。
+    # ⚠ grok-briefing は 0.82 のまま — Grok 記事は cluster tier を bypass する設計
+    #    (2026-05-17) で、今回の測定でも Grok ペアを除外しており根拠が無い。
+    similarity_threshold_cluster: 0.79
     dedup_window_hours_hard: 168
     dedup_window_hours_cluster: 48
 - name: grok-briefing
@@ -95,7 +100,12 @@ pipelines:
     - medium
     triage_max_keep: 30
     similarity_threshold_hard: 0.92
-    similarity_threshold_cluster: 0.82
+    # 0.82 → 0.79 (2026-08-19): 別フィードが同一事案を報じたペアが 14 日で 106 件
+    # 素通りしていた実測に基づく。⚠ 0.78 まで下げると JVN / CISA の「文体が同じで
+    # 対象が違う」アドバイザリ (0.79 台に集中) を誤って落とすため 0.79 で止める。
+    # ⚠ grok-briefing は 0.82 のまま — Grok 記事は cluster tier を bypass する設計
+    #    (2026-05-17) で、今回の測定でも Grok ペアを除外しており根拠が無い。
+    similarity_threshold_cluster: 0.79
     dedup_window_hours_hard: 168
     dedup_window_hours_cluster: 48
 - name: morning-brief
