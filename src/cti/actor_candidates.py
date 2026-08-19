@@ -124,6 +124,19 @@ _KNOWN_NON_ACTOR_NAMES: frozenset[str] = frozenset(
         "us space command",
         "spacecom",
         "a security",
+        # 政党 (2026-08-19)。⚠ プロパガンダ記事は政党を「攪乱役」と framing するため
+        # LLM が攻撃主体として抽出する (GlobalTimes の台湾 DPP 批判記事群で実測)。
+        "dpp",
+        # 脆弱性記事の周辺固有名 (2026-08-19)。根拠記事はすべて Windows/Defender/
+        # BitLocker の脆弱性報道で、記事に出る固有名は LegacyHive / ShieldBreak /
+        # YellowKey という **脆弱性のニックネーム**。候補名自体はタイトルに一度も
+        # 現れず、研究者ハンドルか脆弱性群の総称とみられる。
+        # ⚠ 「候補名がタイトルに出ない」を機械判定に使うのは不可 — UNC5537 /
+        #    CL-STA-0049 / Famous Chollima という実在アクターも同じ形になる
+        #    (ベンダー命名は本文で言及されタイトルに出ない)。列挙で対処する。
+        "nightmare eclipse",
+        "nightmare-eclipse",
+        "chaotic eclipse",
         # 一般語・総称 (2026-08-19)。攻撃主体の固有名ではない
         "ai agents",
         "ai agent",

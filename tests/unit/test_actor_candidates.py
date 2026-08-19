@@ -246,6 +246,29 @@ class TestGeopoliticalNoiseBeyondEnglish:
         assert is_known_non_actor("tucker carlson")
         assert is_known_non_actor("maria zakharova")
 
+    def test_party_and_vulnerability_nicknames(self) -> None:
+        """承認キューの人手判断で却下した 4 件 (2026-08-19)。
+
+        DPP は政党 — ⚠ プロパガンダ記事が「攪乱役」と framing するため LLM が
+        攻撃主体として抽出する。Nightmare/Chaotic Eclipse は Windows/Defender の
+        脆弱性報道が根拠で、記事の固有名は LegacyHive / ShieldBreak という
+        **脆弱性のニックネーム**。候補名自体はタイトルに一度も出ない。
+        """
+        assert is_known_non_actor("dpp")
+        assert is_known_non_actor("nightmare eclipse")
+        assert is_known_non_actor("nightmare-eclipse")
+        assert is_known_non_actor("chaotic eclipse")
+
+    def test_vendor_designated_actors_are_not_blocked_by_title_absence(self) -> None:
+        """⚠ 「候補名がタイトルに出ない」は機械判定に使えない。
+
+        UNC5537 / CL-STA-0049 / Famous Chollima は実在のアクターだが、ベンダー命名は
+        本文で言及されタイトルに出ないため、Nightmare Eclipse と同じ形になる。
+        構造では分けられないので列挙で対処した — この差を固定する。
+        """
+        for key in ("unc5537", "cl-sta-0049", "famous chollima"):
+            assert not is_known_non_actor(key), key
+
     def test_real_actor_candidates_survive(self) -> None:
         """⭐ 収穫を殺さないことの確認 — 実データの正当な候補は全て通す。"""
         for key in (
