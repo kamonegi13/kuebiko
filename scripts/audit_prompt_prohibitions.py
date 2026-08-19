@@ -205,6 +205,106 @@ def _checks() -> list[Prohibition]:
             ),
             min_sample=100,
         ),
+        Prohibition(
+            key="victim_org.non_cyber_category",
+            source="判定基準 victim_orgs (research/policy/geopolitical では原則 [])",
+            forbids="非サイバーカテゴリの記事に victim_org を付けない",
+            # ⚠ 関門を意図的に置いていない (2026-08-19 判断): サンプル 25 件目視の中身は
+            # 制裁対象・監査対象大学・ドローン攻撃先などで、entity 情報としては実在の価値が
+            # ある。地図・被害国 KPI は消費側が CYBER_ATTACK_EVENTS で絞っており守られて
+            # いる。この行の VIOLATED は「rubric の指示と LLM の実挙動の乖離」の観測で、
+            # 対処は 関門化 or rubric 側の緩和 のどちらか (利用者判断待ち)。
+            gate="— (消費側 filter で地図は保護済み。関門化 or rubric 緩和は判断待ち)",
+            since="2026-08-19",
+            sql=(
+                "SELECT count(*) n, count(*) FILTER (WHERE EXISTS ("
+                "SELECT 1 FROM article_entities ae WHERE ae.article_id=a.article_id"
+                " AND ae.entity_type='victim_org')) v"
+                " FROM articles a WHERE a.category IN ('geopolitical','policy','research')"
+                " AND a.created_at >= '2026-08-19'"
+            ),
+            min_sample=100,
+        ),
+        Prohibition(
+            key="victim_sector.non_cyber_category",
+            source="判定基準 victim_sector (research/policy/geopolitical は原則 null)",
+            forbids="非サイバーカテゴリの記事に victim_sector を付けない",
+            gate="— (victim_org.non_cyber_category と同じ判断待ち)",
+            since="2026-08-19",
+            sql=(
+                "SELECT count(*) n, count(*) FILTER (WHERE victim_sector_canonical IS NOT NULL"
+                " AND victim_sector_canonical NOT IN ('', 'uncategorized')) v"
+                " FROM articles WHERE category IN ('geopolitical','policy','research')"
+                " AND created_at >= '2026-08-19'"
+            ),
+            min_sample=100,
+        ),
+        Prohibition(
+            key="involved_country.cyber_category",
+            source="判定基準 involved_countries (サイバー事案では [])",
+            forbids="サイバー事案の記事に involved_country を付けない (victim_country を使う)",
+            gate="—",
+            # 2026-08-18 = required 化 + rubric v4 で involved_countries が実供給され始めた日
+            since="2026-08-18",
+            sql=(
+                "SELECT count(*) n, count(*) FILTER (WHERE EXISTS ("
+                "SELECT 1 FROM article_entities ae WHERE ae.article_id=a.article_id"
+                " AND ae.entity_type='involved_country')) v"
+                " FROM articles a WHERE a.category IN"
+                " ('breach','incident','apt','malware','vulnerability','advisory','apt_leak')"
+                " AND a.created_at >= '2026-08-18'"
+            ),
+            min_sample=200,
+        ),
+        Prohibition(
+            key="synthesis.alternatives_empty",
+            source="status_synthesis.j2 §tradecraft (対立仮説を 1-2 個)",
+            forbids="tradecraft.alternatives を空配列にしない",
+            gate="—",
+            since="2026-08-15",
+            sql=(
+                "SELECT count(*) n, count(*) FILTER (WHERE tradecraft IS NULL OR"
+                " jsonb_array_length(coalesce(tradecraft->'alternatives','[]'::jsonb))=0) v"
+                " FROM status_synthesis WHERE generated_at >= '2026-08-15'"
+            ),
+            min_sample=10,
+        ),
+        Prohibition(
+            key="grounded.japanese_only",
+            source="ground_ach.j2 / ground_incremental.j2 (すべて日本語で書く)",
+            forbids="assumptions / missing / indicators に英語断片を書かない",
+            gate="—",
+            since="2026-08-15",
+            sql=(
+                "WITH elems AS ("
+                "SELECT jsonb_array_elements_text(assumptions::jsonb) txt"
+                " FROM situation_revisions WHERE assumptions<>'[]' AND created_at >= '2026-08-15'"
+                " UNION ALL SELECT jsonb_array_elements_text(indicators::jsonb)"
+                " FROM situation_revisions WHERE indicators<>'[]' AND created_at >= '2026-08-15'"
+                " UNION ALL SELECT jsonb_array_elements_text(missing::jsonb)"
+                " FROM situation_revisions WHERE missing<>'[]' AND created_at >= '2026-08-15') "
+                "SELECT count(*) n, count(*) FILTER"
+                " (WHERE length(txt)>12 AND txt !~ '[぀-ヿ一-鿿]') v FROM elems"
+            ),
+            min_sample=100,
+        ),
+        Prohibition(
+            key="summary.extreme_length",
+            source="判定基準 summary (250-500 字)",
+            forbids="summary が 1000 字を超えない (JSON 流入等の破損検知)",
+            # 250-500 字の遵守そのものは測らない (全期間 25.8% が範囲外 = 指示が実態と
+            # 乖離しており、そのまま載せると常時 VIOLATED の狼少年になる)。1000 字超は
+            # 過去に「LLM が閉じ損ねた JSON の自由記述流入」(599d81a) で実際に起きた
+            # 破局の型なので、その再発だけを検知する。
+            gate="599d81a (JSON 尾部の遮断) が主因を止めた後の再発検知",
+            since="2026-08-18",
+            sql=(
+                "SELECT count(*) n, count(*) FILTER (WHERE char_length(summary) > 1000) v"
+                " FROM articles WHERE summary IS NOT NULL AND summary <> ''"
+                " AND created_at >= '2026-08-18'"
+            ),
+            min_sample=200,
+        ),
     ]
 
 
