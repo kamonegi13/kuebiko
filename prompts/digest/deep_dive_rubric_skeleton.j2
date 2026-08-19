@@ -1,0 +1,55 @@
+{# Phase 5T-T2: F1 weekly deep dive 選定 rubric (案 B: rubric scoring)
+   各 article に 4 軸 0-5 で score を振り、composite は呼び出し側で計算する。
+   prompt は実出力を見て反復改善する前提 (5T-T design decision)。 #}
+{# BLOCK: mission #}
+
+# 現在の PIR (優先情報要求) — pir 軸はこれらへの直撃度で評価する
+{% if pir_context %}
+{% for p in pir_context %}
+- {{ p.title }}{% if p.description %}: {{ p.description }}{% endif %}
+{% endfor %}
+{% else %}
+(PIR 未登録 — pir 軸は下の anchor のみで判定)
+{% endif %}
+
+{# BLOCK: scoring_intro #}
+
+{# BLOCK: axis_pir #}
+
+{# BLOCK: axis_roi #}
+
+{# BLOCK: axis_timeliness #}
+
+{# BLOCK: axis_novelty #}
+
+# 今週の brief/alert で速報された案件
+{% if recent_briefs %}
+{% for b in recent_briefs %}
+- {{ b }}
+{% endfor %}
+{% else %}
+(なし)
+{% endif %}
+
+# 過去 4 週で F1 選定済の dedup_key
+{% if past_selected_keys %}
+{% for k in past_selected_keys %}
+- {{ k }}
+{% endfor %}
+{% else %}
+(なし)
+{% endif %}
+
+# 候補 article (合計 {{ total }} 件)
+{% for item in items %}
+---
+id: {{ item.id }}
+title: {{ item.title }}
+feed: {{ item.feed }}
+importance: {{ item.importance }}
+category: {{ item.category }}
+dedup_key: {{ item.dedup_key or "(none)" }}
+summary: {{ item.summary }}
+{% endfor %}
+
+{# BLOCK: output_rules_and_schema #}

@@ -28,7 +28,10 @@ class TestCatalogCompleteness:
             f"prompts/{p.relative_to(_REPO_ROOT / 'prompts').as_posix()}"
             for p in (_REPO_ROOT / "prompts").rglob("*.j2")
         }
-        assert len(actual) == 15  # +status_synthesis_skeleton (層分け 2 本目 2026-08-20)
+        # +status_synthesis_skeleton (層分け 2 本目 2026-08-20)
+        # +weekly_recap_skeleton / pir_daily_focus_skeleton / deep_dive_rubric_skeleton /
+        # pir_spotlight_skeleton (層分け 3 本目 2026-08-20、digest/spotlight 群 4 本)
+        assert len(actual) == 19
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
@@ -37,7 +40,10 @@ class TestCatalogCompleteness:
             f"config/{p.relative_to(_REPO_ROOT / 'config').as_posix()}"
             for p in (_REPO_ROOT / "config").rglob("*.yaml")
         }
-        assert len(actual) == 18  # +status_synthesis_rubric seed (同上)
+        # +status_synthesis_rubric seed (層分け 2 本目 2026-08-20)
+        # +weekly_recap_rubric / pir_daily_focus_rubric / deep_dive_rubric /
+        # pir_spotlight_rubric seed (層分け 3 本目 2026-08-20)
+        assert len(actual) == 22
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 

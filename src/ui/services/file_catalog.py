@@ -61,17 +61,44 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
     "prompts/digest/pir_daily_focus.j2": FileInfo(
         "ダイジェスト",
         "PIR Daily Focus",
-        "morning-brief の PIR 別 24h 集約 (PIR ごとに要点 1-2 文を生成)",
+        "morning-brief の PIR 別 24h 集約 (PIR ごとに要点 1-2 文を生成)。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 3 本目 2026-08-20)",
+    ),
+    "prompts/digest/pir_daily_focus_skeleton.j2": FileInfo(
+        "ダイジェスト",
+        "PIR Daily Focus の骨格 (code 所有)",
+        "pir_daily_focus の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/digest/weekly_recap.j2": FileInfo(
         "ダイジェスト",
         "週次リキャップ",
-        "weekly-recap の週間総括 narrative",
+        "weekly-recap の週間総括 narrative。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 3 本目 2026-08-20)",
+    ),
+    "prompts/digest/weekly_recap_skeleton.j2": FileInfo(
+        "ダイジェスト",
+        "週次リキャップの骨格 (code 所有)",
+        "weekly_recap の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/digest/deep_dive_rubric.j2": FileInfo(
         "ダイジェスト",
         "深掘り選定ルーブリック",
-        "週次深掘りダイジェストの対象記事選定基準 (deep_dive_selector)",
+        "週次深掘りダイジェストの対象記事選定基準 (deep_dive_selector)。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 3 本目 2026-08-20)",
+    ),
+    "prompts/digest/deep_dive_rubric_skeleton.j2": FileInfo(
+        "ダイジェスト",
+        "深掘り選定ルーブリックの骨格 (code 所有)",
+        "deep_dive_rubric の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/status_synthesis.j2": FileInfo(
         "状況総括 (synthesis)",
@@ -111,7 +138,16 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
     "prompts/spotlight/pir_spotlight.j2": FileInfo(
         "Spotlight",
         "PIR Spotlight",
-        "PIR 縦断の週次 narrative (headline + key_events + outlook)",
+        "PIR 縦断の週次 narrative (headline + key_events + outlook)。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 3 本目 2026-08-20)",
+    ),
+    "prompts/spotlight/pir_spotlight_skeleton.j2": FileInfo(
+        "Spotlight",
+        "PIR Spotlight の骨格 (code 所有)",
+        "pir_spotlight の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/_persona.j2": FileInfo(
         "共有パーツ",
@@ -216,6 +252,30 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "状況総括の編集層 (blocks)",
         "status_synthesis の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
         "UI 編集はプロンプトタブ。層分け 2 本目 2026-08-20)",
+    ),
+    "config/prompts/weekly_recap_rubric.yaml": FileInfo(
+        "プロンプト",
+        "週次リキャップの編集層 (blocks)",
+        "weekly_recap の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
+    ),
+    "config/prompts/pir_daily_focus_rubric.yaml": FileInfo(
+        "プロンプト",
+        "PIR Daily Focus の編集層 (blocks)",
+        "pir_daily_focus の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
+    ),
+    "config/prompts/deep_dive_rubric.yaml": FileInfo(
+        "プロンプト",
+        "深掘り選定ルーブリックの編集層 (blocks)",
+        "deep_dive_rubric の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
+    ),
+    "config/prompts/pir_spotlight_rubric.yaml": FileInfo(
+        "プロンプト",
+        "PIR Spotlight の編集層 (blocks)",
+        "pir_spotlight の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
     ),
 }
 

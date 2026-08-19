@@ -74,8 +74,22 @@ def _render_prompt(
     """
     cfg = load_app_config()
     guild_id = cfg.discord_guild_id or ""
-    env = _build_jinja_env()
-    template = env.get_template(template_name)
+    # 層分けの一般化 (2026-08-20、3 本目): 編集層の SSoT は DB (config_store,
+    # key=weekly_recap_rubric)。合成に失敗したら legacy .j2 に落ちる (WARNING を
+    # 残す = 無音にしない)。rollback: WEEKLY_RECAP_COMPOSER=0。
+    template = None
+    from src.prompts.prompt_store import build_prompt_template
+    from src.prompts.registry import get_spec
+
+    spec = get_spec("weekly_recap")
+    # ⚠ template_name は引数 — 将来 _DIGEST_SPECS に別テンプレートが増えたとき、無条件に
+    # weekly_recap の合成を返すと**要求と違うプロンプトが黙って使われる**。legacy_path との
+    # 一致を関門にする (不一致は legacy 経路へ)。
+    if spec is not None and (PROMPTS_DIR / template_name) == spec.legacy_path:
+        template = build_prompt_template(spec, PROMPTS_DIR / template_name)
+    if template is None:
+        env = _build_jinja_env()
+        template = env.get_template(template_name)
     items = [
         {
             "title": c.title,

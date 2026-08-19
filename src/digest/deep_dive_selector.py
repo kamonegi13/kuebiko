@@ -75,12 +75,23 @@ def _render_prompt(
     past_selected_keys: list[str],
     pir_context: list[dict[str, str]] | None = None,
 ) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
-        autoescape=False,
-        keep_trailing_newline=True,
-    )
-    template = env.get_template(RUBRIC_TEMPLATE)
+    # 層分けの一般化 (2026-08-20、3 本目): 編集層の SSoT は DB (config_store,
+    # key=deep_dive_rubric)。合成に失敗したら legacy .j2 に落ちる (WARNING を
+    # 残す = 無音にしない)。rollback: DEEP_DIVE_RUBRIC_COMPOSER=0。
+    template = None
+    from src.prompts.prompt_store import build_prompt_template
+    from src.prompts.registry import get_spec
+
+    spec = get_spec("deep_dive_rubric")
+    if spec is not None:
+        template = build_prompt_template(spec, PROMPTS_DIR / RUBRIC_TEMPLATE)
+    if template is None:
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
+            autoescape=False,
+            keep_trailing_newline=True,
+        )
+        template = env.get_template(RUBRIC_TEMPLATE)
     rendered_items = [
         {
             "id": c.article_id,

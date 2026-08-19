@@ -1,0 +1,110 @@
+{# PIR Spotlight: PIR 縦断 narrative。
+
+   global synthesis (P+M+E+S+I+T 横断) と棲み分け:
+   - global: 戦略レベル、軸間連鎖、上位 stakeholders 報告用
+   - spotlight: 戦術-作戦レベル、1 PIR 領域の深掘り、analyst 作業用
+
+   出力構造 (hybrid 案):
+   - headline: 状況総括 (150-280 字、actor+TTP+標的の三点セット)
+   - key_events: 直近 N 件の match article から重要 5-8 件を LLM が選定
+   - outlook: 展望 (600-1000 字、4 観点 a/b/c/d)、来週見るべき指標
+
+   入力 context:
+   - pir: 当該 PIR の title + description + strong_signals
+   - candidate_articles: PIR にマッチした直近 article list (max 30 件)
+#}
+
+{% include ["_persona_local.j2", "_persona.j2"] %}
+{# BLOCK: mission #}
+
+## 対象 PIR
+
+- ID: {{ pir.id }}
+- Title: {{ pir.title }}
+- Description:
+{{ pir.description }}
+{%- if pir.strong_signals.actors %}
+- 主要 actors: {{ pir.strong_signals.actors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.sectors %}
+- 対象 sectors: {{ pir.strong_signals.sectors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.countries %}
+- 対象 countries: {{ pir.strong_signals.countries | join(", ") }}
+{%- endif %}
+
+## 期間
+{{ period_label }}
+
+## この PIR にマッチした直近の article ({{ candidate_articles | length }} 件)
+
+{% for art in candidate_articles -%}
+[{{ loop.index }}] **{{ art.title }}** ({{ art.feed_title }}, importance={{ art.importance }}, 信頼度={{ art.reliability }}, {{ art.created_at_jst }})
+  article_id: {{ art.article_id }}
+  url: {{ art.url }}
+  {%- if art.summary %}
+  summary: {{ art.summary[:300] }}
+  {%- endif %}
+  {%- if art.ttps %}
+  観測技術 (MITRE ATT&CK, この記事から抽出済): {{ art.ttps | join(", ") }}
+  {%- endif %}
+
+{% endfor %}
+{% if previous_spotlight %}
+## 前期 ({{ previous_spotlight.period_label }}) のこの PIR の見立て
+
+- headline: {{ previous_spotlight.headline }}
+{%- if previous_spotlight.key_event_titles %}
+- 前期の key events: {{ previous_spotlight.key_event_titles | join(" / ") }}
+{%- endif %}
+- outlook(抜粋): {{ previous_spotlight.outlook }}
+
+**事象は過去・未来に連なる**。今期は前期からの **継続 / 変化 / エスカレーション / 沈静化** を必ず評価し、
+前期 outlook で挙げた監視指標が今期どうなったか (実現 / 不発 / 部分的) を outlook (a)(b) に織り込むこと。
+単発スナップショットにしない。
+{% endif %}
+{% if ledger_situations %}
+## 情勢台帳の確定判定 (canonical estimate — 証拠接地 ACH + 敵対的検証を経た判定)
+
+この PIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
+{% for s in ledger_situations %}
+- 「{{ s.claim }}」 見立て={{ s.leading_hypothesis }} / 確度={{ s.confidence }} / 直近の変化={{ s.delta_type }}{% if s.delta_note %} ({{ s.delta_note }}){% endif %}{% if s.implication %} / 含意: {{ s.implication }}{% endif %}
+{% endfor %}
+
+**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその PIR 縦断の射影)。
+台帳より高い確度で断定しない。台帳に無い新たな帰属を創作しない — 候補記事から読み取れる事実の
+記述に留める。
+{% endif %}
+{% if nation_correlation %}
+## 横断情勢 context (報告ストリーム基準・実発生時刻ではない)
+
+サイバー↔地政学の状況 (帰属サイバー / サイバー言及〔政策中心・帰属なし〕/ 標的 / 地政学):
+{% for n in nation_correlation -%}
+- {{ n.label }} ({{ n.role }}): 帰属{{ n.attributed_cyber }} / 言及{{ n.cyber_mention }} / 標的{{ n.cyber_target }} / 地政学{{ n.geopol }}{% if n.top_actors %} — actors: {{ n.top_actors | join(", ") }}{% endif %}
+{% endfor %}
+**「言及」レーンは ~65% が政策・態勢の言及 (帰属なし)。実作戦と混同せず「姿勢シグナル」として扱う**こと。
+件数差から時間的因果を推論しない (報告時刻であり実発生ではない)。この PIR に関係する国を中心に読む。
+{% endif %}
+{% if forecast_indicators %}
+## 構造予測 (FC2: 直近の定量スパイク、未検証)
+{% for f in forecast_indicators -%}
+- {{ f.scope }}={{ f.target }} {{ f.direction }} (z={{ f.z }}, 件数{{ f.count }})
+{% endfor %}
+outlook (b) で来週の監視指標を述べる際、これら定量予測との整合 / 矛盾を意識すること。
+{% endif %}
+{% if freshness and freshness.dated %}
+## 鮮度 (報道時刻 vs 発生時刻)
+
+当期 dated {{ freshness.dated }} 件中、振り返り報道 (発生から 30 日超) {{ freshness.retrospective }} 件 ({{ freshness.retrospective_pct }}%)。
+**報道急増 ≠ 新規活動増** の可能性 (収集網が過去を掘り起こす)。新規 campaign と再報道を区別すること。
+{% endif %}
+
+{# BLOCK: output_schema #}
+
+### 出力ルール
+
+{# BLOCK: narrative_construction_rules #}
+{# BLOCK: ttp_id_discipline #}
+{# BLOCK: calibration #}
+{# BLOCK: terminology #}
+{# BLOCK: output_format_only #}

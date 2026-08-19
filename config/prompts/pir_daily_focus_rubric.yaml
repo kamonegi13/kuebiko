@@ -1,0 +1,38 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: ミッション (分析指示)
+  body: '**ある特定の PIR (Priority Intelligence Requirement)** に直近 24h で match した article を分析し、
+
+    **本日この PIR 領域で押さえるべき要点** を 1-2 文 (80-160 字) で書いてください。'
+  note: ''
+- field_id: output_length_style
+  kind: rubric
+  title: 出力ルール (字数・文体)
+  body: '## 出力ルール
+
+    - **80-160 字**、平叙文 **1-2 文**'
+  note: ''
+- field_id: proper_noun_requirement
+  kind: rubric
+  title: 固有名詞優先・generic 表現禁止
+  body: '- actor 名 / TTP / 標的セクター・国 など **固有名詞優先**。「活動が活発化」「注意が必要」のような generic 表現は禁止'
+  note: ''
+- field_id: pattern_detection
+  kind: rubric
+  title: 横断パターンの指摘
+  body: '- 横並びの記事から共通 pattern (同 actor / 同 sector / 同 TTP) が見えれば 1 文で指摘'
+  note: ''
+- field_id: no_speculation
+  kind: rubric
+  title: 推測禁止
+  body: '- 推測は禁止、article で言及されている事実のみ使用'
+  note: ''
+- field_id: output_format_only
+  kind: rubric
+  title: 出力形式 (本文のみ)
+  body: '- 出力は **要点本文のみ**、見出し / 前置き / 箇条書き禁止'
+  note: ''
+examples: []

@@ -1,0 +1,67 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: ミッション (PIR 縦断 narrative の目的)
+  body: '**ある特定の PIR (Priority Intelligence Requirement)** に絞り込んだ縦断 narrative を生成してください。
+
+    全体的 (P+M+E+S+I+T) な総括ではなく、**この PIR 領域の戦術-作戦レベル深掘り** が目的です。'
+  note: ''
+- field_id: output_schema
+  kind: rubric
+  title: 出力 JSON 構造
+  body: "## 出力\n\nJSON で以下の構造で出力してください:\n\n```json\n{\n  \"headline\": \"2-3 文 (150-280 字) で「今週この PIR\
+    \ 領域で何が最も重要だったか」を要約\",\n  \"key_events\": [\n    {\n      \"index\": \"上の候補一覧の [N] 番号 (整数)。article_id\
+    \ ではなく番号で指定すること\",\n      \"rationale\": \"なぜこれが key event なのか (30-60 字)\"\n    }\n  ],\n  \"outlook\"\
+    : \"600-1000 字で書く。次の 4 観点をそれぞれ十分な情報量で展開すること:\\n\\n(a) 今週の事案から見える pattern / TTP 進化 / 帰属の動き — 具体的な actor\
+    \ 名 / バックドア名 / TTP ID (MITRE ATT&CK) / 標的セクター・国 を必ず明示。表面的な「活動活発化」のような generic 表現は禁止、必ず固有名詞と具体的 datapoint\
+    \ で書く。\\n\\n(b) 来週警戒すべき指標 — continuing campaign の方向性、報復可能性、周辺アクター連動、地政学イベント (選挙 / 軍事演習 / 重要会合) との連動を具体的に列挙。複数の\
+    \ monitoring 指標を箇条書きで挙げる。\\n\\n(c) 我々 (日本 CTI 担当者) が取るべき注視点 / 対応 / 情報収集の追加 — 具体的な IoC 監視ターゲット、検知ルール、外部連携\
+    \ (JPCERT, NISC 等) の必要性、国内対象組織への通知判断基準。\\n\\n(d) 全体 synthesis ではカバーしきれない、この PIR 特有の深い文脈 — 軍事・諜報戦略\
+    \ / 経済安保 / サプライチェーン / 国際法 / 政治的レイヤー 等の上位文脈を 1-2 段落で論じる。\"\n}\n```"
+  note: ''
+- field_id: narrative_construction_rules
+  kind: rubric
+  title: key_events 選定と narrative 構築規則
+  body: '- **key_events は 5-8 件**選定。**候補一覧の [N] 番号 (index)** で参照すること (長い article_id をコピーせず番号で選ぶ。一覧に無い番号の創作禁止)
+
+    - importance=high の event を **優先的に**選ぶ (high が 3+ 件あれば最低 3 件は high)、low/medium でも narrative 上重要なら採用
+
+    - **重複を避ける**: 同じ事象を別 source が報じているなら 1 件に集約
+
+    - **headline は固有名詞ベース** — "活動が活発" のような generic ではなく "Volt Typhoon が日本通信事業者 2 社を新規標的化、FDMTP バックドアによる
+    lateral movement を確認" のような **actor 名 + TTP + 標的の三点セット**で書く
+
+    - outlook は LLM の知識ではなく **provided articles** からの推論に限る (hallucination 禁止)'
+  note: ''
+- field_id: ttp_id_discipline
+  kind: rubric
+  title: MITRE ID 規律
+  body: '- **MITRE ATT&CK の technique ID (T####/T####.###) は、各記事の「観測技術」に挙がったものだけ引用すること。自分の知識から ID を作ったり補完したりしない**
+    (記憶からの ID は番号・名称がずれるため)。観測技術が無い記事については ID を付けず、手口は自然語で説明する'
+  note: ''
+- field_id: calibration
+  kind: rubric
+  title: 確度・信頼度較正 (NATO Admiralty)
+  body: "- **情報の確度・信頼度の較正 (NATO Admiralty Code 準拠 — 厳守)**: 主張を 2 軸で評価し断定の強さを調整する。\n  記号 (A1/B2) は本文に書かず自然語で表現:\n\
+    \  - **信頼度 (各候補の `信頼度=` tier を使う。事前計算済なので自力推測せずこれに従う)**:\n    一次 / 研究 = 高 (CISA KEV / JPCERT / NCSC\
+    \ / ベンダ CVE / Mandiant / Dragos / ESET 等) /\n    ニュース = 中 (一般報道) / SNS = 低 (未裏取り、Grok / X 単一投稿) /\n\
+    \    国営 = framing 割引 (RT / Sputnik 等、内容が客観報道でも一方的 framing を警戒し断定に賭けない) /\n    不明 = 中扱いで慎重に\n  - **確度\
+    \ (裏付くか)**: 高 = 複数 source 一致・公式 CVE/KEV あり / 中 = 単一 source / 低 = 技術的に非現実的・誇張疑い\n  - **断定形 + 強い推奨 (緊急パッチ等)\
+    \ は信頼度・確度ともに高い時のみ**。低信頼/単一/未裏取りは\n    「単一 source (Grok) の未確認情報だが」「公式 CVE 未登録」等で必ずヘッジし、確定口調にしない。\n\
+    \  - **技術的に疑わしい単一報** (例: nginx の無設定 unauth RCE) は懐疑を明記し緊急対応の根拠にしない (まず裏取り推奨)。\n  - 特に (c) 対応推奨では、強い行動\
+    \ (緊急パッチ・通知) を弱い source 1 本に依存させない。"
+  note: ''
+- field_id: terminology
+  kind: rubric
+  title: CTI ドクトリン用語使用
+  body: '- **CTI doctrine 用語を意識的に使う**: "pre-positioning", "lateral movement", "C2 infrastructure", "TTP
+    evolution", "supply chain compromise", "attribution confidence" 等の専門用語が適切な場面では使用すること'
+  note: ''
+- field_id: output_format_only
+  kind: rubric
+  title: 出力形式 (JSON のみ)
+  body: '- 出力は **JSON のみ**、前後に説明文不要'
+  note: ''
+examples: []
