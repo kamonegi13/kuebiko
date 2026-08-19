@@ -8,7 +8,8 @@ canonical (正規値集合) を持つ vocab は、その値集合と登録ラベ
 
 from __future__ import annotations
 
-from typing import get_args
+from collections.abc import Mapping
+from typing import Any, get_args
 
 from src.storage.records import RunStatus
 from src.vocab import all_vocabularies, get_vocabulary, registered_names
@@ -133,18 +134,82 @@ def test_operational_vocabs_stay_japanese() -> None:
     assert trigger.label_for("scheduler") == "自動実行"
 
 
-def test_confidence_covers_both_backend_scales() -> None:
-    """confidence vocab が ICD-203 (grounded) と diamond intent の両 scale を被覆する。"""
+def test_confidence_covers_every_backend_literal() -> None:
+    """confidence vocab が backend の **全 Literal 定義** を被覆する (2 scale / 5 定義)。
+
+    ICD-203 (grounded synthesis) だけが high/**moderate**/low で、他は high/medium/low。
+    値空間の定義が 5 箇所に散っており SSoT を 1 つに畳めていないため、
+    **新しい定義や値が増えたらここで気付く** ことだけが drift の歯止め
+    (period_type と同じ方式)。定義を足したらこの表にも 1 行足す。
+    """
     from src.cti.diamond_model import Confidence as DiamondConfidence
+    from src.cti.llm_routing_flags import Confidence as RoutingFlagsConfidence
+    from src.cti.source_basis import Confidence as SourceBasisConfidence
+    from src.pir.compiler import ConfidenceLevel as PirConfidence
     from src.synthesis.grounded.estimate import Confidence as GroundedConfidence
 
     vocab = get_vocabulary("confidence")
     assert vocab is not None
     keys = set(vocab.values())
-    assert set(get_args(GroundedConfidence)) <= keys  # high/moderate/low
-    assert set(get_args(DiamondConfidence)) <= keys  # high/medium/low
+    literals = {
+        "synthesis.grounded.estimate.Confidence": GroundedConfidence,  # high/moderate/low
+        "cti.diamond_model.Confidence": DiamondConfidence,  # high/medium/low
+        "cti.llm_routing_flags.Confidence": RoutingFlagsConfidence,
+        "cti.source_basis.Confidence": SourceBasisConfidence,
+        "pir.compiler.ConfidenceLevel": PirConfidence,
+    }
+    uncovered = {name: sorted(set(get_args(literal)) - keys) for name, literal in literals.items()}
+    assert not any(uncovered.values()), f"ラベル未登録の確度値: {uncovered}"
     labels = {i.value: i.label for i in vocab.items}
     assert labels == {"high": "High", "medium": "Medium", "moderate": "Moderate", "low": "Low"}
+
+
+def test_icd203_keyed_maps_cover_every_grounded_confidence_value() -> None:
+    """ICD-203 の確度でキーを引く map に取りこぼしを作らない。
+
+    どれも ``.get(x, default)`` か ``dict[str, …]`` で引くため、値が増えても例外にならず
+    **静かに既定値へ落ちる** (落ちたことは出力に出ない)。2 scale が併存する以上、
+    「moderate を期待する map に medium が来る」は起こりうる事故なので、キー集合を固定する。
+    """
+    from src.assessment import forecast, ledger, salience
+    from src.synthesis.grounded import estimate, render
+    from src.synthesis.grounded.estimate import Confidence as GroundedConfidence
+
+    grounded = set(get_args(GroundedConfidence))
+    # 値の型 (int/float/str) も key の型 (str / Literal) も map ごとに違うため Any。
+    keyed_by_icd203: dict[str, Mapping[Any, object]] = {
+        "assessment.forecast._CONF_TO_UI": forecast._CONF_TO_UI,
+        "assessment.ledger._CONF_RANK": ledger._CONF_RANK,
+        "assessment.salience._CONF_EPISTEMIC": salience._CONF_EPISTEMIC,
+        "synthesis.grounded.estimate._CONF_RANK": estimate._CONF_RANK,
+        "synthesis.grounded.estimate._STEP_UP": estimate._STEP_UP,
+        "synthesis.grounded.render._CONF_JA": render._CONF_JA,
+    }
+    mismatched = {
+        name: sorted(set(mapping) ^ grounded)
+        for name, mapping in keyed_by_icd203.items()
+        if set(mapping) != grounded
+    }
+    assert not mismatched, f"ICD-203 確度のキー集合とずれた map: {mismatched}"
+
+
+def test_cross_scale_bridges_are_total_and_land_in_the_target_scale() -> None:
+    """2 つの scale をまたぐ写像は、入力側で全域・出力側で相手の値空間に収まること。
+
+    ``_SB_CEILING`` (source_basis high/medium/low → ICD-203) と ``_CONF_TO_UI``
+    (ICD-203 → UI の high/medium/low) が唯一の往復路。ここが穴あきだと
+    ``.get(…, "moderate")`` の既定値に黙って落ちる。
+    """
+    from src.assessment.forecast import _CONF_TO_UI
+    from src.cti.diamond_model import Confidence as UiConfidence
+    from src.cti.source_basis import Confidence as SourceBasisConfidence
+    from src.synthesis.grounded.estimate import _SB_CEILING
+    from src.synthesis.grounded.estimate import Confidence as GroundedConfidence
+
+    assert set(_SB_CEILING) == set(get_args(SourceBasisConfidence))
+    assert set(_SB_CEILING.values()) <= set(get_args(GroundedConfidence))
+    assert set(_CONF_TO_UI) == set(get_args(GroundedConfidence))
+    assert set(_CONF_TO_UI.values()) <= set(get_args(UiConfidence))
 
 
 def test_period_type_matches_all_backend_constants() -> None:
