@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.storage.records import ArticleRecord
@@ -686,6 +686,49 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 "AND (a.feed_title IS NULL OR a.feed_title <> 'ransomware.live')"
             ).fetchall()
         return [(str(r["org"]), r["d"]) for r in rows]
+
+    def find_recent_posted_article_by_victim_org(
+        self,
+        victim_org: str,
+        *,
+        within_hours: int,
+        exclude_article_id: str | None = None,
+        now: datetime | None = None,
+    ) -> ArticleRecord | None:
+        """直近 ``within_hours`` 以内に同一 victim_org で posted 済みの article を返す。
+
+        Step 3 (2026-08-19): victim_org × 日付の dedup を双方向化するための直接照合。
+        ``news_victim_org_dates`` (ransomware.live 側からニュースを見る一方向) と違い、
+        こちらは全 source (ransomware.live 含む) を対象にする — RSS/Grok から見て
+        「同じ被害組織が直近で既に posted 済みか」を確認するため。
+
+        victim_org の表記ゆれは完全一致 (LOWER + TRIM) のみで吸収し、部分一致・fuzzy
+        判定はしない (誤爆で別組織の事案を潰す方が害が大きい)。
+        """
+        org = victim_org.strip().lower()
+        if not org:
+            return None
+        base = now or datetime.now(UTC)
+        since = base - timedelta(hours=within_hours)
+        sql = (
+            "SELECT * FROM articles"
+            " WHERE status = 'posted'"
+            " AND created_at >= ?"
+            " AND article_id IN ("
+            "   SELECT article_id FROM article_entities"
+            "    WHERE entity_type = 'victim_org' AND LOWER(TRIM(value)) = ?"
+            " )"
+        )
+        params: list[object] = [_to_iso(since), org]
+        if exclude_article_id:
+            sql += " AND article_id != ?"
+            params.append(exclude_article_id)
+        sql += " ORDER BY created_at DESC LIMIT 1"
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        if row is None:
+            return None
+        return _row_to_article(row)
 
     def collected_ransomware_for_reconcile(self) -> list[tuple[int, str, Any]]:
         """ransomware.live の status='collected' 記事の (id, victim_org小文字, 実効日) を返す。"""

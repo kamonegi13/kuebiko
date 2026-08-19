@@ -21,6 +21,7 @@ from src.config_loader import (
     PipelineConfig,
     StixAttachPolicy,
 )
+from src.cti.identity_dedup import check_pre_post_dedup
 from src.logging_config import get_logger
 from src.pipeline.briefing import (
     DegenerateBodyError,
@@ -859,138 +860,25 @@ async def run_pipeline(
                 outcome["status"] = "post_failed"
                 outcome["failure_reason"] = f"no publisher for channel {channel}"
             continue
-        # Phase 5L-4: ch 横断 dedup チェック
+        # 投稿直前 dedup 4 層 (dedup_key 完全一致 → CVE 正規化 → content 署名 →
+        # victim_org、2026-08-19 統合) を 1 ゲートに集約 (src/cti/identity_dedup.py)。
         # Phase 5L-8: skip された article id も既読化対象に加える
         # (同一 URL の再 fetch→再評価リサイクル防止)。
-        msg_dedup_key = msg.metadata.get("dedup_key")
-        if isinstance(msg_dedup_key, str) and msg_dedup_key:
-            if msg_dedup_key in cross_channel_seen_keys:
-                _log.info(
-                    "cross_channel_dedup_skipped",
-                    article_id=art_id,
-                    requested_channel=channel,
-                    dedup_key=msg_dedup_key,
-                    reason="same_run_higher_priority_already_posted",
-                )
-                if outcome is not None:
-                    outcome["status"] = "skipped_duplicate"
-                    outcome["failure_reason"] = (
-                        f"cross-ch dedup: same key in this run ({msg_dedup_key})"
-                    )
-                skipped_for_mark_read.append(art_id)
-                continue
-            # 履歴 (直近 48h) で同 key の posted を確認
-            if dedup_repo is not None:
-                prior = dedup_repo.find_recent_article_by_dedup_key(
-                    msg_dedup_key,
-                    within_hours=48,
-                )
-                if prior is not None:
-                    _log.info(
-                        "cross_channel_dedup_skipped",
-                        article_id=art_id,
-                        requested_channel=channel,
-                        dedup_key=msg_dedup_key,
-                        reason="prior_post_within_48h",
-                        prior_channel=prior.posted_channel,
-                    )
-                    if outcome is not None:
-                        outcome["status"] = "skipped_duplicate"
-                        outcome["failure_reason"] = (
-                            f"cross-ch dedup: prior post 48h ({prior.posted_channel})"
-                        )
-                    skipped_for_mark_read.append(art_id)
-                    continue
-            cross_channel_seen_keys.add(msg_dedup_key)
-
-        # Phase 5T-V-2: LLM 生成 dedup_key が同事象でばらつく問題への対処。
-        # 上の dedup_key 完全一致では救えない「同 CVE で別 key」のケースを正規化
-        # CVE-ID で 48h 以内に強制 skip する。memory[dedup_window_48h_design_intent]
-        # の「48h 超え再 post は続報許容」と整合 (48h 以内のみ強制)。
-        if dedup_repo is not None:
-            from src.cti.dedup_key import extract_cve_id
-
-            cve_id = extract_cve_id(
-                dedup_key=msg_dedup_key if isinstance(msg_dedup_key, str) else None,
-                title=msg.title,
-            )
-            if cve_id and cve_id in cross_channel_seen_cves:
-                _log.info(
-                    "cve_normalized_dedup_skipped",
-                    article_id=art_id,
-                    requested_channel=channel,
-                    cve_id=cve_id,
-                    reason="same_cve_in_this_run",
-                )
-                if outcome is not None:
-                    outcome["status"] = "skipped_duplicate"
-                    outcome["failure_reason"] = f"cve dedup: same CVE in this run ({cve_id})"
-                skipped_for_mark_read.append(art_id)
-                continue
-            if cve_id:
-                prior_cve = dedup_repo.find_recent_post_by_cve(cve_id, within_hours=48)
-                if prior_cve is not None:
-                    _log.info(
-                        "cve_normalized_dedup_skipped",
-                        article_id=art_id,
-                        requested_channel=channel,
-                        cve_id=cve_id,
-                        reason="prior_post_within_48h",
-                        prior_channel=prior_cve.posted_channel,
-                        prior_dedup_key=prior_cve.dedup_key,
-                    )
-                    if outcome is not None:
-                        outcome["status"] = "skipped_duplicate"
-                        outcome["failure_reason"] = (
-                            f"cve dedup: prior post 48h ({prior_cve.posted_channel}, "
-                            f"key={prior_cve.dedup_key})"
-                        )
-                    skipped_for_mark_read.append(art_id)
-                    continue
-                cross_channel_seen_cves.add(cve_id)
-
-        # Phase B-content-dedup: source 公平 cross-source 同 advisory dedup。
-        # 24h 内に同 content (title signature Jaccard >= 0.5) の posted があれば
-        # status='skipped_duplicate' で skip。source の hierarchy はなし。
-        # 24h 超え (48h-168h) は 続報として通り、Discord 上で followup marker が付く。
-        if dedup_repo is not None:
-            try:
-                from src.cti.content_dedup import find_recent_content_duplicate
-
-                _dedup_art = articles_by_id.get(art_id)
-                content_dup = find_recent_content_duplicate(
-                    repo=dedup_repo,
-                    title=msg.title or "",
-                    summary=msg.summary or "",
-                    # URL 中の advisory id (JVNVU 等) が唯一の決定論的同一性キー
-                    # になるケース (JVN 日英別タイトル) があるため URL も渡す
-                    url=(_dedup_art.url if _dedup_art is not None else ""),
-                    candidate_article_id=art_id,
-                )
-            except Exception as e:  # noqa: BLE001
-                _log.warning(
-                    "content_dedup_lookup_failed",
-                    article_id=art_id,
-                    error=f"{type(e).__name__}: {e}",
-                )
-                content_dup = None
-            if content_dup is not None:
-                _log.info(
-                    "content_dedup_skipped",
-                    article_id=art_id,
-                    requested_channel=channel,
-                    prior_article_id=content_dup.article_id,
-                    prior_feed=content_dup.feed_title,
-                )
-                if outcome is not None:
-                    outcome["status"] = "skipped_duplicate"
-                    outcome["failure_reason"] = (
-                        f"content_dedup: cross-source match "
-                        f"(prior={content_dup.feed_title}, "
-                        f"key={content_dup.dedup_key})"
-                    )
-                skipped_for_mark_read.append(art_id)
-                continue
+        gate_result = check_pre_post_dedup(
+            msg=msg,
+            art_id=art_id,
+            channel=channel,
+            dedup_repo=dedup_repo,
+            article=articles_by_id.get(art_id),
+            cross_channel_seen_keys=cross_channel_seen_keys,
+            cross_channel_seen_cves=cross_channel_seen_cves,
+        )
+        if gate_result is not None:
+            if outcome is not None:
+                outcome["status"] = "skipped_duplicate"
+                outcome["failure_reason"] = gate_result.failure_reason
+            skipped_for_mark_read.append(art_id)
+            continue
 
         # 通知再設計: web-only disposition。channel レジストリで push=False の tier (情報フローで
         # 設定。既定は全 tier push=True) は Discord push をスキップし DB 保存のみ (status='posted'

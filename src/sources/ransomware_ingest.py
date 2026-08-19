@@ -17,6 +17,7 @@ from typing import Any
 
 from src.config_loader import load_app_config
 from src.cti.actor_normalizer import ActorAliasRegistry, load_actor_aliases
+from src.cti.entity_dedup import build_org_date_index, is_covered_within_window
 from src.cti.ransom_groups import distinctive_names, find_mention, has_ransom_context
 from src.cti.subject_actor import SOURCE_FEED
 from src.cti.taxonomy_normalizer import load_normalizer
@@ -69,25 +70,24 @@ def _to_dt(v: object) -> datetime | None:
 def _build_news_index(
     rows: list[tuple[str, Any]],
 ) -> dict[str, list[datetime]]:
-    """(victim_org小文字, 日付) の list を org→日付list の index にする (日付不明は除外)。"""
-    idx: dict[str, list[datetime]] = {}
-    for org, d in rows:
-        dt = _to_dt(d)
-        if dt is not None:
-            idx.setdefault(org, []).append(dt)
-    return idx
+    """(victim_org小文字, 日付) の list を org→日付list の index にする (日付不明は除外)。
+
+    実装は ``src.cti.entity_dedup.build_org_date_index`` へ汎用化して移設 (Step 3,
+    2026-08-19)。ここは従来どおりの薄い呼出しであり挙動は変えない。
+    """
+    return build_org_date_index(rows)
 
 
 def _covered_by_news(
     news_index: dict[str, list[datetime]], victim: str, when: datetime | None
 ) -> bool:
-    """victim_org がニュースに ±窓内で既出か (= ransomware.live 側は重複)。"""
-    dates = news_index.get(victim.strip().lower())
-    if not dates:
-        return False
-    if when is None:
-        return True  # rl 側の日付不明 → org 一致のみでニュース優先 (保守的に重複扱い)
-    return any(abs((d - when).days) <= _DUP_WINDOW_DAYS for d in dates)
+    """victim_org がニュースに ±窓内で既出か (= ransomware.live 側は重複)。
+
+    実装は ``src.cti.entity_dedup.is_covered_within_window`` へ汎用化して移設
+    (Step 3, 2026-08-19)。``_DUP_WINDOW_DAYS`` (±60日) は従来どおりこのモジュールが
+    保持し、挙動は変えない。
+    """
+    return is_covered_within_window(news_index, victim, when, window_days=_DUP_WINDOW_DAYS)
 
 
 def _resolve_group(group: str, registry: ActorAliasRegistry) -> tuple[str, bool]:
