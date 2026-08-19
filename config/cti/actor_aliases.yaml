@@ -7266,3 +7266,35 @@ actors:
   - Pegasus
   notable_campaigns: []
   references: []
+- id: famous_chollima
+  canonical: Famous Chollima
+  aliases: []
+  kind: group
+  family: ''
+- id: apt31
+  canonical: APT31
+  aliases:
+  - ZIRCONIUM
+  - Judgment Panda
+  - Violet Typhoon
+  - RedBravo
+  - BRONZE VINEWOOD
+  kind: group
+  family: ''
+  nation: CN
+  mitre_group: G0128
+  description: 中国 MSS 湖北支局に関連するとされるサイバースパイグループ (MITRE G0128 / ZIRCONIUM)。政府・防衛・重要インフラ・議会関係者を標的とし、2021
+    年に米・EU・英が公式非難、2024 年に米司法省が関係者 7 名を起訴。
+- id: tradertraitor
+  canonical: TraderTraitor
+  aliases:
+  - Jade Sleet
+  - UNC4899
+  - Slow Pisces
+  - PUKCHONG
+  kind: group
+  family: lazarus
+  nation: KP
+  mitre_group: ''
+  description: 北朝鮮 Lazarus 系列の暗号資産窃取に特化したサブグループ (FBI/CISA 2022 命名)。取引所・Web3 企業の開発者を偽求人・トロイ化アプリで標的にし、Bybit
+    (2025) 等の大規模窃取に帰属。
