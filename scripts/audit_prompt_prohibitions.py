@@ -62,33 +62,15 @@ _GENERIC_MALWARE = (
     "adware",
 )
 
-# 実測で tools に混入した「正規の AI プラットフォーム/モデル名」。
+# 正規 AI 製品名の**観測用** regex。関門 (malware_aliases.yaml の ai_platform_drop、
+# 2026-08-19 導入) より**意図的に広く**取る — 関門と同じ判定で測ると「関門のバグ」しか
+# 見えず、関門が知らない新変種 (新製品・新表記) を誰も検知しない。ここに引っかかったら
+# 人が見て、本物なら関門の yaml に 1 行足す。
 # ⚠ WormGPT / FraudGPT / PentestGPT は **攻撃ツールなので入れない** (悪性 LLM サービス)。
-# ⚠ これは観測用リストであって関門ではない — 関門化するかは CTI 上の判断 (AI ツールの
-#   悪用は実在の TTP なので、落とすと情報を失う) が要るため保留中。
-_AI_PLATFORMS = (
-    "claude",
-    "claude code",
-    "chatgpt",
-    "gpt-4",
-    "gpt-4o",
-    "gpt4all",
-    "gemini",
-    "gemini cli",
-    "google gemini cli",
-    "ollama",
-    "msty",
-    "deepseek",
-    "lm studio",
-    "openai codex",
-    "openai operator",
-    "copilot",
-    "github copilot",
-    "midjourney",
-    "stable diffusion",
-    "comfyui",
-    "lora",
-    "perplexity",
+_AI_PLATFORM_REGEX = (
+    r"^(claude|chatgpt|gpt-?[0-9]|gpt4all|gemini|google gemini|openai($| )|copilot"
+    r"|github copilot|deepseek|perplexity|ollama$|msty$|lm studio|midjourney"
+    r"|stable diffusion|comfyui|lora$|mythos|mistral|anthropic|hugging ?face|grok($| ))"
 )
 
 
@@ -115,7 +97,7 @@ def _checks() -> list[Prohibition]:
     hosts = tuple(sorted(source_hosts()))
     host_list = _in_list(hosts) if hosts else "''"
     generic = _in_list(_GENERIC_MALWARE)
-    ai = _in_list(_AI_PLATFORMS)
+    ai_regex = _AI_PLATFORM_REGEX.replace("'", "''")
     return [
         Prohibition(
             key="synthesis.axis_code",
@@ -214,12 +196,12 @@ def _checks() -> list[Prohibition]:
             key="tool.ai_platform",
             source="判定基準 tools ⚠絶対に含めない②",
             forbids="AI モデル / プラットフォーム名を攻撃ツールにしない",
-            gate="— (関門化は未判断: AI ツールの悪用は実在の TTP)",
-            since="2026-06-20",
+            gate="ai_platform_drop (2026-08-19)",
+            since="2026-08-19",
             sql=(
-                "SELECT count(*) n, count(*) FILTER (WHERE lower(trim(value)) IN"
-                f" ({ai})) v FROM article_entities WHERE entity_type='tool'"
-                " AND created_at >= '2026-06-20'"
+                "SELECT count(*) n, count(*) FILTER (WHERE lower(trim(value)) ~"
+                f" '{ai_regex}') v FROM article_entities WHERE entity_type='tool'"
+                " AND created_at >= '2026-08-19'"
             ),
             min_sample=100,
         ),
