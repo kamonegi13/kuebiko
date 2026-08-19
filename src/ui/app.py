@@ -675,6 +675,17 @@ def create_app() -> FastAPI:
             StaticFiles(directory=str(frontend_dist / "assets")),
             name="react-assets",
         )
+        # PWA 資産 (manifest / アイコン) は frontend/public/pwa/ → dist/pwa/ に素通しで
+        # 入る。下の SPA fallback が /app/* を全部 index.html にしてしまうため、
+        # ここで先に mount しないと manifest が HTML として配られて parse 失敗する。
+        # 古い dist (pwa/ を含まないビルド) でも起動が落ちないよう存在を確認する。
+        pwa_dir = frontend_dist / "pwa"
+        if pwa_dir.is_dir():
+            app.mount(
+                "/app/pwa",
+                StaticFiles(directory=str(pwa_dir)),
+                name="pwa-assets",
+            )
         # その他の /app/* path はすべて React SPA index.html を返す
         index_path = frontend_dist / "index.html"
 

@@ -279,6 +279,46 @@ cloudflared tunnel run cti-mobile
 - 「実行管理」を click → table 表示、操作 button は出ない (詳細は `👁` で閲覧可)
 - Intel Graph → Threats tab → actor list (mobile では 1 列)、tap で詳細 view 切替
 
+## ホーム画面アプリ化 (PWA、2026-08-19)
+
+`/app/` を manifest 付きで配信しているため、スマホの「ホーム画面に追加」で
+standalone (ブラウザ chrome なし) のアプリとして起動できる。
+
+**Service Worker は意図的に入れていない。** manifest はインストールするまで不活性
+なので「ブラウザでも従来どおり見られる / PWA にもできる」が無条件に両立するが、
+SW を足すとインストールしていないブラウザ利用者にもキャッシュ層が挟まり、次の 3 点と
+正面から衝突する:
+
+1. `src/ui/app.py` の index.html no-cache 設計 (2026-07-29 に「古い index.html が
+   消えた bundle を参照して SPA 全断」を踏んだ対策) を、より頑固な形で打ち消す
+2. Cloudflare Access のセッション切れ 302 を SW が握り潰し、URL バーのない
+   standalone 表示で復旧手段がなくなる
+3. CTI 本文が端末の Cache Storage に永続化される (端末紛失時の残留物が増える)
+
+オフライン閲覧の需要が実際に出るまで、SW は入れない。
+
+### 構成
+
+| もの | 置き場 |
+|---|---|
+| manifest / アイコン (SSoT) | `frontend/public/pwa/` → vite が `dist/pwa/` へ素通し |
+| 配信 | `src/ui/app.py` の `/app/pwa` mount。SPA fallback より**先に**登録する (後だと manifest が index.html で返る) |
+| `<link rel="manifest">` 等 | `frontend/index.html` の `<head>` |
+| 回帰テスト | `tests/unit/test_pwa_assets.py` |
+
+`scope` / `start_url` は vite の `base` と同じ `/app/` に揃える (ずれると standalone
+判定が外れてただのタブになる)。アイコンは SVG が SSoT で、PNG は
+`uv run python scripts/generate_pwa_icons.py` で再生成する。
+
+### 導入手順 (端末側)
+
+- **iOS**: Safari で `https://<hostname>/app/` を開く → 共有 → 「ホーム画面に追加」
+- **Android**: Chrome のメニュー → 「アプリをインストール」
+
+インストール後に **Cloudflare Access のログインを PWA から 1 回通しておく**。
+iOS のホーム画面 Web アプリは Safari と別のストレージ領域を持つため、Tier1
+(ジョブ即時実行 / 分析チャット) を使うには PWA コンテナ内で改めて認証が要る。
+
 ## 動作確認
 
 | 動作 | 確認方法 |

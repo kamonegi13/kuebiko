@@ -1,0 +1,18 @@
+{
+  "id": "/app/",
+  "name": "Kuebiko — 久延毘古",
+  "short_name": "Kuebiko",
+  "description": "CTI ブリーフィングの運用コンソール",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#0b0d11",
+  "theme_color": "#0b0d11",
+  "icons": [
+    { "src": "/app/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
