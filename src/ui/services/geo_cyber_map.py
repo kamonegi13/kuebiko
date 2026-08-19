@@ -360,6 +360,37 @@ def _flow_rows(
     return list(con.execute(sql, tuple(params)).fetchall())
 
 
+def _victim_place_rows(
+    con: Any,
+    since: datetime | None,
+    threat_class: str = "all",
+    source_status: str = "all",
+    min_importance: str = "all",
+    time_basis: str = "report",
+) -> list[Any]:
+    """窓内の cyber-attack 記事の victim_city entity (article_id, raw_name, iso, title, summary)。
+
+    国バブル (``_country_sector_rows``) と **同じ cyber-attack フィルタ** を適用し、
+    victim_city entity が付いた記事だけを対象にする (地図の精密点レイヤー、Phase 1b 後半)。
+    """
+    status_clause, status_params = _status_filter(source_status, "a.status")
+    sql = (
+        "SELECT ae.value AS raw_name, a.victim_country_iso AS iso, a.article_id AS article_id, "
+        "a.title AS title, a.summary AS summary "
+        "FROM article_entities ae JOIN articles a ON a.article_id = ae.article_id "
+        f"WHERE ae.entity_type='victim_city' AND {status_clause} "
+        "AND a.victim_country_iso IS NOT NULL AND a.victim_country_iso != '' "
+        f"AND {_cyber_category_clause('a.category')}"
+        + _class_clause(threat_class, "a.is_ransomware")
+        + _importance_clause(min_importance, "a.importance")
+    )
+    params: list[Any] = [*status_params, *_cyber_category_params()]
+    if since is not None:
+        sql += _win_frag(time_basis, "a.")
+        params.append(since.isoformat())
+    return list(con.execute(sql, tuple(params)).fetchall())
+
+
 def _time_coverage(con: Any, since: datetime | None) -> dict[str, int]:
     """時間軸トグルのカバレッジ: 報道窓内の cyber+geo 記事の dated 率 (発生日付き / 全)。
 
@@ -594,6 +625,85 @@ def build_cyber_map(
             "placed_events": placed_events,
             "countries": len(nodes),
         },
+    }
+
+
+# 1 ピンに集約したときポップアップへ載せるタイトル件数の上限。
+_SUB_COUNTRY_TITLE_LIMIT = 5
+
+
+def sub_country_points(
+    *,
+    window_days: int | None = 30,
+    threat_class: str = "all",
+    source_status: str = "all",
+    min_importance: str = "all",
+    time_basis: str = "report",
+    db_path: Path = DEFAULT_DB_PATH,
+) -> dict[str, Any]:
+    """victim_city を CITY/ADMIN1 tier で解決し、同一座標に集約したピン群を返す (Phase 1b 後半)。
+
+    国バブル (``build_cyber_map``) と **同じ cyber-attack フィルタ** (threat_class /
+    source_status / min_importance / time_basis) を適用し、victim_city entity を
+    ``Geocoder.city`` → 解決不能なら ``Geocoder.admin1`` の順で解決する。国バブルは
+    このレスポンスに一切影響しない別レイヤー (設計原則: 国は集計で honest に、精密点は
+    実際に解決できた分だけ鋭いピンで示す — 首都に鋭いピンを刺して精度を捏造しない)。
+    同一座標 (lat/lon を小数 4 桁で丸めた key) の複数記事は 1 ピンに集約し、タイトルは
+    ``_SUB_COUNTRY_TITLE_LIMIT`` 件までポップアップ用に保持する。read-only・counts +
+    タイトルのみ返すため secret 非露出。
+    """
+    geo = Geocoder()
+    now = datetime.now(UTC)
+    since = now - timedelta(days=window_days) if window_days else None
+
+    con = _connect(db_path)
+    try:
+        rows = _victim_place_rows(
+            con, since, threat_class, source_status, min_importance, time_basis
+        )
+        buckets: dict[tuple[float, float, str], dict[str, Any]] = {}
+        unresolved = 0
+        for r in rows:
+            text = f"{r['title'] or ''} {r['summary'] or ''}"
+            if looks_accidental_leak(text):
+                continue
+            iso = str(r["iso"]).upper()
+            pt = geo.city(con, r["raw_name"], iso)
+            if pt is None:
+                pt = geo.admin1(con, r["raw_name"], iso)
+            if pt is None:
+                unresolved += 1
+                continue
+            key = (round(pt.lat, 4), round(pt.lon, 4), pt.precision.value)
+            bucket = buckets.setdefault(
+                key,
+                {
+                    "lat": pt.lat,
+                    "lon": pt.lon,
+                    "precision": pt.precision.value,
+                    "count": 0,
+                    "titles": [],
+                    "article_ids": [],
+                },
+            )
+            bucket["count"] = int(bucket["count"]) + 1
+            titles: list[str] = bucket["titles"]
+            if len(titles) < _SUB_COUNTRY_TITLE_LIMIT:
+                titles.append(str(r["title"] or r["article_id"]))
+                article_ids: list[str] = bucket["article_ids"]
+                article_ids.append(str(r["article_id"]))
+    finally:
+        con.close()
+
+    points = sorted(buckets.values(), key=lambda p: -int(p["count"]))
+    return {
+        "window_days": window_days,
+        "generated_at": now.isoformat(),
+        "points": points,
+        "total_points": len(points),
+        "total_articles": sum(int(p["count"]) for p in points),
+        # 解決できなかった件数 (gazetteer 未収載 / geo_admin1 未取込等)。誠実性のため露出する。
+        "unresolved_count": unresolved,
     }
 
 

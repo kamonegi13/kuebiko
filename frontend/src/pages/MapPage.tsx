@@ -14,6 +14,7 @@ import { useMapKnobs } from "../components/geo/mapKnobs";
 import {
   fetchCountryArticles,
   fetchCyberMap,
+  fetchSubCountryPoints,
   fetchTrend,
   type CountryArticle,
   type CyberMapResponse,
@@ -23,6 +24,7 @@ import {
   type MinImportance,
   type PmesiiAxis,
   type SourceStatus,
+  type SubCountryPoint,
   type ThreatClass,
 } from "../api/geo";
 import { TrendChart } from "../components/geo/TrendChart";
@@ -30,7 +32,7 @@ import { fetchArticleDetail } from "../api/article";
 import { formatJst } from "../utils/date";
 import { intentHex, intentLabel } from "../utils/diamond";
 import { usePersistedState } from "../utils/usePersistedState";
-import { vocabLabel } from "../hooks/useVocab";
+import { useVocab, vocabLabel } from "../hooks/useVocab";
 
 const WINDOWS: { label: string; days: number }[] = [
   { label: "24時間", days: 1 },
@@ -157,6 +159,8 @@ function deriveLens(
 }
 
 export function MapPage() {
+  // 都市・地域ピンの精度ラベル (生 enum 直接表示禁止 — UI 表示文言の規約)。
+  const geoPrecisionLabel = useVocab("geo_precision");
   // フィルタ選択は localStorage 永続 (画面更新後も保持)。リセットボタンで既定に戻す。
   const [days, setDays] = usePersistedState("cti.map.days", 30);
   // ダッシュボードの geo widget からのドリルは ?days=N で窓を引き継ぐ
@@ -179,6 +183,7 @@ export function MapPage() {
     pmesii, setPmesii,
     colorBy, setColorBy,
     timeBasis, setTimeBasis,
+    subCountryPins, setSubCountryPins,
   } = useMapKnobs();
   // 日本中心 (C): JP 強調 + 起動時に東アジアへ flyTo + 右パネルに日本カード。
   const [japanFocus, setJapanFocus] = usePersistedState("cti.map.japanFocus", false);
@@ -221,6 +226,7 @@ export function MapPage() {
     setRegion(null);
     setRegionLabel(null);
     setTimeBasis("report");
+    setSubCountryPins(true);
   };
 
   // 台帳(ransomware.live)はすべてランサム被害 → 脅威種別「その他」と交差すると構造的に空
@@ -278,6 +284,22 @@ export function MapPage() {
         effPmesii,
       ),
   });
+
+  // 都市・地域ピン (Phase 1b 後半): victim_city を CITY/ADMIN1 tier で解決した精密点。
+  // cyber バブルと同じフィルタ集合 (threat_class/source_status/min_importance/time_basis)。
+  // トグル off、または地政学のみ表示中 (victim_city と無関係) は fetch しない。
+  const subCountryQuery = useQuery({
+    queryKey: ["geo-sub-country-points", days, effThreatClass, sourceStatus, minImportance, timeBasis],
+    queryFn: () => fetchSubCountryPoints(days, effThreatClass, sourceStatus, minImportance, timeBasis),
+    enabled: subCountryPins && layer !== "geopolitical",
+  });
+  // 地域フィルタ適用後 (bounds 内のみ) のピン。地域プリセットを選ぶと地図・右パネル・推移が
+  // 連動して絞られるのと揃え、地域外のピンだけ地図に残る違和感を防ぐ。
+  const visibleSubCountryPoints = useMemo<SubCountryPoint[]>(() => {
+    if (!subCountryPins || !subCountryQuery.data) return [];
+    const points = subCountryQuery.data.points;
+    return regionBounds ? points.filter((p) => inBounds(p.lat, p.lon, regionBounds)) : points;
+  }, [subCountryPins, subCountryQuery.data, regionBounds]);
 
   // 地域フィルタ適用後の表示 node / geo_events (凡例の合計に使う)。
   const visibleNodes = useMemo<GeoNode[]>(() => {
@@ -439,6 +461,24 @@ export function MapPage() {
         >
           日本中心
         </button>
+        {/* 都市・地域ピン (Phase 1b 後半): victim_city を CITY(市区)/ADMIN1(州・県) tier で
+            解決した精密点レイヤーの on/off。国バブルとは別レイヤーなので既定 on のまま独立に切替。 */}
+        <button
+          onClick={() => setSubCountryPins((v) => !v)}
+          disabled={layer === "geopolitical"}
+          className={`px-2.5 py-1.5 text-sm rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            subCountryPins
+              ? "border-accent text-accent bg-accent/10"
+              : "border-border-default text-fg-muted hover:text-fg"
+          }`}
+          title={
+            layer === "geopolitical"
+              ? "都市・地域ピンは被害地(victim_city)由来のためサイバーレイヤーでのみ表示されます"
+              : "被害都市/州県が判明した記事を精密点で表示 (● 市区 / ○ 州・県)"
+          }
+        >
+          都市・地域ピン
+        </button>
         {data && data.actors.length > 0 && (
           <select
             value={lens.kind === "actor" ? lens.actorId : ""}
@@ -515,6 +555,14 @@ export function MapPage() {
         地図＝収集網の観測（攻撃分布ではない）。暗い国は「攻撃が少ない」ではなく「我々が見ていない」可能性。
         丸の大きさ＝<span className="text-fg-muted">期間内の相対件数</span>（絶対数・情報源の信頼度は丸の上／
         右パネルで確認）。
+        {subCountryPins && layer !== "geopolitical" && (
+          <>
+            {" "}
+            精密点: <span className="text-fg-muted">● {geoPrecisionLabel("city")}</span> /{" "}
+            <span className="text-fg-muted">○ {geoPrecisionLabel("admin1")}</span>
+            （被害地が判明した記事のみ。国バブルの内数）。
+          </>
+        )}
       </div>
 
       {error && (
@@ -544,6 +592,7 @@ export function MapPage() {
                 onCountryClick={(iso, domain) => setPanel({ mode: "country", iso, domain })}
                 region={region}
                 persistViewKey="cti.map.view"
+                subCountryPoints={visibleSubCountryPoints}
               />
             )}
           </div>

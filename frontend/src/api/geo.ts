@@ -179,6 +179,48 @@ export interface CountryArticlesResponse {
   articles: CountryArticle[];
 }
 
+// 都市・地域ピン (地図 Phase 1b 後半): victim_city を CITY/ADMIN1 tier で解決した精密点。
+// 国バブルとは別レイヤーで、精度は正直に符号化する (frontend は "geo_precision" vocab で
+// CITY/ADMIN1 の日本語ラベルを解決する — 生 enum を直接表示しない)。
+export interface SubCountryPoint {
+  lat: number;
+  lon: number;
+  precision: string; // "city" | "admin1" (vocab "geo_precision" でラベル化)
+  count: number;
+  titles: string[]; // ポップアップ表示用 (最大5件)
+  article_ids: string[]; // titles と対応 (クリックスルー用、最大5件)
+}
+
+export interface SubCountryPointsResponse {
+  window_days: number | null;
+  generated_at: string;
+  points: SubCountryPoint[];
+  total_points: number;
+  total_articles: number;
+  unresolved_count: number; // gazetteer 未収載等で解決できなかった件数 (誠実性)
+}
+
+export async function fetchSubCountryPoints(
+  days: number,
+  threatClass: ThreatClass = "all",
+  sourceStatus: SourceStatus = "all",
+  minImportance: MinImportance = "all",
+  timeBasis: TimeBasis = "report",
+): Promise<SubCountryPointsResponse> {
+  const u = new URLSearchParams({
+    days: String(days),
+    threat_class: threatClass,
+    source_status: sourceStatus,
+    min_importance: minImportance,
+    time_basis: timeBasis,
+  });
+  const r = await fetch(`/api/v1/geo/sub-country-points?${u.toString()}`, {
+    credentials: "same-origin",
+  });
+  if (!r.ok) throw new Error(`sub-country-points fetch failed: ${r.status}`);
+  return (await r.json()) as SubCountryPointsResponse;
+}
+
 export async function fetchCountryArticles(
   iso: string,
   days: number,

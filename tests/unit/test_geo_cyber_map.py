@@ -18,6 +18,7 @@ from src.ui.services.geo_cyber_map import (
     _status_filter,
     build_cyber_map,
     country_articles,
+    sub_country_points,
     trend,
 )
 
@@ -288,3 +289,193 @@ def test_build_cyber_map_importance_filter(tmp_path) -> None:  # type: ignore[no
     assert jp_count("all") == 9
     assert jp_count("medium_up") == 5  # high2 + medium3
     assert jp_count("high") == 2
+
+
+# ───────── Phase 1b 後半: 都市・地域ピン (sub_country_points) ─────────
+# 国バブル (nodes) とは別レイヤー。victim_city entity を CITY tier (geo_cities) →
+# ADMIN1 tier (geo_admin1) の順で解決し、同一座標に集約したピンを返す。
+
+
+def _seed_geo_gazetteers(db_path: str) -> None:
+    """geo_cities / geo_admin1 を最小構成で seed する (test 専用オフライン gazetteer)。"""
+    import sqlite3
+
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS geo_cities (country_code TEXT, name_lower TEXT, "
+        "lat DOUBLE PRECISION, lon DOUBLE PRECISION, population BIGINT, "
+        "PRIMARY KEY(country_code, name_lower))"
+    )
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS geo_admin1 (country_code TEXT, name_lower TEXT, "
+        "admin1_code TEXT, lat DOUBLE PRECISION, lon DOUBLE PRECISION, population BIGINT, "
+        "PRIMARY KEY(country_code, name_lower))"
+    )
+    con.execute("INSERT INTO geo_cities VALUES (?,?,?,?,?)", ("JP", "osaka", 34.69, 135.5, 2753862))
+    con.execute(
+        "INSERT INTO geo_admin1 VALUES (?,?,?,?,?,?)",
+        ("US", "minnesota", "US.MN", 44.98, -93.27, 429954),
+    )
+    con.commit()
+    con.close()
+
+
+def _seed_victim_city(repo: RunHistoryRepository, article_id: str, city: str) -> None:
+    """article_entities に victim_city entity を直接 seed する (test 専用)。"""
+    with repo._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "INSERT INTO article_entities (article_id, entity_type, value, created_at)"
+            " VALUES (?, 'victim_city', ?, ?)",
+            (article_id, city, datetime.now(UTC).isoformat()),
+        )
+
+
+def _sub_geo_article(run_id: int, aid: str, iso: str, **overrides: object) -> ArticleRecord:
+    base: dict[str, object] = {
+        "run_id": run_id,
+        "article_id": aid,
+        "title": f"{iso} breach {aid}",
+        "url": f"https://x.example/{aid}",
+        "category": "breach",
+        "status": "posted",
+        "summary": "incident",
+        "victim_country_iso": iso,
+        "published_at": datetime.now(UTC),
+    }
+    base.update(overrides)
+    return ArticleRecord(**base)  # type: ignore[arg-type]
+
+
+def test_sub_country_points_resolves_city_and_admin1(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """都市名は CITY tier、州名は ADMIN1 tier で解決され、別ピンとして返る。"""
+    # Arrange
+    db = tmp_path / "subgeo_city_admin1.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(_sub_geo_article(run_id, "jp1", "JP"))
+    _seed_victim_city(repo, "jp1", "Osaka")
+    repo.add_article(_sub_geo_article(run_id, "us1", "US"))
+    _seed_victim_city(repo, "us1", "Minnesota")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    data = sub_country_points(window_days=None, db_path=db)
+
+    # Assert
+    by_precision = {p["precision"]: p for p in data["points"]}
+    assert by_precision["city"]["count"] == 1
+    assert round(by_precision["city"]["lat"]) == 35  # Osaka 近傍
+    assert by_precision["admin1"]["count"] == 1
+    assert round(by_precision["admin1"]["lat"]) == 45  # Minnesota 代表点近傍
+    assert data["total_points"] == 2
+    assert data["total_articles"] == 2
+    assert data["unresolved_count"] == 0
+
+
+def test_sub_country_points_aggregates_same_coordinate(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """同一都市の複数記事は 1 ピンに集約され、タイトルは上限 5 件に切り詰められる。"""
+    # Arrange
+    db = tmp_path / "subgeo_aggregate.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    for i in range(7):
+        repo.add_article(_sub_geo_article(run_id, f"jp{i}", "JP", title=f"Osaka breach {i}"))
+        _seed_victim_city(repo, f"jp{i}", "Osaka")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    data = sub_country_points(window_days=None, db_path=db)
+
+    # Assert
+    assert len(data["points"]) == 1
+    pin = data["points"][0]
+    assert pin["count"] == 7
+    assert len(pin["titles"]) == 5  # ポップアップ上限で切り詰め
+    assert len(pin["article_ids"]) == 5
+
+
+def test_sub_country_points_unresolved_city_excluded(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """gazetteer に無い地名は plot されず、unresolved_count に計上される (誠実性)。"""
+    # Arrange
+    db = tmp_path / "subgeo_unresolved.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(_sub_geo_article(run_id, "jp1", "JP", title="架空都市 breach"))
+    _seed_victim_city(repo, "jp1", "架空都市")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    data = sub_country_points(window_days=None, db_path=db)
+
+    # Assert
+    assert data["points"] == []
+    assert data["unresolved_count"] == 1
+
+
+def test_sub_country_points_importance_filter(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """国バブルと同じ importance しきい値が sub_country_points にも効く。"""
+    # Arrange
+    db = tmp_path / "subgeo_importance.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(
+        _sub_geo_article(run_id, "h1", "JP", title="Osaka breach h1", importance="high")
+    )
+    _seed_victim_city(repo, "h1", "Osaka")
+    repo.add_article(
+        _sub_geo_article(run_id, "l1", "JP", title="Osaka breach l1", importance="low")
+    )
+    _seed_victim_city(repo, "l1", "Osaka")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    all_data = sub_country_points(window_days=None, db_path=db)
+    high_only = sub_country_points(window_days=None, min_importance="high", db_path=db)
+
+    # Assert
+    assert all_data["points"][0]["count"] == 2
+    assert high_only["points"][0]["count"] == 1
+
+
+def test_sub_country_points_excludes_accidental_leak(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """運用ミス (誤送信等) の記事は国バブルと同様にピンからも除外される。"""
+    # Arrange
+    db = tmp_path / "subgeo_accidental.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(
+        _sub_geo_article(
+            run_id,
+            "jp1",
+            "JP",
+            title="Osaka 市役所が個人情報を誤送信",
+            summary="運用ミスによる情報漏洩",
+        )
+    )
+    _seed_victim_city(repo, "jp1", "Osaka")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    data = sub_country_points(window_days=None, db_path=db)
+
+    # Assert
+    assert data["points"] == []
+
+
+def test_sub_country_points_does_not_affect_country_nodes(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """sub_country_points は国バブル (build_cyber_map の nodes) の件数に影響しない。"""
+    # Arrange
+    db = tmp_path / "subgeo_country_unchanged.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(_sub_geo_article(run_id, "jp1", "JP"))
+    _seed_victim_city(repo, "jp1", "Osaka")
+    _seed_geo_gazetteers(str(db))
+
+    # Act
+    country_data = build_cyber_map(window_days=None, db_path=db)
+
+    # Assert: 国集計のレスポンス形は不変 (件数・キー構成とも既存のまま)。
+    jp = next(n for n in country_data["nodes"] if n["iso"] == "JP")
+    assert jp["count"] == 1
+    assert jp["precision"] == "country"

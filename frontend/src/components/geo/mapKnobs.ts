@@ -36,6 +36,10 @@ export interface MapKnobs {
   setColorBy: Set<ColorBy>;
   timeBasis: TimeBasis;
   setTimeBasis: Set<TimeBasis>;
+  // 都市・地域ピン (地図 Phase 1b 後半): victim_city を CITY/ADMIN1 tier で解決した精密点
+  // レイヤーの on/off。既定 on。
+  subCountryPins: boolean;
+  setSubCountryPins: Set<boolean>;
 }
 
 export function useMapKnobs(): MapKnobs {
@@ -65,6 +69,11 @@ export function useMapKnobs(): MapKnobs {
   const [colorBy, setColorBy] = usePersistedState<ColorBy>("cti.map.colorBy", "intent");
   // 時間軸トグル: 報道時刻(collection が今出している) / 発生時刻(実際に起きた、dated のみ)。
   const [timeBasis, setTimeBasis] = usePersistedState<TimeBasis>("cti.map.timeBasis", "report");
+  // 都市・地域ピン (Phase 1b 後半): 既定 on。
+  const [subCountryPins, setSubCountryPins] = usePersistedState(
+    "cti.map.subCountryPins",
+    true,
+  );
   return {
     layer, setLayer,
     selectedSector, setSelectedSector,
@@ -75,5 +84,6 @@ export function useMapKnobs(): MapKnobs {
     pmesii, setPmesii,
     colorBy, setColorBy,
     timeBasis, setTimeBasis,
+    subCountryPins, setSubCountryPins,
   };
 }

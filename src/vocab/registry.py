@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import get_args
 
 from src.config_loader import IMPORTANCE_LEVELS, KNOWN_ARTICLE_CATEGORIES
+from src.cti.geocoder import GeoPrecision
 from src.cti.llm_routing_flags import EditorialStance
 from src.cti.taxonomy_normalizer import PMESII_AXES
 from src.prompts.rubric_guide import GROUPS
@@ -488,6 +489,21 @@ _REGISTRY: dict[str, Vocabulary] = {
         "pmesii_role",
         {"home": "自国", "adversary": "敵対", "allied": "同盟", "other": "その他"},
         canonical=frozenset({"home", "adversary", "allied", "other"}),
+    ),
+    # geo_precision: 地図の精密点レイヤー (Phase 1b 後半) の精度 Tier。SSoT = src.cti.geocoder
+    # の GeoPrecision (地図の見た目・ポップアップ文言が分岐する根拠)。生 enum 値の直接表示禁止
+    # (UI 表示文言の規約) のため、frontend は必ずこの vocab 経由でラベルを出す。
+    "geo_precision": _vocab(
+        "geo_precision",
+        {
+            "facility": "施設",
+            "org_hq": "組織本社",
+            "city": "市区",
+            "admin1": "州・県 (代表点=州内最大人口都市)",
+            "country": "国",
+            "region": "地域",
+        },
+        canonical=frozenset(p.value for p in GeoPrecision),
     ),
     "event_date_basis": _vocab(
         "event_date_basis",

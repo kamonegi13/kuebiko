@@ -19,6 +19,8 @@ geo_api = APIRouter(prefix="/api/v1/geo", tags=["geo"])
 _TTL_SECONDS = 60.0
 # key = (window_days, threat_class, source_status, min_importance, pmesii), value = (ts, payload)
 _cache: dict[tuple[int, str, str, str, str, str], tuple[float, dict[str, Any]]] = {}
+# key = (window_days, threat_class, source_status, min_importance, time_basis), value = (ts, data)
+_sub_country_cache: dict[tuple[int, str, str, str, str], tuple[float, dict[str, Any]]] = {}
 
 _THREAT_CLASSES = ("all", "ransomware", "other")
 
@@ -121,6 +123,44 @@ def get_cyber_map(
         time_basis=tb,
     )
     _cache[key] = (now, data)
+    return data
+
+
+@geo_api.get("/sub-country-points")
+def get_sub_country_points(
+    days: int = Query(default=30, ge=0, le=365),
+    threat_class: str = Query(default="all"),
+    source_status: str = Query(default="all"),
+    min_importance: str = Query(default="all"),
+    time_basis: str = Query(default="report"),
+) -> dict[str, Any]:
+    """victim_city を CITY/ADMIN1 tier で解決した精密点 (都市・州県ピン) を返す。
+
+    国バブル (``/cyber-map``) とは別レイヤーで、国集計のレスポンスには一切影響しない。
+    フィルタは cyber バブルと同じ集合 (threat_class/source_status/min_importance/time_basis)
+    に揃えており、``domain``/``pmesii`` は無い (victim_city は cyber-attack 記事の被害地の
+    ため地政学レイヤーとは無関係)。read-only・counts + タイトル(最大5件)のみ返す。
+    """
+    from src.ui.services.geo_cyber_map import sub_country_points
+
+    window = max(0, min(365, days))
+    cls = _norm_class(threat_class)
+    src = _norm_source_status(source_status)
+    imp = _norm_importance(min_importance)
+    tb = "event" if time_basis == "event" else "report"
+    now = time.monotonic()
+    key = (window, cls, src, imp, tb)
+    cached = _sub_country_cache.get(key)
+    if cached is not None and now - cached[0] < _TTL_SECONDS:
+        return cached[1]
+    data = sub_country_points(
+        window_days=window or None,
+        threat_class=cls,
+        source_status=src,
+        min_importance=imp,
+        time_basis=tb,
+    )
+    _sub_country_cache[key] = (now, data)
     return data
 
 

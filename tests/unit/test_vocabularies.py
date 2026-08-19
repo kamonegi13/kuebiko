@@ -134,6 +134,21 @@ def test_operational_vocabs_stay_japanese() -> None:
     assert trigger.label_for("scheduler") == "自動実行"
 
 
+def test_geo_precision_matches_backend_enum_and_labels() -> None:
+    """geo_precision vocab が GeoPrecision と厳密一致し、地図ピンの精度文言を固定する。
+
+    地図 Phase 1b 後半 (都市・地域ピン): CITY/ADMIN1 のポップアップ文言は生 enum を
+    直接出さず、この vocab 経由で配信する (UI 表示文言の規約)。
+    """
+    from src.cti.geocoder import GeoPrecision
+
+    vocab = get_vocabulary("geo_precision")
+    assert vocab is not None
+    assert set(vocab.values()) == {p.value for p in GeoPrecision}
+    assert vocab.label_for("city") == "市区"
+    assert vocab.label_for("admin1") == "州・県 (代表点=州内最大人口都市)"
+
+
 def test_confidence_covers_every_backend_literal() -> None:
     """confidence vocab が backend の **全 Literal 定義** を被覆する (2 scale / 5 定義)。
 

@@ -7,10 +7,11 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { CyberMapResponse, GeoEventNode, GeoNode } from "../../api/geo";
+import type { CyberMapResponse, GeoEventNode, GeoNode, SubCountryPoint } from "../../api/geo";
 import { intentHex, intentLabel } from "../../utils/diamond";
 import { sectorColor } from "./sectorColors";
 import { CITY_LABELS } from "./cityLabels";
+import { vocabLabel } from "../../hooks/useVocab";
 import countriesUrl from "./ne_countries.geojson?url";
 
 // 地図の表示制御型 (旧 ThreatMap.tsx から移設、本コンポーネントが正の定義元)。
@@ -44,6 +45,9 @@ interface LeafletThreatMapProps {
   // 地域プリセット: [[south,west],[north,east]]。変化で flyToBounds。null=操作なし。
   region?: [[number, number], [number, number]] | null;
   persistViewKey?: string; // 指定 key で zoom/center を localStorage 保存・復元 (full/mini で別キー)。
+  // 都市・地域ピン (Phase 1b 後半): 呼出側が region/toggle でフィルタ済みの一覧を渡す
+  // (国バブルのレスポンスとは独立、渡さなければ非表示)。
+  subCountryPoints?: SubCountryPoint[];
 }
 
 function radiusFor(count: number, maxCount: number): number {
@@ -132,6 +136,34 @@ function pieCircleIcon(
   });
 }
 
+// 都市・地域ピン (地図 Phase 1b 後半): victim_city を CITY/ADMIN1 tier で解決した精密点。
+// 精度を honest に見分けさせる — CITY=塗りつぶし小円 / ADMIN1=中抜きリング (代表点=州内
+// 最大人口都市、都市より粗い)。どちらも国バブルの最小半径 (MIN_R=5) より明確に小さくする。
+const SUB_COUNTRY_COLOR = "#5eead4"; // teal-300。国バブル(セクター/動機パイ)・地政学ダイヤと
+// 衝突しない中立アクセントで「別レイヤーの精密点」と一目で分かる配色にする。
+const SUB_COUNTRY_MIN_R = 2.5;
+const SUB_COUNTRY_MAX_R = 4.5;
+
+function subCountryRadius(count: number, maxCount: number): number {
+  if (count <= 0) return 0;
+  const t = Math.sqrt(count) / Math.sqrt(Math.max(1, maxCount));
+  return SUB_COUNTRY_MIN_R + (SUB_COUNTRY_MAX_R - SUB_COUNTRY_MIN_R) * t;
+}
+
+// CITY=塗りつぶし円 (filled) / ADMIN1=中抜きリング (transparent fill + 着色枠)。
+function subCountryIcon(diameter: number, filled: boolean): L.DivIcon {
+  const d = Math.max(2, Math.round(diameter));
+  const style = filled
+    ? `background:${SUB_COUNTRY_COLOR};border:1px solid rgba(255,255,255,0.55)`
+    : `background:transparent;border:1.5px solid ${SUB_COUNTRY_COLOR}`;
+  return L.divIcon({
+    className: "",
+    html: `<div style="width:${d}px;height:${d}px;border-radius:50%;${style}"></div>`,
+    iconSize: [d, d],
+    iconAnchor: [d / 2, d / 2],
+  });
+}
+
 // ◯と◇のペアを国重心を中点に左右対称配置する片側ずらし量 (px)。両マーカが同じ値で
 // 逆向きに動くので中点=重心。45°回転◇の水平半幅 ≈0.7·s。広がり過ぎ防止に上限 18px。
 function pairShift(radius: number, diamondSize: number): number {
@@ -189,6 +221,7 @@ export function LeafletThreatMap({
   onCountryClick,
   region = null,
   persistViewKey,
+  subCountryPoints = [],
 }: LeafletThreatMapProps) {
   const divRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -403,7 +436,32 @@ export function LeafletThreatMap({
         dyn.addLayer(m);
       }
     }
-  }, [data, selectedSector, selectedIntent, layer, colorBy, focus, highlightIso]);
+
+    // 都市・地域ピン (Phase 1b 後半): victim_city を CITY/ADMIN1 tier で解決した精密点。
+    // cyber レイヤー非表示中 (地政学のみ) は victim_city と無関係なので出さない。
+    if (showCyber && subCountryPoints.length > 0) {
+      let maxPin = 1;
+      for (const p of subCountryPoints) if (p.count > maxPin) maxPin = p.count;
+      for (const p of subCountryPoints) {
+        const r = subCountryRadius(p.count, maxPin);
+        const filled = p.precision === "city";
+        const precisionLabel = vocabLabel("geo_precision", p.precision);
+        const titleLines = p.titles
+          .map((t) => `<span style="opacity:.8">・${t.replace(/[<>&]/g, "")}</span>`)
+          .join("<br>");
+        L.marker([p.lat, p.lon], {
+          icon: subCountryIcon(r * 2, filled),
+          interactive: true,
+          zIndexOffset: 500, // 国バブルの上に重ねて隠れないようにする
+        })
+          .bindTooltip(
+            `<b>${precisionLabel}</b>・${p.count} 件` + (titleLines ? `<br>${titleLines}` : ""),
+            { sticky: true },
+          )
+          .addTo(dyn);
+      }
+    }
+  }, [data, selectedSector, selectedIntent, layer, colorBy, focus, highlightIso, subCountryPoints]);
 
   // 地域プリセット: region 変化で flyToBounds。
   useEffect(() => {
