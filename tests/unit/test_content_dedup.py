@@ -384,3 +384,106 @@ class TestAdvisoryIdMismatchRaisesTheBar:
         )
 
         assert dup is not None
+
+
+class TestRoundupNotCollapsedBySingleSharedCve:
+    """まとめ記事が CVE 1 個の共有で潰されない (2026-08-19)。
+
+    Weekly Report / 月例パッチ / KEV 一覧は多数の CVE を含むため、**単独記事の
+    どれか 1 つとは必ず共通 CVE を持つ**。「同 CVE = 同 advisory」の強制 dedup を
+    そのまま当てると無関係な記事に消される。実例: JPCERT「Weekly Report:
+    PostgreSQL に複数の脆弱性」が Grok の「VMware vCenter の脆弱性」に CVE 1 個の
+    共有だけで潰された (タイトル Jaccard は 0.0)。30 日で shared_cve は 959 回発火。
+    """
+
+    def test_roundup_survives_single_shared_cve(self, repo: RunHistoryRepository) -> None:
+        _seed(
+            repo,
+            article_id="single",
+            title="VMware vCenter の重大な脆弱性が実環境で悪用 CVE-2026-59310",
+            feed_title="Grok",
+            hours_ago=2.0,
+            url="https://example.com/vcenter",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="Weekly Report: PostgreSQL に複数の脆弱性",
+            summary=(
+                "CVE-2026-59310 CVE-2026-63077 CVE-2026-70001 CVE-2026-70002 "
+                "複数製品の脆弱性情報をまとめて掲載"
+            ),
+            url="https://www.jpcert.or.jp/wr/2026/wr260819.html",
+            candidate_article_id="weekly",
+        )
+
+        assert dup is None, "まとめ記事が CVE 1 個の共有で潰された"
+
+    def test_two_shared_cves_still_dedupe(self, repo: RunHistoryRepository) -> None:
+        """共有が 2 件以上なら同一の可能性が高いので従来どおり畳む。"""
+        _seed(
+            repo,
+            article_id="prior",
+            title="8 月の月例更新 CVE-2026-59310 CVE-2026-63077 CVE-2026-70001",
+            feed_title="SANS Internet Storm Center",
+            hours_ago=2.0,
+            url="https://example.com/patch-tuesday",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="2026年8月マイクロソフトセキュリティ更新プログラムに関する注意喚起",
+            summary="CVE-2026-59310 CVE-2026-63077 を含む複数の脆弱性",
+            url="https://www.jpcert.or.jp/at/2026/at260022.html",
+            candidate_article_id="jpcert-at",
+        )
+
+        assert dup is not None
+
+    def test_single_cve_articles_still_dedupe(self, repo: RunHistoryRepository) -> None:
+        """まとめでない記事同士 (CVE 少数) は従来どおり同 CVE で畳む。"""
+        _seed(
+            repo,
+            article_id="prior",
+            title="Metabase の SQL インジェクションの脆弱性 CVE-2026-72898",
+            feed_title="SecurityWeek",
+            hours_ago=2.0,
+            url="https://example.com/metabase",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="注意喚起: Metabase の SQL インジェクションの脆弱性",
+            summary="CVE-2026-72898 の悪用が確認されている",
+            url="https://www.jpcert.or.jp/at/2026/at260023.html",
+            candidate_article_id="jpcert-metabase",
+        )
+
+        assert dup is not None
+
+    def test_two_roundups_are_still_deduped(self, repo: RunHistoryRepository) -> None:
+        """まとめ記事同士は畳む — 各社が同じ月例パッチを報じた重複であり、
+        ここを救うと同一事象が何件も並ぶ (実データで CrowdStrike / Help Net /
+        Security Affairs が同じ 2026 年 8 月の月例パッチを個別報道していた)。
+        """
+        _seed(
+            repo,
+            article_id="crowdstrike",
+            title=(
+                "2026年8月 Patch Tuesday CVE-2026-59310 CVE-2026-63077 "
+                "CVE-2026-70001 CVE-2026-70002"
+            ),
+            feed_title="CrowdStrike Threat Intel Blog",
+            hours_ago=2.0,
+            url="https://example.com/patch-tuesday-cs",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="Microsoft が 400 件以上の脆弱性を修正、悪用中のゼロデイも含む",
+            summary="CVE-2026-59310 CVE-2026-80001 CVE-2026-80002 CVE-2026-80003",
+            url="https://example.com/patch-tuesday-hns",
+            candidate_article_id="helpnet",
+        )
+
+        assert dup is not None, "まとめ記事同士は畳むべき"

@@ -35,6 +35,14 @@ MIN_TOKENS_REQUIRED = 3
 # (監査 2026-08-01)。JVN → 翌日 JVNDB (iPedia) 再掲が 24h 窓の外で二重投稿された
 # 実事例への対処。0.4 帯の「24h 超は続報として通す」設計は不変 — 延長窓で
 # 効くのは「同一の advisory とほぼ断定できる」信号だけに限定する。
+# まとめ記事 (Weekly Report / 月例パッチ / KEV 一覧) の CVE 保有数の下限。
+# ⚠ **まとめ記事は多数の CVE を含むため、単独記事のどれか 1 つとは必ず共通 CVE を持つ**。
+# 「同 CVE = 同 advisory」の強制 dedup をそのまま当てると、無関係な記事に潰される。
+# 実例 (2026-08-19): JPCERT「Weekly Report: PostgreSQL に複数の脆弱性」が Grok の
+# 「VMware vCenter の脆弱性」に CVE 1 個の共有だけで消えた (タイトル Jaccard は 0.0)。
+# 30 日で shared_cve 強制 dedup は 959 回発火し、落選側には CVE を 100-288 件持つ
+# 記事が含まれていた。3 件以上を持つ側は「まとめ」とみなし、CVE 1 個の共有では畳まない。
+ROUNDUP_CVE_COUNT = 3
 IDENTITY_LOOKBACK_HOURS = 72
 IDENTITY_JACCARD_THRESHOLD = 0.85
 # 72h 窓の候補取得上限 (24h 窓比で流量 3 倍を見込む)
@@ -425,7 +433,19 @@ def find_recent_content_duplicate(
         within_normal_window = _hours_ago(art.created_at, now) <= lookback_hours
         # 強制 dedup: 同 CVE-ID は確度高で同 advisory と判定 (通常窓のみ —
         # 24h 超の同 CVE 記事は続報でありうるため延長窓では判定しない)
-        shared_cves = sig_new_cves & {t for t in sig_old if t.startswith("cve-")}
+        cves_old = {t for t in sig_old if t.startswith("cve-")}
+        shared_cves = sig_new_cves & cves_old
+        # ⚠ **片方だけがまとめ記事**のとき、CVE 1 個の共有では畳まない。
+        # まとめ記事は多数の CVE を含むため単独記事のどれか 1 つとは必ず共通 CVE を持ち、
+        # 無関係な記事に潰される (JPCERT「Weekly Report: PostgreSQL に複数の脆弱性」が
+        # Grok「VMware vCenter の脆弱性」に消えた実例。タイトル Jaccard は 0.0)。
+        # ⭐ **両方がまとめなら畳む** — 各社が同じ Patch Tuesday を報じた重複であり、
+        #    ここを救うと同一事象が何件も並ぶ (実データで確認: CrowdStrike / Help Net /
+        #    Security Affairs が同じ 2026 年 8 月の月例パッチを個別に報道)。
+        both_roundup = min(len(sig_new_cves), len(cves_old)) >= ROUNDUP_CVE_COUNT
+        one_roundup = max(len(sig_new_cves), len(cves_old)) >= ROUNDUP_CVE_COUNT
+        if one_roundup and not both_roundup and len(shared_cves) < 2:
+            shared_cves = set()
         if shared_cves and within_normal_window:
             _log.info(
                 "content_dedup_match",
