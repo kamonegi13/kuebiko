@@ -8,7 +8,6 @@
 //   - 効く先 (guide) / 統計 (FieldStatBlock) / issue 局在化 / プロンプト出力順バッジ / 変更取消 を追加
 //   - 「本文が空」の判定は preview.issues (empty_rubric_body) に一本化し、ローカルで再判定しない
 
-import { useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type {
   ContractField,
@@ -19,6 +18,7 @@ import type {
   RubricSectionKind,
   StatsDays,
 } from "../../../api/promptRubric";
+import { AutoGrowTextarea } from "../../../components/AutoGrowTextarea";
 import { FieldStatBlock } from "./FieldStatBlock";
 import { previewLine } from "./format";
 
@@ -46,27 +46,6 @@ function TypeBadges({ contract }: { contract: ContractField | undefined }) {
         </span>
       )}
     </>
-  );
-}
-
-// auto-grow textarea (mono)。scrollHeight を反映して高さを内容に追従させる。
-function AutoGrowTextarea({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      rows={2}
-      spellCheck={false}
-      className="w-full resize-none overflow-hidden rounded border border-border-subtle bg-surface-2 px-2 py-1.5 font-mono text-xs leading-relaxed text-fg"
-    />
   );
 }
 
