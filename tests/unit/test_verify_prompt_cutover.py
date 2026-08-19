@@ -8,8 +8,11 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from src.storage.config_store import ConfigVersion
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
@@ -21,10 +24,29 @@ from verify_prompt_cutover import (  # noqa: E402
     STATUS_FAIL,
     STATUS_INCONCLUSIVE,
     STATUS_PASS,
-    evaluate_cutover,
+    CutoverVerdict,
+    changes_within,
 )
+from verify_prompt_cutover import evaluate_cutover as _evaluate_cutover  # noqa: E402
+
+
+def evaluate_cutover(pre: dict[str, Any], post: dict[str, Any], **kwargs: Any) -> CutoverVerdict:
+    """閾値ゲートの test 用ラッパ。
+
+    ``version_checked`` の既定は production 側で **False (未検査=判定不能)** に倒して
+    あるため、閾値そのものを固定する本 file では「版検査は済んでいる」を既定に置く。
+    窓の純度ゲート自体の test は生の ``_evaluate_cutover`` を直接呼ぶ。
+    """
+    kwargs.setdefault("version_checked", True)
+    return _evaluate_cutover(pre, post, **kwargs)
+
 
 _ARTICLES = 500  # MIN_POST_ARTICLES を十分に超える標本
+
+
+def _version(version: int, created_at: str) -> ConfigVersion:
+    """判定基準の版履歴 1 行 (note は判定に使わないので空)。"""
+    return ConfigVersion(version=version, note="", created_at=created_at)
 
 
 def _stat(
@@ -401,3 +423,152 @@ class TestVerdictShape:
         verdict = evaluate_cutover(pre, post)
         known = set(_baseline_fields())
         assert {row.field_id for row in verdict.rows} <= known
+
+
+class TestWindowPurity:
+    """窓の中で判定基準がさらに動いていたら判定を出さない (2026-08-19 の関門)。
+
+    実例: 08-16 の層分けを 7 日窓で測ると v3 (08-17) / v4 (08-18) が窓に入る。
+    「注意して読む」ではコマンドが平然と PASS を返すので、コード側で止める。
+    """
+
+    def _clean(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        return (_stats(_ARTICLES, _baseline_fields()), _stats(_ARTICLES, _baseline_fields()))
+
+    def test_version_landing_inside_post_window_blocks_the_verdict(self) -> None:
+        # Arrange: 切替後の窓の中で判定基準が v4 に上がっている
+        pre, post = self._clean()
+
+        # Act
+        verdict = _evaluate_cutover(
+            pre,
+            post,
+            version_checked=True,
+            post_changes=(_version(4, "2026-08-18T11:07:53+00:00"),),
+        )
+
+        # Assert: 「切替後」が単一の状態でないので PASS/FAIL を付けない
+        assert verdict.status == STATUS_INCONCLUSIVE
+        assert any("単一の状態でない" in reason for reason in verdict.reasons)
+
+    def test_allow_mixed_downgrades_the_block_to_a_warning(self) -> None:
+        # Arrange: 承知の上で混成窓を見るときだけ判定を続行する
+        pre, post = self._clean()
+
+        # Act
+        verdict = _evaluate_cutover(
+            pre,
+            post,
+            version_checked=True,
+            post_changes=(_version(4, "2026-08-18T11:07:53+00:00"),),
+            allow_mixed=True,
+        )
+
+        # Assert: 判定は出るが、混成した事実は必ず本文に残る
+        assert verdict.status == STATUS_PASS
+        assert any("単一の状態でない" in warning for warning in verdict.warnings)
+
+    def test_unchecked_history_is_inconclusive_not_clean(self) -> None:
+        # Arrange: 版履歴を読めなかった (key 打ち間違い / DB 障害)
+        pre, post = self._clean()
+
+        # Act
+        verdict = _evaluate_cutover(pre, post, version_checked=False)
+
+        # Assert: 「検査していない」を「混成なし」に倒さない (fail-closed)
+        assert verdict.status == STATUS_INCONCLUSIVE
+        assert any("版履歴" in reason for reason in verdict.reasons)
+
+    def test_version_inside_pre_window_only_warns(self) -> None:
+        # Arrange: 基準線側の混成は比較の相手が blend になるだけで致命ではない
+        pre, post = self._clean()
+
+        # Act
+        verdict = _evaluate_cutover(
+            pre,
+            post,
+            version_checked=True,
+            pre_changes=(_version(3, "2026-08-17T21:44:39+00:00"),),
+        )
+
+        # Assert
+        assert verdict.status == STATUS_PASS
+        assert any("基準線が混成" in warning for warning in verdict.warnings)
+
+
+class TestChangesWithin:
+    """窓に入った版の抽出。境界の扱いを固定する。"""
+
+    _HISTORY = (
+        _version(1, "2026-08-16T07:01:26+00:00"),
+        _version(2, "2026-08-16T07:12:08+00:00"),
+        _version(3, "2026-08-17T21:44:39+00:00"),
+        _version(4, "2026-08-18T11:07:53+00:00"),
+    )
+    _CUTOVER = datetime(2026, 8, 16, 7, 1, 26, tzinfo=UTC)
+
+    def test_cutover_version_itself_is_not_contamination(self) -> None:
+        # Arrange/Act: 切替時刻ちょうどの v1 は「切替そのもの」
+        found = changes_within(
+            self._HISTORY,
+            since=self._CUTOVER,
+            until=self._CUTOVER + timedelta(days=7),
+            include_since=False,
+        )
+
+        # Assert: v1 は除き、窓に入った v2/v3/v4 だけを汚染として挙げる
+        assert [v.version for v in found] == [2, 3, 4]
+
+    def test_pre_window_includes_a_version_sitting_on_its_left_edge(self) -> None:
+        # Arrange/Act: 切替前の窓 [v1, cutover) — 左端に乗った版は基準線を混成させる
+        found = changes_within(
+            self._HISTORY,
+            since=self._CUTOVER,
+            until=self._CUTOVER + timedelta(days=1),
+            include_since=True,
+        )
+
+        # Assert
+        assert [v.version for v in found] == [1, 2]
+
+    def test_unparsable_timestamp_is_kept_not_dropped(self) -> None:
+        # Arrange: created_at が壊れている版 (落とすと fail-open になる)
+        broken = (_version(9, "not-a-timestamp"),)
+
+        # Act
+        found = changes_within(
+            broken,
+            since=self._CUTOVER,
+            until=self._CUTOVER + timedelta(days=1),
+            include_since=False,
+        )
+
+        # Assert
+        assert [v.version for v in found] == [9]
+
+    def test_versions_outside_the_window_are_ignored(self) -> None:
+        # Arrange/Act: 窓より後の版は関係ない
+        found = changes_within(
+            self._HISTORY,
+            since=self._CUTOVER,
+            until=datetime(2026, 8, 17, 0, 0, tzinfo=UTC),
+            include_since=False,
+        )
+
+        # Assert
+        assert [v.version for v in found] == [2]
+
+    def test_sub_second_precision_does_not_make_the_cutover_version_contamination(self) -> None:
+        # Arrange: created_at はマイクロ秒まで持つが --cutover は秒精度で書かれる
+        history = (_version(1, "2026-08-16T07:01:26.696350+00:00"),)
+
+        # Act
+        found = changes_within(
+            history,
+            since=datetime(2026, 8, 16, 7, 1, 26, tzinfo=UTC),
+            until=datetime(2026, 8, 23, 7, 1, 26, tzinfo=UTC),
+            include_since=False,
+        )
+
+        # Assert: 0.7 ミリ秒の差で「切替そのもの」を汚染に数えない
+        assert found == ()

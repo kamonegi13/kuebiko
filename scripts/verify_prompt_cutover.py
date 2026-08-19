@@ -12,7 +12,11 @@ Usage::
     uv run python scripts/verify_prompt_cutover.py --cutover 2026-08-16T07:01:26Z --days 14
     uv run python scripts/verify_prompt_cutover.py --cutover 2026-08-16T07:01:26Z --json
 
-exit code: 0=PASS / 1=FAIL / 2=INCONCLUSIVE (標本不足で判定不能)。
+exit code: 0=PASS / 1=FAIL / 2=INCONCLUSIVE (標本不足 / 窓が混成で判定不能)。
+
+**窓の純度も検査する**。切替後の窓の中で判定基準がさらに版を重ねていたら「切替後」は
+単一の状態ではなく、その数字は名指しした切替に帰属できない。版履歴 (config_store) を
+読んで混成を検出し、判定を出さない (--allow-mixed で承知の上の続行)。
 
 **summarizer 専用ではない**。今後 12 本の他プロンプトを同じ方式に切り替えるたび、
 ``--cutover`` と ``--days`` を変えて同じ道具を使う。集計は
@@ -29,7 +33,8 @@ import json
 import logging
 import sys
 import unicodedata
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,6 +42,7 @@ from typing import Any
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO if (_REPO / "src").is_dir() else Path("/app")))
 
+from src.storage.config_store import ConfigVersion, list_history  # noqa: E402
 from src.ui.services.rubric_field_stats import (  # noqa: E402
     MAX_DAYS,
     MIN_DAYS,
@@ -98,6 +104,30 @@ AVG_LENGTH_GATE_FIELDS: tuple[str, ...] = ("summary",)
 # 判定から外して参考表示にする (誤 FAIL 防止)。scope 付きフィールド (vulnerability
 # 限定の remediation など) は短い窓だと簡単にこの水準を割る。
 MIN_SCOPE_ARTICLES = 30
+
+# ---------- 窓の純度 (窓の中で判定基準がさらに動いていないか) ----------
+
+# 切替後の窓の中で判定基準が版を重ねていたら、「切替後」は **単一の状態ではない**。
+# その窓の数字は複数の版の混成で、名指しした切替には帰属できない。
+#
+# 実例 (2026-08-19 に判明): 08-16 の層分け (v1) を既定の 7 日窓で判定しようとすると、
+# 窓の中に v3 (08-17) と v4 (08-18、判定基準 30% 削減) が入る。運用メモに「窓が
+# 汚れているので注意」と書いても、コマンドは平然と PASS を返す。**禁止は指示では
+# 止まらない (2026-08-19)** ので、判定を出さない関門としてコードに置く。
+#
+# ⚠ 検出できるのは **DB に版が残る判定基準の変更だけ**。コード側の変更 (schema の
+# required 化・後処理 normalizer・モデル切替) はここからは見えない。「混成なし」は
+# 「判定基準が動いていない」以上を意味しない。
+DEFAULT_CONFIG_KEY = "summarizer_rubric"
+
+# 版履歴の取得件数。1 プロンプトの版が 200 を超えることは運用上ありえず、
+# 超えたとしても古い側は窓の外にある (窓は最大 MAX_DAYS=90 日)。
+VERSION_HISTORY_LIMIT = 200
+
+NOTE_VERSION_UNCHECKED = (
+    "判定基準の版履歴を確認していない — 窓の中で基準が動いていないことを保証できない。"
+)
+
 
 # ---------- 判定結果の語彙 ----------
 
@@ -161,6 +191,13 @@ class CutoverVerdict:
     reasons: tuple[str, ...]
     excluded_fields: tuple[str, ...]
     partial_fields: tuple[str, ...]
+    # 窓の純度。``version_checked=False`` は「検査していない/できなかった」で、
+    # 「混成なし」とは別物 (0 件と『測れない』を区別する — 本 script 全体の作法)。
+    version_checked: bool = True
+    config_key: str = ""
+    pre_changes: tuple[ConfigVersion, ...] = field(default_factory=tuple)
+    post_changes: tuple[ConfigVersion, ...] = field(default_factory=tuple)
+    warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
 # ---------- stats dict の読み取り (欠損に強く) ----------
@@ -382,6 +419,64 @@ def _availability_groups(
     return (tuple(excluded), tuple(partial))
 
 
+# ---------- 版の窓内検出 (純関数) ----------
+
+
+def _parse_created_at(value: str) -> datetime | None:
+    """``ConfigVersion.created_at`` (ISO 8601 文字列) を UTC datetime に。解釈できなければ None。
+
+    **秒未満を落とす**。``--cutover`` は人が秒精度で書くのに版の created_at は
+    マイクロ秒まで持つため、切り捨てないと「切替そのものの版」が切替の 0.7 ミリ秒後に
+    見えて汚染として数えられる (実際に踏んだ)。比較は入力側の精度に合わせる。
+    """
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.replace(microsecond=0)
+
+
+def changes_within(
+    history: Sequence[ConfigVersion],
+    *,
+    since: datetime,
+    until: datetime,
+    include_since: bool,
+) -> tuple[ConfigVersion, ...]:
+    """窓 ``[since, until)`` に入った版を古い順で返す。
+
+    ``include_since=False`` は **切替後の窓**用 — 切替時刻ちょうどに保存された版は
+    「切替そのもの」であって汚染ではないため境界から外す。切替前の窓は
+    ``include_since=True`` (窓の左端に版が乗っていれば基準線は混成)。
+
+    created_at を解釈できない行は **落とさず含める** (判定できないものを「無い」に
+    倒すと fail-open になる)。
+    """
+    picked: list[tuple[datetime, ConfigVersion]] = []
+    for version in history:
+        parsed = _parse_created_at(version.created_at)
+        if parsed is None:
+            picked.append((since, version))
+            continue
+        after_start = parsed >= since if include_since else parsed > since
+        if after_start and parsed < until:
+            picked.append((parsed, version))
+    picked.sort(key=lambda item: (item[0], item[1].version))
+    return tuple(version for _, version in picked)
+
+
+def _versions_text(versions: Sequence[ConfigVersion]) -> str:
+    """``v3 2026-08-17T21:44Z / v4 2026-08-18T11:07Z``。note は含めない (表に出すのは別枠)。"""
+    parts = []
+    for version in versions:
+        parsed = _parse_created_at(version.created_at)
+        stamp = parsed.strftime("%Y-%m-%dT%H:%MZ") if parsed is not None else version.created_at
+        parts.append(f"v{version.version} {stamp}")
+    return " / ".join(parts)
+
+
 # ---------- 純粋な判定関数 (DB に触れない = 本 script の検証可能な核) ----------
 
 
@@ -390,11 +485,21 @@ def evaluate_cutover(
     post: dict[str, Any],
     *,
     min_articles: int = MIN_POST_ARTICLES,
+    config_key: str = "",
+    version_checked: bool = False,
+    pre_changes: Sequence[ConfigVersion] = (),
+    post_changes: Sequence[ConfigVersion] = (),
+    allow_mixed: bool = False,
 ) -> CutoverVerdict:
     """切替前後の field-stats 2 つを突き合わせて PASS / FAIL / INCONCLUSIVE を出す。
 
     DB にも時刻にも依存しない純粋関数。``pre`` / ``post`` は
     ``build_field_stats`` の戻り値と同じ形の dict。
+
+    窓の純度は呼び手が調べて渡す (``changes_within`` の結果)。**切替後の窓に版が
+    入っていれば判定を出さない** — 混成した状態に PASS / FAIL を付けても意味が無い。
+    ``version_checked=False`` (検査していない/できなかった) も同じく判定不能とする。
+    どちらも ``allow_mixed=True`` で警告に落とせる。
     """
     pre_articles = _posted_count(pre)
     post_articles = _posted_count(post)
@@ -406,6 +511,22 @@ def evaluate_cutover(
     if pre_articles < min_articles:
         reasons.append(
             f"切替前の窓の配信済み記事が {pre_articles} 件 (判定に必要: {min_articles} 件)"
+        )
+    warnings: list[str] = []
+    if post_changes:
+        text = (
+            f"切替後の窓に判定基準の版が {len(post_changes)} 件入っている "
+            f"({_versions_text(post_changes)}) — 「切替後」が単一の状態でない"
+        )
+        (warnings if allow_mixed else reasons).append(text)
+    elif not version_checked:
+        (warnings if allow_mixed else reasons).append(NOTE_VERSION_UNCHECKED)
+    if pre_changes:
+        # 基準線側の混成は致命ではない (比較の相手が blend になるだけ) が、差の帰属は
+        # その分弱まる。黙って PASS を出さず、必ず本文に残す。
+        warnings.append(
+            f"切替前の窓に判定基準の版が {len(pre_changes)} 件入っている "
+            f"({_versions_text(pre_changes)}) — 基準線が混成のため差の帰属は限定的"
         )
     judged = not reasons
 
@@ -449,6 +570,11 @@ def evaluate_cutover(
         reasons=tuple(reasons),
         excluded_fields=excluded,
         partial_fields=partial,
+        version_checked=version_checked,
+        config_key=config_key,
+        pre_changes=tuple(pre_changes),
+        post_changes=tuple(post_changes),
+        warnings=tuple(warnings),
     )
 
 
@@ -517,6 +643,35 @@ def _render_table(rows: tuple[MetricRow, ...]) -> list[str]:
     return lines
 
 
+def _render_versions(verdict: CutoverVerdict, windows: dict[str, Any]) -> list[str]:
+    """窓の中で判定基準が動いたかを必ず 1 ブロック出す (混成していなくても『なし』と書く)。"""
+    if not verdict.version_checked:
+        return [f"  判定基準の版 : 未検査 — {NOTE_VERSION_UNCHECKED}"]
+    key = verdict.config_key or DEFAULT_CONFIG_KEY
+    lines = [
+        f"  判定基準の版 (config_key={key})",
+        f"    切替前の窓 : {_versions_text(verdict.pre_changes) or 'なし'}",
+        f"    切替後の窓 : {_versions_text(verdict.post_changes) or 'なし'}",
+    ]
+    if verdict.post_changes:
+        cutover = _parse_cutover(windows["cutover"])
+        first = _parse_created_at(verdict.post_changes[0].created_at)
+        if first is not None:
+            hours = (first - cutover).total_seconds() / 3600.0
+            clean_days = int(hours // 24)
+            if clean_days >= MIN_DAYS:
+                lines.append(
+                    f"    → この切替を単独で測れるのは次の版までの {hours:.1f} 時間。"
+                    f"--days {clean_days} 以下なら混成しない。"
+                )
+            else:
+                lines.append(
+                    f"    → 次の版まで {hours:.1f} 時間しかなく、--days の最小 ({MIN_DAYS} 日) "
+                    "でも混成する。この切替を単独で判定することはできない。"
+                )
+    return lines
+
+
 def _render(verdict: CutoverVerdict, windows: dict[str, Any]) -> str:
     pre_window = windows["pre"]
     post_window = windows["post"]
@@ -527,6 +682,7 @@ def _render(verdict: CutoverVerdict, windows: dict[str, Any]) -> str:
         f" (配信済み {verdict.pre_articles} 件)",
         f"  切替後の窓 : {post_window['since']} 〜 {post_window['until']}"
         f" (実データ終端 {post_window['data_end']}, 配信済み {verdict.post_articles} 件)",
+        *_render_versions(verdict, windows),
         "",
     ]
     lines.extend(_render_table(verdict.rows))
@@ -541,6 +697,9 @@ def _render(verdict: CutoverVerdict, windows: dict[str, Any]) -> str:
     if verdict.failures:
         lines.append("閾値超過:")
         lines.extend(f"  {failure}" for failure in verdict.failures)
+    if verdict.warnings:
+        lines.append("注意 (判定は続行):")
+        lines.extend(f"  {warning}" for warning in verdict.warnings)
     lines.append("")
     reason = f" — {' / '.join(verdict.reasons)}" if verdict.reasons else ""
     lines.append(f"総合判定: {verdict.status}{reason}")
@@ -591,8 +750,46 @@ def _build_parser() -> argparse.ArgumentParser:
         default=MIN_POST_ARTICLES,
         help=f"判定に必要な窓あたりの配信済み記事数 (既定 {MIN_POST_ARTICLES})",
     )
+    parser.add_argument(
+        "--config-key",
+        default=DEFAULT_CONFIG_KEY,
+        help=(
+            "窓の純度を検査するための判定基準の config_store key "
+            f"(既定 {DEFAULT_CONFIG_KEY}、空文字で検査を省略)"
+        ),
+    )
+    parser.add_argument(
+        "--allow-mixed",
+        action="store_true",
+        help="窓の中で判定基準が動いていても判定を出す (混成は警告として表示)",
+    )
     parser.add_argument("--json", action="store_true", help="機械可読な JSON で出力する")
     return parser
+
+
+def _load_history(config_key: str) -> tuple[tuple[ConfigVersion, ...], bool]:
+    """判定基準の版履歴と「検査できたか」を返す。
+
+    読めない / 0 件は **「混成なし」ではなく「未検査」** に倒す (fail-closed)。
+    key の打ち間違いが「窓は綺麗でした」と読める出力になるのを避ける。
+    """
+    if not config_key:
+        return ((), False)
+    try:
+        history = tuple(list_history(config_key, limit=VERSION_HISTORY_LIMIT))
+    except Exception as exc:  # DB 障害・table 不在: 判定は続けるが未検査として扱う
+        print(
+            f"判定基準の版履歴を読めませんでした ({type(exc).__name__}) — 窓の純度は未検査",
+            file=sys.stderr,
+        )
+        return ((), False)
+    if not history:
+        print(
+            f"config_key={config_key!r} の版履歴が 0 件 — 窓の純度は未検査",
+            file=sys.stderr,
+        )
+        return ((), False)
+    return (history, True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -615,7 +812,23 @@ def main(argv: list[str] | None = None) -> int:
     post_until = cutover + timedelta(days=args.days)
     pre = build_field_stats(args.days, until=cutover)
     post = build_field_stats(args.days, until=post_until)
-    verdict = evaluate_cutover(pre, post, min_articles=args.min_articles)
+
+    history, version_checked = _load_history(args.config_key)
+    verdict = evaluate_cutover(
+        pre,
+        post,
+        min_articles=args.min_articles,
+        config_key=args.config_key,
+        version_checked=version_checked,
+        pre_changes=changes_within(
+            history,
+            since=cutover - timedelta(days=args.days),
+            until=cutover,
+            include_since=True,
+        ),
+        post_changes=changes_within(history, since=cutover, until=post_until, include_since=False),
+        allow_mixed=args.allow_mixed,
+    )
 
     windows = {
         "cutover": _iso_z(cutover),
