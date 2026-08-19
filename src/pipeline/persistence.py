@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from src.cti.ioc_source_filter import is_source_reference
 from src.cti.subject_actor import (  # noqa: PLC0414 — `as` 形式 = mypy 明示 re-export
     _CYBER_CATEGORIES as _CYBER_CATEGORIES,  # facade re-export (main.py / 既存テスト互換)
 )
@@ -470,8 +471,18 @@ def _persist_article_entities(
                 entities.append(("cve", c))
             continue
         kind = _classify_ioc_type(v)
-        if kind:
-            entities.append((kind, v))
+        if not kind:
+            continue
+        # 判定基準は「出典系の URL は IOC ではない。含めないこと」と明記しているが、
+        # 実測で ioc_domain/ioc_url 3,403 件中 44 件が購読ソースのドメイン、32 件が
+        # その記事自身の出典ホストだった。IOC は照合に使う値なので報道サイトが混ざると
+        # 同一 infra を根拠にした関連付けが偽の辺を作る。指示では止まらないので遮断する。
+        if kind in ("ioc_domain", "ioc_url") and is_source_reference(
+            v, article_url=msg.sources[0].url if msg.sources else None
+        ):
+            _log.info("ioc_source_reference_filtered", kind=kind, value=v)
+            continue
+        entities.append((kind, v))
 
     # CVE は summary 本文にも原文引用される (briefing/summarizer.j2 の指示)。iocs 配列が
     # 取りこぼした分の保険として summary からも regex で補完する。
