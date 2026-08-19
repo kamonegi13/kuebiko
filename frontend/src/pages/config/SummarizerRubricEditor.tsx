@@ -64,9 +64,11 @@ export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditor
   const {
     draft,
     dirty,
+    duplicateFieldIds,
     updateIntro,
     updateSectionBody,
     revertSection,
+    removeSectionAt,
     updateExample,
     revertExample,
     preview,
@@ -297,9 +299,13 @@ export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditor
 
   const renderCard = (section: RubricSection) => {
     const fieldId = section.field_id;
+    // 表示順ではなく draft.sections 上の位置 (I-1: 配列順は不変なので identity で引ける)。
+    // 重複カードの削除は index 指定でしか成立しない (field_id 指定では両方消える)。
+    const sectionIndex = draft.sections.indexOf(section);
+    const duplicate = duplicateFieldIds.has(fieldId);
     return (
       <RubricSectionCard
-        key={fieldId}
+        key={`${fieldId}:${sectionIndex}`}
         section={section}
         contract={contractMap.get(fieldId)}
         guide={guideMap.get(fieldId)}
@@ -310,9 +316,11 @@ export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditor
         issues={issuesForSection(issueIndex, fieldId)}
         changed={changedIds.has(fieldId)}
         open={isFieldOpen(fieldId)}
+        duplicate={duplicate}
         onToggle={() => toggleAnchor(`field:${fieldId}`)}
         onChangeBody={(body) => updateSectionBody(fieldId, body)}
         onRevert={() => revertSection(fieldId)}
+        onRemove={() => removeSectionAt(sectionIndex)}
       />
     );
   };

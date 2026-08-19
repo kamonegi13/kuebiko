@@ -82,9 +82,12 @@ interface RubricSectionCardProps {
   issues: RubricIssue[];
   changed: boolean;
   open: boolean;
+  /** 同じ field_id のカードが他にもある (編集は相互汚染するので止め、削除だけ許す)。 */
+  duplicate: boolean;
   onToggle: () => void;
   onChangeBody: (body: string) => void;
   onRevert: () => void;
+  onRemove: () => void;
 }
 
 export function RubricSectionCard({
@@ -98,15 +101,23 @@ export function RubricSectionCard({
   issues,
   changed,
   open,
+  duplicate,
   onToggle,
   onChangeBody,
   onRevert,
+  onRemove,
 }: RubricSectionCardProps) {
   const charCount = section.body.length;
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const warnCount = issues.length - errorCount;
   const suppressedWithBody = section.kind === "suppressed" && section.body.trim().length > 0;
   const borderClass = errorCount > 0 ? "border-critical" : warnCount > 0 ? "border-warning" : "border-border-subtle";
+
+  const handleRemove = () => {
+    if (window.confirm(`重複しているカード「${section.title}」(${section.field_id}) を削除します。よろしいですか?`)) {
+      onRemove();
+    }
+  };
 
   return (
     <div
@@ -145,6 +156,11 @@ export function RubricSectionCard({
             title="本文が空のためプロンプトに出力されません"
           >
             未出力
+          </span>
+        )}
+        {duplicate && (
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+            重複
           </span>
         )}
         {changed && (
@@ -193,7 +209,24 @@ export function RubricSectionCard({
               {issue.message}
             </div>
           ))}
-          {guide?.editable === false ? (
+          {duplicate ? (
+            /* 同じ field_id のカードが複数ある状態。編集キーが field_id なので入力欄を
+               出すともう片方も書き換わり、保存も backend が拒否する。直す唯一の手段
+               (不要な方の削除) だけを出す。 */
+            <div className="space-y-1.5 rounded border border-critical bg-critical-soft px-2 py-1.5 text-[11px] leading-relaxed text-critical">
+              <p className="m-0">
+                同じ項目のカードが 2 枚以上あります。この状態では編集がもう一方にも及び、保存もできません。
+                不要な方を削除してください。
+              </p>
+              <button
+                type="button"
+                onClick={handleRemove}
+                className="rounded border border-critical px-1.5 py-0.5 font-semibold hover:bg-critical hover:text-fg-inverse"
+              >
+                このカードを削除
+              </button>
+            </div>
+          ) : guide?.editable === false ? (
             /* 下流が必ず上書きするフィールド。空の入力欄は「ここに書けば判定される」と
                誤解させるので、書ける場所を出さずに理由を書く (2026-08-18)。 */
             <p className="m-0 rounded border border-border-subtle bg-surface-2 px-2 py-1.5 text-[11px] leading-relaxed text-fg-muted">
@@ -207,7 +240,7 @@ export function RubricSectionCard({
             <button
               type="button"
               onClick={onRevert}
-              disabled={!changed}
+              disabled={!changed || duplicate}
               className="text-fg-subtle hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
             >
               変更を取り消す

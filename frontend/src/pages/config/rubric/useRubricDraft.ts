@@ -21,9 +21,12 @@ const PREVIEW_DEBOUNCE_MS = 600;
 interface UseRubricDraftResult {
   draft: SummarizerRubric | null;
   dirty: boolean;
+  /** 2 枚以上のカードが同じ field_id を持っている場合のその id 集合 (通常は空)。 */
+  duplicateFieldIds: Set<string>;
   updateIntro: (intro: string) => void;
   updateSectionBody: (fieldId: string, body: string) => void;
   revertSection: (fieldId: string) => void;
+  removeSectionAt: (index: number) => void;
   updateExample: (idx: number, patch: Partial<RubricExample>) => void;
   revertExample: (idx: number) => void;
   preview: PreviewResult | undefined;
@@ -73,6 +76,29 @@ export function useRubricDraft(saved: SummarizerRubric | undefined): UseRubricDr
     return false;
   }, [draft, saved]);
 
+  // 同じ field_id のカードが 2 枚あると、更新キー (field_id) が両方に当たって相互汚染する。
+  // この状態は backend が保存を拒否する (duplicate_field_id) ため、画面に修復手段が無いと
+  // 詰む (旧 UI の未対応項目)。編集は止めて、index 指定の削除だけを許す。
+  const duplicateFieldIds = useMemo(() => {
+    const seen = new Set<string>();
+    const dup = new Set<string>();
+    for (const s of draft?.sections ?? []) {
+      if (seen.has(s.field_id)) dup.add(s.field_id);
+      seen.add(s.field_id);
+    }
+    return dup;
+  }, [draft]);
+
+  // ⚠ 一意な field_id は削除させない。sections の集合は SummaryOutput の model_fields と
+  // 一致する不変量があり、消すと missing_fields でどのみち保存できなくなる。
+  // 削除は field_id ではなく **index** 指定 (field_id 指定では両方消える)。
+  const removeSectionAt = (index: number) => {
+    if (!draft) return;
+    const target = draft.sections[index];
+    if (!target || !duplicateFieldIds.has(target.field_id)) return;
+    setDraft({ ...draft, sections: draft.sections.filter((_s, i) => i !== index) });
+  };
+
   const updateIntro = (intro: string) => {
     if (!draft) return;
     setDraft({ ...draft, intro });
@@ -118,9 +144,11 @@ export function useRubricDraft(saved: SummarizerRubric | undefined): UseRubricDr
   return {
     draft,
     dirty,
+    duplicateFieldIds,
     updateIntro,
     updateSectionBody,
     revertSection,
+    removeSectionAt,
     updateExample,
     revertExample,
     preview,
