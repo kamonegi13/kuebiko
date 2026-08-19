@@ -27,7 +27,11 @@ export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onC
 
       <aside
         className={[
-          "fixed top-0 left-0 z-[70] h-screen flex flex-col",
+          // 高さは **可視ビューポート** に追従させる (2026-08-19)。h-screen (100vh) だけだと
+          // モバイルブラウザでは URL バー/ツールバーのぶん実際の表示領域より高くなり、
+          // 最下部に固定したログイン導線が画面外に出て到達不能になる (nav の
+          // overflow-y-auto の外側にあるためスクロールでも出てこない)。
+          "fixed top-0 left-0 z-[70] h-screen supports-[height:100dvh]:h-dvh flex flex-col",
           "bg-surface-1 border-r border-border-subtle",
           "transition-[width,transform] duration-200 ease-out",
           // mobile: off-canvas drawer (w-60)、md+: 常時表示で width 切替
@@ -90,7 +94,12 @@ export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onC
         {/* ログイン導線 (公開 instance で Cloudflare Access が設定済みのときだけ表示)。
             認証すると運用系ページの閲覧とジョブ即時実行が解放される (write はローカル専用)。 */}
         {flags.auth_available && (
-          <div className="shrink-0 border-t border-border-subtle p-2">
+          <div
+            className="shrink-0 border-t border-border-subtle p-2"
+            // ホームインジケータ (iOS) と重ならないよう safe-area ぶんを上乗せする。
+            // viewport-fit=cover を入れた結果 inset が実値を返すようになったため必要。
+            style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
+          >
             <a
               // ログアウトは Access 保護対象外の /logout (保護下に置くと cookie 破棄後に
               // ログイン画面へ送られてしまう)。ログインは保護対象の /auth/login。
