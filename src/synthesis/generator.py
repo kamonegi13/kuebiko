@@ -231,12 +231,23 @@ def _render_prompt(
     freshness: dict[str, Any] | None = None,
     previous_synthesis: dict[str, Any] | None = None,
 ) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
-        autoescape=False,
-        keep_trailing_newline=True,
-    )
-    template = env.get_template(SYNTHESIS_TEMPLATE)
+    # 層分け (2026-08-20、2 本目): 編集層の SSoT は DB (config_store,
+    # key=status_synthesis_rubric)。合成に失敗したら **必ず** legacy .j2 に落ちる
+    # (WARNING を残す = 無音にしない)。rollback: SYNTHESIS_COMPOSER=0。
+    template = None
+    from src.prompts.prompt_store import build_prompt_template
+    from src.prompts.registry import get_spec
+
+    spec = get_spec("status_synthesis")
+    if spec is not None:
+        template = build_prompt_template(spec, PROMPTS_DIR / SYNTHESIS_TEMPLATE)
+    if template is None:
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(PROMPTS_DIR)),
+            autoescape=False,
+            keep_trailing_newline=True,
+        )
+        template = env.get_template(SYNTHESIS_TEMPLATE)
 
     # Phase Diamond verify-pir-driven: config/delivery/pir.yaml の PIR list を context として注入。
     # 空 / 不在なら pir_context=[] で legacy 挙動 (template 側で空 list を扱う)。

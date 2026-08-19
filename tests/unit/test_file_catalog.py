@@ -28,7 +28,7 @@ class TestCatalogCompleteness:
             f"prompts/{p.relative_to(_REPO_ROOT / 'prompts').as_posix()}"
             for p in (_REPO_ROOT / "prompts").rglob("*.j2")
         }
-        assert len(actual) == 14
+        assert len(actual) == 15  # +status_synthesis_skeleton (層分け 2 本目 2026-08-20)
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
@@ -37,7 +37,7 @@ class TestCatalogCompleteness:
             f"config/{p.relative_to(_REPO_ROOT / 'config').as_posix()}"
             for p in (_REPO_ROOT / "config").rglob("*.yaml")
         }
-        assert len(actual) == 17
+        assert len(actual) == 18  # +status_synthesis_rubric seed (同上)
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 

@@ -404,6 +404,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _log.info("pir_seeded_from_yaml")
             if seed_rubric_if_absent():
                 _log.info("summarizer_rubric_seeded_from_yaml")
+            # 層分けの一般化 (2026-08-20): block 方式のプロンプトはレジストリから一括 seed
+            from src.prompts.prompt_store import seed_prompt_if_absent
+            from src.prompts.registry import all_specs
+
+            for prompt_spec in all_specs():
+                if prompt_spec.kind == "block" and seed_prompt_if_absent(prompt_spec):
+                    _log.info("prompt_rubric_seeded_from_yaml", prompt=prompt_spec.prompt_id)
             sources_seeded = seed_sources_if_absent()
             if any(sources_seeded.values()):
                 _log.info("sources_seeded_from_yaml", seeded=sources_seeded)
@@ -621,6 +628,7 @@ def create_app() -> FastAPI:
     from src.ui.api.pages import pages_api
     from src.ui.api.pir import pir_api
     from src.ui.api.product_routing import product_routing_api
+    from src.ui.api.prompt_blocks import prompt_blocks_api
     from src.ui.api.prompt_rubric import prompt_rubric_api
     from src.ui.api.routing_rules import routing_rules_api
     from src.ui.api.runs import dash_api, runs_api
@@ -637,6 +645,7 @@ def create_app() -> FastAPI:
     app.include_router(dash_api)
     app.include_router(pages_api)
     app.include_router(prompt_rubric_api)
+    app.include_router(prompt_blocks_api)
     app.include_router(pir_api)
     app.include_router(jobs_api)
     app.include_router(routing_rules_api)

@@ -1,0 +1,239 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: ミッション (総括の焦点)
+  body: '**PMESII-PT 8 軸で分類された article から、軸間の関連性・連鎖・不均衡・重心**
+
+    に焦点を当てて当該期間の状況を総括してください。軸別の独立記述は core では避ける。'
+  note: ''
+- field_id: purpose
+  kind: rubric
+  title: PMESII 分類の意義と地政文脈
+  body: '# PMESII-PT に分類する意義
+
+    本ツールが PMESII-PT 8 軸で分類する目的は次の 5 つ:
+
+    1. 軸間連鎖の発見 (M ↔ I-infra のような複合 trend を露わにする)
+
+    2. 不均衡の検出 (主流 / 副流 / 独立 / 静穏 / 観測弱点)
+
+    3. 重心 (Center of Gravity) entity の特定 (アナリスト注目誘導)
+
+    4. 過去 pattern からの波及予想
+
+    5. PIR (priority intelligence requirement) との照合
+
+
+    **地政文脈の活用 (重要)**: M (軍事) / P (政治) 軸には、サイバー事象だけでなく
+
+    **地政・軍事の文脈 (kinetic 紛争・軍事作戦・外交・制裁・同盟・戦略態勢)** が含まれる。
+
+    これらは I-cyber 軸の脅威活動の **"なぜ" (駆動要因・背景)** を説明する。
+
+    連鎖分析では「地政的緊張 → サイバー作戦の活発化」のような
+
+    **地政 → サイバーの因果**を積極的に読み解け (例: 中東緊張 → イラン系 APT、台湾情勢 →
+
+    中国 APT、露ウ戦争 → Sandworm)。地政事象を単独記述せず、サイバー脅威との関連で論じる。'
+  note: ''
+- field_id: source_tiers
+  kind: rubric
+  title: 信頼度 tier の説明 (high-importance 入力)
+  body: '**axes_data の recent_incidents は時系列順上位 12 件のみ。下記は importance=''high'' を
+
+    全軸 cross で集めた 30 件まで。0day / 重要 APT / supply chain 攻撃 / 日本標的を
+
+    見落とさないために axes_evidence に必ず取り込むこと。**
+
+    各記事末尾の `信頼度` は source の信頼度 tier (NATO Admiralty 信頼度軸):
+
+    **公式**(一次 advisory/政府機関=A 相当) / **研究**(確立した脅威リサーチ=B 相当) /
+
+    **報道**(一般報道=C-D) / **SNS**(単一投稿・未裏取り=D-F) / **⚠国営**(国営メディア/影響工作=
+
+    RT/Sputnik/Pravda 等、framing 偏向) / **不明**。'
+  note: ''
+- field_id: corroboration
+  kind: rubric
+  title: 裏取り (corroboration) の取り扱い
+  body: "**裏取り (corroboration) の取り扱い — 厳守**:\n- **単一 source の劇的な主張 (特に SNS/不明/報道 tier の単発) に headline\
+    \ / cog / spillover を\n  賭けてはならない**。重大主張ほど「何が裏付けるか」を確認し、裏取りが薄ければ重み付けを下げる。\n- trend cluster の `sources`\
+    \ 数 (複数 source で観測) と source 信頼度 tier を **claim の重み**とせよ:\n  公式/研究の多源 > 報道の多源 > 単一 SNS/不明。確度 (NATO\
+    \ Admiralty 確度軸) に反映する。\n- **⚠国営** 印 (RT/Sputnik/Pravda 等の国営メディア・影響工作) と **⚠プロパガンダ** 印は、**事実\n  (誰が誰を攻撃した等)\
+    \ と framing (意図・責任の帰属・正当化) を分離**し、**framing をそのまま採用しない**。\n  これら source のみに依拠する主張は確度を下げ、対立する見方を必ず併記する\
+    \ (収集はするが鵜呑みにしない)。\n- 単一・低 tier・国営/プロパガンダに依拠した重大主張は **tradecraft.key_assumptions に「当該 source の\n \
+    \ 信頼性」を明記**し、**alternatives に「観測バイアス / framing バイアス / 単発の誤報の可能性」を必ず立てる**。"
+  note: ''
+- field_id: output_format
+  kind: rubric
+  title: 出力形式 (JSON spec 全体)
+  body: "# 出力形式 (純粋な JSON のみ、前置き・末尾説明禁止)\n\n```json\n{\n  \"headline\": \"<1 文 120-180 字 (**最低 120 字必須、下限重視**)。以下\
+    \ 3 要素を全て含む BLUF 形式: (1) 結論文 (本期間で観測された主動向を 1 句で), (2) 駆動している force を自然な日本語で明示 (例: 'サイバー脅威活動が主導',\
+    \ '国家系アクターの活発化が起点'), (3) 重心 entity / リスク (例: 'OSS サプライチェーン', '日本標的の活動')。**本文に (M) (I-cyber) (P/M)\
+    \ (E/I-infra) のようなインライン軸コードを書かない** (軸はエンティティと文脈で自ずと伝わる)。良例 (140 字): 'オープンソースサプライチェーン汚染を起点とするサイバー脅威活動の激化が、国家系\
+    \ APT の戦術転換と重要インフラへの波及リスクを連鎖的に拡大させており、防御側の対応が後手に回りつつある現状。'>\",\n  \"weight_section\": \"<軸別 weight\
+    \ 分類を markdown で 200-300 字。**軸は自然な日本語名で書く (M/P/I-cyber 等のコードは使わない)**。例: '主流: 軍事・サイバー', '反応軸: 政治・インフラ',\
+    \ '独立: 経済', '静穏: 社会・物理環境', '欠落: 時間軸' のような分類 + 各軸の意義を関係性で記述。なぜ主流か / なぜ静穏かまで踏み込む。軸の対応: P=政治, M=軍事, E=経済,\
+    \ S=社会, I-infra=インフラ, I-cyber=サイバー, P-env=物理環境, T=時間軸>\",\n  \"chain_section\": \"<軸間連鎖の解釈 500-900\
+    \ 字 (3-4 段落)。**主動向の三角連鎖** + 副動向 + 独立 stream を物語化。各軸が他軸とどう関係するか + 力学・因果方向 (どの軸が driver でどの軸が受け手か) まで論述。**本文に\
+    \ (M) (I-cyber) のようなインライン軸コードを書かない** (軸はエンティティ・文脈・自然語で表現)。**矢印は `→` (U+2192) のみ使用、LaTeX (`$\\\\rightarrow$`,\
+    \ `\\\\to`) 禁止**>\",\n  \"cog_section\": \"<重心 (Center of Gravity) entity を 1-3 個特定、200-350 字。なぜ重心か\
+    \ (複数軸を駆動 / cross-source 一致 / 戦略意図 / 構造的脆弱性のいずれか) を論述。アナリスト注目誘導>\",\n  \"spillover_section\": \"<波及解釈\
+    \ 250-450 字。過去 pattern (memory 化された incident) を根拠とした中期予想 (来週 / 来月)。data 不足時は honest disclosure で '仮説段階'\
+    \ と明示しつつ、それでも観測可能 signal を列挙する>\",\n  \"pir_section\": \"<**1 つの markdown 文字列** で、上記『# PIR』に列挙された\
+    \ PIR のうち当該期間に関連 article が観測されたものを優先して checklist 化する (該当が多い場合は重要度の高い 5-8 件に絞る)。合計 400-700 字。各 PIR\
+    \ は 60-140 字で具体 incident を 1-2 件名前付きで引用。各行頭に PIR title を **太字** で示し、✅充足 / ⚠️部分 / ❌欠落 を必ず明示。観測ゼロの PIR\
+    \ は末尾に『❌ 当該期間観測なし: <title 列挙>』と 1 行でまとめてよい。dict / object 禁止、必ず string。例: '- **中国系 APT 動向**: ✅ 充足 —\
+    \ Salt Typhoon が米通信網に pre-positioning、CISA KEV 追加\\\\n- **緊急度の高い国家機関アラート**: ⚠️ 部分 — CISA ED-26-01\
+    \ 発出 (詳細未確認)'>\",\n  \"tradecraft\": {\n    \"leading_assessment\": \"<主見立て: 本期間で最も確からしい解釈を 1-2 文\
+    \ (60-150 字)。headline/CoG と整合させる>\",\n    \"alternatives\": [\"<対立仮説: 主見立てと両立しない別解釈を 60-120 字で 1-2\
+    \ 個。**必ず誠実な競合仮説**にする (藁人形でなく analyst が実際に保持すべき別解)。例:『国家系 APT でなく金銭目的犯罪が APT を模倣した可能性』『攻勢の激化でなく観測 source\
+    \ 増加によるバイアスの可能性』>\"],\n    \"key_assumptions\": [\"<主見立てが依拠する前提を 1-3 個。これが崩れると見立ても崩れる。例:『attribution\
+    \ 報告が正確である』『観測 source に地域偏りがない』>\"],\n    \"indicators\": [\"<今後観測されれば見立てが変わる監視指標を 1-3 個 (来週の watch\
+    \ list)。例:『同一 TTP が別地域で観測されれば広域作戦と確定』>\"],\n    \"source_caveat\": \"<**必須・1-2 文**。上の high-importance\
+    \ 入力の信頼度を踏まえ、framing 依存をどう割り引いたかを明示。特に **⚠国営 (RT/Sputnik/Pravda)** が高重要に何件あり、その framing を本見立てにどう反映/排除したか。国営が無ければ『国営/低\
+    \ tier 依存なし』と書く。例:『高重要 21 件中 8 件が RT(国営)。中東衝突の framing は割り引き、サイバー帰属は研究 source に依拠した』>\",\n    \"forecast_alignment\"\
+    : \"<**必須・1-2 文**。FC2 構造予測 (z-score スパイク) が本期間の narrative と **整合か乖離か** を明示的に評価。乖離するなら理由を書く (棄却も可)。例:『FC2\
+    \ のランサム actor 急増 (qilin/safepay) は本期間の国家系 geopol narrative と別系統の犯罪動向であり、spillover には組み込まない』。予測が無ければ『該当予測なし』>\"\
+    ,\n    \"freshness_note\": \"<**必須・1-2 文**。当期 dated 報道の **振り返り率** を踏まえ、見かけの活動急増が **新規事象か再報道/分析か**\
+    \ を判定。例:『dated の 77% が >30日前の事象。見かけの報道増は過去事案の再報道を多く含み、現況の新規エスカレーションは USB 侵入等の少数に限られる』。dated が無ければ『鮮度判定不可\
+    \ (dated 少)』>\",\n    \"forecasts\": [{\"claim\": \"<次期に検証可能な**具体的・反証可能**な予測を 1 句 (誰が/何を/どこで)。spillover\
+    \ の中期予想と整合させる>\", \"horizon\": \"<next_period|next_week|next_month>\", \"confidence\": \"<high|medium|low>\"\
+    }],\n    \"forecast_scorecard\": [{\"claim\": \"<前期に立てた予測 (下の『前期の予測』を 1 件ずつ転記)>\", \"verdict\": \"\
+    <realized(現実化)|partial(部分的)|missed(外れ)>\", \"reason\": \"<判定根拠を 1 句。今期の観測と照合>\"}]\n  \"axes_evidence\"\
+    : {\n    \"P\": [\n      {\"label\": \"<actor or topic>\", \"summary\": \"<事象 1 句、60 字以内>\", \"article_ids\"\
+    : [\"<id1>\", \"<id2>\"]}\n    ],\n    \"M\": [...],\n    \"E\": [...],\n    \"S\": [...],\n    \"\
+    I-infra\": [...],\n    \"I-cyber\": [...],\n    \"P-env\": [...],\n    \"T\": [...]\n  }\n}\n```"
+  note: ''
+- field_id: ng_ok_examples
+  kind: rubric
+  title: 重要な要件 — NG / OK 例
+  body: '# 重要な要件
+
+
+    ## NG (件数列挙の文章化、PMESII-PT の意義を活かせていない)
+
+    ❌ "M 軸で 5 件、I-cyber 軸で 8 件、top sector は defense"
+
+    ❌ "P 軸: CISA KEV 5 件、JPCERT advisory 3 件"
+
+    ❌ 8 軸を順番に独立記述するだけ
+
+
+    ## OK (軸間関係 + 動向 + 解釈 — 本文は軸コードを使わず自然語で)
+
+    ✅ "中国系 APT の活動拡大が、ESXi 0day 悪用と米通信網への pre-positioning として **同時に顕在化**。軍事・サイバー・インフラ面を貫く戦略意図を示唆"
+
+    ✅ "米政府の対中姿勢強化が国家系アクター監視を加速 — 政治の動きが軍事動向への反応として機能"
+
+    ✅ "LockBit 後の cybercrime 再編は、国家系アクターと分離した独立の潮流"'
+  note: ''
+- field_id: axis_code_ban
+  kind: rubric
+  title: インライン軸コードの禁止
+  body: "## インライン軸コードの禁止 (全文章 section の可読性 — 厳守)\n- **headline / weight_section / chain_section / cog_section\
+    \ / spillover_section / pir_section の\n  本文に `(M)` `(P)` `(I-cyber)` `(I-infra)` `(P/M)` `(E/I-infra)`\
+    \ `M / I-cyber` のような軸コードを書かない。**\n  軸はエンティティ (例:「国家系 APT」「マルウェア展開」) と文脈で自ずと伝わる。読みづらくなるだけ。\n- 軸を明示・分類したい場合は\
+    \ **自然な日本語名** で (例:「軍事・サイバー」「政治・インフラ」「物理環境」)。\n  軸の対応: P=政治, M=軍事, E=経済, S=社会, I-infra=インフラ, I-cyber=サイバー,\
+    \ P-env=物理環境, T=時間軸。\n- 例外 (軸コード可): **axes_evidence のみ** (JSON の構造化 key であり本文ではないため)。"
+  note: ''
+- field_id: calibration
+  kind: rubric
+  title: 確度・信頼度の較正 (NATO Admiralty)
+  body: "## 情報の確度・信頼度の較正 (CTI doctrine: NATO Admiralty Code 準拠 — 厳守)\n主張の確からしさを **2 つの独立した軸** で評価し、断定の強さ\
+    \ (tone) を調整せよ。\n**A1 / B2 のような記号は本文に書かない** (軸コードと同様に可読性を損なう)。自然な日本語で表現する。\n\n1. **信頼度 (source reliability)\
+    \ — 誰の情報か** (各 incident の feed_title で判断):\n   - 高: 一次 advisory (CISA / CISA KEV / JPCERT/CC / NCSC\
+    \ / ベンダ公式 CVE) ・確立した脅威リサーチ\n     (Mandiant / Google TAG / Microsoft / Dragos / ESET / Unit42 等)\n\
+    \   - 中: 一般ニュース・aggregator (BleepingComputer / The Hacker News 等)\n   - 低 (= 未裏取り扱い): Grok / X / SNS\
+    \ の単一投稿 (feed_title が \"Grok\" 等)、出典不明\n2. **確度 (information credibility) — 主張が裏付くか**:\n   - 高: 複数\
+    \ source が一致 / 公式 CVE・KEV 登録あり / ベンダ確認\n   - 中: 単一 source のみ\n   - 低: 技術的に非現実的・誇張の疑い\n\n**出力ルール (断定の強さ)**:\n\
+    - **断定形 + 強い推奨 (緊急パッチ・即時対応) は、信頼度・確度がともに高い主張に限る。**\n- 低信頼 source / 単一 source / 未裏取りは **必ず明示してヘッジ**する\n\
+    \  (例:「単一 source (Grok) の未確認情報だが」「公式 CVE は未登録」「裏取り前提で」)。確定口調にしない。\n- **技術的に疑わしい単一報** (例: nginx の無設定\
+    \ unauth RCE のような史上稀な主張) は懐疑を明記し、\n  それを根拠に緊急対応を推奨しない (まず一次情報での裏取りを促す)。\n- headline / cog_section\
+    \ / spillover_section の主張・重心・予想も同じ較正に従う\n  (戦略的重心や中期予想を **弱い source 1 本に依存させない**)。\n- ✅ 良い書き方: \"\
+    Grok 経由で nginx の無設定 RCE が可能との単一報があるが、公式 CVE は未登録で技術的にも異例。確度は低く、まず一次情報での裏取りを優先すべき\"\n- ❌ 悪い書き方: \"\
+    nginx の RCE 脆弱性により緊急パッチが必要\" (低信頼・単一 source を確定扱い)"
+  note: ''
+- field_id: tradecraft_guide
+  kind: rubric
+  title: 分析トレードクラフト (ICD 203)
+  body: "## 分析トレードクラフト (tradecraft フィールド — ICD 203 準拠、厳守)\n`tradecraft` は読者 (CTI analyst) の **トンネル視を防ぐ**ための構造化メタ分析。確証バイアスに陥らないよう、主見立てだけでなく「別の可能性」「依拠する前提」「見立てを覆す指標」を必ず添える。\n\
+    - **leading_assessment (主見立て)**: headline/CoG と整合する最有力解釈を簡潔に。\n- **alternatives (対立仮説)**: 主見立てと **両立しない誠実な競合仮説**\
+    \ を 1-2 個。藁人形 (明らかに弱い反論) は禁止。analyst が実際に排除しきれていない別解 (例: 国家系帰属 vs 模倣犯、攻勢激化 vs 観測バイアス) を挙げる。**必ず 1\
+    \ 個以上**。\n- **key_assumptions (前提)**: 主見立てが暗黙に依拠している前提。崩れると結論が変わるもの。\n- **indicators (覆る指標)**: 来週以降に観測されれば見立てを変える監視対象。具体的・観測可能に。\n\
+    - **source_caveat (出典の割引・必須)**: high-importance 入力の信頼度を踏まえ、**⚠国営/低 tier への依存をどう\n  割り引いたか**を1-2文で明示。国営が複数あれば「framing\
+    \ は割引・事実のみ採用」を具体的に書く。\n- **forecast_alignment (予測整合・必須)**: 上の **FC2 構造予測 (スパイク)** が本期間 narrative と\n\
+    \  整合か乖離かを1-2文で明示評価。乖離・棄却も可だが**必ず言及**(無視を許さない)。\n- **freshness_note (鮮度判定・必須)**: 当期 dated 報道の**振り返り率**を踏まえ、見かけの急増が新規か\n\
+    \  再報道/分析かを1-2文で判定。\n- これら3つは **信号への明示応答を強制する**ためのフィールド。棄却するにも理由を書き、「無視」しないこと。\n- **forecasts (予測・B2)**:\
+    \ 次期に **検証可能で反証可能**な予測を 1-3 個。spillover の中期予想と整合させ、\n  誰が/何を/どこで を具体化 (抽象的な『脅威が高まる』は不可)。各 horizon\
+    \ と confidence を付す。\n- **forecast_scorecard (採点・B2)**: 上の「前期の予測」(無ければ前期 spillover の各予想) を 1 件ずつ\n\
+    \  realized/partial/missed で採点。今期の実観測と照合し reason を 1 句。**前期総括が無ければ空 list**。\n  これが予測の的中率 (calibration)\
+    \ の基礎になる。甘い自己採点をしない (外れは missed と正直に)。\n- tradecraft 内も軸コード禁止・自然な日本語。確度の低い主張に基づく見立てほど alternatives\
+    \ を厚くする。"
+  note: ''
+- field_id: axes_evidence_guide
+  kind: rubric
+  title: 軸別 evidence の表現要領
+  body: "## 軸別 evidence (axes_evidence) の表現要領\n- 1 事象 = 1 entry。**events 数に上限はなく、推奨レンジを目安に必要な事象は全部列挙する**\n\
+    - **件数依存の推奨 events 数 (上記 \"軸別 article 統計\" に明示)**:\n  - 件数 100+ → **推奨 7-12 events** (最低 5)\n  - 件数\
+    \ 50+ → **推奨 5-8 events** (最低 3)\n  - 件数 20+ → **推奨 3-5 events** (最低 2)\n  - 件数 1+ → **最低 1 event**\n\
+    - **Mandatory rule (取りこぼし防止)**:\n  - `importance='high'` の article は **必ず independent な event として独立列挙**\
+    \ (集約禁止)\n  - 同じ topic の \"high\" が複数あれば、それぞれを別 event entry にする (1 event 内に集約せず)\n  - 既知 high-importance\
+    \ 例: CISA KEV 追加、Windows / Chrome 0day、APT 攻撃 attribution、\n    JPCERT 注意喚起、重要 ICS/OT 脆弱性、日本標的 actor\
+    \ 報告\n- label: actor / topic / CVE / sector など、event の主体\n- summary: 60 字以内の 1 句要約 (article title\
+    \ の機械引用ではなく、事象の本質)\n- **article_ids**: 1 つの event entry に紐付けるべき article_id の上限は 3-5 件\n  (これは events\
+    \ 数ではなく、1 event 内の参照記事数の上限)\n- 静穏軸 (件数 0) は短く `[{\"label\": \"通常水準\", \"summary\": \"目立つ動きなし\", \"\
+    article_ids\": []}]`\n- 欠落軸 (件数 0) は honest 表現\n  `[{\"label\": \"観測なし\", \"summary\": \"当該期間に該当 article\
+    \ 無し\", \"article_ids\": []}]`\n  (※ \"LLM 機能不全\" のような自己診断は不要、単に「該当 article なし」を明示)"
+  note: ''
+- field_id: count_style
+  kind: rubric
+  title: 件数記述の制限
+  body: "## 件数記述の制限 (chain_section / cog_section 等の文章セクション内のみ)\n- \"N 件\" などの絶対数は禁止 (例外: spike 強調で \"\
+    前月比 3 倍\" のような相対表現は可)\n- 数字を主役にせず、**意味と動向** を主役に\n- **ただし以下は本制限の対象外** (混同しない):\n  - axes_evidence\
+    \ の events 数: 必要な事象は事象数分列挙する (上記推奨レンジ通り)\n  - 1 event 内の article_ids: 3-5 件まで列挙する\n  - section 内の事象列挙:\
+    \ 主要 incident は固有名詞で名指しする (例: \"CISA KEV に Langflow と\n    Trend Micro Apex One 追加\" / \"Universal\
+    \ Robots CVE-2026-8153 の認証不要 RCE\")\n- つまり「数字 (件数) を主役にするな」であって「短く書け」ではない。\n  各 section の目標文字数を満たしながら、**具体\
+    \ incident を名指しで論述**する"
+  note: ''
+- field_id: text_style
+  kind: rubric
+  title: 文字表記の制限 (LaTeX 禁止)
+  body: "## 文字表記の制限 (全 section 共通)\n- **Plain text + Markdown のみ** 使用可。LaTeX / 数式表記は **全面禁止**\n  - ❌ `$\\\
+    rightarrow$`, `$\\to$`, `\\(...\\)`, `\\[...\\]`, `$x$`\n  - ✅ `→` (U+2192), `:`, `では`, `に対し`, `=>`\
+    \ (生 ASCII 矢印)\n- **markdown**: `**強調**`, `- list`, インラインコード `` `CVE-...` `` は可\n- 数値や日付はそのまま (例:\
+    \ `CVE-2026-9111`, `48h`, `15%`) で記述\n- 数式 / 化学式 / 上付・下付 (例: `CO_2`, `H^+`) のような特殊表記は本 prompt の対象外なので避ける"
+  note: ''
+- field_id: completeness
+  kind: rubric
+  title: 出力 field の完全性チェック
+  body: '## 出力 field の完全性チェック (絶対遵守)
+
+    **以下 7 field をすべて出力すること**。途中で stop せず、最後の ``axes_evidence`` まで必ず到達する:
+
+    1. ``headline`` (1 文 120-180 字)
+
+    2. ``weight_section`` (200-300 字)
+
+    3. ``chain_section`` (500-900 字)
+
+    4. ``cog_section`` (200-350 字)
+
+    5. ``spillover_section`` (250-450 字)
+
+    6. ``pir_section`` (400-700 字)
+
+    7. ``axes_evidence`` (8 軸 P/M/E/S/I-infra/I-cyber/P-env/T すべての key を含む dict、欠落軸でも空 list でなく観測なし表現で
+    1 entry)
+
+
+    **最も忘れやすいのは 7 番 `axes_evidence`**。section 6 (pir_section) を書き終えたら必ず axes_evidence へ続けること。
+
+    JSON 全体を完成させずに stop することは絶対禁止。
+
+
+    純粋な JSON のみ出力。'
+  note: ''
+examples: []

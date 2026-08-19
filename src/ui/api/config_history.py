@@ -42,7 +42,19 @@ _KNOWN_KEYS: dict[str, str] = {
     "dashboard_layout": "ダッシュボード レイアウト (widget 配置 + 共有既定 config)",
     "grok_tasks": "Grok タスク定義 (外部 Grok 側設定の写し)",
     "summarizer_rubric": "記事要約プロンプトの判定基準",
+    # 層分けの一般化 (2026-08-20): block 方式のプロンプトは registry から自動登録する
+    # (プロンプト追加のたびにここへ 1 行足す手作業と、その漏れを無くす)。
 }
+
+
+def _register_block_prompt_keys() -> None:
+    from src.prompts.registry import all_specs
+
+    for spec in all_specs():
+        _KNOWN_KEYS.setdefault(spec.config_key, f"プロンプト編集層 ({spec.title})")
+
+
+_register_block_prompt_keys()
 
 # 一覧で版数を数える上限 (config 保存は低頻度なので十分大きい固定値)。
 _HISTORY_LIMIT = 200

@@ -51,6 +51,13 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
         "(実際の判定基準はプロンプトタブのカード編集)",
     ),
+    "prompts/synthesis/status_synthesis_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "状況総括の骨格 (code 所有)",
+        "status_synthesis の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 2 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
+    ),
     "prompts/digest/pir_daily_focus.j2": FileInfo(
         "ダイジェスト",
         "PIR Daily Focus",
@@ -203,6 +210,12 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "プロンプト",
         "記事要約の判定基準",
         "summarizer の判定基準 (初回 seed 専用 — runtime SSoT は DB、UI 編集はプロンプトタブ)",
+    ),
+    "config/prompts/status_synthesis_rubric.yaml": FileInfo(
+        "プロンプト",
+        "状況総括の編集層 (blocks)",
+        "status_synthesis の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 2 本目 2026-08-20)",
     ),
 }
 

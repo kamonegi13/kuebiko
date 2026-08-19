@@ -26,7 +26,7 @@ from src.logging_config import get_logger
 
 _log = get_logger(__name__)
 
-RUBRIC_CONFIG_KEY = "summarizer_rubric"
+# 検証対象は registry の全プロンプト (層分けの一般化 2026-08-20 — 追加に自動追従)
 _MAX_WINDOW_DAYS = 7
 _SUBPROCESS_TIMEOUT_SEC = 300
 # ops 投稿の本文上限 (Discord embed の余裕を残す)。超過は先頭優先で切る。
@@ -79,11 +79,11 @@ async def _run_script(args: list[str]) -> tuple[int, str]:
     return (proc.returncode or 0, out.decode("utf-8", errors="replace"))
 
 
-def _latest_rubric_cutover() -> tuple[int, datetime] | None:
-    """summarizer_rubric の最新版 (version, created_at)。履歴が無い/読めないなら None。"""
+def _latest_cutover(config_key: str) -> tuple[int, datetime] | None:
+    """config_key の最新版 (version, created_at)。履歴が無い/読めないなら None。"""
     from src.storage.config_store import list_history
 
-    history = list_history(RUBRIC_CONFIG_KEY, limit=1)
+    history = list_history(config_key, limit=1)
     if not history:
         return None
     latest = history[0]
@@ -111,33 +111,49 @@ async def run_weekly_prompt_governance() -> None:
         )
         sections.extend(f"　{ln}" for ln in _violated_lines(audit_out)[:6])
 
-        # 2) 最新 rubric 切替の合否
-        latest = _latest_rubric_cutover()
-        if latest is None:
-            sections.append("⏳ rubric 切替検証: 版履歴を読めず未実施")
-            worst_exit = max(worst_exit, 2)
-        else:
+        # 2) 管理対象プロンプトの最新切替 (registry に自動追従)
+        #
+        # ⚠ 統計検証 (verify_prompt_cutover) は **summarizer のみ**。指標が articles
+        # (summarizer 出力) の充足率なので、他プロンプトの切替に流すと帰属が壊れる。
+        # block 系 (status_synthesis 等、1 run/日) は標本が構造的に不足するため、
+        # golden (seed=legacy byte 一致) + 保存時 render 検証 + 版履歴で担保し、
+        # ここでは最新版の存在だけを正直に報告する。
+        from src.prompts.registry import all_specs
+
+        for spec in all_specs():
+            latest = _latest_cutover(spec.config_key)
+            if latest is None:
+                sections.append(f"⏳ {spec.prompt_id}: 版履歴なし (seed 未投入?)")
+                worst_exit = max(worst_exit, 2)
+                continue
             version, cutover = latest
+            if spec.prompt_id != "summarizer":
+                sections.append(
+                    f"ℹ️ {spec.prompt_id}: v{version} (統計検証は対象外 — 版履歴/golden で担保)"
+                )
+                continue
             days = clamp_window_days(datetime.now(UTC), cutover)
             if days is None:
-                sections.append(f"⏳ rubric 切替検証: v{version} は切替後 1 日未満 — 次週判定")
-            else:
-                cutover_iso = cutover.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-                verify_exit, verify_out = await _run_script(
-                    [
-                        "scripts.verify_prompt_cutover",
-                        "--cutover",
-                        cutover_iso,
-                        "--days",
-                        str(days),
-                    ]
-                )
-                worst_exit = max(worst_exit, verify_exit if verify_exit in (0, 1, 2) else 1)
                 sections.append(
-                    f"{_STATUS_ICON.get(verify_exit, '🔴')} rubric 切替検証 "
-                    f"(v{version}, {days} 日窓): "
-                    f"{_summary_line(verify_out, prefix='総合判定:')}"
+                    f"⏳ {spec.prompt_id} 切替検証: v{version} は切替後 1 日未満 — 次週判定"
                 )
+                continue
+            cutover_iso = cutover.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            verify_exit, verify_out = await _run_script(
+                [
+                    "scripts.verify_prompt_cutover",
+                    "--cutover",
+                    cutover_iso,
+                    "--days",
+                    str(days),
+                ]
+            )
+            worst_exit = max(worst_exit, verify_exit if verify_exit in (0, 1, 2) else 1)
+            sections.append(
+                f"{_STATUS_ICON.get(verify_exit, '🔴')} {spec.prompt_id} 切替検証 "
+                f"(v{version}, {days} 日窓): "
+                f"{_summary_line(verify_out, prefix='総合判定:')}"
+            )
 
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]
