@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from src.cti.admin1_normalizer import normalize_admin1_key
 from src.cti.taxonomy_normalizer import TaxonomyNormalizer, load_normalizer
 from src.logging_config import get_logger
 
@@ -28,6 +29,7 @@ class GeoPrecision(StrEnum):
     FACILITY = "facility"  # 施設名一致 (最精密、鋭いピン)
     ORG_HQ = "org_hq"  # 組織本社 (代理点、"本社" と明示)
     CITY = "city"  # 都市
+    ADMIN1 = "admin1"  # 州・県 (州内最大都市を代表点にする。都市より粗い)
     COUNTRY = "country"  # 国 (国スケール事象 or 詳細不明 → 国バブル)
     REGION = "region"  # 地域 (地政事象等)
 
@@ -343,6 +345,37 @@ class Geocoder:
         if c is None:
             return None
         return GeoPoint(c[0], c[1], GeoPrecision.REGION, region_id.strip().lower(), "centroid")
+
+    def admin1(self, con: object, name: str | None, country_iso: str | None) -> GeoPoint | None:
+        """州・県名 + 国 ISO → 州の代表点 (``geo_admin1`` を引く)。
+
+        2026-08-19: victim_city の 39% (247 中 97 件) が Minnesota / カリフォルニア州 /
+        徳島県 のような **州・県** で、都市 gazetteer を引けず地図に出ていなかった。
+        ⚠ 判定基準は「所在都市 / **地域**」と書き例に「カリフォルニア州」を挙げている
+        ため、**LLM は指示どおり**。受け手側で解決する。
+
+        ⚠ 代表点は州都ではなく **州内最大人口都市**。州スケールの事象を 1 点で示す
+        用途では同等に使えるが、都市 tier より粗いことを precision で明示する。
+        """
+        if not name or not name.strip() or not country_iso or not country_iso.strip():
+            return None
+        key = normalize_admin1_key(name, country_iso)
+        if not key:
+            return None
+        cc = country_iso.strip().upper()
+        try:
+            row = con.execute(  # type: ignore[attr-defined]
+                "SELECT lat, lon FROM geo_admin1 WHERE country_code=? AND name_lower=?",
+                (cc, key),
+            ).fetchone()
+        except Exception as e:  # noqa: BLE001 — gazetteer 未取込でも地図を壊さない
+            _log.debug("geo_admin1_lookup_failed", error=str(e))
+            return None
+        if row is None:
+            return None
+        return GeoPoint(
+            float(row["lat"]), float(row["lon"]), GeoPrecision.ADMIN1, name.strip(), "geonames"
+        )
 
     def city(self, con: object, name: str | None, country_iso: str | None) -> GeoPoint | None:
         """都市名 + 国 ISO → 都市代表点 (GeoNames gazetteer ``geo_cities`` を引く)。
