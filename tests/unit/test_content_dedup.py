@@ -310,3 +310,77 @@ class TestAdvisoryIdDedup:
             candidate_article_id="followup",
         )
         assert dup is None
+
+
+class TestAdvisoryIdMismatchRaisesTheBar:
+    """別の advisory id を持つ記事は、語り口の一致では畳まない (2026-08-19)。
+
+    advisory は「〜における複数の脆弱性」のような定型文が支配的で、製品が違っても
+    Jaccard 0.4 を超える。実測で JVN iPedia の 79% (22/28)、JPCERT 注意喚起の
+    67% (10/15) が重複落選していた。
+    ⚠ ただし **id 不一致 = 別物とは断定しない** — JVN → 翌日 JVNDB 再掲は id が
+    変わるのに同一の脆弱性。要求水準を「ほぼ同一タイトル」へ引き上げる形にする。
+    """
+
+    def test_different_ids_with_boilerplate_titles_are_kept(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """定型文の重なりだけでは畳まない (別製品の別 advisory)。"""
+        _seed(
+            repo,
+            article_id="jvn-hitachi",
+            title="Hitachi 製品における複数の脆弱性",
+            feed_title="JVN (English)",
+            hours_ago=3.0,
+            url="https://jvn.jp/en/jp/JVN91713656/",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="Siemens 製品における複数の脆弱性",
+            url="https://jvndb.jvn.jp/en/contents/2026/JVNDB-2026-000123.html",
+            candidate_article_id="jvndb-siemens",
+        )
+
+        assert dup is None, "別 advisory id なのに定型文の重なりで畳まれた"
+
+    def test_same_id_across_languages_still_deduped(self, repo: RunHistoryRepository) -> None:
+        """id 一致は従来どおり強制 dedup (日英ペア)。"""
+        _seed(
+            repo,
+            article_id="jvn-en",
+            title="Multiple vulnerabilities in ACME router",
+            feed_title="JVN (English)",
+            hours_ago=2.0,
+            url="https://jvn.jp/en/vu/JVNVU98759887/",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="ACME ルータにおける複数の脆弱性",
+            url="https://jvn.jp/vu/JVNVU98759887/",
+            candidate_article_id="jvn-ja",
+        )
+
+        assert dup is not None
+        assert dup.article_id == "jvn-en"
+
+    def test_articles_without_ids_are_unaffected(self, repo: RunHistoryRepository) -> None:
+        """id を持たない一般記事の判定は変えない (適用範囲外)。"""
+        _seed(
+            repo,
+            article_id="news-a",
+            title="Cl0p exploits Windchill vulnerability to steal data",
+            feed_title="Help Net Security",
+            hours_ago=2.0,
+            url="https://example.com/a",
+        )
+
+        dup = find_recent_content_duplicate(
+            repo=repo,
+            title="Cl0p exploits Windchill vulnerability to steal customer data",
+            url="https://other.example/b",
+            candidate_article_id="news-b",
+        )
+
+        assert dup is not None

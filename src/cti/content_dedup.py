@@ -48,6 +48,11 @@ _CVE_RE = re.compile(r"cve[- ]?(\d{4})[- ]?(\d{4,7})", re.IGNORECASE)
 # 日英別タイトルになるため、URL 中のこの id が唯一の決定論的同一性キー。
 _JVN_VU_RE = re.compile(r"jvn(vu|ta)[#＃]?(\d{8})", re.IGNORECASE)
 _JVNDB_RE = re.compile(r"jvndb-(\d{4})-(\d{6})", re.IGNORECASE)
+# 素の JVN 番号 (jvn.jp/jp/JVN00941257/ · jvn.jp/en/jp/JVN00941257/ · タイトルの JVN#00941257)。
+# ⚠ 実データで最多の形式なのに 2026-08-19 まで抽出対象外だった — VU/TA/DB だけを見ており、
+# そのため advisory 同士の id 比較が事実上働いていなかった。
+# ⚠ ``jvnvu``/``jvnta``/``jvndb`` を巻き込まないよう、直後が数字のものだけを拾う。
+_JVN_PLAIN_RE = re.compile(r"jvn[#＃]?(\d{8})(?!\d)", re.IGNORECASE)
 # 日付パターン (signature から除外、年/月/日 Japanese 表記限定で false-positive 回避)
 _DATE_RE = re.compile(r"\(?\d{4}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?\)?")
 # 句読点・記号
@@ -332,6 +337,8 @@ def extract_advisory_ids(url: str, title: str, summary: str = "") -> frozenset[s
         tokens.add(f"jvn{m.group(1).lower()}-{m.group(2)}")
     for m in _JVNDB_RE.finditer(raw):
         tokens.add(f"jvndb-{m.group(1)}-{m.group(2)}")
+    for m in _JVN_PLAIN_RE.finditer(raw):
+        tokens.add(f"jvn-{m.group(1)}")
     return frozenset(tokens)
 
 
@@ -433,6 +440,16 @@ def find_recent_content_duplicate(
         effective_threshold = (
             jaccard_threshold if within_normal_window else IDENTITY_JACCARD_THRESHOLD
         )
+        # ⚠ **両者が別の advisory id を持つなら、語り口の一致では畳まない** (2026-08-19)。
+        # advisory は「〜における複数の脆弱性」のような定型文が支配的で、製品が違っても
+        # Jaccard 0.4 を超える。実測で JVN iPedia の 79% (22/28)、JPCERT 注意喚起の
+        # 67% (10/15) が重複落選し、別 JVN 番号の JVNDB が別 ID の JVN に潰されていた。
+        # ⚠ ただし **id 不一致 = 別物とは断定しない** — JVN → 翌日 JVNDB 再掲は id が
+        # 変わるのに同一の脆弱性 (ELECOM 実事例、07-28→07-29)。そこで「別物と断定」
+        # ではなく **要求水準をほぼ同一タイトルまで引き上げる** 形にする。
+        ids_old = extract_advisory_ids(art.url or "", art.title or "")
+        if ids_new and ids_old and not (ids_new & ids_old):
+            effective_threshold = max(effective_threshold, IDENTITY_JACCARD_THRESHOLD)
         if score >= effective_threshold and score > best_score:
             best_score = score
             best = art
