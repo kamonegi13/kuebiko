@@ -189,6 +189,15 @@ def _malware_vocab_knows(name: str) -> bool:
         return False
 
 
+def _ai_platform_vocab_knows(name: str) -> bool:
+    try:
+        from src.cti.malware_normalizer import load_malware_normalizer
+
+        return load_malware_normalizer().is_ai_platform(name)
+    except Exception:  # noqa: BLE001 — 語彙欠落で harvest 自体は殺さない
+        return False
+
+
 def is_known_non_actor(key: str, registry: ActorAliasRegistry | None = None) -> bool:
     """正規化済み候補 key が「アクターではない」と決定論判定できるか (純粋関数)。
 
@@ -199,6 +208,12 @@ def is_known_non_actor(key: str, registry: ActorAliasRegistry | None = None) -> 
     if key in _NON_ACTOR_TOKENS or key in _KNOWN_NON_ACTOR_NAMES:
         return True
     if _malware_vocab_knows(key):
+        return True
+    # 正規 AI 製品名 (ai_platform_drop の関門を語彙側でも共有、2026-08-19)。
+    # _KNOWN_NON_ACTOR_NAMES の完全一致は「claudeエージェント」のような日本語複合語を
+    # 素通りさせた (実例、article_entities 2026-08-19)。is_ai_platform の collapse key は
+    # 非英数字を落とすため「claudeエージェント」→ claude で前方一致に掛かる。
+    if _ai_platform_vocab_knows(key):
         return True
     if registry is not None:
         stripped = _VERSION_SUFFIX_RE.sub("", key).strip()

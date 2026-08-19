@@ -246,6 +246,18 @@ class TestGeopoliticalNoiseBeyondEnglish:
         assert is_known_non_actor("tucker carlson")
         assert is_known_non_actor("maria zakharova")
 
+    def test_ai_platform_names_including_japanese_compounds(self) -> None:
+        """正規 AI 製品名は日本語複合語形でも弾く (2026-08-19)。
+
+        _KNOWN_NON_ACTOR_NAMES の完全一致は「claudeエージェント」を素通りさせた (実例)。
+        ai_platform_drop の collapse key (非英数字を落とす) を語彙側でも共有して塞ぐ。
+        """
+        assert is_known_non_actor("claudeエージェント")
+        assert is_known_non_actor("claude code")
+        assert is_known_non_actor("deepseek-v4-pro")
+        # ⚠ 悪性 LLM サービスは攻撃側の実体なので候補に残す
+        assert not is_known_non_actor("wormgpt")
+
     def test_party_and_vulnerability_nicknames(self) -> None:
         """承認キューの人手判断で却下した 4 件 (2026-08-19)。
 
