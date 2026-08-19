@@ -162,7 +162,11 @@ METRICS: tuple[FillMetric, ...] = (
         "victim_sector",
         "a.victim_sector_canonical IS NOT NULL"
         " AND a.victim_sector_canonical NOT IN ('', 'uncategorized')",
-        _CYBER,
+        # 2026-08-19: _CYBER → _CYBER_EVENT。advisory 8 件精読で全件がベンダパッチ告知で
+        # 被害組織の概念が構造的に無い (advisory 23.1% / vulnerability 12.1% が全体を
+        # 51.3% まで希釈、実質母集団では 67.8%)。compromise_date と同型の是正。
+        # ⚠ victim_country / victim_org は同型の疑いがあるが実測してから (外形から推定しない)。
+        _CYBER_EVENT,
     ),
     FillMetric("ent_actor", "actor", _entity_cond("actor"), _CYBER),
     FillMetric("ent_cve", "cve", _entity_cond("cve"), _VULN),

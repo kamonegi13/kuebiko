@@ -643,8 +643,14 @@ def _victim_fields(ctx: _Ctx) -> dict[str, dict[str, Any]]:
         "victim_sector": _stat(
             "victim_sector",
             source_note="articles.victim_sector_canonical",
-            notes=["正規化辞書に無い分野は uncategorized として未充足に数えます。"],
-            coverage=_coverage(ctx.n("n_victim_sector"), cyber, _SCOPE_LABEL_CYBER),
+            notes=[
+                "正規化辞書に無い分野は uncategorized として未充足に数えます。",
+                "分母は侵入事案系 (advisory/vulnerability のパッチ告知には被害組織の"
+                "概念が構造的に無いため。2026-08-19、compromise_date と同型)。",
+            ],
+            coverage=_coverage(
+                ctx.n("n_victim_sector"), ctx.n("n_cyber_event"), _SCOPE_LABEL_CYBER_EVENT
+            ),
             distribution=sector_top,
         ),
         "victim_city": _entity_field(

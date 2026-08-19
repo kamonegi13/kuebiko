@@ -416,3 +416,26 @@ class TestCache:
 
         # Assert
         assert calls["n"] == 2
+
+
+class TestVictimSectorScope:
+    def test_victim_sector_excludes_patch_advisories_from_the_denominator(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """victim_sector の分母は侵入事案系 (2026-08-19)。
+
+        advisory 8 件精読で全件がベンダパッチ告知 = 被害組織の概念が構造的に無く、
+        advisory 23.1% / vulnerability 12.1% が全体を 51.3% まで希釈していた。
+        compromise_date で確立済みの是正 (COVERAGE_CYBER_EVENT) を横展開する。
+        """
+        # Arrange: breach 2 件 (1 件のみ sector あり) + advisory 1 件 (分母外)
+        _add(repo, article_id="b1", category="breach", victim_sector_canonical="energy")
+        _add(repo, article_id="b2", category="breach")
+        _add(repo, article_id="ad1", category="advisory")
+
+        # Act
+        stats = build_field_stats(7, db_path=repo.db_path)
+
+        # Assert: advisory は分母に入らない
+        cov = _field(stats, "victim_sector")["coverage"]
+        assert (cov["filled"], cov["total"], cov["rate"]) == (1, 2, 0.5)
