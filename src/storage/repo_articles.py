@@ -548,7 +548,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "  (body IS NULL AND (body_source IS NULL OR body_source <> 'blocked') "
             # 'none' は「未取得」と「purge 済」の両方を指すため、purge され得ない
             # retention 期間内のものだけ再取得する (古い purge 済を掘り起こさない)。
-            "   AND (body_source <> 'none' OR created_at >= datetime('now', ?))) "
+            "   AND (body_source <> 'none' OR datetime(created_at) >= datetime('now', ?))) "
             "  OR (body_source='feed_summary' AND ("
             "       extraction_failure_reason IS NULL "
             f"       OR extraction_failure_reason NOT IN ({perm_ph})"  # noqa: S608
@@ -636,6 +636,11 @@ class ArticlesMixin(RunHistoryRepositoryBase):
 
         ch 横断 dedup の判定用 (Phase 5L-4)。投稿失敗 / dedup 自体での skip は
         対象外 (失敗側はリトライ余地、skip 側は重ねて抑制不要)。
+
+        ⚠ created_at は datetime() で正規化してから比較する (2026-08-19)。SQLite の
+        保存値は isoformat ('T' 区切り)、datetime('now', ?) は空白区切りを返すため、
+        生の文字列比較だと境界日の行が 'T' > ' ' で窓の外まで一致する (dev/tests のみ。
+        production PG は translate_sql が timestamptz 比較に落とすため無関係)。
         """
         if not dedup_key:
             return None
@@ -645,7 +650,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 SELECT * FROM articles
                  WHERE dedup_key = ?
                    AND status = 'posted'
-                   AND created_at >= datetime('now', ?)
+                   AND datetime(created_at) >= datetime('now', ?)
                  ORDER BY created_at DESC
                  LIMIT 1
                 """,
