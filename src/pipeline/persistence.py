@@ -13,6 +13,7 @@ from src.cti.subject_actor import (
 from src.cti.subject_actor import (
     determine_subject_actors,
 )
+from src.cti.victim_org_filter import is_vendor_noise
 from src.logging_config import get_logger
 from src.storage.run_history import ArticleRecord, RunHistoryRepository
 from src.tools.article_model import Article
@@ -542,9 +543,18 @@ def _persist_article_entities(
     seen_vorg: set[str] = set()
     for org in msg.metadata.get("victim_orgs", []) or []:
         v = str(org).strip()
-        if v and v.lower() not in seen_vorg:
-            seen_vorg.add(v.lower())
-            entities.append(("victim_org", v))
+        if not v or v.lower() in seen_vorg:
+            continue
+        # 判定基準は「ベンダ / ソフトメーカーを含めない」と明記しているが、30 日実測で
+        # Google 19 / Microsoft 17 / Cisco 6 等 49 件が混入し、地図と被害国 KPI に
+        # 偽の点を出していた (バグバウンティの報奨金記事・製品対応記事)。
+        # ⭐ 指示では止まらないので決定論で遮断する。
+        # ⚠ category が breach/incident なら遮断しない = ベンダ自身の侵害記事は残す。
+        if is_vendor_noise(v, msg.category):
+            _log.info("victim_org_vendor_filtered", value=v, category=msg.category)
+            continue
+        seen_vorg.add(v.lower())
+        entities.append(("victim_org", v))
 
     # #7 (geo-map 精密化): victim_city (被害組織の所在都市、明示時のみ)。都市レベル geocode の対象。
     _vcity = str(msg.metadata.get("victim_city", "") or "").strip()

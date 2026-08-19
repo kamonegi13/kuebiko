@@ -1,4 +1,8 @@
-"""victim_org の AI ベンダ汚染掃除 (監査 2026-08-01 ⑦)。
+"""victim_org のベンダ汚染掃除 (監査 2026-08-01 ⑦ / 2026-08-19 拡張)。
+
+⚠ 2026-08-19: denylist と保護 category を ``src.cti.victim_org_filter`` へ移し、
+**取込 filter (persistence) と同じ SSoT** を使うようにした。旧版は AI ベンダ限定で、
+一般 IT ベンダ (Google 19 / Microsoft 17 / Cisco 6 件) が素通りしていた。
 
 AI 記事 (prompt injection / jailbreak / モデル汚染の研究・解説) で OpenAI/Anthropic/
 Hugging Face 等が「被害組織」として抽出され、victim 台帳と地図 (組織本社 tier の偽点)
@@ -16,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 
+from src.cti.victim_org_filter import PROTECTED_CATEGORIES, is_vendor_noise
 from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 
@@ -25,42 +30,23 @@ _BACKUP = "_backup_victim_org_purge_20260801"
 
 # AI プラットフォーム/ベンダ (小文字比較)。「製品への攻撃手法の記事」で victim 扱い
 # される常連。実侵害の可能性がある行は category 条件で保護するため、列挙は攻めてよい。
-_AI_VENDOR_DENYLIST: frozenset[str] = frozenset(
-    {
-        "openai",
-        "anthropic",
-        "hugging face",
-        "huggingface",
-        "google deepmind",
-        "deepmind",
-        "meta ai",
-        "mistral",
-        "mistral ai",
-        "cohere",
-        "stability ai",
-        "xai",
-        "perplexity",
-        "perplexity ai",
-    }
-)
-# 実被害の可能性があるため掃除対象から除外する category
-_PROTECTED_CATEGORIES = ("breach", "incident")
 
 
 def _run(apply: bool, repo: RunHistoryRepository | None = None) -> None:
     repo = repo if repo is not None else RunHistoryRepository()
     mode = "APPLY" if apply else "DRY-RUN"
     with repo._connect() as con:  # noqa: SLF001 — 修復スクリプト
-        prot_ph = ",".join("?" for _ in _PROTECTED_CATEGORIES)
+        protected = tuple(sorted(PROTECTED_CATEGORIES))
+        prot_ph = ",".join("?" for _ in protected)
         rows = con.execute(
             "SELECT ae.id AS eid, ae.value, a.category, a.title, a.article_id"
             " FROM article_entities ae JOIN articles a ON a.article_id = ae.article_id"
             " WHERE ae.entity_type='victim_org'"
             f" AND (a.category IS NULL OR a.category NOT IN ({prot_ph}))",
-            list(_PROTECTED_CATEGORIES),
+            list(protected),
         ).fetchall()
-        targets = [r for r in rows if str(r["value"]).strip().lower() in _AI_VENDOR_DENYLIST]
-        print(f"\n=== victim_org AI ベンダ掃除 ({mode}) — breach/incident は保護 ===")
+        targets = [r for r in rows if is_vendor_noise(str(r["value"]), str(r["category"] or ""))]
+        print(f"\n=== victim_org ベンダ掃除 ({mode}) — breach/incident は保護 ===")
         print(f"対象 {len(targets)} 行:")
         for r in targets:
             print(f"  [{r['category']}] {r['value']:20} | {str(r['title'])[:60]}")
