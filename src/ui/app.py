@@ -260,6 +260,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
     from src.ui.services.cvss_refresh import run_cvss_refresh
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
     from src.ui.services.maintenance import run_daily_maintenance
+    from src.ui.services.prompt_governance import run_weekly_prompt_governance
     from src.ui.services.source_health import run_daily_heartbeat
     from src.ui.services.ua_health import run_ua_health_check
 
@@ -280,6 +281,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "daily-maintenance": run_daily_maintenance,
         "daily-heartbeat": run_daily_heartbeat,
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
+        "weekly-prompt-governance": run_weekly_prompt_governance,
         "actor-history-distill": run_actor_history_distill,
         "job-recovery-watchdog": _job_recovery,
     }

@@ -494,6 +494,26 @@ def default_jobs() -> list[JobDef]:
             minute=10,
         ),
         JobDef(
+            id="weekly-prompt-governance",
+            kind="bespoke",
+            title="プロンプト統治 週次監査",
+            description=(
+                "判定基準の禁止事項が実データで守られているか (audit_prompt_prohibitions) と、"
+                "最新 rubric 切替の合否 (verify_prompt_cutover、窓の純度ゲート込み) を"
+                "週次で検査し ops へ 1 通投稿する (LLM 不使用の決定論)。"
+            ),
+            disable_impact=(
+                "禁止事項の関門漏れ (victim_org ベンダ混入型) と rubric 切替の劣化を"
+                "手動実行しない限り誰も見なくなる。"
+            ),
+            protection="important",
+            schedule_type="cron",
+            day_of_week="mon",
+            hour=8,
+            minute=20,  # weekly-fill-rate-audit (08:10) に続く月曜朝の ops 監査クラスタ
+            max_runtime_minutes=10,
+        ),
+        JobDef(
             id="actor-history-distill",
             kind="bespoke",
             title="アクター行動史 月次蒸留",
