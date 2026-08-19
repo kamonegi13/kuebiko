@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict
 from src.logging_config import get_logger
 from src.tools.fetch_policy import BLOCK_ESCALATION_STATUSES, looks_like_js_challenge
 from src.tools.pdf_text import extract_pdf_text, looks_like_pdf
-from src.tools.text_sanitizer import title_similarity
+from src.tools.text_sanitizer import dominant_script, title_similarity
 from src.tools.url_guard import (
     UnsafeUrlError,
     assert_safe_public_url,
@@ -629,12 +629,21 @@ def check_extracted_identity(
     """
     if not result.success or not result.title or not expected_title:
         return None
+    # 文字種が違うタイトル対 (韓国語ページ vs 日本語 RSS 等) は n-gram では常に 0 点で
+    # 「別記事混入」と区別できない — 初日実測で警告の大半がこの型の誤検知だった。
+    # 測れないものは「判定材料なし」に倒す (0 点の偽警告で真の混入を埋もれさせない)。
+    if dominant_script(result.title) != dominant_script(expected_title):
+        return None
     similarity = title_similarity(result.title, expected_title)
     if similarity < MIN_TITLE_SIMILARITY:
+        # 目視検証のため両タイトルを残す (初日は数値のみで毎回 DB 遡及が必要だった)。
+        # タイトルは配信文面に既に出る情報で §4 の機密には当たらない。80 字で切る。
         _log.warning(
             "extracted_body_title_mismatch",
             article_id=article_id,
             url=result.url,
             similarity=round(similarity, 3),
+            extracted_title=result.title[:80],
+            expected_title=expected_title[:80],
         )
     return similarity

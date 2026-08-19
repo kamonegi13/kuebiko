@@ -20,6 +20,7 @@ from src.tools.content_extractor import (
     _extract_html_lang,
     _looks_like_paywall,
     _parse_iso_date,
+    check_extracted_identity,
 )
 
 # ---------- ヘルパ ----------
@@ -326,3 +327,53 @@ class TestPoolReuse:
 
         assert all(r.success for r in results)
         assert call_count == 3
+
+
+class TestCheckExtractedIdentity:
+    """抽出本文の同一性計測 (記録のみ、2026-08-18 導入 / 08-19 に文字種横断を除外)。"""
+
+    def test_same_language_mismatch_is_measured(self) -> None:
+        # Arrange: 同一文字種で全く別のタイトル (真の別記事混入の型)
+        r = ExtractionResult(
+            url="https://kuebiko.example/a",
+            success=True,
+            text="body",
+            title="Open Secure AI Alliance launches new framework",
+        )
+
+        # Act
+        score = check_extracted_identity(r, "Self-replicating worm hits npm packages")
+
+        # Assert: 低スコアが返り、観測に乗る
+        assert score is not None and score < 0.30
+
+    def test_cross_script_titles_are_not_judged(self) -> None:
+        """文字種が違う対は 0 点でなく None (判定材料なし)。
+
+        初日実測で警告 15 件の抜き取り 4 件中 3 件が「韓国語ページ title vs 日本語
+        RSS title」型の誤検知だった。n-gram は文字種を跨いで測れない — 測れないものを
+        0 点にすると偽警告が真の混入を埋もれさせる。
+        """
+        r = ExtractionResult(
+            url="https://kuebiko.example/kr",
+            success=True,
+            text="body",
+            title="보안 업데이트 권고",  # 韓国語ページの title
+        )
+
+        # Act / Assert
+        assert check_extracted_identity(r, "マイクロソフト月例セキュリティ更新の注意喚起") is None
+
+    def test_matching_titles_score_high(self) -> None:
+        r = ExtractionResult(
+            url="https://kuebiko.example/ok",
+            success=True,
+            text="body",
+            title="Critical RCE in Apache HTTP/2 | Example News",
+        )
+        score = check_extracted_identity(r, "Critical RCE in Apache HTTP/2")
+        assert score is not None and score > 0.9
+
+    def test_no_material_returns_none(self) -> None:
+        r = ExtractionResult(url="https://kuebiko.example/x", success=True, text="body", title="")
+        assert check_extracted_identity(r, "何か") is None

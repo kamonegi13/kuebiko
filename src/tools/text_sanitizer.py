@@ -128,6 +128,33 @@ def _char_ngrams(text: str, n: int = _TITLE_NGRAM) -> set[str]:
     return {compact[i : i + n] for i in range(len(compact) - n + 1)}
 
 
+# 文字種の大分類 (dominant script 判定用)。同一性比較は文字 n-gram なので、
+# 文字種が違う 2 タイトル (韓国語ページ title vs 日本語 RSS title 等) は常に 0 点に
+# なり「別記事混入」と区別できない。初日実測 (2026-08-19、警告 15 件の抜き取り 4 件中
+# 3 件) がこの型の誤検知だった — 測れないものは測れないと言う (None)。
+_SCRIPT_RANGES: tuple[tuple[str, int, int], ...] = (
+    ("latin", 0x0041, 0x024F),
+    ("cyrillic", 0x0400, 0x04FF),
+    ("hangul", 0xAC00, 0xD7AF),
+    ("cjk", 0x3040, 0x30FF),  # ひらがな・カタカナ
+    ("cjk", 0x4E00, 0x9FFF),  # 漢字 (日中共用のため hangul と別枠)
+)
+
+
+def dominant_script(text: str | None) -> str | None:
+    """タイトルの主要文字種 (latin/cyrillic/hangul/cjk)。判定不能 (記号のみ等) は None。"""
+    counts: dict[str, int] = {}
+    for ch in text or "":
+        code = ord(ch)
+        for name, lo, hi in _SCRIPT_RANGES:
+            if lo <= code <= hi:
+                counts[name] = counts.get(name, 0) + 1
+                break
+    if not counts:
+        return None
+    return max(counts, key=lambda k: counts[k])
+
+
 def title_similarity(a: str | None, b: str | None) -> float:
     """2 つのタイトルの近さ (0.0-1.0)。短い側を分母にする包含率。
 

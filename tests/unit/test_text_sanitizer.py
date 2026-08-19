@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.tools.text_sanitizer import (
     cut_json_tail,
+    dominant_script,
     has_html_residue,
     has_json_tail,
     sanitize_for_display,
@@ -155,3 +156,27 @@ class TestTitleSimilarity:
         """判定材料が無いのを「一致」と誤らせない (呼び出し側が None 扱いにする)。"""
         assert title_similarity("", "something") == 0.0
         assert title_similarity(None, None) == 0.0
+
+
+class TestDominantScript:
+    """文字種の主要判定 (2026-08-19)。
+
+    同一性比較は文字 n-gram のため、文字種が違うタイトル対は常に 0 点になり
+    「別記事混入」と区別できない。初日実測で警告の大半 (抜き取り 4 件中 3 件) が
+    この型の誤検知だった — 検出器側で「判定材料なし」に倒すための部品。
+    """
+
+    def test_classifies_each_major_script(self) -> None:
+        assert dominant_script("Critical RCE in Apache") == "latin"
+        assert dominant_script("マイクロソフトが月例更新を公開") == "cjk"
+        assert dominant_script("보안 업데이트 권고") == "hangul"
+        assert dominant_script("Обновление безопасности") == "cyrillic"
+
+    def test_mixed_title_returns_the_majority_script(self) -> None:
+        # 日本語記事タイトルに英製品名が混ざる形が最頻 — cjk が勝つこと
+        assert dominant_script("Apache HTTP/2 の重大な脆弱性、悪用が進行中") == "cjk"
+
+    def test_symbols_only_or_empty_is_none(self) -> None:
+        assert dominant_script("2026-08-19 #1") is None
+        assert dominant_script("") is None
+        assert dominant_script(None) is None
