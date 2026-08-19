@@ -206,53 +206,21 @@ def _checks() -> list[Prohibition]:
             min_sample=100,
         ),
         Prohibition(
-            key="victim_org.non_cyber_category",
-            source="判定基準 victim_orgs (research/policy/geopolitical では原則 [])",
-            forbids="非サイバーカテゴリの記事に victim_org を付けない",
-            # ⚠ 関門を意図的に置いていない (2026-08-19 判断): サンプル 25 件目視の中身は
-            # 制裁対象・監査対象大学・ドローン攻撃先などで、entity 情報としては実在の価値が
-            # ある。地図・被害国 KPI は消費側が CYBER_ATTACK_EVENTS で絞っており守られて
-            # いる。この行の VIOLATED は「rubric の指示と LLM の実挙動の乖離」の観測で、
-            # 対処は 関門化 or rubric 側の緩和 のどちらか (利用者判断待ち)。
-            gate="— (消費側 filter で地図は保護済み。関門化 or rubric 緩和は判断待ち)",
-            since="2026-08-19",
-            sql=(
-                "SELECT count(*) n, count(*) FILTER (WHERE EXISTS ("
-                "SELECT 1 FROM article_entities ae WHERE ae.article_id=a.article_id"
-                " AND ae.entity_type='victim_org')) v"
-                " FROM articles a WHERE a.category IN ('geopolitical','policy','research')"
-                " AND a.created_at >= '2026-08-19'"
-            ),
-            min_sample=100,
-        ),
-        Prohibition(
-            key="victim_sector.non_cyber_category",
-            source="判定基準 victim_sector (research/policy/geopolitical は原則 null)",
-            forbids="非サイバーカテゴリの記事に victim_sector を付けない",
-            gate="— (victim_org.non_cyber_category と同じ判断待ち)",
-            since="2026-08-19",
-            sql=(
-                "SELECT count(*) n, count(*) FILTER (WHERE victim_sector_canonical IS NOT NULL"
-                " AND victim_sector_canonical NOT IN ('', 'uncategorized')) v"
-                " FROM articles WHERE category IN ('geopolitical','policy','research')"
-                " AND created_at >= '2026-08-19'"
-            ),
-            min_sample=100,
-        ),
-        Prohibition(
-            key="involved_country.cyber_category",
-            source="判定基準 involved_countries (サイバー事案では [])",
-            forbids="サイバー事案の記事に involved_country を付けない (victim_country を使う)",
+            key="involved_country.single_cyber",
+            source="判定基準 involved_countries v5 (サイバー事案は多国被害の列挙のみ可)",
+            forbids="サイバー事案で被害国 1 か国だけを involved_countries に書かない",
+            # v5 (2026-08-19T21:25Z) で「多国被害の列挙のみ許可」に緩和した。単一国の列挙は
+            # victim_country の重複 = 引き続き違反として測れる。攻撃側国籍の混入はアクター
+            # 帰属との突合が要り機械判定できない (目録の判断系に降格)。
             gate="—",
-            # 2026-08-18 = required 化 + rubric v4 で involved_countries が実供給され始めた日
-            since="2026-08-18",
+            since="2026-08-19T21:25Z (rubric v5)",
             sql=(
-                "SELECT count(*) n, count(*) FILTER (WHERE EXISTS ("
-                "SELECT 1 FROM article_entities ae WHERE ae.article_id=a.article_id"
-                " AND ae.entity_type='involved_country')) v"
+                "SELECT count(*) n, count(*) FILTER (WHERE ("
+                "SELECT count(*) FROM article_entities ae WHERE ae.article_id=a.article_id"
+                " AND ae.entity_type='involved_country') = 1) v"
                 " FROM articles a WHERE a.category IN"
                 " ('breach','incident','apt','malware','vulnerability','advisory','apt_leak')"
-                " AND a.created_at >= '2026-08-18'"
+                " AND a.created_at >= '2026-08-19T21:25:34Z'"
             ),
             min_sample=200,
         ),
