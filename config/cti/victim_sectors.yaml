@@ -106,6 +106,7 @@ canonical:
   critical_infra:
     display: 重要インフラ
     aliases:
+      - "水道インフラ"
       - 重要インフラ
       - critical_infrastructure
       - critical infrastructure
@@ -123,6 +124,9 @@ canonical:
       - 海運
       - shipping
       - 上下水道
+      # 2026-08-20 taxonomy 提案 24/25 の意図を alias で実現 (water 系は critical_infra 配下が既存構造)
+      - 水道
+      - 水道・下水インフラ
       - web infrastructure
       - telecommunications and critical infrastructure
       - 交通
@@ -169,6 +173,7 @@ canonical:
   technology:
     display: IT
     aliases:
+      - "managed service providers"
       - "IoT infrastructure"
       - "AI infrastructure"
       - "AI/ML Infrastructure"
