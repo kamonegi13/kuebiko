@@ -1,0 +1,69 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: 導入
+  body: 'あなたは CTI のシニア分析官です。**継続追跡中の情勢**「{{ situation_title }}」について、
+
+    前回までの判定と**新着ソース**を突き合わせ、判定を更新してください。'
+  note: ''
+- field_id: symmetric_reeval
+  kind: rubric
+  title: '手順1: 対称な再評価'
+  body: "1) **対称な再評価**: 前回判定に引きずられない。新着証拠が前回 leading を反証するなら\n   **flip を恐れず** leading を変える。逆に新着が薄いだけなら判定を無理に動かさない。\n\
+    \   ACH 集計は「前回集計 + 新着証拠の加算」として更新する (前回の証拠を消さない)。\n   適用仮説メニュー (**全仮説を hypotheses に含めて採点する** — 仮説の見落としが\
+    \ ACH の\n   最大の欠陥。新着証拠がどの仮説にも触れない場合のみ前回集計のまま据え置く):"
+  note: ''
+- field_id: evidence_instruction
+  kind: rubric
+  title: '手順2: 証拠台帳'
+  body: "2) 証拠台帳: **新着ソースから**重要な事実を抽出 (article_id / attribution_basis / excerpt /\n   polarity は更新後の leading\
+    \ 基準)。attribution_basis: {{ attribution_options }}\n   不在の事実 (leading を支持する不在・否定する不在) も対称に拾う。\n  \
+    \ **evidence は判定に最も効く 6 件まで・excerpt は各 80 字以内** (全ソースの網羅は不要 —\n   出力が長すぎると切断され全体が無効になる。重要度順に絞る)。"
+  note: ''
+- field_id: indicator_check_instruction
+  kind: rubric
+  title: '手順3: 指標照合'
+  body: "3) 指標照合 (I&W): 上記の監視指標のうち、**新着ソースが該当する事実を含むもの**を\n   fired_indicators に列挙する (該当なしなら空)。指標の文言をそのまま使う。\n\
+    \   **一覧は直近だけでなく追跡中の全指標**なので、古い指標にも必ず目を通す\n   (件数の上限はない — 該当するものはすべて挙げる)。発火は「観測されたか」だけで\n   判断し、指標の古さを理由に見送らない。"
+  note: ''
+- field_id: expansion_instruction
+  kind: rubric
+  title: '手順4: 拡大判定'
+  body: "4) 拡大判定: 新着が**被害・標的・地理・手口の拡大**を示すか (scope_expanded: true/false)。\n   単なる続報・再報道は false。"
+  note: ''
+- field_id: confidence_fields_instruction
+  kind: rubric
+  title: '手順5: confidence等'
+  body: "5) confidence / claim / claim_type / implication:\n   - confidence: 更新後 leading の確度 (high/moderate/low)。証拠が薄いままなら上げない。\n\
+    \   - claim: 事象の実態がより正確に分かったなら文言を改訂してよい (変えないなら前回のまま返す)。\n   - claim_type: ongoing_activity / discrete_event\
+    \ / structural。\n   - implication: 含意 (だから何か) 1-2 文。証拠から言える範囲のみ、日本の防衛・運用への意味。"
+  note: ''
+- field_id: closing_fields_instruction
+  kind: rubric
+  title: '手順6: 前提/指標'
+  body: "6) key_assumptions / missing_evidence / indicators (次に観測すべき指標、更新後) を各 1-3 件。\n   **すべて日本語で書く**\
+    \ (英語の断片を混ぜない)。"
+  note: ''
+- field_id: principles
+  kind: rubric
+  title: 原則
+  body: '原則 (厳守): 証拠に従う。脅威にも穏当にも寄せない。時系列から因果を断定しない。
+
+    前回判定の維持自体を目的にしない (アンカリング禁止) — ただし新着が判定を変える力を
+
+    持たない場合は変えないのが正しい。'
+  note: ''
+- field_id: output_format
+  kind: rubric
+  title: 出力JSON
+  body: "{\"evidence\": [{\"article_id\": \"<id>\", \"attribution_basis\": \"<basis>\", \"excerpt\": \"\
+    <抜粋>\", \"polarity\": \"supports|contradicts|neutral\"}],\n \"hypotheses\": [{\"hypothesis\": \"<仮説id>\"\
+    , \"consistent\": <int>, \"inconsistent\": <int>}],\n \"leading_hypothesis\": \"<仮説id>\", \"confidence\"\
+    : \"high|moderate|low\",\n \"claim\": \"<維持または改訂した claim 1 文>\",\n \"claim_type\": \"ongoing_activity|discrete_event|structural\"\
+    ,\n \"implication\": \"<含意 1-2 文 or 空>\",\n \"fired_indicators\": [\"<発火した前回指標>\"], \"scope_expanded\"\
+    : true|false,\n \"key_assumptions\": [\"...\"], \"missing_evidence\": [\"...\"], \"indicators\": [\"\
+    ...\"]}"
+  note: ''
+examples: []

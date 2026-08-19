@@ -171,8 +171,17 @@ def build_prompt_environment(spec: PromptSpec, path: Path) -> jinja2.Environment
     """消費側と同一構成の Environment (差分ゼロが要件 — env_style で分岐)。"""
     if spec.env_style == "dispatch":
         return _dispatch_environment(path)
-    # synthesis: src/synthesis/generator.py の env と完全一致 (StrictUndefined 無し)
     prompts_root = path.parent.parent if path.parent.name != "prompts" else path.parent
+    if spec.env_style == "grounded":
+        # grounded: src/synthesis/grounded/passes.py._render の env と完全一致。
+        # synthesis との唯一の差分は StrictUndefined あり (未定義変数を沈黙させない) と
+        # keep_trailing_newline 無し。
+        return jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(prompts_root)),
+            autoescape=False,  # noqa: S701  プロンプトはテキストでありエスケープしない
+            undefined=jinja2.StrictUndefined,
+        )
+    # synthesis: src/synthesis/generator.py の env と完全一致 (StrictUndefined 無し)
     return jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(prompts_root)),
         autoescape=False,  # noqa: S701  プロンプトはテキストでありエスケープしない

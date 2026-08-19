@@ -1,0 +1,65 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: 導入
+  body: '下記は本期間 ({{ period_label }}) の**確定した情勢評価
+
+    (estimate)** です。継続追跡している情勢台帳の「何が新しく、何が変わり、何が続いているか」を
+
+    読みやすい状況総括に整形してください。'
+  note: ''
+- field_id: projection_constraint
+  kind: rubric
+  title: 射影の厳守事項
+  body: "**厳守 — これは射影であって再分析ではない**:\n- estimate に書かれた判定・確度・変化 (delta)・対立仮説のみを使う。**新しい主張・帰属・断定を\n  足さない**。掲載順・最重要判定はコードが決定済み\
+    \ — 順位を変えない。\n- 各判定の**確度を必ず言語化**する (高確度=「可能性が高い」、中確度=「可能性がある/〜とみられる」、\n  低確度=「確証はなく〜の可能性も否定できない」)。低確度の判定を確定事実のように書かない。\n\
+    - **確度語マッピングは headline を含む全セクションで厳守**。要約・見出しだからといって確度を\n  一段上げない。各見立ての確度語はその判定の confidence_ja と一致させる。\n\
+    - 反証 (adversarial) や対立仮説がある判定は、その不確実性を本文に残す。脅威にも穏当にも誇張しない。\n- 変化の理由は delta_note に書かれた事実のみを使う (時系列から因果を創作しない)。"
+  note: ''
+- field_id: sections_intro
+  kind: rubric
+  title: セクション指示の導入
+  body: '次の各セクションを日本語で書いてください (各 2-5 文、無ければ簡潔に「特記なし」):'
+  note: ''
+- field_id: headline_instruction
+  kind: rubric
+  title: headline 総則
+  body: "- headline: 朝刊の太字先頭行 (読者が最初に読む最重要の 1 行)。**2 文・100〜160 字\n  (下限重視 — claim の 1 文言い換えで切り上げない)**。確度語は指名判定の\
+    \ confidence_ja に一致。\n  headline は**世界について**書く。道具側の運用 (「追跡を開始した」「判定を開設」「台帳」等) と、\n  判定過程の説明 (ソース品質・本文のアクセス可否・証拠の欠落・「実証できない」等)\
+    \ は\n  headline に書かない — 確度は確度語 (「〜の可能性がある」等) だけで伝え、\n  その根拠は新規・変化セクション側で述べる。"
+  note: ''
+- field_id: headline_moved_guidance
+  kind: rubric
+  title: headline (moved)
+  body: "  1 文目 = 指名判定の**世界側の変化** (「〜が新たに報告された/確認された」「見立てが〜に\n  転換した」「動きが拡大している」など変化種別が分かる自然な日本語 + actor/標的/手段の固有名詞)。\n\
+    \  2 文目 = 含意またはリスク — 上に供給された含意・変化の内容の範囲内で「だから何か」を書く。\n  良例 (127 字): 「◯◯ランサムウェアの標的が重要インフラ部門へ拡大している動きを新たに確認した\n\
+    \  (金銭目的の犯罪である可能性が高い)。多部門への展開の速さから、国内の関連組織でも同種の侵入試行への\n  警戒を高めるべき局面にある。」"
+  note: ''
+- field_id: headline_quiet_guidance
+  kind: rubric
+  title: headline (quiet)
+  body: "  1 文目 = 本期間は**確度をもって報告できる大きな変化がない**ことを明示 (変化を創作しない。\n  未実証情報の新規追跡があっても headline では変化と扱わず、新規・変化セクションに委ねる)。\n\
+    \  2 文目 = 継続中の最重要判定 (指名判定) の要点と含意を確度語とともに述べる。"
+  note: ''
+- field_id: headline_plain_guidance
+  kind: rubric
+  title: headline (plain)
+  body: "  指名判定の要点 (actor/標的/手段) + 含意 + 確度を 2 文で。変化 (新規/転換/拡大 等) には\n  言及しない (本期間は変化情報が供給されていない — 「変化なし」とも主張しないこと)。"
+  note: ''
+- field_id: other_sections_guidance
+  kind: rubric
+  title: その他セクション
+  body: "- weight_section (新規・変化): 変化した判定を【新規】【転換】等の変化種別が分かる形で概観。\n  各判定 1-2 文、**なぜ変わったか (delta_note)\
+    \ を含める**。変化なしの日は継続判定の概観\n- chain_section (連鎖): 判定間の関係 (上の決定論導出) と事象間の関連 (証拠にある範囲のみ。\n  共有アクター/国家という事実を述べ、そこから因果を創作しない)\n\
+    - cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)\n- spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標\
+    \ / 今後の注視点\n  (推測は推測と明示)\n- pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形 (確度語維持)"
+  note: ''
+- field_id: output_format
+  kind: rubric
+  title: 出力JSON
+  body: "{\"headline\": \"...\", \"weight_section\": \"...\", \"chain_section\": \"...\", \"cog_section\"\
+    : \"...\",\n \"spillover_section\": \"...\", \"pir_section\": \"...\"}"
+  note: ''
+examples: []

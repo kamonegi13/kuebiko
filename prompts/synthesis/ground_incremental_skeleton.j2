@@ -1,0 +1,33 @@
+{# BLOCK: mission #}
+
+【前回までの判定】
+- claim: {{ prior.claim }}
+- claim_type: {{ prior.claim_type }}
+- leading 仮説: {{ prior.leading_hypothesis }} / 確度: {{ prior.confidence }}
+- ACH 集計: {% for h in prior.hypotheses %}{{ h.hypothesis }}(整合{{ h.consistent }}/反整合{{ h.inconsistent }}) {% endfor %}
+- 監視指標 (indicators, 追跡中の全件・新しい順): {% for i in prior.indicators %}「{{ i }}」 {% endfor %}
+{% if prior.key_excerpts %}- 既存の主要証拠抜粋:
+{% for e in prior.key_excerpts %}  - [{{ e.polarity }}] 「{{ e.excerpt }}」
+{% endfor %}{% endif %}
+
+【新着ソース本文】(今回の期間に新しく観測された記事のみ)
+{% for s in sources %}
+--- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+{{ s.text }}
+{% endfor %}
+
+【手順】
+{# BLOCK: symmetric_reeval #}
+{% for h in hypotheses %}
+   - {{ h.id }} ({{ h.label }}): {{ h.description }}
+{% endfor %}
+{# BLOCK: evidence_instruction #}
+{# BLOCK: indicator_check_instruction #}
+{# BLOCK: expansion_instruction #}
+{# BLOCK: confidence_fields_instruction #}
+{# BLOCK: closing_fields_instruction #}
+
+{# BLOCK: principles #}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

@@ -31,7 +31,10 @@ class TestCatalogCompleteness:
         # +status_synthesis_skeleton (層分け 2 本目 2026-08-20)
         # +weekly_recap_skeleton / pir_daily_focus_skeleton / deep_dive_rubric_skeleton /
         # pir_spotlight_skeleton (層分け 3 本目 2026-08-20、digest/spotlight 群 4 本)
-        assert len(actual) == 19
+        # +ground_ach_skeleton / ground_incremental_skeleton / nominate_skeleton /
+        # detect_new_skeleton / adversarial_skeleton / render_skeleton
+        # (層分け 7〜12 本目 2026-08-20、grounded ACH 群 6 本)
+        assert len(actual) == 25
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
@@ -43,7 +46,10 @@ class TestCatalogCompleteness:
         # +status_synthesis_rubric seed (層分け 2 本目 2026-08-20)
         # +weekly_recap_rubric / pir_daily_focus_rubric / deep_dive_rubric /
         # pir_spotlight_rubric seed (層分け 3 本目 2026-08-20)
-        assert len(actual) == 22
+        # +ground_ach_rubric / ground_incremental_rubric / nominate_rubric /
+        # detect_new_rubric / adversarial_rubric / synthesis_render_rubric seed
+        # (層分け 7〜12 本目 2026-08-20)
+        assert len(actual) == 28
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 

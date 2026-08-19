@@ -1,0 +1,29 @@
+{# BLOCK: mission #}
+
+{# BLOCK: context_note #}
+{% for s in sources %}
+--- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.historical is defined and s.historical %} | 【過去の文脈】{% endif %}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+{{ s.text }}
+{% endfor %}
+
+【手順】
+{# BLOCK: ach_instruction #}
+{% for h in hypotheses %}
+   - {{ h.id }} ({{ h.label }}): {{ h.description }}
+     支持例: {{ h.supports }} / 反証例: {{ h.refutes }}
+{% endfor %}
+
+{# BLOCK: evidence_instruction #}
+
+{# BLOCK: confidence_instruction #}
+
+{# BLOCK: assumptions_instruction #}
+
+{# BLOCK: chronology_instruction #}
+
+{# BLOCK: historical_context_instruction #}
+
+{# BLOCK: principles #}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

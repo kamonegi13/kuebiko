@@ -1,0 +1,64 @@
+{% include ["_persona_local.j2", "_persona.j2"] %}
+{# BLOCK: mission #}
+
+{# BLOCK: projection_constraint #}
+
+{% if headline_view %}
+【headline 対象判定 (コード指名 — この判定の変化を見出しにする)】
+[{{ headline_id }}] {{ headline_view.claim }}
+  変化: {{ headline_view.delta_ja }}{% if headline_view.delta_note %} ({{ headline_view.delta_note }}){% endif %} / 見立て: {{ headline_view.leading_label }} / 確度: {{ headline_view.confidence_ja }}
+{% endif %}
+
+【変化した判定】(salience 順。delta = 新規/見立て転換/強化/後退/拡大/再燃/更新)
+{% for j in moved %}
+[{{ j.id }}]【{{ j.delta_ja }}】{{ j.claim }}
+  見立て: {{ j.leading_label }} / 確度: {{ j.confidence_ja }}{% if j.adversarial_refuted %} (検証で反証あり){% endif %}{% if j.delta_note %} / 変化の内容: {{ j.delta_note }}{% endif %}
+  根拠(要点): {% for e in j.evidence_excerpts %}「{{ e }}」 {% endfor %}
+  {% if j.implication %}含意: {{ j.implication }}{% endif %}
+  {% if j.counter %}対立: {{ j.counter }}{% endif %}
+  {% if j.missing %}欠落証拠: {{ j.missing }}{% endif %}
+  {% if j.fired_indicators %}発火した監視指標: {{ j.fired_indicators|join('; ') }}{% endif %}
+{% else %}
+(本期間に変化した判定なし)
+{% endfor %}
+
+【継続中の判定】(変化なし・要注視の standing)
+{% for j in standing %}
+[{{ j.id }}]【継続】{{ j.claim }} — {{ j.leading_label }} / {{ j.confidence_ja }}{% if j.implication %} / 含意: {{ j.implication }}{% endif %}
+{% else %}
+(継続判定なし)
+{% endfor %}
+
+【判定間の関係】(共有アクター/作戦/国家からの決定論導出 — 因果は主張していない)
+{% for r in relation_lines %}
+- {{ r }}
+{% else %}
+(検出された関係なし)
+{% endfor %}
+
+【開いている監視指標】(今後観測されれば判定が変わる)
+{% for j in moved + standing %}{% for i in j.indicators %}- [{{ j.id }}] {{ i }}
+{% endfor %}{% endfor %}
+
+【PIR 対応 (決定論ロールアップ)】
+{% for p in pir_rollup %}
+- {{ p.pir_title }}: {% for it in p.entries %}「{{ it.claim }}」({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
+{% else %}
+(PIR に紐づく判定なし)
+{% endfor %}
+
+{# BLOCK: sections_intro #}
+{# BLOCK: headline_instruction #}
+{# headline_mode はコードが指名 (moved/quiet/plain)。prompts はホットマウントでコードより先に
+   反映されるため、未供給 (旧コード) でも moved 既定で安全に描画する #}
+{% if headline_mode is not defined or headline_mode == "moved" %}
+{# BLOCK: headline_moved_guidance #}
+{% elif headline_mode == "quiet" %}
+{# BLOCK: headline_quiet_guidance #}
+{% else %}
+{# BLOCK: headline_plain_guidance #}
+{% endif %}
+{# BLOCK: other_sections_guidance #}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

@@ -1,0 +1,17 @@
+{# BLOCK: mission #}
+
+判定一覧:
+{% for j in judgments %}
+[{{ j.id }}] 主張: {{ j.claim }}
+  leading: {{ j.leading_hypothesis }} (確度 {{ j.confidence }})
+  証拠台帳:
+{% for e in j.evidence %}    - ({{ e.attribution_basis }} / {{ e.polarity }}) {{ e.excerpt }}
+{% endfor %}
+{% endfor %}
+
+{# BLOCK: output_fields #}
+
+{# BLOCK: principles #}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

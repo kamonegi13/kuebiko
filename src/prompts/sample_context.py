@@ -188,12 +188,172 @@ _PIR_SPOTLIGHT: dict[str, Any] = {
     "freshness": {"dated": 10, "retrospective": 3, "retrospective_pct": 30, "fresh": 5},
 }
 
+_GROUND_ACH: dict[str, Any] = {
+    "claim": "サンプル判定 (render 検証用): kuebiko.example 系ネットワークへの不正アクセス。",
+    "sources": [
+        {
+            "article_id": "sample-001",
+            "feed_title": "sample-feed",
+            "text": "サンプル本文 (render 検証用)。",
+        },
+        {
+            "article_id": "sample-002",
+            "feed_title": "sample-feed-2",
+            "historical": True,
+            "chronology": "報道: 2026-01-01 / 事象: 2025-12-01 (再浮上)",
+            "text": "サンプル過去文脈本文 (render 検証用)。",
+        },
+    ],
+    "hypotheses": [
+        {
+            "id": "organized_state_op",
+            "label": "組織的国家作戦",
+            "description": "サンプル仮説説明 (render 検証用)。",
+            "supports": "サンプル支持例 (render 検証用)。",
+            "refutes": "サンプル反証例 (render 検証用)。",
+        },
+    ],
+    "attribution_options": "govt_confirmed / vendor_confirmed / ... (render 検証用)",
+}
+
+_GROUND_INCREMENTAL: dict[str, Any] = {
+    "situation_title": "サンプル情勢 (render 検証用)",
+    "prior": {
+        "claim": "前回判定のサンプル claim (render 検証用)。",
+        "claim_type": "ongoing_activity",
+        "leading_hypothesis": "organized_state_op",
+        "confidence": "moderate",
+        "hypotheses": [
+            {"hypothesis": "organized_state_op", "consistent": 2, "inconsistent": 0},
+        ],
+        "indicators": ["サンプル監視指標 (render 検証用)"],
+        "key_excerpts": [
+            {"polarity": "supports", "excerpt": "サンプル既存証拠抜粋 (render 検証用)。"},
+        ],
+    },
+    "sources": [
+        {
+            "article_id": "sample-001",
+            "feed_title": "sample-feed",
+            "text": "サンプル新着本文 (render 検証用)。",
+        },
+    ],
+    "hypotheses": [
+        {
+            "id": "organized_state_op",
+            "label": "組織的国家作戦",
+            "description": "サンプル仮説説明 (render 検証用)。",
+            "supports": "サンプル支持例 (render 検証用)。",
+            "refutes": "サンプル反証例 (render 検証用)。",
+        },
+    ],
+    "attribution_options": "govt_confirmed / vendor_confirmed / ... (render 検証用)",
+}
+
+_NOMINATE: dict[str, Any] = {
+    "period_label": "2026-01-01 (サンプル)",
+    "k": 5,
+    "articles": [
+        {
+            "feed_title": "sample-feed",
+            "title": "サンプル記事 (render 検証用)",
+            "article_id": "sample-001",
+            "chronology": "報道: 2026-01-01 / 事象: 2026-01-01",
+        },
+    ],
+}
+
+_DETECT_NEW: dict[str, Any] = {
+    "period_label": "2026-01-01 (サンプル)",
+    "active_titles": ["サンプル追跡中情勢 (render 検証用)"],
+    "pir_context": [{"title": "サンプル PIR", "description": "render 検証用の説明文。"}],
+    "articles": [
+        {
+            "feed_title": "sample-feed",
+            "title": "サンプル残余記事 (render 検証用)",
+            "article_id": "sample-001",
+            "importance": "high",
+            "chronology": "報道: 2026-01-01 / 事象: 2026-01-01",
+        },
+    ],
+}
+
+_ADVERSARIAL: dict[str, Any] = {
+    "judgments": [
+        {
+            "id": "sample-j1",
+            "claim": "サンプル判定 (render 検証用)。",
+            "leading_hypothesis": "organized_state_op",
+            "confidence": "moderate",
+            "evidence": [
+                {
+                    "attribution_basis": "vendor_confirmed",
+                    "polarity": "supports",
+                    "excerpt": "サンプル根拠抜粋 (render 検証用)。",
+                },
+            ],
+        },
+    ],
+}
+
+# render.j2 の judgment view (_judgment_view の射影と同形)。moved/standing/headline_view で共有。
+_RENDER_JUDGMENT_VIEW: dict[str, Any] = {
+    "id": "sample-j1",
+    "claim": "サンプル判定 (render 検証用)。",
+    "leading_label": "組織的国家作戦",
+    "confidence_ja": "中確度",
+    "adversarial_refuted": False,
+    "evidence_excerpts": ["サンプル根拠抜粋 (render 検証用)"],
+    "counter": "サンプル対立仮説 (render 検証用)",
+    "missing": "サンプル欠落証拠 (render 検証用)",
+    "delta_ja": "新規",
+    "delta_note": "サンプル変化の内容 (render 検証用)",
+    "implication": "サンプル含意 (render 検証用)",
+    "fired_indicators": ["サンプル発火指標 (render 検証用)"],
+    "indicators": ["サンプル監視指標 (render 検証用)"],
+}
+
+_SYNTHESIS_RENDER: dict[str, Any] = {
+    "period_label": "2026-01-01 (サンプル)",
+    "headline_id": "sample-j1",
+    "headline_view": _RENDER_JUDGMENT_VIEW,
+    "headline_mode": "moved",
+    "moved": [_RENDER_JUDGMENT_VIEW],
+    "standing": [
+        {
+            **_RENDER_JUDGMENT_VIEW,
+            "id": "sample-j2",
+            "claim": "サンプル継続判定 (render 検証用)。",
+            "delta_ja": "継続",
+        },
+    ],
+    "pir_rollup": [
+        {
+            "pir_title": "サンプル PIR (render 検証用)",
+            "entries": [
+                {
+                    "claim": "サンプル判定 (render 検証用)。",
+                    "confidence_ja": "中確度",
+                    "implication": "サンプル含意 (render 検証用)",
+                },
+            ],
+        },
+    ],
+    "relation_lines": ["サンプル関係 (render 検証用)"],
+}
+
 SAMPLE_CONTEXTS: dict[str, dict[str, Any]] = {
     "status_synthesis": _STATUS_SYNTHESIS,
     "weekly_recap": _WEEKLY_RECAP,
     "pir_daily_focus": _PIR_DAILY_FOCUS,
     "deep_dive_rubric": _DEEP_DIVE_RUBRIC,
     "pir_spotlight": _PIR_SPOTLIGHT,
+    "ground_ach": _GROUND_ACH,
+    "ground_incremental": _GROUND_INCREMENTAL,
+    "nominate": _NOMINATE,
+    "detect_new": _DETECT_NEW,
+    "adversarial": _ADVERSARIAL,
+    "synthesis_render": _SYNTHESIS_RENDER,
 }
 
 

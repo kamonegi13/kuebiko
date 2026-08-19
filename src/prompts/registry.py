@@ -22,9 +22,11 @@ from pathlib import Path
 from typing import Literal
 
 ComposerKind = Literal["field_rubric", "block"]
-# 消費側 Environment との一致が要件 (StrictUndefined の有無が違う)。
-# dispatch = briefing 系 (StrictUndefined) / synthesis = generator 系 (寛容 Undefined)。
-EnvStyle = Literal["dispatch", "synthesis"]
+# 消費側 Environment との一致が要件 (StrictUndefined の有無・keep_trailing_newline の有無が違う)。
+# dispatch = briefing 系 (StrictUndefined) / synthesis = generator 系 (寛容 Undefined) /
+# grounded = src/synthesis/grounded/passes.py._render 系 (StrictUndefined あり・
+# keep_trailing_newline 無し — synthesis との唯一の差分。層分け 7〜12 本目 2026-08-20)。
+EnvStyle = Literal["dispatch", "synthesis", "grounded"]
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,76 @@ _SPECS: tuple[PromptSpec, ...] = (
         kind="block",
         env_style="synthesis",
         skeleton_path=Path("prompts/spotlight/pir_spotlight_skeleton.j2"),
+    ),
+    # ---- grounded ACH 群 (7〜12 本目、2026-08-20) ----
+    # 分析の核 (ACH の対称性・fail-closed・アンカリング禁止)。blocks は「編集して安全な
+    # 指示散文」単位で切り、仮説 id / 証拠注入の Jinja ループは skeleton (code 所有) に残す。
+    PromptSpec(
+        prompt_id="ground_ach",
+        title="証拠接地 + ACH 初回 (ground_ach)",
+        config_key="ground_ach_rubric",
+        env_flag="GROUND_ACH_COMPOSER",
+        seed_path=Path("config/prompts/ground_ach_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/ground_ach.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/ground_ach_skeleton.j2"),
+    ),
+    PromptSpec(
+        prompt_id="ground_incremental",
+        title="証拠接地 増分 (ground_incremental)",
+        config_key="ground_incremental_rubric",
+        env_flag="GROUND_INCREMENTAL_COMPOSER",
+        seed_path=Path("config/prompts/ground_incremental_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/ground_incremental.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/ground_incremental_skeleton.j2"),
+    ),
+    PromptSpec(
+        prompt_id="nominate",
+        title="情勢候補の指名 (nominate)",
+        config_key="nominate_rubric",
+        env_flag="NOMINATE_COMPOSER",
+        seed_path=Path("config/prompts/nominate_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/nominate.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/nominate_skeleton.j2"),
+    ),
+    PromptSpec(
+        prompt_id="detect_new",
+        title="新規情勢の検出 (detect_new)",
+        config_key="detect_new_rubric",
+        env_flag="DETECT_NEW_COMPOSER",
+        seed_path=Path("config/prompts/detect_new_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/detect_new.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/detect_new_skeleton.j2"),
+    ),
+    PromptSpec(
+        prompt_id="adversarial",
+        title="対称 adversarial 検証 (adversarial)",
+        config_key="adversarial_rubric",
+        env_flag="ADVERSARIAL_COMPOSER",
+        seed_path=Path("config/prompts/adversarial_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/adversarial.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/adversarial_skeleton.j2"),
+    ),
+    # prompt_id/config_key/env_flag は "render" を避ける (一般語で API path として不明瞭)。
+    PromptSpec(
+        prompt_id="synthesis_render",
+        title="narrative 射影 (synthesis_render)",
+        config_key="synthesis_render_rubric",
+        env_flag="SYNTHESIS_RENDER_COMPOSER",
+        seed_path=Path("config/prompts/synthesis_render_rubric.yaml"),
+        legacy_path=Path("prompts/synthesis/render.j2"),
+        kind="block",
+        env_style="grounded",
+        skeleton_path=Path("prompts/synthesis/render_skeleton.j2"),
     ),
 )
 

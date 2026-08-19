@@ -1,0 +1,15 @@
+{# BLOCK: mission #}
+
+{# BLOCK: judgment_fields #}
+
+{# BLOCK: principles #}
+
+記事一覧 (各行末に時系列: 報道日/事象日、「再浮上」= 旧事案の再報道):
+{% for a in articles %}
+- [{{ a.feed_title|truncate(18) }}] {{ a.title|truncate(90) }} (id: {{ a.article_id }}){% if a.chronology is defined and a.chronology %} 〔{{ a.chronology }}〕{% endif %}
+{% endfor %}
+
+{# BLOCK: chronology_note #}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

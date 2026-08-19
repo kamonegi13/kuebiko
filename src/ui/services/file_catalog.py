@@ -108,32 +108,88 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
     "prompts/synthesis/nominate.j2": FileInfo(
         "状況総括 (synthesis)",
         "情勢候補の指名",
-        "台帳更新の対象とする情勢候補を記事群から指名する",
+        "台帳更新の対象とする情勢候補を記事群から指名する。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/nominate_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "情勢候補の指名の骨格 (code 所有)",
+        "nominate の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 7〜12 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/detect_new.j2": FileInfo(
         "状況総括 (synthesis)",
         "新規情勢の検出",
-        "既存台帳に無い新しい情勢の立ち上げを検出する",
+        "既存台帳に無い新しい情勢の立ち上げを検出する。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/detect_new_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "新規情勢の検出の骨格 (code 所有)",
+        "detect_new の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
+        "DB 所有でプロンプトタブから編集 (層分け 7〜12 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/ground_ach.j2": FileInfo(
         "状況総括 (synthesis)",
         "証拠接地 + ACH (初回)",
-        "情勢の初回評価: 証拠接地 → 競合仮説分析 (ACH) → 確度較正",
+        "情勢の初回評価: 証拠接地 → 競合仮説分析 (ACH) → 確度較正。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/ground_ach_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "証拠接地 + ACH (初回) の骨格 (code 所有)",
+        "ground_ach の Jinja データ注入部 (ソース本文・仮説メニューのループ) + block マーカー。"
+        "指示散文 (blocks) は DB 所有でプロンプトタブから編集 (層分け 7〜12 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/ground_incremental.j2": FileInfo(
         "状況総括 (synthesis)",
         "証拠接地 (増分)",
-        "既存情勢への増分 ACH 更新 (新規証拠の取込 + 指標の照会)",
+        "既存情勢への増分 ACH 更新 (新規証拠の取込 + 指標の照会)。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/ground_incremental_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "証拠接地 (増分) の骨格 (code 所有)",
+        "ground_incremental の Jinja データ注入部 (前回判定・新着ソース・仮説メニューのループ) + "
+        "block マーカー。指示散文 (blocks) は DB 所有でプロンプトタブから編集 "
+        "(層分け 7〜12 本目 2026-08-20)。seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/adversarial.j2": FileInfo(
         "状況総括 (synthesis)",
         "対称 adversarial 検証",
-        "評価の過確信を防ぐ反対仮説側からの検証パス",
+        "評価の過確信を防ぐ反対仮説側からの検証パス。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/adversarial_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "対称 adversarial 検証の骨格 (code 所有)",
+        "adversarial の Jinja データ注入部 (judgments/evidence のループ) + block マーカー。"
+        "指示散文 (blocks) は DB 所有でプロンプトタブから編集 (層分け 7〜12 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/synthesis/render.j2": FileInfo(
         "状況総括 (synthesis)",
         "narrative 射影",
-        "canonical estimate から報告 narrative への射影 (状態中心アーキテクチャの出力側)",
+        "canonical estimate から報告 narrative への射影 (状態中心アーキテクチャの出力側)。"
+        "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
+        "(実際の指示散文はプロンプトタブの骨格 + block 編集 (プロンプト id は synthesis_render)、"
+        "層分け 7〜12 本目 2026-08-20)",
+    ),
+    "prompts/synthesis/render_skeleton.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "narrative 射影の骨格 (code 所有)",
+        "render (プロンプト id: synthesis_render) の Jinja データ注入部 "
+        "(moved/standing/pir_rollup/relation_lines のループ、headline_mode 分岐) + block マーカー。"
+        "指示散文 (blocks) は DB 所有でプロンプトタブから編集 (層分け 7〜12 本目 2026-08-20)。"
+        "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
     "prompts/spotlight/pir_spotlight.j2": FileInfo(
         "Spotlight",
@@ -276,6 +332,42 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "PIR Spotlight の編集層 (blocks)",
         "pir_spotlight の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
         "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
+    ),
+    "config/prompts/ground_ach_rubric.yaml": FileInfo(
+        "プロンプト",
+        "証拠接地 + ACH (初回) の編集層 (blocks)",
+        "ground_ach の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
+    ),
+    "config/prompts/ground_incremental_rubric.yaml": FileInfo(
+        "プロンプト",
+        "証拠接地 (増分) の編集層 (blocks)",
+        "ground_incremental の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
+    ),
+    "config/prompts/nominate_rubric.yaml": FileInfo(
+        "プロンプト",
+        "情勢候補の指名の編集層 (blocks)",
+        "nominate の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
+    ),
+    "config/prompts/detect_new_rubric.yaml": FileInfo(
+        "プロンプト",
+        "新規情勢の検出の編集層 (blocks)",
+        "detect_new の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
+    ),
+    "config/prompts/adversarial_rubric.yaml": FileInfo(
+        "プロンプト",
+        "対称 adversarial 検証の編集層 (blocks)",
+        "adversarial の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
+    ),
+    "config/prompts/synthesis_render_rubric.yaml": FileInfo(
+        "プロンプト",
+        "narrative 射影の編集層 (blocks)",
+        "render (プロンプト id: synthesis_render) の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
     ),
 }
 

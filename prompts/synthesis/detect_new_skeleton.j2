@@ -1,0 +1,23 @@
+{# BLOCK: mission #}
+
+【既に追跡中の情勢】(これらと同一の事象は選ばない — 既存の続報は割当済みのはず):
+{% for t in active_titles %}
+- {{ t }}
+{% endfor %}
+
+{# BLOCK: selection_criteria_intro #}
+{% for p in pir_context %}
+   - {{ p.title }}: {{ p.description }}
+{% endfor %}
+{# BLOCK: selection_criteria_rest #}
+
+【規則】
+{# BLOCK: rules #}
+
+【残余記事一覧】(行末: 重要度 / 時系列):
+{% for a in articles %}
+- [{{ (a.feed_title or "?")|truncate(18) }}] {{ a.title|truncate(90) }} (id: {{ a.article_id }}) 〔{{ a.importance }}{% if a.chronology is defined and a.chronology %} / {{ a.chronology }}{% endif %}〕
+{% endfor %}
+
+出力 JSON (これ以外を出さない):
+{# BLOCK: output_format #}

@@ -28,6 +28,21 @@ from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
 _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+# registry の legacy_path (相対 Path) との一致判定・build_prompt_template 呼出に使う相対 root
+# (dispatch/digest 系の seam と同じ規約。_PROMPTS_DIR は絶対 path なので legacy_path と比較不可)。
+_PROMPTS_ROOT = Path("prompts")
+
+# template 引数 (env.get_template に渡す相対名) → registry の prompt_id。
+# render.py もここを import して使う (層分け 7〜12 本目、2026-08-20: この 1 seam を
+# 6 テンプレート全消費者 (passes/incremental/adversary/render) が共有する)。
+_TEMPLATE_TO_PROMPT_ID: dict[str, str] = {
+    "synthesis/nominate.j2": "nominate",
+    "synthesis/ground_ach.j2": "ground_ach",
+    "synthesis/ground_incremental.j2": "ground_incremental",
+    "synthesis/detect_new.j2": "detect_new",
+    "synthesis/adversarial.j2": "adversarial",
+    "synthesis/render.j2": "synthesis_render",
+}
 
 _TEMPERATURE = 0.2
 _MAX_TOKENS = 8_000
@@ -58,12 +73,33 @@ _VALID_CONF: frozenset[str] = frozenset({"high", "moderate", "low"})
 
 
 def _render(template: str, **ctx: object) -> str:
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(_PROMPTS_DIR)),
-        autoescape=False,
-        undefined=jinja2.StrictUndefined,
-    )
-    return env.get_template(template).render(**ctx)
+    """grounded ACH 群 6 本の共有 render seam (層分け 7〜12 本目、2026-08-20)。
+
+    registry に spec があり flag が ON なら DB 合成テンプレートを使う。無ければ (flag OFF /
+    DB 未投入 / 合成失敗) legacy .j2 に fail-safe で倒す (prompt_store 側が理由を WARNING に残す)。
+    incremental.py / adversary.py / render.py はこの関数を import して使うため、ここ 1 箇所の
+    改修で 6 テンプレート全消費者に効く。
+    """
+    from src.prompts.prompt_store import build_prompt_template
+    from src.prompts.registry import get_spec
+
+    tmpl: jinja2.Template | None = None
+    prompt_id = _TEMPLATE_TO_PROMPT_ID.get(template)
+    if prompt_id is not None:
+        spec = get_spec(prompt_id)
+        # ⚠ template は引数 — spec.legacy_path との一致を関門にする (llm_digest.py と同型):
+        # マッピングと registry の legacy_path がずれたとき、要求と違うプロンプトが
+        # 黙って合成に化けるのを防ぐ (不一致は legacy 経路へ)。
+        if spec is not None and (_PROMPTS_ROOT / template) == spec.legacy_path:
+            tmpl = build_prompt_template(spec, _PROMPTS_ROOT / template)
+    if tmpl is None:
+        env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(_PROMPTS_DIR)),
+            autoescape=False,
+            undefined=jinja2.StrictUndefined,
+        )
+        tmpl = env.get_template(template)
+    return tmpl.render(**ctx)
 
 
 def _norm_basis(b: str) -> AttributionBasis:
