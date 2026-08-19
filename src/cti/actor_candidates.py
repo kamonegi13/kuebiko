@@ -69,6 +69,21 @@ _GEOPOLITICAL_SUFFIXES: tuple[str, ...] = (
 _GEOPOLITICAL_EXTRA: frozenset[str] = frozenset(
     {"u.s", "u.s.", "u.k", "e.u", "nato", "un", "eu", "hezbollah", "houthis", "hamas", "taliban"}
 )
+# 日本語の統治・軍事組織 (2026-08-19)。⚠ 上の suffix 群は英語のみで、承認キューには
+# 「中国共産党」「中国人民解放軍」がそのまま新興アクター候補として滞留していた。
+# judgment のプロンプトは「国家/政党/軍組織そのもの」を既に禁じているが、**指示だけでは
+# 止まらない** (今日 summarizer で実証済) ため収穫側で決定論遮断する。
+_GEOPOLITICAL_JA_SUFFIXES: tuple[str, ...] = (
+    "共産党",
+    "人民解放軍",
+    "政府",
+    "軍",
+    "国防省",
+    "外務省",
+    "国家安全部",
+    "情報機関",
+    "当局",
+)
 
 # named_primary_actor 由来の非アクター汚染対策 (2026-08-13 カテゴリ混同監査):
 # 承認キュー実測で 人物 (Putin/Kim Jong Un)・政党・一般企業/防衛産業/AI 企業・AI モデル名・
@@ -103,7 +118,20 @@ _KNOWN_NON_ACTOR_NAMES: frozenset[str] = frozenset(
         "edge group",
         "iai",
         "silent push",
+        # 防御側・研究チーム・軍組織 (2026-08-19 承認キュー実測)。
+        # ⚠ judgment のプロンプトは「防御側・報告機関」を既に禁じているが止まっていない。
+        "team82",
+        "us space command",
+        "spacecom",
+        "a security",
+        # 一般語・総称 (2026-08-19)。攻撃主体の固有名ではない
+        "ai agents",
+        "ai agent",
+        "north korean it workers",
+        "it workers",
         # 人物 (政治家・要人)
+        "tucker carlson",
+        "maria zakharova",
         "trump",
         "donald trump",
         "putin",
@@ -181,6 +209,13 @@ def is_geopolitical_noise(key: str) -> bool:
     (scripts/purge_geopolitical_provisional.py) が共有する SSoT。
     """
     if key in _GEOPOLITICAL_EXTRA or key in _country_name_keys():
+        return True
+    if any(key.endswith(s) for s in _GEOPOLITICAL_JA_SUFFIXES):
+        return True
+    # 複数国の列挙 (「China, Russia, Iran and North Korea」)。⚠ 個々は国名判定で
+    # 弾けるが列挙形は素通りしていた。区切りで分解して 2 つ以上が国名なら地政学ノイズ。
+    parts = [p.strip() for p in re.split(r"[,、/&]|\band\b", key) if p.strip()]
+    if len(parts) >= 2 and sum(1 for p in parts if p in _country_name_keys()) >= 2:
         return True
     return any(key == s or key.endswith(" " + s) for s in _GEOPOLITICAL_SUFFIXES)
 

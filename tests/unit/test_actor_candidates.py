@@ -8,6 +8,8 @@ from __future__ import annotations
 from src.cti.actor_candidates import (
     ActorCandidate,
     harvest_candidates,
+    is_geopolitical_noise,
+    is_known_non_actor,
     normalize_actor_key,
 )
 from src.cti.actor_normalizer import ActorAlias, ActorAliasRegistry
@@ -211,3 +213,50 @@ class TestGeopoliticalNoiseFilter:
         )
         keys = {c.key for c in cands}
         assert "storm-2372" in keys and "china" not in keys
+
+
+class TestGeopoliticalNoiseBeyondEnglish:
+    """承認キューに滞留していた非アクターを決定論で弾く (2026-08-19)。
+
+    ⚠ judgment のプロンプトは「国家/政党/軍組織そのもの」「個人名 (政治家)」
+    「防御側・報告機関」を **既に禁じている** のに、承認キューには 中国共産党 /
+    中国人民解放軍 / Tucker Carlson / US Space Command / Team82 が滞留していた。
+    ⭐ **指示だけでは止まらない** (同日 summarizer でも実証) ため収穫側で遮断する。
+    """
+
+    def test_japanese_government_and_military_orgs(self) -> None:
+        assert is_geopolitical_noise("中国共産党")
+        assert is_geopolitical_noise("中国人民解放軍")
+        # ⚠ 実在のアクター名を巻き込まない
+        assert not is_geopolitical_noise("armored likho")
+        assert not is_geopolitical_noise("head mare")
+
+    def test_multi_country_enumeration(self) -> None:
+        """列挙形は素通りしていた — 個々は国名判定で弾けるのに。"""
+        assert is_geopolitical_noise("china, russia, iran, and north korea")
+        assert is_geopolitical_noise("china, russia, iran & north korea")
+        # 1 か国だけの言及は列挙ではない (国名単体は別の分岐が弾く)
+        assert not is_geopolitical_noise("direwolf")
+
+    def test_defenders_and_generic_terms(self) -> None:
+        assert is_known_non_actor("team82")
+        assert is_known_non_actor("us space command")
+        assert is_known_non_actor("ai agents")
+        assert is_known_non_actor("north korean it workers")
+        assert is_known_non_actor("tucker carlson")
+        assert is_known_non_actor("maria zakharova")
+
+    def test_real_actor_candidates_survive(self) -> None:
+        """⭐ 収穫を殺さないことの確認 — 実データの正当な候補は全て通す。"""
+        for key in (
+            "direwolf",
+            "xpl0itrs",
+            "jewelbug",
+            "head mare",
+            "armored likho",
+            "unc5537",
+            "cl-sta-0049",
+            "famous chollima",
+        ):
+            assert not is_known_non_actor(key), key
+            assert not is_geopolitical_noise(key), key
