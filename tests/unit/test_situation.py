@@ -35,8 +35,13 @@ def _seed(tmp_path: Path) -> Path:
             published_at=now,
         )
 
-    # サイバー: 中国系 APT (Volt Typhoon = registry で nation=cn) の侵入
-    repo.add_article(art("cy1", "apt", "prepositioning"))
+    # サイバー: 中国系 APT (Volt Typhoon = registry で nation=cn) の侵入。
+    # 2026-08-20 反転: 攻撃者面は主題 (subject) 起点のため、mention だけでなく
+    # subject_actor_ids/source も評価済みとして設定する (言及のみでは面に出ない)。
+    cy1 = art("cy1", "apt", "prepositioning").model_copy(
+        update={"subject_actor_ids": "volt_typhoon", "subject_actor_source": "llm"}
+    )
+    repo.add_article(cy1)
     repo.add_article_entities("cy1", [("actor", "volt_typhoon")], when=now)
     # 地政学: 中国が当事者
     repo.add_article(art("gp1", "geopolitical", "coercion"))
@@ -72,10 +77,11 @@ def test_situation_correlates_cyber_and_geopolitical_by_nation(tmp_path) -> None
 
 
 def test_situation_by_nation_subject_gate_excludes_mention_only(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    """評価済み記事で主題でない CN APT 言及は攻撃者面 (actors) に計上しない (2026-07-29)。
+    """評価済み記事で主題でない CN APT 言及は攻撃者面 (actors) に計上しない。
 
-    _victim_cyber_face は subject-gate 済だが situation_by_nation の actor_counts は
-    漏れていた (下流5箇所 gating の穴)。同一 SQL gate を適用したことの回帰防止。
+    2026-07-29: 元々は subject_gate_clause による fallback ゲートとして実装されていた。
+    2026-08-20 の母集団反転で、攻撃者面は articles.subject_actor_ids 起点の構成的な
+    集計になったため、主題不一致の記事はそもそも母集団に入らない (同じ結論を別機構で保証)。
     """
     db = tmp_path / "sit_gate.db"
     repo = RunHistoryRepository(db_path=db)
@@ -170,6 +176,9 @@ def test_situation_tempo_exposes_report_and_event_series_with_coverage(tmp_path)
         published_at=_NOW,
         event_date=today,
         event_date_basis="detected",
+        # 攻撃者面は主題起点 (2026-08-20) のため、テンポ系列に乗せるには subject 評価も要る。
+        subject_actor_ids="volt_typhoon",
+        subject_actor_source="llm",
     )
     repo.add_article(dated)
     repo.add_article_entities("ev1", [("actor", "volt_typhoon")], when=_NOW)

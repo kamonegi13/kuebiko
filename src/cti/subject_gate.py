@@ -34,6 +34,15 @@ def subject_gate_clause(*, mention_col: str, subject_ids_col: str, subject_sourc
     return f"({subject_source_col} IS NULL OR {membership})"
 
 
+def split_subject_ids(subject_ids_csv: str | None) -> frozenset[str]:
+    """``subject_actor_ids`` (comma 連結 canonical id 列) を id 集合に分解する SSoT。
+
+    writer (persistence/reprocess) は ``",".join(canonical_ids)`` で空白なしに書く。
+    読み手が site ごとに split を再実装して strip 有無が揺れていたため一本化 (2026-08-20)。
+    """
+    return frozenset(s for s in (subject_ids_csv or "").split(",") if s)
+
+
 def passes_subject_gate(
     *, mention_id: str, subject_ids_csv: str | None, subject_source: str | None
 ) -> bool:
@@ -49,5 +58,4 @@ def passes_subject_gate(
     """
     if not subject_source:
         return True
-    ids = {s for s in (subject_ids_csv or "").split(",") if s}
-    return mention_id in ids
+    return mention_id in split_subject_ids(subject_ids_csv)

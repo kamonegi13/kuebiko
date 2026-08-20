@@ -868,8 +868,17 @@ def test_build_nation_correlation_separates_attributed_from_mention(
             **kw,  # type: ignore[arg-type]
         )
 
-    # 帰属レーン: 中国系 APT (Volt Typhoon → registry で nation=cn)
-    repo.add_article(art("a1", "apt", socio_political_intent="prepositioning"))
+    # 帰属レーン: 中国系 APT (Volt Typhoon → registry で nation=cn)。
+    # 攻撃者面は主題 (subject) 起点 (2026-08-20 反転) のため subject 評価も設定する。
+    repo.add_article(
+        art(
+            "a1",
+            "apt",
+            socio_political_intent="prepositioning",
+            subject_actor_ids="volt_typhoon",
+            subject_actor_source="llm",
+        )
+    )
     repo.add_article_entities("a1", [("actor", "volt_typhoon")], when=now)
     # 言及レーン: i_cyber × involved_country=CN × actor 無し (政策/態勢の言及)
     repo.add_article(

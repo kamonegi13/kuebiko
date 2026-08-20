@@ -42,7 +42,17 @@ def _seed(repo: RunHistoryRepository) -> None:
             **kw,  # type: ignore[arg-type]
         )
 
-    repo.add_article(art("a1", "apt", socio_political_intent="prepositioning"))
+    # 攻撃者面は主題 (subject) 起点 (2026-08-20 反転) のため、mention だけでなく
+    # subject_actor_ids/source も評価済みとして設定する。
+    repo.add_article(
+        art(
+            "a1",
+            "apt",
+            socio_political_intent="prepositioning",
+            subject_actor_ids="volt_typhoon",
+            subject_actor_source="llm",
+        )
+    )
     repo.add_article_entities("a1", [("actor", "volt_typhoon")], when=now)
     repo.add_article(
         art("a2", "geopolitical", pmesii_i_cyber=True, socio_political_intent="coercion")

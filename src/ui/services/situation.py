@@ -1,7 +1,9 @@
 """国家中心 情勢ビュー (National Situation Board) の集計サービス (2026-06-22)。
 
 サイバー↔地政学を **国家** で相関する。背骨＝国家、ドリル＝アクター。
-- **サイバー面**: その国の APT 活動 (actor.nation 経由)。
+- **サイバー面 (攻撃者として)**: その国の APT が **主題 (subject)** の脅威記事
+  (actor.nation × articles.subject_actor_ids)。2026-08-20 に言及 (mention) 起点から
+  反転 — 言及起点は全国家で水増し (実測 30日窓: ru 348→実態119 / cn 101→31 / us 32→0)。
 - **地政学面**: その国が当事者の地政学事象 (entity_type='involved_country' 経由 ← 情勢ブリッジ)。
 両面を intent (動機) で色付け、PMESII ドメインを足場 (内訳) に、時間軸で **テンポ** を出す。
 
@@ -102,6 +104,53 @@ def _face_rows(con: Any, entity_type: str, values: list[str], since: datetime | 
         params.append(since.isoformat())
     sql += " ORDER BY COALESCE(datetime(published_at), datetime(created_at)) DESC"
     return list(con.execute(sql, tuple(params)).fetchall())
+
+
+def _attacker_face_rows(con: Any, actor_ids: list[str], since: datetime | None) -> list[Any]:
+    """攻撃者面 (主題起点): actor_ids のいずれかが主題 (subject) の脅威記事を返す。
+
+    2026-08-20 反転: 従来は article_entities の **言及 (mention)** を数えていたが、実測
+    (30日窓) で全国家に言及混入の水増しが確認された (ru 348→実態119 / cn 101→31 /
+    us 32→0)。母集団を articles.subject_actor_ids (主題評価済み) × 脅威スコープ
+    (_CYBER_CATS) 起点に再定義し、標的面 (_victim_cyber_face) と対称にする。
+    legacy 行 (subject_actor_source IS NULL) は subject_actor_ids も NULL のため
+    membership 条件で自動的に落ちる (mention への fallback は意図的に廃止)。
+    """
+    # actor_ids / subject_actor_ids は同一 registry の canonical id (小文字 snake_case) 由来。
+    # _face_rows の defensive LOWER は自由文の言及値向けで、ここでは両辺 registry のため不要。
+    ids = [a for a in actor_ids if a]
+    if not ids:
+        return []
+    cats_ph = ",".join("?" for _ in _CYBER_CATS)
+    membership = " OR ".join(
+        "INSTR(',' || COALESCE(subject_actor_ids,'') || ',', ',' || ? || ',') > 0" for _ in ids
+    )
+    sql = (
+        f"SELECT {_article_cols()}, subject_actor_ids FROM articles "  # noqa: S608 — 列/分岐は内部固定
+        f"WHERE status='posted' AND LOWER(category) IN ({cats_ph}) AND ({membership})"
+    )
+    params: list[Any] = [*(c.lower() for c in _CYBER_CATS), *ids]
+    if since is not None:
+        sql += " AND COALESCE(datetime(published_at), datetime(created_at)) >= datetime(?)"
+        params.append(since.isoformat())
+    sql += " ORDER BY COALESCE(datetime(published_at), datetime(created_at)) DESC"
+    return list(con.execute(sql, tuple(params)).fetchall())
+
+
+def _derive_actor_counts(rows: list[Any], actor_ids: frozenset[str]) -> Counter[str]:
+    """攻撃者面の top actors を面と同一の母集団 (rows) から構成的に導出する。
+
+    別クエリで数えると面と内訳が乖離しうる (2026-08-20 のバグは gate 有無の乖離が露呈させた)
+    ため、必ず _attacker_face_rows の戻り値から導出する。
+    """
+    from src.cti.subject_gate import split_subject_ids
+
+    counts: Counter[str] = Counter()
+    for r in rows:
+        for aid in split_subject_ids(r["subject_actor_ids"]):
+            if aid in actor_ids:
+                counts[aid] += 1
+    return counts
 
 
 def _cyber_mention_rows(con: Any, iso: str, since: datetime | None) -> list[Any]:
@@ -285,7 +334,7 @@ def list_nations(
     try:
         cyber: Counter[str] = Counter()
         for nat, actors in nat_actors.items():
-            rows = _face_rows(con, "actor", actors, since)
+            rows = _attacker_face_rows(con, actors, since)
             if rows:
                 cyber[nat.upper()] = len(rows)
         geo: Counter[str] = Counter()
@@ -347,36 +396,11 @@ def situation_by_nation(
 
     con = _connect(db_path)
     try:
-        cyber_rows = _face_rows(con, "actor", actors, since)
+        cyber_rows = _attacker_face_rows(con, actors, since)
         geo_rows = _face_rows(con, "involved_country", [iso], since)
         mention_rows = _cyber_mention_rows(con, iso, since)
-        # cyber 面の top APT (件数)。
-        actor_counts: Counter[str] = Counter()
-        if actors:
-            ph = ",".join("?" for _ in actors)
-            asql = (
-                "SELECT LOWER(ae.value) AS actor, COUNT(DISTINCT a.article_id) AS n "
-                "FROM article_entities ae JOIN articles a ON a.article_id=ae.article_id "
-                f"WHERE ae.entity_type='actor' AND LOWER(ae.value) IN ({ph}) AND a.status='posted'"  # noqa: S608
-            )
-            aparams: list[Any] = [a.lower() for a in actors]
-            if since is not None:
-                asql += (
-                    " AND COALESCE(datetime(a.published_at), datetime(a.created_at)) >= datetime(?)"
-                )
-                aparams.append(since.isoformat())
-            # subject-gate (2026-07-29): 評価済みは主題のみ、legacy は mention fallback。
-            # 同ファイルの _victim_cyber_face は済だが本集計は漏れていた (下流5箇所 gating の穴)。
-            from src.cti.subject_gate import subject_gate_clause
-
-            asql += " AND " + subject_gate_clause(
-                mention_col="ae.value",
-                subject_ids_col="a.subject_actor_ids",
-                subject_source_col="a.subject_actor_source",
-            )
-            asql += " GROUP BY LOWER(ae.value)"
-            for r in con.execute(asql, tuple(aparams)).fetchall():
-                actor_counts[str(r["actor"])] = int(r["n"])
+        # cyber 面の top APT (件数): 面と同一母集団 (cyber_rows) から構成的に導出する。
+        actor_counts = _derive_actor_counts(cyber_rows, frozenset(actors))
         # 標的レンズ: この国が受けている cyber 脅威 (victim_country)。
         cyber_target = _victim_cyber_face(con, iso, since)
     finally:
