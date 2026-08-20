@@ -39,12 +39,9 @@ function formatTimestamp(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
 }
 
-interface SummarizerRubricEditorProps {
-  // 「raw (.j2) を表示」トグル押下時に親 (PromptsEditor) が raw editor へ切替るための callback。
-  onSwitchToRaw: () => void;
-}
-
-export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditorProps) {
+// raw との切替は親 (PromptsEditor) の「編集 (カード) / 実ファイル (raw)」トグルに一本化
+// (2026-08-20 再設計) — 本コンポーネントはカード編集だけを持つ。
+export function SummarizerRubricEditor() {
   const qc = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["summarizer-rubric"],
@@ -358,12 +355,6 @@ export function SummarizerRubricEditor({ onSwitchToRaw }: SummarizerRubricEditor
               {saveMessage.text}
             </span>
           )}
-          <button
-            onClick={onSwitchToRaw}
-            className="rounded border border-border-subtle px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
-          >
-            raw (.j2) を表示
-          </button>
           <button
             onClick={handleSave}
             disabled={!dirty || !valid || saveMut.isPending}

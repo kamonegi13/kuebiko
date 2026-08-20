@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Save } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +15,6 @@ import { promptBlocksApi, type ManagedPrompt, type ManagedPromptKind } from "../
 
 // summarizer プロンプトの層分け (WP3): 判定基準の SSoT は DB (rubric)。このパスだけ
 // PromptsEditor が構造化エディタに分岐する (他ファイルは既存の raw textarea のまま)。
-const SUMMARIZER_RUBRIC_PATH = "prompts/briefing/summarizer.j2";
 
 // プロンプト層分けの一般化 (2026-08-20): GET /api/v1/prompts/managed が返す kind は
 // backend の内部語彙 (ComposerKind) そのままなので、UI では日本語に写像してから出す
@@ -290,18 +289,14 @@ function YamlEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
 // Phase Diamond verify: 旧 /app/prompts (PromptsPage) を Config の sub-tab として統合。
 function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
-  const [selected, setSelected] = useState<string | null>(null);
+  // 選択モデル (2026-08-20 再設計): **左は「プロンプト 1 本 = 1 entry」の単一リスト**、
+  // 右上に「編集 (カード) / 実ファイル (raw)」の切替。managed (編集層あり) の据置 .j2 は
+  // 一覧に別 entry として出さず、raw モードで同じ選択から開く。
+  const [selected, setSelected] = useState<string | null>(null); // 実ファイルの path (一覧の key)
+  const [mode, setMode] = useState<"card" | "raw">("card");
   const [content, setContent] = useState("");
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
-  // summarizer.j2 選択時に raw editor を明示的に見たい場合のみ true (既定は構造化編集)。
-  const [showRaw, setShowRaw] = useState(false);
-  // block 方式プロンプト (status_synthesis 以降) をカード編集メニューから選んだときの
-  // prompt_id。非 null の間はグリッド右側を BlockPromptEditor に差し替える (raw ファイル
-  // 選択 `selected` とは独立した状態 — raw 一覧から選び直したら null に戻す)。
-  const [blockPromptId, setBlockPromptId] = useState<string | null>(null);
-  // 「実ファイル (上級)」折りたたみ。raw を見ている間は自動で開く。
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const { data: list } = useQuery({
     queryKey: ["prompts-list"],
@@ -311,10 +306,21 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
     queryKey: ["prompts-managed"],
     queryFn: () => promptBlocksApi.managed(),
   });
+
+  // 実ファイル path → managed entry (編集層を持つプロンプト) の対応。
+  const managedByPath = useMemo(() => {
+    const m = new Map<string, ManagedPrompt>();
+    for (const p of managed?.prompts ?? []) m.set(p.legacy_path, p);
+    return m;
+  }, [managed]);
+
+  const current = selected != null ? managedByPath.get(selected) ?? null : null;
+  const showRawEditor = current == null || mode === "raw";
+
   const { data: file } = useQuery({
     queryKey: ["prompts-file", selected],
     queryFn: () => pagesApi.promptsFile(selected!),
-    enabled: !!selected,
+    enabled: !!selected && showRawEditor,
   });
 
   useEffect(() => {
@@ -324,53 +330,16 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
     }
   }, [file]);
 
-  // 既定選択 = summarizer のカード編集 (raw ファイルではなく編集層が本線)。
-  // managed が読めない異常時のみ raw 先頭に落ちる。
+  // 既定選択 = summarizer (編集層が本線)。managed が読めない異常時のみ raw 先頭。
   useEffect(() => {
-    if (selected || blockPromptId) return;
-    if (managed?.prompts.length) {
-      setSelected(SUMMARIZER_RUBRIC_PATH);
-      setShowRaw(false);
-    } else if (managed && list?.files.length) {
-      setSelected(list.files[0]);
-    }
-  }, [managed, list, selected, blockPromptId]);
+    if (selected) return;
+    if (managed?.prompts.length) setSelected(managed.prompts[0].legacy_path);
+    else if (managed && list?.files.length) setSelected(list.files[0]);
+  }, [managed, list, selected]);
 
-  // raw ファイルを見ている間は上級グループを開いたままにする (選択が見えなくなるのを防ぐ)。
-  useEffect(() => {
-    if (selected && (showRaw || selected !== SUMMARIZER_RUBRIC_PATH)) setAdvancedOpen(true);
-  }, [selected, showRaw]);
-
-  useEffect(() => {
-    setShowRaw(false);
-  }, [selected]);
-
-  const isSummarizerRubric = !blockPromptId && selected === SUMMARIZER_RUBRIC_PATH && !showRaw;
-
-  // 選択中の raw ファイルが managed プロンプトの据置 (legacy_path) なら、その entry。
-  const legacyOwner =
-    selected != null ? managed?.prompts.find((p) => p.legacy_path === selected) ?? null : null;
-
-  // raw ファイル一覧 (FileGroupList) から選び直したら、カード編集メニューの block 選択を
-  // 解除する (2 つの選択状態が同時に「有効」に見えるのを避ける)。
-  const selectRawFile = (path: string) => {
-    setBlockPromptId(null);
+  const select = (path: string) => {
     setSelected(path);
-    // 上級 (実ファイル) 一覧からの選択は常に raw editor — summarizer だけカードに
-    // 化けると「同じ場所から選んだのに画面が違う」混乱になる。
-    setShowRaw(true);
-  };
-
-  const selectManagedPrompt = (p: ManagedPrompt) => {
-    if (p.kind === "field_rubric") {
-      setBlockPromptId(null);
-      setSelected(SUMMARIZER_RUBRIC_PATH);
-      setShowRaw(false);
-      return;
-    }
-    setBlockPromptId(p.prompt_id);
-    setSelected(null);
-    setShowRaw(false);
+    setMode("card"); // 選び直しは常にカード (編集層) から。実ファイルは明示切替のみ
   };
 
   const save = useMutation({
@@ -387,84 +356,76 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   if (!list) return <div className="text-fg-muted text-sm">読み込み中...</div>;
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
-        {/* 選択は本サイドバー 1 箇所に統合 (2026-08-20):
-            第一群 = 編集層 (カード編集、本線) / 第二群 = 実ファイル (上級、rollback 用)。
-            旧チップ帯 + raw 一覧の二重選択は「どちらが効くのか」が読めず廃止。 */}
-        <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-15rem)] min-h-[24rem] overflow-y-auto">
-          <div className="px-3 py-2 text-[11px] font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle">
-            編集 (版履歴・検証つき)
-          </div>
-          <div className="py-1">
-            {(managed?.prompts ?? []).map((p) => {
-              const active = p.kind === "field_rubric" ? isSummarizerRubric : blockPromptId === p.prompt_id;
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
+      {/* 単一リスト: file_catalog の区分見出し + 2 行 entry。managed は編集層のタイトルで表示 */}
+      <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-13rem)] min-h-[24rem] overflow-y-auto">
+        {(list.groups ?? []).map((g) => (
+          <div key={g.category}>
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
+              {g.category}
+            </div>
+            {g.files.map((f) => {
+              const m = managedByPath.get(f.path);
               return (
-                <button
-                  key={p.prompt_id}
-                  onClick={() => selectManagedPrompt(p)}
-                  className={`w-full px-3 py-1.5 text-left text-sm transition-colors flex items-center justify-between gap-2 ${
-                    active ? "bg-accent-subtle text-accent-hover" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
+                <div
+                  key={f.path}
+                  onClick={() => select(f.path)}
+                  title={f.description}
+                  className={`px-3 py-2 cursor-pointer border-b border-border-subtle ${
+                    selected === f.path ? "bg-accent-subtle text-accent-hover" : "hover:bg-surface-2 text-fg"
                   }`}
                 >
-                  <span className="truncate">{p.title}</span>
-                  <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">
-                    {MANAGED_KIND_LABEL[p.kind]}
-                  </span>
-                </button>
+                  <div className="text-sm leading-tight">{m ? m.title : f.label}</div>
+                  <div className="font-mono text-[10px] text-fg-subtle leading-tight mt-0.5">
+                    {m ? m.prompt_id : f.path.replace(/^prompts\//, "")}
+                  </div>
+                </div>
               );
             })}
           </div>
-          <div className="border-t border-border-subtle">
-            <button
-              onClick={() => setAdvancedOpen((v) => !v)}
-              className="w-full px-3 py-2 text-left text-[11px] text-fg-subtle hover:text-fg flex items-center justify-between"
-              title="rollback 用の据置 .j2 と共有パーツ。編集層が有効な間、据置 .j2 の編集は運用に効きません"
-            >
-              <span>実ファイル (上級 — rollback 用)</span>
-              <span>{advancedOpen ? "▾" : "▸"}</span>
-            </button>
-            {advancedOpen && (
-              <FileGroupList
-                groups={list.groups ?? []}
-                selected={selected}
-                onSelect={selectRawFile}
-                stripPrefix="prompts/"
-              />
-            )}
-          </div>
-        </aside>
+        ))}
+      </aside>
 
-        {blockPromptId ? (
-          <BlockPromptEditor promptId={blockPromptId} />
-        ) : isSummarizerRubric ? (
-          <SummarizerRubricEditor onSwitchToRaw={() => setShowRaw(true)} />
+      <div className="min-w-0 space-y-3">
+        {/* 編集層を持つプロンプトのみ、右上でカード/raw を切り替える */}
+        {current && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex rounded-md border border-border-subtle overflow-hidden">
+              {(["card", "raw"] as const).map((m2) => (
+                <button
+                  key={m2}
+                  onClick={() => setMode(m2)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    mode === m2 ? "bg-accent-subtle text-accent-hover" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
+                  }`}
+                >
+                  {m2 === "card" ? "編集 (カード)" : "実ファイル (raw)"}
+                </button>
+              ))}
+            </div>
+            <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">
+              {MANAGED_KIND_LABEL[current.kind]}
+            </span>
+          </div>
+        )}
+
+        {current && mode === "card" ? (
+          current.kind === "field_rubric" ? (
+            <SummarizerRubricEditor />
+          ) : (
+            <BlockPromptEditor promptId={current.prompt_id} />
+          )
         ) : (
           <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-            {legacyOwner && (
-              <div className="flex items-center justify-between gap-2 border-b border-warning bg-warning-soft px-4 py-2 text-xs text-warning">
-                <span>
-                  このファイルは rollback 用の据置です — 編集層が有効な間、ここでの編集は運用に効きません。
-                </span>
-                <button
-                  onClick={() => selectManagedPrompt(legacyOwner)}
-                  className="shrink-0 rounded border border-warning px-2 py-0.5 font-semibold hover:bg-warning hover:text-bg"
-                >
-                  「{legacyOwner.title}」のカード編集へ
-                </button>
+            {current && (
+              <div className="border-b border-warning bg-warning-soft px-4 py-2 text-xs text-warning">
+                rollback 用の据置ファイルです — 編集層が有効な間、ここでの編集は運用に効きません。
+                運用中の変更は「編集 (カード)」から行ってください。
               </div>
             )}
             <div className="px-4 py-2.5 border-b border-border-subtle flex items-center justify-between">
               <div className="text-fg font-mono text-sm">{selected || "ファイルを選択..."}</div>
               <div className="flex items-center gap-3">
-                {selected === SUMMARIZER_RUBRIC_PATH && (
-                  <button
-                    onClick={() => setShowRaw(false)}
-                    className="text-xs text-accent hover:underline"
-                  >
-                    構造化編集に戻る
-                  </button>
-                )}
                 {file?.backup_exists && <span className="text-fg-subtle text-xs">バックアップあり</span>}
                 {message && (
                   <span className={`text-xs px-2 py-0.5 rounded ${message.kind === "success" ? "bg-success-soft text-success" : "bg-critical-soft text-critical"}`}>{message.text}</span>
@@ -481,7 +442,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
             <textarea
               value={content}
               onChange={(e) => { setContent(e.target.value); setDirty(true); }}
-              className="w-full h-[calc(100vh-18rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
+              className="w-full h-[calc(100vh-20rem)] min-h-[21rem] bg-black/60 text-fg font-mono text-xs p-4 outline-none resize-none leading-relaxed"
               spellCheck={false}
             />
           </div>

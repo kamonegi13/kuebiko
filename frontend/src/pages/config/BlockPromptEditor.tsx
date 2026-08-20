@@ -25,6 +25,7 @@ interface BlockPromptEditorProps {
   promptId: string;
 }
 
+// raw との切替は親 (PromptsEditor) のトグルに一本化 (2026-08-20 再設計)。
 export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
   const qc = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
@@ -112,7 +113,9 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
       {/* ヘッダ行 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="m-0 text-md font-semibold text-fg">{data.title}</h3>
+          <h3 className="m-0 text-md font-semibold text-fg">
+            {data.title} <span className="font-mono text-xs font-normal text-fg-subtle">{data.prompt_id}</span>
+          </h3>
           <p className="m-0 text-[11px] text-fg-subtle">
             有効な基準:{" "}
             {data.runtime.active_source === "composed" ? `DB v${data.runtime.version ?? "?"}` : "legacy ファイル"}

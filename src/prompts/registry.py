@@ -34,7 +34,7 @@ class PromptSpec:
     """管理対象プロンプト 1 本の宣言。"""
 
     prompt_id: str  # API path / UI / ログの識別子 (snake_case)
-    title: str  # UI 表示名 (日本語)
+    title: str  # UI 表示名 (日本語、括弧 id は付けない — UI が prompt_id を副行に出す)
     config_key: str  # config_store のキー (版履歴の単位)
     env_flag: str  # =0 で legacy .j2 に即時 rollback する env 変数
     seed_path: Path  # 初回 seed 専用 yaml (git 管理)
@@ -47,7 +47,7 @@ class PromptSpec:
 _SPECS: tuple[PromptSpec, ...] = (
     PromptSpec(
         prompt_id="summarizer",
-        title="記事要約・翻訳 (summarizer)",
+        title="記事要約・翻訳",
         config_key="summarizer_rubric",
         env_flag="SUMMARIZER_COMPOSER",
         seed_path=Path("config/prompts/summarizer_rubric.yaml"),
@@ -57,7 +57,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="status_synthesis",
-        title="状況総括 (status_synthesis)",
+        title="状況総括",
         config_key="status_synthesis_rubric",
         env_flag="SYNTHESIS_COMPOSER",
         seed_path=Path("config/prompts/status_synthesis_rubric.yaml"),
@@ -68,7 +68,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="weekly_recap",
-        title="週次リキャップ (weekly_recap)",
+        title="週次リキャップ",
         config_key="weekly_recap_rubric",
         env_flag="WEEKLY_RECAP_COMPOSER",
         seed_path=Path("config/prompts/weekly_recap_rubric.yaml"),
@@ -79,7 +79,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="pir_daily_focus",
-        title="PIR Daily Focus (pir_daily_focus)",
+        title="PIR Daily Focus",
         config_key="pir_daily_focus_rubric",
         env_flag="PIR_DAILY_FOCUS_COMPOSER",
         seed_path=Path("config/prompts/pir_daily_focus_rubric.yaml"),
@@ -90,7 +90,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="deep_dive_rubric",
-        title="深掘り選定ルーブリック (deep_dive_rubric)",
+        title="深掘り選定ルーブリック",
         config_key="deep_dive_rubric",
         env_flag="DEEP_DIVE_RUBRIC_COMPOSER",
         seed_path=Path("config/prompts/deep_dive_rubric.yaml"),
@@ -101,7 +101,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="pir_spotlight",
-        title="PIR Spotlight (pir_spotlight)",
+        title="PIR Spotlight",
         config_key="pir_spotlight_rubric",
         env_flag="PIR_SPOTLIGHT_COMPOSER",
         seed_path=Path("config/prompts/pir_spotlight_rubric.yaml"),
@@ -115,7 +115,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     # 指示散文」単位で切り、仮説 id / 証拠注入の Jinja ループは skeleton (code 所有) に残す。
     PromptSpec(
         prompt_id="ground_ach",
-        title="証拠接地 + ACH 初回 (ground_ach)",
+        title="証拠接地 + ACH 初回",
         config_key="ground_ach_rubric",
         env_flag="GROUND_ACH_COMPOSER",
         seed_path=Path("config/prompts/ground_ach_rubric.yaml"),
@@ -126,7 +126,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="ground_incremental",
-        title="証拠接地 増分 (ground_incremental)",
+        title="証拠接地 増分",
         config_key="ground_incremental_rubric",
         env_flag="GROUND_INCREMENTAL_COMPOSER",
         seed_path=Path("config/prompts/ground_incremental_rubric.yaml"),
@@ -137,7 +137,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="nominate",
-        title="情勢候補の指名 (nominate)",
+        title="情勢候補の指名",
         config_key="nominate_rubric",
         env_flag="NOMINATE_COMPOSER",
         seed_path=Path("config/prompts/nominate_rubric.yaml"),
@@ -148,7 +148,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="detect_new",
-        title="新規情勢の検出 (detect_new)",
+        title="新規情勢の検出",
         config_key="detect_new_rubric",
         env_flag="DETECT_NEW_COMPOSER",
         seed_path=Path("config/prompts/detect_new_rubric.yaml"),
@@ -159,7 +159,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="adversarial",
-        title="対称 adversarial 検証 (adversarial)",
+        title="対称 adversarial 検証",
         config_key="adversarial_rubric",
         env_flag="ADVERSARIAL_COMPOSER",
         seed_path=Path("config/prompts/adversarial_rubric.yaml"),
@@ -171,7 +171,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     # prompt_id/config_key/env_flag は "render" を避ける (一般語で API path として不明瞭)。
     PromptSpec(
         prompt_id="synthesis_render",
-        title="narrative 射影 (synthesis_render)",
+        title="narrative 射影",
         config_key="synthesis_render_rubric",
         env_flag="SYNTHESIS_RENDER_COMPOSER",
         seed_path=Path("config/prompts/synthesis_render_rubric.yaml"),
