@@ -79,6 +79,9 @@ async def managed_prompts() -> dict[str, Any]:
                 "title": spec.title,
                 "kind": spec.kind,
                 "config_key": spec.config_key,
+                # UI が raw ファイル一覧の legacy .j2 と突合し「rollback 用の据置 —
+                # 編集はカードから」のバナーを出すための対応付け。
+                "legacy_path": str(spec.legacy_path),
                 "version": history[0].version if history else None,
                 "saved_at": history[0].created_at if history else "",
             }

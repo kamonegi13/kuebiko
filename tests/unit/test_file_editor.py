@@ -156,3 +156,38 @@ class TestMaskHelper:
         assert mask_env_value("abcdefghij") == "abcd***"
         assert mask_env_value("ab") == "***"
         assert mask_env_value("") == ""
+
+
+class TestSkeletonGuard:
+    """骨格 (code 所有) を UI 編集から守る (2026-08-20 層分け)。
+
+    表示上の隠蔽 (一覧除外) だけでは不十分 — 遮断の実体はサーバ側 (nav.ts の教訓と同型)。
+    """
+
+    def test_skeletons_are_excluded_from_the_listing(self, tmp_path: Path) -> None:
+        # Arrange
+        (tmp_path / "prompts" / "synthesis").mkdir(parents=True)
+        (tmp_path / "prompts" / "synthesis" / "status_synthesis.j2").write_text("x")
+        (tmp_path / "prompts" / "synthesis" / "status_synthesis_skeleton.j2").write_text("y")
+        editor = FileEditor(tmp_path)
+
+        # Act
+        names = [p.name for p in editor.list_prompts()]
+
+        # Assert
+        assert "status_synthesis.j2" in names
+        assert "status_synthesis_skeleton.j2" not in names
+
+    def test_writing_a_skeleton_is_rejected_server_side(self, tmp_path: Path) -> None:
+        # Arrange
+        (tmp_path / "prompts").mkdir()
+        target = tmp_path / "prompts" / "x_skeleton.j2"
+        target.write_text("orig")
+        editor = FileEditor(tmp_path)
+
+        # Act / Assert
+        import pytest
+
+        with pytest.raises(EditError, match="骨格"):
+            editor.write_file("prompts/x_skeleton.j2", "changed", kind="prompt")
+        assert target.read_text() == "orig"

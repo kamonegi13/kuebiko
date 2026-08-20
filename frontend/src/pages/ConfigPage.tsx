@@ -300,6 +300,8 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   // prompt_id。非 null の間はグリッド右側を BlockPromptEditor に差し替える (raw ファイル
   // 選択 `selected` とは独立した状態 — raw 一覧から選び直したら null に戻す)。
   const [blockPromptId, setBlockPromptId] = useState<string | null>(null);
+  // 「実ファイル (上級)」折りたたみ。raw を見ている間は自動で開く。
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const { data: list } = useQuery({
     queryKey: ["prompts-list"],
@@ -322,9 +324,22 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
     }
   }, [file]);
 
+  // 既定選択 = summarizer のカード編集 (raw ファイルではなく編集層が本線)。
+  // managed が読めない異常時のみ raw 先頭に落ちる。
   useEffect(() => {
-    if (!selected && list?.files.length) setSelected(list.files[0]);
-  }, [list, selected]);
+    if (selected || blockPromptId) return;
+    if (managed?.prompts.length) {
+      setSelected(SUMMARIZER_RUBRIC_PATH);
+      setShowRaw(false);
+    } else if (managed && list?.files.length) {
+      setSelected(list.files[0]);
+    }
+  }, [managed, list, selected, blockPromptId]);
+
+  // raw ファイルを見ている間は上級グループを開いたままにする (選択が見えなくなるのを防ぐ)。
+  useEffect(() => {
+    if (selected && (showRaw || selected !== SUMMARIZER_RUBRIC_PATH)) setAdvancedOpen(true);
+  }, [selected, showRaw]);
 
   useEffect(() => {
     setShowRaw(false);
@@ -332,11 +347,18 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   const isSummarizerRubric = !blockPromptId && selected === SUMMARIZER_RUBRIC_PATH && !showRaw;
 
+  // 選択中の raw ファイルが managed プロンプトの据置 (legacy_path) なら、その entry。
+  const legacyOwner =
+    selected != null ? managed?.prompts.find((p) => p.legacy_path === selected) ?? null : null;
+
   // raw ファイル一覧 (FileGroupList) から選び直したら、カード編集メニューの block 選択を
   // 解除する (2 つの選択状態が同時に「有効」に見えるのを避ける)。
   const selectRawFile = (path: string) => {
     setBlockPromptId(null);
     setSelected(path);
+    // 上級 (実ファイル) 一覧からの選択は常に raw editor — summarizer だけカードに
+    // 化けると「同じ場所から選んだのに画面が違う」混乱になる。
+    setShowRaw(true);
   };
 
   const selectManagedPrompt = (p: ManagedPrompt) => {
@@ -347,6 +369,8 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
       return;
     }
     setBlockPromptId(p.prompt_id);
+    setSelected(null);
+    setShowRaw(false);
   };
 
   const save = useMutation({
@@ -364,39 +388,51 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   return (
     <div className="space-y-3">
-      {managed && managed.prompts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border-subtle bg-surface-1 p-3">
-          <span className="text-xs text-fg-subtle">カード編集できるプロンプト:</span>
-          {managed.prompts.map((p) => {
-            const active = p.kind === "field_rubric" ? isSummarizerRubric : blockPromptId === p.prompt_id;
-            return (
-              <button
-                key={p.prompt_id}
-                onClick={() => selectManagedPrompt(p)}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  active
-                    ? "border-accent bg-accent-subtle text-accent-hover"
-                    : "border-border-subtle text-fg-muted hover:bg-surface-2 hover:text-fg"
-                }`}
-              >
-                {p.title}
-                <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">
-                  {MANAGED_KIND_LABEL[p.kind]}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
+        {/* 選択は本サイドバー 1 箇所に統合 (2026-08-20):
+            第一群 = 編集層 (カード編集、本線) / 第二群 = 実ファイル (上級、rollback 用)。
+            旧チップ帯 + raw 一覧の二重選択は「どちらが効くのか」が読めず廃止。 */}
         <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-15rem)] min-h-[24rem] overflow-y-auto">
-          <FileGroupList
-            groups={list.groups ?? []}
-            selected={selected}
-            onSelect={selectRawFile}
-            stripPrefix="prompts/"
-          />
+          <div className="px-3 py-2 text-[11px] font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle">
+            編集 (版履歴・検証つき)
+          </div>
+          <div className="py-1">
+            {(managed?.prompts ?? []).map((p) => {
+              const active = p.kind === "field_rubric" ? isSummarizerRubric : blockPromptId === p.prompt_id;
+              return (
+                <button
+                  key={p.prompt_id}
+                  onClick={() => selectManagedPrompt(p)}
+                  className={`w-full px-3 py-1.5 text-left text-sm transition-colors flex items-center justify-between gap-2 ${
+                    active ? "bg-accent-subtle text-accent-hover" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
+                  }`}
+                >
+                  <span className="truncate">{p.title}</span>
+                  <span className="shrink-0 rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">
+                    {MANAGED_KIND_LABEL[p.kind]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-t border-border-subtle">
+            <button
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className="w-full px-3 py-2 text-left text-[11px] text-fg-subtle hover:text-fg flex items-center justify-between"
+              title="rollback 用の据置 .j2 と共有パーツ。編集層が有効な間、据置 .j2 の編集は運用に効きません"
+            >
+              <span>実ファイル (上級 — rollback 用)</span>
+              <span>{advancedOpen ? "▾" : "▸"}</span>
+            </button>
+            {advancedOpen && (
+              <FileGroupList
+                groups={list.groups ?? []}
+                selected={selected}
+                onSelect={selectRawFile}
+                stripPrefix="prompts/"
+              />
+            )}
+          </div>
         </aside>
 
         {blockPromptId ? (
@@ -405,6 +441,19 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
           <SummarizerRubricEditor onSwitchToRaw={() => setShowRaw(true)} />
         ) : (
           <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
+            {legacyOwner && (
+              <div className="flex items-center justify-between gap-2 border-b border-warning bg-warning-soft px-4 py-2 text-xs text-warning">
+                <span>
+                  このファイルは rollback 用の据置です — 編集層が有効な間、ここでの編集は運用に効きません。
+                </span>
+                <button
+                  onClick={() => selectManagedPrompt(legacyOwner)}
+                  className="shrink-0 rounded border border-warning px-2 py-0.5 font-semibold hover:bg-warning hover:text-bg"
+                >
+                  「{legacyOwner.title}」のカード編集へ
+                </button>
+              </div>
+            )}
             <div className="px-4 py-2.5 border-b border-border-subtle flex items-center justify-between">
               <div className="text-fg font-mono text-sm">{selected || "ファイルを選択..."}</div>
               <div className="flex items-center gap-3">

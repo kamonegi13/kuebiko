@@ -39,9 +39,20 @@ class FileEditor:
     # ----- public API -----
 
     def list_prompts(self) -> list[Path]:
+        """編集対象のプロンプト実ファイル一覧。
+
+        ``*_skeleton.j2`` は除外する (2026-08-20 層分け): code 所有の骨格で、UI から
+        編集すると golden 不変量 (seed 合成 == legacy byte 一致) とコンテナ内 volume の
+        git 状態を壊す。編集は編集層 (blocks カード) が正 — 除外は表示上の隠蔽でなく
+        ``validate_target`` の書込拒否 (下) と対で行う。
+        """
         if not self._prompts_dir.exists():
             return []
-        return sorted(p for p in self._prompts_dir.rglob("*.j2") if p.is_file())
+        return sorted(
+            p
+            for p in self._prompts_dir.rglob("*.j2")
+            if p.is_file() and not p.name.endswith("_skeleton.j2")
+        )
 
     def list_yaml_configs(self) -> list[Path]:
         if not self._config_dir.exists():
@@ -135,6 +146,11 @@ class FileEditor:
         if kind == "prompt":
             # 区分サブディレクトリ (prompts/briefing/ 等) を許可 (2026-08-15 物理再編)。
             # resolve() 済みパスに対する is_relative_to 判定なので path traversal は不可
+            if target.name.endswith("_skeleton.j2"):
+                raise EditError(
+                    "骨格 (skeleton) は code 所有のため UI から編集できません "
+                    "(指示文の編集はプロンプトタブのカード編集で行ってください)",
+                )
             if not target.is_relative_to(self._prompts_dir) or target.suffix != ".j2":
                 raise EditError(
                     f"保存先として許可されていません: {path} "

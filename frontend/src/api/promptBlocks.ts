@@ -48,6 +48,8 @@ export interface ManagedPrompt {
   title: string;
   kind: ManagedPromptKind;
   config_key: string;
+  /** rollback 用の据置 .j2 のパス (raw 一覧との突合で据置バナーを出す)。 */
+  legacy_path: string;
   version: number | null;
   saved_at: string;
 }
