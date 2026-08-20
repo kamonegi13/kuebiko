@@ -477,6 +477,53 @@ def build_feed_body_health_lines(warns: list[FillWarn], *, feeds_checked: int) -
     return lines
 
 
+# 本文同一性監査 (2026-08-21): サイト改装で抽出がナビ/ティーザー列に化けると「取得成立・
+# 本文非空・長さ妥当」のまま複数記事が同一 body になり、既存の全監視 (死活 / 充足率 /
+# 切り株率 / html 残渣) をすり抜ける (The Register 344 件・約 1 か月無検知の実例)。
+# 同一 feed 内で同一 body 先頭部が多重出現することを検出信号にする。
+_DUP_BODY_PREFIX_LEN = 400  # 比較キー長 (枠テキストは先頭から同一。全文比較は不要に重い)
+_DUP_BODY_MIN_LEN = 500  # これ未満の短文は定型 advisory 等の正当な重複がありうるため除外
+_DUP_BODY_WARN_COUNT = 5  # 7 日内の同一 body がこの件数以上 = 構造的な抽出誤りの疑い
+
+
+def fetch_duplicate_body_rows(con: Any, since_iso: str) -> list[tuple[str, int, int]]:
+    """feed 単位の (feed, 最多重複 body 件数, 全文系の総件数) を返す (grok/ransomware 除外)。"""
+    sql = (
+        "SELECT feed, MAX(cnt) AS dup_max, SUM(cnt) AS n_total FROM ("
+        " SELECT COALESCE(feed_title,'(不明)') AS feed,"
+        f" substr(body, 1, {_DUP_BODY_PREFIX_LEN}) AS body_key, COUNT(*) AS cnt"  # noqa: S608
+        " FROM articles"
+        f" WHERE created_at >= ? AND {_FULL_BODY_COND}"  # noqa: S608 — 条件は内部定数のみ
+        f" AND body IS NOT NULL AND LENGTH(body) >= {_DUP_BODY_MIN_LEN}"
+        " AND (feed_title IS NULL OR LOWER(feed_title) NOT IN ('grok','ransomware.live'))"
+        f" GROUP BY COALESCE(feed_title,'(不明)'), substr(body, 1, {_DUP_BODY_PREFIX_LEN})"
+        ") t GROUP BY feed"
+    )
+    rows = con.execute(sql, [since_iso]).fetchall()
+    return [(str(r[0]), int(r[1]), int(r[2])) for r in rows]
+
+
+def detect_duplicate_body_warns(
+    rows: list[tuple[str, int, int]], *, warn_count: int = _DUP_BODY_WARN_COUNT
+) -> list[tuple[str, int, int]]:
+    """同一 body の最多重複が閾値以上の feed を、重複数の降順で返す。"""
+    return sorted((r for r in rows if r[1] >= warn_count), key=lambda r: -r[1])
+
+
+def build_duplicate_body_lines(warns: list[tuple[str, int, int]]) -> list[str]:
+    """weekly 監査投稿の本文同一性セクション (OK 時は空=投稿を短く保つ)。"""
+    if not warns:
+        return []
+    lines = [
+        f"本文同一性: ⚠️ {len(warns)} ソースで同一本文の多重出現 (改装でナビ/枠を抽出している疑い)"
+    ]
+    for feed, dup, total in warns[:8]:
+        lines.append(
+            f"- {feed}: 同一本文 {dup} 件 / 7日 {total} 件 — 実記事の目視と pre-trim 登録を検討"
+        )
+    return lines
+
+
 async def run_weekly_fill_rate_audit() -> None:
     """週次 fill-rate 監査: 前週の被覆急落 + routing ルール発火を判定し ops へ必ず 1 通投稿する。
 
@@ -584,6 +631,21 @@ async def run_weekly_fill_rate_audit() -> None:
                 rule_warn_count += len(feed_warns)
         except Exception as e:  # noqa: BLE001
             _log.warning("feed_body_health_audit_failed", error=str(e))
+        # 本文同一性 (2026-08-21): 同一 feed で同一 body の多重出現 = 改装によるナビ/枠抽出の
+        # 疑い (取得成立・非空・長さ妥当のまま沈黙する故障モード。The Register の実例)。
+        try:
+            con3 = _connect_default()
+            try:
+                dup_rows = fetch_duplicate_body_rows(con3, (now - timedelta(days=7)).isoformat())
+            finally:
+                con3.close()
+            dup_warns = detect_duplicate_body_warns(dup_rows)
+            dup_lines = build_duplicate_body_lines(dup_warns)
+            if dup_lines:
+                rule_lines.extend(dup_lines)
+                rule_warn_count += len(dup_warns)
+        except Exception as e:  # noqa: BLE001
+            _log.warning("duplicate_body_audit_failed", error=str(e))
         labels = {m.key: m.label for m in METRICS}
         warns = [
             w

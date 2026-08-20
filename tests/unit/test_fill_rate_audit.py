@@ -15,13 +15,16 @@ from src.ui.services.fill_rate_audit import (
     bucket_weekly,
     build_audit_report,
     build_drift_lines,
+    build_duplicate_body_lines,
     build_feed_body_health_lines,
     build_heartbeat_fill_line,
     collect_weekly_cells,
+    detect_duplicate_body_warns,
     detect_feed_body_health_collapses,
     detect_fill_collapse,
     detect_fill_drift,
     fetch_daily_rows,
+    fetch_duplicate_body_rows,
 )
 
 
@@ -396,3 +399,100 @@ class TestFeedBodyHealthCollapse:
         assert lines
         assert "ソースが急落" in lines[0]
         assert any("Feed X" in line for line in lines)
+
+
+class TestDuplicateBodyAudit:
+    """本文同一性監査: 同一 feed の同一 body 多重出現を検出する (The Register 型の静かな故障)。"""
+
+    @pytest.fixture
+    def repo(self, tmp_path: Path) -> RunHistoryRepository:
+        return RunHistoryRepository(db_path=tmp_path / "dup.db")
+
+    def _add_with_body(
+        self,
+        repo: RunHistoryRepository,
+        *,
+        article_id: str,
+        feed: str,
+        body: str,
+        source: str = "prefetch",
+    ) -> None:
+        run_id = repo.start_run(
+            RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False)
+        )
+        repo.add_article(
+            ArticleRecord(
+                run_id=run_id,
+                article_id=article_id,
+                title=f"t-{article_id}",
+                url=f"https://feeds.kuebiko.example/{article_id}",
+                feed_title=feed,
+                summary="s",
+                importance="medium",
+                status="posted",
+                category="apt",
+                created_at=datetime.now(UTC) - timedelta(days=1),
+            ),
+        )
+        repo.update_article_body(article_id, body, source=source)
+
+    def _rows(self, repo: RunHistoryRepository) -> list[tuple[str, int, int]]:
+        from src.storage.db_backend import connect
+
+        con = connect(repo.db_path)
+        try:
+            since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+            return fetch_duplicate_body_rows(con, since)
+        finally:
+            con.close()
+
+    def test_warns_when_same_body_repeats_at_threshold(self, repo: RunHistoryRepository) -> None:
+        # Arrange: ナビ枠テキスト (同一 body) が 5 記事に出現
+        nav = "MOST POPULAR nav junk text. " * 30
+        for i in range(5):
+            self._add_with_body(repo, article_id=f"j{i}", feed="regsite", body=nav)
+
+        # Act
+        warns = detect_duplicate_body_warns(self._rows(repo))
+
+        # Assert
+        assert warns == [("regsite", 5, 5)]
+        lines = build_duplicate_body_lines(warns)
+        assert lines and "本文同一性" in lines[0]
+        assert "regsite" in lines[1]
+
+    def test_no_warn_below_threshold(self, repo: RunHistoryRepository) -> None:
+        # Arrange: 4 件は閾値未満
+        nav = "MOST POPULAR nav junk text. " * 30
+        for i in range(4):
+            self._add_with_body(repo, article_id=f"j{i}", feed="regsite", body=nav)
+
+        # Act / Assert
+        assert detect_duplicate_body_warns(self._rows(repo)) == []
+
+    def test_no_warn_for_distinct_bodies(self, repo: RunHistoryRepository) -> None:
+        # Arrange: 本文がすべて異なる健全なソース
+        for i in range(6):
+            self._add_with_body(
+                repo, article_id=f"d{i}", feed="healthy", body=f"unique article body {i}. " * 30
+            )
+
+        # Act / Assert
+        assert detect_duplicate_body_warns(self._rows(repo)) == []
+
+    def test_short_bodies_are_excluded(self, repo: RunHistoryRepository) -> None:
+        # Arrange: 500 字未満の定型文は正当な重複がありうるため分母から外す
+        for i in range(6):
+            self._add_with_body(repo, article_id=f"s{i}", feed="shorty", body="short advisory")
+
+        # Act / Assert
+        assert self._rows(repo) == []
+
+    def test_grok_feed_is_excluded(self, repo: RunHistoryRepository) -> None:
+        # Arrange: grok 経路は本文の性質が異なるため対象外
+        body = "grok shared body text. " * 30
+        for i in range(6):
+            self._add_with_body(repo, article_id=f"g{i}", feed="Grok", body=body, source="grok")
+
+        # Act / Assert
+        assert self._rows(repo) == []
