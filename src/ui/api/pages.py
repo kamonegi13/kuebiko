@@ -549,10 +549,13 @@ async def subscriptions_set_reliability(
 
 
 def _list_prompts(editor: FileEditor) -> list[str]:
-    base = editor.env_path().parent / "prompts"
-    if not base.exists():
-        return []
-    return sorted(str(p.relative_to(base.parent)) for p in base.rglob("*.j2"))
+    """raw 編集対象の一覧。**FileEditor.list_prompts に委譲** (骨格除外の SSoT を複製しない)。
+
+    2026-08-20: 旧実装はここで独自 rglob しており、file_editor 側の skeleton 除外が
+    効かず一覧に骨格が混入していた (列挙が 2 箇所 = 関門の複製漏れの典型)。
+    """
+    base = editor.env_path().parent
+    return sorted(str(p.relative_to(base)) for p in editor.list_prompts())
 
 
 @pages_api.get("/prompts")
