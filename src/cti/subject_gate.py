@@ -2,12 +2,16 @@
 
 docs/body_extraction_and_entity_integrity_redesign.md §5。
 
-地図 flow / 情勢ボード攻撃元 / 概況 actor-nation は ``article_entities`` の **言及 (mention)**
-actor を数えており、記事の主題でないアクター (ランサム列挙記事の被害列挙、報道機関の言及等)
-が攻撃帰属に混入していた (実測 90 日窓で 24%)。
+導入時 (2026-07-27) は 地図 flow / 情勢ボード攻撃元 / 概況 actor-nation が
+``article_entities`` の **言及 (mention)** actor を数えており、記事の主題でないアクターの
+混入 (実測 90 日窓で 24%) を本 gate の後付けで抑えていた。**2026-08-20/21 にこの 3 消費者は
+母集団自体を subject_actor_ids 起点に反転済み** (75c7dee / b44a2e6 — gate 後付けは呼び出し側
+ごとに漏れるため)。現在 gate を使うのは **観測・言及の意味論が正しい消費者**のみ:
+標的面の攻撃元内訳 (_victim_cyber_face) / 脅威スナップショットの regex 経路
+(threat_operations) / STIX export (article_ops) / PIR 上位アクター (pir/evaluator)。
 
 subject-gate = 評価済み行 (subject_actor_source 非 NULL) は **主題メンバーシップ** に絞り、
-legacy 行 (主題層 07-17 稼働前 = 窓の 40%) は mention に fallback する。membership は
+legacy 行 (主題層 07-17 稼働前) は mention に fallback する。membership は
 **position ベース (INSTR、translate_sql が PG で STRPOS に変換)** — LIKE は id 中の `_` が
 ワイルドカードになり、psycopg が `%,` を placeholder と誤解する二重の罠がある (shadow 試行)。
 
