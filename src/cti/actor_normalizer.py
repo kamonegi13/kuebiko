@@ -23,7 +23,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.logging_config import get_logger
 
@@ -202,6 +202,18 @@ class ActorAlias(BaseModel):
     merged_at: str | None = None  # merge 決定日 (ISO date)
     merge_note: str = ""  # merge の根拠メモ (人承認の記録)
     moved_aliases: tuple[str, ...] = ()  # 継承先へ移した alias (merge undo 用の来歴)
+
+    @field_validator("nation")
+    @classmethod
+    def _normalize_nation(cls, v: str | None) -> str | None:
+        """nation (ISO-2) は小文字が規約 — parse 時に正規化する。
+
+        承認キュー payload 経由で大文字 (CN/KP) が yaml に混入した実績 (2026-08-21)。
+        消費側は集計 key・敵対国判定 (小文字集合) に使うため、非正規化のまま通すと
+        国が黙って割れる (概況で cn/CN が別行になり、敵対国判定から漏れた)。
+        全読者がここを通るので、正規化はこの 1 点に置く。
+        """
+        return v.lower() if v else v
 
     @property
     def is_merged(self) -> bool:
