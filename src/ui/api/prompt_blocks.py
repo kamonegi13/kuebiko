@@ -23,11 +23,15 @@ from src.logging_config import get_logger
 from src.prompts.block_composer import compose_blocks, skeleton_slots
 from src.prompts.prompt_store import (
     build_prompt_template,
+    build_python_block_source,
+    compose_python_block,
     fallback_reason,
     invalidate_prompt_cache,
     is_prompt_composer_enabled,
     load_prompt_rubric,
     load_skeleton,
+    python_block_sample_targets,
+    python_block_slot_ids,
     validate_block_rubric,
 )
 from src.prompts.registry import PromptSpec, all_specs, get_spec
@@ -45,20 +49,29 @@ _MAX_ERRORS_IN_DETAIL = 10
 
 def _spec_or_404(prompt_id: str) -> PromptSpec:
     spec = get_spec(prompt_id)
-    if spec is None or spec.kind != "block":
+    if spec is None or spec.kind not in ("block", "python_block"):
         raise HTTPException(
             status_code=404, detail=f"管理対象の block プロンプトではありません: {prompt_id}"
         )
     return spec
 
 
+def _is_active(spec: PromptSpec) -> bool:
+    """build を実際に呼んで判定する (表示と実体を一致させる — summarizer と同じ作法)。
+
+    python_block kind は Jinja Template を持たないため、対応する runtime 合成関数を呼ぶ。
+    """
+    if spec.kind == "python_block":
+        return build_python_block_source(spec, python_block_sample_targets(spec)) is not None
+    return build_prompt_template(spec, spec.legacy_path) is not None
+
+
 def _runtime_payload(spec: PromptSpec) -> dict[str, Any]:
-    """build を実際に呼んで判定する (表示と実体を一致させる — summarizer と同じ作法)。"""
-    template = build_prompt_template(spec, spec.legacy_path)
+    active = _is_active(spec)
     history = config_store.list_history(spec.config_key, limit=1)
     return {
         "composer_enabled": is_prompt_composer_enabled(spec),
-        "active_source": "composed" if template is not None else "legacy_file",
+        "active_source": "composed" if active else "legacy_file",
         "fallback_reason": fallback_reason(spec.prompt_id),
         "legacy_path": str(spec.legacy_path),
         "env_flag": spec.env_flag,
@@ -96,11 +109,16 @@ async def get_blocks(prompt_id: str) -> dict[str, Any]:
     rubric = load_prompt_rubric(spec)
     if rubric is None:
         raise HTTPException(status_code=500, detail="編集層が見つかりません (seed 未投入)")
-    skeleton = load_skeleton(spec)
-    slots = skeleton_slots(skeleton) if skeleton else []
+    if spec.kind == "python_block":
+        # skeleton が無いため slot 順は対象モジュールの固定表 (SLOT_IDS) から取る。
+        slots = list(python_block_slot_ids(spec))
+    else:
+        skeleton = load_skeleton(spec)
+        slots = skeleton_slots(skeleton) if skeleton else []
     return {
         "prompt_id": spec.prompt_id,
         "title": spec.title,
+        "kind": spec.kind,
         "rubric": rubric.model_dump(),
         # slot 順 = プロンプト内の出現順。UI はこの順でカードを描く (DB の配列順でなく)。
         "slots": slots,
@@ -155,6 +173,20 @@ async def preview_blocks(prompt_id: str, req: PreviewBlocksRequest) -> dict[str,
     if rubric is None:
         raise HTTPException(status_code=500, detail="編集層が見つかりません (seed 未投入)")
     errors = validate_block_rubric(spec, rubric)
+    if spec.kind == "python_block":
+        # python_block は Jinja render 段が無い — サンプル候補での合成結果自体が
+        # 「展開後プロンプト」に相当する (rendered_sample = composed)。
+        composed = ""
+        if not errors:
+            with contextlib.suppress(Exception):
+                composed = compose_python_block(spec, rubric, python_block_sample_targets(spec))
+        return {
+            "valid": not errors,
+            "errors": errors,
+            "composed": composed[:_PREVIEW_CHAR_CAP],
+            "composed_chars": len(composed),
+            "rendered_sample": composed[:_PREVIEW_CHAR_CAP],
+        }
     skeleton = load_skeleton(spec)
     composed = compose_blocks(skeleton, rubric) if skeleton and not errors else ""
     rendered_sample = ""

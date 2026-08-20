@@ -5,7 +5,7 @@ UI 編集 + 版履歴 + 保存前 dry-run + 切替検証で運用する」方式
 横展開するための SSoT。**プロンプトを 1 本追加する = ここに PromptSpec を 1 つ足す**
 (store / API / UI / 週次統治ジョブはレジストリを読むだけで新プロンプトに追従する)。
 
-合成方式は 2 種:
+合成方式は 3 種:
 
 - ``field_rubric`` (summarizer): 出力スキーマのフィールドごとに判定基準を持ち、
   code 所有の骨格 (persona / 記事変数) と合成する。契約は出力スキーマが SSoT。
@@ -13,6 +13,13 @@ UI 編集 + 版履歴 + 保存前 dry-run + 切替検証で運用する」方式
   (code 所有 — データ注入とマーカー行) + blocks (DB 所有 — 指示散文)** をマーカー
   置換で連結する。**seed 合成 = legacy .j2 と byte 一致**が golden 不変量
   (summarizer の期待差分契約より強くて単純 — 逸脱は UI 編集でのみ生まれる)。
+- ``python_block`` (ioc_llm_verifier、group 4 の 1 本目、2026-08-21): .j2 を持たず
+  **Python コードが構造を所有する動的プロンプト** (候補リストが実行時に決まり Jinja
+  ループで表現しない設計判断)。skeleton の代わりに対象モジュールが blocks (DB 所有の
+  指示散文) を受け取る合成関数を持ち、``src/prompts/prompt_store.py`` が prompt_id で
+  そこへ dispatch する (1 本目のみの小さな表、複数本になったら Protocol 化を検討)。
+  ``skeleton_path=None`` / ``env_style="none"`` (Jinja を一切使わない)。golden 不変量は
+  block 方式と同じ「seed の blocks で合成した結果が legacy 関数の出力と byte 一致」。
 """
 
 from __future__ import annotations
@@ -21,12 +28,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-ComposerKind = Literal["field_rubric", "block"]
+ComposerKind = Literal["field_rubric", "block", "python_block"]
 # 消費側 Environment との一致が要件 (StrictUndefined の有無・keep_trailing_newline の有無が違う)。
 # dispatch = briefing 系 (StrictUndefined) / synthesis = generator 系 (寛容 Undefined) /
 # grounded = src/synthesis/grounded/passes.py._render 系 (StrictUndefined あり・
-# keep_trailing_newline 無し — synthesis との唯一の差分。層分け 7〜12 本目 2026-08-20)。
-EnvStyle = Literal["dispatch", "synthesis", "grounded"]
+# keep_trailing_newline 無し — synthesis との唯一の差分。層分け 7〜12 本目 2026-08-20) /
+# none = kind="python_block" 専用 (Jinja を使わないため Environment を構築しない)。
+EnvStyle = Literal["dispatch", "synthesis", "grounded", "none"]
 
 
 @dataclass(frozen=True)
@@ -179,6 +187,22 @@ _SPECS: tuple[PromptSpec, ...] = (
         kind="block",
         env_style="grounded",
         skeleton_path=Path("prompts/synthesis/render_skeleton.j2"),
+    ),
+    # ---- group 4: Python 所有プロンプト (1 本目、2026-08-21) ----
+    # .j2 を持たない動的プロンプト。legacy_path は rollback 用の frozen 関数
+    # (_build_prompt_legacy) を持つ実ファイルを指す (UI の「実ファイル」表示・統治レポート用
+    # のラベルにすぎず、Web からの直接編集は許可しない — allowlist は FileEditor 側の
+    # ``prompts/**/*.j2`` 固定で、.py はそもそも対象外なので構造的に安全)。
+    PromptSpec(
+        prompt_id="ioc_llm_verifier",
+        title="IoC LLM 検証",
+        config_key="ioc_llm_verifier_rubric",
+        env_flag="IOC_LLM_VERIFIER_COMPOSER",
+        seed_path=Path("config/prompts/ioc_llm_verifier_rubric.yaml"),
+        legacy_path=Path("src/cti/ioc_llm_verifier.py"),
+        kind="python_block",
+        env_style="none",
+        skeleton_path=None,
     ),
 )
 

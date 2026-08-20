@@ -13,6 +13,7 @@ None に倒して呼び出し側が legacy .j2 を使う。**黙って倒さな�
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -169,6 +170,12 @@ def load_skeleton(spec: PromptSpec) -> str | None:
 
 def build_prompt_environment(spec: PromptSpec, path: Path) -> jinja2.Environment:
     """消費側と同一構成の Environment (差分ゼロが要件 — env_style で分岐)。"""
+    if spec.env_style == "none":
+        # python_block kind は Jinja を一切使わない (候補リストは code が f-string で組む)。
+        # 呼び間違い (kind 分岐漏れ) を早期に落とすためのガード。
+        raise ValueError(
+            f"env_style=none (python_block) は Jinja Environment を使いません: {spec.prompt_id}"
+        )
     if spec.env_style == "dispatch":
         return _dispatch_environment(path)
     prompts_root = path.parent.parent if path.parent.name != "prompts" else path.parent
@@ -207,6 +214,8 @@ def validate_block_rubric(spec: PromptSpec, rubric: SummarizerRubric) -> list[st
     エラー文の list を返す (空 = 保存可)。render まで通すのは summarizer WP2 の教訓
     (「検証は preview、保存は PUT」と分けると検証だけが preview に残る事故が起きる)。
     """
+    if spec.kind == "python_block":
+        return validate_python_block_rubric(spec, rubric)
     skeleton = load_skeleton(spec)
     if skeleton is None:
         return ["skeleton が読めません (code 側の欠陥 — 保存不可)"]
@@ -263,3 +272,105 @@ def build_prompt_template(spec: PromptSpec, path: Path) -> jinja2.Template | Non
     state.template_key = key
     state.fallback_reason = ""
     return template
+
+
+# ---------- python_block kind (skeleton を持たない Python 所有プロンプト) ----------
+#
+# group 4 (ioc_llm_verifier、2026-08-21) 以降のための対象モジュール dispatch。合成の実体
+# (blocks + 動的データ → プロンプト文字列) は対象モジュールが持ち、ここは prompt_id で
+# そこへ委譲するだけ。1 本目のみなので小さな表に留める (YAGNI — 複数本になったら
+# Protocol 化を検討。他の kind と違い skeleton ファイルが無いため slot 定義も対象
+# モジュール側の定数 (SLOT_IDS) から取る)。
+
+_PythonBlockComposeFn = Callable[[dict[str, str], list[dict[str, str]]], str]
+
+
+def _python_block_compose_fn(spec: PromptSpec) -> _PythonBlockComposeFn | None:
+    """python_block kind の合成関数を prompt_id で解決する (対象モジュールへの委譲)。"""
+    if spec.prompt_id == "ioc_llm_verifier":
+        from src.cti.ioc_llm_verifier import compose_from_blocks
+
+        return compose_from_blocks
+    return None
+
+
+def python_block_slot_ids(spec: PromptSpec) -> tuple[str, ...]:
+    """python_block kind の slot id (skeleton が無いため対象モジュールの固定表から取る)。"""
+    if spec.prompt_id == "ioc_llm_verifier":
+        from src.cti.ioc_llm_verifier import SLOT_IDS
+
+        return SLOT_IDS
+    return ()
+
+
+def python_block_sample_targets(spec: PromptSpec) -> list[dict[str, str]]:
+    """保存前検証・preview 用のサンプル候補 (対象モジュールが持つ非空ダミー、各 type 1 件)。"""
+    if spec.prompt_id == "ioc_llm_verifier":
+        from src.cti.ioc_llm_verifier import SAMPLE_TARGETS
+
+        # 共有参照を返すと呼び手の変異が全 preview/検証を汚染する — 都度コピー (イミュータブル規約)
+        return [dict(t) for t in SAMPLE_TARGETS]
+    return []
+
+
+def compose_python_block(
+    spec: PromptSpec, rubric: SummarizerRubric, targets: list[dict[str, str]]
+) -> str:
+    """python_block kind の合成 (pure)。合成関数未登録 / 実行時例外は呼び出し側が握る。"""
+    compose_fn = _python_block_compose_fn(spec)
+    if compose_fn is None:
+        raise ValueError(f"python_block の合成関数が未登録です: {spec.prompt_id}")
+    blocks = {s.field_id: s.body for s in rubric.sections}
+    return compose_fn(blocks, targets)
+
+
+def validate_python_block_rubric(spec: PromptSpec, rubric: SummarizerRubric) -> list[str]:
+    """python_block kind の保存前検証: slot/block 1:1 → サンプル候補での合成 (最後の砦)。"""
+    slots = python_block_slot_ids(spec)
+    if not slots:
+        return [f"python_block の slot 定義が見つかりません (code 側の欠陥): {spec.prompt_id}"]
+    slot_set = set(slots)
+    block_ids = [s.field_id for s in rubric.sections]
+    errors: list[str] = []
+    for duplicate in {b for b in block_ids if block_ids.count(b) > 1}:
+        errors.append(f"block id が重複しています: {duplicate}")
+    for missing in [s for s in slots if s not in set(block_ids)]:
+        errors.append(f"slot に対応する block がありません: {missing}")
+    for unknown in [b for b in block_ids if b not in slot_set]:
+        errors.append(f"未知の block です (書いても出力されません): {unknown}")
+    if rubric.examples:
+        errors.append("python_block 方式は examples を使いません (出力例は該当 block の本文へ)")
+    if errors:
+        return errors
+    try:
+        composed = compose_python_block(spec, rubric, python_block_sample_targets(spec))
+    except Exception as e:  # noqa: BLE001 — 種類を問わず保存を拒否する
+        return [f"サンプル候補での合成に失敗しました: {type(e).__name__}"]
+    if not composed.strip():
+        return ["合成結果が空文字列です"]
+    return []
+
+
+def build_python_block_source(spec: PromptSpec, targets: list[dict[str, str]]) -> str | None:
+    """python_block kind の runtime 合成 (fail-safe)。flag OFF / rubric 不在 / 合成失敗は None。
+
+    対象モジュールはこの結果が None なら legacy 経路 (frozen 関数) へ倒す (rollback 実体)。
+    """
+    state = _state(spec.prompt_id)
+    if not is_prompt_composer_enabled(spec):
+        state.fallback_reason = f"{spec.env_flag}=0 (legacy を使用)"
+        return None
+    rubric = load_prompt_rubric(spec)
+    if rubric is None:
+        _fallback(spec, "編集層が DB にも seed yaml にも見つかりません")
+        return None
+    try:
+        result = compose_python_block(spec, rubric, targets)
+    except Exception as e:  # noqa: BLE001  合成失敗でも本番は legacy で走り続ける
+        _fallback(spec, "python 合成に失敗しました", error_type=type(e).__name__)
+        return None
+    if not result.strip():
+        _fallback(spec, "python 合成結果が空です")
+        return None
+    state.fallback_reason = ""
+    return result

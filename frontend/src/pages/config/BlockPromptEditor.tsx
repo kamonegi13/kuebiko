@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Save } from "lucide-react";
+import { AlertTriangle, Info, Save } from "lucide-react";
 import { promptBlocksApi } from "../../api/promptBlocks";
 import { changedFieldIds } from "./rubric/format";
 import { useBlockDraft } from "./blocks/useBlockDraft";
@@ -110,6 +110,17 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
         </div>
       )}
 
+      {data.kind === "python_block" && (
+        <div className="inline-flex items-start gap-1.5 rounded-lg border border-border-subtle bg-surface-2 p-3 text-sm text-fg-muted">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            このプロンプトは skeleton ファイル (.j2) を持たず、構造は Python コードが所有します
+            (候補リストなどの動的な部分はコードが組み立てます)。「実ファイル」表示は無く、
+            下の合成プレビューは代表的なサンプル候補での合成結果です。
+          </span>
+        </div>
+      )}
+
       {/* ヘッダ行 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -194,17 +205,21 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
         <summary className="cursor-pointer select-none px-4 py-2 text-sm text-fg-muted">合成プレビュー</summary>
         <div className="space-y-3 px-4 pb-3">
           <div>
-            <div className="mb-1 text-[11px] text-fg-subtle">合成後テンプレート (Jinja タグ未展開)</div>
+            <div className="mb-1 text-[11px] text-fg-subtle">
+              {data.kind === "python_block" ? "合成結果 (サンプル候補)" : "合成後テンプレート (Jinja タグ未展開)"}
+            </div>
             <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
               {preview?.composed ?? ""}
             </pre>
           </div>
-          <div>
-            <div className="mb-1 text-[11px] text-fg-subtle">サンプル context での展開後プロンプト</div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
-              {preview?.rendered_sample ?? ""}
-            </pre>
-          </div>
+          {data.kind !== "python_block" && (
+            <div>
+              <div className="mb-1 text-[11px] text-fg-subtle">サンプル context での展開後プロンプト</div>
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+                {preview?.rendered_sample ?? ""}
+              </pre>
+            </div>
+          )}
         </div>
       </details>
     </div>

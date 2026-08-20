@@ -49,7 +49,8 @@ class TestCatalogCompleteness:
         # +ground_ach_rubric / ground_incremental_rubric / nominate_rubric /
         # detect_new_rubric / adversarial_rubric / synthesis_render_rubric seed
         # (層分け 7〜12 本目 2026-08-20)
-        assert len(actual) == 28
+        # +ioc_llm_verifier_rubric seed (group 4 の 1 本目、python_block kind、2026-08-21)
+        assert len(actual) == 29
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 

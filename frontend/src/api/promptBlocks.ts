@@ -41,7 +41,10 @@ async function sendJson<T>(path: string, method: "POST" | "PUT", body: unknown):
   return r.json() as Promise<T>;
 }
 
-export type ManagedPromptKind = "field_rubric" | "block";
+// python_block (2026-08-21): .j2 skeleton を持たず Python コードが構造を所有する動的
+// プロンプト (ioc_llm_verifier、group 4 の 1 本目)。編集 UI は block と共用 (BlockPromptEditor) —
+// slots は skeleton マーカーでなく backend の固定表由来、preview に Jinja render 段が無い点のみ違う。
+export type ManagedPromptKind = "field_rubric" | "block" | "python_block";
 
 export interface ManagedPrompt {
   prompt_id: string;
@@ -80,9 +83,11 @@ export interface BlockRuntimeInfo {
 export interface BlocksGetResponse {
   prompt_id: string;
   title: string;
+  kind: ManagedPromptKind;
   rubric: BlockRubric;
-  // プロンプト内の出現順 (skeleton のマーカー順)。カードはこの順で描く — DB の
-  // sections 配列順ではない (そちらは I-1 と同じ理由で保存時に一切並べ替えない)。
+  // プロンプト内の出現順 (skeleton のマーカー順、python_block は対象モジュールの固定表順)。
+  // カードはこの順で描く — DB の sections 配列順ではない (そちらは I-1 と同じ理由で保存時に
+  // 一切並べ替えない)。
   slots: string[];
   runtime: BlockRuntimeInfo;
 }

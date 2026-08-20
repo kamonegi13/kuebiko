@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -211,8 +212,146 @@ def _find_context(body: str, needle: str, window: int) -> str:
     return body[s:e].replace("\n", " ").strip()
 
 
+# ---------- プロンプトの層分け (python_block kind、2026-08-21) ----------
+#
+# .j2 と違い本関数は Python コードが構造を所有する動的プロンプト (候補リストが実行時に
+# 決まるため Jinja ループで表現しない設計判断)。編集可能な指示散文は 3 block に分離し
+# DB (config_store) 所有にする (src/prompts/registry.py の PromptSpec、kind="python_block")。
+# 見出し行・候補リストの動的生成・JSON 出力形式行は **code 所有のまま** (出力スキーマ
+# IocVerifyOutput と結合しているため編集不可が正しい)。
+#
+# slot id (skeleton が無いため固定表で持つ — prompt_store.python_block_slot_ids が参照)。
+SLOT_IDS: tuple[str, ...] = ("intro", "criteria", "rules")
+
+_PROMPT_ID = "ioc_llm_verifier"
+
+# 保存前検証・preview 用のサンプル候補 (各 type を 1 件ずつ含む非空ダミー)。実データを
+# 使わず kuebiko.example 系のみ (§4: ログ・応答に本物の記事本文を持ち込まない)。
+SAMPLE_TARGETS: list[dict[str, str]] = [
+    {
+        "type": "ipv4",
+        "value": "198.51.100.23",
+        "context": "C2 サーバへの接続が観測された 198.51.100.23 (render 検証用)。",
+    },
+    {
+        "type": "ipv6",
+        "value": "2001:db8::1",
+        "context": "IPv6 経由の C2 通信 2001:db8::1 (render 検証用)。",
+    },
+    {
+        "type": "domain",
+        "value": "evil.kuebiko.example",
+        "context": "マルウェアの配布元 evil.kuebiko.example (render 検証用)。",
+    },
+    {
+        "type": "url",
+        "value": "https://evil.kuebiko.example/payload.exe",
+        "context": "初期アクセスの配布 URL (render 検証用)。",
+    },
+    {
+        "type": "md5",
+        "value": "abcd1234abcd1234abcd1234abcd1234",
+        "context": "検体の MD5 ハッシュ (render 検証用)。",
+    },
+    {
+        "type": "sha1",
+        "value": "abcd1234abcd1234abcd1234abcd1234abcd1234",
+        "context": "検体の SHA1 ハッシュ (render 検証用)。",
+    },
+    {
+        "type": "sha256",
+        "value": "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234",
+        "context": "検体の SHA256 ハッシュ (render 検証用)。",
+    },
+    {
+        "type": "email",
+        "value": "attacker@kuebiko.example",
+        "context": "フィッシングの送信元アドレス (render 検証用)。",
+    },
+    {
+        "type": "cve",
+        "value": "CVE-2026-00001",
+        "context": "悪用された脆弱性 (render 検証用)。",
+    },
+    {
+        "type": "mitre_tech",
+        "value": "T1566",
+        "context": "観測された ATT&CK technique (render 検証用)。",
+    },
+    {
+        "type": "mitre_group",
+        "value": "G0001",
+        "context": "帰属候補の ATT&CK group (render 検証用)。",
+    },
+]
+
+
+def compose_from_blocks(blocks: Mapping[str, str], targets: list[dict[str, str]]) -> str:
+    """blocks (DB 所有の指示散文) + targets (code 所有の動的候補リスト) からプロンプトを合成する。
+
+    レイアウトは ``_build_prompt_legacy`` と同一。blocks が legacy 由来の verbatim テキスト
+    なら結果は byte 一致する (golden 不変量、tests/unit で固定)。``blocks`` に
+    ``SLOT_IDS`` の欠落があれば ``KeyError`` (呼び出し側の保存前検証 / fail-safe で拾う)。
+    """
+    lines = [
+        blocks["intro"],
+        "",
+        "## 判定基準",
+        blocks["criteria"],
+        "",
+        "## 候補リスト",
+    ]
+    for i, t in enumerate(targets):
+        lines.append(
+            f"{i}. type={t['type']} value={t['value']!r}\n   context: {t['context'][:200]!r}",
+        )
+    lines.extend(
+        [
+            "",
+            "## 出力 (JSON のみ)",
+            '{ "decisions": ['
+            ' {"id": <候補番号>, "action": "keep"|"drop", "reason": "<短い理由>"},'
+            " ... ] }",
+            "",
+            "ルール:",
+            blocks["rules"],
+        ],
+    )
+    return "\n".join(lines)
+
+
+def _composed_prompt(targets: list[dict[str, str]]) -> str | None:
+    """DB 編集層があればそれで合成する。flag OFF / 編集層不在 / 合成失敗は None (= legacy へ)。"""
+    from src.prompts.prompt_store import build_python_block_source
+    from src.prompts.registry import get_spec
+
+    spec = get_spec(_PROMPT_ID)
+    if spec is None:
+        return None
+    return build_python_block_source(spec, targets)
+
+
 def _build_prompt(targets: list[dict[str, str]]) -> str:
-    """LLM verifier 用プロンプトを組み立てる。"""
+    """LLM verifier 用プロンプトを組み立てる (DB 編集層 → legacy の順で fail-safe に解決)。
+
+    graceful degradation (本 module の契約) を下層の例外処理に依存させない — 合成経路が
+    どこで raise しても legacy (純 Python・I/O なし) に落ちる構造保証。per-article の
+    hot path で prompt 組み立てを新しい crash 点にしないための関門。
+    """
+    try:
+        composed = _composed_prompt(targets)
+    except Exception as e:  # noqa: BLE001 — 合成失敗は契約上 legacy へ
+        _log.warning("ioc_prompt_compose_failed", error=str(e))
+        composed = None
+    return composed if composed is not None else _build_prompt_legacy(targets)
+
+
+def _build_prompt_legacy(targets: list[dict[str, str]]) -> str:
+    """rollback 用の frozen 実装 (``IOC_LLM_VERIFIER_COMPOSER=0`` の実体)。
+
+    ⚠ 編集禁止: DB 編集層 (blocks) の内容と独立させるため、この関数は他のどこからも
+    import されない自己完結コピーとして維持する (block 方式の legacy .j2 と同じ役割)。
+    """
     lines = [
         "あなたは CTI (Cyber Threat Intelligence) 分析の専門家です。",
         "以下は regex で抽出された IoC 候補と各々の周辺文脈です。",
@@ -284,8 +423,11 @@ def _reconstruct_extracted(
 
 # 後方互換: 既存 test / コードが import するための named export
 __all__ = [
+    "SAMPLE_TARGETS",
+    "SLOT_IDS",
     "IocDecision",
     "IocVerifyOutput",
+    "compose_from_blocks",
     "verify_iocs_with_llm",
 ]
 

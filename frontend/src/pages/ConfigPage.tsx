@@ -22,6 +22,7 @@ import { promptBlocksApi, type ManagedPrompt, type ManagedPromptKind } from "../
 const MANAGED_KIND_LABEL: Record<ManagedPromptKind, string> = {
   field_rubric: "フィールド別",
   block: "ブロック",
+  python_block: "ブロック (Python 所有)",
 };
 
 // 設定画面の整理 (2026-08-02): タブが **3 種類の異なるもの** を同列に並べていて
@@ -316,6 +317,19 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
   const current = selected != null ? managedByPath.get(selected) ?? null : null;
   const showRawEditor = current == null || mode === "raw";
+  // python_block (2026-08-21): .j2 skeleton を持たない Python 所有プロンプトは実ファイルが
+  // prompts/**/*.j2 の一覧 (list.files) に現れない — allowlist (FileEditor) が .py を対象外に
+  // しているため raw 編集自体が構造的に不可能。「実ファイル」切替を出さず banner に留める。
+  const hasRawFile = current != null && (list?.files ?? []).includes(current.legacy_path);
+
+  // list.groups (実ファイル一覧) に対応が無い managed entry (= python_block 系) を、
+  // 専用の区分としてサイドバーへ追加する (実ファイルが無いプロンプトが選択肢から消えないため)。
+  const codeOwnedGroup = useMemo(() => {
+    const rawFiles = new Set(list?.files ?? []);
+    const entries = (managed?.prompts ?? []).filter((m) => !rawFiles.has(m.legacy_path));
+    if (entries.length === 0) return null;
+    return { category: "解析ロジック (Python 所有)", files: entries };
+  }, [managed, list]);
 
   const { data: file } = useQuery({
     queryKey: ["prompts-file", selected],
@@ -384,6 +398,27 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
             })}
           </div>
         ))}
+        {/* 実ファイルを持たない managed prompt (python_block 系) 専用の区分 */}
+        {codeOwnedGroup && (
+          <div key={codeOwnedGroup.category}>
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
+              {codeOwnedGroup.category}
+            </div>
+            {codeOwnedGroup.files.map((m) => (
+              <div
+                key={m.legacy_path}
+                onClick={() => select(m.legacy_path)}
+                title={`${m.prompt_id} (実ファイルは無し — 構造は Python コードが所有)`}
+                className={`px-3 py-2 cursor-pointer border-b border-border-subtle ${
+                  selected === m.legacy_path ? "bg-accent-subtle text-accent-hover" : "hover:bg-surface-2 text-fg"
+                }`}
+              >
+                <div className="text-sm leading-tight">{m.title}</div>
+                <div className="font-mono text-[10px] text-fg-subtle leading-tight mt-0.5">{m.prompt_id}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </aside>
 
       <div className="min-w-0 space-y-3">
@@ -391,7 +426,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
         {current && (
           <div className="flex items-center justify-between gap-2">
             <div className="inline-flex rounded-md border border-border-subtle overflow-hidden">
-              {(["card", "raw"] as const).map((m2) => (
+              {(hasRawFile ? (["card", "raw"] as const) : (["card"] as const)).map((m2) => (
                 <button
                   key={m2}
                   onClick={() => setMode(m2)}

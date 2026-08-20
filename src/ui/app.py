@@ -409,7 +409,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from src.prompts.registry import all_specs
 
             for prompt_spec in all_specs():
-                if prompt_spec.kind == "block" and seed_prompt_if_absent(prompt_spec):
+                if prompt_spec.kind in ("block", "python_block") and seed_prompt_if_absent(
+                    prompt_spec
+                ):
                     _log.info("prompt_rubric_seeded_from_yaml", prompt=prompt_spec.prompt_id)
             sources_seeded = seed_sources_if_absent()
             if any(sources_seeded.values()):

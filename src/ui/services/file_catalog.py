@@ -369,6 +369,13 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "render (プロンプト id: synthesis_render) の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
         "UI 編集はプロンプトタブ。層分け 7〜12 本目 2026-08-20)",
     ),
+    "config/prompts/ioc_llm_verifier_rubric.yaml": FileInfo(
+        "プロンプト",
+        "IoC LLM 検証の編集層 (blocks)",
+        "ioc_llm_verifier の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。Python コードが構造を所有する動的プロンプト "
+        "= group 4 の 1 本目、2026-08-21)",
+    ),
 }
 
 _FALLBACK_CATEGORY = "その他"

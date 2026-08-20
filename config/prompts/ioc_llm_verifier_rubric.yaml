@@ -1,0 +1,32 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: intro
+  kind: rubric
+  title: 冒頭 (persona + 判定指示)
+  body: 'あなたは CTI (Cyber Threat Intelligence) 分析の専門家です。
+
+    以下は regex で抽出された IoC 候補と各々の周辺文脈です。
+
+    **真の Indicator of Compromise (攻撃に関連する識別子) かどうか** を判定してください。'
+  note: ''
+- field_id: criteria
+  kind: rubric
+  title: 判定基準 (KEEP/DROP)
+  body: "- KEEP: 攻撃で実際に観測 / 使用された識別子 (C2 IP / malware hash / 攻撃 domain など)\n- DROP:\
+    \ 以下のような誤抽出\n  - ソフトウェアバージョン番号 (例: 6.2.10.0)\n  - ライブラリ / フレームワーク名 (例: Socket.IO,\
+    \ Node.js)\n  - Git commit hash (40-hex、github.com 等の文脈)\n  - ATT&CK 解説記事内の technique\
+    \ 参照 (実 incident でなく解説目的)\n  - 記事末尾の連絡先 email / 公式機関 contact\n  - 良性サービス (Cloudflare/Google\
+    \ DNS、AWS など) の悪用文脈なし言及\n  - 記事の引用 / 出典 URL\n  - RFC documentation IP (192.0.2.x\
+    \ / 198.51.100.x / 203.0.113.x)"
+  note: ''
+- field_id: rules
+  kind: rubric
+  title: ルール
+  body: '- 全候補 (上の番号 0〜N-1) について必ず判定を 1 件ずつ出力
+
+    - 判定迷う場合は keep (false negative よりも false positive を許容)
+
+    - reason は 50 字以内の短い日本語'
+  note: ''
+examples: []
