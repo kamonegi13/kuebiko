@@ -363,10 +363,10 @@ kuebiko/
 - **production DB は PostgreSQL** (Phase Y 以降):
   - `docker compose` の `postgres` service に named volume (`postgres_data`) でデータ永続化
   - 127.0.0.1:5433 で host から `psql` 可能 (5433 は既存 pg と衝突回避)
-  - `DATABASE_URL=postgresql://cti:${POSTGRES_PASSWORD}@postgres:5432/kuebiko` env で接続
+  - `DATABASE_URL=postgresql://kuebiko:${POSTGRES_PASSWORD}@postgres:5432/kuebiko` env で接続
   - SQLite (旧 `data/run_history.db`) は **legacy**、 dev / tests でのみ動作 (DATABASE_URL 未設定時 fallback)
   - macOS virtiofs WAL 衝突 corruption の根本解決 (2026-05-26 cutover)
-  - host から SQL access する場合は `docker exec postgres psql -U cti -d kuebiko` 経由
+  - host から SQL access する場合は `docker exec postgres psql -U kuebiko -d kuebiko` 経由 (2026-07-31 rename 以降 user も kuebiko。旧 `cti` role は nologin)
   - **バックアップ (Phase 0 F1)**: `backup` sidecar (postgres:16-alpine) が日次 `pg_dump -Fc` を
     `./data/backups/` に出力 (14 日 rotation)。`docker compose up -d backup` で起動、
     `docker logs backup` で成否確認。復元は `scripts/restore_db.sh <dump>`。
