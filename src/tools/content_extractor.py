@@ -20,6 +20,7 @@ import re
 from datetime import datetime
 from types import TracebackType
 from typing import Any, Self
+from urllib.parse import urlparse
 
 import httpx
 import trafilatura
@@ -43,6 +44,15 @@ from src.tools.user_agent import (
 _log = get_logger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# ドメイン別の本文コンテナ XPath (pre-trim)。サイト改装で trafilatura が本文ノードの選択を
+# 誤る場合に、抽出入力をこのサブツリーへ絞る。**セレクタ不一致・パース失敗は全文のまま
+# fail-open** (汎用抽出へ)。metadata/言語/paywall 判定は常に全文 HTML を使う (head を失わない)。
+# 2026-08-21: The Register 改装 (teaser <article> 多数 + toplist 列) で本文でなくナビ列が
+# 約 2 か月抽出されていた (全記事が同一 2,494 字の MOST POPULAR 列)。実本文は k5a-article。
+_MAIN_CONTENT_XPATH_BY_HOST: dict[str, str] = {
+    "theregister.com": "//*[contains(@class, 'k5a-article')]",
+}
 
 # 本文取得の UA 戦略 (2026-07-27, docs/body_extraction_and_entity_integrity_redesign.md §2.2)。
 # 陳腐化した UA (旧 Chrome/120) そのものが WAF のボット署名になり全文取得が 403 で無音失敗して
@@ -291,7 +301,7 @@ class ContentExtractor:
         # (URL ごとに独立な記事) では cross-call dedup は害なので無効化する。
         try:
             text = trafilatura.extract(
-                html,
+                pretrim_main_content(url, html),
                 include_comments=False,
                 include_tables=False,
                 favor_recall=False,
@@ -472,10 +482,10 @@ class ContentExtractor:
         if not html:
             return None
 
-        # trafilatura で text 抽出
+        # trafilatura で text 抽出 (httpx 経路と同じドメイン別 pre-trim を適用)
         try:
             text = trafilatura.extract(
-                html,
+                pretrim_main_content(url, html),
                 include_comments=False,
                 include_tables=False,
                 favor_recall=False,
@@ -552,6 +562,44 @@ class ContentExtractor:
 
 
 # ---------- module-level helpers ----------
+
+
+def pretrim_main_content(url: str, html: str) -> str:
+    """ドメイン別 XPath で本文コンテナへ pre-trim する (不一致・失敗は全文のまま)。
+
+    trafilatura への **入力専用**。metadata 抽出・言語判定・paywall 判定には使わない
+    (head / 全文の情報を失うため)。対象ドメインは _MAIN_CONTENT_XPATH_BY_HOST。
+    """
+    host = (urlparse(url).hostname or "").lower()
+    xpath = next(
+        (
+            xp
+            for h, xp in _MAIN_CONTENT_XPATH_BY_HOST.items()
+            if host == h or host.endswith("." + h)
+        ),
+        None,
+    )
+    if xpath is None:
+        return html
+    try:
+        from lxml import html as lxml_html
+
+        raw = lxml_html.fromstring(html).xpath(xpath)
+        # XPath の戻りは式次第で bool/float/str にもなる — 要素ノードのみに絞る
+        nodes = (
+            [n for n in raw if isinstance(n, lxml_html.HtmlElement)]
+            if isinstance(raw, list)
+            else []
+        )
+        if not nodes:
+            _log.info("content_pretrim_selector_missed", url=url)
+            return html
+        sub = lxml_html.tostring(nodes[0], encoding="unicode")
+    except Exception as e:  # noqa: BLE001 — pre-trim は最適化であり失敗を致命化しない
+        _log.debug("content_pretrim_failed", url=url, error=str(e))
+        return html
+    _log.info("content_pretrim_applied", url=url, trimmed_length=len(sub))
+    return f"<html><body>{sub}</body></html>"
 
 
 def _looks_like_paywall(*, text: str, html: str) -> bool:
