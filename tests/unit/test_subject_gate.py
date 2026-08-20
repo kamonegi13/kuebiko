@@ -9,7 +9,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from src.cti.subject_gate import passes_subject_gate, subject_gate_clause
+import pytest
+
+from src.cti.subject_gate import (
+    passes_subject_gate,
+    subject_gate_clause,
+    subject_membership_clause,
+)
 from src.storage.records import ArticleRecord, RunRecord
 from src.storage.run_history import RunHistoryRepository
 
@@ -132,3 +138,51 @@ def test_passes_gate_membership_is_exact() -> None:
         subject_ids_csv="akira_ransom,the_gentlemen",
         subject_source="feed",
     )
+
+
+# ---------- subject_membership_clause (2026-08-21、地図 flow / 概況で共用) ----------
+
+
+def test_subject_membership_clause_matches_situation_hand_rolled_form() -> None:
+    """situation.py._attacker_face_rows の置換前の手書き OR 連結と文字列一致する (挙動不変の
+    リファクタであることの回帰防止)。"""
+    ids = ["volt_typhoon", "lazarus", "salt_typhoon"]
+    expected_membership = " OR ".join(
+        "INSTR(',' || COALESCE(subject_actor_ids,'') || ',', ',' || ? || ',') > 0" for _ in ids
+    )
+    assert subject_membership_clause("subject_actor_ids", len(ids)) == f"({expected_membership})"
+
+
+def test_subject_membership_clause_single_param_respects_column_prefix() -> None:
+    assert subject_membership_clause("a.subject_actor_ids", 1) == (
+        "(INSTR(',' || COALESCE(a.subject_actor_ids,'') || ',', ',' || ? || ',') > 0)"
+    )
+
+
+def test_subject_membership_clause_rejects_zero_param_count() -> None:
+    # 空候補での呼び出しは呼出側の guard 漏れなので早期に落とす。
+    with pytest.raises(ValueError, match="param_count"):
+        subject_membership_clause("subject_actor_ids", 0)
+
+
+def test_subject_membership_clause_exact_match_via_sqlite(tmp_path: Path) -> None:
+    """実 SQLite 上で position ベースの完全一致 (部分文字列誤マッチ防止) を検証する。"""
+    repo = _repo(tmp_path)
+    rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=False))
+    repo.add_article(
+        ArticleRecord(
+            run_id=rid,
+            article_id="a1",
+            title="t",
+            url="https://ex.com/a1",
+            status="posted",
+            subject_actor_ids="the_gentlemen,inc_ransom",
+        )
+    )
+    clause = subject_membership_clause("subject_actor_ids", 2)
+    with repo._connect() as con:  # noqa: SLF001
+        rows = con.execute(
+            f"SELECT article_id FROM articles WHERE {clause}",  # noqa: S608 — clause は内部固定
+            ("akira", "inc_ransom"),
+        ).fetchall()
+    assert [r["article_id"] for r in rows] == ["a1"]  # akira は部分一致せず落ちる

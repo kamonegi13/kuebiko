@@ -43,6 +43,8 @@ _BODY_WINDOW_DAYS = 90
 
 
 def _split_ids(raw: object) -> list[str]:
+    # split_subject_ids と挙動差 (list で順序を保持 — 呼出側が ",".join([*existing, new_id])
+    # で追記順を維持する必要がある + strip() の空白耐性) のため据置 (2026-08-21 監査)。
     return [s.strip() for s in str(raw or "").split(",") if s.strip()]
 
 

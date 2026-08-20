@@ -457,6 +457,8 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
     # 言及 (entity actor) との役割分離表示に使う (B1、NSA 混同の解消)。
     from src.cti.actor_normalizer import load_actor_aliases as _load_aliases
 
+    # split_subject_ids と挙動差 (list で表示順を保持 + フィルタ述語が s.strip() で
+    # split_subject_ids の `if s` と異なる) のため据置 (2026-08-21 監査)。
     _subj_ids = [s for s in (a.subject_actor_ids or "").split(",") if s.strip()]
     _registry = _load_aliases()
     subject_actors: list[dict[str, str]] = []

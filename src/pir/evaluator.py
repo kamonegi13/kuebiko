@@ -264,6 +264,8 @@ def _row_match_signals(
     subject_gated = bool(subject_source) and _subject_gate_enabled()
     subject_ids: frozenset[str] = frozenset()
     if subject_gated:
+        # split_subject_ids と挙動差 (strip() + lower() で PIR 照合を大小文字非依存に
+        # する意図的な正規化) のため据置 (2026-08-21 監査)。
         subject_ids = frozenset(
             s.strip().lower()
             for s in _safe_row_get(row, "subject_actor_ids").split(",")

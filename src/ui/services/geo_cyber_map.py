@@ -323,37 +323,31 @@ def _flow_rows(
     min_importance: str = "all",
     time_basis: str = "report",
 ) -> list[Any]:
-    """窓内の cyber-attack 記事の (iso, actor_id, title, summary) を取得 (アクター中心ビュー用)。"""
-    status_clause, status_params = _status_filter(source_status, "a.status")
-    # D1 (2026-07-27): 同盟国の報告/防御機関 (NSA 等) を攻撃帰属から除外 (legacy 行の mention
-    # fallback でも NSA を残さないため subject-gate と併用する)。
-    from src.cti.actor_roles import reporter_org_actor_ids
-    from src.cti.subject_gate import subject_gate_clause
+    """窓内 cyber-attack 記事の (iso, subject_actor_ids, title, summary) を返す。
 
-    reporter_ids = sorted(reporter_org_actor_ids())
-    reporter_clause = ""
-    if reporter_ids:
-        reporter_ph = ",".join("?" for _ in reporter_ids)
-        reporter_clause = f" AND ae.value NOT IN ({reporter_ph})"
-    # subject-gate (案A): 評価済みは主題のみ、legacy は mention fallback (窓 40%)。
-    gate = subject_gate_clause(
-        mention_col="ae.value",
-        subject_ids_col="a.subject_actor_ids",
-        subject_source_col="a.subject_actor_source",
-    )
+    アクター中心ビュー (actor 別の被害国) 用の生データ取得。
+
+    2026-08-21 反転: 国家情勢ボードの攻撃者面 (75c7dee, 2026-08-20) と同じ欠陥 —
+    article_entities の **言及 (mention)** actor を数えており、記事の主題でないアクター
+    (ランサム列挙記事の被害列挙、報道機関の言及等) が攻撃帰属に混入していた — がここにも
+    あったため、母集団を ``articles.subject_actor_ids`` (主題評価済み) 起点に反転する。
+    legacy 行 (subject_actor_source IS NULL → subject_actor_ids も NULL/空) は呼出側
+    (build_cyber_map) の split_subject_ids で空集合になり自然に落ちる (mention への
+    fallback は意図的に廃止)。1 記事 → 複数 (iso, actor) ペアへの展開・報告/防御機関の
+    除外は呼出側で行う (SQL 側は articles のみの単純な母集団取得に留める)。
+    """
+    status_clause, status_params = _status_filter(source_status, "a.status")
     sql = (
-        "SELECT a.victim_country_iso AS iso, ae.value AS actor, a.title AS title, "
-        "a.summary AS summary "
-        "FROM article_entities ae JOIN articles a ON a.article_id = ae.article_id "
-        f"WHERE ae.entity_type='actor' AND {status_clause} "
+        "SELECT a.victim_country_iso AS iso, a.subject_actor_ids AS subject_actor_ids, "
+        "a.title AS title, a.summary AS summary "
+        "FROM articles a "
+        f"WHERE {status_clause} "
         "AND a.victim_country_iso IS NOT NULL AND a.victim_country_iso != '' "
         f"AND {_cyber_category_clause('a.category')}"
-        + reporter_clause
-        + f" AND {gate}"
         + _class_clause(threat_class, "a.is_ransomware")
         + _importance_clause(min_importance, "a.importance")
     )
-    params: list[Any] = [*status_params, *_cyber_category_params(), *reporter_ids]
+    params: list[Any] = [*status_params, *_cyber_category_params()]
     if since is not None:
         sql += _win_frag(time_basis, "a.")
         params.append(since.isoformat())
@@ -566,12 +560,22 @@ def build_cyber_map(
     # 経緯: [[geo_map_design_discussion]]。
 
     # ── actors: アクター別の被害国 (actor 中心ビュー = 被害国ハイライト用)。
-    # actor_id → {victim_iso: count}。
+    # actor_id → {victim_iso: count}。2026-08-21: 主題起点 (subject_actor_ids) への反転に
+    # 伴い、1 記事 → 複数 (iso, actor) ペアの展開と報告/防御機関 (NSA 等) の除外を
+    # ここで行う (旧 SQL 側の NOT IN + subject-gate から移動)。
+    from src.cti.actor_roles import reporter_org_actor_ids
+    from src.cti.subject_gate import split_subject_ids
+
+    reporter_ids = reporter_org_actor_ids()
     actor_victims: dict[str, Counter[str]] = defaultdict(Counter)
     for r in flow_raw:
         if _is_accident(r):
             continue
-        actor_victims[str(r["actor"])][str(r["iso"]).upper()] += 1
+        iso_up = str(r["iso"]).upper()
+        for aid in split_subject_ids(r["subject_actor_ids"]):
+            if aid in reporter_ids:
+                continue
+            actor_victims[aid][iso_up] += 1
     actors: list[dict[str, Any]] = []
     for actor_id, vc in actor_victims.items():
         nat = (nation_map.get(actor_id) or "").upper()

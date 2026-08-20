@@ -87,6 +87,9 @@ class ArticleFacts:
         ``actor_values`` = article_entities (actor) の値 (evaluator の actor_map 由来、
         actor/actor_nation leaf の legacy 照合に使う。無ければ空 = leaf が不成立に倒れる)。
         """
+        # split_subject_ids と挙動差 (strip() + lower() で照合を大小文字非依存にする
+        # 意図的な正規化。evaluator.py の subject_gated 分岐と同一意味論) のため据置
+        # (2026-08-21 監査)。
         raw_subject = str(_get(row, "subject_actor_ids") or "")
         subject_ids = frozenset(s.strip().lower() for s in raw_subject.split(",") if s.strip())
         return cls(

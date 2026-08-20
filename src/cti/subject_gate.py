@@ -34,6 +34,27 @@ def subject_gate_clause(*, mention_col: str, subject_ids_col: str, subject_sourc
     return f"({subject_source_col} IS NULL OR {membership})"
 
 
+def subject_membership_clause(subject_ids_col: str, param_count: int) -> str:
+    """OR 連結の literal-id membership SQL 断片を返す (INSTR position ベース、両端カンマ挟み)。
+
+    ``param_count`` 個の ``INSTR(',' || COALESCE({subject_ids_col},'') || ',',
+    ',' || ? || ',') > 0`` を OR で連結し ``(...)`` で括って返す (呼出側は params に候補 id を
+    宣言順で渡す契約)。:func:`subject_gate_clause` と同じ position ベース判定 — LIKE は
+    id 中の ``_`` がワイルドカードになる罠、psycopg が ``%,`` を placeholder と誤解する罠の
+    両方があるため使わない (INSTR は translate_sql が PG で STRPOS に変換する)。
+
+    ``param_count=0`` は呼出側の空 guard 漏れ (候補なしで OR 句を作ろうとしている) なので
+    ValueError で早期検出する — 呼出側は空リストなら本関数を呼ばずに別処理へ分岐する契約。
+    """
+    if param_count <= 0:
+        raise ValueError("param_count must be >= 1 (caller must guard an empty candidate list)")
+    membership = " OR ".join(
+        f"INSTR(',' || COALESCE({subject_ids_col},'') || ',', ',' || ? || ',') > 0"
+        for _ in range(param_count)
+    )
+    return f"({membership})"
+
+
 def split_subject_ids(subject_ids_csv: str | None) -> frozenset[str]:
     """``subject_actor_ids`` (comma 連結 canonical id 列) を id 集合に分解する SSoT。
 

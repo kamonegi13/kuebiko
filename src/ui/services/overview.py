@@ -190,33 +190,33 @@ def _region_counts(country_counts: dict[str, int]) -> dict[str, int]:
 def _actor_nation_counts(
     con: Any, since: datetime, until: datetime, nation_map: dict[str, str]
 ) -> dict[str, int]:
-    """article_entities(actor) を窓で集計し、actor→nation で国籍別件数に。"""
-    # D1 (2026-07-27): 報告/防御機関を除外 + subject-gate (評価済みは主題のみ、legacy は fallback)。
+    """articles.subject_actor_ids (主題起点) を窓で展開し、actor→nation で国籍別件数に。
+
+    2026-08-21 反転: 国家情勢ボードの攻撃者面 (75c7dee, 2026-08-20) / 地図 flow
+    (同日) と同じ欠陥 — article_entities の言及 (mention) actor を数えており記事の
+    主題でないアクターが混入していた — があったため、母集団を
+    ``articles.subject_actor_ids`` 起点に反転する。legacy 行 (subject_actor_source
+    IS NULL → subject_actor_ids も NULL) は split_subject_ids で空集合になり自然に
+    落ちる (mention への fallback は意図的に廃止)。
+    """
     from src.cti.actor_roles import reporter_org_actor_ids
-    from src.cti.subject_gate import subject_gate_clause
+    from src.cti.subject_gate import split_subject_ids
 
     reporter_ids = reporter_org_actor_ids()
-    gate = subject_gate_clause(
-        mention_col="ae.value",
-        subject_ids_col="a.subject_actor_ids",
-        subject_source_col="a.subject_actor_source",
-    )
     sql = (
-        "SELECT ae.value AS actor FROM article_entities ae "
-        "JOIN articles a ON a.article_id = ae.article_id "
-        "WHERE ae.entity_type='actor' AND a.status='posted' "
-        "AND datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?) "
-        f"AND {gate}"
+        "SELECT subject_actor_ids FROM articles "
+        "WHERE status='posted' "
+        "AND datetime(created_at) >= datetime(?) AND datetime(created_at) < datetime(?)"
     )
     rows = con.execute(sql, (since.isoformat(), until.isoformat())).fetchall()
     out: Counter[str] = Counter()
     for r in rows:
-        actor_id = str(r["actor"])
-        if actor_id in reporter_ids:
-            continue
-        nat = nation_map.get(actor_id)
-        if nat:
-            out[nat] += 1
+        for actor_id in split_subject_ids(r["subject_actor_ids"]):
+            if actor_id in reporter_ids:
+                continue
+            nat = nation_map.get(actor_id)
+            if nat:
+                out[nat] += 1
     return dict(out)
 
 

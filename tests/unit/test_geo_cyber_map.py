@@ -291,6 +291,66 @@ def test_build_cyber_map_importance_filter(tmp_path) -> None:  # type: ignore[no
     assert jp_count("high") == 2
 
 
+# ───────── アクター中心ビュー (flow): 主題起点への反転 (2026-08-21) ─────────
+# 国家情勢ボードの攻撃者面 (75c7dee, 2026-08-20) と同じ欠陥 (article_entities の言及
+# (mention) actor を数えると記事の主題でないアクターが混入する) が地図の flow にもあった
+# ため、articles.subject_actor_ids 起点に反転した。以下は反転の回帰防止。
+
+
+def test_flow_actors_excludes_mention_only_article(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """言及のみ (評価済みだが主題なし) の記事は actors (flow ペア) に出ない。"""
+    db = tmp_path / "flow_mention_only.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(
+        ArticleRecord(
+            run_id=run_id,
+            article_id="mo1",
+            title="JP breach mo1",
+            url="https://x.example/mo1",
+            category="breach",
+            status="posted",
+            victim_country_iso="JP",
+            published_at=datetime.now(UTC),
+            subject_actor_ids="",
+            subject_actor_source="none",
+        )
+    )
+    repo.add_article_entities("mo1", [("actor", "volt_typhoon")])
+
+    data = build_cyber_map(window_days=None, db_path=db)
+    actor_ids = {a["actor_id"] for a in data["actors"]}
+    assert "volt_typhoon" not in actor_ids
+    assert data["actors"] == []
+
+
+def test_flow_actors_includes_subject_match_in_scoped_category(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """subject 一致 + 対象 (cyber-attack) カテゴリの記事は actors (flow ペア) に出る。"""
+    db = tmp_path / "flow_subject_match.db"
+    repo = RunHistoryRepository(db_path=db)
+    run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=True))
+    repo.add_article(
+        ArticleRecord(
+            run_id=run_id,
+            article_id="s1",
+            title="JP breach s1",
+            url="https://x.example/s1",
+            category="breach",
+            status="posted",
+            victim_country_iso="JP",
+            published_at=datetime.now(UTC),
+            subject_actor_ids="lazarus",
+            subject_actor_source="llm",
+        )
+    )
+
+    data = build_cyber_map(window_days=None, db_path=db)
+    lazarus = next((a for a in data["actors"] if a["actor_id"] == "lazarus"), None)
+    assert lazarus is not None
+    assert lazarus["total"] == 1
+    assert {v["iso"] for v in lazarus["victims"]} == {"JP"}
+
+
 # ───────── Phase 1b 後半: 都市・地域ピン (sub_country_points) ─────────
 # 国バブル (nodes) とは別レイヤー。victim_city entity を CITY tier (geo_cities) →
 # ADMIN1 tier (geo_admin1) の順で解決し、同一座標に集約したピンを返す。

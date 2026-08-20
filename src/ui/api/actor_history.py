@@ -134,6 +134,8 @@ def actor_month_articles(actor_id: str, month: str) -> dict[str, Any]:
     ids = {canonical, *registry.merged_sources(canonical)}
     repo = RunHistoryRepository()
     since, before = month_window_utc(month)
+    # split_subject_ids と挙動差 (str(None)="None" フォールバック + strip() の空白耐性) の
+    # ため据置 (2026-08-21 監査)。
     rows = [
         r
         for r in _dedupe_by_article(repo.list_subject_article_rows(since, before))

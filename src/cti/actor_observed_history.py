@@ -97,6 +97,9 @@ def _dedupe_by_article(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, A
 
 
 def _subject_ids(row: Mapping[str, Any]) -> list[str]:
+    # split_subject_ids と挙動差 (list で順序/重複を保持 + strip() の空白耐性。本関数は
+    # per_actor 集計のループ用で frozenset 化すると重複記事由来の二重集計を静かに畳んで
+    # しまう) のため据置 (2026-08-21 監査)。
     raw = str(row.get("subject_actor_ids") or "")
     return [s.strip() for s in raw.split(",") if s.strip()]
 
