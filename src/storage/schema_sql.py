@@ -577,4 +577,19 @@ CREATE TABLE IF NOT EXISTS body_ja_chunks (
     created_at TEXT    NOT NULL,
     PRIMARY KEY (article_id, seq)
 );
+
+-- ops 通知の永続化 (2026-08-21、PG _SCHEMA と対)。post_ops_message は従来 Discord ops
+-- webhook へ送るだけで DB に残さず、webhook 不達・未設定の警告が痕跡なく消えていた
+-- (確立教訓「stdout は監査にならない」「成功も記録しないと沈黙の意味を決められない」に
+-- 反する)。webhook 送信の成否に関わらず必ず 1 行残す (access_audit と同型の設計)。
+CREATE TABLE IF NOT EXISTS ops_notices (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT    NOT NULL,               -- ISO8601 UTC
+    title      TEXT    NOT NULL,
+    body       TEXT    NOT NULL,
+    importance TEXT    NOT NULL DEFAULT 'low',  -- high/medium/low (vocab "importance" 流用)
+    sent       INTEGER NOT NULL DEFAULT 0       -- 1/0 (webhook 送信成否)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
 """

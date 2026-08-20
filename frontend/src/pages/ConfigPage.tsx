@@ -8,6 +8,7 @@ import { ConnectionsPanel } from "./config/ConnectionsPanel";
 import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
+import { OpsNoticesCard } from "../components/OpsNoticesCard";
 import { HostWatchdogCard } from "../components/HostWatchdogCard";
 import { SummarizerRubricEditor } from "./config/SummarizerRubricEditor";
 import { BlockPromptEditor } from "./config/BlockPromptEditor";
@@ -118,9 +119,11 @@ export function ConfigPage() {
       {tab === "system" && <SystemEditor />}
       {tab === "history" && (
         <div className="space-y-4">
-          {/* 「後から何が起きたか追う」記録を 1 か所に: 誰が入ったか (監査) と
-              何を変えたか (設定履歴)。設定そのものではないので他タブと分けている。 */}
+          {/* 「後から何が起きたか追う」記録を 1 か所に: 誰が入ったか (監査) /
+              何を変えたか (設定履歴) / 何を運用者に通知したか (ops 通知)。
+              設定そのものではないので他タブと分けている。 */}
           <AccessAuditCard />
+          <OpsNoticesCard />
           <ConfigHistoryView />
         </div>
       )}

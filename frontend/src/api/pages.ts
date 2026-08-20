@@ -250,6 +250,8 @@ export const pagesApi = {
   },
   // mobile tunnel (Phase Diamond verify-mobile / named tunnel の UI 管理は 2026-07-30 C2)
   accessAudit: (limit = 50) => getJson<AccessAuditResponse>(`/api/v1/access-audit?limit=${limit}`),
+  // ops 通知の永続化 (2026-08-21): post_ops_message が送った Discord #ops 通知の記録
+  opsNotices: (limit = 50) => getJson<OpsNoticesResponse>(`/api/v1/ops-notices?limit=${limit}`),
   hostWatchdogStatus: () => getJson<HostWatchdogStatus>("/api/v1/host-watchdog/status"),
   hostWatchdogEnable: () =>
     postForm<HostWatchdogStatus>("/api/v1/host-watchdog/enable", new FormData()),
@@ -282,6 +284,23 @@ export interface AccessAuditResponse {
   events: AccessAuditEvent[];
   count: number;
   auth: { configured: boolean; team_domain: string };
+  error?: string;
+}
+
+// ops 通知の永続化 (2026-08-21)。post_ops_message は webhook 送信の成否に関わらず
+// 必ず 1 行残す (webhook 未設定/不達でも sent=false で残る)。
+export interface OpsNotice {
+  id: number;
+  created_at: string;
+  title: string;
+  body: string;
+  importance: string; // high / medium / low (vocab "importance" で日本語化)
+  sent: boolean;
+}
+
+export interface OpsNoticesResponse {
+  notices: OpsNotice[];
+  count: number;
   error?: string;
 }
 

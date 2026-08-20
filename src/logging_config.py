@@ -101,6 +101,16 @@ def _mask_text(text: str) -> str:
     return _EMAIL_RE.sub(_MASKED_EMAIL, _WEBHOOK_URL_RE.sub(_MASKED_WEBHOOK, text))
 
 
+def mask_text(text: str) -> str:
+    """自由文を DB 永続化・API 応答へ載せる前のマスク (公開 seam、2026-08-21)。
+
+    log 経路は mask_sensitive_processor が担うが、log 以外で自由文を保存する消費者
+    (ops_notices 等) はここを通す。例外文字列に webhook URL 等が埋まる事故は
+    read API 漏洩として 2 度再発した型 (config_endpoint_secret_leak) — 保存時点で塞ぐ。
+    """
+    return _mask_text(text)
+
+
 def _mask_event_dict(d: EventDict) -> EventDict:
     """``EventDict`` 内の機密キー + 文字列値中の webhook URL を再帰的にマスクする。"""
     masked: dict[str, Any] = {}

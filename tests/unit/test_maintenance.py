@@ -97,3 +97,22 @@ async def test_daily_maintenance_purges_old_article_bodies(tmp_path: Path) -> No
     assert bodies["a-old"] is None  # 90d 超は NULL 化
     assert bodies["a-legacy-old"] is None  # created_at fallback でも NULL 化
     assert bodies["a-new"] == "NEW"  # 新しい body は保持
+
+
+@pytest.mark.asyncio
+async def test_daily_maintenance_purges_old_ops_notices(tmp_path: Path) -> None:
+    """ops 通知の永続化 (2026-08-21): access_audit と同じ 180 日 retention を日次衛生で回す。"""
+    from src.ui.services import maintenance
+
+    db = tmp_path / "ops_notices.db"
+    repo = RunHistoryRepository(db_path=db)
+    now = datetime.now(UTC)
+    repo.record_ops_notice(title="recent", body="b", importance="low", sent=True, when=now)
+    repo.record_ops_notice(
+        title="old", body="b", importance="low", sent=True, when=now - timedelta(days=200)
+    )
+
+    await maintenance.run_daily_maintenance(repo=repo)
+
+    remaining = repo.list_ops_notices()
+    assert [n["title"] for n in remaining] == ["recent"]

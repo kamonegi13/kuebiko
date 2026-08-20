@@ -152,6 +152,25 @@ async def access_audit(limit: int = 200) -> dict[str, Any]:
     return {"events": rows, "count": len(rows), "auth": auth}
 
 
+# ---------- /ops-notices (ops 通知の永続化、2026-08-21) ----------
+
+
+@pages_api.get("/ops-notices")
+async def ops_notices(request: Request, limit: int = 50) -> dict[str, Any]:
+    """post_ops_message が送った ops 通知を新しい順に返す (設定 → 履歴・監査タブ用)。
+
+    webhook 不達・未設定でも DB には必ず 1 行残る (src/ui/services/ops_notify.py)。
+    運用系の観測データのため公開 instance からは READ_ONLY_GET_DENYLIST で遮断される。
+    """
+    repo: RunHistoryRepository = request.app.state.repo
+    try:
+        notices = repo.list_ops_notices(limit=min(max(limit, 1), 500))
+    except Exception as e:  # noqa: BLE001 — 参照の失敗で画面を落とさない
+        _log.warning("ops_notices_list_failed", error=str(e))
+        return {"notices": [], "count": 0, "error": "ops 通知を読み出せませんでした"}
+    return {"notices": notices, "count": len(notices)}
+
+
 # ---------- /runtime-flags (Phase Diamond verify-mobile) ----------
 
 

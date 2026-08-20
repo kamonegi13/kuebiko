@@ -24,6 +24,9 @@ _BODY_RETENTION_DAYS = 90
 # 認証の監査証跡 (2026-08-02)。run_logs より長い 180 日 — 不正アクセスの発覚は
 # 遅れる前提で、遡って調べられる期間を確保する。
 _ACCESS_AUDIT_RETENTION_DAYS = 180
+# ops 通知の永続化 (2026-08-21)。access_audit と同じ 180 日水準 — 運用上の警告も
+# 「後から遡って調べる」ためのものなので同じ保持期間にする。
+_OPS_NOTICES_RETENTION_DAYS = 180
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -40,6 +43,8 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_bodies = repo.purge_article_bodies_older_than(days=_BODY_RETENTION_DAYS)
         # 監査証跡は run_logs (30 日) より長く保つ — 事故の発覚は遅れる前提 (2026-08-02)
         purged_audit = repo.purge_old_access_audit(days=_ACCESS_AUDIT_RETENTION_DAYS)
+        # ops 通知も同じ理由で access_audit と同水準の retention (2026-08-21)
+        purged_ops_notices = repo.purge_old_ops_notices(days=_OPS_NOTICES_RETENTION_DAYS)
         _log.info(
             "daily_maintenance_done",
             purged_logs=purged_logs,
@@ -47,6 +52,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_detection_log=detection_purged,
             purged_bodies=purged_bodies,
             purged_access_audit=purged_audit,
+            purged_ops_notices=purged_ops_notices,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない
         _log.error("daily_maintenance_failed", error=str(e))
