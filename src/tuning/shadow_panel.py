@@ -61,6 +61,25 @@ def _second_model_ref() -> str:
     return os.environ.get(ENV_SECOND_MODEL, "").strip() or _DEFAULT_SECOND_MODEL
 
 
+# 推論系モデル: think=False だと出力が reasoning 側へ流れ structured content が空になる
+# (2026-08-22 実測。Gemma4 の「digest 系は think=False 必須」と真逆の癖)
+_FORCE_THINK_PREFIXES = ("gpt-oss",)
+
+
+class _ForceThink:
+    """generate_structured の think を強制する薄い adapter (パネル呼出限定)。"""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    async def generate_structured(self, *args: Any, **kwargs: Any) -> Any:
+        kwargs["think"] = True
+        return await self._inner.generate_structured(*args, **kwargs)
+
+
 def _default_llm_factory(model_ref: str | None) -> Any:
     from src.config_loader import load_app_config
     from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref
@@ -68,7 +87,10 @@ def _default_llm_factory(model_ref: str | None) -> Any:
     config = load_app_config()
     if model_ref is None:
         return build_llm_for(Step.ARTICLE_SUMMARY, config)
-    return build_llm_for_ref(model_ref, Step.ARTICLE_SUMMARY, config)
+    llm = build_llm_for_ref(model_ref, Step.ARTICLE_SUMMARY, config)
+    if model_ref.startswith(_FORCE_THINK_PREFIXES):
+        return _ForceThink(llm)
+    return llm
 
 
 def _classify_agreement(values: list[str], truth: str) -> str:
@@ -172,6 +194,11 @@ async def _run_impl(
             verdicts.append({"model": model_label, "value": value})
 
         agreement = _classify_agreement([v["value"] for v in verdicts], c["truth"])
+        if agreement == "error":
+            # 情報ゼロの裁定は永続化しない — error 行が case_key を塞ぐと修正後の
+            # 再裁定が構造的に不可能になる (来週の sweep で自動再試行される)
+            errors.append(f"{c['article_id']}: パネルにエラー混入")
+            continue
         _repo.record_panel_verdict(
             case_key=case_key,
             field=_FIELD,
@@ -187,8 +214,6 @@ async def _run_impl(
         result_disputes += int(is_dispute)
         result_controls += int(not is_dispute)
         splits += int(agreement == "split")
-        if agreement == "error":
-            errors.append(f"{c['article_id']}: パネルにエラー混入")
 
     result = PanelRunResult(
         cases=result_cases,

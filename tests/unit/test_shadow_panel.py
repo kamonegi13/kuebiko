@@ -113,6 +113,8 @@ def patched_pipeline(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     async def fake_classify(llm: Any, **kwargs: Any) -> Any:
         state["calls"].append(llm.answer)
         llm.calls += 1
+        if llm.answer == "RAISE":
+            raise RuntimeError("panel judge boom")
 
         class _Out:
             subject_actor_id = llm.answer
@@ -208,6 +210,50 @@ class TestShadowPanelRun:
         assert result.cases == 0
         assert result.unreachable == 1
         assert repo.summarize_panel_verdicts()["judged"] == 0
+
+    @pytest.mark.asyncio
+    async def test_error_verdict_is_not_persisted_and_retries(
+        self,
+        repo: RunHistoryRepository,
+        patched_pipeline: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """情報ゼロの error 裁定は記録しない — case_key を塞ぐと修正後に再裁定できない。"""
+        monkeypatch.setenv("TUNING_PANEL_SECOND_MODEL", "dummy:second")
+        _seed_labeled_article(
+            repo, article_id="a1", truth="qilin", production="akira", body="x" * 600
+        )
+        broken = await run_weekly_shadow_panel(
+            repo=repo, llm_factory=_factory({None: "qilin", "dummy:second": "RAISE"}), now=_NOW
+        )
+        assert broken.cases == 0
+        assert broken.errors  # 可視化はされる
+        assert repo.summarize_panel_verdicts()["judged"] == 0
+
+        # モデル側の問題を直したら同じ事例が再裁定できる
+        fixed = await run_weekly_shadow_panel(
+            repo=repo, llm_factory=_factory({None: "qilin", "dummy:second": "qilin"}), now=_NOW
+        )
+        assert fixed.cases == 1
+        assert repo.summarize_panel_verdicts()["judged"] == 1
+
+    @pytest.mark.asyncio
+    async def test_force_think_wrapper_targets_reasoning_models(self) -> None:
+        from src.tuning.shadow_panel import _ForceThink
+
+        captured: dict[str, Any] = {}
+
+        class _Inner:
+            answer = "x"
+
+            async def generate_structured(self, *a: Any, **k: Any) -> str:
+                captured.update(k)
+                return "ok"
+
+        wrapped = _ForceThink(_Inner())
+        assert await wrapped.generate_structured("p", think=False) == "ok"
+        assert captured["think"] is True  # think=False 指定でも強制される
+        assert wrapped.answer == "x"  # その他の属性は素通し
 
     @pytest.mark.asyncio
     async def test_old_labels_are_out_of_window(
