@@ -305,8 +305,10 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="sat",
-            hour=3,
-            minute=10,
+            # 深夜帯の空白 (毎日 03:20 の ledger-deep-review が ~04:35 に終わってから
+            # 06:30 朝ブリーフまで)。LLM heavy 同士を重ねない。
+            hour=4,
+            minute=45,
         ),
         JobDef(
             id="weekly-tuning-label-harvest",
