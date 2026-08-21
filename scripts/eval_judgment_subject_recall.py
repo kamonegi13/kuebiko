@@ -56,10 +56,31 @@ def _fetch_sets(n_pos: int, n_ctrl: int) -> tuple[list[dict[str, Any]], list[dic
 
     con = connect(RunHistoryRepository().db_path)
     try:
+        # 正例 = 「犯行声明 (feed 帰属) と同一 victim_org を ±5 日に報じたニュース記事」。
+        # feed 記事自体は構造化レコードで散文 body を持たないため、直接は使えない (初回実験
+        # で実証)。声明のギャング = 正解ラベル、ニュース側の散文 = 判定入力。
+        # ⚠ INTERVAL 構文は PG 前提 (本スクリプトはコンテナ内実行専用)。
         pos_sql = (
-            "SELECT article_id, title, body, category, subject_actor_ids FROM articles "
-            "WHERE subject_actor_source='feed' AND LENGTH(COALESCE(body,'')) >= 500 "
-            "ORDER BY created_at DESC LIMIT ?"
+            "WITH claims AS ("
+            "  SELECT a.subject_actor_ids AS gt, LOWER(e.value) AS org, a.created_at"
+            "  FROM articles a JOIN article_entities e"
+            "    ON e.article_id=a.article_id AND e.entity_type='victim_org'"
+            "  WHERE a.subject_actor_source='feed' AND COALESCE(a.subject_actor_ids,'') <> ''"
+            "), news AS ("
+            "  SELECT a.article_id, a.title, a.body, a.category, LOWER(e.value) AS org,"
+            "         a.created_at"
+            "  FROM articles a JOIN article_entities e"
+            "    ON e.article_id=a.article_id AND e.entity_type='victim_org'"
+            "  WHERE a.subject_actor_source <> 'feed'"
+            "    AND LENGTH(COALESCE(a.body,'')) >= 500"
+            "    AND COALESCE(a.article_type,'') <> 'recap'"
+            "    AND a.title NOT LIKE '%ダイジェスト%'"
+            ") "
+            "SELECT DISTINCT ON (n.article_id) n.article_id, n.title, n.body, n.category, c.gt "
+            "FROM news n JOIN claims c ON n.org = c.org "
+            " AND n.created_at BETWEEN c.created_at - INTERVAL '5 days'"
+            "                      AND c.created_at + INTERVAL '5 days' "
+            "ORDER BY n.article_id, c.created_at DESC LIMIT ?"
         )
         pos = [
             {
