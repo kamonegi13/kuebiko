@@ -182,19 +182,22 @@ export interface SituationRecent {
 
 export interface SituationFace {
   total: number;
-  // cyber 攻撃者面=その国の APT / 標的面=攻撃元アクター
+  // cyber 攻撃者面=その国の攻撃主体 (国家機関・APT 群を問わず) / 標的面=攻撃元アクター
   actors?: { actor_id: string; label: string; count: number }[];
   sectors?: { sector: string; label: string; count: number }[]; // 標的面のみ (狙われた分野)
   intents: { intent: string; count: number }[];
   domains: { axis: string; label: string; count: number }[]; // PMESII 足場 (内訳)
   recent: SituationRecent[];
+  // 攻撃者面のみ: この国に帰属する辞書内アクター数。0 件表示の意味分離に使う
+  // (追跡対象外 vs 追跡中だが窓内に主題帰属の攻勢記事なし)
+  tracked_actor_count?: number;
 }
 
 export interface SituationResponse {
   nation: string;
   label: string;
   window_days: number | null;
-  cyber: SituationFace | null; // 攻撃者レンズ: その国の APT 攻勢 (actor.nation、帰属済み)
+  cyber: SituationFace | null; // 攻撃者レンズ: その国が主体のサイバー攻勢 (主題帰属済み)
   cyber_mention: SituationFace | null; // 言及レンズ: 帰属なしサイバー言及 (i_cyber×当事国×actor無し、政策/態勢中心)
   cyber_target: SituationFace | null; // 標的レンズ: その国が受けている脅威 (victim_country)
   geopolitical: SituationFace | null;

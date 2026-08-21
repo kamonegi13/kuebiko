@@ -1,6 +1,6 @@
 // 国家中心 情勢ボード (National Situation Board)。旧 PMESII-PT 8軸カード(飽和で低価値)を
 // 作り変え。サイバー↔地政学を **国家** で相関する: 背骨=国家 / ドリル=アクター。
-//   - サイバー攻撃者面 = その国の APT 攻勢 (actor.nation)。敵対国で厚い。
+//   - サイバー攻撃者面 = その国が主体のサイバー攻勢 (国家機関・APT 群を問わず、主題帰属)。敵対国で厚い。
 //   - サイバー標的面   = その国が受けている脅威 (victim_country)。自国/同盟で厚い。攻撃元+分野付き。
 //   - 地政学面         = その国が当事者の地政学事象 (involved_country ブリッジ)。
 // 「攻撃者」と「標的」の両レンズで国際力学の両面を見る。intent(動機)で色付け、PMESII を足場に。
@@ -52,7 +52,7 @@ export function PMESIITab() {
         series: [
           {
             key: "cyber",
-            label: "サイバー(APT)",
+            label: "サイバー(攻撃者)",
             counts: isEvent ? data.tempo.cyber_event : data.tempo.cyber,
           },
           {
@@ -72,7 +72,7 @@ export function PMESIITab() {
       <div className="flex items-baseline justify-between gap-2 flex-wrap px-1">
         <h3 className="m-0 text-lg font-bold text-fg tracking-tight">国家情勢ボード</h3>
         <span className="text-fg-muted text-xs">
-          攻撃者(APT) / 標的(被害) / 地政学(当事国) を国家で相関 · 過去 {f.time}日
+          攻撃者(帰属) / 標的(被害) / 地政学(当事国) を国家で相関 · 過去 {f.time}日
         </span>
       </div>
 
@@ -128,7 +128,7 @@ export function PMESIITab() {
           {/* 凡例: 攻撃者(accent) / 標的(cyan) / 地政学(warning) */}
           <div className="flex items-center gap-3 px-1 text-[10.5px] text-fg-subtle">
             <span className="inline-flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent" />攻撃者=その国の APT 攻勢 (帰属済み)
+              <span className="w-2 h-2 rounded-full bg-accent" />攻撃者=その国が主体のサイバー攻勢 (帰属済み・国家機関含む)
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-violet-400" />言及=帰属なしサイバー言及 (政策/態勢中心)
@@ -144,19 +144,23 @@ export function PMESIITab() {
           {/* 四面: サイバー攻撃者(帰属) | サイバー言及(帰属なし) | サイバー標的 | 地政学 */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <FacePanel
-              title="サイバー攻撃者面 (APT)"
+              title="サイバー攻撃者面"
               tone="accent"
               face={data.cyber}
-              actorsLabel="APT"
-              emptyHint="この国を監視対象とする脅威アクターが辞書に無い (= 敵対サイバーの追跡対象外)"
+              actorsLabel="攻撃主体"
+              emptyHint={
+                (data.cyber?.tracked_actor_count ?? 0) > 0
+                  ? "この期間、この国のアクター (国家機関・APT 群) が主体と帰属された攻勢記事なし"
+                  : "この国に帰属する追跡対象アクターが辞書に無い"
+              }
               onActor={drillToActor}
             />
             <FacePanel
               title="サイバー言及面 (帰属なし)"
               tone="muted"
               face={data.cyber_mention}
-              note="情報(サイバー)分野×当事国×APT名指し無し。地政学/政策記事に埋もれた言及 (多くは政策・態勢、一部 実事象)"
-              emptyHint="この期間に APT 名指し無しのサイバー言及なし"
+              note="情報(サイバー)分野×当事国×攻撃主体の名指し無し。地政学/政策記事に埋もれた言及 (多くは政策・態勢、一部 実事象)"
+              emptyHint="この期間に攻撃主体の名指し無しのサイバー言及なし"
             />
             <FacePanel
               title="サイバー標的面 (被害)"
@@ -243,7 +247,7 @@ function NationChip({
       className={`flex items-center gap-1 rounded border px-2 py-1 text-xs transition-colors ${
         selected ? "border-accent text-fg bg-accent/10" : "border-border-subtle text-fg-muted hover:text-fg"
       }`}
-      title={`攻撃者(APT) ${n.cyber} / 標的(被害) ${n.cyber_target} / 地政学 ${n.geopol}`}
+      title={`攻撃者 ${n.cyber} / 標的(被害) ${n.cyber_target} / 地政学 ${n.geopol}`}
     >
       <span className="font-medium text-fg">{n.label}</span>
       <span className="text-accent tnum">{n.cyber}</span>
@@ -261,7 +265,7 @@ function FacePanel({
   face,
   emptyHint,
   note,
-  actorsLabel = "APT",
+  actorsLabel = "攻撃主体",
   onActor,
 }: {
   title: string;
@@ -289,7 +293,7 @@ function FacePanel({
         <div className="text-xs text-fg-subtle italic py-3">{emptyHint}</div>
       ) : (
         <>
-          {/* アクター (攻撃者面=その国の APT / 標的面=攻撃元) — click でアクター詳細へドリル */}
+          {/* アクター (攻撃者面=その国の攻撃主体 / 標的面=攻撃元) — click でアクター詳細へドリル */}
           {face?.actors && face.actors.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] text-fg-subtle uppercase tracking-wider">{actorsLabel}</span>

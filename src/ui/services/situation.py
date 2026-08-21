@@ -415,6 +415,10 @@ def situation_by_nation(
         {"actor_id": aid, "label": actor_label.get(aid, aid), "count": n}
         for aid, n in actor_counts.most_common(_TOP_ACTORS)
     ]
+    # 空状態の意味分離 (2026-08-21): 0 件には「辞書にこの国のアクターが居ない (追跡対象外)」と
+    # 「追跡中だが窓内に主題帰属の攻勢記事なし」の 2 状態があり、UI が区別して表示する。
+    # 米国のように国家機関 (us_nsa 等) を追跡中でも攻勢報道が無ければ 0 になるのは正常。
+    cyber["tracked_actor_count"] = len(actors)
     geopol = _summarize_face(geo_rows)
     cyber_mention = _summarize_face(mention_rows)
 
