@@ -4,13 +4,16 @@
 // ⌘K パレット + WS 由来の通知集約もここで担う (全ページ共通)。
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ArrowDown, Loader2 } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { useChannelMeta } from "./channel";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { usePullToRefresh, PULL_THRESHOLD_PX } from "../hooks/usePullToRefresh";
 import { useNotifications } from "../state/notifications";
+import { useArticlePeekStore } from "../state/articlePeek";
 import { vocabLabel } from "../hooks/useVocab";
 import { actorHref } from "../utils/intelNav";
 
@@ -33,6 +36,15 @@ export function AppShell({ pathname, children }: AppShellProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const pushNotification = useNotifications((s) => s.push);
   const chMeta = useChannelMeta();
+
+  // プルリフレッシュ: この repo は document スクロール設計 (sticky を壊さないため
+  // 個別コンテナを overflow-y-auto にしない、上部コメント参照) なので getScrollTop は
+  // window.scrollY を見る。記事ピーク表示中は peek 内スクロールと干渉させないため無効化。
+  const peekOpen = useArticlePeekStore((s) => s.articleId !== null);
+  const { containerRef: pullRef, pullDistance, readyToRelease } = usePullToRefresh<HTMLDivElement>({
+    disabled: peekOpen,
+    getScrollTop: () => window.scrollY,
+  });
 
   useEffect(() => {
     try {
@@ -90,8 +102,37 @@ export function AppShell({ pathname, children }: AppShellProps) {
     }
   }, [pushNotification, chMeta]));
 
+  // 引いた量 (0..MAX_VISUAL_PULL_PX) を 0..閾値ぶんの下方向オフセットへ写像し、
+  // 閾値に近づくほど円が画面内に収まっていく見た目にする (40px = 円のおおよその高さ)
+  const pullIndicatorOffset = Math.min(pullDistance, PULL_THRESHOLD_PX) - 40;
+  const pullIndicatorRotation = Math.min(180, (pullDistance / PULL_THRESHOLD_PX) * 180);
+
   return (
     <div className="min-h-screen">
+      {/* プルリフレッシュ indicator。矢印→(閾値超で)スピナーに切替。tap を奪わないよう
+          pointer-events-none。overscroll-behavior-y: contain (index.css) と併用し、
+          ブラウザネイティブの pull-to-refresh との二重発火を防ぐ。 */}
+      {pullDistance > 0 && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-x-0 z-[60] flex justify-center pointer-events-none"
+          style={{ top: "env(safe-area-inset-top)" }}
+        >
+          <div
+            className="mt-2 rounded-full bg-surface-2 border border-border-default shadow-lg p-2"
+            style={{ transform: `translateY(${pullIndicatorOffset}px)` }}
+          >
+            {readyToRelease ? (
+              <Loader2 className="h-4 w-4 text-accent animate-spin" />
+            ) : (
+              <ArrowDown
+                className="h-4 w-4 text-fg-muted"
+                style={{ transform: `rotate(${pullIndicatorRotation}deg)` }}
+              />
+            )}
+          </div>
+        </div>
+      )}
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}
@@ -100,8 +141,12 @@ export function AppShell({ pathname, children }: AppShellProps) {
         onCloseMobile={() => setMobileOpen(false)}
       />
       {/* overflow-x-clip: 子要素の横はみ出しでページ全体が横に広がる (モバイルで
-          スクロール不能なまま見切れる) のを防ぐ安全網。clip は sticky を壊さない。 */}
-      <div className={`min-w-0 overflow-x-clip transition-[margin] duration-200 ease-out ${collapsed ? "md:ml-14" : "md:ml-60"}`}>
+          スクロール不能なまま見切れる) のを防ぐ安全網。clip は sticky を壊さない。
+          ref はプルリフレッシュのタッチ判定用 (このコンテナ配下でタッチを追跡する)。 */}
+      <div
+        ref={pullRef}
+        className={`min-w-0 overflow-x-clip transition-[margin] duration-200 ease-out ${collapsed ? "md:ml-14" : "md:ml-60"}`}
+      >
         <TopBar
           pathname={pathname}
           onOpenPalette={() => setPaletteOpen(true)}

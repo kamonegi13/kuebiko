@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useSwipeToClose } from "../hooks/useSwipeToClose";
 
 interface DrawerProps {
   isOpen: boolean;
@@ -12,6 +13,15 @@ interface DrawerProps {
   widthClass?: string;
   /** ヘッダ右側 (閉じるボタンの左) に置く追加要素 (例: ArticlePeek の「記事画面で開く」) */
   headerExtra?: React.ReactNode;
+  /** true ならモバイル (md 未満) に限りパネル幅を「画面幅 - 24px」にし、左に地の画面が
+   * 見える gutter を作る (フルスクリーンに見えてオーバーレイと気付かれず、ブラウザバックを
+   * 誤操作しがちな問題への対策)。gutter 部分は既存の backdrop がそのままタップで閉じる。
+   * 左端には掴めそうな grabber も出す。md+ の見た目は widthClass のまま変えない。
+   * default false (既存 Drawer 利用箇所の見た目は不変)。 */
+  mobileGutter?: boolean;
+  /** true なら右フリックでこの Drawer を閉じられるようにする (touch イベント前提のため
+   * デスクトップのマウス操作では自然に発火しない)。default false。 */
+  swipeToClose?: boolean;
   children: React.ReactNode;
 }
 
@@ -21,8 +31,15 @@ export function Drawer({
   title,
   widthClass = "md:w-[56rem]",
   headerExtra,
+  mobileGutter = false,
+  swipeToClose = false,
   children,
 }: DrawerProps) {
+  const panelRef = useSwipeToClose<HTMLDivElement>({
+    onClose,
+    disabled: !swipeToClose || !isOpen,
+  });
+
   // ESC で close + scroll lock
   useEffect(() => {
     if (!isOpen) return;
@@ -62,10 +79,19 @@ export function Drawer({
         onClick={onClose}
         className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
       />
-      {/* Drawer panel — mobile では full-screen (w-full)、tablet+ で widthClass */}
+      {/* Drawer panel — mobile では full-screen (w-full)、tablet+ で widthClass。
+          mobileGutter 時のみ mobile 幅を絞り、左の gutter (地の画面) で
+          「これはオーバーレイだ」と一目で分かるようにする。 */}
       <div
-        className={`relative w-full ${widthClass} max-w-full md:max-w-[95vw] h-full bg-bg border-l border-border-default shadow-2xl overflow-y-auto animate-slide-in-right`}
+        ref={panelRef}
+        className={`relative ${mobileGutter ? "w-[calc(100%-24px)]" : "w-full"} ${widthClass} max-w-full md:max-w-[95vw] h-full bg-bg border-l border-border-default shadow-2xl overflow-y-auto animate-slide-in-right`}
       >
+        {mobileGutter && (
+          <div
+            aria-hidden="true"
+            className="md:hidden pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 z-20 w-1 h-12 rounded-full bg-fg-subtle/40"
+          />
+        )}
         <div className="sticky top-0 z-10 bg-bg/95 backdrop-blur-md border-b border-border-subtle px-5 py-3 flex items-center justify-between">
           <h3 className="m-0 text-md font-bold text-fg tracking-tight">{title}</h3>
           <div className="flex items-center gap-2">

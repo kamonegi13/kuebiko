@@ -11,6 +11,9 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* 自前のプルリフレッシュ (usePullToRefresh) とブラウザネイティブの
+       overscroll/pull-to-refresh が二重発火しないようにする。 */
+    overscroll-behavior-y: contain;
   }
   ::selection { background: rgba(107,136,255,0.32); color: #e8ebf0; }
   /* tabular nums for stats */
