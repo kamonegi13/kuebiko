@@ -844,7 +844,6 @@ actors:
   - HIDDEN COBRA
   - Diamond Sleet
   - Labyrinth Chollima
-  - APT38
   - Guardians of Peace
   - NICKEL ACADEMY
   mitre_group: G0032
@@ -1226,6 +1225,7 @@ actors:
   - Stardust Chollima
   - COPERNICIUM
   - TA444
+  - APT38
   mitre_group: G0082
   nation: kp
   sponsor: DPRK RGB
@@ -6337,9 +6337,9 @@ actors:
   status: merged
   merged_into: shinyhunters
   merged_at: '2026-08-20'
-  merge_note: 'MITRE G1057 が UNC6240 を ShinyHunters の別名と定義 (提案 184)。UNC6240 は本
-    entry の canonical のため move_alias の自動付替が不可 — merge (redirect 墓標) で対応。
-    Google GTIG も Salesforce 恐喝を ShinyHunters (UNC6240) と同定しており同一性証拠は充分。'
+  merge_note: MITRE G1057 が UNC6240 を ShinyHunters の別名と定義 (提案 184)。UNC6240 は本 entry
+    の canonical のため move_alias の自動付替が不可 — merge (redirect 墓標) で対応。 Google GTIG も Salesforce
+    恐喝を ShinyHunters (UNC6240) と同定しており同一性証拠は充分。
 - id: unc6780
   canonical: UNC6780
   aliases:
