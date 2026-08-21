@@ -131,11 +131,18 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
     # ---------- 収穫 producer 用の読み出し (SQL は storage 層に集約) ----------
 
     def fetch_feed_subject_claims(self, since_iso: str) -> list[dict[str, Any]]:
-        """犯行声明 (feed 帰属) 記事 × victim_org を返す (収穫①の突合元)。"""
+        """犯行声明 (feed 帰属) 記事 × victim_org を返す (収穫①の突合元)。
+
+        時刻錨は **発覚日** COALESCE(published_at, created_at) — 掲載日 (created_at) を
+        錨にすると、数か月前の事件を遅れて掲載した声明が同一組織の別インシデント報道と
+        誤結合する (2026-08-22 に LexisNexis で実発生: 発覚 05-01 の声明が 08-11 掲載され、
+        08-10 の別事件報道へ誤ラベル)。reconcile の「実効日」と同じ既定。
+        """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT a.article_id, a.subject_actor_ids AS gt,"
-                " LOWER(TRIM(e.value)) AS org, a.created_at"
+                " LOWER(TRIM(e.value)) AS org,"
+                " COALESCE(a.published_at, a.created_at) AS created_at"
                 " FROM articles a JOIN article_entities e"
                 "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
                 " WHERE a.subject_actor_source = 'feed'"
@@ -156,19 +163,22 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
     def fetch_victim_org_news_candidates(self, since_iso: str) -> list[dict[str, Any]]:
         """feed 帰属でないニュース記事 × victim_org を返す (収穫①の突合先)。
 
-        散文 body を持たない構造化レコードや recap を除外する (feed 記事は散文 body を
-        持たない — eval_judgment 2026-08-21 の実測)。
+        除外: 散文 body を持たない構造化レコード / recap / **ダイジェスト** (多数事件の
+        まとめには単一主題が存在しない — eval script の除外を移植し忘れて Grok ダイジェスト
+        に誤ラベルが付いた 2026-08-22 の教訓。生 % は psycopg 罠 → パラメータで渡す)。
         """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT a.article_id, LOWER(TRIM(e.value)) AS org, a.created_at"
+                "SELECT a.article_id, LOWER(TRIM(e.value)) AS org,"
+                " COALESCE(a.published_at, a.created_at) AS created_at"
                 " FROM articles a JOIN article_entities e"
                 "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
                 " WHERE COALESCE(a.subject_actor_source, '') <> 'feed'"
                 "   AND LENGTH(COALESCE(a.body, '')) >= 500"
                 "   AND COALESCE(a.article_type, '') <> 'recap'"
+                "   AND a.title NOT LIKE ?"
                 "   AND a.created_at >= ?",
-                (since_iso,),
+                ("%ダイジェスト%", since_iso),
             ).fetchall()
         return [
             {

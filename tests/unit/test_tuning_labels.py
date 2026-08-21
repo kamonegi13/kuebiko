@@ -34,6 +34,8 @@ def _seed_article(
     article_type: str = "",
     victim_orgs: tuple[str, ...] = (),
     created_at: datetime = _NOW,
+    published_at: datetime | None = None,
+    title: str | None = None,
 ) -> None:
     """収穫の入力 (articles + article_entities) を直接 seed する (test 専用)。"""
     iso = created_at.isoformat()
@@ -45,18 +47,19 @@ def _seed_article(
         rid = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
         conn.execute(
             "INSERT INTO articles (run_id, article_id, title, url, status, created_at,"
-            " subject_actor_source, subject_actor_ids, body, article_type)"
-            " VALUES (?,?,?,?, 'posted', ?, ?, ?, ?, ?)",
+            " subject_actor_source, subject_actor_ids, body, article_type, published_at)"
+            " VALUES (?,?,?,?, 'posted', ?, ?, ?, ?, ?, ?)",
             (
                 rid,
                 article_id,
-                f"title-{article_id}",
+                title if title is not None else f"title-{article_id}",
                 f"https://kuebiko.example/{article_id}",
                 iso,
                 subject_actor_source,
                 subject_actor_ids,
                 "x" * body_len,
                 article_type,
+                published_at.isoformat() if published_at else None,
             ),
         )
         for org in victim_orgs:
@@ -267,6 +270,51 @@ class TestFeedNewsSubjectSweep:
         )
         result = run_label_harvest(repo, now=_NOW)
         assert result.feed_subject_new == 0
+
+    def test_digest_articles_are_excluded(self, repo: RunHistoryRepository) -> None:
+        """多数事件まとめ (ダイジェスト) には単一主題が無い — ラベルを付けない。
+
+        eval script にあった除外の移植漏れで Grok ダイジェストへ誤ラベルが付いた
+        (2026-08-22 backfill 監査で発覚) の回帰テスト。
+        """
+        _seed_article(
+            repo,
+            article_id="claim1",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+        )
+        _seed_article(
+            repo,
+            article_id="digest1",
+            title="デイリー ランサムウェア ダイジェスト - 計 35 件",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=1),
+        )
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.feed_subject_new == 0
+
+    def test_stale_claim_anchors_on_discovery_date(self, repo: RunHistoryRepository) -> None:
+        """声明の時刻錨は発覚日 (published_at) — 数か月前の事件を遅れて掲載した声明が
+        同一組織の別インシデント報道へ誤結合しない (LexisNexis 型、2026-08-22)。"""
+        _seed_article(
+            repo,
+            article_id="stale_claim",
+            subject_actor_source="feed",
+            subject_actor_ids="fulcrumsec",
+            victim_orgs=("LexisNexis",),
+            created_at=_NOW - timedelta(days=1),  # 掲載は昨日
+            published_at=_NOW - timedelta(days=100),  # 発覚は 100 日前
+        )
+        _seed_article(
+            repo,
+            article_id="new_incident_news",
+            victim_orgs=("LexisNexis",),
+            created_at=_NOW - timedelta(days=2),
+        )
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.feed_subject_new == 0  # 発覚日錨では窓外
 
     def test_sweep_is_idempotent(self, repo: RunHistoryRepository) -> None:
         _seed_article(
