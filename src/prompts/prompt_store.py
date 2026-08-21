@@ -282,10 +282,11 @@ def build_prompt_template(spec: PromptSpec, path: Path) -> jinja2.Template | Non
 # slot 定義も対象モジュール側の定数 (SLOT_IDS) から取る。
 #
 # 「動的データ」の形は prompt ごとに異なる (ioc_llm_verifier=候補 list[dict]、
-# judgment_classifier=``.format()`` context の dict[str, str])。2 本目 (judgment_classifier)
-# の追加で異形が確定したため、この形を持つ引数/戻り値は ``Any`` で表す — 各対象モジュールの
-# 合成関数が自分の形として静的に解釈する (呼び出し側はここでは中身を見ない)。2 本を超えたら
-# Protocol 化を検討 (YAGNI、現状は小さな if 分岐表で足りる)。
+# judgment_classifier=``.format()`` context の dict[str, str]、article_triage=直接組み立て
+# 用の dict[str, str])。judgment_classifier の追加で異形が確定したため、この形を持つ引数/
+# 戻り値は ``Any`` で表す — 各対象モジュールの合成関数が自分の形として静的に解釈する
+# (呼び出し側はここでは中身を見ない)。group 4 は 3 本 (2026-08-21 完遂) を小さな if 分岐表
+# で捌いており、今後さらに増えたら Protocol 化を検討 (YAGNI)。
 
 _PythonBlockComposeFn = Callable[[dict[str, str], Any], str]
 
@@ -302,6 +303,10 @@ def _python_block_compose_fn(spec: PromptSpec) -> _PythonBlockComposeFn | None:
         )
 
         return _judgment_compose_from_blocks
+    if spec.prompt_id == "article_triage":
+        from src.tools.article_triage import compose_from_blocks as _triage_compose_from_blocks
+
+        return _triage_compose_from_blocks
     return None
 
 
@@ -315,14 +320,19 @@ def python_block_slot_ids(spec: PromptSpec) -> tuple[str, ...]:
         from src.cti.judgment_classifier import SLOT_IDS
 
         return SLOT_IDS
+    if spec.prompt_id == "article_triage":
+        from src.tools.article_triage import SLOT_IDS
+
+        return SLOT_IDS
     return ()
 
 
 def python_block_sample_targets(spec: PromptSpec) -> Any:
     """保存前検証・preview 用のサンプル動的データ (対象モジュールが持つ非空ダミー)。
 
-    ioc_llm_verifier は候補 list[dict[str, str]]、judgment_classifier は
-    ``.format()`` context の dict[str, str] — 戻り値の形は対象モジュールに委ねる。
+    ioc_llm_verifier は候補 list[dict[str, str]]、judgment_classifier / article_triage は
+    ``.format()`` context または直接組み立て用の dict[str, str] — 戻り値の形は対象モジュールに
+    委ねる。
     """
     if spec.prompt_id == "ioc_llm_verifier":
         from src.cti.ioc_llm_verifier import SAMPLE_TARGETS
@@ -331,6 +341,10 @@ def python_block_sample_targets(spec: PromptSpec) -> Any:
         return [dict(t) for t in SAMPLE_TARGETS]
     if spec.prompt_id == "judgment_classifier":
         from src.cti.judgment_classifier import SAMPLE_CONTEXT
+
+        return dict(SAMPLE_CONTEXT)
+    if spec.prompt_id == "article_triage":
+        from src.tools.article_triage import SAMPLE_CONTEXT
 
         return dict(SAMPLE_CONTEXT)
     return []

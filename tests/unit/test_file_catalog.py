@@ -51,7 +51,8 @@ class TestCatalogCompleteness:
         # (層分け 7〜12 本目 2026-08-20)
         # +ioc_llm_verifier_rubric seed (group 4 の 1 本目、python_block kind、2026-08-21)
         # +judgment_rubric seed (group 4 の 2 本目、python_block kind、2026-08-21)
-        assert len(actual) == 30
+        # +triage_rubric seed (group 4 の 3 本目・最終、python_block kind、2026-08-21)
+        assert len(actual) == 31
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 

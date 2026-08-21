@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -126,10 +127,44 @@ class ArticleTriage:
         high_criteria: str,
         medium_criteria: str,
     ) -> str:
-        """PIR yaml から動的生成された prompt。
+        """PIR yaml から動的生成された prompt (DB 編集層 → legacy の順で fail-safe に解決)。
 
-        各 PIR の title + description が judging criteria として注入される。
-        user が PIR を編集すると、ここに反映される。
+        各 PIR の title + description が judging criteria として注入される (code 所有、
+        層分けの対象外)。編集可能な指示散文 (intro / low_criteria / output_rules) は
+        DB (config_store) 所有で ``compose_from_blocks`` が合成する (層分け group 4 の
+        3 本目、2026-08-21)。graceful degradation を下層の例外処理に依存させない —
+        合成経路がどこで raise しても legacy (純 Python・I/O なし) に落ちる構造保証
+        (ioc_llm_verifier / judgment_classifier と同型の関門)。
+        """
+        context = {
+            "feed": (article.feed_title or "").strip(),
+            "title": (article.title or "").strip(),
+            "body_preview": self._triage_content(article),
+            "high_criteria": high_criteria,
+            "medium_criteria": medium_criteria,
+        }
+        try:
+            composed = _composed_prompt(context)
+        except Exception as e:  # noqa: BLE001 — 合成失敗は契約上 legacy へ
+            _log.warning("triage_prompt_compose_failed", error=str(e))
+            composed = None
+        if composed is not None:
+            return composed
+        return self._build_prompt_pir_driven_legacy(article, high_criteria, medium_criteria)
+
+    def _build_prompt_pir_driven_legacy(
+        self,
+        article: Article,
+        high_criteria: str,
+        medium_criteria: str,
+    ) -> str:
+        """rollback 用の frozen 実装 (``TRIAGE_COMPOSER=0`` の実体、PIR-driven 経路のみ)。
+
+        ⚠ 編集禁止: DB 編集層 (blocks) の内容と独立させるため、この関数は他のどこからも
+        import されない自己完結コピーとして維持する (block 方式の legacy .j2 / ioc の
+        ``_build_prompt_legacy`` / judgment の ``_build_prompt_legacy`` と同じ役割)。
+        ``_build_prompt_legacy_hardcoded`` (env `PIR_DRIVEN_TRIAGE=0` の rollback 実体) とは
+        別物 — こちらは PIR-driven 経路の中の python_block 層分けの rollback。
         """
         body_preview = self._triage_content(article)
         title = (article.title or "").strip()
@@ -227,3 +262,94 @@ class ArticleTriage:
             "- reason: 30 字以内で判定理由を簡潔に "
             "(例: 「中国APTのSolarWinds型サプライチェーン侵害」「金銭目的犯罪、影響限定的」)\n"
         )
+
+
+# ---------- プロンプトの層分け (python_block kind、2026-08-21、group 4 の 3 本目・最終) ----------
+#
+# 層分けは PIR-driven 経路 (_build_prompt_pir_driven) のみが対象。high/medium 基準は PIR レイヤ
+# (src/pir/integration.py の build_triage_high_criteria 等) が既に動的注入しユーザ編集可能な
+# ため触らない (code 所有のまま)。_build_prompt_legacy_hardcoded (env PIR_DRIVEN_TRIAGE=0 の
+# rollback 実体) は一切変更しない — フラグ入れ子は独立 (PIR_DRIVEN_TRIAGE=0 なら
+# TRIAGE_COMPOSER の状態によらず hardcoded prompt が出る。_build_prompt の分岐がそもそも
+# _build_prompt_pir_driven を呼ばないため構造的に保証される)。
+#
+# ioc_llm_verifier と同じ設計判断: .j2 を持たず Python コードが構造を所有する動的プロンプト
+# (記事データは実行時に決まるため Jinja ループで表現しない)。編集可能な指示散文は 3 block に
+# 分離し DB (config_store) 所有にする (src/prompts/registry.py の PromptSpec、
+# kind="python_block")。ioc/judgment との違い: 出力ルール block が生の brace ``{high, medium,
+# low}`` を含むため **直接組み立て方式 (.format() 不使用)** を踏襲する — block 文字列は
+# テンプレートとして解釈されず、そのまま文字列連結される (format 方式だと ValueError で
+# 保存できない)。code 所有: 記事データ部 (feed/title/body_preview)、「## 判定基準 (high)」
+# 見出し + high_criteria 注入、medium_section の条件付き組み立て (medium_criteria 空なら
+# 省略 — 現挙動を byte 一致で維持)。
+#
+# slot id (skeleton が無いため固定表で持つ — prompt_store.python_block_slot_ids が参照)。
+SLOT_IDS: tuple[str, ...] = ("intro", "low_criteria", "output_rules")
+
+_PROMPT_ID = "article_triage"
+
+# 保存前検証・preview 用のサンプル context (非空ダミー、medium_criteria も 1 行含む —
+# medium_section 省略の枝は golden テスト側で空文字を別途検証する)。実データを使わず
+# kuebiko.example 系のみ (§4: ログ・応答に本物の記事本文を持ち込まない)。
+SAMPLE_CONTEXT: dict[str, str] = {
+    "feed": "kuebiko.example-feed",
+    "title": "kuebiko.example 系ネットワークへの不正アクセス (render 検証用)",
+    "body_preview": (
+        "kuebiko.example 系の重要インフラ事業者を標的にした攻撃が"
+        "観測された (render 検証用サンプル本文)。"
+    ),
+    "high_criteria": (
+        "1. サンプル high 基準 1 (render 検証用)\n2. サンプル high 基準 2 (render 検証用)"
+    ),
+    "medium_criteria": "- サンプル medium 基準 1 (render 検証用)",
+}
+
+
+def compose_from_blocks(blocks: Mapping[str, str], context: Mapping[str, str]) -> str:
+    """blocks (DB 所有の指示散文) + context (code 所有のデータ) からプロンプトを合成する。
+
+    レイアウトは ``_build_prompt_pir_driven_legacy`` と同一。blocks が legacy 由来の verbatim
+    テキストなら結果は byte 一致する (golden 不変量、tests/unit で固定)。``context`` は
+    ``{feed, title, body_preview, high_criteria, medium_criteria}`` の dict。``blocks`` に
+    ``SLOT_IDS`` の欠落があれば ``KeyError`` (呼び出し側の保存前検証 / fail-safe で拾う)。
+    直接組み立てのため block 中の生 brace (``{high, medium, low}`` 等) はそのまま出力に残る
+    (.format() を通さない — judgment_classifier との違い)。
+    """
+    medium_criteria = context["medium_criteria"]
+    medium_section = ""
+    if medium_criteria:
+        medium_section = "## 判定基準 (medium)\n" + medium_criteria + "\n\n"
+
+    return (
+        f"{blocks['intro']}\n\n"
+        f"フィード: {context['feed']}\n"
+        f"タイトル: {context['title']}\n"
+        f"概要: {context['body_preview']}\n\n"
+        "## 判定基準 (high)\n"
+        "次のいずれかに該当すれば **high** (即時通知):\n"
+        f"{context['high_criteria']}\n\n"
+        f"{medium_section}"
+        f"{blocks['low_criteria']}\n\n"
+        f"{blocks['output_rules']}\n"
+    )
+
+
+def _composed_prompt(context: Mapping[str, str]) -> str | None:
+    """DB 編集層があればそれで合成する。flag OFF / 編集層不在 / 合成失敗は None (= legacy へ)。"""
+    from src.prompts.prompt_store import build_python_block_source
+    from src.prompts.registry import get_spec
+
+    spec = get_spec(_PROMPT_ID)
+    if spec is None:
+        return None
+    return build_python_block_source(spec, context)
+
+
+# 後方互換: 既存 test / コードが import するための named export
+__all__ = [
+    "SAMPLE_CONTEXT",
+    "SLOT_IDS",
+    "ArticleTriage",
+    "TriageDecision",
+    "compose_from_blocks",
+]

@@ -383,6 +383,13 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "UI 編集はプロンプトタブ。Python コードが構造を所有する動的プロンプト "
         "= group 4 の 2 本目、2026-08-21)",
     ),
+    "config/prompts/triage_rubric.yaml": FileInfo(
+        "プロンプト",
+        "記事 triage (重要度判定) の編集層 (blocks)",
+        "article_triage の PIR-driven 経路の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。high/medium 判定基準は PIR レイヤの動的注入のため対象外。"
+        "Python コードが構造を所有する動的プロンプト = group 4 の 3 本目・最終、2026-08-21)",
+    ),
 }
 
 _FALLBACK_CATEGORY = "その他"

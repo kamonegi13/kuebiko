@@ -13,16 +13,18 @@ UI 編集 + 版履歴 + 保存前 dry-run + 切替検証で運用する」方式
   (code 所有 — データ注入とマーカー行) + blocks (DB 所有 — 指示散文)** をマーカー
   置換で連結する。**seed 合成 = legacy .j2 と byte 一致**が golden 不変量
   (summarizer の期待差分契約より強くて単純 — 逸脱は UI 編集でのみ生まれる)。
-- ``python_block`` (ioc_llm_verifier / judgment_classifier、group 4、2026-08-21): .j2 を
-  持たず **Python コードが構造を所有する動的プロンプト** (候補リストや区切り情報が実行時に
-  決まり Jinja ループで表現しない設計判断)。skeleton の代わりに対象モジュールが blocks
-  (DB 所有の指示散文) を受け取る合成関数を持ち、``src/prompts/prompt_store.py`` が
-  prompt_id でそこへ dispatch する (2 本目までは小さな if 分岐表、複数本になったら
-  Protocol 化を検討)。``skeleton_path=None`` / ``env_style="none"`` (Jinja を一切使わない)。
-  golden 不変量は block 方式と同じ「seed の blocks で合成した結果が legacy 関数の出力と
-  byte 一致」。動的データの形は対象モジュールごとに異なってよい (ioc_llm_verifier は
-  候補 list、judgment_classifier は ``.format()`` context の dict) — dispatch 層は
-  ``Any`` で中継し、各対象モジュールの合成関数が自分の形として解釈する。
+- ``python_block`` (ioc_llm_verifier / judgment_classifier / article_triage、group 4、
+  2026-08-21、全 3 本で完遂): .j2 を持たず **Python コードが構造を所有する動的プロンプト**
+  (候補リストや区切り情報が実行時に決まり Jinja ループで表現しない設計判断)。skeleton の
+  代わりに対象モジュールが blocks (DB 所有の指示散文) を受け取る合成関数を持ち、
+  ``src/prompts/prompt_store.py`` が prompt_id でそこへ dispatch する (3 本とも小さな
+  if 分岐表で足りている、Protocol 化は次の追加時に再検討)。``skeleton_path=None`` /
+  ``env_style="none"`` (Jinja を一切使わない)。golden 不変量は block 方式と同じ「seed の
+  blocks で合成した結果が legacy 関数の出力と byte 一致」。動的データの形は対象モジュール
+  ごとに異なってよい (ioc_llm_verifier は候補 list、judgment_classifier は ``.format()``
+  context の dict、article_triage は直接組み立て用の dict — 生 brace ``{high, medium, low}``
+  を含む block をそのまま扱えるのが直接組み立て方式を選ぶ理由) — dispatch 層は ``Any`` で
+  中継し、各対象モジュールの合成関数が自分の形として解釈する。
 """
 
 from __future__ import annotations
@@ -191,7 +193,7 @@ _SPECS: tuple[PromptSpec, ...] = (
         env_style="grounded",
         skeleton_path=Path("prompts/synthesis/render_skeleton.j2"),
     ),
-    # ---- group 4: Python 所有プロンプト (1〜2 本目、2026-08-21) ----
+    # ---- group 4: Python 所有プロンプト (1〜3 本目、2026-08-21、全 3 本で完遂) ----
     # .j2 を持たない動的プロンプト。legacy_path は rollback 用の frozen 関数
     # (_build_prompt_legacy) を持つ実ファイルを指す (UI の「実ファイル」表示・統治レポート用
     # のラベルにすぎず、Web からの直接編集は許可しない — allowlist は FileEditor 側の
@@ -214,6 +216,20 @@ _SPECS: tuple[PromptSpec, ...] = (
         env_flag="JUDGMENT_COMPOSER",
         seed_path=Path("config/prompts/judgment_rubric.yaml"),
         legacy_path=Path("src/cti/judgment_classifier.py"),
+        kind="python_block",
+        env_style="none",
+        skeleton_path=None,
+    ),
+    # group 4 の 3 本目 (最終、2026-08-21)。層分けは PIR-driven 経路のみ (high/medium 基準は
+    # PIR レイヤが既に動的注入する編集可能面のため触らない)。legacy_path は
+    # ``_build_prompt_pir_driven_legacy`` (rollback 用 frozen 実装) を持つ実ファイルを指す。
+    PromptSpec(
+        prompt_id="article_triage",
+        title="記事 triage (重要度判定)",
+        config_key="triage_rubric",
+        env_flag="TRIAGE_COMPOSER",
+        seed_path=Path("config/prompts/triage_rubric.yaml"),
+        legacy_path=Path("src/tools/article_triage.py"),
         kind="python_block",
         env_style="none",
         skeleton_path=None,
