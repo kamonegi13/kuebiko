@@ -4,7 +4,7 @@
 // ⌘K パレット + WS 由来の通知集約もここで担う (全ページ共通)。
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowDown, Loader2 } from "lucide-react";
+import { ArrowDown, RefreshCw } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { BottomTabBar } from "./BottomTabBar";
@@ -103,9 +103,8 @@ export function AppShell({ pathname, children }: AppShellProps) {
   }, [pushNotification, chMeta]));
 
   // 引いた量 (0..MAX_VISUAL_PULL_PX) を 0..閾値ぶんの下方向オフセットへ写像し、
-  // 閾値に近づくほど円が画面内に収まっていく見た目にする (40px = 円のおおよその高さ)
+  // 閾値に近づくほどピルが画面内に収まっていく見た目にする (40px = ピルのおおよその高さ)
   const pullIndicatorOffset = Math.min(pullDistance, PULL_THRESHOLD_PX) - 40;
-  const pullIndicatorRotation = Math.min(180, (pullDistance / PULL_THRESHOLD_PX) * 180);
 
   return (
     <div className="min-h-screen">
@@ -118,17 +117,22 @@ export function AppShell({ pathname, children }: AppShellProps) {
           className="fixed inset-x-0 z-[60] flex justify-center pointer-events-none"
           style={{ top: "env(safe-area-inset-top)" }}
         >
+          {/* 回転演出は不採用 (2026-08-21 利用者フィードバック: 途中の横/斜め矢印が意味不明)。
+              静止アイコン + 文字で「離せば更新される」ことを直接伝える */}
           <div
-            className="mt-2 rounded-full bg-surface-2 border border-border-default shadow-lg p-2"
+            className="mt-2 rounded-full bg-surface-2 border border-border-default shadow-lg px-3 py-1.5"
             style={{ transform: `translateY(${pullIndicatorOffset}px)` }}
           >
             {readyToRelease ? (
-              <Loader2 className="h-4 w-4 text-accent animate-spin" />
+              <span className="flex items-center gap-1.5 text-accent text-xs font-medium">
+                <RefreshCw className="h-4 w-4" />
+                離して更新
+              </span>
             ) : (
-              <ArrowDown
-                className="h-4 w-4 text-fg-muted"
-                style={{ transform: `rotate(${pullIndicatorRotation}deg)` }}
-              />
+              <span className="flex items-center gap-1.5 text-fg-muted text-xs">
+                <ArrowDown className="h-4 w-4" />
+                引いて更新
+              </span>
             )}
           </div>
         </div>
