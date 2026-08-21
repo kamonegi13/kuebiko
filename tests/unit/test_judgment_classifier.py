@@ -181,3 +181,24 @@ async def test_named_primary_actor_drops_noise_tokens() -> None:
         )
         assert res is not None
         assert res.named_primary_actor == ""
+
+
+class TestLlmSchemaRequired:
+    """LLM 向け schema の required 全指定 (2026-08-21、summarizer 08-18 と同機構)。
+
+    required ゼロだとモデルは JSON を途中で閉じられ、schema 順で最後の
+    subject_rationale が系統的に空になる (実測 59% 欠落)。
+    """
+
+    def test_all_fields_are_required_in_llm_schema(self) -> None:
+        # Act
+        schema = JudgmentOut.model_json_schema()
+
+        # Assert: 全フィールドが required (途中閉じの構造的封鎖)
+        assert set(schema["required"]) == set(JudgmentOut.model_fields.keys())
+        assert "subject_rationale" in schema["required"]
+
+    def test_python_side_defaults_remain_lenient(self) -> None:
+        # Assert: 内部構築は引数なしで通る (LLM にだけ厳格の非対称を維持)
+        out = JudgmentOut()
+        assert out.subject_rationale == ""

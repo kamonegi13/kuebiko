@@ -21,7 +21,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from src.cti.actor_normalizer import ActorAlias
 from src.logging_config import get_logger
@@ -41,10 +43,46 @@ _CONF = ("high", "medium", "low")
 _RATIONALE_MAX_CHARS = 200
 
 
+# LLM に **キーの出力そのものを義務づける** フィールド (2026-08-21、summarizer 08-18 と同機構)。
+# 全フィールドに既定値があるため required がゼロで、モデルは JSON をいつでも閉じられた。
+# schema 順で最後の subject_rationale が最初の犠牲者になり、「主題なし時は根拠必須」の
+# プロンプト指示 (指示では止まらない) にかかわらず 59% が空だった (2026-08-21 実測 144/245)。
+# ⚠ Python 側の既定値は残す (内部構築・テストに寛容、LLM にだけ厳格の非対称は意図)。
+# ⚠ 全フィールドが "" / null / bool を返せる型のため、捏造の強制にはならない。
+_LLM_REQUIRED_FIELDS = frozenset(
+    {
+        "editorial_stance",
+        "article_type",
+        "intent",
+        "confidence",
+        "rationale",
+        "technical",
+        "event_date",
+        "event_date_basis",
+        "compromise_date",
+        "i_infra",
+        "subject_actor_id",
+        "subject_confidence",
+        "named_primary_actor",
+        "subject_rationale",
+    }
+)
+
+
 class JudgmentOut(BaseModel):
     """統合判断分類器の LLM 構造化出力 (防御は呼び出し側 / 下流 normalize)。"""
 
     model_config = ConfigDict(extra="ignore")
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """LLM へ渡す schema でだけ ``required`` を広げる (上の定数の説明を参照)。"""
+        schema = handler(core_schema)
+        required = set(schema.get("required", ())) | _LLM_REQUIRED_FIELDS
+        schema["required"] = sorted(required)
+        return schema
 
     editorial_stance: str = "unknown"
     article_type: str = "breaking"
