@@ -288,6 +288,25 @@ def default_jobs() -> list[JobDef]:
             hour=3,
             minute=0,
         ),
+        JobDef(
+            id="weekly-tuning-label-harvest",
+            kind="pipeline",
+            heavy=False,
+            max_runtime_minutes=5,
+            title="週次 tuning ラベル収穫",
+            description=(
+                "遅延正解 (feed 突合 / taxonomy 裁定 / 論調訂正) を tuning_labels へ"
+                "収穫 (較正格子 P1)。"
+            ),
+            disable_impact=(
+                "較正格子のラベルが蓄積されず、プロンプト評価と few-shot の資産が増えない。"
+            ),
+            protection="important",
+            schedule_type="cron",
+            day_of_week="wed",
+            hour=3,
+            minute=30,
+        ),
         # ----- K2/K3: 保守 -----
         JobDef(
             id="pir-entity-rebuild",
