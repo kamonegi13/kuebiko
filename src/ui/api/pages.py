@@ -1718,7 +1718,33 @@ async def tuning_labels_summary() -> dict[str, Any]:
         "panel": repo.summarize_panel_verdicts(),
         # §11-C: taxonomy 提案の区分別 人間同意率 (区分1 が ~100% なら自動化候補)
         "taxonomy_agreement": repo.taxonomy_tier_agreement(),
+        # P4: 係争 (E1 × パネル不一致) の裁定キュー + 裁定履歴
+        "adjudication": {
+            "pending": repo.list_pending_adjudications(),
+            "recent": repo.list_recent_resolutions(limit=10),
+        },
     }
+
+
+@pages_api.post("/tuning-labels/adjudicate")
+async def tuning_labels_adjudicate(request: Request) -> dict[str, Any]:
+    """係争 1 件の人間裁定 (較正格子 P4 C5)。裁定 = 適用の終端保証は resolve_case が担う。
+
+    write API — readonly instance では middleware が 403 (Tier2)。
+    """
+    form = await request.form()
+    case_key = str(form.get("case_key") or "").strip()
+    resolution = str(form.get("resolution") or "").strip()
+    if not case_key or resolution not in ("label_wrong", "label_correct"):
+        raise HTTPException(status_code=400, detail="入力が不正です")
+    from src.tuning.adjudication import Resolution, resolve_case
+
+    typed: Resolution = "label_wrong" if resolution == "label_wrong" else "label_correct"
+    repo = RunHistoryRepository()
+    result = resolve_case(repo, case_key=case_key, resolution=typed)
+    if not result.ok:
+        raise HTTPException(status_code=409, detail=result.reason)
+    return {"resolved": True, "case_key": case_key, "superseded": result.superseded}
 
 
 # ---------- /intel-graph/editorial-quality ----------

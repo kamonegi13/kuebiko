@@ -238,7 +238,12 @@ async def _run_impl(
         skipped_existing=skipped,
         errors=errors,
     )
-    await _notify_summary(_repo, result, second_ref)
+    # P4: TTL 失効 (§12 の無応答既定) → 裁定待ち件数を通知に載せる (起票通知の原則)
+    from src.tuning.adjudication import expire_stale_cases
+
+    expire_stale_cases(_repo, now=now)
+    pending = len(_repo.list_pending_adjudications())
+    await _notify_summary(_repo, result, second_ref, pending=pending)
     _log.info(
         "shadow_panel_complete",
         cases=result.cases,
@@ -251,26 +256,36 @@ async def _run_impl(
     return result
 
 
-async def _notify_summary(repo: Any, result: PanelRunResult, second_ref: str) -> None:
+async def _notify_summary(
+    repo: Any, result: PanelRunResult, second_ref: str, *, pending: int = 0
+) -> None:
     """週次 ops 通知 (0 件でも 1 通 — 届くこと自体が監査の生存証明)。"""
     try:
         totals = repo.summarize_panel_verdicts()
         split_rate = totals.get("split_rate")
         split_cell = f"{split_rate:.1%}" if split_rate is not None else "-"
         avg_chars = totals.get("by_agreement", {}).get("split", {}).get("avg_prompt_chars", 0)
+        from src.tuning.adjudication import ADJUDICATION_TTL_DAYS
+
+        pending_line = (
+            f"\n⚖️ 人間の裁定待ち {pending} 件 — 運用タブの裁定カードでレビューしてください"
+            f" (無応答は {ADJUDICATION_TTL_DAYS} 日で保守側に自動アーカイブ)"
+            if pending
+            else ""
+        )
         body = (
             f"今回: 裁定 {result.cases} 件 (係争 {result.disputes} / 対照 {result.controls})、"
             f"分裂 {result.splits} 件、候補未到達 {result.unreachable} 件。\n"
             f"累計: 裁定 {totals.get('judged', 0)} 件、分裂率 {split_cell}"
             f" (= 外部 LLM に上がるはずだった率)、分裂例の平均送信 {avg_chars:,} 字。\n"
-            f"パネル: main + {second_ref} (シャドー — 本番は読まない)"
+            f"パネル: main + {second_ref} (シャドー — 本番は読まない)" + pending_line
         )
         from src.ui.services.ops_notify import post_ops_message
 
         await post_ops_message(
             title=f"シャドーパネル週次: 裁定 {result.cases} 件 / 分裂 {result.splits}",
             body=body,
-            importance="low",
+            importance="medium" if pending else "low",
         )
     except Exception as e:  # noqa: BLE001 — 通知失敗で裁定結果を捨てない
         _log.warning("shadow_panel_notify_failed", error=str(e))

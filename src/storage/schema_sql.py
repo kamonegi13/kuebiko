@@ -655,4 +655,15 @@ CREATE TABLE IF NOT EXISTS panel_verdicts (
 
 CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
     ON panel_verdicts(field, agreement);
+
+-- 較正格子 P4 (§4 C5、2026-08-22): 係争 (E1 ラベル × パネル不一致) への人間裁定。
+-- 観測 (panel_verdicts) と判断 (本表) は別状態 (evidence_state_separation の原則)。
+-- resolution: label_wrong (ラベル誤り→E1 隔離) / label_correct (判定側の見逃し) /
+--             expired (TTL 30 日の無応答既定 §12 — 係争ラベルは保守側で隔離)
+CREATE TABLE IF NOT EXISTS panel_resolutions (
+    case_key    TEXT PRIMARY KEY,   -- panel_verdicts.case_key と対
+    resolution  TEXT NOT NULL,
+    resolved_by TEXT NOT NULL,      -- manual / ttl
+    created_at  TEXT NOT NULL
+);
 """

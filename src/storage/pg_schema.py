@@ -778,6 +778,15 @@ CREATE TABLE IF NOT EXISTS panel_verdicts (
 
 CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
     ON panel_verdicts(field, agreement);
+
+-- 較正格子 P4: 係争への人間裁定 (2026-08-22、SQLite _SCHEMA と対)。
+-- 詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS panel_resolutions (
+    case_key    TEXT PRIMARY KEY,
+    resolution  TEXT NOT NULL,
+    resolved_by TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
 """
 
 
