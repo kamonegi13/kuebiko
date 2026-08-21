@@ -276,21 +276,32 @@ def build_prompt_template(spec: PromptSpec, path: Path) -> jinja2.Template | Non
 
 # ---------- python_block kind (skeleton を持たない Python 所有プロンプト) ----------
 #
-# group 4 (ioc_llm_verifier、2026-08-21) 以降のための対象モジュール dispatch。合成の実体
-# (blocks + 動的データ → プロンプト文字列) は対象モジュールが持ち、ここは prompt_id で
-# そこへ委譲するだけ。1 本目のみなので小さな表に留める (YAGNI — 複数本になったら
-# Protocol 化を検討。他の kind と違い skeleton ファイルが無いため slot 定義も対象
-# モジュール側の定数 (SLOT_IDS) から取る)。
+# group 4 (ioc_llm_verifier 2026-08-21 / judgment_classifier 2026-08-21) 以降のための対象
+# モジュール dispatch。合成の実体 (blocks + 動的データ → プロンプト文字列) は対象モジュールが
+# 持ち、ここは prompt_id でそこへ委譲するだけ。他の kind と違い skeleton ファイルが無いため
+# slot 定義も対象モジュール側の定数 (SLOT_IDS) から取る。
+#
+# 「動的データ」の形は prompt ごとに異なる (ioc_llm_verifier=候補 list[dict]、
+# judgment_classifier=``.format()`` context の dict[str, str])。2 本目 (judgment_classifier)
+# の追加で異形が確定したため、この形を持つ引数/戻り値は ``Any`` で表す — 各対象モジュールの
+# 合成関数が自分の形として静的に解釈する (呼び出し側はここでは中身を見ない)。2 本を超えたら
+# Protocol 化を検討 (YAGNI、現状は小さな if 分岐表で足りる)。
 
-_PythonBlockComposeFn = Callable[[dict[str, str], list[dict[str, str]]], str]
+_PythonBlockComposeFn = Callable[[dict[str, str], Any], str]
 
 
 def _python_block_compose_fn(spec: PromptSpec) -> _PythonBlockComposeFn | None:
     """python_block kind の合成関数を prompt_id で解決する (対象モジュールへの委譲)。"""
     if spec.prompt_id == "ioc_llm_verifier":
-        from src.cti.ioc_llm_verifier import compose_from_blocks
+        from src.cti.ioc_llm_verifier import compose_from_blocks as _ioc_compose_from_blocks
 
-        return compose_from_blocks
+        return _ioc_compose_from_blocks
+    if spec.prompt_id == "judgment_classifier":
+        from src.cti.judgment_classifier import (
+            compose_from_blocks as _judgment_compose_from_blocks,
+        )
+
+        return _judgment_compose_from_blocks
     return None
 
 
@@ -300,22 +311,32 @@ def python_block_slot_ids(spec: PromptSpec) -> tuple[str, ...]:
         from src.cti.ioc_llm_verifier import SLOT_IDS
 
         return SLOT_IDS
+    if spec.prompt_id == "judgment_classifier":
+        from src.cti.judgment_classifier import SLOT_IDS
+
+        return SLOT_IDS
     return ()
 
 
-def python_block_sample_targets(spec: PromptSpec) -> list[dict[str, str]]:
-    """保存前検証・preview 用のサンプル候補 (対象モジュールが持つ非空ダミー、各 type 1 件)。"""
+def python_block_sample_targets(spec: PromptSpec) -> Any:
+    """保存前検証・preview 用のサンプル動的データ (対象モジュールが持つ非空ダミー)。
+
+    ioc_llm_verifier は候補 list[dict[str, str]]、judgment_classifier は
+    ``.format()`` context の dict[str, str] — 戻り値の形は対象モジュールに委ねる。
+    """
     if spec.prompt_id == "ioc_llm_verifier":
         from src.cti.ioc_llm_verifier import SAMPLE_TARGETS
 
         # 共有参照を返すと呼び手の変異が全 preview/検証を汚染する — 都度コピー (イミュータブル規約)
         return [dict(t) for t in SAMPLE_TARGETS]
+    if spec.prompt_id == "judgment_classifier":
+        from src.cti.judgment_classifier import SAMPLE_CONTEXT
+
+        return dict(SAMPLE_CONTEXT)
     return []
 
 
-def compose_python_block(
-    spec: PromptSpec, rubric: SummarizerRubric, targets: list[dict[str, str]]
-) -> str:
+def compose_python_block(spec: PromptSpec, rubric: SummarizerRubric, targets: Any) -> str:
     """python_block kind の合成 (pure)。合成関数未登録 / 実行時例外は呼び出し側が握る。"""
     compose_fn = _python_block_compose_fn(spec)
     if compose_fn is None:
@@ -351,7 +372,7 @@ def validate_python_block_rubric(spec: PromptSpec, rubric: SummarizerRubric) -> 
     return []
 
 
-def build_python_block_source(spec: PromptSpec, targets: list[dict[str, str]]) -> str | None:
+def build_python_block_source(spec: PromptSpec, targets: Any) -> str | None:
     """python_block kind の runtime 合成 (fail-safe)。flag OFF / rubric 不在 / 合成失敗は None。
 
     対象モジュールはこの結果が None なら legacy 経路 (frozen 関数) へ倒す (rollback 実体)。

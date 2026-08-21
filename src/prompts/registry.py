@@ -13,13 +13,16 @@ UI 編集 + 版履歴 + 保存前 dry-run + 切替検証で運用する」方式
   (code 所有 — データ注入とマーカー行) + blocks (DB 所有 — 指示散文)** をマーカー
   置換で連結する。**seed 合成 = legacy .j2 と byte 一致**が golden 不変量
   (summarizer の期待差分契約より強くて単純 — 逸脱は UI 編集でのみ生まれる)。
-- ``python_block`` (ioc_llm_verifier、group 4 の 1 本目、2026-08-21): .j2 を持たず
-  **Python コードが構造を所有する動的プロンプト** (候補リストが実行時に決まり Jinja
-  ループで表現しない設計判断)。skeleton の代わりに対象モジュールが blocks (DB 所有の
-  指示散文) を受け取る合成関数を持ち、``src/prompts/prompt_store.py`` が prompt_id で
-  そこへ dispatch する (1 本目のみの小さな表、複数本になったら Protocol 化を検討)。
-  ``skeleton_path=None`` / ``env_style="none"`` (Jinja を一切使わない)。golden 不変量は
-  block 方式と同じ「seed の blocks で合成した結果が legacy 関数の出力と byte 一致」。
+- ``python_block`` (ioc_llm_verifier / judgment_classifier、group 4、2026-08-21): .j2 を
+  持たず **Python コードが構造を所有する動的プロンプト** (候補リストや区切り情報が実行時に
+  決まり Jinja ループで表現しない設計判断)。skeleton の代わりに対象モジュールが blocks
+  (DB 所有の指示散文) を受け取る合成関数を持ち、``src/prompts/prompt_store.py`` が
+  prompt_id でそこへ dispatch する (2 本目までは小さな if 分岐表、複数本になったら
+  Protocol 化を検討)。``skeleton_path=None`` / ``env_style="none"`` (Jinja を一切使わない)。
+  golden 不変量は block 方式と同じ「seed の blocks で合成した結果が legacy 関数の出力と
+  byte 一致」。動的データの形は対象モジュールごとに異なってよい (ioc_llm_verifier は
+  候補 list、judgment_classifier は ``.format()`` context の dict) — dispatch 層は
+  ``Any`` で中継し、各対象モジュールの合成関数が自分の形として解釈する。
 """
 
 from __future__ import annotations
@@ -188,7 +191,7 @@ _SPECS: tuple[PromptSpec, ...] = (
         env_style="grounded",
         skeleton_path=Path("prompts/synthesis/render_skeleton.j2"),
     ),
-    # ---- group 4: Python 所有プロンプト (1 本目、2026-08-21) ----
+    # ---- group 4: Python 所有プロンプト (1〜2 本目、2026-08-21) ----
     # .j2 を持たない動的プロンプト。legacy_path は rollback 用の frozen 関数
     # (_build_prompt_legacy) を持つ実ファイルを指す (UI の「実ファイル」表示・統治レポート用
     # のラベルにすぎず、Web からの直接編集は許可しない — allowlist は FileEditor 側の
@@ -200,6 +203,17 @@ _SPECS: tuple[PromptSpec, ...] = (
         env_flag="IOC_LLM_VERIFIER_COMPOSER",
         seed_path=Path("config/prompts/ioc_llm_verifier_rubric.yaml"),
         legacy_path=Path("src/cti/ioc_llm_verifier.py"),
+        kind="python_block",
+        env_style="none",
+        skeleton_path=None,
+    ),
+    PromptSpec(
+        prompt_id="judgment_classifier",
+        title="統合判断分類器",
+        config_key="judgment_rubric",
+        env_flag="JUDGMENT_COMPOSER",
+        seed_path=Path("config/prompts/judgment_rubric.yaml"),
+        legacy_path=Path("src/cti/judgment_classifier.py"),
         kind="python_block",
         env_style="none",
         skeleton_path=None,

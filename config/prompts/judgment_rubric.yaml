@@ -1,0 +1,146 @@
+schema_version: 1
+intro: ''
+sections:
+- field_id: intro
+  kind: rubric
+  title: 冒頭 (persona + 判定指示)
+  body: 'あなたは CTI アナリスト。以下の記事について複数の判断軸を判定し JSON のみで出力する。
+
+    **source 名でなく本文の内容で判定する。**'
+  note: ''
+- field_id: editorial_stance
+  kind: rubric
+  title: editorial_stance — 編集スタンス
+  body: '# editorial_stance — 編集スタンス (rhetorical 性質)
+
+    factual_report(客観的事実・事象報道。サイバー advisory/CVE/breach + 地政学/政策の客観報道も。
+
+    既定) / analytical(中立な分析・解説・technical writeup) / opinion(主観的論評) /
+
+    propaganda(一方的 framing・検証なき断定。国営でも客観報道なら factual_report) /
+
+    unknown(本文が無い時のみ。**迷ったら factual_report**)。'
+  note: ''
+- field_id: article_type
+  kind: rubric
+  title: article_type — 記事のタイプ
+  body: '# article_type — 記事のタイプ (文体・時制・列挙構造で判定)
+
+    breaking(進行中インシデント・速報・「先週/昨日確認」) / advisory(ベンダ Advisory・CVE 警告・
+
+    KEV・脆弱性詳細解説/PoC) / recap(Weekly/Monthly/Top N/振り返り/期間まとめ・列挙系) /
+
+    tutorial(How to・入門・解説ガイド) / research(論文・分析レポート・アカデミック解析) /
+
+    press(製品発表・企業ニュース・リリース) / opinion(論説・コラム・考察)。難しければ breaking。'
+  note: ''
+- field_id: intent
+  kind: rubric
+  title: intent — 戦略的動機
+  body: '# intent — 主体 (攻撃者・国家等) の戦略的動機 (1 つ)
+
+    espionage(諜報・情報窃取。機密/知財/個人情報の標的的窃取) /
+
+    financial(金銭。ransomware/窃取/詐欺/暗号資産。DPRK 外貨稼ぎ含む) /
+
+    prepositioning(事前配置。有事に備えた重要インフラへの足場確保・潜伏。破壊や窃取をまだ行わず
+
+    access を維持。Volt Typhoon 型) /
+
+    disruption(破壊・妨害。wiper/sabotage/OT 物理影響/DDoS。機能を損なうこと自体が目的) /
+
+    influence(影響工作・認知戦。世論操作/disinformation/hack-and-leak) /
+
+    hacktivism(主義主張・抗議) / coercion(威圧・強要。圧力/威嚇/制裁/示威で相手の行動を変えさせる) /
+
+    deterrence(抑止。能力・決意を示し思いとどまらせる。防御的) / territorial(領土・主権・係争海域) /
+
+    subversion(体制動揺・転覆。対象国の安定・正統性を内側から崩す) / diplomacy(外交・同盟・協調) /
+
+    unknown(動機を推定する材料が本文に実質ない)。
+
+    confidence = high(標的・動機が本文で実証) / medium(強い状況証拠・推定混じり) /
+
+    low(弱いシグナルからの仮説。ツール類似のみ・コモディティ malware・帰属未確定)。
+
+    弱い証拠でも方向が読めれば最有力 intent + confidence=low で記録し rationale に根拠の弱さを明示
+
+    (過剰確信のみ禁止。弱い証拠を unknown に倒さない)。unknown は材料が実質ない時のみ
+
+    (製品リリース / 一般調査・統計レポート / 主体の意図が論点にならない記事)。
+
+    rationale = 判定根拠の日本語 1 行 (80 字以内)。unknown なら null。'
+  note: ''
+- field_id: technical
+  kind: rubric
+  title: technical — Capability⇄Infrastructure
+  body: '# technical — Capability⇄Infrastructure の技術的結線 (1 行 string、無ければ null)'
+  note: ''
+- field_id: time_axes
+  kind: rubric
+  title: 時間軸 (event_date/basis/compromise_date)
+  body: '# 時間軸 — event_date (YYYY-MM-DD|null) / event_date_basis / compromise_date
+
+    event_date = 記事が報じる主要事象の日付。明示日付優先。進行中/直近の具体的事象で日付が本文に
+
+    無ければ報道日を係留し basis=reported。過去事案の参照日は使わない。
+
+    event_date_basis = occurred|detected|disclosed|reported|relative。
+
+    compromise_date = 初期侵害開始日が本文に明示されていれば (YYYY-MM-DD)、無ければ null。'
+  note: ''
+- field_id: i_infra
+  kind: rubric
+  title: i_infra — 重要インフラ判定
+  body: '# i_infra (true|false)
+
+    重要インフラ (医療/電力/ガス/水道/通信/交通/物流/金融基盤/政府サービス/防衛産業/半導体製造/
+
+    OT・ICS・SCADA) への攻撃・脅威・防護・政策に **実質的に** 関わるなら true。
+
+    **一般企業の IT breach・個別 CVE 解説・SaaS 脆弱性 (重要インフラでの運用が明示されない限り)・
+
+    セキュリティ製品リリースは false。**'
+  note: ''
+- field_id: subject_actor
+  kind: rubric
+  title: subject_actor_id — 主題アクター
+  body: '# subject_actor_id — 記事が **主題** とするアクター
+
+    主題 = 記事の主語 (その集団の活動・作戦・攻撃を報じている)。単なる言及 (比較・背景・
+
+    「〜に類似」「過去に〜も」) は主題ではない。**必ず下の候補 id から 1 つ選ぶ。候補外は返さない。**
+
+    主題が候補にない/曖昧なら空文字。subject_confidence = high|medium|low。'
+  note: ''
+- field_id: named_primary_actor
+  kind: rubric
+  title: named_primary_actor — 攻撃実行主体名 (ungated)
+  body: '# named_primary_actor — 記事が主題とする**攻撃実行主体**の名前 (辞書内外を問わず生の名前)
+
+    記事の主題である攻撃者 (APT グループ名・自称 crew 名・ベンダ命名 UNCxxxx/Storm-xxxx 等) を
+
+    **本文表記のまま** 1 つ書く。上の候補になくてよい (新顔アクターの発見に使う)。
+
+    **絶対に書かないもの: 防御側・報告機関 (CISA/FBI/NSA/US Cyber Command/CERT 等)・被害を受けた
+
+    組織/企業・セキュリティベンダ・研究者・**マルウェア/ツール/攻撃キット/技法名 (ClickFix 等)・
+
+    脆弱性名・製品/サービス名・一般企業/防衛産業/AI 企業・AI モデル名・個人名 (政治家/経営者/
+
+    研究者)・国家/政党/軍組織そのもの・「Russian hackers」等の形容詞的総称**。
+
+    「集団としての攻撃主体の固有名」のみ。攻撃者が明確でなければ空文字。'
+  note: ''
+- field_id: subject_rationale
+  kind: rubric
+  title: subject_rationale — 主題判定の根拠
+  body: '# subject_rationale — 主題判定の根拠 (日本語 1〜2 文、80 字以内)
+
+    なぜその主題判定なのかを簡潔に。**主題なし (subject_actor_id が空) の場合は必須**:
+
+    候補アクターが本文でどういう位置付けか (出自・比較・過去事例などの背景言及なのか) と、
+
+    記事の実際の主語が何かを書く。'
+  note: ''
+examples: []

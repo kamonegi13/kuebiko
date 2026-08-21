@@ -19,6 +19,8 @@ subject_actor_classifier) を置換する。importance / category / victim は *
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, ConfigDict
 
 from src.cti.actor_normalizer import ActorAlias
@@ -79,7 +81,11 @@ class JudgmentOut(BaseModel):
 
 # 各軸の基準は置換元の focused プロンプト (editorial_stance_classifier / analysis_axes_classifier
 # / subject_actor_classifier) を忠実に集約。A/B + 実データ目視で正確性を確認済み (2026-07-26)。
-_PROMPT_TEMPLATE = """\
+#
+# ⚠ 編集禁止: DB 編集層 (blocks) の内容と独立させるため、この文字列は他のどこからも import
+# されない自己完結コピーとして維持する (rollback 用の frozen 実装、``JUDGMENT_COMPOSER=0`` の実体。
+# block 方式の legacy .j2 / ioc_llm_verifier の ``_build_prompt_legacy`` と同じ役割)。
+_PROMPT_TEMPLATE_LEGACY = """\
 あなたは CTI アナリスト。以下の記事について複数の判断軸を判定し JSON のみで出力する。
 **source 名でなく本文の内容で判定する。**
 
@@ -162,6 +168,136 @@ OT・ICS・SCADA) への攻撃・脅威・防護・政策に **実質的に** �
 """
 
 
+# ---------- プロンプトの層分け (python_block kind、2026-08-21、group 4 の 2 本目) ----------
+#
+# ioc_llm_verifier と同じ設計判断: .j2 を持たず Python コードが構造を所有する動的プロンプト
+# (subject_actor 候補は実行時に決まるため Jinja ループで表現しない)。編集可能な指示散文は
+# セクション単位で 10 block に分離し DB (config_store) 所有にする
+# (src/prompts/registry.py の PromptSpec、kind="python_block")。
+#
+# ioc_llm_verifier との違い: 候補は「値そのもの」でなく「表示済み文字列」として渡ってくる
+# ため (subject_actor_id の候補リストは記事ごとに件数が変わる 1 行の文字列表現)、合成は
+# **最終文字列を組んでから既存と同じ ``.format()`` を通す**設計にする (block に生の ``{``
+# が混入すると ``.format()`` が ``ValueError``/``KeyError`` で落ちる — 保存前検証がこれを
+# サンプル context での実合成まで通すことで拾う、既存の ``validate_python_block_rubric`` が
+# そのまま使える)。code 所有: candidates 行 (データ注入)、JSON 出力形式行 (JudgmentOut
+# スキーマと結合)、「# 記事」以下のデータ部。見出し行は block に含める (byte 一致が成立し、
+# かつ UI 編集で見出しごと直せる方が自然 — ioc_llm_verifier と同じ判断)。
+SLOT_IDS: tuple[str, ...] = (
+    "intro",
+    "editorial_stance",
+    "article_type",
+    "intent",
+    "technical",
+    "time_axes",
+    "i_infra",
+    "subject_actor",
+    "named_primary_actor",
+    "subject_rationale",
+)
+
+_PROMPT_ID = "judgment_classifier"
+
+# 保存前検証・preview 用のサンプル context (各 placeholder を埋める非空ダミー)。実データを
+# 使わず kuebiko.example 系のみ (§4: ログ・応答に本物の記事本文を持ち込まない)。
+SAMPLE_CONTEXT: dict[str, str] = {
+    "candidates": "qilin, apt29",
+    "category": "apt",
+    "published": "2026-01-01",
+    "title": "kuebiko.example 系ネットワークへの不正アクセス (render 検証用)",
+    "body": (
+        "kuebiko.example 系の重要インフラ事業者を標的にしたランサムウェア攻撃が"
+        "観測された (render 検証用サンプル本文)。"
+    ),
+}
+
+
+def compose_from_blocks(blocks: Mapping[str, str], context: Mapping[str, str]) -> str:
+    """blocks (DB 所有の指示散文) + context (code 所有のプレースホルダ値) からプロンプトを合成する。
+
+    レイアウトは ``_PROMPT_TEMPLATE_LEGACY`` と同一。blocks が legacy 由来の verbatim テキスト
+    なら結果は byte 一致する (golden 不変量、tests/unit で固定)。組み立てた文字列に
+    ``.format(**context)`` を通す ── block に ``candidates``/``category`` 等以外の生の ``{``
+    が混入していれば ``ValueError``/``KeyError`` で落ちる (呼び出し側の保存前検証 / fail-safe
+    で拾う)。``blocks`` に ``SLOT_IDS`` の欠落があれば ``KeyError``。
+
+    ⚠ 逆に **有効な context キー** (``{body}``/``{title}``/``{candidates}`` 等) を block の
+    散文に書くと、エラーにならず**その位置に実データが黙って展開される** (format 名前空間を
+    blocks と共有しているため)。単独運用者の編集面なので injection 脅威ではないが、
+    「本文を参照」のつもりで ``{body}`` と書くと記事全文がそのセクションに挿入される —
+    プレースホルダを散文で言及したいときは ``{{body}}`` とエスケープすること。
+    """
+    lines = [
+        blocks["intro"],
+        "",
+        blocks["editorial_stance"],
+        "",
+        blocks["article_type"],
+        "",
+        blocks["intent"],
+        "",
+        blocks["technical"],
+        "",
+        blocks["time_axes"],
+        "",
+        blocks["i_infra"],
+        "",
+        blocks["subject_actor"],
+        "候補 (記事に登場した既知アクター): {candidates}",
+        "",
+        blocks["named_primary_actor"],
+        "",
+        blocks["subject_rationale"],
+        "",
+        "# 出力 (JSON のみ、前置き禁止)",
+        '{{"editorial_stance":"...","article_type":"...","intent":"...","confidence":"low",',
+        '"rationale":null,"technical":null,"event_date":null,"event_date_basis":null,',
+        '"compromise_date":null,"i_infra":false,"subject_actor_id":"","subject_confidence":"low",',
+        '"named_primary_actor":"","subject_rationale":""}}',
+        "",
+        "# 記事",
+        "カテゴリ: {category}",
+        "報道日: {published}",
+        "タイトル: {title}",
+        "本文:",
+        "{body}",
+        "",
+    ]
+    template = "\n".join(lines)
+    return template.format(**context)
+
+
+def _composed_prompt(context: Mapping[str, str]) -> str | None:
+    """DB 編集層があればそれで合成する。flag OFF / 編集層不在 / 合成失敗は None (= legacy へ)。"""
+    from src.prompts.prompt_store import build_python_block_source
+    from src.prompts.registry import get_spec
+
+    spec = get_spec(_PROMPT_ID)
+    if spec is None:
+        return None
+    return build_python_block_source(spec, context)
+
+
+def _build_prompt(context: Mapping[str, str]) -> str:
+    """判断プロンプトを組み立てる (DB 編集層 → legacy の順で fail-safe に解決)。
+
+    graceful degradation (本 module の契約) を下層の例外処理に依存させない — 合成経路が
+    どこで raise しても legacy (純 Python・I/O なし) に落ちる構造保証。per-article の
+    hot path で prompt 組み立てを新しい crash 点にしないための関門 (ioc_llm_verifier と同型)。
+    """
+    try:
+        composed = _composed_prompt(context)
+    except Exception as e:  # noqa: BLE001 — 合成失敗は契約上 legacy へ
+        _log.warning("judgment_prompt_compose_failed", error=str(e))
+        composed = None
+    return composed if composed is not None else _build_prompt_legacy(context)
+
+
+def _build_prompt_legacy(context: Mapping[str, str]) -> str:
+    """rollback 用の frozen 実装 (``JUDGMENT_COMPOSER=0`` の実体)。"""
+    return _PROMPT_TEMPLATE_LEGACY.format(**context)
+
+
 def build_judgment_prompt(
     *,
     title: str,
@@ -171,13 +307,14 @@ def build_judgment_prompt(
     candidates: list[ActorAlias],
 ) -> str:
     cand = ", ".join(c.id for c in candidates) or "(候補なし — subject_actor_id は空)"
-    return _PROMPT_TEMPLATE.format(
-        candidates=cand,
-        category=(category or "").strip() or "?",
-        published=(published or "?"),
-        title=(title or "").strip(),
-        body=(body or "").strip()[:_BODY_MAX_CHARS],
-    )
+    context: dict[str, str] = {
+        "candidates": cand,
+        "category": (category or "").strip() or "?",
+        "published": (published or "?"),
+        "title": (title or "").strip(),
+        "body": (body or "").strip()[:_BODY_MAX_CHARS],
+    }
+    return _build_prompt(context)
 
 
 async def classify_judgment(

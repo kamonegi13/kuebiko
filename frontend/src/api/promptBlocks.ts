@@ -42,8 +42,9 @@ async function sendJson<T>(path: string, method: "POST" | "PUT", body: unknown):
 }
 
 // python_block (2026-08-21): .j2 skeleton を持たず Python コードが構造を所有する動的
-// プロンプト (ioc_llm_verifier、group 4 の 1 本目)。編集 UI は block と共用 (BlockPromptEditor) —
-// slots は skeleton マーカーでなく backend の固定表由来、preview に Jinja render 段が無い点のみ違う。
+// プロンプト (ioc_llm_verifier / judgment_classifier、group 4)。編集 UI は block と共用
+// (BlockPromptEditor) — slots は skeleton マーカーでなく backend の固定表由来、preview に
+// Jinja render 段が無い点のみ違う。
 export type ManagedPromptKind = "field_rubric" | "block" | "python_block";
 
 export interface ManagedPrompt {

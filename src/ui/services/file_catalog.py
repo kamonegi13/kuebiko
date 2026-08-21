@@ -376,6 +376,13 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "UI 編集はプロンプトタブ。Python コードが構造を所有する動的プロンプト "
         "= group 4 の 1 本目、2026-08-21)",
     ),
+    "config/prompts/judgment_rubric.yaml": FileInfo(
+        "プロンプト",
+        "統合判断分類器の編集層 (blocks)",
+        "judgment_classifier の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
+        "UI 編集はプロンプトタブ。Python コードが構造を所有する動的プロンプト "
+        "= group 4 の 2 本目、2026-08-21)",
+    ),
 }
 
 _FALLBACK_CATEGORY = "その他"
