@@ -254,6 +254,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
             **await run_deep_review(llm=llm, adversarial_llm=adversarial_llm),
         )
 
+    from src.tuning.goldset_cron import run_weekly_goldset_eval
     from src.ui.services.actor_history_distill import run_actor_history_distill
     from src.ui.services.body_refetch_backlog import run_body_refetch_backlog
     from src.ui.services.body_translate_backlog import run_body_translate_backlog
@@ -282,6 +283,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "daily-heartbeat": run_daily_heartbeat,
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,
+        "weekly-goldset-eval": run_weekly_goldset_eval,
         "actor-history-distill": run_actor_history_distill,
         "job-recovery-watchdog": _job_recovery,
     }

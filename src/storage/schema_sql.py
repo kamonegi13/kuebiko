@@ -615,4 +615,23 @@ CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_article
     ON tuning_labels(article_id);
+
+-- 較正格子 P2 (docs/self_evolving_tuning_design.md §6、2026-08-22): 評価・rollback 裁定の記録。
+-- goldset 3 者比較 (kind=goldset_cutover) と C7 自動 rollback の裁定 (kind=auto_rollback) を
+-- 永続化する。(prompt_id, kind, to_version) の既存行チェックが冪等性と flip-flop 防止の
+-- 状態を兼ねる (成功も記録する — 記録が無いと「評価済み」と「未評価」を区別できない)。
+CREATE TABLE IF NOT EXISTS tuning_evals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id    TEXT    NOT NULL,   -- summarizer / judgment ...
+    kind         TEXT    NOT NULL,   -- goldset_cutover / auto_rollback
+    from_version INTEGER,            -- 比較元の旧版 / rollback の復元先
+    to_version   INTEGER,            -- 比較先の新版 / 劣化を検出した版
+    verdict      TEXT    NOT NULL,   -- pass / degraded / would_rollback / rolled_back 等
+    mode         TEXT    NOT NULL,   -- measure / shadow / applied
+    detail       TEXT    NOT NULL,   -- JSON (自由文は入れない)
+    created_at   TEXT    NOT NULL    -- ISO8601 UTC
+);
+
+CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
+    ON tuning_evals(prompt_id, kind, to_version);
 """

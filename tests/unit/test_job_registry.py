@@ -228,9 +228,10 @@ class TestDynamicCollectionSuppression:
         monthly = by_id["monthly-status-synthesis"].max_runtime_minutes
         weekly = by_id["weekly-status-synthesis"].max_runtime_minutes
         mitre = by_id["mitre-actor-sync"].max_runtime_minutes
-        # 帯幅で差が付く (monthly > weekly > mitre)。全体最長は夜間 deep-review (75分)。
+        # 帯幅で差が付く (monthly > weekly > mitre)。全体最長は goldset 切替評価
+        # (90分、土曜深夜。3×86 件の LLM 実行 — 較正格子 P2)。
         assert monthly > weekly > mitre
-        assert by_id["ledger-deep-review"].max_runtime_minutes == max(
+        assert by_id["weekly-goldset-eval"].max_runtime_minutes == max(
             j.max_runtime_minutes for j in jr.default_jobs()
         )
 

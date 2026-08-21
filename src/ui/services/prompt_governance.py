@@ -154,6 +154,14 @@ async def run_weekly_prompt_governance() -> None:
                 f"(v{version}, {days} 日窓): "
                 f"{_summary_line(verify_out, prefix='総合判定:')}"
             )
+            # C7 自動 rollback 関門 (較正格子 P2): FAIL のとき前版へ戻す判定。
+            # 既定はシャドー (記録のみ)、実適用は TUNING_AUTO_ROLLBACK=1。
+            # 判定・適用の実体は src/tuning/auto_rollback (ここは 1 行足すだけ)。
+            from src.tuning.auto_rollback import maybe_auto_rollback
+
+            rollback_line = await maybe_auto_rollback(verify_exit=verify_exit)
+            if rollback_line:
+                sections.append(rollback_line)
 
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]

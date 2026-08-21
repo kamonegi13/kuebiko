@@ -1712,6 +1712,8 @@ async def tuning_labels_summary() -> dict[str, Any]:
     return {
         "summary": repo.summarize_tuning_labels(),
         "recent": repo.list_tuning_labels(limit=20),
+        # P2: goldset 評価と auto-rollback 裁定 (シャドー含む) の履歴
+        "evals": repo.list_tuning_evals(limit=10),
     }
 
 

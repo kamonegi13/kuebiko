@@ -172,14 +172,28 @@ _TARGETS = {
 }
 
 
-def _build_template(drop: list[str]) -> Any:
+def _build_template(drop: list[str], rubric_version: int | None = None) -> Any:
     """評価用のテンプレートを組む。``drop`` 指定時は **DB に保存せず** 変種を使う。
 
     本番の rubric を書き換えると production が即座に新版を使うため、
     「もしこのフィールドを外したら」はメモリ上の変種で試す。
+    ``rubric_version`` 指定時は config_store の版履歴からその版を pin して組む
+    (較正格子 P2 の cron 化 — 旧版 vs 新版の同一入力比較。DB は変更しない)。
     """
     from src.pipeline.dispatch import DEFAULT_TEMPLATE_PATH, _load_template
 
+    if rubric_version is not None:
+        if drop:
+            raise SystemExit("--drop-field と --rubric-version は併用できない")
+        from src.prompts.rubric_model import SummarizerRubric
+        from src.prompts.summarizer_composer import build_template
+        from src.storage.config_store import get_config_version
+
+        value = get_config_version("summarizer_rubric", rubric_version)
+        if value is None:
+            raise SystemExit(f"summarizer_rubric v{rubric_version} が版履歴に無い")
+        rubric = SummarizerRubric.model_validate(value)
+        return build_template(rubric, path=DEFAULT_TEMPLATE_PATH)
     if not drop:
         return _load_template()  # 本番と同一経路
     from src.eval.rubric_variant import drop_fields
@@ -198,6 +212,7 @@ async def _run_all(
     drop: list[str],
     target: str = "summarizer",
     model: str | None = None,
+    rubric_version: int | None = None,
 ) -> Path:
     from src.config_loader import load_app_config
     from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref
@@ -213,9 +228,13 @@ async def _run_all(
     )
     if model:
         print(f"モデル override: {model}", file=sys.stderr)
-    template = _build_template(drop) if needs_template else None
+    template = _build_template(drop, rubric_version) if needs_template else None
     if drop and not needs_template:
         raise SystemExit("--drop-field は summarizer のみ (judgment の判定基準はコード内)")
+    if rubric_version is not None and not needs_template:
+        raise SystemExit("--rubric-version は summarizer のみ")
+    if rubric_version is not None:
+        print(f"rubric v{rubric_version} を pin して実行 — DB は変更しない", file=sys.stderr)
     if drop:
         print(f"変種で実行 (除外フィールド: {', '.join(drop)}) — DB は変更しない", file=sys.stderr)
 
@@ -239,7 +258,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
     articles = load_goldset(GOLDSET_PATH)
     path = asyncio.run(
-        _run_all(articles, args.label, args.drop_field or [], args.target, args.model)
+        _run_all(
+            articles,
+            args.label,
+            args.drop_field or [],
+            args.target,
+            args.model,
+            getattr(args, "rubric_version", None),
+        )
     )
     print(f"{len(articles)} 件を実行 → {path}")
     return 0
@@ -296,6 +322,45 @@ def _floor_error() -> int:
     return 2
 
 
+def _compare_rows(
+    a: dict[str, dict[str, Any]],
+    b: dict[str, dict[str, Any]],
+    shared: list[str],
+    floor_x: dict[str, dict[str, Any]] | None,
+    floor_y: dict[str, dict[str, Any]] | None,
+    floor_ids: list[str],
+) -> list[dict[str, Any]]:
+    """フィールド別の比較指標 (表示形式に依存しない中間表現)。"""
+    fields = sorted({k for r in a.values() for k in r} - {"article_id", "_error"})
+    rows: list[dict[str, Any]] = []
+    for fld in fields:
+        changed = [aid for aid in shared if _norm(a[aid].get(fld)) != _norm(b[aid].get(fld))]
+        agree = _agreement(a, b, fld, shared)
+        fill_a, fill_b = _fill_rate(a, fld, shared), _fill_rate(b, fld, shared)
+        delta_pt = (fill_b - fill_a) * 100
+        row: dict[str, Any] = {
+            "field": fld,
+            "agree": agree,
+            "fill_a": fill_a,
+            "fill_b": fill_b,
+            "delta_pt": delta_pt,
+            "changed_ids": changed,
+        }
+        if floor_x is not None and floor_y is not None:
+            floor_agree = _agreement(floor_x, floor_y, fld, floor_ids)
+            floor_pt = (
+                abs(_fill_rate(floor_x, fld, floor_ids) - _fill_rate(floor_y, fld, floor_ids)) * 100
+            )
+            # 床 = 同一設定でも動く幅 / 二項 sd = この充足率で 86 件を引いたときの
+            # 標本ばらつき。**両方を超えて初めて「変化」**と呼ぶ。
+            noise_pt = max(floor_pt, _binomial_sd_pt(fill_a, len(shared)), _MIN_FLOOR_PT)
+            row["floor_agree"] = floor_agree
+            row["noise_pt"] = noise_pt
+            row["is_change"] = abs(delta_pt) > noise_pt
+        rows.append(row)
+    return rows
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     if not args.floor and not args.no_floor:
         return _floor_error()
@@ -316,7 +381,26 @@ def cmd_compare(args: argparse.Namespace) -> int:
             print("対照の 2 実行に共通の article_id が無い", file=sys.stderr)
             return 1
 
-    fields = sorted({k for r in a.values() for k in r} - {"article_id", "_error"})
+    rows = _compare_rows(a, b, shared, floor_x, floor_y, floor_ids)
+
+    if getattr(args, "json", False):
+        # 機械可読出力 (較正格子 P2 の cron 化用)。article_id は件数のみ (本文非掲載と同方針)
+        payload = {
+            "label_a": args.label_a,
+            "label_b": args.label_b,
+            "shared": len(shared),
+            "floor_shared": len(floor_ids) if args.floor else None,
+            "fields": [
+                {k: (len(v) if k == "changed_ids" else v) for k, v in r.items()}
+                | {"changed": len(r["changed_ids"])}
+                for r in rows
+            ],
+        }
+        for f in payload["fields"]:
+            f.pop("changed_ids", None)
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
     head = f"{args.label_a} vs {args.label_b}  (共通 {len(shared)} 件)"
     if args.floor:
         head += f"\n対照: {args.floor[0]} vs {args.floor[1]}  (共通 {len(floor_ids)} 件)"
@@ -325,42 +409,27 @@ def cmd_compare(args: argparse.Namespace) -> int:
     print(head + "\n")
     print(f"{'フィールド':<22}{'一致':>6}{'床':>6}  {'充足率 A→B':>16}{'床の揺れ':>10}  判定")
     print("-" * 74)
-    changed_ids: dict[str, list[str]] = {}
-    for fld in fields:
-        for aid in shared:
-            if _norm(a[aid].get(fld)) != _norm(b[aid].get(fld)):
-                changed_ids.setdefault(fld, []).append(aid)
-
-        agree = _agreement(a, b, fld, shared)
-        fill_a, fill_b = _fill_rate(a, fld, shared), _fill_rate(b, fld, shared)
-        delta_pt = (fill_b - fill_a) * 100
-
-        if floor_x is not None and floor_y is not None:
-            floor_agree = _agreement(floor_x, floor_y, fld, floor_ids)
-            floor_pt = (
-                abs(_fill_rate(floor_x, fld, floor_ids) - _fill_rate(floor_y, fld, floor_ids)) * 100
-            )
-            # 床 = 同一設定でも動く幅 / 二項 sd = この充足率で 86 件を引いたときの
-            # 標本ばらつき。**両方を超えて初めて「変化」**と呼ぶ。
-            noise_pt = max(floor_pt, _binomial_sd_pt(fill_a, len(shared)), _MIN_FLOOR_PT)
-            verdict = "★ 変化" if abs(delta_pt) > noise_pt else "ノイズ内"
-            floor_cell = f"{floor_agree * 100:>5.0f}%"
-            floor_pt_cell = f"±{noise_pt:>4.1f}pt"
+    for r in rows:
+        if "is_change" in r:
+            verdict = "★ 変化" if r["is_change"] else "ノイズ内"
+            floor_cell = f"{r['floor_agree'] * 100:>5.0f}%"
+            floor_pt_cell = f"±{r['noise_pt']:>4.1f}pt"
         else:
             verdict = "?"
             floor_cell = f"{'-':>6}"
             floor_pt_cell = f"{'-':>8}"
-
-        fill_cell = f"{fill_a * 100:>5.1f}→{fill_b * 100:>5.1f}%"
+        fill_cell = f"{r['fill_a'] * 100:>5.1f}→{r['fill_b'] * 100:>5.1f}%"
         print(
-            f"{fld:<22}{agree * 100:>5.0f}%{floor_cell}  "
+            f"{r['field']:<22}{r['agree'] * 100:>5.0f}%{floor_cell}  "
             f"{fill_cell:>16}{floor_pt_cell:>10}  {verdict}"
         )
 
     if args.show_ids:
         print("\n変化した article_id (フィールド別、先頭 10 件):")
-        for fld, ids in sorted(changed_ids.items()):
-            print(f"  {fld}: {', '.join(ids[:10])}{' …' if len(ids) > 10 else ''}")
+        for r in rows:
+            ids = r["changed_ids"]
+            if ids:
+                print(f"  {r['field']}: {', '.join(ids[:10])}{' …' if len(ids) > 10 else ''}")
     return 0
 
 
@@ -393,6 +462,11 @@ def main() -> int:
         action="append",
         help="判定基準と出力例からこのフィールドを外して実行する (DB は変更しない)",
     )
+    r.add_argument(
+        "--rubric-version",
+        type=int,
+        help="config_store の版履歴からこの版の rubric を pin して実行する (summarizer のみ)",
+    )
     r.set_defaults(func=cmd_run)
 
     c = sub.add_parser("compare", help="2 つの実行結果をフィールド別に突き合わせる")
@@ -410,6 +484,11 @@ def main() -> int:
         help="床を取らずに生の差分だけ見る (判定はできない)",
     )
     c.add_argument("--show-ids", action="store_true", help="変化した article_id も出す")
+    c.add_argument(
+        "--json",
+        action="store_true",
+        help="機械可読 JSON で出力する (cron 化用。article_id は件数のみ)",
+    )
     c.set_defaults(func=cmd_compare)
 
     args = p.parse_args()

@@ -21,6 +21,26 @@ const SOURCE_JA: Record<string, string> = {
   E3: "人間裁定",
 };
 
+// P2: 評価・裁定の種別/結果の日本語写像
+const EVAL_KIND_JA: Record<string, string> = {
+  goldset_cutover: "goldset 切替評価",
+  auto_rollback: "自動 rollback 裁定",
+};
+
+const VERDICT_JA: Record<string, string> = {
+  pass: "合格",
+  degraded: "劣化",
+  would_rollback: "戻すべき (シャドー)",
+  rolled_back: "復元済み",
+};
+
+const VERDICT_TONE: Record<string, string> = {
+  pass: "bg-success-soft text-success",
+  degraded: "bg-warning-soft text-warning",
+  would_rollback: "bg-warning-soft text-warning",
+  rolled_back: "bg-critical-soft text-critical",
+};
+
 export function TuningLabelsCard() {
   const { data } = useQuery({
     queryKey: ["tuning-labels"],
@@ -72,6 +92,25 @@ export function TuningLabelsCard() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {/* P2: goldset 評価 / auto-rollback 裁定の履歴 (rubric 変更の翌週に自動で並ぶ) */}
+      {data && data.evals && data.evals.length > 0 && (
+        <div className="border-t border-border-subtle">
+          <div className="px-4 py-2 text-xs text-fg-muted uppercase bg-surface-2">評価・裁定 (P2)</div>
+          {data.evals.map((e) => (
+            <div key={e.id} className="px-4 py-2 border-t border-border-subtle flex items-center gap-2 text-xs">
+              <span className="text-fg">{EVAL_KIND_JA[e.kind] ?? e.kind}</span>
+              <span className="text-fg-subtle font-mono">
+                {e.prompt_id} v{e.from_version ?? "?"}→v{e.to_version ?? "?"}
+              </span>
+              <span className={`px-2 py-0.5 rounded font-semibold ${VERDICT_TONE[e.verdict] ?? "bg-surface-3 text-fg-muted"}`}>
+                {VERDICT_JA[e.verdict] ?? e.verdict}
+              </span>
+              {e.mode === "shadow" && <span className="text-fg-subtle">(シャドー)</span>}
+              <span className="ml-auto text-fg-subtle">{formatJstShort(e.created_at)}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

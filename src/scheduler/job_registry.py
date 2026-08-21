@@ -289,6 +289,26 @@ def default_jobs() -> list[JobDef]:
             minute=0,
         ),
         JobDef(
+            id="weekly-goldset-eval",
+            kind="bespoke",
+            heavy=True,
+            max_runtime_minutes=90,
+            title="goldset 切替評価",
+            description=(
+                "rubric の版が変わった週だけ、凍結 gold set で旧版 vs 新版の同一入力"
+                "比較 (対照 = 新版 2 実行) を自動実行する (較正格子 P2)。"
+            ),
+            disable_impact=(
+                "rubric 変更の入力凍結評価が自動で出なくなる (本番統計の切替検証は"
+                " weekly-prompt-governance が継続)。"
+            ),
+            protection="important",
+            schedule_type="cron",
+            day_of_week="sat",
+            hour=3,
+            minute=10,
+        ),
+        JobDef(
             id="weekly-tuning-label-harvest",
             kind="pipeline",
             heavy=False,

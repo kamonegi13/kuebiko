@@ -735,9 +735,23 @@ export interface TuningLabelRow {
   superseded_by: number | null;
 }
 
+// P2: goldset 評価 / auto-rollback 裁定の履歴行
+export interface TuningEvalRow {
+  id: number;
+  prompt_id: string;
+  kind: string;
+  from_version: number | null;
+  to_version: number | null;
+  verdict: string;
+  mode: string;
+  detail: string;
+  created_at: string;
+}
+
 export interface TuningLabelsResponse {
   summary: TuningLabelSummaryRow[];
   recent: TuningLabelRow[];
+  evals: TuningEvalRow[];
 }
 
 export interface EditorialArticle {

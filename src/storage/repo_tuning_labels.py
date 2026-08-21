@@ -179,6 +179,87 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             for r in rows
         ]
 
+    # ---------- tuning_evals (P2: goldset 評価 + C7 rollback 裁定) ----------
+
+    def record_tuning_eval(
+        self,
+        *,
+        prompt_id: str,
+        kind: str,
+        verdict: str,
+        mode: str,
+        detail: str,
+        from_version: int | None = None,
+        to_version: int | None = None,
+        when: datetime | None = None,
+    ) -> int:
+        """評価・裁定を 1 行追記する (append-only)。detail は JSON、自由文は入れない。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO tuning_evals"
+                " (prompt_id, kind, from_version, to_version, verdict, mode, detail, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    prompt_id,
+                    kind,
+                    from_version,
+                    to_version,
+                    verdict,
+                    mode,
+                    detail,
+                    _to_iso(when or datetime.now(UTC)),
+                ),
+            )
+            assert cur.lastrowid is not None
+            return int(cur.lastrowid)
+
+    def find_tuning_eval(
+        self,
+        *,
+        prompt_id: str,
+        kind: str,
+        to_version: int,
+    ) -> dict[str, Any] | None:
+        """同一 (prompt, kind, to_version) の既存裁定 (冪等性と flip-flop 防止の状態)。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, verdict, mode, created_at FROM tuning_evals"
+                " WHERE prompt_id = ? AND kind = ? AND to_version = ?"
+                " ORDER BY id DESC LIMIT 1",
+                (prompt_id, kind, to_version),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row["id"]),
+            "verdict": str(row["verdict"]),
+            "mode": str(row["mode"]),
+            "created_at": str(row["created_at"]),
+        }
+
+    def list_tuning_evals(self, limit: int = 20) -> list[dict[str, Any]]:
+        """評価・裁定を新しい順に返す (運用タブの表示用)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, prompt_id, kind, from_version, to_version, verdict, mode,"
+                " detail, created_at FROM tuning_evals ORDER BY id DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "prompt_id": str(r["prompt_id"]),
+                "kind": str(r["kind"]),
+                "from_version": int(r["from_version"]) if r["from_version"] is not None else None,
+                "to_version": int(r["to_version"]) if r["to_version"] is not None else None,
+                "verdict": str(r["verdict"]),
+                "mode": str(r["mode"]),
+                "detail": str(r["detail"]),
+                "created_at": str(r["created_at"]),
+            }
+            for r in rows
+        ]
+
     def list_editorial_stance_reviews(self) -> list[dict[str, Any]]:
         """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。"""
         with self._connect() as conn:

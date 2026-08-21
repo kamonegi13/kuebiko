@@ -742,6 +742,23 @@ CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_article
     ON tuning_labels(article_id);
+
+-- 較正格子 P2: 評価・rollback 裁定の記録 (2026-08-22、SQLite _SCHEMA と対)。
+-- 詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS tuning_evals (
+    id           BIGSERIAL PRIMARY KEY,
+    prompt_id    TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    from_version BIGINT,
+    to_version   BIGINT,
+    verdict      TEXT NOT NULL,
+    mode         TEXT NOT NULL,
+    detail       TEXT NOT NULL,
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
+    ON tuning_evals(prompt_id, kind, to_version);
 """
 
 
