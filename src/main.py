@@ -96,6 +96,7 @@ from src.pipeline.runners import (  # noqa: F401
     _run_pir_spotlight_default,
     _run_status_synthesis_default,
     _run_taxonomy_review_default,
+    _run_tuning_label_harvest_default,
 )
 from src.pipeline.summary import (  # noqa: F401
     ArticleType,
@@ -171,6 +172,7 @@ __all__ = [
     "_run_pir_spotlight_default",
     "_run_status_synthesis_default",
     "_run_taxonomy_review_default",
+    "_run_tuning_label_harvest_default",
     "_sort_briefings_for_posting",
     "_strip_html",
     "_strip_html_keep_newlines",

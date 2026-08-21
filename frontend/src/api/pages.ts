@@ -228,6 +228,8 @@ export const pagesApi = {
     postJson<{ saved: boolean; key_set: boolean; key_masked: string }>(
       "/api/v1/model-tiers/endpoint-key", { name, api_key },
     ),
+  // 較正格子 P1: 遅延正解ラベルの集計
+  tuningLabels: () => getJson<TuningLabelsResponse>("/api/v1/tuning-labels"),
   // taxonomy review
   taxonomyReview: () => getJson<TaxonomyResponse>("/api/v1/taxonomy-review"),
   taxonomyAction: (id: number, action: "accept" | "reject" | "defer") =>
@@ -701,6 +703,7 @@ export interface TaxonomyProposal {
   rationale: string;
   confidence: string;
   evidence_count: number;
+  evidence_ids: string[];
   status: string;
   reviewed_at: string;
 }
@@ -710,6 +713,31 @@ export interface TaxonomyResponse {
   tier_2: TaxonomyProposal[];
   tier_3: TaxonomyProposal[];
   recent_reviewed: TaxonomyProposal[];
+}
+
+// 較正格子 P1: 遅延正解ラベルの集計 (運用タブの件数カード)
+export interface TuningLabelSummaryRow {
+  field: string;
+  source: string;
+  total: number;
+  active: number;
+  last_arrived_at: string;
+}
+
+export interface TuningLabelRow {
+  id: number;
+  article_id: string | null;
+  field: string;
+  label_value: string;
+  source: string;
+  strength: string;
+  arrived_at: string;
+  superseded_by: number | null;
+}
+
+export interface TuningLabelsResponse {
+  summary: TuningLabelSummaryRow[];
+  recent: TuningLabelRow[];
 }
 
 export interface EditorialArticle {

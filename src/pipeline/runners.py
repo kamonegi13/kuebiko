@@ -549,6 +549,54 @@ async def _run_taxonomy_review_default(
     )
 
 
+# ---------- 較正格子 P1: 遅延正解ラベルの週次収穫 ----------
+
+
+async def _run_tuning_label_harvest_default(
+    *,
+    config: AppConfig,
+    pipeline: PipelineConfig,
+    dry_run: bool,
+    run_id: int | None = None,
+) -> PipelineRunResult:
+    """weekly-tuning-label-harvest pipeline (docs/self_evolving_tuning_design.md §6 P1)。
+
+    E1 (feed 突合) + E3 (taxonomy 採否 / editorial 訂正) を tuning_labels へ sweep する。
+    LLM 呼出なし・Discord 記事配信なし。ops 通知は 0 件でも毎回 1 通送る
+    (「届くこと自体が監査の生存証明」— fill-rate 監査と同じ方針、§12.3)。
+    """
+    _ = config, pipeline, run_id
+    from src.tuning.label_harvest import run_label_harvest
+
+    repo = RunHistoryRepository()
+    result = run_label_harvest(repo, dry_run=dry_run)
+
+    if not dry_run:
+        try:
+            from src.ui.services.ops_notify import post_ops_message
+
+            await post_ops_message(
+                title=f"tuning ラベル収穫: 新規 {result.total_new} 件",
+                body=(
+                    f"週次の遅延正解収穫 (較正格子 P1) — 主体突合 {result.feed_subject_new} 件"
+                    f" (声明競合スキップ {result.feed_subject_conflicts} 件) /"
+                    f" taxonomy 裁定 {result.taxonomy_new} 件 /"
+                    f" 論調訂正 {result.editorial_new} 件。"
+                    f" エラー {len(result.errors)} 件。"
+                ),
+            )
+        except Exception as e:  # noqa: BLE001 — 通知失敗で収穫結果を捨てない
+            _log.warning("label_harvest_ops_notify_failed", error=str(e))
+
+    return PipelineRunResult(
+        total_fetched=result.total_new + result.feed_subject_conflicts,
+        summarized=result.total_new,
+        posted=0,
+        marked_read=0,
+        errors=result.errors,
+    )
+
+
 # ---------- Actors Stage 4: MITRE actor sync pipeline runner ----------
 
 

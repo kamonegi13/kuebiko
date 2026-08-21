@@ -1571,6 +1571,21 @@ async def taxonomy_review(request: Request) -> dict[str, Any]:
     )
     recent.sort(key=lambda p: p.reviewed_at or p.created_at, reverse=True)
 
+    def _evidence_ids(raw: str | None) -> list[str]:
+        # 証拠記事 id (保存済みだが従来 UI 未表示だった — 較正格子 §11-B で表示する)。
+        # JSON array 以外の破損値は空扱い (証拠が出ないだけで提案表示は壊さない)。
+        import json
+
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(v) for v in parsed if v][:5]
+
     def _to(p: object) -> dict[str, Any]:
         from src.storage.run_history import TaxonomyProposalRecord
 
@@ -1586,6 +1601,7 @@ async def taxonomy_review(request: Request) -> dict[str, Any]:
             "rationale": p.rationale,
             "confidence": p.confidence,
             "evidence_count": p.evidence_count,
+            "evidence_ids": _evidence_ids(p.evidence_ids),
             "status": p.status,
             # Phase Diamond fix: ISO 完全形 (tz info 込み) で返却、frontend formatJst で JST 表示
             "reviewed_at": p.reviewed_at.isoformat() if p.reviewed_at else "",
@@ -1680,6 +1696,22 @@ async def taxonomy_action(
         "applied": applied,
         "backfilled": backfilled,
         "reattributed": reattributed,
+    }
+
+
+# ---------- /tuning-labels (較正格子 P1) ----------
+
+
+@pages_api.get("/tuning-labels")
+async def tuning_labels_summary() -> dict[str, Any]:
+    """遅延正解ラベル (tuning_labels) の集計 — 運用タブの件数カード用。
+
+    denylist 対象 (運用系 read API は公開面に出さない — read_only_policy)。
+    """
+    repo = RunHistoryRepository()
+    return {
+        "summary": repo.summarize_tuning_labels(),
+        "recent": repo.list_tuning_labels(limit=20),
     }
 
 

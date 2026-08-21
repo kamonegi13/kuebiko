@@ -722,6 +722,26 @@ CREATE TABLE IF NOT EXISTS ops_notices (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
+
+-- 較正格子 P1: 遅延正解ラベル (2026-08-21、SQLite _SCHEMA と対)。
+-- 詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS tuning_labels (
+    id            BIGSERIAL PRIMARY KEY,
+    dedup_key     TEXT      NOT NULL UNIQUE,
+    article_id    TEXT,
+    field         TEXT      NOT NULL,
+    label_value   TEXT      NOT NULL,
+    source        TEXT      NOT NULL,
+    strength      TEXT      NOT NULL,
+    arrived_at    TEXT      NOT NULL,
+    provenance    TEXT      NOT NULL,
+    superseded_by BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
+    ON tuning_labels(field, source);
+CREATE INDEX IF NOT EXISTS idx_tuning_labels_article
+    ON tuning_labels(article_id);
 """
 
 

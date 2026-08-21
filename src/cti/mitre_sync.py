@@ -591,6 +591,35 @@ async def translate_summary(llm: LLMClient, text: str) -> str:
 # ---------- runner (pipeline から呼ばれる) ----------
 
 
+def _harvest_alias_labels(repo: Any, update: Any) -> None:
+    """MITRE 自動適用の alias 追加を tuning_labels (E1) へ記録する (較正格子 P1 収穫②)。
+
+    repo が record_tuning_label を持たない (テストの fake 等) 場合と書込失敗は
+    warning に落として同期を続行する。
+    """
+    record = getattr(repo, "record_tuning_label", None)
+    if record is None:
+        return
+    for alias in update.add_aliases:
+        try:
+            record(
+                dedup_key=f"mitre_alias:{update.actor_id}:{str(alias).lower()}",
+                field="actor_alias",
+                label_value=update.actor_id,
+                source="E1",
+                strength="strong",
+                provenance=json.dumps(
+                    {"producer": "mitre_sync", "alias": str(alias)}, ensure_ascii=False
+                ),
+            )
+        except Exception as e:  # noqa: BLE001 — ラベル記録の失敗で同期を止めない
+            _log.warning(
+                "mitre_sync_label_record_failed",
+                actor_id=update.actor_id,
+                error=str(e),
+            )
+
+
 @dataclass(frozen=True)
 class MitreSyncResult:
     """1 回の MITRE 同期の実行結果。"""
@@ -665,6 +694,11 @@ async def run_mitre_actor_sync(
             references=len(update.add_references),
             summary_updated=bool(update.new_summary_en and summary_ja),
         )
+        # 較正格子 P1 (収穫②): MITRE 帰属確定を E1 遅延正解ラベルとして残す。
+        # push 型 hook なのは、適用済み変更の一覧を DB に残す他の記録が無く
+        # sweep で後から辿れないため。dedup_key で再同期は冪等。失敗しても同期は止めない。
+        if not dry_run and repo is not None:
+            _harvest_alias_labels(repo, update)
 
     if applied and not dry_run and write_yaml is not None:
         write_yaml(

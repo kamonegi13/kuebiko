@@ -31,6 +31,7 @@ from src.pipeline.runners import (
     _run_pir_spotlight_default,
     _run_status_synthesis_default,
     _run_taxonomy_review_default,
+    _run_tuning_label_harvest_default,
 )
 from src.storage.run_history import RunHistoryRepository
 from src.tools.content_extractor import ContentExtractor
@@ -92,6 +93,15 @@ async def run_default(
     # Phase H: weekly-taxonomy-review (LLM 提案生成、UI で承認)
     if pipeline.source.type == "taxonomy_review":
         return await _run_taxonomy_review_default(
+            config=config,
+            pipeline=pipeline,
+            dry_run=dry_run,
+            run_id=run_id,
+        )
+
+    # 較正格子 P1: 遅延正解ラベルの週次収穫 (LLM 不使用・DB sweep のみ)
+    if pipeline.source.type == "tuning_label_harvest":
+        return await _run_tuning_label_harvest_default(
             config=config,
             pipeline=pipeline,
             dry_run=dry_run,

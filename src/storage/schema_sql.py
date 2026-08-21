@@ -592,4 +592,27 @@ CREATE TABLE IF NOT EXISTS ops_notices (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
+
+-- 較正格子 P1 (docs/self_evolving_tuning_design.md §4 C1、2026-08-21): 遅延正解ラベル。
+-- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積し、
+-- 較正 (C3) と few-shot プール (C8) の恒久資産にする。producer は週次 sweep (pull 型) で、
+-- dedup_key (producer が組む決定論キー) により再収穫が冪等 — 人間が一切触らなくても
+-- ラベルが増え続ける (§12 人間非介在の縮退設計)。
+CREATE TABLE IF NOT EXISTS tuning_labels (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    dedup_key     TEXT    NOT NULL UNIQUE,
+    article_id    TEXT,                       -- NULL = 記事に紐づかない事実 (識別系など)
+    field         TEXT    NOT NULL,           -- subject_actor / editorial_stance / ...
+    label_value   TEXT    NOT NULL,
+    source        TEXT    NOT NULL,           -- 証拠源層: E0/E1/E2/E3 (P1 は E1/E3 のみ)
+    strength      TEXT    NOT NULL,           -- strong / weak
+    arrived_at    TEXT    NOT NULL,           -- ISO8601 UTC (正解が確定した時刻)
+    provenance    TEXT    NOT NULL,           -- JSON: 由来 (producer / 根拠 id)。自由文は入れない
+    superseded_by INTEGER                     -- 後続ラベルによる置換 (NULL = 現行)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
+    ON tuning_labels(field, source);
+CREATE INDEX IF NOT EXISTS idx_tuning_labels_article
+    ON tuning_labels(article_id);
 """

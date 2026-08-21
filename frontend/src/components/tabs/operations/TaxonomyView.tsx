@@ -102,6 +102,22 @@ function ProposalRow({ proposal: p, qc }: { proposal: TaxonomyProposal; qc: Retu
         </div>
         <ChangeSummary json={p.proposed_change} />
         <div className="text-fg-muted text-xs leading-relaxed">{p.rationale}</div>
+        {/* 証拠記事リンク (較正格子 §11-B): 件数だけでなく記事そのものに到達できるようにする。
+            /app/article/ リンクはグローバル・クリックインターセプトでサイドピークが開く。 */}
+        {p.evidence_ids && p.evidence_ids.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1.5 items-center text-[11px]">
+            <span className="text-fg-subtle">証拠記事:</span>
+            {p.evidence_ids.map((aid, i) => (
+              <a
+                key={aid}
+                href={`/app/article/${encodeURIComponent(aid)}`}
+                className="text-accent hover:underline font-mono"
+              >
+                [{i + 1}]
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       {!read_only && (
         <div className="flex flex-col gap-1 shrink-0">

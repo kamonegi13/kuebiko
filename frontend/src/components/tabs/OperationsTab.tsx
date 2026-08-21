@@ -4,6 +4,7 @@
 import { useFilters } from "../../state/filters";
 import { TaxonomyView } from "./operations/TaxonomyView";
 import { EditorialView } from "./operations/EditorialView";
+import { TuningLabelsCard } from "./operations/TuningLabelsCard";
 
 export function OperationsTab() {
   const f = useFilters();
@@ -14,6 +15,9 @@ export function OperationsTab() {
         <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">運用</h3>
         <div className="text-fg-muted text-sm">分類語彙・アクター別名・論調の運用観察と手動確認</div>
       </div>
+
+      {/* 較正格子 P1: 遅延正解ラベルの蓄積状況 (サブビュー横断の常設カード) */}
+      <TuningLabelsCard />
 
       {/* サブビュー切替 (Taxonomy / Editorial) は上部コントロールバー (Shell) が担う。 */}
       {/* Active sub-view */}

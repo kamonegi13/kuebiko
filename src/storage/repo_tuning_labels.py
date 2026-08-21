@@ -1,0 +1,199 @@
+"""遅延正解ラベル (tuning_labels) の読み書き — 較正格子 P1 (run_history 分割の一部)。
+
+設計は docs/self_evolving_tuning_design.md §4 C1。producer (src/tuning/label_harvest.py と
+mitre_sync の hook) が「当時の判定 vs 後日確定した事実」の突合結果を書き、消費者
+(P1 では運用タブの件数表示、P3 以降で較正 C3 / few-shot C8) が読む。
+
+- 冪等性: ``dedup_key`` (producer が組む決定論キー) の UNIQUE で再収穫の重複を遮断する
+  (指示でなく関門で止める — deterministic_gates 2026-08-19)。
+- 置換: 同一 (article_id, field, source) の現行ラベルは ``superseded_by`` で新ラベルに
+  置き換える (編集訂正のやり直し等)。source を跨いだ置換はしない — E3 が E1 を上書き
+  しない (層の強度は消費者側で扱う)。
+- ``provenance`` は JSON のみ。自由文 (コメント等) は入れない (§4 マスク方針を書込側で
+  満たす — register_nav 2026-08-21 の教訓)。
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+from src.storage.repo_base import RunHistoryRepositoryBase
+from src.storage.row_mappers import _to_iso
+
+
+class TuningLabelsMixin(RunHistoryRepositoryBase):
+    """tuning_labels テーブルの読み書き。"""
+
+    def record_tuning_label(
+        self,
+        *,
+        dedup_key: str,
+        field: str,
+        label_value: str,
+        source: str,
+        strength: str,
+        provenance: str,
+        article_id: str | None = None,
+        arrived_at: datetime | None = None,
+        supersede_same: bool = False,
+    ) -> int | None:
+        """ラベルを 1 行追記する。挿入できたら id、dedup_key 既出なら None を返す。
+
+        ``supersede_same=True`` のとき、同一 (article_id, field, source) の現行ラベル
+        (superseded_by IS NULL) を新 id で置換済みにする。article_id が無い識別系
+        ラベルには適用しない (記事という置換単位が無いため)。
+        """
+        ts = _to_iso(arrived_at or datetime.now(UTC))
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO tuning_labels"
+                " (dedup_key, article_id, field, label_value, source, strength,"
+                "  arrived_at, provenance)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (dedup_key, article_id, field, label_value, source, strength, ts, provenance),
+            )
+            if (cur.rowcount or 0) == 0:
+                return None  # dedup_key 既出 (冪等)
+            row = conn.execute(
+                "SELECT id FROM tuning_labels WHERE dedup_key = ?",
+                (dedup_key,),
+            ).fetchone()
+            new_id = int(row["id"])
+            if supersede_same and article_id is not None:
+                conn.execute(
+                    "UPDATE tuning_labels SET superseded_by = ?"
+                    " WHERE article_id = ? AND field = ? AND source = ?"
+                    "   AND id <> ? AND superseded_by IS NULL",
+                    (new_id, article_id, field, source, new_id),
+                )
+            return new_id
+
+    def summarize_tuning_labels(self) -> list[dict[str, Any]]:
+        """(field, source) ごとの現行/総件数と最終到着時刻 (運用タブの件数表示用)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT field, source,"
+                " COUNT(*) AS total,"
+                " SUM(CASE WHEN superseded_by IS NULL THEN 1 ELSE 0 END) AS active,"
+                " MAX(arrived_at) AS last_arrived_at"
+                " FROM tuning_labels GROUP BY field, source"
+                " ORDER BY field, source",
+            ).fetchall()
+        return [
+            {
+                "field": str(r["field"]),
+                "source": str(r["source"]),
+                "total": int(r["total"]),
+                "active": int(r["active"] or 0),
+                "last_arrived_at": str(r["last_arrived_at"]),
+            }
+            for r in rows
+        ]
+
+    def list_tuning_labels(
+        self,
+        *,
+        field: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """ラベルを新しい順に返す (field でフィルタ可)。"""
+        sql = (
+            "SELECT id, dedup_key, article_id, field, label_value, source, strength,"
+            " arrived_at, provenance, superseded_by FROM tuning_labels"
+        )
+        params: list[object] = []
+        if field:
+            sql += " WHERE field = ?"
+            params.append(field)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "dedup_key": str(r["dedup_key"]),
+                "article_id": str(r["article_id"]) if r["article_id"] is not None else None,
+                "field": str(r["field"]),
+                "label_value": str(r["label_value"]),
+                "source": str(r["source"]),
+                "strength": str(r["strength"]),
+                "arrived_at": str(r["arrived_at"]),
+                "provenance": str(r["provenance"]),
+                "superseded_by": (
+                    int(r["superseded_by"]) if r["superseded_by"] is not None else None
+                ),
+            }
+            for r in rows
+        ]
+
+    # ---------- 収穫 producer 用の読み出し (SQL は storage 層に集約) ----------
+
+    def fetch_feed_subject_claims(self, since_iso: str) -> list[dict[str, Any]]:
+        """犯行声明 (feed 帰属) 記事 × victim_org を返す (収穫①の突合元)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT a.article_id, a.subject_actor_ids AS gt,"
+                " LOWER(TRIM(e.value)) AS org, a.created_at"
+                " FROM articles a JOIN article_entities e"
+                "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
+                " WHERE a.subject_actor_source = 'feed'"
+                "   AND COALESCE(a.subject_actor_ids, '') <> ''"
+                "   AND a.created_at >= ?",
+                (since_iso,),
+            ).fetchall()
+        return [
+            {
+                "article_id": str(r["article_id"]),
+                "gt": str(r["gt"]),
+                "org": str(r["org"]),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def fetch_victim_org_news_candidates(self, since_iso: str) -> list[dict[str, Any]]:
+        """feed 帰属でないニュース記事 × victim_org を返す (収穫①の突合先)。
+
+        散文 body を持たない構造化レコードや recap を除外する (feed 記事は散文 body を
+        持たない — eval_judgment 2026-08-21 の実測)。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT a.article_id, LOWER(TRIM(e.value)) AS org, a.created_at"
+                " FROM articles a JOIN article_entities e"
+                "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
+                " WHERE COALESCE(a.subject_actor_source, '') <> 'feed'"
+                "   AND LENGTH(COALESCE(a.body, '')) >= 500"
+                "   AND COALESCE(a.article_type, '') <> 'recap'"
+                "   AND a.created_at >= ?",
+                (since_iso,),
+            ).fetchall()
+        return [
+            {
+                "article_id": str(r["article_id"]),
+                "org": str(r["org"]),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def list_editorial_stance_reviews(self) -> list[dict[str, Any]]:
+        """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT article_id, original_stance, corrected_stance, created_at"
+                " FROM editorial_stance_reviews",
+            ).fetchall()
+        return [
+            {
+                "article_id": str(r["article_id"]),
+                "original_stance": (
+                    str(r["original_stance"]) if r["original_stance"] is not None else None
+                ),
+                "corrected_stance": str(r["corrected_stance"]),
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]

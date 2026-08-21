@@ -1,0 +1,79 @@
+// Operations tab の常設カード: 遅延正解ラベル (較正格子 P1) の件数表示。
+// tuning_labels の消費者第 1 号 (write-only 列を作らない規約)。週次収穫
+// (weekly-tuning-label-harvest) が蓄積した「後日確定した事実」の供給量を種別ごとに見せる。
+
+import { useQuery } from "@tanstack/react-query";
+import { pagesApi } from "../../../api/pages";
+import { formatJstShort } from "../../../utils/date";
+
+// 内部コード → 日本語 (生 enum 直接表示禁止の規約)。未知キーは原値 fallback。
+const FIELD_JA: Record<string, string> = {
+  subject_actor: "主体アクター (犯行声明 突合)",
+  editorial_stance: "論調の人手訂正",
+  taxonomy_decision: "分類提案の裁定",
+  actor_alias: "アクター別名の確定 (MITRE)",
+};
+
+const SOURCE_JA: Record<string, string> = {
+  E0: "決定論",
+  E1: "遅延正解",
+  E2: "パネル",
+  E3: "人間裁定",
+};
+
+export function TuningLabelsCard() {
+  const { data } = useQuery({
+    queryKey: ["tuning-labels"],
+    queryFn: () => pagesApi.tuningLabels(),
+  });
+
+  return (
+    <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border-subtle flex justify-between items-center">
+        <h3 className="m-0 text-md font-semibold text-fg">遅延正解ラベル (較正格子)</h3>
+        <span className="text-fg-subtle text-xs">
+          週次収穫 — 後日確定した事実との突合。プロンプト評価と few-shot の恒久資産
+        </span>
+      </div>
+      {(!data || data.summary.length === 0) && (
+        <div className="px-4 py-4 text-fg-subtle text-sm">
+          まだラベルがありません (週次収穫は水曜深夜。人手操作なしでも蓄積されます)
+        </div>
+      )}
+      {data && data.summary.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
+              <tr>
+                <th className="text-left px-4 py-2">種別</th>
+                <th className="text-left px-4 py-2">証拠源</th>
+                <th className="text-right px-4 py-2">現行</th>
+                <th className="text-right px-4 py-2 hidden sm:table-cell">総数</th>
+                <th className="text-left px-4 py-2 hidden md:table-cell">最終到着</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.summary.map((r) => (
+                <tr key={`${r.field}:${r.source}`} className="border-t border-border-subtle">
+                  <td className="px-4 py-2 text-fg text-xs">{FIELD_JA[r.field] ?? r.field}</td>
+                  <td className="px-4 py-2">
+                    <span className="text-xs px-2 py-0.5 rounded font-semibold bg-surface-3 text-fg-muted font-mono">
+                      {r.source} {SOURCE_JA[r.source] ?? ""}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-right text-fg tnum font-semibold">{r.active}</td>
+                  <td className="px-4 py-2 text-right text-fg-subtle tnum text-xs hidden sm:table-cell">
+                    {r.total}
+                  </td>
+                  <td className="px-4 py-2 text-fg-subtle text-xs hidden md:table-cell">
+                    {formatJstShort(r.last_arrived_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

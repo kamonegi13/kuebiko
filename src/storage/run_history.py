@@ -12,6 +12,7 @@
 - ``repo_synthesis.py``— status synthesis / spotlight / forecast / article_notes
 - ``repo_knowledge.py``— taxonomy / MITRE / actor provisional / F1 / maintenance / aggregations
 - ``repo_ops_notices.py``— ops_notices (ops 通知の永続化、2026-08-21)
+- ``repo_tuning_labels.py``— tuning_labels (較正格子 P1 遅延正解ラベル、2026-08-21)
 
 ``RunHistoryRepository`` は上記 mixin を合成した具象クラス。全 mixin は共通基底
 ``RunHistoryRepositoryBase`` を継承するため、ダイヤモンド MRO でも ``self._connect``
@@ -57,6 +58,7 @@ from src.storage.repo_pir import PirJudgmentsMixin
 from src.storage.repo_runs import RunsMixin
 from src.storage.repo_synthesis import SynthesisMixin
 from src.storage.repo_translation import TranslationChunksMixin
+from src.storage.repo_tuning_labels import TuningLabelsMixin
 from src.storage.row_mappers import (
     _from_iso,
     _normalize_jsonb,
@@ -88,6 +90,7 @@ class RunHistoryRepository(
     ActorProfileMixin,
     TranslationChunksMixin,
     OpsNoticesMixin,
+    TuningLabelsMixin,
     RunHistoryRepositoryBase,
 ):
     """SQLite/PostgreSQL ベースの run / article / live_log 履歴リポジトリ (mixin 合成)。"""
