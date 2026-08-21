@@ -41,6 +41,13 @@ const VERDICT_TONE: Record<string, string> = {
   rolled_back: "bg-critical-soft text-critical",
 };
 
+// §11-C: taxonomy 提案の区分ラベル (TaxonomyView と同じ区分体系)
+const TIER_JA: Record<string, string> = {
+  tier_1_auto: "区分1 (誤字)",
+  tier_2_review: "区分2 (手動確認)",
+  tier_3_strategic: "区分3 (戦略)",
+};
+
 export function TuningLabelsCard() {
   const { data } = useQuery({
     queryKey: ["tuning-labels"],
@@ -92,6 +99,29 @@ export function TuningLabelsCard() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {/* P3: シャドーパネル累計 + taxonomy 区分別人間同意率 (§11-C) */}
+      {data && (data.panel?.judged > 0 || (data.taxonomy_agreement ?? []).length > 0) && (
+        <div className="border-t border-border-subtle px-4 py-2.5 flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">
+          {data.panel?.judged > 0 && (
+            <span>
+              パネル裁定 累計 <strong className="text-fg tnum">{data.panel.judged}</strong> 件 · 分裂率{" "}
+              <strong className="text-fg tnum">
+                {data.panel.split_rate != null ? `${(data.panel.split_rate * 100).toFixed(1)}%` : "-"}
+              </strong>
+              <span className="text-fg-subtle"> (外部 LLM に上がるはずだった率)</span>
+            </span>
+          )}
+          {(data.taxonomy_agreement ?? []).map((t) => (
+            <span key={t.tier}>
+              {TIER_JA[t.tier] ?? t.tier} 同意率{" "}
+              <strong className="text-fg tnum">
+                {t.agreement_rate != null ? `${(t.agreement_rate * 100).toFixed(0)}%` : "-"}
+              </strong>
+              <span className="text-fg-subtle tnum"> ({t.accepted}/{t.accepted + t.rejected})</span>
+            </span>
+          ))}
         </div>
       )}
       {/* P2: goldset 評価 / auto-rollback 裁定の履歴 (rubric 変更の翌週に自動で並ぶ) */}

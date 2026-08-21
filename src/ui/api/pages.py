@@ -1714,6 +1714,10 @@ async def tuning_labels_summary() -> dict[str, Any]:
         "recent": repo.list_tuning_labels(limit=20),
         # P2: goldset 評価と auto-rollback 裁定 (シャドー含む) の履歴
         "evals": repo.list_tuning_evals(limit=10),
+        # P3: シャドーパネルの累計 (分裂率 = 外部 LLM エスカレーション量の実測)
+        "panel": repo.summarize_panel_verdicts(),
+        # §11-C: taxonomy 提案の区分別 人間同意率 (区分1 が ~100% なら自動化候補)
+        "taxonomy_agreement": repo.taxonomy_tier_agreement(),
     }
 
 

@@ -748,10 +748,27 @@ export interface TuningEvalRow {
   created_at: string;
 }
 
+// P3: シャドーパネルの累計 (分裂率 = 外部 LLM エスカレーション量の実測)
+export interface PanelSummary {
+  by_agreement: Record<string, { n: number; avg_prompt_chars: number }>;
+  judged: number;
+  split_rate: number | null;
+}
+
+// §11-C: taxonomy 提案の区分別 人間同意率
+export interface TaxonomyAgreementRow {
+  tier: string;
+  accepted: number;
+  rejected: number;
+  agreement_rate: number | null;
+}
+
 export interface TuningLabelsResponse {
   summary: TuningLabelSummaryRow[];
   recent: TuningLabelRow[];
   evals: TuningEvalRow[];
+  panel: PanelSummary;
+  taxonomy_agreement: TaxonomyAgreementRow[];
 }
 
 export interface EditorialArticle {

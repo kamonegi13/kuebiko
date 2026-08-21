@@ -260,6 +260,129 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             for r in rows
         ]
 
+    # ---------- panel_verdicts (P3: シャドーパネル裁定) ----------
+
+    def record_panel_verdict(
+        self,
+        *,
+        case_key: str,
+        field: str,
+        verdicts: str,
+        agreement: str,
+        is_dispute: bool,
+        article_id: str | None = None,
+        truth_value: str | None = None,
+        production_value: str | None = None,
+        prompt_chars: int = 0,
+        when: datetime | None = None,
+    ) -> int | None:
+        """パネル裁定を 1 行追記する。case_key 既出なら None (冪等)。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO panel_verdicts"
+                " (case_key, article_id, field, truth_value, production_value,"
+                "  verdicts, agreement, is_dispute, prompt_chars, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    case_key,
+                    article_id,
+                    field,
+                    truth_value,
+                    production_value,
+                    verdicts,
+                    agreement,
+                    1 if is_dispute else 0,
+                    int(prompt_chars),
+                    _to_iso(when or datetime.now(UTC)),
+                ),
+            )
+            if (cur.rowcount or 0) == 0:
+                return None
+            row = conn.execute(
+                "SELECT id FROM panel_verdicts WHERE case_key = ?", (case_key,)
+            ).fetchone()
+            return int(row["id"])
+
+    def has_panel_verdict(self, case_key: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM panel_verdicts WHERE case_key = ?", (case_key,)
+            ).fetchone()
+        return row is not None
+
+    def summarize_panel_verdicts(self) -> dict[str, Any]:
+        """累計の分裂率・正解率 (較正曲線 C3 の原資、運用タブ表示用)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT agreement, COUNT(*) AS n, AVG(prompt_chars) AS avg_chars"
+                " FROM panel_verdicts GROUP BY agreement",
+            ).fetchall()
+        by_agreement = {
+            str(r["agreement"]): {
+                "n": int(r["n"]),
+                "avg_prompt_chars": int(float(r["avg_chars"] or 0)),
+            }
+            for r in rows
+        }
+        judged = sum(v["n"] for k, v in by_agreement.items() if k != "error")
+        splits = by_agreement.get("split", {}).get("n", 0)
+        return {
+            "by_agreement": by_agreement,
+            "judged": judged,
+            "split_rate": round(splits / judged, 3) if judged else None,
+        }
+
+    def fetch_subject_panel_cases(self, since_iso: str) -> list[dict[str, Any]]:
+        """E1 主体ラベル付き記事 (パネルの入力候補)。正誤の仕分けは呼び出し側で行う。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT tl.article_id, tl.label_value AS truth,"
+                " a.title, a.body, a.category, a.published_at,"
+                " COALESCE(a.subject_actor_ids, '') AS production"
+                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
+                " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
+                "   AND tl.superseded_by IS NULL AND tl.arrived_at >= ?"
+                "   AND LENGTH(COALESCE(a.body, '')) >= 500",
+                (since_iso,),
+            ).fetchall()
+        return [
+            {
+                "article_id": str(r["article_id"]),
+                "truth": str(r["truth"]),
+                "title": str(r["title"] or ""),
+                "body": str(r["body"] or ""),
+                "category": str(r["category"] or ""),
+                "published": str(r["published_at"]) if r["published_at"] else None,
+                "production": str(r["production"]),
+            }
+            for r in rows
+        ]
+
+    def taxonomy_tier_agreement(self) -> list[dict[str, Any]]:
+        """taxonomy 提案の区分別 人間同意率 (§11-C — 区分1 が ~100% なら自動化候補)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT tier,"
+                " SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) AS accepted,"
+                " SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected"
+                " FROM taxonomy_review_proposals"
+                " WHERE status IN ('accepted', 'rejected') GROUP BY tier ORDER BY tier",
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            accepted = int(r["accepted"] or 0)
+            rejected = int(r["rejected"] or 0)
+            total = accepted + rejected
+            out.append(
+                {
+                    "tier": str(r["tier"]),
+                    "accepted": accepted,
+                    "rejected": rejected,
+                    "agreement_rate": round(accepted / total, 3) if total else None,
+                }
+            )
+        return out
+
     def list_editorial_stance_reviews(self) -> list[dict[str, Any]]:
         """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。"""
         with self._connect() as conn:

@@ -759,6 +759,25 @@ CREATE TABLE IF NOT EXISTS tuning_evals (
 
 CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
     ON tuning_evals(prompt_id, kind, to_version);
+
+-- 較正格子 P3: シャドーパネル裁定 (2026-08-22、SQLite _SCHEMA と対)。
+-- 詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS panel_verdicts (
+    id               BIGSERIAL PRIMARY KEY,
+    case_key         TEXT    NOT NULL UNIQUE,
+    article_id       TEXT,
+    field            TEXT    NOT NULL,
+    truth_value      TEXT,
+    production_value TEXT,
+    verdicts         TEXT    NOT NULL,
+    agreement        TEXT    NOT NULL,
+    is_dispute       INTEGER NOT NULL,
+    prompt_chars     INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
+    ON panel_verdicts(field, agreement);
 """
 
 

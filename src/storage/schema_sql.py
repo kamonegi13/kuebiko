@@ -634,4 +634,25 @@ CREATE TABLE IF NOT EXISTS tuning_evals (
 
 CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
     ON tuning_evals(prompt_id, kind, to_version);
+
+-- 較正格子 P3 (docs/self_evolving_tuning_design.md §4 C2/C3、2026-08-22): シャドーパネル裁定。
+-- E1 正解が判明している事例 (本番との不一致=係争 + 一致対照) を多様 2 モデルが盲検で
+-- 再判定した結果。分裂率 (外部 LLM エスカレーション量の実測、§10.2) と 合意度×実正解の
+-- 較正曲線 (C3) の原資。**シャドー専用テーブル — 本番パイプラインは読まない** (§10.1)。
+CREATE TABLE IF NOT EXISTS panel_verdicts (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_key         TEXT    NOT NULL UNIQUE,  -- 冪等キー (再実行で重複しない)
+    article_id       TEXT,
+    field            TEXT    NOT NULL,          -- subject_actor (P3 は主体判定のみ)
+    truth_value      TEXT,                      -- E1 正解 (feed 突合ラベル)
+    production_value TEXT,                      -- 本番判定 (裁定時点)
+    verdicts         TEXT    NOT NULL,          -- JSON: [{model, value}]
+    agreement        TEXT    NOT NULL,          -- unanimous_correct/unanimous_wrong/split/error
+    is_dispute       INTEGER NOT NULL,          -- 1=本番と正解が不一致の係争例 0=一致対照
+    prompt_chars     INTEGER NOT NULL DEFAULT 0, -- 送信本文量の実数 (外部予算見積 §10.2)
+    created_at       TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
+    ON panel_verdicts(field, agreement);
 """
