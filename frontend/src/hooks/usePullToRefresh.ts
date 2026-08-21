@@ -58,6 +58,12 @@ export function usePullToRefresh<T extends HTMLElement>(
     let tracking = false;
     let startY = 0;
     let dy = 0;
+    // 閾値を跨いだ瞬間の触覚フィードバック (コツッ)。閾値未満へ戻ったら再武装し、
+    // 跨ぐたびに 1 回だけ鳴らす。iOS Safari/PWA は vibrate API 未実装のため無反応 (無害)。
+    let hapticArmed = true;
+    const hapticTick = () => {
+      if ("vibrate" in navigator) navigator.vibrate(10);
+    };
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1 || scrollTop() > 0) {
@@ -66,6 +72,7 @@ export function usePullToRefresh<T extends HTMLElement>(
       }
       startY = e.touches[0].clientY;
       dy = 0;
+      hapticArmed = true;
       tracking = true;
     };
 
@@ -88,6 +95,12 @@ export function usePullToRefresh<T extends HTMLElement>(
       // overscroll-behavior-y: contain も併用すること)
       e.preventDefault();
       dy = rawDy;
+      if (rawDy >= PULL_THRESHOLD_PX && hapticArmed) {
+        hapticArmed = false;
+        hapticTick();
+      } else if (rawDy < PULL_THRESHOLD_PX) {
+        hapticArmed = true;
+      }
       setPullDistance(Math.min(MAX_VISUAL_PULL_PX, rawDy));
     };
 
