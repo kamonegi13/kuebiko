@@ -74,7 +74,7 @@ def _fetch_sets(n_pos: int, n_ctrl: int) -> tuple[list[dict[str, Any]], list[dic
             "  WHERE a.subject_actor_source <> 'feed'"
             "    AND LENGTH(COALESCE(a.body,'')) >= 500"
             "    AND COALESCE(a.article_type,'') <> 'recap'"
-            "    AND a.title NOT LIKE '%ダイジェスト%'"
+            "    AND a.title NOT LIKE ?"  # % は psycopg の placeholder 罠 → パラメータで渡す
             ") "
             "SELECT DISTINCT ON (n.article_id) n.article_id, n.title, n.body, n.category, c.gt "
             "FROM news n JOIN claims c ON n.org = c.org "
@@ -90,7 +90,7 @@ def _fetch_sets(n_pos: int, n_ctrl: int) -> tuple[list[dict[str, Any]], list[dic
                 "category": str(r[3] or ""),
                 "gt": str(r[4] or "").split(",")[0],
             }
-            for r in con.execute(pos_sql, (n_pos * 3,)).fetchall()
+            for r in con.execute(pos_sql, ("%ダイジェスト%", n_pos * 3)).fetchall()
         ]
         ctrl_sql = (
             "SELECT a.article_id, a.title, a.body, a.category FROM articles a "
