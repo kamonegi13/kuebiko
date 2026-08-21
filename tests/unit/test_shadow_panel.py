@@ -212,6 +212,34 @@ class TestShadowPanelRun:
         assert repo.summarize_panel_verdicts()["judged"] == 0
 
     @pytest.mark.asyncio
+    async def test_cap_is_applied_after_excluding_judged_cases(
+        self,
+        repo: RunHistoryRepository,
+        patched_pipeline: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """cap は既裁定除外の後 — 先に切ると既裁定が枠を占有し新事例に永久に届かない。"""
+        monkeypatch.setenv("TUNING_PANEL_SECOND_MODEL", "dummy:second")
+        _seed_labeled_article(
+            repo, article_id="a1", truth="qilin", production="akira", body="x" * 600
+        )
+        _seed_labeled_article(
+            repo, article_id="a2", truth="qilin", production="akira", body="y" * 600
+        )
+        factory = _factory({None: "qilin", "dummy:second": "qilin"})
+
+        first = await run_weekly_shadow_panel(
+            repo=repo, llm_factory=factory, now=_NOW, max_disputes=1
+        )
+        assert first.cases == 1
+        second = await run_weekly_shadow_panel(
+            repo=repo, llm_factory=factory, now=_NOW, max_disputes=1
+        )
+        assert second.cases == 1  # 2 件目に到達する (旧実装は 0 のまま停滞)
+        assert second.skipped_existing == 1
+        assert repo.summarize_panel_verdicts()["judged"] == 2
+
+    @pytest.mark.asyncio
     async def test_error_verdict_is_not_persisted_and_retries(
         self,
         repo: RunHistoryRepository,

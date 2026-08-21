@@ -107,13 +107,23 @@ async def run_weekly_shadow_panel(
     repo: Any | None = None,
     llm_factory: LlmFactory | None = None,
     now: datetime | None = None,
+    lookback_days: int = _LOOKBACK_DAYS,
+    max_disputes: int = _MAX_DISPUTES,
+    max_controls: int = _MAX_CONTROLS,
 ) -> PanelRunResult:
-    """週次: E1 正解付き事例をパネルに通し、裁定と分裂率の原資を記録する。"""
+    """週次: E1 正解付き事例をパネルに通し、裁定と分裂率の原資を記録する。
+
+    lookback_days / cap は過去データ一括検証 (backfill) 用に広げられる — 冪等
+    (case_key) なので何度実行しても既裁定は再判定されない。
+    """
     try:
         return await _run_impl(
             repo=repo,
             llm_factory=llm_factory or _default_llm_factory,
             now=now or datetime.now(UTC),
+            lookback_days=lookback_days,
+            max_disputes=max_disputes,
+            max_controls=max_controls,
         )
     except Exception as e:  # noqa: BLE001 — パネルの失敗で scheduler を汚さない
         _log.error("shadow_panel_failed", error=f"{type(e).__name__}: {e}")
@@ -125,6 +135,9 @@ async def _run_impl(
     repo: Any | None,
     llm_factory: LlmFactory,
     now: datetime,
+    lookback_days: int,
+    max_disputes: int,
+    max_controls: int,
 ) -> PanelRunResult:
     from src.cti.actor_normalizer import load_actor_aliases
     from src.cti.judgment_classifier import _BODY_MAX_CHARS, classify_judgment
@@ -132,19 +145,25 @@ async def _run_impl(
     from src.storage.run_history import RunHistoryRepository
 
     _repo = repo if repo is not None else RunHistoryRepository()
-    since_iso = (now - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+    since_iso = (now - timedelta(days=lookback_days)).isoformat()
     raw_cases = _repo.fetch_subject_panel_cases(since_iso)
 
-    # 係争 (本番≠正解) を優先し、一致対照は較正曲線の完全性のために少数混ぜる
+    # 係争 (本番≠正解) を優先し、一致対照は較正曲線の完全性のために少数混ぜる。
+    # ⚠ cap は**既裁定を除いてから**切る — 先に切ると窓内の既裁定が枠を占有し、
+    # 反復実行・翌週実行が新事例に永久に到達しない (08-22 初回運転で発覚)
     disputes = []
     controls = []
+    skipped = 0
     for c in raw_cases:
+        if _repo.has_panel_verdict(f"subjpanel:{c['article_id']}:{c['truth']}"):
+            skipped += 1
+            continue
         production_first = c["production"].split(",")[0].strip()
         if production_first != c["truth"]:
             disputes.append(c)
         else:
             controls.append(c)
-    picked = disputes[:_MAX_DISPUTES] + controls[:_MAX_CONTROLS]
+    picked = disputes[:max_disputes] + controls[:max_controls]
 
     second_ref = _second_model_ref()
     panelists: list[tuple[str, Any]] = [
@@ -158,16 +177,11 @@ async def _run_impl(
     result_controls = 0
     splits = 0
     unreachable = 0
-    skipped = 0
     errors: list[str] = []
 
     for c in picked:
         is_dispute = c["production"].split(",")[0].strip() != c["truth"]
         case_key = f"subjpanel:{c['article_id']}:{c['truth']}"
-        if _repo.has_panel_verdict(case_key):
-            skipped += 1
-            continue
-
         body = c["body"][:_BODY_MAX_CHARS]
         candidates = _relevant_actors(aliases.find_all(f"{c['title']}\n{body}"), c["category"])
         if not any(a.id == c["truth"] for a in candidates):

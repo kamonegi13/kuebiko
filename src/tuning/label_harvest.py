@@ -122,13 +122,14 @@ def _sweep_feed_news_subject(
     *,
     now: datetime,
     dry_run: bool,
+    lookback_days: int = _LOOKBACK_DAYS,
 ) -> tuple[int, int]:
     """収穫① (E1): 犯行声明 × ニュース記事の victim_org ±5 日突合 → 主体ラベル。
 
     同一 org へ別ギャングの声明が窓内に複数ある場合は正解を決められないので付与しない
     (conflict として数える — 保守側の既定)。
     """
-    since_iso = (now - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+    since_iso = (now - timedelta(days=lookback_days)).isoformat()
     claims = repo.fetch_feed_subject_claims(since_iso)
     news = repo.fetch_victim_org_news_candidates(since_iso)
 
@@ -241,17 +242,22 @@ def run_label_harvest(
     *,
     now: datetime | None = None,
     dry_run: bool = False,
+    lookback_days: int = _LOOKBACK_DAYS,
 ) -> LabelHarvestResult:
     """全 producer を実行する (週次 pipeline から呼ばれる)。
 
     1 producer の例外は errors に落として残りを続行する (収穫全体を止めない)。
+    ``lookback_days`` は過去データ一括収穫 (backfill) 用に広げられる (冪等)。
+    上限の目安は body 保持 90 日 (それ以前は突合先の本文が purge 済み)。
     """
     base = now or datetime.now(UTC)
     errors: list[str] = []
     feed_new = feed_conflicts = taxonomy_new = editorial_new = 0
 
     try:
-        feed_new, feed_conflicts = _sweep_feed_news_subject(repo, now=base, dry_run=dry_run)
+        feed_new, feed_conflicts = _sweep_feed_news_subject(
+            repo, now=base, dry_run=dry_run, lookback_days=lookback_days
+        )
     except Exception as e:  # noqa: BLE001 — 1 producer の失敗で他を止めない
         _log.warning("label_harvest_feed_sweep_failed", error=str(e))
         errors.append(f"feed_subject: {type(e).__name__}: {e}")
