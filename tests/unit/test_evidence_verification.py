@@ -223,3 +223,52 @@ class TestSourceIdResolution:
     def test_short_fragment_does_not_match_by_prefix(self) -> None:
         real = self.KNOWN["article_id"]
         assert self._resolve("rss:", real) is None
+
+
+class TestIndexReference:
+    """ACH も Spotlight と同じ番号参照へ揃える (転記破損を原理的に起こさせない)。
+
+    実測: ACH プロンプトが `--- id: <長い id> | <feed名> ---` と出していたため、LLM が
+    行ごと写して `id | feed名` の破損が生じていた (実 LLM 試験で 2 claim が 8/8 件不在)。
+    Spotlight は候補一覧の [N] 番号で参照させてこの класс を消している。
+    """
+
+    @staticmethod
+    def _resolve(index: int | None, raw: str, ids: list[str]) -> str | None:
+        from src.synthesis.grounded.passes import _resolve_evidence_source
+
+        sources = [{"article_id": i, "feed_title": "f", "text": "t"} for i in ids]
+        return _resolve_evidence_source(index, raw, sources)
+
+    IDS = [
+        "rss:https://www.theregister.com/a/5290706",
+        "rss:https://gbhackers.com/?p=196463",
+        "grok:e576425909d9a9e5:387#2090136982378700811",
+    ]
+
+    def test_index_is_preferred(self) -> None:
+        assert self._resolve(2, "", self.IDS) == self.IDS[1]
+
+    def test_index_wins_over_corrupted_id(self) -> None:
+        # 番号が正しければ id が壊れていても正しい記事に解決する
+        assert self._resolve(1, "theregister.com/a/5290706 | The Register", self.IDS) == self.IDS[0]
+
+    def test_out_of_range_index_falls_back_to_id(self) -> None:
+        assert self._resolve(99, self.IDS[2], self.IDS) == self.IDS[2]
+
+    def test_missing_index_falls_back_to_id_repair(self) -> None:
+        assert self._resolve(None, "gbhackers.com/?p=196463", self.IDS) == self.IDS[1]
+
+    def test_unresolvable_returns_none(self) -> None:
+        assert self._resolve(None, "rss:https://never-seen.example/x", self.IDS) is None
+
+    def test_zero_index_is_not_treated_as_first(self) -> None:
+        # 1-based。0 は「未指定」であって 1 件目ではない
+        assert self._resolve(0, "rss:https://never-seen.example/x", self.IDS) is None
+
+    def test_bare_number_in_article_id_is_treated_as_index(self) -> None:
+        """実測: LLM は番号を article_id 側に文字列で入れる ("1")。意図に寄せて解する。"""
+        assert self._resolve(None, "2", self.IDS) == self.IDS[1]
+
+    def test_bare_number_out_of_range_is_not_an_index(self) -> None:
+        assert self._resolve(None, "99", self.IDS) is None

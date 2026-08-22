@@ -176,6 +176,10 @@ async def nominate_claims(
 
 class _WireEvidence(BaseModel):
     model_config = {"extra": "ignore"}
+    # 候補一覧の [N] 番号 (1-based、0 = 未指定)。長い article_id を写させると転記が
+    # 壊れるため **番号参照を主経路にする** (Spotlight の key_events と同じ設計)。
+    # ``int | None`` は structured 生成で anyOf/null になり不安定なため 0 を番兵にする。
+    index: int = 0
     article_id: str = ""
     attribution_basis: str = "unattributed"
     excerpt: str = ""
@@ -276,6 +280,32 @@ def _resolve_source_id(raw: str, known: dict[str, str]) -> str | None:
     return None
 
 
+
+def _resolve_evidence_source(
+    index: int | None, raw_id: str, sources: list[dict[str, str]]
+) -> str | None:
+    """証拠の出典参照を実 article_id に解決する。
+
+    優先順 (Spotlight ``_resolve_event_match`` と同型):
+      1. ``index`` (候補一覧の [N] 番号、1-based) — 転記が壊れないので最も確実
+      2. ``article_id`` の修復解決 (``_resolve_source_id``)
+    どちらも解けなければ None (誤った記事へ証拠を付けるより落とす)。
+    """
+    if index is not None and 1 <= index <= len(sources):
+        return str(sources[index - 1].get("article_id", "")) or None
+    # 実測: LLM は番号を article_id 側に文字列で入れることがある ("1")。
+    # 候補一覧の範囲内の裸の整数は番号として解する (書式でなく意図に寄せる)。
+    bare = (raw_id or "").strip()
+    if bare.isdigit() and 1 <= int(bare) <= len(sources):
+        return str(sources[int(bare) - 1].get("article_id", "")) or None
+    known = {
+        _norm_id(str(src.get("article_id", ""))): str(src.get("article_id", ""))
+        for src in sources
+    }
+    known.pop("", None)
+    return _resolve_source_id(raw_id, known)
+
+
 async def ground_and_score(
     *,
     llm: LLMClient,
@@ -310,17 +340,12 @@ async def ground_and_score(
     # LLM が返す article_id は転記で壊れる (feed 名の連結 / prefix 欠落 / 切り詰め)。
     # prompt で渡した id 集合へ寄せてから採用する — 解決できないものは捨てる
     # (候補外を引用することは原理的に無いため、解決不能 = 転記不能な破損)。
-    known_ids = {
-        _norm_id(str(src.get("article_id", ""))): str(src.get("article_id", ""))
-        for src in sources
-    }
-    known_ids.pop("", None)
     evidence_items: list[EvidenceItem] = []
     unresolved = 0
     for e in a.evidence:
         if not e.excerpt.strip():
             continue
-        aid = _resolve_source_id(e.article_id, known_ids)
+        aid = _resolve_evidence_source(e.index, e.article_id, sources)
         if aid is None:
             unresolved += 1
             continue

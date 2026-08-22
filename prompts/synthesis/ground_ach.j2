@@ -4,7 +4,7 @@
 【ソース本文】(【過去の文脈】= 対象期間より前の同一アクター/CVE/被害組織の記事。前例・パターン・
 新規性の判定材料。現在の事象そのものではない)
 {% for s in sources %}
---- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.historical is defined and s.historical %} | 【過去の文脈】{% endif %}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+--- [{{ loop.index }}] {{ s.feed_title }}{% if s.historical is defined and s.historical %} | 【過去の文脈】{% endif %}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
 {{ s.text }}
 {% endfor %}
 
@@ -20,7 +20,8 @@
 
 2) 証拠台帳 (**最も効く 8 件まで・excerpt は各 100 字以内** — 全ソースの網羅は不要。
    出力が長すぎると切断され全体が無効になる): 本文中の重要な事実を抽出し、各々に付与する:
-   - article_id: 出典 (上の id)
+   - index: 出典 = **上の候補一覧の [N] 番号 (整数)**。長い id を写すと転記が壊れる
+     ため、必ず番号で指定する (一覧に無い番号の創作禁止)
    - attribution_basis: 帰属の根拠を 1 つ選ぶ: {{ attribution_options }}
    - excerpt: 本文からの短い根拠抜粋 (要約でなく該当箇所)。
      **本文に逐語で存在しない引用は保存時に機械照合で破棄される** — 言い換えず
@@ -62,7 +63,7 @@
 - 逆に、本物の標的型を示す証拠 (標的選定・窃取/C2 の実証・公式帰属) があれば**穏当仮説に逃げない**。
 
 出力 JSON (これ以外を出さない):
-{"evidence": [{"article_id": "<id>", "attribution_basis": "<basis>", "excerpt": "<抜粋>", "polarity": "supports|contradicts|neutral"}],
+{"evidence": [{"index": <N>, "attribution_basis": "<basis>", "excerpt": "<抜粋>", "polarity": "supports|contradicts|neutral"}],
  "hypotheses": [{"hypothesis": "<仮説id>", "consistent": <int>, "inconsistent": <int>}],
  "leading_hypothesis": "<仮説id>",
  "confidence": "high|moderate|low",

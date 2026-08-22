@@ -225,7 +225,13 @@ function EvidenceList({ detail }: { detail: SituationDetail }) {
                 {vocabLabel("polarity", e.polarity)}
               </span>
               <span className="min-w-0">
-                「{e.excerpt}」
+                {/* 引用は本文との逐語照合を通ったものだけが残る (2026-08-22)。
+                    照合に落ちた行は excerpt が空 — 空の鉤括弧を出さず、記事側で示す。 */}
+                {e.excerpt ? (
+                  <>「{e.excerpt}」</>
+                ) : (
+                  <span className="text-fg-subtle">(逐語引用なし)</span>
+                )}
                 {e.article_title && (
                   <span className="text-fg-subtle"> — {e.article_title}</span>
                 )}
