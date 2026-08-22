@@ -191,6 +191,20 @@ async def run_weekly_prompt_governance() -> None:
         except Exception as e:  # noqa: BLE001 — シャドー統計の失敗で監査投稿を止めない
             _log.warning("head_shadow_stats_failed", error=str(e))
 
+        # 一貫性番兵 (§10.2f — パネル退役の後継)。決定論・LLM 呼出ゼロで
+        # intent 判定の不安定率を測り、rubric 変更のドリフト監視に使う。
+        # ⚠ 番兵専用 — 合否・目標関数にしない (壁 3 と同型の罠)。
+        try:
+            from src.storage.run_history import RunHistoryRepository as _Repo
+            from src.tuning.consistency_sentinel import (
+                compute_intent_instability,
+                sentinel_line,
+            )
+
+            sections.append(sentinel_line(compute_intent_instability(_Repo())))
+        except Exception as e:  # noqa: BLE001 — 番兵の失敗で監査投稿を止めない
+            _log.warning("consistency_sentinel_failed", error=str(e))
+
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]
         importance = "medium" if worst_exit == 1 else "low"

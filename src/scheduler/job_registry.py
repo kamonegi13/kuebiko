@@ -310,28 +310,10 @@ def default_jobs() -> list[JobDef]:
             hour=4,
             minute=45,
         ),
-        JobDef(
-            id="weekly-shadow-panel",
-            kind="bespoke",
-            heavy=False,
-            max_runtime_minutes=20,
-            title="シャドーパネル週次裁定",
-            description=(
-                "E1 正解付きの主体判定事例を多様 2 モデルが盲検で再判定し、分裂率"
-                " (外部 LLM エスカレーション量の実測) と較正曲線の原資を記録する"
-                " (較正格子 P3、シャドー専用)。"
-            ),
-            disable_impact=(
-                "分裂率・較正曲線のデータが溜まらず、外部 LLM の予算判断 (§10.2) と"
-                " P4 の自動裁定閾値を決められない。"
-            ),
-            protection="important",
-            schedule_type="cron",
-            day_of_week="sun",
-            # goldset (土 04:45) と同じ深夜空白帯の日曜側。~20 件 × 2 モデルで短時間
-            hour=4,
-            minute=45,
-        ),
+        # weekly-shadow-panel は 2026-08-22 に任務完了として退役 (§10.3 縮退決定)。
+        # 設計目的 (分裂率から外部 LLM 予算を見積る) への答えは「escalation 不要」
+        # (裁定 22 件・分裂 0 — ただし母集団は候補 1 択が支配的で識別力は限定的、
+        # §13b 2R-H9)。実装 (src/tuning/shadow_panel.py) は再測定用の資産として残置。
         JobDef(
             id="weekly-tuning-label-harvest",
             kind="pipeline",

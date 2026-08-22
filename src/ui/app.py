@@ -255,7 +255,6 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         )
 
     from src.tuning.goldset_cron import run_weekly_goldset_eval
-    from src.tuning.shadow_panel import run_weekly_shadow_panel
     from src.ui.services.actor_history_distill import run_actor_history_distill
     from src.ui.services.body_refetch_backlog import run_body_refetch_backlog
     from src.ui.services.body_translate_backlog import run_body_translate_backlog
@@ -285,7 +284,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,
         "weekly-goldset-eval": run_weekly_goldset_eval,
-        "weekly-shadow-panel": run_weekly_shadow_panel,
+        # weekly-shadow-panel は 2026-08-22 退役 (§10.3 縮退 — JobDef ごと除去)
         "actor-history-distill": run_actor_history_distill,
         "job-recovery-watchdog": _job_recovery,
     }

@@ -252,6 +252,41 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             ).fetchone()
         return str(row["url"]) if row is not None and row["url"] is not None else None
 
+    def fetch_intent_embedding_window(
+        self, since_iso: str, *, embed_model: str
+    ) -> list[dict[str, Any]]:
+        """一貫性番兵の入力: 窓内の posted 記事 (intent 確定分) × embedding。
+
+        article_id で重複正規化 (articles は url fan-out するため本文の長い方等の
+        優先は不要 — intent は posted 行にのみ書かれる)。created_at 昇順。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT a.article_id, a.url, a.socio_political_intent AS intent,"
+                " e.vector, e.dim, a.created_at"
+                " FROM articles a"
+                " JOIN dedup_seen_urls d ON d.url = a.url"
+                " JOIN article_embeddings e ON e.url_hash = d.url_hash"
+                " WHERE a.status = 'posted' AND a.created_at >= ?"
+                "   AND a.socio_political_intent IS NOT NULL"
+                "   AND a.socio_political_intent <> 'unknown'"
+                "   AND e.model = ?"
+                " ORDER BY a.created_at",
+                (since_iso, embed_model),
+            ).fetchall()
+        seen: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            aid = str(r["article_id"])
+            if aid not in seen:
+                seen[aid] = {
+                    "article_id": aid,
+                    "url": str(r["url"] or ""),
+                    "intent": str(r["intent"]),
+                    "vector": bytes(r["vector"]),
+                    "dim": int(r["dim"] or 0),
+                }
+        return list(seen.values())
+
     def fetch_claim_feed_urls(self) -> list[str]:
         """claim 収集器由来の記事 (subject_actor_source='feed') の URL 全件。
 
