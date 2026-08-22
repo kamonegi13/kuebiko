@@ -113,3 +113,49 @@ def test_empty_db_returns_graceful_empties(tmp_path: Path) -> None:
     assert ctx.forecast_indicators == []
     assert ctx.freshness["dated"] == 0
     assert ctx.freshness["retrospective_pct"] == 0
+
+
+def test_forecast_indicators_exclude_daily_bursts_by_default(tmp_path: Path) -> None:
+    """period_type 分離 (2026-08-22 独立レビュー P0)。
+
+    日次バースト (period_type='daily'、当日件数) が週次消費者 (Spotlight) の
+    構造予測ブロックへ流入すると、z 順で週次 FC2 を押し出し時間軸が混在する。
+    既定 (weekly) では daily 行を返さないことを固定する。
+    """
+    from datetime import UTC, datetime
+
+    from src.forecast.models import ForecastIndicatorRecord
+
+    db = tmp_path / "fc.db"
+    repo = RunHistoryRepository(db_path=db)
+    now = datetime.now(UTC)
+    repo.upsert_forecast_indicator(
+        ForecastIndicatorRecord(
+            period_type="weekly",
+            period_start=now,
+            scope="actor",
+            target_value="volt_typhoon",
+            direction="rising",
+            z_score=2.4,
+            baseline_avg=10.0,
+            latest_count=38,
+        )
+    )
+    repo.upsert_forecast_indicator(
+        ForecastIndicatorRecord(
+            period_type="daily",
+            period_start=now,
+            scope="actor",
+            target_value="head_mare",
+            direction="rising",
+            z_score=6.8,  # 日次の z は週次より高く出やすい (押し出しの再現)
+            baseline_avg=1.8,
+            latest_count=8,
+        )
+    )
+
+    rows = build_forecast_indicators(db_path=db)
+
+    assert [r["target"] for r in rows] == ["volt_typhoon"]
+    daily_rows = build_forecast_indicators(db_path=db, period_type="daily")
+    assert [r["target"] for r in daily_rows] == ["head_mare"]

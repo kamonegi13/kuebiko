@@ -90,21 +90,89 @@ class TestComputeFromRows:
         assert stats.articles == 0
 
 
+class TestPairWindow:
+    def test_pairs_beyond_window_are_not_same_event(self) -> None:
+        # 同一ベクトルでも 14 日を超えて離れていれば別事象 (蓄積 90 日 ≠ 事象定義)
+        rows = [
+            {**_row("espionage", 0), "created_at": "2026-08-01T00:00:00+00:00"},
+            {**_row("financial", 0), "created_at": "2026-08-20T00:00:00+00:00"},
+        ]
+
+        stats = compute_from_rows(rows, threshold=0.85, pair_window_days=14)
+
+        assert stats.measured_clusters == 0
+
+    def test_pairs_within_window_still_cluster(self) -> None:
+        rows = [
+            {**_row("espionage", 0), "created_at": "2026-08-01T00:00:00+00:00"},
+            {**_row("financial", 0), "created_at": "2026-08-05T00:00:00+00:00"},
+        ]
+
+        stats = compute_from_rows(rows, threshold=0.85, pair_window_days=14)
+
+        assert stats.measured_clusters == 1
+        assert stats.split_clusters == 1
+
+
+class TestWilsonInterval:
+    def test_zero_total_is_zero_interval(self) -> None:
+        from src.tuning.consistency_sentinel import wilson_interval
+
+        assert wilson_interval(0, 0) == (0.0, 0.0)
+
+    def test_small_sample_has_wide_interval(self) -> None:
+        # 3/4 の点推定 75% は CI が ~30-95% に開く — 数字単独で出してはいけない量
+        from src.tuning.consistency_sentinel import wilson_interval
+
+        lo, hi = wilson_interval(3, 4)
+        assert hi - lo > 0.4
+
+
 class TestSentinelLine:
     def test_none_reports_insufficient_sample(self) -> None:
         assert "標本不足" in sentinel_line(None)
 
-    def test_line_contains_rates_and_anti_goodhart_note(self) -> None:
+    def test_few_clusters_suppress_the_number(self) -> None:
+        # クラスタ 14 件 (< 30) では点推定を出さない — 週次ドリフトの錯覚防止 (§10.2e)
         stats = ConsistencyStats(
-            articles=100,
-            measured_clusters=10,
+            articles=1296,
+            measured_clusters=14,
             split_clusters=3,
             single_host_measured=4,
-            single_host_split=2,
+            single_host_split=3,
+        )
+
+        line = sentinel_line(stats)
+
+        assert "標本不足" in line
+        assert "21%" not in line
+
+    def test_line_contains_rates_ci_and_anti_goodhart_note(self) -> None:
+        stats = ConsistencyStats(
+            articles=1000,
+            measured_clusters=100,
+            split_clusters=30,
+            single_host_measured=20,
+            single_host_split=10,
         )
 
         line = sentinel_line(stats)
 
         assert "30%" in line
+        assert "CI" in line
         assert "50%" in line
         assert "目標関数にしない" in line
+
+    def test_single_host_stratum_suppressed_when_thin(self) -> None:
+        stats = ConsistencyStats(
+            articles=1000,
+            measured_clusters=100,
+            split_clusters=30,
+            single_host_measured=4,
+            single_host_split=3,
+        )
+
+        line = sentinel_line(stats)
+
+        assert "単一ホスト層は標本不足" in line
+        assert "75%" not in line

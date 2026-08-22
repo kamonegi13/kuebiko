@@ -265,7 +265,7 @@ def format_burst_compact(events: Sequence[BurstEvent]) -> str:
     """
     if not events:
         return ""
-    lines = ["📈 急増検知 (I&W)"]
+    lines = ["📈 急増検知 (I&W) — 言及件数の統計。収集網の観測であり活動量そのものではない"]
     for e in events[:_FORMAT_TOP_N]:
         prefix = _SCOPE_PREFIX_JA.get(e.scope, e.scope)
         flag = " ⚑PIR" if e.scope == "actor" and e.matched_pir_ids else ""

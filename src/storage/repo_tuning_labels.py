@@ -284,6 +284,7 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                     "intent": str(r["intent"]),
                     "vector": bytes(r["vector"]),
                     "dim": int(r["dim"] or 0),
+                    "created_at": str(r["created_at"] or ""),
                 }
         return list(seen.values())
 

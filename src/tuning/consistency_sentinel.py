@@ -33,13 +33,22 @@ if TYPE_CHECKING:
 
 _log = structlog.get_logger(__name__)
 
-WINDOW_DAYS = 14
+# 集計窓は 90 日 (2026-08-22 独立レビュー: 14 日窓では測定可能クラスタが ~14 個しか
+# できず、二項 CI が 5〜51% に開いて番兵として機能しない。10pt のシフト検出には
+# 100 クラスタ級 ≈ 90 日分が要る)。同一事象のペア判定は 14 日 (§10.2f と同じ定義) —
+# 窓を広げるのは「蓄積期間」であって「事象の定義」ではない。
+WINDOW_DAYS = 90
+PAIR_WINDOW_DAYS = 14
 SIM_THRESHOLD = 0.85
 # クラスタ統計が意味を持つ最小標本 (下回ったら「標本不足」— 0 件と測れないを区別)
 MIN_ROWS = 50
+# 数字を出してよい最小クラスタ数 (CI 幅が広すぎる数字は錯覚を生むだけ)
+MIN_CLUSTERS = 30
+MIN_SINGLE_HOST_CLUSTERS = 10
 # 週次ガバナンス内で走るため計算量の安全弁 (新しい方を優先)
 MAX_ROWS = 8000
 _DEFAULT_EMBED_MODEL = "snowflake-arctic-embed2"
+_WILSON_Z = 1.96
 
 
 @dataclass(frozen=True)
@@ -63,8 +72,19 @@ class ConsistencyStats:
         return self.single_host_split / self.single_host_measured
 
 
-def cluster_indices(matrix: NDArray[np.float32], threshold: float) -> list[list[int]]:
-    """コサイン類似度 >= threshold の連結成分 (union-find)。行は L2 正規化して比較する。"""
+def cluster_indices(
+    matrix: NDArray[np.float32],
+    threshold: float,
+    *,
+    epochs: NDArray[np.float64] | None = None,
+    pair_window_seconds: float | None = None,
+) -> list[list[int]]:
+    """コサイン類似度 >= threshold の連結成分 (union-find)。行は L2 正規化して比較する。
+
+    ``epochs`` (行と同順・昇順の UNIX 秒) と ``pair_window_seconds`` を渡すと、
+    時刻差が窓を超えるペアは辺にしない (§10.2f と同じ「同一事象」定義 —
+    蓄積期間を 90 日に広げても、事象のペア判定は 14 日のまま保つ)。
+    """
     n = matrix.shape[0]
     if n == 0:
         return []
@@ -85,21 +105,49 @@ def cluster_indices(matrix: NDArray[np.float32], threshold: float) -> list[list[
         rows, cols = np.nonzero(sims >= threshold)
         for r, c in zip(rows.tolist(), cols.tolist(), strict=True):
             i, j = s + r, c
-            if i < j:
-                ri, rj = find(i), find(j)
-                if ri != rj:
-                    parent[ri] = rj
+            if i >= j:
+                continue
+            if (
+                epochs is not None
+                and pair_window_seconds is not None
+                and abs(float(epochs[j]) - float(epochs[i])) > pair_window_seconds
+            ):
+                continue
+            ri, rj = find(i), find(j)
+            if ri != rj:
+                parent[ri] = rj
     groups: dict[int, list[int]] = {}
     for i in range(n):
         groups.setdefault(find(i), []).append(i)
     return [g for g in groups.values() if len(g) >= 2]
 
 
-def compute_from_rows(rows: list[dict[str, Any]], *, threshold: float) -> ConsistencyStats:
-    """(intent, url, vector) の行群から不安定率を計算する純関数部。"""
+def wilson_interval(successes: int, total: int, *, z: float = _WILSON_Z) -> tuple[float, float]:
+    """二項比率の Wilson 区間。点推定だけ出すと少標本で錯覚を生む (§10.2e の教訓)。"""
+    if total <= 0:
+        return (0.0, 0.0)
+    p = successes / total
+    denom = 1.0 + z * z / total
+    center = (p + z * z / (2 * total)) / denom
+    margin = (z * ((p * (1 - p) / total + z * z / (4 * total * total)) ** 0.5)) / denom
+    return (max(0.0, center - margin), min(1.0, center + margin))
+
+
+def compute_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    threshold: float,
+    pair_window_days: int | None = None,
+) -> ConsistencyStats:
+    """(intent, url, vector[, created_at]) の行群から不安定率を計算する純関数部。
+
+    rows は created_at 昇順であること (repo がそう返す)。pair_window_days を渡すと
+    時刻差がそれを超えるペアは同一事象と見なさない。
+    """
     vectors: list[NDArray[np.float32]] = []
     intents: list[str] = []
     hosts: list[str] = []
+    epoch_list: list[float] = []
     for r in rows:
         vec = np.frombuffer(r["vector"], dtype="<f4")
         if int(r.get("dim") or 0) and vec.shape[0] != int(r["dim"]):
@@ -107,12 +155,20 @@ def compute_from_rows(rows: list[dict[str, Any]], *, threshold: float) -> Consis
         vectors.append(vec)
         intents.append(str(r["intent"]))
         hosts.append(normalize_host(str(r.get("url") or "")))
+        epoch_list.append(_to_epoch(r.get("created_at")))
     if not vectors:
         return ConsistencyStats(0, 0, 0, 0, 0)
     matrix = np.vstack(vectors).astype(np.float32)
+    epochs: NDArray[np.float64] | None = None
+    window_seconds: float | None = None
+    if pair_window_days is not None and any(e > 0 for e in epoch_list):
+        epochs = np.asarray(epoch_list, dtype=np.float64)
+        window_seconds = pair_window_days * 86400.0
 
     measured = split = sh_measured = sh_split = 0
-    for group in cluster_indices(matrix, threshold):
+    for group in cluster_indices(
+        matrix, threshold, epochs=epochs, pair_window_seconds=window_seconds
+    ):
         group_intents = {intents[i] for i in group}
         if len(group) < 2:
             continue
@@ -147,17 +203,51 @@ def compute_intent_instability(
         return None
     if len(rows) > MAX_ROWS:
         rows = rows[-MAX_ROWS:]
-    return compute_from_rows(rows, threshold=threshold)
+    return compute_from_rows(rows, threshold=threshold, pair_window_days=PAIR_WINDOW_DAYS)
+
+
+def _to_epoch(value: Any) -> float:
+    """created_at (ISO 文字列 or datetime) → UNIX 秒。解釈不能は 0 (時間窓を課さない)。"""
+    if value is None:
+        return 0.0
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.timestamp()
 
 
 def sentinel_line(stats: ConsistencyStats | None) -> str:
-    """週次ガバナンス ops 本文の 1 行。番兵であり合否ではない (目標関数化の禁止)。"""
+    """週次ガバナンス ops 本文の 1 行。番兵であり合否ではない (目標関数化の禁止)。
+
+    少標本の点推定は毎週の錯覚を生むだけなので、クラスタ数が閾値未満なら数字を
+    出さない (0 件と「測れない」を区別する — 本プロジェクトの作法)。CI は Wilson。
+    """
     if stats is None:
         return "🧭 intent 不安定率: 標本不足で今週は測定なし"
-    return (
+    if stats.measured_clusters < MIN_CLUSTERS:
+        return (
+            f"🧭 intent 不安定率: クラスタ {stats.measured_clusters} 件 < {MIN_CLUSTERS}"
+            " — 標本不足のため数字は出さない (蓄積待ち)"
+        )
+    lo, hi = wilson_interval(stats.split_clusters, stats.measured_clusters)
+    line = (
         f"🧭 intent 不安定率 ({WINDOW_DAYS}日, t={SIM_THRESHOLD}): "
-        f"{stats.rate * 100:.0f}% ({stats.split_clusters}/{stats.measured_clusters} クラスタ)"
-        f" / 単一ホスト連報 {stats.single_host_rate * 100:.0f}%"
-        f" ({stats.single_host_split}/{stats.single_host_measured})"
-        " — 番兵 (推移を見る)。目標関数にしない (§10.2f)"
+        f"{stats.rate * 100:.0f}% (CI {lo * 100:.0f}-{hi * 100:.0f}%,"
+        f" {stats.split_clusters}/{stats.measured_clusters} クラスタ)"
     )
+    if stats.single_host_measured >= MIN_SINGLE_HOST_CLUSTERS:
+        slo, shi = wilson_interval(stats.single_host_split, stats.single_host_measured)
+        line += (
+            f" / 単一ホスト連報 {stats.single_host_rate * 100:.0f}%"
+            f" (CI {slo * 100:.0f}-{shi * 100:.0f}%, {stats.single_host_split}/"
+            f"{stats.single_host_measured})"
+        )
+    else:
+        line += f" / 単一ホスト層は標本不足 ({stats.single_host_measured} 件)"
+    return line + " — 番兵 (推移を見る)。目標関数にしない (§10.2f)"

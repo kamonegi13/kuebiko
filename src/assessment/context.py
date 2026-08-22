@@ -83,11 +83,19 @@ def build_nation_correlation(
     return out
 
 
-def build_forecast_indicators(*, db_path: Path, limit: int = 10) -> list[dict[str, Any]]:
+def build_forecast_indicators(
+    *, db_path: Path, limit: int = 10, period_type: str = "weekly"
+) -> list[dict[str, Any]]:
     """B(1): 未検証 (open) の FC2 構造予測 (z-score スパイク) を注入用に返す。
 
     forecast pipeline が出す定量予測 (scope=actor/intent 等、direction、z_score、件数、rationale)
     の最新・高 z を渡し、spillover の叙述を構造予測に裏打ちさせる。障害時は [] (legacy)。
+
+    ⚠ period_type で必ず絞る (2026-08-22 独立レビュー P0): 日次バースト
+    (period_type='daily'、当日件数・z 2.5+) が週次 FC2 (週間件数) と同じテーブルに
+    載るため、無フィルタだと z 順で週次予測を押し出し、LLM が「当日 5 件」と
+    「週 59 件」を同一軸で読む時間軸混在が起きる。消費者 (Spotlight=週次) の
+    分析期間と一致させる。
     """
     import sqlite3
     from datetime import UTC, datetime, timedelta
@@ -103,11 +111,12 @@ def build_forecast_indicators(*, db_path: Path, limit: int = 10) -> list[dict[st
             """
             SELECT scope, target_value, direction, z_score, latest_count, rationale
               FROM forecast_indicators
-             WHERE verified_at IS NULL AND datetime(period_start) >= datetime(?)
+             WHERE verified_at IS NULL AND period_type = ?
+               AND datetime(period_start) >= datetime(?)
              ORDER BY z_score DESC
              LIMIT ?
             """,
-            (since.isoformat(), limit),
+            (period_type, since.isoformat(), limit),
         ).fetchall()
     except Exception:  # noqa: BLE001 — forecast 不在/障害で呼び出し側を止めない
         return []
