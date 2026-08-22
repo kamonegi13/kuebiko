@@ -228,18 +228,8 @@ export const pagesApi = {
     postJson<{ saved: boolean; key_set: boolean; key_masked: string }>(
       "/api/v1/model-tiers/endpoint-key", { name, api_key },
     ),
-  // 較正格子 P1: 遅延正解ラベルの集計
+  // 凍結ラベル資産 + goldset 切替評価の履歴
   tuningLabels: () => getJson<TuningLabelsResponse>("/api/v1/tuning-labels"),
-  // 較正格子 P4: 係争 1 件の人間裁定
-  tuningAdjudicate: (case_key: string, resolution: "label_wrong" | "label_correct") => {
-    const f = new FormData();
-    f.set("case_key", case_key);
-    f.set("resolution", resolution);
-    return postForm<{ resolved: boolean; superseded: number }>(
-      "/api/v1/tuning-labels/adjudicate",
-      f,
-    );
-  },
   // taxonomy review
   taxonomyReview: () => getJson<TaxonomyResponse>("/api/v1/taxonomy-review"),
   taxonomyAction: (id: number, action: "accept" | "reject" | "defer") =>
@@ -758,53 +748,10 @@ export interface TuningEvalRow {
   created_at: string;
 }
 
-// P3: シャドーパネルの累計 (分裂率 = 外部 LLM エスカレーション量の実測)
-export interface PanelSummary {
-  by_agreement: Record<string, { n: number; avg_prompt_chars: number }>;
-  judged: number;
-  split_rate: number | null;
-}
-
-// §11-C: taxonomy 提案の区分別 人間同意率
-export interface TaxonomyAgreementRow {
-  tier: string;
-  accepted: number;
-  rejected: number;
-  agreement_rate: number | null;
-}
-
-// P4: 係争 (E1 ラベル × パネル不一致) の裁定
-export interface AdjudicationCase {
-  case_key: string;
-  article_id: string | null;
-  field: string;
-  truth_value: string;
-  production_value: string;
-  verdicts: string; // JSON: [{model, value}]
-  agreement: string;
-  is_dispute: boolean;
-  created_at: string;
-  title?: string;
-}
-
-export interface AdjudicationResolution {
-  case_key: string;
-  resolution: string;
-  resolved_by: string;
-  created_at: string;
-  article_id: string | null;
-  field: string;
-  truth_value: string;
-  agreement: string;
-}
-
 export interface TuningLabelsResponse {
   summary: TuningLabelSummaryRow[];
   recent: TuningLabelRow[];
   evals: TuningEvalRow[];
-  panel: PanelSummary;
-  taxonomy_agreement: TaxonomyAgreementRow[];
-  adjudication: { pending: AdjudicationCase[]; recent: AdjudicationResolution[] };
 }
 
 export interface EditorialArticle {

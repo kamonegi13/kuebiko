@@ -1,22 +1,19 @@
-"""犯行声明突合による主体の決定論補完 (§13 対処 A、2026-08-22)。
+"""犯行声明突合による主体の決定論補完 (2026-08-22)。
 
 記事の主題アクター判定は本文言及集合の候補ゲートを持つため、ギャング名を書かない
-被害報道では LLM が構造的に主体を選べない (実測 26% が未到達、
-docs/self_evolving_tuning_design.md §13)。一方 ransomware.live の犯行声明
-(subject_actor_source='feed') は最強証拠であり、victim_org ±窓日 突合で主体を
-決定論的に転移できる。
+被害報道では LLM が構造的に主体を選べない (実測では未到達 29 件のうち 28 件が
+「候補ゼロ」= LLM に解けない問題だった)。一方 ransomware.live の犯行声明
+(subject_actor_source='feed') は最強証拠であり、victim_org ±5 日 突合で主体を
+決定論的に転移できる。LLM 呼出はゼロ。
 
-突合ロジックは src/tuning/label_harvest.py の収穫① (``_sweep_feed_news_subject``) と
-**同一セマンティクス** — 突合パラメータ (時間窓 / generic org denylist / 日付比較方式)
-の SSoT を割らないため、当該モジュールの private 定数・ヘルパをそのまま再利用する
-(``_GENERIC_ORG_DENYLIST`` / ``_MATCH_WINDOW_DAYS`` / ``_as_dt``)。パラメータを変える
-場合は label_harvest.py 側の値を直せば両方に反映される。
+呼出経路は 2 本 — ransomware_ingest 直後 (主経路) と daily-maintenance (安全網)。
 
-label_harvest との役割差: label_harvest はラベル台帳 (tuning_labels、観測専用) に
-書くだけで記事本体は変更しない。本モジュールは articles.subject_actor_* 列を実際に
-埋める (Discord 投稿・PIR 評価等の下流消費者に届く決定論補完)。**既存の主体は
-絶対に上書きしない** (feed 突合は本文言及ゲートの外側にある転移証拠のため、
-既に何らかの主体判定 (title/llm 等) が入っている記事には手を出さない保守則)。
+**既存の主体は絶対に上書きしない**: feed 突合は本文言及ゲートの外側にある転移証拠の
+ため、既に何らかの主体判定 (title/llm 等) が入っている記事には手を出さない保守則。
+
+来歴: 自己進化チューニング (較正格子) の実験中に派生した部品。実験本体は
+2026-08-22 に失敗として撤収したが、本モジュールは決定論のみで動き本番の主体充足に
+実効があったため存続させた (撤収の経緯は docs/self_evolving_tuning_design.md)。
 """
 
 from __future__ import annotations
@@ -28,14 +25,45 @@ from typing import Any
 from src.cti.subject_actor import SOURCE_FEED_MATCH
 from src.logging_config import get_logger
 
-# 突合パラメータの SSoT は label_harvest 側にある。ここでは再定義せず import して使う
-# (パッケージ内 private ヘルパの意図的再利用 — 突合窓/denylist が二重管理化しないよう
-# 変更は label_harvest.py 側の値を直すこと)。
-from src.tuning.label_harvest import _GENERIC_ORG_DENYLIST, _MATCH_WINDOW_DAYS, _as_dt
-
 _log = get_logger(__name__)
 
 _DEFAULT_LOOKBACK_DAYS = 35
+# 声明 ↔ 報道の日付照合窓
+_MATCH_WINDOW_DAYS = 5
+# 一般語の組織名は同名衝突で誤結合しやすいため完全一致で除外する最小 denylist
+# (victim_org 抽出側の is_vendor_noise とは別軸 — あちらはベンダ言及)
+_GENERIC_ORG_DENYLIST = frozenset(
+    {
+        "government",
+        "ministry",
+        "police",
+        "hospital",
+        "university",
+        "school",
+        "bank",
+        "city",
+        "council",
+        "市役所",
+        "病院",
+        "大学",
+        "政府",
+        "警察",
+        "学校",
+    }
+)
+
+
+def _as_dt(value: Any) -> datetime | None:
+    """created_at の両 backend 対応 (SQLite=TEXT / PG=TIMESTAMPTZ or TEXT)。"""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+    return None
 
 
 @dataclass(frozen=True)
@@ -58,10 +86,9 @@ def run_subject_backfill(
     """犯行声明 × victim_org 突合で主体未確定の記事を決定論的に埋める。
 
     ``repo`` は ``fetch_feed_subject_claims`` / ``fetch_victim_org_news_candidates`` /
-    ``update_subject_actor_fields`` を持つ duck type (label_harvest._LabelRepo と同様の
-    型付けをしない設計)。突合は _sweep_feed_news_subject と同一 (org 単位に声明を束ね、
-    generic org を除外、±_MATCH_WINDOW_DAYS で日付照合、同一 org へ複数ギャングが
-    競合する場合は正解を決められないため書かない)。
+    ``update_subject_actor_fields`` を持つ duck type。突合は org 単位に声明を束ね、
+    generic org を除外、±_MATCH_WINDOW_DAYS で日付照合し、同一 org へ複数ギャングが
+    競合する場合は正解を決められないため書かない。
 
     補完対象は **news 記事の subject_actor_ids が空のときのみ** (fetch 側で
     subject_actor_source='feed' の記事は既に除外済み)。1 記事の書込失敗は errors に
@@ -86,7 +113,7 @@ def run_subject_backfill(
         if ts is None or not gt or not org:
             continue
         if org in _GENERIC_ORG_DENYLIST:
-            continue  # 一般語の組織名は同名衝突の誤結合源 (label_harvest §13-1 と同じ)
+            continue  # 一般語の組織名は同名衝突の誤結合源
         claims_by_org.setdefault(org, []).append((gt, ts))
 
     filled = 0

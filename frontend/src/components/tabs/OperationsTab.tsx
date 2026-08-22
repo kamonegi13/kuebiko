@@ -5,7 +5,6 @@ import { useFilters } from "../../state/filters";
 import { TaxonomyView } from "./operations/TaxonomyView";
 import { EditorialView } from "./operations/EditorialView";
 import { TuningLabelsCard } from "./operations/TuningLabelsCard";
-import { AdjudicationCard } from "./operations/AdjudicationCard";
 
 export function OperationsTab() {
   const f = useFilters();
@@ -17,10 +16,7 @@ export function OperationsTab() {
         <div className="text-fg-muted text-sm">分類語彙・アクター別名・論調の運用観察と手動確認</div>
       </div>
 
-      {/* 較正格子 P4: 係争の裁定 (待ち 0 かつ履歴 0 なら自己隠蔽) */}
-      <AdjudicationCard />
-
-      {/* 較正格子 P1: 遅延正解ラベルの蓄積状況 (サブビュー横断の常設カード) */}
+      {/* 遅延正解ラベル (凍結資産) と goldset 切替評価の常設カード */}
       <TuningLabelsCard />
 
       {/* サブビュー切替 (Taxonomy / Editorial) は上部コントロールバー (Shell) が担う。 */}

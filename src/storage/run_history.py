@@ -12,9 +12,7 @@
 - ``repo_synthesis.py``— status synthesis / spotlight / forecast / article_notes
 - ``repo_knowledge.py``— taxonomy / MITRE / actor provisional / F1 / maintenance / aggregations
 - ``repo_ops_notices.py``— ops_notices (ops 通知の永続化、2026-08-21)
-- ``repo_tuning_labels.py``— tuning_labels / tuning_evals (較正格子 P1/P2、2026-08-21)
-- ``repo_panel.py``     — panel_verdicts / panel_resolutions (較正格子 P3/P4、2026-08-22)
-- ``repo_head_shadow.py``— head_shadow (較正格子 ロードマップ C、蒸留ヘッドのシャドー計測)
+- ``repo_tuning_labels.py``— tuning_labels (凍結資産) / tuning_evals (goldset 評価)
 
 ``RunHistoryRepository`` は上記 mixin を合成した具象クラス。全 mixin は共通基底
 ``RunHistoryRepositoryBase`` を継承するため、ダイヤモンド MRO でも ``self._connect``
@@ -53,11 +51,9 @@ from src.storage.repo_actor_profile import ActorProfileMixin
 from src.storage.repo_articles import ArticlesMixin
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.repo_dedup import DedupMixin
-from src.storage.repo_head_shadow import HeadShadowMixin
 from src.storage.repo_knowledge import KnowledgeMixin
 from src.storage.repo_llm_usage import LlmUsageMixin
 from src.storage.repo_ops_notices import OpsNoticesMixin
-from src.storage.repo_panel import PanelMixin
 from src.storage.repo_pir import PirJudgmentsMixin
 from src.storage.repo_runs import RunsMixin
 from src.storage.repo_synthesis import SynthesisMixin
@@ -95,8 +91,6 @@ class RunHistoryRepository(
     TranslationChunksMixin,
     OpsNoticesMixin,
     TuningLabelsMixin,
-    PanelMixin,
-    HeadShadowMixin,
     RunHistoryRepositoryBase,
 ):
     """SQLite/PostgreSQL ベースの run / article / live_log 履歴リポジトリ (mixin 合成)。"""

@@ -154,56 +154,6 @@ async def run_weekly_prompt_governance() -> None:
                 f"(v{version}, {days} 日窓): "
                 f"{_summary_line(verify_out, prefix='総合判定:')}"
             )
-            # C7 自動 rollback 関門 (較正格子 P2): FAIL のとき前版へ戻す判定。
-            # 既定はシャドー (記録のみ)、実適用は TUNING_AUTO_ROLLBACK=1。
-            # 判定・適用の実体は src/tuning/auto_rollback (ここは 1 行足すだけ)。
-            # 破局判定 (2026-08-22 H6): 無人で動いてよいのは破局ゲートの FAIL のみ。
-            # verify の「破局判定: FAIL」行が SSoT (scripts/verify_prompt_cutover)。
-            from src.tuning.auto_rollback import maybe_auto_rollback
-
-            rollback_line = await maybe_auto_rollback(
-                verify_exit=verify_exit,
-                catastrophic="破局判定: FAIL" in verify_out,
-            )
-            if rollback_line:
-                sections.append(rollback_line)
-
-        # 較正格子のシャドー部品台帳 (§13-8): 無期限シャドー化を防ぐ期限起票
-        try:
-            from src.tuning.shadow_registry import shadow_status_lines
-
-            sections.extend(shadow_status_lines())
-        except Exception as e:  # noqa: BLE001 — 台帳の失敗で監査投稿を止めない
-            _log.warning("shadow_registry_failed", error=str(e))
-
-        # 蒸留ヘッド v0 のシャドー統計 (§14.3 の常設消費者 — write-only 化の防止)
-        try:
-            from src.storage.run_history import RunHistoryRepository
-
-            hs = RunHistoryRepository().head_shadow_stats(days=7)
-            if hs.total > 0:
-                agree_pct = 100.0 * hs.agree_with_triage / hs.total
-                sections.append(
-                    f"🧮 ヘッド v0 シャドー (7 日): {hs.total} 件 / triage 一致 "
-                    f"{agree_pct:.0f}% / 足切り不一致 {hs.disagree_cutoff} 件 / "
-                    f"triage エラー {hs.triage_error} 件"
-                )
-        except Exception as e:  # noqa: BLE001 — シャドー統計の失敗で監査投稿を止めない
-            _log.warning("head_shadow_stats_failed", error=str(e))
-
-        # 一貫性番兵 (§10.2f — パネル退役の後継)。決定論・LLM 呼出ゼロで
-        # intent 判定の不安定率を測り、rubric 変更のドリフト監視に使う。
-        # ⚠ 番兵専用 — 合否・目標関数にしない (壁 3 と同型の罠)。
-        try:
-            from src.storage.run_history import RunHistoryRepository as _Repo
-            from src.tuning.consistency_sentinel import (
-                compute_intent_instability,
-                sentinel_line,
-            )
-
-            sections.append(sentinel_line(compute_intent_instability(_Repo())))
-        except Exception as e:  # noqa: BLE001 — 番兵の失敗で監査投稿を止めない
-            _log.warning("consistency_sentinel_failed", error=str(e))
 
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]

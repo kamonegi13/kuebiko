@@ -382,7 +382,7 @@ async def run_ingest(
     # 決定論補完する (遅延声明が届いた直後が最も効くタイミング。冪等・既存主体は不変)
     subject_backfilled = 0
     try:
-        from src.tuning.subject_backfill import run_subject_backfill
+        from src.cti.subject_backfill import run_subject_backfill
 
         subject_backfilled = run_subject_backfill(repository).filled
     except Exception as e:  # noqa: BLE001 — 補完の失敗で取込 run を汚さない

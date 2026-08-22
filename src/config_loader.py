@@ -50,8 +50,6 @@ SourceType = Literal[
     # 段4(a) 朝レンダー統合: synthesis ナラティブ + PIR daily focus を 1 製品に統合
     # (旧 pir_daily_focus + daily-status-synthesis-morning の重複投稿を解消)
     "morning_brief",
-    # 較正格子 P1 (self_evolving_tuning_design §6): 遅延正解ラベルの週次収穫
-    "tuning_label_harvest",
 ]
 ExtractMethod = Literal["trafilatura", "playwright"]
 

@@ -1572,7 +1572,7 @@ async def taxonomy_review(request: Request) -> dict[str, Any]:
     recent.sort(key=lambda p: p.reviewed_at or p.created_at, reverse=True)
 
     def _evidence_ids(raw: str | None) -> list[str]:
-        # 証拠記事 id (保存済みだが従来 UI 未表示だった — 較正格子 §11-B で表示する)。
+        # 証拠記事 id (保存済みだが従来 UI 未表示だった — 2026-08-22 から表示する)。
         # JSON array 以外の破損値は空扱い (証拠が出ないだけで提案表示は壊さない)。
         import json
 
@@ -1699,12 +1699,15 @@ async def taxonomy_action(
     }
 
 
-# ---------- /tuning-labels (較正格子 P1) ----------
+# ---------- /tuning-labels (凍結ラベル資産 + goldset 評価履歴) ----------
 
 
 @pages_api.get("/tuning-labels")
 async def tuning_labels_summary() -> dict[str, Any]:
-    """遅延正解ラベル (tuning_labels) の集計 — 運用タブの件数カード用。
+    """遅延正解ラベルと goldset 切替評価の履歴 — 運用タブの件数カード用。
+
+    ラベル台帳は 2026-08-22 の較正格子撤収により **凍結資産** (新規収穫なし)。
+    goldset 評価 (evals) のみ weekly-goldset-eval で更新が続く。
 
     denylist 対象 (運用系 read API は公開面に出さない — read_only_policy)。
     """
@@ -1712,39 +1715,8 @@ async def tuning_labels_summary() -> dict[str, Any]:
     return {
         "summary": repo.summarize_tuning_labels(),
         "recent": repo.list_tuning_labels(limit=20),
-        # P2: goldset 評価と auto-rollback 裁定 (シャドー含む) の履歴
         "evals": repo.list_tuning_evals(limit=10),
-        # P3: シャドーパネルの累計 (分裂率 = 外部 LLM エスカレーション量の実測)
-        "panel": repo.summarize_panel_verdicts(),
-        # §11-C: taxonomy 提案の区分別 人間同意率 (区分1 が ~100% なら自動化候補)
-        "taxonomy_agreement": repo.taxonomy_tier_agreement(),
-        # P4: 係争 (E1 × パネル不一致) の裁定キュー + 裁定履歴
-        "adjudication": {
-            "pending": repo.list_pending_adjudications(),
-            "recent": repo.list_recent_resolutions(limit=10),
-        },
     }
-
-
-@pages_api.post("/tuning-labels/adjudicate")
-async def tuning_labels_adjudicate(request: Request) -> dict[str, Any]:
-    """係争 1 件の人間裁定 (較正格子 P4 C5)。裁定 = 適用の終端保証は resolve_case が担う。
-
-    write API — readonly instance では middleware が 403 (Tier2)。
-    """
-    form = await request.form()
-    case_key = str(form.get("case_key") or "").strip()
-    resolution = str(form.get("resolution") or "").strip()
-    if not case_key or resolution not in ("label_wrong", "label_correct"):
-        raise HTTPException(status_code=400, detail="入力が不正です")
-    from src.tuning.adjudication import Resolution, resolve_case
-
-    typed: Resolution = "label_wrong" if resolution == "label_wrong" else "label_correct"
-    repo = RunHistoryRepository()
-    result = resolve_case(repo, case_key=case_key, resolution=typed)
-    if not result.ok:
-        raise HTTPException(status_code=409, detail=result.reason)
-    return {"resolved": True, "case_key": case_key, "superseded": result.superseded}
 
 
 # ---------- /intel-graph/editorial-quality ----------

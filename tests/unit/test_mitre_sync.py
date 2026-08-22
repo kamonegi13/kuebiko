@@ -499,18 +499,6 @@ class _FakeRepo:
         return len(self.inserted)
 
 
-class _FakeRepoWithLabels(_FakeRepo):
-    """較正格子 P1: 収穫② (alias 確定ラベル) の記録を捕捉する fake。"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.labels: list[dict[str, Any]] = []
-
-    def record_tuning_label(self, **kwargs: Any) -> int | None:
-        self.labels.append(kwargs)
-        return len(self.labels)
-
-
 @pytest.mark.asyncio
 async def test_runner_applies_updates_and_persists_proposals(
     monkeypatch: pytest.MonkeyPatch,
@@ -551,58 +539,6 @@ async def test_runner_applies_updates_and_persists_proposals(
     assert "BRONZE SILHOUETTE" in written[0][0]
     assert repo.inserted[0]["proposal_type"] == "mitre_new_actor"
     assert "和訳済みテキスト" in repo.inserted[0]["payload"]  # 新規 actor の summary も和訳済
-
-
-@pytest.mark.asyncio
-async def test_runner_records_alias_labels_on_auto_apply(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """較正格子 P1 収穫②: 自動適用された alias 追加が E1 ラベルとして記録される。"""
-    existing = _data(
-        [{"id": "volt_typhoon", "canonical": "Volt Typhoon", "aliases": [], "summary": ""}]
-    )
-
-    async def fake_fetch(url: str = "") -> list[MitreGroup]:
-        return [_group()]
-
-    monkeypatch.setattr("src.cti.mitre_sync.fetch_mitre_groups", fake_fetch)
-    monkeypatch.setattr("src.cti.mitre_sync.load_actors_raw", lambda: existing)
-
-    repo = _FakeRepoWithLabels()
-    result = await run_mitre_actor_sync(
-        llm=_FakeLLM(text="和訳済みテキスト"),
-        repo=repo,
-        run_id=None,
-        dry_run=False,
-        write_yaml=lambda content, msg: None,
-    )
-
-    assert result.auto_applied == 1
-    assert repo.labels, "自動適用の alias がラベル化されていない"
-    label = repo.labels[0]
-    assert label["field"] == "actor_alias"
-    assert label["label_value"] == "volt_typhoon"
-    assert label["source"] == "E1"
-    assert label["dedup_key"].startswith("mitre_alias:volt_typhoon:")
-
-
-@pytest.mark.asyncio
-async def test_runner_dry_run_records_no_labels(monkeypatch: pytest.MonkeyPatch) -> None:
-    existing = _data(
-        [{"id": "volt_typhoon", "canonical": "Volt Typhoon", "aliases": [], "summary": ""}]
-    )
-
-    async def fake_fetch(url: str = "") -> list[MitreGroup]:
-        return [_group()]
-
-    monkeypatch.setattr("src.cti.mitre_sync.fetch_mitre_groups", fake_fetch)
-    monkeypatch.setattr("src.cti.mitre_sync.load_actors_raw", lambda: existing)
-
-    repo = _FakeRepoWithLabels()
-    await run_mitre_actor_sync(
-        llm=_FakeLLM(text="x"), repo=repo, run_id=None, dry_run=True, write_yaml=None
-    )
-    assert repo.labels == []
 
 
 @pytest.mark.asyncio

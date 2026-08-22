@@ -1,8 +1,8 @@
-"""goldset 3 者比較の cron 化 — 較正格子 P2 (docs/self_evolving_tuning_design.md §4 C6 後半)。
+"""goldset 3 者比較の cron 化 (2026-08-22)。
 
 summarizer_rubric の版が変わった週だけ、凍結 gold set で 旧版 1 回 + 新版 2 回 (2 本目が
 揺らぎの床 = 対照) を自動実行し、フィールド別の合否を tuning_evals へ記録して ops へ
-報告する。**測定のみ** (シャドー互換) — rollback の判断は週次ガバナンス (本番統計の
+報告する。**測定のみ** — rollback の判断は週次ガバナンス (本番統計の
 verify_prompt_cutover) が担い、本評価はその独立な証拠 (入力凍結 = コーパス交絡なし)。
 
 判定ロジックの SSoT は ``scripts/eval_goldset.py`` — 本 module は subprocess で呼ぶ

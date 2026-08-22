@@ -56,9 +56,6 @@ from src.eval.goldset import (  # noqa: E402
 GOLDSET_PATH = Path("data/eval/goldset.jsonl")
 RUNS_DIR = Path("data/eval/runs")
 
-# §13-6: goldset 評価は few-shot を構造的に遮断する (env flag に依らない)。
-# --fewshot 指定の変種実行のみ True (few-shot の効果測定はその run だけが担う)
-_JUDGMENT_ALLOW_FEWSHOT = False
 # 床の下限 (pt)。86 件の標本では 1 件の増減が約 1.2pt なので、それ未満の差は
 # 対照が完全一致していても「変化」と呼ばない。
 _MIN_FLOOR_PT = 1.5
@@ -163,7 +160,6 @@ async def _run_one_judgment(llm: Any, _template: Any, art: GoldArticle) -> dict[
         body=body,
         published=art.published,
         candidates=candidates,
-        allow_fewshot=_JUDGMENT_ALLOW_FEWSHOT,
     )
     if out is None:
         return {"article_id": art.article_id, "_error": "classify_judgment returned None"}
@@ -261,17 +257,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not GOLDSET_PATH.exists():
         print(f"gold set が無い。先に build を実行する: {GOLDSET_PATH}", file=sys.stderr)
         return 1
-    if getattr(args, "fewshot", False):
-        # 較正格子 P5 (C8): few-shot 注入の変種実行 (judgment のみ)。
-        # env flag + 構造 allow の両方をこの process に限り立てる
-        if args.target != "judgment":
-            raise SystemExit("--fewshot は judgment のみ")
-        import os
-
-        global _JUDGMENT_ALLOW_FEWSHOT
-        _JUDGMENT_ALLOW_FEWSHOT = True
-        os.environ["JUDGMENT_FEWSHOT"] = "1"
-        print("few-shot 注入で実行 (JUDGMENT_FEWSHOT=1、この process のみ)", file=sys.stderr)
     articles = load_goldset(GOLDSET_PATH)
     path = asyncio.run(
         _run_all(
@@ -482,11 +467,6 @@ def main() -> int:
         "--rubric-version",
         type=int,
         help="config_store の版履歴からこの版の rubric を pin して実行する (summarizer のみ)",
-    )
-    r.add_argument(
-        "--fewshot",
-        action="store_true",
-        help="few-shot 注入 (JUDGMENT_FEWSHOT=1) で実行する (judgment のみ)",
     )
     r.set_defaults(func=cmd_run)
 

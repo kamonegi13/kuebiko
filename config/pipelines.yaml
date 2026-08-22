@@ -239,21 +239,6 @@ pipelines:
     extract_method: trafilatura
     extract_min_length: 200
     target_language: ja
-- name: weekly-tuning-label-harvest
-  # 較正格子 P1 (self_evolving_tuning_design §6): 遅延正解ラベルの週次収穫。
-  # LLM 不使用・DB sweep のみで数秒。深夜帯 (水 03:30、月 taxonomy / 火 mitre と分散)。
-  schedule:
-    enabled: true
-    hour: 3
-    minute: 30
-    day_of_week: wed
-  source:
-    type: tuning_label_harvest
-    max_articles: 1
-  processor:
-    extract_method: trafilatura
-    extract_min_length: 200
-    target_language: ja
 - name: mitre-actor-sync
   # 案2: 火 09:00 → 火 03:00 (深夜)。MITRE→Actor 辞書同期 (LLM 和訳)、時刻非依存。
   schedule:

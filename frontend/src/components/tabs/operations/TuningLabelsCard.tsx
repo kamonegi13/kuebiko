@@ -1,6 +1,6 @@
-// Operations tab の常設カード: 遅延正解ラベル (較正格子 P1) の件数表示。
-// tuning_labels の消費者第 1 号 (write-only 列を作らない規約)。週次収穫
-// (weekly-tuning-label-harvest) が蓄積した「後日確定した事実」の供給量を種別ごとに見せる。
+// Operations tab の常設カード: 遅延正解ラベル (凍結資産) と goldset 切替評価の履歴。
+// ラベル台帳は 2026-08-22 の較正格子撤収で新規収穫を停止し、蓄積分を凍結資産として残す。
+// 更新が続くのは goldset 評価 (weekly-goldset-eval) のみ。
 
 import { useQuery } from "@tanstack/react-query";
 import { pagesApi } from "../../../api/pages";
@@ -17,35 +17,22 @@ const FIELD_JA: Record<string, string> = {
 const SOURCE_JA: Record<string, string> = {
   E0: "決定論",
   E1: "遅延正解",
-  E2: "パネル",
   E3: "人間裁定",
 };
 
-// P2: 評価・裁定の種別/結果の日本語写像
+// 評価の種別/結果の日本語写像
 const EVAL_KIND_JA: Record<string, string> = {
   goldset_cutover: "goldset 切替評価",
-  auto_rollback: "自動 rollback 裁定",
 };
 
 const VERDICT_JA: Record<string, string> = {
   pass: "合格",
   degraded: "劣化",
-  would_rollback: "戻すべき (シャドー)",
-  rolled_back: "復元済み",
 };
 
 const VERDICT_TONE: Record<string, string> = {
   pass: "bg-success-soft text-success",
   degraded: "bg-warning-soft text-warning",
-  would_rollback: "bg-warning-soft text-warning",
-  rolled_back: "bg-critical-soft text-critical",
-};
-
-// §11-C: taxonomy 提案の区分ラベル (TaxonomyView と同じ区分体系)
-const TIER_JA: Record<string, string> = {
-  tier_1_auto: "区分1 (誤字)",
-  tier_2_review: "区分2 (手動確認)",
-  tier_3_strategic: "区分3 (戦略)",
 };
 
 export function TuningLabelsCard() {
@@ -101,33 +88,10 @@ export function TuningLabelsCard() {
           </table>
         </div>
       )}
-      {/* P3: シャドーパネル累計 + taxonomy 区分別人間同意率 (§11-C) */}
-      {data && (data.panel?.judged > 0 || (data.taxonomy_agreement ?? []).length > 0) && (
-        <div className="border-t border-border-subtle px-4 py-2.5 flex flex-wrap gap-x-6 gap-y-1 text-xs text-fg-muted">
-          {data.panel?.judged > 0 && (
-            <span>
-              パネル裁定 累計 <strong className="text-fg tnum">{data.panel.judged}</strong> 件 · 分裂率{" "}
-              <strong className="text-fg tnum">
-                {data.panel.split_rate != null ? `${(data.panel.split_rate * 100).toFixed(1)}%` : "-"}
-              </strong>
-              <span className="text-fg-subtle"> (外部 LLM に上がるはずだった率)</span>
-            </span>
-          )}
-          {(data.taxonomy_agreement ?? []).map((t) => (
-            <span key={t.tier}>
-              {TIER_JA[t.tier] ?? t.tier} 同意率{" "}
-              <strong className="text-fg tnum">
-                {t.agreement_rate != null ? `${(t.agreement_rate * 100).toFixed(0)}%` : "-"}
-              </strong>
-              <span className="text-fg-subtle tnum"> ({t.accepted}/{t.accepted + t.rejected})</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {/* P2: goldset 評価 / auto-rollback 裁定の履歴 (rubric 変更の翌週に自動で並ぶ) */}
+      {/* goldset 切替評価の履歴 (rubric 変更の翌週に自動で並ぶ) */}
       {data && data.evals && data.evals.length > 0 && (
         <div className="border-t border-border-subtle">
-          <div className="px-4 py-2 text-xs text-fg-muted uppercase bg-surface-2">評価・裁定 (P2)</div>
+          <div className="px-4 py-2 text-xs text-fg-muted uppercase bg-surface-2">goldset 切替評価</div>
           {data.evals.map((e) => (
             <div key={e.id} className="px-4 py-2 border-t border-border-subtle flex items-center gap-2 text-xs">
               <span className="text-fg">{EVAL_KIND_JA[e.kind] ?? e.kind}</span>

@@ -364,7 +364,6 @@ async def classify_judgment(
     published: str | None,
     candidates: list[ActorAlias],
     summary_text: str | None = None,
-    allow_fewshot: bool = True,
 ) -> JudgmentOut | None:
     """記事 1 本の判断軸を統合 focused で判定する。障害時は None (安全側=空を維持)。
 
@@ -384,18 +383,6 @@ async def classify_judgment(
     prompt = build_judgment_prompt(
         title=title, category=category, body=_body, published=published, candidates=candidates
     )
-    # 較正格子 P5 (C8): retrieval few-shot の例示層を code 所有で末尾注入。
-    # JUDGMENT_FEWSHOT=1 のときのみ (既定 off — goldset 3 者比較で実測してから cutover)。
-    # ``allow_fewshot=False`` は **測定経路 (シャドーパネル / goldset 評価) の構造的遮断**
-    # (§13-6 対処): flag に依らず引数で off — パネルが自分の監査対象を教材として読む
-    # 独立性破壊を env 状態と無関係に不可能にする。
-    # 失敗は fail-open (注入なしで従来動作。few-shot の障害で判定を止めない)。
-    from src.tuning.fewshot_pool import get_fewshot_section, is_fewshot_enabled
-
-    if allow_fewshot and is_fewshot_enabled():
-        section = await get_fewshot_section(title=title, body=_body, category=category)
-        if section:
-            prompt = f"{prompt}\n\n{section}"
     try:
         out = await llm.generate_structured(prompt, schema=JudgmentOut, think=False)
     except Exception as e:  # noqa: BLE001 — 分類失敗で記事処理を止めない

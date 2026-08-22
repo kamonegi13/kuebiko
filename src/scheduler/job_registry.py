@@ -296,7 +296,7 @@ def default_jobs() -> list[JobDef]:
             title="goldset 切替評価",
             description=(
                 "rubric の版が変わった週だけ、凍結 gold set で旧版 vs 新版の同一入力"
-                "比較 (対照 = 新版 2 実行) を自動実行する (較正格子 P2)。"
+                "比較 (対照 = 新版 2 実行) を自動実行する。"
             ),
             disable_impact=(
                 "rubric 変更の入力凍結評価が自動で出なくなる (本番統計の切替検証は"
@@ -309,29 +309,6 @@ def default_jobs() -> list[JobDef]:
             # 06:30 朝ブリーフまで)。LLM heavy 同士を重ねない。
             hour=4,
             minute=45,
-        ),
-        # weekly-shadow-panel は 2026-08-22 に任務完了として退役 (§10.3 縮退決定)。
-        # 設計目的 (分裂率から外部 LLM 予算を見積る) への答えは「escalation 不要」
-        # (裁定 22 件・分裂 0 — ただし母集団は候補 1 択が支配的で識別力は限定的、
-        # §13b 2R-H9)。実装 (src/tuning/shadow_panel.py) は再測定用の資産として残置。
-        JobDef(
-            id="weekly-tuning-label-harvest",
-            kind="pipeline",
-            heavy=False,
-            max_runtime_minutes=5,
-            title="週次 tuning ラベル収穫",
-            description=(
-                "遅延正解 (feed 突合 / taxonomy 裁定 / 論調訂正) を tuning_labels へ"
-                "収穫 (較正格子 P1)。"
-            ),
-            disable_impact=(
-                "較正格子のラベルが蓄積されず、プロンプト評価と few-shot の資産が増えない。"
-            ),
-            protection="important",
-            schedule_type="cron",
-            day_of_week="wed",
-            hour=3,
-            minute=30,
         ),
         # ----- K2/K3: 保守 -----
         JobDef(

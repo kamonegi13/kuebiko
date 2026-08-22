@@ -54,7 +54,7 @@ READ_ONLY_GET_DENYLIST: tuple[str, ...] = (
     "/api/v1/host-watchdog",
     "/api/v1/taxonomy-review",
     "/api/v1/editorial-quality",
-    # 較正格子 P1: 遅延正解ラベルの集計 (運用系 — 公開面に出さない)
+    # 遅延正解ラベル (凍結資産) と goldset 評価 (運用系 — 公開面に出さない)
     "/api/v1/tuning-labels",
     "/api/v1/flow",
     "/api/v1/routing-rules",

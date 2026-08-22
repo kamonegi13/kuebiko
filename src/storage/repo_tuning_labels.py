@@ -1,16 +1,14 @@
-"""遅延正解ラベル (tuning_labels) の読み書き — 較正格子 P1 (run_history 分割の一部)。
+"""遅延正解ラベル (tuning_labels) と goldset 切替評価 (tuning_evals) の読み書き。
 
-設計は docs/self_evolving_tuning_design.md §4 C1。producer (src/tuning/label_harvest.py と
-mitre_sync の hook) が「当時の判定 vs 後日確定した事実」の突合結果を書き、消費者
-(P1 では運用タブの件数表示、P3 以降で較正 C3 / few-shot C8) が読む。
+**tuning_labels は凍結資産**: 2026-08-22 の較正格子 (自己進化チューニング) 撤収に伴い
+producer (週次収穫) を停止した。蓄積済みの 78 件は将来の評価母集団として残し、
+読み取り API (運用タブ表示 / asset_export の日次退避) のみ維持する。撤収の経緯は
+docs/self_evolving_tuning_design.md。
 
-- 冪等性: ``dedup_key`` (producer が組む決定論キー) の UNIQUE で再収穫の重複を遮断する
-  (指示でなく関門で止める — deterministic_gates 2026-08-19)。
-- 置換: 同一 (article_id, field, source) の現行ラベルは ``superseded_by`` で新ラベルに
-  置き換える (編集訂正のやり直し等)。source を跨いだ置換はしない — E3 が E1 を上書き
-  しない (層の強度は消費者側で扱う)。
-- ``provenance`` は JSON のみ。自由文 (コメント等) は入れない (§4 マスク方針を書込側で
-  満たす — register_nav 2026-08-21 の教訓)。
+**tuning_evals は稼働中**: weekly-goldset-eval が rubric 版の切替評価を記録し続ける。
+
+同居する主体補完の突合クエリ (fetch_feed_subject_claims /
+fetch_victim_org_news_candidates) は src/cti/subject_backfill.py の決定論補完が使う。
 """
 
 from __future__ import annotations
@@ -24,62 +22,6 @@ from src.storage.row_mappers import _to_iso
 
 class TuningLabelsMixin(RunHistoryRepositoryBase):
     """tuning_labels テーブルの読み書き。"""
-
-    def record_tuning_label(
-        self,
-        *,
-        dedup_key: str,
-        field: str,
-        label_value: str,
-        source: str,
-        strength: str,
-        provenance: str,
-        article_id: str | None = None,
-        arrived_at: datetime | None = None,
-        supersede_same: bool = False,
-        snapshot: str | None = None,
-    ) -> int | None:
-        """ラベルを 1 行追記する。挿入できたら id、dedup_key 既出なら None を返す。
-
-        ``supersede_same=True`` のとき、同一 (article_id, field, source) の現行ラベル
-        (superseded_by IS NULL) を新 id で置換済みにする。article_id が無い識別系
-        ラベルには適用しない (記事という置換単位が無いため)。
-        ``snapshot`` は学習テキストの凍結 (JSON — 本文 90 日 purge 後も教材が残る §13-3)。
-        """
-        ts = _to_iso(arrived_at or datetime.now(UTC))
-        with self._connect() as conn:
-            cur = conn.execute(
-                "INSERT OR IGNORE INTO tuning_labels"
-                " (dedup_key, article_id, field, label_value, source, strength,"
-                "  arrived_at, provenance, snapshot)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    dedup_key,
-                    article_id,
-                    field,
-                    label_value,
-                    source,
-                    strength,
-                    ts,
-                    provenance,
-                    snapshot,
-                ),
-            )
-            if (cur.rowcount or 0) == 0:
-                return None  # dedup_key 既出 (冪等)
-            row = conn.execute(
-                "SELECT id FROM tuning_labels WHERE dedup_key = ?",
-                (dedup_key,),
-            ).fetchone()
-            new_id = int(row["id"])
-            if supersede_same and article_id is not None:
-                conn.execute(
-                    "UPDATE tuning_labels SET superseded_by = ?"
-                    " WHERE article_id = ? AND field = ? AND source = ?"
-                    "   AND id <> ? AND superseded_by IS NULL",
-                    (new_id, article_id, field, source, new_id),
-                )
-            return new_id
 
     def summarize_tuning_labels(self) -> list[dict[str, Any]]:
         """(field, source) ごとの現行/総件数と最終到着時刻 (運用タブの件数表示用)。"""
@@ -220,126 +162,6 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
 
     # ---------- 不変条件14 (§5 ソース独立性、2026-08-22): 自己突合の非破壊隔離 ----------
 
-    def list_e1_subject_labels_not_self_source(self) -> list[dict[str, Any]]:
-        """自己突合の再分類走査対象 (strength <> 'self_source' の E1 主体ラベル全件)。
-
-        ``strength = 'self_source'`` を既に除外しているため、この一覧を基に更新する
-        処理は自然に冪等 (2 回目は対象が残っていない)。記事が消えている行は
-        (INNER JOIN のため) 対象外 — host が判定できない行は保守的に据え置く。
-        """
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT tl.id, tl.provenance, a.url"
-                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
-                " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
-                "   AND tl.strength <> 'self_source'",
-            ).fetchall()
-        return [
-            {
-                "id": int(r["id"]),
-                "provenance": str(r["provenance"]),
-                "url": str(r["url"] or ""),
-            }
-            for r in rows
-        ]
-
-    def fetch_article_url(self, article_id: str) -> str | None:
-        """記事の URL を 1 件引く (自己突合再分類で claim 側 host を引くため)。"""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT url FROM articles WHERE article_id = ?",
-                (article_id,),
-            ).fetchone()
-        return str(row["url"]) if row is not None and row["url"] is not None else None
-
-    def fetch_intent_embedding_window(
-        self, since_iso: str, *, embed_model: str
-    ) -> list[dict[str, Any]]:
-        """一貫性番兵の入力: 窓内の posted 記事 (intent 確定分) × embedding。
-
-        article_id で重複正規化 (articles は url fan-out するため本文の長い方等の
-        優先は不要 — intent は posted 行にのみ書かれる)。created_at 昇順。
-        """
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT a.article_id, a.url, a.socio_political_intent AS intent,"
-                " e.vector, e.dim, a.created_at"
-                " FROM articles a"
-                " JOIN dedup_seen_urls d ON d.url = a.url"
-                " JOIN article_embeddings e ON e.url_hash = d.url_hash"
-                " WHERE a.status = 'posted' AND a.created_at >= ?"
-                "   AND a.socio_political_intent IS NOT NULL"
-                "   AND a.socio_political_intent <> 'unknown'"
-                "   AND e.model = ?"
-                " ORDER BY a.created_at",
-                (since_iso, embed_model),
-            ).fetchall()
-        seen: dict[str, dict[str, Any]] = {}
-        for r in rows:
-            aid = str(r["article_id"])
-            if aid not in seen:
-                seen[aid] = {
-                    "article_id": aid,
-                    "url": str(r["url"] or ""),
-                    "intent": str(r["intent"]),
-                    "vector": bytes(r["vector"]),
-                    "dim": int(r["dim"] or 0),
-                    "created_at": str(r["created_at"] or ""),
-                }
-        return list(seen.values())
-
-    def fetch_claim_feed_urls(self) -> list[str]:
-        """claim 収集器由来の記事 (subject_actor_source='feed') の URL 全件。
-
-        不変条件 14 の「同一**収集器**」判定用: claim 行そのものの host は
-        リークサイトの .onion 等で、収集器の**配信面** (www.ransomware.live の RSS 記事)
-        とは host が一致しない。news 側の host がこの集合の host に含まれるなら、
-        その記事は収集器の配信面であり独立ソースではない。host 正規化は呼び出し側。
-        """
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT url FROM articles"
-                " WHERE subject_actor_source = 'feed' AND url IS NOT NULL AND url <> ''",
-            ).fetchall()
-        return [str(r["url"]) for r in rows]
-
-    def mark_label_self_source(self, label_id: int) -> None:
-        """ラベルを削除せず strength='self_source' に更新する (非破壊隔離、冪等)。"""
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE tuning_labels SET strength = 'self_source'"
-                " WHERE id = ? AND strength <> 'self_source'",
-                (label_id,),
-            )
-
-    def list_labels_missing_snapshot(self) -> list[dict[str, Any]]:
-        """snapshot 未凍結で本文がまだ残っているラベル (backfill 対象、§13-3)。"""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT tl.id, a.title, a.body, a.category"
-                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
-                " WHERE tl.snapshot IS NULL AND tl.article_id IS NOT NULL"
-                "   AND LENGTH(COALESCE(a.body, '')) >= 200",
-            ).fetchall()
-        return [
-            {
-                "id": int(r["id"]),
-                "title": str(r["title"] or ""),
-                "body": str(r["body"] or ""),
-                "category": str(r["category"] or ""),
-            }
-            for r in rows
-        ]
-
-    def set_label_snapshot(self, label_id: int, snapshot: str) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE tuning_labels SET snapshot = ? WHERE id = ? AND snapshot IS NULL",
-                (snapshot, label_id),
-            )
-
-    # ---------- tuning_evals (P2: goldset 評価 + C7 rollback 裁定) ----------
-
     def record_tuning_eval(
         self,
         *,
@@ -428,77 +250,3 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def supersede_active_labels(
-        self,
-        *,
-        article_id: str,
-        field: str,
-        source: str,
-        superseded_by: int,
-    ) -> int:
-        """同一 (article, field, source) の現行ラベルを置換済みにする (裁定の終端処理用)。
-
-        ``superseded_by=0`` は「後継なしの隔離」sentinel (TTL 失効 §12 用 — 実ラベル id は
-        1 始まりなので衝突しない)。active 判定は superseded_by IS NULL なので 0 でも外れる。
-        """
-        with self._connect() as conn:
-            cur = conn.execute(
-                "UPDATE tuning_labels SET superseded_by = ?"
-                " WHERE article_id = ? AND field = ? AND source = ?"
-                "   AND id <> ? AND superseded_by IS NULL",
-                (superseded_by, article_id, field, source, superseded_by),
-            )
-            return int(cur.rowcount or 0)
-
-    def taxonomy_tier_agreement(self) -> list[dict[str, Any]]:
-        """taxonomy 提案の区分別 人間同意率 (§11-C — 区分1 が ~100% なら自動化候補)。"""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT tier,"
-                " SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) AS accepted,"
-                " SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected"
-                " FROM taxonomy_review_proposals"
-                " WHERE status IN ('accepted', 'rejected') GROUP BY tier ORDER BY tier",
-            ).fetchall()
-        out: list[dict[str, Any]] = []
-        for r in rows:
-            accepted = int(r["accepted"] or 0)
-            rejected = int(r["rejected"] or 0)
-            total = accepted + rejected
-            out.append(
-                {
-                    "tier": str(r["tier"]),
-                    "accepted": accepted,
-                    "rejected": rejected,
-                    "agreement_rate": round(accepted / total, 3) if total else None,
-                }
-            )
-        return out
-
-    def list_editorial_stance_reviews(self) -> list[dict[str, Any]]:
-        """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。
-
-        title/body は学習テキスト凍結 (snapshot §13-3) 用 (LEFT JOIN — 記事が消えていても
-        訂正自体はラベル化する)。
-        """
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT r.article_id, r.original_stance, r.corrected_stance, r.created_at,"
-                " a.title, a.body, a.category"
-                " FROM editorial_stance_reviews r"
-                " LEFT JOIN articles a ON a.article_id = r.article_id",
-            ).fetchall()
-        return [
-            {
-                "article_id": str(r["article_id"]),
-                "original_stance": (
-                    str(r["original_stance"]) if r["original_stance"] is not None else None
-                ),
-                "corrected_stance": str(r["corrected_stance"]),
-                "created_at": r["created_at"],
-                "title": str(r["title"] or ""),
-                "body": str(r["body"] or ""),
-                "category": str(r["category"] or ""),
-            }
-            for r in rows
-        ]

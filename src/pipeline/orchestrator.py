@@ -508,27 +508,6 @@ async def run_pipeline(
                 count=triage_error_count,
                 source_type=pipeline.source.type,
             )
-        # 1.8b. 蒸留ヘッド v0 のシャドー推論 (§14.3 / 不変条件 12)。
-        # Phase 1.7 で計算済みの embedding を使い、triage 全判定 (棄却分含む) と
-        # ヘッド予測の対を head_shadow に記録するだけ — 本番配信には一切影響しない。
-        # 成果物不在・embedding 欠落・例外はすべて fail-open (skip + log)。
-        if not dry_run and dedup_repo is not None and triage_decisions and semantic_embeddings:
-            try:
-                from src.tuning.head_shadow import record_head_shadow
-
-                recorded_shadow = record_head_shadow(
-                    decisions=triage_decisions,
-                    embeddings=semantic_embeddings,
-                    kept_ids={a.id for a in articles},
-                    keep_importance=set(pipeline.processor.triage_keep_importance),
-                    repo=dedup_repo,
-                    run_id=str(run_id) if run_id is not None else None,
-                )
-                if recorded_shadow:
-                    _log.info("head_shadow_recorded", count=recorded_shadow)
-            except Exception as e:  # noqa: BLE001 — シャドー記録の失敗で本番を止めない
-                _log.debug("head_shadow_failed", error=str(e))
-
     # 2. 各記事を処理 (1 件失敗しても続行)
     briefings: list[tuple[str, BriefingMessage]] = []  # (article_id, message)
     # Grok 展開時の per-tweet sub-article_id → 親 Article (persist の articles_by_id 補完用)。

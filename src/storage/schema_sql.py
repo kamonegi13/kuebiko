@@ -593,11 +593,11 @@ CREATE TABLE IF NOT EXISTS ops_notices (
 
 CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
 
--- 較正格子 P1 (docs/self_evolving_tuning_design.md §4 C1、2026-08-21): 遅延正解ラベル。
--- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積し、
--- 較正 (C3) と few-shot プール (C8) の恒久資産にする。producer は週次 sweep (pull 型) で、
--- dedup_key (producer が組む決定論キー) により再収穫が冪等 — 人間が一切触らなくても
--- ラベルが増え続ける (§12 人間非介在の縮退設計)。
+-- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
+-- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
+-- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・
+-- 国家系 APT はゼロ) ため自己進化チューニングごと撤収した。蓄積分は将来の評価母集団
+-- として残す。経緯は docs/self_evolving_tuning_design.md §0。
 CREATE TABLE IF NOT EXISTS tuning_labels (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     dedup_key     TEXT    NOT NULL UNIQUE,
@@ -622,14 +622,14 @@ CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_article
     ON tuning_labels(article_id);
 
--- 較正格子 P2 (docs/self_evolving_tuning_design.md §6、2026-08-22): 評価・rollback 裁定の記録。
--- goldset 3 者比較 (kind=goldset_cutover) と C7 自動 rollback の裁定 (kind=auto_rollback) を
+-- goldset 切替評価の記録 (2026-08-22)。
+-- goldset 3 者比較 (kind=goldset_cutover) の結果を weekly-goldset-eval が
 -- 永続化する。(prompt_id, kind, to_version) の既存行チェックが冪等性と flip-flop 防止の
 -- 状態を兼ねる (成功も記録する — 記録が無いと「評価済み」と「未評価」を区別できない)。
 CREATE TABLE IF NOT EXISTS tuning_evals (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     prompt_id    TEXT    NOT NULL,   -- summarizer / judgment ...
-    kind         TEXT    NOT NULL,   -- goldset_cutover / auto_rollback
+    kind         TEXT    NOT NULL,   -- goldset_cutover
     from_version INTEGER,            -- 比較元の旧版 / rollback の復元先
     to_version   INTEGER,            -- 比較先の新版 / 劣化を検出した版
     verdict      TEXT    NOT NULL,   -- pass / degraded / would_rollback / rolled_back 等
@@ -640,64 +640,4 @@ CREATE TABLE IF NOT EXISTS tuning_evals (
 
 CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
     ON tuning_evals(prompt_id, kind, to_version);
-
--- 較正格子 P3 (docs/self_evolving_tuning_design.md §4 C2/C3、2026-08-22): シャドーパネル裁定。
--- E1 正解が判明している事例 (本番との不一致=係争 + 一致対照) を多様 2 モデルが盲検で
--- 再判定した結果。分裂率 (外部 LLM エスカレーション量の実測、§10.2) と 合意度×実正解の
--- 較正曲線 (C3) の原資。**シャドー専用テーブル — 本番パイプラインは読まない** (§10.1)。
-CREATE TABLE IF NOT EXISTS panel_verdicts (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    case_key         TEXT    NOT NULL UNIQUE,  -- 冪等キー (再実行で重複しない)
-    article_id       TEXT,
-    field            TEXT    NOT NULL,          -- subject_actor (P3 は主体判定のみ)
-    truth_value      TEXT,                      -- E1 正解 (feed 突合ラベル)
-    production_value TEXT,                      -- 本番判定 (裁定時点)
-    verdicts         TEXT    NOT NULL,          -- JSON: [{model, value}]
-    agreement        TEXT    NOT NULL,          -- unanimous_correct/unanimous_wrong/split/error
-    is_dispute       INTEGER NOT NULL,          -- 1=本番と正解が不一致の係争例 0=一致対照
-    prompt_chars     INTEGER NOT NULL DEFAULT 0, -- 送信本文量の実数 (外部予算見積 §10.2)
-    created_at       TEXT    NOT NULL,
-    -- 裁定時の judgment_rubric 版 (§13-17、2026-08-22): 版横断で累計分裂率・較正曲線が
-    -- regime 混合しないよう層別次元として記録 (NULL = 版記録以前の裁定)
-    rubric_version   INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
-    ON panel_verdicts(field, agreement);
-
--- 較正格子 P4 (§4 C5、2026-08-22): 係争 (E1 ラベル × パネル不一致) への人間裁定。
--- 観測 (panel_verdicts) と判断 (本表) は別状態 (evidence_state_separation の原則)。
--- resolution: label_wrong (ラベル誤り→E1 隔離) / label_correct (判定側の見逃し) /
---             expired (TTL 30 日の無応答既定 §12 — 係争ラベルは保守側で隔離)
-CREATE TABLE IF NOT EXISTS panel_resolutions (
-    case_key    TEXT PRIMARY KEY,   -- panel_verdicts.case_key と対
-    resolution  TEXT NOT NULL,
-    resolved_by TEXT NOT NULL,      -- manual / ttl
-    created_at  TEXT NOT NULL
-);
-
--- 較正格子 ロードマップ C (docs/self_evolving_tuning_design.md、2026-08-22): 古典 ML
--- 蒸留ヘッドのシャドー推論記録。ヘッドの予測を同時点の triage LLM 判定と突き合わせて
--- 記録するのみで、本番配信には一切影響しない (panel_verdicts と同じ「観測」原則 —
--- シャドー専用テーブル、本番パイプラインは読まない)。url_hash (記事の dedup url_hash)
--- を冪等キーにして再実行の重複を遮断する。
-CREATE TABLE IF NOT EXISTS head_shadow (
-    url_hash              TEXT    NOT NULL PRIMARY KEY,
-    article_id            TEXT    NOT NULL,
-    run_id                TEXT,
-    head_importance       TEXT    NOT NULL,          -- ヘッド予測 high/medium/low
-    head_importance_probs TEXT    NOT NULL,           -- JSON: {"high":0.12,...} 較正確率
-    head_category         TEXT,
-    head_category_prob    REAL,
-    triage_importance     TEXT,                       -- 同時点の triage LLM 判定 (比較対象)
-    triage_error          INTEGER NOT NULL DEFAULT 0,  -- triage が fail-open だったか
-    triage_kept           INTEGER NOT NULL,            -- 1=triage 通過 0=足切り
-    disagree_cutoff       INTEGER NOT NULL DEFAULT 0,  -- 足切り境界での不一致 (§13-7 番兵対象)
-    artifact_version      TEXT    NOT NULL,            -- ヘッド成果物の版
-    embedding_model       TEXT    NOT NULL,
-    created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_head_shadow_created  ON head_shadow(created_at);
-CREATE INDEX IF NOT EXISTS idx_head_shadow_disagree ON head_shadow(disagree_cutoff);
 """

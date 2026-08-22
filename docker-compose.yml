@@ -123,17 +123,6 @@ services:
       # 概念 PIR の LLM 主題判定 (0 で候補ゲートのみに degrade)。
       # 設計: docs/pir_concept_llm_judge_design.md
       PIR_LLM_JUDGE: ${PIR_LLM_JUDGE:-1}
-      # 較正格子 (docs/self_evolving_tuning_design.md): C7 自動 rollback の実適用。
-      # 0=シャドー (記録のみ) / 1=劣化検出時に前版へ無人復帰 (唯一の無人適用、fail-closed)。
-      # cutover 判断は §10.3 決定記録 (2026-08-22)
-      TUNING_AUTO_ROLLBACK: ${TUNING_AUTO_ROLLBACK:-0}
-      # C8 few-shot 注入 (§10.2c で棄却済み — 再測定で採用する場合のみ 1)
-      JUDGMENT_FEWSHOT: ${JUDGMENT_FEWSHOT:-0}
-      # シャドーパネルの異議者モデル (既定はコード側 gpt-oss:20b)
-      TUNING_PANEL_SECOND_MODEL: ${TUNING_PANEL_SECOND_MODEL:-}
-      # 蒸留ヘッド v0 のシャドー推論 (§14.3)。1=triage 地点で記録 (本番配信に影響しない) /
-      # 0=完全停止。成果物 (data/models/head/current) 不在時は自動 skip
-      HEAD_SHADOW: ${HEAD_SHADOW:-1}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
       # ローカル専用) が、設定画面が「公開面の認証が設定済みか」を正しく表示するために
       # 同じ値を渡す。認証の実施は readonly instance のみ。

@@ -45,11 +45,14 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_audit = repo.purge_old_access_audit(days=_ACCESS_AUDIT_RETENTION_DAYS)
         # ops 通知も同じ理由で access_audit と同水準の retention (2026-08-21)
         purged_ops_notices = repo.purge_old_ops_notices(days=_OPS_NOTICES_RETENTION_DAYS)
-        # 較正格子の恒久資産 (ラベル/裁定/goldset) を日次で data/backups へ退避 (§13-3)。
+        # 評価資産 (ラベル/評価記録/goldset) を日次で data/backups へ退避。
         # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
-        from src.tuning.asset_export import export_tuning_assets
+        from src.storage.asset_export import export_eval_assets
 
-        export_tuning_assets(repo)
+        export_eval_assets(repo)
+        # 主体の決定論補完の安全網 (主経路は ransomware_ingest 直後)。
+        # 週次収穫ジョブ撤収 (2026-08-22) に伴い日次衛生へ移設した
+        backfill = _run_subject_backfill_safety_net(repo)
         _log.info(
             "daily_maintenance_done",
             purged_logs=purged_logs,
@@ -58,9 +61,21 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_bodies=purged_bodies,
             purged_access_audit=purged_audit,
             purged_ops_notices=purged_ops_notices,
+            subject_backfilled=backfill,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない
         _log.error("daily_maintenance_failed", error=str(e))
+
+
+def _run_subject_backfill_safety_net(repo: RunHistoryRepository) -> int:
+    """犯行声明突合による主体補完の日次安全網。失敗は 0 (fail-open)。"""
+    try:
+        from src.cti.subject_backfill import run_subject_backfill
+
+        return run_subject_backfill(repo).filled
+    except Exception as e:  # noqa: BLE001 — 補完の失敗で衛生バッチを止めない
+        _log.warning("subject_backfill_safety_net_failed", error=str(e))
+        return 0
 
 
 def _purge_detection_log(repo: RunHistoryRepository) -> int:

@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from src.cti.subject_actor import SOURCE_FEED_MATCH
+from src.cti.subject_backfill import run_subject_backfill
 from src.storage.run_history import RunHistoryRepository
-from src.tuning.subject_backfill import run_subject_backfill
 
 _NOW = datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC)
 

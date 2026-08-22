@@ -254,7 +254,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
             **await run_deep_review(llm=llm, adversarial_llm=adversarial_llm),
         )
 
-    from src.tuning.goldset_cron import run_weekly_goldset_eval
+    from src.eval.goldset_cron import run_weekly_goldset_eval
     from src.ui.services.actor_history_distill import run_actor_history_distill
     from src.ui.services.body_refetch_backlog import run_body_refetch_backlog
     from src.ui.services.body_translate_backlog import run_body_translate_backlog
@@ -284,7 +284,6 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,
         "weekly-goldset-eval": run_weekly_goldset_eval,
-        # weekly-shadow-panel は 2026-08-22 退役 (§10.3 縮退 — JobDef ごと除去)
         "actor-history-distill": run_actor_history_distill,
         "job-recovery-watchdog": _job_recovery,
     }
@@ -365,11 +364,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     purged_dedup = repo.purge_old_dedup_entries(days=DEDUP_RETENTION_DAYS)
     if purged_dedup > 0:
         _log.info("purged_old_dedup", count=purged_dedup)
-    # - head_shadow (蒸留ヘッド v0 のシャドー記録、§14.3) も同様に retention を切る。
-    #   保持日数の既定は repo 側 (cutover 判定 8 週より十分長い 180 日)。
-    purged_head_shadow = repo.purge_head_shadow()
-    if purged_head_shadow > 0:
-        _log.info("purged_head_shadow", count=purged_head_shadow)
     # - VACUUM: SQLite は DELETE 後に領域を返さないので、定期的な物理回収が必要。
     #   毎回はコストが高い (DB 全体を rewrite) ので、sentinel ファイルの mtime で
     #   30 日に 1 度に絞る。個人運用規模 (~100MB) なら数秒で完了する。
