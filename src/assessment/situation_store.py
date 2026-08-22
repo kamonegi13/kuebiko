@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from src.assessment.evidence_verify import excerpt_is_supported
 from src.logging_config import get_logger
 from src.storage.run_history import DEFAULT_DB_PATH, RunHistoryRepository
 
@@ -478,6 +479,29 @@ class SituationStore:
             )
         return True
 
+    def _fetch_article_bodies(self, article_id: str) -> tuple[bool, list[str]]:
+        """(記事が実在するか, 照合に使う本文群)。原文と日本語訳を並べて返す。
+
+        引用検査は原文と訳文の**両方**を haystack にする — 英語記事の要点が日本語訳から
+        引用される運用が実在するため。本文取得は既存の repo API に委ねる
+        (表示行の重複解決 ``_DISPLAY_ROW_ORDER`` を再実装しない)。
+        """
+        with self._repo._connect() as conn:  # noqa: SLF001
+            exists = conn.execute(
+                "SELECT 1 FROM articles WHERE article_id=? LIMIT 1", (article_id,)
+            ).fetchone()
+        if exists is None:
+            return False, []
+        bodies = [
+            b
+            for b in (
+                self._repo.get_article_body(article_id),
+                self._repo.get_article_body_ja(article_id),
+            )
+            if b
+        ]
+        return True, bodies
+
     def record_assessment(
         self,
         *,
@@ -496,7 +520,26 @@ class SituationStore:
         評価結果 (polarity/excerpt) が永久に落ちていた (2026-07-16 監査で実測:
         台帳 neutral 909 行中 878 行が excerpt 空)。評価は常に最新判定で上書きし、
         added_at / assigned_by (観測の来歴) は元の値を保持する。返り値=新規挿入なら True。
+
+        **引用実在の関門 (2026-08-22)**: 本 seam は LLM 出力を台帳へ入れる唯一の口で、
+        検査が無かった (実測: 記事参照の 3.14% が実在せず、引用の 59.9% が本文に不在)。
+        ここで 2 段の決定論検査を掛ける — ①記事が実在しなければ**書かない** (False)
+        ②引用が本文に逐語で無ければ **excerpt を空にして行は残す** (観測の事実は残し、
+        たどれない引用だけ落とす)。本文が purge 済み等で照合不能なときは引用を保持する
+        (検証不能と反証は別物 — 実測で照合可能率 92.5%、不能は 1.7%)。
         """
+        exists, bodies = self._fetch_article_bodies(article_id)
+        if not exists:
+            _log.warning(
+                "evidence_article_not_found", situation=situation_id, article=article_id[:80]
+            )
+            return False
+        verified_excerpt = excerpt
+        if excerpt and bodies and not excerpt_is_supported(excerpt, *bodies):
+            _log.info(
+                "evidence_excerpt_unsupported", situation=situation_id, article=article_id[:80]
+            )
+            verified_excerpt = ""
         with self._repo._connect() as conn:  # noqa: SLF001
             before = conn.execute(
                 "SELECT 1 FROM situation_evidence WHERE situation_id=? AND article_id=?",
@@ -519,7 +562,7 @@ class SituationStore:
                     article_id,
                     polarity,
                     attribution_basis,
-                    excerpt[:500],
+                    verified_excerpt[:500],
                     source_tier,
                     assessed_at,
                     assigned_by,

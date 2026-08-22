@@ -27,7 +27,7 @@ sections:
   title: '手順2: 証拠台帳'
   body: "2) 証拠台帳 (**最も効く 8 件まで・excerpt は各 100 字以内** — 全ソースの網羅は不要。\n   出力が長すぎると切断され全体が無効になる): 本文中の重要な事実を抽出し、各々に付与する:\n\
     \   - article_id: 出典 (上の id)\n   - attribution_basis: 帰属の根拠を 1 つ選ぶ: {{ attribution_options }}\n  \
-    \ - excerpt: 本文からの短い根拠抜粋 (要約でなく該当箇所)\n   - polarity: **手順1で選んだ leading 仮説に対し** supports / contradicts\
+    \ - excerpt: 本文からの短い根拠抜粋 (要約でなく該当箇所)。\n     **本文に逐語で存在しない引用は保存時に機械照合で破棄される** — 言い換えず\n     原文の文字列をそのまま写すこと。省略は ... で繋いでよい (各断片が逐語なら可)\n   - polarity: **手順1で選んだ leading 仮説に対し** supports / contradicts\
     \ / neutral\n   **不在の事実も必ず含める** — leading を支持する不在事実と、leading を否定する不在事実の\n   **双方**を対称に拾う (例: leading\
     \ が偶発なら「意図的な横展開の痕跡がない」=偶発を supports、\n   「調達/設定不備の根拠がない」=偶発を contradicts。leading が組織的作戦なら「窃取・外部通信の\n\
     \   証拠がない」=organized を contradicts)。脅威側・穏当側のどちらにも偏らせない。"

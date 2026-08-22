@@ -284,7 +284,22 @@ class TestComputeDeltaType:
 
 @pytest.fixture
 def store(tmp_path: Path) -> SituationStore:
-    return SituationStore(db_path=tmp_path / "ledger.db")
+    st = SituationStore(db_path=tmp_path / "ledger.db")
+    # 証拠は実在する記事しか指せない (2026-08-22 の引用実在の関門)。台帳テストが使う
+    # 合成 id を articles に先に置く — 本番の不変条件をテスト側でも満たす。
+    repo = st._repo  # noqa: SLF001 — テストからの意図的な内部参照
+    rid = repo.start_run(RunRecord(started_at=_now(), pipeline="ledger-test", dry_run=False))
+    for i in range(1, 10):
+        repo.add_article(
+            ArticleRecord(
+                run_id=rid,
+                article_id=f"a{i}",
+                title=f"t{i}",
+                url=f"https://kuebiko.example/a{i}",
+                status="posted",
+            )
+        )
+    return st
 
 
 class TestSituationStore:

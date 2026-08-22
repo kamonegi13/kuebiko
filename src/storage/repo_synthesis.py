@@ -407,6 +407,29 @@ class SynthesisMixin(RunHistoryRepositoryBase):
                 out.setdefault(str(r["v"]).upper(), []).append(ts)
         return out
 
+    def evidence_citation_stats(self) -> dict[str, int]:
+        """証拠の引用健全性 (週次監査用)。
+
+        ``dangling`` = 実在しない記事を指す証拠。書込 seam の関門 (2026-08-22) が
+        弾くので 0 が正常 — 増えたら関門を迂回する経路が生えたということ。
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total,"
+                " SUM(CASE WHEN e.excerpt <> '' THEN 1 ELSE 0 END) AS with_excerpt,"
+                " SUM(CASE WHEN a.article_id IS NULL THEN 1 ELSE 0 END) AS dangling"
+                " FROM situation_evidence e"
+                " LEFT JOIN (SELECT DISTINCT article_id FROM articles) a"
+                "   ON a.article_id = e.article_id"
+            ).fetchone()
+        if row is None:
+            return {"total": 0, "with_excerpt": 0, "dangling": 0}
+        return {
+            "total": int(row["total"] or 0),
+            "with_excerpt": int(row["with_excerpt"] or 0),
+            "dangling": int(row["dangling"] or 0),
+        }
+
     def recent_cve_values(self, *, days: int = 14, limit: int = 200) -> list[str]:
         """直近 N 日に出現した CVE を頻度降順で返す (Phase 2.5 K5b、NVD CVSS warm 用)。"""
         since_iso = _to_iso(datetime.now(UTC) - timedelta(days=days))

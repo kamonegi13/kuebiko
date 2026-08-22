@@ -582,6 +582,24 @@ async def run_weekly_fill_rate_audit() -> None:
                     rule_warn_count += 1
         except Exception as e:  # noqa: BLE001
             _log.warning("subject_coverage_audit_failed", error=str(e))
+        # 証拠の引用実在 (2026-08-22 の関門の可観測化)。関門は逐語照合に落ちた引用を
+        # **黙って空にする**ため、落下率を常設監視しないと「証拠が減った」ことに
+        # 気付けない。実在しない参照は 0 が正常 (書込 seam が弾く)。
+        try:
+            from src.storage.run_history import RunHistoryRepository
+
+            ev = RunHistoryRepository().evidence_citation_stats()
+            if ev["total"] > 0:
+                quote_rate = ev["with_excerpt"] / ev["total"]
+                mark = " ⚠️" if ev["dangling"] > 0 else ""
+                rule_lines.append(
+                    f"証拠の引用: {ev['total']} 件 / 引用あり {ev['with_excerpt']}"
+                    f" ({quote_rate:.0%}) / 実在しない参照 {ev['dangling']} 件{mark}"
+                )
+                if ev["dangling"] > 0:
+                    rule_warn_count += 1
+        except Exception as e:  # noqa: BLE001
+            _log.warning("evidence_citation_audit_failed", error=str(e))
         # 概念 PIR の LLM 主題判定 backlog (規約 3 点セット: 消費者なき沈黙を常設検知)。
         # backlog が積み上がる = 夜間 judge バッチの沈黙 → 該当 PIR の照合が空白化する。
         try:
