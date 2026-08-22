@@ -390,6 +390,14 @@ kuebiko/
   3. **ラベルは SSoT を参照** (intent/nation=`src/cti/diamond_model.py`、sector=
      `config/cti/victim_sectors.yaml`、victim 国=`config/cti/countries.yaml`、日本判定=
      `src/cti/japan_relevance.py`、キーワード照合=`src/cti/keyword_match.py`。複製辞書を作らない)
+- **投資の継続判定は「出荷した測定済みの利得」で書く。「作った部品の数」で書かない**
+  (2026-08-22、較正格子の post-mortem 2R-H7): 「N 週で cutover した部品がゼロなら撤退」型の
+  ゲートは、**判定当日に設計論拠だけの cutover を 1 件足せば自己充足する** (実際に起きた)。
+  継続の条件は「本番の出力が測定可能に良くなった件数」に置く。
+- **収集量を重要性の代理にしない** (第 3 回独立レビュー #4): 言及量の急増 (日次バースト等) は
+  **収集網の観測**であって重要性の定義ではない。重要性の背骨は PIR → importance → channel
+  (§13 設計原則 2)。バースト類を配信・重要度・記事選抜へ効かせると収集量が背骨を上書きする。
+  境界は `tests/unit/test_burst_boundary.py` の import 関門が固定する (表示経路からのみ参照可)。
 - **時系列の集計は「事象時刻」で行う。DB へ書いた時刻を事象時刻に使わない** (2026-08-22 根治):
   `article_entities.created_at` は entity 行を書いた時刻であり、バックフィル (再抽出 /
   別名昇格 / intent・axes backfill) は過去記事へ当日の日付で書くため事象時刻にならない。
