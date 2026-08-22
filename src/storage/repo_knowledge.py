@@ -305,6 +305,31 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
             rows = conn.execute(sql, params).fetchall()
         return [(str(r[0]), int(r[1])) for r in rows]
 
+    def list_provisional_with_article_context(
+        self, *, since: datetime | None = None
+    ) -> list[dict[str, Any]]:
+        """暗定候補 × 記事の帰属文脈 (昇格の見込み利得を測る原資)。
+
+        タイトル照合は呼び出し側 (Python) が行う — 候補名に LIKE のワイルドカードが
+        含まれると SQL 側で過剰一致して利得を水増しするため。母集団は暗定 entity
+        のみで小さく、全件を返しても問題にならない。
+        """
+        sql = (
+            "SELECT ae.value AS value, a.article_id AS article_id, a.title AS title,"
+            " a.subject_actor_ids AS subject_actor_ids,"
+            " a.subject_actor_source AS subject_actor_source"
+            " FROM article_entities ae"
+            " JOIN articles a ON a.article_id = ae.article_id"
+            " WHERE ae.entity_type='actor_provisional'"
+        )
+        params: list[object] = []
+        if since is not None:
+            sql += " AND ae.created_at >= ?"
+            params.append(_to_iso(since))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
     def sample_articles_for_provisional(self, key: str, *, limit: int = 3) -> list[tuple[str, str]]:
         """暗定候補 key を含む記事の (article_id, title) を新しい順に最大 limit 件 (提案の根拠)。"""
         with self._connect() as conn:

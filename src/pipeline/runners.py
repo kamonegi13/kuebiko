@@ -633,10 +633,22 @@ async def _run_mitre_actor_sync_default(
             news_alias_new = na_stats["proposed"]
         except Exception as e:  # noqa: BLE001
             _log.warning("news_alias_proposal_failed", error=str(e))
+    # 帰属の粒度低下 (2026-08-22): タイトルの辞書未収録名を無視して本文の別アクターへ
+    # 寄せた記事を検出し、同じ別名キューへ「同一性を確認せよ」と起票する。dedup_key は
+    # news_alias 収穫と同一名前空間なので二重起票しない。独立に失敗を握る。
+    downgrade_new = 0
+    if repo is not None and not dry_run:
+        try:
+            from src.cti.actor_attribution_downgrade import propose_downgrade_aliases
+
+            dg_stats = propose_downgrade_aliases(repo, run_id=run_id)
+            downgrade_new = dg_stats["proposed"]
+        except Exception as e:  # noqa: BLE001
+            _log.warning("downgrade_alias_proposal_failed", error=str(e))
     # 起票の ops 通知 (2026-07-31): pending 提案は通知が無いと気づかれず滞留する
     # (実例: 07-28 起票の 5 件が 3 日間未レビュー)。新規起票のあった週次同期後に 1 行
     # 通知してレビュー UI (アクター辞書ページ) へ誘導する。通知失敗は同期結果を汚さない。
-    proposals_total = result.proposals_new + emerging_new + news_alias_new
+    proposals_total = result.proposals_new + emerging_new + news_alias_new + downgrade_new
     if proposals_total > 0 and not dry_run:
         try:
             from src.ui.services.ops_notify import post_ops_message
@@ -646,7 +658,7 @@ async def _run_mitre_actor_sync_default(
                 body=(
                     f"週次同期で辞書昇格・別名の提案を {proposals_total} 件起票しました"
                     f" (MITRE {result.proposals_new} / 新興 {emerging_new}"
-                    f" / 別名 {news_alias_new})。"
+                    f" / 別名 {news_alias_new} / 粒度低下の疑い {downgrade_new})。"
                     "アクター辞書ページの同期提案パネルでレビューしてください。"
                 ),
             )
