@@ -474,28 +474,36 @@ class TestSourceIndependenceGate:
         assert result.feed_subject_new == 1
         assert result.feed_subject_self_source_skipped == 0
 
-    def test_independent_claim_is_preferred_over_self_source_one(
+    def test_news_on_collector_surface_is_skipped_even_when_claim_host_differs(
         self, repo: RunHistoryRepository
     ) -> None:
-        """同一 gt に自己ソース候補と独立ソース候補が両方ある場合は独立側を採用する。"""
+        """収集器の配信面判定 (2026-08-22 初回運転の実測が根拠)。
+
+        claim 行の URL はリークサイトの .onion、news は収集器の配信面
+        (www.ransomware.live の RSS 記事) — host 直接比較では独立に見えるが、
+        両方とも同一収集器由来なので独立証拠にならない。
+        """
+        # 突合に使う claim は .onion ホスト
         _seed_article(
             repo,
-            article_id="self_claim",
+            article_id="claim_onion",
             subject_actor_source="feed",
             subject_actor_ids="qilin",
             victim_orgs=("Acme Corp",),
             created_at=_NOW - timedelta(days=2),
-            url="https://ransomware.live/self_claim",
+            url="https://leaksite0000.onion/claim",
         )
+        # 収集器は配信面 (ransomware.live) にも記事を持つ → 配信面 host 集合に入る
         _seed_article(
             repo,
-            article_id="indep_claim",
+            article_id="claim_surface",
             subject_actor_source="feed",
-            subject_actor_ids="qilin",
-            victim_orgs=("Acme Corp",),
-            created_at=_NOW - timedelta(days=2),
-            url="https://leaksite-mirror.example/indep_claim",
+            subject_actor_ids="cl0p",
+            victim_orgs=("Other Org",),
+            created_at=_NOW - timedelta(days=30),
+            url="https://www.ransomware.live/other",
         )
+        # news は配信面ホスト上の RSS 記事 — claim (.onion) と host は違うが同一収集器
         _seed_article(
             repo,
             article_id="news1",
@@ -504,10 +512,9 @@ class TestSourceIndependenceGate:
             url="https://ransomware.live/news1",
         )
         result = run_label_harvest(repo, now=_NOW)
-        assert result.feed_subject_new == 1
-        assert result.feed_subject_self_source_skipped == 0
-        rows = repo.list_tuning_labels(field="subject_actor")
-        assert json.loads(rows[0]["provenance"])["claim_article_id"] == "indep_claim"
+        assert result.feed_subject_new == 0
+        assert result.feed_subject_self_source_skipped == 1
+        assert repo.list_tuning_labels(field="subject_actor") == []
 
 
 class TestReclassifySelfSourceLabels:
@@ -557,6 +564,41 @@ class TestReclassifySelfSourceLabels:
         assert reclassify_self_source_labels(repo) == 0
         rows = repo.list_tuning_labels(field="subject_actor")
         assert rows[0]["strength"] == "strong"
+
+    def test_reclassifies_collector_surface_news_even_if_claim_row_is_gone(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """claim 行が消えていても、news 側が収集器の配信面なら隔離できる (規則①)。
+
+        初回運転で 43 件中 26 件しか隔離できなかった原因 (claim=.onion / news=配信面で
+        host 不一致、または claim 行の不在) への対処。
+        """
+        from src.tuning.label_harvest import reclassify_self_source_labels
+
+        # 配信面 host 集合の供給源 (feed 記事が ransomware.live 上にもある)
+        _seed_article(
+            repo,
+            article_id="surface_claim",
+            subject_actor_source="feed",
+            url="https://www.ransomware.live/surface",
+        )
+        # news は配信面上の記事。provenance の claim は存在しない記事を指す
+        _seed_article(repo, article_id="news1", url="https://ransomware.live/news1")
+        repo.record_tuning_label(
+            dedup_key="legacy-onion-claim",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance=json.dumps(
+                {"producer": "feed_victim_org_match", "claim_article_id": "gone_claim"}
+            ),
+            article_id="news1",
+        )
+
+        assert reclassify_self_source_labels(repo) == 1
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows[0]["strength"] == "self_source"
 
     def test_run_label_harvest_reclassifies_at_start(self, repo: RunHistoryRepository) -> None:
         """週次収穫の冒頭で自動的に再分類が走る (dry_run では走らない)。"""

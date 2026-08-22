@@ -252,6 +252,21 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             ).fetchone()
         return str(row["url"]) if row is not None and row["url"] is not None else None
 
+    def fetch_claim_feed_urls(self) -> list[str]:
+        """claim 収集器由来の記事 (subject_actor_source='feed') の URL 全件。
+
+        不変条件 14 の「同一**収集器**」判定用: claim 行そのものの host は
+        リークサイトの .onion 等で、収集器の**配信面** (www.ransomware.live の RSS 記事)
+        とは host が一致しない。news 側の host がこの集合の host に含まれるなら、
+        その記事は収集器の配信面であり独立ソースではない。host 正規化は呼び出し側。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT url FROM articles"
+                " WHERE subject_actor_source = 'feed' AND url IS NOT NULL AND url <> ''",
+            ).fetchall()
+        return [str(r["url"]) for r in rows]
+
     def mark_label_self_source(self, label_id: int) -> None:
         """ラベルを削除せず strength='self_source' に更新する (非破壊隔離、冪等)。"""
         with self._connect() as conn:

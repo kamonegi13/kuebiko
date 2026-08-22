@@ -118,6 +118,8 @@ class _LabelRepo(Protocol):
 
     def fetch_article_url(self, article_id: str) -> str | None: ...
 
+    def fetch_claim_feed_urls(self) -> list[str]: ...
+
     def mark_label_self_source(self, label_id: int) -> None: ...
 
     def list_taxonomy_proposals(
@@ -203,14 +205,18 @@ def _sweep_feed_news_subject(
     同一 org へ別ギャングの声明が窓内に複数ある場合は正解を決められないので付与しない
     (conflict として数える — 保守側の既定)。
 
-    不変条件14 (§5 ソース独立性、2026-08-22): 突合候補のうち claim と news が
-    同一ホスト由来のものは独立証拠にならない。同一 gt に複数の claim 候補がある場合は
-    host が異なる (= 独立ソースの) 候補を優先して採用し、独立候補が 1 つも無ければ
-    突合自体をスキップする (ラベルを書かない、self_source_skipped として計上)。
+    不変条件14 (§5 ソース独立性、2026-08-22): news 側の host が claim 収集器の
+    配信面 host 集合 (subject_actor_source='feed' の記事の host — 動的導出) に含まれる
+    場合、その記事は収集器由来であり独立証拠にならない → 突合をスキップ
+    (self_source_skipped として計上)。claim 行自身の host との比較では不足
+    (claim はリークサイトの .onion、配信面は www.ransomware.live で host が割れる —
+    初回運転 26/43 しか隔離できなかった実測が根拠)。
     """
     since_iso = (now - timedelta(days=lookback_days)).isoformat()
     claims = repo.fetch_feed_subject_claims(since_iso)
     news = repo.fetch_victim_org_news_candidates(since_iso)
+    # 収集器の配信面 host 集合 (不変条件14 の「同一収集器」判定。動的導出 — config 不要)
+    claim_feed_hosts = {h for h in (normalize_host(u) for u in repo.fetch_claim_feed_urls()) if h}
 
     rubric_version = _current_summarizer_rubric_version()
     claims_by_org: dict[str, list[tuple[str, str, datetime, str]]] = {}
@@ -247,19 +253,15 @@ def _sweep_feed_news_subject(
             continue
         gt = next(iter(gts))
 
-        # 不変条件14: news 側と host が異なる (独立ソースの) claim 候補だけを採用対象にする。
-        # www. の有無等の素朴な揺らぎは normalize_host (既存 IOC 出典判定と同じ流儀。
-        # 完全な registrable domain 比較ではないが個人運用規模では十分) で吸収する。
+        # 不変条件14: news 側が収集器の配信面に載っている記事は独立ソースではない。
+        # claim の host は常に配信面集合に含まれる (claim も feed 記事) ため、この 1 判定が
+        # 「claim と同一 host」の場合も包含する。www. の有無等の揺らぎは normalize_host
+        # (既存 IOC 出典判定と同じ流儀) で吸収する。
         news_host = normalize_host(str(n.get("url", "")))
-        independent = [
-            (claim_id, c_url)
-            for claim_id, _, c_url in matched
-            if normalize_host(c_url) != news_host
-        ]
-        if not independent:
+        if news_host and news_host in claim_feed_hosts:
             self_source_skipped += 1
             continue
-        claim_article_id = independent[0][0]
+        claim_article_id = matched[0][0]
 
         inserted = _record(
             repo,
@@ -300,7 +302,16 @@ def reclassify_self_source_labels(repo: _LabelRepo) -> int:
     対象から外れる (= 自然に冪等)。収穫 sweep の冒頭で毎回呼んでよい。
     """
     reclassified = 0
+    claim_feed_hosts = {h for h in (normalize_host(u) for u in repo.fetch_claim_feed_urls()) if h}
     for row in repo.list_e1_subject_labels_not_self_source():
+        news_host = normalize_host(str(row.get("url", "")))
+        # ① 収集器の配信面判定 (claim 行が消えていても判定できる)。実測で claim 行の
+        # URL は .onion のため host 直接比較をすり抜けていた (初回運転 26/43 の原因)
+        if news_host and news_host in claim_feed_hosts:
+            repo.mark_label_self_source(int(row["id"]))
+            reclassified += 1
+            continue
+        # ② claim 側 host との直接比較 (従来規則)
         try:
             provenance = json.loads(str(row["provenance"]))
         except (TypeError, ValueError):
@@ -311,7 +322,6 @@ def reclassify_self_source_labels(repo: _LabelRepo) -> int:
         claim_url = repo.fetch_article_url(str(claim_article_id))
         if not claim_url:
             continue  # claim 記事が既に無い → host 判定不能、保守的に据え置く
-        news_host = normalize_host(str(row.get("url", "")))
         if news_host and news_host == normalize_host(claim_url):
             repo.mark_label_self_source(int(row["id"]))
             reclassified += 1
