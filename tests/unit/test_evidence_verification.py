@@ -298,3 +298,36 @@ class TestBothAchPathsUseTheSameDiscipline:
             assert "[{{ loop.index }}]" in body, name
             # 長い id を列挙すると LLM が行ごと写して破損する
             assert "--- id: {{ s.article_id }}" not in body, name
+
+
+class TestSingleAssemblySeam:
+    """証拠の組み立ては 1 箇所に寄せる (重複が「移植忘れ」を生む)。
+
+    2026-08-22: ACH 2 経路に同一のループを複製していたため、初回だけ出典解決を入れて
+    増分を取り残し本番で証拠欠落を出した。**同じことをする経路が複数あること自体**が
+    原因なので、組み立てを共有関数に寄せ、複製の再発をここで止める。
+    """
+
+    def test_both_paths_call_the_shared_builder(self) -> None:
+        import inspect
+
+        from src.synthesis.grounded import incremental, passes
+
+        for mod, fn in (
+            (passes, passes.ground_and_score),
+            (incremental, incremental.incremental_ground_and_score),
+        ):
+            src = inspect.getsource(fn)
+            assert "build_evidence_items(" in src, mod.__name__
+
+    def test_evidence_item_is_constructed_in_one_place(self) -> None:
+        from pathlib import Path
+
+        # EvidenceItem( の直接構築は共有関数のある passes.py だけに存在してよい
+        offenders = []
+        for py in Path("src/synthesis/grounded").glob("*.py"):
+            if py.name in ("passes.py", "estimate.py"):
+                continue
+            if "EvidenceItem(" in py.read_text(encoding="utf-8"):
+                offenders.append(py.name)
+        assert offenders == [], f"証拠の組み立てが再び分岐している: {offenders}"

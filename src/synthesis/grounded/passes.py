@@ -7,9 +7,10 @@ generate_structured (pydantic 検証 + 修復) で頑健化し、未知値はコ
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import jinja2
 from pydantic import BaseModel, Field
@@ -306,6 +307,49 @@ def _resolve_evidence_source(
     return _resolve_source_id(raw_id, known)
 
 
+
+def build_evidence_items(
+    wire_evidence: Sequence[Any],
+    *,
+    sources: list[dict[str, str]],
+    tier_by_id: dict[str, str],
+    log_context: str,
+) -> tuple[EvidenceItem, ...]:
+    """LLM の証拠 wire を EvidenceItem へ落とす **ACH 共通の組み立て口**。
+
+    ACH は初回 (``ground_and_score``) と増分 (``incremental_ground_and_score``) の 2 経路が
+    あり、以前は同一のループを両方に複製していた。2026-08-22 に「出典参照の解決」を
+    初回だけに入れて増分を取り残し本番で欠落を出したため、**組み立てを 1 箇所に寄せた**
+    (規律を片方の経路にだけ入れる事故を構造的に起こせなくする)。
+
+    規律: ①空 excerpt は捨てる ②出典は番号優先で実 article_id へ解決し、解けなければ
+    捨てる (誤った記事へ証拠を付けない) ③source_tier は LLM でなくコードが付与する。
+    """
+    items: list[EvidenceItem] = []
+    unresolved = 0
+    for e in wire_evidence:
+        if not e.excerpt.strip():
+            continue
+        aid = _resolve_evidence_source(e.index, e.article_id, sources)
+        if aid is None:
+            unresolved += 1
+            continue
+        items.append(
+            EvidenceItem(
+                article_id=aid,
+                source_tier=tier_by_id.get(aid, "unknown"),  # tier はコードが付与
+                attribution_basis=_norm_basis(e.attribution_basis),
+                excerpt=e.excerpt.strip()[:500],
+                polarity=_norm_polarity(e.polarity),
+            )
+        )
+    if unresolved:
+        _log.warning(
+            "grounded_evidence_id_unresolved", context=log_context[:60], dropped=unresolved
+        )
+    return tuple(items)
+
+
 async def ground_and_score(
     *,
     llm: LLMClient,
@@ -340,27 +384,9 @@ async def ground_and_score(
     # LLM が返す article_id は転記で壊れる (feed 名の連結 / prefix 欠落 / 切り詰め)。
     # prompt で渡した id 集合へ寄せてから採用する — 解決できないものは捨てる
     # (候補外を引用することは原理的に無いため、解決不能 = 転記不能な破損)。
-    evidence_items: list[EvidenceItem] = []
-    unresolved = 0
-    for e in a.evidence:
-        if not e.excerpt.strip():
-            continue
-        aid = _resolve_evidence_source(e.index, e.article_id, sources)
-        if aid is None:
-            unresolved += 1
-            continue
-        evidence_items.append(
-            EvidenceItem(
-                article_id=aid,
-                source_tier=tier_by_id.get(aid, "unknown"),  # tier はコードが付与
-                attribution_basis=_norm_basis(e.attribution_basis),
-                excerpt=e.excerpt.strip()[:500],
-                polarity=_norm_polarity(e.polarity),
-            )
-        )
-    if unresolved:
-        _log.warning("grounded_evidence_id_unresolved", claim=claim[:60], dropped=unresolved)
-    evidence = tuple(evidence_items)
+    evidence = build_evidence_items(
+        a.evidence, sources=sources, tier_by_id=tier_by_id, log_context=claim
+    )
     hyps = tuple(
         HypothesisScore(
             hypothesis=h.hypothesis,

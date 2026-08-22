@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from src.logging_config import get_logger
-from src.synthesis.grounded.estimate import EvidenceItem, HypothesisScore
+from src.synthesis.grounded.estimate import HypothesisScore
 from src.synthesis.grounded.hypotheses import (
     Hypothesis,
     hypotheses_for_domain,
@@ -29,12 +29,10 @@ from src.synthesis.grounded.passes import (
     _MAX_TOKENS,
     _TEMPERATURE,
     ClaimAnalysis,
-    _norm_basis,
     _norm_conf,
-    _norm_polarity,
     _render,
-    _resolve_evidence_source,
     _verdict,
+    build_evidence_items,
     norm_claim_type,
 )
 from src.tools.llm_client import LLMClient
@@ -166,32 +164,10 @@ async def incremental_ground_and_score(
             raw=a.leading_hypothesis[:40],
         )
         leading = prior.leading_hypothesis
-    # 出典参照は番号優先で解決する (ground_and_score と同一の規律)。解決不能は破棄。
-    evidence_items: list[EvidenceItem] = []
-    unresolved = 0
-    for e in a.evidence:
-        if not e.excerpt.strip():
-            continue
-        aid = _resolve_evidence_source(e.index, e.article_id, sources)
-        if aid is None:
-            unresolved += 1
-            continue
-        evidence_items.append(
-            EvidenceItem(
-                article_id=aid,
-                source_tier=tier_by_id.get(aid, "unknown"),
-                attribution_basis=_norm_basis(e.attribution_basis),
-                excerpt=e.excerpt.strip()[:500],
-                polarity=_norm_polarity(e.polarity),
-            )
-        )
-    if unresolved:
-        _log.warning(
-            "grounded_incremental_evidence_unresolved",
-            situation=situation_title[:60],
-            dropped=unresolved,
-        )
-    evidence = tuple(evidence_items)
+    # 組み立ては ACH 共通の口に寄せる (規律を片方の経路にだけ入れる事故を防ぐ)
+    evidence = build_evidence_items(
+        a.evidence, sources=sources, tier_by_id=tier_by_id, log_context=situation_title
+    )
     hyps = tuple(
         HypothesisScore(
             hypothesis=h.hypothesis,
