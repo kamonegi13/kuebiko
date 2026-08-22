@@ -136,6 +136,11 @@ STATUS_FAIL = "FAIL"
 STATUS_INCONCLUSIVE = "INCONCLUSIVE"
 _EXIT_CODES = {STATUS_PASS: 0, STATUS_FAIL: 1, STATUS_INCONCLUSIVE: 2}
 
+# C7 無人 rollback の作動条件 (破局判定) の説明。週次ガバナンスがこの行頭語を
+# パースして auto_rollback に渡す — 行頭語 "破局判定:" は契約であり変更しない。
+CATASTROPHIC_LINE_PREFIX = "破局判定:"
+_CATASTROPHIC_NOTE = "無人 rollback の作動条件 — 分布シフト >20pt / 全滅級低下 >15pt のみ"
+
 ROLE_GATE = "判定"
 ROLE_REFERENCE = "参考"
 ROLE_EXCLUDED = "対象外"
@@ -703,7 +708,30 @@ def _render(verdict: CutoverVerdict, windows: dict[str, Any]) -> str:
     lines.append("")
     reason = f" — {' / '.join(verdict.reasons)}" if verdict.reasons else ""
     lines.append(f"総合判定: {verdict.status}{reason}")
+    # C7 破局ゲート (2026-08-22 独立レビュー H6): 総合 FAIL のうち無人 rollback を
+    # 作動させてよいのは「判定傾向の変質 (分布)」「フィールド全滅級の低下」のみ。
+    # 充足率の小幅ゲート (1-2pt) は片側 Goodhart ラチェット、要約長 ±15% は
+    # ブレビティ改善の自動巻き戻しになるため、人間向け報告に残すが無人適用には繋がない。
+    if verdict.status == STATUS_FAIL:
+        flag = STATUS_FAIL if any(is_catastrophic_row(r) for r in verdict.rows) else STATUS_PASS
+        lines.append(f"{CATASTROPHIC_LINE_PREFIX} {flag} ({_CATASTROPHIC_NOTE})")
     return "\n".join(lines)
+
+
+def is_catastrophic_row(row: MetricRow) -> bool:
+    """C7 無人 rollback の作動対象 (破局ゲート) の FAIL 行か。
+
+    - 分布シフト (metric="share"、閾値 ±20pt) — 判定傾向の変質
+    - 汎用充足率 (metric="coverage" かつ明示ゲート外、閾値 -15pt) — フィールド全滅級
+
+    明示ゲート (title_ja 2pt / summary 1pt) と平均要約長 (±15%) の FAIL は
+    破局ではない — 人間の判断対象。
+    """
+    if row.verdict != STATUS_FAIL:
+        return False
+    if row.metric == "share":
+        return True
+    return row.metric == "coverage" and row.field_id not in EXPLICIT_COVERAGE_GATES
 
 
 # ---------- CLI ----------

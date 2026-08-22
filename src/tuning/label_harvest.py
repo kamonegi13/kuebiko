@@ -12,6 +12,13 @@ P1 の producer (§10.3 の決定):
 
 日付の突合は Python で行う (SQL の per-row 日付演算は SQLite/PG で方言が割れるため。
 sqlite_pg_bare_column_group_by 2026-08-04 の教訓 — 可搬でない SQL を書かない)。
+
+**不変条件14 (ソース独立性、§5・§10.2e、2026-08-22)**: E1 ラベル 51 件中 43 件が
+突合の両辺とも www.ransomware.live 由来の自己突合だった (実測)。遠隔監督ラベルは
+突合の両辺が独立ソースであることを構造的に保証する — 同一ソース・同一収集器由来の
+突合はラベルとして数えない。``subject_backfill.py`` (本番の帰属補完) は対象外
+(ransomware.live 自記事にギャング名を付けるのは帰属としては正しい。禁止されるのは
+それを独立ラベルとして数えることだけ)。
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from src.cti.ioc_source_filter import normalize_host
 from src.logging_config import get_logger
 
 _log = get_logger(__name__)
@@ -105,6 +113,12 @@ class _LabelRepo(Protocol):
     def fetch_feed_subject_claims(self, since_iso: str) -> list[dict[str, Any]]: ...
 
     def fetch_victim_org_news_candidates(self, since_iso: str) -> list[dict[str, Any]]: ...
+
+    def list_e1_subject_labels_not_self_source(self) -> list[dict[str, Any]]: ...
+
+    def fetch_article_url(self, article_id: str) -> str | None: ...
+
+    def mark_label_self_source(self, label_id: int) -> None: ...
 
     def list_taxonomy_proposals(
         self, *, status: str | None = ..., tier: str | None = ..., limit: int = ...

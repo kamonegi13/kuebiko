@@ -149,12 +149,15 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         錨にすると、数か月前の事件を遅れて掲載した声明が同一組織の別インシデント報道と
         誤結合する (2026-08-22 に LexisNexis で実発生: 発覚 05-01 の声明が 08-11 掲載され、
         08-10 の別事件報道へ誤ラベル)。reconcile の「実効日」と同じ既定。
+
+        ``url`` は不変条件14 (§5 ソース独立性、2026-08-22) の突合元 host 判定用。
         """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT a.article_id, a.subject_actor_ids AS gt,"
                 " LOWER(TRIM(e.value)) AS org,"
-                " COALESCE(a.published_at, a.created_at) AS created_at"
+                " COALESCE(a.published_at, a.created_at) AS created_at,"
+                " a.url"
                 " FROM articles a JOIN article_entities e"
                 "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
                 " WHERE a.subject_actor_source = 'feed'"
@@ -168,6 +171,7 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 "gt": str(r["gt"]),
                 "org": str(r["org"]),
                 "created_at": r["created_at"],
+                "url": str(r["url"] or ""),
             }
             for r in rows
         ]
@@ -181,12 +185,13 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         title/body/category はラベルの学習テキスト凍結 (snapshot §13-3) 用。
         subject_actor_ids/subject_actor_source は既存主体の有無判定用 (subject backfill、
         2026-08-22 §13 対処 A — 既存の主体は上書きせず判定材料として持ち帰る)。
+        ``url`` は不変条件14 (§5 ソース独立性、2026-08-22) の突合先 host 判定用。
         """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT a.article_id, LOWER(TRIM(e.value)) AS org,"
                 " COALESCE(a.published_at, a.created_at) AS created_at,"
-                " a.title, a.body, a.category,"
+                " a.title, a.body, a.category, a.url,"
                 " COALESCE(a.subject_actor_ids, '') AS subject_actor_ids,"
                 " COALESCE(a.subject_actor_source, '') AS subject_actor_source"
                 " FROM articles a JOIN article_entities e"
@@ -206,11 +211,55 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 "title": str(r["title"] or ""),
                 "body": str(r["body"] or ""),
                 "category": str(r["category"] or ""),
+                "url": str(r["url"] or ""),
                 "subject_actor_ids": str(r["subject_actor_ids"]),
                 "subject_actor_source": str(r["subject_actor_source"]),
             }
             for r in rows
         ]
+
+    # ---------- 不変条件14 (§5 ソース独立性、2026-08-22): 自己突合の非破壊隔離 ----------
+
+    def list_e1_subject_labels_not_self_source(self) -> list[dict[str, Any]]:
+        """自己突合の再分類走査対象 (strength <> 'self_source' の E1 主体ラベル全件)。
+
+        ``strength = 'self_source'`` を既に除外しているため、この一覧を基に更新する
+        処理は自然に冪等 (2 回目は対象が残っていない)。記事が消えている行は
+        (INNER JOIN のため) 対象外 — host が判定できない行は保守的に据え置く。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT tl.id, tl.provenance, a.url"
+                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
+                " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
+                "   AND tl.strength <> 'self_source'",
+            ).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "provenance": str(r["provenance"]),
+                "url": str(r["url"] or ""),
+            }
+            for r in rows
+        ]
+
+    def fetch_article_url(self, article_id: str) -> str | None:
+        """記事の URL を 1 件引く (自己突合再分類で claim 側 host を引くため)。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT url FROM articles WHERE article_id = ?",
+                (article_id,),
+            ).fetchone()
+        return str(row["url"]) if row is not None and row["url"] is not None else None
+
+    def mark_label_self_source(self, label_id: int) -> None:
+        """ラベルを削除せず strength='self_source' に更新する (非破壊隔離、冪等)。"""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE tuning_labels SET strength = 'self_source'"
+                " WHERE id = ? AND strength <> 'self_source'",
+                (label_id,),
+            )
 
     def list_labels_missing_snapshot(self) -> list[dict[str, Any]]:
         """snapshot 未凍結で本文がまだ残っているラベル (backfill 対象、§13-3)。"""

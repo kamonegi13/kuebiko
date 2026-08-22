@@ -108,6 +108,10 @@ class PanelMixin(RunHistoryRepositoryBase):
         ``confirmed_only=True`` はパネルが unanimous_correct で確認済みのラベルに限定する
         (few-shot プール §13-6 — 設計 C8 の「高確信ラベル」の実装。パネル未確認の
         ラベルを教材にしない)。
+
+        不変条件14 (§5 ソース独立性、2026-08-22): 突合の両辺が同一ソース由来
+        (``strength='self_source'``) のラベルはパネル・few-shot プールの入力候補から
+        構造的に除外する — 自己突合は遠隔監督ラベルとして数えない。
         """
         sql = (
             "SELECT tl.article_id, tl.label_value AS truth,"
@@ -117,6 +121,7 @@ class PanelMixin(RunHistoryRepositoryBase):
             " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
             "   AND tl.superseded_by IS NULL AND tl.arrived_at >= ?"
             "   AND LENGTH(COALESCE(a.body, '')) >= 500"
+            "   AND (tl.strength IS NULL OR tl.strength <> 'self_source')"
         )
         if confirmed_only:
             sql += (

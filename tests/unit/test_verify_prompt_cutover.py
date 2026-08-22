@@ -425,6 +425,42 @@ class TestVerdictShape:
         assert {row.field_id for row in verdict.rows} <= known
 
 
+class TestCatastrophicGate:
+    """C7 破局ゲート (2026-08-22 H6): 無人 rollback の作動対象は分布と全滅級のみ。"""
+
+    def test_distribution_shift_is_catastrophic(self) -> None:
+        from verify_prompt_cutover import is_catastrophic_row
+
+        after = _baseline_fields()
+        after["importance"] = _stat(
+            "importance", distribution={"high": 0.40, "medium": 0.20, "low": 0.40}
+        )
+        verdict = evaluate_cutover(_stats(_ARTICLES, _baseline_fields()), _stats(_ARTICLES, after))
+        assert verdict.status == STATUS_FAIL
+        assert any(is_catastrophic_row(r) for r in verdict.rows)
+
+    def test_small_explicit_coverage_drop_is_not_catastrophic(self) -> None:
+        # summary 充足率 -2pt は総合 FAIL だが、無人 rollback の作動条件にはならない
+        # (片側 Goodhart ラチェット防止 — 人間向け報告にのみ残る)
+        from verify_prompt_cutover import is_catastrophic_row
+
+        after = _baseline_fields()
+        after["summary"] = _stat("summary", rate=0.97, average=320.0)
+        verdict = evaluate_cutover(_stats(_ARTICLES, _baseline_fields()), _stats(_ARTICLES, after))
+        assert verdict.status == STATUS_FAIL
+        assert not any(is_catastrophic_row(r) for r in verdict.rows)
+
+    def test_summary_length_change_is_not_catastrophic(self) -> None:
+        # ブレビティ改善 (要約長 -20%) を無人で巻き戻さない
+        from verify_prompt_cutover import is_catastrophic_row
+
+        after = _baseline_fields()
+        after["summary"] = _stat("summary", rate=0.99, average=256.0)
+        verdict = evaluate_cutover(_stats(_ARTICLES, _baseline_fields()), _stats(_ARTICLES, after))
+        assert verdict.status == STATUS_FAIL
+        assert not any(is_catastrophic_row(r) for r in verdict.rows)
+
+
 class TestWindowPurity:
     """窓の中で判定基準がさらに動いていたら判定を出さない (2026-08-19 の関門)。
 

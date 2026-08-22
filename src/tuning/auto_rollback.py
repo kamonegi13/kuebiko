@@ -10,6 +10,11 @@ config を前版へ復帰する。**本設計で唯一の無人適用** (fail-cl
 判定は ``decide_rollback()`` 純関数に集約する (job_recovery の decide() と同じ原則)。
 ガード:
 - 劣化判定 (verify exit=1) のときだけ動く。INCONCLUSIVE (=2) では動かない (保守側)。
+- **破局級 (分布シフト >20pt / 全滅級低下 >15pt) のみ無人で動く** (2026-08-22 独立
+  レビュー H6: 充足率の小幅ゲートを無人接続すると片側 Goodhart ラチェットになり、
+  要約長 ±15% ゲートはブレビティ改善を自動で巻き戻す。非破局の FAIL は人間向け
+  報告に残るだけで、無人適用の作動条件からは外す)。判定は verify_prompt_cutover の
+  「破局判定」行が SSoT。
 - 前版が無ければ戻せない。
 - 直前の版が auto-rollback 自身なら動かない (rollback の rollback で flip-flop しない)。
 - 同じ版への裁定は 1 回だけ (tuning_evals の既存行が状態)。
@@ -56,6 +61,7 @@ def is_auto_apply_enabled() -> bool:
 def decide_rollback(
     *,
     verify_exit: int,
+    catastrophic: bool,
     latest_version: int | None,
     latest_note: str,
     previous_version: int | None,
@@ -65,6 +71,14 @@ def decide_rollback(
     """rollback するか (純関数)。呼び出し側は結論を実行するだけにする。"""
     if verify_exit != _VERIFY_FAIL:
         return RollbackDecision(action="none", reason="劣化判定ではない")
+    if not catastrophic:
+        return RollbackDecision(
+            action="none",
+            reason=(
+                "劣化はあるが破局級ではない — 無人適用は破局ゲート"
+                " (分布シフト >20pt / 全滅級低下 >15pt) のみ (§10.3 2026-08-22)"
+            ),
+        )
     if latest_version is None or previous_version is None:
         return RollbackDecision(action="none", reason="前版が無く戻せない")
     if latest_note.startswith(ROLLBACK_NOTE_PREFIX):
@@ -86,6 +100,7 @@ def decide_rollback(
 async def maybe_auto_rollback(
     *,
     verify_exit: int,
+    catastrophic: bool = False,
     prompt_id: str = "summarizer",
     config_key: str = "summarizer_rubric",
     repo: Any | None = None,
@@ -111,6 +126,7 @@ async def maybe_auto_rollback(
         )
         decision = decide_rollback(
             verify_exit=verify_exit,
+            catastrophic=catastrophic,
             latest_version=latest.version if latest else None,
             latest_note=latest.note if latest else "",
             previous_version=previous.version if previous else None,

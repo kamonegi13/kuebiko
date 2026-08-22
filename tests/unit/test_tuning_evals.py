@@ -58,6 +58,7 @@ class TestDecideRollback:
     def _decide(self, **kw: Any) -> Any:
         base: dict[str, Any] = {
             "verify_exit": 1,
+            "catastrophic": True,
             "latest_version": 5,
             "latest_note": "UI から保存",
             "previous_version": 4,
@@ -69,6 +70,13 @@ class TestDecideRollback:
     def test_pass_and_inconclusive_do_nothing(self) -> None:
         assert self._decide(verify_exit=0).action == "none"
         assert self._decide(verify_exit=2).action == "none"  # 判定不能では動かない (保守側)
+
+    def test_non_catastrophic_fail_does_not_rollback(self) -> None:
+        # H6 (2026-08-22): 充足率の小幅ゲート・要約長の FAIL は無人適用に繋がない。
+        # 無人で動いてよいのは破局ゲート (分布 >20pt / 全滅級 >15pt) のみ。
+        d = self._decide(catastrophic=False)
+        assert d.action == "none"
+        assert "破局" in d.reason
 
     def test_no_previous_version_cannot_rollback(self) -> None:
         assert self._decide(previous_version=None).action == "none"
@@ -113,7 +121,7 @@ class TestMaybeAutoRollback:
             return 99
 
         monkeypatch.setattr("src.storage.config_store.save_config", _capture_save)
-        line = await maybe_auto_rollback(verify_exit=1, repo=repo)
+        line = await maybe_auto_rollback(verify_exit=1, catastrophic=True, repo=repo)
         assert line is not None and "シャドー" in line
         assert saved == []  # 適用していない
         rec = repo.find_tuning_eval(prompt_id="summarizer", kind="auto_rollback", to_version=5)
@@ -126,8 +134,8 @@ class TestMaybeAutoRollback:
         self, repo: RunHistoryRepository, history: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("TUNING_AUTO_ROLLBACK", raising=False)
-        await maybe_auto_rollback(verify_exit=1, repo=repo)
-        line = await maybe_auto_rollback(verify_exit=1, repo=repo)
+        await maybe_auto_rollback(verify_exit=1, catastrophic=True, repo=repo)
+        line = await maybe_auto_rollback(verify_exit=1, catastrophic=True, repo=repo)
         assert line is not None and "見送り" in line
         assert len(repo.list_tuning_evals()) == 1  # 裁定は 1 回だけ
 
@@ -148,7 +156,7 @@ class TestMaybeAutoRollback:
 
         monkeypatch.setattr("src.storage.config_store.save_config", _fake_save)
         monkeypatch.setattr("src.prompts.rubric_store.invalidate_summarizer_cache", lambda: None)
-        line = await maybe_auto_rollback(verify_exit=1, repo=repo)
+        line = await maybe_auto_rollback(verify_exit=1, catastrophic=True, repo=repo)
         assert line is not None and "適用" in line
         assert saved and saved[0][0] == "summarizer_rubric"
         assert saved[0][1].startswith(ROLLBACK_NOTE_PREFIX)

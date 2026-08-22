@@ -157,9 +157,14 @@ async def run_weekly_prompt_governance() -> None:
             # C7 自動 rollback 関門 (較正格子 P2): FAIL のとき前版へ戻す判定。
             # 既定はシャドー (記録のみ)、実適用は TUNING_AUTO_ROLLBACK=1。
             # 判定・適用の実体は src/tuning/auto_rollback (ここは 1 行足すだけ)。
+            # 破局判定 (2026-08-22 H6): 無人で動いてよいのは破局ゲートの FAIL のみ。
+            # verify の「破局判定: FAIL」行が SSoT (scripts/verify_prompt_cutover)。
             from src.tuning.auto_rollback import maybe_auto_rollback
 
-            rollback_line = await maybe_auto_rollback(verify_exit=verify_exit)
+            rollback_line = await maybe_auto_rollback(
+                verify_exit=verify_exit,
+                catastrophic="破局判定: FAIL" in verify_out,
+            )
             if rollback_line:
                 sections.append(rollback_line)
 
