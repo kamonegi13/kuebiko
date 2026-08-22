@@ -383,6 +383,15 @@ async def classify_judgment(
     prompt = build_judgment_prompt(
         title=title, category=category, body=_body, published=published, candidates=candidates
     )
+    # 較正格子 P5 (C8): retrieval few-shot の例示層を code 所有で末尾注入。
+    # JUDGMENT_FEWSHOT=1 のときのみ (既定 off — goldset 3 者比較で実測してから cutover)。
+    # 失敗は fail-open (注入なしで従来動作。few-shot の障害で判定を止めない)。
+    from src.tuning.fewshot_pool import get_fewshot_section, is_fewshot_enabled
+
+    if is_fewshot_enabled():
+        section = await get_fewshot_section(title=title, body=_body, category=category)
+        if section:
+            prompt = f"{prompt}\n\n{section}"
     try:
         out = await llm.generate_structured(prompt, schema=JudgmentOut, think=False)
     except Exception as e:  # noqa: BLE001 — 分類失敗で記事処理を止めない
