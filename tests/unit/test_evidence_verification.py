@@ -157,3 +157,69 @@ class TestWriteSeamGate:
         rows = self._rows(store)
         assert len(rows) == 1
         assert rows[0]["excerpt"] == "照合できないが捏造とは限らない引用文"
+
+
+class TestNormalizationTolerance:
+    """字体差は吸収するが、言い換えは通さない (偽陰性・偽陽性の両方を抑える)。"""
+
+    def test_smart_quotes_and_dashes_are_tolerated(self) -> None:
+        body = "The team “became aware of active exploitation” in June — per PSIRT."
+        excerpt = "the team 'became aware of active exploitation' in June - per PSIRT"
+        assert excerpt_is_supported(excerpt, body) is True
+
+    def test_fullwidth_and_case_are_tolerated(self) -> None:
+        body = "APT29 が新たなローダーを配布した。"
+        assert excerpt_is_supported("ＡＰＴ29が新たなローダーを配布した", body) is True
+
+    def test_paraphrase_still_rejected_after_loosening(self) -> None:
+        # 記号を落としても言い換えは一致しない (緩めすぎていないことの固定)
+        body = "Houthi forces announced a blockade of shipping near Saudi Arabia."
+        assert excerpt_is_supported("フーシ派が全面海上封鎖を宣言し米の攻撃に連動", body) is False
+        assert excerpt_is_supported("The group deployed a wiper against banks", body) is False
+
+
+class TestSourceIdResolution:
+    """LLM が返す article_id の転記破損を、prompt で渡した id へ寄せて解決する。
+
+    実測された破損 (実 LLM 試験): feed 名の連結 / rss:https:// prefix 欠落 / 切り詰め。
+    候補外を引用することは原理的に無いため、これらは捏造でなく転記の壊れ。
+    """
+
+    KNOWN = {"article_id": "rss:https://www.theregister.com/a/5290706"}
+
+    @staticmethod
+    def _resolve(raw: str, *ids: str) -> str | None:
+        from src.synthesis.grounded.passes import _norm_id, _resolve_source_id
+
+        known = {_norm_id(i): i for i in ids}
+        return _resolve_source_id(raw, known)
+
+    def test_exact_id_resolves(self) -> None:
+        real = self.KNOWN["article_id"]
+        assert self._resolve(real, real) == real
+
+    def test_feed_title_suffix_is_stripped(self) -> None:
+        real = self.KNOWN["article_id"]
+        assert self._resolve(f"{real} | The Register", real) == real
+
+    def test_missing_rss_prefix_is_recovered(self) -> None:
+        real = "rss:https://gbhackers.com/?p=196463"
+        assert self._resolve("gbhackers.com/?p=196463", real) == real
+
+    def test_truncated_id_resolves_when_unique(self) -> None:
+        real = "grok:e576425909d9a9e5:387#2090136982378700811"
+        assert self._resolve("grok:e576425909d9a9e5", real) == real
+
+    def test_ambiguous_truncation_is_not_resolved(self) -> None:
+        # 誤った記事へ証拠を付けるより落とす (台帳は帰属の台帳)
+        a = "rss:https://example.com/articles/2026/aaaa"
+        b = "rss:https://example.com/articles/2026/bbbb"
+        assert self._resolve("rss:https://example.com/articles/2026/", a, b) is None
+
+    def test_unknown_id_is_not_resolved(self) -> None:
+        real = self.KNOWN["article_id"]
+        assert self._resolve("rss:https://never-seen.example/x/1", real) is None
+
+    def test_short_fragment_does_not_match_by_prefix(self) -> None:
+        real = self.KNOWN["article_id"]
+        assert self._resolve("rss:", real) is None

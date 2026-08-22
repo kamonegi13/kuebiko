@@ -102,6 +102,16 @@ def _render(template: str, **ctx: object) -> str:
     return tmpl.render(**ctx)
 
 
+# 前方一致で id を引き当てる際の最小長。**本来のガードは一意性** (複数候補に当たる
+# 断片は解決しない) で、この長さは "rss:" のような scheme だけの断片を落とすためのもの。
+_MIN_ID_PREFIX = 16
+
+
+def _norm_id(v: str) -> str:
+    """id 照合用の正規化 (小文字化 + 空白除去)。"""
+    return "".join((v or "").split()).casefold()
+
+
 def _norm_basis(b: str) -> AttributionBasis:
     return cast(AttributionBasis, b) if b in _VALID_BASIS else "unattributed"
 
@@ -226,6 +236,46 @@ def _verdict(
     )
 
 
+
+def _resolve_source_id(raw: str, known: dict[str, str]) -> str | None:
+    """LLM が返した article_id を、prompt で渡した実 id へ寄せる。
+
+    LLM は候補外の記事を引用できない (prompt に本文しか無い) ため、返ってくる id は
+    **実在 id の転記**であって捏造ではない。実測される破損の型:
+    - ``rss:https://example.com/x | The Register`` — feed 名を連結
+    - ``example.com/?p=123`` — ``rss:https://`` prefix の欠落
+    - 末尾の切り詰め / 前後の空白
+
+    ``known`` は {正規化キー: 実 id}。曖昧一致 (複数候補) は解決しない — 誤った
+    記事へ証拠を付けるより落とす方が安全 (台帳は帰属の台帳であるため)。
+    """
+    if not raw:
+        return None
+    candidates = [raw.strip()]
+    # 「id | feed title」形式を分解 (feed 名側から id を引き当てない)
+    if "|" in raw:
+        candidates.append(raw.split("|", 1)[0].strip())
+    expanded: list[str] = []
+    for c in candidates:
+        expanded.append(c)
+        if not c.startswith(("rss:", "grok:", "rl_")):
+            expanded.append(f"rss:https://{c.lstrip('/')}")
+            expanded.append(f"rss:{c}")
+    for c in expanded:
+        hit = known.get(_norm_id(c))
+        if hit:
+            return hit
+    # 前方一致 (末尾切り詰め)。一意に定まるときだけ採用する
+    for c in expanded:
+        key = _norm_id(c)
+        if len(key) < _MIN_ID_PREFIX:
+            continue
+        matches = {v for k, v in known.items() if k.startswith(key) or key.startswith(k)}
+        if len(matches) == 1:
+            return next(iter(matches))
+    return None
+
+
 async def ground_and_score(
     *,
     llm: LLMClient,
@@ -257,17 +307,35 @@ async def ground_and_score(
         # parse 欠落/未知 id → unverified_or_false に倒すが silent にしない (品質監視)
         _log.warning("grounded_leading_unknown", claim=claim[:60], raw=a.leading_hypothesis[:40])
         leading = "unverified_or_false"
-    evidence = tuple(
-        EvidenceItem(
-            article_id=e.article_id,
-            source_tier=tier_by_id.get(e.article_id, "unknown"),  # tier はコードが付与
-            attribution_basis=_norm_basis(e.attribution_basis),
-            excerpt=e.excerpt.strip()[:500],
-            polarity=_norm_polarity(e.polarity),
+    # LLM が返す article_id は転記で壊れる (feed 名の連結 / prefix 欠落 / 切り詰め)。
+    # prompt で渡した id 集合へ寄せてから採用する — 解決できないものは捨てる
+    # (候補外を引用することは原理的に無いため、解決不能 = 転記不能な破損)。
+    known_ids = {
+        _norm_id(str(src.get("article_id", ""))): str(src.get("article_id", ""))
+        for src in sources
+    }
+    known_ids.pop("", None)
+    evidence_items: list[EvidenceItem] = []
+    unresolved = 0
+    for e in a.evidence:
+        if not e.excerpt.strip():
+            continue
+        aid = _resolve_source_id(e.article_id, known_ids)
+        if aid is None:
+            unresolved += 1
+            continue
+        evidence_items.append(
+            EvidenceItem(
+                article_id=aid,
+                source_tier=tier_by_id.get(aid, "unknown"),  # tier はコードが付与
+                attribution_basis=_norm_basis(e.attribution_basis),
+                excerpt=e.excerpt.strip()[:500],
+                polarity=_norm_polarity(e.polarity),
+            )
         )
-        for e in a.evidence
-        if e.excerpt.strip()
-    )
+    if unresolved:
+        _log.warning("grounded_evidence_id_unresolved", claim=claim[:60], dropped=unresolved)
+    evidence = tuple(evidence_items)
     hyps = tuple(
         HypothesisScore(
             hypothesis=h.hypothesis,

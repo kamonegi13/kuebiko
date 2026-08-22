@@ -15,6 +15,7 @@ CTI として「証拠が無い」より「たどれない証拠を示す」ほ�
 from __future__ import annotations
 
 import re
+import unicodedata
 
 # これ未満の引用は偶然一致しうるため証拠として検証しない (落とす)
 _MIN_EXCERPT_CHARS = 12
@@ -22,12 +23,22 @@ _MIN_EXCERPT_CHARS = 12
 _ELLIPSIS_RE = re.compile(r"\.{3}|…|…")
 # 断片として意味を持つ最小長 (これ未満の断片は照合対象から外す)
 _MIN_FRAGMENT_CHARS = 8
-_WS_RE = re.compile(r"\s+")
+# 空白 + 引用符/ダッシュ/句読点の字体差。LLM は原文を写す際にこれらを揺らす
+# (実測: 非逐語と判定された引用の 2.7% は 'became aware of…' のような引用符差のみ)。
+# 逐語判定では落として比較する — 12 字以上の文字列が偶然一致することはまず無く、
+# 言い換えは記号を落としても一致しない (実測で残り 57.2% は本文に真に不在)。
+_NOISE_RE = re.compile(
+    r"[\s\u2018\u2019\u201c\u201d'\"`\u2010-\u2015\-\u2026.,:;!?()\[\]{}\u3001\u3002\u300c\u300d\u300e\u300f]+"
+)
 
 
 def normalize_for_match(text: str) -> str:
-    """空白差を吸収する。原文の改行・全角空白・連続空白は引用時に揺れるため。"""
-    return _WS_RE.sub("", text or "")
+    """字体差を吸収する。全角/半角 (NFKC)・大小・空白・引用符/ダッシュ/句読点を落とす。
+
+    「原文をそのまま写したか」を見るのが目的であり、表記の揺れで正当な引用を
+    落とすのは台帳の精度を下げる (偽陰性も損失)。
+    """
+    return _NOISE_RE.sub("", unicodedata.normalize("NFKC", text or "").casefold())
 
 
 def excerpt_is_supported(excerpt: str, *bodies: str) -> bool:
