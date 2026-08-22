@@ -571,10 +571,18 @@ async def _run_tuning_label_harvest_default(
     repo = RunHistoryRepository()
     result = run_label_harvest(repo, dry_run=dry_run)
 
+    # §13 対処 A: 主体の決定論補完 (週次の安全網 — 主経路は ransomware_ingest 直後)
+    from src.tuning.subject_backfill import run_subject_backfill
+
+    backfill = run_subject_backfill(repo, dry_run=dry_run)
+
     if not dry_run:
         try:
+            from src.tuning.supply_sentinel import supply_drift_lines
             from src.ui.services.ops_notify import post_ops_message
 
+            # §13-1 残対処: E1 供給のドリフト番兵 (閉ループの静かな縮退を可視化)
+            sentinel = "\n".join(supply_drift_lines(repo))
             await post_ops_message(
                 title=f"tuning ラベル収穫: 新規 {result.total_new} 件",
                 body=(
@@ -582,7 +590,10 @@ async def _run_tuning_label_harvest_default(
                     f" (声明競合スキップ {result.feed_subject_conflicts} 件) /"
                     f" taxonomy 裁定 {result.taxonomy_new} 件 /"
                     f" 論調訂正 {result.editorial_new} 件。"
-                    f" エラー {len(result.errors)} 件。"
+                    f" エラー {len(result.errors)} 件。\n"
+                    f"主体の決定論補完 (feed_match): {backfill.filled} 件"
+                    f" (競合スキップ {backfill.skipped_conflict})。"
+                    + (f"\n{sentinel}" if sentinel else "")
                 ),
             )
         except Exception as e:  # noqa: BLE001 — 通知失敗で収穫結果を捨てない

@@ -179,12 +179,16 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         まとめには単一主題が存在しない — eval script の除外を移植し忘れて Grok ダイジェスト
         に誤ラベルが付いた 2026-08-22 の教訓。生 % は psycopg 罠 → パラメータで渡す)。
         title/body/category はラベルの学習テキスト凍結 (snapshot §13-3) 用。
+        subject_actor_ids/subject_actor_source は既存主体の有無判定用 (subject backfill、
+        2026-08-22 §13 対処 A — 既存の主体は上書きせず判定材料として持ち帰る)。
         """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT a.article_id, LOWER(TRIM(e.value)) AS org,"
                 " COALESCE(a.published_at, a.created_at) AS created_at,"
-                " a.title, a.body, a.category"
+                " a.title, a.body, a.category,"
+                " COALESCE(a.subject_actor_ids, '') AS subject_actor_ids,"
+                " COALESCE(a.subject_actor_source, '') AS subject_actor_source"
                 " FROM articles a JOIN article_entities e"
                 "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
                 " WHERE COALESCE(a.subject_actor_source, '') <> 'feed'"
@@ -202,6 +206,8 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 "title": str(r["title"] or ""),
                 "body": str(r["body"] or ""),
                 "category": str(r["category"] or ""),
+                "subject_actor_ids": str(r["subject_actor_ids"]),
+                "subject_actor_source": str(r["subject_actor_source"]),
             }
             for r in rows
         ]

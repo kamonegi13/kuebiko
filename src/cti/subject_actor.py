@@ -37,6 +37,10 @@ SUBJECT_ACTOR_LLM_ENV = "SUBJECT_ACTOR_LLM"
 # SOURCE_FEED = source データが帰属をデータとして主張 (ransomware.live の group、
 # MITRE の G-id 等)。最強の証拠 — 名前照合を経ず辞書 id 解決のみで採用する。
 SOURCE_FEED = "feed"
+# SOURCE_FEED_MATCH = 犯行声明 (feed) と victim_org ±窓日 突合による転移帰属
+# (2026-08-22 §13 対処 A)。証拠等級: feed > feed_match > title > llm。
+# 本文言及ゲートの外側だが LLM 推測ではなく決定論 (声明データ + 決定論突合) 由来。
+SOURCE_FEED_MATCH = "feed_match"
 SOURCE_TITLE = "title"
 SOURCE_LLM = "llm"
 SOURCE_NONE = "none"

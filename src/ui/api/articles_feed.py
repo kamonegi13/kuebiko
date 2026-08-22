@@ -534,7 +534,8 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
             "extraction_failure_reason": a.extraction_failure_reason,
             # 主題アクター層 (2026-07-17): 「記事の主語」= 攻撃主体。言及 (entity actor) と分離し、
             # UI で役割三分割 (主題 / 言及された組織 / 技術指標) 表示する (NSA 混同の構造的解消)。
-            # subject_actor_source = 'title'|'llm'|'feed'|'none' (None=未評価 / none=主題なし)
+            # subject_actor_source = 'title'|'llm'|'feed'|'feed_match'|'none'
+            # (None=未評価 / none=主題なし。feed_match=犯行声明突合の転移帰属 2026-08-22)
             "subject_actor_ids": _subj_ids,
             "subject_actors": subject_actors,
             "subject_actor_source": a.subject_actor_source,

@@ -378,6 +378,16 @@ async def run_ingest(
         ]
         stats["news_tagged"] = repository.set_is_ransomware(tag_ids)
 
+    # §13 対処 A (2026-08-22): 声明取込の直後に victim_org 突合で主体未確定の報道記事を
+    # 決定論補完する (遅延声明が届いた直後が最も効くタイミング。冪等・既存主体は不変)
+    subject_backfilled = 0
+    try:
+        from src.tuning.subject_backfill import run_subject_backfill
+
+        subject_backfilled = run_subject_backfill(repository).filled
+    except Exception as e:  # noqa: BLE001 — 補完の失敗で取込 run を汚さない
+        _log.warning("subject_backfill_failed", error=str(e))
+
     repository.finish_run(
         run_id,
         status="succeeded",
@@ -390,7 +400,7 @@ async def run_ingest(
         note=(
             f"collected={stats['collected']} dup={stats['duplicate']} "
             f"reconciled={stats['reconciled']} news_tagged={stats['news_tagged']} "
-            f"skipped={stats['skipped']}"
+            f"skipped={stats['skipped']} subj_backfill={subject_backfilled}"
         ),
     )
     _log.info("ransomware_ingest_done", **stats)
