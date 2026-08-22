@@ -463,7 +463,6 @@ async def run_pipeline(
             skipped_triage_ids,
             triage_error_count,
             rejected_triage,
-            triage_decisions,
         ) = await _filter_by_triage(
             articles,
             triage_llm,

@@ -177,18 +177,13 @@ class TestFilterByTriageRejectedSplit:
             return TriageDecision(importance="low", reason="?")
 
         llm.generate_structured = AsyncMock(side_effect=_gen)
-        survivors, skipped, skipped_ids, _err, rejected, all_decisions = await _filter_by_triage(
+        survivors, skipped, skipped_ids, _err, rejected = await _filter_by_triage(
             arts, llm, keep_importance={"high", "medium"}, max_keep=10
         )
         assert [a.id for a in survivors] == ["a-high"]
         assert skipped == 1
         assert skipped_ids == ["a-low"]
         assert [a.id for a in rejected] == ["a-low"]
-        # ヘッド v0 シャドー記録 (§14.3) 用: 棄却分も含む全判定が露出される
-        assert {(a.id, imp) for a, imp, _e in all_decisions} == {
-            ("a-high", "high"),
-            ("a-low", "low"),
-        }
 
     @pytest.mark.asyncio
     async def test_max_keep_overflow_is_skipped_but_not_rejected(self) -> None:
@@ -199,7 +194,7 @@ class TestFilterByTriageRejectedSplit:
         llm.generate_structured = AsyncMock(
             return_value=TriageDecision(importance="high", reason="x"),
         )
-        survivors, skipped, skipped_ids, _err, rejected, _decisions = await _filter_by_triage(
+        survivors, skipped, skipped_ids, _err, rejected = await _filter_by_triage(
             arts, llm, keep_importance={"high", "medium"}, max_keep=2
         )
         assert len(survivors) == 2

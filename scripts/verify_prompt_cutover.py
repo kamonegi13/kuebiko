@@ -136,8 +136,8 @@ STATUS_FAIL = "FAIL"
 STATUS_INCONCLUSIVE = "INCONCLUSIVE"
 _EXIT_CODES = {STATUS_PASS: 0, STATUS_FAIL: 1, STATUS_INCONCLUSIVE: 2}
 
-# C7 無人 rollback の作動条件 (破局判定) の説明。週次ガバナンスがこの行頭語を
-# パースして auto_rollback に渡す — 行頭語 "破局判定:" は契約であり変更しない。
+# 破局的劣化の判定行 (人が読む報告用)。自動 rollback の消費者は 2026-08-22 の
+# 較正格子撤収で除去したため、現在この行を機械的にパースする経路は無い。
 CATASTROPHIC_LINE_PREFIX = "破局判定:"
 _CATASTROPHIC_NOTE = "無人 rollback の作動条件 — 分布シフト >20pt / 全滅級低下 >15pt のみ"
 

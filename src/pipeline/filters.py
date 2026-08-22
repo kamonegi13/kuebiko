@@ -85,7 +85,7 @@ async def _filter_by_triage(
     keep_importance: set[str],
     max_keep: int,
     think: bool = False,
-) -> tuple[list[Article], int, list[str], int, list[Article], list[tuple[Article, str, bool]]]:
+) -> tuple[list[Article], int, list[str], int, list[Article]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
     Grok 経路の記事は triage 対象外 (元から重要度を内包しているため)。
@@ -104,9 +104,6 @@ async def _filter_by_triage(
             呼び出し側が URL 既読化する = 判断済みの終端状態 (2026-07-12)。
             max_keep の枠あふれ (評価は通ったが予算切り) は含めない —
             未採用でなく未処理であり、次 run のリトライ権を保持する。
-        decisions: triage 対象全記事の (article, importance, error)。ヘッド v0 の
-            シャドー記録 (§14.3) が棄却分も含む全判定を必要とするため露出する。
-            Grok バイパス記事は含まない。
     """
     from src.tools.article_triage import ArticleTriage  # 遅延インポート (循環回避)
 
@@ -122,7 +119,7 @@ async def _filter_by_triage(
             triage_targets.append(a)
 
     if not triage_targets:
-        return articles, 0, [], 0, [], []
+        return articles, 0, [], 0, []
 
     # 並列 triage (既定 5 — Ollama サーバへの負荷バランス)
     sem = asyncio.Semaphore(_triage_concurrency())
@@ -162,7 +159,7 @@ async def _filter_by_triage(
     kept_ids = {a.id for a in kept}
     skipped_ids = [a.id for a in triage_targets if a.id not in kept_ids]
     survivors = grok_articles + kept
-    return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected, decisions
+    return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected
 
 
 async def _prefetch_thin_bodies(
