@@ -390,6 +390,16 @@ kuebiko/
   3. **ラベルは SSoT を参照** (intent/nation=`src/cti/diamond_model.py`、sector=
      `config/cti/victim_sectors.yaml`、victim 国=`config/cti/countries.yaml`、日本判定=
      `src/cti/japan_relevance.py`、キーワード照合=`src/cti/keyword_match.py`。複製辞書を作らない)
+- **時系列の集計は「事象時刻」で行う。DB へ書いた時刻を事象時刻に使わない** (2026-08-22 根治):
+  `article_entities.created_at` は entity 行を書いた時刻であり、バックフィル (再抽出 /
+  別名昇格 / intent・axes backfill) は過去記事へ当日の日付で書くため事象時刻にならない。
+  実測で言及の 44.3% が 1 日超・34.4% が 7 日超ずれ、週次 FC3 spike の 44% が偽陽性、
+  日次バーストは単日最大 42 件の幻を出していた。錨の SSoT は
+  `src/storage/repo_synthesis.py:_EVENT_TS_EXPR` (公開時刻・取込で上限・欠損は取込時刻)、
+  fan-out 防止は `_DEDUP_ARTICLES` (articles は同一 article_id が複数行ありうる)。
+  不変条件は `tests/unit/test_event_time_anchor.py` が固定する。
+  **時間尺度を変えてデータ源を再利用するときは、必ず時刻意味論を再検証する** —
+  週次 8 週窓では均されて見えない歪みが、日次窓では支配的になる。
 - **デプロイは app service 限定で** (2026-07-05): `docker compose up -d --build` を全 service に
   かけると **tunnel が毎回再作成され quick tunnel の URL が変わる** (→ 毎デプロイ ops に
   新 URL 投稿 = 「URL が頻繁に変わる」の正体)。app のみ更新するときは

@@ -22,6 +22,23 @@ from src.storage.row_mappers import (
     _to_iso,
 )
 
+# 事象時刻の錨 (2026-08-22 根本修正)。**DB へ書いた時刻を事象時刻として使わない。**
+# article_entities.created_at は「entity 行を書いた時刻」であり、バックフィル
+# (再抽出 / 別名昇格 / intent・axes backfill) は過去記事へ当日の日付で書くため
+# 事象時刻とは無関係になる (実測: 言及の 44.3% が 1 日超・34.4% が 7 日超ずれ、
+# 週次 FC3 spike の 44% が偽陽性、日次バーストは単日最大 42 件の幻)。
+# 錨は「公開時刻。ただし取込より後にはならない (実測 0.5% が不正)。欠損は取込時刻」。
+_EVENT_TS_EXPR = (
+    "CASE WHEN {a}.published_at IS NOT NULL AND {a}.published_at <= {a}.created_at"
+    " THEN {a}.published_at ELSE {a}.created_at END"
+)
+# articles は同一 article_id が複数行ありうる (実測 3,593 行 / 最大 7 行)。
+# join 前に 1 行へ畳んで言及の水増し (fan-out) を防ぐ。
+_DEDUP_ARTICLES = (
+    "(SELECT article_id, MIN(created_at) AS created_at,"
+    " MIN(published_at) AS published_at FROM articles GROUP BY article_id)"
+)
+
 
 class SynthesisMixin(RunHistoryRepositoryBase):
     # ----- Phase 3: status synthesis -----
@@ -266,22 +283,30 @@ class SynthesisMixin(RunHistoryRepositoryBase):
         since: datetime,
         limit_values: int | None = None,
     ) -> dict[str, list[datetime]]:
-        """article_entities (指定 type) の value ごとに出現時刻 (created_at) 群を返す。
+        """article_entities (指定 type) の value ごとに **事象時刻** 群を返す。
 
-        forecast の週次バケット集計の元データ (FC3/FC4/FC5)。``since`` 以降のみ。
-        join せず article_entities.created_at を使うので fan-out しない。
+        forecast の週次バケット集計 (FC3/FC4/FC5) / 日次バースト / 振り返りの元データ。
+        時刻は ``_EVENT_TS_EXPR`` の錨 (公開時刻、取込で上限、欠損は取込時刻) を使い、
+        ``since`` もその錨で切る。**entity 行の created_at は使わない** — バックフィルが
+        過去記事へ当日の日付で書くため事象時刻にならない (2026-08-22 根本修正)。
+        articles は ``_DEDUP_ARTICLES`` で article_id ごと 1 行へ畳んでから join する。
         ``limit_values`` 指定時は件数上位のみ返す。
         """
         since_iso = _to_iso(since)
+        ts_expr = _EVENT_TS_EXPR.format(a="a")
         out: dict[str, list[datetime]] = {}
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT value, created_at FROM article_entities "
-                "WHERE entity_type = ? AND created_at >= ?",
+                "SELECT value, ts FROM ("
+                f"  SELECT e.value AS value, {ts_expr} AS ts"
+                "   FROM article_entities e"
+                f"  JOIN {_DEDUP_ARTICLES} a ON a.article_id = e.article_id"
+                "   WHERE e.entity_type = ?"
+                ") q WHERE ts >= ?",
                 (entity_type, since_iso),
             ).fetchall()
         for r in rows:
-            ts = _from_iso(r["created_at"])
+            ts = _from_iso(r["ts"])
             if ts is not None:
                 out.setdefault(str(r["value"]), []).append(ts)
         if limit_values is not None and len(out) > limit_values:
@@ -300,15 +325,20 @@ class SynthesisMixin(RunHistoryRepositoryBase):
         out: dict[str, list[datetime]] = {}
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT socio_political_intent AS intent, created_at FROM articles "
-                "WHERE socio_political_intent IS NOT NULL "
-                "AND socio_political_intent != 'unknown' "
-                "AND (intent_confidence IS NULL OR intent_confidence != 'low') "
-                "AND created_at >= ?",
+                "SELECT intent, ts FROM ("
+                "  SELECT a.article_id AS aid,"
+                "         MIN(a.socio_political_intent) AS intent,"
+                f"        {_EVENT_TS_EXPR.format(a='a')} AS ts"
+                "   FROM articles a"
+                "   WHERE a.socio_political_intent IS NOT NULL "
+                "   AND a.socio_political_intent != 'unknown' "
+                "   AND (a.intent_confidence IS NULL OR a.intent_confidence != 'low') "
+                f"  GROUP BY a.article_id, {_EVENT_TS_EXPR.format(a='a')}"
+                ") q WHERE ts >= ?",
                 (since_iso,),
             ).fetchall()
         for r in rows:
-            ts = _from_iso(r["created_at"])
+            ts = _from_iso(r["ts"])
             if ts is not None:
                 out.setdefault(str(r["intent"]), []).append(ts)
         return out
@@ -325,20 +355,25 @@ class SynthesisMixin(RunHistoryRepositoryBase):
         cat_ph = ",".join(["?"] * len(CYBER_ATTACK_EVENTS))
         excluded = ("", "uncategorized", "multi_sector")
         excl_ph = ",".join(["?"] * len(excluded))
+        ts_expr = _EVENT_TS_EXPR.format(a="a")
         sql = (
-            "SELECT victim_sector_canonical AS v, created_at FROM articles "
-            "WHERE status='posted' "
-            f"AND category IN ({cat_ph}) "
-            "AND victim_sector_canonical IS NOT NULL "
-            f"AND victim_sector_canonical NOT IN ({excl_ph}) "
-            "AND created_at >= ?"
+            "SELECT v, ts FROM ("
+            "  SELECT a.article_id AS aid, MIN(a.victim_sector_canonical) AS v,"
+            f"        {ts_expr} AS ts"
+            "   FROM articles a"
+            "   WHERE a.status='posted' "
+            f"  AND a.category IN ({cat_ph}) "
+            "   AND a.victim_sector_canonical IS NOT NULL "
+            f"  AND a.victim_sector_canonical NOT IN ({excl_ph}) "
+            f"  GROUP BY a.article_id, {ts_expr}"
+            ") q WHERE ts >= ?"
         )
         params: list[Any] = [*sorted(CYBER_ATTACK_EVENTS), *excluded, _to_iso(since)]
         out: dict[str, list[datetime]] = {}
         with self._connect() as conn:
             rows = conn.execute(sql, tuple(params)).fetchall()
         for r in rows:
-            ts = _from_iso(r["created_at"])
+            ts = _from_iso(r["ts"])
             if ts is not None:
                 out.setdefault(str(r["v"]), []).append(ts)
         return out
@@ -350,19 +385,24 @@ class SynthesisMixin(RunHistoryRepositoryBase):
         行は除外する。ISO コードは大文字に正規化する (geo_cyber_map と同じ表記統一)。
         """
         cat_ph = ",".join(["?"] * len(CYBER_ATTACK_EVENTS))
+        ts_expr = _EVENT_TS_EXPR.format(a="a")
         sql = (
-            "SELECT victim_country_iso AS v, created_at FROM articles "
-            "WHERE status='posted' "
-            f"AND category IN ({cat_ph}) "
-            "AND victim_country_iso IS NOT NULL AND victim_country_iso != '' "
-            "AND created_at >= ?"
+            "SELECT v, ts FROM ("
+            "  SELECT a.article_id AS aid, MIN(a.victim_country_iso) AS v,"
+            f"        {ts_expr} AS ts"
+            "   FROM articles a"
+            "   WHERE a.status='posted' "
+            f"  AND a.category IN ({cat_ph}) "
+            "   AND a.victim_country_iso IS NOT NULL AND a.victim_country_iso != '' "
+            f"  GROUP BY a.article_id, {ts_expr}"
+            ") q WHERE ts >= ?"
         )
         params: list[Any] = [*sorted(CYBER_ATTACK_EVENTS), _to_iso(since)]
         out: dict[str, list[datetime]] = {}
         with self._connect() as conn:
             rows = conn.execute(sql, tuple(params)).fetchall()
         for r in rows:
-            ts = _from_iso(r["created_at"])
+            ts = _from_iso(r["ts"])
             if ts is not None:
                 out.setdefault(str(r["v"]).upper(), []).append(ts)
         return out

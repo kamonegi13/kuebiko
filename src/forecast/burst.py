@@ -191,7 +191,8 @@ def _close_out_stale_indicators(
 ) -> None:
     """``VERIFY_AFTER_DAYS`` 経過した open な daily indicator を close-out する。
 
-    観測窓は ``(period_start, period_start + VERIFY_AFTER_DAYS]``。判定式は週次
+    観測窓は ``(period_start + 1d, period_start + VERIFY_AFTER_DAYS]`` (当日は除く)。
+    判定式は週次
     ``snapshot_and_verify_indicators`` と同じ (baseline_avg は既に週換算済みなので
     そのまま閾値に使える)。``DAILY_WINDOW_DAYS`` より古い period_start は streams
     の fetch (``since``) より前になるため、その分の活動は数えられない — observed
@@ -205,8 +206,14 @@ def _close_out_stale_indicators(
             continue
         times = streams.get(ind.scope, {}).get(ind.target_value, [])
         start = _aware(ind.period_start)
+        # 検証窓は **バースト当日を除いた** 翌日以降 (2026-08-22 修正)。当日を含めると
+        # バースト当日の件数だけで閾値に届き、検定がトートロジー化する
+        # (過去 90 日実測: hit 77.6% のうち 30.5% が当日だけで決着していた。
+        # 当日除外後は hit 63.3% = 検出力のある検定になる)。
+        window_start = start + timedelta(days=1)
         window_end = start + timedelta(days=VERIFY_AFTER_DAYS)
-        observed = sum(1 for t in times if start < t <= window_end)
+        # 境界は翌日 00:00 を **含む** (除くのはバースト当日だけ)。
+        observed = sum(1 for t in times if window_start <= t <= window_end)
         threshold = max(1.0, ind.baseline_avg)
         repo.mark_forecast_indicator_verified(
             ind.id, hit=observed >= threshold, observed_count=observed, when=now
