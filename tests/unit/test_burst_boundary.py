@@ -52,6 +52,20 @@ def _burst_importers() -> list[Path]:
     return hits
 
 
+def test_spotlight_prompt_carries_no_salience_injection() -> None:
+    """Spotlight の LLM プロンプトに件数・z の顕在性ブロックを戻さない (#3)。
+
+    2026-08-22: forecast_indicators の z スパイクと nation_correlation の件数を撤去した
+    (実測で 60 本中 34 本 = 57% が z を語っており、収集量が narrative の枠組みを
+    駆動していた)。freshness は「報道急増 ≠ 新規活動増」の**注意喚起**なので残す。
+    """
+    for name in ("pir_spotlight", "pir_spotlight_skeleton"):
+        body = Path(f"prompts/spotlight/{name}.j2").read_text(encoding="utf-8")
+        assert "forecast_indicators" not in body, name
+        assert "nation_correlation" not in body, name
+        assert "freshness" in body, name  # 注意喚起は残っていること
+
+
 def test_burst_is_not_imported_outside_the_display_path() -> None:
     # Act
     importers = _burst_importers()

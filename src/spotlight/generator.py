@@ -127,9 +127,11 @@ def _build_prompt(
         pir=pir,
         candidate_articles=candidate_articles,
         period_label=period_label,
-        # 状態中心: synthesis と同一の横断 assessment を射影として注入 (空なら legacy 挙動)。
-        nation_correlation=assessment.nation_correlation if assessment else [],
-        forecast_indicators=assessment.forecast_indicators if assessment else [],
+        # 鮮度のみ注入する (2026-08-22)。これは「報道急増 ≠ 新規活動増」を戒める
+        # **注意喚起**であり、顕在性を持ち込む信号ではない。
+        # nation_correlation / forecast_indicators (z スパイク) は撤去した — 件数・z による
+        # 顕在性の再重み付けは **収集量を重要性の代理にする** ことであり、重要性の背骨
+        # (PIR → importance → channel) と衝突する (CLAUDE.md §7 / 第 3 回独立レビュー #3/#4)。
         freshness=assessment.freshness if assessment else {},
         # 「事象は過去・未来に連なる」: 前期見立てを継続性 context として注入。
         previous_spotlight=previous_spotlight,

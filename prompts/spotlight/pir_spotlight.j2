@@ -76,23 +76,6 @@
 台帳より高い確度で断定しない。台帳に無い新たな帰属を創作しない — 候補記事から読み取れる事実の
 記述に留める。
 {% endif %}
-{% if nation_correlation %}
-## 横断情勢 context (報告ストリーム基準・実発生時刻ではない)
-
-サイバー↔地政学の状況 (帰属サイバー / サイバー言及〔政策中心・帰属なし〕/ 標的 / 地政学):
-{% for n in nation_correlation -%}
-- {{ n.label }} ({{ n.role }}): 帰属{{ n.attributed_cyber }} / 言及{{ n.cyber_mention }} / 標的{{ n.cyber_target }} / 地政学{{ n.geopol }}{% if n.top_actors %} — actors: {{ n.top_actors | join(", ") }}{% endif %}
-{% endfor %}
-**「言及」レーンは ~65% が政策・態勢の言及 (帰属なし)。実作戦と混同せず「姿勢シグナル」として扱う**こと。
-件数差から時間的因果を推論しない (報告時刻であり実発生ではない)。この PIR に関係する国を中心に読む。
-{% endif %}
-{% if forecast_indicators %}
-## 構造予測 (FC2: 直近の定量スパイク、未検証)
-{% for f in forecast_indicators -%}
-- {{ f.scope }}={{ f.target }} {{ f.direction }} (z={{ f.z }}, 件数{{ f.count }})
-{% endfor %}
-outlook (b) で来週の監視指標を述べる際、これら定量予測との整合 / 矛盾を意識すること。
-{% endif %}
 {% if freshness and freshness.dated %}
 ## 鮮度 (報道時刻 vs 発生時刻)
 
