@@ -38,6 +38,12 @@ SHADOW_REGISTRY: tuple[ShadowEntry, ...] = (
         is_cutover="TUNING_AUTO_ROLLBACK",
         note="唯一の無人安全網。シャドーのままでは一度も作動しない",
     ),
+    ShadowEntry(
+        name="蒸留ヘッド v0 (triage 地点のシャドー推論、§14)",
+        started=date(2026, 8, 22),
+        is_cutover="HEAD_CASCADE",
+        note="cutover 基準は設計書 §14.4 (非劣 + 致命方向 0 + 足切り番兵の同時実装)",
+    ),
 )
 
 

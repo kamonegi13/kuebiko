@@ -366,6 +366,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     purged_dedup = repo.purge_old_dedup_entries(days=DEDUP_RETENTION_DAYS)
     if purged_dedup > 0:
         _log.info("purged_old_dedup", count=purged_dedup)
+    # - head_shadow (蒸留ヘッド v0 のシャドー記録、§14.3) も同様に retention を切る。
+    #   保持日数の既定は repo 側 (cutover 判定 8 週より十分長い 180 日)。
+    purged_head_shadow = repo.purge_head_shadow()
+    if purged_head_shadow > 0:
+        _log.info("purged_head_shadow", count=purged_head_shadow)
     # - VACUUM: SQLite は DELETE 後に領域を返さないので、定期的な物理回収が必要。
     #   毎回はコストが高い (DB 全体を rewrite) ので、sentinel ファイルの mtime で
     #   30 日に 1 度に絞る。個人運用規模 (~100MB) なら数秒で完了する。

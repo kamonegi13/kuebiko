@@ -673,4 +673,29 @@ CREATE TABLE IF NOT EXISTS panel_resolutions (
     resolved_by TEXT NOT NULL,      -- manual / ttl
     created_at  TEXT NOT NULL
 );
+
+-- 較正格子 ロードマップ C (docs/self_evolving_tuning_design.md、2026-08-22): 古典 ML
+-- 蒸留ヘッドのシャドー推論記録。ヘッドの予測を同時点の triage LLM 判定と突き合わせて
+-- 記録するのみで、本番配信には一切影響しない (panel_verdicts と同じ「観測」原則 —
+-- シャドー専用テーブル、本番パイプラインは読まない)。url_hash (記事の dedup url_hash)
+-- を冪等キーにして再実行の重複を遮断する。
+CREATE TABLE IF NOT EXISTS head_shadow (
+    url_hash              TEXT    NOT NULL PRIMARY KEY,
+    article_id            TEXT    NOT NULL,
+    run_id                TEXT,
+    head_importance       TEXT    NOT NULL,          -- ヘッド予測 high/medium/low
+    head_importance_probs TEXT    NOT NULL,           -- JSON: {"high":0.12,...} 較正確率
+    head_category         TEXT,
+    head_category_prob    REAL,
+    triage_importance     TEXT,                       -- 同時点の triage LLM 判定 (比較対象)
+    triage_error          INTEGER NOT NULL DEFAULT 0,  -- triage が fail-open だったか
+    triage_kept           INTEGER NOT NULL,            -- 1=triage 通過 0=足切り
+    disagree_cutoff       INTEGER NOT NULL DEFAULT 0,  -- 足切り境界での不一致 (§13-7 番兵対象)
+    artifact_version      TEXT    NOT NULL,            -- ヘッド成果物の版
+    embedding_model       TEXT    NOT NULL,
+    created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_head_shadow_created  ON head_shadow(created_at);
+CREATE INDEX IF NOT EXISTS idx_head_shadow_disagree ON head_shadow(disagree_cutoff);
 """

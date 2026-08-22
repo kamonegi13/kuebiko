@@ -793,6 +793,28 @@ CREATE TABLE IF NOT EXISTS panel_resolutions (
     resolved_by TEXT NOT NULL,
     created_at  TEXT NOT NULL
 );
+
+-- 較正格子 ロードマップ C: 古典 ML 蒸留ヘッドのシャドー推論記録 (2026-08-22、SQLite
+-- _SCHEMA と対)。詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS head_shadow (
+    url_hash              TEXT             NOT NULL PRIMARY KEY,
+    article_id            TEXT             NOT NULL,
+    run_id                TEXT,
+    head_importance       TEXT             NOT NULL,
+    head_importance_probs TEXT             NOT NULL,
+    head_category         TEXT,
+    head_category_prob    DOUBLE PRECISION,
+    triage_importance     TEXT,
+    triage_error          INTEGER          NOT NULL DEFAULT 0,
+    triage_kept           INTEGER          NOT NULL,
+    disagree_cutoff       INTEGER          NOT NULL DEFAULT 0,
+    artifact_version      TEXT             NOT NULL,
+    embedding_model       TEXT             NOT NULL,
+    created_at            TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_head_shadow_created  ON head_shadow(created_at);
+CREATE INDEX IF NOT EXISTS idx_head_shadow_disagree ON head_shadow(disagree_cutoff);
 """
 
 

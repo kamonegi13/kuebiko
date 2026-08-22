@@ -171,6 +171,21 @@ async def run_weekly_prompt_governance() -> None:
         except Exception as e:  # noqa: BLE001 — 台帳の失敗で監査投稿を止めない
             _log.warning("shadow_registry_failed", error=str(e))
 
+        # 蒸留ヘッド v0 のシャドー統計 (§14.3 の常設消費者 — write-only 化の防止)
+        try:
+            from src.storage.run_history import RunHistoryRepository
+
+            hs = RunHistoryRepository().head_shadow_stats(days=7)
+            if hs.total > 0:
+                agree_pct = 100.0 * hs.agree_with_triage / hs.total
+                sections.append(
+                    f"🧮 ヘッド v0 シャドー (7 日): {hs.total} 件 / triage 一致 "
+                    f"{agree_pct:.0f}% / 足切り不一致 {hs.disagree_cutoff} 件 / "
+                    f"triage エラー {hs.triage_error} 件"
+                )
+        except Exception as e:  # noqa: BLE001 — シャドー統計の失敗で監査投稿を止めない
+            _log.warning("head_shadow_stats_failed", error=str(e))
+
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]
         importance = "medium" if worst_exit == 1 else "low"
