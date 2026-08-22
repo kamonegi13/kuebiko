@@ -664,9 +664,11 @@ async def generate_synthesis(
         axes_data=axes_data,
         trend_clusters=trend_clusters,
         high_importance_articles=high_importance,
-        nation_correlation=assessment.nation_correlation,
+        # 鮮度のみ注入する (2026-08-22)。nation_correlation (件数) と
+        # forecast_indicators (z スパイク) は撤去 — 収集量を重要性の代理にしない
+        # (CLAUDE.md §7)。grounded 経路は元から注入を持たず、legacy の週次/月次だけが
+        # 残っていたため基準を揃えた。freshness は「報道急増 ≠ 新規活動増」の注意喚起。
         nation_window_days=nation_window_days,
-        forecast_indicators=assessment.forecast_indicators,
         freshness=assessment.freshness,
         previous_synthesis=previous_synthesis,
     )

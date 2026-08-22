@@ -52,18 +52,29 @@ def _burst_importers() -> list[Path]:
     return hits
 
 
-def test_spotlight_prompt_carries_no_salience_injection() -> None:
-    """Spotlight の LLM プロンプトに件数・z の顕在性ブロックを戻さない (#3)。
+# 件数・z を LLM へ渡していた narrative 系プロンプト (2026-08-22 に全面で撤去)。
+# 1 サーフェスだけ直して別を取り残す事故を防ぐため、**全サーフェスを列挙して固定する**。
+_NARRATIVE_PROMPTS = (
+    "prompts/spotlight/pir_spotlight.j2",
+    "prompts/spotlight/pir_spotlight_skeleton.j2",
+    "prompts/synthesis/status_synthesis.j2",
+    "prompts/synthesis/status_synthesis_skeleton.j2",
+)
+
+
+@pytest.mark.parametrize("path", _NARRATIVE_PROMPTS)
+def test_narrative_prompts_carry_no_salience_injection(path: str) -> None:
+    """narrative プロンプトに件数・z の顕在性ブロックを戻さない (#3/#4)。
 
     2026-08-22: forecast_indicators の z スパイクと nation_correlation の件数を撤去した
-    (実測で 60 本中 34 本 = 57% が z を語っており、収集量が narrative の枠組みを
-    駆動していた)。freshness は「報道急増 ≠ 新規活動増」の**注意喚起**なので残す。
+    (Spotlight の実測で 60 本中 34 本 = 57% が z を語っており、収集量が narrative の
+    枠組みを駆動していた)。**freshness は残す** — 「報道急増 ≠ 新規活動増、収集網が
+    過去を掘り起こす」という注意喚起で、顕在性を持ち込むのとは向きが逆。
     """
-    for name in ("pir_spotlight", "pir_spotlight_skeleton"):
-        body = Path(f"prompts/spotlight/{name}.j2").read_text(encoding="utf-8")
-        assert "forecast_indicators" not in body, name
-        assert "nation_correlation" not in body, name
-        assert "freshness" in body, name  # 注意喚起は残っていること
+    body = Path(path).read_text(encoding="utf-8")
+    assert "forecast_indicators" not in body, path
+    assert "nation_correlation" not in body, path
+    assert "freshness" in body, path  # 注意喚起は残っていること
 
 
 def test_burst_is_not_imported_outside_the_display_path() -> None:

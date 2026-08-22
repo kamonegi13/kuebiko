@@ -78,36 +78,6 @@ RT/Sputnik/Pravda 等、framing 偏向) / **不明**。
 - 単一・低 tier・国営/プロパガンダに依拠した重大主張は **tradecraft.key_assumptions に「当該 source の
   信頼性」を明記**し、**alternatives に「観測バイアス / framing バイアス / 単発の誤報の可能性」を必ず立てる**。
 
-{% if nation_correlation %}
-# 国家横断 相関 (サイバー↔地政学、過去 {{ nation_window_days }} 日の報告ストリーム)
-**これは「報告された時刻」(記事の取得・公開時刻) 基準の観測ストリームであり、事象の
-実発生時刻ではない。よって件数差から時間的因果 (どちらが先行したか) を推論してはならない。**
-各国を 4 レーンに **分離** して提示する:
-- **帰属サイバー**: 名指しされた APT の活動 (actor.nation、帰属確度=高)
-- **サイバー言及**: APT 名指し無しのサイバー文脈 (i_cyber × 当事国)。**検証で約 65% は
-  政策・規範・態勢の言及、約 35% のみ実事象**。よって確定的な攻撃活動と混同せず、
-  **その国のサイバー姿勢・政策のシグナル**として扱うこと。
-- **標的サイバー**: その国を victim とする攻撃 (受けている脅威)
-- **地政学**: その国が当事者の地政学事象 (involved_country ブリッジ)
-{% for n in nation_correlation %}
-## {{ n.label }} ({{ n.iso }}{% if n.role == 'home' %}・自国{% elif n.role == 'adversary' %}・敵対{% endif %})
-- 帰属サイバー {{ n.attributed_cyber }}{% if n.top_actors %} (主要: {{ n.top_actors|join(', ') }}){% endif %} / サイバー言及 {{ n.cyber_mention }} (政策中心) / 標的 {{ n.cyber_target }} / 地政学 {{ n.geopol }}
-{% if n.cyber_intents %}- サイバー動機: {{ n.cyber_intents|join(', ') }}{% endif %}
-{% if n.geopol_intents %}- 地政学動機: {{ n.geopol_intents|join(', ') }}{% endif %}
-{% endfor %}
-
-**この相関を chain_section / cog_section に活かす**: 同一国でサイバー (帰属/標的) と
-地政学が同時に厚い国は **ハイブリッド戦の結節点** として論じる。ただし実作戦の主張は
-「帰属サイバー」「標的」を根拠とし、「言及」レーンは姿勢・意図の補強に留めること。
-{% endif %}
-{% if forecast_indicators %}
-# 構造予測 (FC2、定量スパイク検出 — spillover の足場)
-直近の z-score スパイク検出 (baseline 比で異常に増加した scope)。**spillover_section の
-中期予想を、この定量シグナルで裏打ち / 反証せよ** (叙述だけの予測にしない)。
-{% for f in forecast_indicators %}
-- {{ f.scope }}={{ f.target }}: {{ f.direction }} (z={{ f.z }}、直近 {{ f.count }} 件)
-{% endfor %}
-{% endif %}
 {% if freshness and freshness.dated %}
 # 当期報道の鮮度 (報道時刻 vs 発生時刻、dated subset)
 発生日が判明した {{ freshness.dated }} 件のうち、**振り返り (>30日前の事象) {{ freshness.retrospective }} 件
