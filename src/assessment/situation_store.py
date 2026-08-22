@@ -816,6 +816,25 @@ class SituationStore:
                 (situation_id, indicator[:500], opened_at, horizon_days),
             )
 
+    def forecast_calibration_rows(self) -> list[dict[str, Any]]:
+        """採点済み予測を「開設時の自己申告確度」で層別集計する (F′ の原資)。
+
+        確度は forecast を開いた時点で最新だった revision のもの。決定論 (SQL のみ)。
+        """
+        sql = (
+            "SELECT conf AS confidence, COUNT(*) AS scored,"
+            " SUM(CASE WHEN status='hit' THEN 1 ELSE 0 END) AS hit FROM ("
+            "  SELECT f.status AS status,"
+            "    (SELECT r.confidence FROM situation_revisions r"
+            "      WHERE r.situation_id = f.situation_id AND r.created_at <= f.opened_at"
+            "      ORDER BY r.created_at DESC LIMIT 1) AS conf"
+            "  FROM situation_forecasts f"
+            "  WHERE f.status IN ('hit','expired')"
+            ") q WHERE conf IS NOT NULL GROUP BY conf"
+        )
+        with self._repo._connect() as conn:  # noqa: SLF001
+            return [dict(r) for r in conn.execute(sql)]
+
     def score_forecast(self, forecast_id: int, *, status: str, note: str, scored_at: str) -> None:
         """open forecast を hit/expired/unevaluated に採点する。
 

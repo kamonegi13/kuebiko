@@ -156,6 +156,17 @@ async def run_weekly_prompt_governance() -> None:
                 f"{_summary_line(verify_out, prefix='総合判定:')}"
             )
 
+        # 予測較正の外部会計 (F′、2026-08-22)。synthesis は予測の発火も確度も自己申告
+        # するため、正解の無い場に自己採点しか並ばない。決定論で「確度が自分の発火率を
+        # 予測できているか」を検算して併記する。⚠ 番兵専用 — 目標関数にしない。
+        try:
+            from src.assessment.forecast_calibration import calibration_lines, collect_calibration
+            from src.assessment.situation_store import SituationStore
+
+            sections.extend(calibration_lines(collect_calibration(SituationStore())))
+        except Exception as e:  # noqa: BLE001 — 較正の失敗で監査投稿を止めない
+            _log.warning("forecast_calibration_failed", error=str(e))
+
         # seed 版ずれの検知 (2026-08-22)。プロンプト本文の SSoT は DB (config_store) で、
         # ⭐**リポジトリの seed yaml を編集しても実行時には効かない** (yaml は初回 seed 専用)。
         # 実際に「seed を直して効いたつもり」で半日運転した事故があったため、乖離を常設検知する。
