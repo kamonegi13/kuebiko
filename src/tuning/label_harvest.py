@@ -29,6 +29,55 @@ _log = get_logger(__name__)
 _MATCH_WINDOW_DAYS = 5
 # 収穫の遡り日数 (週次実行の取りこぼし・遅延到着に余裕を持たせる)
 _LOOKBACK_DAYS = 35
+# snapshot に凍結する本文長 (judgment の _BODY_MAX_CHARS と同水準)
+_SNAPSHOT_BODY_CHARS = 8000
+# 一般語の組織名は同名衝突で誤結合しやすい (§13-1 併発欠陥)。完全一致で除外する
+# 最小 denylist — victim_org 抽出側の is_vendor_noise とは別軸 (あちらはベンダ言及)
+_GENERIC_ORG_DENYLIST = frozenset(
+    {
+        "government",
+        "ministry",
+        "police",
+        "hospital",
+        "university",
+        "school",
+        "bank",
+        "city",
+        "council",
+        "市役所",
+        "病院",
+        "大学",
+        "政府",
+        "警察",
+        "学校",
+    }
+)
+
+
+def _snapshot_json(title: str, body: str, category: str) -> str:
+    """学習テキストの凍結 (§13-3)。本文 90 日 purge 後も教材として残す JSON。"""
+    return json.dumps(
+        {
+            "title": title.strip()[:300],
+            "body": " ".join(body.split())[:_SNAPSHOT_BODY_CHARS],
+            "category": category,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _current_summarizer_rubric_version() -> int | None:
+    """突合キー (victim_org) の供給源 = summarizer の現行 rubric 版 (§13-1 閉ループ対策)。
+
+    ラベル来歴に記録することで、版間のラベル供給量ドリフトを事後に層別監査できる。
+    """
+    try:
+        from src.storage.config_store import list_history
+
+        history = list_history("summarizer_rubric", limit=1)
+        return history[0].version if history else None
+    except Exception:  # noqa: BLE001 — 版が読めなくても収穫は続行
+        return None
 
 
 class _LabelRepo(Protocol):
@@ -46,7 +95,12 @@ class _LabelRepo(Protocol):
         article_id: str | None = ...,
         arrived_at: datetime | None = ...,
         supersede_same: bool = ...,
+        snapshot: str | None = ...,
     ) -> int | None: ...
+
+    def list_labels_missing_snapshot(self) -> list[dict[str, Any]]: ...
+
+    def set_label_snapshot(self, label_id: int, snapshot: str) -> None: ...
 
     def fetch_feed_subject_claims(self, since_iso: str) -> list[dict[str, Any]]: ...
 
@@ -99,6 +153,7 @@ def _record(
     article_id: str | None = None,
     arrived_at: datetime | None = None,
     supersede_same: bool = False,
+    snapshot: str | None = None,
 ) -> bool:
     """1 ラベルの書き込み。dry_run は候補として数えるだけで書かない。"""
     if dry_run:
@@ -113,6 +168,7 @@ def _record(
         article_id=article_id,
         arrived_at=arrived_at,
         supersede_same=supersede_same,
+        snapshot=snapshot,
     )
     return new_id is not None
 
@@ -133,12 +189,15 @@ def _sweep_feed_news_subject(
     claims = repo.fetch_feed_subject_claims(since_iso)
     news = repo.fetch_victim_org_news_candidates(since_iso)
 
+    rubric_version = _current_summarizer_rubric_version()
     claims_by_org: dict[str, list[tuple[str, str, datetime]]] = {}
     for c in claims:
         ts = _as_dt(c["created_at"])
         gt = str(c["gt"]).split(",")[0].strip()
         if ts is None or not gt or not c["org"]:
             continue
+        if c["org"] in _GENERIC_ORG_DENYLIST:
+            continue  # 一般語の組織名は同名衝突の誤結合源 (§13-1)
         claims_by_org.setdefault(str(c["org"]), []).append((str(c["article_id"]), gt, ts))
 
     new_count = 0
@@ -176,7 +235,13 @@ def _sweep_feed_news_subject(
                 "claim_article_id": matched[0][0],
                 "org": org,
                 "window_days": _MATCH_WINDOW_DAYS,
+                # §13-1: 突合キー (victim_org) は summarizer LLM 出力 — 供給時の rubric 版を
+                # 来歴に残し、版間のラベル供給ドリフトを事後監査できるようにする
+                "summarizer_rubric_version": rubric_version,
             },
+            snapshot=_snapshot_json(
+                str(n.get("title", "")), str(n.get("body", "")), str(n.get("category", ""))
+            ),
         )
         new_count += int(inserted)
     return new_count, conflicts
@@ -218,6 +283,7 @@ def _sweep_editorial_corrections(repo: _LabelRepo, *, dry_run: bool) -> int:
     new_count = 0
     for r in repo.list_editorial_stance_reviews():
         corrected = str(r["corrected_stance"])
+        body = str(r.get("body", ""))
         inserted = _record(
             repo,
             dry_run=dry_run,
@@ -232,9 +298,28 @@ def _sweep_editorial_corrections(repo: _LabelRepo, *, dry_run: bool) -> int:
                 "producer": "editorial_review",
                 "original_stance": r["original_stance"],
             },
+            snapshot=(
+                _snapshot_json(str(r.get("title", "")), body, str(r.get("category", "")))
+                if body
+                else None
+            ),
         )
         new_count += int(inserted)
     return new_count
+
+
+def _backfill_snapshots(repo: _LabelRepo) -> int:
+    """snapshot 未凍結ラベルへ本文が残っているうちに写経する (§13-3、冪等)。"""
+    filled = 0
+    for row in repo.list_labels_missing_snapshot():
+        repo.set_label_snapshot(
+            int(row["id"]),
+            _snapshot_json(str(row["title"]), str(row["body"]), str(row["category"])),
+        )
+        filled += 1
+    if filled:
+        _log.info("label_snapshot_backfilled", count=filled)
+    return filled
 
 
 def run_label_harvest(
@@ -273,6 +358,13 @@ def run_label_harvest(
     except Exception as e:  # noqa: BLE001
         _log.warning("label_harvest_editorial_sweep_failed", error=str(e))
         errors.append(f"editorial: {type(e).__name__}: {e}")
+
+    if not dry_run:
+        try:
+            _backfill_snapshots(repo)  # 本文 purge 前に学習テキストを凍結 (§13-3)
+        except Exception as e:  # noqa: BLE001
+            _log.warning("label_snapshot_backfill_failed", error=str(e))
+            errors.append(f"snapshot: {type(e).__name__}: {e}")
 
     result = LabelHarvestResult(
         feed_subject_new=feed_new,

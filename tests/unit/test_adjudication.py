@@ -110,12 +110,13 @@ class TestResolveCase:
 
 
 class TestTtlExpiry:
-    def test_stale_case_expires_and_quarantines(self, repo: RunHistoryRepository) -> None:
+    def test_stale_case_expires_without_destroying_label(self, repo: RunHistoryRepository) -> None:
+        """§13-2 対処: TTL はキュー整理のみ — パネルが割れただけで錨 (E1) を消さない。"""
         _seed_case(repo, when=_NOW - timedelta(days=40))
         expired = expire_stale_cases(repo, now=_NOW)
         assert expired == 1
         assert repo.list_pending_adjudications() == []
-        assert _active_e1(repo) == []  # 係争中ラベルは保守側で隔離 (sentinel 0)
+        assert _active_e1(repo) == ["qilin"]  # ラベルは非破壊で残る
         recent = repo.list_recent_resolutions()
         assert recent[0]["resolution"] == "expired"
         assert recent[0]["resolved_by"] == "ttl"

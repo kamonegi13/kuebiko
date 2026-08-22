@@ -163,6 +163,14 @@ async def run_weekly_prompt_governance() -> None:
             if rollback_line:
                 sections.append(rollback_line)
 
+        # 較正格子のシャドー部品台帳 (§13-8): 無期限シャドー化を防ぐ期限起票
+        try:
+            from src.tuning.shadow_registry import shadow_status_lines
+
+            sections.extend(shadow_status_lines())
+        except Exception as e:  # noqa: BLE001 — 台帳の失敗で監査投稿を止めない
+            _log.warning("shadow_registry_failed", error=str(e))
+
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]
         importance = "medium" if worst_exit == 1 else "low"

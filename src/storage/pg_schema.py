@@ -735,8 +735,11 @@ CREATE TABLE IF NOT EXISTS tuning_labels (
     strength      TEXT      NOT NULL,
     arrived_at    TEXT      NOT NULL,
     provenance    TEXT      NOT NULL,
-    superseded_by BIGINT
+    superseded_by BIGINT,
+    snapshot      TEXT
 );
+
+ALTER TABLE tuning_labels ADD COLUMN IF NOT EXISTS snapshot TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);
@@ -773,8 +776,11 @@ CREATE TABLE IF NOT EXISTS panel_verdicts (
     agreement        TEXT    NOT NULL,
     is_dispute       INTEGER NOT NULL,
     prompt_chars     INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT    NOT NULL
+    created_at       TEXT    NOT NULL,
+    rubric_version   INTEGER
 );
+
+ALTER TABLE panel_verdicts ADD COLUMN IF NOT EXISTS rubric_version INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field
     ON panel_verdicts(field, agreement);

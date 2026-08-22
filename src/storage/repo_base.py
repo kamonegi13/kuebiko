@@ -86,6 +86,13 @@ class RunHistoryRepositoryBase:
         # Phase 5L-4: articles に dedup_key カラム追加 (idempotent)
         # 古い DB は ALTER TABLE で追加、新しい DB は _SCHEMA_SQL の CREATE TABLE で
         # 既に存在する。INDEX 作成は両ケース共通 (IF NOT EXISTS)。
+        # 較正格子 §13 対処 (2026-08-22): 学習テキスト凍結 + rubric 版の層別次元
+        existing_labels = {row["name"] for row in conn.execute("PRAGMA table_info(tuning_labels)")}
+        if existing_labels and "snapshot" not in existing_labels:
+            conn.execute("ALTER TABLE tuning_labels ADD COLUMN snapshot TEXT")
+        existing_panel = {row["name"] for row in conn.execute("PRAGMA table_info(panel_verdicts)")}
+        if existing_panel and "rubric_version" not in existing_panel:
+            conn.execute("ALTER TABLE panel_verdicts ADD COLUMN rubric_version INTEGER")
         existing_articles = {row["name"] for row in conn.execute("PRAGMA table_info(articles)")}
         if "dedup_key" not in existing_articles:
             conn.execute("ALTER TABLE articles ADD COLUMN dedup_key TEXT")

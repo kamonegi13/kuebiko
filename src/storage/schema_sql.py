@@ -608,7 +608,11 @@ CREATE TABLE IF NOT EXISTS tuning_labels (
     strength      TEXT    NOT NULL,           -- strong / weak
     arrived_at    TEXT    NOT NULL,           -- ISO8601 UTC (正解が確定した時刻)
     provenance    TEXT    NOT NULL,           -- JSON: 由来 (producer / 根拠 id)。自由文は入れない
-    superseded_by INTEGER                     -- 後続ラベルによる置換 (NULL = 現行)
+    superseded_by INTEGER,                    -- 後続ラベルによる置換 (NULL = 現行)
+    -- 学習テキストの凍結 (§13-3、2026-08-22): 本文は 90 日で purge されるため、
+    -- 収穫時に (title/本文抜粋/候補/分類) を JSON で写経する — ラベルは残るのに教材が
+    -- 消える「恒久資産の時限崩壊」の根治。goldset と同じ凍結原理
+    snapshot      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
@@ -650,7 +654,10 @@ CREATE TABLE IF NOT EXISTS panel_verdicts (
     agreement        TEXT    NOT NULL,          -- unanimous_correct/unanimous_wrong/split/error
     is_dispute       INTEGER NOT NULL,          -- 1=本番と正解が不一致の係争例 0=一致対照
     prompt_chars     INTEGER NOT NULL DEFAULT 0, -- 送信本文量の実数 (外部予算見積 §10.2)
-    created_at       TEXT    NOT NULL
+    created_at       TEXT    NOT NULL,
+    -- 裁定時の judgment_rubric 版 (§13-17、2026-08-22): 版横断で累計分裂率・較正曲線が
+    -- regime 混合しないよう層別次元として記録 (NULL = 版記録以前の裁定)
+    rubric_version   INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_panel_verdicts_field

@@ -37,7 +37,9 @@ def _seed_labeled(
     truth: str,
     body: str,
     category: str = "ransomware",
+    panel_confirmed: bool = True,
 ) -> None:
+    """教材候補 1 件を seed する。§13-6 以降プールは unanimous_correct 確認済み限定。"""
     iso = _NOW.isoformat()
     with repo._connect() as conn:  # noqa: SLF001
         conn.execute(
@@ -67,6 +69,17 @@ def _seed_labeled(
         provenance="{}",
         article_id=article_id,
     )
+    if panel_confirmed:
+        repo.record_panel_verdict(
+            case_key=f"subjpanel:{article_id}:{truth}",
+            field="subject_actor",
+            article_id=article_id,
+            truth_value=truth,
+            production_value=truth,
+            verdicts="[]",
+            agreement="unanimous_correct",
+            is_dispute=False,
+        )
 
 
 class _FakeEmbedder:
@@ -98,7 +111,8 @@ def no_alias_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("src.cti.actor_normalizer.load_actor_aliases", lambda: _Aliases())
     monkeypatch.setattr(
-        "src.pipeline.persistence._relevant_actors", lambda found, cat: [_Cand("qilin")]
+        "src.pipeline.persistence._relevant_actors",
+        lambda found, cat: [_Cand("qilin"), _Cand("akira")],
     )
     monkeypatch.setattr(fp, "_current_rubric_version", lambda: 3)
 
@@ -165,6 +179,30 @@ class TestFewshotSection:
             k=1,
         )
         assert "title-same-cat" in section  # 同カテゴリ優先
+
+    @pytest.mark.asyncio
+    async def test_unconfirmed_and_unreachable_labels_are_excluded(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§13-6: パネル未確認ラベルと候補未到達ラベルは教材にしない。"""
+        _seed_labeled(repo, article_id="ok", truth="qilin", body="x" * 600)
+        _seed_labeled(
+            repo, article_id="unconfirmed", truth="akira", body="y" * 600, panel_confirmed=False
+        )
+        # 候補ゲート外の truth (fake 候補は qilin/akira のみ) = 構造ゲート破りの教材
+        _seed_labeled(repo, article_id="unreachable", truth="lockbit", body="z" * 600)
+        section = await get_fewshot_section(
+            title="q",
+            body="w" * 300,
+            category="ransomware",
+            repo=repo,
+            embedder=None,
+            now=_NOW,
+            k=5,
+        )
+        assert "title-ok" in section
+        assert "title-unconfirmed" not in section
+        assert "title-unreachable" not in section
 
     @pytest.mark.asyncio
     async def test_empty_pool_returns_empty(self, repo: RunHistoryRepository) -> None:

@@ -45,6 +45,11 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_audit = repo.purge_old_access_audit(days=_ACCESS_AUDIT_RETENTION_DAYS)
         # ops 通知も同じ理由で access_audit と同水準の retention (2026-08-21)
         purged_ops_notices = repo.purge_old_ops_notices(days=_OPS_NOTICES_RETENTION_DAYS)
+        # 較正格子の恒久資産 (ラベル/裁定/goldset) を日次で data/backups へ退避 (§13-3)。
+        # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
+        from src.tuning.asset_export import export_tuning_assets
+
+        export_tuning_assets(repo)
         _log.info(
             "daily_maintenance_done",
             purged_logs=purged_logs,

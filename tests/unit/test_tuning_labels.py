@@ -316,6 +316,78 @@ class TestFeedNewsSubjectSweep:
         result = run_label_harvest(repo, now=_NOW)
         assert result.feed_subject_new == 0  # 発覚日錨では窓外
 
+    def test_generic_org_names_are_excluded(self, repo: RunHistoryRepository) -> None:
+        """§13-1 併発欠陥: 一般語の組織名は同名衝突の誤結合源 — 突合キーにしない。"""
+        _seed_article(
+            repo,
+            article_id="claim1",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Hospital",),
+            created_at=_NOW - timedelta(days=2),
+        )
+        _seed_article(
+            repo,
+            article_id="news1",
+            victim_orgs=("hospital",),
+            created_at=_NOW - timedelta(days=1),
+        )
+        assert run_label_harvest(repo, now=_NOW).feed_subject_new == 0
+
+    def test_label_carries_snapshot_and_rubric_version(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§13-3 (学習テキスト凍結) + §13-1 (rubric 版の来歴 stamp)。"""
+        import src.tuning.label_harvest as lh
+
+        monkeypatch.setattr(lh, "_current_summarizer_rubric_version", lambda: 5)
+        _seed_article(
+            repo,
+            article_id="claim1",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+        )
+        _seed_article(
+            repo,
+            article_id="news1",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=1),
+        )
+        assert run_label_harvest(repo, now=_NOW).feed_subject_new == 1
+        with repo._connect() as conn:  # noqa: SLF001
+            row = conn.execute(
+                "SELECT snapshot, provenance FROM tuning_labels WHERE article_id='news1'"
+            ).fetchone()
+        snap = json.loads(row["snapshot"])
+        assert snap["title"] == "title-news1"
+        assert len(snap["body"]) >= 500  # 本文 purge 後も教材が残る
+        assert json.loads(row["provenance"])["summarizer_rubric_version"] == 5
+
+    def test_backfill_fills_missing_snapshots(self, repo: RunHistoryRepository) -> None:
+        _seed_article(repo, article_id="a1", victim_orgs=(), created_at=_NOW)
+        repo.record_tuning_label(
+            dedup_key="old-label",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance="{}",
+            article_id="a1",
+        )
+        from src.tuning.label_harvest import _backfill_snapshots
+
+        assert _backfill_snapshots(repo) == 1
+        assert _backfill_snapshots(repo) == 0  # 冪等
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows and rows[0]["id"] is not None
+        with repo._connect() as conn:  # noqa: SLF001
+            snap = conn.execute(
+                "SELECT snapshot FROM tuning_labels WHERE article_id='a1'"
+            ).fetchone()
+        assert snap["snapshot"] is not None
+
     def test_sweep_is_idempotent(self, repo: RunHistoryRepository) -> None:
         _seed_article(
             repo,

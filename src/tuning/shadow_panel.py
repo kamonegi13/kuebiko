@@ -170,6 +170,10 @@ async def _run_impl(
         ("main", llm_factory(None)),
         (second_ref, llm_factory(second_ref)),
     ]
+    # §13-17: 裁定時の rubric 版を層別次元として記録 (版横断の regime 混合防止)
+    from src.tuning.fewshot_pool import current_judgment_rubric_version
+
+    rubric_version = current_judgment_rubric_version()
 
     aliases = load_actor_aliases()
     result_cases = 0
@@ -200,6 +204,9 @@ async def _run_impl(
                     body=body,
                     published=c["published"],
                     candidates=candidates,
+                    # §13-6: パネルは自分が監査すべき答え (プール) を読んではならない —
+                    # flag 状態に依らず構造的に遮断
+                    allow_fewshot=False,
                 )
                 value = str(out.subject_actor_id or "") if out is not None else "(error)"
             except Exception as e:  # noqa: BLE001 — 1 件の失敗でパネル全体を止めない
@@ -223,6 +230,7 @@ async def _run_impl(
             agreement=agreement,
             is_dispute=is_dispute,
             prompt_chars=len(c["title"]) + len(body),
+            rubric_version=rubric_version,
         )
         result_cases += 1
         result_disputes += int(is_dispute)

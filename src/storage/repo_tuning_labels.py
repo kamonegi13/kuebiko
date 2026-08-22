@@ -37,21 +37,33 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         article_id: str | None = None,
         arrived_at: datetime | None = None,
         supersede_same: bool = False,
+        snapshot: str | None = None,
     ) -> int | None:
         """ラベルを 1 行追記する。挿入できたら id、dedup_key 既出なら None を返す。
 
         ``supersede_same=True`` のとき、同一 (article_id, field, source) の現行ラベル
         (superseded_by IS NULL) を新 id で置換済みにする。article_id が無い識別系
         ラベルには適用しない (記事という置換単位が無いため)。
+        ``snapshot`` は学習テキストの凍結 (JSON — 本文 90 日 purge 後も教材が残る §13-3)。
         """
         ts = _to_iso(arrived_at or datetime.now(UTC))
         with self._connect() as conn:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO tuning_labels"
                 " (dedup_key, article_id, field, label_value, source, strength,"
-                "  arrived_at, provenance)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (dedup_key, article_id, field, label_value, source, strength, ts, provenance),
+                "  arrived_at, provenance, snapshot)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    dedup_key,
+                    article_id,
+                    field,
+                    label_value,
+                    source,
+                    strength,
+                    ts,
+                    provenance,
+                    snapshot,
+                ),
             )
             if (cur.rowcount or 0) == 0:
                 return None  # dedup_key 既出 (冪等)
@@ -166,11 +178,13 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         除外: 散文 body を持たない構造化レコード / recap / **ダイジェスト** (多数事件の
         まとめには単一主題が存在しない — eval script の除外を移植し忘れて Grok ダイジェスト
         に誤ラベルが付いた 2026-08-22 の教訓。生 % は psycopg 罠 → パラメータで渡す)。
+        title/body/category はラベルの学習テキスト凍結 (snapshot §13-3) 用。
         """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT a.article_id, LOWER(TRIM(e.value)) AS org,"
-                " COALESCE(a.published_at, a.created_at) AS created_at"
+                " COALESCE(a.published_at, a.created_at) AS created_at,"
+                " a.title, a.body, a.category"
                 " FROM articles a JOIN article_entities e"
                 "   ON e.article_id = a.article_id AND e.entity_type = 'victim_org'"
                 " WHERE COALESCE(a.subject_actor_source, '') <> 'feed'"
@@ -185,9 +199,38 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 "article_id": str(r["article_id"]),
                 "org": str(r["org"]),
                 "created_at": r["created_at"],
+                "title": str(r["title"] or ""),
+                "body": str(r["body"] or ""),
+                "category": str(r["category"] or ""),
             }
             for r in rows
         ]
+
+    def list_labels_missing_snapshot(self) -> list[dict[str, Any]]:
+        """snapshot 未凍結で本文がまだ残っているラベル (backfill 対象、§13-3)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT tl.id, a.title, a.body, a.category"
+                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
+                " WHERE tl.snapshot IS NULL AND tl.article_id IS NOT NULL"
+                "   AND LENGTH(COALESCE(a.body, '')) >= 200",
+            ).fetchall()
+        return [
+            {
+                "id": int(r["id"]),
+                "title": str(r["title"] or ""),
+                "body": str(r["body"] or ""),
+                "category": str(r["category"] or ""),
+            }
+            for r in rows
+        ]
+
+    def set_label_snapshot(self, label_id: int, snapshot: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE tuning_labels SET snapshot = ? WHERE id = ? AND snapshot IS NULL",
+                (snapshot, label_id),
+            )
 
     # ---------- tuning_evals (P2: goldset 評価 + C7 rollback 裁定) ----------
 
@@ -270,6 +313,15 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
             for r in rows
         ]
 
+    def export_tuning_labels(self) -> list[dict[str, Any]]:
+        """全ラベルの schema 非依存 dump (恒久資産エクスポート §13-3 用)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, dedup_key, article_id, field, label_value, source, strength,"
+                " arrived_at, provenance, superseded_by, snapshot FROM tuning_labels ORDER BY id",
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def supersede_active_labels(
         self,
         *,
@@ -318,11 +370,17 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
         return out
 
     def list_editorial_stance_reviews(self) -> list[dict[str, Any]]:
-        """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。"""
+        """editorial 訂正の全件 (収穫③ E3 producer 用。UNIQUE(article_id) で最新のみ)。
+
+        title/body は学習テキスト凍結 (snapshot §13-3) 用 (LEFT JOIN — 記事が消えていても
+        訂正自体はラベル化する)。
+        """
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT article_id, original_stance, corrected_stance, created_at"
-                " FROM editorial_stance_reviews",
+                "SELECT r.article_id, r.original_stance, r.corrected_stance, r.created_at,"
+                " a.title, a.body, a.category"
+                " FROM editorial_stance_reviews r"
+                " LEFT JOIN articles a ON a.article_id = r.article_id",
             ).fetchall()
         return [
             {
@@ -332,6 +390,9 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 ),
                 "corrected_stance": str(r["corrected_stance"]),
                 "created_at": r["created_at"],
+                "title": str(r["title"] or ""),
+                "body": str(r["body"] or ""),
+                "category": str(r["category"] or ""),
             }
             for r in rows
         ]

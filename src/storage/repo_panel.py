@@ -37,14 +37,19 @@ class PanelMixin(RunHistoryRepositoryBase):
         production_value: str | None = None,
         prompt_chars: int = 0,
         when: datetime | None = None,
+        rubric_version: int | None = None,
     ) -> int | None:
-        """パネル裁定を 1 行追記する。case_key 既出なら None (冪等)。"""
+        """パネル裁定を 1 行追記する。case_key 既出なら None (冪等)。
+
+        ``rubric_version`` = 裁定時の judgment_rubric 版 (§13-17 — 版横断の regime 混合を
+        C3 較正の層別で扱えるようにする)。
+        """
         with self._connect() as conn:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO panel_verdicts"
                 " (case_key, article_id, field, truth_value, production_value,"
-                "  verdicts, agreement, is_dispute, prompt_chars, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  verdicts, agreement, is_dispute, prompt_chars, created_at, rubric_version)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     case_key,
                     article_id,
@@ -56,6 +61,7 @@ class PanelMixin(RunHistoryRepositoryBase):
                     1 if is_dispute else 0,
                     int(prompt_chars),
                     _to_iso(when or datetime.now(UTC)),
+                    rubric_version,
                 ),
             )
             if (cur.rowcount or 0) == 0:
@@ -94,19 +100,33 @@ class PanelMixin(RunHistoryRepositoryBase):
             "split_rate": round(splits / judged, 3) if judged else None,
         }
 
-    def fetch_subject_panel_cases(self, since_iso: str) -> list[dict[str, Any]]:
-        """E1 主体ラベル付き記事 (パネルの入力候補)。正誤の仕分けは呼び出し側で行う。"""
+    def fetch_subject_panel_cases(
+        self, since_iso: str, *, confirmed_only: bool = False
+    ) -> list[dict[str, Any]]:
+        """E1 主体ラベル付き記事 (パネルの入力候補)。正誤の仕分けは呼び出し側で行う。
+
+        ``confirmed_only=True`` はパネルが unanimous_correct で確認済みのラベルに限定する
+        (few-shot プール §13-6 — 設計 C8 の「高確信ラベル」の実装。パネル未確認の
+        ラベルを教材にしない)。
+        """
+        sql = (
+            "SELECT tl.article_id, tl.label_value AS truth,"
+            " a.title, a.body, a.category, a.published_at,"
+            " COALESCE(a.subject_actor_ids, '') AS production"
+            " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
+            " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
+            "   AND tl.superseded_by IS NULL AND tl.arrived_at >= ?"
+            "   AND LENGTH(COALESCE(a.body, '')) >= 500"
+        )
+        if confirmed_only:
+            sql += (
+                " AND EXISTS (SELECT 1 FROM panel_verdicts pv"
+                "  WHERE pv.article_id = tl.article_id AND pv.field = tl.field"
+                "    AND pv.truth_value = tl.label_value"
+                "    AND pv.agreement = 'unanimous_correct')"
+            )
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT tl.article_id, tl.label_value AS truth,"
-                " a.title, a.body, a.category, a.published_at,"
-                " COALESCE(a.subject_actor_ids, '') AS production"
-                " FROM tuning_labels tl JOIN articles a ON a.article_id = tl.article_id"
-                " WHERE tl.field = 'subject_actor' AND tl.source = 'E1'"
-                "   AND tl.superseded_by IS NULL AND tl.arrived_at >= ?"
-                "   AND LENGTH(COALESCE(a.body, '')) >= 500",
-                (since_iso,),
-            ).fetchall()
+            rows = conn.execute(sql, (since_iso,)).fetchall()
         return [
             {
                 "article_id": str(r["article_id"]),
@@ -119,6 +139,16 @@ class PanelMixin(RunHistoryRepositoryBase):
             }
             for r in rows
         ]
+
+    def export_panel_verdicts(self) -> list[dict[str, Any]]:
+        """全裁定の schema 非依存 dump (恒久資産エクスポート §13-3 用)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, case_key, article_id, field, truth_value, production_value,"
+                " verdicts, agreement, is_dispute, prompt_chars, created_at, rubric_version"
+                " FROM panel_verdicts ORDER BY id",
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ---------- P4: 裁定キュー (導出) + 人間裁定 ----------
 

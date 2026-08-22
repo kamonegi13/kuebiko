@@ -103,7 +103,10 @@ def expire_stale_cases(
 ) -> int:
     """TTL 超過の未裁定係争を expired にする (§12 の無応答既定 — 人間不在でも溜まらない)。
 
-    係争中の E1 ラベルは保守側で隔離する (学習資産の純度 > 1 ラベルの回収)。
+    **非破壊** (§13-2 対処、2026-08-22): 旧実装は E1 ラベルを隔離 (supersede) していたが、
+    係争には split (パネルが割れただけ) も含まれるため「パネル合意が錨を消す」= §5
+    不変条件 1/2 の実装違反だった。expired はキュー整理の状態にとどめ、ラベルは残す。
+    学習資産の保守性は消費者側 (few-shot プールの unanimous_correct 限定 §13-6) が担う。
     """
     base = now or datetime.now(UTC)
     cutoff = base - timedelta(days=ttl_days)
@@ -117,20 +120,10 @@ def expire_stale_cases(
             created = created.replace(tzinfo=UTC)
         if created > cutoff:
             continue
-        if not repo.insert_panel_resolution(
+        if repo.insert_panel_resolution(
             case_key=case["case_key"], resolution="expired", resolved_by="ttl"
         ):
-            continue
-        expired += 1
-        if case["article_id"]:
-            # 後継なしの隔離 (sentinel 0)。マーカーラベル方式は「空の active ラベル」を
-            # 作り次回パネルの入力に混入するため不採用
-            repo.supersede_active_labels(
-                article_id=case["article_id"],
-                field=case["field"],
-                source="E1",
-                superseded_by=0,
-            )
+            expired += 1
     if expired:
         _log.info("adjudication_ttl_expired", count=expired, ttl_days=ttl_days)
     return expired

@@ -72,7 +72,8 @@ def invalidate_fewshot_pool() -> None:
     _cache = None
 
 
-def _current_rubric_version() -> int | None:
+def current_judgment_rubric_version() -> int | None:
+    """judgment_rubric の現行版 (プールの版バインドとパネル裁定の層別次元 §13-17 が共用)。"""
     try:
         from src.storage.config_store import list_history
 
@@ -82,18 +83,28 @@ def _current_rubric_version() -> int | None:
         return None
 
 
+# 後方互換 (テストの monkeypatch 対象)
+_current_rubric_version = current_judgment_rubric_version
+
+
 async def _build_pool(repo: Any, embedder: Any | None, now: datetime) -> list[Example]:
     from src.cti.actor_normalizer import load_actor_aliases
     from src.pipeline.persistence import _relevant_actors
 
     since_iso = (now - timedelta(days=_POOL_LOOKBACK_DAYS)).isoformat()
-    rows = repo.fetch_subject_panel_cases(since_iso)[:_MAX_POOL]
+    # §13-6: 教材は **パネルが unanimous_correct で確認済み** のラベルに限定する
+    # (設計 C8「高確信ラベル」の実装。未確認ラベルを教材にしない)
+    rows = repo.fetch_subject_panel_cases(since_iso, confirmed_only=True)[:_MAX_POOL]
     aliases = load_actor_aliases()
     examples: list[Example] = []
     for r in rows:
         title = str(r["title"])[:_TITLE_CHARS]
         excerpt = " ".join(str(r["body"]).split())[:_EXCERPT_CHARS]
         cands = _relevant_actors(aliases.find_all(f"{r['title']}\n{r['body']}"), r["category"])
+        # §13-6: 正解が候補ゲート外の例は「候補外の答え」を教える構造ゲート破りの教材に
+        # なるため除外する (候補到達可能例のみ)
+        if not any(c.id == str(r["truth"]) for c in cands):
+            continue
         vector = None
         if embedder is not None:
             try:
