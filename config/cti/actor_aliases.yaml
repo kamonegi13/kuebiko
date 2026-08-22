@@ -6252,6 +6252,8 @@ actors:
   canonical: UNC1151
   aliases:
   - UNC-1151
+  - FrostyNeighbor
+  - Ghostwriter
   nation: by
   sponsor: Belarus State-Sponsored (assessed)
   description: ベラルーシ当局関連と評価される諜報・影響工作アクター。Ghostwriter 作戦と関連づけられ、 ポーランド/リトアニア/ウクライナの政府・軍・メディアを標的。alias
@@ -6276,7 +6278,8 @@ actors:
   family: ''
 - id: unc1549
   canonical: UNC1549
-  aliases: []
+  aliases:
+  - Mirage Kitten
   kind: group
   family: ''
 - id: cl_cri_1089
@@ -6406,12 +6409,14 @@ actors:
   mitre_summary_sha1: e325daf76625ba05e6e04b0b6bde5c298f2d373e
 - id: unc5221
   canonical: UNC5221
-  aliases: []
+  aliases:
+  - VerdantBamboo
   kind: group
   family: ''
 - id: storm_1516
   canonical: Storm-1516
-  aliases: []
+  aliases:
+  - CopyCop
   kind: group
   family: ''
 - id: ta445

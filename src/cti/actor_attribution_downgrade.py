@@ -48,22 +48,28 @@ _MIN_KEY_LEN = 4
 class DowngradeSuspect:
     """タイトルの未知名 ↔ 本文帰属先の既知アクター の対 (同一性は未判定)。"""
 
-    key: str  # タイトルに出た辞書未収録の名前
+    key: str  # タイトルに出た辞書未収録の名前 (正規化済みの小文字)
+    display: str  # 記事タイトル中の実際の綴り (別名として辞書へ入れる表記)
     attributed_to: tuple[str, ...]  # 本文経由で実際に帰属した既知アクター id
     articles: int
     sample_titles: tuple[str, ...]
 
 
-def _title_contains(title: str, key: str) -> bool:
-    """語境界つきの大小無視照合。
+def _title_match(title: str, key: str) -> str | None:
+    """語境界つきの大小無視照合。一致したら**タイトル中の実際の綴り**を返す。
 
     部分文字列照合だと "pink" が "pinkerton" 等を拾う。英数字の連なりの内側では
     一致させない (日本語は語境界を持たないため前後の英数字のみを見る)。
+
+    綴りを返すのは、別名を辞書へ入れるときに表示表記 (FrostyNeighbor) を保つため
+    — 暗定 entity の value は正規化で小文字化されており、そのまま alias にすると
+    既存表記 (UNC-1151 / Wicked Panda) と不揃いになり UI・STIX 出力に出る。
     """
     if not title or not key:
-        return False
+        return None
     pattern = rf"(?<![0-9A-Za-z]){re.escape(key)}(?![0-9A-Za-z])"
-    return re.search(pattern, title, flags=re.IGNORECASE) is not None
+    m = re.search(pattern, title, flags=re.IGNORECASE)
+    return m.group(0) if m else None
 
 
 def detect_attribution_downgrades(
@@ -80,13 +86,15 @@ def detect_attribution_downgrades(
     articles: dict[str, set[str]] = {}
     targets: dict[str, list[str]] = {}
     samples: dict[str, list[str]] = {}
+    display: dict[str, str] = {}
 
     for row in rows:
         key = str(row["value"])
         if len(key) < _MIN_KEY_LEN:
             continue
         title = str(row["title"] or "")
-        if not _title_contains(title, key):
+        matched = _title_match(title, key)
+        if matched is None:
             continue
         # タイトル層が既知アクターで発火した分 (source='title') は正常。
         # source='llm' = タイトルの未知名を無視して本文の別アクターへ寄せた形のみを見る。
@@ -97,6 +105,7 @@ def detect_attribution_downgrades(
         if not resolved:
             continue
         articles.setdefault(key, set()).add(str(row["article_id"]))
+        display.setdefault(key, matched)
         for actor_id in resolved:
             if actor_id not in targets.setdefault(key, []):
                 targets[key].append(actor_id)
@@ -107,6 +116,7 @@ def detect_attribution_downgrades(
     suspects = [
         DowngradeSuspect(
             key=key,
+            display=display.get(key, key),
             attributed_to=tuple(sorted(targets.get(key, []))),
             articles=len(ids_set),
             sample_titles=tuple(samples.get(key, [])),
@@ -145,14 +155,14 @@ def propose_downgrade_aliases(
             skipped += 1  # 帰属先が割れる = 別名の問いとして立てられない
             continue
         actor_id = s.attributed_to[0]
-        alias = s.key
+        alias = s.display
         if registry.knows_name(alias) or registry.resolve_source_slug(alias) is not None:
             skipped += 1  # 既に辞書が知っている (暗定側の取りこぼし)
             continue
         if is_generic_alias(alias):
             skipped += 1  # 一般語は別名にしない (2026-07-26 の一般語衝突事故)
             continue
-        dedup_key = f"news_alias:{actor_id}:{alias.lower()}"
+        dedup_key = f"news_alias:{actor_id}:{s.key}"  # 名前空間は正規化キーで固定
         if repo.find_actor_update_proposal(
             proposal_type=PROPOSAL_TYPE_NEWS_ALIAS, dedup_key=dedup_key
         ):

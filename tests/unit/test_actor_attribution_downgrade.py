@@ -61,8 +61,8 @@ class TestDetection:
         _article(
             repo,
             "a1",
-            "Mirage Kitten、中東を標的とした新マルウェアを展開",
-            provisional="mirage kitten",
+            "Kuebiko Phantom、中東を標的とした新マルウェアを展開",
+            provisional="kuebiko phantom",
             subject_ids="unc1549",
             subject_source="llm",
         )
@@ -71,8 +71,8 @@ class TestDetection:
         found = detect_attribution_downgrades(repo, now=_NOW)
 
         # Assert
-        assert [(s.key, s.attributed_to, s.articles) for s in found] == [
-            ("mirage kitten", ("unc1549",), 1)
+        assert [(s.key, s.display, s.attributed_to, s.articles) for s in found] == [
+            ("kuebiko phantom", "Kuebiko Phantom", ("unc1549",), 1)
         ]
 
     def test_title_sourced_attribution_is_normal(self, repo: RunHistoryRepository) -> None:
@@ -80,8 +80,8 @@ class TestDetection:
         _article(
             repo,
             "a1",
-            "Lazarus と Mirage Kitten の関係",
-            provisional="mirage kitten",
+            "Lazarus と Kuebiko Phantom の関係",
+            provisional="kuebiko phantom",
             subject_ids="lazarus",
             subject_source="title",
         )
@@ -99,7 +99,7 @@ class TestDetection:
 
     def test_name_only_in_body_is_not_flagged(self, repo: RunHistoryRepository) -> None:
         # Arrange — タイトルに出ないならタイトル層の取りこぼしではない
-        _article(repo, "a1", "無関係な見出し", provisional="mirage kitten",
+        _article(repo, "a1", "無関係な見出し", provisional="kuebiko phantom",
                  subject_ids="unc1549", subject_source="llm")
 
         # Act / Assert
@@ -115,7 +115,7 @@ class TestDetection:
 
     def test_outside_window_is_excluded(self, repo: RunHistoryRepository) -> None:
         # Arrange
-        _article(repo, "a1", "Mirage Kitten の活動", provisional="mirage kitten",
+        _article(repo, "a1", "Kuebiko Phantom の活動", provisional="kuebiko phantom",
                  subject_ids="unc1549", subject_source="llm")
 
         # Act / Assert
@@ -127,7 +127,7 @@ class TestDetection:
 class TestProposal:
     def test_proposes_alias_with_identity_warning(self, repo: RunHistoryRepository) -> None:
         # Arrange
-        _article(repo, "a1", "Mirage Kitten、中東を標的", provisional="mirage kitten",
+        _article(repo, "a1", "Kuebiko Phantom、中東を標的", provisional="kuebiko phantom",
                  subject_ids="unc1549", subject_source="llm")
 
         # Act
@@ -137,19 +137,20 @@ class TestProposal:
         assert stats["proposed"] == 1
         p = repo.find_actor_update_proposal(
             proposal_type=PROPOSAL_TYPE_NEWS_ALIAS,
-            dedup_key="news_alias:unc1549:mirage kitten",
+            dedup_key="news_alias:unc1549:kuebiko phantom",
         )
         assert p is not None
         assert "同一性は未判定" in p.rationale  # 人が判定する (自動昇格しない)
         assert "粒度低下" in p.rationale
         payload = json.loads(p.payload)
-        assert payload["alias"] == "mirage kitten"
+        # 別名はタイトル中の実表記で入る (辞書の既存表記と揃える)
+        assert payload["alias"] == "Kuebiko Phantom"
         assert payload["actor_id"] == "unc1549"
         assert payload["_evidence"]["signal"] == "attribution_downgrade"
 
     def test_split_attribution_is_not_proposed(self, repo: RunHistoryRepository) -> None:
         # Arrange — 帰属先が複数だと「どのアクターの別名か」を問いにできない
-        _article(repo, "a1", "Mirage Kitten の攻撃", provisional="mirage kitten",
+        _article(repo, "a1", "Kuebiko Phantom の攻撃", provisional="kuebiko phantom",
                  subject_ids="unc1549,lazarus", subject_source="llm")
 
         # Act
@@ -169,7 +170,7 @@ class TestProposal:
 
     def test_no_duplicate_across_runs(self, repo: RunHistoryRepository) -> None:
         # Arrange
-        _article(repo, "a1", "Mirage Kitten の活動", provisional="mirage kitten",
+        _article(repo, "a1", "Kuebiko Phantom の活動", provisional="kuebiko phantom",
                  subject_ids="unc1549", subject_source="llm")
         propose_downgrade_aliases(repo, now=_NOW)
 
@@ -201,7 +202,7 @@ class TestProposal:
         self, repo: RunHistoryRepository
     ) -> None:
         # Arrange
-        _article(repo, "a1", "Mirage Kitten の活動", provisional="mirage kitten",
+        _article(repo, "a1", "Kuebiko Phantom の活動", provisional="kuebiko phantom",
                  subject_ids="unc1549", subject_source="llm")
 
         # Act
@@ -210,7 +211,27 @@ class TestProposal:
         # Assert
         p = repo.find_actor_update_proposal(
             proposal_type=PROPOSAL_TYPE_NEWS_ALIAS,
-            dedup_key="news_alias:unc1549:mirage kitten",
+            dedup_key="news_alias:unc1549:kuebiko phantom",
         )
         assert p is not None
         assert "1 語名" not in p.rationale
+
+    def test_dedup_key_uses_normalized_form_not_display(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        # Arrange — 表記揺れ (大小差) で二重起票しないこと
+        _article(repo, "a1", "KUEBIKO PHANTOM の活動", provisional="kuebiko phantom",
+                 subject_ids="unc1549", subject_source="llm")
+        propose_downgrade_aliases(repo, now=_NOW)
+
+        # Act — 別表記の記事が増えても同じ dedup_key に落ちる
+        _article(repo, "a2", "Kuebiko Phantom の続報", provisional="kuebiko phantom",
+                 subject_ids="unc1549", subject_source="llm")
+        stats = propose_downgrade_aliases(repo, now=_NOW)
+
+        # Assert
+        assert stats["proposed"] == 0
+        assert repo.find_actor_update_proposal(
+            proposal_type=PROPOSAL_TYPE_NEWS_ALIAS,
+            dedup_key="news_alias:unc1549:kuebiko phantom",
+        ) is not None
