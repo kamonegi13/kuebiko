@@ -272,3 +272,29 @@ class TestIndexReference:
 
     def test_bare_number_out_of_range_is_not_an_index(self) -> None:
         assert self._resolve(None, "99", self.IDS) is None
+
+
+class TestBothAchPathsUseTheSameDiscipline:
+    """ACH は 2 経路ある (初回 ground_and_score / 増分 incremental_ground_and_score)。
+
+    2026-08-22: 初回だけ番号参照へ直し、増分を取り残して本番で
+    evidence_article_not_found が出た。**兄弟経路に同じ規律が入っているかを固定する。**
+    """
+
+    def test_both_wire_schemas_carry_index(self) -> None:
+        from src.synthesis.grounded.incremental import _WireIncEvidence
+        from src.synthesis.grounded.passes import _WireEvidence
+
+        for model in (_WireEvidence, _WireIncEvidence):
+            assert "index" in model.model_fields, model.__name__
+            # 0 = 未指定 (int|None は structured 生成で不安定)
+            assert model.model_fields["index"].default == 0
+
+    def test_both_prompts_reference_sources_by_number(self) -> None:
+        from pathlib import Path
+
+        for name in ("ground_ach", "ground_incremental"):
+            body = Path(f"prompts/synthesis/{name}.j2").read_text(encoding="utf-8")
+            assert "[{{ loop.index }}]" in body, name
+            # 長い id を列挙すると LLM が行ごと写して破損する
+            assert "--- id: {{ s.article_id }}" not in body, name

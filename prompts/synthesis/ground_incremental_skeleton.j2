@@ -12,7 +12,7 @@
 
 【新着ソース本文】(今回の期間に新しく観測された記事のみ)
 {% for s in sources %}
---- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+--- [{{ loop.index }}] {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
 {{ s.text }}
 {% endfor %}
 

@@ -33,6 +33,7 @@ from src.synthesis.grounded.passes import (
     _norm_conf,
     _norm_polarity,
     _render,
+    _resolve_evidence_source,
     _verdict,
     norm_claim_type,
 )
@@ -70,6 +71,9 @@ def is_sane_japanese_claim(text: str) -> bool:
 
 class _WireIncEvidence(BaseModel):
     model_config = {"extra": "ignore"}
+    # 候補一覧の [N] 番号 (1-based、0 = 未指定)。ground_ach と同じ番号参照方式
+    # (長い id を写させると転記が壊れる — 2026-08-22 実測)。
+    index: int = 0
     article_id: str = ""
     attribution_basis: str = "unattributed"
     excerpt: str = ""
@@ -162,17 +166,32 @@ async def incremental_ground_and_score(
             raw=a.leading_hypothesis[:40],
         )
         leading = prior.leading_hypothesis
-    evidence = tuple(
-        EvidenceItem(
-            article_id=e.article_id,
-            source_tier=tier_by_id.get(e.article_id, "unknown"),
-            attribution_basis=_norm_basis(e.attribution_basis),
-            excerpt=e.excerpt.strip()[:500],
-            polarity=_norm_polarity(e.polarity),
+    # 出典参照は番号優先で解決する (ground_and_score と同一の規律)。解決不能は破棄。
+    evidence_items: list[EvidenceItem] = []
+    unresolved = 0
+    for e in a.evidence:
+        if not e.excerpt.strip():
+            continue
+        aid = _resolve_evidence_source(e.index, e.article_id, sources)
+        if aid is None:
+            unresolved += 1
+            continue
+        evidence_items.append(
+            EvidenceItem(
+                article_id=aid,
+                source_tier=tier_by_id.get(aid, "unknown"),
+                attribution_basis=_norm_basis(e.attribution_basis),
+                excerpt=e.excerpt.strip()[:500],
+                polarity=_norm_polarity(e.polarity),
+            )
         )
-        for e in a.evidence
-        if e.excerpt.strip()
-    )
+    if unresolved:
+        _log.warning(
+            "grounded_incremental_evidence_unresolved",
+            situation=situation_title[:60],
+            dropped=unresolved,
+        )
+    evidence = tuple(evidence_items)
     hyps = tuple(
         HypothesisScore(
             hypothesis=h.hypothesis,

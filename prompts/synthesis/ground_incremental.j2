@@ -13,7 +13,7 @@
 
 【新着ソース本文】(今回の期間に新しく観測された記事のみ)
 {% for s in sources %}
---- id: {{ s.article_id }} | {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
+--- [{{ loop.index }}] {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---
 {{ s.text }}
 {% endfor %}
 
@@ -26,8 +26,10 @@
 {% for h in hypotheses %}
    - {{ h.id }} ({{ h.label }}): {{ h.description }}
 {% endfor %}
-2) 証拠台帳: **新着ソースから**重要な事実を抽出 (article_id / attribution_basis / excerpt /
+2) 証拠台帳: **新着ソースから**重要な事実を抽出 (index=候補一覧の[N]番号 / attribution_basis / excerpt /
    polarity は更新後の leading 基準)。attribution_basis: {{ attribution_options }}
+   **excerpt は本文からの逐語抜粋** — 本文に逐語で存在しない引用は保存時に機械照合で
+   破棄される。言い換えず原文の文字列をそのまま写す (省略は ... で繋いでよい)。
    不在の事実 (leading を支持する不在・否定する不在) も対称に拾う。
    **evidence は判定に最も効く 6 件まで・excerpt は各 80 字以内** (全ソースの網羅は不要 —
    出力が長すぎると切断され全体が無効になる。重要度順に絞る)。
@@ -51,7 +53,7 @@
 持たない場合は変えないのが正しい。
 
 出力 JSON (これ以外を出さない):
-{"evidence": [{"article_id": "<id>", "attribution_basis": "<basis>", "excerpt": "<抜粋>", "polarity": "supports|contradicts|neutral"}],
+{"evidence": [{"index": <N>, "attribution_basis": "<basis>", "excerpt": "<抜粋>", "polarity": "supports|contradicts|neutral"}],
  "hypotheses": [{"hypothesis": "<仮説id>", "consistent": <int>, "inconsistent": <int>}],
  "leading_hypothesis": "<仮説id>", "confidence": "high|moderate|low",
  "claim": "<維持または改訂した claim 1 文>",

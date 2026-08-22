@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 from src.logging_config import get_logger
 
@@ -154,6 +155,42 @@ async def run_weekly_prompt_governance() -> None:
                 f"(v{version}, {days} 日窓): "
                 f"{_summary_line(verify_out, prefix='総合判定:')}"
             )
+
+        # seed 版ずれの検知 (2026-08-22)。プロンプト本文の SSoT は DB (config_store) で、
+        # ⭐**リポジトリの seed yaml を編集しても実行時には効かない** (yaml は初回 seed 専用)。
+        # 実際に「seed を直して効いたつもり」で半日運転した事故があったため、乖離を常設検知する。
+        # golden テストは seed==legacy のファイル間一致しか見ておらず DB 乖離を素通りする。
+        try:
+            import json as _json
+
+            import yaml as _yaml
+
+            from src.prompts.registry import all_specs
+            from src.storage.config_store import get_config
+
+            drifted: list[str] = []
+            for spec in all_specs():
+                seed_path = Path(spec.seed_path)
+                if not seed_path.exists():
+                    continue
+                seed = _yaml.safe_load(seed_path.read_text(encoding="utf-8"))
+                live = get_config(spec.config_key)
+                if live is None:
+                    continue
+                if _json.dumps(seed, sort_keys=True, ensure_ascii=False) != _json.dumps(
+                    live, sort_keys=True, ensure_ascii=False
+                ):
+                    drifted.append(spec.prompt_id)
+            if drifted:
+                # 乖離自体は正常方向にも起きる (UI 調整で DB が seed より先行)。警告に
+                # せず事実として出す — 目的は「seed を直して効いたつもり」を気付かせること。
+                sections.append(
+                    f"ℹ️ seed 版ずれ {len(drifted)} 本 ({', '.join(sorted(drifted)[:6])}): "
+                    "稼働中の本文は **DB 版**。リポジトリの seed yaml を編集しても反映されない"
+                    " (適用するには UI/API から保存する)"
+                )
+        except Exception as e:  # noqa: BLE001 — 検知の失敗で監査投稿を止めない
+            _log.warning("prompt_seed_drift_check_failed", error=str(e))
 
         title = "プロンプト統治 週次監査"
         body = "\n".join(sections)[:_BODY_LIMIT]
