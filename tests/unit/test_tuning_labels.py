@@ -3,6 +3,11 @@
 ラベルは「LLM 出力の採点」でなく「外部正解との突合」を起点に定義する (設計 §2)。
 収穫は週次 sweep (pull 型・冪等) — 人間が一切触らなくてもラベルが増え続けること (§12) を
 dedup_key の冪等性テストで固定する。
+
+不変条件14 (§5 ソース独立性、2026-08-22) のため ``_seed_article`` は claim 記事
+(``subject_actor_source='feed'``) と news 記事とで既定ホストを分ける (実運用の
+「犯行声明サイト」と「報道サイト」が別ドメインである状態を模す)。明示的に同一ホストを
+与えれば自己突合ケースを再現できる。
 """
 
 from __future__ import annotations
@@ -36,9 +41,22 @@ def _seed_article(
     created_at: datetime = _NOW,
     published_at: datetime | None = None,
     title: str | None = None,
+    url: str | None = None,
 ) -> None:
-    """収穫の入力 (articles + article_entities) を直接 seed する (test 専用)。"""
+    """収穫の入力 (articles + article_entities) を直接 seed する (test 専用)。
+
+    ``url`` 省略時、claim 記事 (``subject_actor_source='feed'``) と news 記事は
+    既定で別ホストになる (不変条件14 の独立性ゲートを既存テストが自然に満たすため)。
+    同一ホストの自己突合を再現したいテストは ``url`` を明示的に揃える。
+    """
     iso = created_at.isoformat()
+    if url is None:
+        host = (
+            "ransomware-leaksite.example"
+            if subject_actor_source == "feed"
+            else "news-outlet.example"
+        )
+        url = f"https://{host}/{article_id}"
     with repo._connect() as conn:  # noqa: SLF001
         conn.execute(
             "INSERT INTO runs (started_at, pipeline, dry_run, status) VALUES (?, 't', 0, 'done')",
@@ -53,7 +71,7 @@ def _seed_article(
                 rid,
                 article_id,
                 title if title is not None else f"title-{article_id}",
-                f"https://kuebiko.example/{article_id}",
+                url,
                 iso,
                 subject_actor_source,
                 subject_actor_ids,
@@ -408,6 +426,192 @@ class TestFeedNewsSubjectSweep:
         assert first.feed_subject_new == 1
         assert second.feed_subject_new == 0  # 再実行で増えない
         assert len(repo.list_tuning_labels(field="subject_actor")) == 1
+
+
+class TestSourceIndependenceGate:
+    """不変条件14 (§5・§10.2e、2026-08-22): 突合の両辺が同一ソースなら数えない。"""
+
+    def test_same_host_match_is_skipped(self, repo: RunHistoryRepository) -> None:
+        # claim/news を同一ホスト (www. の有無だけ違う) にした自己突合
+        _seed_article(
+            repo,
+            article_id="claim1",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+            url="https://www.ransomware.live/claim1",
+        )
+        _seed_article(
+            repo,
+            article_id="news1",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=1),
+            url="https://ransomware.live/news1",
+        )
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.feed_subject_new == 0
+        assert result.feed_subject_self_source_skipped == 1
+        assert repo.list_tuning_labels(field="subject_actor") == []
+
+    def test_different_host_still_matches(self, repo: RunHistoryRepository) -> None:
+        # _seed_article の既定ホスト (claim=leaksite / news=news-outlet) で独立性を満たす
+        _seed_article(
+            repo,
+            article_id="claim1",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+        )
+        _seed_article(
+            repo,
+            article_id="news1",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=1),
+        )
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.feed_subject_new == 1
+        assert result.feed_subject_self_source_skipped == 0
+
+    def test_independent_claim_is_preferred_over_self_source_one(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """同一 gt に自己ソース候補と独立ソース候補が両方ある場合は独立側を採用する。"""
+        _seed_article(
+            repo,
+            article_id="self_claim",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+            url="https://ransomware.live/self_claim",
+        )
+        _seed_article(
+            repo,
+            article_id="indep_claim",
+            subject_actor_source="feed",
+            subject_actor_ids="qilin",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=2),
+            url="https://leaksite-mirror.example/indep_claim",
+        )
+        _seed_article(
+            repo,
+            article_id="news1",
+            victim_orgs=("Acme Corp",),
+            created_at=_NOW - timedelta(days=1),
+            url="https://ransomware.live/news1",
+        )
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.feed_subject_new == 1
+        assert result.feed_subject_self_source_skipped == 0
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert json.loads(rows[0]["provenance"])["claim_article_id"] == "indep_claim"
+
+
+class TestReclassifySelfSourceLabels:
+    """不変条件14: 既存の自己突合ラベルを削除せず strength で隔離する再分類関数。"""
+
+    def test_reclassifies_self_source_and_is_idempotent(self, repo: RunHistoryRepository) -> None:
+        from src.tuning.label_harvest import reclassify_self_source_labels
+
+        # 独立性ゲート実装前に書かれた既存ラベルを模す (claim/news 同一ホスト)
+        _seed_article(repo, article_id="claim1", url="https://ransomware.live/claim1")
+        _seed_article(repo, article_id="news1", url="https://www.ransomware.live/news1")
+        repo.record_tuning_label(
+            dedup_key="legacy-self-match",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance=json.dumps(
+                {"producer": "feed_victim_org_match", "claim_article_id": "claim1"}
+            ),
+            article_id="news1",
+        )
+
+        assert reclassify_self_source_labels(repo) == 1
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows[0]["strength"] == "self_source"
+        # 冪等: 再実行では対象が残っていないので増えない
+        assert reclassify_self_source_labels(repo) == 0
+
+    def test_independent_label_is_left_untouched(self, repo: RunHistoryRepository) -> None:
+        from src.tuning.label_harvest import reclassify_self_source_labels
+
+        _seed_article(repo, article_id="claim1", url="https://ransomware.live/claim1")
+        _seed_article(repo, article_id="news1", url="https://news-outlet.example/news1")
+        repo.record_tuning_label(
+            dedup_key="legit",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance=json.dumps(
+                {"producer": "feed_victim_org_match", "claim_article_id": "claim1"}
+            ),
+            article_id="news1",
+        )
+
+        assert reclassify_self_source_labels(repo) == 0
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows[0]["strength"] == "strong"
+
+    def test_run_label_harvest_reclassifies_at_start(self, repo: RunHistoryRepository) -> None:
+        """週次収穫の冒頭で自動的に再分類が走る (dry_run では走らない)。"""
+        _seed_article(repo, article_id="claim1", url="https://ransomware.live/claim1")
+        _seed_article(repo, article_id="news1", url="https://www.ransomware.live/news1")
+        repo.record_tuning_label(
+            dedup_key="legacy-self-match",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance=json.dumps(
+                {"producer": "feed_victim_org_match", "claim_article_id": "claim1"}
+            ),
+            article_id="news1",
+        )
+
+        dry = run_label_harvest(repo, now=_NOW, dry_run=True)
+        assert dry.self_source_reclassified == 0
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows[0]["strength"] == "strong"
+
+        result = run_label_harvest(repo, now=_NOW)
+        assert result.self_source_reclassified == 1
+        rows = repo.list_tuning_labels(field="subject_actor")
+        assert rows[0]["strength"] == "self_source"
+
+
+class TestFetchSubjectPanelCases:
+    """不変条件14: パネル・few-shot の入力候補は自己突合ラベルを読まない。"""
+
+    def test_self_source_labels_are_excluded(self, repo: RunHistoryRepository) -> None:
+        for aid in ("selfsrc", "indep"):
+            _seed_article(repo, article_id=aid, body_len=600, created_at=_NOW)
+        repo.record_tuning_label(
+            dedup_key="self1",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="self_source",
+            provenance="{}",
+            article_id="selfsrc",
+        )
+        repo.record_tuning_label(
+            dedup_key="indep1",
+            field="subject_actor",
+            label_value="qilin",
+            source="E1",
+            strength="strong",
+            provenance="{}",
+            article_id="indep",
+        )
+        since_iso = (_NOW - timedelta(days=5)).isoformat()
+        cases = repo.fetch_subject_panel_cases(since_iso)
+        assert {c["article_id"] for c in cases} == {"indep"}
 
 
 class TestE3Sweeps:

@@ -133,8 +133,12 @@ class LabelHarvestResult:
 
     feed_subject_new: int = 0
     feed_subject_conflicts: int = 0
+    # 不変条件14 (§5): 突合の両辺が同一ソースだったためラベルを書かなかった件数
+    feed_subject_self_source_skipped: int = 0
     taxonomy_new: int = 0
     editorial_new: int = 0
+    # 不変条件14 (§5): 既存ラベルのうち今回 strength='self_source' に再分類した件数
+    self_source_reclassified: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -193,18 +197,23 @@ def _sweep_feed_news_subject(
     now: datetime,
     dry_run: bool,
     lookback_days: int = _LOOKBACK_DAYS,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """収穫① (E1): 犯行声明 × ニュース記事の victim_org ±5 日突合 → 主体ラベル。
 
     同一 org へ別ギャングの声明が窓内に複数ある場合は正解を決められないので付与しない
     (conflict として数える — 保守側の既定)。
+
+    不変条件14 (§5 ソース独立性、2026-08-22): 突合候補のうち claim と news が
+    同一ホスト由来のものは独立証拠にならない。同一 gt に複数の claim 候補がある場合は
+    host が異なる (= 独立ソースの) 候補を優先して採用し、独立候補が 1 つも無ければ
+    突合自体をスキップする (ラベルを書かない、self_source_skipped として計上)。
     """
     since_iso = (now - timedelta(days=lookback_days)).isoformat()
     claims = repo.fetch_feed_subject_claims(since_iso)
     news = repo.fetch_victim_org_news_candidates(since_iso)
 
     rubric_version = _current_summarizer_rubric_version()
-    claims_by_org: dict[str, list[tuple[str, str, datetime]]] = {}
+    claims_by_org: dict[str, list[tuple[str, str, datetime, str]]] = {}
     for c in claims:
         ts = _as_dt(c["created_at"])
         gt = str(c["gt"]).split(",")[0].strip()
@@ -212,10 +221,13 @@ def _sweep_feed_news_subject(
             continue
         if c["org"] in _GENERIC_ORG_DENYLIST:
             continue  # 一般語の組織名は同名衝突の誤結合源 (§13-1)
-        claims_by_org.setdefault(str(c["org"]), []).append((str(c["article_id"]), gt, ts))
+        claims_by_org.setdefault(str(c["org"]), []).append(
+            (str(c["article_id"]), gt, ts, str(c.get("url", "")))
+        )
 
     new_count = 0
     conflicts = 0
+    self_source_skipped = 0
     window = timedelta(days=_MATCH_WINDOW_DAYS)
     for n in news:
         n_ts = _as_dt(n["created_at"])
@@ -223,17 +235,32 @@ def _sweep_feed_news_subject(
         if n_ts is None or org not in claims_by_org:
             continue
         matched = [
-            (claim_id, gt)
-            for claim_id, gt, c_ts in claims_by_org[org]
+            (claim_id, gt, c_url)
+            for claim_id, gt, c_ts, c_url in claims_by_org[org]
             if abs(n_ts - c_ts) <= window
         ]
         if not matched:
             continue
-        gts = {gt for _, gt in matched}
+        gts = {gt for _, gt, _ in matched}
         if len(gts) > 1:
             conflicts += 1
             continue
         gt = next(iter(gts))
+
+        # 不変条件14: news 側と host が異なる (独立ソースの) claim 候補だけを採用対象にする。
+        # www. の有無等の素朴な揺らぎは normalize_host (既存 IOC 出典判定と同じ流儀。
+        # 完全な registrable domain 比較ではないが個人運用規模では十分) で吸収する。
+        news_host = normalize_host(str(n.get("url", "")))
+        independent = [
+            (claim_id, c_url)
+            for claim_id, _, c_url in matched
+            if normalize_host(c_url) != news_host
+        ]
+        if not independent:
+            self_source_skipped += 1
+            continue
+        claim_article_id = independent[0][0]
+
         inserted = _record(
             repo,
             dry_run=dry_run,
@@ -246,7 +273,7 @@ def _sweep_feed_news_subject(
             supersede_same=True,
             provenance={
                 "producer": "feed_victim_org_match",
-                "claim_article_id": matched[0][0],
+                "claim_article_id": claim_article_id,
                 "org": org,
                 "window_days": _MATCH_WINDOW_DAYS,
                 # §13-1: 突合キー (victim_org) は summarizer LLM 出力 — 供給時の rubric 版を
@@ -258,7 +285,39 @@ def _sweep_feed_news_subject(
             ),
         )
         new_count += int(inserted)
-    return new_count, conflicts
+    return new_count, conflicts, self_source_skipped
+
+
+def reclassify_self_source_labels(repo: _LabelRepo) -> int:
+    """既存の E1 主体ラベルのうち自己突合分を非破壊に隔離する (不変条件14、一回性/冪等)。
+
+    実測で E1 ラベル 51 件中 43 件が突合の両辺とも www.ransomware.live 由来の自己突合
+    だった (docs/self_evolving_tuning_design.md §10.2e)。ラベル自体・provenance (来歴) は
+    変更せず、``strength`` を ``'self_source'`` に更新するだけで消費者
+    (panel / few-shot / supply_sentinel) から構造的に除外する。
+
+    走査対象は ``strength <> 'self_source'`` のみなので、一度隔離した行は次回以降
+    対象から外れる (= 自然に冪等)。収穫 sweep の冒頭で毎回呼んでよい。
+    """
+    reclassified = 0
+    for row in repo.list_e1_subject_labels_not_self_source():
+        try:
+            provenance = json.loads(str(row["provenance"]))
+        except (TypeError, ValueError):
+            continue
+        claim_article_id = provenance.get("claim_article_id")
+        if not claim_article_id:
+            continue
+        claim_url = repo.fetch_article_url(str(claim_article_id))
+        if not claim_url:
+            continue  # claim 記事が既に無い → host 判定不能、保守的に据え置く
+        news_host = normalize_host(str(row.get("url", "")))
+        if news_host and news_host == normalize_host(claim_url):
+            repo.mark_label_self_source(int(row["id"]))
+            reclassified += 1
+    if reclassified:
+        _log.info("label_self_source_reclassified", count=reclassified)
+    return reclassified
 
 
 def _sweep_taxonomy_decisions(repo: _LabelRepo, *, dry_run: bool) -> int:
@@ -351,10 +410,19 @@ def run_label_harvest(
     """
     base = now or datetime.now(UTC)
     errors: list[str] = []
-    feed_new = feed_conflicts = taxonomy_new = editorial_new = 0
+    feed_new = feed_conflicts = feed_self_skipped = taxonomy_new = editorial_new = 0
+    reclassified = 0
+
+    if not dry_run:
+        # 不変条件14 (§5): 既存の自己突合ラベルの隔離を毎回冒頭で試みる (冪等)。
+        try:
+            reclassified = reclassify_self_source_labels(repo)
+        except Exception as e:  # noqa: BLE001 — 1 producer の失敗で他を止めない
+            _log.warning("label_harvest_reclassify_failed", error=str(e))
+            errors.append(f"reclassify: {type(e).__name__}: {e}")
 
     try:
-        feed_new, feed_conflicts = _sweep_feed_news_subject(
+        feed_new, feed_conflicts, feed_self_skipped = _sweep_feed_news_subject(
             repo, now=base, dry_run=dry_run, lookback_days=lookback_days
         )
     except Exception as e:  # noqa: BLE001 — 1 producer の失敗で他を止めない
@@ -383,14 +451,18 @@ def run_label_harvest(
     result = LabelHarvestResult(
         feed_subject_new=feed_new,
         feed_subject_conflicts=feed_conflicts,
+        feed_subject_self_source_skipped=feed_self_skipped,
         taxonomy_new=taxonomy_new,
         editorial_new=editorial_new,
+        self_source_reclassified=reclassified,
         errors=errors,
     )
     _log.info(
         "label_harvest_complete",
         feed_subject_new=result.feed_subject_new,
         feed_subject_conflicts=result.feed_subject_conflicts,
+        feed_subject_self_source_skipped=result.feed_subject_self_source_skipped,
+        self_source_reclassified=result.self_source_reclassified,
         taxonomy_new=result.taxonomy_new,
         editorial_new=result.editorial_new,
         dry_run=dry_run,

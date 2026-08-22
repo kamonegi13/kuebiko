@@ -605,7 +605,9 @@ CREATE TABLE IF NOT EXISTS tuning_labels (
     field         TEXT    NOT NULL,           -- subject_actor / editorial_stance / ...
     label_value   TEXT    NOT NULL,
     source        TEXT    NOT NULL,           -- 証拠源層: E0/E1/E2/E3 (P1 は E1/E3 のみ)
-    strength      TEXT    NOT NULL,           -- strong / weak
+    -- strong / weak / self_source (突合の両辺が同一ソース由来 = 不変条件14 で
+    -- 独立ラベルとして数えない隔離マーカー、2026-08-22。削除でなく strength 更新で隔離)
+    strength      TEXT    NOT NULL,
     arrived_at    TEXT    NOT NULL,           -- ISO8601 UTC (正解が確定した時刻)
     provenance    TEXT    NOT NULL,           -- JSON: 由来 (producer / 根拠 id)。自由文は入れない
     superseded_by INTEGER,                    -- 後続ラベルによる置換 (NULL = 現行)

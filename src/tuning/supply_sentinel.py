@@ -7,6 +7,11 @@ rubric 変更でラベル供給が静かに縮退しても、収穫は「新規 
 判定は fill-rate 監査と同じ思想 (過去週中央値との比較・決定論・LLM 不使用)。
 ラベルの arrived_at (= 記事の実効日) で週バケツを作り、直近の完全週が
 過去 4 週中央値の半分未満なら警告行を返す。母数が小さすぎる週は判定しない。
+
+不変条件14 (§5 ソース独立性、2026-08-22) 適用後は分母を「独立ラベルのみ」
+(``strength <> 'self_source'``) に層別する — baseline (過去週) も同じフィルタで
+再計算しないと、独立性強制の直後に供給が ~6 件/週 → ~1 件/週へ構造的に落ちて
+偽の崩落警報が出てしまう (旧分母のまま新分母を比較する誤り)。
 """
 
 from __future__ import annotations
@@ -45,6 +50,10 @@ def supply_drift_lines(repo: Any, *, now: datetime | None = None) -> list[str]:
         for r in rows:
             if r.get("source") != "E1" or r.get("superseded_by") is not None:
                 continue
+            # 不変条件14: 自己突合 (strength='self_source') は独立ラベルでないため
+            # 供給カウントの分母から外す。latest/baseline とも同じループで再計算される。
+            if r.get("strength") == "self_source":
+                continue
             try:
                 dt = datetime.fromisoformat(str(r["arrived_at"]).replace("Z", "+00:00"))
             except ValueError:
@@ -63,7 +72,7 @@ def supply_drift_lines(repo: Any, *, now: datetime | None = None) -> list[str]:
 
         lines = [
             f"E1 供給: 直近完全週 {latest_n} 件 (過去 {_BASELINE_WEEKS} 週中央値 "
-            f"{base_median:.0f} 件)"
+            f"{base_median:.0f} 件) — 独立ソース基準 (2026-08-22 不変条件 14)"
         ]
         if base_median >= _MIN_BASELINE_PER_WEEK and latest_n < base_median * _COLLAPSE_RATIO:
             lines.append(

@@ -610,12 +610,15 @@ async def _run_tuning_label_harvest_default(
                 title=f"tuning ラベル収穫: 新規 {result.total_new} 件",
                 body=(
                     f"週次の遅延正解収穫 (較正格子 P1) — 主体突合 {result.feed_subject_new} 件"
-                    f" (声明競合スキップ {result.feed_subject_conflicts} 件) /"
+                    f" (声明競合スキップ {result.feed_subject_conflicts} 件 /"
+                    f" 自己ソーススキップ {result.feed_subject_self_source_skipped} 件) /"
                     f" taxonomy 裁定 {result.taxonomy_new} 件 /"
                     f" 論調訂正 {result.editorial_new} 件。"
                     f" エラー {len(result.errors)} 件。\n"
                     f"主体の決定論補完 (feed_match): {backfill.filled} 件"
                     f" (競合スキップ {backfill.skipped_conflict})。"
+                    f" 既存ラベルの自己ソース再分類 (不変条件14): "
+                    f"{result.self_source_reclassified} 件。"
                     + (f"\n{sentinel}" if sentinel else "")
                 ),
             )
