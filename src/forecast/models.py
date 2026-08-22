@@ -12,7 +12,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 # 指標の対象軸。article_entities の entity_type または articles.socio_political_intent。
-ForecastScope = Literal["actor", "intent", "cve", "malware_family"]
+# sector / country (I&W 日次バースト検出、burst.py) は victim_sector_canonical /
+# victim_country_iso 由来。
+ForecastScope = Literal["actor", "intent", "cve", "malware_family", "sector", "country"]
 
 
 class ForecastIndicatorRecord(BaseModel):

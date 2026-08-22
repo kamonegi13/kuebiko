@@ -35,6 +35,35 @@ class TestBucketWeekly:
         assert analytics.bucket_weekly(times, weeks=4, now=now) == [0, 0, 0, 0]
 
 
+class TestBucketDaily:
+    def test_buckets_into_days_oldest_first_with_today_last(self) -> None:
+        now = datetime(2026, 6, 8, 15, 0, tzinfo=UTC)
+        times = [
+            now - timedelta(hours=2),  # 当日
+            now - timedelta(hours=5),  # 当日
+            now - timedelta(days=1),  # 前日
+            now - timedelta(days=10),  # 窓内 (10 日前)
+        ]
+        daily = analytics.bucket_daily(times, days=28, now=now)
+        assert len(daily) == 28
+        assert daily[-1] == 2  # 当日に 2 件
+        assert daily[-2] == 1  # 前日に 1 件
+        assert sum(daily) == 4
+
+    def test_ignores_future_and_out_of_window(self) -> None:
+        now = datetime(2026, 6, 8, tzinfo=UTC)
+        times = [now + timedelta(hours=1), now - timedelta(days=40)]
+        assert analytics.bucket_daily(times, days=28, now=now) == [0] * 28
+
+    def test_empty_times_returns_zero_series(self) -> None:
+        now = datetime(2026, 6, 8, tzinfo=UTC)
+        assert analytics.bucket_daily([], days=28, now=now) == [0] * 28
+
+    def test_zero_days_returns_empty_series(self) -> None:
+        now = datetime(2026, 6, 8, tzinfo=UTC)
+        assert analytics.bucket_daily([now], days=0, now=now) == []
+
+
 class TestTrendDirection:
     def test_increasing(self) -> None:
         d, slope = analytics.trend_direction([0, 1, 2, 4, 6])

@@ -2243,6 +2243,23 @@ class TestComposeDailyBrief:
             is None
         )
 
+    def test_morning_includes_burst_section_between_narrative_and_pir(self) -> None:
+        from src.main import _compose_daily_brief
+
+        msg = _compose_daily_brief(
+            slot="morning",
+            narrative="**状況総括**",
+            pir_body="📍 PIR Daily Focus",
+            sources=[],
+            period_label="2026-08-22",
+            section_count=1,
+            burst_body="📈 急増検知 (I&W)\n・アクター qilin: 本日 9 件",
+        )
+        assert msg is not None
+        assert "急増検知" in msg.summary
+        assert msg.summary.index("状況総括") < msg.summary.index("急増検知")
+        assert msg.summary.index("急増検知") < msg.summary.index("PIR Daily Focus")
+
 
 class TestComposeCompactSummary:
     """Discord 要点射影 (2026-07-12): 全文 push をやめ 要点 + Web 誘導の 1 通にする。"""
@@ -2292,6 +2309,19 @@ class TestComposeCompactSummary:
             base_url=None,
         )
         assert text.index("本日の高脅威") < text.index("headline") < text.index("中国 APT")
+
+    def test_burst_section_sits_between_high_threats_and_synthesis(self) -> None:
+        # ロードマップ D: 急増検知 (I&W) は「act now」(高脅威) の次、状況総括の前。
+        from src.pipeline.runners import _compose_compact_summary
+
+        text = _compose_compact_summary(
+            narrative="**headline**",
+            pir_body="",
+            high_threats="🔴 **本日の高脅威**",
+            burst="📈 急増検知 (I&W)\n・アクター qilin: 本日 9 件",
+            base_url=None,
+        )
+        assert text.index("本日の高脅威") < text.index("急増検知") < text.index("headline")
 
 
 class TestWebOnlyDisposition:

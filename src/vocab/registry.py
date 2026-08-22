@@ -346,8 +346,15 @@ _REGISTRY: dict[str, Vocabulary] = {
     ),
     "forecast_scope": _vocab(
         "forecast_scope",
-        {"actor": "アクター", "intent": "意図", "cve": "CVE", "malware_family": "マルウェア"},
-        canonical=frozenset({"actor", "intent", "cve", "malware_family"}),
+        {
+            "actor": "アクター",
+            "intent": "意図",
+            "cve": "CVE",
+            "malware_family": "マルウェア",
+            "sector": "セクター",
+            "country": "被害国",
+        },
+        canonical=frozenset({"actor", "intent", "cve", "malware_family", "sector", "country"}),
     ),
     "forecast_direction": _vocab(
         "forecast_direction",

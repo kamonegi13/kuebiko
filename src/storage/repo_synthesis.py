@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.cti.category_scopes import CYBER_ATTACK_EVENTS
 from src.storage.records import (
     ArticleNoteRecord,
     ArticleRecord,
@@ -310,6 +311,60 @@ class SynthesisMixin(RunHistoryRepositoryBase):
             ts = _from_iso(r["created_at"])
             if ts is not None:
                 out.setdefault(str(r["intent"]), []).append(ts)
+        return out
+
+    def victim_sector_event_times(self, *, since: datetime) -> dict[str, list[datetime]]:
+        """victim_sector_canonical ごとに cyber-attack 記事の created_at 群を返す。
+
+        I&W 日次バースト検出 (burst.py) の sector scope 用。``entity_event_times`` /
+        ``intent_event_times`` と同形の戻り値 (value → created_at 群)。
+        status='posted' かつ category が ``CYBER_ATTACK_EVENTS`` (地図と同じ攻撃イベントレンズ、
+        SSoT = category_scopes) の行のみ。sector が未分類 (NULL/空/uncategorized/multi_sector)
+        の行はバーストの主体として意味を持たないため除外する。
+        """
+        cat_ph = ",".join(["?"] * len(CYBER_ATTACK_EVENTS))
+        excluded = ("", "uncategorized", "multi_sector")
+        excl_ph = ",".join(["?"] * len(excluded))
+        sql = (
+            "SELECT victim_sector_canonical AS v, created_at FROM articles "
+            "WHERE status='posted' "
+            f"AND category IN ({cat_ph}) "
+            "AND victim_sector_canonical IS NOT NULL "
+            f"AND victim_sector_canonical NOT IN ({excl_ph}) "
+            "AND created_at >= ?"
+        )
+        params: list[Any] = [*sorted(CYBER_ATTACK_EVENTS), *excluded, _to_iso(since)]
+        out: dict[str, list[datetime]] = {}
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        for r in rows:
+            ts = _from_iso(r["created_at"])
+            if ts is not None:
+                out.setdefault(str(r["v"]), []).append(ts)
+        return out
+
+    def victim_country_event_times(self, *, since: datetime) -> dict[str, list[datetime]]:
+        """victim_country_iso ごとに cyber-attack 記事の created_at 群を返す。
+
+        I&W 日次バースト検出 (burst.py) の country scope 用。国が未解決 (NULL/空) の
+        行は除外する。ISO コードは大文字に正規化する (geo_cyber_map と同じ表記統一)。
+        """
+        cat_ph = ",".join(["?"] * len(CYBER_ATTACK_EVENTS))
+        sql = (
+            "SELECT victim_country_iso AS v, created_at FROM articles "
+            "WHERE status='posted' "
+            f"AND category IN ({cat_ph}) "
+            "AND victim_country_iso IS NOT NULL AND victim_country_iso != '' "
+            "AND created_at >= ?"
+        )
+        params: list[Any] = [*sorted(CYBER_ATTACK_EVENTS), _to_iso(since)]
+        out: dict[str, list[datetime]] = {}
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        for r in rows:
+            ts = _from_iso(r["created_at"])
+            if ts is not None:
+                out.setdefault(str(r["v"]).upper(), []).append(ts)
         return out
 
     def recent_cve_values(self, *, days: int = 14, limit: int = 200) -> list[str]:

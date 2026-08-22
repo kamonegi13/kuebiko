@@ -207,6 +207,7 @@ def _compose_daily_brief(
     sources: list[Source],
     period_label: str,
     section_count: int,
+    burst_body: str = "",
 ) -> BriefingMessage | None:
     """朝刊/夕刊: daily synthesis ナラティブ (+ morning は PIR focus) を 1 BriefingMessage に合成。
 
@@ -214,7 +215,7 @@ def _compose_daily_brief(
     (synthesis のみ = 夕方の状況更新)。朝刊/夕刊のように同じ「ブリーフィング」で中身が異なる。
     両方空なら None (投稿しない)。純粋関数 (LLM/DB/IO なし) でテスト容易。
     """
-    parts = [p for p in (narrative.strip(), pir_body.strip()) if p]
+    parts = [p for p in (narrative.strip(), burst_body.strip(), pir_body.strip()) if p]
     if not parts:
         return None
     combined = "\n\n━━━━━━━━━━\n\n".join(parts)
@@ -248,7 +249,12 @@ _DAILY_BRIEF_WEB_PATH = "/app/daily-brief"
 
 
 def _compose_compact_summary(
-    *, narrative: str, pir_body: str, high_threats: str = "", base_url: str | None
+    *,
+    narrative: str,
+    pir_body: str,
+    high_threats: str = "",
+    burst: str = "",
+    base_url: str | None,
 ) -> str:
     """Discord 用の要点射影を合成する (純粋関数)。
 
@@ -260,7 +266,9 @@ def _compose_compact_summary(
     日次通読に載せる (分類と配信の断絶の解消)。synthesis/PIR より前に置く = 「act now」
     の tier を先頭に。
     """
-    parts = [p for p in (high_threats.strip(), narrative.strip(), pir_body.strip()) if p]
+    parts = [
+        p for p in (high_threats.strip(), burst.strip(), narrative.strip(), pir_body.strip()) if p
+    ]
     if base_url:
         parts.append(f"📎 全文 (根拠・記事一覧): {base_url}{_DAILY_BRIEF_WEB_PATH}")
     else:
@@ -336,6 +344,19 @@ async def _run_daily_brief_default(
             if len(sources) >= 5:
                 break
 
+    # ロードマップ D: 日次バースト検出 (I&W 統計シグナル、forecast の日次拡張)。
+    # 決定論・LLM 追加呼出なし・DB read (+ 非 dry-run のみ indicator 起票)。
+    # 失敗しても brief 全体を止めない (burst 側も fail-open の二重防御)。
+    burst_section = ""
+    if is_morning:
+        try:
+            from src.forecast.burst import detect_daily_bursts, format_burst_compact
+
+            bursts = detect_daily_bursts(RunHistoryRepository(), persist=not dry_run)
+            burst_section = format_burst_compact(bursts)
+        except Exception as e:  # noqa: BLE001 — I&W 節の失敗で朝刊を止めない
+            _log.error("daily_brief_burst_failed", error=str(e))
+
     message = _compose_daily_brief(
         slot=slot,
         narrative=narrative,
@@ -343,6 +364,7 @@ async def _run_daily_brief_default(
         sources=sources,
         period_label=period_label,
         section_count=len(sections),
+        burst_body=burst_section,
     )
     if message is None:
         _log.info("daily_brief_empty", slot=slot, pipeline=pipeline.name)
@@ -371,6 +393,7 @@ async def _run_daily_brief_default(
         narrative=build_synthesis_compact(syn_record) if syn_record is not None else "",
         pir_body=pir_compact,
         high_threats=high_threat_compact,
+        burst=burst_section,
         base_url=resolve_public_base_url(),
     )
 

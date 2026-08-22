@@ -47,6 +47,30 @@ def bucket_weekly(
     return counts
 
 
+def bucket_daily(
+    times: list[datetime],
+    *,
+    days: int,
+    now: datetime,
+) -> list[int]:
+    """出現時刻リストを直近 ``days`` 日の日次カウント (古い→新しい) に落とす。
+
+    ``bucket_weekly`` の日次版 (I&W 日次バースト検出用)。最後の要素が「当日」。
+    窓外 (now より未来 / days 日より過去) は無視。
+    """
+    if days <= 0:
+        return []
+    counts = [0] * days
+    for t in times:
+        delta = now - t
+        if delta < timedelta(0):
+            continue  # 未来は無視
+        days_ago = delta.days
+        if 0 <= days_ago < days:
+            counts[days - 1 - days_ago] += 1
+    return counts
+
+
 def trend_direction(series: list[int]) -> tuple[TrendDirection, float]:
     """週次系列の傾向を線形回帰 slope で分類する (FC4)。
 
