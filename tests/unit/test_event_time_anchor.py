@@ -204,4 +204,6 @@ class TestAnchorLiteralSingleSource:
             if marker in path.read_text(encoding="utf-8")
             and path.name != "event_time.py"
         ]
-        assert offenders == [], f"畳み込み式の複製を検出: {offenders} (event_time.py を import すること)"
+        assert offenders == [], (
+            f"畳み込み式の複製を検出: {offenders} (event_time.py を import すること)"
+        )
