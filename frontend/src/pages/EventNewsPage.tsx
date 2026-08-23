@@ -115,8 +115,24 @@ function Detail({ id }: { id: string }) {
           <p className="text-xs text-fg-subtle mt-5 pt-3 border-t border-border-subtle">{d.note}</p>
         </div>
       ) : (
-        <div className="bg-surface-1 border border-border-subtle rounded-lg p-5 text-sm text-fg-muted">
-          この事象はまだ 1 媒体のみのため、生成ニュースはありません。下の原記事をお読みください。
+        /* 単独記事 (案 A): 生成はせず、原記事の要約を **同じ枠** で読ませる。
+           枠を揃えることで読む場所が 1 つに保たれる。 */
+        <div className="bg-surface-1 border border-border-subtle rounded-lg p-5">
+          <h3 className="m-0 text-lg font-bold text-fg leading-snug text-balance">
+            {d.members[0]?.title ?? "(記事なし)"}
+          </h3>
+          <div className="flex flex-wrap gap-3 items-center text-xs text-fg-muted mt-1.5 mb-4">
+            <SourceBadge item={d} />
+            <span>{d.members[0]?.feed_title}</span>
+            <span>{formatJst(d.first_reported_at)}</span>
+            <span className={IMPORTANCE_TONE[d.importance] ?? ""}>{d.importance}</span>
+          </div>
+          <p className="text-fg text-[15px] leading-[1.95] max-w-[46em] whitespace-pre-wrap">
+            {d.members[0]?.summary}
+          </p>
+          <p className="text-xs text-fg-subtle mt-5 pt-3 border-t border-border-subtle">
+            1 媒体のみの報道のため、記事の要約をそのまま表示している。他媒体が報じると事象として統合され本文が生成される。
+          </p>
         </div>
       )}
 
@@ -148,11 +164,18 @@ function Detail({ id }: { id: string }) {
   );
 }
 
+const IMPORTANCE_FILTERS: { key: string; label: string }[] = [
+  { key: "high", label: "high のみ" },
+  { key: "high,medium", label: "high + medium" },
+  { key: "", label: "すべて" },
+];
+
 export function EventNewsPage() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [imp, setImp] = useState("high,medium");
   const { data, isFetching, error } = useQuery({
-    queryKey: ["eventnews-list"],
-    queryFn: () => fetchEventNews(60),
+    queryKey: ["eventnews-list", imp],
+    queryFn: () => fetchEventNews(80, imp || undefined),
     refetchInterval: 5 * 60 * 1000,
   });
 
@@ -164,8 +187,23 @@ export function EventNewsPage() {
       <div>
         <h2 className="m-0 text-xl font-bold text-fg tracking-tight">事象ニュース</h2>
         <p className="text-fg-muted text-sm mt-1">
-          同一の事象を報じた複数記事を束ね、1 本のニュースとして生成・更新する。新しい記事が加わると本文が更新される。
+          収集した記事を事象単位で読む。複数媒体が報じた事象は 1 本に統合して生成し、新しい記事が加わると更新される。
+          単独報はその記事の要約をそのまま表示する。
         </p>
+      </div>
+
+      <div className="flex gap-1.5">
+        {IMPORTANCE_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => { setImp(f.key); setSelected(null); }}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+              imp === f.key ? "border-accent text-accent bg-accent/10" : "border-border-default text-fg-muted hover:text-fg"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {isFetching && !data && <div className="text-fg-subtle text-sm">読み込み中…</div>}
@@ -193,9 +231,10 @@ export function EventNewsPage() {
                   <span className="text-fg-subtle">{STATUS_LABEL[it.status] ?? it.status}</span>
                   <span className="ml-auto text-fg-subtle">{formatJst(it.last_reported_at)}</span>
                 </div>
-                <div className="text-sm text-fg leading-snug">
-                  {it.member_count} 記事の事象
-                </div>
+                <div className="text-sm text-fg leading-snug">{it.headline}</div>
+                {it.member_count > 1 && (
+                  <div className="text-[11px] text-fg-subtle mt-0.5">{it.member_count} 記事を統合</div>
+                )}
                 <div className="mt-0.5"><SourceBadge item={it} /></div>
               </button>
             ))}

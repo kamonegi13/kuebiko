@@ -33,3 +33,29 @@ class TestGeneratedContentIsLabelled:
         """生成物と原ソースの区別 (§3) — レスポンスが常に生成物である旨を伝える。"""
         assert "生成" in GENERATED_NOTE
         assert "原記事" in GENERATED_NOTE
+
+
+class TestSingleReadingSurface:
+    def test_list_includes_singletons(self) -> None:
+        """単独記事も一覧に出す (案 A) — ここを複数媒体に絞ると読む場所が 2 つになる。
+
+        事象単位化の目的は「読む場所を 1 つにする」ことで、生成の有無で出し分けると
+        読み手は記事一覧と往復することになり目的を果たさない。
+        """
+        import inspect
+
+        from src.ui.api.eventnews import list_event_news
+
+        src = inspect.getsource(list_event_news)
+        # 生成の有無 (current_version / has_news) で除外していないこと
+        assert "has_news" not in src.split("items.append")[0]
+        assert "current_version > 0" not in src.split("items.append")[0]
+
+    def test_list_row_carries_a_headline(self) -> None:
+        """一覧行は見出しを持つ (生成があれば生成見出し、無ければ原記事タイトル)。"""
+        import inspect
+
+        from src.ui.api.eventnews import _headline_and_preview
+
+        src = inspect.getsource(_headline_and_preview)
+        assert "art.title" in src, "単独記事は原記事タイトルを見出しにする"

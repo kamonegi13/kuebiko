@@ -7,6 +7,7 @@ import { channelsApi } from "../../api/channels";
 import { COUNT_CHOICES, type ConfigOption, type WidgetDef } from "./shared";
 import { StatusStripWidget, StandingAssessmentWidget, SynthesisSectionWidget } from "./widgets/situational";
 import { LatestHeadlinesWidget } from "./widgets/headlines";
+import { EventNewsWidget } from "./widgets/eventnews";
 import { TopActorsWidget, ActorDossierWidget } from "./widgets/threats";
 import { SituationWidget, MiniMapWidget, GeoRankingWidget, GeoTrendWidget } from "./widgets/situation_geo";
 import { PirCoverageWidget, PirSpotlightWidget } from "./widgets/pir";
@@ -18,6 +19,14 @@ import { JpCiThreatWidget } from "./widgets/jpci";
 
 // ── 共通 config option 定義 ──
 const PER_OPTION: ConfigOption = { key: "per", label: "件数", choices: COUNT_CHOICES };
+const EVENTNEWS_IMPORTANCE: ConfigOption = {
+  key: "importance", label: "重要度",
+  choices: [
+    { value: "high", label: "high のみ" },
+    { value: "high,medium", label: "high + medium" },
+    { value: "", label: "すべて" },
+  ],
+};
 const HEADLINE_AXES: ConfigOption = {
   key: "axis", label: "分類軸",
   choices: [
@@ -193,6 +202,9 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   synthesis_section: { title: "Synthesis セクション", Component: SynthesisSectionWidget, defaultSpan: 2, defaultHeight: 340, thumb: "text", multi: true, blurb: "重心/波及/連鎖/比重/PIR を選択表示", configOptions: [SECTION_OPTION, PERIOD_OPTION] },
   // ── 過去参照 ──
   latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / PIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
+  // ── 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。裏取りは
+  //    「独立媒体数」で示し記事数では示さない。単独報は「1 媒体のみ」と明示する ──
+  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)", configOptions: [EVENTNEWS_IMPORTANCE, PER_OPTION], defaultConfig: { importance: "high,medium", per: 6 } },
   // ── 記事フィード (汎用・設定可・複数配置可。カテゴリ/CH/重要度/サイトで絞る) ──
   news_feed: { title: "記事フィード", Component: ArticleFeedWidget, defaultSpan: 2, defaultHeight: 420, thumb: "list", multi: true, blurb: "カテゴリ/CH/重要度/サイトで絞った記事。設定を変えて複数配置 (脆弱性/脅威/地政/緊急 等)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { mode: "summary", per: 5 } },
   // ── 発見支援 / 脅威 ──

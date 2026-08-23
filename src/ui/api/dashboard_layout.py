@@ -64,10 +64,14 @@ _DEFAULT_WIDGETS: list[dict[str, object]] = [
     {"id": "vulnerabilities_kev", "x": 6, "y": 78, "w": 6, "h": 18},
     {"id": "pir_coverage", "x": 0, "y": 96, "w": 6, "h": 16},
     {"id": "holdings", "x": 6, "y": 96, "w": 6, "h": 16},
-    {"id": "latest_headlines", "x": 0, "y": 112, "w": 12, "h": 24, "config": {"axis": "pmesii"}},
+    # 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。既定配置に入れる
+    # (**保存済みレイアウトには影響しない** — 既存利用者はツールボックスから追加)。
+    {"id": "eventnews", "x": 0, "y": 112, "w": 6, "h": 16,
+     "config": {"importance": "high,medium", "per": 6}},
+    {"id": "latest_headlines", "x": 0, "y": 128, "w": 12, "h": 24, "config": {"axis": "pmesii"}},
     # /app/health ページ廃止 (P4) に伴い死活監視を既定配置 (保存済みレイアウトには
     # 影響しない — 既存利用者はツールボックスから追加)。
-    {"id": "health", "x": 0, "y": 136, "w": 6, "h": 14},
+    {"id": "health", "x": 0, "y": 152, "w": 6, "h": 14},
 ]
 
 

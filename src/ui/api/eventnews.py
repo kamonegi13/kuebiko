@@ -56,6 +56,22 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
     }
 
 
+def _headline_and_preview(repo: RunHistoryRepository, record: Any) -> tuple[str, str]:
+    """一覧に出す見出しと冒頭。生成があればそれを、無ければ原記事のものを使う。"""
+    if record.state.current_version > 0:
+        versions = repo.list_event_versions(record.state.item_id)
+        if versions:
+            latest = versions[-1]
+            body = json.loads(latest.body_json) if latest.body_json else {}
+            return latest.headline, str(body.get("bluf", ""))[:160]
+    articles = repo.get_articles_by_ids(list(record.state.member_ids))
+    for aid in record.state.member_ids:
+        art = articles.get(aid)
+        if art is not None:
+            return art.title, (art.summary or "")[:160]
+    return "(記事の取得に失敗)", ""
+
+
 def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]:
     """構成記事を **全件** 返す (§3-1: 折りたたみは可・省略は不可)。"""
     members = repo.list_event_members(item_id)
@@ -83,10 +99,19 @@ def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str,
 
 
 @eventnews_api.get("")
-def list_event_news(limit: int = 50, status: str | None = None) -> dict[str, Any]:
-    """事象一覧 (新着順)。origin='live' のみ — リプレイ行は返さない。"""
+def list_event_news(
+    limit: int = 50, status: str | None = None, importance: str | None = None
+) -> dict[str, Any]:
+    """事象一覧 (新着順)。origin='live' のみ — リプレイ行は返さない。
+
+    **単独記事も返す** (docs/event_news_design.md §14b 案 A)。生成ニュースを持つのは
+    複数媒体の事象だけだが、単独記事は原記事の見出し・要約をそのまま同じ枠で読ませる。
+    ここを複数媒体に限ると読み手は記事一覧と 2 箇所を読むことになり、事象単位化の
+    目的 (読む場所を 1 つにする) を果たさない。
+    """
     repo = _repo()
     statuses = [s.strip() for s in status.split(",")] if status else None
+    wanted = {i.strip() for i in importance.split(",")} if importance else None
     records = repo.list_event_items(
         origin="live", statuses=statuses, limit=min(limit, _LIST_LIMIT_MAX)
     )
@@ -94,9 +119,14 @@ def list_event_news(limit: int = 50, status: str | None = None) -> dict[str, Any
     for r in records:
         if r.merged_into:
             continue  # 墓標は一覧に出さない (redirect 先が出る)
+        if wanted and r.state.importance not in wanted:
+            continue
+        headline, preview = _headline_and_preview(repo, r)
         items.append(
             {
                 "id": r.state.item_id,
+                "headline": headline,
+                "preview": preview,
                 "status": r.state.status,
                 "change_kind": r.change_kind,
                 "importance": r.state.importance,

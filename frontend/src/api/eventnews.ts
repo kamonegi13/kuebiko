@@ -1,6 +1,8 @@
 /** 事象ニュースの一覧行。裏取りは independent_sources で表す (member_count ではない)。 */
 export interface EventNewsListItem {
   id: string;
+  headline: string;
+  preview: string;
   status: "new" | "updated" | "reinforced" | "dormant";
   change_kind: "add" | "correct" | null;
   importance: string;
@@ -68,8 +70,10 @@ async function get<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export function fetchEventNews(limit = 50) {
-  return get<{ items: EventNewsListItem[]; note: string }>(`/api/v1/eventnews?limit=${limit}`);
+export function fetchEventNews(limit = 50, importance?: string) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (importance) q.set("importance", importance);
+  return get<{ items: EventNewsListItem[]; note: string }>(`/api/v1/eventnews?${q}`);
 }
 
 export function fetchEventNewsDetail(id: string) {
