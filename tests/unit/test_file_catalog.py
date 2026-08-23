@@ -34,7 +34,8 @@ class TestCatalogCompleteness:
         # +ground_ach_skeleton / ground_incremental_skeleton / nominate_skeleton /
         # detect_new_skeleton / adversarial_skeleton / render_skeleton
         # (層分け 7〜12 本目 2026-08-20、grounded ACH 群 6 本)
-        assert len(actual) == 25
+        # +eventnews/refine.j2 (事象単位ニュース §9、2026-08-23)
+        assert len(actual) == 26
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 

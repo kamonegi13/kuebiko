@@ -63,6 +63,21 @@ class TestClassifyTier:
         assert classify_source_tier("Sputnik Globe (Russia)", "https://sputnikglobe.com/x") == sm
         assert classify_source_tier("Pravda Netherlands", "https://news-pravda.com/x") == sm
 
+    def test_china_state_media_flagged(self) -> None:
+        """中国国営は state_media に分類 (docs/event_news_design.md §8 の SSoT 追記、2026-08-23)。
+
+        追記前はロシア系のみで、中国国営 3 社の同時展開が事象ニュースの独立媒体数表示で
+        「独立 3 媒体 (国営 0)」と誤表示される欠陥があった (config/sources/source_reliability.yaml
+        state_media.hosts への追記で是正)。
+        """
+        sm = "state_media"
+        assert classify_source_tier("Global Times", "https://www.globaltimes.cn/x") == sm
+        assert classify_source_tier("Xinhua", "https://www.xinhuanet.com/x") == sm
+        assert classify_source_tier("News.cn", "https://www.news.cn/x") == sm
+        assert classify_source_tier("CGTN", "https://www.cgtn.com/x") == sm
+        assert classify_source_tier("China Daily", "https://www.chinadaily.com.cn/x") == sm
+        assert classify_source_tier("ECNS", "https://www.ecns.cn/x") == sm
+
     def test_independent_adversary_sources_not_flagged(self) -> None:
         """踏んではいけない罠: 国籍でなく国家統制で分類。独立系は state_media にしない。"""
         # The Insider = 反クレムリン独立調査報道 / NK News = 独立 NK ウォッチャー
