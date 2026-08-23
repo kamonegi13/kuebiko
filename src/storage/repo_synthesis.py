@@ -6,6 +6,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.cti.category_scopes import CYBER_ATTACK_EVENTS
+
+# 事象時刻の錨。SSoT は src/storage/event_time.py (2026-08-23 昇格 — 複製は
+# 移植漏れを生むため、錨式のリテラルは event_time.py にのみ存在する)。
+from src.storage.event_time import DEDUP_ARTICLES as _DEDUP_ARTICLES
+from src.storage.event_time import EVENT_TS_EXPR as _EVENT_TS_EXPR
 from src.storage.records import (
     ArticleNoteRecord,
     ArticleRecord,
@@ -20,23 +25,6 @@ from src.storage.row_mappers import (
     _row_to_spotlight,
     _row_to_synthesis,
     _to_iso,
-)
-
-# 事象時刻の錨 (2026-08-22 根本修正)。**DB へ書いた時刻を事象時刻として使わない。**
-# article_entities.created_at は「entity 行を書いた時刻」であり、バックフィル
-# (再抽出 / 別名昇格 / intent・axes backfill) は過去記事へ当日の日付で書くため
-# 事象時刻とは無関係になる (実測: 言及の 44.3% が 1 日超・34.4% が 7 日超ずれ、
-# 週次 FC3 spike の 44% が偽陽性、日次バーストは単日最大 42 件の幻)。
-# 錨は「公開時刻。ただし取込より後にはならない (実測 0.5% が不正)。欠損は取込時刻」。
-_EVENT_TS_EXPR = (
-    "CASE WHEN {a}.published_at IS NOT NULL AND {a}.published_at <= {a}.created_at"
-    " THEN {a}.published_at ELSE {a}.created_at END"
-)
-# articles は同一 article_id が複数行ありうる (実測 3,593 行 / 最大 7 行)。
-# join 前に 1 行へ畳んで言及の水増し (fan-out) を防ぐ。
-_DEDUP_ARTICLES = (
-    "(SELECT article_id, MIN(created_at) AS created_at,"
-    " MIN(published_at) AS published_at FROM articles GROUP BY article_id)"
 )
 
 

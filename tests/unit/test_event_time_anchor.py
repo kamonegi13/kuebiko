@@ -179,3 +179,29 @@ class TestBurstCloseOutWindow:
 
         # Assert
         assert counted == [next_day_00, last]
+
+
+class TestAnchorLiteralSingleSource:
+    """錨式のリテラルは event_time.py にのみ存在する (複製 = 移植漏れの芽)。"""
+
+    def test_anchor_literal_exists_only_in_event_time_module(self) -> None:
+        marker = "published_at IS NOT NULL AND {a}.published_at"
+        src_root = Path(__file__).resolve().parents[2] / "src"
+        offenders = [
+            path
+            for path in src_root.rglob("*.py")
+            if marker in path.read_text(encoding="utf-8")
+            and path.name != "event_time.py"
+        ]
+        assert offenders == [], f"錨式の複製を検出: {offenders} (event_time.py を import すること)"
+
+    def test_dedup_articles_literal_exists_only_in_event_time_module(self) -> None:
+        marker = "MIN(published_at) AS published_at FROM articles GROUP BY article_id"
+        src_root = Path(__file__).resolve().parents[2] / "src"
+        offenders = [
+            path
+            for path in src_root.rglob("*.py")
+            if marker in path.read_text(encoding="utf-8")
+            and path.name != "event_time.py"
+        ]
+        assert offenders == [], f"畳み込み式の複製を検出: {offenders} (event_time.py を import すること)"
