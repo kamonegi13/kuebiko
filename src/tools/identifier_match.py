@@ -26,7 +26,9 @@ from typing import Literal
 
 from src.cti.ioc_extractor import extract_iocs, refang
 
-IdentifierKind = Literal["cve", "ip", "domain", "hash", "version", "cvss", "actor_id"]
+IdentifierKind = Literal[
+    "cve", "ip", "domain", "hash", "version", "cvss", "actor_id", "proper_noun"
+]
 
 # ---------- 新規 regex (ioc_extractor の対象外) ----------
 
@@ -74,6 +76,16 @@ _IP_LOOSE_RE = re.compile(
 _ACTOR_ID_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:UNC|APT|TA|STORM-|UAT-|CL-)\d+(?![A-Za-z0-9])",
     re.IGNORECASE,
+)
+
+# 製品・ベンダ名等の ASCII 固有名詞 (CamelCase / 全大文字 / 数字混じり)。
+# **緩い型 (計数のみ・本文は壊さない)**。実測で `RingCentral` → `RingCRntal` の
+# ような破損が出たが、固有名詞は文法が開いており置換対象にすると誤りが増える。
+# 対称照合なので、抽出器が拾いすぎても両側で相殺され誤検出にならない。
+# 条件は「語中に大文字がある ASCII 語」— 製品名の型 (RingCentral / CISA / BadIIS) を
+# 拾い、通常の英単語 (Security) は拾わない。破損 (RingCRntal) も同じ形なので拾える。
+_PROPER_NOUN_RE = re.compile(
+    r"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*(?![A-Za-z0-9])"
 )
 
 # find_repair_candidate の許容規律 (docs/event_news_design.md §9)
@@ -203,6 +215,8 @@ def extract_identifiers(text: str) -> tuple[Identifier, ...]:
         idents.append(_make_identifier("cvss", m.group(1)))
     for m in _ACTOR_ID_RE.finditer(refanged):
         idents.append(_make_identifier("actor_id", m.group(0)))
+    for m in _PROPER_NOUN_RE.finditer(refanged):
+        idents.append(_make_identifier("proper_noun", m.group(0)))
 
     return _dedupe(idents)
 

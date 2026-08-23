@@ -145,7 +145,10 @@ def resolve_text(
         entry = by_token.get(token)
         if entry is None:
             stats = stats.merged(ResolveStats(unknown_refs=1))
-            return ""  # カタログに無い番号は創作 — 表記ごと落とす
+            # カタログに無い番号は創作。**無言で削除しない** — 削ると主語が消えて
+            # 「は、…」で始まる壊れた文が残る (2026-08-23 実測 2 行)。印を残して
+            # 観測の事実を保持し、落ちたことを読み手に見せる (引用関門と同じ思想)。
+            return UNRESOLVED_PLACEHOLDER
         mis = 1 if cited_member and cited_member not in entry.members else 0
         stats = stats.merged(ResolveStats(resolved=1, misattributed=mis))
         return entry.identifier.raw

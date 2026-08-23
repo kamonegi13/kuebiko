@@ -139,3 +139,26 @@ class TestSourceIndexGate:
         r = verify_draft(draft, members)
         assert len(r.draft.discrepancies) == 1
         assert r.dropped_lines == 0
+
+
+class TestResidualRisks:
+    def test_unknown_reference_leaves_a_marker_not_a_hole(self) -> None:
+        """創作番号を無言削除しない — 削ると主語が消えて壊れた文が残る (実測 2 行)。"""
+        members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[FactItem(text="{I99} は関与を主張している。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text.startswith("(原文参照)")
+
+    def test_corrupted_product_name_is_flagged_without_touching_text(self) -> None:
+        """固有名詞の破損は検出のみ (文法が開いており置換すると誤りが増えるため)。"""
+        members = (_member("a", body="RingCentral は侵害を公表"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[FactItem(text="RingCRntal は侵害を公表した。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "RingCRntal は侵害を公表した。"  # 本文は無傷
+        assert r.substituted_ids == 0
