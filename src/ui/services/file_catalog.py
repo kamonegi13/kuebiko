@@ -20,6 +20,7 @@ PROMPT_CATEGORY_ORDER: tuple[str, ...] = (
     "ダイジェスト",
     "状況総括 (synthesis)",
     "Spotlight",
+    "事象ニュース",
     "共有パーツ",
     "その他",
 )
@@ -204,6 +205,13 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "pir_spotlight の Jinja データ注入部 + block マーカー。指示散文 (blocks) は "
         "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
         "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
+    ),
+    "prompts/eventnews/refine.j2": FileInfo(
+        "事象ニュース",
+        "事象ニュース精製",
+        "群化済みメンバー記事群 (同一事象の複数報道) を 1 本の structured ニュースへ精製する "
+        "(headline/BLUF/報じられた事実/ソース間の相違/未確認・不明)。v1 は shadow 運用 "
+        "(スケジューラ未接続、docs/event_news_design.md 参照)",
     ),
     "prompts/_persona.j2": FileInfo(
         "共有パーツ",

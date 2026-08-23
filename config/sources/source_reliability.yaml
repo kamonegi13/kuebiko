@@ -211,7 +211,20 @@ state_media:
     - rt.com
     - sputnikglobe.com
     - sputniknews.com
+    # 中国国営 (docs/event_news_design.md §8 — 事象ニュースの独立媒体数表示で、
+    # 中国国営 3 社の同時展開が「独立 3 媒体 (国営 0)」と誤表示される欠陥の是正。
+    # 既存の source_basis / synthesis 確度算出にも同時に効く SSoT への追記)
+    - globaltimes.cn
+    - xinhuanet.com
+    - news.cn
+    - cgtn.com
+    - chinadaily.com.cn
+    - ecns.cn
   titles:
     - russia today
     - sputnik
     - pravda            # Pravda/Portal Kombat 影響工作網 (偽装ローカル名・蘭の正規紙でない)
+    - global times
+    - xinhua
+    - cgtn
+    - china daily

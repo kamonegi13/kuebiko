@@ -125,6 +125,10 @@ class Step(StrEnum):
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
     ARTICLE_TRANSLATE = "article_translate"
+    # 事象単位ニュース精製 (docs/event_news_design.md §9)。群化済みメンバー記事群 → 1 本の
+    # structured news。1 群あたり 1 呼出・prompt はメンバー上限 8 件で頭打ちのため fast で足りる
+    # (per-article 要約と同じ速度重視の性質。v1 は shadow 運用でスケジューラ未接続)。
+    EVENT_NEWS = "event_news"
     # --- dialog tier (user-facing 対話、2026-07-19 fast から分離) ---
     PIR_COMPILE = "pir_compile"  # PIR description → structured 抽出 (対話)
     SELECTOR_PROPOSAL = "selector_proposal"  # scraper CSS selector 提案 (対話)
@@ -173,6 +177,9 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # 本文翻訳 (オンデマンド + バックログ)。timeout は 1 チャンク (≤5k 字) あたり。
     # 長文は body_translator がチャンク分割して複数回呼ぶ。
     Step.ARTICLE_TRANSLATE: StepSpec(Tier.FAST, 300.0),
+    # 事象ニュース精製 (§9)。メンバー上限 8 件・facts/discrepancies/unknowns の structured
+    # 出力のみのため per-article 要約より軽い。timeout は spotlight 系より短く 240s。
+    Step.EVENT_NEWS: StepSpec(Tier.FAST, 240.0),
     Step.SYNTHESIS_NARRATIVE: StepSpec(Tier.NARRATIVE, 900.0),
     # 夜間精査は「think を使う ACH」= narrative ティア経由でモデルと think 設定を継承する
     # (reasoning のモデルを factory 外で wrap すると UI の think 1:1 原則が壊れる)。

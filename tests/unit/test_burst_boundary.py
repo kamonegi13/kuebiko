@@ -61,20 +61,40 @@ _NARRATIVE_PROMPTS = (
     "prompts/synthesis/status_synthesis_skeleton.j2",
 )
 
+# 事象単位ニュース (docs/event_news_design.md §9) は narrative 系と同じ
+# 「収集量を顕在性の代理にしない」規律には従うが、PIR spotlight/synthesis のような
+# 鮮度 (freshness) 注意喚起の注入対象ではない (決定論の群化結果を精製する別の生成物)。
+# 一律 assert のまま追加すると「freshness が無い」で誤って落ちるため、検査observationを
+# 「顕在性を戻さない (negative)」と「鮮度注意喚起を残す (positive)」に分離してから加える。
+_NO_SALIENCE_INJECTION_PROMPTS = (*_NARRATIVE_PROMPTS, "prompts/eventnews/refine.j2")
 
-@pytest.mark.parametrize("path", _NARRATIVE_PROMPTS)
-def test_narrative_prompts_carry_no_salience_injection(path: str) -> None:
-    """narrative プロンプトに件数・z の顕在性ブロックを戻さない (#3/#4)。
+
+@pytest.mark.parametrize("path", _NO_SALIENCE_INJECTION_PROMPTS)
+def test_prompts_carry_no_salience_injection(path: str) -> None:
+    """narrative 系 + 事象ニュースに件数・z の顕在性ブロックを戻さない (#3/#4)。
 
     2026-08-22: forecast_indicators の z スパイクと nation_correlation の件数を撤去した
     (Spotlight の実測で 60 本中 34 本 = 57% が z を語っており、収集量が narrative の
-    枠組みを駆動していた)。**freshness は残す** — 「報道急増 ≠ 新規活動増、収集網が
-    過去を掘り起こす」という注意喚起で、顕在性を持ち込むのとは向きが逆。
+    枠組みを駆動していた)。事象ニュース (2026-08-23 新設) も同じ規律の対象に含める —
+    群サイズ・媒体数を importance に反映しない (docs/event_news_design.md §10) のと
+    同型の禁止。
     """
     body = Path(path).read_text(encoding="utf-8")
     assert "forecast_indicators" not in body, path
     assert "nation_correlation" not in body, path
-    assert "freshness" in body, path  # 注意喚起は残っていること
+
+
+@pytest.mark.parametrize("path", _NARRATIVE_PROMPTS)
+def test_narrative_prompts_carry_freshness_warning(path: str) -> None:
+    """narrative 系 (spotlight/synthesis) は鮮度注意喚起 (freshness) を保持すること。
+
+    **freshness は残す** — 「報道急増 ≠ 新規活動増、収集網が過去を掘り起こす」という
+    注意喚起で、顕在性を持ち込むのとは向きが逆。事象ニュースはこの注意喚起の対象外
+    (§9 は identifier gate / structured 出力の規律であり、鮮度文脈を注入しない) のため
+    このテストの対象には含めない。
+    """
+    body = Path(path).read_text(encoding="utf-8")
+    assert "freshness" in body, path
 
 
 def test_burst_is_not_imported_outside_the_display_path() -> None:
