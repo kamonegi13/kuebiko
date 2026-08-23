@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from src.eventnews.models import EventNewsDraft, FactItem, GateResult, MemberArticle
@@ -28,6 +29,16 @@ from src.tools.identifier_catalog import (
     render_catalog,
     resolve_text,
 )
+
+# 本文末尾に LLM が書いた出典番号。表示側が source_index から付けるため二重になる
+# (実測 532 行中 155 行 = 29%)。プロンプトでも禁止したが、**指示は関門にならない**ので
+# 決定論でも落とす (2026-08-19 の規約)。行中の [N] は文意に関わるため末尾のみ除去。
+_TRAILING_CITE_RE = re.compile(r"(?:\s*\[\d{1,2}\])+\s*([。.!?！？])?\s*$")
+
+
+def strip_trailing_citation(text: str) -> str:
+    """行末の [N] を落とす (句点が前後どちらにあっても文末の句点は保つ)。"""
+    return _TRAILING_CITE_RE.sub(lambda m: m.group(1) or "", text.rstrip())
 
 
 def member_text(member: MemberArticle) -> str:
@@ -57,6 +68,7 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
             dropped += 1  # 0 / 範囲外 / 創作番号は行ごと落とす
             continue
         text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
+        text = strip_trailing_citation(text)
         total = total.merged(st)
         facts.append(FactItem(text=text, source_index=item.source_index, paragraph=item.paragraph))
 

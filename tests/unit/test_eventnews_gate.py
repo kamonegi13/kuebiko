@@ -192,3 +192,23 @@ class TestResidualRisks:
         )
         r = verify_draft(draft, members)
         assert r.draft.facts[0].paragraph == 2
+
+    def test_trailing_citation_written_by_the_model_is_stripped(self) -> None:
+        """本文末尾の [N] は表示側が付けるため二重になる — 決定論で落とす。
+
+        プロンプトでも禁止したが **指示は関門にならない** (実測 532 行中 155 行 = 29%)。
+        文中の [N] (相違節の「[1] では A、[2] では B」型) は文意なので残す。
+        """
+        members = (_member("a", body="x"), _member("b", body="y"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[
+                FactItem(text="販売している [1]。", source_index=1),
+                FactItem(text="窃取した。[2]", source_index=2),
+                FactItem(text="記事 [1] では A、[2] では B と報じる。", source_index=1),
+            ],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "販売している。"
+        assert r.draft.facts[1].text == "窃取した。"
+        assert r.draft.facts[2].text == "記事 [1] では A、[2] では B と報じる。"
