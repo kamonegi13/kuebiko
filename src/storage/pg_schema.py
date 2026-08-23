@@ -762,6 +762,70 @@ CREATE TABLE IF NOT EXISTS tuning_evals (
 
 CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
     ON tuning_evals(prompt_id, kind, to_version);
+
+-- 事象単位ニュース (event news) v1 (2026-08-23、SQLite _SCHEMA と対)。
+-- 詳細コメントは schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS event_items (
+    id                    TEXT     PRIMARY KEY,
+    origin                TEXT     NOT NULL,
+    first_reported_at     TEXT     NOT NULL,
+    last_reported_at      TEXT     NOT NULL,
+    status                TEXT     NOT NULL DEFAULT 'new',
+    change_kind           TEXT,
+    current_version       INTEGER  NOT NULL DEFAULT 0,
+    merged_into           TEXT,
+    related_to            TEXT,
+    importance            TEXT     NOT NULL DEFAULT '',
+    best_source_tier      TEXT     NOT NULL DEFAULT '',
+    independent_sources   INTEGER  NOT NULL DEFAULT 0,
+    state_media_count     INTEGER  NOT NULL DEFAULT 0,
+    unclassified_sources  INTEGER  NOT NULL DEFAULT 0,
+    created_at            TEXT     NOT NULL,
+    updated_at            TEXT     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_items_origin_status
+    ON event_items(origin, status, last_reported_at);
+
+CREATE TABLE IF NOT EXISTS event_item_versions (
+    item_id         TEXT     NOT NULL,
+    version         INTEGER  NOT NULL,
+    generated_at    TEXT     NOT NULL,
+    model           TEXT     NOT NULL,
+    prompt_version  TEXT     NOT NULL,
+    headline        TEXT     NOT NULL,
+    body_json       TEXT     NOT NULL,
+    new_facts_json  TEXT     NOT NULL,
+    verified_at     TEXT,
+    dropped_lines   INTEGER  NOT NULL DEFAULT 0,
+    repaired_ids    INTEGER  NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, version)
+);
+
+-- BOOL は使わない (dual-backend 規律) ため contributed_new_facts は SMALLINT (0/1)。
+CREATE TABLE IF NOT EXISTS event_item_members (
+    item_id               TEXT     NOT NULL,
+    article_id            TEXT     NOT NULL,
+    joined_at             TEXT     NOT NULL,
+    contributed_new_facts SMALLINT NOT NULL DEFAULT 0,
+    join_signal           TEXT     NOT NULL DEFAULT '',
+    PRIMARY KEY (item_id, article_id)
+);
+CREATE INDEX IF NOT EXISTS idx_event_item_members_article
+    ON event_item_members(article_id);
+
+CREATE TABLE IF NOT EXISTS dedup_semantic_skips (
+    id            BIGSERIAL PRIMARY KEY,
+    skipped_url   TEXT      NOT NULL,
+    skipped_title TEXT      NOT NULL,
+    skipped_host  TEXT      NOT NULL,
+    feed_title    TEXT      NOT NULL,
+    feed_url      TEXT      NOT NULL,
+    tier          TEXT      NOT NULL,
+    matched_kind  TEXT      NOT NULL,
+    matched_key   TEXT      NOT NULL,
+    ts            TEXT      NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dedup_semantic_skips_ts ON dedup_semantic_skips(ts);
 """
 
 

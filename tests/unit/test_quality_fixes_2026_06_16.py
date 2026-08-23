@@ -196,7 +196,7 @@ async def test_intra_batch_semantic_dedup(tmp_path) -> None:  # type: ignore[no-
         _art("a2", "ALPHA 事案 別ソース", "https://y.example/2"),  # 同事案・別 URL・同バッチ
         _art("b1", "BETA 無関係な事案", "https://z.example/3"),
     ]
-    survivors, skipped, _persist, skipped_ids = await _filter_semantic_duplicates(
+    survivors, skipped, _persist, skipped_ids, skip_records = await _filter_semantic_duplicates(
         arts,
         repo,
         _FakeEmbedder(),
@@ -211,6 +211,10 @@ async def test_intra_batch_semantic_dedup(tmp_path) -> None:  # type: ignore[no-
     assert "b1" in ids  # 別事案は生存
     assert "a2" in skipped_ids
     assert skipped == 1
+    assert len(skip_records) == 1
+    assert skip_records[0].tier == "intra_batch"
+    assert skip_records[0].matched_kind == "article_id"
+    assert skip_records[0].matched_key == "a1"
 
 
 async def test_skipped_article_keeps_its_embedding(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -226,7 +230,7 @@ async def test_skipped_article_keeps_its_embedding(tmp_path) -> None:  # type: i
         _art("a2", "ALPHA 事案 別ソース", "https://y.example/2"),  # intra-batch で落ちる
     ]
 
-    survivors, skipped, persist, skipped_ids = await _filter_semantic_duplicates(
+    survivors, skipped, persist, skipped_ids, _skip_records = await _filter_semantic_duplicates(
         arts,
         repo,
         _FakeEmbedder(),
@@ -240,3 +244,103 @@ async def test_skipped_article_keeps_its_embedding(tmp_path) -> None:  # type: i
     assert {a.id for a in survivors} == {"a1"}
     assert "a2" in persist, "落とした記事の embedding が返っていない (根拠が消える)"
     assert "a1" in persist
+
+
+class _FixedEmbedder(EmbeddingClient):
+    """固定ベクトルを返す fake (hard/cluster tier の中間 cosine を作るため)。"""
+
+    def __init__(self, vector: tuple[float, ...]) -> None:
+        self._vector = vector
+
+    @property
+    def dim(self) -> int | None:
+        return len(self._vector)
+
+    @property
+    def model(self) -> str:
+        return "test-embed"
+
+    async def embed(self, text: str, *, kind: str = "document") -> EmbeddingResponse:
+        return EmbeddingResponse(vector=self._vector, model="test-embed", dim=len(self._vector))
+
+
+async def test_hard_tier_semantic_dedup_produces_skip_record(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """永続ストアとの hard tier 一致 (ほぼ同一記事) も SemanticSkip として記録される (§8b)。"""
+    from src.tools.url_normalizer import url_hash
+
+    repo = RunHistoryRepository(db_path=tmp_path / "hard_tier.db")
+    existing_url = "https://x.example/existing"
+    existing_h = url_hash(existing_url)
+    repo.mark_url_seen(url_hash=existing_h, url=existing_url, title="既存記事")
+    repo.add_article_embedding(
+        url_hash=existing_h,
+        url=existing_url,
+        vector=[1.0, 0.0, 0.0, 0.0],
+        model="test-embed",
+        title="既存記事",
+    )
+
+    new_article = _art("a1", "ALPHA 事案 再送", "https://x.example/new")
+    survivors, skipped, _persist, skipped_ids, skip_records = await _filter_semantic_duplicates(
+        [new_article],
+        repo,
+        _FakeEmbedder(),  # ALPHA → (1,0,0,0)、既存と cosine 1.0
+        threshold_hard=0.92,
+        threshold_cluster=0.79,
+        window_hours_hard=168,
+        window_hours_cluster=48,
+    )
+
+    assert skipped == 1
+    assert skipped_ids == ["a1"]
+    assert survivors == []
+    assert len(skip_records) == 1
+    rec = skip_records[0]
+    assert rec.tier == "hard"
+    assert rec.matched_kind == "url_hash"
+    assert rec.matched_key == existing_h
+    assert rec.skipped_url == "https://x.example/new"
+    assert rec.skipped_host == "x.example"
+    assert rec.feed_title == "Feed"
+    assert rec.feed_url == "https://example.com/feed"
+
+
+async def test_cluster_tier_semantic_dedup_produces_skip_record(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """永続ストアとの cluster tier 一致 (同事象別ソース) も SemanticSkip として記録される (§8b)。
+
+    hard threshold (0.92) は超えず cluster threshold (0.79) だけ超える cosine (~0.85) を
+    作るため、既存 embedding と直交しない固定ベクトルを使う。
+    """
+    from src.tools.url_normalizer import url_hash
+
+    repo = RunHistoryRepository(db_path=tmp_path / "cluster_tier.db")
+    existing_url = "https://y.example/existing"
+    existing_h = url_hash(existing_url)
+    repo.mark_url_seen(url_hash=existing_h, url=existing_url, title="既存記事")
+    repo.add_article_embedding(
+        url_hash=existing_h,
+        url=existing_url,
+        vector=[1.0, 0.0, 0.0, 0.0],
+        model="test-embed",
+        title="既存記事",
+    )
+
+    new_article = _art("a1", "BETA 事案 別ソース", "https://y.example/new")
+    survivors, skipped, _persist, skipped_ids, skip_records = await _filter_semantic_duplicates(
+        [new_article],
+        repo,
+        _FixedEmbedder((0.85, 0.5268573, 0.0, 0.0)),  # cosine ≈ 0.85 (hard 未満・cluster 超)
+        threshold_hard=0.92,
+        threshold_cluster=0.79,
+        window_hours_hard=168,
+        window_hours_cluster=48,
+    )
+
+    assert skipped == 1
+    assert skipped_ids == ["a1"]
+    assert survivors == []
+    assert len(skip_records) == 1
+    rec = skip_records[0]
+    assert rec.tier == "cluster"
+    assert rec.matched_kind == "url_hash"
+    assert rec.matched_key == existing_h
