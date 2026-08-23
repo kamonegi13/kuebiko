@@ -151,3 +151,29 @@ def test_extract_identifiers_finds_cvss_score() -> None:
 
 def test_extract_identifiers_empty_text_returns_empty_tuple() -> None:
     assert extract_identifiers("") == ()
+
+
+# ---------- 2026-08-23 の実測で見つかった誤抽出 (本文入力で顕在化) ----------
+
+
+class TestExtractionRegressions:
+    def test_cvss_ten_is_not_split(self) -> None:
+        """`CVSS 10.0` を `0.0` と切り出さない (版数部の optional が先頭桁を食っていた)。"""
+        got = {i.raw for i in extract_identifiers("CVSS 10.0 の最大深刻度")}
+        assert "10.0" in got
+        assert "0.0" not in got
+
+    def test_four_part_version_is_not_an_ip(self) -> None:
+        """Chrome 型の 4 部版数を IPv4 と誤認しない (オクテットは最大 3 桁)。"""
+        idents = extract_identifiers("151.0.7922.170 がリリースされた")
+        assert [(i.kind, i.raw) for i in idents] == [("version", "151.0.7922.170")]
+
+    def test_ipv4_is_not_double_counted_as_version(self) -> None:
+        idents = extract_identifiers("C2 は 23.254.165.112 である")
+        assert [(i.kind, i.raw) for i in idents] == [("ip", "23.254.165.112")]
+
+    def test_cvss_version_string_is_not_read_as_score(self) -> None:
+        """`CVSS v3.1 は …` の `3.1` をスコアとして捕まえない (backtracking の穴)。"""
+        got = [(i.kind, i.raw) for i in extract_identifiers("CVSS v3.1 は 9.1 と評価")]
+        assert ("cvss", "9.1") in got
+        assert ("cvss", "3.1") not in got

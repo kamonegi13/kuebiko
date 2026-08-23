@@ -32,7 +32,9 @@ IdentifierKind = Literal["cve", "ip", "domain", "hash", "version", "cvss", "acto
 
 # version: major.minor[.patch]。裸の数値連結の拾いすぎを防ぐため、前後が数字・ピリオドで
 # ないことを要求する (これにより IPv4 のような長い連結の内部にはマッチしない)。
-_VERSION_RE = re.compile(r"(?<![0-9A-Za-z_.])\d{1,4}\.\d{1,4}(?:\.\d{1,5})?(?![0-9A-Za-z_.])")
+_VERSION_RE = re.compile(
+    r"(?<![0-9A-Za-z_.])\d{1,4}\.\d{1,4}(?:\.\d{1,5}){0,2}(?![0-9A-Za-z_.])"
+)
 # 2 部の数値 (1.9 等) は日本語の数量表現 (約1.9万件) と衝突する — リプレイ実測で
 # 関門が正当な数量を「(原文参照)」に置換し本文を破壊した (E1'' の副作用の実物)。
 # 2 部は version 文脈語が近傍に在るときだけ識別子とみなし、数量接尾辞が続くものは除外。
@@ -46,8 +48,10 @@ _VERSION_WINDOW = 14
 # CVSS ベクトル文字列 (例: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
 _CVSS_VECTOR_RE = re.compile(r"CVSS:\d\.\d(?:/[A-Z]{1,3}:[A-Z]{1,3})+", re.IGNORECASE)
 # CVSS スコア表記 (例: "CVSS スコアは 9.8" / "CVSSv3.1: 7.5")
+# 版数部は "v3.1" のように **v 必須** とする。v 無しの `\s*\d` を許すと
+# "CVSS 10.0" の先頭 "1" を版数と誤読し、スコアを "0.0" と切り出す (2026-08-23 実測)。
 _CVSS_SCORE_RE = re.compile(
-    r"CVSS(?:\s*v?\d(?:\.\d)?)?[^0-9]{0,20}?(\d{1,2}\.\d)\b",
+    r"CVSS(?:\s*v\d(?:\.\d)?)?[^0-9]{0,20}?(?<![0-9.A-Za-z])(\d{1,2}\.\d)(?![0-9.])",
     re.IGNORECASE,
 )
 
@@ -59,8 +63,10 @@ _CVE_LOOSE_RE = re.compile(r"(?<![A-Za-z0-9])CVE-\d{4}-\d{3,8}(?![0-9])", re.IGN
 # 関門用の広い IPv4 網: 4 групп dot 区切りで、うち 3 групп 以上が純数字なら
 # 「IP の形をしたもの」とみなす (16 進化けした 2CA.254.165.112 型と、ioc_extractor が
 # 良性判定で落とす文書用レンジ 203.0.113.* の捏造の両方を掴む)
+# 各 group は最大 3 桁 (IPv4 オクテットの上限)。4 桁を許すと Chrome 等の 4 部版数
+# (151.0.7922.170) を IP と誤認する (2026-08-23 実測)。
 _IP_LOOSE_RE = re.compile(
-    r"(?<![0-9A-Za-z.])([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})(?![0-9A-Za-z.])"
+    r"(?<![0-9A-Za-z.])([0-9A-Fa-f]{1,3})\.([0-9A-Fa-f]{1,3})\.([0-9A-Fa-f]{1,3})\.([0-9A-Fa-f]{1,3})(?![0-9A-Za-z.])"
 )
 
 # actor_id: UNC1234 / APT41 / TA505 / STORM-1234 / UAT-5647 / CL-STA-0043 系。
@@ -169,8 +175,11 @@ def extract_identifiers(text: str) -> tuple[Identifier, ...]:
             idents.append(_make_identifier("ip", m.group(0)))
 
     # version/cvss/actor_id は本モジュール固有の regex。defang 済みテキストに対して適用する。
+    ip_spans = {(m.start(), m.end()) for m in _IP_LOOSE_RE.finditer(refanged)}
     for m in _VERSION_RE.finditer(refanged):
         tok = m.group(0)
+        if (m.start(), m.end()) in ip_spans:
+            continue  # IP として既に採ったトークンを version として二重計上しない
         after = refanged[m.end() : m.end() + 2]
         if _QUANTITY_SUFFIX_RE.match(after):
             continue  # 数量表現 (1.9万件 等) — 識別子ではない
