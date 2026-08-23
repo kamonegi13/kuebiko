@@ -402,6 +402,25 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             ).fetchall()
         return [_row_to_event_version(r) for r in rows]
 
+    def latest_event_versions(self, item_ids: Sequence[str]) -> dict[str, EventVersionRecord]:
+        """複数アイテムの **最新版のみ** を 1 クエリで返す (一覧の N+1 回避)。
+
+        dual-backend 可搬形は ROW_NUMBER のみ (bare GROUP BY は PG で落ちる)。
+        """
+        ids = list(dict.fromkeys(item_ids))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM ("  # noqa: S608 — placeholders のみ
+                " SELECT *, ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY version DESC) AS rn"
+                f" FROM event_item_versions WHERE item_id IN ({placeholders})"
+                ") t WHERE rn = 1",
+                ids,
+            ).fetchall()
+        return {str(r["item_id"]): _row_to_event_version(r) for r in rows}
+
     # ---------- dedup_semantic_skips (§8b) ----------
 
     def record_semantic_skips(self, rows: Sequence[Any]) -> int:

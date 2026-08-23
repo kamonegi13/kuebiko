@@ -55,7 +55,40 @@ class TestSingleReadingSurface:
         """一覧行は見出しを持つ (生成があれば生成見出し、無ければ原記事タイトル)。"""
         import inspect
 
-        from src.ui.api.eventnews import _headline_and_preview
+        from src.ui.api.eventnews import _headlines_and_previews
 
-        src = inspect.getsource(_headline_and_preview)
+        src = inspect.getsource(_headlines_and_previews)
         assert "art.title" in src, "単独記事は原記事タイトルを見出しにする"
+
+
+class TestListPerformance:
+    def test_list_resolves_headlines_in_bulk(self) -> None:
+        """一覧はアイテムごとに版・記事を引かない (N+1 は数日で体感悪化する)。
+
+        1 日 ~127 件のペースで事象が増えるため、limit=80 で 160 クエリになる。
+        版は latest_event_versions、記事は get_articles_by_ids で各 1 クエリにまとめる。
+        """
+        import inspect
+
+        from src.ui.api.eventnews import _headlines_and_previews, list_event_news
+
+        list_src = inspect.getsource(list_event_news)
+        assert "_headlines_and_previews" in list_src
+        # ループ内で 1 件ずつ引いていないこと
+        loop_body = list_src.split("for r in shown:")[-1]
+        assert "list_event_versions" not in loop_body
+        assert "get_articles_by_ids" not in loop_body
+
+        bulk_src = inspect.getsource(_headlines_and_previews)
+        assert bulk_src.count("repo.latest_event_versions") == 1
+        assert bulk_src.count("repo.get_articles_by_ids") == 1
+
+    def test_latest_version_is_taken_from_the_front(self) -> None:
+        """list_event_versions は version DESC — versions[-1] は **最古** になる。"""
+        import inspect
+
+        from src.ui.api.eventnews import _version_payload
+
+        src = inspect.getsource(_version_payload)
+        assert "versions[0]" in src
+        assert "versions[-1]" not in src

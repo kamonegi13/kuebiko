@@ -184,7 +184,7 @@ def _build_report(
         )
         versions = repo.list_event_versions(it.state.item_id)
         if versions:
-            latest = versions[-1]
+            latest = versions[0]  # version DESC で返るので先頭が最新
             lines.append(f"**{latest.headline}** (v{latest.version})")
             body = json.loads(latest.body_json)
             lines.append("")

@@ -414,3 +414,56 @@ class TestSemanticSkips:
         with repo._connect() as conn:  # noqa: SLF001 — 他の repo テストと同型
             conn.execute("UPDATE dedup_semantic_skips SET ts = datetime('now', '-100 days')")
         assert repo.purge_semantic_skips(days=90) == 1
+
+
+class TestLatestVersionsBulk:
+    """一覧の N+1 回避 — 複数アイテムの最新版を 1 クエリで返す。"""
+
+    def test_returns_only_the_latest_version_per_item(self, tmp_path: Path) -> None:
+        repo = RunHistoryRepository(tmp_path / "t.db")
+        now = datetime.now(UTC)
+        for item_id in ("ev-a", "ev-b"):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=now,
+                last_reported_at=now,
+                importance="high",
+            )
+        for v in (1, 2, 3):
+            repo.record_event_version(
+                item_id="ev-a",
+                version=v,
+                generated_at=now,
+                model="m",
+                prompt_version="p",
+                headline=f"a-v{v}",
+                body_json="{}",
+                new_facts_json="{}",
+                verified_at=None,
+                dropped_lines=0,
+                repaired_ids=0,
+            )
+        repo.record_event_version(
+            item_id="ev-b",
+            version=1,
+            generated_at=now,
+            model="m",
+            prompt_version="p",
+            headline="b-v1",
+            body_json="{}",
+            new_facts_json="{}",
+            verified_at=None,
+            dropped_lines=0,
+            repaired_ids=0,
+        )
+
+        latest = repo.latest_event_versions(["ev-a", "ev-b", "ev-missing"])
+
+        assert latest["ev-a"].headline == "a-v3", "最新版 (最大 version) を返す"
+        assert latest["ev-b"].headline == "b-v1"
+        assert "ev-missing" not in latest
+
+    def test_empty_input_does_not_query(self, tmp_path: Path) -> None:
+        repo = RunHistoryRepository(tmp_path / "t.db")
+        assert repo.latest_event_versions([]) == {}

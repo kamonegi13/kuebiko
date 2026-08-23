@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -36,7 +37,7 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
     versions = repo.list_event_versions(item_id)
     if not versions:
         return None
-    latest = versions[-1]
+    latest = versions[0]  # version DESC で返るので先頭が最新
     body = json.loads(latest.body_json) if latest.body_json else {}
     return {
         "version": latest.version,
@@ -56,20 +57,33 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
     }
 
 
-def _headline_and_preview(repo: RunHistoryRepository, record: Any) -> tuple[str, str]:
-    """一覧に出す見出しと冒頭。生成があればそれを、無ければ原記事のものを使う。"""
-    if record.state.current_version > 0:
-        versions = repo.list_event_versions(record.state.item_id)
-        if versions:
-            latest = versions[-1]
+def _headlines_and_previews(
+    repo: RunHistoryRepository, records: Sequence[Any]
+) -> dict[str, tuple[str, str]]:
+    """一覧の見出しと冒頭を **一括** で解決する。
+
+    アイテムごとに版と記事を引くと N+1 になる (1 日 ~127 件のペースで事象が増えるため、
+    数日で一覧が目に見えて遅くなる)。版は ``latest_event_versions``、記事は
+    ``get_articles_by_ids`` で **それぞれ 1 クエリ**にまとめる。
+    """
+    versions = repo.latest_event_versions([r.state.item_id for r in records])
+    need_article = [r for r in records if r.state.item_id not in versions]
+    articles = repo.get_articles_by_ids([aid for r in need_article for aid in r.state.member_ids])
+    out: dict[str, tuple[str, str]] = {}
+    for r in records:
+        latest = versions.get(r.state.item_id)
+        if latest is not None:
             body = json.loads(latest.body_json) if latest.body_json else {}
-            return latest.headline, str(body.get("bluf", ""))[:160]
-    articles = repo.get_articles_by_ids(list(record.state.member_ids))
-    for aid in record.state.member_ids:
-        art = articles.get(aid)
-        if art is not None:
-            return art.title, (art.summary or "")[:160]
-    return "(記事の取得に失敗)", ""
+            out[r.state.item_id] = (latest.headline, str(body.get("bluf", ""))[:160])
+            continue
+        for aid in r.state.member_ids:
+            art = articles.get(aid)
+            if art is not None:
+                out[r.state.item_id] = (art.title, (art.summary or "")[:160])
+                break
+        else:
+            out[r.state.item_id] = ("(記事の取得に失敗)", "")
+    return out
 
 
 def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]:
@@ -115,13 +129,15 @@ def list_event_news(
     records = repo.list_event_items(
         origin="live", statuses=statuses, limit=min(limit, _LIST_LIMIT_MAX)
     )
+    shown = [
+        r
+        for r in records
+        if not r.merged_into and not (wanted and r.state.importance not in wanted)
+    ]
+    resolved = _headlines_and_previews(repo, shown)
     items = []
-    for r in records:
-        if r.merged_into:
-            continue  # 墓標は一覧に出さない (redirect 先が出る)
-        if wanted and r.state.importance not in wanted:
-            continue
-        headline, preview = _headline_and_preview(repo, r)
+    for r in shown:
+        headline, preview = resolved[r.state.item_id]
         items.append(
             {
                 "id": r.state.item_id,
