@@ -33,6 +33,15 @@ IdentifierKind = Literal["cve", "ip", "domain", "hash", "version", "cvss", "acto
 # version: major.minor[.patch]。裸の数値連結の拾いすぎを防ぐため、前後が数字・ピリオドで
 # ないことを要求する (これにより IPv4 のような長い連結の内部にはマッチしない)。
 _VERSION_RE = re.compile(r"(?<![0-9A-Za-z_.])\d{1,4}\.\d{1,4}(?:\.\d{1,5})?(?![0-9A-Za-z_.])")
+# 2 部の数値 (1.9 等) は日本語の数量表現 (約1.9万件) と衝突する — リプレイ実測で
+# 関門が正当な数量を「(原文参照)」に置換し本文を破壊した (E1'' の副作用の実物)。
+# 2 部は version 文脈語が近傍に在るときだけ識別子とみなし、数量接尾辞が続くものは除外。
+_VERSION_CONTEXT_RE = re.compile(
+    r"version|バージョン|ビルド|リリース|patch|update|build|以前|以降|未満|系列|\bv\d",
+    re.IGNORECASE,
+)
+_QUANTITY_SUFFIX_RE = re.compile(r"^[万億千兆件人％%ドル円倍pt]")
+_VERSION_WINDOW = 14
 
 # CVSS ベクトル文字列 (例: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
 _CVSS_VECTOR_RE = re.compile(r"CVSS:\d\.\d(?:/[A-Z]{1,3}:[A-Z]{1,3})+", re.IGNORECASE)
@@ -161,7 +170,15 @@ def extract_identifiers(text: str) -> tuple[Identifier, ...]:
 
     # version/cvss/actor_id は本モジュール固有の regex。defang 済みテキストに対して適用する。
     for m in _VERSION_RE.finditer(refanged):
-        idents.append(_make_identifier("version", m.group(0)))
+        tok = m.group(0)
+        after = refanged[m.end() : m.end() + 2]
+        if _QUANTITY_SUFFIX_RE.match(after):
+            continue  # 数量表現 (1.9万件 等) — 識別子ではない
+        if tok.count(".") < 2:
+            window = refanged[max(0, m.start() - _VERSION_WINDOW) : m.end() + _VERSION_WINDOW]
+            if not _VERSION_CONTEXT_RE.search(window):
+                continue  # 2 部数値は version 文脈語が無ければ拾わない
+        idents.append(_make_identifier("version", tok))
     for m in _CVSS_VECTOR_RE.finditer(refanged):
         idents.append(_make_identifier("cvss", m.group(0)))
     for m in _CVSS_SCORE_RE.finditer(refanged):
