@@ -1,0 +1,179 @@
+"""識別子照合の単独所有モジュール (docs/event_news_design.md §9)。
+
+CVE / IP / domain / hash / version / CVSS / actor_id を対象に、
+「使ってよい識別子か」「原文に本当に書かれているか」を決定論で判定する。
+
+**なぜ ``src.assessment.evidence_verify.normalize_for_match`` を使わないか**:
+あちらはピリオド・ハイフンを含む記号を丸ごと落として部分文字列 ``in`` で照合する。
+識別子ではこれが致命的で、``UNC70`` が ``UNC7005`` に含まれる (誤って一致する) のを
+そのまま再現してしまう (レビュー A H4)。本モジュールは NFKC + casefold のみを適用し、
+**ピリオド・ハイフンは保持**したうえで、一致はトークン境界 (前後が英数字でないこと) を
+必須にすることで同じ事故を構造的に防ぐ。
+
+CVE / IP / domain / hash の抽出は ``src.cti.ioc_extractor`` の公開関数
+(``extract_iocs`` / ``refang``) を再利用する (defang 対応込み、regex の複製をしない)。
+version / CVSS / actor_id はここで新規に定義する (ioc_extractor の対象外)。
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections.abc import Sequence
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Literal
+
+from src.cti.ioc_extractor import extract_iocs, refang
+
+IdentifierKind = Literal["cve", "ip", "domain", "hash", "version", "cvss", "actor_id"]
+
+# ---------- 新規 regex (ioc_extractor の対象外) ----------
+
+# version: major.minor[.patch]。裸の数値連結の拾いすぎを防ぐため、前後が数字・ピリオドで
+# ないことを要求する (これにより IPv4 のような長い連結の内部にはマッチしない)。
+_VERSION_RE = re.compile(r"(?<![0-9A-Za-z_.])\d{1,4}\.\d{1,4}(?:\.\d{1,5})?(?![0-9A-Za-z_.])")
+
+# CVSS ベクトル文字列 (例: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+_CVSS_VECTOR_RE = re.compile(r"CVSS:\d\.\d(?:/[A-Z]{1,3}:[A-Z]{1,3})+", re.IGNORECASE)
+# CVSS スコア表記 (例: "CVSS スコアは 9.8" / "CVSSv3.1: 7.5")
+_CVSS_SCORE_RE = re.compile(
+    r"CVSS(?:\s*v?\d(?:\.\d)?)?[^0-9]{0,20}?(\d{1,2}\.\d)\b",
+    re.IGNORECASE,
+)
+
+# actor_id: UNC1234 / APT41 / TA505 / STORM-1234 / UAT-5647 / CL-STA-0043 系。
+# \b は CJK と ASCII の境界で機能しないため actor_normalizer.py と同じ lookaround 方式を使う。
+_ACTOR_ID_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:UNC|APT|TA|STORM-|UAT-|CL-)\d+(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+# find_repair_candidate の許容規律 (docs/event_news_design.md §9)
+_REPAIR_MAX_LEN_DIFF = 3
+_REPAIR_MIN_COMMON_RATIO = 0.5
+
+
+@dataclass(frozen=True)
+class Identifier:
+    """1 つの識別子 (照合単位)。"""
+
+    kind: IdentifierKind
+    raw: str
+    normalized: str
+
+
+def normalize_identifier(s: str) -> str:
+    """NFKC + casefold + defang 復元。ピリオド・ハイフンは保持する。
+
+    全角文字・引用符の字体差を NFKC で吸収し、``[.]`` / ``hxxp`` 等の defang 表記を
+    ``refang`` (ioc_extractor と共通) で通常表記へ戻してから casefold する。
+    句読点を落とす ``normalize_for_match`` とは異なり、識別子の内部構造
+    (ピリオド区切りの IP / ハイフン区切りの CVE 等) は破壊しない。
+    """
+    nfkc = unicodedata.normalize("NFKC", s or "")
+    return refang(nfkc).casefold()
+
+
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum()
+
+
+def contains_identifier(haystack: str, ident: Identifier) -> bool:
+    """``haystack`` に ``ident`` がトークン境界つきで存在するか。
+
+    haystack 側も ``ident.normalized`` と同じ正規化 (NFKC + casefold + defang 復元) を
+    行ってから比較する。一致箇所の前後が英数字でないことを要求し、
+    ``UNC70`` が ``UNC7005`` に含まれる誤判定を防ぐ。
+    """
+    needle = ident.normalized
+    if not needle:
+        return False
+    hay = normalize_identifier(haystack)
+
+    start = 0
+    while True:
+        idx = hay.find(needle, start)
+        if idx == -1:
+            return False
+        before_ok = idx == 0 or not _is_word_char(hay[idx - 1])
+        end = idx + len(needle)
+        after_ok = end == len(hay) or not _is_word_char(hay[end])
+        if before_ok and after_ok:
+            return True
+        start = idx + 1
+
+
+def _make_identifier(kind: IdentifierKind, raw: str) -> Identifier:
+    return Identifier(kind=kind, raw=raw, normalized=normalize_identifier(raw))
+
+
+def _dedupe(idents: list[Identifier]) -> tuple[Identifier, ...]:
+    """登場順を保ちながら (kind, normalized) で重複除去する。"""
+    seen: set[tuple[str, str]] = set()
+    out: list[Identifier] = []
+    for ident in idents:
+        key = (ident.kind, ident.normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ident)
+    return tuple(out)
+
+
+def extract_identifiers(text: str) -> tuple[Identifier, ...]:
+    """テキストから識別子を全種別抽出する (defang 対応込み)。"""
+    if not text:
+        return ()
+
+    idents: list[Identifier] = []
+
+    # cve/ip/domain/hash は ioc_extractor の抽出を再利用 (defang 対応込み)。
+    extracted = extract_iocs(text)
+    for cve in extracted.cves:
+        idents.append(_make_identifier("cve", cve))
+    for ip in (*extracted.ipv4, *extracted.ipv6):
+        idents.append(_make_identifier("ip", ip))
+    for domain in extracted.domains:
+        idents.append(_make_identifier("domain", domain))
+    for digest in (*extracted.md5, *extracted.sha1, *extracted.sha256):
+        idents.append(_make_identifier("hash", digest))
+
+    # version/cvss/actor_id は本モジュール固有の regex。defang 済みテキストに対して適用する。
+    refanged = refang(text)
+    for m in _VERSION_RE.finditer(refanged):
+        idents.append(_make_identifier("version", m.group(0)))
+    for m in _CVSS_VECTOR_RE.finditer(refanged):
+        idents.append(_make_identifier("cvss", m.group(0)))
+    for m in _CVSS_SCORE_RE.finditer(refanged):
+        idents.append(_make_identifier("cvss", m.group(1)))
+    for m in _ACTOR_ID_RE.finditer(refanged):
+        idents.append(_make_identifier("actor_id", m.group(0)))
+
+    return _dedupe(idents)
+
+
+def find_repair_candidate(broken: Identifier, allowed: Sequence[Identifier]) -> Identifier | None:
+    """``broken`` を ``allowed`` 内の一意な近傍識別子へ解決する (曖昧なら None)。
+
+    同 kind の候補が **ちょうど 1 件** だけ存在し、かつ長さ差 3 以内 かつ
+    共通部分 (連続一致文字数の合計) が長い方の半分を超える場合のみ解決する。
+    誤った記事へ証拠を付けるより落とすほうがましなので、条件を満たさなければ None。
+    """
+    same_kind = [a for a in allowed if a.kind == broken.kind]
+    if len(same_kind) != 1:
+        return None
+
+    candidate = same_kind[0]
+    b, c = broken.normalized, candidate.normalized
+    if not b or not c:
+        return None
+    if abs(len(b) - len(c)) > _REPAIR_MAX_LEN_DIFF:
+        return None
+
+    matcher = SequenceMatcher(None, b, c)
+    common = sum(block.size for block in matcher.get_matching_blocks())
+    if common <= max(len(b), len(c)) * _REPAIR_MIN_COMMON_RATIO:
+        return None
+
+    return candidate
