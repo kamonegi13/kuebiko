@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -146,9 +146,18 @@ async def process_candidates(
     llm_factory: Callable[[], LLMClient] | None,
     *,
     generate: bool = True,
+    existing: Sequence[tuple[ItemState, Sequence[MemberArticle]]] = (),
 ) -> ProcessStats:
-    """錨時刻順の逐次適用。candidates は anchor_ts 昇順であること。"""
-    items: dict[str, _LiveItem] = {}
+    """錨時刻順の逐次適用。candidates は anchor_ts 昇順であること。
+
+    ``existing`` に窓内の既存アイテム (状態 + メンバー) を渡すと、その続きから処理する。
+    毎時運用ではこれを repo から復元して渡し、リプレイでは空で開始する — **同じ関数で
+    本番とリプレイを走らせる**ことで、評価と本番の挙動差を構造的に無くす。
+    """
+    items: dict[str, _LiveItem] = {
+        state.item_id: _LiveItem(snapshot=state, members=list(members))
+        for state, members in existing
+    }
     stats = dict.fromkeys(
         (
             "created",
