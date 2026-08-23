@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -36,6 +37,38 @@ UNRESOLVED_PLACEHOLDER = "(原文参照)"
 
 # LLM が書く参照の許容形: {I3} / ｛I3｝ / [I3] / I3 (単独トークン)
 _REF_RE = re.compile(r"[{｛\[]\s*(I\d{1,3})\s*[}｝\]]|(?<![A-Za-z0-9])(I\d{1,3})(?![A-Za-z0-9])")
+
+# 想定される字種 (日本語 CTI ブリーフに出てよいもの)。ここから外れる文字は
+# **生成の破損**の兆候 (実測: `2026年` が `202막年` になりハングルが混入)。
+# 識別子と違い文法が閉じているので検査が確実。本文は壊さず計数のみ。
+_EXPECTED_SCRIPT_PREFIXES = (
+    "LATIN",
+    "HIRAGANA",
+    "KATAKANA",
+    "CJK UNIFIED",
+    "FULLWIDTH",
+    "HALFWIDTH",
+    "IDEOGRAPHIC",
+    "DIGIT",
+    "GREEK",
+    "CYRILLIC",
+)
+
+
+def count_script_anomalies(text: str) -> int:
+    """想定外の字種の文字数を数える (ASCII・記号・約物は対象外)。"""
+    n = 0
+    for ch in text:
+        if ch.isascii() or ch.isspace():
+            continue
+        category = unicodedata.category(ch)
+        if category.startswith(("P", "S", "Z")):
+            continue  # 約物・記号 (、。「」※ ™ 等)
+        name = unicodedata.name(ch, "")
+        if not name.startswith(_EXPECTED_SCRIPT_PREFIXES):
+            n += 1
+    return n
+
 
 # 参照として解決されなかった中括弧 (装飾用途 / 捏造番号)。中身は残す。
 _BRACE_RE = re.compile(r"[{｛]\s*([^{}｛｝]{1,60}?)\s*[}｝]")
@@ -78,6 +111,7 @@ class ResolveStats:
     misattributed: int = 0  # 参照先記事に無い識別子を引いた数 (実値は保持・計数のみ)
     literal_ok: int = 0  # 実値で書かれ、カタログに在った数
     unwrapped: int = 0  # 参照でない中括弧を外した数 (LLM が略語を装飾に使う癖)
+    script_anomalies: int = 0  # 想定外の字種 (生成破損の兆候。本文は壊さない)
     literal_substituted: int = 0  # 実値で書かれ、厳密型でカタログに無い → 置換した数
     literal_flagged: int = 0  # 実値で書かれ、緩い型でカタログに無い → 計数のみ
 
@@ -90,6 +124,7 @@ class ResolveStats:
             literal_substituted=self.literal_substituted + other.literal_substituted,
             literal_flagged=self.literal_flagged + other.literal_flagged,
             unwrapped=self.unwrapped + other.unwrapped,
+            script_anomalies=self.script_anomalies + other.script_anomalies,
         )
 
 
@@ -186,6 +221,7 @@ def resolve_text(
             # version/cvss 等は表記の変種が無限。本文は壊さず計数のみ (§C)
             stats = stats.merged(ResolveStats(literal_flagged=1))
 
+    stats = stats.merged(ResolveStats(script_anomalies=count_script_anomalies(text)))
     out = _REF_RE.sub(_sub, text)
     leftover = len(_BRACE_RE.findall(out))
     if leftover:

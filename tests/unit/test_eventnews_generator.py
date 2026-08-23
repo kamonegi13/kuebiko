@@ -174,3 +174,17 @@ class TestTextualMemberSelection:
 
         assert "本文にしかない詳細な記述" in prompt
         assert "みじかい要約" not in prompt
+
+
+class TestBoilerplateStripping:
+    def test_media_boilerplate_is_removed_from_prompt(self) -> None:
+        """媒体側の節見出しを入力から断つ (指示では止まらない、の規約)。
+
+        実測: The Register の 'MORE CONTEXT' が本文へ「CONTEXT の文脈として」と写った。
+        """
+        m = _member("a", summary="", body="侵害が判明した。MORE CONTEXT 同社はロシア由来である。")
+
+        prompt = build_prompt([m], "(識別子なし)")
+
+        assert "MORE CONTEXT" not in prompt
+        assert "同社はロシア由来である" in prompt

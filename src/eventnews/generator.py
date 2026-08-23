@@ -28,6 +28,26 @@ _MEMBER_FIELD_CHAR_CAP = 1400
 # 案 (v2) は +10% にとどまり、梃子は入力側だった。費用は 14 秒/件で要約入力と同等。
 _MEMBER_BODY_CHAR_CAP = 2600
 
+# 本文抽出をすり抜けた媒体側の定型見出し。LLM がこれを事実の一部として写す実害が
+# 出た (The Register の "MORE CONTEXT" が「CONTEXT の文脈として」という本文になった)。
+# 指示で止めず入力側で断つ (禁止は指示では止まらない、2026-08-19 の規約)。
+_BOILERPLATE_MARKERS: tuple[str, ...] = (
+    "MORE CONTEXT",
+    "MORE ON THIS",
+    "READ MORE",
+    "RELATED STORIES",
+    "SPONSORED",
+    "ADVERTISEMENT",
+)
+
+
+def _strip_boilerplate(text: str) -> str:
+    out = text
+    for marker in _BOILERPLATE_MARKERS:
+        out = out.replace(marker, " ")
+    return out
+
+
 # select_members の tier 優先度 (official > research > その他)。未列挙 (news/social/
 # state_media/unknown) はすべて同格の「その他」— tier 内での序列は anchor_ts のみで決める。
 _SELECT_TIER_RANK: dict[str, int] = {"official": 0, "research": 1}
@@ -82,7 +102,7 @@ def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str
             "title": m.title[:_MEMBER_FIELD_CHAR_CAP],
             "feed_title": m.feed_title[:_MEMBER_FIELD_CHAR_CAP],
             "anchor": m.anchor_ts.isoformat(),
-            "summary": (m.body or m.summary)[:_MEMBER_BODY_CHAR_CAP],
+            "summary": _strip_boilerplate(m.body or m.summary)[:_MEMBER_BODY_CHAR_CAP],
         }
         for i, m in enumerate(selected, start=1)
     ]

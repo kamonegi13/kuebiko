@@ -189,3 +189,19 @@ class TestExtractionRegressions:
             assert contains_identifier(hay, ident) is True
         for ident in extract_identifiers("CVE-2026-18051 が存在する"):
             assert contains_identifier(hay, ident) is True
+
+
+class TestScriptAnomalies:
+    """生成破損の検出 — 識別子と違い字種は文法が閉じているので確実に検査できる。"""
+
+    def test_unexpected_script_is_counted(self) -> None:
+        from src.tools.identifier_catalog import count_script_anomalies
+
+        # 実測: '2026年' が '202막年' になりハングルが混入した
+        assert count_script_anomalies("202막年6月末") == 1
+
+    def test_legitimate_characters_are_not_flagged(self) -> None:
+        from src.tools.identifier_catalog import count_script_anomalies
+
+        for text in ("2026年6月末", "McDonald’s と Santé", "“TheHatman” ™ ※ 18.2〜19.2"):
+            assert count_script_anomalies(text) == 0
