@@ -162,3 +162,23 @@ class TestResidualRisks:
         r = verify_draft(draft, members)
         assert r.draft.facts[0].text == "RingCRntal は侵害を公表した。"  # 本文は無傷
         assert r.substituted_ids == 0
+
+    def test_decorative_braces_are_unwrapped_not_left(self) -> None:
+        """LLM は `{…}` を技術用語の装飾に使う — 中身を残して外す (実測 100 箇所超)。"""
+        members = (_member("a", body="CVE-2026-1111 を悪用"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[FactItem(text="{I1} を {VPN} 経由で悪用した。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "CVE-2026-1111 を VPN 経由で悪用した。"
+
+    def test_fabricated_word_number_token_is_unwrapped(self) -> None:
+        """`I`+数字 の書式を真似た `{GT42}` 型の捏造は、中身を残して外し対称照合に回す。"""
+        members = (_member("a", body="GTIG が報告"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[FactItem(text="{GT42} は報告した。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "GT42 は報告した。"
