@@ -42,6 +42,18 @@ _CVSS_SCORE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 関門用の広い CVE 網 (ioc_extractor は年を 19|20 に固定しており、転記破損で年桁が
+# 化けた CVE-7026-* 等を認識できない — 関門は「CVE の形をしたもの」を全部掴む。
+# E1' 注入試験 2026-08-23 で実測した穴)
+_CVE_LOOSE_RE = re.compile(r"(?<![A-Za-z0-9])CVE-\d{4}-\d{3,8}(?![0-9])", re.IGNORECASE)
+
+# 関門用の広い IPv4 網: 4 групп dot 区切りで、うち 3 групп 以上が純数字なら
+# 「IP の形をしたもの」とみなす (16 進化けした 2CA.254.165.112 型と、ioc_extractor が
+# 良性判定で落とす文書用レンジ 203.0.113.* の捏造の両方を掴む)
+_IP_LOOSE_RE = re.compile(
+    r"(?<![0-9A-Za-z.])([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})\.([0-9A-Fa-f]{1,4})(?![0-9A-Za-z.])"
+)
+
 # actor_id: UNC1234 / APT41 / TA505 / STORM-1234 / UAT-5647 / CL-STA-0043 系。
 # \b は CJK と ASCII の境界で機能しないため actor_normalizer.py と同じ lookaround 方式を使う。
 _ACTOR_ID_RE = re.compile(
@@ -128,19 +140,26 @@ def extract_identifiers(text: str) -> tuple[Identifier, ...]:
 
     idents: list[Identifier] = []
 
-    # cve/ip/domain/hash は ioc_extractor の抽出を再利用 (defang 対応込み)。
+    # domain/hash は ioc_extractor の抽出を再利用 (defang + TLD 検証込み)。
     extracted = extract_iocs(text)
-    for cve in extracted.cves:
-        idents.append(_make_identifier("cve", cve))
-    for ip in (*extracted.ipv4, *extracted.ipv6):
-        idents.append(_make_identifier("ip", ip))
     for domain in extracted.domains:
         idents.append(_make_identifier("domain", domain))
     for digest in (*extracted.md5, *extracted.sha1, *extracted.sha256):
         idents.append(_make_identifier("hash", digest))
+    for ip6 in extracted.ipv6:
+        idents.append(_make_identifier("ip", ip6))
+
+    # cve/ipv4 は関門用の広い網 (上記コメント参照 — ioc_extractor の厳格 regex は
+    # 破損識別子を認識できず検査から静かに外すため、転記忠実性の検査には使わない)。
+    refanged = refang(text)
+    for m in _CVE_LOOSE_RE.finditer(refanged):
+        idents.append(_make_identifier("cve", m.group(0)))
+    for m in _IP_LOOSE_RE.finditer(refanged):
+        digit_groups = sum(1 for g in m.groups() if g.isdigit())
+        if digit_groups >= 3:
+            idents.append(_make_identifier("ip", m.group(0)))
 
     # version/cvss/actor_id は本モジュール固有の regex。defang 済みテキストに対して適用する。
-    refanged = refang(text)
     for m in _VERSION_RE.finditer(refanged):
         idents.append(_make_identifier("version", m.group(0)))
     for m in _CVSS_VECTOR_RE.finditer(refanged):
