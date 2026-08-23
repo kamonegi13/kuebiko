@@ -31,8 +31,13 @@ function SourceChip({ item }: { item: Pick<EventNewsListItem, "independent_sourc
   );
 }
 
-/** facts を段落へまとめ、文末に控えめな出典番号を置く。 */
-function Body({ facts, onCite }: { facts: EventNewsFact[]; onCite: (n: number) => void }) {
+/** facts を段落へまとめ、文末に控えめな出典番号を置く。
+ *
+ * 出典番号は **素の記事リンク** (`/app/article/:id`) にする。ArticlePeek の
+ * グローバル・クリックインターセプトがこれを捕捉して右ドロワーで開くため、
+ * 履歴統合 (バックで閉じる) や再入 guard をこちらで再実装しなくて済む。
+ */
+function Body({ facts, articleIdOf }: { facts: EventNewsFact[]; articleIdOf: (n: number) => string | undefined }) {
   const paras = new Map<number, EventNewsFact[]>();
   for (const f of facts) {
     const k = f.paragraph || 1;
@@ -46,14 +51,14 @@ function Body({ facts, onCite }: { facts: EventNewsFact[]; onCite: (n: number) =
           {paras.get(k)!.map((f, i) => (
             <span key={i}>
               {f.text}
-              {f.source_index > 0 && (
-                <button
-                  onClick={() => onCite(f.source_index)}
+              {f.source_index > 0 && articleIdOf(f.source_index) && (
+                <a
+                  href={`/app/article/${encodeURIComponent(articleIdOf(f.source_index)!)}`}
                   title={`出典 [${f.source_index}] を開く`}
-                  className="align-super text-[10px] font-mono text-fg-subtle hover:text-accent ml-0.5 mr-0.5"
+                  className="align-super text-[10px] font-mono text-fg-subtle hover:text-accent ml-0.5 mr-0.5 no-underline"
                 >
                   [{f.source_index}]
-                </button>
+                </a>
               )}
             </span>
           ))}
@@ -64,7 +69,6 @@ function Body({ facts, onCite }: { facts: EventNewsFact[]; onCite: (n: number) =
 }
 
 function DetailBody({ id }: { id: string }) {
-  const [openMember, setOpenMember] = useState<number | null>(null);
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews", id],
     queryFn: () => fetchEventNewsDetail(id),
@@ -74,6 +78,7 @@ function DetailBody({ id }: { id: string }) {
   if (error) return <div className="text-critical text-sm">エラー: {String(error)}</div>;
   if (!data) return null;
   const d: EventNewsDetail = data;
+  const articleIdOf = (n: number) => d.members.find((m) => m.index === n)?.article_id;
 
   return (
     <div className="space-y-4">
@@ -88,7 +93,7 @@ function DetailBody({ id }: { id: string }) {
           <p className="border-l-[3px] border-accent pl-3.5 text-fg text-[15px] leading-relaxed max-w-[46em] mb-4">
             {d.news.bluf}
           </p>
-          <Body facts={d.news.facts} onCite={setOpenMember} />
+          <Body facts={d.news.facts} articleIdOf={articleIdOf} />
           {d.news.discrepancies.length > 0 && (
             <>
               <h4 className="text-xs uppercase tracking-wider text-fg-muted font-medium mt-5 mb-2">ソース間の相違</h4>
@@ -128,24 +133,40 @@ function DetailBody({ id }: { id: string }) {
         <h4 className="text-xs uppercase tracking-wider text-fg-muted font-medium mb-2">
           原記事 {d.members.length} 件{d.news && "（[N] は本文の出典番号）"}
         </h4>
-        <div className="space-y-1.5">
+        <ul className="space-y-1">
           {d.members.map((m) => (
-            <details key={m.article_id} open={openMember === m.index} className="border border-border-subtle rounded">
-              <summary className="px-3 py-2 cursor-pointer flex gap-2 items-baseline text-sm">
-                <span className="font-mono text-xs text-accent shrink-0">[{m.index}]</span>
-                <span className="text-fg">{m.title}</span>
-                <span className="ml-auto text-xs text-fg-subtle shrink-0">{m.feed_title} · {m.source_tier}</span>
-              </summary>
-              <div className="px-3 pb-3 pt-1 text-sm text-fg-muted border-t border-dashed border-border-subtle">
-                {m.summary}
-                <div className="mt-2 flex gap-3">
-                  <a href={`/app/article/${encodeURIComponent(m.article_id)}`} className="text-accent text-xs">分析結果 →</a>
-                  <a href={m.url} target="_blank" rel="noopener noreferrer" className="text-fg-subtle hover:text-accent text-xs">元記事 ↗</a>
+            <li
+              key={m.article_id}
+              className="flex items-start gap-2 border border-border-subtle rounded px-3 py-2"
+            >
+              <span className="font-mono text-xs text-accent shrink-0 mt-0.5">[{m.index}]</span>
+              <div className="flex-1 min-w-0">
+                {/* 素の記事リンク = ArticlePeek のインターセプトが右ドロワーで開く */}
+                <a
+                  href={`/app/article/${encodeURIComponent(m.article_id)}`}
+                  className="block text-sm text-fg hover:text-accent hover:underline leading-snug"
+                  title="この記事を開く"
+                >
+                  {m.title}
+                </a>
+                <div className="text-[11px] text-fg-subtle flex flex-wrap items-center gap-x-2 mt-0.5">
+                  <span>{m.feed_title}</span>
+                  <span>{m.source_tier}</span>
+                  {m.contributed_new_facts && <span className="text-accent">新しい事実を追加</span>}
+                  <a
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-peek-ignore
+                    className="hover:text-accent"
+                  >
+                    元記事 ↗
+                  </a>
                 </div>
               </div>
-            </details>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </div>
   );
