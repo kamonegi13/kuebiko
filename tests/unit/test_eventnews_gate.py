@@ -214,3 +214,22 @@ def test_discrepancy_with_index_zero_uses_union_matching() -> None:
     assert result.draft.discrepancies[0].text == "CVE-2024-1111 の詳細は媒体間で一致した。"
     assert result.repaired_ids == 0
     assert result.substituted_ids == 0
+
+
+# ---------- headline / bluf も関門を通る (2026-08-23) ----------
+
+
+def test_headline_and_bluf_identifiers_are_verified() -> None:
+    # 原文に無い CVE は headline/bluf でも置換される (最も読まれる 2 節が無検査だった)
+    member = _member("m1", summary="TrueConf Server の脆弱性が悪用リストへ追加された。")
+    draft = EventNewsDraft(
+        headline="CVE-2026-72529 の悪用警告",
+        bluf="攻撃者は CVE-2026-72530 を悪用している。",
+        facts=[],
+    )
+
+    result = verify_draft(draft, (member,))
+
+    assert "CVE-2026-72529" not in result.draft.headline
+    assert "CVE-2026-72530" not in result.draft.bluf
+    assert result.substituted_ids == 2

@@ -55,6 +55,7 @@ class ProcessStats:
     reinforced: int
     generated: int
     generation_failures: int
+    generation_skipped: int
     dropped_lines: int
     repaired_ids: int
     substituted_ids: int
@@ -109,6 +110,16 @@ async def _generate_version(
     members = item.members
     try:
         selected, _omitted = gen.select_members(members)
+        if len(selected) < 2:
+            # 本文・要約を持つメンバーが 2 件未満 = 統合する材料が無い。タイトルだけで
+            # 生成させると事実を創作する (2026-08-23 実測) ため生成しない。
+            _log.info(
+                "eventnews_generation_skipped_no_text",
+                item_id=item.snapshot.item_id,
+                members=len(members),
+                textual=len(selected),
+            )
+            return None, None
         allowed = _allowed_identifiers_text(selected)
         draft: EventNewsDraft = await gen.generate_draft(selected, allowed, llm)
         gate: GateResult = identifier_gate.verify_draft(draft, selected)
@@ -151,6 +162,7 @@ async def process_candidates(
             "reinforced",
             "generated",
             "generation_failures",
+            "generation_skipped",
             "dropped_lines",
             "repaired_ids",
             "substituted_ids",
@@ -255,7 +267,9 @@ async def process_candidates(
             new_facts_json = json.dumps(decision.new_facts, ensure_ascii=False, default=str)
             gate, _ = await _generate_version(repo, item, llm, now, new_facts_json)
             if gate is None:
-                stats["generation_failures"] += 1
+                textual, _ = gen.select_members(item.members)
+                key = "generation_skipped" if len(textual) < 2 else "generation_failures"
+                stats[key] += 1
             else:
                 stats["generated"] += 1
                 stats["dropped_lines"] += gate.dropped_lines

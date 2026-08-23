@@ -175,7 +175,12 @@ def _process_unknowns(
 
 
 def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> GateResult:
-    """structured 出力の識別子関門 (2 段) + [N] 関門 (facts のみ) を通す。"""
+    """structured 出力の識別子関門 (2 段) + [N] 関門 (facts のみ) を通す。
+
+    識別子の照合対象は headline / bluf / facts / discrepancies / unknowns の全節。
+    [N] 関門 (source_index の範囲検査と行落とし) は facts のみに適用する — 不在の
+    主張 (「どの媒体も特定していない」) は原理的に [N] を持てないため。
+    """
     allowed_by_member = extract_allowed_by_member(members)
     union_allowed = tuple(ident for group in allowed_by_member for ident in group)
 
@@ -188,10 +193,17 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
     unknowns, unk_repaired, unk_substituted, unk_verified = _process_unknowns(
         draft.unknowns, members, union_allowed
     )
+    # headline / bluf は N→1 の統合主張で単一 [N] に紐づかないため和集合照合
+    # (unknowns と同じ扱い)。**最も読まれる 2 フィールドが無検査だった** —
+    # 2026-08-23 の実測で BLUF に破損アクター名 (UAT-10147 → "UAT-10 Hay47")、
+    # headline に捏造 CVE が残っていた。
+    head_texts, head_repaired, head_substituted, head_verified = _process_unknowns(
+        [draft.headline, draft.bluf], members, union_allowed
+    )
 
     new_draft = EventNewsDraft(
-        headline=draft.headline,
-        bluf=draft.bluf,
+        headline=head_texts[0],
+        bluf=head_texts[1],
         facts=facts,
         discrepancies=discrepancies,
         unknowns=unknowns,
@@ -199,7 +211,7 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
     return GateResult(
         draft=new_draft,
         dropped_lines=dropped_lines,
-        repaired_ids=facts_repaired + disc_repaired + unk_repaired,
-        substituted_ids=facts_substituted + disc_substituted + unk_substituted,
-        verified=facts_verified and disc_verified and unk_verified,
+        repaired_ids=facts_repaired + disc_repaired + unk_repaired + head_repaired,
+        substituted_ids=facts_substituted + disc_substituted + unk_substituted + head_substituted,
+        verified=facts_verified and disc_verified and unk_verified and head_verified,
     )

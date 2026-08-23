@@ -24,6 +24,7 @@ def _member(
     host: str = "bleepingcomputer.com",
     anchor_offset_hours: int = 0,
     summary: str = "s",
+    body: str = "",
 ) -> MemberArticle:
     return MemberArticle(
         article_id=article_id,
@@ -37,7 +38,7 @@ def _member(
         status="posted",
         anchor_ts=_BASE_TS + timedelta(hours=anchor_offset_hours),
         summary=summary,
-        body="",
+        body=body,
         entities=frozenset(),
     )
 
@@ -149,3 +150,27 @@ class TestGenerateDraft:
         assert len(fake.calls) == 1
         assert "[1]" in fake.calls[0]
         assert "CVE-2024-1234" in fake.calls[0]
+
+
+# ---------- 本文入力 + 無テキスト member の除外 (2026-08-23) ----------
+
+
+class TestTextualMemberSelection:
+    def test_members_without_text_are_not_selected(self) -> None:
+        """本文も要約も無いメンバーは [N] 枠を得ない (捏造の温床を構造的に断つ)。"""
+        withtext = _member("a", summary="本文あり")
+        notext = _member("b", summary="", body="")
+
+        selected, omitted = select_members([withtext, notext])
+
+        assert [m.article_id for m in selected] == ["a"]
+        assert omitted == 1
+
+    def test_prompt_uses_body_over_summary(self) -> None:
+        """入力は本文優先 — 要約は本文の 1/12.8 まで圧縮済みで情報を回復できない。"""
+        m = _member("a", summary="みじかい要約", body="本文にしかない詳細な記述")
+
+        prompt = build_prompt([m], "(識別子なし)")
+
+        assert "本文にしかない詳細な記述" in prompt
+        assert "みじかい要約" not in prompt

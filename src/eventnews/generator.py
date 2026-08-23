@@ -19,8 +19,14 @@ from src.tools.llm_client import LLMClient
 _PROMPT_TEMPLATE = "eventnews/refine.j2"
 _PROMPTS_DIR = Path("prompts")
 
-# member 1 件あたり title/feed_title/summary の切詰め上限 (§9 の記載どおり各 1400 字)
+# member 1 件あたり title/feed_title の切詰め上限
 _MEMBER_FIELD_CHAR_CAP = 1400
+# 本文の切詰め上限 (2026-08-23 の A/B 実測で決定)。
+# **入力は per-article 要約でなく記事本文**。要約は本文の 1/12.8 (336 字 vs 4,313 字) まで
+# 圧縮済みで、事象統合の段階では失われた情報を回復できない。本文入力で情報量 +48% /
+# facts +26% (4 事象・同一プロンプト同一モデルでの実測)。プロンプト側で分量を要求する
+# 案 (v2) は +10% にとどまり、梃子は入力側だった。費用は 14 秒/件で要約入力と同等。
+_MEMBER_BODY_CHAR_CAP = 2600
 
 # select_members の tier 優先度 (official > research > その他)。未列挙 (news/social/
 # state_media/unknown) はすべて同格の「その他」— tier 内での序列は anchor_ts のみで決める。
@@ -35,13 +41,20 @@ def select_members(
 
     序列は tier (official > research > その他) → anchor_ts 昇順。上限 ``PROMPT_MEMBER_CAP``。
     戻り値は (選抜されたメンバー, 省略件数)。
+
+    **本文も要約も持たないメンバーは選抜しない** (2026-08-23)。重複判定で落ちた記事
+    (``status='skipped_duplicate'``) は要約前に落ちるため 241/245 が本文・要約とも空で、
+    タイトルだけを [N] 枠として提示すると LLM が「その記事に書かれた事実」を創作する
+    (実測: 要約なしメンバーのみの 4 事象すべてで CVE 番号の捏造)。裏取り媒体としては
+    ``compute_source_breakdown`` が別途数えるので、独立媒体数は減らない。
     """
 
     def _sort_key(m: MemberArticle) -> tuple[int, object]:
         tier = classify_source_tier(m.feed_title, m.feed_url)
         return (_SELECT_TIER_RANK.get(tier, _SELECT_TIER_OTHER), m.anchor_ts)
 
-    ordered = sorted(members, key=_sort_key)
+    textual = [m for m in members if (m.body or m.summary).strip()]
+    ordered = sorted(textual, key=_sort_key)
     selected = ordered[:PROMPT_MEMBER_CAP]
     omitted = len(members) - len(selected)
     return selected, omitted
@@ -59,8 +72,8 @@ def _prompt_env() -> jinja2.Environment:
 def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str) -> str:
     """``prompts/eventnews/refine.j2`` を render する (§9)。
 
-    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/summary、各 1400 字切詰め) /
-    省略件数 / 使ってよい識別子一覧 (呼び手が整形済みの文字列をそのまま渡す)。
+    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** 2600 字切詰め、
+    本文が無ければ要約) / 省略件数 / 使ってよい識別子一覧 (呼び手が整形済みの文字列)。
     """
     selected, omitted = select_members(members)
     numbered = [
@@ -69,7 +82,7 @@ def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str
             "title": m.title[:_MEMBER_FIELD_CHAR_CAP],
             "feed_title": m.feed_title[:_MEMBER_FIELD_CHAR_CAP],
             "anchor": m.anchor_ts.isoformat(),
-            "summary": m.summary[:_MEMBER_FIELD_CHAR_CAP],
+            "summary": (m.body or m.summary)[:_MEMBER_BODY_CHAR_CAP],
         }
         for i, m in enumerate(selected, start=1)
     ]
