@@ -620,6 +620,7 @@ def create_app() -> FastAPI:
     from src.ui.api.channels import channels_api
     from src.ui.api.config_history import config_history_api
     from src.ui.api.dashboard_layout import dashboard_layout_api
+    from src.ui.api.eventnews import eventnews_api
     from src.ui.api.flow import flow_api
     from src.ui.api.geo import geo_api
     from src.ui.api.grok_mail import grok_mail_api
@@ -670,6 +671,10 @@ def create_app() -> FastAPI:
     app.include_router(spotlight_api)
     app.include_router(situations_api)
     app.include_router(actor_history_api)
+    # 事象単位ニュース (Tier0 = 匿名で閲覧可)。GET のみで readonly でもそのまま動く。
+    # 公開判断: 公開記事から生成した読み物であり、運用系の情報を含まないため
+    # READ_ONLY_GET_DENYLIST には入れない (2026-08-24 利用者決定)。
+    app.include_router(eventnews_api)
     app.include_router(sources_api)
     app.include_router(dashboard_layout_api)
     # article_ops は articles_feed より先に登録する:

@@ -4,7 +4,7 @@
 
 import {
   BookOpen, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText,
-  Flag, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert,
+  Flag, History, Layers, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert,
   TrendingUp, Users, Workflow,
 } from "lucide-react";
 
@@ -58,6 +58,9 @@ export const NAV_GROUPS: NavGroup[] = [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
       { href: "/app/daily-brief", label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
+      // 事象ニュース (2026-08-24): 同一事象の複数報道を束ねて 1 本に生成した読み物。
+      // 記事一覧 (ニュース・検索) が「収集した個々の記事」なのに対し、こちらは「事象」単位。
+      { href: "/app/eventnews", label: "事象ニュース", Icon: Layers, prefixes: ["/app/eventnews"] },
       { href: "/app/news", label: "ニュース・検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
       { href: "/app/notes", label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
       { href: "/app/subscriptions", label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },

@@ -10,6 +10,7 @@ import { NewsPage } from "./pages/NewsPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { ArticleDetailPage } from "./pages/ArticleDetailPage";
+import { EventNewsPage } from "./pages/EventNewsPage";
 import { NotesPage } from "./pages/NotesPage";
 import { DailyBriefPage } from "./pages/DailyBriefPage";
 import { AssistantPage } from "./pages/AssistantPage";
@@ -40,6 +41,7 @@ type Route =
   | { kind: "article"; articleId: string }
   | { kind: "notes" }
   | { kind: "daily-brief" }
+  | { kind: "eventnews" }
   | { kind: "assistant" }
   | { kind: "subscriptions" }
   | { kind: "actors" }
@@ -104,6 +106,7 @@ function parseRoute(): Route {
     return { kind: "daily-brief" };
   }
   if (p === "/app/daily-brief") return { kind: "daily-brief" };
+  if (p === "/app/eventnews") return { kind: "eventnews" };
   if (p === "/app/assistant") return { kind: "assistant" };
   const articleMatch = p.match(/^\/app\/article\/(.+)$/);
   if (articleMatch) return { kind: "article", articleId: decodeURIComponent(articleMatch[1]) };
@@ -173,6 +176,7 @@ export default function App() {
       {effectiveRoute.kind === "run-detail" && <RunDetailPage runId={effectiveRoute.runId} />}
       {effectiveRoute.kind === "history" && <HistoryPage />}
       {effectiveRoute.kind === "article" && <ArticleDetailPage articleId={effectiveRoute.articleId} />}
+      {effectiveRoute.kind === "eventnews" && <EventNewsPage />}
       {effectiveRoute.kind === "notes" && <NotesPage />}
       {effectiveRoute.kind === "daily-brief" && <DailyBriefPage />}
       {effectiveRoute.kind === "assistant" && <AssistantPage />}

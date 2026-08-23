@@ -23,6 +23,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
     {
         "src/storage/repo_eventnews.py",
         "src/ui/services/eventnews_hourly_job.py",
+        # 2026-08-24: 読み手向けの出口 (Tier0 = 匿名で閲覧可)。**生成物が公開面へ
+        # 出る唯一の経路**なので、ここを増やすときは公開範囲の判断とセットで行う。
+        "src/ui/api/eventnews.py",
     }
 )
 
