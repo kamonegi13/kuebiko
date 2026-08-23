@@ -103,7 +103,16 @@ def normalize_identifier(s: str) -> str:
 
 
 def _is_word_char(ch: str) -> bool:
-    return ch.isalnum()
+    """識別子の一部になりうる文字か (境界判定用)。
+
+    ``str.isalnum()`` は **CJK 文字にも True を返す**ため、そのまま使うと
+    ``影響2.10.4以前版本`` / ``バージョン2.10.4以前`` のように日本語・中国語に
+    隣接した識別子が「境界が取れない = 原文に無い」と誤判定される
+    (2026-08-23 実測: 本文入力への切替後、置換の大半がこの型だった)。
+    識別子は ASCII の英数字で構成されるので、**ASCII 英数字のみを語中文字**とみなし、
+    CJK・記号・空白はすべて境界として扱う。
+    """
+    return ch.isascii() and ch.isalnum()
 
 
 def contains_identifier(haystack: str, ident: Identifier) -> bool:

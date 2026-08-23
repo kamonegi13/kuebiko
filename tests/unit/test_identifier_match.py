@@ -177,3 +177,15 @@ class TestExtractionRegressions:
         got = [(i.kind, i.raw) for i in extract_identifiers("CVSS v3.1 は 9.1 と評価")]
         assert ("cvss", "9.1") in got
         assert ("cvss", "3.1") not in got
+
+    def test_identifier_adjacent_to_cjk_is_found(self) -> None:
+        """CJK に隣接した識別子を「原文に無い」と誤判定しない。
+
+        ``str.isalnum()`` は CJK にも True を返すため、素朴な境界判定では
+        ``影響2.10.4以前版本`` の版数が不在扱いになる (本コーパスは日本語・中国語が主)。
+        """
+        hay = "重大漏洞CVE-2026-18051，影響2.10.4以前版本"
+        for ident in extract_identifiers("2.10.4 以前のバージョン"):
+            assert contains_identifier(hay, ident) is True
+        for ident in extract_identifiers("CVE-2026-18051 が存在する"):
+            assert contains_identifier(hay, ident) is True
