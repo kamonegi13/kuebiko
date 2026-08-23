@@ -102,7 +102,7 @@ def _process_facts(
             fact.text,
             _member_text(member),
             allowed_by_member[idx - 1],
-            verifiable=bool(member.body),
+            verifiable=bool(member.summary or member.body),
         )
         repaired_total += repaired
         substituted_total += substituted
@@ -124,7 +124,7 @@ def _process_discrepancies(
     substituted_total = 0
     verified = True
     union_text = _union_text(members)
-    union_verifiable = any(bool(m.body) for m in members)
+    union_verifiable = any(bool(m.summary or m.body) for m in members)
 
     for item in items:
         idx = item.source_index
@@ -132,7 +132,7 @@ def _process_discrepancies(
             member = members[idx - 1]
             haystack = _member_text(member)
             allowed = allowed_by_member[idx - 1]
-            verifiable = bool(member.body)
+            verifiable = bool(member.summary or member.body)
         else:
             haystack = union_text
             allowed = union_allowed
@@ -156,7 +156,7 @@ def _process_unknowns(
 ) -> tuple[list[str], int, int, bool]:
     """unknowns の識別子は和集合照合 (どの記事にも書かれていない、が主張の本質)。"""
     haystack = _union_text(members)
-    verifiable = any(bool(m.body) for m in members)
+    verifiable = any(bool(m.summary or m.body) for m in members)
     kept: list[str] = []
     repaired_total = 0
     substituted_total = 0

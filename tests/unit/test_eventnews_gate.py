@@ -150,7 +150,8 @@ def test_matching_identifier_is_left_unchanged() -> None:
 
 
 def test_empty_body_line_is_preserved_and_marks_unverified() -> None:
-    member = _member("m1", body="")
+    # purge 済み = title 以外の照合材料が無い (summary も空)。識別子は保持し verified=False
+    member = _member("m1", summary="", body="")
     draft = EventNewsDraft(
         headline="h",
         bluf="b",
@@ -167,7 +168,7 @@ def test_empty_body_line_is_preserved_and_marks_unverified() -> None:
 
 
 def test_lines_without_identifiers_do_not_affect_verified_flag() -> None:
-    member = _member("m1", body="")
+    member = _member("m1", summary="", body="")
     draft = EventNewsDraft(
         headline="h",
         bluf="b",
