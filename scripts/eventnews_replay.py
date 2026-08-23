@@ -5,7 +5,8 @@
 評価レポート (E1'-E6 の材料) を markdown で出力する。
 
 実行例 (host):
-  DATABASE_URL=postgresql://kuebiko:cti_local_dev@127.0.0.1:5433/kuebiko \
+  # パスワードは compose の POSTGRES_PASSWORD (既定値は docker-compose.yml 参照)
+  DATABASE_URL=postgresql://kuebiko:${POSTGRES_PASSWORD}@127.0.0.1:5433/kuebiko \
   uv run python scripts/eventnews_replay.py --days 10 --generate --out /tmp/eventnews_eval.md
 """
 
