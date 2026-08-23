@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
+from urllib.parse import urlparse
 
 from src.config_loader import AppConfig
 from src.logging_config import get_logger
@@ -18,6 +20,57 @@ from src.tools.text_utils import strip_html as _strip_html
 from src.tools.url_normalizer import url_hash
 
 _log = get_logger(__name__)
+
+# 意味 dedup の skip tier (§8b: 記録のみ・裏取り算入はしない)
+SkipTier = Literal["hard", "cluster", "intra_batch"]
+# skip 記録の照合種別: hard/cluster は永続ストアの url_hash、intra_batch はバッチ内 article_id
+MatchedKind = Literal["url_hash", "article_id"]
+
+
+@dataclass(frozen=True)
+class SemanticSkip:
+    """意味 dedup で破棄した記事の記録 (docs/event_news_design.md §8b)。
+
+    v1 では **記録の蓄積のみ** — cluster tier 破棄を裏取りに算入する判断は分離・後置
+    (近重複から独立性を製造する Goodhart を避けるため)。**filters.py は record を
+    返すだけで DB 書込・dry_run 判定を持ち込まない** (レビュー A H3、書込は
+    orchestrator の既存 ``not dry_run`` ブロックが担う)。
+    """
+
+    skipped_url: str
+    skipped_title: str
+    skipped_host: str
+    feed_title: str
+    feed_url: str
+    tier: SkipTier
+    matched_kind: MatchedKind
+    matched_key: str
+
+
+def _semantic_skip(
+    article: Article,
+    *,
+    tier: SkipTier,
+    matched_kind: MatchedKind,
+    matched_key: str,
+) -> SemanticSkip:
+    """1 件の意味 dedup skip から ``SemanticSkip`` を組み立てる。
+
+    host は article.url から都度導出する (Article に host フィールドは無いため)。
+    feed_title/feed_url は Article に既存のフィールドをそのまま使う。
+    """
+    host = (urlparse(article.url).hostname or "").lower()
+    return SemanticSkip(
+        skipped_url=article.url,
+        skipped_title=article.title,
+        skipped_host=host,
+        feed_title=article.feed_title,
+        feed_url=article.feed_url,
+        tier=tier,
+        matched_kind=matched_kind,
+        matched_key=matched_key,
+    )
+
 
 # triage の同時実行数 (2026-08-17)。既定 5 = 従来どおり。
 #
@@ -223,7 +276,7 @@ async def _filter_semantic_duplicates(
     threshold_cluster: float,
     window_hours_hard: int,
     window_hours_cluster: int,
-) -> tuple[list[Article], int, dict[str, tuple[str, list[float]]], list[str]]:
+) -> tuple[list[Article], int, dict[str, tuple[str, list[float]]], list[str], list[SemanticSkip]]:
     """embedding コサイン類似度で意味的重複をスキップする (Phase 5L-2: 2 段階)。
 
     Args:
@@ -239,9 +292,13 @@ async def _filter_semantic_duplicates(
         skipped: スキップ件数
         embeddings_to_persist: 投稿後に保存する {article_id: (model, vector)} マップ
         skipped_ids: スキップした article id リスト (dedup 既読化対象)
+        skip_records: skip 1 件ごとの ``SemanticSkip`` (docs/event_news_design.md §8b)。
+            DB 書込は呼び出し側 (orchestrator) が担う — このモジュールは record を
+            返すだけ (レビュー A H3)。
     """
     survivors: list[Article] = []
     skipped_ids: list[str] = []
+    skip_records: list[SemanticSkip] = []
     embeddings_to_persist: dict[str, tuple[str, list[float]]] = {}
     # R-D (dedup の時間的完全性): 永続ストアは投稿後にしか更新されないため、同一バッチ内
     # の同事象 (同日・別ソース) が互いに照合されず両方生き残る。実行中バッチの生存
@@ -282,6 +339,11 @@ async def _filter_semantic_duplicates(
         if match_hard is not None:
             matched_hash, similarity = match_hard
             skipped_ids.append(article.id)
+            skip_records.append(
+                _semantic_skip(
+                    article, tier="hard", matched_kind="url_hash", matched_key=matched_hash
+                )
+            )
             _log.info(
                 "dedup_skipped_semantic_match",
                 article_id=article.id,
@@ -314,6 +376,14 @@ async def _filter_semantic_duplicates(
             if match_cluster is not None:
                 matched_hash, similarity = match_cluster
                 skipped_ids.append(article.id)
+                skip_records.append(
+                    _semantic_skip(
+                        article,
+                        tier="cluster",
+                        matched_kind="url_hash",
+                        matched_key=matched_hash,
+                    )
+                )
                 _log.info(
                     "dedup_skipped_semantic_match",
                     article_id=article.id,
@@ -337,6 +407,14 @@ async def _filter_semantic_duplicates(
             intra_threshold = threshold_hard if _is_grok_article(article) else threshold_cluster
             if bsim >= intra_threshold:
                 skipped_ids.append(article.id)
+                skip_records.append(
+                    _semantic_skip(
+                        article,
+                        tier="intra_batch",
+                        matched_kind="article_id",
+                        matched_key=batch_ids[bi],
+                    )
+                )
                 _log.info(
                     "dedup_skipped_semantic_match",
                     article_id=article.id,
@@ -352,7 +430,7 @@ async def _filter_semantic_duplicates(
             batch_units.append(unit)
             batch_ids.append(article.id)
 
-    return survivors, len(skipped_ids), embeddings_to_persist, skipped_ids
+    return survivors, len(skipped_ids), embeddings_to_persist, skipped_ids, skip_records
 
 
 def _embedding_input_text(article: Article) -> str:

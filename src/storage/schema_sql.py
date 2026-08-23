@@ -640,4 +640,78 @@ CREATE TABLE IF NOT EXISTS tuning_evals (
 
 CREATE INDEX IF NOT EXISTS idx_tuning_evals_lookup
     ON tuning_evals(prompt_id, kind, to_version);
+
+-- 事象単位ニュース (event news) v1 (2026-08-23、docs/event_news_design.md §11)。
+-- 収集した記事を事象単位に群化し、群ごとに LLM が 1 本の「ニュース」を精製する層。
+-- v1 は shadow (本番配信・スケジューラには未接続)。id は grouping モジュールが指定する。
+CREATE TABLE IF NOT EXISTS event_items (
+    id                    TEXT    PRIMARY KEY,
+    -- 'live' | 'replay' — replay 行 (評価用の逐次再適用) の本番混入を防ぐ区別 (§2)
+    origin                TEXT    NOT NULL,
+    first_reported_at     TEXT    NOT NULL,
+    last_reported_at      TEXT    NOT NULL,
+    -- 'new' | 'updated' | 'reinforced' | 'dormant' (§7、判定はすべて決定論)
+    status                TEXT    NOT NULL DEFAULT 'new',
+    change_kind           TEXT,                            -- 'add' | 'correct' | NULL (§7)
+    -- 0 = 未生成 (生成失敗含む)。version=0 は状態に関わらず無条件に再生成対象 (§7)
+    current_version       INTEGER NOT NULL DEFAULT 0,
+    merged_into           TEXT,                             -- v1 は未使用 (将来の手動併合)
+    related_to            TEXT,                             -- メンバー上限超過時の弱リンク (§5)
+    importance            TEXT    NOT NULL DEFAULT '',      -- 構成記事の最大値 (集約のみ、§10)
+    best_source_tier      TEXT    NOT NULL DEFAULT '',
+    independent_sources   INTEGER NOT NULL DEFAULT 0,
+    -- NULL が 0 と読まれる二重の嘘を型で防ぐため NOT NULL DEFAULT 0 (§8)
+    state_media_count     INTEGER NOT NULL DEFAULT 0,
+    unclassified_sources  INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT    NOT NULL,
+    updated_at            TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_items_origin_status
+    ON event_items(origin, status, last_reported_at);
+
+-- 版履歴 (§6/§9)。保持上限 20/item、ただし version=1 は常に保持 (訂正の追跡可能性)。
+CREATE TABLE IF NOT EXISTS event_item_versions (
+    item_id         TEXT    NOT NULL,
+    version         INTEGER NOT NULL,
+    generated_at    TEXT    NOT NULL,
+    model           TEXT    NOT NULL,
+    prompt_version  TEXT    NOT NULL,
+    headline        TEXT    NOT NULL,
+    body_json       TEXT    NOT NULL,   -- structured 出力 (散文は表示層で組む、§9)
+    new_facts_json  TEXT    NOT NULL,   -- 決定論の版差分 (§6、プロセ差分は監査用に留める)
+    verified_at     TEXT,               -- 識別子照合の実施時刻 (本文 purge 済で不能なら NULL)
+    dropped_lines   INTEGER NOT NULL DEFAULT 0,
+    repaired_ids    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, version)
+);
+
+-- アイテムの構成記事 (群化のメンバー)。BOOL は使わない (dual-backend 規律) ため
+-- contributed_new_facts は 0/1 の INTEGER。
+CREATE TABLE IF NOT EXISTS event_item_members (
+    item_id                 TEXT    NOT NULL,
+    article_id              TEXT    NOT NULL,
+    joined_at               TEXT    NOT NULL,
+    contributed_new_facts   INTEGER NOT NULL DEFAULT 0,
+    join_signal             TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (item_id, article_id)
+);
+CREATE INDEX IF NOT EXISTS idx_event_item_members_article
+    ON event_item_members(article_id);
+
+-- 意味 dedup (cluster tier 中心) の破棄記録 (§8b — v1 は記録の蓄積のみ、裏取り算入は
+-- しない)。書込は orchestrator の既存 not dry_run ブロックが担う (filters.py は
+-- record を返すのみ、レビュー A H3)。retention 90 日 (dedup と連動)。
+CREATE TABLE IF NOT EXISTS dedup_semantic_skips (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    skipped_url   TEXT    NOT NULL,
+    skipped_title TEXT    NOT NULL,
+    skipped_host  TEXT    NOT NULL,
+    feed_title    TEXT    NOT NULL,
+    feed_url      TEXT    NOT NULL,
+    tier          TEXT    NOT NULL,   -- 'hard' | 'cluster' | 'intra_batch'
+    matched_kind  TEXT    NOT NULL,   -- 'url_hash' | 'article_id'
+    matched_key   TEXT    NOT NULL,
+    ts            TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dedup_semantic_skips_ts ON dedup_semantic_skips(ts);
 """

@@ -1,0 +1,453 @@
+"""事象単位ニュース (event news) v1 の永続化 (run_history 分割の一部)。
+
+設計 SSoT: docs/event_news_design.md (v2)、interface pin: src/eventnews/models.py。
+このモジュールは群化アイテム (event_items) / 版履歴 (event_item_versions) /
+構成記事 (event_item_members) / 意味 dedup の skip 記録 (dedup_semantic_skips) の
+読み書きを担う。v1 は shadow — 本番配信・スケジューラには接続しない (§12)。
+
+錨時刻は使わない: event_items の first_reported_at/last_reported_at は
+grouping モジュールが articles から算出済みの値を渡す (このモジュール自身は
+event_time.py の錨式を再計算しない)。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from src.eventnews.models import VERSION_CAP, ItemState
+from src.storage.repo_base import RunHistoryRepositoryBase
+from src.storage.row_mappers import _from_iso, _to_iso
+
+# event_items の部分更新で許可するカラム (allowlist。update_article_enrichment と同型)。
+_EVENT_ITEM_UPDATABLE_COLUMNS = frozenset(
+    {
+        "status",
+        "change_kind",
+        "current_version",
+        "importance",
+        "best_source_tier",
+        "independent_sources",
+        "state_media_count",
+        "unclassified_sources",
+        "last_reported_at",
+        "updated_at",
+        "related_to",
+    }
+)
+
+
+@dataclass(frozen=True)
+class EventItemRecord:
+    """event_items の 1 行。判定ロジックが読む最小状態は ``state`` (ItemState)、
+    残りは表示・監査用の付加メタ。
+    """
+
+    state: ItemState
+    origin: str
+    change_kind: str | None
+    merged_into: str | None
+    related_to: str | None
+    best_source_tier: str
+    independent_sources: int
+    state_media_count: int
+    unclassified_sources: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class EventMemberRecord:
+    """event_item_members の 1 行。"""
+
+    article_id: str
+    joined_at: datetime
+    contributed_new_facts: int
+    join_signal: str
+
+
+@dataclass(frozen=True)
+class EventVersionRecord:
+    """event_item_versions の 1 行。"""
+
+    item_id: str
+    version: int
+    generated_at: datetime
+    model: str
+    prompt_version: str
+    headline: str
+    body_json: str
+    new_facts_json: str
+    verified_at: datetime | None
+    dropped_lines: int
+    repaired_ids: int
+
+
+def _row_to_event_item(row: Any, member_ids: tuple[str, ...]) -> EventItemRecord:
+    first = _from_iso(row["first_reported_at"])
+    last = _from_iso(row["last_reported_at"])
+    created = _from_iso(row["created_at"])
+    updated = _from_iso(row["updated_at"])
+    assert first is not None
+    assert last is not None
+    assert created is not None
+    assert updated is not None
+    state = ItemState(
+        item_id=str(row["id"]),
+        first_reported_at=first,
+        last_reported_at=last,
+        status=str(row["status"]),
+        importance=str(row["importance"] or ""),
+        current_version=int(row["current_version"] or 0),
+        member_ids=member_ids,
+    )
+    return EventItemRecord(
+        state=state,
+        origin=str(row["origin"]),
+        change_kind=(str(row["change_kind"]) if row["change_kind"] is not None else None),
+        merged_into=(str(row["merged_into"]) if row["merged_into"] is not None else None),
+        related_to=(str(row["related_to"]) if row["related_to"] is not None else None),
+        best_source_tier=str(row["best_source_tier"] or ""),
+        independent_sources=int(row["independent_sources"] or 0),
+        state_media_count=int(row["state_media_count"] or 0),
+        unclassified_sources=int(row["unclassified_sources"] or 0),
+        created_at=created,
+        updated_at=updated,
+    )
+
+
+def _row_to_event_version(row: Any) -> EventVersionRecord:
+    generated = _from_iso(row["generated_at"])
+    assert generated is not None
+    return EventVersionRecord(
+        item_id=str(row["item_id"]),
+        version=int(row["version"]),
+        generated_at=generated,
+        model=str(row["model"]),
+        prompt_version=str(row["prompt_version"]),
+        headline=str(row["headline"]),
+        body_json=str(row["body_json"]),
+        new_facts_json=str(row["new_facts_json"]),
+        verified_at=_from_iso(row["verified_at"]),
+        dropped_lines=int(row["dropped_lines"] or 0),
+        repaired_ids=int(row["repaired_ids"] or 0),
+    )
+
+
+class EventNewsMixin(RunHistoryRepositoryBase):
+    """event_items / event_item_versions / event_item_members / dedup_semantic_skips。"""
+
+    # ---------- event_items ----------
+
+    def create_event_item(
+        self,
+        *,
+        item_id: str,
+        origin: str,
+        first_reported_at: datetime,
+        last_reported_at: datetime,
+        importance: str,
+        best_source_tier: str = "",
+        independent_sources: int = 0,
+        state_media_count: int = 0,
+        unclassified_sources: int = 0,
+        related_to: str | None = None,
+        when: datetime | None = None,
+    ) -> str:
+        """新規 event_item を作成する (id は呼び手 = grouping モジュール指定)。
+
+        ``origin`` は 'live' | 'replay' 必須 (§2 — replay 行の本番混入防止)。
+        初期状態は status='new' / current_version=0 (§7: 0 は無条件再生成対象)。
+        """
+        now = _to_iso(when or datetime.now(UTC))
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO event_items"
+                " (id, origin, first_reported_at, last_reported_at, status, change_kind,"
+                "  current_version, merged_into, related_to, importance, best_source_tier,"
+                "  independent_sources, state_media_count, unclassified_sources,"
+                "  created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, 'new', NULL, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item_id,
+                    origin,
+                    _to_iso(first_reported_at),
+                    _to_iso(last_reported_at),
+                    related_to,
+                    importance,
+                    best_source_tier,
+                    independent_sources,
+                    state_media_count,
+                    unclassified_sources,
+                    now,
+                    now,
+                ),
+            )
+        return item_id
+
+    def get_event_item(self, item_id: str) -> EventItemRecord | None:
+        """event_item 1 件を member_ids 込みで取得する (無ければ None)。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM event_items WHERE id=?",
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            member_rows = conn.execute(
+                "SELECT article_id FROM event_item_members WHERE item_id=? ORDER BY joined_at ASC",
+                (item_id,),
+            ).fetchall()
+        member_ids = tuple(str(r["article_id"]) for r in member_rows)
+        return _row_to_event_item(row, member_ids)
+
+    def list_event_items(
+        self,
+        *,
+        origin: str | None = None,
+        statuses: Sequence[str] | None = None,
+        limit: int = 200,
+    ) -> list[EventItemRecord]:
+        """event_items を新着順 (last_reported_at DESC) で列挙する (member_ids 込み)。
+
+        ``origin`` / ``statuses`` で絞り込み可能。N+1 を避けるため member_ids は
+        対象アイテム群をまとめて 1 クエリで引く。
+        """
+        clauses: list[str] = []
+        params: list[object] = []
+        if origin is not None:
+            clauses.append("origin = ?")
+            params.append(origin)
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            clauses.append(f"status IN ({placeholders})")
+            params.extend(statuses)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM event_items {where} "  # noqa: S608 — where句は固定カラムのみ
+                "ORDER BY datetime(last_reported_at) DESC LIMIT ?",
+                params,
+            ).fetchall()
+            if not rows:
+                return []
+            ids = [str(r["id"]) for r in rows]
+            id_placeholders = ",".join("?" for _ in ids)
+            member_rows = conn.execute(
+                "SELECT item_id, article_id FROM event_item_members "  # noqa: S608
+                f"WHERE item_id IN ({id_placeholders}) ORDER BY joined_at ASC",
+                ids,
+            ).fetchall()
+        members_by_item: dict[str, list[str]] = {}
+        for r in member_rows:
+            members_by_item.setdefault(str(r["item_id"]), []).append(str(r["article_id"]))
+        return [_row_to_event_item(r, tuple(members_by_item.get(str(r["id"]), ()))) for r in rows]
+
+    def update_event_item(self, item_id: str, fields: dict[str, object]) -> int:
+        """event_items の部分更新 (allowlist 制御、update_article_enrichment と同型)。
+
+        datetime 値は ISO 文字列へ変換する。``updated_at`` を fields に含めない場合は
+        現在時刻を自動付与する。戻り値は更新行数。
+        """
+        cols = [c for c in fields if c in _EVENT_ITEM_UPDATABLE_COLUMNS]
+        if not cols:
+            return 0
+        values: list[object] = []
+        for c in cols:
+            v = fields[c]
+            values.append(_to_iso(v) if isinstance(v, datetime) else v)
+        if "updated_at" not in cols:
+            cols.append("updated_at")
+            values.append(_to_iso(datetime.now(UTC)))
+        set_clause = ", ".join(f"{c}=?" for c in cols)
+        values.append(item_id)
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"UPDATE event_items SET {set_clause} WHERE id=?",  # noqa: S608 — cols allowlisted
+                values,
+            )
+            return int(cur.rowcount or 0)
+
+    # ---------- event_item_members ----------
+
+    def add_event_member(
+        self,
+        *,
+        item_id: str,
+        article_id: str,
+        joined_at: datetime,
+        contributed_new_facts: int,
+        join_signal: str,
+    ) -> None:
+        """群のメンバー記事を追加する (INSERT OR IGNORE 相当、冪等)。"""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO event_item_members"
+                " (item_id, article_id, joined_at, contributed_new_facts, join_signal)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (item_id, article_id, _to_iso(joined_at), contributed_new_facts, join_signal),
+            )
+
+    def list_event_members(self, item_id: str) -> list[EventMemberRecord]:
+        """アイテムの構成記事を参加順 (joined_at ASC) で返す。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT article_id, joined_at, contributed_new_facts, join_signal"
+                " FROM event_item_members WHERE item_id=? ORDER BY joined_at ASC",
+                (item_id,),
+            ).fetchall()
+        out: list[EventMemberRecord] = []
+        for r in rows:
+            joined = _from_iso(r["joined_at"])
+            assert joined is not None
+            out.append(
+                EventMemberRecord(
+                    article_id=str(r["article_id"]),
+                    joined_at=joined,
+                    contributed_new_facts=int(r["contributed_new_facts"] or 0),
+                    join_signal=str(r["join_signal"] or ""),
+                )
+            )
+        return out
+
+    # ---------- event_item_versions ----------
+
+    def record_event_version(
+        self,
+        *,
+        item_id: str,
+        version: int,
+        generated_at: datetime,
+        model: str,
+        prompt_version: str,
+        headline: str,
+        body_json: str,
+        new_facts_json: str,
+        verified_at: datetime | None,
+        dropped_lines: int,
+        repaired_ids: int,
+    ) -> None:
+        """版を 1 件記録する (§6/§9)。
+
+        同一 (item_id, version) の再投入は上書き (生成リトライの冪等性)。挿入後、
+        保持上限 (``VERSION_CAP``、version=1 は常に保持) を超えていれば古い版から
+        剪定する。**current_version の更新はこのメソッドの責務外** — 呼び出し側が
+        ``update_event_item(item_id, {"current_version": version})`` で別途行う
+        (状態機械の判定と版の記録を分離するため)。
+        """
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO event_item_versions
+                  (item_id, version, generated_at, model, prompt_version, headline,
+                   body_json, new_facts_json, verified_at, dropped_lines, repaired_ids)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(item_id, version) DO UPDATE SET
+                  generated_at   = excluded.generated_at,
+                  model          = excluded.model,
+                  prompt_version = excluded.prompt_version,
+                  headline       = excluded.headline,
+                  body_json      = excluded.body_json,
+                  new_facts_json = excluded.new_facts_json,
+                  verified_at    = excluded.verified_at,
+                  dropped_lines  = excluded.dropped_lines,
+                  repaired_ids   = excluded.repaired_ids
+                """,
+                (
+                    item_id,
+                    version,
+                    _to_iso(generated_at),
+                    model,
+                    prompt_version,
+                    headline,
+                    body_json,
+                    new_facts_json,
+                    _to_iso(verified_at) if verified_at is not None else None,
+                    dropped_lines,
+                    repaired_ids,
+                ),
+            )
+            self._prune_event_versions(conn, item_id)
+
+    def _prune_event_versions(self, conn: Any, item_id: str) -> None:
+        """保持上限 VERSION_CAP を超えたら version=1 を除く最古から削除する (§6)。"""
+        rows = conn.execute(
+            "SELECT version FROM event_item_versions WHERE item_id=? ORDER BY version ASC",
+            (item_id,),
+        ).fetchall()
+        versions = [int(r["version"]) for r in rows]
+        if len(versions) <= VERSION_CAP:
+            return
+        excess = len(versions) - VERSION_CAP
+        deletable = [v for v in versions if v != 1]
+        to_delete = deletable[:excess]
+        if not to_delete:
+            return
+        placeholders = ",".join("?" for _ in to_delete)
+        conn.execute(
+            "DELETE FROM event_item_versions "  # noqa: S608 — placeholders は int のみ
+            f"WHERE item_id=? AND version IN ({placeholders})",
+            (item_id, *to_delete),
+        )
+
+    def list_event_versions(self, item_id: str) -> list[EventVersionRecord]:
+        """アイテムの版履歴を新しい順 (version DESC) で返す。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM event_item_versions WHERE item_id=? ORDER BY version DESC",
+                (item_id,),
+            ).fetchall()
+        return [_row_to_event_version(r) for r in rows]
+
+    # ---------- dedup_semantic_skips (§8b) ----------
+
+    def record_semantic_skips(self, rows: Sequence[Any]) -> int:
+        """意味 dedup の skip 記録を一括挿入する (§8b — 記録のみ、裏取り算入はしない)。
+
+        ``rows`` は ``src.pipeline.filters.SemanticSkip`` のインスタンス列。遅延 import
+        (storage → pipeline の循環 import を避けるため、upsert_pir_spotlight /
+        upsert_forecast_indicator と同型)。空入力は 0 を返す。
+        """
+        from src.pipeline.filters import SemanticSkip
+
+        if not rows:
+            return 0
+        now_iso = _to_iso(datetime.now(UTC))
+        values: list[tuple[object, ...]] = []
+        for r in rows:
+            if not isinstance(r, SemanticSkip):
+                raise TypeError(f"expected SemanticSkip, got {type(r).__name__}")
+            values.append(
+                (
+                    r.skipped_url,
+                    r.skipped_title,
+                    r.skipped_host,
+                    r.feed_title,
+                    r.feed_url,
+                    r.tier,
+                    r.matched_kind,
+                    r.matched_key,
+                    now_iso,
+                )
+            )
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO dedup_semantic_skips"
+                " (skipped_url, skipped_title, skipped_host, feed_title, feed_url,"
+                "  tier, matched_kind, matched_key, ts)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                values,
+            )
+        return len(values)
+
+    def purge_semantic_skips(self, days: int = 90) -> int:
+        """N 日より古い dedup_semantic_skips を削除する (§11 retention、dedup と連動)。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM dedup_semantic_skips WHERE ts < datetime('now', ?)",
+                (f"-{days} days",),
+            )
+            return int(cur.rowcount or 0)

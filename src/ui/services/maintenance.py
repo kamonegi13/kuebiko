@@ -27,6 +27,9 @@ _ACCESS_AUDIT_RETENTION_DAYS = 180
 # ops 通知の永続化 (2026-08-21)。access_audit と同じ 180 日水準 — 運用上の警告も
 # 「後から遡って調べる」ためのものなので同じ保持期間にする。
 _OPS_NOTICES_RETENTION_DAYS = 180
+# 意味 dedup の skip 記録 (2026-08-23、docs/event_news_design.md §8b/§11)。dedup 本体
+# (article_embeddings/dedup_seen_urls) と同水準の 90 日で連動させる。
+_SEMANTIC_SKIPS_RETENTION_DAYS = 90
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -45,6 +48,8 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_audit = repo.purge_old_access_audit(days=_ACCESS_AUDIT_RETENTION_DAYS)
         # ops 通知も同じ理由で access_audit と同水準の retention (2026-08-21)
         purged_ops_notices = repo.purge_old_ops_notices(days=_OPS_NOTICES_RETENTION_DAYS)
+        # 意味 dedup の skip 記録 (2026-08-23、§8b) — dedup 本体と同水準の 90 日で連動
+        purged_semantic_skips = repo.purge_semantic_skips(days=_SEMANTIC_SKIPS_RETENTION_DAYS)
         # 評価資産 (ラベル/評価記録/goldset) を日次で data/backups へ退避。
         # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
         from src.storage.asset_export import export_eval_assets
@@ -61,6 +66,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_bodies=purged_bodies,
             purged_access_audit=purged_audit,
             purged_ops_notices=purged_ops_notices,
+            purged_semantic_skips=purged_semantic_skips,
             subject_backfilled=backfill,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない

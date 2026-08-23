@@ -28,6 +28,7 @@ from src.pipeline.briefing import (
     _process_article,
 )
 from src.pipeline.filters import (
+    SemanticSkip,
     _filter_by_triage,
     _filter_duplicates,
     _filter_semantic_duplicates,
@@ -254,6 +255,66 @@ def _mark_skipped_urls_seen(
     return marked
 
 
+def _persist_semantic_dedup_skips(
+    *,
+    dry_run: bool,
+    skipped_semantic_ids: list[str],
+    pre_semantic_by_id: dict[str, Article],
+    semantic_embeddings: dict[str, tuple[str, list[float]]],
+    semantic_skip_records: list[SemanticSkip],
+    dedup_repo: RunHistoryRepository,
+) -> None:
+    """意味 dedup で落とした記事を既読化 + 判断根拠 (embedding) を保存する。
+
+    **dry-run では何も書かない** (dry-run の意図は LLM 出力プレビューであり、
+    重複判定は揃えるが永続化はしない、既存不変条件)。
+
+    既読化 (mark_url_seen) と embedding 保存は記事単位で fail-open (2026-08-19):
+    semantic 重複 = 判断済み (embedding 一致で不採用)。URL が異なるため URL-dedup では
+    既読にならず、既読化しないと毎 run 再 embedding + 再比較のリサイクルになる。
+
+    skip 記録 (``dedup_semantic_skips``、docs/event_news_design.md §8b) も同様に
+    fail-open — 記録の失敗で dedup 本体 (記事のふるい落とし) を巻き込まない。
+    """
+    if dry_run or not skipped_semantic_ids:
+        return
+    for sem_id in skipped_semantic_ids:
+        sem_a = pre_semantic_by_id.get(sem_id)
+        if sem_a is None:
+            continue
+        try:
+            sem_h = url_hash(sem_a.url)
+            dedup_repo.mark_url_seen(
+                url_hash=sem_h,
+                url=sem_a.url,
+                article_id=sem_id,
+                title=sem_a.title,
+            )
+            # 判断根拠も残す (2026-08-19)。⚠ 最多の skip 経路 (7 日 670 件) が
+            # ここ。embedding を捨てると「この閾値変更で新たに落ちた記事は
+            # 妥当だったか」を後から一切検証できない。
+            sem_emb = semantic_embeddings.get(sem_id)
+            if sem_emb is not None:
+                dedup_repo.add_article_embedding(
+                    url_hash=sem_h,
+                    url=sem_a.url,
+                    vector=sem_emb[1],
+                    model=sem_emb[0],
+                    title=sem_a.title,
+                )
+        except Exception as e:  # noqa: BLE001 — 既読化失敗は次 run 再評価で自癒
+            _log.debug("semantic_dup_seen_mark_failed", article_id=sem_id, error=str(e))
+    if semantic_skip_records:
+        try:
+            dedup_repo.record_semantic_skips(semantic_skip_records)
+        except Exception as e:  # noqa: BLE001 — 記録失敗で dedup 本体を殺さない (§8b)
+            _log.debug(
+                "semantic_skip_record_failed",
+                count=len(semantic_skip_records),
+                error=str(e),
+            )
+
+
 # ---------- 公開 API ----------
 
 
@@ -391,6 +452,7 @@ async def run_pipeline(
             skipped_dup_semantic,
             semantic_embeddings,
             skipped_semantic_ids,
+            semantic_skip_records,
         ) = await _filter_semantic_duplicates(
             articles,
             dedup_repo,
@@ -404,33 +466,14 @@ async def run_pipeline(
         # semantic 重複 = 判断済み (embedding 一致で不採用)。URL が異なるため URL-dedup では
         # 既読にならず、既読化しないと毎 run 再 embedding + 再比較のリサイクルになる
         # (triage 落選と同じ「評価済み・不採用の終端状態」欠落、2026-07-12 根治)。
-        if not dry_run and skipped_semantic_ids:
-            for sem_id in skipped_semantic_ids:
-                sem_a = pre_semantic_by_id.get(sem_id)
-                if sem_a is None:
-                    continue
-                try:
-                    sem_h = url_hash(sem_a.url)
-                    dedup_repo.mark_url_seen(
-                        url_hash=sem_h,
-                        url=sem_a.url,
-                        article_id=sem_id,
-                        title=sem_a.title,
-                    )
-                    # 判断根拠も残す (2026-08-19)。⚠ 最多の skip 経路 (7 日 670 件) が
-                    # ここ。embedding を捨てると「この閾値変更で新たに落ちた記事は
-                    # 妥当だったか」を後から一切検証できない。
-                    sem_emb = semantic_embeddings.get(sem_id)
-                    if sem_emb is not None:
-                        dedup_repo.add_article_embedding(
-                            url_hash=sem_h,
-                            url=sem_a.url,
-                            vector=sem_emb[1],
-                            model=sem_emb[0],
-                            title=sem_a.title,
-                        )
-                except Exception as e:  # noqa: BLE001 — 既読化失敗は次 run 再評価で自癒
-                    _log.debug("semantic_dup_seen_mark_failed", article_id=sem_id, error=str(e))
+        _persist_semantic_dedup_skips(
+            dry_run=dry_run,
+            skipped_semantic_ids=skipped_semantic_ids,
+            pre_semantic_by_id=pre_semantic_by_id,
+            semantic_embeddings=semantic_embeddings,
+            semantic_skip_records=semantic_skip_records,
+            dedup_repo=dedup_repo,
+        )
         if skipped_dup_semantic > 0:
             _log.info(
                 "dedup_skipped_semantic",
