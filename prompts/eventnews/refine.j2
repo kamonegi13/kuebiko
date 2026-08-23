@@ -26,7 +26,7 @@
 
 {% for m in members -%}
 [{{ m.index }}] **{{ m.title }}** ({{ m.feed_title }}, {{ m.anchor }})
-  summary: {{ m.summary }}
+  {{ m.summary }}
 
 {% endfor %}
 
