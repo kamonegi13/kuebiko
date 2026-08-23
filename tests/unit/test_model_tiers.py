@@ -68,6 +68,9 @@ class TestRegistry:
             Step.SYNTHESIS_NARRATIVE,
             Step.PIR_SPOTLIGHT,
             Step.LEDGER_DEEP_REVIEW,
+            # 事象ニュース (2026-08-23): fast(26B) では日本語破損が出たため narrative へ
+            # (同一入力の A/B で 26B 3件/5事象 → 31B 0件。docs/event_news_design.md §14b)
+            Step.EVENT_NEWS,
         }
 
     def test_embed_is_embedding_tier(self) -> None:

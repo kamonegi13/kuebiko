@@ -116,3 +116,23 @@ class TestCandidateLimiting:
         assert res.candidates == 1  # b のみ
         assert ("ev-1", "b") in repo.members  # 既存アイテムへ合流した
         assert repo.created == []  # 新規アイテムを作っていない
+
+
+class TestJobRegistration:
+    def test_job_is_registered_with_a_dispatch_target(self) -> None:
+        """pipelines.yaml だけでは scheduler に載らない — JobDef と dispatch の両方を固定する。"""
+        from src.scheduler.job_registry import load_jobs
+
+        job = next((j for j in load_jobs() if j.id == "eventnews-hourly"), None)
+        assert job is not None, "JobDef が無い"
+        assert job.interval_minutes == 60
+        assert job.offset_minutes == 20, "収集(:00)の後・翻訳(:15)と scraper(:30)の間"
+        assert job.protection == "optional", "止めても配信に影響しない (v1 は出口が無い)"
+
+    def test_flag_disables_the_job_entirely(self, monkeypatch: object) -> None:
+        import asyncio
+
+        from src.ui.services.eventnews_hourly_job import run_eventnews_hourly
+
+        monkeypatch.setenv("EVENTNEWS_HOURLY", "0")  # type: ignore[attr-defined]
+        assert asyncio.run(run_eventnews_hourly()) == {"skipped": "flag_off"}

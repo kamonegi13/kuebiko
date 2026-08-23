@@ -32,6 +32,12 @@ from src.tools.identifier_match import Identifier, extract_identifiers
 # 置換 (本文の書き換え) まで行う厳密文法の型。それ以外は計数のみ。
 STRICT_KINDS: frozenset[str] = frozenset({"cve", "ip", "domain", "hash", "actor_id"})
 
+# カタログ (= プロンプトに実値を提示する一覧) に載せない型。
+# 固有名詞を載せたところ、26B が「使ってよい識別子」を **企業名リストと誤解して羅列**
+# した (McDonald、TCS、BEC、AI、CEO、PDF、SECURITY… 2026-08-23 実測)。
+# 検出 (直書きの照合・破損の計数) には引き続き使う — 載せないのは提示だけ。
+CATALOG_EXCLUDED_KINDS: frozenset[str] = frozenset({"proper_noun"})
+
 # 解決できなかった識別子の代替表記 (行は残す — 観測の事実は保持する)
 UNRESOLVED_PLACEHOLDER = "(原文参照)"
 
@@ -76,7 +82,12 @@ _BRACE_RE = re.compile(r"[{｛]\s*([^{}｛｝]{1,60}?)\s*[}｝]")
 
 @dataclass(frozen=True)
 class CatalogEntry:
-    """カタログ 1 件。``token`` は ``I1`` 形式、``members`` は 1-based の記事番号集合。"""
+    """カタログ 1 件。
+
+    ``token`` は ``I1`` 形式。``CATALOG_EXCLUDED_KINDS`` の型は**空文字**で、
+    プロンプトに提示されない (照合・計数には使う)。番号は提示するものだけに
+    連番で振る — 穴が空くと LLM が存在しない番号を推測する。
+    """
 
     token: str
     identifier: Identifier
@@ -89,7 +100,7 @@ class IdentifierCatalog:
 
     @property
     def by_token(self) -> Mapping[str, CatalogEntry]:
-        return {e.token: e for e in self.entries}
+        return {e.token: e for e in self.entries if e.token}
 
     @property
     def normalized_values(self) -> frozenset[str]:
@@ -143,23 +154,30 @@ def build_catalog(member_texts: Sequence[str]) -> IdentifierCatalog:
             else:
                 found[key] = (ident, {idx})
     ordered = sorted(found.values(), key=lambda p: (min(p[1]), p[0].kind, p[0].normalized))
-    return IdentifierCatalog(
-        entries=tuple(
-            CatalogEntry(token=f"I{i}", identifier=ident, members=frozenset(members))
-            for i, (ident, members) in enumerate(ordered, start=1)
-        )
-    )
+    entries: list[CatalogEntry] = []
+    n = 0
+    for ident, members in ordered:
+        if ident.kind in CATALOG_EXCLUDED_KINDS:
+            entries.append(CatalogEntry(token="", identifier=ident, members=frozenset(members)))
+            continue
+        n += 1
+        entries.append(CatalogEntry(token=f"I{n}", identifier=ident, members=frozenset(members)))
+    return IdentifierCatalog(entries=tuple(entries))
 
 
 def render_catalog(catalog: IdentifierCatalog) -> str:
-    """プロンプトへ載せる一覧。実値はここにだけ書かれ、本文には番号で参照させる。"""
-    if not catalog.entries:
+    """プロンプトへ載せる一覧。実値はここにだけ書かれ、本文には番号で参照させる。
+
+    ``CATALOG_EXCLUDED_KINDS`` の型は**提示しない** (照合には使う)。
+    """
+    shown = [e for e in catalog.entries if e.token]
+    if not shown:
         return "(この事象に識別子はありません。本文にも識別子を書かないこと)"
     lines = [
         f"{e.token} = {e.identifier.raw}  ({e.identifier.kind}, 記事 "
         + "".join(f"[{m}]" for m in sorted(e.members))
         + ")"
-        for e in catalog.entries
+        for e in shown
     ]
     return "\n".join(lines)
 

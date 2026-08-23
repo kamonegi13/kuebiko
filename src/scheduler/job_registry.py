@@ -367,6 +367,30 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="eventnews-hourly",
+            kind="bespoke",
+            title="事象ニュース 毎時更新",
+            description=(
+                "収集済み記事を事象単位に群化し、複数媒体が報じた事象について 1 本の "
+                "ニュースを生成・更新する (docs/event_news_design.md)。生成はメンバー 2 件 "
+                "以上のアイテムのみ (単独記事は per-article 要約をそのまま読ませる)。"
+                "実測で生成は 0.25 回/時・65 秒/回 (narrative ティア) のため毎時占有は "
+                "20 秒前後。**v1 は shadow — 読み手向けの出口 (UI/Discord) は未配線**で、"
+                "目的は毎時運用の実証と占有時間の実測。EVENTNEWS_HOURLY=0 で完全停止。"
+            ),
+            disable_impact=(
+                "事象の群化と更新が止まる。記事は従来どおり per-article で表示されるため "
+                "配信への影響は無い (v1 時点では読み手向けの出口が無いため実害ゼロ)。"
+            ),
+            protection="optional",
+            schedule_type="interval",
+            interval_minutes=60,
+            # 毎時 :20 — 収集 (:00 direct-rss-fetch) の後、翻訳バックログ (:15) と
+            # scraper (:30) の間の空き。安全なデプロイ帯 (:16-:29) とも整合する。
+            offset_minutes=20,
+            upkeep=True,
+        ),
+        JobDef(
             id="body-translate-backlog",
             kind="bespoke",
             title="本文自動翻訳",
