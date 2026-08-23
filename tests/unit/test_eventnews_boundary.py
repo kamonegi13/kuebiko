@@ -13,9 +13,18 @@ import re
 from pathlib import Path
 
 # src/ 内で eventnews を import してよいモジュール (repo-relative)。
-# v1 の許可: storage の Mixin (ItemState 型と VERSION_CAP を読む infra — 生成物の
-# 消費者ではない)。scripts/ は src 外なので対象外。
-_ALLOWLIST: frozenset[str] = frozenset({"src/storage/repo_eventnews.py"})
+# 許可された消費者。**default-deny** — ここに無いモジュールが import すると落ちる。
+# 増やすときは「生成物がどこへ流れるか」を意識して 1 行足すこと (それがこの関門の目的)。
+#
+# - repo_eventnews: storage の Mixin (ItemState 型と VERSION_CAP を読む infra。消費者ではない)
+# - eventnews_hourly_job: 毎時ジョブ本体 (2026-08-24)。**生成するだけで、生成物を
+#   他層へ渡さない** — 読み手向けの出口 (UI/Discord) は未配線で、追加時は別途 1 行要る
+_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "src/storage/repo_eventnews.py",
+        "src/ui/services/eventnews_hourly_job.py",
+    }
+)
 
 _IMPORT_RE = re.compile(r"^\s*(?:from|import)\s+src\.eventnews\b", re.MULTILINE)
 
