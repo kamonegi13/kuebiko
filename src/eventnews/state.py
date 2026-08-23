@@ -129,7 +129,10 @@ def decide_arrival(
 
     4 条件のいずれかで 'updated'、いずれも無ければ 'reinforced':
       ① 駆動 entity (cve/victim_org/actor) の新規値
-      ② independent (§8) の増加
+      ② 初の裏取り (independent 1 → 2。単独報の解消 = I&W 上の最重要遷移。
+         2 → 3 以降の同 tier 追加は reinforced — 実測で全 join の 99% が
+         「別媒体からの 2 件目以降」であり、無条件の増加駆動は updated を
+         恒真にする [リプレイ実測 reinforced 1%、レビュー B D3 の予言どおり])
       ③ best_tier の上昇 (news/social/state_media → research/official)
       ④ importance の上昇
 
@@ -146,7 +149,7 @@ def decide_arrival(
         if new_values:
             added[etype] = new_values
 
-    media_increase = breakdown_after.independent > breakdown_before.independent
+    media_increase = breakdown_before.independent == 1 and breakdown_after.independent >= 2
     tier_rise = (
         breakdown_before.best_tier not in _HIGH_AUTHORITY_TIERS
         and breakdown_after.best_tier in _HIGH_AUTHORITY_TIERS
@@ -157,7 +160,7 @@ def decide_arrival(
 
     reasons: list[str] = [_ENTITY_REASON[t] for t in ("cve", "victim_org", "actor") if t in added]
     if media_increase:
-        reasons.append("media_increase")
+        reasons.append("first_corroboration")
     if tier_rise:
         reasons.append("tier_rise")
     if importance_rise:

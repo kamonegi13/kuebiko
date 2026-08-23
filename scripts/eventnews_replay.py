@@ -113,9 +113,18 @@ def main() -> None:
     members, vectors = _fetch(args.days)
     print(f"候補 {len(members)} 記事 ({args.days} 日)", flush=True)
 
+    # ⚠ RunHistoryRepository は DATABASE_URL があると PG を選ぶ (dual-backend)。
+    # リプレイの書込先は必ずローカル SQLite — 読み取り (_fetch) を終えてから env を
+    # 落とし、本番 PG への書込を構造的に不可能にする (初回実行で実際に本番へ書いた
+    # 事故の再発防止。origin='replay' 列が特定と除去を可能にした)
+    os.environ.pop("DATABASE_URL", None)
     db_path = Path(args.db)
     if db_path.exists():
         db_path.unlink()
+    from src.storage.db_backend import is_pg_enabled
+
+    if is_pg_enabled():  # 二重防御 — ここに来たら構成ミス
+        raise RuntimeError("replay は SQLite にのみ書く (DATABASE_URL が残っている)")
     repo = RunHistoryRepository(db_path)
 
     llm_factory = None
@@ -157,6 +166,10 @@ def _build_report(
         f"- 生成: {stats.generated} (失敗 {stats.generation_failures})",
         f"- 関門: 落下 facts 行 {stats.dropped_lines} / 修復 {stats.repaired_ids}"
         f" / 置換 {stats.substituted_ids}",
+        f"- updated 駆動理由の内訳: {dict(stats.reason_counts)}",
+        f"- E4'改 (判別力): 2 媒体以上への合流 {stats.later_joins} 件中"
+        f" reinforced {stats.later_reinforced}"
+        f" ({stats.later_reinforced / max(stats.later_joins, 1) * 100:.0f}%、合格線 >=50%)",
         "",
         "## 複数メンバーのアイテム (E3 目視対象)",
         "",

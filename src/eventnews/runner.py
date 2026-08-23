@@ -58,6 +58,12 @@ class ProcessStats:
     dropped_lines: int
     repaired_ids: int
     substituted_ids: int
+    # updated を駆動した理由の内訳 (E4' の診断用 — 判定器が恒真化していないかを見る)
+    reason_counts: tuple[tuple[str, int], ...] = ()
+    # E4' の判別力測定: 既に 2 媒体以上あるアイテムへの合流 (= 構造的に必然の
+    # first_corroboration を除いた母集団) とそのうちの reinforced 数
+    later_joins: int = 0
+    later_reinforced: int = 0
 
 
 def _item_id_for(article_id: str) -> str:
@@ -152,6 +158,8 @@ async def process_candidates(
         0,
     )
     llm = llm_factory() if (generate and llm_factory) else None
+    reason_counter: dict[str, int] = {}
+    later_joins = later_reinforced = 0
 
     for cand in candidates:
         vec = vectors.get(cand.article_id)
@@ -228,6 +236,12 @@ async def process_candidates(
             join_signal=",".join(f"{t}:{v}" for t, v in assignment.shared_entities[:4]),
         )
         stats[decision.kind] += 1
+        for r in decision.reasons:
+            reason_counter[r] = reason_counter.get(r, 0) + 1
+        if breakdown_before.independent >= 2:
+            later_joins += 1
+            if decision.kind == "reinforced":
+                later_reinforced += 1
 
         needs_generation = (
             generate
@@ -266,4 +280,9 @@ async def process_candidates(
             },
         )
 
-    return ProcessStats(**stats)
+    return ProcessStats(
+        **stats,
+        reason_counts=tuple(sorted(reason_counter.items())),
+        later_joins=later_joins,
+        later_reinforced=later_reinforced,
+    )

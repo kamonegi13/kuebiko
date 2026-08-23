@@ -142,7 +142,8 @@ class TestDecideArrival:
         assert decision.change_kind == "add"
         assert decision.new_facts["added_entities"] == {"cve": ["CVE-2024-2222"]}
 
-    def test_media_increase_triggers_updated(self) -> None:
+    def test_first_corroboration_triggers_updated(self) -> None:
+        # 1 → 2 = 単独報に初の裏取り (I&W 上の最重要遷移) のみが updated を駆動する
         existing: dict[str, frozenset[str]] = {}
         new_member = _member()
         before = _breakdown(independent=1)
@@ -151,8 +152,19 @@ class TestDecideArrival:
         decision = decide_arrival(existing, new_member, before, after, importance_before="medium")
 
         assert decision.kind == "updated"
-        assert "media_increase" in decision.reasons
+        assert "first_corroboration" in decision.reasons
         assert decision.new_facts["media_delta"] == 1
+
+    def test_later_media_additions_are_reinforced(self) -> None:
+        # 2 → 3 以降の同 tier 追加は reinforced (無条件の増加駆動は updated を恒真にする)
+        existing: dict[str, frozenset[str]] = {}
+        new_member = _member()
+        before = _breakdown(independent=2)
+        after = _breakdown(independent=3)
+
+        decision = decide_arrival(existing, new_member, before, after, importance_before="medium")
+
+        assert decision.kind == "reinforced"
 
     def test_tier_rise_from_news_to_official_triggers_updated(self) -> None:
         existing: dict[str, frozenset[str]] = {}
