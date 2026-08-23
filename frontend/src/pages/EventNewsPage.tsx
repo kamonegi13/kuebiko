@@ -1,42 +1,37 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pageContainer } from "../components/Page";
-import { formatJst } from "../utils/date";
+import { Drawer } from "../components/Drawer";
+import { formatJstCompact, formatJst } from "../utils/date";
 import {
   fetchEventNews,
   fetchEventNewsDetail,
   type EventNewsDetail,
   type EventNewsFact,
+  type EventNewsListItem,
 } from "../api/eventnews";
 
-const IMPORTANCE_TONE: Record<string, string> = {
-  high: "text-critical",
-  medium: "text-warning",
-  low: "text-fg-subtle",
-};
+const IMPORTANCE_FILTERS: { key: string; label: string }[] = [
+  { key: "high", label: "high のみ" },
+  { key: "high,medium", label: "high + medium" },
+  { key: "", label: "すべて" },
+];
 
-const STATUS_LABEL: Record<string, string> = {
-  new: "新規",
-  updated: "更新",
-  reinforced: "補強",
-  dormant: "沈静",
-};
-
-/** 裏取りの表示 — 記事数ではなく「独立媒体数」で表し、未分類を 0 と見せない。 */
-function SourceBadge({ item }: { item: { independent_sources: number; state_media_count: number; unclassified_sources: number } }) {
-  const parts: string[] = [];
-  if (item.state_media_count > 0) parts.push(`国営 ${item.state_media_count}`);
-  if (item.unclassified_sources > 0) parts.push(`未分類 ${item.unclassified_sources}`);
+/** 裏取り = 独立媒体数。記事数では表さない (docs/event_news_design.md §3-3)。 */
+function SourceChip({ item }: { item: Pick<EventNewsListItem, "independent_sources" | "state_media_count" | "unclassified_sources"> }) {
   const solo = item.independent_sources <= 1;
   return (
-    <span className={`text-xs ${solo ? "text-warning" : "text-fg-muted"}`} title={solo ? "裏取りがまだ無い単独報" : undefined}>
-      {solo ? "1 媒体のみ・未裏取り" : `独立 ${item.independent_sources} 媒体`}
-      {parts.length > 0 && <span className="text-fg-subtle">（{parts.join("・")}）</span>}
+    <span
+      className={`px-1 rounded ${solo ? "bg-warning-soft text-warning" : "bg-surface-2 text-fg-muted"}`}
+      title={solo ? "裏取りがまだ無い単独報" : "同一事象を報じた独立媒体の数"}
+    >
+      {solo ? "1 媒体のみ" : `独立 ${item.independent_sources} 媒体`}
+      {item.state_media_count > 0 && <span className="text-critical"> ・国営 {item.state_media_count}</span>}
     </span>
   );
 }
 
-/** facts を段落へまとめ、文末に控えめな出典番号を置く (クリックで原文へ)。 */
+/** facts を段落へまとめ、文末に控えめな出典番号を置く。 */
 function Body({ facts, onCite }: { facts: EventNewsFact[]; onCite: (n: number) => void }) {
   const paras = new Map<number, EventNewsFact[]>();
   for (const f of facts) {
@@ -68,7 +63,7 @@ function Body({ facts, onCite }: { facts: EventNewsFact[]; onCite: (n: number) =
   );
 }
 
-function Detail({ id }: { id: string }) {
+function DetailBody({ id }: { id: string }) {
   const [openMember, setOpenMember] = useState<number | null>(null);
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews", id],
@@ -83,19 +78,17 @@ function Detail({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       {d.news ? (
-        <div className="bg-surface-1 border border-border-subtle rounded-lg p-5">
-          <h3 className="m-0 text-lg font-bold text-fg leading-snug text-balance">{d.news.headline}</h3>
-          <div className="flex flex-wrap gap-3 items-center text-xs text-fg-muted mt-1.5 mb-4">
-            <SourceBadge item={d} />
-            <span>{d.members.length} 記事</span>
+        <div>
+          <div className="flex flex-wrap gap-2 items-center text-[11px] text-fg-muted mb-3">
+            <SourceChip item={d} />
+            <span>{d.members.length} 記事を統合</span>
             <span>{formatJst(d.first_reported_at)} → {formatJst(d.last_reported_at)}</span>
-            <span className={IMPORTANCE_TONE[d.importance] ?? ""}>{d.importance}</span>
             <span className="text-fg-subtle">v{d.news.version} · {d.news.model}</span>
           </div>
           <p className="border-l-[3px] border-accent pl-3.5 text-fg text-[15px] leading-relaxed max-w-[46em] mb-4">
             {d.news.bluf}
           </p>
-          <Body facts={d.news.facts} onCite={(n) => setOpenMember(n)} />
+          <Body facts={d.news.facts} onCite={setOpenMember} />
           {d.news.discrepancies.length > 0 && (
             <>
               <h4 className="text-xs uppercase tracking-wider text-fg-muted font-medium mt-5 mb-2">ソース間の相違</h4>
@@ -115,17 +108,12 @@ function Detail({ id }: { id: string }) {
           <p className="text-xs text-fg-subtle mt-5 pt-3 border-t border-border-subtle">{d.note}</p>
         </div>
       ) : (
-        /* 単独記事 (案 A): 生成はせず、原記事の要約を **同じ枠** で読ませる。
-           枠を揃えることで読む場所が 1 つに保たれる。 */
-        <div className="bg-surface-1 border border-border-subtle rounded-lg p-5">
-          <h3 className="m-0 text-lg font-bold text-fg leading-snug text-balance">
-            {d.members[0]?.title ?? "(記事なし)"}
-          </h3>
-          <div className="flex flex-wrap gap-3 items-center text-xs text-fg-muted mt-1.5 mb-4">
-            <SourceBadge item={d} />
+        /* 単独記事 (案 A): 生成せず、原記事の要約を同じ枠で読ませる。 */
+        <div>
+          <div className="flex flex-wrap gap-2 items-center text-[11px] text-fg-muted mb-3">
+            <SourceChip item={d} />
             <span>{d.members[0]?.feed_title}</span>
             <span>{formatJst(d.first_reported_at)}</span>
-            <span className={IMPORTANCE_TONE[d.importance] ?? ""}>{d.importance}</span>
           </div>
           <p className="text-fg text-[15px] leading-[1.95] max-w-[46em] whitespace-pre-wrap">
             {d.members[0]?.summary}
@@ -136,9 +124,9 @@ function Detail({ id }: { id: string }) {
         </div>
       )}
 
-      <div className="bg-surface-1 border border-border-subtle rounded-lg p-4">
+      <div className="border-t border-border-subtle pt-3">
         <h4 className="text-xs uppercase tracking-wider text-fg-muted font-medium mb-2">
-          原記事 {d.members.length} 件（[N] は本文の出典番号）
+          原記事 {d.members.length} 件{d.news && "（[N] は本文の出典番号）"}
         </h4>
         <div className="space-y-1.5">
           {d.members.map((m) => (
@@ -146,14 +134,13 @@ function Detail({ id }: { id: string }) {
               <summary className="px-3 py-2 cursor-pointer flex gap-2 items-baseline text-sm">
                 <span className="font-mono text-xs text-accent shrink-0">[{m.index}]</span>
                 <span className="text-fg">{m.title}</span>
-                <span className="ml-auto text-xs text-fg-subtle shrink-0">
-                  {m.feed_title} · {m.source_tier}
-                </span>
+                <span className="ml-auto text-xs text-fg-subtle shrink-0">{m.feed_title} · {m.source_tier}</span>
               </summary>
               <div className="px-3 pb-3 pt-1 text-sm text-fg-muted border-t border-dashed border-border-subtle">
                 {m.summary}
-                <div className="mt-2">
-                  <a href={m.url} target="_blank" rel="noopener noreferrer" className="text-accent text-xs">原記事 ↗</a>
+                <div className="mt-2 flex gap-3">
+                  <a href={`/app/article/${encodeURIComponent(m.article_id)}`} className="text-accent text-xs">分析結果 →</a>
+                  <a href={m.url} target="_blank" rel="noopener noreferrer" className="text-fg-subtle hover:text-accent text-xs">元記事 ↗</a>
                 </div>
               </div>
             </details>
@@ -164,14 +151,8 @@ function Detail({ id }: { id: string }) {
   );
 }
 
-const IMPORTANCE_FILTERS: { key: string; label: string }[] = [
-  { key: "high", label: "high のみ" },
-  { key: "high,medium", label: "high + medium" },
-  { key: "", label: "すべて" },
-];
-
 export function EventNewsPage() {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [imp, setImp] = useState("high,medium");
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews-list", imp],
@@ -180,15 +161,14 @@ export function EventNewsPage() {
   });
 
   const items = data?.items ?? [];
-  const current = selected ?? items.find((i) => i.has_news)?.id ?? items[0]?.id ?? null;
+  const openItem = items.find((i) => i.id === openId) ?? null;
 
   return (
-    <div className={`${pageContainer("wide")} space-y-5`}>
+    <div className={`${pageContainer("wide")} space-y-4`}>
       <div>
         <h2 className="m-0 text-xl font-bold text-fg tracking-tight">事象ニュース</h2>
         <p className="text-fg-muted text-sm mt-1">
-          収集した記事を事象単位で読む。複数媒体が報じた事象は 1 本に統合して生成し、新しい記事が加わると更新される。
-          単独報はその記事の要約をそのまま表示する。
+          収集した記事を事象単位で読む。複数媒体が報じた事象は 1 本に統合して生成し、新しい記事が加わると更新される。単独報はその記事の要約を表示する。
         </p>
       </div>
 
@@ -196,7 +176,7 @@ export function EventNewsPage() {
         {IMPORTANCE_FILTERS.map((f) => (
           <button
             key={f.key}
-            onClick={() => { setImp(f.key); setSelected(null); }}
+            onClick={() => setImp(f.key)}
             className={`text-xs px-3 py-1.5 rounded border transition-colors ${
               imp === f.key ? "border-accent text-accent bg-accent/10" : "border-border-default text-fg-muted hover:text-fg"
             }`}
@@ -204,44 +184,68 @@ export function EventNewsPage() {
             {f.label}
           </button>
         ))}
+        {data && <span className="ml-auto self-center text-xs text-fg-subtle">{items.length} 件</span>}
       </div>
 
       {isFetching && !data && <div className="text-fg-subtle text-sm">読み込み中…</div>}
       {error && <div className="text-critical text-sm">エラー: {String(error)}</div>}
-
-      {items.length === 0 && data && (
+      {data && items.length === 0 && (
         <div className="text-fg-muted text-sm bg-surface-1 border border-border-subtle rounded-lg p-4">
-          まだ事象がありません。複数媒体が同じ事象を報じると、ここに現れます。
+          該当する事象がありません。
         </div>
       )}
 
-      {items.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
-          <nav className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden lg:sticky lg:top-3 max-h-[calc(100vh-2rem)] overflow-y-auto">
-            {items.map((it) => (
+      <ul className="space-y-1.5">
+        {items.map((it) => (
+          <li
+            key={it.id}
+            className="flex items-start gap-2 bg-surface-1 border border-border-subtle rounded-lg px-3 py-2.5"
+          >
+            <span
+              className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                it.importance === "high" ? "bg-critical" : it.importance === "medium" ? "bg-warning" : "bg-fg-subtle"
+              }`}
+            />
+            <div className="flex-1 min-w-0">
               <button
-                key={it.id}
-                onClick={() => setSelected(it.id)}
-                className={`w-full text-left px-3 py-2.5 border-b border-border-subtle hover:bg-surface-2 transition-colors ${
-                  current === it.id ? "bg-surface-2" : ""
-                }`}
+                onClick={() => setOpenId(it.id)}
+                className="block w-full text-left text-sm font-medium leading-snug text-fg hover:text-accent hover:underline"
+                title="事象の詳細を開く"
               >
-                <div className="flex items-center gap-2 text-[11px] mb-0.5">
-                  <span className={IMPORTANCE_TONE[it.importance] ?? "text-fg-subtle"}>{it.importance}</span>
-                  <span className="text-fg-subtle">{STATUS_LABEL[it.status] ?? it.status}</span>
-                  <span className="ml-auto text-fg-subtle">{formatJst(it.last_reported_at)}</span>
-                </div>
-                <div className="text-sm text-fg leading-snug">{it.headline}</div>
-                {it.member_count > 1 && (
-                  <div className="text-[11px] text-fg-subtle mt-0.5">{it.member_count} 記事を統合</div>
-                )}
-                <div className="mt-0.5"><SourceBadge item={it} /></div>
+                {it.headline}
               </button>
-            ))}
-          </nav>
-          <main className="min-w-0">{current && <Detail id={current} />}</main>
-        </div>
-      )}
+              {it.preview && (
+                <p className="text-xs text-fg-muted leading-relaxed mt-1 line-clamp-4">{it.preview}</p>
+              )}
+              <div className="text-[11px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
+                <SourceChip item={it} />
+                {it.member_count > 1 && (
+                  <span className="px-1 rounded bg-surface-2 text-fg-muted">{it.member_count} 記事を統合</span>
+                )}
+                {it.status === "updated" && (
+                  <span className="px-1 rounded bg-accent/15 text-accent">更新</span>
+                )}
+                {it.best_source_tier && it.best_source_tier !== "news" && (
+                  <span className="px-1 rounded bg-surface-2 text-fg-muted">{it.best_source_tier}</span>
+                )}
+                <span className="ml-auto shrink-0 text-fg-subtle" title="最新報道の時刻">
+                  {formatJstCompact(it.last_reported_at)}
+                </span>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <Drawer
+        isOpen={openId !== null}
+        onClose={() => setOpenId(null)}
+        title={openItem?.headline ?? "事象"}
+        mobileGutter
+        swipeToClose
+      >
+        {openId && <DetailBody id={openId} />}
+      </Drawer>
     </div>
   );
 }
