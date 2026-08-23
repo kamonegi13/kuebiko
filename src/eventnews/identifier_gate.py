@@ -1,217 +1,93 @@
-"""事象単位ニュースの識別子関門 (docs/event_news_design.md §9)。
+"""識別子関門 — カタログの番号参照を実値へ解決し、直書きを対称照合で検査する。
 
-生成された structured 出力の識別子を、**source_index が指す 1 記事のみ**に対して
-照合する (全メンバー和集合との照合は cross-member 転植 — 別記事の CVE が別製品に
-付く — を素通しするため禁止。レビュー B C1)。discrepancies の source_index=0
-(「どの媒体も特定していない」等の不在の主張) と unknowns だけは和集合照合を使う。
+**2026-08-23 の抜本改修**: 旧実装は「生成文から抽出 → 原文を部分文字列 + 語境界で検索」
+という非対称な 2 経路で判定しており、両者がズレる箇所すべてがバグになっていた
+(1 日で 5 種の誤判定)。識別子の型 × 表記 × 言語の組合せは開いており、個別修正では
+収束しない。よって:
+
+- **識別子は LLM に書かせない** — プロンプトはカタログ (``I1 = CVE-…``) を提示し、
+  本文には ``{I1}`` と書かせる。転記誤りが検出対象でなく **発生し得ない**ものになる
+  (2026-08-22 の引用関門で確立した番号参照と同型)
+- **検査は対称** — やむを得ず実値が書かれた場合のみ、原文にも同じ抽出器をかけて作った
+  集合への帰属で判定する。判定経路が 1 本なので抽出器の癖は両側で相殺される
+- **強制は厳密文法のみ** — CVE/IP/domain/hash/actor_id は置換、version/cvss は計数のみ
+
+[N] 関門 (source_index の範囲検査と行落とし) は facts のみに適用する — 不在の主張
+(「どの媒体も特定していない」) は原理的に [N] を持てないため。
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.cti.ioc_extractor import refang
 from src.eventnews.models import EventNewsDraft, FactItem, GateResult, MemberArticle
-from src.tools.identifier_match import (
-    Identifier,
-    contains_identifier,
-    extract_identifiers,
-    find_repair_candidate,
+from src.tools.identifier_catalog import (
+    IdentifierCatalog,
+    ResolveStats,
+    build_catalog,
+    render_catalog,
+    resolve_text,
 )
 
-# 解決不能な識別子の置換先 (原文が特定できないことを明示する)
-_UNRESOLVED_PLACEHOLDER = "(原文参照)"
 
-
-def _member_text(member: MemberArticle) -> str:
+def member_text(member: MemberArticle) -> str:
+    """カタログ構築・照合に使う 1 記事分のテキスト (本文が空でも title/summary は使う)。"""
     return f"{member.title}\n{member.summary}\n{member.body}"
 
 
-def _union_text(members: Sequence[MemberArticle]) -> str:
-    return "\n".join(_member_text(m) for m in members)
+def build_member_catalog(members: Sequence[MemberArticle]) -> IdentifierCatalog:
+    return build_catalog([member_text(m) for m in members])
 
 
-def extract_allowed_by_member(
-    members: Sequence[MemberArticle],
-) -> tuple[tuple[Identifier, ...], ...]:
-    """メンバーごと (title+summary+body) の「使ってよい識別子」一覧を返す。
-
-    プロンプトへ渡す整形は担当外 (identifier 一覧を返すだけ)。
-    """
-    return tuple(extract_identifiers(_member_text(m)) for m in members)
-
-
-def _verify_line(
-    text: str,
-    haystack: str,
-    allowed: tuple[Identifier, ...],
-    *,
-    verifiable: bool,
-) -> tuple[str, int, int, bool]:
-    """1 行の識別子を照合し、置換後テキストと集計を返す。
-
-    戻り値: (置換後テキスト, repaired 数, substituted 数, その行を検証できたか)。
-    ``text`` はまず ``refang`` し、以降の識別子抽出・置換をすべてこの正規化済み
-    テキストに対して行う (``extract_identifiers`` 内部の refang と揃え、
-    抽出した ``raw`` が必ず置換対象のテキスト中に literal に存在するようにする)。
-    """
-    canonical_text = refang(text)
-    found = extract_identifiers(canonical_text)
-    if not found:
-        return canonical_text, 0, 0, True
-    if not verifiable:
-        # 本文 purge 済み等で照合不能: 検証不能 ≠ 反証。行はそのまま保持する。
-        return canonical_text, 0, 0, False
-
-    new_text = canonical_text
-    repaired = 0
-    substituted = 0
-    for ident in found:
-        if contains_identifier(haystack, ident):
-            continue
-        candidate = find_repair_candidate(ident, allowed)
-        if candidate is not None:
-            new_text = new_text.replace(ident.raw, candidate.raw)
-            repaired += 1
-        else:
-            new_text = new_text.replace(ident.raw, _UNRESOLVED_PLACEHOLDER)
-            substituted += 1
-    return new_text, repaired, substituted, True
-
-
-def _process_facts(
-    facts: Sequence[FactItem],
-    members: Sequence[MemberArticle],
-    allowed_by_member: Sequence[tuple[Identifier, ...]],
-) -> tuple[list[FactItem], int, int, int, bool]:
-    """facts の [N] 関門 + 識別子関門。範囲外/未指定 (source_index) は行ごと落とす。"""
-    kept: list[FactItem] = []
-    dropped_lines = 0
-    repaired_total = 0
-    substituted_total = 0
-    verified = True
-
-    for fact in facts:
-        idx = fact.source_index
-        if idx < 1 or idx > len(members):
-            dropped_lines += 1
-            continue
-
-        member = members[idx - 1]
-        new_text, repaired, substituted, line_verified = _verify_line(
-            fact.text,
-            _member_text(member),
-            allowed_by_member[idx - 1],
-            verifiable=bool(member.summary or member.body),
-        )
-        repaired_total += repaired
-        substituted_total += substituted
-        verified = verified and line_verified
-        kept.append(FactItem(text=new_text, source_index=idx))
-
-    return kept, dropped_lines, repaired_total, substituted_total, verified
-
-
-def _process_discrepancies(
-    items: Sequence[FactItem],
-    members: Sequence[MemberArticle],
-    allowed_by_member: Sequence[tuple[Identifier, ...]],
-    union_allowed: tuple[Identifier, ...],
-) -> tuple[list[FactItem], int, int, bool]:
-    """discrepancies は [N] を要求しない。source_index=0/範囲外は和集合照合で残す。"""
-    kept: list[FactItem] = []
-    repaired_total = 0
-    substituted_total = 0
-    verified = True
-    union_text = _union_text(members)
-    union_verifiable = any(bool(m.summary or m.body) for m in members)
-
-    for item in items:
-        idx = item.source_index
-        if 1 <= idx <= len(members):
-            member = members[idx - 1]
-            haystack = _member_text(member)
-            allowed = allowed_by_member[idx - 1]
-            verifiable = bool(member.summary or member.body)
-        else:
-            haystack = union_text
-            allowed = union_allowed
-            verifiable = union_verifiable
-
-        new_text, repaired, substituted, line_verified = _verify_line(
-            item.text, haystack, allowed, verifiable=verifiable
-        )
-        repaired_total += repaired
-        substituted_total += substituted
-        verified = verified and line_verified
-        kept.append(FactItem(text=new_text, source_index=idx))
-
-    return kept, repaired_total, substituted_total, verified
-
-
-def _process_unknowns(
-    items: Sequence[str],
-    members: Sequence[MemberArticle],
-    union_allowed: tuple[Identifier, ...],
-) -> tuple[list[str], int, int, bool]:
-    """unknowns の識別子は和集合照合 (どの記事にも書かれていない、が主張の本質)。"""
-    haystack = _union_text(members)
-    verifiable = any(bool(m.summary or m.body) for m in members)
-    kept: list[str] = []
-    repaired_total = 0
-    substituted_total = 0
-    verified = True
-
-    for text in items:
-        new_text, repaired, substituted, line_verified = _verify_line(
-            text, haystack, union_allowed, verifiable=verifiable
-        )
-        repaired_total += repaired
-        substituted_total += substituted
-        verified = verified and line_verified
-        kept.append(new_text)
-
-    return kept, repaired_total, substituted_total, verified
+def render_allowed_identifiers(members: Sequence[MemberArticle]) -> str:
+    """プロンプトへ載せるカタログ文字列 (実値はここにだけ現れる)。"""
+    return render_catalog(build_member_catalog(members))
 
 
 def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> GateResult:
-    """structured 出力の識別子関門 (2 段) + [N] 関門 (facts のみ) を通す。
+    """structured 出力の識別子解決 + [N] 関門を通す。"""
+    catalog = build_member_catalog(members)
+    total = ResolveStats()
+    n_members = len(members)
 
-    識別子の照合対象は headline / bluf / facts / discrepancies / unknowns の全節。
-    [N] 関門 (source_index の範囲検査と行落とし) は facts のみに適用する — 不在の
-    主張 (「どの媒体も特定していない」) は原理的に [N] を持てないため。
-    """
-    allowed_by_member = extract_allowed_by_member(members)
-    union_allowed = tuple(ident for group in allowed_by_member for ident in group)
+    facts: list[FactItem] = []
+    dropped = 0
+    for item in draft.facts:
+        if not (1 <= item.source_index <= n_members):
+            dropped += 1  # 0 / 範囲外 / 創作番号は行ごと落とす
+            continue
+        text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
+        total = total.merged(st)
+        facts.append(FactItem(text=text, source_index=item.source_index))
 
-    facts, dropped_lines, facts_repaired, facts_substituted, facts_verified = _process_facts(
-        draft.facts, members, allowed_by_member
-    )
-    discrepancies, disc_repaired, disc_substituted, disc_verified = _process_discrepancies(
-        draft.discrepancies, members, allowed_by_member, union_allowed
-    )
-    unknowns, unk_repaired, unk_substituted, unk_verified = _process_unknowns(
-        draft.unknowns, members, union_allowed
-    )
-    # headline / bluf は N→1 の統合主張で単一 [N] に紐づかないため和集合照合
-    # (unknowns と同じ扱い)。**最も読まれる 2 フィールドが無検査だった** —
-    # 2026-08-23 の実測で BLUF に破損アクター名 (UAT-10147 → "UAT-10 Hay47")、
-    # headline に捏造 CVE が残っていた。
-    head_texts, head_repaired, head_substituted, head_verified = _process_unknowns(
-        [draft.headline, draft.bluf], members, union_allowed
-    )
+    discrepancies: list[FactItem] = []
+    for item in draft.discrepancies:
+        cited = item.source_index if 1 <= item.source_index <= n_members else 0
+        text, st = resolve_text(item.text, catalog, cited_member=cited)
+        total = total.merged(st)
+        discrepancies.append(FactItem(text=text, source_index=item.source_index))
 
-    new_draft = EventNewsDraft(
-        headline=head_texts[0],
-        bluf=head_texts[1],
-        facts=facts,
-        discrepancies=discrepancies,
-        unknowns=unknowns,
-    )
+    unknowns: list[str] = []
+    for raw in draft.unknowns:
+        text, st = resolve_text(raw, catalog, cited_member=0)
+        total = total.merged(st)
+        unknowns.append(text)
+
+    headline, st_head = resolve_text(draft.headline, catalog, cited_member=0)
+    total = total.merged(st_head)
+    bluf, st_bluf = resolve_text(draft.bluf, catalog, cited_member=0)
+    total = total.merged(st_bluf)
+
     return GateResult(
-        draft=new_draft,
-        dropped_lines=dropped_lines,
-        repaired_ids=facts_repaired + disc_repaired + unk_repaired + head_repaired,
-        substituted_ids=facts_substituted + disc_substituted + unk_substituted + head_substituted,
-        verified=facts_verified and disc_verified and unk_verified and head_verified,
+        draft=EventNewsDraft(
+            headline=headline, bluf=bluf, facts=facts,
+            discrepancies=discrepancies, unknowns=unknowns,
+        ),
+        dropped_lines=dropped,
+        repaired_ids=total.resolved,
+        substituted_ids=total.literal_substituted + total.unknown_refs,
+        verified=bool(catalog.entries) or not any(
+            (total.literal_flagged, total.literal_substituted, total.unknown_refs)
+        ),
+        stats=total,
     )

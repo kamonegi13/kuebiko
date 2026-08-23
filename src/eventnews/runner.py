@@ -85,14 +85,8 @@ def _max_importance(a: str, b: str) -> str:
 
 
 def _allowed_identifiers_text(members: list[MemberArticle]) -> str:
-    per_member = identifier_gate.extract_allowed_by_member(members)
-    lines: list[str] = []
-    for n, idents in enumerate(per_member, 1):
-        if not idents:
-            continue
-        uniq = sorted({i.raw for i in idents})
-        lines.append(f"[{n}] " + " / ".join(uniq[:40]))
-    return "\n".join(lines) if lines else "(識別子なし)"
+    """プロンプトへ載せる識別子カタログ (実値はここにだけ現れ、本文には {In} で参照させる)。"""
+    return identifier_gate.render_allowed_identifiers(members)
 
 
 async def _generate_version(

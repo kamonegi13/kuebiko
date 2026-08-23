@@ -138,10 +138,16 @@ class EventNewsDraft(BaseModel):
 
 @dataclass(frozen=True)
 class GateResult:
-    """識別子関門 + [N] 関門を通した後の生成物。"""
+    """識別子関門 + [N] 関門を通した後の生成物。
+
+    ``repaired_ids`` はカタログ番号 ``{In}`` から実値へ解決した数 (= LLM が転記せず
+    番号で書いた数)。``substituted_ids`` は実値直書き かつ カタログ外の厳密型 +
+    カタログに無い番号。詳細内訳は ``stats``。
+    """
 
     draft: EventNewsDraft
     dropped_lines: int  # source_index 0/範囲外で落とした facts 行数
-    repaired_ids: int  # 一意候補へ解決した識別子数
-    substituted_ids: int  # 解決不能で「(原文参照)」に置換した識別子数
-    verified: bool  # 照合を実施できたか (本文 purge 済みで不能なら False)
+    repaired_ids: int  # {In} → 実値に解決した数
+    substituted_ids: int  # 「(原文参照)」に置換 + 創作番号の除去
+    verified: bool  # 照合を実施できたか
+    stats: object | None = None  # identifier_catalog.ResolveStats (詳細内訳)

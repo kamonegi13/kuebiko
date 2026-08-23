@@ -1,235 +1,141 @@
-"""事象単位ニュースの識別子関門 (src/eventnews/identifier_gate.py) のテスト。
+"""識別子関門 (カタログ番号参照 + 対称照合) の不変条件。
 
-範囲外 index の落下 / cross-member 転植の repair・置換 / 置換後も行が残ること /
-本文空 (purge 済み) で保持されること / discrepancies が source_index=0 でも
-残ることを固定する (docs/event_news_design.md §9)。
+設計 SSoT: docs/event_news_design.md §9 / src/tools/identifier_catalog.py の docstring。
+旧実装 (生成側 regex 抽出 × 原文側 部分文字列検索) は非対称ゆえ誤判定が尽きなかったため、
+2026-08-23 に番号参照 + 集合帰属へ全面改修した。ここではその不変条件を固定する。
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.eventnews.identifier_gate import extract_allowed_by_member, verify_draft
+from src.eventnews.identifier_gate import render_allowed_identifiers, verify_draft
 from src.eventnews.models import EventNewsDraft, FactItem, MemberArticle
-
-_NOW = datetime(2026, 8, 20, tzinfo=UTC)
 
 
 def _member(
-    article_id: str,
-    *,
-    title: str = "title",
-    summary: str = "summary",
-    body: str = "body",
+    article_id: str, *, title: str = "t", summary: str = "s", body: str = ""
 ) -> MemberArticle:
     return MemberArticle(
         article_id=article_id,
         title=title,
-        url=f"https://example.com/{article_id}",
-        feed_title="feed",
-        feed_url="https://example.com/feed",
-        host="example.com",
-        importance="medium",
-        category="threat",
+        url=f"https://e/{article_id}",
+        feed_title="F",
+        feed_url="https://f",
+        host="e",
+        importance="high",
+        category="apt",
         status="posted",
-        anchor_ts=_NOW,
+        anchor_ts=datetime(2026, 8, 20, tzinfo=UTC),
         summary=summary,
         body=body,
         entities=frozenset(),
     )
 
 
-# ---------- extract_allowed_by_member ----------
+class TestCatalogRendering:
+    def test_catalog_lists_values_with_member_numbers(self) -> None:
+        members = (_member("a", body="CVE-2026-1111 の脆弱性"), _member("b", body="修正版 2.10.5"))
+        text = render_allowed_identifiers(members)
+        assert "CVE-2026-1111" in text
+        assert "2.10.5" in text
+        assert "記事 [1]" in text
+        assert "記事 [2]" in text
+
+    def test_empty_catalog_is_explicit(self) -> None:
+        assert "識別子はありません" in render_allowed_identifiers((_member("a", body="なし"),))
 
 
-def test_extract_allowed_by_member_combines_title_and_body() -> None:
-    member = _member("m1", title="APT99 の活動", summary="", body="CVE-2024-1111 を悪用")
+class TestPlaceholderResolution:
+    def test_reference_is_resolved_to_real_value(self) -> None:
+        members = (_member("a", body="CVE-2026-1111 を悪用"), _member("b", body="別記事"))
+        draft = EventNewsDraft(
+            headline="{I1} の悪用",
+            bluf="b",
+            facts=[FactItem(text="{I1} が悪用された。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "CVE-2026-1111 が悪用された。"
+        assert r.draft.headline == "CVE-2026-1111 の悪用"
+        assert r.repaired_ids >= 2
 
-    result = extract_allowed_by_member((member,))
-
-    assert len(result) == 1
-    kinds = {ident.kind for ident in result[0]}
-    assert "actor_id" in kinds
-    assert "cve" in kinds
-
-
-# ---------- 範囲外 index の落下 ----------
-
-
-def test_fact_with_out_of_range_or_unset_index_is_dropped() -> None:
-    member = _member("m1", body="通常の記述。CVE の言及なし。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[
-            FactItem(text="正常な事実", source_index=1),
-            FactItem(text="範囲外の参照", source_index=5),
-            FactItem(text="未指定の参照", source_index=0),
-        ],
-    )
-
-    result = verify_draft(draft, (member,))
-
-    assert len(result.draft.facts) == 1
-    assert result.draft.facts[0].text == "正常な事実"
-    assert result.dropped_lines == 2
+    def test_unknown_reference_is_removed(self) -> None:
+        """カタログに無い番号は創作 — 表記ごと落とす (実値へ化けさせない)。"""
+        members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[FactItem(text="{I99} が悪用された。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert "I99" not in r.draft.facts[0].text
+        assert r.substituted_ids == 1
 
 
-# ---------- cross-member 転植 ----------
+class TestLiteralIdentifiers:
+    def test_literal_outside_catalog_is_substituted_for_strict_kinds(self) -> None:
+        members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[FactItem(text="CVE-2026-9999 も悪用された。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert "CVE-2026-9999" not in r.draft.facts[0].text
+        assert "(原文参照)" in r.draft.facts[0].text
+
+    def test_literal_inside_catalog_is_kept(self) -> None:
+        """CJK に隣接していてもカタログ集合に在れば保持する (対称照合の要点)。"""
+        members = (
+            _member("a", body="重大漏洞CVE-2026-1111，影響2.10.4以前版本"),
+            _member("b", body="x"),
+        )
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[FactItem(text="CVE-2026-1111 は 2.10.4 以前に影響する。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].text == "CVE-2026-1111 は 2.10.4 以前に影響する。"
+        assert r.substituted_ids == 0
+
+    def test_loose_kinds_are_counted_not_destroyed(self) -> None:
+        """版数・CVSS は表記の変種が無限 — 本文を壊さず計数のみ (§C)。"""
+        members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[FactItem(text="バージョン 9.9.9 に影響する。", source_index=1)],
+        )
+        r = verify_draft(draft, members)
+        assert "9.9.9" in r.draft.facts[0].text
+        assert r.substituted_ids == 0
 
 
-def test_cross_member_transplant_is_repaired_or_substituted() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 の悪用が確認された。")
-    m2 = _member("m2", body="別製品の CVE-2024-2222 が影響を受ける。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        # 記事 1 の CVE を、記事 2 (source_index=2) 参照の行に誤って書いた。
-        facts=[FactItem(text="影響を受けるのは CVE-2024-1111 だ。", source_index=2)],
-    )
+class TestSourceIndexGate:
+    def test_out_of_range_fact_is_dropped(self) -> None:
+        members = (_member("a", body="x"), _member("b", body="y"))
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[
+                FactItem(text="範囲外", source_index=5),
+                FactItem(text="未指定", source_index=0),
+                FactItem(text="正常", source_index=1),
+            ],
+        )
+        r = verify_draft(draft, members)
+        assert [f.text for f in r.draft.facts] == ["正常"]
+        assert r.dropped_lines == 2
 
-    result = verify_draft(draft, (m1, m2))
-
-    assert len(result.draft.facts) == 1
-    text = result.draft.facts[0].text
-    assert "CVE-2024-1111" not in text
-    assert result.repaired_ids + result.substituted_ids == 1
-
-
-def test_cross_member_transplant_repairs_to_correct_id_when_unique() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 の悪用が確認された。")
-    m2 = _member("m2", body="別製品の CVE-2024-2222 のみが影響を受ける。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[FactItem(text="影響を受けるのは CVE-2024-1111 だ。", source_index=2)],
-    )
-
-    result = verify_draft(draft, (m1, m2))
-
-    assert result.repaired_ids == 1
-    assert result.substituted_ids == 0
-    assert "CVE-2024-2222" in result.draft.facts[0].text
-
-
-def test_unrepairable_identifier_is_substituted_but_line_kept() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 の悪用が確認された。")
-    # 記事 2 には CVE が 2 件あり、一意な repair 先を決められない (曖昧)。
-    m2 = _member("m2", body="CVE-2024-3333 と CVE-2024-4444 の両方に言及。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[FactItem(text="影響を受けるのは CVE-2024-1111 だ。", source_index=2)],
-    )
-
-    result = verify_draft(draft, (m1, m2))
-
-    assert len(result.draft.facts) == 1
-    assert "(原文参照)" in result.draft.facts[0].text
-    assert result.substituted_ids == 1
-    assert result.repaired_ids == 0
-
-
-def test_matching_identifier_is_left_unchanged() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 の悪用が確認された。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[FactItem(text="影響を受けるのは CVE-2024-1111 だ。", source_index=1)],
-    )
-
-    result = verify_draft(draft, (m1,))
-
-    assert result.draft.facts[0].text == "影響を受けるのは CVE-2024-1111 だ。"
-    assert result.repaired_ids == 0
-    assert result.substituted_ids == 0
-    assert result.verified is True
-
-
-# ---------- 本文空 (purge 済み) で保持 ----------
-
-
-def test_empty_body_line_is_preserved_and_marks_unverified() -> None:
-    # purge 済み = title 以外の照合材料が無い (summary も空)。識別子は保持し verified=False
-    member = _member("m1", summary="", body="")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[FactItem(text="CVE-2024-1111 が使われた。", source_index=1)],
-    )
-
-    result = verify_draft(draft, (member,))
-
-    assert len(result.draft.facts) == 1
-    assert result.draft.facts[0].text == "CVE-2024-1111 が使われた。"
-    assert result.verified is False
-    assert result.repaired_ids == 0
-    assert result.substituted_ids == 0
-
-
-def test_lines_without_identifiers_do_not_affect_verified_flag() -> None:
-    member = _member("m1", summary="", body="")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        facts=[FactItem(text="識別子を含まない事実。", source_index=1)],
-    )
-
-    result = verify_draft(draft, (member,))
-
-    assert result.draft.facts[0].text == "識別子を含まない事実。"
-    assert result.verified is True
-
-
-# ---------- discrepancies は source_index=0 でも残る ----------
-
-
-def test_discrepancy_with_index_zero_is_kept() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 が確認された。")
-    m2 = _member("m2", body="別の情報源はこの脆弱性に言及していない。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        discrepancies=[FactItem(text="初期侵入経路はどの媒体も特定していない。", source_index=0)],
-    )
-
-    result = verify_draft(draft, (m1, m2))
-
-    assert len(result.draft.discrepancies) == 1
-    assert result.draft.discrepancies[0].text == "初期侵入経路はどの媒体も特定していない。"
-
-
-def test_discrepancy_with_index_zero_uses_union_matching() -> None:
-    m1 = _member("m1", body="CVE-2024-1111 が確認された。")
-    m2 = _member("m2", body="別の情報源はこの脆弱性に言及していない。")
-    draft = EventNewsDraft(
-        headline="h",
-        bluf="b",
-        discrepancies=[FactItem(text="CVE-2024-1111 の詳細は媒体間で一致した。", source_index=0)],
-    )
-
-    result = verify_draft(draft, (m1, m2))
-
-    # union (m1+m2) に CVE-2024-1111 が実在するため、置換・repair は不要。
-    assert result.draft.discrepancies[0].text == "CVE-2024-1111 の詳細は媒体間で一致した。"
-    assert result.repaired_ids == 0
-    assert result.substituted_ids == 0
-
-
-# ---------- headline / bluf も関門を通る (2026-08-23) ----------
-
-
-def test_headline_and_bluf_identifiers_are_verified() -> None:
-    # 原文に無い CVE は headline/bluf でも置換される (最も読まれる 2 節が無検査だった)
-    member = _member("m1", summary="TrueConf Server の脆弱性が悪用リストへ追加された。")
-    draft = EventNewsDraft(
-        headline="CVE-2026-72529 の悪用警告",
-        bluf="攻撃者は CVE-2026-72530 を悪用している。",
-        facts=[],
-    )
-
-    result = verify_draft(draft, (member,))
-
-    assert "CVE-2026-72529" not in result.draft.headline
-    assert "CVE-2026-72530" not in result.draft.bluf
-    assert result.substituted_ids == 2
+    def test_discrepancy_without_index_is_kept(self) -> None:
+        """不在の主張は原理的に [N] を持てない — 落とさない。"""
+        members = (_member("a", body="x"), _member("b", body="y"))
+        draft = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            discrepancies=[FactItem(text="どの媒体も侵入経路を特定していない。", source_index=0)],
+        )
+        r = verify_draft(draft, members)
+        assert len(r.draft.discrepancies) == 1
+        assert r.dropped_lines == 0
