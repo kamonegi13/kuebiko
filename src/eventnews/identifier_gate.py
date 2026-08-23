@@ -58,14 +58,16 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
             continue
         text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
         total = total.merged(st)
-        facts.append(FactItem(text=text, source_index=item.source_index))
+        facts.append(FactItem(text=text, source_index=item.source_index, paragraph=item.paragraph))
 
     discrepancies: list[FactItem] = []
     for item in draft.discrepancies:
         cited = item.source_index if 1 <= item.source_index <= n_members else 0
         text, st = resolve_text(item.text, catalog, cited_member=cited)
         total = total.merged(st)
-        discrepancies.append(FactItem(text=text, source_index=item.source_index))
+        discrepancies.append(
+            FactItem(text=text, source_index=item.source_index, paragraph=item.paragraph)
+        )
 
     unknowns: list[str] = []
     for raw in draft.unknowns:
@@ -80,14 +82,16 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
 
     return GateResult(
         draft=EventNewsDraft(
-            headline=headline, bluf=bluf, facts=facts,
-            discrepancies=discrepancies, unknowns=unknowns,
+            headline=headline,
+            bluf=bluf,
+            facts=facts,
+            discrepancies=discrepancies,
+            unknowns=unknowns,
         ),
         dropped_lines=dropped,
         repaired_ids=total.resolved,
         substituted_ids=total.literal_substituted + total.unknown_refs,
-        verified=bool(catalog.entries) or not any(
-            (total.literal_flagged, total.literal_substituted, total.unknown_refs)
-        ),
+        verified=bool(catalog.entries)
+        or not any((total.literal_flagged, total.literal_substituted, total.unknown_refs)),
         stats=total,
     )

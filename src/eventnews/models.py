@@ -115,12 +115,19 @@ class StateDecision:
 
 
 class FactItem(BaseModel):
-    """[N] 参照つきの 1 行。source_index は候補一覧の 1-based 番号、0 = 未指定。"""
+    """[N] 参照つきの 1 行。source_index は候補一覧の 1-based 番号、0 = 未指定。
+
+    ``paragraph`` は表示層で散文に組むときの段落番号 (1-based)。**保存は 1 行 =
+    1 出典のまま**で、読み物としての体裁は表示側が組み立てる (docs/event_news_design.md
+    §9 — 出典の検証可能性と可読性を両立させるための分離)。``int | None`` は
+    structured 生成で LLM が値を返さなくなるため使わない (2026-08-22 の確立解)。
+    """
 
     model_config = ConfigDict(frozen=True)
 
     text: str
     source_index: int = 0
+    paragraph: int = 1
 
 
 class EventNewsDraft(BaseModel):

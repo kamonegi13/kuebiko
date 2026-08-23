@@ -182,3 +182,13 @@ class TestResidualRisks:
         )
         r = verify_draft(draft, members)
         assert r.draft.facts[0].text == "GT42 は報告した。"
+
+    def test_paragraph_is_preserved_through_the_gate(self) -> None:
+        """段落番号は表示層が散文に組むための構造 — 関門で失わない。"""
+        members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
+        draft = EventNewsDraft(
+            headline="h", bluf="b",
+            facts=[FactItem(text="一つ目。", source_index=1, paragraph=2)],
+        )
+        r = verify_draft(draft, members)
+        assert r.draft.facts[0].paragraph == 2
