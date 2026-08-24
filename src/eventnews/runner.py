@@ -37,8 +37,7 @@ _log = get_logger(__name__)
 
 _IMPORTANCE_RANK = {"low": 0, "medium": 1, "high": 2}
 # v2 (2026-08-24): 「[N] のみが報じる」と「text に [N] を書かない」が矛盾していた
-# v3 (2026-08-24): 掲載場所/URL を事実として書かせない + 裏取り状態を単独行にしない
-_PROMPT_VERSION = "eventnews-v3"
+_PROMPT_VERSION = "eventnews-v2"
 
 
 @dataclass

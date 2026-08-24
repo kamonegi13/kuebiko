@@ -77,24 +77,6 @@ GROUP BY 1, 2
 """
 
 
-def _dedupe_by_url(candidates: Sequence[MemberArticle]) -> list[MemberArticle]:
-    """同一 URL の候補を 1 件に畳む (最も古い錨時刻を残す)。
-
-    ``DEDUP_ARTICLES`` は article_id の重複行を畳むが、**同一 URL に別の article_id が
-    付く**ことは畳めない。Grok は同じツイートが別レポートに現れると別 sub-article として
-    取り込まれるため (実測: 同一 URL で article_id が複数ある URL 228 件)、そのまま
-    候補にすると同じツイートが 1 つの事象へ 2 回入り、メンバー数と「統合した記事数」を
-    水増しする (実測: 47 アイテムで余分なメンバー 54 件)。
-    """
-    seen: dict[str, MemberArticle] = {}
-    for c in candidates:
-        key = c.url.strip()
-        current = seen.get(key)
-        if current is None or c.anchor_ts < current.anchor_ts:
-            seen[key] = c
-    return sorted(seen.values(), key=lambda m: m.anchor_ts)
-
-
 def _entity_counts(
     repo: RunHistoryRepository, window_start: datetime
 ) -> dict[tuple[str, str], int]:
@@ -181,7 +163,6 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     # メンバーが再候補化すると決定論の item_id が衝突する (遡及構築で実際に落ちた)。
     already = repo.existing_member_article_ids([c.article_id for c in candidates])
     candidates = [c for c in candidates if c.article_id not in already]
-    candidates = _dedupe_by_url(candidates)
 
     vectors = _load_vectors(repo, [c.article_id for c in candidates])
     candidates = [c for c in candidates if c.article_id in vectors]
