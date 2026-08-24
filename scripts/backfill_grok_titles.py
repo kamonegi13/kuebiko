@@ -55,6 +55,7 @@ async def _main() -> None:
     with repo._connect() as conn:  # noqa: SLF001
         rows = conn.execute(
             "SELECT article_id AS article_id, title AS title, COALESCE(summary,'') AS summary"
+            ", COALESCE(feed_title,'') AS feed_title"
             " FROM articles WHERE POSITION(? IN url) > 0 ORDER BY created_at DESC",
             ("//x.com/",),
         ).fetchall()
@@ -82,7 +83,8 @@ async def _main() -> None:
             skipped += 1
             continue
         # 本番と同じ: 原タイトル欄は sentinel、本文はそのまま
-        article = type("A", (), {"title": NO_TITLE_SENTINEL, "feed_title": "@x"})()
+        feed_title = str(r["feed_title"])
+        article = type("A", (), {"title": NO_TITLE_SENTINEL, "feed_title": feed_title})()
         try:
             out = await llm.generate_structured(
                 prompt=template.render(article=article, body=body[:4000]),
@@ -95,7 +97,10 @@ async def _main() -> None:
             continue
         new_title = (out.title_ja or "").strip()
         # 接地検証 (本番と同じ): 本文に無い固有名詞を含む見出しは採用しない
-        if not new_title or ungrounded_title_tokens(new_title, f"{r['title']} {body[:5000]}"):
+        # 接地材料に媒体名 (投稿者) を含める — 本番と同じ (X では組織名がアカウント名に
+        # しか現れないことがあり、正しい見出しが未接地として弾かれる)。
+        grounding = f"{feed_title} {r['title']} {body[:5000]}"
+        if not new_title or ungrounded_title_tokens(new_title, grounding):
             skipped += 1
             continue
         with repo._connect() as conn:  # noqa: SLF001

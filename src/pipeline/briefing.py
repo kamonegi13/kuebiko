@@ -744,8 +744,13 @@ def _build_briefing(
         if title_translated:
             from src.pipeline.summary import ungrounded_title_tokens
 
+            # 接地材料に **媒体名 (投稿者)** も含める。X の投稿では組織名が本文でなく
+            # アカウント名にしか現れないことがあり、「CISA、ICS の advisory 2 件を発行」
+            # のような正しい見出しが 'cisa' 未接地として弾かれていた (2026-08-24 実測)。
+            # 媒体名は取り込み時に確定している既知の事実なので、幻覚判定の材料になる。
             _bad_tokens = ungrounded_title_tokens(
-                title_translated, f"{article.title} {body_text[:5000]}"
+                title_translated,
+                f"{article.feed_title} {article.title} {body_text[:5000]}",
             )
             if _bad_tokens:
                 _log.warning(

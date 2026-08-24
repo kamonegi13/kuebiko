@@ -554,3 +554,22 @@ def test_title_less_sources_get_a_generated_headline() -> None:
     # 事実 (無い) と指示 (作れ) の両方を 1 文字列で伝える
     assert "タイトルなし" in NO_TITLE_SENTINEL
     assert "見出しを新たに作る" in NO_TITLE_SENTINEL
+
+
+def test_headline_grounding_counts_the_source_name() -> None:
+    """幻覚判定の材料に媒体名 (投稿者) を含めること。
+
+    2026-08-24 実測: X の投稿では組織名が本文ではなく **アカウント名にしか** 現れない
+    ことがあり、「CISA、ICS に関する 2 件の公開アドバイザリを発行」という正しい見出しが
+    'cisa' 未接地として弾かれ、投稿本文がタイトルのまま残っていた。
+    媒体名は取り込み時に確定している既知の事実なので、接地材料として扱える。
+    """
+    from src.pipeline.summary import ungrounded_title_tokens
+
+    body = "⚠️ We issued 2 new public ICS Advisories. These advisories provide info…"
+    title = "CISA、ICS に関する 2 件の新しい公開アドバイザリを発行"
+
+    # 本文だけでは 'cisa' が未接地に見える
+    assert ungrounded_title_tokens(title, body) == ["cisa"]
+    # 媒体名を材料に含めれば接地する
+    assert ungrounded_title_tokens(title, f"@CISACyber {body}") == []
