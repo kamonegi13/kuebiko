@@ -219,6 +219,8 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         body_source=_opt_text("body_source"),
         extraction_failure_reason=_opt_text("extraction_failure_reason"),
         article_type=_opt_text("article_type"),
+        # 発信者種別 (Grok/X の account_class)。裏取り内訳の表示と tier 判定に使う
+        account_class=_opt_text("account_class"),
         # body_source 状態機械化 (2026-07-29): 再取得試行回数 (欠損列耐性、DEFAULT 0)
         refetch_attempts=(int(row["refetch_attempts"] or 0) if "refetch_attempts" in keys else 0),
         created_at=_from_iso(row["created_at"]) or datetime.now(UTC),

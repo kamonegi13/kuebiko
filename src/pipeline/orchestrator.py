@@ -651,7 +651,16 @@ async def run_pipeline(
                     # 親を指していたため既読化・埋込がツイート URL で行われず、Grok は
                     # 意味的 dedup にも事象の群化にも一度も参加できていなかった。
                     tweet_url = msg.sources[0].url if msg.sources else ""
-                    grok_subarticles.append((sub_id, grok_subarticle_source(article, tweet_url)))
+                    grok_subarticles.append(
+                        (
+                            sub_id,
+                            grok_subarticle_source(
+                                article,
+                                tweet_url,
+                                account_class=getattr(msg, "account_class", "") or "",
+                            ),
+                        )
+                    )
                     briefings.append((sub_id, msg))
                     article_outcomes.append(
                         {

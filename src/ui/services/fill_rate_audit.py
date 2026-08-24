@@ -73,6 +73,16 @@ METRICS: tuple[FillMetric, ...] = (
         "a.socio_political_intent IS NOT NULL AND a.socio_political_intent NOT IN ('', 'unknown')",
         None,
     ),
+    # 発信者種別 (2026-08-24): Grok/X の account_class の充足率。裏取り内訳の
+    # 「著名研究者 / アグリゲータ」表示と tier 判定がこの列に依存する。空のまま
+    # 増えていくと X は一律 social に戻り、専門家の一次情報が埋もれる。
+    # 母集団は X 由来の記事のみ (非 X は定義上 NULL なので全件で測ると常に低く出る)。
+    FillMetric(
+        "account_class",
+        "発信者種別(X)",
+        "a.account_class IS NOT NULL AND a.account_class <> ''",
+        None,
+    ),
     # 主題アクター層 (2026-07-17): 取込時判定の実施率 (NULL = 判定が走っていない)。
     # 'none' (評価済み・主題なし) は正常値として被覆に数える — 監視対象は層の死活。
     FillMetric(

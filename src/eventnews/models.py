@@ -80,6 +80,8 @@ class MemberArticle:
     summary: str
     body: str  # 空可 (purge 済み。照合不能は「保持」)
     entities: frozenset[tuple[str, str]]
+    # 発信者種別 (Grok/X の account_class)。tier 判定に使う (空 = 未分類 / 非 X)
+    account_class: str = ""
 
 
 @dataclass(frozen=True)

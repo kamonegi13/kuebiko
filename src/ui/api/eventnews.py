@@ -96,6 +96,7 @@ def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str,
         art = articles.get(m.article_id)
         feed_title = art.feed_title if art else ""
         feed_url = getattr(art, "feed_url", "") or "" if art else ""
+        account_class = (getattr(art, "account_class", "") or "") if art else ""
         out.append(
             {
                 "index": i,
@@ -103,7 +104,11 @@ def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str,
                 "title": art.title if art else "",
                 "url": art.url if art else "",
                 "feed_title": feed_title,
-                "source_tier": classify_source_tier(feed_title or "", feed_url),
+                # tier は発信者種別を加味する (X の著名研究者と転載 bot を同じにしない)
+                "source_tier": classify_source_tier(
+                    feed_title or "", feed_url, account_class=account_class
+                ),
+                "account_class": account_class,
                 "published_at": art.published_at if art else None,
                 "summary": (art.summary if art else "") or "",
                 "joined_at": m.joined_at.isoformat(),
@@ -294,6 +299,28 @@ def _metadata_payload(repo: RunHistoryRepository, members: Sequence[Any]) -> dic
     }
 
 
+def _corroboration_payload(members: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """裏取りの内訳 = **媒体単位** の tier 分布。
+
+    「独立 3 媒体」だけでは、ニュース媒体 3 社の裏取りなのか X の転載 bot 3 件なのかが
+    区別できない。tier は発信者種別 (Grok の account_class) を加味して決まるので、
+    著名研究者の一次情報は 'research'、アグリゲータは 'social' として現れる。
+
+    記事数ではなく **媒体数** で数える (同一媒体の連投を裏取りに数えない、§3-3)。
+    """
+    by_media: dict[str, str] = {}
+    for m in members:
+        key = str(m.get("feed_title") or m.get("url") or m.get("article_id") or "")
+        if key:
+            by_media[key] = str(m.get("source_tier") or "unknown")
+    counts: dict[str, int] = {}
+    for tier in by_media.values():
+        counts[tier] = counts.get(tier, 0) + 1
+    return [
+        {"tier": t, "media": n} for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
 @eventnews_api.get("")
 def list_event_news(
     limit: int = 50, status: str | None = None, importance: str | None = None
@@ -366,7 +393,9 @@ def get_event_news(item_id: str) -> dict[str, Any]:
         "first_reported_at": record.state.first_reported_at.isoformat(),
         "last_reported_at": record.state.last_reported_at.isoformat(),
         "news": _version_payload(repo, item_id),
-        "members": _members_payload(repo, item_id),
+        "members": (members_payload := _members_payload(repo, item_id)),
+        # 裏取りの内訳 (媒体単位の tier 分布)。「独立 N 媒体」の中身を見せる
+        "corroboration": _corroboration_payload(members_payload),
         # 原記事から抽出済みのメタデータ (決定論の集約。生成本文とは別枠で出す)。
         # **members と同じ並び** を渡す — 自由記述の出典番号 [N] を一致させるため。
         "metadata": _metadata_payload(repo, repo.list_event_members(item_id)),

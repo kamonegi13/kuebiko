@@ -74,7 +74,7 @@ def compute_source_breakdown(members: Sequence[MemberArticle]) -> SourceBreakdow
         key = _source_key(m)
         if not key:
             continue
-        tier = classify_source_tier(m.feed_title, m.feed_url)
+        tier = classify_source_tier(m.feed_title, m.feed_url, account_class=m.account_class)
         if key not in tier_by_key or _BEST_TIER_RANK[tier] > _BEST_TIER_RANK[tier_by_key[key]]:
             tier_by_key[key] = tier
 

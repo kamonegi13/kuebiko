@@ -160,8 +160,19 @@ function EventJudgement({ d }: { d: EventNewsDetail }) {
         node: (
           <>
             独立 {d.independent_sources} 媒体
-            {d.state_media_count > 0 && ` ・国営 ${d.state_media_count}`}
-            {d.unclassified_sources > 0 && ` ・未分類 ${d.unclassified_sources}`}
+            {/* 内訳を出す。「3 媒体」がニュース 3 社なのか X の転載 3 件なのかで
+                意味が全く違うため、数だけを見せない (docs/event_news_design.md §3-3)。 */}
+            {d.corroboration.length > 0 && (
+              <span className="text-fg-subtle">
+                {" — "}
+                {d.corroboration
+                  .map((c) => `${vocabLabel("source_tier", c.tier) || c.tier} ${c.media}`)
+                  .join(" ・ ")}
+              </span>
+            )}
+            {d.state_media_count > 0 && (
+              <span className="text-critical"> ・国営 {d.state_media_count}</span>
+            )}
           </>
         ),
       },
@@ -192,7 +203,12 @@ function MembersCard({ d }: { d: EventNewsDetail }) {
               </a>
               <div className="text-[11px] text-fg-subtle flex flex-wrap items-center gap-x-2 mt-0.5">
                 <span>{m.feed_title}</span>
-                <span>{m.source_tier}</span>
+                <span>{vocabLabel("source_tier", m.source_tier) || m.source_tier}</span>
+                {m.account_class && (
+                  <span className="text-accent">
+                    {vocabLabel("account_class", m.account_class) || m.account_class}
+                  </span>
+                )}
                 {m.published_at && <span className="tnum">{formatJst(m.published_at)}</span>}
                 {m.contributed_new_facts && <span className="text-accent">新しい事実を追加</span>}
                 <a

@@ -126,6 +126,9 @@ class ArticleRecord(BaseModel):
     # 被害国スコープ (監査 2026-08-01 ⑥): ISO2 に解決できない "global"/"EU"/複数国
     # 列挙の受け皿 ("global" | "regional" | "multi" | None)。iso は単一国の意味を保つ。
     victim_country_scope: str | None = None
+    # 発信者種別 (Grok/X の account_class。空 = 未分類 / 非 X)。
+    # 「著名研究者の一次情報」と「リークサイト転載 bot」を裏取り表示で区別する。
+    account_class: str | None = None
     # ランサム識別フラグ (category と直交)。ransomware.live 由来 / 攻撃者が ransom_group で true。
     is_ransomware: bool = False
     # Phase Diamond-Axes: Diamond Model meta-feature 軸。

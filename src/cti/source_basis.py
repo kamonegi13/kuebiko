@@ -311,16 +311,40 @@ _TIER_LABEL: dict[SourceTier, str] = {
 }
 
 
-def classify_source_tier(feed_title: str, feed_url: str) -> SourceTier:
-    """source の信頼度ティアを feed_title / feed_url から決定的に分類 (briefing 評価層)。
+# 発信者種別 (Grok/X の account_class) → tier。X はホストで見ると一律 'social' だが、
+# **著名研究者の一次情報とリークサイト転載 bot を同じ扱いにしない**ための写像。
+# Grok が分類済みの値をそのまま通すだけで、こちらで推測はしない (2026-08-24)。
+ACCOUNT_CLASS_TIER: dict[str, SourceTier] = {
+    "vendor_official": "official",
+    "gov_official": "official",
+    # 当事者 = 被害組織自身の開示。一次情報なので official 扱い
+    "affected_party": "official",
+    "analyst_known": "research",
+    # 未確認研究者 / アグリゲータは social のまま (裏取りを過大に見せない)
+    "analyst_unknown": "social",
+    "aggregator": "social",
+}
 
-    判定順: UI 上書き (override) → host suffix → title keyword → news(default)。
+
+def classify_source_tier(feed_title: str, feed_url: str, *, account_class: str = "") -> SourceTier:
+    """source の信頼度ティアを決定的に分類する (briefing 評価層)。
+
+    判定順: UI 上書き (override) → **発信者種別** → host suffix → title keyword → news(default)。
+
+    ``account_class`` は Grok が分類した X 投稿者の種別。ホストで見ると x.com は一律
+    'social' になり、著名研究者の一次情報とリークサイト転載 bot が同じ扱いになる。
+    利用者の指摘 (2026-08-24)「X 上のセキュリティ専門家の投稿は価値がある」への対処で、
+    **Grok が既に判定した値をそのまま通す** (こちらで推測しない)。
     """
     p = load_reliability_patterns()
     # UI 上書きを最優先 (SubscriptionsPage から編集、feed_url or title で照合)
     override = p.overrides.get(feed_url) or p.overrides.get(feed_title)
     if override in ASSIGNABLE_TIERS:
         return override  # type: ignore[return-value]
+
+    mapped = ACCOUNT_CLASS_TIER.get(account_class.strip())
+    if mapped is not None:
+        return mapped
 
     title = feed_title.lower()
     try:

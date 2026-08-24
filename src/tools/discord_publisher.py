@@ -200,6 +200,10 @@ class BriefingMessage(BaseModel):
     iocs: list[str] = Field(default_factory=list)
     mitre_techniques: list[str] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
+    # 発信者種別 (Grok/X の account_class)。空 = 未分類 / 非 X。
+    # 「著名研究者の一次情報」と「リークサイト転載 bot」を下流で区別する唯一の手掛かりで、
+    # 従来は収集フィルタの通過判定にだけ使って捨てていた (2026-08-24)。
+    account_class: str = ""
     analyst_note: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     # multi-embed モード用 (空なら従来の単 embed 動作)
@@ -1006,13 +1010,8 @@ _CORROBORATION_LABEL: dict[str, str] = {
     "single_source": "単一ソース",
     "unverified": "未確認",
 }
-_ACCOUNT_CLASS_LABEL: dict[str, str] = {
-    "vendor_official": "ベンダー公式",
-    "analyst_known": "著名研究者",
-    "analyst_unknown": "未確認研究者",
-    "aggregator": "アグリゲータ",
-    "affected_party": "当事者",
-}
+# ラベルの SSoT は src/vocab/registry.py の "account_class" (UI へも同じ値が配信される)。
+# ここで複製すると表示が二重管理になり、片方だけ古くなる。
 
 
 def _format_signal_label(incident: BriefingIncident) -> str:
@@ -1029,7 +1028,10 @@ def _format_signal_label(incident: BriefingIncident) -> str:
 
 def _format_account_class(account_class: str) -> str:
     """account_class の英値を日本語ラベルに。未知値はそのまま表示。"""
-    return _ACCOUNT_CLASS_LABEL.get(account_class, account_class)
+    from src.vocab import get_vocabulary
+
+    vocab = get_vocabulary("account_class")
+    return vocab.label_for(account_class) if vocab else account_class
 
 
 # field で表現済みの「アクター:」「信頼性:」のみで構成された analyst_note を

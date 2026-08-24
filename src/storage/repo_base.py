@@ -285,6 +285,13 @@ class RunHistoryRepositoryBase:
         if "victim_country_scope" not in existing_articles:
             conn.execute("ALTER TABLE articles ADD COLUMN victim_country_scope TEXT")
 
+        # 発信者種別 (2026-08-24): Grok/X の account_class をそのまま保持する。
+        # 「著名研究者の一次情報」と「リークサイト転載 bot」を下流で区別するための唯一の
+        # 手掛かり。従来は収集フィルタの通過判定にだけ使って捨てていたため、事象ニュースの
+        # 裏取り表示で両者が同じ「1 媒体」に見えていた。
+        if "account_class" not in existing_articles:
+            conn.execute("ALTER TABLE articles ADD COLUMN account_class TEXT")
+
         # ランサム識別フラグ (category と直交する横断属性)。ransomware.live 由来 / 攻撃者が
         # ransom_group のニュースで true。地図の「ランサム/その他」分割フィルタに使う。
         # category を侵食しない (breach/malware のまま is_ransomware=true で無損失)。

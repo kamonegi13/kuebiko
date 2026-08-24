@@ -127,6 +127,33 @@ _REGISTRY: dict[str, Vocabulary] = {
         canonical=_CAPABILITY_VALUES,
     ),
     # ---- 運用・記述系 (日本語維持。docs §2.6.1) ----
+    # source の信頼度ティア。ラベルは src/cti/source_basis.py の _TIER_LABEL と
+    # 同義だが、UI へ配信するのはここ (frontend に翻訳表を持たせない)。
+    "source_tier": _vocab(
+        "source_tier",
+        {
+            "official": "一次情報",
+            "research": "研究",
+            "news": "ニュース",
+            "social": "SNS",
+            "state_media": "国営",
+            "unknown": "不明",
+        },
+    ),
+    # 発信者種別 (Grok/X の account_class)。ラベルの SSoT はここ 1 箇所
+    # (Discord embed も UI もこれを参照する)。2026-08-24: 従来は
+    # discord_publisher の私有 dict にしか無く、UI へ出す術が無かった。
+    "account_class": _vocab(
+        "account_class",
+        {
+            "vendor_official": "ベンダー公式",
+            "gov_official": "政府公式",
+            "analyst_known": "著名研究者",
+            "analyst_unknown": "未確認研究者",
+            "affected_party": "当事者",
+            "aggregator": "アグリゲータ",
+        },
+    ),
     "stance": _vocab(
         "stance",
         {

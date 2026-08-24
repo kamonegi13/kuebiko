@@ -42,10 +42,10 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    subject_actor_ids, subject_actor_source, subject_actor_confidence,
                    llm_primary_actor_raw, llm_primary_confidence,
                    subject_actor_rationale,
-                   article_type, created_at)
+                   article_type, account_class, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.run_id,
@@ -98,6 +98,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.llm_primary_confidence,
                     record.subject_actor_rationale,
                     record.article_type,
+                    record.account_class,
                     _to_iso(record.created_at),
                 ),
             )

@@ -692,6 +692,9 @@ CREATE INDEX IF NOT EXISTS idx_alias_usage_actor
 
 -- 被害国スコープ (監査 2026-08-01 ⑥): ISO2 に解決できない "global"/"EU"/複数国の受け皿。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS victim_country_scope TEXT;
+-- 発信者種別 (2026-08-24): Grok/X の account_class。著名研究者の一次情報と
+-- リークサイト転載 bot を下流で区別する唯一の手掛かり。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS account_class TEXT;
 
 -- 主題判定の根拠文 (2026-08-13 可視化): 特に「主題なし」の理由を記事詳細に表示する。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS subject_actor_rationale TEXT;

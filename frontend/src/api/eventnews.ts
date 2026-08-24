@@ -30,6 +30,8 @@ export interface EventNewsMember {
   url: string;
   feed_title: string;
   source_tier: string;
+  /** 発信者種別 (Grok/X の account_class)。空 = 未分類 / 非 X。 */
+  account_class: string;
   published_at: string | null;
   summary: string;
   joined_at: string;
@@ -96,6 +98,8 @@ export interface EventNewsDetail {
     history: { version: number; generated_at: string }[];
   } | null;
   members: EventNewsMember[];
+  /** 裏取りの内訳 = 媒体単位の tier 分布 (記事数ではない)。 */
+  corroboration: { tier: string; media: number }[];
   metadata: EventNewsMetadata;
   note: string;
 }

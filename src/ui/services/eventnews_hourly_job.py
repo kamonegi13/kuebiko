@@ -38,13 +38,14 @@ _TS = EVENT_TS_EXPR.format(a="a")
 
 _SQL_CANDIDATES = f"""
 SELECT a.article_id, {_TS} AS anchor_ts, x.importance, x.category, x.status,
-       x.title, x.url, x.feed_title, x.feed_url, x.summary, x.body
+       x.title, x.url, x.feed_title, x.feed_url, x.summary, x.body, x.account_class
 FROM {DEDUP_ARTICLES} a
 JOIN (
   SELECT article_id, MAX(importance) importance, MAX(category) category,
          MAX(status) status, MAX(title) title, MAX(url) url,
          MAX(COALESCE(feed_title,'')) feed_title, MAX(COALESCE(feed_url,'')) feed_url,
-         MAX(COALESCE(summary,'')) summary, MAX(COALESCE(body,'')) body
+         MAX(COALESCE(summary,'')) summary, MAX(COALESCE(body,'')) body,
+         MAX(COALESCE(account_class,'')) account_class
   FROM articles GROUP BY article_id
 ) x ON x.article_id = a.article_id
 WHERE a.created_at >= ? AND x.importance IN ('high','medium')
@@ -111,6 +112,8 @@ def _to_member(row: Mapping[str, object], entities: frozenset[tuple[str, str]]) 
     title, url = row["title"], row["url"]
     feed_title, feed_url = row["feed_title"], row["feed_url"]
     summary, body = row["summary"], row["body"]
+    # ⚠ sqlite3.Row に .get() は無い (PG は dict)。両 backend で使えるのは添字だけ。
+    account_class = str(row["account_class"] or "")
     anchor = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
     if anchor.tzinfo is None:
         anchor = anchor.replace(tzinfo=UTC)
@@ -128,6 +131,7 @@ def _to_member(row: Mapping[str, object], entities: frozenset[tuple[str, str]]) 
         summary=str(summary),
         body=str(body),
         entities=entities,
+        account_class=account_class,
     )
 
 
@@ -240,7 +244,8 @@ def _load_members(
             " COALESCE(a.feed_title,'') AS feed_title,"
             " COALESCE(a.feed_url,'') AS feed_url,"
             " COALESCE(a.summary,'') AS summary,"
-            " COALESCE(a.body,'') AS body"
+            " COALESCE(a.body,'') AS body,"
+            " COALESCE(a.account_class,'') AS account_class"
             " FROM articles a"
             f" WHERE a.article_id IN ({placeholders})",
             article_ids,

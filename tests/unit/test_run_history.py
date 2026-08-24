@@ -301,6 +301,8 @@ class TestArticleRecording:
             "event_date_basis": "reported",
             "compromise_date": "2026-05-01",
             "article_type": "advisory",
+            # 発信者種別 (Grok/X の account_class)。裏取り内訳の表示と tier 判定に使う
+            "account_class": "analyst_known",
         }
         model_fields = set(ArticleRecord.model_fields) - via_other_seams
         missing_sentinels = model_fields - set(sentinel)

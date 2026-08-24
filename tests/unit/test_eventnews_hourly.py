@@ -415,3 +415,51 @@ def test_grok_subarticle_carries_author_identity() -> None:
     # permalink でなければ親のまま (壊れた URL で source identity を捏造しない)
     assert grok_subarticle_source(parent, "https://grok.com/chat/abc") is parent
     assert grok_subarticle_source(parent, "") is parent
+
+
+def test_account_class_lifts_expert_posts_above_aggregators() -> None:
+    """X の発信者種別が tier に反映されること。
+
+    利用者の指摘 (2026-08-24)「X 上のセキュリティ専門家の投稿は価値がある」への対処。
+    ホストで見ると x.com は一律 'social' で、著名研究者の一次情報とリークサイト転載
+    bot が同じ扱いになっていた。Grok が既に判定した値をそのまま通す。
+    """
+    from src.cti.source_basis import classify_source_tier
+
+    # 発信者種別なし = 従来どおり host 判定 (SNS)
+    assert classify_source_tier("@FalconFeedsio", "https://x.com/FalconFeedsio") == "social"
+    # 著名研究者は research、公式は official、アグリゲータは social のまま
+    cases = {
+        "analyst_known": "research",
+        "vendor_official": "official",
+        "gov_official": "official",
+        "affected_party": "official",
+        "analyst_unknown": "social",
+        "aggregator": "social",
+    }
+    for cls, tier in cases.items():
+        got = classify_source_tier("@x", "https://x.com/x", account_class=cls)
+        assert got == tier, f"{cls} -> {got} (期待 {tier})"
+
+
+def test_account_class_labels_have_a_single_source_of_truth() -> None:
+    """発信者種別のラベルが語彙 SSoT から配信されること (生 enum を直出ししない)。"""
+    from src.vocab import get_vocabulary
+
+    vocab = get_vocabulary("account_class")
+    assert vocab is not None
+    assert vocab.label_for("analyst_known") == "著名研究者"
+    assert vocab.label_for("aggregator") == "アグリゲータ"
+    # tier 側も UI へ配信される (source_tier を生値で出さないため)
+    tiers = get_vocabulary("source_tier")
+    assert tiers is not None and tiers.label_for("research") == "研究"
+
+
+def test_account_class_is_registered_in_the_fill_rate_audit() -> None:
+    """充足率の週次監査に登録されていること (規約 3 点セット)。
+
+    空のまま増えていくと X は一律 social に戻り、専門家の一次情報が埋もれる。
+    """
+    from src.ui.services.fill_rate_audit import METRICS
+
+    assert any(m.key == "account_class" for m in METRICS)

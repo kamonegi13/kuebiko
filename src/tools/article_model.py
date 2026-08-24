@@ -25,6 +25,8 @@ class Article(BaseModel):
     published: datetime
     feed_title: str
     feed_url: str
+    # 発信者種別 (現状 Grok/X の account_class のみ。空 = 未分類)。author の限定子。
+    account_class: str = ""
     # Phase 3 (収集の深掘り): triage 前に先行抽出した本文 (trafilatura)。thin feed の
     # triage 精度向上のため、ここに本文があれば triage / 本処理がこれを優先利用する
     # (本処理での再抽出を回避)。通常の fetch 時点では None。

@@ -65,7 +65,7 @@ def grok_report_is_quiet(article: Article) -> bool:
 _X_PERMALINK = re.compile(r"^https?://(?:www\.)?x\.com/([A-Za-z0-9_]{1,15})/status/\d+")
 
 
-def grok_subarticle_source(parent: Article, tweet_url: str) -> Article:
+def grok_subarticle_source(parent: Article, tweet_url: str, *, account_class: str = "") -> Article:
     """per-tweet の source identity を持つ Article を返す (永続化・既読化用)。
 
     **なぜ要るか (2026-08-24)**: Grok は 1 ツイート = sub-article に展開されるが、
@@ -92,6 +92,7 @@ def grok_subarticle_source(parent: Article, tweet_url: str) -> Article:
             # 媒体 = 投稿者。feed_url が source key の第一候補 (Source Identity Decoupling)
             "feed_url": f"https://x.com/{handle}",
             "feed_title": f"@{handle}",
+            "account_class": account_class,
         }
     )
 
@@ -228,23 +229,27 @@ async def _grok_jsonl_to_briefings(
         grok_msg = tweet_to_briefing(record)
         if grok_msg is None:
             continue  # unknown theme は skip
+        # per-tweet の source identity は **enrichment の成否に関わらず** 必要なので
+        # try の外で組み立てる (失敗しても媒体 = 投稿者・発信者種別は確定している)。
+        handle = (
+            record.author_handle
+            if record.author_handle.startswith("@")
+            else f"@{record.author_handle}"
+        )
+        feed_title = f"{record.author_name} ({handle})" if record.author_name else handle
+        tweet_article = Article(
+            id=f"grok-x-{record.tweet_id}",
+            title=(record.text[:120] or feed_title),
+            url=record.url,
+            summary_html=record.text,
+            author=handle,
+            published=record.posted_at_dt or article.published,
+            feed_title=feed_title,
+            feed_url=record.url,
+            # 発信者種別を下流へ運ぶ (従来は収集フィルタの判定にだけ使って捨てていた)
+            account_class=record.account_class,
+        )
         try:
-            handle = (
-                record.author_handle
-                if record.author_handle.startswith("@")
-                else f"@{record.author_handle}"
-            )
-            feed_title = f"{record.author_name} ({handle})" if record.author_name else handle
-            tweet_article = Article(
-                id=f"grok-x-{record.tweet_id}",
-                title=(record.text[:120] or feed_title),
-                url=record.url,
-                summary_html=record.text,
-                author=handle,
-                published=record.posted_at_dt or article.published,
-                feed_title=feed_title,
-                feed_url=record.url,
-            )
             # summarizer に渡す本文 (引用 / 外部 URL でコンテキスト補強 → IOC 抽出にも寄与)
             body_parts = [record.text]
             if record.quoted_text:
@@ -263,7 +268,7 @@ async def _grok_jsonl_to_briefings(
                 brief_count_24h=brief_count_24h,
                 body_source="grok",
             )
-            out.append(_merge_grok_overlay(enriched, grok_msg))
+            message = _merge_grok_overlay(enriched, grok_msg)
             enriched_n += 1
         except Exception as e:  # noqa: BLE001
             _log.warning(
@@ -272,7 +277,9 @@ async def _grok_jsonl_to_briefings(
                 error_type=type(e).__name__,
                 error=str(e)[:200],
             )
-            out.append(grok_msg)  # 機械変換版で graceful degradation
+            message = grok_msg  # 機械変換版で graceful degradation
+        # 発信者種別は enrichment の成否に依らず確定しているので必ず載せる。
+        out.append(message.model_copy(update={"account_class": record.account_class}))
 
     _log.info(
         "grok_jsonl_briefings_generated",

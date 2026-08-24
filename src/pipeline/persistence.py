@@ -208,6 +208,8 @@ def _persist_article_outcomes(
                     feed_title=article.feed_title,
                     # Source Identity Decoupling: 安定 source キーを永続化 (取り込み側は既に設定済)
                     feed_url=article.feed_url,
+                    # 発信者種別 (Grok/X)。裏取り内訳の表示と tier 判定に使う
+                    account_class=(getattr(article, "account_class", "") or None),
                     importance=importance,
                     category=category,
                     status=outcome["status"],  # type: ignore[arg-type]
