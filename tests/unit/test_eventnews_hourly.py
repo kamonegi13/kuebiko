@@ -384,3 +384,34 @@ def test_existing_members_are_excluded_from_candidates(tmp_path: object) -> None
 
     assert got == {"a-1"}
     assert repo.existing_member_article_ids([]) == set()
+
+
+def test_grok_subarticle_carries_author_identity() -> None:
+    """Grok の per-tweet 記事が **投稿者** を媒体として持つこと。
+
+    2026-08-24: sub-article が親 Article を指していたため、既読化・埋込が親レポートの
+    URL で行われ、ツイート URL は dedup_seen_urls に 1 件も入らなかった
+    (実測 x.com: articles 906 / dedup 0)。feed_title も全件 'Grok' で、**何人が
+    報じても独立 1 媒体** として数えられていた (実測 102 アカウント)。
+    """
+    from src.pipeline.grok_convert import grok_subarticle_source
+    from src.tools.article_model import Article
+
+    parent = Article(
+        id="grok-1",
+        title="Grok レポート",
+        url="https://grok.com/chat/abc",
+        summary_html="",
+        published=datetime(2026, 8, 24, tzinfo=UTC),
+        feed_title="Grok",
+        feed_url="https://grok.com/",
+    )
+
+    got = grok_subarticle_source(parent, "https://x.com/FalconFeedsio/status/2091643392816214268")
+
+    assert got.url == "https://x.com/FalconFeedsio/status/2091643392816214268"
+    assert got.feed_url == "https://x.com/FalconFeedsio"
+    assert got.feed_title == "@FalconFeedsio"
+    # permalink でなければ親のまま (壊れた URL で source identity を捏造しない)
+    assert grok_subarticle_source(parent, "https://grok.com/chat/abc") is parent
+    assert grok_subarticle_source(parent, "") is parent

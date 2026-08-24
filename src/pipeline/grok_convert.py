@@ -61,6 +61,41 @@ def grok_report_is_quiet(article: Article) -> bool:
     return result.heartbeat_count > 0
 
 
+# X の permalink: https://x.com/<handle>/status/<id>
+_X_PERMALINK = re.compile(r"^https?://(?:www\.)?x\.com/([A-Za-z0-9_]{1,15})/status/\d+")
+
+
+def grok_subarticle_source(parent: Article, tweet_url: str) -> Article:
+    """per-tweet の source identity を持つ Article を返す (永続化・既読化用)。
+
+    **なぜ要るか (2026-08-24)**: Grok は 1 ツイート = sub-article に展開されるが、
+    orchestrator の ``articles_by_id`` は sub-id → **親 Article** を指していた。
+    その結果:
+
+    - 既読化・埋込が親レポートの URL で行われ、ツイート URL は ``dedup_seen_urls`` に
+      1 件も入らない (実測 x.com: articles 906 / dedup 0) → **意味的 dedup にも
+      事象の群化にも一度も参加できない**
+    - ``feed_title`` が全件 'Grok' / ``feed_url`` が全件 'https://grok.com/' となり、
+      **何人が報じても独立 1 媒体**として数えられる (実測 102 アカウント)
+
+    ここでは permalink から投稿者を取り、投稿者を媒体 (source key) にする。
+    tier は ``classify_source_tier`` が x.com を 'social' に分類するため、
+    「独立 3 媒体」がニュース媒体 3 社の裏取りと混同されることはない。
+    """
+    m = _X_PERMALINK.match(tweet_url.strip())
+    if not m:
+        return parent
+    handle = m.group(1)
+    return parent.model_copy(
+        update={
+            "url": tweet_url.strip(),
+            # 媒体 = 投稿者。feed_url が source key の第一候補 (Source Identity Decoupling)
+            "feed_url": f"https://x.com/{handle}",
+            "feed_title": f"@{handle}",
+        }
+    )
+
+
 async def _grok_article_to_briefings(
     article: Article,
     *,

@@ -38,6 +38,7 @@ from src.pipeline.grok_convert import (
     _grok_article_to_briefings,
     _grok_subarticle_id,
     _is_grok_article,
+    grok_subarticle_source,
 )
 from src.pipeline.persistence import (
     _persist_article_outcomes,
@@ -646,7 +647,11 @@ async def run_pipeline(
                     # 「記事不明」で skip → Grok tweet が articles テーブル
                     # (web UI/検索/entity 層) から 6/17 以降消えていた。
                     # (統合側で grok_subarticles / articles_by_id_local 双方へ入れる)
-                    grok_subarticles.append((sub_id, article))
+                    # 2026-08-24: 親ではなく **per-tweet の source identity** を登録する。
+                    # 親を指していたため既読化・埋込がツイート URL で行われず、Grok は
+                    # 意味的 dedup にも事象の群化にも一度も参加できていなかった。
+                    tweet_url = msg.sources[0].url if msg.sources else ""
+                    grok_subarticles.append((sub_id, grok_subarticle_source(article, tweet_url)))
                     briefings.append((sub_id, msg))
                     article_outcomes.append(
                         {
