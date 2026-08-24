@@ -122,12 +122,16 @@ async def run_embedding_backfill() -> dict[str, object]:
         embedded=embedded,
         failed=failed,
         skipped_empty=skipped_empty,
+        skipped_alias=skipped_alias,
         elapsed_seconds=elapsed,
     )
     return {
         "embedded": embedded,
         "failed": failed,
         "skipped_empty": skipped_empty,
+        # 正規化後 hash が衝突して埋込を持てない記事 (被害者レコードの #fragment 等)。
+        # 黙って落とさず件数を出す — 群化に参加できない層の大きさが見えなくなるため。
+        "skipped_alias": skipped_alias,
         "remaining_hint": len(rows) == _MAX_PER_RUN,
         "elapsed_seconds": elapsed,
     }
