@@ -384,3 +384,28 @@ def test_existing_members_are_excluded_from_candidates(tmp_path: object) -> None
 
     assert got == {"a-1"}
     assert repo.existing_member_article_ids([]) == set()
+
+
+def test_candidates_are_deduped_by_url() -> None:
+    """同一 URL の候補を 1 件に畳むこと。
+
+    ``DEDUP_ARTICLES`` は article_id の重複行を畳むが、**同一 URL に別の article_id が
+    付く**ことは畳めない。Grok は同じツイートが別レポートに現れると別 sub-article として
+    取り込まれる (実測: 同一 URL で article_id が複数ある URL 228 件)。畳まないと同じ
+    ツイートが 1 つの事象へ 2 回入り、「統合した記事数」を水増しする。
+    """
+    from src.ui.services.eventnews_hourly_job import _dedupe_by_url
+
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    a = _member("a-1", hours_ago=0)
+    b = _member("a-2", hours_ago=0)
+    older = MemberArticle(**{**a.__dict__, "url": "https://x.example/1", "anchor_ts": base})
+    newer = MemberArticle(
+        **{**b.__dict__, "url": "https://x.example/1", "anchor_ts": base + timedelta(hours=2)}
+    )
+    other = MemberArticle(**{**b.__dict__, "url": "https://x.example/2", "anchor_ts": base})
+
+    got = _dedupe_by_url([newer, older, other])
+
+    # 同一 URL は 1 件、残るのは古い方 (初報を錨にする)
+    assert [m.article_id for m in got] == ["a-1", "a-2"]
