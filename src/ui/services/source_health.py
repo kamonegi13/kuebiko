@@ -124,6 +124,10 @@ _PRODUCT_FRESHNESS_LIMITS: tuple[tuple[str, str, str, int], ...] = (
     ("recap", "weekly_recaps", "", 9),
     ("spotlight", "pir_spotlight", "", 9),
     ("月次総括", "status_synthesis", "WHERE period_type='monthly'", 35),
+    # 事象ニュースは毎時生成。2026-08-24: 結合信号 entity の取得誤りで **生成が
+    # 一度も起きないまま毎時 succeeded を返し続け**、利用者の指摘まで気付けなかった。
+    # 実測の期待収量は 3-4 件/日なので、2 日ゼロは異常。
+    ("事象ニュース", "event_item_versions", "", 2),
 )
 
 

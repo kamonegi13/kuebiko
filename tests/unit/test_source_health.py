@@ -203,3 +203,17 @@ class TestHeartbeatNewLines:
             proposals_line="⚠️アクター提案 pending 33 件 (最古 23d、要レビュー)",
         )
         assert importance == "medium"
+
+
+def test_event_news_is_covered_by_the_freshness_deadman() -> None:
+    """事象ニュースが製品鮮度 dead-man の対象であること。
+
+    2026-08-24: 結合信号 entity の取得誤りで生成が一度も起きないまま毎時
+    succeeded を返し続け、**利用者の指摘が唯一の検知手段**になっていた。
+    「毎回成功」は「機能している」ではない — 出力そのものを見張る必要がある。
+    """
+    from src.ui.services.source_health import _PRODUCT_FRESHNESS_LIMITS
+
+    entry = next((e for e in _PRODUCT_FRESHNESS_LIMITS if e[1] == "event_item_versions"), None)
+    assert entry is not None
+    assert entry[3] <= 2  # 期待収量 3-4 件/日 に対し、2 日ゼロは異常
