@@ -389,6 +389,29 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="embedding-backfill",
+            kind="bespoke",
+            title="埋込の取りこぼし補完",
+            description=(
+                "埋込を持たない記事を毎時埋める。埋込は意味的 dedup の判定時にしか生成されず、"
+                "保存は投稿確定の経路でしか行われないため、そこを通らない記事は埋込を永久に"
+                "持たない。**Grok (x.com) は 906 記事すべてが該当** し、事象ニュースの群化に"
+                "一度も参加できていなかった (既読化が親レポート URL で行われ、ツイート URL が"
+                "dedup_seen_urls に入らないため、既存 backfill script も構造的に拾えない)。"
+                "事象ニュース生成 (:20) の前に走らせる。"
+            ),
+            disable_impact=(
+                "Grok の投稿と、投稿経路を通らない記事が事象ニュースに合流できなくなる "
+                "(単独記事としてしか出ない)。意味的 dedup の判定材料も欠ける。"
+            ),
+            protection="important",
+            schedule_type="interval",
+            interval_minutes=60,
+            # 毎時 :10 — 収集 (:00) の後、事象ニュース (:20) の前
+            offset_minutes=10,
+            upkeep=True,
+        ),
+        JobDef(
             id="eventnews-hourly",
             kind="bespoke",
             title="事象ニュース 毎時更新",

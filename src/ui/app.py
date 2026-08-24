@@ -259,6 +259,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
     from src.ui.services.body_refetch_backlog import run_body_refetch_backlog
     from src.ui.services.body_translate_backlog import run_body_translate_backlog
     from src.ui.services.cvss_refresh import run_cvss_refresh
+    from src.ui.services.embedding_backfill_job import run_embedding_backfill
     from src.ui.services.eventnews_hourly_job import run_eventnews_hourly
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
     from src.ui.services.maintenance import run_daily_maintenance
@@ -277,6 +278,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "pir-entity-rebuild": _pir_rebuild,
         "pir-judge-hourly": _pir_judge_hourly,
         "ledger-deep-review": _ledger_deep_review,
+        "embedding-backfill": run_embedding_backfill,
         "eventnews-hourly": run_eventnews_hourly,
         "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,

@@ -418,6 +418,54 @@ class DedupMixin(RunHistoryRepositoryBase):
                 ).fetchone()
         return int(row["c"])
 
+    def list_articles_missing_embedding(
+        self,
+        *,
+        model: str,
+        limit: int = 500,
+        since_iso: str | None = None,
+    ) -> list[tuple[str, str, str, datetime | None]]:
+        """embedding 未生成の **記事** を新しい順に (article_id, url, title, created_at) で返す。
+
+        ``list_urls_missing_embedding`` との違いは起点。あちらは ``dedup_seen_urls`` を
+        起点にするため、**既読化されていない記事は永久に拾えない**。Grok は 1 ツイート =
+        sub-article に展開されるが、既読化は親レポートの URL で行われるため、ツイート URL は
+        dedup_seen_urls に 1 件も入らない (実測 x.com: articles 906 / dedup 0)。結果として
+        Grok の記事は意味的 dedup にも事象の群化にも一度も参加できていなかった。
+
+        ここでは articles を起点にし、呼び手が必要なら ``mark_url_seen`` を先に打つ
+        (FK は url_hash の存在で担保されるため)。``created_at`` は embedding と
+        dedup_seen_urls の時刻に刻む — now() にすると過去記事が一斉に「最近」化し、
+        dedup 窓が歴史全体を見て過剰 dedup する。
+        """
+        params: list[object] = [model]
+        sql = (
+            "SELECT a.article_id AS article_id, a.url AS url,"
+            " COALESCE(a.title, '') AS title, a.created_at AS created_at"
+            " FROM articles a"
+            " LEFT JOIN article_embeddings e ON e.url = a.url AND e.model = ?"
+            " WHERE e.url IS NULL AND a.url <> ''"
+        )
+        if since_iso:
+            sql += " AND a.created_at >= ?"
+            params.append(since_iso)
+        sql += " ORDER BY a.created_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        out: list[tuple[str, str, str, datetime | None]] = []
+        seen_urls: set[str] = set()
+        for r in rows:
+            url = str(r["url"])
+            # 同一 URL の複数記事行 (article_id が複数ありうる) は 1 回だけ embed する
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            ts = r["created_at"]
+            when = ts if isinstance(ts, datetime) else (_from_iso(str(ts)) if ts else None)
+            out.append((str(r["article_id"]), url, str(r["title"]), when))
+        return out
+
     def list_urls_missing_embedding(
         self,
         *,

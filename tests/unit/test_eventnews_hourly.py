@@ -253,3 +253,52 @@ def test_frequency_window_is_independent_of_the_join_window() -> None:
 
     assert models.ENTITY_FREQ_WINDOW_HOURS == models.DORMANT_AFTER_DAYS * 24
     assert models.ENTITY_FREQ_WINDOW_HOURS != models.WINDOW_HOURS
+
+
+# --- 埋込の取りこぼし補完 --------------------------------------------------
+#
+# 2026-08-24: 埋込は「意味的 dedup の判定時に生成し、投稿確定の経路で保存」する
+# 設計だったため、その経路を通らない記事は埋込を永久に持たなかった。Grok は
+# 1 ツイート = sub-article に展開されるが既読化は親レポート URL で行われるため、
+# **articles に 906 件ある x.com の URL が dedup_seen_urls に 1 件も無い**。
+# 既存 backfill script は dedup_seen_urls を起点にするので構造的に拾えない。
+
+
+def test_missing_embedding_query_starts_from_articles(tmp_path: object) -> None:
+    """既読化されていない記事も埋込対象として拾えること。"""
+    # Arrange — dedup_seen_urls に無い記事 (Grok のツイートと同じ状況)
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "emb.db")  # type: ignore[operator]
+    now = datetime.now(UTC).isoformat()
+    with repo._connect() as conn:  # noqa: SLF001
+        _seed_run(conn)
+        _seed_article(conn, "a-tweet", created_at=now, published=now)
+
+    # Act
+    got = repo.list_articles_missing_embedding(model="m", limit=10)
+
+    # Assert
+    assert [r[0] for r in got] == ["a-tweet"]
+    # 既存の dedup_seen_urls 起点のクエリでは拾えない (これが構造的な盲点だった)
+    assert repo.list_urls_missing_embedding(model="m", limit=10) == []
+
+
+def test_missing_embedding_query_skips_already_embedded(tmp_path: object) -> None:
+    """同一 model の埋込が既にある記事は対象外。"""
+    from src.storage.run_history import RunHistoryRepository
+    from src.tools.url_normalizer import url_hash
+
+    repo = RunHistoryRepository(db_path=tmp_path / "emb2.db")  # type: ignore[operator]
+    now = datetime.now(UTC).isoformat()
+    with repo._connect() as conn:  # noqa: SLF001
+        _seed_run(conn)
+        _seed_article(conn, "a-1", created_at=now, published=now)
+    url = "https://kuebiko.example/a-1"
+    h = url_hash(url)
+    repo.mark_url_seen(url_hash=h, url=url, article_id="a-1", title="t")
+    repo.add_article_embedding(url_hash=h, url=url, vector=[0.1, 0.2], model="m", title="t")
+
+    assert repo.list_articles_missing_embedding(model="m", limit=10) == []
+    # 別 model なら未生成として拾う
+    assert [r[0] for r in repo.list_articles_missing_embedding(model="other", limit=10)] == ["a-1"]
