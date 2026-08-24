@@ -30,6 +30,11 @@ export interface SubjectActorView {
   articles?: number;
 }
 
+// 常時表示する entity 種別。CTI の読み手が最初に要る識別子は「誰が (主題アクター)」
+// 「何の脆弱性か (CVE)」「何のマルウェアか」。TTP・IOC・製品・国・PIR 等は件数が
+// 多く縦に長くなるため **必要なときに開く** (カードが長いと本文へ辿り着けない)。
+const PRIMARY_ENTITY_TYPES: readonly string[] = ["cve", "malware_family"];
+
 // entity chip → 記事サーフェス (/app/news) の逆引き (article_entities の type と同一)。
 export function pivotHref(type: string, value: string): string {
   return `/app/news?${new URLSearchParams({ pivot_type: type, pivot_value: value })}`;
@@ -135,6 +140,17 @@ export function EntitySection({
   note?: string;
 }) {
   const subjectIds = new Set(subjectActors.map((s) => s.id));
+  // 言及 actor は主題を除くと空になりうる。空の群は種別ごと出さない。
+  const visible = groups.filter(
+    (g) =>
+      (g.type === "actor" ? g.values.filter((v) => !subjectIds.has(v.value)) : g.values).length > 0,
+  );
+  const primary = visible.filter((g) => PRIMARY_ENTITY_TYPES.includes(g.type));
+  const rest = visible.filter((g) => !PRIMARY_ENTITY_TYPES.includes(g.type));
+  const restCount = rest.reduce((n, g) => n + g.values.length, 0);
+  const renderGroup = (g: EntityGroupView) => (
+    <GroupChips key={g.type} g={g} subjectIds={subjectIds} />
+  );
 
   return (
     <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3">
@@ -177,19 +193,37 @@ export function EntitySection({
         )}
       </div>
 
-      {groups.length === 0 && (
+      {visible.length === 0 && (
         <div className="text-fg-subtle text-sm">抽出されたエンティティはありません</div>
       )}
-      {groups.map((g) => {
-        // actor (言及) 群は主題 id を除外し「言及された組織・関係者」として表示。
-        // subject は上の主題アクター欄で既出のため二重表示しない。
-        const isMentionActor = g.type === "actor";
-        const values = isMentionActor ? g.values.filter((v) => !subjectIds.has(v.value)) : g.values;
-        if (values.length === 0) return null;
-        const groupLabel = isMentionActor
-          ? "言及された組織・関係者"
-          : vocabLabel("entity_type", g.type);
-        return (
+      {primary.map(renderGroup)}
+      {rest.length > 0 && (
+        <details className="group">
+          <summary className="text-fg-subtle text-xs cursor-pointer select-none hover:text-accent">
+            <span className="inline-block transition-transform group-open:rotate-90">▸</span>{" "}
+            <span className="group-open:hidden">
+              その他のエンティティを表示 ({rest.length} 種別・{restCount} 件)
+            </span>
+            <span className="hidden group-open:inline">その他のエンティティを閉じる</span>
+          </summary>
+          <div className="space-y-3 mt-2">{rest.map(renderGroup)}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+
+// 1 種別ぶんの chip 群。常時表示ぶんと折りたたみぶんで **同じ描画** を使う。
+function GroupChips({ g, subjectIds }: { g: EntityGroupView; subjectIds: Set<string> }) {
+  // actor (言及) 群は主題 id を除外し「言及された組織・関係者」として表示。
+  // subject は上の主題アクター欄で既出のため二重表示しない。
+  const isMentionActor = g.type === "actor";
+  const values = isMentionActor ? g.values.filter((v) => !subjectIds.has(v.value)) : g.values;
+  if (values.length === 0) return null;
+  const groupLabel = isMentionActor ? "言及された組織・関係者" : vocabLabel("entity_type", g.type);
+  return (
+
           <div key={g.type}>
             <div className="text-fg-subtle text-xs mb-1">
               {groupLabel}
@@ -240,8 +274,5 @@ export function EntitySection({
               );
             })()}
           </div>
-        );
-      })}
-    </div>
   );
 }

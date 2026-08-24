@@ -79,6 +79,15 @@ export function JudgementCard({ j, title = "Diamond / 判定" }: { j: Judgement;
     (j.extraRows?.length ?? 0) > 0;
   if (!hasAny) return null;
 
+  // 常時表示は「意図 / 被害 / 呼び手固有の行 (裏取り等)」だけ。読み手が最初に要る
+  // のはこの 3 つで、根拠・技術面・対処・所見・論調・配信判定・PMESII は
+  // **必要なときに開く**。カードが縦に長いと本文へ辿り着く前に画面を使い切る。
+  const detailCount =
+    (j.texts?.length ?? 0) +
+    (j.stance?.length ? 1 : 0) +
+    (j.delivery != null ? 1 : 0) +
+    (j.pmesii?.length ? 1 : 0);
+
   return (
     <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-2">
       <div className="text-fg-muted text-xs uppercase">{title}</div>
@@ -100,52 +109,63 @@ export function JudgementCard({ j, title = "Diamond / 判定" }: { j: Judgement;
             ))}
           </Row>
         )}
-        {(j.texts ?? []).map((t) => (
-          <Row key={t.label} label={t.label}>
-            {t.items.map((it, i) => (
-              <span key={i} className="block">
-                {it.text}
-                {it.sourceIndex != null && (
-                  <span className="align-super text-[10px] font-mono text-fg-subtle ml-0.5">
-                    [{it.sourceIndex}]
-                  </span>
-                )}
-              </span>
-            ))}
-          </Row>
-        ))}
-        {j.stance && j.stance.length > 0 && (
-          <Row label="論調">
-            <Values values={j.stance} />
-          </Row>
-        )}
         {victimRow.length > 0 && (
           <Row label="被害">
             <Values values={victimRow} />
           </Row>
         )}
-        {j.delivery != null && <Row label="配信判定">{j.delivery}</Row>}
         {(j.extraRows ?? []).map((r) => (
           <Row key={r.label} label={r.label}>
             {r.node}
           </Row>
         ))}
       </dl>
-      {j.pmesii && j.pmesii.length > 0 && (
-        <div className="pt-1">
-          <div className="text-fg-subtle text-xs mb-1">PMESII-PT</div>
-          <div className="flex flex-wrap gap-1.5">
-            {j.pmesii.map((p) => (
-              <span
-                key={p.label}
-                className="bg-surface-2 border border-border-default rounded px-2 py-0.5 text-xs text-fg-muted"
-              >
-                {p.label}
-                {p.articles != null && <span className="tnum ml-1 text-fg-subtle">{p.articles}</span>}
-              </span>
+      {detailCount > 0 && (
+        <details className="group">
+          <summary className="text-fg-subtle text-xs cursor-pointer select-none hover:text-accent">
+            <span className="inline-block transition-transform group-open:rotate-90">▸</span>{" "}
+            <span className="group-open:hidden">詳細を表示 ({detailCount})</span>
+            <span className="hidden group-open:inline">詳細を閉じる</span>
+          </summary>
+          <dl className="text-sm space-y-1.5 m-0 mt-2">
+            {(j.texts ?? []).map((t) => (
+              <Row key={t.label} label={t.label}>
+                {t.items.map((it, i) => (
+                  <span key={i} className="block">
+                    {it.text}
+                    {it.sourceIndex != null && (
+                      <span className="align-super text-[10px] font-mono text-fg-subtle ml-0.5">
+                        [{it.sourceIndex}]
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </Row>
             ))}
-          </div>
-        </div>
+            {j.stance && j.stance.length > 0 && (
+              <Row label="論調">
+                <Values values={j.stance} />
+              </Row>
+            )}
+            {j.delivery != null && <Row label="配信判定">{j.delivery}</Row>}
+          </dl>
+          {j.pmesii && j.pmesii.length > 0 && (
+            <div className="pt-2">
+              <div className="text-fg-subtle text-xs mb-1">PMESII-PT</div>
+              <div className="flex flex-wrap gap-1.5">
+                {j.pmesii.map((p) => (
+                  <span
+                    key={p.label}
+                    className="bg-surface-2 border border-border-default rounded px-2 py-0.5 text-xs text-fg-muted"
+                  >
+                    {p.label}
+                    {p.articles != null && <span className="tnum ml-1 text-fg-subtle">{p.articles}</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </details>
       )}
     </div>
   );
