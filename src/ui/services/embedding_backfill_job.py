@@ -78,8 +78,16 @@ async def run_embedding_backfill() -> dict[str, object]:
         query_prefix=config.ollama_embed_query_prefix,
     )
 
-    embedded = failed = skipped_empty = 0
+    # 正規化後 hash が既に埋込を持つ記事は対象から外す。fragment (#...) を落とす
+    # 正規化により複数記事が同一 hash に潰れることがあり、URL 一致では永久に
+    # 見つからないため、除外しないと毎回同じ記事を埋め直し続ける。
+    taken = repo.existing_embedding_url_hashes([url_hash(u) for _a, u, _t, _w in rows], model=model)
+
+    embedded = failed = skipped_empty = skipped_alias = 0
     for article_id, url, title, when in rows:
+        if url_hash(url) in taken:
+            skipped_alias += 1
+            continue
         record = repo.get_article(article_id)
         body = repo.get_article_body(article_id)
         text = _document_text(title, record.summary if record else None, body)
@@ -106,6 +114,7 @@ async def run_embedding_backfill() -> dict[str, object]:
             when=when,
         )
         embedded += 1
+        taken.add(h)
 
     elapsed = round(time.monotonic() - started, 1)
     _log.info(

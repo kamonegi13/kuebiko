@@ -302,3 +302,53 @@ def test_missing_embedding_query_skips_already_embedded(tmp_path: object) -> Non
     assert repo.list_articles_missing_embedding(model="m", limit=10) == []
     # 別 model なら未生成として拾う
     assert [r[0] for r in repo.list_articles_missing_embedding(model="other", limit=10)] == ["a-1"]
+
+
+def test_backfill_does_not_loop_on_hash_collisions(tmp_path: object) -> None:
+    """正規化後 hash が衝突する記事を毎回埋め直さないこと。
+
+    2026-08-24 に実際に無限ループした: ``url_hash`` は fragment (#...) を落とすため、
+    ransomware.live の被害者レコード (``/about#<id>`` で 1 件ずつ区別) が同一 hash に
+    潰れる。埋込は url_hash が主キーで 1 件しか持てず、URL 一致では永久に見つからない。
+    """
+    # Arrange — fragment だけが違う 2 記事 (正規化後は同一 hash)
+    from src.storage.run_history import RunHistoryRepository
+    from src.tools.url_normalizer import url_hash
+
+    repo = RunHistoryRepository(db_path=tmp_path / "alias.db")  # type: ignore[operator]
+    now = datetime.now(UTC).isoformat()
+    urls = ["https://kuebiko.example/about#aaa", "https://kuebiko.example/about#bbb"]
+    with repo._connect() as conn:  # noqa: SLF001
+        _seed_run(conn)
+        for i, u in enumerate(urls):
+            conn.execute(
+                "INSERT INTO articles (run_id, article_id, url, title, summary, body, importance,"
+                " category, status, feed_title, feed_url, published_at, created_at)"
+                " VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    f"a-{i}",
+                    u,
+                    f"t{i}",
+                    "s",
+                    "b",
+                    "high",
+                    "vuln",
+                    "posted",
+                    "F",
+                    "https://kuebiko.example/feed",
+                    now,
+                    now,
+                ),
+            )
+    h = url_hash(urls[0])
+    assert h == url_hash(urls[1])
+    repo.mark_url_seen(url_hash=h, url=urls[0], article_id="a-0", title="t0")
+    repo.add_article_embedding(url_hash=h, url=urls[0], vector=[0.1], model="m", title="t0")
+
+    # Act — 2 件目は URL 一致では未生成に見えるが、hash は既に埋まっている
+    rows = repo.list_articles_missing_embedding(model="m", limit=10)
+    taken = repo.existing_embedding_url_hashes([url_hash(u) for _a, u, _t, _w in rows], model="m")
+
+    # Assert
+    assert [r[0] for r in rows] == ["a-1"]
+    assert url_hash(urls[1]) in taken

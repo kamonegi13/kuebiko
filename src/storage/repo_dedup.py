@@ -418,6 +418,26 @@ class DedupMixin(RunHistoryRepositoryBase):
                 ).fetchone()
         return int(row["c"])
 
+    def existing_embedding_url_hashes(self, url_hashes: Sequence[str], *, model: str) -> set[str]:
+        """指定 url_hash のうち、既に埋込を持つものを返す。
+
+        ``url_hash`` は正規化後の値で **fragment (#...) を落とす**。ransomware.live の
+        被害者レコードは ``/about#<id>`` で 1 件ずつを区別するため、複数記事が同一
+        url_hash に潰れる。埋込は url_hash が主キーなので 1 件しか持てず、URL 一致
+        (``e.url = a.url``) では永久に見つからない → 毎回「未生成」と判定されて
+        埋め直しが止まらなくなる (2026-08-24 に実際に無限ループした)。
+        """
+        if not url_hashes:
+            return set()
+        placeholders = ",".join("?" for _ in url_hashes)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT url_hash AS url_hash FROM article_embeddings"  # noqa: S608 — placeholders のみ
+                f" WHERE model = ? AND url_hash IN ({placeholders})",
+                [model, *url_hashes],
+            ).fetchall()
+        return {str(r["url_hash"]) for r in rows}
+
     def list_articles_missing_embedding(
         self,
         *,
