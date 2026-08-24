@@ -213,8 +213,21 @@ export function newEmptyPir(id = ""): Pir {
 
 // ===== API =====
 
+/** 絞り込み dropdown 用の最小表現。KPI を含まない = 記事を走査しない。 */
+export interface PirOption {
+  id: string;
+  title: string;
+  enabled: boolean;
+}
+
 export const pirApi = {
   list: () => getJson<PirListResponse>("/api/v1/pir"),
+  /**
+   * facet の選択肢。**`list()` を dropdown に使わないこと** — あちらは 30 日 ×
+   * 15,000 記事を走査して KPI を出すため cold 1.9 秒 + DB 接続を 1 本占有し、
+   * 全ページ読み込みで呼ぶと接続プールを使い切る (2026-08-25 に停止させた)。
+   */
+  options: () => getJson<PirOption[]>("/api/v1/pir/options"),
   get: (id: string) => getJson<Pir>(`/api/v1/pir/${encodeURIComponent(id)}`),
   kpi: (id: string) => getJson<KpiResponse>(`/api/v1/pir/${encodeURIComponent(id)}/kpi`),
   compile: (title: string, description: string, pir_id?: string) =>

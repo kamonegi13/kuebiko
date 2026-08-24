@@ -70,7 +70,15 @@ def _get_pool() -> Any:
                 _pool = ConnectionPool(
                     conninfo=get_database_url(),
                     min_size=1,
-                    max_size=10,
+                    # uvicorn の同期エンドポイントは anyio threadpool (既定 40) で走る。
+                    # 10 だと DB に触る要求が 10 本並んだだけで残りが 30 秒待たされ、
+                    # scheduler ジョブまで巻き添えでこける (2026-08-25 に全停止)。
+                    # PG 側は max_connections=100 で常用 10 未満なので余裕がある。
+                    max_size=20,
+                    # 切断済み connection を掴んだまま貸し出さない。プールが
+                    # 「貸出中」と数えている接続が PG 側に存在しない状態から
+                    # 自力で復帰させる (上記障害では復帰しなかった)。
+                    check=ConnectionPool.check_connection,
                     kwargs={"row_factory": dict_row},
                     open=False,
                 )

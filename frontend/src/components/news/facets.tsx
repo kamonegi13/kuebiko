@@ -102,22 +102,23 @@ export function useFacetOptions(): FacetOptions {
     [feedList],
   );
 
+  // ⚠ `pirApi.list()` は KPI 付き (30 日 × 15,000 記事の走査、cold 1.9 秒、DB 接続を
+  // 1 本占有)。dropdown から呼ぶと全ページ読み込みで走り、接続プールを使い切る
+  // (2026-08-25 に実際にアプリ全体を停止させた)。選択肢は軽量経路から取る。
   const { data: pirList } = useQuery({
-    queryKey: ["facet-pir"],
-    queryFn: () => pirApi.list(),
+    queryKey: ["facet-pir-options"],
+    queryFn: () => pirApi.options(),
     staleTime: 10 * 60_000,
   });
   const pir = useMemo(
     () => [
       { value: "", label: "全PIR" },
-      ...(pirList?.priorities ?? [])
-        .filter((p) => p.enabled)
-        .map((p) => ({ value: p.id, label: p.title })),
+      ...(pirList ?? []).filter((p) => p.enabled).map((p) => ({ value: p.id, label: p.title })),
     ],
     [pirList],
   );
   const pirLabel = useMemo(
-    () => new Map((pirList?.priorities ?? []).map((p) => [p.id, p.title])),
+    () => new Map((pirList ?? []).map((p) => [p.id, p.title])),
     [pirList],
   );
 

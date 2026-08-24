@@ -7,6 +7,7 @@ CRUD + KPI + preview + LLM compile を提供。
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -166,6 +167,8 @@ def _match_to_sample(match: Any) -> PreviewMatchSample:
 # 数十秒の遅れは許容)。dashboard/overview と同じ考え方。
 _LIST_CACHE: dict[str, tuple[float, PirListResponse]] = {}
 _LIST_TTL_SEC = 45.0
+# cache miss の同時多発 (stampede) を 1 本に畳む。threadpool 実行なので threading.Lock。
+_LIST_LOCK = threading.Lock()
 
 
 def _invalidate_pir_caches() -> None:
@@ -178,6 +181,30 @@ def _invalidate_pir_caches() -> None:
     _OVERVIEW_CACHE.clear()
 
 
+class PirOption(BaseModel):
+    """絞り込み dropdown 用の最小表現 (KPI を含まない)。"""
+
+    id: str
+    title: str
+    enabled: bool
+
+
+# ⚠ **`/{pir_id}` より前に登録すること**。FastAPI は登録順に照合するため、後ろに
+# 置くと `pir_id="options"` として捕まる。
+@pir_api.get("/options", response_model=list[PirOption])
+async def list_pir_options() -> list[PirOption]:
+    """PIR の id / title だけを返す軽量経路 (ニュース・事象ニュースの facet 用)。
+
+    **一覧 (`GET /api/v1/pir`) を dropdown に使ってはいけない** — あちらは 30 日 ×
+    15,000 記事を走査して KPI を出すため cold 1.9 秒かかり、その間 DB 接続を
+    1 本占有する。2026-08-25 に facet を 2 画面へ広げた際、これが全ページ読み込みで
+    呼ばれるようになり、接続プール (max 10) を使い切ってアプリ全体が停止した。
+    ここは config を読むだけで記事に触らない。
+    """
+    cfg = load_current_pir_config()
+    return [PirOption(id=p.id, title=p.title, enabled=p.enabled) for p in cfg.priorities]
+
+
 # 同期関数として定義する (async def にすると 30 日走査の間 event loop を占有し、
 # UI 全体が固まる)。FastAPI が threadpool で実行する。
 @pir_api.get("", response_model=PirListResponse)
@@ -185,17 +212,24 @@ def list_pirs() -> PirListResponse:
     cached = _LIST_CACHE.get("list")
     if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SEC:
         return cached[1]
-    cfg = load_current_pir_config()
-    matches = evaluate_pirs_batch(cfg.priorities, lookback_hours=24 * 30, limit=15000)
-    items = [_to_list_item(p, matches.get(p.id, [])) for p in cfg.priorities]
-    pending = sum(1 for p in cfg.priorities if not p.metadata.approved_by_user)
-    resp = PirListResponse(
-        version=cfg.version,
-        priorities=items,
-        pending_draft_count=pending,
-    )
-    _LIST_CACHE["list"] = (time.monotonic(), resp)
-    return resp
+    # TTL 切れの瞬間に N 本同時に来ると、N 本とも 15,000 記事の走査を始めて DB 接続を
+    # N 本掴む (max 10 で枯渇 → アプリ全体が停止する)。先頭の 1 本だけ計算させ、
+    # 残りはその結果を待って共有する。
+    with _LIST_LOCK:
+        cached = _LIST_CACHE.get("list")
+        if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SEC:
+            return cached[1]
+        cfg = load_current_pir_config()
+        matches = evaluate_pirs_batch(cfg.priorities, lookback_hours=24 * 30, limit=15000)
+        items = [_to_list_item(p, matches.get(p.id, [])) for p in cfg.priorities]
+        pending = sum(1 for p in cfg.priorities if not p.metadata.approved_by_user)
+        resp = PirListResponse(
+            version=cfg.version,
+            priorities=items,
+            pending_draft_count=pending,
+        )
+        _LIST_CACHE["list"] = (time.monotonic(), resp)
+        return resp
 
 
 @pir_api.get("/{pir_id}", response_model=Pir)
