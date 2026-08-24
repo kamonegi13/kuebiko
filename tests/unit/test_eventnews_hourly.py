@@ -352,3 +352,35 @@ def test_backfill_does_not_loop_on_hash_collisions(tmp_path: object) -> None:
     # Assert
     assert [r[0] for r in rows] == ["a-1"]
     assert url_hash(urls[1]) in taken
+
+
+def test_existing_members_are_excluded_from_candidates(tmp_path: object) -> None:
+    """既にメンバーの記事を候補に戻さないこと (決定論 item_id の衝突防止)。
+
+    2026-08-24: 遡及構築で候補窓 (14 日) が復元窓 (dormant 期限) を超え、復元されない
+    アイテムのメンバーが再候補化して `event_items_pkey` の UniqueViolation で落ちた。
+    復元済みメンバーの除外だけでは足りず、DB 側の関門が要る。
+    """
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "member.db")  # type: ignore[operator]
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    repo.create_event_item(
+        item_id="ev-x",
+        origin="live",
+        first_reported_at=base,
+        last_reported_at=base,
+        importance="high",
+    )
+    repo.add_event_member(
+        item_id="ev-x",
+        article_id="a-1",
+        joined_at=base,
+        contributed_new_facts=1,
+        join_signal="seed",
+    )
+
+    got = repo.existing_member_article_ids(["a-1", "a-2"])
+
+    assert got == {"a-1"}
+    assert repo.existing_member_article_ids([]) == set()

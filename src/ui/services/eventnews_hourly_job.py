@@ -158,6 +158,12 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     cand_ents = _join_entities_for(repo, cand_ids, counts)
     candidates = [_to_member(r, cand_ents.get(str(r["article_id"]), frozenset())) for r in rows]
 
+    # 既にどこかのアイテムのメンバーになっている記事は候補から外す。run_hourly は
+    # **復元したアイテム**のメンバーしか除外できないため、復元窓より古いアイテムの
+    # メンバーが再候補化すると決定論の item_id が衝突する (遡及構築で実際に落ちた)。
+    already = repo.existing_member_article_ids([c.article_id for c in candidates])
+    candidates = [c for c in candidates if c.article_id not in already]
+
     vectors = _load_vectors(repo, [c.article_id for c in candidates])
     candidates = [c for c in candidates if c.article_id in vectors]
     if not candidates:

@@ -203,6 +203,25 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         member_ids = tuple(str(r["article_id"]) for r in member_rows)
         return _row_to_event_item(row, member_ids)
 
+    def existing_member_article_ids(self, article_ids: Sequence[str]) -> set[str]:
+        """指定記事のうち、既にどこかのアイテムのメンバーになっているものを返す。
+
+        候補の重複投入を防ぐ **最後の関門**。``run_hourly`` は復元したアイテムの
+        メンバーしか除外できないため、復元窓 (dormant 期限) より古いアイテムの
+        メンバーが再び候補に入ると、決定論の item_id が衝突して落ちる
+        (2026-08-24: 遡及構築で `event_items_pkey` の UniqueViolation)。
+        """
+        if not article_ids:
+            return set()
+        placeholders = ",".join("?" for _ in article_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT article_id AS article_id FROM event_item_members"  # noqa: S608
+                f" WHERE article_id IN ({placeholders})",
+                list(article_ids),
+            ).fetchall()
+        return {str(r["article_id"]) for r in rows}
+
     def list_event_items(
         self,
         *,
