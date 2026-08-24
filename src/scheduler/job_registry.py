@@ -367,6 +367,28 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="public-reachability",
+            kind="bespoke",
+            title="公開面 到達性チェック",
+            description=(
+                "公開 URL (Cloudflare Tunnel 経由) を **HTTP/2 で** 叩き、スマホ / PWA から "
+                "実際に開けるかを確認する。2026-08-24 に cloudflared の QUIC 経路が壊れ、"
+                "**HTTP/2・HTTP/3 のクライアントだけ**が応答途中で切断される障害が半日続いた。"
+                "ローカルは 2ms で正常・HTTP/1.1 の curl も正常だったため、"
+                "**利用者の報告が唯一の検知手段**になっていた。公開していなければ何もしない。"
+            ),
+            disable_impact=(
+                "公開面 (スマホ / PWA) が落ちても気付けなくなる。ローカルの死活監視は "
+                "origin しか見ておらず、トンネル経由の到達性は誰も見ていない。"
+            ),
+            protection="important",
+            schedule_type="interval",
+            interval_minutes=60,
+            # 毎時 :50 — 収集(:00)/事象ニュース(:20)/scraper(:30) の谷間
+            offset_minutes=50,
+            upkeep=True,
+        ),
+        JobDef(
             id="eventnews-hourly",
             kind="bespoke",
             title="事象ニュース 毎時更新",

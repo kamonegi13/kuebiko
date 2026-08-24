@@ -112,7 +112,11 @@ start_tunnel() {
     fi
     # 【セキュリティ】token は env でなく --token 引数で渡す (cloudflared の env ダンプに載せない)。
     (
-      cloudflared tunnel --no-autoupdate run --token "$CF_TOKEN" 2>&1 |
+      # --protocol http2 (2026-08-24): 既定の QUIC はエッジ↔cloudflared 間で不安定になり、
+      # **HTTP/2・HTTP/3 のクライアントだけ**が応答途中で切断される (ERR_CONNECTION_CLOSED)。
+      # HTTP/1.1 の curl では再現しないため見落としやすい。実害: スマホ/PWA から一切開けない
+      # のに host からの疎通確認は通る、という切り分けの難しい故障になる。
+      cloudflared tunnel --no-autoupdate --protocol http2 run --token "$CF_TOKEN" 2>&1 |
         while IFS= read -r line; do echo "$line"; done
     ) &
     cf_pid=$!
@@ -126,7 +130,7 @@ start_tunnel() {
   # account-less quick tunnel (fall back): URL は cloudflared 再起動で変わる。
   echo "[supervisor] starting cloudflared (quick tunnel, target=$TUNNEL_TARGET)"
   (
-    cloudflared tunnel --no-autoupdate --url "$TUNNEL_TARGET" 2>&1 |
+    cloudflared tunnel --no-autoupdate --protocol http2 --url "$TUNNEL_TARGET" 2>&1 |
       while IFS= read -r line; do
         echo "$line"
         if [ ! -s "$URL_FILE" ]; then

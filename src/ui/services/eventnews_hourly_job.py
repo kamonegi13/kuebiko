@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -59,8 +59,14 @@ WHERE entity_type IN ('cve','victim_org','actor','malware_family')
 """
 
 
-def _to_member(row: Sequence[object], entities: frozenset[tuple[str, str]]) -> MemberArticle:
-    aid, ts, imp, cat, status, title, url, feed_title, feed_url, summary, body = row
+def _to_member(row: Mapping[str, object], entities: frozenset[tuple[str, str]]) -> MemberArticle:
+    """行 → MemberArticle。**位置でなくキー名で読む** — 列順・列数の変更に強い。"""
+    aid = row["article_id"]
+    ts = row["anchor_ts"]
+    imp, cat, status = row["importance"], row["category"], row["status"]
+    title, url = row["title"], row["url"]
+    feed_title, feed_url = row["feed_title"], row["feed_url"]
+    summary, body = row["summary"], row["body"]
     anchor = ts if isinstance(ts, datetime) else datetime.fromisoformat(str(ts))
     if anchor.tzinfo is None:
         anchor = anchor.replace(tzinfo=UTC)
@@ -100,7 +106,7 @@ async def run_eventnews_hourly() -> dict[str, object]:
     for _, etype, value in raw:
         counts[(etype, value)] = counts.get((etype, value), 0) + 1
     join_ents = build_join_entities(raw, counts)
-    candidates = [_to_member(r, join_ents.get(str(r[0]), frozenset())) for r in rows]
+    candidates = [_to_member(r, join_ents.get(str(r["article_id"]), frozenset())) for r in rows]
 
     vectors = _load_vectors(repo, [c.article_id for c in candidates])
     candidates = [c for c in candidates if c.article_id in vectors]
@@ -166,13 +172,25 @@ def _load_members(
     placeholders = ",".join("?" for _ in article_ids)
     with repo._connect() as conn:  # noqa: SLF001
         rows = conn.execute(
-            f"SELECT a.article_id, {EVENT_TS_EXPR.format(a='a')}, a.importance, a.category,"  # noqa: S608
-            " a.status, a.title, a.url, COALESCE(a.feed_title,''), COALESCE(a.feed_url,''),"
-            " COALESCE(a.summary,''), COALESCE(a.body,'') FROM articles a"
+            # ⚠ **全列に別名を付ける**: PG は dict 形式で行を返すため、別名の無い
+            # COALESCE(...) は 4 列とも同じキーへ潰れ、11 列のはずが 8 列になる
+            # (2026-08-24 の実障害: 既存アイテムの復元経路だけが落ちた)。
+            f"SELECT a.article_id AS article_id,"  # noqa: S608
+            f" {EVENT_TS_EXPR.format(a='a')} AS anchor_ts,"
+            " a.importance AS importance, a.category AS category, a.status AS status,"
+            " a.title AS title, a.url AS url,"
+            " COALESCE(a.feed_title,'') AS feed_title,"
+            " COALESCE(a.feed_url,'') AS feed_url,"
+            " COALESCE(a.summary,'') AS summary,"
+            " COALESCE(a.body,'') AS body"
+            " FROM articles a"
             f" WHERE a.article_id IN ({placeholders})",
             article_ids,
         ).fetchall()
-    return {str(r[0]): _to_member(r, join_ents.get(str(r[0]), frozenset())) for r in rows}
+    return {
+        str(r["article_id"]): _to_member(r, join_ents.get(str(r["article_id"]), frozenset()))
+        for r in rows
+    }
 
 
 __all__ = ["run_eventnews_hourly"]

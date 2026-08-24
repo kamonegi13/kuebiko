@@ -263,6 +263,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
     from src.ui.services.maintenance import run_daily_maintenance
     from src.ui.services.prompt_governance import run_weekly_prompt_governance
+    from src.ui.services.public_reachability import run_public_reachability_check
     from src.ui.services.source_health import run_daily_heartbeat
     from src.ui.services.ua_health import run_ua_health_check
 
@@ -277,6 +278,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "pir-judge-hourly": _pir_judge_hourly,
         "ledger-deep-review": _ledger_deep_review,
         "eventnews-hourly": run_eventnews_hourly,
+        "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,
         "body-refetch-backlog": run_body_refetch_backlog,
         "ua-health-check": run_ua_health_check,
