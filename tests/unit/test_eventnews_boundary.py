@@ -123,3 +123,41 @@ def test_metadata_is_empty_without_members() -> None:
 
     out = _metadata_payload(cast(RunHistoryRepository, _FakeRepo({}, {})), [])
     assert out == {"entities": [], "subject_actors": [], "facets": []}
+
+
+def test_list_filters_apply_before_limit(tmp_path: object) -> None:
+    """絞り込みは LIMIT より前に効くこと。
+
+    取得後に filter すると「新着 N 件のうち high のもの」になり、「high の新着 N 件」に
+    ならない。アイテムが数十件の間は気付かないが、遡及構築で 2,000 件規模になると
+    high 絞り込みがほとんど何も返さなくなる。
+    """
+    # Arrange — medium を 10 件、その後ろ (古い側) に high を 3 件
+    from datetime import UTC, datetime, timedelta
+
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "list.db")  # type: ignore[operator]
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    for i in range(10):
+        repo.create_event_item(
+            item_id=f"ev-m{i}",
+            origin="live",
+            first_reported_at=base + timedelta(hours=i + 100),
+            last_reported_at=base + timedelta(hours=i + 100),
+            importance="medium",
+        )
+    for i in range(3):
+        repo.create_event_item(
+            item_id=f"ev-h{i}",
+            origin="live",
+            first_reported_at=base + timedelta(hours=i),
+            last_reported_at=base + timedelta(hours=i),
+            importance="high",
+        )
+
+    # Act — 新着 5 件だけを見ると high は 0 件だが、high で絞れば 3 件返るべき
+    got = repo.list_event_items(origin="live", importances=["high"], limit=5)
+
+    # Assert
+    assert [r.state.item_id for r in got] == ["ev-h2", "ev-h1", "ev-h0"]

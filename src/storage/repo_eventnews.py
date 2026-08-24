@@ -208,12 +208,18 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         *,
         origin: str | None = None,
         statuses: Sequence[str] | None = None,
+        importances: Sequence[str] | None = None,
+        exclude_merged: bool = False,
         limit: int = 200,
     ) -> list[EventItemRecord]:
         """event_items を新着順 (last_reported_at DESC) で列挙する (member_ids 込み)。
 
-        ``origin`` / ``statuses`` で絞り込み可能。N+1 を避けるため member_ids は
-        対象アイテム群をまとめて 1 クエリで引く。
+        ``origin`` / ``statuses`` / ``importances`` で絞り込み可能。N+1 を避けるため
+        member_ids は対象アイテム群をまとめて 1 クエリで引く。
+
+        ⚠ **絞り込みは LIMIT より前に効かせること**。呼び手が取得後に filter すると
+        「新着 N 件のうち該当するもの」しか出ず、「該当するものの新着 N 件」に
+        ならない (遡及構築でアイテムが 2,000 件規模になり顕在化した)。
         """
         clauses: list[str] = []
         params: list[object] = []
@@ -224,6 +230,12 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             placeholders = ",".join("?" for _ in statuses)
             clauses.append(f"status IN ({placeholders})")
             params.extend(statuses)
+        if importances:
+            placeholders = ",".join("?" for _ in importances)
+            clauses.append(f"importance IN ({placeholders})")
+            params.extend(importances)
+        if exclude_merged:
+            clauses.append("(merged_into IS NULL OR merged_into = '')")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
         with self._connect() as conn:

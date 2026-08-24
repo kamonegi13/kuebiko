@@ -213,15 +213,17 @@ def list_event_news(
     """
     repo = _repo()
     statuses = [s.strip() for s in status.split(",")] if status else None
-    wanted = {i.strip() for i in importance.split(",")} if importance else None
-    records = repo.list_event_items(
-        origin="live", statuses=statuses, limit=min(limit, _LIST_LIMIT_MAX)
+    wanted = [i.strip() for i in importance.split(",")] if importance else None
+    # 絞り込みは **LIMIT より前** に効かせる。取得後に filter すると「新着 N 件のうち
+    # high のもの」になり、「high の新着 N 件」にならない (遡及構築で 2,000 件規模に
+    # なって顕在化: high 絞り込みが数件しか出なくなる)。
+    shown = repo.list_event_items(
+        origin="live",
+        statuses=statuses,
+        importances=wanted,
+        exclude_merged=True,
+        limit=min(limit, _LIST_LIMIT_MAX),
     )
-    shown = [
-        r
-        for r in records
-        if not r.merged_into and not (wanted and r.state.importance not in wanted)
-    ]
     resolved = _headlines_and_previews(repo, shown)
     items = []
     for r in shown:
