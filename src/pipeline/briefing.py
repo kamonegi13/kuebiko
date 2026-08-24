@@ -126,6 +126,22 @@ async def _process_article(
     )
 
 
+# タイトルを持たない source に渡す「原タイトル」欄の中身。事実 (タイトルが無い) と
+# 指示 (本文から見出しを作る) を 1 つの文字列で伝える。判定基準そのものを書き換えず
+# 済むため、rollback 契約 (合成版 == legacy .j2) を壊さない。
+NO_TITLE_SENTINEL = (
+    "(タイトルなし — SNS 投稿。本文から 60 字以内の見出しを新たに作ること。"
+    "本文の先頭をそのまま切り出さず、「誰が・何をした/された」を骨格にする)"
+)
+
+
+def _prompt_article(article: Article) -> Article:
+    """プロンプトへ渡す記事。タイトルを持たない source では原タイトル欄を差し替える。"""
+    if getattr(article, "has_title", True):
+        return article
+    return article.model_copy(update={"title": NO_TITLE_SENTINEL})
+
+
 async def _summarize_and_build(
     article: Article,
     body: str,
@@ -156,7 +172,17 @@ async def _summarize_and_build(
     # 起こすのを防ぐ。LLM に渡す本文はさらに小さい上限で切り詰める (消費者側キャップ)。
     llm_body = body[:MAX_LLM_BODY_CHARS]
     # b. LLM 要約 (Jinja2 テンプレで構築したプロンプト) — **抽出専用**
-    prompt = template.render(article=article, body=llm_body)
+    #
+    # タイトルを持たない source (X/SNS 投稿) は ``article.title`` に投稿本文の先頭が
+    # 入っている。それをそのまま「原タイトル」として渡すと、判定基準の
+    # 「原タイトルが日本語ならそのままコピー」に当たり **本文が見出しになる**
+    # (2026-08-24 実測: x.com 記事 913 件中 286 件 = 31%)。
+    #
+    # 対処は **入力側** で行う。プロンプト本体 (共有テンプレ) は触らない — summarizer の
+    # テンプレは合成版と legacy .j2 の byte 同値が rollback 契約として固定されており、
+    # 片方だけ変えると契約が崩れるため。無いものは「無い」と伝え、何をすべきかも同じ
+    # 文字列で渡す。
+    prompt = template.render(article=_prompt_article(article), body=llm_body)
     summary = await llm.generate_structured(prompt, schema=SummaryOutput, think=think)
     # b2. 統合判断分類器 (2026-07-26 抜本策): 過負荷 summarizer で枯死する判断系
     # (editorial_stance / intent / diamond / event_date / i_infra / article_type /

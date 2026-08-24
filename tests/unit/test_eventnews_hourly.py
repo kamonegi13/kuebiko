@@ -518,3 +518,39 @@ def test_event_note_roundtrip(tmp_path: object) -> None:
     assert repo.get_event_note("ev-missing") is None
     assert [n.item_id for n in repo.list_event_notes()] == ["ev-1"]
     assert repo.list_event_notes(bookmarked_only=True) == []
+
+
+def test_title_less_sources_get_a_generated_headline() -> None:
+    """タイトルを持たない source では原タイトル欄を差し替えること。
+
+    2026-08-24: X の投稿にタイトルは無く、``Article.title`` には投稿本文の先頭 120 字を
+    入れていた。判定基準は「原タイトルが日本語ならそのままコピー」なので、**日本語の
+    投稿は本文がそのまま見出しになる** (実測 x.com 913 件中 286 件 = 31%)。
+
+    対処は入力側で行う — summarizer のテンプレは合成版と legacy .j2 の byte 同値が
+    rollback 契約として固定されており、片方だけ変えると契約が崩れるため。
+    """
+    from src.pipeline.briefing import NO_TITLE_SENTINEL, _prompt_article
+    from src.tools.article_model import Article
+
+    def _article(title: str, *, has_title: bool = True) -> Article:
+        return Article(
+            id="a-1",
+            url="https://kuebiko.example/1",
+            summary_html="",
+            published=datetime(2026, 8, 24, tzinfo=UTC),
+            feed_title="@x",
+            feed_url="https://x.com/x",
+            title=title,
+            has_title=has_title,
+        )
+
+    tweet = _article("【お詫び】不正アクセス障害により、一部店舗にて…", has_title=False)
+    rss = _article("Microsoft Patches Critical RCE")
+
+    assert _prompt_article(tweet).title == NO_TITLE_SENTINEL
+    # 通常記事は素通し (原タイトルを尊重する既存挙動を壊さない)
+    assert _prompt_article(rss) is rss
+    # 事実 (無い) と指示 (作れ) の両方を 1 文字列で伝える
+    assert "タイトルなし" in NO_TITLE_SENTINEL
+    assert "見出しを新たに作る" in NO_TITLE_SENTINEL
