@@ -85,9 +85,7 @@ class TestEntityEventTimeAnchor:
         # Assert
         assert abs((times["lazarus"][0] - ingested).total_seconds()) < 3600
 
-    def test_published_after_ingest_is_clamped_to_ingest(
-        self, repo: RunHistoryRepository
-    ) -> None:
+    def test_published_after_ingest_is_clamped_to_ingest(self, repo: RunHistoryRepository) -> None:
         """取込より未来の published_at は不正データ (実測 0.5%)。取込時刻へ丸める。"""
         # Arrange
         ingested = _NOW - timedelta(days=3)
@@ -190,8 +188,7 @@ class TestAnchorLiteralSingleSource:
         offenders = [
             path
             for path in src_root.rglob("*.py")
-            if marker in path.read_text(encoding="utf-8")
-            and path.name != "event_time.py"
+            if marker in path.read_text(encoding="utf-8") and path.name != "event_time.py"
         ]
         assert offenders == [], f"錨式の複製を検出: {offenders} (event_time.py を import すること)"
 
@@ -201,9 +198,65 @@ class TestAnchorLiteralSingleSource:
         offenders = [
             path
             for path in src_root.rglob("*.py")
-            if marker in path.read_text(encoding="utf-8")
-            and path.name != "event_time.py"
+            if marker in path.read_text(encoding="utf-8") and path.name != "event_time.py"
         ]
         assert offenders == [], (
             f"畳み込み式の複製を検出: {offenders} (event_time.py を import すること)"
         )
+
+
+def test_article_list_orders_by_event_time_but_filters_by_ingest(tmp_path: object) -> None:
+    """一覧は **事象時刻で並び**、絞り込みは **取得時刻** で行うこと。
+
+    2026-08-24 利用者指摘: 一覧が created_at (取得時刻) 順なのに published_at (公開時刻)
+    を表示していたため、時刻が前後して見えた。ANSSI のようにその日の advisory を
+    まとめて後から配信する媒体で顕著 (実測: 公開と取得の差は 6h 超が 10%)。
+
+    並びだけを事象時刻にする。絞り込みまで事象時刻にすると「公開は古いが取得は今」の
+    記事が直近窓から消えて **見落とし** になる。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "order.db")  # type: ignore[operator]
+    now = datetime(2026, 8, 24, 22, 0, tzinfo=UTC)
+    with repo._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "INSERT INTO runs (id, started_at, pipeline, dry_run, status)"
+            " VALUES (1, ?, 'p', 0, 'done')",
+            (now.isoformat(),),
+        )
+        rows = [
+            # (id, 公開, 取得) — 後追い配信: 公開は古いが取得は最新
+            ("late", now - timedelta(hours=13), now),
+            ("fresh", now - timedelta(hours=1), now - timedelta(minutes=30)),
+        ]
+        for aid, pub, created in rows:
+            conn.execute(
+                "INSERT INTO articles (run_id, article_id, url, title, summary, body,"
+                " importance, category, status, feed_title, feed_url, published_at, created_at)"
+                " VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    aid,
+                    f"https://kuebiko.example/{aid}",
+                    aid,
+                    "s",
+                    "b",
+                    "high",
+                    "vuln",
+                    "posted",
+                    "F",
+                    "https://kuebiko.example/f",
+                    pub.isoformat(),
+                    created.isoformat(),
+                ),
+            )
+
+    # 並び = 事象時刻の降順 (公開が新しい fresh が先)
+    got = repo.list_articles(limit=10)
+    assert [a.article_id for a in got] == ["fresh", "late"]
+
+    # 絞り込みは取得時刻。直近 2h で切っても後追い配信は残る (見落とさない)
+    recent = repo.list_articles(since=now - timedelta(hours=2), limit=10)
+    assert {a.article_id for a in recent} == {"fresh", "late"}

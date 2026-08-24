@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.storage.event_time import EVENT_TS_EXPR
 from src.storage.records import ArticleRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _row_to_article, _to_iso
@@ -1152,7 +1153,14 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = (
             f"SELECT * FROM articles {where} "  # noqa: S608 (clauses are param placeholders)
-            "ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            # 並びは **事象時刻** (公開時刻・取得で上限)。表示している時刻と並びの鍵を
+            # 一致させる — 従来は created_at (取得時刻) で並べて published_at (公開時刻) を
+            # 表示していたため、一覧の時刻が前後して見えた (2026-08-24 利用者指摘)。
+            # ANSSI のようにその日の advisory をまとめて後から配信する媒体で顕著
+            # (実測: 公開と取得の差は中央値 0.9h だが 6h 超が 10%・24h 超が 2.4%)。
+            # ⚠ **絞り込み (since/until) は created_at のまま**。ここを事象時刻にすると
+            # 「公開は古いが取得は今」の記事が直近窓から消え、見落としになる。
+            f"ORDER BY {EVENT_TS_EXPR.format(a='articles')} DESC LIMIT ? OFFSET ?"
         )
         params.extend([limit, offset])
         with self._connect() as conn:
