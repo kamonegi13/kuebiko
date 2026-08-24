@@ -479,3 +479,42 @@ def test_candidate_population_covers_low_and_victim_records() -> None:
         assert token in _SQL_CANDIDATES
     for token in ("'posted'", "'skipped_duplicate'", "'collected'", "'collected_duplicate'"):
         assert token in _SQL_CANDIDATES
+
+
+def test_event_note_roundtrip(tmp_path: object) -> None:
+    """事象単位のメモが保存・復元されること (created_at は保持)。"""
+    from datetime import timedelta
+
+    from src.storage.records import EventNoteRecord
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "note.db")  # type: ignore[operator]
+    created = datetime.now(UTC) - timedelta(days=2)
+    repo.upsert_event_note(
+        EventNoteRecord(
+            item_id="ev-1",
+            bookmarked=True,
+            note="継続監視",
+            tags=["apt", "jp"],
+            judgment="",
+            created_at=created,
+        )
+    )
+    got = repo.get_event_note("ev-1")
+    assert got is not None
+    assert got.bookmarked is True
+    assert got.note == "継続監視"
+    assert got.tags == ["apt", "jp"]
+
+    # 更新しても created_at は保たれる (「いつ気付いたか」を失わない)
+    repo.upsert_event_note(
+        EventNoteRecord(item_id="ev-1", bookmarked=False, note="解決", created_at=got.created_at)
+    )
+    again = repo.get_event_note("ev-1")
+    assert again is not None
+    assert again.bookmarked is False and again.note == "解決"
+    assert abs((again.created_at - created).total_seconds()) < 2
+
+    assert repo.get_event_note("ev-missing") is None
+    assert [n.item_id for n in repo.list_event_notes()] == ["ev-1"]
+    assert repo.list_event_notes(bookmarked_only=True) == []

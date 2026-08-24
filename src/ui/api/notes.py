@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from src.storage.records import EventNoteRecord
 from src.storage.run_history import ArticleNoteRecord
 
 notes_api = APIRouter(prefix="/api/v1", tags=["notes"])
@@ -102,3 +103,54 @@ async def delete_note(request: Request, article_id: str) -> dict[str, Any]:
     repo = request.app.state.repo
     repo.delete_article_note(article_id.strip())
     return {"article_id": article_id, "exists": False}
+
+
+# ---- 事象単位の memo / bookmark (2026-08-24) ----------------------------------
+#
+# 事象ニュースの read API (`/api/v1/eventnews`) は **GET のみ / Tier0 匿名可** の
+# 約束なので、write はこちら (notes) に置く。READ_ONLY instance では middleware が
+# PUT を 403 で block する = 公開面からは編集不可。
+
+
+def event_note_to_dict(n: EventNoteRecord) -> dict[str, Any]:
+    return {
+        "item_id": n.item_id,
+        "bookmarked": n.bookmarked,
+        "note": n.note,
+        "tags": n.tags,
+        "judgment": n.judgment,
+        "updated_at": n.updated_at.isoformat() if n.updated_at else None,
+    }
+
+
+@notes_api.get("/event-notes/{item_id}")
+async def get_event_note(request: Request, item_id: str) -> dict[str, Any]:
+    """1 事象の memo/bookmark を返す (未作成なら空)。read-only。"""
+    rec = request.app.state.repo.get_event_note(item_id.strip())
+    if rec is None:
+        return {"item_id": item_id, "bookmarked": False, "note": "", "tags": [], "judgment": ""}
+    return event_note_to_dict(rec)
+
+
+@notes_api.put("/event-notes/{item_id}")
+async def put_event_note(request: Request, item_id: str, body: NoteBody) -> dict[str, Any]:
+    """1 事象の memo/bookmark を保存する (write = ローカル instance のみ)。"""
+    iid = item_id.strip()
+    if not iid:
+        raise HTTPException(status_code=400, detail="item_id は必須")
+    repo = request.app.state.repo
+    if repo.get_event_item(iid) is None:
+        raise HTTPException(status_code=404, detail=f"事象が見つかりません: {iid}")
+    existing = repo.get_event_note(iid)
+    repo.upsert_event_note(
+        EventNoteRecord(
+            item_id=iid,
+            bookmarked=body.bookmarked,
+            note=body.note,
+            tags=body.tags,
+            judgment=body.judgment,
+            created_at=existing.created_at if existing else datetime.now(UTC),
+        )
+    )
+    saved = repo.get_event_note(iid)
+    return event_note_to_dict(saved) if saved else {"item_id": iid}

@@ -27,6 +27,7 @@ import {
 } from "../../api/article";
 import { JudgementCard, type Judgement, type JudgementValue } from "../../components/analysis/JudgementCard";
 import { EntitySection } from "../../components/analysis/EntitySection";
+import { EventNoteEditor } from "./EventNoteEditor";
 import { intentLabel, isHypothesisIntent } from "../../utils/diamond";
 import { sectorLabel } from "../../components/geo/sectorColors";
 import { countryLabel } from "../../utils/countryLabels";
@@ -382,6 +383,7 @@ export function EventNewsDetailBody({ id }: { id: string }) {
       )}
 
       <MembersCard d={d} />
+      <EventNoteEditor itemId={d.id} />
 
       {d.news && <p className="text-xs text-fg-subtle m-0">{d.note}</p>}
     </div>

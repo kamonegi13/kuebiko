@@ -451,6 +451,21 @@ CREATE TABLE IF NOT EXISTS article_notes (
 CREATE INDEX IF NOT EXISTS idx_article_notes_bookmarked
     ON article_notes(bookmarked, updated_at DESC);
 
+-- ===== event_item_notes (事象単位の memo/bookmark) =====
+-- 記事単位のメモ (article_notes) と別テーブルにする。事象は記事の集合であり、
+-- 「この事象を継続監視する」は個々の記事に付ける判断とは粒度が違う (2026-08-24)。
+CREATE TABLE IF NOT EXISTS event_item_notes (
+    item_id     TEXT        NOT NULL PRIMARY KEY,
+    bookmarked  SMALLINT    NOT NULL DEFAULT 0,
+    note        TEXT        NOT NULL DEFAULT '',
+    tags        TEXT        NOT NULL DEFAULT '[]',
+    judgment    TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_event_item_notes_bookmarked
+    ON event_item_notes(bookmarked, updated_at DESC);
+
 -- ===== Situation Ledger (状況台帳、段A) =====
 -- 設計: docs/synthesis_situation_ledger_design.md。時刻列は TEXT (ISO8601, UTC 固定) —
 -- store は文字列比較/Python 側パースのみで SQL 日時関数を使わず、SQLite と挙動を揃える。

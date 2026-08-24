@@ -65,6 +65,11 @@ READ_ONLY_GET_DENYLIST: tuple[str, ...] = (
     "/api/v1/ops-notices",
     # 収集関心の詳細 (Grok タスクプロンプト写し) を公開面に出さない (2026-08-15)
     "/api/v1/grok/tasks",
+    # 個人のメモ・判断 (2026-08-24)。分析者の所見そのものであり、公開面に匿名で
+    # 出す理由が無い。実際に `GET /api/v1/notes` が readonly instance から本文ごと
+    # 読めていた。Tier1 (Cloudflare Access 認証済み) では従来どおり閲覧できる。
+    "/api/v1/notes",
+    "/api/v1/event-notes",
 )
 
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に

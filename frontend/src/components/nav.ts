@@ -4,7 +4,7 @@
 
 import {
   BookOpen, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText,
-  Flag, History, Layers, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert,
+  Flag, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert,
   TrendingUp, Users, Workflow,
 } from "lucide-react";
 
@@ -47,6 +47,11 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/app/intel/forecast", label: "将来予測", Icon: TrendingUp, prefixes: ["/app/intel/forecast"] },
       // 振り返り (過去参照) はブリーフページの週次ビューに統合 (2026-07-25 時間軸統合)
       { href: "/app/pir", label: "PIR / Spotlight", Icon: Flag, prefixes: ["/app/pir"] },
+      // 事象ニュース (2026-08-24 交代 → 2026-08-24 インテリジェンスへ移動)。
+      // 同一事象の複数報道を束ね、**ツールが生成した**読み物。収集物そのものではなく
+      // 生成された分析なので コンテンツ ではなく インテリジェンス に置く
+      // (収集 = コンテンツ / 生成 = インテリジェンス の区分)。
+      { href: "/app/eventnews", label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
       // 分析チャット (2026-07-12): 自然言語でデータ照会 → 簡易レポート。
       // read-only ツールのみのため readonly instance でも利用可 (2026-07-19 allowlist 化)
       { href: "/app/assistant", label: "分析チャット", Icon: MessageSquareText, prefixes: ["/app/assistant"] },
@@ -58,12 +63,9 @@ export const NAV_GROUPS: NavGroup[] = [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
       { href: "/app/daily-brief", label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
-      // 読む導線の主役は **事象ニュース** (2026-08-24 交代)。同一事象の複数報道を束ねて
-      // 1 本に生成した読み物で、記事の被覆は 98.7%・絞り込みはニュース検索と同じ語彙。
-      // 記事一覧は「収集した個々の記事を掘る」画面として残す (low・全 status を含む
-      // 生データ面。事象に入らない行や、記事単位のメモ/ブックマークはこちら)。
-      { href: "/app/eventnews", label: "ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
-      { href: "/app/news", label: "記事一覧・検索", Icon: Layers, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
+      // 収集した個々の記事を探す画面。生成物ではないので コンテンツ に残す
+      // (事象ニュースは生成物なので インテリジェンス へ移動した)。
+      { href: "/app/news", label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
       { href: "/app/notes", label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
       { href: "/app/subscriptions", label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
       { href: "/app/actors", label: "アクター辞書", Icon: Users, prefixes: ["/app/actors"] },
@@ -123,7 +125,7 @@ export function isFullOnlyPath(pathname: string): boolean {
 export const BOTTOM_NAV: NavLink[] = [
   { href: "/app", label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
   // モバイルの主導線も事象ニュース (読む画面)。記事一覧はメニューから辿る。
-  { href: "/app/eventnews", label: "ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
+  { href: "/app/eventnews", label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
   { href: "/app/intel/pmesii", label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },
   { href: "/app/map", label: "マップ", Icon: Map, prefixes: ["/app/map"] },
 ];

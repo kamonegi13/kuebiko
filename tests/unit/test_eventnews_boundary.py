@@ -359,3 +359,20 @@ def test_search_matches_generated_text_or_member_articles(tmp_path: object) -> N
         )
         == []
     )
+
+
+def test_personal_notes_are_not_anonymously_readable() -> None:
+    """個人メモが公開面 (Tier0 匿名) から読めないこと。
+
+    2026-08-24: `GET /api/v1/notes` が readonly instance から本文ごと読めていた
+    (分析者の所見がそのまま公開面に出ていた)。事象メモを足すにあたり両方を
+    denylist へ入れる。Tier1 (Cloudflare Access 認証済み) では従来どおり閲覧可。
+    """
+    from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST, is_read_only_blocked_get
+
+    assert "/api/v1/notes" in READ_ONLY_GET_DENYLIST
+    assert "/api/v1/event-notes" in READ_ONLY_GET_DENYLIST
+    assert is_read_only_blocked_get("/api/v1/notes")
+    assert is_read_only_blocked_get("/api/v1/event-notes/ev-1")
+    # 事象ニュース本体は Tier0 のまま (読み物なので公開してよい)
+    assert not is_read_only_blocked_get("/api/v1/eventnews")

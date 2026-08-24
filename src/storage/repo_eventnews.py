@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.eventnews.models import VERSION_CAP, ItemState
+from src.storage.records import EventNoteRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _from_iso, _to_iso
 
@@ -202,6 +203,60 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             ).fetchall()
         member_ids = tuple(str(r["article_id"]) for r in member_rows)
         return _row_to_event_item(row, member_ids)
+
+    def upsert_event_note(self, record: EventNoteRecord) -> None:
+        """1 事象の memo/bookmark/tags/judgment を upsert (created_at は保持)。
+
+        記事単位の ``upsert_article_note`` と同形。事象は記事の集合なので、
+        「この事象を継続監視する」判断は記事に付けるものとは粒度が違う。
+        """
+        import json as _json
+
+        now_iso = _to_iso(datetime.now(UTC))
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO event_item_notes
+                  (item_id, bookmarked, note, tags, judgment, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(item_id) DO UPDATE SET
+                  bookmarked = excluded.bookmarked,
+                  note       = excluded.note,
+                  tags       = excluded.tags,
+                  judgment   = excluded.judgment,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    record.item_id,
+                    1 if record.bookmarked else 0,
+                    record.note,
+                    _json.dumps(record.tags, ensure_ascii=False),
+                    record.judgment,
+                    _to_iso(record.created_at),
+                    now_iso,
+                ),
+            )
+
+    def get_event_note(self, item_id: str) -> EventNoteRecord | None:
+        """1 事象の note を取得 (無ければ None)。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM event_item_notes WHERE item_id=?", (item_id,)
+            ).fetchone()
+        return _row_to_event_note(row) if row else None
+
+    def list_event_notes(
+        self, *, bookmarked_only: bool = False, limit: int = 200
+    ) -> list[EventNoteRecord]:
+        """note を更新新しい順に列挙 (一覧ページ用)。"""
+        where = "WHERE bookmarked=1 " if bookmarked_only else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM event_item_notes {where}"  # noqa: S608 — 定数のみ
+                "ORDER BY datetime(updated_at) DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [_row_to_event_note(r) for r in rows]
 
     def search_event_versions(self, term: str, *, limit: int = 500) -> list[str]:
         """生成本文 (見出し + 本体) に語を含む事象の item_id を返す。
@@ -557,3 +612,27 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 (f"-{days} days",),
             )
             return int(cur.rowcount or 0)
+
+
+def _row_to_event_note(row: object) -> EventNoteRecord:
+    import json as _json
+
+    def col(name: str) -> object:
+        return row[name]  # type: ignore[index]
+
+    raw_tags = str(col("tags") or "[]")
+    try:
+        tags = [str(t) for t in _json.loads(raw_tags)]
+    except ValueError:
+        tags = []
+    return EventNoteRecord(
+        item_id=str(col("item_id")),
+        bookmarked=bool(col("bookmarked")),
+        note=str(col("note") or ""),
+        tags=tags,
+        judgment=str(col("judgment") or ""),
+        # 列は NOT NULL DEFAULT なので通常は必ず値がある。欠損時は now() で埋める
+        # (Optional にすると呼び手全員が None 分岐を持つことになる)。
+        created_at=_from_iso(str(col("created_at"))) or datetime.now(UTC),
+        updated_at=_from_iso(str(col("updated_at"))) or datetime.now(UTC),
+    )

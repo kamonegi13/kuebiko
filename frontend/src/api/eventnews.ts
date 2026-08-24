@@ -148,3 +148,31 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
 export function fetchEventNewsDetail(id: string) {
   return get<EventNewsDetail>(`/api/v1/eventnews/${encodeURIComponent(id)}`);
 }
+
+/** 事象単位の memo / bookmark。記事単位のメモとは粒度が違う (事象は記事の集合)。 */
+export interface EventNote {
+  item_id: string;
+  bookmarked: boolean;
+  note: string;
+  tags: string[];
+  judgment: string;
+  updated_at?: string | null;
+}
+
+export function fetchEventNote(itemId: string) {
+  return get<EventNote>(`/api/v1/event-notes/${encodeURIComponent(itemId)}`);
+}
+
+export async function saveEventNote(
+  itemId: string,
+  body: Pick<EventNote, "bookmarked" | "note" | "tags" | "judgment">,
+): Promise<EventNote> {
+  const r = await fetch(`/api/v1/event-notes/${encodeURIComponent(itemId)}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return (await r.json()) as EventNote;
+}

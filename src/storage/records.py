@@ -322,6 +322,24 @@ class ArticleNoteRecord(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class EventNoteRecord(BaseModel):
+    """1 事象への個人 memo / bookmark / tag / judgment。
+
+    記事単位の ``ArticleNoteRecord`` と同じ形だが対象が違う。事象は記事の集合であり、
+    「この事象を継続監視する」という判断は個々の記事に付けるものとは粒度が違う。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    item_id: str
+    bookmarked: bool = False
+    note: str = ""
+    tags: list[str] = Field(default_factory=list)
+    judgment: str = ""  # アナリストの所見 (例: 誤検知 / 重要先例 / 要追跡)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class SourceFetchHealth(BaseModel):
     """監査 2026-07-05 P2: 1 feed の直近 fetch 健全性 (feed 死活検知用)。"""
 

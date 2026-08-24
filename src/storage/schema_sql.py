@@ -386,6 +386,16 @@ CREATE TABLE IF NOT EXISTS article_notes (
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS event_item_notes (
+    item_id     TEXT NOT NULL PRIMARY KEY,
+    bookmarked  INTEGER NOT NULL DEFAULT 0,
+    note        TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    judgment    TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_article_notes_bookmarked
     ON article_notes(bookmarked, updated_at DESC);
 

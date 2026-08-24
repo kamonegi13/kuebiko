@@ -114,11 +114,11 @@ export function EventNewsPage() {
   return (
     <div className={`${pageContainer("wide")} space-y-4`}>
       <div>
-        <h2 className="m-0 text-xl font-bold text-fg tracking-tight">ニュース</h2>
+        <h2 className="m-0 text-xl font-bold text-fg tracking-tight">事象ニュース</h2>
         <p className="text-fg-muted text-sm mt-1">
           収集した記事を事象単位で読む。複数媒体が報じた事象は 1 本に統合して生成し、新しい記事が加わると更新される。単独報はその記事をそのまま読める。
           <a href="/app/news" className="text-fg-subtle hover:text-accent ml-1 underline">
-            記事単位で掘る →
+            ニュース検索へ →
           </a>
         </p>
       </div>
