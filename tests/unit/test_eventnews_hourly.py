@@ -136,3 +136,107 @@ class TestJobRegistration:
 
         monkeypatch.setenv("EVENTNEWS_HOURLY", "0")  # type: ignore[attr-defined]
         assert asyncio.run(run_eventnews_hourly()) == {"skipped": "flag_off"}
+
+
+# --- 毎時ジョブの取得層 (DB 形状) の不変条件 -------------------------------
+#
+# 2026-08-24 の本番不発: 既存アイテムのメンバーを復元する際、entity を
+# ``article_entities.created_at >= 6時間前`` で絞っていたため、窓内の古い
+# メンバー (最大 72h 前) の entity が **常に空**になり、「共有 entity >= 1」が
+# 永久に不成立 → 合流が一度も起きず、25 アイテム全件が単独記事のまま
+# 蓄積していた。ジョブは毎回 succeeded を返すため、外形では気付けない。
+
+
+def _seed_run(conn: object) -> None:
+    conn.execute(  # type: ignore[attr-defined]
+        "INSERT INTO runs (id, started_at, pipeline, dry_run, status)"
+        " VALUES (1, ?, 'eventnews', 0, 'done')",
+        (datetime.now(UTC).isoformat(),),
+    )
+
+
+def _seed_article(conn: object, aid: str, *, created_at: str, published: str) -> None:
+    conn.execute(  # type: ignore[attr-defined]
+        "INSERT INTO articles (run_id, article_id, url, title, summary, body, importance,"
+        " category, status, feed_title, feed_url, published_at, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            1,
+            aid,
+            f"https://kuebiko.example/{aid}",
+            f"title-{aid}",
+            "summary",
+            "body",
+            "high",
+            "vuln",
+            "posted",
+            "F",
+            "https://kuebiko.example/feed",
+            published,
+            created_at,
+        ),
+    )
+
+
+def test_existing_members_keep_entities_regardless_of_write_time(tmp_path: object) -> None:
+    """復元した既存メンバーが結合信号 entity を持つこと。
+
+    ``article_entities.created_at`` は **行を書いた時刻** であって事象時刻ではない
+    (バックフィル・再抽出は過去記事へ当日の日付を書く)。ここを時刻で絞ると
+    合流が構造的に不可能になる。
+    """
+    # Arrange — 3 日前に取り込まれ、entity も 3 日前に書かれた記事
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.services.eventnews_hourly_job import _entity_counts, _load_members
+
+    repo = RunHistoryRepository(db_path=tmp_path / "hourly.db")  # type: ignore[operator]
+    old = (datetime.now(UTC) - timedelta(days=3)).isoformat()
+    with repo._connect() as conn:  # noqa: SLF001
+        _seed_run(conn)
+        _seed_article(conn, "a-old", created_at=old, published=old)
+        conn.execute(
+            "INSERT INTO article_entities (article_id, entity_type, value, created_at)"
+            " VALUES (?,?,?,?)",
+            ("a-old", "cve", "CVE-2026-0001", old),
+        )
+
+    # Act
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=72))
+    members = _load_members(repo, ["a-old"], counts)
+
+    # Assert — entity が空なら合流条件を満たしようがない
+    assert "a-old" in members
+    assert members["a-old"].entities == frozenset({("cve", "cve-2026-0001")})
+
+
+def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
+    """頻出ガードの分母は窓内コーパス全体で数える。
+
+    手元の数十件だけで数えると cap (12 記事) に届かず、頻出語が結合信号として
+    通ってしまい、無関係な記事同士が繋がる。
+    """
+    # Arrange — 同じ CVE を 15 記事が持つ (cap 超え)
+    from src.eventnews.models import ENTITY_FREQ_CAP
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.services.eventnews_hourly_job import _entity_counts, _join_entities_for
+
+    repo = RunHistoryRepository(db_path=tmp_path / "cap.db")  # type: ignore[operator]
+    now = datetime.now(UTC).isoformat()
+    total = ENTITY_FREQ_CAP + 3
+    with repo._connect() as conn:  # noqa: SLF001
+        _seed_run(conn)
+        for i in range(total):
+            _seed_article(conn, f"a-{i}", created_at=now, published=now)
+            conn.execute(
+                "INSERT INTO article_entities (article_id, entity_type, value, created_at)"
+                " VALUES (?,?,?,?)",
+                (f"a-{i}", "cve", "CVE-2026-9999", now),
+            )
+
+    # Act — 2 記事だけを対象に引いても、分母は窓全体で数える
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=72))
+    ents = _join_entities_for(repo, ["a-0", "a-1"], counts)
+
+    # Assert
+    assert counts[("cve", "cve-2026-9999")] == total
+    assert ents == {}

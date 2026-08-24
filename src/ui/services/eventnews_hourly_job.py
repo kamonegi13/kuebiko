@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -21,7 +21,7 @@ import numpy as np
 from src.config_loader import load_app_config
 from src.eventnews.grouping import build_join_entities
 from src.eventnews.hourly import hydrate_open_items, run_hourly
-from src.eventnews.models import MemberArticle
+from src.eventnews.models import WINDOW_HOURS, MemberArticle
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
 from src.storage.run_history import RunHistoryRepository
@@ -52,11 +52,55 @@ WHERE a.created_at >= ? AND x.importance IN ('high','medium')
 ORDER BY 2
 """
 
-_SQL_ENTITIES = """
+# entity は **article_id で引く**。``article_entities.created_at`` は行を書いた時刻で
+# あって事象時刻ではない (バックフィル・再抽出は過去記事へ当日の日付を書く)。
+# ここを時刻で絞ると、復元した既存メンバー (最大 72h 前) の entity が空になり、
+# 「共有 entity >= 1」が永久に不成立 → **合流が構造的に起きなくなる**
+# (2026-08-24: 本番で 25 アイテム全件が単独記事のままだった原因)。
+_SQL_ENTITIES_BY_ID = """
 SELECT article_id, entity_type, LOWER(TRIM(value)) FROM article_entities
 WHERE entity_type IN ('cve','victim_org','actor','malware_family')
-  AND LENGTH(TRIM(value)) >= 4 AND created_at >= ?
+  AND LENGTH(TRIM(value)) >= 4 AND article_id IN ({placeholders})
 """
+
+# 頻出ガード (ENTITY_FREQ_CAP) の分母。窓内コーパス全体で数えないと、
+# 手元の数十件では cap に届かず頻出語が結合信号として通ってしまう。
+_SQL_ENTITY_COUNTS = f"""
+SELECT e.entity_type, LOWER(TRIM(e.value)), COUNT(DISTINCT e.article_id)
+FROM article_entities e
+WHERE e.entity_type IN ('cve','victim_org','actor','malware_family')
+  AND LENGTH(TRIM(e.value)) >= 4
+  AND e.article_id IN (
+    SELECT a.article_id FROM {DEDUP_ARTICLES} a WHERE a.created_at >= ?
+  )
+GROUP BY 1, 2
+"""
+
+
+def _entity_counts(
+    repo: RunHistoryRepository, window_start: datetime
+) -> dict[tuple[str, str], int]:
+    """窓内コーパスでの (entity_type, value) 出現記事数 = 頻出ガードの分母。"""
+    with repo._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(_SQL_ENTITY_COUNTS, (window_start.isoformat(),)).fetchall()
+    return {(str(r[0]), str(r[1])): int(r[2]) for r in rows}
+
+
+def _join_entities_for(
+    repo: RunHistoryRepository,
+    article_ids: Sequence[str],
+    counts: Mapping[tuple[str, str], int],
+) -> dict[str, frozenset[tuple[str, str]]]:
+    """指定記事の結合信号 entity を引く (候補・既存メンバーで共通に使う唯一の口)。"""
+    if not article_ids:
+        return {}
+    placeholders = ",".join("?" for _ in article_ids)
+    with repo._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(
+            _SQL_ENTITIES_BY_ID.format(placeholders=placeholders),  # noqa: S608 — placeholders のみ
+            list(article_ids),
+        ).fetchall()
+    return build_join_entities([(str(r[0]), str(r[1]), str(r[2])) for r in rows], counts)
 
 
 def _to_member(row: Mapping[str, object], entities: frozenset[tuple[str, str]]) -> MemberArticle:
@@ -99,14 +143,11 @@ async def run_eventnews_hourly() -> dict[str, object]:
 
     with repo._connect() as conn:  # noqa: SLF001 — repo 内部接続の再利用 (他ジョブと同型)
         rows = conn.execute(_SQL_CANDIDATES, (since.isoformat(),)).fetchall()
-        ent_rows = conn.execute(_SQL_ENTITIES, (since.isoformat(),)).fetchall()
 
-    counts: dict[tuple[str, str], int] = {}
-    raw = [(str(r[0]), str(r[1]), str(r[2])) for r in ent_rows]
-    for _, etype, value in raw:
-        counts[(etype, value)] = counts.get((etype, value), 0) + 1
-    join_ents = build_join_entities(raw, counts)
-    candidates = [_to_member(r, join_ents.get(str(r["article_id"]), frozenset())) for r in rows]
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=WINDOW_HOURS))
+    cand_ids = [str(r["article_id"]) for r in rows]
+    cand_ents = _join_entities_for(repo, cand_ids, counts)
+    candidates = [_to_member(r, cand_ents.get(str(r["article_id"]), frozenset())) for r in rows]
 
     vectors = _load_vectors(repo, [c.article_id for c in candidates])
     candidates = [c for c in candidates if c.article_id in vectors]
@@ -114,7 +155,7 @@ async def run_eventnews_hourly() -> dict[str, object]:
         _log.info("eventnews_hourly_no_candidates")
         return {"candidates": 0, "elapsed_seconds": round(time.monotonic() - started, 1)}
 
-    existing = hydrate_open_items(repo, lambda ids: _load_members(repo, ids, join_ents))
+    existing = hydrate_open_items(repo, lambda ids: _load_members(repo, ids, counts))
     for _, members in existing:
         vectors.update(_load_vectors(repo, [m.article_id for m in members]))
 
@@ -165,10 +206,12 @@ def _load_vectors(repo: RunHistoryRepository, article_ids: list[str]) -> dict[st
 def _load_members(
     repo: RunHistoryRepository,
     article_ids: list[str],
-    join_ents: dict[str, frozenset[tuple[str, str]]],
+    counts: Mapping[tuple[str, str], int],
 ) -> dict[str, MemberArticle]:
+    """既存アイテムのメンバーを本文 + 結合信号 entity ごと復元する。"""
     if not article_ids:
         return {}
+    join_ents = _join_entities_for(repo, article_ids, counts)
     placeholders = ",".join("?" for _ in article_ids)
     with repo._connect() as conn:  # noqa: SLF001
         rows = conn.execute(
