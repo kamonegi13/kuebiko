@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.cti.source_basis import classify_source_tier
 from src.storage.run_history import RunHistoryRepository
+from src.ui.api.articles_feed import RELATED_ENTITY_TYPE_ORDER
 
 eventnews_api = APIRouter(prefix="/api/v1/eventnews", tags=["eventnews"])
 
@@ -112,6 +113,90 @@ def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str,
     return out
 
 
+# メタデータの 1 種別あたり表示上限。ttp / ioc は 1 事象で数十件になりうるため、
+# 全件返すと読み手が本文に辿り着けない。省いた数は必ず返す (黙って切らない)。
+_METADATA_VALUE_CAP = 24
+
+
+def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> dict[str, Any]:
+    """構成記事から **決定論で** 集約したメタデータ。
+
+    生成本文とは別物として返す — ここは LLM を通らないので、値の正しさは抽出層の
+    品質そのもの。事象ニュースは「何が起きたか」の散文だが、実務では
+    「どの CVE か・どのアクターか・どの手口か」が判断材料になる。原記事を 1 件ずつ
+    開かないと分からない状態を解消するのがこの節の目的。
+
+    ラベルは付けない (値のみ返す) — 表示名の SSoT は frontend の ``vocabLabel``
+    (backend 配信の語彙) 一つに保つ。
+    """
+    ids = list(member_ids)
+    if not ids:
+        return {"entities": [], "subject_actors": [], "facets": []}
+
+    raw = repo.count_entities_for_articles(ids)
+    ordered = [*RELATED_ENTITY_TYPE_ORDER, *sorted(set(raw) - set(RELATED_ENTITY_TYPE_ORDER))]
+    groups: list[dict[str, Any]] = []
+    for etype in ordered:
+        values = raw.get(etype)
+        if not values:
+            continue
+        ranked = sorted(values.items(), key=lambda kv: (-kv[1], kv[0]))
+        entry: dict[str, Any] = {
+            "type": etype,
+            "values": [{"value": v, "articles": n} for v, n in ranked[:_METADATA_VALUE_CAP]],
+            "omitted": max(0, len(ranked) - _METADATA_VALUE_CAP),
+        }
+        if etype == "cve":
+            from src.tools.nvd_client import get_cvss
+
+            scores = {}
+            for v, _ in ranked[:_METADATA_VALUE_CAP]:
+                info = get_cvss(v)
+                if info:
+                    scores[v] = {"score": info[0], "severity": info[1]}
+            if scores:
+                entry["cvss"] = scores
+        groups.append(entry)
+
+    articles = repo.get_articles_by_ids(ids)
+    subject_counts: dict[str, int] = {}
+    facet_counts: dict[str, dict[str, int]] = {}
+    for art in articles.values():
+        for sid in (art.subject_actor_ids or "").split(","):
+            if sid.strip():
+                subject_counts[sid.strip()] = subject_counts.get(sid.strip(), 0) + 1
+        for key, value in (
+            ("victim_sector", art.victim_sector_canonical),
+            ("victim_country", art.victim_country_iso),
+            ("socio_political_intent", art.socio_political_intent),
+            ("category", art.category),
+        ):
+            if value:
+                facet_counts.setdefault(key, {})[value] = facet_counts[key].get(value, 0) + 1
+
+    from src.cti.actor_normalizer import load_actor_aliases
+
+    registry = load_actor_aliases()
+    subject_actors = []
+    for sid, n in sorted(subject_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        entry_ = registry.by_id(registry.resolve_actor_id(sid))
+        subject_actors.append(
+            {"id": sid, "label": entry_.canonical if entry_ else sid, "articles": n}
+        )
+
+    facets = [
+        {
+            "key": key,
+            "values": [
+                {"value": v, "articles": n}
+                for v, n in sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))
+            ],
+        }
+        for key, vals in facet_counts.items()
+    ]
+    return {"entities": groups, "subject_actors": subject_actors, "facets": facets}
+
+
 @eventnews_api.get("")
 def list_event_news(
     limit: int = 50, status: str | None = None, importance: str | None = None
@@ -183,5 +268,7 @@ def get_event_news(item_id: str) -> dict[str, Any]:
         "last_reported_at": record.state.last_reported_at.isoformat(),
         "news": _version_payload(repo, item_id),
         "members": _members_payload(repo, item_id),
+        # 原記事から抽出済みのメタデータ (決定論の集約。生成本文とは別枠で出す)
+        "metadata": _metadata_payload(repo, record.state.member_ids),
         "note": GENERATED_NOTE,
     }

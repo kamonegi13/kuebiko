@@ -45,7 +45,8 @@ _PIVOT_ENTITY_TYPES = {
     "ioc_url",
 }
 # related entity の表示順 (actor / malware を上位に)。
-_PIVOT_RELATED_TYPE_ORDER = [
+# **表示順の SSoT** — 記事詳細と事象ニュースで同じ順序を使う (import して参照)。
+RELATED_ENTITY_TYPE_ORDER = [
     "actor",
     "actor_provisional",
     "malware_family",
@@ -363,7 +364,7 @@ async def entity_pivot(
     related_raw = repo.count_entities_for_articles(article_ids) if article_ids else {}
 
     related: list[dict[str, Any]] = []
-    for t in _PIVOT_RELATED_TYPE_ORDER:
+    for t in RELATED_ENTITY_TYPE_ORDER:
         vc = related_raw.get(t)
         if not vc:
             continue
@@ -470,7 +471,7 @@ async def get_article_detail(request: Request, article_id: str) -> dict[str, Any
     ent_raw = repo.count_entities_for_articles([aid])
     entities: list[dict[str, Any]] = []
     seen_types: set[str] = set()
-    ordered_types = [*_PIVOT_RELATED_TYPE_ORDER, *sorted(ent_raw.keys())]
+    ordered_types = [*RELATED_ENTITY_TYPE_ORDER, *sorted(ent_raw.keys())]
     for t in ordered_types:
         if t in seen_types or t not in ent_raw:
             continue

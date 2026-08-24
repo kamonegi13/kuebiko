@@ -1,9 +1,16 @@
 // 事象ニュース widget — 直近の事象を「独立媒体数つき」で並べる。
 // 記事数を裏取りとして見せない (docs/event_news_design.md §3-3)。単独報は
 // 「1 媒体のみ」と明示する — I&W では未裏取りの初報こそ最重要でありうるため。
+//
+// 見出しの click は **その場でドロワーを開く** (一覧ページへ飛ばさない)。
+// widget から読み始めて、必要なら原記事ドロワーへ進む、が読み手の動線。
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchEventNews } from "../../../api/eventnews";
+import { Drawer } from "../../../components/Drawer";
+import { vocabLabel } from "../../../hooks/useVocab";
+import { EventNewsDetailBody, SourceChip } from "../../eventnews/EventNewsDetail";
 import { WidgetCard, Loading, Empty, WidgetError, cfgNum, cfgStr, type WidgetProps } from "../shared";
 
 const TONE: Record<string, string> = {
@@ -15,12 +22,14 @@ const TONE: Record<string, string> = {
 export function EventNewsWidget({ config }: WidgetProps) {
   const per = cfgNum(config, "per", 6);
   const importance = cfgStr(config, "importance", "high,medium");
+  const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
     queryKey: ["dash-eventnews", importance, per],
     queryFn: () => fetchEventNews(Math.max(per * 2, 20), importance || undefined),
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);
+  const openItem = items.find((i) => i.id === openId) ?? null;
 
   return (
     <WidgetCard title="事象ニュース" href="/app/eventnews" linkLabel="すべて →">
@@ -28,30 +37,37 @@ export function EventNewsWidget({ config }: WidgetProps) {
         <Empty>まだ事象がありません。</Empty>
       ) : (
         <ul className="space-y-2">
-          {items.map((it) => {
-            const solo = it.independent_sources <= 1;
-            return (
-              <li key={it.id} className="leading-snug">
-                <a href={`/app/eventnews#${it.id}`} className="text-[13px] text-fg hover:text-accent">
-                  {it.headline}
-                </a>
-                <div className="flex flex-wrap items-center gap-2 text-[10px] mt-0.5">
-                  <span className={TONE[it.importance] ?? "text-fg-subtle"}>{it.importance}</span>
-                  <span className={solo ? "text-warning" : "text-fg-subtle"}>
-                    {solo ? "1 媒体のみ・未裏取り" : `独立 ${it.independent_sources} 媒体`}
-                  </span>
-                  {it.state_media_count > 0 && (
-                    <span className="text-critical">国営 {it.state_media_count}</span>
-                  )}
-                  {it.status === "updated" && (
-                    <span className="px-1 rounded bg-accent/15 text-accent">更新</span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+          {items.map((it) => (
+            <li key={it.id} className="leading-snug">
+              <button
+                onClick={() => setOpenId(it.id)}
+                className="block w-full text-left text-[13px] text-fg hover:text-accent hover:underline"
+                title="事象の詳細を開く"
+              >
+                {it.headline}
+              </button>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] mt-0.5">
+                <span className={TONE[it.importance] ?? "text-fg-subtle"}>
+                  {vocabLabel("importance", it.importance)}
+                </span>
+                <SourceChip item={it} />
+                {it.status === "updated" && (
+                  <span className="px-1 rounded bg-accent/15 text-accent">更新</span>
+                )}
+              </div>
+            </li>
+          ))}
         </ul>
       )}
+      <Drawer
+        isOpen={openId !== null}
+        onClose={() => setOpenId(null)}
+        title={openItem?.headline ?? "事象"}
+        mobileGutter
+        swipeToClose
+      >
+        {openId && <EventNewsDetailBody id={openId} />}
+      </Drawer>
     </WidgetCard>
   );
 }

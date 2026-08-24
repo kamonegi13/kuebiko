@@ -240,3 +240,16 @@ def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
     # Assert
     assert counts[("cve", "cve-2026-9999")] == total
     assert ents == {}
+
+
+def test_frequency_window_is_independent_of_the_join_window() -> None:
+    """頻出ガードの分母は参加窓と独立であること。
+
+    二つを束ねると「参加窓を広げる → 分母も広がる → cap に掛かる値が増える →
+    広げた効果が相殺される」という無関係な結合が生まれる。実測では分母 336h と
+    720h で multi アイテムは 167 vs 165 とほぼ不変であり、束ねる理由が無い。
+    """
+    from src.eventnews import models
+
+    assert models.ENTITY_FREQ_WINDOW_HOURS == models.DORMANT_AFTER_DAYS * 24
+    assert models.ENTITY_FREQ_WINDOW_HOURS != models.WINDOW_HOURS

@@ -14,7 +14,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 import numpy as np
 
@@ -302,4 +302,53 @@ async def process_candidates(
         reason_counts=tuple(sorted(reason_counter.items())),
         later_joins=later_joins,
         later_reinforced=later_reinforced,
+    )
+
+
+@dataclass(frozen=True)
+class BackfillStats:
+    attempted: int
+    generated: int
+    skipped: int
+    failed: int
+
+
+async def generate_pending(
+    repo: EventNewsMixin,
+    pending: Sequence[tuple[ItemState, Sequence[MemberArticle]]],
+    llm_factory: Callable[[], LLMClient],
+    *,
+    limit: int | None = None,
+    on_progress: Callable[[int, int, str], None] | None = None,
+) -> BackfillStats:
+    """まだ版を持たないアイテムに対し、**最終状態で 1 回だけ**生成する。
+
+    過去分の遡及生成 (バックフィル) 用。逐次適用をそのまま再生すると状態遷移ごとに
+    生成が走り、読み手には見えない中間版に LLM 時間を費やすことになる。過去の
+    「更新の履歴」は事後には価値が無い — 必要なのは今読める最終形なので、
+    群化 (``process_candidates(generate=False)``) と生成をこの関数で分ける。
+    """
+    llm = llm_factory()
+    now = datetime.now(UTC)
+    targets = list(pending)[: limit if limit is not None else len(pending)]
+    generated = skipped = failed = 0
+    for i, (snapshot, members) in enumerate(targets, start=1):
+        item = _LiveItem(snapshot=snapshot, members=list(members))
+        if on_progress:
+            on_progress(i, len(targets), snapshot.item_id)
+        gate, _ = await _generate_version(repo, item, llm, now, "[]")
+        if gate is None:
+            textual, _ = gen.select_members(item.members)
+            if len(textual) < 2:
+                skipped += 1
+            else:
+                failed += 1
+            continue
+        generated += 1
+        repo.update_event_item(
+            snapshot.item_id,
+            {"current_version": snapshot.current_version + 1, "updated_at": now},
+        )
+    return BackfillStats(
+        attempted=len(targets), generated=generated, skipped=skipped, failed=failed
     )

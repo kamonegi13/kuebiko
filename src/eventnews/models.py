@@ -19,14 +19,30 @@ COS_THRESHOLD = 0.70
 JOIN_ENTITY_TYPES: tuple[str, ...] = ("cve", "victim_org", "actor", "malware_family")
 # entity 値の頻出ガード: 窓内でこれを超える記事に出る値は結合信号に使わない
 ENTITY_FREQ_CAP = 12
+# 頻出ガードの分母を数える窓。**参加窓 (WINDOW_HOURS) とは独立**に持つ — 二つを
+# 束ねると「参加窓を広げると分母も広がって cap に掛かる値が増え、広げた効果が
+# 相殺される」という無関係な結合が生まれる。アイテムが成長しうる最長期間
+# (dormant 期限) を基準にする。336h と 720h の比較で結果はほぼ不変 (multi 167 vs 165)。
+ENTITY_FREQ_WINDOW_HOURS = 14 * 24  # = DORMANT_AFTER_DAYS * 24
 # 参加窓: 既存アイテム last_reported_at からの時間 (rolling)
-WINDOW_HOURS = 72
+#
+# 72h → 168h (2026-08-24)。30 日の実データで窓幅を掃引した結果:
+#   窓    multi アイテム  記事被覆
+#    24h        108         6.2%
+#    72h        167         9.5%
+#   168h        204        12.0%
+#   336h        218        12.9%
+# 168h で頭打ちに近づく (以降 +7%)。168h で初めて成立する群を全件目視したところ、
+# すべて同一事象の続報だった (Hugging Face 侵害の 11 日間・VMware 重大脆弱性の
+# 日本語媒体による後追い・Jewelbug の追加分析等)。**続報で更新される**ことが
+# この機能の主目的なので、精度を落とさずに拾えるなら広げる方が正しい。
+WINDOW_HOURS = 168
 # アイテムのメンバー上限 (超過は新アイテム「第 2 部」+ related_to)
 MEMBER_CAP = 12
 # dormant アイテムへの再参加の厳条件
 DORMANT_REJOIN_COS = 0.80
 DORMANT_REJOIN_SHARED = 2
-# 失効: last_reported_at からこの日数で dormant
+# 失効: last_reported_at からこの日数で dormant (ENTITY_FREQ_WINDOW_HOURS と同基準)
 DORMANT_AFTER_DAYS = 14
 
 # ---------- 生成 (§9) ----------

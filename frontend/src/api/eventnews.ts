@@ -36,6 +36,18 @@ export interface EventNewsMember {
   contributed_new_facts: boolean;
 }
 
+/** 原記事から抽出済みのメタデータ (決定論の集約。LLM を通らない)。 */
+export interface EventNewsMetadata {
+  entities: {
+    type: string;
+    values: { value: string; articles: number }[];
+    omitted: number;
+    cvss?: Record<string, { score: number; severity: string }>;
+  }[];
+  subject_actors: { id: string; label: string; articles: number }[];
+  facets: { key: string; values: { value: string; articles: number }[] }[];
+}
+
 export interface EventNewsDetail {
   id: string;
   status: string;
@@ -61,6 +73,7 @@ export interface EventNewsDetail {
     history: { version: number; generated_at: string }[];
   } | null;
   members: EventNewsMember[];
+  metadata: EventNewsMetadata;
   note: string;
 }
 

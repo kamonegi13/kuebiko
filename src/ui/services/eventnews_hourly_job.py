@@ -21,7 +21,7 @@ import numpy as np
 from src.config_loader import load_app_config
 from src.eventnews.grouping import build_join_entities
 from src.eventnews.hourly import hydrate_open_items, run_hourly
-from src.eventnews.models import WINDOW_HOURS, MemberArticle
+from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
 from src.storage.run_history import RunHistoryRepository
@@ -136,15 +136,24 @@ async def run_eventnews_hourly() -> dict[str, object]:
     if os.environ.get(_FLAG, "1") == "0":
         _log.info("eventnews_hourly_disabled")
         return {"skipped": "flag_off"}
+    return await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
 
+
+async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) -> dict[str, object]:
+    """指定した遡及幅で群化 (+ 生成) を 1 回走らせる。
+
+    毎時ジョブとバックフィルで **取得を完全に共有する** ための唯一の入口。
+    2026-08-24 の不発は「評価と本番で entity の引き方が違った」ことが原因だったので、
+    遡及幅だけを引数にして、それ以外の経路を分岐させない。
+    """
     started = time.monotonic()
     repo = RunHistoryRepository()
-    since = datetime.now(UTC) - timedelta(hours=_CANDIDATE_LOOKBACK_HOURS)
+    since = datetime.now(UTC) - timedelta(hours=lookback_hours)
 
     with repo._connect() as conn:  # noqa: SLF001 — repo 内部接続の再利用 (他ジョブと同型)
         rows = conn.execute(_SQL_CANDIDATES, (since.isoformat(),)).fetchall()
 
-    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=WINDOW_HOURS))
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
     cand_ids = [str(r["article_id"]) for r in rows]
     cand_ents = _join_entities_for(repo, cand_ids, counts)
     candidates = [_to_member(r, cand_ents.get(str(r["article_id"]), frozenset())) for r in rows]
@@ -164,7 +173,7 @@ async def run_eventnews_hourly() -> dict[str, object]:
     def _llm() -> LLMClient:
         return build_llm_for(Step.EVENT_NEWS, config)
 
-    result = await run_hourly(repo, candidates, vectors, existing, _llm)
+    result = await run_hourly(repo, candidates, vectors, existing, _llm if generate else None)
     elapsed = round(time.monotonic() - started, 1)
     _log.info(
         "eventnews_hourly_summary",
