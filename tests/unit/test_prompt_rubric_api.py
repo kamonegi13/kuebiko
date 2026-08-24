@@ -468,7 +468,7 @@ class TestConfigHistoryIntegration:
         assert before is not None
         assert before.intro == "v2 の導入文"
 
-        await config_history.revert_config("summarizer_rubric", RevertRequest(version=1))
+        config_history.revert_config("summarizer_rubric", RevertRequest(version=1))
 
         after = rubric_store.load_rubric()
         assert after is not None

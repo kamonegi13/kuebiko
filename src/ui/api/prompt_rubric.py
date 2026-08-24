@@ -145,7 +145,7 @@ class SaveRubricRequest(BaseModel):
 
 
 @prompt_rubric_api.put("/rubric")
-async def put_rubric(req: SaveRubricRequest) -> dict[str, Any]:
+def put_rubric(req: SaveRubricRequest) -> dict[str, Any]:
     """判定基準を検証して DB に版保存する。エラーがあれば 400 で保存を拒否する。"""
     validation: RubricValidation = validate_rubric(req.rubric)
     if not validation.is_valid:

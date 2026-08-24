@@ -60,7 +60,7 @@ async def get_product_routing() -> dict[str, Any]:
 
 
 @product_routing_api.post("")
-async def save_product_routing(req: SaveProductRoutingRequest) -> dict[str, Any]:
+def save_product_routing(req: SaveProductRoutingRequest) -> dict[str, Any]:
     """プロダクト配信マッピングを検証して保存 (版履歴は config_store に残る)。"""
     from src.storage.config_store import save_config
     from src.tools.channel_registry import known_channel_ids

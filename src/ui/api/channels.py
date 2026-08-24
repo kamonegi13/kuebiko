@@ -147,7 +147,7 @@ class SaveWebhookRequest(BaseModel):
 
 
 @channels_api.post("/{channel_id}/webhook")
-async def save_channel_webhook(
+def save_channel_webhook(
     channel_id: str, request: Request, req: SaveWebhookRequest
 ) -> dict[str, Any]:
     """チャンネルの投稿先 webhook URL を .env に保存する (空文字 = 削除、即時反映)。
@@ -187,7 +187,7 @@ async def save_channel_webhook(
 
 
 @channels_api.post("")
-async def save_channels(req: SaveChannelsRequest) -> dict[str, Any]:
+def save_channels(req: SaveChannelsRequest) -> dict[str, Any]:
     """チャンネルレジストリを検証して保存 (版履歴は config_store に残る)。"""
     from src.storage.config_store import save_config
     from src.tools.channel_registry import (

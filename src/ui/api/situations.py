@@ -39,7 +39,7 @@ def _rev_dict(r: RevisionRow) -> dict[str, Any]:
 
 
 @situations_api.get("")
-async def list_situations(status: str = "active,dormant") -> dict[str, Any]:
+def list_situations(status: str = "active,dormant") -> dict[str, Any]:
     """追跡中の情勢一覧 (salience 降順)。status は CSV (active/dormant/closed)。"""
     statuses = tuple(s.strip() for s in status.split(",") if s.strip())
     store = SituationStore()
@@ -75,7 +75,7 @@ async def list_situations(status: str = "active,dormant") -> dict[str, Any]:
 
 
 @situations_api.get("/{situation_id}")
-async def situation_detail(situation_id: str) -> dict[str, Any]:
+def situation_detail(situation_id: str) -> dict[str, Any]:
     """1 情勢の全 revision 履歴 + 証拠台帳 + 関係 (検証可能性の開示)。"""
     store = SituationStore()
     row = store.get_situation(situation_id)

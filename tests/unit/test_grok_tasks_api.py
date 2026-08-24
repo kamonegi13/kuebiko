@@ -79,8 +79,8 @@ class TestRoundTrip:
 
         # Act
         req = SaveGrokTasksRequest(tasks=[_task(), _task(id="jp_east_asia")])
-        saved = await gt.save_grok_tasks(req)
-        out = await gt.get_grok_tasks()
+        saved = gt.save_grok_tasks(req)
+        out = gt.get_grok_tasks()
 
         # Assert
         assert saved["saved"] is True and saved["count"] == 2
@@ -91,7 +91,7 @@ class TestRoundTrip:
     async def test_invalid_save_raises_400(self) -> None:
         req = SaveGrokTasksRequest(tasks=[_task(id="dup"), _task(id="dup")])
         with pytest.raises(HTTPException) as ei:
-            await gt.save_grok_tasks(req)
+            gt.save_grok_tasks(req)
         assert ei.value.status_code == 400
 
 

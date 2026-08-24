@@ -62,7 +62,7 @@ async def list_pipelines() -> dict[str, Any]:
 
 
 @runs_api.get("/recent")
-async def recent_runs(request: Request, limit: int = 10) -> dict[str, Any]:
+def recent_runs(request: Request, limit: int = 10) -> dict[str, Any]:
     """直近 run 一覧 + 現在 running の run。"""
     repo: RunHistoryRepository = request.app.state.repo
     running = repo.list_runs(limit=1, status="running")
@@ -109,7 +109,7 @@ async def start_run(
 
 
 @runs_api.get("/{run_id}")
-async def get_run(request: Request, run_id: int) -> dict[str, Any]:
+def get_run(request: Request, run_id: int) -> dict[str, Any]:
     """1 run の status + meta。"""
     repo: RunHistoryRepository = request.app.state.repo
     run = repo.get_run(run_id)
@@ -119,7 +119,7 @@ async def get_run(request: Request, run_id: int) -> dict[str, Any]:
 
 
 @runs_api.get("/{run_id}/log")
-async def get_run_log(
+def get_run_log(
     request: Request,
     run_id: int,
     from_seq: int = 0,
@@ -144,7 +144,7 @@ async def get_run_log(
 
 
 @dash_api.get("/summary")
-async def dashboard_summary(request: Request, days: int = 7) -> dict[str, Any]:
+def dashboard_summary(request: Request, days: int = 7) -> dict[str, Any]:
     """ダッシュボード集計 (直近 N 日)。"""
     days = max(1, min(days, 90))
     repo: RunHistoryRepository = request.app.state.repo

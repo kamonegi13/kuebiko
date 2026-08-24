@@ -49,7 +49,7 @@ pages_api = APIRouter(prefix="/api/v1", tags=["pages"])
 
 
 @pages_api.get("/history")
-async def history_list(
+def history_list(
     request: Request,
     importance: str | None = None,
     status: str | None = None,
@@ -97,7 +97,7 @@ async def history_list(
 
 
 @pages_api.post("/history/{run_id}/delete")
-async def history_delete(request: Request, run_id: int) -> dict[str, Any]:
+def history_delete(request: Request, run_id: int) -> dict[str, Any]:
     repo: RunHistoryRepository = request.app.state.repo
     deleted = repo.delete_run(run_id)
     if not deleted:
@@ -109,7 +109,7 @@ async def history_delete(request: Request, run_id: int) -> dict[str, Any]:
 
 
 @pages_api.post("/history/purge")
-async def history_purge(request: Request, days: int = Form(default=30)) -> dict[str, Any]:
+def history_purge(request: Request, days: int = Form(default=30)) -> dict[str, Any]:
     """N 日より古い run_logs (ライブログ) を purge する (Phase 0 F3, non-destructive)。
 
     旧実装は delete_runs_older_than で runs を削除し articles を FK CASCADE で連鎖削除して
@@ -127,7 +127,7 @@ async def history_purge(request: Request, days: int = Form(default=30)) -> dict[
 
 
 @pages_api.get("/access-audit")
-async def access_audit(limit: int = 200) -> dict[str, Any]:
+def access_audit(limit: int = 200) -> dict[str, Any]:
     """Cloudflare Access (Tier1) の認証イベントを新しい順に返す。
 
     公開 instance からは READ_ONLY_GET_DENYLIST で遮断され、ローカル full instance と
@@ -156,7 +156,7 @@ async def access_audit(limit: int = 200) -> dict[str, Any]:
 
 
 @pages_api.get("/ops-notices")
-async def ops_notices(request: Request, limit: int = 50) -> dict[str, Any]:
+def ops_notices(request: Request, limit: int = 50) -> dict[str, Any]:
     """post_ops_message が送った ops 通知を新しい順に返す (設定 → 履歴・監査タブ用)。
 
     webhook 不達・未設定でも DB には必ず 1 行残る (src/ui/services/ops_notify.py)。
@@ -388,7 +388,7 @@ _EXPORT_SUMMARY_MAX = 1000
 
 
 @pages_api.get("/export/articles.csv")
-async def export_articles_csv(
+def export_articles_csv(
     request: Request,
     since_days: int = Query(default=90, ge=0, le=3650),
     importance: str | None = Query(default=None),
@@ -450,7 +450,7 @@ async def export_articles_csv(
 
 
 @pages_api.get("/subscriptions")
-async def subscriptions_list() -> dict[str, Any]:
+def subscriptions_list() -> dict[str, Any]:
     """購読ソース list を返す (全 transport + 無効ソースも含む)。
 
     Phase F+: _source_manager で feeds.yaml(rss) / scrapers.yaml(html_scraper) /
@@ -856,7 +856,7 @@ async def source_quality_get(request: Request) -> dict[str, Any]:
 
 
 @pages_api.post("/config/source-quality")
-async def source_quality_save(
+def source_quality_save(
     request: Request,
     brief_cap_24h: int = Form(...),
     categories: str = Form(default=""),  # カンマ区切りの category 群
@@ -922,7 +922,7 @@ async def actors_list(request: Request) -> dict[str, Any]:
 
 
 @pages_api.post("/actors/{actor_id}")
-async def actors_update(request: Request, actor_id: str, body: ActorEditRequest) -> dict[str, Any]:
+def actors_update(request: Request, actor_id: str, body: ActorEditRequest) -> dict[str, Any]:
     """既存 actor を更新。alias 重複 (誤帰属) は 400 で拒否。"""
     from src.cti.actor_editor import (
         apply_actor_edit,
@@ -1028,7 +1028,7 @@ def _proposal_to_dict(p: Any) -> dict[str, Any]:
 
 
 @pages_api.get("/actors/sync")
-async def actors_sync_status(request: Request) -> dict[str, Any]:
+def actors_sync_status(request: Request) -> dict[str, Any]:
     """MITRE 同期のレビュー待ち提案一覧 + 同期カバレッジ。"""
     from src.cti.actor_editor import load_actors_raw
 
@@ -1045,7 +1045,7 @@ async def actors_sync_status(request: Request) -> dict[str, Any]:
 
 
 @pages_api.post("/actors/sync/proposals/{proposal_id}/approve")
-async def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, Any]:
+def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, Any]:
     """MITRE 同期提案を承認して actor_aliases.yaml に適用する。
 
     - mitre_new_actor: alias 衝突を再検証してから新規 actor を追加
@@ -1232,7 +1232,7 @@ async def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, A
 
 
 @pages_api.post("/actors/sync/proposals/{proposal_id}/reject")
-async def actors_sync_reject(request: Request, proposal_id: int) -> dict[str, Any]:
+def actors_sync_reject(request: Request, proposal_id: int) -> dict[str, Any]:
     """MITRE 同期提案を却下する (dedup_key により同一提案は再生成されない)。"""
     repo = RunHistoryRepository()
     if not repo.decide_actor_update_proposal(proposal_id, status="rejected"):
@@ -1559,7 +1559,7 @@ async def schedule_toggle_scraper(
 
 
 @pages_api.get("/taxonomy-review")
-async def taxonomy_review(request: Request) -> dict[str, Any]:
+def taxonomy_review(request: Request) -> dict[str, Any]:
     from src.storage.run_history import RunHistoryRepository
 
     repo = RunHistoryRepository()
@@ -1616,7 +1616,7 @@ async def taxonomy_review(request: Request) -> dict[str, Any]:
 
 
 @pages_api.post("/taxonomy-review/{proposal_id}/{action}")
-async def taxonomy_action(
+def taxonomy_action(
     request: Request,
     proposal_id: int,
     action: str,
@@ -1703,7 +1703,7 @@ async def taxonomy_action(
 
 
 @pages_api.get("/tuning-labels")
-async def tuning_labels_summary() -> dict[str, Any]:
+def tuning_labels_summary() -> dict[str, Any]:
     """遅延正解ラベルと goldset 切替評価の履歴 — 運用タブの件数カード用。
 
     ラベル台帳は 2026-08-22 の較正格子撤収により **凍結資産** (新規収穫なし)。
@@ -1726,7 +1726,7 @@ _VALID_STANCES = ("factual_report", "analytical", "opinion", "propaganda", "unkn
 
 
 @pages_api.get("/editorial-quality")
-async def editorial_quality(
+def editorial_quality(
     request: Request,
     lookback_days: int = 14,
     stance_filter: str | None = None,

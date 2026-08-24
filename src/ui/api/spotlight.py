@@ -108,7 +108,7 @@ class SpotlightListResponse(BaseModel):
 
 
 @spotlight_api.get("", response_model=SpotlightListResponse)
-async def list_spotlights(period_type: SpotlightPeriod = "weekly") -> SpotlightListResponse:
+def list_spotlights(period_type: SpotlightPeriod = "weekly") -> SpotlightListResponse:
     """全 PIR の最新 Spotlight を取得 (UI 一覧用)。"""
     repo = RunHistoryRepository()
     kev_set = get_kev_cve_set()
@@ -120,7 +120,7 @@ async def list_spotlights(period_type: SpotlightPeriod = "weekly") -> SpotlightL
 
 
 @spotlight_api.get("/{pir_id}", response_model=SpotlightSummary)
-async def get_spotlight(pir_id: str, period_type: SpotlightPeriod = "weekly") -> SpotlightSummary:
+def get_spotlight(pir_id: str, period_type: SpotlightPeriod = "weekly") -> SpotlightSummary:
     """個別 PIR の最新 Spotlight (詳細画面用)。"""
     repo = RunHistoryRepository()
     rec = repo.get_latest_spotlight(pir_id=pir_id, period_type=period_type)

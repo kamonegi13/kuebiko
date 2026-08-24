@@ -187,7 +187,7 @@ def _build_facets(  # noqa: PLR0913
 
 
 @articles_feed_api.get("/articles")
-async def list_articles_feed(  # noqa: PLR0913
+def list_articles_feed(  # noqa: PLR0913
     request: Request,
     importance: str | None = Query(default=None),
     category: str | None = Query(default=None),
@@ -329,7 +329,7 @@ async def feed_options(request: Request, days: int = 90) -> dict[str, Any]:  # n
 
 
 @articles_feed_api.get("/pivot")
-async def entity_pivot(
+def entity_pivot(
     request: Request,
     entity_type: str = Query(...),
     value: str = Query(...),
@@ -436,7 +436,7 @@ def _routing_rule_label(rule_id: str | None) -> str | None:
 
 
 @articles_feed_api.get("/articles/{article_id:path}")
-async def get_article_detail(request: Request, article_id: str) -> dict[str, Any]:
+def get_article_detail(request: Request, article_id: str) -> dict[str, Any]:
     """1 記事の全 enrichment を返す deep-view (Phase 2 K4)。
 
     body / summary / Diamond (intent + technical) / victim / PMESII-PT 8 軸 /

@@ -113,7 +113,7 @@ async def translate_article(request: Request, article_id: str) -> dict[str, Any]
 
 
 @article_ops_api.get("/{article_id:path}/stix")
-async def article_stix(request: Request, article_id: str) -> Response:
+def article_stix(request: Request, article_id: str) -> Response:
     """単記事の STIX 2.1 bundle を download 形式で返す。"""
     aid = article_id.strip()
     if not aid:

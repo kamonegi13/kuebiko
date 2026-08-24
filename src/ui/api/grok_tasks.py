@@ -82,7 +82,7 @@ def _latest_meta() -> dict[str, Any]:
 
 
 @grok_tasks_api.get("")
-async def get_grok_tasks() -> dict[str, Any]:
+def get_grok_tasks() -> dict[str, Any]:
     """タスク定義の写し一覧 (UI 表示/編集用)。"""
     from src.storage.config_store import get_config
 
@@ -92,7 +92,7 @@ async def get_grok_tasks() -> dict[str, Any]:
 
 
 @grok_tasks_api.put("")
-async def save_grok_tasks(req: SaveGrokTasksRequest) -> dict[str, Any]:
+def save_grok_tasks(req: SaveGrokTasksRequest) -> dict[str, Any]:
     """タスク定義の写しを検証して版保存する。"""
     errs = validate_tasks(req.tasks)
     if errs:

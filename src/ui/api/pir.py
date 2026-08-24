@@ -192,7 +192,7 @@ class PirOption(BaseModel):
 # ⚠ **`/{pir_id}` より前に登録すること**。FastAPI は登録順に照合するため、後ろに
 # 置くと `pir_id="options"` として捕まる。
 @pir_api.get("/options", response_model=list[PirOption])
-async def list_pir_options() -> list[PirOption]:
+def list_pir_options() -> list[PirOption]:
     """PIR の id / title だけを返す軽量経路 (ニュース・事象ニュースの facet 用)。
 
     **一覧 (`GET /api/v1/pir`) を dropdown に使ってはいけない** — あちらは 30 日 ×
@@ -233,7 +233,7 @@ def list_pirs() -> PirListResponse:
 
 
 @pir_api.get("/{pir_id}", response_model=Pir)
-async def get_pir(pir_id: str) -> Pir:
+def get_pir(pir_id: str) -> Pir:
     cfg = load_current_pir_config()
     pir = cfg.find(pir_id)
     if pir is None:
@@ -242,7 +242,7 @@ async def get_pir(pir_id: str) -> Pir:
 
 
 @pir_api.get("/{pir_id}/kpi", response_model=KpiResponse)
-async def get_pir_kpi(pir_id: str) -> KpiResponse:
+def get_pir_kpi(pir_id: str) -> KpiResponse:
     cfg = load_current_pir_config()
     pir = cfg.find(pir_id)
     if pir is None:
@@ -301,7 +301,7 @@ async def preview_pir(req: PreviewRequest) -> PreviewResponse:
 
 
 @pir_api.post("/save", response_model=Pir)
-async def save_pir(req: SavePirRequest) -> Pir:
+def save_pir(req: SavePirRequest) -> Pir:
     """新規追加 or 既存 update。"""
     # 照合条件の構造検証 (authoring 統一 §3.2)。evaluate_match は不明構造を静かに
     # no-match に倒すため、保存時に拒否して「静かな沈黙 PIR」を作らせない。
@@ -364,7 +364,7 @@ async def save_pir(req: SavePirRequest) -> Pir:
 
 
 @pir_api.post("/{pir_id}/approve", response_model=Pir)
-async def approve_pir(pir_id: str) -> Pir:
+def approve_pir(pir_id: str) -> Pir:
     """draft PIR を user 承認済としてマーク (UI の一覧で banner を消す用)。"""
     cfg = load_current_pir_config()
     pir = cfg.find(pir_id)
@@ -390,7 +390,7 @@ async def approve_pir(pir_id: str) -> Pir:
 
 
 @pir_api.post("/{pir_id}/toggle", response_model=Pir)
-async def toggle_pir(pir_id: str) -> Pir:
+def toggle_pir(pir_id: str) -> Pir:
     """PIR の enabled を toggle (一覧画面で素早く on/off)。"""
     cfg = load_current_pir_config()
     pir = cfg.find(pir_id)
@@ -410,7 +410,7 @@ async def toggle_pir(pir_id: str) -> Pir:
 
 
 @pir_api.delete("/{pir_id}", response_model=dict)
-async def delete_pir(pir_id: str) -> dict[str, Any]:
+def delete_pir(pir_id: str) -> dict[str, Any]:
     cfg = load_current_pir_config()
     pir = cfg.find(pir_id)
     if pir is None:

@@ -308,7 +308,7 @@ class SaveAnthropicKeyRequest(BaseModel):
 
 
 @model_tiers_api.post("/anthropic-key")
-async def save_anthropic_key(request: Request, req: SaveAnthropicKeyRequest) -> dict[str, Any]:
+def save_anthropic_key(request: Request, req: SaveAnthropicKeyRequest) -> dict[str, Any]:
     """外部 LLM (Anthropic) の API キーを .env に保存/削除する (UI 完結・即時反映)。
 
     保存先は DB でなく **.env** — config_store は版履歴 (app_config_versions) と日次
@@ -468,7 +468,7 @@ class SaveEndpointsRequest(BaseModel):
 
 
 @model_tiers_api.post("/endpoints")
-async def save_llm_endpoints_api(req: SaveEndpointsRequest) -> dict[str, Any]:
+def save_llm_endpoints_api(req: SaveEndpointsRequest) -> dict[str, Any]:
     """接続先一覧を検証して DB (config_store) に版保存する。
 
     削除ガード: いずれかのティアに割当中の接続先は削除できない (400)。
@@ -545,7 +545,7 @@ async def save_endpoint_key(request: Request, req: SaveEndpointKeyRequest) -> di
 
 
 @model_tiers_api.post("")
-async def save_model_tiers(req: SaveModelTiersRequest) -> dict[str, Any]:
+def save_model_tiers(req: SaveModelTiersRequest) -> dict[str, Any]:
     """ティア割当を検証 (中華系拒否) して保存 (版履歴は config_store に残る)。"""
     from src.storage.config_store import save_config
     from src.tools.model_tiers import (

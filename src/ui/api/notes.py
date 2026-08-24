@@ -38,7 +38,7 @@ def note_to_dict(n: ArticleNoteRecord) -> dict[str, Any]:
 
 
 @notes_api.get("/notes")
-async def list_notes(
+def list_notes(
     request: Request,
     bookmarked_only: bool = Query(default=False),
     tag: str | None = Query(default=None),
@@ -64,7 +64,7 @@ async def list_notes(
 
 
 @notes_api.get("/notes/{article_id:path}")
-async def get_note(request: Request, article_id: str) -> dict[str, Any]:
+def get_note(request: Request, article_id: str) -> dict[str, Any]:
     """1 article の note を取得 (無ければ exists=false)。read-only。"""
     repo = request.app.state.repo
     n = repo.get_article_note(article_id.strip())
@@ -74,7 +74,7 @@ async def get_note(request: Request, article_id: str) -> dict[str, Any]:
 
 
 @notes_api.put("/notes/{article_id:path}")
-async def put_note(request: Request, article_id: str, body: NoteBody) -> dict[str, Any]:
+def put_note(request: Request, article_id: str, body: NoteBody) -> dict[str, Any]:
     """note を upsert。全フィールド空なら delete (no-op note を残さない)。write。"""
     repo = request.app.state.repo
     aid = article_id.strip()
@@ -98,7 +98,7 @@ async def put_note(request: Request, article_id: str, body: NoteBody) -> dict[st
 
 
 @notes_api.delete("/notes/{article_id:path}")
-async def delete_note(request: Request, article_id: str) -> dict[str, Any]:
+def delete_note(request: Request, article_id: str) -> dict[str, Any]:
     """note を削除。write。"""
     repo = request.app.state.repo
     repo.delete_article_note(article_id.strip())
@@ -124,7 +124,7 @@ def event_note_to_dict(n: EventNoteRecord) -> dict[str, Any]:
 
 
 @notes_api.get("/event-notes/{item_id}")
-async def get_event_note(request: Request, item_id: str) -> dict[str, Any]:
+def get_event_note(request: Request, item_id: str) -> dict[str, Any]:
     """1 事象の memo/bookmark を返す (未作成なら空)。read-only。"""
     rec = request.app.state.repo.get_event_note(item_id.strip())
     if rec is None:
@@ -133,7 +133,7 @@ async def get_event_note(request: Request, item_id: str) -> dict[str, Any]:
 
 
 @notes_api.put("/event-notes/{item_id}")
-async def put_event_note(request: Request, item_id: str, body: NoteBody) -> dict[str, Any]:
+def put_event_note(request: Request, item_id: str, body: NoteBody) -> dict[str, Any]:
     """1 事象の memo/bookmark を保存する (write = ローカル instance のみ)。"""
     iid = item_id.strip()
     if not iid:

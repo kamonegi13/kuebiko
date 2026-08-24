@@ -247,7 +247,7 @@ def get_actor_detail(  # sync def = threadpool 実行 (同上)
 
 
 @api.get("/pmesii")
-async def get_pmesii(
+def get_pmesii(
     time: str = "30",
     axis: str = "",
 ) -> dict[str, Any]:
@@ -322,7 +322,7 @@ async def get_situation(nation: str = "", time: str = "90") -> dict[str, Any]:
 
 
 @api.get("/synthesis")
-async def get_synthesis(period_type: str = "weekly") -> dict[str, Any]:
+def get_synthesis(period_type: str = "weekly") -> dict[str, Any]:
     """Synthesis tab data。"""
     if period_type not in ("daily", "weekly", "monthly"):
         period_type = "weekly"
@@ -455,7 +455,7 @@ async def get_synthesis(period_type: str = "weekly") -> dict[str, Any]:
 
 
 @api.get("/forecast")
-async def get_forecast(weeks: int = Query(default=8, ge=4, le=26)) -> dict[str, Any]:
+def get_forecast(weeks: int = Query(default=8, ge=4, le=26)) -> dict[str, Any]:
     """Phase 4 将来予測: spike (FC3) / トレンド (FC4) / 相関 (FC5) / 指標的中率 (FC2)。
 
     決定的 (LLM 非依存) な時系列分析。actor / intent の週次活動から、分散考慮 spike や
@@ -469,7 +469,7 @@ async def get_forecast(weeks: int = Query(default=8, ge=4, le=26)) -> dict[str, 
 
 
 @api.get("/retrospect")
-async def get_retrospect(weeks_ago: int = Query(default=1, ge=0, le=52)) -> dict[str, Any]:
+def get_retrospect(weeks_ago: int = Query(default=1, ge=0, le=52)) -> dict[str, Any]:
     """Phase 6 過去参照: ``weeks_ago`` 週前の振り返りスナップショット。
 
     その週の synthesis (状況総括) + 主要記事 + 活動 actor + forecast 指標の的中結果を
@@ -481,7 +481,7 @@ async def get_retrospect(weeks_ago: int = Query(default=1, ge=0, le=52)) -> dict
 
 
 @api.get("/brief-context")
-async def get_brief_context(until: str = Query(default="")) -> dict[str, Any]:
+def get_brief_context(until: str = Query(default="")) -> dict[str, Any]:
     """ブリーフ閲覧時の補足コンテキスト (時間軸統合 P2/P3)。
 
     ``until`` = 選択中ブリーフの生成時刻 (ISO)。省略時は現在時刻。直前 24h の
@@ -504,7 +504,7 @@ async def get_brief_context(until: str = Query(default="")) -> dict[str, Any]:
 
 
 @api.get("/daily-briefs")
-async def get_daily_briefs(
+def get_daily_briefs(
     limit: int = Query(default=30, ge=1, le=180),
     meta_only: int = Query(default=0, ge=0, le=1),
 ) -> dict[str, Any]:
@@ -519,7 +519,7 @@ async def get_daily_briefs(
 
 
 @api.get("/daily-briefs/{brief_id}")
-async def get_daily_brief_by_id(brief_id: int) -> dict[str, Any]:
+def get_daily_brief_by_id(brief_id: int) -> dict[str, Any]:
     """1 件の日次ブリーフを本文込みで返す (一覧からの選択時オンデマンド取得)。"""
     repo = RunHistoryRepository()
     brief = repo.get_daily_brief(brief_id)

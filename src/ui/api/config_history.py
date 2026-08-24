@@ -123,7 +123,7 @@ class RevertRequest(BaseModel):
 
 
 @config_history_api.get("")
-async def list_config_keys() -> dict[str, Any]:
+def list_config_keys() -> dict[str, Any]:
     """履歴対象 config key の一覧 (現 version + 版数)。UI のセレクタ用。"""
     keys: list[dict[str, Any]] = []
     for key, label in _KNOWN_KEYS.items():
@@ -140,7 +140,7 @@ async def list_config_keys() -> dict[str, Any]:
 
 
 @config_history_api.get("/{key}")
-async def get_config_history(key: str) -> dict[str, Any]:
+def get_config_history(key: str) -> dict[str, Any]:
     """1 key の版履歴 (新しい順、現行 version をマーク)。"""
     label = _require_known_key(key)
     history = config_store.list_history(key, limit=_HISTORY_LIMIT)
@@ -162,7 +162,7 @@ async def get_config_history(key: str) -> dict[str, Any]:
 
 
 @config_history_api.get("/{key}/{version}")
-async def get_config_version_value(key: str, version: int) -> dict[str, Any]:
+def get_config_version_value(key: str, version: int) -> dict[str, Any]:
     """特定 version の値 (閲覧・diff 用)。"""
     _require_known_key(key)
     value = config_store.get_config_version(key, version)
@@ -172,7 +172,7 @@ async def get_config_version_value(key: str, version: int) -> dict[str, Any]:
 
 
 @config_history_api.post("/{key}/revert")
-async def revert_config(key: str, req: RevertRequest) -> dict[str, Any]:
+def revert_config(key: str, req: RevertRequest) -> dict[str, Any]:
     """指定 version の値を新 version として保存し直す (= 巻き戻し) + cache 無効化。
 
     過去の値をそのまま append するため履歴は失われない (revert も 1 版として残る)。

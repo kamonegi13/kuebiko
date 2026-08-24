@@ -79,7 +79,7 @@ def _job_view(
 
 
 @jobs_api.get("")
-async def list_jobs_endpoint(request: Request) -> dict[str, Any]:
+def list_jobs_endpoint(request: Request) -> dict[str, Any]:
     """全背景ジョブ + ライブ状態を返す (運用コンソール用)。"""
     scheduler = getattr(request.app.state, "scheduler", None)
     repo = request.app.state.repo
@@ -119,7 +119,7 @@ async def list_jobs_endpoint(request: Request) -> dict[str, Any]:
 
 
 @jobs_api.get("/{job_id}/runs")
-async def job_runs_endpoint(job_id: str, request: Request, limit: int = 20) -> dict[str, Any]:
+def job_runs_endpoint(job_id: str, request: Request, limit: int = 20) -> dict[str, Any]:
     """選択ジョブの実行履歴を新しい順に返す (詳細パネルの一覧表示用)。"""
     job = get_job(job_id)
     if job is None:

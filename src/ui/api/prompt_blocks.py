@@ -81,7 +81,7 @@ def _runtime_payload(spec: PromptSpec) -> dict[str, Any]:
 
 
 @prompt_blocks_api.get("/managed")
-async def managed_prompts() -> dict[str, Any]:
+def managed_prompts() -> dict[str, Any]:
     """管理対象プロンプトの一覧 (summarizer 含む — UI のプロンプト選択メニュー用)。"""
     items: list[dict[str, Any]] = []
     for spec in all_specs():
@@ -134,7 +134,7 @@ class SaveBlocksRequest(BaseModel):
 
 
 @prompt_blocks_api.put("/{prompt_id}/blocks")
-async def put_blocks(prompt_id: str, req: SaveBlocksRequest) -> dict[str, Any]:
+def put_blocks(prompt_id: str, req: SaveBlocksRequest) -> dict[str, Any]:
     """blocks を検証して DB に版保存する。エラーがあれば 400 で保存を拒否する。
 
     検証は slot/block 1:1 → Jinja 構文 → サンプル context での render まで
@@ -166,7 +166,7 @@ class PreviewBlocksRequest(BaseModel):
 
 
 @prompt_blocks_api.post("/{prompt_id}/blocks/preview")
-async def preview_blocks(prompt_id: str, req: PreviewBlocksRequest) -> dict[str, Any]:
+def preview_blocks(prompt_id: str, req: PreviewBlocksRequest) -> dict[str, Any]:
     """検証結果 + 合成原文 + サンプル context での render 結果を返す (常に 200)。"""
     spec = _spec_or_404(prompt_id)
     rubric = req.rubric or load_prompt_rubric(spec)

@@ -102,7 +102,7 @@ async def get_routing_rules() -> dict[str, Any]:
 
 
 @routing_rules_api.post("")
-async def save_routing_rules(req: SaveRulesRequest) -> dict[str, Any]:
+def save_routing_rules(req: SaveRulesRequest) -> dict[str, Any]:
     """ルールセットを検証して DB (config_store) に保存。yaml/git は触らない。"""
     from src.config_loader import KNOWN_ARTICLE_CATEGORIES
     from src.cti.routing_rules import (

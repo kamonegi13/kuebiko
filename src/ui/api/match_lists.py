@@ -42,7 +42,7 @@ async def get_match_lists_route() -> dict[str, Any]:
 
 
 @match_lists_api.post("")
-async def save_match_lists_route(req: SaveMatchListsRequest) -> dict[str, Any]:
+def save_match_lists_route(req: SaveMatchListsRequest) -> dict[str, Any]:
     """マッチリストを検証して保存 (版履歴は config_store に残る)。"""
     from src.cti.match_lists import save_match_lists, validate_match_lists
 

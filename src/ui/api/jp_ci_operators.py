@@ -34,7 +34,7 @@ class SaveOperatorsRequest(BaseModel):
 
 
 @jp_ci_operators_api.get("")
-async def get_operators() -> dict[str, Any]:
+def get_operators() -> dict[str, Any]:
     """実効名簿 (DB → BUILTIN fallback 済) と分野ラベル。"""
     from src.cti.ci_operator_roster import load_operators
     from src.storage.config_store import list_history
@@ -54,7 +54,7 @@ async def get_operators() -> dict[str, Any]:
 
 
 @jp_ci_operators_api.post("")
-async def save_operators(req: SaveOperatorsRequest) -> dict[str, Any]:
+def save_operators(req: SaveOperatorsRequest) -> dict[str, Any]:
     """名簿の全量保存。検証エラーは 400 (保存しない)。"""
     from src.cti.ci_operator_roster import invalidate_operators_cache, validate_operators
     from src.storage.config_store import save_config
