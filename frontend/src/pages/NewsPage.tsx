@@ -11,33 +11,21 @@ import { Check } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { articlesApi } from "../api/articles";
-import { pirApi } from "../api/pir";
-import { fetchSearch, fetchAffectedVendors, fetchActorOptions, fetchFeedOptions, type SearchFacets } from "../api/search";
+import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
+import {
+  BODY_OPTS, IMPORTANCE_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput,
+} from "../components/news/facets";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
 import { extractCves } from "./dashboard/shared";
 import { formatJstCompact } from "../utils/date";
 import { usePersistedState } from "../utils/usePersistedState";
 import { hasIntent, intentLabel, isHypothesisIntent } from "../utils/diamond";
-import { useChannelMeta, useChannels } from "../components/channel";
-import { useVocabOptions, vocabLabel } from "../hooks/useVocab";
+import { useChannelMeta } from "../components/channel";
+import { vocabLabel } from "../hooks/useVocab";
 import { sectorLabel } from "../components/geo/sectorColors";
 import { countryLabel } from "../utils/countryLabels";
-
-// カテゴリ・チャンネル選択肢のラベルは live registry / backend 配信 vocab を SSoT に
-// 解決する。boot gate 済みで cache は暖まっているため NewsPage 内で組み立てる (下記)。
-const IMPORTANCE_OPTS = [
-  { value: "", label: "全重要度" }, { value: "high", label: "High" }, { value: "medium", label: "Medium" },
-];
-const SINCE_OPTS = [
-  { value: "0", label: "全期間" }, { value: "24", label: "24時間" }, { value: "72", label: "3日" },
-  { value: "168", label: "7日" }, { value: "720", label: "30日" }, { value: "2160", label: "90日" },
-];
-// 本文由来フィルタ: 全文取得できた記事 / 切り株 (フィード抜粋のみ・全文未取得) を絞る。
-const BODY_OPTS = [
-  { value: "", label: "本文: 全て" }, { value: "full", label: "全文取得済" }, { value: "stump", label: "切り株のみ" },
-];
 
 // 構造化エンティティ (CVE/IP/ドメイン/ハッシュ) を検出 → 逆引きへ自動ルート。
 function detectEntity(raw: string): { type: string; value: string } | null {
@@ -121,25 +109,8 @@ function isLateIngest(published?: string | null, created?: string | null): boole
 
 export function NewsPage() {
   const chMeta = useChannelMeta();
-  const CATEGORY_OPTS: { value: string; label: string }[] = [
-    { value: "", label: "全カテゴリ" },
-    { value: "vuln", label: vocabLabel("category_group", "vuln") },
-    { value: "threat", label: vocabLabel("category_group", "threat") },
-    { value: "incident_breach", label: vocabLabel("category_group", "incident_breach") },
-    { value: "vulnerability", label: vocabLabel("category", "vulnerability") },
-    { value: "breach", label: vocabLabel("category", "breach") },
-    { value: "malware", label: vocabLabel("category", "malware") },
-    { value: "apt", label: vocabLabel("category", "apt") },
-    { value: "geopolitical", label: "地政" },
-    { value: "policy", label: "サイバー政策" },
-    { value: "research", label: vocabLabel("category", "research") },
-    { value: "advisory", label: vocabLabel("category", "advisory") },
-  ];
-  // チャンネル選択肢は live registry から動的に (custom / ops も含む、固定マップは stale 化する)。
-  const CHANNEL_OPTS = [
-    { value: "", label: "全チャンネル" },
-    ...useChannels().map((c) => ({ value: c.id, label: c.label })),
-  ];
+  // facet 選択肢は事象ニュースと共有する (ラベル辞書を 2 箇所に持たない)。
+  const facetOpts = useFacetOptions();
   const init = readState();
   const [category, setCategory] = useState(init.category);
   const [channel, setChannel] = useState(init.channel);
@@ -150,10 +121,6 @@ export function NewsPage() {
   const [malware, setMalware] = useState(init.malware);
   const [cve, setCve] = useState(init.cve);
   const [intent, setIntent] = useState(init.intent);
-  const INTENT_OPTS = [
-    { value: "", label: "全意図" },
-    ...useVocabOptions("intent").map((i) => ({ value: i.value, label: i.label })),
-  ];
   const [pir, setPir] = useState(init.pir);
   const [actor, setActor] = useState(init.actor);
   const [body, setBody] = useState(init.body);
@@ -203,46 +170,7 @@ export function NewsPage() {
   const activePivot = pivot ?? autoPivot;
   const view: "browse" | "search" | "pivot" = activePivot ? "pivot" : search ? "search" : "browse";
 
-  // 情報源 facet は実データ由来 (購読一覧だと Grok 等の購読外経路が選べない — 2026-08-15)
-  const { data: feedList } = useQuery({
-    queryKey: ["news-feed-options"],
-    queryFn: () => fetchFeedOptions(),
-    staleTime: 10 * 60_000,
-  });
-  const feedOpts = useMemo(
-    () => (feedList ?? []).map((f) => f.title).sort((a, b) => a.localeCompare(b)),
-    [feedList],
-  );
-
-  // PIR facet 選択肢 (enabled な PIR のみ。id→title)。
-  const { data: pirList } = useQuery({ queryKey: ["news-pir"], queryFn: () => pirApi.list(), staleTime: 10 * 60_000 });
-  const pirOpts = useMemo(
-    () => [
-      { value: "", label: "全PIR" },
-      ...(pirList?.priorities ?? [])
-        .filter((p) => p.enabled)
-        .map((p) => ({ value: p.id, label: p.title })),
-    ],
-    [pirList],
-  );
-  const pirLabel = useMemo(
-    () => new Map((pirList?.priorities ?? []).map((p) => [p.id, p.title])),
-    [pirList],
-  );
-
-  // actor facet 選択肢 (canonical id→name)。
-  const { data: actorList } = useQuery({ queryKey: ["news-actors"], queryFn: () => fetchActorOptions(), staleTime: 30 * 60_000 });
-  const actorOpts = useMemo(
-    () => [{ value: "", label: "全アクター" }, ...(actorList ?? []).map((a) => ({ value: a.id, label: a.name }))],
-    [actorList],
-  );
-  const actorLabel = useMemo(
-    () => new Map((actorList ?? []).map((a) => [a.id, a.name])),
-    [actorList],
-  );
-
-  // affected (vendor/product) の autocomplete 候補 (NVD cache 由来)。
-  const { data: vendorOpts } = useQuery({ queryKey: ["news-vendors"], queryFn: () => fetchAffectedVendors(), staleTime: 30 * 60_000 });
+  const { pirLabel, actorLabel } = facetOpts;
 
   // W2: 新着モードの時間絞り込み。cursor あり→絶対 since(=「前回確認以降」)、cursor 未設定→
   // 直近 24h を暫定表示 (『ここまで既読』で基準を作るまでの足場)。新着 off→従来の since_hours。
@@ -323,27 +251,21 @@ export function NewsPage() {
           placeholder="検索 (CVE/IP/ドメインは逆引き)…"
           className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
         />
-        <Sel value={category} onChange={setCategory} opts={CATEGORY_OPTS} />
-        <Sel value={feed} onChange={setFeed} opts={[{ value: "", label: "全サイト" }, ...feedOpts.map((f) => ({ value: f, label: f }))]} />
-        <Sel value={channel} onChange={setChannel} opts={CHANNEL_OPTS} />
+        <Sel value={category} onChange={setCategory} opts={facetOpts.category} />
+        <Sel value={feed} onChange={setFeed} opts={facetOpts.feed} />
+        <Sel value={channel} onChange={setChannel} opts={facetOpts.channel} />
         <Sel value={importance} onChange={setImportance} opts={IMPORTANCE_OPTS} />
         <Sel value={body} onChange={setBody} opts={BODY_OPTS} />
-        <Sel value={intent} onChange={setIntent} opts={INTENT_OPTS} />
-        <Sel value={pir} onChange={setPir} opts={pirOpts} />
-        <Sel value={actor} onChange={setActor} opts={actorOpts} />
-        <input
-          list="news-vendor-list"
-          value={vendorRaw}
-          onChange={(e) => setVendorRaw(e.target.value)}
-          placeholder="影響 ベンダ/製品…"
-          title="指定したベンダ/製品の脆弱性に言及する記事を絞り込む"
-          className={`h-8 px-2.5 bg-surface-2 border rounded-md text-sm w-[130px] placeholder:text-fg-subtle focus:outline-none focus:border-accent ${
-            vendor ? "border-accent text-accent-hover" : "border-border-subtle text-fg"
-          }`}
+        <Sel value={intent} onChange={setIntent} opts={facetOpts.intent} />
+        <Sel value={pir} onChange={setPir} opts={facetOpts.pir} />
+        <Sel value={actor} onChange={setActor} opts={facetOpts.actor} />
+        <VendorInput
+          raw={vendorRaw}
+          onChange={setVendorRaw}
+          applied={vendor}
+          options={facetOpts.vendor}
+          listId="news-vendor-list"
         />
-        <datalist id="news-vendor-list">
-          {(vendorOpts ?? []).map((v) => <option key={v} value={v} />)}
-        </datalist>
         <Sel value={since} onChange={setSince} opts={SINCE_OPTS} />
         {view === "search" ? (
           <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center" title="精密 = LLM で関連度を並べ直す (~25-35s)">
@@ -605,19 +527,5 @@ function Chip({ children, tone, mono, active, onClick }: {
     >
       {children}
     </button>
-  );
-}
-
-function Sel({ value, onChange, opts }: { value: string; onChange: (v: string) => void; opts: { value: string; label: string }[] }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`h-8 pl-2.5 pr-7 bg-surface-2 border rounded-md text-sm cursor-pointer max-w-[180px] focus:outline-none ${
-        value ? "border-accent text-accent-hover" : "border-border-subtle text-fg"
-      }`}
-    >
-      {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
   );
 }
