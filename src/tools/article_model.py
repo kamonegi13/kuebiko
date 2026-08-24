@@ -27,6 +27,11 @@ class Article(BaseModel):
     feed_url: str
     # 発信者種別 (現状 Grok/X の account_class のみ。空 = 未分類)。author の限定子。
     account_class: str = ""
+    # **この source が本物のタイトルを持つか** (2026-08-24)。X/Grok の投稿には
+    # タイトルが無く、``title`` には投稿本文の先頭を入れている。日本語の投稿だと
+    # 「日本語のタイトルは翻訳せず原題を使う」規則に当たって本文がそのまま見出しに
+    # なっていた (実測 913 件中 286 件 = 31%)。False の source では生成見出しを使う。
+    has_title: bool = True
     # Phase 3 (収集の深掘り): triage 前に先行抽出した本文 (trafilatura)。thin feed の
     # triage 精度向上のため、ここに本文があれば triage / 本処理がこれを優先利用する
     # (本処理での再抽出を回避)。通常の fetch 時点では None。

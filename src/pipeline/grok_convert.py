@@ -93,6 +93,8 @@ def grok_subarticle_source(parent: Article, tweet_url: str, *, account_class: st
             "feed_url": f"https://x.com/{handle}",
             "feed_title": f"@{handle}",
             "account_class": account_class,
+            # 親 (Grok レポート) は has_title=True だが、per-tweet は本文しか無い
+            "has_title": False,
         }
     )
 
@@ -248,6 +250,9 @@ async def _grok_jsonl_to_briefings(
             feed_url=record.url,
             # 発信者種別を下流へ運ぶ (従来は収集フィルタの判定にだけ使って捨てていた)
             account_class=record.account_class,
+            # X の投稿にタイトルは無い。``title`` は本文の先頭を入れているだけなので、
+            # 見出しは生成に委ねる (そうしないと日本語投稿は本文が見出しになる)。
+            has_title=False,
         )
         try:
             # summarizer に渡す本文 (引用 / 外部 URL でコンテキスト補強 → IOC 抽出にも寄与)

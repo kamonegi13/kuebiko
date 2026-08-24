@@ -705,7 +705,10 @@ def _build_briefing(
         metadata["_extraction_failure_reason"] = extraction_failure_reason
     # Phase 5J-2: 日本語訳タイトル採用ロジック (Phase 5E の改修)
     title_translated = (summary.title_ja or "").strip()
-    if _has_japanese_kana(article.title):
+    # タイトルを持たない source (X/Grok) は ``title`` が投稿本文の先頭でしかないので、
+    # 日本語であっても原題を使わない。使うと本文がそのまま見出しになる
+    # (2026-08-24 実測: x.com 記事 913 件のうち 286 件 = 31% がこの状態だった)。
+    if getattr(article, "has_title", True) and _has_japanese_kana(article.title):
         display_title = article.title
     else:
         display_title = title_translated or article.title

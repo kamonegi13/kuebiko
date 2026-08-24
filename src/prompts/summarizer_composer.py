@@ -23,9 +23,15 @@ LEGACY_TEMPLATE_PATH = Path("prompts/briefing/summarizer.j2")
 # ---- コード所有層 (利用者が編集できない構造部分) ----
 
 PERSONA_INCLUDE = '{% include ["_persona_local.j2", "_persona.j2"] %}'
+# タイトルを持たない source (X/SNS 投稿) では ``article.title`` に投稿本文の先頭が
+# 入っている。それを「原タイトル」として見せると、LLM は rubric の
+# 「原タイトルが日本語ならそのままコピー」に従って **本文をそのまま見出しにする**
+# (2026-08-24 実測: x.com 記事 913 件中 286 件 = 31% がこの状態だった)。
+# 無いものは無いと示し、見出しの生成は rubric 側の指示に委ねる。
 ARTICLE_BLOCK = (
     "【記事タイトル】\n"
-    "{{ article.title }}\n"
+    "{% if article.has_title | default(true) %}{{ article.title }}"
+    "{% else %}(タイトルなし — SNS 投稿。本文から見出しを作ること){% endif %}\n"
     "\n"
     "【記事 ソース】\n"
     "{{ article.feed_title }}\n"
