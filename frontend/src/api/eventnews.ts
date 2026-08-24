@@ -140,7 +140,9 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
     const v = q[k];
     if (v) p.set(k, String(v));
   }
-  return get<{ items: EventNewsListItem[]; note: string }>(`/api/v1/eventnews?${p}`);
+  return get<{ items: EventNewsListItem[]; note: string; scan_capped?: boolean }>(
+    `/api/v1/eventnews?${p}`,
+  );
 }
 
 export function fetchEventNewsDetail(id: string) {

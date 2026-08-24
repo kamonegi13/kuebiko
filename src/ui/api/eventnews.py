@@ -466,7 +466,13 @@ def list_event_news(  # noqa: PLR0913
                 "has_news": r.state.current_version > 0,
             }
         )
-    return {"items": items, "note": GENERATED_NOTE}
+    return {
+        "items": items,
+        "note": GENERATED_NOTE,
+        # 記事側の走査が上限に当たったか。黙って切ると「これで全部」と誤読される
+        # (no silent caps)。UI は「該当が多いので絞り込みを足してください」と出す。
+        "scan_capped": member_ids is not None and len(member_ids) >= _ARTICLE_SCAN_CAP,
+    }
 
 
 @eventnews_api.get("/{item_id}")

@@ -200,6 +200,12 @@ export function EventNewsPage() {
         )}
       </div>
 
+      {data?.scan_capped && (
+        <div className="text-warning text-xs bg-warning-soft border border-warning/40 rounded px-3 py-2">
+          該当する記事が多いため、走査を打ち切っています。絞り込みを足すと取りこぼしがなくなります。
+        </div>
+      )}
+
       {isFetching && !data && <div className="text-fg-subtle text-sm">読み込み中…</div>}
       {error && <div className="text-critical text-sm">エラー: {String(error)}</div>}
       {data && items.length === 0 && (
