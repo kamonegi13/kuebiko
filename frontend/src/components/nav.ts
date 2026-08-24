@@ -58,10 +58,12 @@ export const NAV_GROUPS: NavGroup[] = [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
       { href: "/app/daily-brief", label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
-      // 事象ニュース (2026-08-24): 同一事象の複数報道を束ねて 1 本に生成した読み物。
-      // 記事一覧 (ニュース・検索) が「収集した個々の記事」なのに対し、こちらは「事象」単位。
-      { href: "/app/eventnews", label: "事象ニュース", Icon: Layers, prefixes: ["/app/eventnews"] },
-      { href: "/app/news", label: "ニュース・検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
+      // 読む導線の主役は **事象ニュース** (2026-08-24 交代)。同一事象の複数報道を束ねて
+      // 1 本に生成した読み物で、記事の被覆は 98.7%・絞り込みはニュース検索と同じ語彙。
+      // 記事一覧は「収集した個々の記事を掘る」画面として残す (low・全 status を含む
+      // 生データ面。事象に入らない行や、記事単位のメモ/ブックマークはこちら)。
+      { href: "/app/eventnews", label: "ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
+      { href: "/app/news", label: "記事一覧・検索", Icon: Layers, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
       { href: "/app/notes", label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
       { href: "/app/subscriptions", label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
       { href: "/app/actors", label: "アクター辞書", Icon: Users, prefixes: ["/app/actors"] },
@@ -120,7 +122,8 @@ export function isFullOnlyPath(pathname: string): boolean {
 // 「メニュー」は href なし (onOpenMenu コールバックで sidebar drawer を開く)。
 export const BOTTOM_NAV: NavLink[] = [
   { href: "/app", label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
-  { href: "/app/news", label: "ニュース・検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
+  // モバイルの主導線も事象ニュース (読む画面)。記事一覧はメニューから辿る。
+  { href: "/app/eventnews", label: "ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
   { href: "/app/intel/pmesii", label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },
   { href: "/app/map", label: "マップ", Icon: Map, prefixes: ["/app/map"] },
 ];
