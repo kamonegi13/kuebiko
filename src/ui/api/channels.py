@@ -79,7 +79,7 @@ def _webhook_masked_map(request: Request) -> dict[str, str]:
 
 
 @channels_api.get("")
-async def get_channels(request: Request) -> dict[str, Any]:
+def get_channels(request: Request) -> dict[str, Any]:
     """チャンネルレジストリ一覧 (UI 編集用)。"""
     from dataclasses import asdict
 

@@ -297,7 +297,7 @@ def get_pmesii(
 
 
 @api.get("/situation/nations")
-async def get_situation_nations(time: str = "90") -> dict[str, Any]:
+def get_situation_nations(time: str = "90") -> dict[str, Any]:
     """国家中心 情勢ボードのセレクタ: サイバー/地政学を持つ国の件数一覧。"""
     from src.ui.services.situation import list_nations
 
@@ -306,7 +306,7 @@ async def get_situation_nations(time: str = "90") -> dict[str, Any]:
 
 
 @api.get("/situation")
-async def get_situation(nation: str = "", time: str = "90") -> dict[str, Any]:
+def get_situation(nation: str = "", time: str = "90") -> dict[str, Any]:
     """国家中心 情勢: サイバー面(APT) + 地政学面(当事国) + テンポ(日次)を相関して返す。"""
     from src.ui.services.situation import list_nations, situation_by_nation
 

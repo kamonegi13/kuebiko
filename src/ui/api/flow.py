@@ -23,7 +23,7 @@ _log = get_logger(__name__)
 
 
 @flow_api.get("")
-async def get_flow(days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
+def get_flow(days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
     """情報フロー snapshot (期間内 posted articles が母集合)。"""
     from src.cti.router import is_rules_engine_enabled
     from src.cti.routing_rules import load_routing_rules

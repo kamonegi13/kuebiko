@@ -75,7 +75,7 @@ def _resolve_domain(domain: str) -> list[str]:
 
 
 @routing_rules_api.get("")
-async def get_routing_rules() -> dict[str, Any]:
+def get_routing_rules() -> dict[str, Any]:
     """現行ルールセット + 型付きプロパティ・カタログ + engine 有効状態を返す。
 
     語彙統一 (2026-06-14): flag/記事属性 を撤廃し、編集 UI は properties カタログから
@@ -127,7 +127,7 @@ def save_routing_rules(req: SaveRulesRequest) -> dict[str, Any]:
 
 
 @routing_rules_api.post("/preview")
-async def preview_routing_rules(req: PreviewRequest) -> dict[str, Any]:
+def preview_routing_rules(req: PreviewRequest) -> dict[str, Any]:
     """代表シナリオで「現行 legacy」vs「提案ルール engine」の channel を比較。
 
     DB 非依存・決定的。rules=None なら現行 file のルールでプレビュー。

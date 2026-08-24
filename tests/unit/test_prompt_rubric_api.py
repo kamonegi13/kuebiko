@@ -549,7 +549,7 @@ class TestLegacyFileUntouched:
             intro="不変性確認用",
             sections=[RubricSection(field_id="summary", body="要約の基準。")],
         )
-        result = await prompt_rubric.preview_rubric(PreviewRubricRequest(rubric=rubric))
+        result = prompt_rubric.preview_rubric(PreviewRubricRequest(rubric=rubric))
 
         assert result["valid"] is True
         assert legacy.read_bytes() == before

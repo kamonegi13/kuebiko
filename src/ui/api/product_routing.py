@@ -38,7 +38,7 @@ class SaveProductRoutingRequest(BaseModel):
 
 
 @product_routing_api.get("")
-async def get_product_routing() -> dict[str, Any]:
+def get_product_routing() -> dict[str, Any]:
     """プロダクト配信マッピング (UI 編集用)。channel の push 状況も同梱。"""
     from src.tools.channel_registry import load_channels
     from src.tools.product_routing import (

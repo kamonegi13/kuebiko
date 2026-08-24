@@ -24,7 +24,7 @@ class TestSessionStatus:
         monkeypatch.setattr(gs, "_STATE_PATH", tmp_path / "missing.json")
         monkeypatch.setattr(gs, "_VERIFY_STATUS_PATH", tmp_path / "verify.json")
         monkeypatch.setattr(gs, "_last_grok_run", lambda: None)
-        out = await gs.get_session_status()
+        out = gs.get_session_status()
         assert out["state"] == {"exists": False}
         assert out["acquire_command"].startswith("uv run")
 
@@ -49,7 +49,7 @@ class TestSessionStatus:
         monkeypatch.setattr(gs, "_STATE_PATH", state)
         monkeypatch.setattr(gs, "_VERIFY_STATUS_PATH", tmp_path / "verify.json")
         monkeypatch.setattr(gs, "_last_grok_run", lambda: None)
-        out = await gs.get_session_status()
+        out = gs.get_session_status()
         serialized = json.dumps(out)
         assert secret_value not in serialized
         assert "sso" not in serialized  # cookie 名も出さない

@@ -28,7 +28,7 @@ class SaveMatchListsRequest(BaseModel):
 
 
 @match_lists_api.get("")
-async def get_match_lists_route() -> dict[str, Any]:
+def get_match_lists_route() -> dict[str, Any]:
     """user 定義マッチリスト一覧 (UI 編集用)。"""
     from src.cti.match_lists import get_match_lists
 

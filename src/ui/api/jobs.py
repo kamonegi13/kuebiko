@@ -134,7 +134,7 @@ def job_runs_endpoint(job_id: str, request: Request, limit: int = 20) -> dict[st
 
 
 @jobs_api.post("/{job_id}/toggle")
-async def toggle_job(job_id: str, req: ToggleRequest, request: Request) -> dict[str, Any]:
+def toggle_job(job_id: str, req: ToggleRequest, request: Request) -> dict[str, Any]:
     """ジョブの enabled を切替える (protection=critical の停止は confirm 必須)。"""
     job = get_job(job_id)
     if job is None:
@@ -165,7 +165,7 @@ async def toggle_job(job_id: str, req: ToggleRequest, request: Request) -> dict[
 
 
 @jobs_api.post("/{job_id}/schedule")
-async def reschedule_job(job_id: str, req: ScheduleRequest, request: Request) -> dict[str, Any]:
+def reschedule_job(job_id: str, req: ScheduleRequest, request: Request) -> dict[str, Any]:
     """ジョブのスケジュールを変更する (検証 + 危険時刻警告、live 反映)。"""
     current = get_job(job_id)
     if current is None:
@@ -194,7 +194,7 @@ async def reschedule_job(job_id: str, req: ScheduleRequest, request: Request) ->
 
 
 @jobs_api.post("/{job_id}/run")
-async def run_job_now(job_id: str, request: Request) -> dict[str, Any]:
+def run_job_now(job_id: str, request: Request) -> dict[str, Any]:
     """ジョブを今すぐ手動実行する (scheduler job のみ、reactive は不可)。"""
     job = get_job(job_id)
     if job is None:

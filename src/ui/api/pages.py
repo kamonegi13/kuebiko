@@ -175,7 +175,7 @@ def ops_notices(request: Request, limit: int = 50) -> dict[str, Any]:
 
 
 @pages_api.get("/runtime-flags")
-async def runtime_flags(request: Request) -> dict[str, Any]:
+def runtime_flags(request: Request) -> dict[str, Any]:
     """フロントが起動時に取得する runtime config。
 
     - ``read_only``: write button を hide する (2 instance 構成の公開側)。
@@ -233,7 +233,7 @@ def _mobile_tunnel_state() -> dict[str, Any]:
 
 
 @pages_api.get("/mobile-tunnel/status")
-async def mobile_tunnel_status() -> dict[str, Any]:
+def mobile_tunnel_status() -> dict[str, Any]:
     """現在の tunnel 状態を返す。
 
     Returns:
@@ -245,7 +245,7 @@ async def mobile_tunnel_status() -> dict[str, Any]:
 
 
 @pages_api.post("/mobile-tunnel/enable")
-async def mobile_tunnel_enable() -> dict[str, Any]:
+def mobile_tunnel_enable() -> dict[str, Any]:
     """flag file を作成 → supervisor が cloudflared を起動する。"""
     mtf.ENABLED_FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
     mtf.ENABLED_FLAG_FILE.touch()
@@ -253,7 +253,7 @@ async def mobile_tunnel_enable() -> dict[str, Any]:
 
 
 @pages_api.post("/mobile-tunnel/disable")
-async def mobile_tunnel_disable() -> dict[str, Any]:
+def mobile_tunnel_disable() -> dict[str, Any]:
     """flag file を削除 → supervisor が cloudflared を停止する。"""
     with contextlib.suppress(FileNotFoundError):
         mtf.ENABLED_FLAG_FILE.unlink()
@@ -286,13 +286,13 @@ def _host_watchdog_state() -> dict[str, Any]:
 
 
 @pages_api.get("/host-watchdog/status")
-async def host_watchdog_status() -> dict[str, Any]:
+def host_watchdog_status() -> dict[str, Any]:
     """ホスト復旧 watchdog の状態 (導入済みか / 有効か / 直近の稼働と復旧履歴)。"""
     return _host_watchdog_state()
 
 
 @pages_api.post("/host-watchdog/enable")
-async def host_watchdog_enable() -> dict[str, Any]:
+def host_watchdog_enable() -> dict[str, Any]:
     """flag file を作成 → ホスト側 watchdog が次回起動時に有効と判断する。"""
     from src.tools import host_watchdog_files as hwf
 
@@ -301,7 +301,7 @@ async def host_watchdog_enable() -> dict[str, Any]:
 
 
 @pages_api.post("/host-watchdog/disable")
-async def host_watchdog_disable() -> dict[str, Any]:
+def host_watchdog_disable() -> dict[str, Any]:
     """flag file を削除 → ホスト側 watchdog は即 no-op で終了する。"""
     from src.tools import host_watchdog_files as hwf
 
@@ -317,7 +317,7 @@ class _NamedTunnelConfigIn(BaseModel):
 
 
 @pages_api.post("/mobile-tunnel/named-config")
-async def mobile_tunnel_set_named_config(body: _NamedTunnelConfigIn) -> dict[str, Any]:
+def mobile_tunnel_set_named_config(body: _NamedTunnelConfigIn) -> dict[str, Any]:
     """named tunnel の token / hostname を data/ ファイルに保存する。
 
     - **full instance 限定**: readonly instance は write middleware が全 POST を 403。
@@ -341,7 +341,7 @@ async def mobile_tunnel_set_named_config(body: _NamedTunnelConfigIn) -> dict[str
 
 
 @pages_api.post("/mobile-tunnel/named-config/clear")
-async def mobile_tunnel_clear_named_config() -> dict[str, Any]:
+def mobile_tunnel_clear_named_config() -> dict[str, Any]:
     """named tunnel 設定 (token + hostname) を削除して quick tunnel に戻す。"""
     mtf.clear_token()
     mtf.clear_hostname()
@@ -542,7 +542,7 @@ def subscriptions_list() -> dict[str, Any]:
 
 
 @pages_api.post("/subscriptions/reliability")
-async def subscriptions_set_reliability(
+def subscriptions_set_reliability(
     request: Request,
     feed_url: str = Form(default=""),
     title: str = Form(default=""),
@@ -578,7 +578,7 @@ def _list_prompts(editor: FileEditor) -> list[str]:
 
 
 @pages_api.get("/prompts")
-async def prompts_list(request: Request) -> dict[str, Any]:
+def prompts_list(request: Request) -> dict[str, Any]:
     editor: FileEditor = request.app.state.file_editor
     from src.ui.services.file_catalog import (
         PROMPT_CATALOG,
@@ -594,7 +594,7 @@ async def prompts_list(request: Request) -> dict[str, Any]:
 
 
 @pages_api.get("/prompts/file")
-async def prompts_file(request: Request, path: str) -> dict[str, Any]:
+def prompts_file(request: Request, path: str) -> dict[str, Any]:
     editor: FileEditor = request.app.state.file_editor
     try:
         content = editor.read_file(path, kind="prompt")
@@ -633,7 +633,7 @@ def _summarizer_rollback_notice(path: str) -> dict[str, Any]:
 
 
 @pages_api.post("/prompts/save")
-async def prompts_save(
+def prompts_save(
     request: Request,
     path: str = Form(...),
     content: str = Form(...),
@@ -684,7 +684,7 @@ def _is_secret_env_key(key: str, secret_keys: Collection[str]) -> bool:
 
 
 @pages_api.get("/config")
-async def config_get(request: Request) -> dict[str, Any]:
+def config_get(request: Request) -> dict[str, Any]:
     editor: FileEditor = request.app.state.file_editor
     env_text = ""
     if editor.env_path().exists():
@@ -718,7 +718,7 @@ async def config_get(request: Request) -> dict[str, Any]:
 
 
 @pages_api.get("/config/yaml")
-async def config_yaml_get(request: Request, path: str) -> dict[str, Any]:
+def config_yaml_get(request: Request, path: str) -> dict[str, Any]:
     editor: FileEditor = request.app.state.file_editor
     try:
         return {"path": path, "content": editor.read_file(path, kind="yaml")}
@@ -758,7 +758,7 @@ class SaveSystemConfigRequest(BaseModel):
 
 
 @pages_api.post("/config/system")
-async def config_system_save(request: Request, req: SaveSystemConfigRequest) -> dict[str, Any]:
+def config_system_save(request: Request, req: SaveSystemConfigRequest) -> dict[str, Any]:
     """システム設定 (LOG_LEVEL / TIMEZONE) を .env に保存する (設定・死活の画面統合 P3)。
 
     - LOG_LEVEL: logging_config は os.environ を直読みするため、稼働中プロセスの
@@ -817,7 +817,7 @@ def _validate_yaml_schema(path: str, content: str) -> str | None:
 
 
 @pages_api.post("/config/yaml")
-async def config_yaml_save(
+def config_yaml_save(
     request: Request,
     path: str = Form(...),
     content: str = Form(...),
@@ -842,7 +842,7 @@ async def config_yaml_save(
 
 
 @pages_api.get("/config/source-quality")
-async def source_quality_get(request: Request) -> dict[str, Any]:
+def source_quality_get(request: Request) -> dict[str, Any]:
     """brief routing 設定を構造化して返す (raw YAML でなくフォーム編集用)。"""
     from src.config_loader import KNOWN_ARTICLE_CATEGORIES
     from src.cti.router import get_source_quality
@@ -914,7 +914,7 @@ class ActorEditRequest(BaseModel):
 
 
 @pages_api.get("/actors")
-async def actors_list(request: Request) -> dict[str, Any]:
+def actors_list(request: Request) -> dict[str, Any]:
     """Actor 辞書の一覧 (raw YAML でなく構造化表示・編集用)。"""
     from src.cti.actor_editor import list_actors, list_families
 
@@ -1303,7 +1303,7 @@ def _collect_cluster_members(scrapers: list[ScraperEntry]) -> list[dict[str, Any
 
 
 @pages_api.get("/schedule")
-async def schedule_get(request: Request) -> dict[str, Any]:
+def schedule_get(request: Request) -> dict[str, Any]:
     # readonly instance では scheduler が None → 空 dict で fallback。
     # scheduler_available=False の時は next_run/is_paused は算出不能 (main instance で稼働中)
     # なので frontend は設定上のスケジュール (cron) を代替表示する。
@@ -1353,7 +1353,7 @@ async def schedule_get(request: Request) -> dict[str, Any]:
 
 
 @pages_api.post("/schedule/{job_id}/pause")
-async def schedule_pause(request: Request, job_id: str) -> dict[str, Any]:
+def schedule_pause(request: Request, job_id: str) -> dict[str, Any]:
     scheduler = request.app.state.scheduler
     try:
         scheduler.pause(job_id)
@@ -1363,7 +1363,7 @@ async def schedule_pause(request: Request, job_id: str) -> dict[str, Any]:
 
 
 @pages_api.post("/schedule/{job_id}/resume")
-async def schedule_resume(request: Request, job_id: str) -> dict[str, Any]:
+def schedule_resume(request: Request, job_id: str) -> dict[str, Any]:
     scheduler = request.app.state.scheduler
     try:
         scheduler.resume(job_id)
@@ -1373,7 +1373,7 @@ async def schedule_resume(request: Request, job_id: str) -> dict[str, Any]:
 
 
 @pages_api.post("/schedule/{job_id}/trigger")
-async def schedule_trigger(request: Request, job_id: str) -> dict[str, Any]:
+def schedule_trigger(request: Request, job_id: str) -> dict[str, Any]:
     scheduler = request.app.state.scheduler
     try:
         scheduler.trigger_now(job_id)
@@ -1383,7 +1383,7 @@ async def schedule_trigger(request: Request, job_id: str) -> dict[str, Any]:
 
 
 @pages_api.post("/schedule/{job_id}/cron")
-async def schedule_update_cron(
+def schedule_update_cron(
     request: Request,
     job_id: str,
     hour: int = Form(...),
@@ -1435,7 +1435,7 @@ def _reload_scheduler_for_pipeline(request: Request, job_id: str) -> None:
 
 
 @pages_api.post("/schedule/{job_id}/update_schedule")
-async def schedule_update_full(
+def schedule_update_full(
     request: Request,
     job_id: str,
     mode: str = Form(...),
@@ -1464,7 +1464,7 @@ async def schedule_update_full(
 
 
 @pages_api.post("/schedule/{job_id}/update_source")
-async def schedule_update_source(
+def schedule_update_source(
     request: Request,
     job_id: str,
     max_articles: int = Form(...),
@@ -1479,7 +1479,7 @@ async def schedule_update_source(
 
 
 @pages_api.post("/schedule/{job_id}/update_dedup")
-async def schedule_update_dedup(
+def schedule_update_dedup(
     request: Request,
     job_id: str,
     similarity_threshold_hard: float = Form(...),
@@ -1502,7 +1502,7 @@ async def schedule_update_dedup(
 
 
 @pages_api.post("/schedule/{job_id}/update_think")
-async def schedule_update_think(
+def schedule_update_think(
     request: Request,
     job_id: str,
     think_enabled: str | None = Form(default=None),
@@ -1539,7 +1539,7 @@ async def schedule_update_triage(
 
 
 @pages_api.post("/schedule/{job_id}/scrapers/{scraper_name}/toggle")
-async def schedule_toggle_scraper(
+def schedule_toggle_scraper(
     request: Request,
     job_id: str,
     scraper_name: str,

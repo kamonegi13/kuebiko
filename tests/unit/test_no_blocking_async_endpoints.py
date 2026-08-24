@@ -1,12 +1,17 @@
 """route handler が event loop を塞がないことの関門。
 
-2026-08-25 の全停止の真因: `async def` の中で **同期の DB 呼び出し** をしている
-endpoint が 70 件あった。同期呼び出しは event loop 上で走るため、DB 接続プールの
+2026-08-25 の全停止の真因: `async def` の中で **同期の呼び出ししかしていない**
+endpoint が 125 件あった。同期呼び出しは event loop 上で走るため、DB 接続プールの
 枯渇などで 30 秒ブロックすると **アプリ全体が無応答**になる (CPU 0% / TCP は
 受け付けるが何も返らない / PG 側の接続は 1 本だけ、という形で観測された)。
 
 FastAPI は `def` の handler を threadpool で実行するので、同期処理は `def` で
 書けば event loop は空いたままになり、遅くはなっても止まらない。
+
+判定は **「await を 1 つも持たない route handler は def」** の一点だけにする。
+最初は「DB を触る語が本文に出るか」で判定したが、helper 越しに DB へ行く
+`feed-options` / `actor-options` / `channels` / `vocabularies` を取りこぼし、
+**修正したのに同じ負荷でまた固まった**。目印による判定は必ず穴が空く。
 
 ⭐ この検査は「規約」ではなく**関門**。指示だけでは止まらないことが繰り返し
 起きているため、機械的に落とす (docs: deterministic_gates_over_instructions)。
@@ -17,18 +22,6 @@ from __future__ import annotations
 import ast
 import pathlib
 
-# 同期 DB / ストア呼び出しの目印。ここに挙げた語が本文に出るなら blocking とみなす。
-_BLOCKING_MARKERS = (
-    "repo.",
-    "_repo()",
-    "load_current_pir_config",
-    "._connect(",
-    "RunHistoryRepository(",
-    "list_articles",
-    "store.",
-    "load_config",
-    "_store",
-)
 _ROUTE_METHODS = (".get(", ".post(", ".put(", ".delete(", ".patch(")
 
 
@@ -62,7 +55,6 @@ def _offenders() -> list[str]:
     out: list[str] = []
     for path in sorted(pathlib.Path("src/ui/api").rglob("*.py")):
         src = path.read_text()
-        lines = src.splitlines()
         for node in ast.walk(ast.parse(src)):
             if not isinstance(node, ast.AsyncFunctionDef) or not node.decorator_list:
                 continue
@@ -72,16 +64,13 @@ def _offenders() -> list[str]:
             checker = _HasAwait()
             for stmt in node.body:
                 checker.visit(stmt)
-            if checker.found:
-                continue  # 本物の async handler
-            body = "\n".join(lines[node.lineno - 1 : node.end_lineno])
-            if any(marker in body for marker in _BLOCKING_MARKERS):
+            if not checker.found:
                 out.append(f"{path}:{node.lineno} {node.name}")
     return out
 
 
 def test_no_route_handler_blocks_the_event_loop() -> None:
-    """await を持たず DB に触る `async def` handler はゼロであること。
+    """await を 1 つも持たない `async def` handler はゼロであること。
 
     落ちたら **`async def` を `def` に変えるだけ**。FastAPI が threadpool で
     実行するようになり、遅くはなってもアプリ全体は止まらなくなる。

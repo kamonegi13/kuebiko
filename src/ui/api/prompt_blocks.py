@@ -103,7 +103,7 @@ def managed_prompts() -> dict[str, Any]:
 
 
 @prompt_blocks_api.get("/{prompt_id}/blocks")
-async def get_blocks(prompt_id: str) -> dict[str, Any]:
+def get_blocks(prompt_id: str) -> dict[str, Any]:
     """現行 blocks (編集層) + skeleton slots (順序) + runtime 状態を返す。"""
     spec = _spec_or_404(prompt_id)
     rubric = load_prompt_rubric(spec)

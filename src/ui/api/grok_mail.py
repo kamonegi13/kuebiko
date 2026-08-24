@@ -39,7 +39,7 @@ def _current_state() -> dict[str, Any]:
 
 
 @grok_mail_api.get("")
-async def get_grok_mail() -> dict[str, Any]:
+def get_grok_mail() -> dict[str, Any]:
     """Grok メール受信 (IMAP) の設定状況 (マスク表示のみ)。"""
     return _current_state()
 
@@ -65,7 +65,7 @@ class SaveGrokMailRequest(BaseModel):
 
 
 @grok_mail_api.post("")
-async def save_grok_mail(request: Request, req: SaveGrokMailRequest) -> dict[str, Any]:
+def save_grok_mail(request: Request, req: SaveGrokMailRequest) -> dict[str, Any]:
     """IMAP 設定を .env に保存する (即時反映・再起動不要)。
 
     空欄のフィールドは既存値を維持する (.env editor の secret 空送信 skip と同じ規約)。

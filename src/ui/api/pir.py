@@ -290,7 +290,7 @@ async def compile_pir_endpoint(req: CompileRequest) -> CompileResponse:
 
 
 @pir_api.post("/preview", response_model=PreviewResponse)
-async def preview_pir(req: PreviewRequest) -> PreviewResponse:
+def preview_pir(req: PreviewRequest) -> PreviewResponse:
     """draft PIR で実際に何件 match するか preview (Save 前の確認用)。"""
     matches = evaluate_pir_matches(req.pir, lookback_hours=req.lookback_hours, limit=1000)
     samples = [_match_to_sample(m) for m in matches[:10]]
@@ -494,7 +494,7 @@ class SuggestedPirItem(BaseModel):
 
 
 @pir_api.get("/suggestions", response_model=list[SuggestedPirItem])
-async def list_pir_suggestions() -> list[SuggestedPirItem]:
+def list_pir_suggestions() -> list[SuggestedPirItem]:
     """Shadow F5: 自動 PIR 提案 (現状は placeholder、Phase 3 で実装)。"""
     return []
 

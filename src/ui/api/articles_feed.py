@@ -274,7 +274,7 @@ def list_articles_feed(  # noqa: PLR0913
 
 
 @articles_feed_api.get("/affected-vendors")
-async def affected_vendor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
+def affected_vendor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """affected facet の autocomplete 候補 (NVD cache 由来の全 vendor + product)。read-only。
 
     cache に出現する vendor/product のみ = 自コーパスの CVE に紐づくもの (warming で増える)。
@@ -285,7 +285,7 @@ async def affected_vendor_options(request: Request) -> dict[str, Any]:  # noqa: 
 
 
 @articles_feed_api.get("/actor-options")
-async def actor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
+def actor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """actor facet の選択肢 (canonical id → 表示名)。read-only。
 
     actor registry の curated 語彙。記事の entity_type='actor' は canonical id で保存される
@@ -302,7 +302,7 @@ async def actor_options(request: Request) -> dict[str, Any]:  # noqa: ARG001
 
 
 @articles_feed_api.get("/feed-options")
-async def feed_options(request: Request, days: int = 90) -> dict[str, Any]:  # noqa: ARG001
+def feed_options(request: Request, days: int = 90) -> dict[str, Any]:  # noqa: ARG001
     """情報源 (feed) facet の選択肢を**実データから**返す。read-only。
 
     購読ソース一覧 (subscriptions) 由来だと Grok のような購読外の取込経路

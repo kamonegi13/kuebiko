@@ -15,7 +15,7 @@ vocabularies_api = APIRouter(prefix="/api/v1/vocabularies", tags=["vocabularies"
 
 
 @vocabularies_api.get("")
-async def get_vocabularies() -> dict[str, list[dict[str, object]]]:
+def get_vocabularies() -> dict[str, list[dict[str, object]]]:
     """全語彙の value→label 定義を返す (backend が唯一の SSoT)。"""
     from src.vocab import all_vocabularies
 

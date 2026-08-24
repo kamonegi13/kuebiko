@@ -50,7 +50,7 @@ def _run_to_dict(run: object) -> dict[str, Any]:
 
 
 @runs_api.get("/pipelines")
-async def list_pipelines() -> dict[str, Any]:
+def list_pipelines() -> dict[str, Any]:
     """pipelines.yaml に定義された実行可能 pipeline 一覧。"""
     try:
         pipelines = load_pipelines()

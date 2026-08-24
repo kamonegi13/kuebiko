@@ -437,9 +437,7 @@ class SaveClaudeCodeTokenRequest(BaseModel):
 
 
 @model_tiers_api.post("/claudecode-token")
-async def save_claudecode_token(
-    request: Request, req: SaveClaudeCodeTokenRequest
-) -> dict[str, Any]:
+def save_claudecode_token(request: Request, req: SaveClaudeCodeTokenRequest) -> dict[str, Any]:
     """Claude Code サブスクの長期トークンを .env に保存/削除する (即時反映)。
 
     sidecar bridge は呼出ごとに共有 .env を読むため、保存は bridge 再起動なしで効く。
@@ -521,7 +519,7 @@ class SaveEndpointKeyRequest(BaseModel):
 
 
 @model_tiers_api.post("/endpoint-key")
-async def save_endpoint_key(request: Request, req: SaveEndpointKeyRequest) -> dict[str, Any]:
+def save_endpoint_key(request: Request, req: SaveEndpointKeyRequest) -> dict[str, Any]:
     """接続先の API キーを .env に保存/削除する (登録済み接続先のみ、即時反映)。"""
     from src.tools.llm_endpoints import invalidate_llm_endpoints_cache, resolve_endpoint
     from src.ui.services.env_editor import EnvEditError, mask_value, update_env

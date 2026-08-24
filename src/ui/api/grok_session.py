@@ -109,7 +109,7 @@ def _last_grok_run() -> dict[str, Any] | None:
 
 
 @grok_session_api.get("")
-async def get_session_status() -> dict[str, Any]:
+def get_session_status() -> dict[str, Any]:
     """Grok セッションの現況 (state.json 概況 + 最終検証 + 直近 run)。"""
     return {
         "state": _state_summary(),

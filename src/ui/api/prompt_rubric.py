@@ -115,7 +115,7 @@ def _runtime_payload() -> dict[str, Any]:
 
 
 @prompt_rubric_api.get("/rubric")
-async def get_rubric() -> dict[str, Any]:
+def get_rubric() -> dict[str, Any]:
     """現行の判定基準 + schema 契約 + runtime 状態 (合成 or legacy) を返す。"""
     rubric = load_rubric()
     if rubric is None:
@@ -181,7 +181,7 @@ class PreviewRubricRequest(BaseModel):
 
 
 @prompt_rubric_api.post("/rubric/preview")
-async def preview_rubric(req: PreviewRubricRequest) -> dict[str, Any]:
+def preview_rubric(req: PreviewRubricRequest) -> dict[str, Any]:
     """検証結果 + 合成原文 + サンプル記事でのレンダリング結果を返す (常に 200)。
 
     ``rubric`` 省略時は現行保存値を使う。レンダリング失敗 (I6: 保存前検証の最後の砦) は
