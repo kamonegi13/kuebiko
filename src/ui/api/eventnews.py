@@ -124,23 +124,46 @@ _FACET_LABELS: dict[str, tuple[str, str]] = {
     "victim_country": ("被害国", "country"),
     "intent": ("意図", "intent"),
     "category": ("分類", "category"),
+    "stance": ("論調", "stance"),
+    "channel": ("配信先", "channel"),
 }
 
+# PMESII-PT 軸 (ArticleRecord の boolean 列 → frontend の軸キー)。
+_PMESII_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("pmesii_p", "p"),
+    ("pmesii_m", "m"),
+    ("pmesii_e", "e"),
+    ("pmesii_s", "s"),
+    ("pmesii_i_infra", "i_infra"),
+    ("pmesii_i_cyber", "i_cyber"),
+    ("pmesii_p_env", "p_env"),
+    ("pmesii_t", "t"),
+)
 
-def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> dict[str, Any]:
-    """構成記事から **決定論で** 集約したメタデータ。
+# 自由記述の判定欄 (記事画面の「意図根拠 / 技術面 / 対処 / 所見」)。事象は複数記事を
+# 束ねるため、**1 本にまとめず記事ごとに出典番号付きで並べる** — 要約すると
+# 生成物になってしまい、決定論の集計という性質が崩れる。
+_TEXT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("socio_political_rationale", "意図根拠"),
+    ("technical_axis_summary", "技術面"),
+    ("remediation", "対処"),
+    ("analyst_note", "所見"),
+)
+
+
+def _metadata_payload(repo: RunHistoryRepository, members: Sequence[Any]) -> dict[str, Any]:
+    """構成記事から **決定論で** 集約したメタデータ + 判定。
 
     生成本文とは別物として返す — ここは LLM を通らないので、値の正しさは抽出層の
-    品質そのもの。事象ニュースは「何が起きたか」の散文だが、実務では
-    「どの CVE か・どのアクターか・どの手口か」が判断材料になる。原記事を 1 件ずつ
-    開かないと分からない状態を解消するのがこの節の目的。
+    品質そのもの。記事画面 (ArticleReadView) の「Diamond / 判定」「エンティティ」
+    カードと **同じ行・同じ語彙** を出せるように整えるのがこの関数の責務。
 
-    ラベルは付けない (値のみ返す) — 表示名の SSoT は frontend の ``vocabLabel``
-    (backend 配信の語彙) 一つに保つ。
+    ラベル自体は ``_FACET_LABELS`` が持つ (表示名の SSoT を frontend に複製しない)。
     """
-    ids = list(member_ids)
+    ids = [str(m.article_id) for m in members]
+    empty: dict[str, Any] = {"entities": [], "subject_actors": [], "facets": [], "judgement": {}}
     if not ids:
-        return {"entities": [], "subject_actors": [], "facets": []}
+        return empty
 
     raw = repo.count_entities_for_articles(ids)
     ordered = [*RELATED_ENTITY_TYPE_ORDER, *sorted(set(raw) - set(RELATED_ENTITY_TYPE_ORDER))]
@@ -156,21 +179,34 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
             "omitted": max(0, len(ranked) - _METADATA_VALUE_CAP),
         }
         if etype == "cve":
-            from src.tools.nvd_client import get_cvss
+            from src.tools.nvd_client import get_affected, get_cvss
 
-            scores = {}
+            scores: dict[str, Any] = {}
+            affected: dict[str, Any] = {}
             for v, _ in ranked[:_METADATA_VALUE_CAP]:
                 info = get_cvss(v)
                 if info:
                     scores[v] = {"score": info[0], "severity": info[1]}
+                vendors, products = get_affected(v)
+                if vendors or products:
+                    affected[v] = {"vendors": vendors, "products": products}
             if scores:
                 entry["cvss"] = scores
+            if affected:
+                entry["affected"] = affected
         groups.append(entry)
 
     articles = repo.get_articles_by_ids(ids)
     subject_counts: dict[str, int] = {}
     facet_counts: dict[str, dict[str, int]] = {}
-    for art in articles.values():
+    confidence_counts: dict[str, int] = {}
+    pmesii: dict[str, int] = {}
+    texts: dict[str, list[dict[str, Any]]] = {}
+
+    for index, aid in enumerate(ids, start=1):
+        art = articles.get(aid)
+        if art is None:
+            continue
         for sid in (art.subject_actor_ids or "").split(","):
             if sid.strip():
                 subject_counts[sid.strip()] = subject_counts.get(sid.strip(), 0) + 1
@@ -179,25 +215,47 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
             ("victim_country", art.victim_country_iso),
             ("intent", art.socio_political_intent),
             ("category", art.category),
+            ("stance", art.editorial_stance),
+            ("channel", art.posted_channel),
         ):
             if value:
                 # ⚠ 代入文は右辺が先に評価される。``setdefault(...)[v] = facet_counts[key]...``
                 # と 1 行で書くと右辺の facet_counts[key] が KeyError になる。
                 bucket = facet_counts.setdefault(key, {})
                 bucket[value] = bucket.get(value, 0) + 1
+        if art.socio_political_intent and art.intent_confidence:
+            confidence_counts[art.intent_confidence] = (
+                confidence_counts.get(art.intent_confidence, 0) + 1
+            )
+        for column, axis in _PMESII_COLUMNS:
+            if getattr(art, column, False):
+                pmesii[axis] = pmesii.get(axis, 0) + 1
+        for column, label in _TEXT_FIELDS:
+            text = (getattr(art, column, None) or "").strip()
+            if text:
+                texts.setdefault(label, []).append({"text": text, "source_index": index})
 
     from src.cti.actor_normalizer import load_actor_aliases
 
     registry = load_actor_aliases()
-    subject_actors = []
-    for sid, n in sorted(subject_counts.items(), key=lambda kv: (-kv[1], kv[0])):
-        entry_ = registry.by_id(registry.resolve_actor_id(sid))
-        subject_actors.append(
-            {"id": sid, "label": entry_.canonical if entry_ else sid, "articles": n}
-        )
-
-    facets = [
+    subject_actors = [
         {
+            "id": sid,
+            "label": (
+                entry_.canonical
+                if (entry_ := registry.by_id(registry.resolve_actor_id(sid))) is not None
+                else sid
+            ),
+            "articles": n,
+        }
+        for sid, n in sorted(subject_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+    def _facet(key: str) -> dict[str, Any] | None:
+        vals = facet_counts.get(key)
+        if not vals:
+            return None
+        return {
             "key": key,
             # 表示名と、値のラベル解決に使う語彙名を **backend が指定する**
             # (表示名の SSoT を frontend に複製しない、ui_copy_policy)。
@@ -208,9 +266,32 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
                 for v, n in sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))
             ],
         }
-        for key, vals in facet_counts.items()
-    ]
-    return {"entities": groups, "subject_actors": subject_actors, "facets": facets}
+
+    facets = [f for f in (_facet(k) for k in _FACET_LABELS) if f is not None]
+    judgement = {
+        # 記事画面の「Diamond / 判定」と同じ行を出すための材料。
+        "intent": _facet("intent"),
+        "intent_confidence": [
+            {"value": v, "articles": n}
+            for v, n in sorted(confidence_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+        "texts": [{"label": label, "items": items} for label, items in texts.items()],
+        "stance": _facet("stance"),
+        "victim_sector": _facet("victim_sector"),
+        "victim_country": _facet("victim_country"),
+        "channel": _facet("channel"),
+        "category": _facet("category"),
+        "pmesii": [
+            {"axis": a, "articles": n}
+            for a, n in sorted(pmesii.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+    }
+    return {
+        "entities": groups,
+        "subject_actors": subject_actors,
+        "facets": facets,
+        "judgement": judgement,
+    }
 
 
 @eventnews_api.get("")
@@ -286,7 +367,8 @@ def get_event_news(item_id: str) -> dict[str, Any]:
         "last_reported_at": record.state.last_reported_at.isoformat(),
         "news": _version_payload(repo, item_id),
         "members": _members_payload(repo, item_id),
-        # 原記事から抽出済みのメタデータ (決定論の集約。生成本文とは別枠で出す)
-        "metadata": _metadata_payload(repo, record.state.member_ids),
+        # 原記事から抽出済みのメタデータ (決定論の集約。生成本文とは別枠で出す)。
+        # **members と同じ並び** を渡す — 自由記述の出典番号 [N] を一致させるため。
+        "metadata": _metadata_payload(repo, repo.list_event_members(item_id)),
         "note": GENERATED_NOTE,
     }

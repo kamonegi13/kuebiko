@@ -81,12 +81,31 @@ class _FakeRepo:
 
 
 class _FakeArticle:
+    """ArticleRecord の判定関連フィールドだけを持つ代役 (既定は未判定)。"""
+
+    _FIELDS = (
+        "subject_actor_ids",
+        "victim_sector_canonical",
+        "victim_country_iso",
+        "socio_political_intent",
+        "intent_confidence",
+        "category",
+        "editorial_stance",
+        "posted_channel",
+        "socio_political_rationale",
+        "technical_axis_summary",
+        "remediation",
+        "analyst_note",
+    )
+
     def __init__(self, **kw: object) -> None:
-        self.subject_actor_ids = kw.get("subject_actor_ids")
-        self.victim_sector_canonical = kw.get("victim_sector_canonical")
-        self.victim_country_iso = kw.get("victim_country_iso")
-        self.socio_political_intent = kw.get("socio_political_intent")
-        self.category = kw.get("category")
+        for name in self._FIELDS:
+            setattr(self, name, kw.get(name))
+
+
+class _FakeMember:
+    def __init__(self, article_id: str) -> None:
+        self.article_id = article_id
 
 
 def test_metadata_aggregates_facets_across_members() -> None:
@@ -106,7 +125,9 @@ def test_metadata_aggregates_facets_across_members() -> None:
     )
 
     # Act
-    out = _metadata_payload(cast(RunHistoryRepository, repo), ["a1", "a2"])
+    out = _metadata_payload(
+        cast(RunHistoryRepository, repo), [_FakeMember("a1"), _FakeMember("a2")]
+    )
 
     # Assert
     sector = next(f for f in out["facets"] if f["key"] == "victim_sector")
@@ -118,6 +139,39 @@ def test_metadata_aggregates_facets_across_members() -> None:
     assert cve["values"][0] == {"value": "CVE-2026-1", "articles": 2}
 
 
+def test_free_text_judgement_keeps_per_article_source_numbers() -> None:
+    """自由記述の判定欄は 1 本にまとめず、記事ごとに出典番号を付けて並べる。
+
+    要約すると決定論の集計でなくなる (生成物になる)。出典番号は members の並びと
+    一致していなければ、読み手が [N] から原記事へ辿れない。
+    """
+    # Arrange
+    from typing import cast
+
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.api.eventnews import _metadata_payload
+
+    repo = _FakeRepo(
+        {},
+        {
+            "a1": _FakeArticle(remediation="パッチ適用"),
+            "a2": _FakeArticle(remediation="回避策なし"),
+        },
+    )
+
+    # Act
+    out = _metadata_payload(
+        cast(RunHistoryRepository, repo), [_FakeMember("a1"), _FakeMember("a2")]
+    )
+
+    # Assert
+    block = next(t for t in out["judgement"]["texts"] if t["label"] == "対処")
+    assert block["items"] == [
+        {"text": "パッチ適用", "source_index": 1},
+        {"text": "回避策なし", "source_index": 2},
+    ]
+
+
 def test_metadata_is_empty_without_members() -> None:
     from typing import cast
 
@@ -125,7 +179,7 @@ def test_metadata_is_empty_without_members() -> None:
     from src.ui.api.eventnews import _metadata_payload
 
     out = _metadata_payload(cast(RunHistoryRepository, _FakeRepo({}, {})), [])
-    assert out == {"entities": [], "subject_actors": [], "facets": []}
+    assert out == {"entities": [], "subject_actors": [], "facets": [], "judgement": {}}
 
 
 def test_list_filters_apply_before_limit(tmp_path: object) -> None:

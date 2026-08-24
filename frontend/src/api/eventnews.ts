@@ -36,6 +36,27 @@ export interface EventNewsMember {
   contributed_new_facts: boolean;
 }
 
+export interface EventNewsFacet {
+  key: string;
+  /** label = 表示名、vocab = 値のラベル解決に使う語彙名 (backend が指定)。 */
+  label: string;
+  vocab: string;
+  values: { value: string; articles: number }[];
+}
+
+/** 記事画面の「Diamond / 判定」と同じ行を出すための集計。 */
+export interface EventNewsJudgement {
+  intent?: EventNewsFacet | null;
+  intent_confidence?: { value: string; articles: number }[];
+  texts?: { label: string; items: { text: string; source_index: number }[] }[];
+  stance?: EventNewsFacet | null;
+  victim_sector?: EventNewsFacet | null;
+  victim_country?: EventNewsFacet | null;
+  channel?: EventNewsFacet | null;
+  category?: EventNewsFacet | null;
+  pmesii?: { axis: string; articles: number }[];
+}
+
 /** 原記事から抽出済みのメタデータ (決定論の集約。LLM を通らない)。 */
 export interface EventNewsMetadata {
   entities: {
@@ -43,15 +64,11 @@ export interface EventNewsMetadata {
     values: { value: string; articles: number }[];
     omitted: number;
     cvss?: Record<string, { score: number; severity: string }>;
+    affected?: Record<string, { vendors: string[]; products: string[] }>;
   }[];
   subject_actors: { id: string; label: string; articles: number }[];
-  /** label = 表示名、vocab = 値のラベル解決に使う語彙名 (backend が指定)。 */
-  facets: {
-    key: string;
-    label: string;
-    vocab: string;
-    values: { value: string; articles: number }[];
-  }[];
+  facets: EventNewsFacet[];
+  judgement: EventNewsJudgement;
 }
 
 export interface EventNewsDetail {

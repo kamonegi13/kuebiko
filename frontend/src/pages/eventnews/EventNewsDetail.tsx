@@ -20,13 +20,23 @@ import { useQuery } from "@tanstack/react-query";
 import { formatJst } from "../../utils/date";
 import { vocabLabel } from "../../hooks/useVocab";
 import { ArticleReadView, IMPORTANCE_TONE } from "../article/ArticleReadView";
-import { fetchArticleDetail, type ArticleDetailResponse } from "../../api/article";
+import {
+  PMESII_LABELS,
+  fetchArticleDetail,
+  type ArticleDetailResponse,
+} from "../../api/article";
+import { JudgementCard, type Judgement, type JudgementValue } from "../../components/analysis/JudgementCard";
+import { EntitySection } from "../../components/analysis/EntitySection";
+import { intentLabel, isHypothesisIntent } from "../../utils/diamond";
+import { sectorLabel } from "../../components/geo/sectorColors";
+import { countryLabel } from "../../utils/countryLabels";
+import { useChannelMeta } from "../../components/channel";
 import {
   fetchEventNewsDetail,
   type EventNewsDetail,
   type EventNewsFact,
+  type EventNewsFacet,
   type EventNewsListItem,
-  type EventNewsMetadata,
 } from "../../api/eventnews";
 
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
@@ -87,93 +97,77 @@ function Body({ facts, articleIdOf }: { facts: EventNewsFact[]; articleIdOf: (n:
   );
 }
 
-// entity chip → 記事サーフェス (/app/news) の逆引き。記事詳細と同じ規約。
-function pivotHref(type: string, value: string): string {
-  return `/app/news?${new URLSearchParams({ pivot_type: type, pivot_value: value })}`;
+/** 集計 facet → 共有カードの値。複数記事なら件数を添える。 */
+function facetValues(
+  f: EventNewsFacet | null | undefined,
+  withCounts: boolean,
+  labelOf?: (value: string) => string,
+): JudgementValue[] | null {
+  if (!f) return null;
+  return f.values.map((v) => ({
+    value: v.value,
+    label: (labelOf ? labelOf(v.value) : vocabLabel(f.vocab, v.value)) || v.value,
+    articles: withCounts ? v.articles : undefined,
+  }));
 }
 
-function cvssTone(score: number): string {
-  if (score >= 9) return "text-critical";
-  if (score >= 7) return "text-warning";
-  return "text-fg-subtle";
-}
-
-/** エンティティ カード。記事ドロワーの同名カードと同じ構造・見た目にする。
- *
- * 中身は **原記事から抽出済みの値を決定論で集計したもの** で、生成物ではない。
- */
-function EntityCard({ meta }: { meta: EventNewsMetadata }) {
-  // facet (被害/意図/分類) は判定カード側。ここは記事画面と同じく
-  // 「主題アクター + 技術指標」に限る。
-  if (meta.entities.length === 0 && meta.subject_actors.length === 0) return null;
-
-  return (
-    <div className={`${CARD} space-y-3`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className={CARD_LABEL}>エンティティ (クリックで逆引き)</div>
-        <span className="text-fg-subtle text-[11px]">
-          構成記事の抽出結果を集計（数字 = 言及した記事数）
-        </span>
-      </div>
-
-      <div>
-        <div className="text-fg-subtle text-xs mb-1">主題アクター</div>
-        {meta.subject_actors.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {meta.subject_actors.map((sa) => (
-              <a
-                key={sa.id}
-                href={pivotHref("actor", sa.id)}
-                title={`${sa.label} で逆引き（${sa.articles} 記事が主題として帰属）`}
-                className="inline-flex items-center gap-1 bg-accent/10 border border-accent-soft rounded px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/20 transition-colors"
-              >
-                {sa.label}
-                <span className="tnum text-[10px] text-accent/70">{sa.articles}</span>
-              </a>
-            ))}
-          </div>
-        ) : (
-          <div className="text-fg-subtle text-xs">未帰属（構成記事に主題アクターの帰属なし）</div>
-        )}
-      </div>
-
-      {meta.entities.map((g) => (
-        <div key={g.type}>
-          <div className="text-fg-subtle text-xs mb-1">
-            {vocabLabel("entity_type", g.type)}
-            {g.omitted > 0 && <span className="ml-1">（他 {g.omitted} 件）</span>}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {g.values.map((v) => {
-              const cvss = g.cvss?.[v.value];
-              return (
-                <a
-                  key={v.value}
-                  href={pivotHref(g.type, v.value)}
-                  title={
-                    cvss
-                      ? `${v.value} — CVSS ${cvss.score} ${cvss.severity}（${v.articles} 記事が言及）`
-                      : `${v.value} で逆引き（${v.articles} 記事が言及）`
-                  }
-                  className="inline-flex items-center gap-1 bg-surface-2 border border-border-default rounded px-2 py-0.5 text-xs font-mono text-fg-muted hover:text-accent hover:border-accent-soft transition-colors"
-                >
-                  {v.value}
-                  {cvss && (
-                    <span className={`tnum font-semibold ${cvssTone(cvss.score)}`}>
-                      {cvss.score.toFixed(1)}
-                    </span>
-                  )}
-                  {v.articles > 1 && (
-                    <span className="tnum text-[10px] text-fg-subtle">{v.articles}</span>
-                  )}
-                </a>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+/** 構成記事の判定を、記事画面と **同じカード・同じ行** で見せる。 */
+function EventJudgement({ d }: { d: EventNewsDetail }) {
+  const chMeta = useChannelMeta();
+  const j = d.metadata.judgement;
+  const multi = d.members.length > 1;
+  const judgement: Judgement = {
+    intent: facetValues(j.intent, multi, (v) => intentLabel(v)),
+    intentConfidence: (j.intent_confidence ?? [])
+      .map((c) => ({
+        label: vocabLabel("confidence", c.value),
+        hypothesis: isHypothesisIntent(c.value),
+        articles: multi ? c.articles : undefined,
+      }))
+      .filter((c) => c.label),
+    texts: (j.texts ?? []).map((t) => ({
+      label: t.label,
+      // 出典番号は複数記事のときだけ意味を持つ (1 件なら自明)
+      items: t.items.map((it) => ({ text: it.text, sourceIndex: multi ? it.source_index : undefined })),
+    })),
+    stance: facetValues(j.stance, multi),
+    victim: [
+      [
+        ...(facetValues(j.victim_sector, multi, (v) => sectorLabel(v)) ?? []),
+        ...(facetValues(j.victim_country, multi, (v) => countryLabel(v)) ?? []),
+      ],
+    ],
+    delivery:
+      (j.channel?.values.length ?? 0) > 0 ? (
+        <>
+          {j.channel!.values.map((v, i) => (
+            <span key={v.value}>
+              {i > 0 && <span className="text-fg-subtle"> / </span>}
+              <span className="text-fg">{chMeta(v.value).label}</span>
+              {multi && <span className="text-fg-subtle text-xs ml-0.5 tnum">({v.articles})</span>}
+            </span>
+          ))}
+        </>
+      ) : null,
+    pmesii: (j.pmesii ?? [])
+      .map((x) => ({
+        label: PMESII_LABELS.find((p) => p.key === x.axis)?.label ?? x.axis,
+        articles: multi ? x.articles : undefined,
+      })),
+    extraRows: [
+      {
+        label: "裏取り",
+        node: (
+          <>
+            独立 {d.independent_sources} 媒体
+            {d.state_media_count > 0 && ` ・国営 ${d.state_media_count}`}
+            {d.unclassified_sources > 0 && ` ・未分類 ${d.unclassified_sources}`}
+          </>
+        ),
+      },
+    ],
+  };
+  return <JudgementCard j={judgement} />;
 }
 
 /** 構成記事カード。記事ドロワーへ入る動線 (§3-1: 折りたたみは可・省略は不可)。 */
@@ -216,41 +210,6 @@ function MembersCard({ d }: { d: EventNewsDetail }) {
         ))}
       </ul>
     </details>
-  );
-}
-
-/** 判定カード。記事画面の「Diamond / 判定」と同じ位置・同じ dl 書式で、
- * 構成記事の判定を集計して見せる (LLM を通らない決定論の集約)。 */
-function JudgementCard({ d }: { d: EventNewsDetail }) {
-  const facets = d.metadata.facets;
-  if (facets.length === 0) return null;
-  const join = (f: EventNewsMetadata["facets"][number]) =>
-    f.values
-      .map((v) => {
-        const label = vocabLabel(f.vocab, v.value) || v.value;
-        return d.members.length > 1 ? `${label} (${v.articles})` : label;
-      })
-      .join(" / ");
-  return (
-    <div className={`${CARD} space-y-2`}>
-      <div className={CARD_LABEL}>判定 (構成記事の集計)</div>
-      <dl className="m-0 space-y-1 text-xs">
-        {facets.map((f) => (
-          <div key={f.key} className="flex gap-2">
-            <dt className="text-fg-subtle w-24 shrink-0">{f.label}</dt>
-            <dd className="text-fg-muted m-0">{join(f)}</dd>
-          </div>
-        ))}
-        <div className="flex gap-2">
-          <dt className="text-fg-subtle w-24 shrink-0">裏取り</dt>
-          <dd className="text-fg-muted m-0">
-            独立 {d.independent_sources} 媒体
-            {d.state_media_count > 0 && ` ・国営 ${d.state_media_count}`}
-            {d.unclassified_sources > 0 && ` ・未分類 ${d.unclassified_sources}`}
-          </dd>
-        </div>
-      </dl>
-    </div>
   );
 }
 
@@ -349,8 +308,16 @@ export function EventNewsDetailBody({ id }: { id: string }) {
         </div>
       </div>
 
-      <JudgementCard d={d} />
-      <EntityCard meta={d.metadata} />
+      {/* 記事画面と同じ 2 カラム (判定 / エンティティ)。描画は共有コンポーネント。 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <EventJudgement d={d} />
+        <EntitySection
+          subjectActors={d.metadata.subject_actors}
+          subjectActorSource={d.metadata.subject_actors.length > 0 ? "aggregate" : null}
+          groups={d.metadata.entities}
+          note="構成記事の抽出結果を集計（数字 = 言及した記事数）"
+        />
+      </div>
 
       {d.news ? (
         <>
