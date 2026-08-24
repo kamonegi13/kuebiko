@@ -463,3 +463,19 @@ def test_account_class_is_registered_in_the_fill_rate_audit() -> None:
     from src.ui.services.fill_rate_audit import METRICS
 
     assert any(m.key == "account_class" for m in METRICS)
+
+
+def test_candidate_population_covers_low_and_victim_records() -> None:
+    """候補の母集団に low と被害者レコードが含まれること。
+
+    事象ニュースを主導線にする以上、high/medium だけでは直近 14 日の記事の 68.5% しか
+    到達できない (low で 87.6%、被害者レコードまでで 98.7%)。被害者レコードは
+    victim_org を共有して報道と合流し、実測で 50 群が「リークサイト掲載 + 報道」の
+    混成になった。母集団を狭めると **その事象は存在しないことになる**ため関門で固定する。
+    """
+    from src.ui.services.eventnews_hourly_job import _SQL_CANDIDATES
+
+    for token in ("'high'", "'medium'", "'low'"):
+        assert token in _SQL_CANDIDATES
+    for token in ("'posted'", "'skipped_duplicate'", "'collected'", "'collected_duplicate'"):
+        assert token in _SQL_CANDIDATES

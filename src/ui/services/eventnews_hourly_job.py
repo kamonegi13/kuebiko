@@ -36,6 +36,17 @@ _FLAG = "EVENTNEWS_HOURLY"
 _CANDIDATE_LOOKBACK_HOURS = 6
 _TS = EVENT_TS_EXPR.format(a="a")
 
+# 候補の母集団 (2026-08-24 に拡張)。
+#
+# **low を含める理由は被覆**: 事象ニュースを主導線にする以上、high/medium だけだと
+# 直近 14 日の記事の 68.5% しか到達できない。low を足して 87.6%、被害者レコードまで
+# 入れて 98.7%。統合そのものへの寄与は low が +5 事象と僅少で、上流の意味的 dedup が
+# 近接重複を既に落としているため (実測)。
+#
+# **被害者レコード (collected 系) を含める理由は統合**: ransomware.live の被害者掲載は
+# 構造化データだが、同じ被害組織を報じたニュースと **entity (victim_org) を共有して
+# 合流する**。実測で multi 事象 +42、うち **50 群が「リークサイト掲載 + 報道」の
+# 混成**になった。掲載と報道が 1 本に束ねられるのは読み手にとって素直な形。
 _SQL_CANDIDATES = f"""
 SELECT a.article_id, {_TS} AS anchor_ts, x.importance, x.category, x.status,
        x.title, x.url, x.feed_title, x.feed_url, x.summary, x.body, x.account_class
@@ -48,8 +59,8 @@ JOIN (
          MAX(COALESCE(account_class,'')) account_class
   FROM articles GROUP BY article_id
 ) x ON x.article_id = a.article_id
-WHERE a.created_at >= ? AND x.importance IN ('high','medium')
-  AND x.status IN ('posted','skipped_duplicate')
+WHERE a.created_at >= ? AND x.importance IN ('high','medium','low')
+  AND x.status IN ('posted','skipped_duplicate','collected','collected_duplicate')
 ORDER BY 2
 """
 
