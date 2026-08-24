@@ -45,7 +45,13 @@ export interface EventNewsMetadata {
     cvss?: Record<string, { score: number; severity: string }>;
   }[];
   subject_actors: { id: string; label: string; articles: number }[];
-  facets: { key: string; values: { value: string; articles: number }[] }[];
+  /** label = 表示名、vocab = 値のラベル解決に使う語彙名 (backend が指定)。 */
+  facets: {
+    key: string;
+    label: string;
+    vocab: string;
+    values: { value: string; articles: number }[];
+  }[];
 }
 
 export interface EventNewsDetail {

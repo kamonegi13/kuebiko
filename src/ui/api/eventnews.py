@@ -117,6 +117,15 @@ def _members_payload(repo: RunHistoryRepository, item_id: str) -> list[dict[str,
 # 全件返すと読み手が本文に辿り着けない。省いた数は必ず返す (黙って切らない)。
 _METADATA_VALUE_CAP = 24
 
+# facet キー → (表示名, 値のラベル解決に使う語彙名)。語彙は既存のものを使い回す
+# (sector / country / intent / category は /api/v1/vocabularies が配信済み)。
+_FACET_LABELS: dict[str, tuple[str, str]] = {
+    "victim_sector": ("被害セクター", "sector"),
+    "victim_country": ("被害国", "country"),
+    "intent": ("意図", "intent"),
+    "category": ("分類", "category"),
+}
+
 
 def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> dict[str, Any]:
     """構成記事から **決定論で** 集約したメタデータ。
@@ -168,7 +177,7 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
         for key, value in (
             ("victim_sector", art.victim_sector_canonical),
             ("victim_country", art.victim_country_iso),
-            ("socio_political_intent", art.socio_political_intent),
+            ("intent", art.socio_political_intent),
             ("category", art.category),
         ):
             if value:
@@ -190,6 +199,10 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
     facets = [
         {
             "key": key,
+            # 表示名と、値のラベル解決に使う語彙名を **backend が指定する**
+            # (表示名の SSoT を frontend に複製しない、ui_copy_policy)。
+            "label": _FACET_LABELS[key][0],
+            "vocab": _FACET_LABELS[key][1],
             "values": [
                 {"value": v, "articles": n}
                 for v, n in sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))

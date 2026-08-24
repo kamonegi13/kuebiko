@@ -111,6 +111,9 @@ def test_metadata_aggregates_facets_across_members() -> None:
     # Assert
     sector = next(f for f in out["facets"] if f["key"] == "victim_sector")
     assert sector["values"] == [{"value": "government", "articles": 2}]
+    # 表示名と語彙名は backend が指定する (ui_copy_policy: 生 enum を直出ししない)
+    assert sector["label"] == "被害セクター"
+    assert sector["vocab"] == "sector"
     cve = next(g for g in out["entities"] if g["type"] == "cve")
     assert cve["values"][0] == {"value": "CVE-2026-1", "articles": 2}
 
