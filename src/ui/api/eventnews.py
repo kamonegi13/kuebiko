@@ -414,9 +414,15 @@ def list_event_news(  # noqa: PLR0913
     # 記事側の絞り込みは **既存のニュース検索と同じ経路** で解決する
     # (意味論を二重化しない — 2026-08-24 の「評価と本番で取得が分かれると挙動が
     # 一致しない」の教訓)。該当記事を含む事象だけを返す。
+    term = (search or "").strip()
+    # 検索語だけは他フィルタと分けて解決する。「生成本文に含む」または
+    # 「構成記事に含む」の **OR** で一致とするため (他フィルタは AND のまま)。
+    search_item_ids = repo.search_event_versions(term) if term else None
+    search_member_ids = (
+        _matching_article_ids(request, search=term, since_hours=since_hours) if term else None
+    )
     member_ids = _matching_article_ids(
         request,
-        search=search,
         category=category,
         channel=channel,
         feed=feed,
@@ -439,6 +445,8 @@ def list_event_news(  # noqa: PLR0913
         importances=wanted,
         exclude_merged=True,
         member_article_ids=member_ids,
+        search_item_ids=search_item_ids,
+        search_member_article_ids=search_member_ids,
         limit=min(limit, _LIST_LIMIT_MAX),
         offset=max(0, offset),
     )
@@ -471,7 +479,10 @@ def list_event_news(  # noqa: PLR0913
         "note": GENERATED_NOTE,
         # 記事側の走査が上限に当たったか。黙って切ると「これで全部」と誤読される
         # (no silent caps)。UI は「該当が多いので絞り込みを足してください」と出す。
-        "scan_capped": member_ids is not None and len(member_ids) >= _ARTICLE_SCAN_CAP,
+        "scan_capped": any(
+            ids is not None and len(ids) >= _ARTICLE_SCAN_CAP
+            for ids in (member_ids, search_member_ids)
+        ),
     }
 
 

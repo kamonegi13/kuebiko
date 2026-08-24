@@ -203,6 +203,26 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         member_ids = tuple(str(r["article_id"]) for r in member_rows)
         return _row_to_event_item(row, member_ids)
 
+    def search_event_versions(self, term: str, *, limit: int = 500) -> list[str]:
+        """生成本文 (見出し + 本体) に語を含む事象の item_id を返す。
+
+        **なぜ構成記事の検索だけでは足りないか**: 生成本文は日本語で、原記事は英語の
+        ことが多い。標本 60 事象のうち 57 件が「生成本文にしか無い語」を含んでいた
+        (バッファオーバーフロー / リークサイト / 未認証 / 安定版 等)。読み手が一覧で
+        見ているのは生成された見出しなので、そこに見えている語で引けないのは事故。
+        """
+        needle = term.strip().lower()
+        if not needle:
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT item_id AS item_id FROM event_item_versions"
+                " WHERE LOWER(headline) LIKE ? OR LOWER(body_json) LIKE ?"
+                " LIMIT ?",
+                (f"%{needle}%", f"%{needle}%", int(limit)),
+            ).fetchall()
+        return [str(r["item_id"]) for r in rows]
+
     def existing_member_article_ids(self, article_ids: Sequence[str]) -> set[str]:
         """指定記事のうち、既にどこかのアイテムのメンバーになっているものを返す。
 
@@ -230,6 +250,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         importances: Sequence[str] | None = None,
         exclude_merged: bool = False,
         member_article_ids: Sequence[str] | None = None,
+        search_item_ids: Sequence[str] | None = None,
+        search_member_article_ids: Sequence[str] | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> list[EventItemRecord]:
@@ -269,6 +291,25 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 f" WHERE m.item_id = event_items.id AND m.article_id IN ({ph}))"
             )
             params.extend(member_article_ids)
+        if search_item_ids is not None or search_member_article_ids is not None:
+            # 検索語は「生成本文に含む」**または**「構成記事に含む」で一致とする。
+            # 一覧で見えているのは生成された見出しなので、そこに見える語で引けないと事故。
+            items = list(search_item_ids or [])
+            arts = list(search_member_article_ids or [])
+            if not items and not arts:
+                return []
+            ors: list[str] = []
+            if items:
+                ors.append(f"id IN ({','.join('?' for _ in items)})")
+                params.extend(items)
+            if arts:
+                ors.append(
+                    "EXISTS (SELECT 1 FROM event_item_members sm"
+                    f" WHERE sm.item_id = event_items.id"
+                    f" AND sm.article_id IN ({','.join('?' for _ in arts)}))"
+                )
+                params.extend(arts)
+            clauses.append(f"({' OR '.join(ors)})")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
         params.append(max(0, int(offset)))

@@ -297,3 +297,65 @@ def test_list_offset_paginates(tmp_path: object) -> None:
     page2 = repo.list_event_items(origin="live", limit=2, offset=2)
     assert [r.state.item_id for r in page1] == ["ev-2", "ev-1"]
     assert [r.state.item_id for r in page2] == ["ev-0"]
+
+
+def test_search_matches_generated_text_or_member_articles(tmp_path: object) -> None:
+    """検索は「生成本文に含む」または「構成記事に含む」の OR で一致する。
+
+    生成本文は日本語・原記事は英語のことが多く、標本 60 事象のうち 57 件が
+    「生成本文にしか無い語」を含んでいた。一覧で見えているのは生成された見出しなので、
+    そこに見える語で引けないのは事故。
+    """
+    from datetime import UTC, datetime
+
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "search.db")  # type: ignore[operator]
+    now = datetime(2026, 8, 1, tzinfo=UTC)
+    for i in range(2):
+        repo.create_event_item(
+            item_id=f"ev-{i}",
+            origin="live",
+            first_reported_at=now,
+            last_reported_at=now,
+            importance="high",
+        )
+        repo.add_event_member(
+            item_id=f"ev-{i}",
+            article_id=f"a-{i}",
+            joined_at=now,
+            contributed_new_facts=1,
+            join_signal="seed",
+        )
+    repo.record_event_version(
+        item_id="ev-0",
+        version=1,
+        generated_at=now,
+        model="m",
+        prompt_version="v",
+        headline="バッファオーバーフローの脆弱性",
+        body_json="{}",
+        new_facts_json="[]",
+        verified_at=now,
+        dropped_lines=0,
+        repaired_ids=0,
+    )
+
+    # 生成本文だけに在る語で引ける
+    assert repo.search_event_versions("バッファオーバーフロー") == ["ev-0"]
+    got = repo.list_event_items(
+        origin="live", search_item_ids=["ev-0"], search_member_article_ids=[], limit=10
+    )
+    assert [r.state.item_id for r in got] == ["ev-0"]
+    # 構成記事側だけの一致でも引ける (OR)
+    got2 = repo.list_event_items(
+        origin="live", search_item_ids=[], search_member_article_ids=["a-1"], limit=10
+    )
+    assert [r.state.item_id for r in got2] == ["ev-1"]
+    # 両方空 = 該当なし (全件化させない)
+    assert (
+        repo.list_event_items(
+            origin="live", search_item_ids=[], search_member_article_ids=[], limit=10
+        )
+        == []
+    )
