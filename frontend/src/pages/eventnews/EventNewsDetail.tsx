@@ -1,10 +1,15 @@
 // 事象 1 件の詳細ビュー。**一覧ページと dashboard widget の両方から使う**ため、
 // ページから切り出して共有している (ドロワーの中身を 2 箇所に複製しない)。
 //
-// 表示要領は **記事ドロワー (ArticleReadView) に合わせる** (2026-08-24)。
-// 同じアプリの中でドロワーごとに構造が違うと、読み手は毎回「どこに何があるか」を
-// 探し直すことになる。ヘッダ (メタ行 → 見出し → 時間軸) → カード群、という並びと
-// カードの見た目・ラベル書式を共有する。
+// **通常ニュース (ArticleReadView) を基準にし、事象ニュース固有のものを差し込む**
+// (2026-08-24)。事象ニュースを前面に出して通常ニュースを置き換えていく前提のため、
+// 「事象ニュース独自の画面」ではなく「記事画面の上位互換」として作る:
+//
+//  - **単独記事の事象は ArticleReadView をそのまま埋め込む**。記事が 1 件なら中身は
+//    通常ニュースと同一で、そこから更にドロワーを開かせるのは純粋な遠回り。本文
+//    (日本語訳・IoC コピー含む) まで 1 枚で読み切れる
+//  - 複数記事の事象も **節の並びを記事画面に合わせる**
+//    (ヘッダ → 判定 → エンティティ → 要点/要約 → 本文 → 固有節)
 //
 // 表示の原則 (docs/event_news_design.md §3):
 //  - 生成本文と原記事を構造で区別する (セクション名に「生成」と明記)。構成記事は全件出す
@@ -14,7 +19,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { formatJst } from "../../utils/date";
 import { vocabLabel } from "../../hooks/useVocab";
-import { IMPORTANCE_TONE } from "../article/ArticleReadView";
+import { ArticleReadView, IMPORTANCE_TONE } from "../article/ArticleReadView";
+import { fetchArticleDetail, type ArticleDetailResponse } from "../../api/article";
 import {
   fetchEventNewsDetail,
   type EventNewsDetail,
@@ -97,9 +103,9 @@ function cvssTone(score: number): string {
  * 中身は **原記事から抽出済みの値を決定論で集計したもの** で、生成物ではない。
  */
 function EntityCard({ meta }: { meta: EventNewsMetadata }) {
-  const hasAny =
-    meta.entities.length > 0 || meta.subject_actors.length > 0 || meta.facets.length > 0;
-  if (!hasAny) return null;
+  // facet (被害/意図/分類) は判定カード側。ここは記事画面と同じく
+  // 「主題アクター + 技術指標」に限る。
+  if (meta.entities.length === 0 && meta.subject_actors.length === 0) return null;
 
   return (
     <div className={`${CARD} space-y-3`}>
@@ -130,23 +136,6 @@ function EntityCard({ meta }: { meta: EventNewsMetadata }) {
           <div className="text-fg-subtle text-xs">未帰属（構成記事に主題アクターの帰属なし）</div>
         )}
       </div>
-
-      {meta.facets.map((f) => (
-        <div key={f.key}>
-          <div className="text-fg-subtle text-xs mb-1">{f.label}</div>
-          <div className="flex flex-wrap gap-1.5">
-            {f.values.map((v) => (
-              <span
-                key={v.value}
-                className="inline-flex items-center gap-1 bg-surface-2 border border-border-default rounded px-2 py-0.5 text-xs text-fg-muted"
-              >
-                {vocabLabel(f.vocab, v.value) || v.value}
-                <span className="tnum text-[10px] text-fg-subtle">{v.articles}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
 
       {meta.entities.map((g) => (
         <div key={g.type}>
@@ -230,6 +219,81 @@ function MembersCard({ d }: { d: EventNewsDetail }) {
   );
 }
 
+/** 判定カード。記事画面の「Diamond / 判定」と同じ位置・同じ dl 書式で、
+ * 構成記事の判定を集計して見せる (LLM を通らない決定論の集約)。 */
+function JudgementCard({ d }: { d: EventNewsDetail }) {
+  const facets = d.metadata.facets;
+  if (facets.length === 0) return null;
+  const join = (f: EventNewsMetadata["facets"][number]) =>
+    f.values
+      .map((v) => {
+        const label = vocabLabel(f.vocab, v.value) || v.value;
+        return d.members.length > 1 ? `${label} (${v.articles})` : label;
+      })
+      .join(" / ");
+  return (
+    <div className={`${CARD} space-y-2`}>
+      <div className={CARD_LABEL}>判定 (構成記事の集計)</div>
+      <dl className="m-0 space-y-1 text-xs">
+        {facets.map((f) => (
+          <div key={f.key} className="flex gap-2">
+            <dt className="text-fg-subtle w-24 shrink-0">{f.label}</dt>
+            <dd className="text-fg-muted m-0">{join(f)}</dd>
+          </div>
+        ))}
+        <div className="flex gap-2">
+          <dt className="text-fg-subtle w-24 shrink-0">裏取り</dt>
+          <dd className="text-fg-muted m-0">
+            独立 {d.independent_sources} 媒体
+            {d.state_media_count > 0 && ` ・国営 ${d.state_media_count}`}
+            {d.unclassified_sources > 0 && ` ・未分類 ${d.unclassified_sources}`}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+/** 単独記事の事象 = 中身は通常ニュースと同一。**記事ビューをそのまま埋め込む**。
+ *
+ * ここから更に記事ドロワーを開かせるのは遠回りでしかない (記事は 1 件しかない)。
+ * 本文・日本語訳・IoC コピーまで含めて 1 枚で読み切れるようにする。
+ */
+function SingleArticleBody({ d }: { d: EventNewsDetail }) {
+  const articleId = d.members[0]?.article_id ?? "";
+  const { data, isLoading, error } = useQuery<ArticleDetailResponse>({
+    queryKey: ["article-detail", articleId],
+    queryFn: () => fetchArticleDetail(articleId),
+    enabled: articleId !== "",
+    retry: false,
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* 事象ニュース固有の差し込み: 裏取りの状態 */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <SourceChip item={d} />
+        <span className="text-fg-subtle">
+          他媒体が報じると事象として統合され、本文が生成される
+        </span>
+      </div>
+      {isLoading && <div className="text-fg-subtle text-sm">読み込み中…</div>}
+      {(error || (!isLoading && !data)) && (
+        <div className="text-critical text-sm bg-surface-1 border border-border-subtle rounded-lg px-4 py-3">
+          記事を取得できませんでした
+          {/* 取得できなくても事象側が持つ要約だけは読ませる (空振りで終わらせない) */}
+          {d.members[0]?.summary && (
+            <p className="text-sm text-fg-muted leading-relaxed whitespace-pre-wrap mt-2 mb-0">
+              {d.members[0].summary}
+            </p>
+          )}
+        </div>
+      )}
+      {data && <ArticleReadView data={data} variant="peek" />}
+    </div>
+  );
+}
+
 export function EventNewsDetailBody({ id }: { id: string }) {
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews", id],
@@ -240,6 +304,9 @@ export function EventNewsDetailBody({ id }: { id: string }) {
   if (error) return <div className="text-critical text-sm">エラー: {String(error)}</div>;
   if (!data) return null;
   const d: EventNewsDetail = data;
+  // 記事 1 件の事象は中身が通常ニュースそのもの。記事ビューを埋め込み、
+  // 事象側のヘッダを重ねない (見出し・重要度・時刻が二重になるため)。
+  if (!d.news && d.members.length === 1) return <SingleArticleBody d={d} />;
   const articleIdOf = (n: number) => d.members.find((m) => m.index === n)?.article_id;
   const headline = d.news?.headline ?? d.members[0]?.title ?? "事象";
   const spanDays = Math.round(
@@ -282,9 +349,12 @@ export function EventNewsDetailBody({ id }: { id: string }) {
         </div>
       </div>
 
+      <JudgementCard d={d} />
+      <EntityCard meta={d.metadata} />
+
       {d.news ? (
         <>
-          {/* 要点 — 記事ドロワーの「要約」カードと同じ位置・同じ見た目 */}
+          {/* 要点 — 記事画面の「要約」カードと同じ位置・同じ見た目 */}
           <div className={CARD}>
             <div className={`${CARD_LABEL} mb-2`}>要点 (kuebiko 生成)</div>
             <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap m-0">{d.news.bluf}</p>
@@ -316,19 +386,18 @@ export function EventNewsDetailBody({ id }: { id: string }) {
           )}
         </>
       ) : (
-        /* 単独記事 (案 A): 生成せず、原記事の要約を同じ枠で読ませる。 */
+        /* 複数記事だが生成がまだ (または失敗した) 状態。空振りで終わらせない。 */
         <div className={CARD}>
           <div className={`${CARD_LABEL} mb-2`}>要約 (原記事)</div>
           <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap m-0">
             {d.members[0]?.summary}
           </p>
           <p className="text-xs text-fg-subtle mt-3 pt-3 border-t border-border-subtle m-0">
-            1 媒体のみの報道のため、記事の要約をそのまま表示している。他媒体が報じると事象として統合され本文が生成される。
+            統合本文は次の生成で作られる。それまでは最初に報じた記事の要約を表示している。
           </p>
         </div>
       )}
 
-      <EntityCard meta={d.metadata} />
       <MembersCard d={d} />
 
       {d.news && <p className="text-xs text-fg-subtle m-0">{d.note}</p>}

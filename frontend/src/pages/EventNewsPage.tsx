@@ -102,6 +102,7 @@ export function EventNewsPage() {
         isOpen={openId !== null}
         onClose={() => setOpenId(null)}
         title={openItem?.headline ?? "事象"}
+        widthClass="md:w-[46rem]"
         mobileGutter
         swipeToClose
       >
