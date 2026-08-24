@@ -58,3 +58,68 @@ class TestEventNewsImportBoundary:
             p.name for p in pkg.rglob("*.py") if banned.search(p.read_text(encoding="utf-8"))
         ]
         assert offenders == [], f"eventnews から判断層への依存を検出: {offenders}"
+
+
+# --- メタデータ集約の回帰 ---------------------------------------------------
+#
+# 2026-08-24: `facet_counts.setdefault(k, {})[v] = facet_counts[k].get(v, 0) + 1`
+# と 1 行で書いたため、**右辺が setdefault より先に評価されて** KeyError になり、
+# 詳細 API が 500 を返した。単体テストでは書式の正しさしか見ておらず、実物を
+# 叩くまで気付けなかった。ここで集約そのものを固定する。
+
+
+class _FakeRepo:
+    def __init__(self, entities: dict[str, dict[str, int]], articles: dict[str, object]) -> None:
+        self._entities = entities
+        self._articles = articles
+
+    def count_entities_for_articles(self, ids: list[str]) -> dict[str, dict[str, int]]:
+        return self._entities
+
+    def get_articles_by_ids(self, ids: list[str]) -> dict[str, object]:
+        return self._articles
+
+
+class _FakeArticle:
+    def __init__(self, **kw: object) -> None:
+        self.subject_actor_ids = kw.get("subject_actor_ids")
+        self.victim_sector_canonical = kw.get("victim_sector_canonical")
+        self.victim_country_iso = kw.get("victim_country_iso")
+        self.socio_political_intent = kw.get("socio_political_intent")
+        self.category = kw.get("category")
+
+
+def test_metadata_aggregates_facets_across_members() -> None:
+    """複数記事に跨る facet を件数付きで集計する。"""
+    # Arrange
+    from typing import cast
+
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.api.eventnews import _metadata_payload
+
+    repo = _FakeRepo(
+        {"cve": {"CVE-2026-1": 2, "CVE-2026-2": 1}},
+        {
+            "a1": _FakeArticle(victim_sector_canonical="government", category="apt"),
+            "a2": _FakeArticle(victim_sector_canonical="government", category="vuln"),
+        },
+    )
+
+    # Act
+    out = _metadata_payload(cast(RunHistoryRepository, repo), ["a1", "a2"])
+
+    # Assert
+    sector = next(f for f in out["facets"] if f["key"] == "victim_sector")
+    assert sector["values"] == [{"value": "government", "articles": 2}]
+    cve = next(g for g in out["entities"] if g["type"] == "cve")
+    assert cve["values"][0] == {"value": "CVE-2026-1", "articles": 2}
+
+
+def test_metadata_is_empty_without_members() -> None:
+    from typing import cast
+
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.api.eventnews import _metadata_payload
+
+    out = _metadata_payload(cast(RunHistoryRepository, _FakeRepo({}, {})), [])
+    assert out == {"entities": [], "subject_actors": [], "facets": []}

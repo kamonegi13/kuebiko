@@ -172,7 +172,10 @@ def _metadata_payload(repo: RunHistoryRepository, member_ids: Sequence[str]) -> 
             ("category", art.category),
         ):
             if value:
-                facet_counts.setdefault(key, {})[value] = facet_counts[key].get(value, 0) + 1
+                # ⚠ 代入文は右辺が先に評価される。``setdefault(...)[v] = facet_counts[key]...``
+                # と 1 行で書くと右辺の facet_counts[key] が KeyError になる。
+                bucket = facet_counts.setdefault(key, {})
+                bucket[value] = bucket.get(value, 0) + 1
 
     from src.cti.actor_normalizer import load_actor_aliases
 
