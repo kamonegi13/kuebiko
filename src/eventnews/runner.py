@@ -36,7 +36,8 @@ from src.tools.llm_client import LLMClient, LLMError
 _log = get_logger(__name__)
 
 _IMPORTANCE_RANK = {"low": 0, "medium": 1, "high": 2}
-_PROMPT_VERSION = "eventnews-v1"
+# v2 (2026-08-24): 「[N] のみが報じる」と「text に [N] を書かない」が矛盾していた
+_PROMPT_VERSION = "eventnews-v2"
 
 
 @dataclass

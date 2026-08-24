@@ -161,3 +161,23 @@ def test_list_filters_apply_before_limit(tmp_path: object) -> None:
 
     # Assert
     assert [r.state.item_id for r in got] == ["ev-h2", "ev-h1", "ev-h0"]
+
+
+def test_prompt_does_not_ask_for_inline_citation_numbers() -> None:
+    """プロンプトが「text に [N] を書け」と「書くな」を同時に言っていないこと。
+
+    2026-08-24: 二重表記を止めるために「text の中に [N] を書かない」を足したが、
+    その上にあった「1 media のみが報じている事実は『[N] のみが報じる』と明示する」を
+    直し忘れ、**矛盾した指示**になっていた。結果 LLM は媒体名を参照しようとして
+    識別子一覧に無いため置換され、「と (原文参照) のみが報じる」という壊れた文が
+    出た (実測 2/119 件)。
+    """
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[2] / "prompts" / "eventnews" / "refine.j2").read_text(
+        encoding="utf-8"
+    )
+    # 「text に書かない」側の指示は必ず在ること
+    assert "text の中に `[1]` のような出典番号を書かない" in text
+    # 「[N] のみが報じる」と書かせる指示が残っていないこと
+    assert "「[N] のみが報じる」" not in text
