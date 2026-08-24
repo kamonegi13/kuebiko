@@ -25,7 +25,8 @@ export function EventNewsWidget({ config }: WidgetProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
     queryKey: ["dash-eventnews", importance, per],
-    queryFn: () => fetchEventNews(Math.max(per * 2, 20), importance || undefined),
+    queryFn: () =>
+      fetchEventNews({ limit: Math.max(per * 2, 20), importance: importance || undefined }),
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);

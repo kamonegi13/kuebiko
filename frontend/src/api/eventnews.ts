@@ -110,10 +110,37 @@ async function get<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export function fetchEventNews(limit = 50, importance?: string) {
-  const q = new URLSearchParams({ limit: String(limit) });
-  if (importance) q.set("importance", importance);
-  return get<{ items: EventNewsListItem[]; note: string }>(`/api/v1/eventnews?${q}`);
+/** 一覧の絞り込み。記事側の条件はニュース検索と同じ語彙 (同じ経路で解決される)。 */
+export interface EventNewsQuery {
+  limit?: number;
+  offset?: number;
+  importance?: string;
+  search?: string;
+  category?: string;
+  channel?: string;
+  actor?: string;
+  cve?: string;
+  malware?: string;
+  intent?: string;
+  pir?: string;
+  affected_vendor?: string;
+  entity_type?: string;
+  entity_value?: string;
+  since_hours?: number;
+}
+
+export function fetchEventNews(q: EventNewsQuery = {}) {
+  const p = new URLSearchParams({ limit: String(q.limit ?? 50) });
+  if (q.offset) p.set("offset", String(q.offset));
+  if (q.since_hours) p.set("since_hours", String(q.since_hours));
+  for (const k of [
+    "importance", "search", "category", "channel", "actor", "cve",
+    "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value",
+  ] as const) {
+    const v = q[k];
+    if (v) p.set(k, String(v));
+  }
+  return get<{ items: EventNewsListItem[]; note: string }>(`/api/v1/eventnews?${p}`);
 }
 
 export function fetchEventNewsDetail(id: string) {

@@ -240,3 +240,60 @@ def test_prompt_does_not_ask_for_inline_citation_numbers() -> None:
     assert "「[N] のみが報じる」" not in text
     # 掲載場所・URL を事実として書かせない (本文に無い URL は置換され文が壊れる)
     assert "掲載場所・URL を事実として書かない" in text
+
+
+def test_list_filters_lift_article_matches_to_events(tmp_path: object) -> None:
+    """記事側の絞り込みが「該当メンバーを含む事象」に持ち上がること。
+
+    事象は記事の集合なので、絞り込みは **1 件でも該当メンバーを含むか** で判定する。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "filter.db")  # type: ignore[operator]
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    for i in range(2):
+        repo.create_event_item(
+            item_id=f"ev-{i}",
+            origin="live",
+            first_reported_at=base + timedelta(hours=i),
+            last_reported_at=base + timedelta(hours=i),
+            importance="high",
+        )
+        repo.add_event_member(
+            item_id=f"ev-{i}",
+            article_id=f"a-{i}",
+            joined_at=base,
+            contributed_new_facts=1,
+            join_signal="seed",
+        )
+
+    got = repo.list_event_items(origin="live", member_article_ids=["a-1"], limit=10)
+    assert [r.state.item_id for r in got] == ["ev-1"]
+    # 空リスト = 「該当記事ゼロ」なので事象もゼロ (全件化させない)
+    assert repo.list_event_items(origin="live", member_article_ids=[], limit=10) == []
+    # None = 絞らない
+    assert len(repo.list_event_items(origin="live", member_article_ids=None, limit=10)) == 2
+
+
+def test_list_offset_paginates(tmp_path: object) -> None:
+    """offset でページングできること (新着順)。"""
+    from datetime import UTC, datetime, timedelta
+
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository(db_path=tmp_path / "page.db")  # type: ignore[operator]
+    base = datetime(2026, 8, 1, tzinfo=UTC)
+    for i in range(3):
+        repo.create_event_item(
+            item_id=f"ev-{i}",
+            origin="live",
+            first_reported_at=base + timedelta(hours=i),
+            last_reported_at=base + timedelta(hours=i),
+            importance="high",
+        )
+    page1 = repo.list_event_items(origin="live", limit=2)
+    page2 = repo.list_event_items(origin="live", limit=2, offset=2)
+    assert [r.state.item_id for r in page1] == ["ev-2", "ev-1"]
+    assert [r.state.item_id for r in page2] == ["ev-0"]

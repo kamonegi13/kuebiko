@@ -35,9 +35,11 @@ export interface SubjectActorView {
 // 多く縦に長くなるため **必要なときに開く** (カードが長いと本文へ辿り着けない)。
 const PRIMARY_ENTITY_TYPES: readonly string[] = ["cve", "malware_family"];
 
-// entity chip → 記事サーフェス (/app/news) の逆引き (article_entities の type と同一)。
+// entity chip → 逆引き。**事象ニュース** を既定の着地点にする (2026-08-24)。
+// 事象ニュースを主導線にしていく方針のため、chip から記事一覧へ落とすと読み手が
+// 2 つの画面を行き来することになる。記事単位で見たいときは事象の「原記事」から入る。
 export function pivotHref(type: string, value: string): string {
-  return `/app/news?${new URLSearchParams({ pivot_type: type, pivot_value: value })}`;
+  return `/app/eventnews?${new URLSearchParams({ pivot_type: type, pivot_value: value })}`;
 }
 
 // コピー対象: ioc_* (IP/ドメイン/URL/ハッシュ) + CVE。TTP は IoC ではないため対象外。

@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from src.cti.source_basis import classify_source_tier
 from src.storage.run_history import RunHistoryRepository
@@ -321,9 +322,84 @@ def _corroboration_payload(members: Sequence[dict[str, Any]]) -> list[dict[str, 
     ]
 
 
+# 記事側フィルタを事象へ持ち上げるときに走査する記事の上限。ここを超える結果は
+# 「該当が多すぎる」ので、利用者は絞り込みを足す (黙って切らず件数を返す)。
+_ARTICLE_SCAN_CAP = 2000
+
+
+def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
+    """記事側フィルタに該当する article_id。フィルタ無指定なら None (絞らない)。
+
+    **既存のニュース検索 (`_build_facets` + `repo.list_articles`) をそのまま使う**。
+    同じ条件語で違う結果が出ないようにするため、ここで SQL を書き直さない。
+    """
+    entity_type = (filters.pop("entity_type", None) or "").strip().lower()
+    entity_value = (filters.pop("entity_value", None) or "").strip()
+    search = (filters.pop("search", None) or "").strip() or None
+    since_hours = int(filters.pop("since_hours", 0) or 0)
+    active = {k: v for k, v in filters.items() if v}
+    if not (active or search or since_hours or (entity_type and entity_value)):
+        return None
+
+    repo = request.app.state.repo
+    if entity_type and entity_value:
+        # pivot は entity 完全一致 (articles_feed の /pivot と同じ経路)
+        since = datetime.now(UTC) - timedelta(hours=since_hours) if since_hours > 0 else None
+        articles = repo.list_articles(
+            entity_type=entity_type,
+            entity_value=entity_value.lower(),
+            since=since,
+            limit=_ARTICLE_SCAN_CAP,
+        )
+        return [a.article_id for a in articles]
+
+    from src.ui.api.articles_feed import _build_facets
+
+    facets = _build_facets(
+        importance=None,
+        category=active.get("category"),
+        feed=active.get("feed"),
+        channel=active.get("channel"),
+        cve=active.get("cve"),
+        malware=active.get("malware"),
+        intent=active.get("intent"),
+        pir=active.get("pir"),
+        actor=active.get("actor"),
+        affected_vendor=active.get("affected_vendor"),
+        since_hours=since_hours,
+        since_iso=None,
+        # 事象は skipped_duplicate も構成記事に含むため status で絞らない
+        # (SearchFacets は status=None を「絞らない」と解釈する。"all" は
+        #  literal として渡ってしまい 0 件になる)
+        status=None,
+        body=None,
+    )
+    articles = repo.list_articles(
+        **facets.to_query_kwargs(), search=search, limit=_ARTICLE_SCAN_CAP
+    )
+    return [a.article_id for a in articles]
+
+
 @eventnews_api.get("")
-def list_event_news(
-    limit: int = 50, status: str | None = None, importance: str | None = None
+def list_event_news(  # noqa: PLR0913
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    importance: str | None = None,
+    search: str | None = None,
+    category: str | None = None,
+    channel: str | None = None,
+    feed: str | None = None,
+    actor: str | None = None,
+    cve: str | None = None,
+    malware: str | None = None,
+    intent: str | None = None,
+    pir: str | None = None,
+    affected_vendor: str | None = None,
+    entity_type: str | None = None,
+    entity_value: str | None = None,
+    since_hours: int = 0,
 ) -> dict[str, Any]:
     """事象一覧 (新着順)。origin='live' のみ — リプレイ行は返さない。
 
@@ -335,6 +411,25 @@ def list_event_news(
     repo = _repo()
     statuses = [s.strip() for s in status.split(",")] if status else None
     wanted = [i.strip() for i in importance.split(",")] if importance else None
+    # 記事側の絞り込みは **既存のニュース検索と同じ経路** で解決する
+    # (意味論を二重化しない — 2026-08-24 の「評価と本番で取得が分かれると挙動が
+    # 一致しない」の教訓)。該当記事を含む事象だけを返す。
+    member_ids = _matching_article_ids(
+        request,
+        search=search,
+        category=category,
+        channel=channel,
+        feed=feed,
+        actor=actor,
+        cve=cve,
+        malware=malware,
+        intent=intent,
+        pir=pir,
+        affected_vendor=affected_vendor,
+        entity_type=entity_type,
+        entity_value=entity_value,
+        since_hours=since_hours,
+    )
     # 絞り込みは **LIMIT より前** に効かせる。取得後に filter すると「新着 N 件のうち
     # high のもの」になり、「high の新着 N 件」にならない (遡及構築で 2,000 件規模に
     # なって顕在化: high 絞り込みが数件しか出なくなる)。
@@ -343,7 +438,9 @@ def list_event_news(
         statuses=statuses,
         importances=wanted,
         exclude_merged=True,
+        member_article_ids=member_ids,
         limit=min(limit, _LIST_LIMIT_MAX),
+        offset=max(0, offset),
     )
     resolved = _headlines_and_previews(repo, shown)
     items = []

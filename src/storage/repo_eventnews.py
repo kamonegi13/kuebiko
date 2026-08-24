@@ -229,7 +229,9 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         statuses: Sequence[str] | None = None,
         importances: Sequence[str] | None = None,
         exclude_merged: bool = False,
+        member_article_ids: Sequence[str] | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[EventItemRecord]:
         """event_items を新着順 (last_reported_at DESC) で列挙する (member_ids 込み)。
 
@@ -255,12 +257,25 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             params.extend(importances)
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
+        if member_article_ids is not None:
+            # 記事側の絞り込み (pivot / category / 検索 等) を事象へ持ち上げる。
+            # **1 件でも該当メンバーを含む事象**を返す (事象は記事の集合なので、
+            # 「どのメンバーが該当したか」ではなく「事象が該当するか」で数える)。
+            if not member_article_ids:
+                return []
+            ph = ",".join("?" for _ in member_article_ids)
+            clauses.append(
+                f"EXISTS (SELECT 1 FROM event_item_members m"  # noqa: S608 — placeholders のみ
+                f" WHERE m.item_id = event_items.id AND m.article_id IN ({ph}))"
+            )
+            params.extend(member_article_ids)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
+        params.append(max(0, int(offset)))
         with self._connect() as conn:
             rows = conn.execute(
                 f"SELECT * FROM event_items {where} "  # noqa: S608 — where句は固定カラムのみ
-                "ORDER BY datetime(last_reported_at) DESC LIMIT ?",
+                "ORDER BY datetime(last_reported_at) DESC LIMIT ? OFFSET ?",
                 params,
             ).fetchall()
             if not rows:
