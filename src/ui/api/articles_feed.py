@@ -312,16 +312,18 @@ def feed_options(request: Request, days: int = 90) -> dict[str, Any]:  # noqa: A
     from src.storage.db_backend import connect, translate_sql
 
     window_days = max(1, min(int(days), 365))
-    conn = connect()
-    rows = conn.execute(
-        translate_sql(
-            "SELECT feed_title, COUNT(*) AS n FROM articles "
-            "WHERE feed_title IS NOT NULL AND feed_title <> '' "
-            "AND created_at > datetime('now', ?) "
-            "GROUP BY feed_title ORDER BY n DESC, feed_title ASC"
-        ),
-        (f"-{window_days} days",),
-    ).fetchall()
+    # ⚠ **必ず with で受ける**。ここを `conn = connect()` と書くと 1 回の呼び出しごとに
+    # プール接続を 1 本失い、上限に達した時点でアプリ全体が停止する (2026-08-25 の全停止)。
+    with connect() as conn:
+        rows = conn.execute(
+            translate_sql(
+                "SELECT feed_title, COUNT(*) AS n FROM articles "
+                "WHERE feed_title IS NOT NULL AND feed_title <> '' "
+                "AND created_at > datetime('now', ?) "
+                "GROUP BY feed_title ORDER BY n DESC, feed_title ASC"
+            ),
+            (f"-{window_days} days",),
+        ).fetchall()
     return {
         "feeds": [{"title": str(r[0]), "count": int(r[1])} for r in rows],
         "window_days": window_days,
