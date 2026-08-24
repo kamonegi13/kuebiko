@@ -40,6 +40,9 @@ class ProbeResult:
     status: int | None
     elapsed_seconds: float
     error: str | None = None
+    # 検査器そのものが動かなかった (依存欠落等)。**これは障害の証拠ではない** —
+    # 検証不能を反証として扱わない。実際 h2 未導入で初回に誤報を出した。
+    probe_broken: bool = False
 
 
 async def _probe_once(url: str) -> ProbeResult:
@@ -67,6 +70,7 @@ async def _probe_once(url: str) -> ProbeResult:
             status=None,
             elapsed_seconds=round(time.monotonic() - started, 3),
             error=f"{type(exc).__name__}: {exc}",
+            probe_broken=isinstance(exc, ImportError),
         )
 
 
@@ -98,6 +102,10 @@ async def run_public_reachability_check() -> dict[str, object]:
     result = await check_public_reachability()
     if result is None:
         return {"skipped": "no_public_url"}
+    if result.probe_broken:
+        # 公開面ではなく監視側の故障。障害として通知すると狼少年になる。
+        _log.error("public_reachability_probe_broken", error=result.error)
+        return {"probe_broken": True, "error": result.error}
     if not result.ok:
         try:
             from src.ui.services.ops_notify import post_ops_message

@@ -147,3 +147,37 @@ def test_job_is_registered() -> None:
     job = next((j for j in load_jobs() if j.id == "public-reachability"), None)
     assert job is not None
     assert job.interval_minutes == 60
+
+
+@pytest.mark.asyncio
+async def test_probe_failure_is_not_an_outage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """検査器が動かない状態を障害として通知しない — 検証不能は反証ではない。
+
+    初回デプロイで実際に踏んだ: ``h2`` 未導入で HTTP/2 を張れず ImportError となり、
+    公開面は正常なのに「到達できません」を ops へ流した。
+    """
+    # Arrange
+    _install(monkeypatch, raises=ImportError("the 'h2' package is not installed"))
+    monkeypatch.setattr(pr, "resolve_public_base_url", lambda: "https://example.test")
+    sent: list[dict[str, Any]] = []
+
+    async def _fake_post(**kwargs: Any) -> None:
+        sent.append(kwargs)
+
+    monkeypatch.setattr("src.ui.services.ops_notify.post_ops_message", _fake_post)
+
+    # Act
+    out = await pr.run_public_reachability_check()
+
+    # Assert
+    assert out == {"probe_broken": True, "error": out["error"]}
+    assert sent == []
+
+
+def test_http2_dependency_is_installed() -> None:
+    """HTTP/2 を張るための ``h2`` が入っていること。
+
+    これが無いと監視は毎時 ImportError を出し続け、故障を見張っているつもりで
+    何も見ていない状態になる。
+    """
+    import h2  # noqa: F401
