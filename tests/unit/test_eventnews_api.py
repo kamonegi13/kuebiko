@@ -36,20 +36,36 @@ class TestGeneratedContentIsLabelled:
 
 
 class TestSingleReadingSurface:
-    def test_list_includes_singletons(self) -> None:
-        """単独記事も一覧に出す (案 A) — ここを複数媒体に絞ると読む場所が 2 つになる。
+    def test_list_includes_singletons_by_default(self) -> None:
+        """単独記事も **既定で** 一覧に出す (案 A) — 絞ると読む場所が 2 つになる。
 
-        事象単位化の目的は「読む場所を 1 つにする」ことで、生成の有無で出し分けると
-        読み手は記事一覧と往復することになり目的を果たさない。
+        事象単位化の目的は「読む場所を 1 つにする」ことで、生成の有無で既定から
+        出し分けると読み手は記事一覧と往復する。2026-08-25 に読み手が自分で選べる
+        絞り込み (``has_news`` / ``min_independent_sources``) を足したが、
+        **既定値は「絞らない」から動かしてはいけない**。
         """
         import inspect
 
         from src.ui.api.eventnews import list_event_news
 
-        src = inspect.getsource(list_event_news)
-        # 生成の有無 (current_version / has_news) で除外していないこと
-        assert "has_news" not in src.split("items.append")[0]
-        assert "current_version > 0" not in src.split("items.append")[0]
+        params = inspect.signature(list_event_news).parameters
+        assert params["has_news"].default is None
+        assert params["min_independent_sources"].default == 0
+
+    def test_event_only_filters_reach_the_query(self) -> None:
+        """事象固有の軸は **DB 側** で絞る (取得後の filter は LIMIT と噛み合わない)。
+
+        取得後に間引くと「新着 N 件のうち複数媒体のもの」になり、
+        「複数媒体の新着 N 件」にならない (遡及構築で 2,000 件規模になり顕在化済み)。
+        """
+        import inspect
+
+        from src.ui.api.eventnews import list_event_news
+
+        head = inspect.getsource(list_event_news).split("items.append")[0]
+        call = head.split("repo.list_event_items(")[1]
+        assert "min_independent_sources=" in call
+        assert "has_news=has_news" in call
 
     def test_list_row_carries_a_headline(self) -> None:
         """一覧行は見出しを持つ (生成があれば生成見出し、無ければ原記事タイトル)。"""

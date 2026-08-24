@@ -400,6 +400,8 @@ def list_event_news(  # noqa: PLR0913
     entity_type: str | None = None,
     entity_value: str | None = None,
     since_hours: int = 0,
+    min_independent_sources: int = 0,
+    has_news: bool | None = None,
 ) -> dict[str, Any]:
     """事象一覧 (新着順)。origin='live' のみ — リプレイ行は返さない。
 
@@ -407,6 +409,9 @@ def list_event_news(  # noqa: PLR0913
     複数媒体の事象だけだが、単独記事は原記事の見出し・要約をそのまま同じ枠で読ませる。
     ここを複数媒体に限ると読み手は記事一覧と 2 箇所を読むことになり、事象単位化の
     目的 (読む場所を 1 つにする) を果たさない。
+
+    ``min_independent_sources`` / ``has_news`` は読み手が **自分で** 複数媒体報や
+    統合済みだけに絞るための軸 (既定は絞らない)。記事側には無い事象固有の facet。
     """
     repo = _repo()
     statuses = [s.strip() for s in status.split(",")] if status else None
@@ -444,6 +449,8 @@ def list_event_news(  # noqa: PLR0913
         statuses=statuses,
         importances=wanted,
         exclude_merged=True,
+        min_independent_sources=max(0, min_independent_sources),
+        has_news=has_news,
         member_article_ids=member_ids,
         search_item_ids=search_item_ids,
         search_member_article_ids=search_member_ids,

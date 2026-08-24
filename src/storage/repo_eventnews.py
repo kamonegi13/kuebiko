@@ -304,6 +304,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         statuses: Sequence[str] | None = None,
         importances: Sequence[str] | None = None,
         exclude_merged: bool = False,
+        min_independent_sources: int = 0,
+        has_news: bool | None = None,
         member_article_ids: Sequence[str] | None = None,
         search_item_ids: Sequence[str] | None = None,
         search_member_article_ids: Sequence[str] | None = None,
@@ -314,6 +316,11 @@ class EventNewsMixin(RunHistoryRepositoryBase):
 
         ``origin`` / ``statuses`` / ``importances`` で絞り込み可能。N+1 を避けるため
         member_ids は対象アイテム群をまとめて 1 クエリで引く。
+
+        ``min_independent_sources`` / ``has_news`` は **事象固有の軸** (記事側には
+        存在しない)。単独報が全体の 9 割を占めるため、記事から持ち上げた facet の
+        どれよりも母集団を大きく動かす。既定はどちらも「絞らない」— 単独記事を
+        既定で落とすと読む場所が 2 つに戻る (§14b 案 A)。
 
         ⚠ **絞り込みは LIMIT より前に効かせること**。呼び手が取得後に filter すると
         「新着 N 件のうち該当するもの」しか出ず、「該当するものの新着 N 件」に
@@ -334,6 +341,12 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             params.extend(importances)
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
+        if min_independent_sources > 0:
+            clauses.append("independent_sources >= ?")
+            params.append(int(min_independent_sources))
+        if has_news is not None:
+            # 生成の有無は current_version が SSoT (版が 1 本でもあれば生成済み)
+            clauses.append("current_version > 0" if has_news else "current_version = 0")
         if member_article_ids is not None:
             # 記事側の絞り込み (pivot / category / 検索 等) を事象へ持ち上げる。
             # **1 件でも該当メンバーを含む事象**を返す (事象は記事の集合なので、

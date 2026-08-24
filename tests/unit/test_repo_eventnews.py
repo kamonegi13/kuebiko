@@ -107,6 +107,51 @@ class TestEventItemCRUD:
         new_items = repo.list_event_items(statuses=["new"])
         assert {i.state.item_id for i in new_items} == {"b"}
 
+    def test_list_event_items_filters_by_min_independent_sources(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """独立媒体数の下限で絞れる — 「複数媒体が報じた事象だけ読む」導線の本体。
+
+        単独報が全体の 9 割を占めるため、既存 facet (カテゴリ等) のどれよりも
+        母集団を大きく変える軸になる。
+        """
+        for item_id, sources in (("solo", 1), ("pair", 2), ("many", 5)):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="low",
+            )
+            repo.update_event_item(item_id, {"independent_sources": sources})
+
+        assert {i.state.item_id for i in repo.list_event_items(min_independent_sources=2)} == {
+            "pair",
+            "many",
+        }
+        # 0 は「絞らない」— 未指定と同じ挙動 (UI の「すべて」がここに落ちる)
+        assert len(repo.list_event_items(min_independent_sources=0)) == 3
+
+    def test_list_event_items_filters_by_has_news(self, repo: RunHistoryRepository) -> None:
+        """生成済み (current_version > 0) の有無で絞れる。
+
+        既定は None = 絞らない。単独記事を一覧から落とさないため
+        (docs/event_news_design.md §14b 案 A) 既定値を変えてはいけない。
+        """
+        for item_id, version in (("generated", 2), ("raw", 0)):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="low",
+            )
+            repo.update_event_item(item_id, {"current_version": version})
+
+        assert {i.state.item_id for i in repo.list_event_items(has_news=True)} == {"generated"}
+        assert {i.state.item_id for i in repo.list_event_items(has_news=False)} == {"raw"}
+        assert len(repo.list_event_items()) == 2
+
     def test_list_event_items_orders_by_last_reported_desc(
         self, repo: RunHistoryRepository
     ) -> None:

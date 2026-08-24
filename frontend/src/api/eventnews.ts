@@ -118,6 +118,8 @@ export interface EventNewsQuery {
   search?: string;
   category?: string;
   channel?: string;
+  /** 情報源 (feed_title)。記事側 facet をそのまま持ち上げる。 */
+  feed?: string;
   actor?: string;
   cve?: string;
   malware?: string;
@@ -127,15 +129,24 @@ export interface EventNewsQuery {
   entity_type?: string;
   entity_value?: string;
   since_hours?: number;
+  /** 事象固有: 独立媒体数の下限 (2 = 複数媒体が報じた事象のみ)。0 = 絞らない。 */
+  min_independent_sources?: number;
+  /** 事象固有: 生成済み (統合記事あり) だけに絞る。未指定 = 絞らない。 */
+  has_news?: boolean;
+  /** 事象固有: 状態 (new / updated / reinforced) のカンマ区切り。 */
+  status?: string;
 }
 
 export function fetchEventNews(q: EventNewsQuery = {}) {
   const p = new URLSearchParams({ limit: String(q.limit ?? 50) });
   if (q.offset) p.set("offset", String(q.offset));
   if (q.since_hours) p.set("since_hours", String(q.since_hours));
+  if (q.min_independent_sources) p.set("min_independent_sources", String(q.min_independent_sources));
+  // false も意味を持つ (未生成のみ) ため undefined とだけ区別する
+  if (q.has_news !== undefined) p.set("has_news", String(q.has_news));
   for (const k of [
-    "importance", "search", "category", "channel", "actor", "cve",
-    "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value",
+    "importance", "search", "category", "channel", "feed", "actor", "cve",
+    "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status",
   ] as const) {
     const v = q[k];
     if (v) p.set(k, String(v));
