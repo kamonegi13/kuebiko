@@ -29,6 +29,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useRuntimeFlags, shouldHideFullOnly } from "./hooks/useRuntimeFlags";
 import { isFullOnlyPath } from "./components/nav";
 import { ArticlePeekHost } from "./components/ArticlePeek";
+import { PublicNewsSite } from "./public/PublicNewsSite";
 
 type IntelTab = "synthesis" | "pmesii" | "threats" | "forecast" | "operations";
 
@@ -158,6 +159,12 @@ export default function App() {
   }, []);
 
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/app";
+
+  // 公開 instance の未認証アクセスは **ニュースサイト** を出す (2026-08-25)。
+  // 分析者向けの画面は出さない — 匿名で読める API も allowlist の 4 つだけなので、
+  // 従来の AppShell を描いても中身が 403 だらけになる。認証 (Cloudflare Access) すれば
+  // 従来どおり全機能に戻る。判定は shouldHideFullOnly と同じ述語を共有する。
+  if (shouldHideFullOnly(flags)) return <PublicNewsSite />;
 
   // readonly instance かつ未認証では fullOnly ページを直 URL でも描画しない
   // (nav.ts fullOnly が SSoT)。API はサーバ側 READ_ONLY_GET_DENYLIST が 403 で遮断する

@@ -93,7 +93,6 @@ def _public_citation(citation: dict[str, Any]) -> dict[str, Any]:
 def list_public_news(
     limit: int = 30,
     offset: int = 0,
-    category: str | None = None,
     search: str | None = None,
 ) -> dict[str, Any]:
     """公開ニュース一覧 (high のみ、新しい順)。
@@ -142,8 +141,6 @@ def list_public_news(
             "published_at": r.state.last_reported_at.isoformat(),
             "citations": [_public_citation(c) for c in citations[:3]],
         }
-        if category:
-            item["category"] = category
         items.append(item)
     return {"items": items, "note": GENERATED_NOTE}
 
