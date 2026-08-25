@@ -130,6 +130,9 @@ def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str
     return template.render(
         members=numbered,
         omitted=omitted,
+        # 単独報は「統合」ではなく 1 記事の再構成。節ごとの要約で読み物にする
+        # (文単位の [N] は出典が 1 つしかないので情報を持たない)。
+        solo=len(selected) == 1,
         allowed_identifiers_text=allowed_identifiers_text,
     )
 

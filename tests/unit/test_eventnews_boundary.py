@@ -243,7 +243,7 @@ def test_prompt_does_not_ask_for_inline_citation_numbers() -> None:
     # 「[N] のみが報じる」と書かせる指示が残っていないこと
     assert "「[N] のみが報じる」" not in text
     # 掲載場所・URL を事実として書かせない (本文に無い URL は置換され文が壊れる)
-    assert "掲載場所・URL を事実として書かない" in text
+    assert "掲載場所・URL を内容として書かない" in text
 
 
 def test_list_filters_lift_article_matches_to_events(tmp_path: object) -> None:

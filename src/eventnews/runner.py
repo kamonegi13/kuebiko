@@ -43,6 +43,14 @@ _PROMPT_VERSION = "eventnews-v4"
 # これ以上の事実行があるのに節が 1 種類なら、割り当てが効いていないとみなす
 _SECTION_SPREAD_MIN_FACTS = 6
 
+# 単独報 (本文を持つメンバーが 1 件) を生成する条件。
+# 公開面は high しか出さないので、母集団を high に揃える — 全件生成すると
+# 205 件/日 (実測 2026-08-26) になり、複数報道 18.6 件/日 の 11 倍になる。
+_SOLO_MIN_IMPORTANCE = "high"
+# タイトルだけで生成させると内容を創作する (2026-08-23 実測)。抜粋しか無い記事も
+# 同じなので、本文の長さで足切りする。
+_SOLO_MIN_BODY_CHARS = 1500
+
 
 @dataclass
 class _LiveItem:
@@ -94,6 +102,22 @@ def _allowed_identifiers_text(members: list[MemberArticle]) -> str:
     return identifier_gate.render_allowed_identifiers(members)
 
 
+def _should_generate(item: _LiveItem, selected: Sequence[MemberArticle]) -> bool:
+    """このアイテムを生成対象にするか。
+
+    本文を持つメンバーが 0 件なら対象外 — タイトルだけで生成させると内容を創作する
+    (2026-08-23 実測)。1 件のみ (単独報) は、公開面と同じ ``high`` かつ本文が
+    ``_SOLO_MIN_BODY_CHARS`` 以上のものに限る。2 件以上は従来どおり無条件。
+    """
+    if not selected:
+        return False
+    if len(selected) >= 2:
+        return True
+    if item.snapshot.importance != _SOLO_MIN_IMPORTANCE:
+        return False
+    return len(selected[0].body or "") >= _SOLO_MIN_BODY_CHARS
+
+
 async def _generate_version(
     repo: EventNewsMixin,
     item: _LiveItem,
@@ -109,14 +133,13 @@ async def _generate_version(
     members = item.members
     try:
         selected, _omitted = gen.select_members(members)
-        if len(selected) < 2:
-            # 本文・要約を持つメンバーが 2 件未満 = 統合する材料が無い。タイトルだけで
-            # 生成させると事実を創作する (2026-08-23 実測) ため生成しない。
+        if not _should_generate(item, selected):
             _log.info(
                 "eventnews_generation_skipped_no_text",
                 item_id=item.snapshot.item_id,
                 members=len(members),
                 textual=len(selected),
+                importance=item.snapshot.importance,
             )
             return None, None
         allowed = _allowed_identifiers_text(selected)
