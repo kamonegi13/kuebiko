@@ -17,11 +17,14 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, HTTPException, Request
 
 from src.cti.source_basis import classify_source_tier
 from src.storage.run_history import RunHistoryRepository
 from src.ui.api.articles_feed import RELATED_ENTITY_TYPE_ORDER
+
+_log = structlog.get_logger(__name__)
 
 eventnews_api = APIRouter(prefix="/api/v1/eventnews", tags=["eventnews"])
 
@@ -364,6 +367,47 @@ def _corroboration_payload(members: Sequence[dict[str, Any]]) -> list[dict[str, 
 # 「該当が多すぎる」ので、利用者は絞り込みを足す (黙って切らず件数を返す)。
 _ARTICLE_SCAN_CAP = 2000
 
+# 意味検索で拾う記事の上限と類似度の下限。
+# 実測 (2026-08-25、5 クエリ): 語句検索と重なるのは 0-4 件で、**16-20 件は意味検索に
+# しか出ない**。「ランサムウェアによる製造業への攻撃」は語句 0 件 / 意味 20 件だった。
+# 言い換えと多言語をまたぐため、事象ニュースの検索でも効く。
+_SEMANTIC_TOP_K = 120
+_SEMANTIC_MIN_SIMILARITY = 0.45
+
+
+def _semantic_article_ids(request: Request, term: str, since_hours: int) -> list[str] | None:
+    """クエリに意味的に近い記事の id。embedder 未設定なら None (語句検索のみで動く)。
+
+    ⚠ **公開面 (Tier0) からは呼ばない**。匿名に embedding 計算を開放しないため、
+    この経路は分析者向けの `/api/v1/eventnews` にだけ置く。
+    """
+    from src.ui.api.articles_feed import _resolve_embedder
+
+    embedder = _resolve_embedder(request)
+    if embedder is None or not term:
+        return None
+
+    # この endpoint は同期 (def) なので threadpool の worker で走る。worker には
+    # event loop が無いので asyncio.run で完結させてよい (loop は塞がない)。
+    import asyncio
+
+    try:
+        response = asyncio.run(embedder.embed(term, kind="query"))
+    except Exception as e:  # noqa: BLE001 — 意味検索が落ちても語句検索は返す
+        _log.warning("eventnews_semantic_embed_failed", error=str(e))
+        return None
+
+    repo = request.app.state.repo
+    hits = repo.find_similar_embeddings(
+        list(response.vector),
+        model=embedder.model,
+        top_k=_SEMANTIC_TOP_K,
+        threshold=_SEMANTIC_MIN_SIMILARITY,
+        window_hours=since_hours,
+    )
+    by_url = repo.get_articles_by_urls([url for _, url, _ in hits])
+    return [a.article_id for _, url, _ in hits if (a := by_url.get(url)) is not None]
+
 
 def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
     """記事側フィルタに該当する article_id。フィルタ無指定なら None (絞らない)。
@@ -440,6 +484,7 @@ def list_event_news(  # noqa: PLR0913
     since_hours: int = 0,
     min_independent_sources: int = 0,
     has_news: bool | None = None,
+    semantic: bool = False,
 ) -> dict[str, Any]:
     """事象一覧 (新着順)。origin='live' のみ — リプレイ行は返さない。
 
@@ -464,6 +509,12 @@ def list_event_news(  # noqa: PLR0913
     search_member_ids = (
         _matching_article_ids(request, search=term, since_hours=since_hours) if term else None
     )
+    # 意味検索は語句検索と **OR** で足す (言い換え・多言語を拾うのが目的で、
+    # 語句一致を狭めるためではない)。embedder 未設定なら黙って語句検索のみ。
+    if semantic and term:
+        semantic_ids = _semantic_article_ids(request, term, since_hours)
+        if semantic_ids:
+            search_member_ids = list(dict.fromkeys([*(search_member_ids or []), *semantic_ids]))
     member_ids = _matching_article_ids(
         request,
         category=category,

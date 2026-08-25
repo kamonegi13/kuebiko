@@ -135,6 +135,8 @@ export interface EventNewsQuery {
   has_news?: boolean;
   /** 事象固有: 状態 (new / updated / reinforced) のカンマ区切り。 */
   status?: string;
+  /** 意味検索を併用する (言い換え・多言語を拾う)。既定 off。 */
+  semantic?: boolean;
 }
 
 export function fetchEventNews(q: EventNewsQuery = {}) {
@@ -144,6 +146,7 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
   if (q.min_independent_sources) p.set("min_independent_sources", String(q.min_independent_sources));
   // false も意味を持つ (未生成のみ) ため undefined とだけ区別する
   if (q.has_news !== undefined) p.set("has_news", String(q.has_news));
+  if (q.semantic) p.set("semantic", "true");
   for (const k of [
     "importance", "search", "category", "channel", "feed", "actor", "cve",
     "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status",

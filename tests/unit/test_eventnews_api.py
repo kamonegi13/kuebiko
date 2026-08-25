@@ -162,3 +162,65 @@ class TestPreviewFallback:
         src = inspect.getsource(_headlines_and_previews)
         assert src.count("repo.get_article_bodies") == 1
         assert "for item_id, aid in need_body.items()" in src
+
+
+class TestSemanticSearch:
+    """意味検索の事象への移植 (2026-08-25)。
+
+    実測 (5 クエリ): 語句検索と重なるのは 0-4 件で、**16-20 件は意味検索にしか
+    出ない**。「ランサムウェアによる製造業への攻撃」は語句 0 件 / 意味 20 件。
+    """
+
+    def test_is_opt_in(self) -> None:
+        """既定は off。embedding を毎回の検索で走らせない。"""
+        import inspect
+
+        from src.ui.api.eventnews import list_event_news
+
+        assert inspect.signature(list_event_news).parameters["semantic"].default is False
+
+    def test_is_combined_with_keyword_search_by_or(self) -> None:
+        """語句一致を **狭めない**。言い換えを足すのが目的。"""
+        import inspect
+
+        from src.ui.api.eventnews import list_event_news
+
+        src = inspect.getsource(list_event_news)
+        block = src.split("if semantic and term:")[1][:400]
+        assert "*(search_member_ids or [])" in block, "語句側の結果を捨てている"
+
+    def test_is_not_reachable_anonymously(self) -> None:
+        """⚠ 公開面 (Tier0) に embedding 計算を開放しない。
+
+        匿名で LLM/embedding を消費できる経路は 2026-08-25 に閉じたばかり
+        (`/api/v1/search?mode=precise` 等)。事象ニュースはそもそも匿名から
+        読めないので、この経路も自動的に閉じている — それを固定する。
+        """
+        assert not is_public_get("/api/v1/eventnews")
+
+    def test_public_news_has_no_semantic_parameter(self) -> None:
+        """公開 API 側に持ち込まれていないこと。"""
+        import inspect
+
+        from src.ui.api.public_news import list_public_news
+
+        assert "semantic" not in inspect.signature(list_public_news).parameters
+
+    def test_embedder_absence_degrades_to_keyword_only(self) -> None:
+        """embedder 未設定でも検索は動く (意味検索だけ無効になる)。"""
+        import inspect
+
+        from src.ui.api.eventnews import _semantic_article_ids
+
+        src = inspect.getsource(_semantic_article_ids)
+        assert "if embedder is None" in src
+        assert "return None" in src
+
+    def test_runs_off_the_event_loop(self) -> None:
+        """同期 endpoint から asyncio.run で完結させる (event loop を塞がない)。"""
+        import inspect
+
+        from src.ui.api.eventnews import _semantic_article_ids, list_event_news
+
+        assert not inspect.iscoroutinefunction(list_event_news)
+        assert "asyncio.run" in inspect.getsource(_semantic_article_ids)

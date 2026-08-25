@@ -56,6 +56,7 @@ function readQuery(): EventNewsQuery & { importance: string } {
     entity_type: p.get("pivot_type") ?? undefined,
     entity_value: p.get("pivot_value") ?? undefined,
     since_hours: num("since_hours"),
+    semantic: p.get("semantic") === "1" ? true : undefined,
     // 事象固有の軸
     min_independent_sources: num("min_sources"),
     has_news: p.get("has_news") === "1" ? true : undefined,
@@ -70,6 +71,7 @@ function writeQuery(q: EventNewsQuery & { importance: string }): void {
   if (q.since_hours) p.set("since_hours", String(q.since_hours));
   if (q.min_independent_sources) p.set("min_sources", String(q.min_independent_sources));
   if (q.has_news) p.set("has_news", "1");
+  if (q.semantic) p.set("semantic", "1");
   for (const k of ["category", "channel", "feed", "actor", "cve", "malware", "intent", "pir", "affected_vendor", "status"] as const) {
     if (q[k]) p.set(k, String(q[k]));
   }
@@ -160,6 +162,20 @@ export function EventNewsPage() {
           placeholder="事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
           className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
         />
+        {/* 意味検索。語句検索と OR で足す (言い換え・多言語を拾う)。
+            実測: 語句 0 件のクエリでも 20 件出ることがある。 */}
+        <button
+          onClick={() => set({ semantic: q.semantic ? undefined : true })}
+          aria-pressed={q.semantic === true}
+          title="言い換えや多言語の記事も拾う (embedding で類似検索)"
+          className={`h-8 px-3 rounded-md border text-sm transition-colors ${
+            q.semantic
+              ? "border-accent text-accent bg-accent/10"
+              : "border-border-subtle text-fg-muted hover:text-fg"
+          }`}
+        >
+          意味検索
+        </button>
         <Sel value={q.category ?? ""} onChange={(v) => set({ category: v || undefined })} opts={facetOpts.category} />
         <Sel value={q.feed ?? ""} onChange={(v) => set({ feed: v || undefined })} opts={facetOpts.feed} />
         <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
