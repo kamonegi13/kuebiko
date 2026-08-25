@@ -265,11 +265,34 @@ describe("PC のレイアウト", () => {
   it("節の見出しを記事見出しと区別できる形にする", async () => {
     renderSite();
     await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
-    // 節の見出しはアクセントバーを伴い、記事見出しより太い
+    // 節の見出しは色バーを伴い、記事見出しより太い
     const headings = Array.from(document.querySelectorAll("h2"));
     const section = headings.find((h) => h.textContent === "新着");
     expect(section?.className).toContain("font-bold");
-    expect(section?.previousElementSibling?.className).toContain("bg-accent");
+    const bar = section?.previousElementSibling as HTMLElement | null;
+    expect(bar?.getAttribute("aria-hidden")).toBe("true");
+    expect(bar?.style.background).toBeTruthy();
+  });
+
+  it("カテゴリごとに色を変える (節のバーと記事バッジで同じ色を使う)", async () => {
+    const { categoryColor } = await import("./categoryColors");
+    expect(categoryColor("vuln")).not.toBe(categoryColor("threat"));
+    expect(categoryColor("incident_breach")).not.toBe(categoryColor("geopolitical"));
+    // 未知の分類は中立色 (勝手に色を割り当てない)
+    const { CATEGORY_NEUTRAL } = await import("./categoryColors");
+    expect(categoryColor("unknown-key")).toBe(CATEGORY_NEUTRAL);
+  });
+
+  it("面を持たせるのは分類の区画だけ (注目・新着まで箱にしない)", async () => {
+    renderSite();
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+    const boxed = Array.from(document.querySelectorAll("section")).filter((el) =>
+      el.className.includes("bg-surface-2/40"),
+    );
+    const headings = boxed.map((el) => el.querySelector("h2")?.textContent);
+    expect(headings).not.toContain("新着");
+    expect(headings).not.toContain("注目");
+    expect(boxed.length).toBeGreaterThan(0);
   });
 
   it("カテゴリ節の中ではカードのカテゴリバッジを出さない (節見出しと重複)", async () => {

@@ -23,6 +23,7 @@ import { vocabLabel } from "../hooks/useVocab";
 import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
 import { PublicMapSection } from "./PublicMapSection";
+import { categoryColor } from "./categoryColors";
 
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
@@ -257,7 +258,11 @@ function Portal({ openedId }: { openedId?: string }) {
       {featuredItems.length > 0 && (
         <section className="space-y-5">
           <div className="flex items-center gap-2">
-            <span className="w-[3px] h-[15px] rounded-full bg-accent shrink-0" aria-hidden />
+            <span
+              className="w-[3px] h-[15px] rounded-full shrink-0"
+              style={{ background: "var(--color-accent, #e0603a)" }}
+              aria-hidden
+            />
             <h2 className="text-[15px] font-bold tracking-wide text-fg">注目</h2>
             <span className="text-[11px] text-fg-subtle">
               直近 72 時間で多くの媒体が報じた事案
@@ -297,19 +302,36 @@ function Portal({ openedId }: { openedId?: string }) {
 function PortalSection({
   title,
   href,
+  color,
+  boxed,
   children,
 }: {
   title: string;
   href: string;
+  /** 節の識別色。省略時はアクセント色 (注目・新着など分類でない節)。 */
+  color?: string;
+  /** true でカード状の面に載せる。**分類の区画だけ**に使う
+   *  (注目・新着まで面にすると 6 個の箱が並んで、かえって区切りが読めなくなる)。 */
+  boxed?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
-      {/* ⚠ 節の見出しを記事見出しと同じ色・同じ太さにしない。全部 text-fg だと
-          どこで節が切り替わったのか分からなくなる (利用者指摘)。
-          左のアクセントバー + 太字 + 上の余白で「ここから別の区画」を示す。 */}
-      <div className="flex items-center gap-2 pt-2">
-        <span className="w-[3px] h-[15px] rounded-full bg-accent shrink-0" aria-hidden />
+    /* ⚠ 節を **淡い面** で囲って区画にする。全部が地の色だとどこで節が切り替わった
+       のか分からない (利用者指摘)。ただし塗りは薄く保つ — 4 区画が濃く塗られると
+       今度は面同士がうるさくなり、記事の見出しが沈む。 */
+    <section
+      className={
+        boxed
+          ? "rounded-lg border border-border-subtle bg-surface-2/40 p-4 space-y-4"
+          : "space-y-4 pt-2"
+      }
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="w-[3px] h-[15px] rounded-full shrink-0"
+          style={{ background: color ?? "var(--color-accent, #e0603a)" }}
+          aria-hidden
+        />
         <h2 className="text-[15px] font-bold tracking-wide text-fg">{title}</h2>
         <span className="flex-1 border-b border-border-subtle" />
         <a
@@ -342,6 +364,8 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
     <PortalSection
       title={categoryLabel(categoryKey)}
       href={`${HOME_PATH}/c/${encodeURIComponent(categoryKey)}`}
+      color={categoryColor(categoryKey)}
+      boxed
     >
       <div className="space-y-5">
         {/* 節の見出しが既にカテゴリを示しているのでバッジは出さない (重複) */}
@@ -387,7 +411,19 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
 function CategoryBadge({ category }: { category: string }) {
   const label = categoryLabel(category);
   if (!label) return null;
-  return <span className="text-[11px] font-semibold tracking-wide text-accent">{label}</span>;
+  // 節の識別色と同じ色を使い、「どの区画の記事か」を一覧でも保つ
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-fg-muted"
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ background: categoryColor(category) }}
+        aria-hidden
+      />
+      {label}
+    </span>
+  );
 }
 
 function NewsList({ category, openedId }: { category?: string; openedId?: string }) {
