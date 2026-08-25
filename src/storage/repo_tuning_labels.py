@@ -249,4 +249,3 @@ class TuningLabelsMixin(RunHistoryRepositoryBase):
                 " arrived_at, provenance, superseded_by, snapshot FROM tuning_labels ORDER BY id",
             ).fetchall()
         return [dict(r) for r in rows]
-

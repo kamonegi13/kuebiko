@@ -60,7 +60,8 @@ def excerpt_is_supported(excerpt: str, *bodies: str) -> bool:
         return False
 
     fragments = [
-        f for f in (normalize_for_match(p) for p in _ELLIPSIS_RE.split(excerpt))
+        f
+        for f in (normalize_for_match(p) for p in _ELLIPSIS_RE.split(excerpt))
         if len(f) >= _MIN_FRAGMENT_CHARS
     ]
     if not fragments:

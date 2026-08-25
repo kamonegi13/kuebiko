@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -201,6 +202,9 @@ async def run_weekly_prompt_governance() -> None:
                     " (適用するには UI/API から保存する)"
                 )
         except Exception as e:  # noqa: BLE001 — 検知の失敗で監査投稿を止めない
+            # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+            # 走った結果が永久に保存されるため (2026-08-25)
+            raise_if_infrastructure(e, context="prompt_governance")
             _log.warning("prompt_seed_drift_check_failed", error=str(e))
 
         title = "プロンプト統治 週次監査"

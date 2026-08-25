@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -122,6 +123,9 @@ def load_llm_endpoints(*, db_path: Path | None = None) -> list[LlmEndpoint]:
                         )
                     )
     except Exception as e:  # noqa: BLE001 — DB 障害で LLM 構築を壊さない (接続先なし扱い)
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="llm_endpoints")
         _log.warning("llm_endpoints_load_failed", error=str(e)[:200])
     _CACHE[cache_key] = result
     return result

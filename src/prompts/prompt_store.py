@@ -26,6 +26,7 @@ from src.prompts.block_composer import compose_blocks, validate_blocks
 from src.prompts.registry import PromptSpec
 from src.prompts.rubric_model import SummarizerRubric
 from src.prompts.summarizer_composer import build_environment as _dispatch_environment
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -108,6 +109,9 @@ def _load_from_db(spec: PromptSpec) -> SummarizerRubric | None:
 
         value = get_config(spec.config_key)
     except Exception as e:  # noqa: BLE001  DB 障害でも legacy 運用は継続させる
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="prompts")
         _log.warning("prompt_rubric_db_read_failed", prompt=spec.prompt_id, error=str(e))
         return None
     if value is None:

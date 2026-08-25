@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from src.cti.keyword_match import keyword_in_text
 from src.logging_config import get_logger
 from src.storage import config_store
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -55,6 +56,9 @@ def _load_from_db() -> list[MatchList]:
     try:
         raw = config_store.get_config(MATCH_LISTS_CONFIG_KEY)
     except Exception as e:  # noqa: BLE001 — DB 障害でも routing を壊さない
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="match_lists")
         _log.warning("match_lists_load_failed", error=str(e))
         return []
     if not isinstance(raw, list):

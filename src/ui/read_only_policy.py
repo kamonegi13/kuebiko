@@ -61,6 +61,8 @@ READ_ONLY_GET_DENYLIST: tuple[str, ...] = (
     "/api/v1/product-routing",
     # 監査証跡そのものを公開面に出さない (2026-08-02)
     "/api/v1/access-audit",
+    # DB 接続プールの内部状態 (運用情報。2026-08-25)
+    "/api/v1/db-pool",
     # ops 通知の内容 (運用警告の title/body) を公開面に出さない (2026-08-21)
     "/api/v1/ops-notices",
     # 収集関心の詳細 (Grok タスクプロンプト写し) を公開面に出さない (2026-08-15)

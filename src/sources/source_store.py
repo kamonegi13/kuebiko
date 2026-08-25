@@ -26,6 +26,7 @@ from typing import Any, Literal
 import yaml
 
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -93,6 +94,9 @@ def load_entries(transport: TransportT, *, path: Path | None = None) -> list[dic
 
             val = get_config(config_key_for(transport))
         except Exception as e:  # noqa: BLE001
+            # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+            # 走った結果が永久に保存されるため (2026-08-25)
+            raise_if_infrastructure(e, context="sources")
             _log.warning("source_store_db_read_failed", transport=transport, error=str(e))
             val = None
         if isinstance(val, list):

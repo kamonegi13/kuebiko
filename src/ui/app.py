@@ -624,6 +624,7 @@ def create_app() -> FastAPI:
     from src.ui.api.channels import channels_api
     from src.ui.api.config_history import config_history_api
     from src.ui.api.dashboard_layout import dashboard_layout_api
+    from src.ui.api.db_pool import db_pool_api
     from src.ui.api.eventnews import eventnews_api
     from src.ui.api.flow import flow_api
     from src.ui.api.geo import geo_api
@@ -652,6 +653,7 @@ def create_app() -> FastAPI:
 
     app.include_router(api_v1)
     app.include_router(assistant_api)
+    app.include_router(db_pool_api)
     app.include_router(runs_api)
     app.include_router(dash_api)
     app.include_router(pages_api)

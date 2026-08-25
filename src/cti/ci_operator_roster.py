@@ -25,6 +25,7 @@ from typing import Any
 from src.cti.ci_operators_builtin import BUILTIN_OPERATORS_DATA
 from src.cti.nisc_sectors import NISC_SECTORS, kw_hit
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -181,6 +182,9 @@ def _load_operators_uncached() -> tuple[OperatorDef, ...]:
             if parsed:
                 return tuple(parsed)
     except Exception as e:  # noqa: BLE001 — DB 不達でも BUILTIN で動作継続
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="ci_operators")
         _log.warning("jp_ci_operators_db_load_failed", error=str(e))
     return BUILTIN_OPERATORS
 

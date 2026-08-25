@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
@@ -239,6 +240,9 @@ def _load_tier_map(*, db_path: Path | None) -> dict[str, str]:
 
         raw = get_config(MODEL_TIERS_CONFIG_KEY, db_path=db_path)
     except Exception as e:  # noqa: BLE001 — DB 障害でモデル解決を壊さない
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="model_tiers")
         _log.warning("model_tiers_db_load_failed", error=str(e))
         raw = None
     if isinstance(raw, dict):

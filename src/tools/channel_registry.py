@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -141,6 +142,9 @@ def _load_channels_uncached(*, db_path: Path | None) -> tuple[ChannelDef, ...]:
 
         raw = get_config(CHANNELS_CONFIG_KEY, db_path=db_path)
     except Exception as e:  # noqa: BLE001 — DB 障害で投稿経路を壊さない
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="channels")
         _log.warning("channel_registry_db_load_failed", error=str(e))
         return BUILTIN_CHANNELS
     if raw is None:

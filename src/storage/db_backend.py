@@ -20,11 +20,14 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import sys
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
+
+import structlog
 
 # psycopg は optional import (SQLite-only 運用で依存させない)
 try:
@@ -93,6 +96,57 @@ def close_pool() -> None:
         if _pool is not None:
             _pool.close()
             _pool = None
+
+
+_log = structlog.get_logger(__name__)
+
+
+# ===== 障害の分類 =====
+#
+# 運用 config は **DB が SSoT で yaml は seed (出荷時の既定)**。DB 読み取りが失敗した
+# ときに黙って seed へ degrade すると、利用者が編集したモデルティア・プロンプト・
+# rubric・配信ルールではなく **出荷時の既定でパイプラインが走り、その結果が永久に
+# 保存される**。値が無い/壊れている (= データの問題) なら seed で良いが、
+# DB に届いていない (= 基盤の問題) なら degrade してはいけない。
+
+
+def is_infrastructure_error(exc: BaseException) -> bool:
+    """「DB に届いていない」種類の失敗か (値の不在・破損と区別する)。
+
+    2026-08-25: 接続プール枯渇 (`PoolTimeout`) が warning に埋もれ、PIR 設定が
+    無言で seed に落ちていた。障害の切り分けを半日遅らせた。
+    """
+    if isinstance(exc, sqlite3.OperationalError | sqlite3.DatabaseError):
+        return True
+    # psycopg / psycopg_pool は環境によって未導入 (SQLite fallback) なので遅延判定
+    for module_name, class_names in (
+        ("psycopg", ("OperationalError", "InterfaceError")),
+        ("psycopg_pool", ("PoolTimeout", "PoolClosed", "TooManyRequests")),
+    ):
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        for class_name in class_names:
+            klass = getattr(module, class_name, None)
+            if isinstance(klass, type) and isinstance(exc, klass):
+                return True
+    return False
+
+
+def raise_if_infrastructure(exc: BaseException, *, context: str) -> None:
+    """基盤の失敗なら **degrade せずに送出** する。値の問題ならそのまま戻る。
+
+    運用 config の読み取りを ``except`` で包む箇所は必ずここを通すこと
+    (関門: ``tests/unit/test_config_degradation.py``)。
+    """
+    if is_infrastructure_error(exc):
+        _log.error(
+            "config_db_unavailable",
+            context=context,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise exc
 
 
 # ===== SQL dialect 翻訳 =====

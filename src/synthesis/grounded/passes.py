@@ -241,7 +241,6 @@ def _verdict(
     )
 
 
-
 def _resolve_source_id(raw: str, known: dict[str, str]) -> str | None:
     """LLM が返した article_id を、prompt で渡した実 id へ寄せる。
 
@@ -281,7 +280,6 @@ def _resolve_source_id(raw: str, known: dict[str, str]) -> str | None:
     return None
 
 
-
 def _resolve_evidence_source(
     index: int | None, raw_id: str, sources: list[dict[str, str]]
 ) -> str | None:
@@ -300,12 +298,10 @@ def _resolve_evidence_source(
     if bare.isdigit() and 1 <= int(bare) <= len(sources):
         return str(sources[int(bare) - 1].get("article_id", "")) or None
     known = {
-        _norm_id(str(src.get("article_id", ""))): str(src.get("article_id", ""))
-        for src in sources
+        _norm_id(str(src.get("article_id", ""))): str(src.get("article_id", "")) for src in sources
     }
     known.pop("", None)
     return _resolve_source_id(raw_id, known)
-
 
 
 def build_evidence_items(

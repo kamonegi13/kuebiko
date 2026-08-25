@@ -15,6 +15,7 @@ import os
 from src.logging_config import get_logger
 from src.pir.loader import load_pir_config
 from src.pir.models import Pir, PirConfig
+from src.storage.db_backend import raise_if_infrastructure
 
 _log = get_logger(__name__)
 
@@ -40,6 +41,9 @@ def load_current_pir_config() -> PirConfig:
 
         raw = get_config(PIR_CONFIG_KEY)
     except Exception as e:  # noqa: BLE001 — DB 障害で PIR を壊さない
+        # 基盤の失敗 (DB 未達) は seed へ degrade しない — 出荷時の既定で
+        # 走った結果が永久に保存されるため (2026-08-25)
+        raise_if_infrastructure(e, context="pir")
         _log.warning("pir_db_read_failed", error=str(e))
         raw = None
     if isinstance(raw, dict):
