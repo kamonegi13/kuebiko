@@ -276,3 +276,81 @@ describe("PC のレイアウト", () => {
     ).toBeTruthy();
   });
 });
+
+describe("記事本文の組み方", () => {
+  const MULTI = {
+    ...ITEM,
+    bluf: "要点の文。",
+    facts: [
+      { text: "一段落目の一文目。", source_index: 1, paragraph: 1 },
+      { text: "一段落目の二文目。", source_index: 0, paragraph: 1 },
+      { text: "二段落目の一文目。", source_index: 2, paragraph: 2 },
+    ],
+    discrepancies: [{ text: "食い違いの点。", source_index: 1, paragraph: 0 }],
+    unknowns: ["未確認の点。"],
+    first_reported_at: ITEM.published_at,
+    note: "kuebiko が生成した要約であり、原記事そのものではない",
+  };
+
+  function renderArticle(detail: object) {
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    vi.stubGlobal("fetch", async (url: string) => ({
+      ok: true,
+      json: async () =>
+        url.includes("/api/v1/public/news/map")
+          ? { nodes: [], window_days: 30, placed: 0, unplaced: 0, total: 0, note: "" }
+          : url.includes("/api/v1/public/news/")
+            ? detail
+            : { items: [], note: "", categories: [] },
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <PublicNewsSite />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("事実行を段落にまとめる (平坦な箇条書きにしない)", async () => {
+    renderArticle(MULTI);
+    await screen.findByText(/出典 \(2\)/);
+    const paras = Array.from(document.querySelectorAll("p")).filter((el) =>
+      el.className.includes("indent-[1em]"),
+    );
+    // paragraph は 1 と 2 の 2 つ → <p> も 2 つ
+    expect(paras.length).toBe(2);
+    expect(paras[0].textContent).toContain("一段落目の一文目。");
+    expect(paras[0].textContent).toContain("一段落目の二文目。");
+    expect(paras[1].textContent).toContain("二段落目の一文目。");
+  });
+
+  it("同じ段落の文をばらばらの行にしない", async () => {
+    renderArticle(MULTI);
+    await screen.findByText(/出典 \(2\)/);
+    const first = Array.from(document.querySelectorAll("p")).find((el) =>
+      el.textContent?.includes("一段落目の一文目。"),
+    );
+    // 同段落の 2 文が 1 つの <p> に入っていること
+    expect(first?.textContent).toContain("一段落目の二文目。");
+  });
+
+  it("出典番号を本文中に残す", async () => {
+    renderArticle(MULTI);
+    await screen.findByText(/出典 \(2\)/);
+    const sups = Array.from(document.querySelectorAll("sup")).map((s) => s.textContent);
+    expect(sups).toContain("[1]");
+    expect(sups).toContain("[2]");
+  });
+
+  it("要点を独立したボックスで先に見せる", async () => {
+    renderArticle(MULTI);
+    expect(await screen.findByText("要点")).toBeTruthy();
+    expect(screen.getByText("要点の文。")).toBeTruthy();
+  });
+
+  it("読了目安を出す", async () => {
+    renderArticle(MULTI);
+    await screen.findByText(/出典 \(2\)/);
+    expect(screen.getByText(/分で読めます/)).toBeTruthy();
+  });
+});

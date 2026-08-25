@@ -502,14 +502,68 @@ function NewsCard({ item, opened }: { item: PublicNewsItem; opened?: boolean }) 
   );
 }
 
+/** 読了目安 (日本語は 1 分あたり約 500 字)。参照サイトと同じく目安として出す。 */
+function readingMinutes(data: { bluf: string; facts: { text: string }[] }): number {
+  const chars = data.bluf.length + data.facts.reduce((n, f) => n + f.text.length, 0);
+  return Math.max(1, Math.round(chars / 500));
+}
+
+/**
+ * 生成本文の要点。記事の冒頭に置く (参照サイトの "Key points" と同じ役割)。
+ * 本文と地の色を変え、拾い読みでもここだけは目に入るようにする。
+ */
+function KeyPoints({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-surface-2 px-4 py-3.5">
+      <p className="text-[11px] font-semibold tracking-wide text-fg-subtle mb-1.5">要点</p>
+      <p className="text-[15px] leading-[1.95] text-fg">{text}</p>
+    </div>
+  );
+}
+
+/** 記事本文の節。見出しと罫線で区切り、節どうしの間隔を広めに取る。 */
+function ArticleSection({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone?: "warning";
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 pt-5 border-t border-border-subtle">
+      <h2
+        className={`text-[13px] font-semibold ${tone === "warning" ? "text-warning" : "text-fg-muted"}`}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** 事実行を paragraph 番号でまとめる (順序は生成時のまま)。 */
+function groupByParagraph<T extends { paragraph: number }>(facts: T[]): T[][] {
+  const out: T[][] = [];
+  let current = -1;
+  for (const f of facts) {
+    if (f.paragraph !== current) {
+      out.push([]);
+      current = f.paragraph;
+    }
+    out[out.length - 1].push(f);
+  }
+  return out;
+}
+
 /** 出典の並び。**詳細でだけ** 見せる。 */
 function Citations({ citations }: { citations: PublicCitation[] }) {
   return (
-    <section className="space-y-3 pt-6 border-t border-border-subtle">
-      <h2 className="text-[13px] font-semibold text-fg-muted">出典 ({citations.length})</h2>
+    <ArticleSection title={`出典 (${citations.length})`}>
       <ol className="space-y-2.5">
         {citations.map((c) => (
-          <li key={c.index} className="text-[13px] leading-[1.7]">
+          <li key={c.index} className="text-[13px] leading-[1.7] pl-7 -indent-7">
             <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>
             <a
               href={c.url}
@@ -520,11 +574,13 @@ function Citations({ citations }: { citations: PublicCitation[] }) {
               {c.title}
               <ExternalLink className="inline w-3 h-3 ml-1 align-baseline" />
             </a>
-            {c.source && <div className="text-[11px] text-fg-subtle mt-0.5">{c.source}</div>}
+            {c.source && (
+              <div className="text-[11px] text-fg-subtle mt-0.5 indent-0">{c.source}</div>
+            )}
           </li>
         ))}
       </ol>
-    </section>
+    </ArticleSection>
   );
 }
 
@@ -537,6 +593,8 @@ function NewsDetail({ id }: { id: string }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [id]);
+
+  const paragraphs = data ? groupByParagraph(data.facts) : [];
 
   if (isFetching && !data) return <p className="text-sm text-fg-subtle">読み込み中…</p>;
   if (error || !data) {
@@ -556,40 +614,48 @@ function NewsDetail({ id }: { id: string }) {
 
   return (
     <article className="space-y-6 max-w-[42rem]">
-      <header className="space-y-2.5">
+      <header className="space-y-3 pb-1">
         <CategoryBadge category={data.category} />
-        <h1 className="text-[24px] font-bold leading-[1.45] text-fg">{data.headline}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle">
+        <h1 className="text-[24px] lg:text-[27px] font-bold leading-[1.45] text-fg">
+          {data.headline}
+        </h1>
+        {/* メタ行: 日付 / 読了目安 / 裏取り。分析的な情報は開いた人にだけ見せる */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle">
           <time dateTime={data.published_at}>{formatJstDate(data.published_at)}</time>
-          {/* 裏取りの内訳は分析的な情報なので、開いた人にだけ見せる */}
+          <span>約 {readingMinutes(data)} 分で読めます</span>
           {data.independent_sources >= 2 && <span>独立 {data.independent_sources} 媒体が報道</span>}
         </div>
       </header>
 
-      {data.bluf && <p className="text-[15px] leading-[2] text-fg">{data.bluf}</p>}
+      {data.bluf && <KeyPoints text={data.bluf} />}
 
-      {data.facts.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-[13px] font-semibold text-fg-muted">報じられている内容</h2>
-          <ul className="space-y-2">
-            {data.facts.map((f, i) => (
-              <li key={i} className="text-[14px] leading-[1.9] text-fg-muted">
-                {f.text}
-                {f.source_index > 0 && (
-                  <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
-                )}
-              </li>
+      {paragraphs.length > 0 && (
+        <ArticleSection title="報じられている内容">
+          {/* 事実行を **段落単位** に組む。生成側が paragraph を持っているのに
+              平坦な箇条書きにすると、21 行の羅列になって読み通せない。 */}
+          <div className="space-y-4">
+            {paragraphs.map((facts, i) => (
+              <p key={i} className="text-[14px] leading-[2] text-fg-muted indent-[1em]">
+                {facts.map((f, j) => (
+                  <span key={j}>
+                    {f.text}
+                    {f.source_index > 0 && (
+                      <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
+                    )}
+                  </span>
+                ))}
+              </p>
             ))}
-          </ul>
-        </section>
+          </div>
+        </ArticleSection>
       )}
 
       {data.discrepancies.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-[13px] font-semibold text-warning">媒体間で食い違う点</h2>
-          <ul className="space-y-1.5 text-[14px] leading-[1.9] text-fg-muted">
+        <ArticleSection title="媒体間で食い違う点" tone="warning">
+          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
             {data.discrepancies.map((d, i) => (
-              <li key={i}>
+              <li key={i} className="pl-4 -indent-4">
+                <span className="text-fg-subtle">・</span>
                 {d.text}
                 {d.source_index > 0 && (
                   <sup className="ml-0.5 text-accent tnum">[{d.source_index}]</sup>
@@ -597,18 +663,20 @@ function NewsDetail({ id }: { id: string }) {
               </li>
             ))}
           </ul>
-        </section>
+        </ArticleSection>
       )}
 
       {data.unknowns.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-[13px] font-semibold text-fg-muted">わかっていない点</h2>
-          <ul className="space-y-1.5 text-[14px] leading-[1.9] text-fg-muted">
+        <ArticleSection title="わかっていない点">
+          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
             {data.unknowns.map((u, i) => (
-              <li key={i}>{u}</li>
+              <li key={i} className="pl-4 -indent-4">
+                <span className="text-fg-subtle">・</span>
+                {u}
+              </li>
             ))}
           </ul>
-        </section>
+        </ArticleSection>
       )}
 
       <Citations citations={data.citations} />
