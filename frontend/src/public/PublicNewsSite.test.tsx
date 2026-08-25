@@ -9,6 +9,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PublicNewsSite } from "./PublicNewsSite";
 import mapSource from "./PublicMap.tsx?raw";
+import siteSource from "./PublicNewsSite.tsx?raw";
 
 const ITEM = {
   id: "ev-1",
@@ -320,6 +321,22 @@ describe("PC のレイアウト", () => {
     expect(headline?.className).toContain("text-fg");
     expect(headline?.className).not.toContain("text-fg-muted");
     expect(headline?.className).toContain("font-medium");
+  });
+
+  it("カード自身は li を作らない (裸の li がブラウザ既定の ● を出していた)", async () => {
+    renderSite();
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+    // カテゴリ節の先頭記事は <ul> の外に置くため、li だと勝手にマーカーが付く
+    const strayLi = Array.from(document.querySelectorAll("li")).filter(
+      (el) => el.parentElement && !["UL", "OL"].includes(el.parentElement.tagName),
+    );
+    expect(strayLi).toEqual([]);
+  });
+
+  it("hover の色替えを hover 可能な端末に限る (モバイルでタップ後に残る)", () => {
+    // 実機 (iPhone) で 2 件目だけ青く残っていた。:hover はタップ後も維持されるため。
+    expect(siteSource).not.toMatch(/(?<!hover:hover\)\]:)group-hover:text-accent/);
+    expect(siteSource).toContain("[@media(hover:hover)]:group-hover:text-accent");
   });
 
   it("被害国レールは出さない (PC で違和感があった)", async () => {

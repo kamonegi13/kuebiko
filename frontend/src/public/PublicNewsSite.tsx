@@ -273,7 +273,9 @@ function Portal({ openedId }: { openedId?: string }) {
           {featuredItems.length > 1 && (
             <ul className="grid gap-x-8 gap-y-5 md:grid-cols-2 pt-6 border-t border-border-subtle">
               {featuredItems.slice(1).map((it) => (
-                <NewsCard key={it.id} item={it} opened={it.id === openedId} />
+                <li key={it.id}>
+                  <NewsCard item={it} opened={it.id === openedId} />
+                </li>
               ))}
             </ul>
           )}
@@ -283,7 +285,9 @@ function Portal({ openedId }: { openedId?: string }) {
       <PortalSection title="新着" href={`${HOME_PATH}/latest`}>
         <ul className="grid gap-x-8 gap-y-6 md:grid-cols-2">
           {latestItems.map((it) => (
-            <NewsCard key={it.id} item={it} opened={it.id === openedId} />
+            <li key={it.id}>
+              <NewsCard item={it} opened={it.id === openedId} />
+            </li>
           ))}
         </ul>
       </PortalSection>
@@ -381,11 +385,11 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
                   className="group w-full flex items-baseline gap-2 py-2.5 text-left transition-colors"
                 >
-                  <span className="text-[9px] text-fg-subtle group-hover:text-accent shrink-0">
+                  <span className="text-[9px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
                   <span
-                    className={`flex-1 text-[13.5px] font-medium leading-[1.6] group-hover:text-accent ${
+                    className={`flex-1 text-[13.5px] font-medium leading-[1.6] [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
                     }`}
                   >
@@ -506,7 +510,9 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
         {/* PC は 2 列。カードは高さがまちまちなので grid で行を揃える */}
         <ul className="grid gap-x-8 gap-y-7 md:grid-cols-2">
           {items.map((it) => (
-            <NewsCard key={it.id} item={it} opened={it.id === openedId} />
+            <li key={it.id}>
+              <NewsCard item={it} opened={it.id === openedId} />
+            </li>
           ))}
         </ul>
 
@@ -594,7 +600,7 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
         className="block w-full text-left group space-y-2"
       >
         <CategoryBadge category={item.category} />
-        <h2 className="text-[22px] lg:text-[26px] font-bold leading-[1.4] text-fg group-hover:text-accent transition-colors">
+        <h2 className="text-[22px] lg:text-[26px] font-bold leading-[1.4] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h2>
         {item.summary && (
@@ -619,26 +625,27 @@ function NewsCard({
   opened?: boolean;
   hideCategory?: boolean;
 }) {
+  // ⚠ ここで <li> を返さない。カテゴリ節では <ul> の外 (先頭記事) にも置くため、
+  // 裸の <li> がブラウザ既定のマーカー (●) を出してしまう (2026-08-25 利用者指摘)。
+  // リストに入れるのは呼び手の責務。
   return (
-    <li>
-      <article className={opened ? "opacity-60" : undefined}>
-        <button
-          onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
-          className="block w-full text-left group space-y-1.5"
-        >
-          {!hideCategory && <CategoryBadge category={item.category} />}
-          <h3 className="text-[16px] font-semibold leading-[1.5] text-fg group-hover:text-accent transition-colors">
-            {item.headline}
-          </h3>
-          {item.summary && (
-            <p className="text-[13px] leading-[1.85] text-fg-muted line-clamp-2">{item.summary}</p>
-          )}
-        </button>
-        <div className="mt-2">
-          <CardMeta item={item} />
-        </div>
-      </article>
-    </li>
+    <article className={opened ? "opacity-60" : undefined}>
+      <button
+        onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
+        className="block w-full text-left group space-y-1.5"
+      >
+        {!hideCategory && <CategoryBadge category={item.category} />}
+        <h3 className="text-[16px] font-semibold leading-[1.5] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
+          {item.headline}
+        </h3>
+        {item.summary && (
+          <p className="text-[13px] leading-[1.85] text-fg-muted line-clamp-2">{item.summary}</p>
+        )}
+      </button>
+      <div className="mt-2">
+        <CardMeta item={item} />
+      </div>
+    </article>
   );
 }
 
