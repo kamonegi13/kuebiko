@@ -135,25 +135,31 @@ export function PublicNewsSite() {
 
 function SiteHeader({ route }: { route: Route }) {
   return (
-    <header className="border-b border-border-subtle bg-surface-1/95 backdrop-blur-md sticky top-0 z-20">
-      <div className="w-full max-w-[72rem] mx-auto px-5">
+    <>
+      {/* 題字は **スクロールで流す**。読み始めたら要らない (2026-08-25 利用者指摘)。 */}
+      <header className="w-full max-w-[72rem] mx-auto px-5">
         <div className="flex items-baseline gap-2.5 pt-4 pb-3">
           <button
             onClick={() => navigate(HOME_PATH)}
-            className="text-[17px] font-bold tracking-tight text-fg hover:text-accent transition-colors"
+            className="text-[17px] font-bold tracking-tight text-fg [@media(hover:hover)]:hover:text-accent transition-colors"
           >
             kuebiko
           </button>
           <span className="text-[11px] text-fg-subtle">サイバー脅威ニュース</span>
         </div>
-        <CategoryNav
-          active={route.kind === "category" ? route.key : undefined}
-          onMap={route.kind === "map"}
-          home={isPortal(route)}
-          latest={route.kind === "latest"}
-        />
+      </header>
+      {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
+      <div className="sticky top-0 z-20 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md">
+        <div className="w-full max-w-[72rem] mx-auto px-5">
+          <CategoryNav
+            active={route.kind === "category" ? route.key : undefined}
+            onMap={route.kind === "map"}
+            home={isPortal(route)}
+            latest={route.kind === "latest"}
+          />
+        </div>
       </div>
-    </header>
+    </>
   );
 }
 
@@ -195,7 +201,10 @@ function CategoryNav({
   const keys = data?.categories ?? [];
   if (keys.length === 0) return null;
   return (
-    <nav className="flex flex-wrap gap-x-4 gap-y-1 overflow-x-auto">
+    /* ⚠ `flex-wrap` と `overflow-x-auto` を併用しない。CSS では片方の軸が visible で
+       なくなるともう一方も auto になるため、折り返した瞬間に **縦のスクロールバー**が
+       出る (2026-08-25 実機で発生)。横 1 列 + 横スクロールに固定し、バーは隠す。 */
+    <nav className="flex flex-nowrap gap-x-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <CategoryTab href={HOME_PATH} label="ホーム" active={home} />
       <CategoryTab href={`${HOME_PATH}/latest`} label="新着" active={latest} />
       {keys.map((k) => (

@@ -425,6 +425,45 @@ describe("記事本文の組み方", () => {
   });
 });
 
+describe("ヘッダ", () => {
+  it("追従するのはナビだけ (題字はスクロールで流す)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const header = document.querySelector("header");
+    // 題字の行は sticky にしない
+    expect(header?.className).not.toContain("sticky");
+    // ナビを包む要素が sticky top-0
+    const nav = document.querySelector("nav");
+    const bar = nav?.closest("div.sticky");
+    expect(bar).toBeTruthy();
+    expect(bar?.className).toContain("top-0");
+  });
+
+  it("ナビは折り返さない (flex-wrap と overflow-x-auto の併用で縦バーが出る)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const nav = document.querySelector("nav");
+    expect(nav?.className).toContain("flex-nowrap");
+    expect(nav?.className).not.toContain("flex-wrap");
+    // 片方の軸が visible でなくなるともう一方も auto になるため、縦は明示で hidden
+    expect(nav?.className).toContain("overflow-y-hidden");
+  });
+
+  it("ナビのスクロールバーを隠す (横スクロールは指で行う)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const nav = document.querySelector("nav");
+    expect(nav?.className).toContain("[scrollbar-width:none]");
+  });
+
+  it("ナビは地図より前面に出る (Leaflet の pane は z-index 400+)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const bar = document.querySelector("nav")?.closest("div.sticky");
+    expect(bar?.className).toContain("z-20");
+  });
+});
+
 describe("地図の描画設定", () => {
   /**
    * jsdom では Leaflet の実描画を検証できないので、**壊れると必ず見える 2 点**が
