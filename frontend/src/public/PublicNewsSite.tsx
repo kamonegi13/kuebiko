@@ -67,15 +67,10 @@ export function PublicNewsSite() {
     }
   }, [route]);
 
-  // 記事を開いている間は背後の一覧をスクロールさせない
-  useEffect(() => {
-    if (route.kind !== "detail") return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [route]);
+  // ⚠ 背後のスクロールロックは **Drawer が持っている** (scrollbar 幅の補正込み)。
+  // ここで二重に掛けると、閉じるときに互いの復元が競合して `overflow: hidden` が
+  // 残り、**一覧がスクロールできなくなる** (2026-08-25 に実際に起きた)。
+  // グローバルなスタイルの持ち主は 1 つに保つ。
 
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">

@@ -171,10 +171,24 @@ describe("ドロワー表示", () => {
     back.mockRestore();
   });
 
-  it("記事を開いている間は背後をスクロールさせない", async () => {
+  it("記事を開いている間は背後をスクロールさせない (ロックの持ち主は Drawer)", async () => {
     window.history.replaceState(null, "", "/app/news/ev-1");
     renderSite();
     await screen.findByText(/出典 \(2\)/);
     expect(document.body.style.overflow).toBe("hidden");
+  });
+
+  it("閉じたらスクロールが戻る", async () => {
+    document.body.style.overflow = "";
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    renderSite();
+    await screen.findByText(/出典 \(2\)/);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // 閉じる = 履歴が戻って route が home になる
+    window.history.replaceState(null, "", "/app/news");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    await waitFor(() => expect(document.body.style.overflow).not.toBe("hidden"));
   });
 });
