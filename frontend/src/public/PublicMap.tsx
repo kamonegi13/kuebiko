@@ -17,8 +17,9 @@ import "leaflet/dist/leaflet.css";
 import countriesUrl from "../components/geo/ne_countries.geojson?url";
 import type { PublicMapNode } from "../api/publicNews";
 
-const MIN_R = 5;
-const MAX_R = 22;
+// 世界ズームでは 70 か国以上が同時に出る。最小半径を絞らないと欧州が塊になる。
+const MIN_R = 3;
+const MAX_R = 18;
 
 function radiusFor(count: number, maxCount: number): number {
   if (count <= 0) return 0;
@@ -101,5 +102,16 @@ export function PublicMap({
     }
   }, [nodes]);
 
-  return <div ref={divRef} className="w-full h-[52vh] min-h-[280px] rounded-lg overflow-hidden" />;
+  // ⚠ 2 点、どちらも落とすと表示が壊れる:
+  //  1) **背景色**を当てる。Leaflet のコンテナ既定は明るいグレーなので、暗色テーマだと
+  //     海が真っ白になる (分析画面の地図も同じ指定を持っている)
+  //  2) **スタッキング文脈を作る** (relative + z-0)。Leaflet の内部 pane は z-index 400+ を
+  //     使うため、文脈を作らないと **sticky ヘッダの上にバブルが描かれる**
+  return (
+    <div
+      ref={divRef}
+      className="relative z-0 w-full h-[52vh] min-h-[280px] rounded-lg overflow-hidden"
+      style={{ background: "#0a0e16" }}
+    />
+  );
 }

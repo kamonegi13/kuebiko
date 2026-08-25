@@ -8,6 +8,7 @@ import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PublicNewsSite } from "./PublicNewsSite";
+import mapSource from "./PublicMap.tsx?raw";
 
 const ITEM = {
   id: "ev-1",
@@ -352,5 +353,24 @@ describe("記事本文の組み方", () => {
     renderArticle(MULTI);
     await screen.findByText(/出典 \(2\)/);
     expect(screen.getByText(/分で読めます/)).toBeTruthy();
+  });
+});
+
+describe("地図の描画設定", () => {
+  /**
+   * jsdom では Leaflet の実描画を検証できないので、**壊れると必ず見える 2 点**が
+   * ソースに残っていることを固定する。2026-08-25 に両方落として、
+   * 「海が真っ白」「バブルが sticky ヘッダの上に描かれる」を実機で出した。
+   */
+  it("暗色の背景を当てる (既定のままだと海が真っ白になる)", () => {
+    expect(mapSource).toContain('background: "#0a0e16"');
+  });
+
+  it("スタッキング文脈を作る (Leaflet の pane は z-index 400+ でヘッダを突き抜ける)", () => {
+    expect(mapSource).toContain("relative z-0");
+  });
+
+  it("ホイールズームを切る (記事を読みながらの誤操作を防ぐ)", () => {
+    expect(mapSource).toContain("scrollWheelZoom: false");
   });
 });
