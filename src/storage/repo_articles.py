@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -215,6 +215,32 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         if row is None or row["body"] is None:
             return None
         return str(row["body"])
+
+    def get_article_bodies(self, article_ids: Sequence[str]) -> dict[str, str]:
+        """``article_id`` → 本文 (日本語訳があれば優先) を **1 クエリ** で返す。
+
+        一覧で使うため N+1 にしない (``get_article_body`` は 1 件用)。
+        ``ArticleRecord`` は body を持たない (一覧で毎回本文を運ぶと重い) ので、
+        本文が要る場面だけこの口で引く。
+        """
+        if not article_ids:
+            return {}
+        uniq = list(dict.fromkeys(article_ids))
+        placeholders = ", ".join("?" for _ in uniq)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT article_id, body_ja, body FROM articles"  # noqa: S608 — placeholders のみ
+                f" WHERE article_id IN ({placeholders})",
+                uniq,
+            ).fetchall()
+        out: dict[str, str] = {}
+        for r in rows:
+            # 日本語訳を優先 (一覧は日本語で読む)。COALESCE は使わない —
+            # PG は行を dict で返すため別名の無い式列が潰れる (2026-08-24)
+            text = r["body_ja"] or r["body"]
+            if text and str(r["article_id"]) not in out:
+                out[str(r["article_id"])] = str(text)
+        return out
 
     # ---------- 記事詳細 UI: 本文オンデマンド日本語訳キャッシュ (2026-07-25) ----------
 

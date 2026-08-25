@@ -62,6 +62,11 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
 _PREVIEW_CHARS = 160
 
 
+def _clip(text: str) -> str:
+    """一覧の冒頭 1 行に畳む (本文は生テキストなので改行・連続空白が入る)。"""
+    return " ".join(text.split())[:_PREVIEW_CHARS]
+
+
 def _preview_text(art: Any) -> str:
     """単独報の冒頭。要約が無ければ **本文**から作る。
 
@@ -72,9 +77,10 @@ def _preview_text(art: Any) -> str:
     """
     summary = (getattr(art, "summary", "") or "").strip()
     if summary:
-        return summary[:_PREVIEW_CHARS]
-    body = (getattr(art, "body", "") or "").strip()
-    return " ".join(body.split())[:_PREVIEW_CHARS]
+        return _clip(summary)
+    # ArticleRecord は body を持たない (一覧で本文を毎回運ぶと重い)。
+    # 空を返した分は呼び手が ``get_article_bodies`` でまとめて埋める。
+    return ""
 
 
 def _headlines_and_previews(
@@ -90,6 +96,9 @@ def _headlines_and_previews(
     need_article = [r for r in records if r.state.item_id not in versions]
     articles = repo.get_articles_by_ids([aid for r in need_article for aid in r.state.member_ids])
     out: dict[str, tuple[str, str]] = {}
+    # 要約が空だった単独報。本文で埋めるため article_id を控えておく
+    # (``ArticleRecord`` は body を持たないので別途 1 クエリで引く)
+    need_body: dict[str, str] = {}
     for r in records:
         latest = versions.get(r.state.item_id)
         if latest is not None:
@@ -99,10 +108,21 @@ def _headlines_and_previews(
         for aid in r.state.member_ids:
             art = articles.get(aid)
             if art is not None:
-                out[r.state.item_id] = (art.title, _preview_text(art))
+                preview = _preview_text(art)
+                out[r.state.item_id] = (art.title, preview)
+                if not preview:
+                    need_body[r.state.item_id] = aid
                 break
         else:
             out[r.state.item_id] = ("(記事の取得に失敗)", "")
+
+    if need_body:
+        bodies = repo.get_article_bodies(list(need_body.values()))
+        for item_id, aid in need_body.items():
+            text = bodies.get(aid, "")
+            if text:
+                headline, _ = out[item_id]
+                out[item_id] = (headline, _clip(text))
     return out
 
 

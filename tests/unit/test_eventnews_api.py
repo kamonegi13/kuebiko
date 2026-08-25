@@ -119,38 +119,46 @@ class TestPreviewFallback:
     preview を ``summary`` だけから作っていたこと。事象は被覆のため
     ``skipped_duplicate`` の記事も構成記事に含むが、重複判定された記事は
     **要約 LLM を通らない**ので summary が空になる。実測では単独報 high 433 件の
-    うち 95 件が skipped_duplicate で、うち 92 件が要約空・**本文は全件あり**
-    (678〜3,610 字)。
+    うち 95 件が skipped_duplicate で、うち 92 件が要約空・**本文は全件あり**。
     """
-
-    @staticmethod
-    def _article(summary: str, body: str) -> SimpleNamespace:
-        return SimpleNamespace(summary=summary, body=body)
 
     def test_uses_summary_when_present(self) -> None:
         from src.ui.api.eventnews import _preview_text
 
-        assert _preview_text(self._article("要約です。", "本文です。")) == "要約です。"
+        assert _preview_text(SimpleNamespace(summary="要約です。")) == "要約です。"
 
-    def test_falls_back_to_body_when_summary_is_empty(self) -> None:
+    def test_returns_empty_when_summary_is_missing(self) -> None:
+        """本文は ArticleRecord に無いので、ここでは空を返し呼び手が埋める。"""
         from src.ui.api.eventnews import _preview_text
 
-        assert _preview_text(self._article("", "本文の冒頭です。")) == "本文の冒頭です。"
-        assert _preview_text(self._article("   ", "本文の冒頭です。")) == "本文の冒頭です。"
-
-    def test_collapses_whitespace_in_body(self) -> None:
-        """本文は生テキストなので改行・連続空白が入る。一覧では 1 行に畳む。"""
-        from src.ui.api.eventnews import _preview_text
-
-        assert _preview_text(self._article("", "行1\n\n  行2\t行3")) == "行1 行2 行3"
-
-    def test_returns_empty_when_neither_is_available(self) -> None:
-        from src.ui.api.eventnews import _preview_text
-
-        assert _preview_text(self._article("", "")) == ""
+        assert _preview_text(SimpleNamespace(summary="")) == ""
         assert _preview_text(SimpleNamespace()) == ""
 
-    def test_truncates_to_the_preview_length(self) -> None:
-        from src.ui.api.eventnews import _PREVIEW_CHARS, _preview_text
+    def test_clip_collapses_whitespace_and_truncates(self) -> None:
+        from src.ui.api.eventnews import _PREVIEW_CHARS, _clip
 
-        assert len(_preview_text(self._article("", "あ" * 500))) == _PREVIEW_CHARS
+        assert _clip("行1\n\n  行2\t行3") == "行1 行2 行3"
+        assert len(_clip("あ" * 500)) == _PREVIEW_CHARS
+
+    def test_article_record_has_no_body_so_a_lookup_is_required(self) -> None:
+        """**実型の契約**を固定する。
+
+        当初 ``getattr(art, "body", "")`` で埋めるつもりだったが、``ArticleRecord``
+        は body を持たず、フォールバックが無言で空振りしていた
+        (偽オブジェクトのテストは通るのに本番では直らない)。body が将来入るなら
+        この test が落ちるので、そのとき ``get_article_bodies`` 経由をやめてよい。
+        """
+        from src.storage.records import ArticleRecord
+
+        assert "body" not in ArticleRecord.__annotations__
+        assert "summary" in ArticleRecord.__annotations__
+
+    def test_list_fills_empty_previews_from_bodies_in_one_query(self) -> None:
+        """要約が空の分は **1 クエリ** で本文から埋める (N+1 にしない)。"""
+        import inspect
+
+        from src.ui.api.eventnews import _headlines_and_previews
+
+        src = inspect.getsource(_headlines_and_previews)
+        assert src.count("repo.get_article_bodies") == 1
+        assert "for item_id, aid in need_body.items()" in src
