@@ -439,6 +439,13 @@ describe("ヘッダ", () => {
     expect(bar?.className).toContain("top-0");
   });
 
+  it("追従時にタブが上端へ貼り付かない (上余白を取る)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const inner = document.querySelector("nav")?.parentElement;
+    expect(inner?.className).toContain("pt-3");
+  });
+
   it("ナビは折り返さない (flex-wrap と overflow-x-auto の併用で縦バーが出る)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);

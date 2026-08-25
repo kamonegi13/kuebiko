@@ -150,7 +150,9 @@ function SiteHeader({ route }: { route: Route }) {
       </header>
       {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
       <div className="sticky top-0 z-20 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md">
-        <div className="w-full max-w-[72rem] mx-auto px-5">
+        {/* 追従時にタブが画面の上端へ貼り付かないよう、内側に上余白を取る
+            (2026-08-25 利用者指摘)。iOS のブラウザ枠の直下でも詰まって見えない。 */}
+        <div className="w-full max-w-[72rem] mx-auto px-5 pt-3">
           <CategoryNav
             active={route.kind === "category" ? route.key : undefined}
             onMap={route.kind === "map"}
