@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -45,6 +46,21 @@ _LIST_LIMIT_MAX = 60
 #   地政学 212 / マルウェア・APT 247 / 侵害 290 / 脆弱性 132
 # policy(1) や recap/other は件数が僅少なので独立ページを持たない (新着には出る)。
 PUBLIC_CATEGORIES: tuple[str, ...] = ("vuln", "incident_breach", "threat", "geopolitical")
+
+# 「注目」= **直近 72 時間で最も多くの独立媒体が報じた事案**。
+#
+# 実測 (過去 10 日を再現、2026-08-25):
+#   新しい順 (旧)          その窓で最大の裏取りを拾えた 3/10 日・平均 4.4 媒体
+#   72h 内を媒体数順 (現)  10/10 日・平均 10.0 媒体
+# 旧規則は 10 日中 7 日で最大の話題を逃していた (11 媒体の事案がある日に 3 媒体を表示)。
+#
+# ⚠ これは **表示順**であって重要性の定義ではない。候補は既に PIR → importance で
+# high に絞られており、媒体数はその中の並べ替えにしか使わない
+# (収集量で重要性を上書きしない: tests/unit/test_burst_boundary.py と同じ趣旨)。
+FEATURED_WINDOW_HOURS = 72
+# 静かな日に注目が空にならないよう、足りなければ窓を広げる
+FEATURED_FALLBACK_HOURS = 24 * 7
+FEATURED_COUNT = 3
 
 
 # 記事 category → 公開カテゴリ key の逆引き (グループ定義から機械的に作る)
@@ -126,6 +142,28 @@ def _citations(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]
     return out
 
 
+def _featured_records(repo: RunHistoryRepository, common: dict[str, Any]) -> list[Any]:
+    """注目枠。直近 72h の中から独立媒体数の多い順に取る。
+
+    静かな日に空にならないよう、足りなければ窓を 7 日へ広げる (それでも
+    「最も裏取りのある事案」であることは変わらない)。
+    """
+    now = datetime.now(UTC)
+    latest: list[Any] = []
+    for hours in (FEATURED_WINDOW_HOURS, FEATURED_FALLBACK_HOURS):
+        latest = repo.list_event_items(
+            **common,
+            min_independent_sources=2,
+            has_news=True,
+            since=now - timedelta(hours=hours),
+            order_by="corroboration",
+            limit=FEATURED_COUNT,
+        )
+        if len(latest) >= FEATURED_COUNT:
+            break
+    return latest
+
+
 def _public_citation(citation: dict[str, Any]) -> dict[str, Any]:
     """公開する出典の形 (内部 id は落とす)。"""
     return {k: v for k, v in citation.items() if k != "article_id"}
@@ -156,19 +194,23 @@ def list_public_news(
     repo = _repo()
     term = (search or "").strip()
     search_item_ids = repo.search_event_versions(term) if term else None
-    records = repo.list_event_items(
-        origin="live",
-        importances=list(_PUBLIC_IMPORTANCES),
-        exclude_merged=True,
+    common: dict[str, Any] = {
+        "origin": "live",
+        "importances": list(_PUBLIC_IMPORTANCES),
+        "exclude_merged": True,
         # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
-        exclude_duplicate_only=True,
-        member_categories=categories,
-        min_independent_sources=2 if featured else 0,
-        has_news=True if featured else None,
-        search_item_ids=search_item_ids,
-        limit=min(max(limit, 1), _LIST_LIMIT_MAX),
-        offset=max(0, offset),
-    )
+        "exclude_duplicate_only": True,
+        "member_categories": categories,
+        "search_item_ids": search_item_ids,
+    }
+    if featured:
+        records = _featured_records(repo, common)
+    else:
+        records = repo.list_event_items(
+            **common,
+            limit=min(max(limit, 1), _LIST_LIMIT_MAX),
+            offset=max(0, offset),
+        )
     versions = repo.latest_event_versions([r.state.item_id for r in records])
     articles = repo.get_articles_by_ids([a for r in records for a in r.state.member_ids])
     items: list[dict[str, Any]] = []

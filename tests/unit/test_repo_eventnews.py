@@ -212,6 +212,43 @@ class TestEventItemCRUD:
         assert {"has-posted", "dup-but-generated"} <= kept
         assert len(repo.list_event_items()) == 3  # 既定は落とさない
 
+    def test_list_event_items_can_order_by_corroboration(self, repo: RunHistoryRepository) -> None:
+        """独立媒体数の多い順に並べられる (公開面の「注目」枠)。
+
+        ⚠ 並べ替えにだけ使う。重要性は PIR → importance が決める。
+        """
+        older = _NOW - timedelta(hours=10)
+        for item_id, sources, ts in (("few-new", 2, _NOW), ("many-old", 9, older)):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=ts,
+                last_reported_at=ts,
+                importance="high",
+            )
+            repo.update_event_item(item_id, {"independent_sources": sources})
+
+        by_recency = repo.list_event_items()
+        assert [i.state.item_id for i in by_recency] == ["few-new", "many-old"]
+
+        by_corroboration = repo.list_event_items(order_by="corroboration")
+        assert [i.state.item_id for i in by_corroboration] == ["many-old", "few-new"]
+
+    def test_list_event_items_filters_by_since(self, repo: RunHistoryRepository) -> None:
+        """事象そのものの新しさで絞れる (記事側の since_hours とは別物)。"""
+        for item_id, ts in (("recent", _NOW), ("stale", _NOW - timedelta(days=5))):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=ts,
+                last_reported_at=ts,
+                importance="high",
+            )
+
+        kept = {i.state.item_id for i in repo.list_event_items(since=_NOW - timedelta(hours=72))}
+        assert kept == {"recent"}
+        assert len(repo.list_event_items()) == 2
+
     def test_list_event_items_orders_by_last_reported_desc(
         self, repo: RunHistoryRepository
     ) -> None:

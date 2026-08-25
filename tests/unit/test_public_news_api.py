@@ -116,7 +116,7 @@ class TestHighOnly:
 
     def test_list_filters_by_importance(self) -> None:
         src = inspect.getsource(public_news.list_public_news)
-        assert "importances=list(_PUBLIC_IMPORTANCES)" in src
+        assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
 
     def test_detail_rejects_non_high(self) -> None:
         src = inspect.getsource(public_news.get_public_news)
@@ -129,7 +129,7 @@ class TestDedupIsRespected:
     def test_duplicate_only_items_are_excluded_before_the_limit(self) -> None:
         """SQL 側で落とす。取得後に間引くと 1 ページの件数が欠ける (実測 limit=6 で 4 件)。"""
         src = inspect.getsource(public_news.list_public_news)
-        assert "exclude_duplicate_only=True" in src
+        assert '"exclude_duplicate_only": True' in src
         assert "_is_duplicate_only" not in src.split("for r in records:")[1]
 
     def test_duplicate_only_item_404s(self) -> None:
@@ -176,7 +176,7 @@ class TestCategoryPages:
 
     def test_filter_is_applied_before_the_limit(self) -> None:
         src = inspect.getsource(public_news.list_public_news)
-        assert "member_categories=" in src.split("for r in records:")[0]
+        assert '"member_categories": categories' in src.split("for r in records:")[0]
 
     def test_list_advertises_the_categories(self) -> None:
         """フロントがカテゴリ一覧を別経路で持たないよう、一覧が自分で返す。"""
@@ -185,8 +185,42 @@ class TestCategoryPages:
 
 
 class TestFeatured:
+    """注目 = **直近 72 時間で最も多くの独立媒体が報じた事案** (2026-08-25 実測で改訂)。
+
+    旧規則 (複数媒体 + 統合済みを新しい順) は、過去 10 日を再現すると
+    **10 日中 7 日でその窓の最大の話題を逃していた** (11 媒体の事案がある日に
+    3 媒体を 3 件表示)。媒体数順にすると 10/10 日で拾える (平均 4.4 → 10.0 媒体)。
+    """
+
     def test_featured_requires_corroboration_and_a_generated_body(self) -> None:
-        """注目枠は「複数媒体が報じ、かつ統合本文がある」もの。単独報を注目にしない。"""
+        """単独報を注目にしない。"""
+        src = inspect.getsource(public_news._featured_records)
+        assert "min_independent_sources=2" in src
+        assert "has_news=True" in src
+
+    def test_featured_orders_by_corroboration_not_recency(self) -> None:
+        """新しい順だと最大の話題を逃す (実測 3/10 日)。"""
+        src = inspect.getsource(public_news._featured_records)
+        assert 'order_by="corroboration"' in src
+
+    def test_featured_is_bounded_to_a_recent_window(self) -> None:
+        """媒体数だけで選ぶと何週間も前の事案が居座る。窓で新しさを担保する。"""
+        assert public_news.FEATURED_WINDOW_HOURS == 72
+        src = inspect.getsource(public_news._featured_records)
+        assert "since=" in src
+
+    def test_featured_widens_the_window_instead_of_going_empty(self) -> None:
+        """静かな日に注目が空にならないよう窓を広げる。"""
+        assert public_news.FEATURED_FALLBACK_HOURS > public_news.FEATURED_WINDOW_HOURS
+        src = inspect.getsource(public_news._featured_records)
+        assert "for hours in (FEATURED_WINDOW_HOURS, FEATURED_FALLBACK_HOURS)" in src
+
+    def test_corroboration_is_display_only(self) -> None:
+        """⚠ 媒体数は **表示順** にだけ使う。重要性は PIR → importance が決める。
+
+        収集量で優先度を上書きしない (tests/unit/test_burst_boundary.py と同じ趣旨)。
+        候補は既に high に絞られていることを固定する。
+        """
         src = inspect.getsource(public_news.list_public_news)
-        assert "min_independent_sources=2 if featured else 0" in src
-        assert "has_news=True if featured else None" in src
+        assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
+        assert public_news._PUBLIC_IMPORTANCES == ("high",)

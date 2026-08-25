@@ -246,7 +246,13 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
     <div className="space-y-8">
       {featuredItems.length > 0 && (
         <section className="space-y-5">
-          <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
+            {/* 何を基準に選んでいるかを読み手に示す (順位の根拠を隠さない) */}
+            <span className="text-[11px] text-fg-subtle">
+              直近 72 時間で多くの媒体が報じた事案
+            </span>
+          </div>
           <LeadStory item={featuredItems[0]} />
           {featuredItems.length > 1 && (
             <ul className="space-y-5 pt-6 border-t border-border-subtle">

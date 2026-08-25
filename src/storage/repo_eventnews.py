@@ -308,6 +308,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         has_news: bool | None = None,
         exclude_duplicate_only: bool = False,
         member_categories: Sequence[str] | None = None,
+        since: datetime | None = None,
+        order_by: str = "recency",
         member_article_ids: Sequence[str] | None = None,
         search_item_ids: Sequence[str] | None = None,
         search_member_article_ids: Sequence[str] | None = None,
@@ -318,6 +320,15 @@ class EventNewsMixin(RunHistoryRepositoryBase):
 
         ``origin`` / ``statuses`` / ``importances`` で絞り込み可能。N+1 を避けるため
         member_ids は対象アイテム群をまとめて 1 クエリで引く。
+
+        ``since`` は ``last_reported_at`` の下限 (事象そのものの新しさ。記事側の
+        ``since_hours`` とは別物)。``order_by`` は "recency" (既定: 新着順) か
+        "corroboration" (独立媒体数の多い順 → 同数なら新しい順)。
+
+        ⚠ ``corroboration`` は **表示順のためだけ** に使うこと。重要性の背骨は
+        PIR → importance → channel であり、収集量 (何媒体が報じたか) で重要性を
+        決めてはいけない (tests/unit/test_burst_boundary.py と同じ趣旨)。ここは
+        既に importance で絞られた集合の **並べ替え**なので線の内側。
 
         ``member_categories`` は構成記事のカテゴリでの絞り込み (公開面のカテゴリ別
         一覧)。記事側 facet を走査してから持ち上げる経路と違い上限が無く、
@@ -351,6 +362,9 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             params.extend(importances)
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
+        if since is not None:
+            clauses.append("datetime(last_reported_at) >= datetime(?)")
+            params.append(_to_iso(since))
         if min_independent_sources > 0:
             clauses.append("independent_sources >= ?")
             params.append(int(min_independent_sources))
@@ -407,9 +421,14 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         params.append(int(limit))
         params.append(max(0, int(offset)))
         with self._connect() as conn:
+            order_sql = (
+                "independent_sources DESC, datetime(last_reported_at) DESC"
+                if order_by == "corroboration"
+                else "datetime(last_reported_at) DESC"
+            )
             rows = conn.execute(
-                f"SELECT * FROM event_items {where} "  # noqa: S608 — where句は固定カラムのみ
-                "ORDER BY datetime(last_reported_at) DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM event_items {where} "  # noqa: S608 — where句/order は固定
+                f"ORDER BY {order_sql} LIMIT ? OFFSET ?",
                 params,
             ).fetchall()
             if not rows:
