@@ -139,7 +139,7 @@ async def generate_draft(
     allowed_identifiers_text: str,
     llm: LLMClient,
 ) -> EventNewsDraft:
-    """事象ニュースの structured 出力を生成する (§9、Step.EVENT_NEWS / fast tier)。
+    """事象ニュースの structured 出力を生成する (§9、Step.EVENT_NEWS / narrative tier)。
 
     識別子関門・[N] 関門はここで呼ばない (runner が ``GateResult`` として統合する)。
     ``llm`` は呼出側が ``model_tiers.build_llm_for(Step.EVENT_NEWS, config)`` 等で
