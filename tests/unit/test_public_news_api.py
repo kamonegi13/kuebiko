@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+from types import SimpleNamespace
 
 from src.ui.api import public_news
 from src.ui.read_only_policy import PUBLIC_GET_ALLOWLIST, is_public_get
@@ -120,3 +121,26 @@ class TestHighOnly:
     def test_detail_rejects_non_high(self) -> None:
         src = inspect.getsource(public_news.get_public_news)
         assert "importance not in _PUBLIC_IMPORTANCES" in src
+
+
+class TestDedupIsRespected:
+    """kuebiko 自身が重複と判定したものを単独記事として公開しない (契約 4)。"""
+
+    def test_duplicate_only_items_are_excluded_before_the_limit(self) -> None:
+        """SQL 側で落とす。取得後に間引くと 1 ページの件数が欠ける (実測 limit=6 で 4 件)。"""
+        src = inspect.getsource(public_news.list_public_news)
+        assert "exclude_duplicate_only=True" in src
+        assert "_is_duplicate_only" not in src.split("for r in records:")[1]
+
+    def test_duplicate_only_item_404s(self) -> None:
+        src = inspect.getsource(public_news.get_public_news)
+        assert "_is_duplicate_only" in src
+        assert "404" in src.split("_is_duplicate_only")[1][:200]
+
+    def test_generated_items_survive_even_if_members_were_duplicates(self) -> None:
+        """複数媒体をまとめた読み物になっているなら公開してよい。"""
+        assert public_news._is_duplicate_only({}, ()) is True
+        posted = SimpleNamespace(status="posted")
+        dup = SimpleNamespace(status="skipped_duplicate")
+        assert public_news._is_duplicate_only({"a": dup, "b": posted}, ("a", "b")) is False
+        assert public_news._is_duplicate_only({"a": dup}, ("a",)) is True

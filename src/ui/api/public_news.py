@@ -15,7 +15,10 @@
 2. **出典を必ず付ける** — 生成本文の有無に関わらず、媒体名と原記事 URL を返す。
    出典の無い項目は返さない
 3. **high のみ** — 公開するのは重要度 high の事象だけ (2026-08-25 利用者判断)
-4. GET のみ
+4. **自前の重複判定を尊重する** — 全メンバーが ``skipped_duplicate`` で生成本文も
+   無い事象は公開しない。dedup が「既に収集済みの重複」と判定したものを単独記事と
+   して出すと、同じ事案を二重掲載することになる (実測 43 事象)
+5. GET のみ
 """
 
 from __future__ import annotations
@@ -39,6 +42,18 @@ GENERATED_NOTE = "kuebiko が複数媒体の報道から生成した要約であ
 
 def _repo() -> RunHistoryRepository:
     return RunHistoryRepository()
+
+
+def _is_duplicate_only(articles: dict[str, Any], member_ids: tuple[str, ...]) -> bool:
+    """全メンバーが dedup で重複と判定されたか (契約 4)。
+
+    ``skipped_duplicate`` は「既に収集済みの記事と同じ事案」という自前の判定。
+    生成本文があるなら複数媒体をまとめた読み物になっているので公開してよい。
+    """
+    known = [articles[a] for a in member_ids if a in articles]
+    if not known:
+        return True
+    return all(getattr(a, "status", "") == "skipped_duplicate" for a in known)
 
 
 def _citations(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]:
@@ -93,6 +108,8 @@ def list_public_news(
         origin="live",
         importances=list(_PUBLIC_IMPORTANCES),
         exclude_merged=True,
+        # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
+        exclude_duplicate_only=True,
         search_item_ids=search_item_ids,
         limit=min(max(limit, 1), _LIST_LIMIT_MAX),
         offset=max(0, offset),
@@ -143,6 +160,10 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="not found")
 
     versions = repo.list_event_versions(item_id)
+    if not versions:
+        articles = repo.get_articles_by_ids(list(record.state.member_ids))
+        if _is_duplicate_only(articles, record.state.member_ids):
+            raise HTTPException(status_code=404, detail="not found")
     latest = versions[0] if versions else None
     body = json.loads(latest.body_json) if latest and latest.body_json else {}
     if latest is not None:

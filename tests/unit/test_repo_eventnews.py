@@ -152,6 +152,66 @@ class TestEventItemCRUD:
         assert {i.state.item_id for i in repo.list_event_items(has_news=False)} == {"raw"}
         assert len(repo.list_event_items()) == 2
 
+    def test_list_event_items_can_exclude_duplicate_only_items(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """全メンバーが dedup で重複判定 かつ 生成本文なし の事象を落とす (公開面用)。
+
+        **LIMIT より前**に効く必要がある — 取得後に間引くと 1 ページの件数が欠ける。
+        """
+        now = _NOW.isoformat()
+        with repo._connect() as conn:  # noqa: SLF001
+            conn.execute(
+                "INSERT INTO runs (id, started_at, pipeline, dry_run, status)"
+                " VALUES (1, ?, 'eventnews', 0, 'done')",
+                (now,),
+            )
+            for aid, status in (("art-dup", "skipped_duplicate"), ("art-posted", "posted")):
+                conn.execute(
+                    "INSERT INTO articles (run_id, article_id, url, title, status, created_at)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (1, aid, f"https://kuebiko.example/{aid}", aid, status, now),
+                )
+            conn.commit()
+
+        for item_id, aid in (("dup-only", "art-dup"), ("has-posted", "art-posted")):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="high",
+            )
+            repo.add_event_member(
+                item_id=item_id,
+                article_id=aid,
+                joined_at=_NOW,
+                contributed_new_facts=0,
+                join_signal="seed",
+            )
+        # 重複のみだが生成済み = 読み物になっているので残す
+        repo.create_event_item(
+            item_id="dup-but-generated",
+            origin="live",
+            first_reported_at=_NOW,
+            last_reported_at=_NOW,
+            importance="high",
+        )
+        repo.add_event_member(
+            item_id="dup-but-generated",
+            article_id="art-dup",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.update_event_item("dup-but-generated", {"current_version": 1})
+
+        kept = {i.state.item_id for i in repo.list_event_items(exclude_duplicate_only=True)}
+
+        assert "dup-only" not in kept
+        assert {"has-posted", "dup-but-generated"} <= kept
+        assert len(repo.list_event_items()) == 3  # 既定は落とさない
+
     def test_list_event_items_orders_by_last_reported_desc(
         self, repo: RunHistoryRepository
     ) -> None:

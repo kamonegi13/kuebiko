@@ -306,6 +306,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         exclude_merged: bool = False,
         min_independent_sources: int = 0,
         has_news: bool | None = None,
+        exclude_duplicate_only: bool = False,
         member_article_ids: Sequence[str] | None = None,
         search_item_ids: Sequence[str] | None = None,
         search_member_article_ids: Sequence[str] | None = None,
@@ -316,6 +317,10 @@ class EventNewsMixin(RunHistoryRepositoryBase):
 
         ``origin`` / ``statuses`` / ``importances`` で絞り込み可能。N+1 を避けるため
         member_ids は対象アイテム群をまとめて 1 クエリで引く。
+
+        ``exclude_duplicate_only`` は「全メンバーが dedup で重複判定 かつ 生成本文なし」
+        の事象を落とす (公開面用)。**必ず LIMIT より前に効かせる** — 取得後に間引くと
+        「新着 N 件のうち公開できるもの」になり「公開できる新着 N 件」にならない。
 
         ``min_independent_sources`` / ``has_news`` は **事象固有の軸** (記事側には
         存在しない)。単独報が全体の 9 割を占めるため、記事から持ち上げた facet の
@@ -347,6 +352,13 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         if has_news is not None:
             # 生成の有無は current_version が SSoT (版が 1 本でもあれば生成済み)
             clauses.append("current_version > 0" if has_news else "current_version = 0")
+        if exclude_duplicate_only:
+            clauses.append(
+                "(current_version > 0 OR EXISTS ("
+                " SELECT 1 FROM event_item_members dm"
+                " JOIN articles da ON da.article_id = dm.article_id"
+                " WHERE dm.item_id = event_items.id AND da.status <> 'skipped_duplicate'))"
+            )
         if member_article_ids is not None:
             # 記事側の絞り込み (pivot / category / 検索 等) を事象へ持ち上げる。
             # **1 件でも該当メンバーを含む事象**を返す (事象は記事の集合なので、
