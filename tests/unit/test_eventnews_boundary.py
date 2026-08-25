@@ -23,9 +23,13 @@ _ALLOWLIST: frozenset[str] = frozenset(
     {
         "src/storage/repo_eventnews.py",
         "src/ui/services/eventnews_hourly_job.py",
-        # 2026-08-24: 読み手向けの出口 (Tier0 = 匿名で閲覧可)。**生成物が公開面へ
-        # 出る唯一の経路**なので、ここを増やすときは公開範囲の判断とセットで行う。
+        # 2026-08-24: 読み手向けの出口 (分析者向け)。2026-08-25 に匿名からは外し、
+        # 公開面は public_news.py が担うようになった (allowlist は default-deny)。
         "src/ui/api/eventnews.py",
+        # 2026-08-25: **公開ニュース (Tier0 = 匿名で閲覧可) の唯一の出口**。
+        # 参照するのは注目の採点 (src/eventnews/urgency.py) のみで、生成物を
+        # 他層へ還流させない。公開範囲の判断は test_public_news_api.py が固定する。
+        "src/ui/api/public_news.py",
     }
 )
 

@@ -68,10 +68,25 @@ class TestRedistributionBoundary:
     - ``articles.summary`` = **kuebiko の LLM が書いた要約**。§9 が明示的に認めている
     """
 
-    def test_module_never_reads_publisher_body(self) -> None:
-        src = pathlib.Path(public_news.__file__).read_text()
-        for forbidden in ("get_article_bodies", ".body_ja", "art.body", '"body"'):
-            assert forbidden not in src, f"公開 API が出版社の本文に触れている: {forbidden}"
+    def test_payload_builders_never_touch_publisher_body(self) -> None:
+        """**返す側**は本文に触れない。
+
+        2026-08-25: 注目の採点で「実際に悪用されている」を本文から判定する必要が
+        生じたため、`_score_pool` だけは本文を読む。ただし読んだ本文は **点数に
+        しかならず**、レスポンスには出ない。契約は「読まない」ではなく
+        **「返さない」** なので、返す側の関数を名指しで固定する。
+        """
+        for fn in (public_news.list_public_news, public_news.get_public_news):
+            src = inspect.getsource(fn)
+            for forbidden in ("get_article_bodies", ".body_ja", "art.body", '"body"'):
+                assert forbidden not in src, f"{fn.__name__} が本文に触れている: {forbidden}"
+
+    def test_scoring_returns_scores_not_text(self) -> None:
+        """採点は本文を読んでよいが、返すのは点数と事象だけ。"""
+        import typing
+
+        hints = typing.get_type_hints(public_news._score_pool)
+        assert str(hints["return"]).replace(" ", "").startswith("list[tuple[int,")
 
     def test_kuebiko_summary_is_allowed(self) -> None:
         """単独報は kuebiko の要約を出す。高 importance の 94% が要約を持つ。"""
@@ -185,42 +200,53 @@ class TestCategoryPages:
 
 
 class TestFeatured:
-    """注目 = **直近 72 時間で最も多くの独立媒体が報じた事案** (2026-08-25 実測で改訂)。
+    """注目 = **読み手が今いちばん知る必要がある事案** (2026-08-25 に 2 度改訂)。
 
-    旧規則 (複数媒体 + 統合済みを新しい順) は、過去 10 日を再現すると
-    **10 日中 7 日でその窓の最大の話題を逃していた** (11 媒体の事案がある日に
-    3 媒体を 3 件表示)。媒体数順にすると 10/10 日で拾える (平均 4.4 → 10.0 媒体)。
+    1. 新しい順      → その窓で最大の話題を 10 日中 7 日 逃していた
+    2. 媒体数順      → **報道量は注意の量であって重要性ではない** (利用者指摘)。
+       実測で日本関連は公開対象の 4.5%、一次情報は 2.8% しかなく、媒体数順では
+       まず選ばれない
+    3. 行動要度 (現行)
     """
 
-    def test_featured_requires_corroboration_and_a_generated_body(self) -> None:
+    def test_ranking_does_not_use_media_count(self) -> None:
+        """⚠ 媒体数を順位に混ぜない。同点処理にも使わない (使えば量が順位を決める)。"""
+        src = inspect.getsource(public_news._featured_records)
+        assert "independent_sources" not in src
+        assert "corroboration" not in src
+        assert "min_independent_sources" not in src
+
+    def test_ranking_uses_the_urgency_score(self) -> None:
+        src = inspect.getsource(public_news._score_pool)
+        assert "urgency_score" in src
+
+    def test_ties_break_by_recency(self) -> None:
+        src = inspect.getsource(public_news._featured_records)
+        assert "last_reported_at" in src
+
+    def test_featured_requires_a_generated_body(self) -> None:
         """単独報を注目にしない。"""
         src = inspect.getsource(public_news._featured_records)
-        assert "min_independent_sources=2" in src
         assert "has_news=True" in src
 
-    def test_featured_orders_by_corroboration_not_recency(self) -> None:
-        """新しい順だと最大の話題を逃す (実測 3/10 日)。"""
-        src = inspect.getsource(public_news._featured_records)
-        assert 'order_by="corroboration"' in src
-
     def test_featured_is_bounded_to_a_recent_window(self) -> None:
-        """媒体数だけで選ぶと何週間も前の事案が居座る。窓で新しさを担保する。"""
         assert public_news.FEATURED_WINDOW_HOURS == 72
-        src = inspect.getsource(public_news._featured_records)
-        assert "since=" in src
+        assert "since=" in inspect.getsource(public_news._featured_records)
 
     def test_featured_widens_the_window_instead_of_going_empty(self) -> None:
-        """静かな日に注目が空にならないよう窓を広げる。"""
         assert public_news.FEATURED_FALLBACK_HOURS > public_news.FEATURED_WINDOW_HOURS
         src = inspect.getsource(public_news._featured_records)
         assert "for hours in (FEATURED_WINDOW_HOURS, FEATURED_FALLBACK_HOURS)" in src
 
-    def test_corroboration_is_display_only(self) -> None:
-        """⚠ 媒体数は **表示順** にだけ使う。重要性は PIR → importance が決める。
+    def test_roundup_articles_are_excluded(self) -> None:
+        """まとめ記事は複数の話題を含み信号が同時に立つ (実測で週刊まとめが 3 位に)。"""
+        from src.eventnews.urgency import EXCLUDED_CATEGORIES
 
-        収集量で優先度を上書きしない (tests/unit/test_burst_boundary.py と同じ趣旨)。
-        候補は既に high に絞られていることを固定する。
-        """
+        assert "recap" in EXCLUDED_CATEGORIES
+        assert "is_excluded_category" in inspect.getsource(public_news._score_pool)
+
+    def test_candidates_are_high_importance_only(self) -> None:
+        """重要性は PIR → importance が決める。行動要度はその中の順位付け。"""
         src = inspect.getsource(public_news.list_public_news)
         assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
         assert public_news._PUBLIC_IMPORTANCES == ("high",)

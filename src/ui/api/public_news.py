@@ -50,20 +50,20 @@ _LIST_LIMIT_MAX = 60
 # policy(1) や recap/other は件数が僅少なので独立ページを持たない (新着には出る)。
 PUBLIC_CATEGORIES: tuple[str, ...] = ("vuln", "incident_breach", "threat", "geopolitical")
 
-# 「注目」= **直近 72 時間で最も多くの独立媒体が報じた事案**。
+# 「注目」= **読み手が今いちばん知る必要がある事案**。
 #
-# 実測 (過去 10 日を再現、2026-08-25):
-#   新しい順 (旧)          その窓で最大の裏取りを拾えた 3/10 日・平均 4.4 媒体
-#   72h 内を媒体数順 (現)  10/10 日・平均 10.0 媒体
-# 旧規則は 10 日中 7 日で最大の話題を逃していた (11 媒体の事案がある日に 3 媒体を表示)。
-#
-# ⚠ これは **表示順**であって重要性の定義ではない。候補は既に PIR → importance で
-# high に絞られており、媒体数はその中の並べ替えにしか使わない
-# (収集量で重要性を上書きしない: tests/unit/test_burst_boundary.py と同じ趣旨)。
+# 2026-08-25 に 2 度作り直した。
+#   1. 新しい順          → その窓で最大の話題を 10 日中 7 日 逃していた
+#   2. 媒体数順          → **報道量は注意の量であって重要性ではない** (利用者指摘)。
+#      実測で日本関連は公開対象の 4.5%、一次情報 (政府・CERT) は 2.8% しかなく、
+#      媒体数順ではまず選ばれない。英語圏で広く報じられる海外製品の脆弱性が並ぶ
+#   3. **行動要度** (現行) → src/eventnews/urgency.py の配点で選ぶ。媒体数は使わない
 FEATURED_WINDOW_HOURS = 72
 # 静かな日に注目が空にならないよう、足りなければ窓を広げる
 FEATURED_FALLBACK_HOURS = 24 * 7
 FEATURED_COUNT = 3
+# 採点する候補の上限。窓内の生成済み high は実測 28 件なので十分に余裕がある
+_FEATURED_POOL_MAX = 200
 
 
 # 記事 category → 公開カテゴリ key の逆引き (グループ定義から機械的に作る)
@@ -145,26 +145,82 @@ def _citations(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]
     return out
 
 
-def _featured_records(repo: RunHistoryRepository, common: dict[str, Any]) -> list[Any]:
-    """注目枠。直近 72h の中から独立媒体数の多い順に取る。
+_FEATURED_TTL_SECONDS = 300.0
+_featured_cache: dict[str, tuple[float, list[Any]]] = {}
 
-    静かな日に空にならないよう、足りなければ窓を 7 日へ広げる (それでも
-    「最も裏取りのある事案」であることは変わらない)。
+
+def _featured_records(repo: RunHistoryRepository, common: dict[str, Any]) -> list[Any]:
+    """注目枠。直近 72h の候補を **行動要度** で採点して上位を返す。
+
+    採点には本文・CVSS・PIR が要るので SQL では順位を決められない。候補は窓内の
+    生成済み high だけなので小さく (実測 28 事象 / 132 記事)、Python で採点できる。
+
+    静かな日に空にならないよう、足りなければ窓を 7 日へ広げる。
     """
+    # 採点は本文を読むので毎リクエストは走らせない (候補は 5 分あれば十分に新しい)
+    cache_key = str(common.get("member_categories")) + "|" + str(common.get("member_country"))
+    cached = _featured_cache.get(cache_key)
+    if cached is not None and time.monotonic() - cached[0] < _FEATURED_TTL_SECONDS:
+        return cached[1]
+
     now = datetime.now(UTC)
-    latest: list[Any] = []
+    scored: list[tuple[int, Any]] = []
     for hours in (FEATURED_WINDOW_HOURS, FEATURED_FALLBACK_HOURS):
-        latest = repo.list_event_items(
+        pool = repo.list_event_items(
             **common,
-            min_independent_sources=2,
             has_news=True,
             since=now - timedelta(hours=hours),
-            order_by="corroboration",
-            limit=FEATURED_COUNT,
+            limit=_FEATURED_POOL_MAX,
         )
-        if len(latest) >= FEATURED_COUNT:
+        scored = _score_pool(repo, pool)
+        if len(scored) >= FEATURED_COUNT:
             break
-    return latest
+    # 同点は新しい順 (順位に媒体数を混ぜない — 混ぜれば結局は量が決める)
+    scored.sort(key=lambda pair: (pair[0], pair[1].state.last_reported_at), reverse=True)
+    picked = [record for _, record in scored[:FEATURED_COUNT]]
+    _featured_cache[cache_key] = (time.monotonic(), picked)
+    return picked
+
+
+def _score_pool(repo: RunHistoryRepository, pool: list[Any]) -> list[tuple[int, Any]]:
+    """候補を行動要度で採点する (まとめ記事は落とす)。"""
+    from src.eventnews.urgency import is_excluded_category, urgency_score
+    from src.tools.nvd_client import get_cvss
+
+    ids = [a for r in pool for a in r.state.member_ids]
+    if not ids:
+        return []
+    articles = repo.get_articles_by_ids(ids)
+    bodies = repo.get_article_bodies(ids)
+    out: list[tuple[int, Any]] = []
+    for record in pool:
+        members = [articles[a] for a in record.state.member_ids if a in articles]
+        if is_excluded_category(members):
+            continue
+        text = " ".join(
+            (bodies.get(a, "") or "") + " " + ((articles[a].title if a in articles else "") or "")
+            for a in record.state.member_ids
+        )
+        per_article = repo.count_entities_for_articles(list(record.state.member_ids))
+        cves = list((per_article.get("cve") or {}).keys())
+        scores = [hit[0] for c in cves if (hit := get_cvss(c))]
+        out.append(
+            (
+                urgency_score(
+                    text=text,
+                    max_cvss=max(scores) if scores else 0.0,
+                    japan_related=any(
+                        (getattr(m, "victim_country_iso", "") or "") == "JP"
+                        or (getattr(m, "posted_channel", "") or "") == "japan_watch"
+                        for m in members
+                    ),
+                    ransomware=any(getattr(m, "is_ransomware", 0) for m in members),
+                    pir_count=len(per_article.get("pir") or {}),
+                ),
+                record,
+            )
+        )
+    return out
 
 
 def _public_citation(citation: dict[str, Any]) -> dict[str, Any]:
