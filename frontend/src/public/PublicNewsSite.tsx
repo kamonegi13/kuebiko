@@ -336,19 +336,35 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
       title={categoryLabel(categoryKey)}
       href={`${HOME_PATH}/c/${encodeURIComponent(categoryKey)}`}
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         <NewsCard item={head} opened={head.id === openedId} />
         {rest.length > 0 && (
-          <ul className="space-y-2.5 pt-3 border-t border-border-subtle">
+          /* ⚠ 先頭カードの **要約と同じ色・同じ字送り**にしない。13px の text-fg-muted
+             だと本文の続きに見えて、見出しの一覧だと分からなくなる (利用者指摘)。
+             行頭記号 + 通常色 + 中太 で「別の記事の見出し」だと分かる形にする。 */
+          <ul className="divide-y divide-border-subtle border-t border-border-subtle">
             {rest.map((it) => (
               <li key={it.id}>
                 <button
                   onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
-                  className={`w-full text-left text-[13px] leading-[1.6] hover:text-accent transition-colors ${
-                    it.id === openedId ? "text-fg-subtle" : "text-fg-muted"
-                  }`}
+                  className="group w-full flex items-baseline gap-2 py-2.5 text-left transition-colors"
                 >
-                  {it.headline}
+                  <span className="text-[9px] text-fg-subtle group-hover:text-accent shrink-0">
+                    ●
+                  </span>
+                  <span
+                    className={`flex-1 text-[13.5px] font-medium leading-[1.6] group-hover:text-accent ${
+                      it.id === openedId ? "text-fg-subtle" : "text-fg"
+                    }`}
+                  >
+                    {it.headline}
+                  </span>
+                  <time
+                    dateTime={it.published_at}
+                    className="shrink-0 text-[10px] text-fg-subtle tnum"
+                  >
+                    {formatJstDate(it.published_at)}
+                  </time>
                 </button>
               </li>
             ))}

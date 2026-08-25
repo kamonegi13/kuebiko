@@ -59,7 +59,10 @@ beforeEach(() => {
               discrepancies: [], unknowns: [], first_reported_at: ITEM.published_at,
               note: "kuebiko が生成した要約であり、原記事そのものではない" }
           : {
-              items: [ITEM],
+              // カテゴリ節は「先頭 1 本 + 見出しのみ 3 本」なので複数返す
+              items: url.includes("category=")
+                ? [ITEM, ...[1, 2, 3].map((n) => ({ ...ITEM, id: `ev-${n}`, headline: `見出し${n}` }))]
+                : [ITEM],
               note: "kuebiko が生成した要約であり、原記事そのものではない",
               categories: ["vuln", "incident_breach", "threat", "geopolitical"],
             },
@@ -257,6 +260,22 @@ describe("PC のレイアウト", () => {
     const links = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href"));
     expect(links).toContain("/app/news/c/vuln");
     expect(links).toContain("/app/news/latest");
+  });
+
+  it("カテゴリ節の見出し一覧を本文と区別できる形にする", async () => {
+    // 同じ ITEM が head にも rest にも入る stub なので、見出しリスト側の要素で確認する
+    renderSite();
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+
+    const bullets = Array.from(document.querySelectorAll("li button")).filter((b) =>
+      b.textContent?.includes("●"),
+    );
+    expect(bullets.length).toBeGreaterThan(0);
+    const headline = bullets[0].querySelector("span:nth-of-type(2)");
+    // ⚠ 先頭カードの要約と同じ text-fg-muted にしない (本文の続きに見える)
+    expect(headline?.className).toContain("text-fg");
+    expect(headline?.className).not.toContain("text-fg-muted");
+    expect(headline?.className).toContain("font-medium");
   });
 
   it("被害国レールは出さない (PC で違和感があった)", async () => {
