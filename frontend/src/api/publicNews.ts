@@ -43,7 +43,10 @@ export interface PublicNewsDetail {
   generated: boolean;
   bluf: string;
   facts: PublicNewsFact[];
-  discrepancies: string[];
+  /** ⚠ facts と同じ形 (オブジェクト)。string[] ではない — 2026-08-25 に取り違えて
+   *  公開サイトを真っ黒にした (React は object を子に渡すと throw する)。 */
+  discrepancies: PublicNewsFact[];
+  /** こちらは素の文字列 (backend の `list[str]`)。 */
   unknowns: string[];
   published_at: string;
   first_reported_at: string;

@@ -20,6 +20,8 @@ import {
 } from "../api/publicNews";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { PublicErrorBoundary } from "./PublicErrorBoundary";
+import { Drawer } from "../components/Drawer";
 
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
@@ -65,17 +67,47 @@ export function PublicNewsSite() {
     }
   }, [route]);
 
+  // 記事を開いている間は背後の一覧をスクロールさせない
+  useEffect(() => {
+    if (route.kind !== "detail") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [route]);
+
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">
       <SiteHeader route={route} />
       <main className="flex-1 w-full max-w-[46rem] mx-auto px-5 py-8">
-        {route.kind === "detail" ? (
-          <NewsDetail id={route.id} />
-        ) : (
-          <NewsList category={route.kind === "category" ? route.key : undefined} />
-        )}
+        {/* 描画で落ちてもヘッダ・カテゴリ・フッタは残す (他の記事へ移れるように) */}
+        <PublicErrorBoundary onReset={() => navigate(HOME_PATH)}>
+          <NewsList
+            category={route.kind === "category" ? route.key : undefined}
+            /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
+            openedId={route.kind === "detail" ? route.id : undefined}
+          />
+        </PublicErrorBoundary>
       </main>
       <SiteFooter />
+
+      {/* 記事はドロワーで読む。URL は /app/news/{id} のまま維持するので、
+          共有もブラウザバックもそのまま効く (2026-08-25 利用者提案)。 */}
+      <Drawer
+        isOpen={route.kind === "detail"}
+        onClose={() => window.history.back()}
+        title="記事"
+        widthClass="md:w-[44rem]"
+        mobileGutter
+        swipeToClose
+      >
+        {route.kind === "detail" && (
+          <PublicErrorBoundary onReset={() => window.history.back()}>
+            <NewsDetail id={route.id} />
+          </PublicErrorBoundary>
+        )}
+      </Drawer>
     </div>
   );
 }
@@ -167,7 +199,7 @@ function CategoryBadge({ category }: { category: string }) {
   return <span className="text-[11px] font-semibold tracking-wide text-accent">{label}</span>;
 }
 
-function NewsList({ category }: { category?: string }) {
+function NewsList({ category, openedId }: { category?: string; openedId?: string }) {
   const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [search, setSearch] = useState(term);
   const [page, setPage] = useState(0);
@@ -264,7 +296,7 @@ function NewsList({ category }: { category?: string }) {
 
         <ul className="space-y-6">
           {items.map((it) => (
-            <NewsCard key={it.id} item={it} />
+            <NewsCard key={it.id} item={it} opened={it.id === openedId} />
           ))}
         </ul>
 
@@ -366,10 +398,10 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
   );
 }
 
-function NewsCard({ item }: { item: PublicNewsItem }) {
+function NewsCard({ item, opened }: { item: PublicNewsItem; opened?: boolean }) {
   return (
     <li>
-      <article>
+      <article className={opened ? "opacity-60" : undefined}>
         <button
           onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
           className="block w-full text-left group space-y-1.5"
@@ -431,8 +463,12 @@ function NewsDetail({ id }: { id: string }) {
     return (
       <div className="space-y-3">
         <p className="text-sm text-fg-muted">記事が見つかりませんでした。</p>
-        <button onClick={() => navigate(HOME_PATH)} className="text-sm text-accent hover:underline">
-          ← 一覧へ戻る
+        <button
+          onClick={() => window.history.back()}
+          className="inline-flex items-center gap-1 text-sm text-accent hover:underline"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          閉じる
         </button>
       </div>
     );
@@ -440,14 +476,6 @@ function NewsDetail({ id }: { id: string }) {
 
   return (
     <article className="space-y-6">
-      <button
-        onClick={() => navigate(HOME_PATH)}
-        className="inline-flex items-center gap-1 text-[12px] text-fg-subtle hover:text-accent transition-colors"
-      >
-        <ChevronLeft className="w-3.5 h-3.5" />
-        一覧へ戻る
-      </button>
-
       <header className="space-y-2.5">
         <CategoryBadge category={data.category} />
         <h1 className="text-[24px] font-bold leading-[1.45] text-fg">{data.headline}</h1>
@@ -481,7 +509,12 @@ function NewsDetail({ id }: { id: string }) {
           <h2 className="text-[13px] font-semibold text-warning">媒体間で食い違う点</h2>
           <ul className="space-y-1.5 text-[14px] leading-[1.9] text-fg-muted">
             {data.discrepancies.map((d, i) => (
-              <li key={i}>{d}</li>
+              <li key={i}>
+                {d.text}
+                {d.source_index > 0 && (
+                  <sup className="ml-0.5 text-accent tnum">[{d.source_index}]</sup>
+                )}
+              </li>
             ))}
           </ul>
         </section>

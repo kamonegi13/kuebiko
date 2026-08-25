@@ -150,3 +150,31 @@ describe("カテゴリ", () => {
     expect(screen.getByText("注目")).toBeTruthy();
   });
 });
+
+describe("ドロワー表示", () => {
+  it("記事を開いても一覧は裏に残る (閉じたときスクロール位置を失わない)", async () => {
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    renderSite();
+    // 一覧の見出し (新着) と記事の中身が同時に存在する
+    await screen.findByText(/出典 \(2\)/);
+    expect(screen.getAllByText("新着").length).toBeGreaterThan(0);
+  });
+
+  it("閉じる操作は履歴を戻す (URL と表示を一致させたまま)", async () => {
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    renderSite();
+    await screen.findByText(/出典 \(2\)/);
+    const close = document.querySelector('[aria-label="閉じる"], button[title="閉じる"]');
+    if (close) (close as HTMLElement).click();
+    expect(back).toHaveBeenCalled();
+    back.mockRestore();
+  });
+
+  it("記事を開いている間は背後をスクロールさせない", async () => {
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    renderSite();
+    await screen.findByText(/出典 \(2\)/);
+    expect(document.body.style.overflow).toBe("hidden");
+  });
+});
