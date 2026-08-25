@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 
 from src.config_loader import load_app_config
-from src.eventnews.grouping import build_join_entities
+from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.hourly import hydrate_open_items, run_hourly
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
 from src.logging_config import get_logger
@@ -77,25 +77,36 @@ WHERE entity_type IN ('cve','victim_org','actor','malware_family')
 
 # 頻出ガード (ENTITY_FREQ_CAP) の分母。窓内コーパス全体で数えないと、
 # 手元の数十件では cap に届かず頻出語が結合信号として通ってしまう。
+# 集計は SQL でせず Python 側で行う。キーの作り方 (victim_org の正規化) を
+# 参照側と共有する必要があり、SQL では同じ正規化を書けないため
+# (2026-08-25: SQL の LOWER(TRIM()) と normalize_for_match がずれて cap が不発だった)。
+# 窓内の対象行は実測 8,422 行なので Python 集計で問題ない。
 _SQL_ENTITY_COUNTS = f"""
-SELECT e.entity_type, LOWER(TRIM(e.value)), COUNT(DISTINCT e.article_id)
+SELECT e.entity_type, LOWER(TRIM(e.value)), e.article_id
 FROM article_entities e
 WHERE e.entity_type IN ('cve','victim_org','actor','malware_family')
   AND LENGTH(TRIM(e.value)) >= 4
   AND e.article_id IN (
     SELECT a.article_id FROM {DEDUP_ARTICLES} a WHERE a.created_at >= ?
   )
-GROUP BY 1, 2
 """
 
 
 def _entity_counts(
     repo: RunHistoryRepository, window_start: datetime
 ) -> dict[tuple[str, str], int]:
-    """窓内コーパスでの (entity_type, value) 出現記事数 = 頻出ガードの分母。"""
+    """窓内コーパスでの (entity_type, value) 出現記事数 = 頻出ガードの分母。
+
+    キーは ``join_entity_key`` で作る — 参照側 (``build_join_entities``) と
+    同じ関数を通さないと lookup が当たらず、ガードが無言で不発になる。
+    """
     with repo._connect() as conn:  # noqa: SLF001
         rows = conn.execute(_SQL_ENTITY_COUNTS, (window_start.isoformat(),)).fetchall()
-    return {(str(r[0]), str(r[1])): int(r[2]) for r in rows}
+    seen: dict[tuple[str, str], set[str]] = {}
+    for r in rows:
+        key = join_entity_key(str(r[0]), str(r[1]))
+        seen.setdefault(key, set()).add(str(r[2]))
+    return {key: len(article_ids) for key, article_ids in seen.items()}
 
 
 def _join_entities_for(

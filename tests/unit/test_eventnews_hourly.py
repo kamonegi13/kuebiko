@@ -215,7 +215,9 @@ def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
     手元の数十件だけで数えると cap (12 記事) に届かず、頻出語が結合信号として
     通ってしまい、無関係な記事同士が繋がる。
     """
-    # Arrange — 同じ CVE を 15 記事が持つ (cap 超え)
+    # Arrange — 同じ被害組織名を 15 記事が持つ (cap 超え)。
+    # 型は cap 対象のものを使う (CVE は 2026-08-25 から cap 免除)。
+    from src.assessment.evidence_verify import normalize_for_match
     from src.eventnews.models import ENTITY_FREQ_CAP
     from src.storage.run_history import RunHistoryRepository
     from src.ui.services.eventnews_hourly_job import _entity_counts, _join_entities_for
@@ -223,6 +225,7 @@ def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
     repo = RunHistoryRepository(db_path=tmp_path / "cap.db")  # type: ignore[operator]
     now = datetime.now(UTC).isoformat()
     total = ENTITY_FREQ_CAP + 3
+    normalized = normalize_for_match("Common Corp.")
     with repo._connect() as conn:  # noqa: SLF001
         _seed_run(conn)
         for i in range(total):
@@ -230,7 +233,7 @@ def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
             conn.execute(
                 "INSERT INTO article_entities (article_id, entity_type, value, created_at)"
                 " VALUES (?,?,?,?)",
-                (f"a-{i}", "cve", "CVE-2026-9999", now),
+                (f"a-{i}", "victim_org", "Common Corp.", now),
             )
 
     # Act — 2 記事だけを対象に引いても、分母は窓全体で数える
@@ -238,7 +241,7 @@ def test_frequency_cap_denominator_covers_the_window(tmp_path: object) -> None:
     ents = _join_entities_for(repo, ["a-0", "a-1"], counts)
 
     # Assert
-    assert counts[("cve", "cve-2026-9999")] == total
+    assert counts[("victim_org", normalized)] == total
     assert ents == {}
 
 

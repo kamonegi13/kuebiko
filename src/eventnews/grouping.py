@@ -18,6 +18,7 @@ from src.eventnews.models import (
     DORMANT_REJOIN_COS,
     DORMANT_REJOIN_SHARED,
     ENTITY_FREQ_CAP,
+    FREQ_CAP_EXEMPT_TYPES,
     JOIN_ENTITY_TYPES,
     MEMBER_CAP,
     WINDOW_HOURS,
@@ -30,6 +31,20 @@ from src.eventnews.models import (
 _MIN_SHARED_FOR_EDGE = 1
 
 _EdgeOutcome = tuple[float, tuple[tuple[str, str], ...]] | str | None
+
+
+def join_entity_key(entity_type: str, value: str) -> tuple[str, str]:
+    """結合信号 entity のキー。**分母 (頻出ガードの counts) と参照側で必ず共有する**。
+
+    victim_org だけ自由記述なので ``normalize_for_match`` で表記揺れを畳む。
+    2026-08-25 まで counts 側は SQL の ``LOWER(TRIM(value))`` でキーを作っていたため
+    victim_org のキーが**永久に一致せず、cap が一度も効いていなかった**
+    (実測: shell / nasa 等 3 値が cap 超のまま結合信号として通っていた)。
+    キーの作り方が 2 箇所にあると必ずずれるので、ここを唯一の口にする。
+    """
+    if entity_type == "victim_org":
+        return (entity_type, normalize_for_match(value))
+    return (entity_type, value)
 
 
 def build_join_entities(
@@ -48,9 +63,8 @@ def build_join_entities(
     for article_id, entity_type, value in raw:
         if entity_type not in JOIN_ENTITY_TYPES:
             continue
-        normalized_value = normalize_for_match(value) if entity_type == "victim_org" else value
-        key = (entity_type, normalized_value)
-        if counts.get(key, 0) > ENTITY_FREQ_CAP:
+        key = join_entity_key(entity_type, value)
+        if entity_type not in FREQ_CAP_EXEMPT_TYPES and counts.get(key, 0) > ENTITY_FREQ_CAP:
             continue
         grouped.setdefault(article_id, set()).add(key)
 

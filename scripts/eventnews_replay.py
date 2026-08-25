@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import collections
 import json
 import os
 import sys
@@ -27,7 +26,7 @@ import psycopg
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config_loader import load_app_config
-from src.eventnews.grouping import build_join_entities
+from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.models import JOIN_ENTITY_TYPES, MemberArticle
 from src.eventnews.runner import ProcessStats, process_candidates
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
@@ -69,9 +68,12 @@ def _fetch(days: int) -> tuple[list[MemberArticle], dict[str, np.ndarray]]:
         ents = conn.execute(_SQL_ENTITIES, (list(JOIN_ENTITY_TYPES),)).fetchall()
 
     raw_entities = [(aid, et, v) for aid, et, v in ents]
-    counts: collections.Counter[tuple[str, str]] = collections.Counter(
-        (et, v) for _, et, v in raw_entities
-    )
+    # 分母のキーは **本番と同じ `join_entity_key`** で作り、**記事単位の distinct** で
+    # 数える。ここを独自に組むと評価と本番で挙動が変わる (2026-08-24 の教訓)。
+    by_key: dict[tuple[str, str], set[str]] = {}
+    for aid, et, v in raw_entities:
+        by_key.setdefault(join_entity_key(et, v), set()).add(aid)
+    counts: dict[tuple[str, str], int] = {k: len(v) for k, v in by_key.items()}
     join_ents = build_join_entities(raw_entities, counts)
 
     members: list[MemberArticle] = []

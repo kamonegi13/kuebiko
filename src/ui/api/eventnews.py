@@ -59,6 +59,24 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
     }
 
 
+_PREVIEW_CHARS = 160
+
+
+def _preview_text(art: Any) -> str:
+    """単独報の冒頭。要約が無ければ **本文**から作る。
+
+    事象は被覆のため ``skipped_duplicate`` の記事も構成記事に含むが、重複判定された
+    記事は要約 LLM を通らないため ``summary`` が空になる。summary だけを見ていると
+    一覧に**本文が一切出ないカード**が並ぶ (2026-08-25 に利用者が発見)。本文は
+    取得済みなので、そこから冒頭を出す。
+    """
+    summary = (getattr(art, "summary", "") or "").strip()
+    if summary:
+        return summary[:_PREVIEW_CHARS]
+    body = (getattr(art, "body", "") or "").strip()
+    return " ".join(body.split())[:_PREVIEW_CHARS]
+
+
 def _headlines_and_previews(
     repo: RunHistoryRepository, records: Sequence[Any]
 ) -> dict[str, tuple[str, str]]:
@@ -81,7 +99,7 @@ def _headlines_and_previews(
         for aid in r.state.member_ids:
             art = articles.get(aid)
             if art is not None:
-                out[r.state.item_id] = (art.title, (art.summary or "")[:160])
+                out[r.state.item_id] = (art.title, _preview_text(art))
                 break
         else:
             out[r.state.item_id] = ("(記事の取得に失敗)", "")

@@ -6,6 +6,8 @@ Tier0 (匿名可) として出すため、**何を返し何を返さないか**�
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from src.ui.api.eventnews import GENERATED_NOTE
 from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST
 
@@ -108,3 +110,47 @@ class TestListPerformance:
         src = inspect.getsource(_version_payload)
         assert "versions[0]" in src
         assert "versions[-1]" not in src
+
+
+class TestPreviewFallback:
+    """一覧の冒頭テキストの決め方。
+
+    2026-08-25: 一覧に **本文が一切出ないカード** が並んでいた。原因は単独報の
+    preview を ``summary`` だけから作っていたこと。事象は被覆のため
+    ``skipped_duplicate`` の記事も構成記事に含むが、重複判定された記事は
+    **要約 LLM を通らない**ので summary が空になる。実測では単独報 high 433 件の
+    うち 95 件が skipped_duplicate で、うち 92 件が要約空・**本文は全件あり**
+    (678〜3,610 字)。
+    """
+
+    @staticmethod
+    def _article(summary: str, body: str) -> SimpleNamespace:
+        return SimpleNamespace(summary=summary, body=body)
+
+    def test_uses_summary_when_present(self) -> None:
+        from src.ui.api.eventnews import _preview_text
+
+        assert _preview_text(self._article("要約です。", "本文です。")) == "要約です。"
+
+    def test_falls_back_to_body_when_summary_is_empty(self) -> None:
+        from src.ui.api.eventnews import _preview_text
+
+        assert _preview_text(self._article("", "本文の冒頭です。")) == "本文の冒頭です。"
+        assert _preview_text(self._article("   ", "本文の冒頭です。")) == "本文の冒頭です。"
+
+    def test_collapses_whitespace_in_body(self) -> None:
+        """本文は生テキストなので改行・連続空白が入る。一覧では 1 行に畳む。"""
+        from src.ui.api.eventnews import _preview_text
+
+        assert _preview_text(self._article("", "行1\n\n  行2\t行3")) == "行1 行2 行3"
+
+    def test_returns_empty_when_neither_is_available(self) -> None:
+        from src.ui.api.eventnews import _preview_text
+
+        assert _preview_text(self._article("", "")) == ""
+        assert _preview_text(SimpleNamespace()) == ""
+
+    def test_truncates_to_the_preview_length(self) -> None:
+        from src.ui.api.eventnews import _PREVIEW_CHARS, _preview_text
+
+        assert len(_preview_text(self._article("", "あ" * 500))) == _PREVIEW_CHARS

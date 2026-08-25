@@ -19,6 +19,13 @@ COS_THRESHOLD = 0.70
 JOIN_ENTITY_TYPES: tuple[str, ...] = ("cve", "victim_org", "actor", "malware_family")
 # entity 値の頻出ガード: 窓内でこれを超える記事に出る値は結合信号に使わない
 ENTITY_FREQ_CAP = 12
+# 頻出ガードを **適用しない** 型。CVE ID は脆弱性 1 件を指す大域一意な識別子で、
+# 何媒体が報じても指す対象は変わらない (= 頻度で情報量が薄まらない)。むしろ
+# 「よく出る CVE」= 大きな事案であり、まさに束ねたい対象。cap を掛けると
+# **大きく報じられた事案ほど群化に失敗する**という逆転が起きる。
+# victim_org / actor / malware_family は自由記述または再利用される名前なので
+# cap を維持する (別事案どうしを繋いでしまうため)。
+FREQ_CAP_EXEMPT_TYPES: frozenset[str] = frozenset({"cve"})
 # 頻出ガードの分母を数える窓。**参加窓 (WINDOW_HOURS) とは独立**に持つ — 二つを
 # 束ねると「参加窓を広げると分母も広がって cap に掛かる値が増え、広げた効果が
 # 相殺される」という無関係な結合が生まれる。アイテムが成長しうる最長期間

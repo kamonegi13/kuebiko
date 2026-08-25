@@ -315,16 +315,36 @@ def test_dormant_item_accepts_strict_match() -> None:
 
 
 def test_build_join_entities_excludes_over_cap_values() -> None:
-    common_key = ("cve", "cve-2024-common")
-    rare_key = ("cve", "cve-2024-rare")
-    raw = [(f"a{i}", "cve", "cve-2024-common") for i in range(ENTITY_FREQ_CAP + 1)]
-    raw.append(("a0", "cve", "cve-2024-rare"))
+    """自由記述・再利用される名前 (victim_org / actor / malware_family) は cap で落とす。"""
+    common = normalize_for_match("Common Corp.")
+    rare = normalize_for_match("Rare Corp.")
+    common_key = ("victim_org", common)
+    rare_key = ("victim_org", rare)
+    raw = [(f"a{i}", "victim_org", "Common Corp.") for i in range(ENTITY_FREQ_CAP + 1)]
+    raw.append(("a0", "victim_org", "Rare Corp."))
     counts = {common_key: ENTITY_FREQ_CAP + 1, rare_key: 1}
 
     result = build_join_entities(raw, counts)
 
     assert common_key not in result["a0"]
     assert rare_key in result["a0"]
+
+
+def test_build_join_entities_keeps_frequent_cve() -> None:
+    """CVE は頻出でも結合信号に残す (大域一意な識別子なので頻度で薄まらない)。
+
+    2026-08-25: cap を CVE にも掛けていたため、**大きく報じられた事案ほど群化に
+    失敗する**逆転が起きていた。実測で 16 個の CVE が cap を超え、162 事象
+    (うち 140 が単独事象) に散っていた。CVE-2026-68820 は 26 事象に分裂。
+    共起だけで繋がるわけではなく cos >= COS_THRESHOLD が別途要る。
+    """
+    key = ("cve", "cve-2026-73570")
+    raw = [(f"a{i}", "cve", "cve-2026-73570") for i in range(ENTITY_FREQ_CAP + 5)]
+    counts = {key: ENTITY_FREQ_CAP + 5}
+
+    result = build_join_entities(raw, counts)
+
+    assert key in result["a0"]
 
 
 def test_build_join_entities_normalizes_victim_org() -> None:
