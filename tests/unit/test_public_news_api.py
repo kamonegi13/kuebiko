@@ -161,9 +161,18 @@ class TestCategoryPages:
         assert public_news._categories_for("geopolitical") == ["geopolitical"]
 
     def test_unknown_category_is_rejected_not_ignored(self) -> None:
-        """未知の値で「絞らない」にすると、綴り違いが全件表示になって気付けない。"""
+        """未知の値で「絞らない」にすると、綴り違いが全件表示になって気付けない。
+
+        2026-08-25: `_categories_for` が None を返すのに endpoint 側がそれを
+        「絞らない」として扱い、`?category=policy` が全件を返していた。
+        **述語のテストだけでは足りない — endpoint が None をどう扱うかまで固定する**。
+        """
         assert public_news._categories_for("policy") is None
         assert public_news._categories_for("../../etc") is None
+
+        src = inspect.getsource(public_news.list_public_news)
+        assert "if category and categories is None:" in src
+        assert "404" in src.split("if category and categories is None:")[1][:120]
 
     def test_filter_is_applied_before_the_limit(self) -> None:
         src = inspect.getsource(public_news.list_public_news)

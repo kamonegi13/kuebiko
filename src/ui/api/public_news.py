@@ -122,6 +122,12 @@ def list_public_news(
     ``category`` は ``PUBLIC_CATEGORIES`` のいずれか。``featured`` は「注目」枠で、
     複数媒体が報じ かつ 統合本文を持つ事象に絞る。どちらも **LIMIT より前**に効く。
     """
+    # 未知のカテゴリで **絞らない** にすると綴り違いが全件表示になり気付けない。
+    # 明示的に弾く (2026-08-25: `?category=policy` が全件を返していた)。
+    categories = _categories_for(category) if category else None
+    if category and categories is None:
+        raise HTTPException(status_code=404, detail="unknown category")
+
     repo = _repo()
     term = (search or "").strip()
     search_item_ids = repo.search_event_versions(term) if term else None
@@ -131,7 +137,7 @@ def list_public_news(
         exclude_merged=True,
         # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
         exclude_duplicate_only=True,
-        member_categories=_categories_for(category) if category else None,
+        member_categories=categories,
         min_independent_sources=2 if featured else 0,
         has_news=True if featured else None,
         search_item_ids=search_item_ids,
