@@ -262,6 +262,27 @@ describe("PC のレイアウト", () => {
     expect(links).toContain("/app/news/latest");
   });
 
+  it("節の見出しを記事見出しと区別できる形にする", async () => {
+    renderSite();
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+    // 節の見出しはアクセントバーを伴い、記事見出しより太い
+    const headings = Array.from(document.querySelectorAll("h2"));
+    const section = headings.find((h) => h.textContent === "新着");
+    expect(section?.className).toContain("font-bold");
+    expect(section?.previousElementSibling?.className).toContain("bg-accent");
+  });
+
+  it("カテゴリ節の中ではカードのカテゴリバッジを出さない (節見出しと重複)", async () => {
+    renderSite();
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+    const headings = Array.from(document.querySelectorAll("h2")).map((h) => h.textContent);
+    // 見出しに vuln があるのに、その節のカード内にバッジは出ない
+    expect(headings).toContain("vuln");
+    const badges = screen.getAllByText("vuln");
+    // h2 の 1 つと、新着/注目カードのバッジのみ (カテゴリ節のカードには出ない)
+    expect(badges.length).toBeLessThan(headings.length + 4);
+  });
+
   it("カテゴリ節の見出し一覧を本文と区別できる形にする", async () => {
     // 同じ ITEM が head にも rest にも入る stub なので、見出しリスト側の要素で確認する
     renderSite();

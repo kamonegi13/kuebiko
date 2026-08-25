@@ -253,14 +253,16 @@ function Portal({ openedId }: { openedId?: string }) {
   const categories = latest?.categories ?? [];
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       {featuredItems.length > 0 && (
         <section className="space-y-5">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
+          <div className="flex items-center gap-2">
+            <span className="w-[3px] h-[15px] rounded-full bg-accent shrink-0" aria-hidden />
+            <h2 className="text-[15px] font-bold tracking-wide text-fg">注目</h2>
             <span className="text-[11px] text-fg-subtle">
               直近 72 時間で多くの媒体が報じた事案
             </span>
+            <span className="flex-1 border-b border-border-subtle" />
           </div>
           <LeadStory item={featuredItems[0]} />
           {featuredItems.length > 1 && (
@@ -282,7 +284,7 @@ function Portal({ openedId }: { openedId?: string }) {
       </PortalSection>
 
       {/* カテゴリごとの入口。PC は 2 列に並べて幅を使う */}
-      <div className="grid gap-x-10 gap-y-10 lg:grid-cols-2">
+      <div className="grid gap-x-10 gap-y-12 lg:grid-cols-2">
         {categories.map((key) => (
           <CategoryTeaser key={key} categoryKey={key} openedId={openedId} />
         ))}
@@ -302,16 +304,21 @@ function PortalSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4 pt-6 border-t border-border-subtle">
-      <div className="flex items-baseline gap-2">
-        <h2 className="text-[15px] font-bold text-fg">{title}</h2>
+    <section className="space-y-4">
+      {/* ⚠ 節の見出しを記事見出しと同じ色・同じ太さにしない。全部 text-fg だと
+          どこで節が切り替わったのか分からなくなる (利用者指摘)。
+          左のアクセントバー + 太字 + 上の余白で「ここから別の区画」を示す。 */}
+      <div className="flex items-center gap-2 pt-2">
+        <span className="w-[3px] h-[15px] rounded-full bg-accent shrink-0" aria-hidden />
+        <h2 className="text-[15px] font-bold tracking-wide text-fg">{title}</h2>
+        <span className="flex-1 border-b border-border-subtle" />
         <a
           href={href}
           onClick={(e) => {
             e.preventDefault();
             navigate(href);
           }}
-          className="ml-auto text-[11px] text-fg-subtle hover:text-accent underline underline-offset-2"
+          className="shrink-0 text-[11px] text-fg-subtle hover:text-accent"
         >
           一覧へ →
         </a>
@@ -337,7 +344,8 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
       href={`${HOME_PATH}/c/${encodeURIComponent(categoryKey)}`}
     >
       <div className="space-y-5">
-        <NewsCard item={head} opened={head.id === openedId} />
+        {/* 節の見出しが既にカテゴリを示しているのでバッジは出さない (重複) */}
+        <NewsCard item={head} opened={head.id === openedId} hideCategory />
         {rest.length > 0 && (
           /* ⚠ 先頭カードの **要約と同じ色・同じ字送り**にしない。13px の text-fg-muted
              だと本文の続きに見えて、見出しの一覧だと分からなくなる (利用者指摘)。
@@ -566,7 +574,15 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
   );
 }
 
-function NewsCard({ item, opened }: { item: PublicNewsItem; opened?: boolean }) {
+function NewsCard({
+  item,
+  opened,
+  hideCategory,
+}: {
+  item: PublicNewsItem;
+  opened?: boolean;
+  hideCategory?: boolean;
+}) {
   return (
     <li>
       <article className={opened ? "opacity-60" : undefined}>
@@ -574,7 +590,7 @@ function NewsCard({ item, opened }: { item: PublicNewsItem; opened?: boolean }) 
           onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
           className="block w-full text-left group space-y-1.5"
         >
-          <CategoryBadge category={item.category} />
+          {!hideCategory && <CategoryBadge category={item.category} />}
           <h3 className="text-[16px] font-semibold leading-[1.5] text-fg group-hover:text-accent transition-colors">
             {item.headline}
           </h3>
