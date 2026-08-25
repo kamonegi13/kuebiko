@@ -331,13 +331,16 @@ async def generate_pending(
     群化 (``process_candidates(generate=False)``) と生成をこの関数で分ける。
     """
     llm = llm_factory()
-    now = datetime.now(UTC)
     targets = list(pending)[: limit if limit is not None else len(pending)]
     generated = skipped = failed = 0
     for i, (snapshot, members) in enumerate(targets, start=1):
         item = _LiveItem(snapshot=snapshot, members=list(members))
         if on_progress:
             on_progress(i, len(targets), snapshot.item_id)
+        # ⚠ **1 件ごとに時刻を取る**。ループの外で 1 回だけ取ると、2.5 時間かけた
+        # 253 件が全部同じ generated_at になる (2026-08-25 の遡及で実際にそうなった)。
+        # 「いつ書いたか」を全件同じ値にすると、生成の進み方が事後に追えない。
+        now = datetime.now(UTC)
         gate, _ = await _generate_version(repo, item, llm, now, "[]")
         if gate is None:
             textual, _ = gen.select_members(item.members)

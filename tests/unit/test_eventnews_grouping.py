@@ -364,3 +364,57 @@ def test_build_join_entities_excludes_non_join_types() -> None:
     result = build_join_entities(raw, counts)
 
     assert result.get("a1", frozenset()) == frozenset()
+
+
+# ---------- CVE を主題として共有するペアの閾値 (required_cos) ----------
+
+
+def _cves(*ids: str) -> frozenset[tuple[str, str]]:
+    return frozenset(("cve", i) for i in ids)
+
+
+def test_focal_cve_pair_uses_the_relaxed_threshold() -> None:
+    """同じ CVE を主題にする記事どうしは cos を緩める。
+
+    日本語の短い注意喚起と英語記事では埋込が離れる (実測 CVE-2026-73570 のペアで
+    cos=0.512)。頻出ガードを直して CVE が結合信号に戻っても、AND のもう一方
+    (cos>=0.70) が通らず分裂が残っていた。
+    """
+    from src.eventnews.grouping import required_cos
+    from src.eventnews.models import FOCAL_CVE_COS
+
+    a = _cves("cve-2026-73570")
+    b = _cves("cve-2026-73570", "cve-2026-1")
+    assert required_cos(a, b, sorted(a & b)) == FOCAL_CVE_COS
+
+
+def test_bulk_advisory_keeps_the_strict_threshold() -> None:
+    """一括アドバイザリ側は緩めない。
+
+    ANSSI の 1 記事は最大 278 個の CVE を列挙する。列挙を主題扱いすると、
+    たまたま同じ CVE に触れただけの無関係な事案が接着する。
+    """
+    from src.eventnews.grouping import required_cos
+    from src.eventnews.models import COS_THRESHOLD, FOCAL_CVE_MAX
+
+    focal = _cves("cve-2026-73570")
+    bulk = _cves(*[f"cve-2026-{i}" for i in range(FOCAL_CVE_MAX + 2)], "cve-2026-73570")
+    assert required_cos(focal, bulk, sorted(focal & bulk)) == COS_THRESHOLD
+    assert required_cos(bulk, focal, sorted(focal & bulk)) == COS_THRESHOLD
+
+
+def test_non_cve_sharing_keeps_the_strict_threshold() -> None:
+    """緩めるのは CVE だけ。actor/malware/victim_org は再利用される名前なので厳しいまま。"""
+    from src.eventnews.grouping import required_cos
+    from src.eventnews.models import COS_THRESHOLD
+
+    a = frozenset({("actor", "apt28")})
+    assert required_cos(a, a, sorted(a)) == COS_THRESHOLD
+
+
+def test_relaxed_threshold_still_requires_a_shared_entity() -> None:
+    """cos を緩めても「共有 entity >= 1」は外さない (2 信号のうち片方は必ず要る)。"""
+    from src.eventnews.grouping import required_cos
+    from src.eventnews.models import COS_THRESHOLD
+
+    assert required_cos(_cves("cve-a"), _cves("cve-b"), []) == COS_THRESHOLD

@@ -18,6 +18,8 @@ from src.eventnews.models import (
     DORMANT_REJOIN_COS,
     DORMANT_REJOIN_SHARED,
     ENTITY_FREQ_CAP,
+    FOCAL_CVE_COS,
+    FOCAL_CVE_MAX,
     FREQ_CAP_EXEMPT_TYPES,
     JOIN_ENTITY_TYPES,
     MEMBER_CAP,
@@ -87,14 +89,36 @@ def _within_window(anchor_ts: datetime, last_reported_at: datetime) -> bool:
     return abs((anchor_ts - last_reported_at).total_seconds()) <= WINDOW_HOURS * 3600
 
 
+def _cve_count(entities: frozenset[tuple[str, str]]) -> int:
+    return sum(1 for entity_type, _ in entities if entity_type == "cve")
+
+
+def required_cos(
+    cand_entities: frozenset[tuple[str, str]],
+    member_entities: frozenset[tuple[str, str]],
+    shared: Sequence[tuple[str, str]],
+) -> float:
+    """このペアに要求する cos。
+
+    **CVE を主題として共有する**ときだけ緩める。主題の定義は「両方の記事が
+    CVE を ``FOCAL_CVE_MAX`` 個以下しか持たない」= 一括アドバイザリではないこと。
+    列挙側 (1 記事で数十〜278 個) を緩めると無関係な事案が接着する。
+    """
+    if not any(entity_type == "cve" for entity_type, _ in shared):
+        return COS_THRESHOLD
+    if _cve_count(cand_entities) > FOCAL_CVE_MAX or _cve_count(member_entities) > FOCAL_CVE_MAX:
+        return COS_THRESHOLD
+    return FOCAL_CVE_COS
+
+
 def _member_edges(
     cand_entities: frozenset[tuple[str, str]],
     cand_unit: np.ndarray,
     members: Sequence[MemberArticle],
     member_vecs: Mapping[str, np.ndarray],
-) -> list[tuple[float, tuple[tuple[str, str], ...]]]:
-    """各メンバーとの (cos, 共有 entity) を、共有 entity が存在するものだけ集める。"""
-    edges: list[tuple[float, tuple[tuple[str, str], ...]]] = []
+) -> list[tuple[float, tuple[tuple[str, str], ...], float]]:
+    """各メンバーとの (cos, 共有 entity, 要求 cos) を、共有 entity があるものだけ集める。"""
+    edges: list[tuple[float, tuple[tuple[str, str], ...], float]] = []
     for member in members:
         shared = tuple(sorted(cand_entities & member.entities))
         if len(shared) < _MIN_SHARED_FOR_EDGE:
@@ -103,7 +127,7 @@ def _member_edges(
         if vec is None:
             continue
         cos = float(np.dot(cand_unit, _unit_vector(vec)))
-        edges.append((cos, shared))
+        edges.append((cos, shared, required_cos(cand_entities, member.entities, shared)))
     return edges
 
 
@@ -125,20 +149,21 @@ def _item_candidate(
         return None
 
     if _is_dormant(item, now):
+        # dormant への再参加は緩めない (古いアイテムを掘り起こす条件は厳しいまま)
         strict = [
             (cos, shared)
-            for cos, shared in edges
+            for cos, shared, _ in edges
             if cos >= DORMANT_REJOIN_COS and len(shared) >= DORMANT_REJOIN_SHARED
         ]
         if strict:
             return max(strict, key=lambda pair: pair[0])
-        normal = [(cos, shared) for cos, shared in edges if cos >= COS_THRESHOLD]
+        normal = [(cos, shared) for cos, shared, need in edges if cos >= need]
         return "dormant_strict" if normal else None
 
     if not _within_window(candidate.anchor_ts, item.last_reported_at):
         return None
 
-    normal = [(cos, shared) for cos, shared in edges if cos >= COS_THRESHOLD]
+    normal = [(cos, shared) for cos, shared, need in edges if cos >= need]
     if not normal:
         return None
     return max(normal, key=lambda pair: pair[0])
