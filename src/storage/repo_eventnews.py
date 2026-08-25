@@ -364,7 +364,11 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
         if since is not None:
-            clauses.append("datetime(last_reported_at) >= datetime(?)")
+            # ⚠ `datetime(col)` を使わない。dual backend の翻訳は `datetime(col)` を
+            # 「col は TIMESTAMPTZ」と見なすが、この列は **TEXT** なので PG で
+            # `text >= timestamptz` になり落ちる。ISO 文字列どうしの比較にする
+            # (書き込みは常に `_to_iso` なので辞書順 = 時系列順。ORDER BY も同じ前提)。
+            clauses.append("last_reported_at >= ?")
             params.append(_to_iso(since))
         if min_independent_sources > 0:
             clauses.append("independent_sources >= ?")
