@@ -45,6 +45,9 @@ export interface PublicNewsDetail {
   category: string;
   generated: boolean;
   bluf: string;
+  /** 拾い読み用の箇条書き (backend の `list[str]`)。出典番号は持たない。
+   *  2026-08-26 より前の版には無いので、空配列を必ず既定にする。 */
+  key_points: string[];
   facts: PublicNewsFact[];
   /** ⚠ facts と同じ形 (オブジェクト)。string[] ではない — 2026-08-25 に取り違えて
    *  公開サイトを真っ黒にした (React は object を子に渡すと throw する)。 */

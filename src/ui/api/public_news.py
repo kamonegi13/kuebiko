@@ -430,6 +430,8 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         ),
         "generated": latest is not None,
         "bluf": bluf,
+        # 要点は拾い読み用の箇条書き (BLUF は流れで読ませる文)。出典番号は持たない
+        "key_points": body.get("key_points", []),
         # 事実行は出典番号を持つ (どの媒体が報じたかを本文中で示す)
         "facts": body.get("facts", []),
         "discrepancies": body.get("discrepancies", []),

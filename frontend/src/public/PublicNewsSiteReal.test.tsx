@@ -44,8 +44,10 @@ describe("本番実データの描画", () => {
       renderDetail(d);
       // 単独報は見出しと出典タイトルが同じなので 2 箇所に出る (正しい挙動)
       expect((await screen.findAllByText(d.headline)).length).toBeGreaterThan(0);
-      // 出典が 1 件も出ないのは契約違反 (公開面は出典必須)
-      expect(screen.getByText(new RegExp(`出典 \\(${d.citations.length}\\)`))).toBeTruthy();
+      // 出典が 1 件も出ないのは契約違反 (公開面は出典必須)。件数の括弧書きは
+      // **2 件以上のときだけ** — 1 件なら「出典 (1)」は情報を持たない (2026-08-26)
+      const heading = d.citations.length > 1 ? `出典 (${d.citations.length})` : "出典";
+      expect(screen.getByText(heading)).toBeTruthy();
     },
   );
 });

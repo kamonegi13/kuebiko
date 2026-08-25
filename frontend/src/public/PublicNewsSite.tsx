@@ -662,8 +662,15 @@ function NewsCard({
 }
 
 /** 読了目安 (日本語は 1 分あたり約 500 字)。参照サイトと同じく目安として出す。 */
-function readingMinutes(data: { bluf: string; facts: { text: string }[] }): number {
-  const chars = data.bluf.length + data.facts.reduce((n, f) => n + f.text.length, 0);
+function readingMinutes(data: {
+  bluf: string;
+  key_points?: string[];
+  facts: { text: string }[];
+}): number {
+  const chars =
+    data.bluf.length +
+    (data.key_points ?? []).reduce((n, p) => n + p.length, 0) +
+    data.facts.reduce((n, f) => n + f.text.length, 0);
   return Math.max(1, Math.round(chars / 500));
 }
 
@@ -684,18 +691,50 @@ function LeadSummary({ text }: { text: string }) {
   );
 }
 
-/** 事実行 1 段落。**同じ段落の文は連結して散文にする** (行ごとに割らない)。 */
+/** 拾い読み用の**要点**。要約 (散文) とは別物で、参照サイトの "Key points" に当たる。
+ *
+ * 2026-08-26 まで生成側は要点を作っていたが、識別子関門が draft を組み直すときに
+ * 渡し忘れており **本番 542 版すべてでキーごと消えていた**。過去の版には無いので
+ * 空配列で必ず落ちること (`key_points` が無い版は何も描かない)。
+ */
+function KeyPoints({ points }: { points: string[] }) {
+  if (points.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-accent/25 bg-accent/[0.06] px-4 py-3.5">
+      <p className="text-[11px] font-semibold tracking-wide text-accent mb-2">要点</p>
+      <ul className="space-y-1.5">
+        {points.map((point, i) => (
+          <li key={i} className="flex gap-2 text-[14px] leading-[1.85] text-fg">
+            <span aria-hidden className="mt-[0.55em] size-1.5 shrink-0 rounded-full bg-accent/70" />
+            <span>{point}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 事実行 1 段落。**同じ段落の文は連結して散文にする** (行ごとに割らない)。
+ *
+ * ⚠ 出典が 1 件しかない記事では **番号を出さない**。全部 [1] になり情報を持たない
+ * うえ、読みの邪魔になる (2026-08-26 利用者指摘)。データ側の `source_index` は
+ * 検証のためそのまま保持し、**表示だけ抑制する**。
+ */
 function FactParagraph({
   facts,
+  showCitations,
 }: {
   facts: { text: string; source_index: number }[];
+  showCitations: boolean;
 }) {
   return (
     <p className="text-[14px] leading-[2] text-fg-muted indent-[1em]">
       {facts.map((f, i) => (
         <span key={i}>
           {f.text}
-          {f.source_index > 0 && <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>}
+          {showCitations && f.source_index > 0 && (
+            <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
+          )}
         </span>
       ))}
     </p>
@@ -740,12 +779,17 @@ function groupByParagraph<T extends { paragraph: number }>(facts: T[]): T[][] {
 
 /** 出典の並び。**詳細でだけ** 見せる。 */
 function Citations({ citations }: { citations: PublicCitation[] }) {
+  // 1 件なら番号を振らない (本文側でも番号を出していないため対応が付かない)
+  const numbered = citations.length > 1;
   return (
-    <ArticleSection title={`出典 (${citations.length})`}>
-      <ol className="space-y-2.5">
+    <ArticleSection title={numbered ? `出典 (${citations.length})` : "出典"}>
+      <ol className={numbered ? "space-y-2.5" : "space-y-2.5 list-none"}>
         {citations.map((c) => (
-          <li key={c.index} className="text-[13px] leading-[1.7] pl-7 -indent-7">
-            <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>
+          <li
+            key={c.index}
+            className={`text-[13px] leading-[1.7] ${numbered ? "pl-7 -indent-7" : ""}`}
+          >
+            {numbered && <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>}
             <a
               href={c.url}
               target="_blank"
@@ -778,6 +822,8 @@ function NewsDetail({ id }: { id: string }) {
   const paragraphs = data ? groupByParagraph(data.facts) : [];
   // v4 以降は節を持つ。持たない記事 (既存) は節見出し無しで従来どおり描く
   const sections = data ? buildSections(data.facts) : [];
+  // 出典が 1 件なら番号は情報を持たない (全部 [1] になる)
+  const showCitations = (data?.citations.length ?? 0) > 1;
 
   if (isFetching && !data) return <p className="text-sm text-fg-subtle">読み込み中…</p>;
   if (error || !data) {
@@ -811,13 +857,14 @@ function NewsDetail({ id }: { id: string }) {
       </header>
 
       {data.bluf && <LeadSummary text={data.bluf} />}
+      <KeyPoints points={data.key_points ?? []} />
 
       {sections.length > 0
         ? sections.map((sec) => (
             <ArticleSection key={sec.key} title={sec.label}>
               <div className="space-y-4">
                 {sec.paragraphs.map((facts, i) => (
-                  <FactParagraph key={i} facts={facts} />
+                  <FactParagraph key={i} facts={facts} showCitations={showCitations} />
                 ))}
               </div>
             </ArticleSection>
@@ -827,7 +874,7 @@ function NewsDetail({ id }: { id: string }) {
             <ArticleSection title="報じられている内容">
               <div className="space-y-4">
                 {paragraphs.map((facts, i) => (
-                  <FactParagraph key={i} facts={facts} />
+                  <FactParagraph key={i} facts={facts} showCitations={showCitations} />
                 ))}
               </div>
             </ArticleSection>
@@ -840,7 +887,7 @@ function NewsDetail({ id }: { id: string }) {
               <li key={i} className="pl-4 -indent-4">
                 <span className="text-fg-subtle">・</span>
                 {d.text}
-                {d.source_index > 0 && (
+                {showCitations && d.source_index > 0 && (
                   <sup className="ml-0.5 text-accent tnum">[{d.source_index}]</sup>
                 )}
               </li>
