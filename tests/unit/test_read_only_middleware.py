@@ -66,15 +66,27 @@ BLOCKED_GET_PATHS = [
     "/api/v1/product-routing",
 ]
 
-# 公開ページが消費する read API (readonly でも通すべきもの)
+# 匿名 (Tier0) が読める API。2026-08-25 に denylist から allowlist へ反転したため、
+# **ここに挙げたものだけ**が通る。以前は health-status / history / subscriptions /
+# channels / actors も匿名で読めていたが、いずれも運用情報なので Tier1 へ移した。
 PUBLIC_GET_PATHS = [
+    "/api/health",
     "/api/v1/runtime-flags",
+    "/api/v1/vocabularies",
+    "/api/v1/public/news",
+    "/api/v1/public/news/ev-1",
+]
+
+# 反転で匿名から外れたもの (認証すれば従来どおり読める)
+NOW_AUTHENTICATED_ONLY = [
     "/api/v1/health-status",
     "/api/v1/history",
     "/api/v1/subscriptions",
-    # ChannelChip 等の公開 UI が消費 (webhook URL はマスク済みのため遮断しない)
     "/api/v1/channels",
     "/api/v1/actors",
+    "/api/v1/eventnews",
+    "/api/v1/articles",
+    "/api/v1/search",
 ]
 
 
@@ -82,24 +94,33 @@ class TestBlockedGetJudgement:
     """_is_read_only_blocked_get の純関数テスト。"""
 
     @pytest.mark.parametrize("path", BLOCKED_GET_PATHS)
-    def test_denylist_paths_are_blocked(self, path: str) -> None:
+    def test_operational_paths_are_blocked(self, path: str) -> None:
         assert is_read_only_blocked_get(path) is True
 
     @pytest.mark.parametrize("path", PUBLIC_GET_PATHS)
     def test_public_paths_are_not_blocked(self, path: str) -> None:
         assert is_read_only_blocked_get(path) is False
 
+    @pytest.mark.parametrize("path", NOW_AUTHENTICATED_ONLY)
+    def test_operational_reads_need_authentication(self, path: str) -> None:
+        """default-deny 化 (2026-08-25) で匿名から外れたもの。"""
+        assert is_read_only_blocked_get(path) is True
+
     @pytest.mark.parametrize(
         "path",
         [
-            # 境界一致: prefix の単なる前方一致 (別 endpoint) を巻き込まない
-            "/api/v1/flows",
-            "/api/v1/jobsx",
-            "/api/v1/configuration",
-            "/api/v1/scheduler-info",
+            # 境界一致: allowlist の prefix に単なる前方一致で乗らない
+            "/api/v1/public/newsfeed",
+            "/api/v1/vocabularies-admin",
+            "/api/v1/runtime-flags-debug",
         ],
     )
-    def test_prefix_boundary_does_not_overmatch(self, path: str) -> None:
+    def test_allowlist_prefix_boundary_does_not_overmatch(self, path: str) -> None:
+        assert is_read_only_blocked_get(path) is True
+
+    @pytest.mark.parametrize("path", ["/", "/app", "/app/news", "/assets/x.js", "/auth/login"])
+    def test_non_api_paths_stay_public(self, path: str) -> None:
+        """SPA の shell・assets・認証導線は公開のまま (弾くと画面が出ない)。"""
         assert is_read_only_blocked_get(path) is False
 
 
@@ -169,9 +190,9 @@ class TestReadOnlyMiddleware:
         assert res.status_code == 200
         assert res.json()["read_only"] is True
 
-    def test_public_channels_get_passes_through(self, read_only_client: TestClient) -> None:
-        # 公開 UI (ChannelChip) の依存。403 にしないことが要件 (中身は masked)
-        assert read_only_client.get("/api/v1/channels").status_code != 403
+    def test_channels_now_requires_authentication(self, read_only_client: TestClient) -> None:
+        """2026-08-25: 公開面はニュースサイトになり、チャンネル情報は運用情報として Tier1 へ。"""
+        assert read_only_client.get("/api/v1/channels").status_code == 403
 
     def test_write_post_still_blocked(self, read_only_client: TestClient) -> None:
         res = read_only_client.post("/api/v1/channels", json={"channels": []})

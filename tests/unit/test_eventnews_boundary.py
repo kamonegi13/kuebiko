@@ -365,14 +365,17 @@ def test_personal_notes_are_not_anonymously_readable() -> None:
     """個人メモが公開面 (Tier0 匿名) から読めないこと。
 
     2026-08-24: `GET /api/v1/notes` が readonly instance から本文ごと読めていた
-    (分析者の所見がそのまま公開面に出ていた)。事象メモを足すにあたり両方を
-    denylist へ入れる。Tier1 (Cloudflare Access 認証済み) では従来どおり閲覧可。
+    (分析者の所見がそのまま公開面に出ていた)。denylist への追加漏れが原因で、
+    2026-08-25 に allowlist (default-deny) へ反転した。Tier1 (Cloudflare Access
+    認証済み) では従来どおり閲覧可。
     """
-    from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST, is_read_only_blocked_get
+    from src.ui.read_only_policy import is_read_only_blocked_get
 
-    assert "/api/v1/notes" in READ_ONLY_GET_DENYLIST
-    assert "/api/v1/event-notes" in READ_ONLY_GET_DENYLIST
+    assert is_read_only_blocked_get("/api/v1/notes")
+    assert is_read_only_blocked_get("/api/v1/event-notes")
     assert is_read_only_blocked_get("/api/v1/notes")
     assert is_read_only_blocked_get("/api/v1/event-notes/ev-1")
-    # 事象ニュース本体は Tier0 のまま (読み物なので公開してよい)
-    assert not is_read_only_blocked_get("/api/v1/eventnews")
+    # 2026-08-25: 事象ニュース (分析者向け) も匿名からは外し、公開面は
+    # `/api/v1/public/news` が担う (原記事の本文を返さない契約付き)。
+    assert is_read_only_blocked_get("/api/v1/eventnews")
+    assert not is_read_only_blocked_get("/api/v1/public/news")

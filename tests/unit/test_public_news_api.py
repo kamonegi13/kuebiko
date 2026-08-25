@@ -1,0 +1,122 @@
+"""公開ニュース API (Tier0) の契約。
+
+匿名の第三者が読む唯一の面なので、**何を返さないか**をテストで固定する。
+"""
+
+from __future__ import annotations
+
+import ast
+import inspect
+import pathlib
+
+from src.ui.api import public_news
+from src.ui.read_only_policy import PUBLIC_GET_ALLOWLIST, is_public_get
+
+
+class TestAnonymousSurface:
+    def test_public_news_is_the_only_content_api_exposed(self) -> None:
+        """匿名で読める API は allowlist の 4 つだけ (default-deny)。
+
+        2026-08-25 に denylist から反転した。反転前は 98 個の GET のうち 67 個が
+        匿名で読め、PIR (収集関心の定義)・取込履歴・購読ソース構成・Grok アカウント
+        状態・LLM を消費する精密検索まで含まれていた。
+        """
+        assert is_public_get("/api/v1/public/news")
+        assert is_public_get("/api/v1/public/news/ev-1")
+        for path in (
+            "/api/v1/pir",
+            "/api/v1/articles",
+            "/api/v1/search",
+            "/api/v1/notes",
+            "/api/v1/runs/recent",
+            "/api/v1/subscriptions",
+            "/api/v1/grok-mail",
+            "/api/v1/intel-graph/synthesis",
+            "/api/v1/actors",
+            "/api/v1/export/articles.csv",
+            "/api/v1/semantic-search",
+        ):
+            assert not is_public_get(path), f"{path} が匿名に露出している"
+
+    def test_spa_and_assets_stay_public(self) -> None:
+        """API 以外 (SPA shell / assets / 認証導線) は公開のまま — 弾くと画面が出ない。"""
+        for path in ("/", "/app", "/app/news", "/assets/index-abc.js", "/auth/login"):
+            assert is_public_get(path)
+
+    def test_allowlist_contains_no_operational_api(self) -> None:
+        """allowlist に運用系を足していないか (増やすときの歯止め)。"""
+        assert set(PUBLIC_GET_ALLOWLIST) == {
+            "/api/health",
+            "/api/v1/runtime-flags",
+            "/api/v1/vocabularies",
+            "/api/v1/public/news",
+        }
+
+    def test_routes_are_get_only(self) -> None:
+        for route in public_news.public_news_api.routes:
+            methods: set[str] = getattr(route, "methods", set())
+            assert methods <= {"GET", "HEAD"}
+
+
+class TestRedistributionBoundary:
+    """CLAUDE.md §9 の線引き。
+
+    - ``articles.body`` / ``body_ja`` = trafilatura で抽出した **原記事そのもの**。
+      公開すれば再配布になる。§10 が robots.txt を無視する根拠を「配信は要約 +
+      引用 URL のみ」に置いているため、ここを破るとその前提ごと崩れる
+    - ``articles.summary`` = **kuebiko の LLM が書いた要約**。§9 が明示的に認めている
+    """
+
+    def test_module_never_reads_publisher_body(self) -> None:
+        src = pathlib.Path(public_news.__file__).read_text()
+        for forbidden in ("get_article_bodies", ".body_ja", "art.body", '"body"'):
+            assert forbidden not in src, f"公開 API が出版社の本文に触れている: {forbidden}"
+
+    def test_kuebiko_summary_is_allowed(self) -> None:
+        """単独報は kuebiko の要約を出す。高 importance の 94% が要約を持つ。"""
+        src = inspect.getsource(public_news.list_public_news)
+        assert 'getattr(first, "summary", "")' in src
+
+    def test_payload_keys_are_explicit(self) -> None:
+        """返す dict のキーを固定する (うっかり本文キーが増えないように)。"""
+        tree = ast.parse(pathlib.Path(public_news.__file__).read_text())
+        keys: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Dict):
+                for k in node.keys:
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                        keys.add(k.value)
+        assert "body" not in keys
+        assert "body_ja" not in keys
+        assert "content" not in keys
+
+
+class TestCitationsAreMandatory:
+    def test_items_without_a_citation_are_dropped(self) -> None:
+        """出典 (媒体名 + 原記事 URL) を示せない項目は公開しない。"""
+        src = inspect.getsource(public_news.list_public_news)
+        assert "if not citations:" in src
+        assert "continue" in src.split("if not citations:")[1][:80]
+
+    def test_detail_404s_without_citations(self) -> None:
+        src = inspect.getsource(public_news.get_public_news)
+        assert "if not citations:" in src
+        assert "404" in src.split("if not citations:")[1][:120]
+
+    def test_internal_article_id_is_not_published(self) -> None:
+        """出典に内部 id を混ぜない (公開面から記事ストアを推測させない)。"""
+        src = inspect.getsource(public_news._public_citation)
+        assert 'k != "article_id"' in src
+
+
+class TestHighOnly:
+    def test_only_high_importance_is_public(self) -> None:
+        assert public_news._PUBLIC_IMPORTANCES == ("high",)
+
+    def test_list_filters_by_importance(self) -> None:
+        src = inspect.getsource(public_news.list_public_news)
+        assert "importances=list(_PUBLIC_IMPORTANCES)" in src
+
+    def test_detail_rejects_non_high(self) -> None:
+        src = inspect.getsource(public_news.get_public_news)
+        assert "importance not in _PUBLIC_IMPORTANCES" in src

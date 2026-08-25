@@ -37,41 +37,24 @@ WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # Access 設定後は Tier1 (認証済みのみ) に格上げされる — 匿名の LLM 資源消費を防ぐため。
 _POST_ALLOWLIST: tuple[str, ...] = ("/api/v1/assistant/chat",)
 
-# GET も遮断する運用系 API (2026-07-31)。write 遮断だけでは fullOnly ページの
-# read API が公開 URL から直叩きできてしまうため path-prefix で 403 にする。
-# nav.ts の fullOnly (表示上の隠蔽) と対になるサーバ側の遮断で、こちらが防御の実体。
-# 注意: /api/v1/channels は公開ページ (ChannelChip 等) が消費し webhook はマスク済みの
-# ため遮断しない。/api/v1/config は /config-history と前方一致しないよう別項目で持つ。
-READ_ONLY_GET_DENYLIST: tuple[str, ...] = (
-    "/api/v1/jobs",
-    "/api/v1/schedule",
-    "/api/v1/prompts",
-    "/api/v1/config",
-    "/api/v1/config-history",
-    "/api/v1/match-lists",
-    "/api/v1/model-tiers",
-    "/api/v1/mobile-tunnel",
-    "/api/v1/host-watchdog",
-    "/api/v1/taxonomy-review",
-    "/api/v1/editorial-quality",
-    # 遅延正解ラベル (凍結資産) と goldset 評価 (運用系 — 公開面に出さない)
-    "/api/v1/tuning-labels",
-    "/api/v1/flow",
-    "/api/v1/routing-rules",
-    "/api/v1/product-routing",
-    # 監査証跡そのものを公開面に出さない (2026-08-02)
-    "/api/v1/access-audit",
-    # DB 接続プールの内部状態 (運用情報。2026-08-25)
-    "/api/v1/db-pool",
-    # ops 通知の内容 (運用警告の title/body) を公開面に出さない (2026-08-21)
-    "/api/v1/ops-notices",
-    # 収集関心の詳細 (Grok タスクプロンプト写し) を公開面に出さない (2026-08-15)
-    "/api/v1/grok/tasks",
-    # 個人のメモ・判断 (2026-08-24)。分析者の所見そのものであり、公開面に匿名で
-    # 出す理由が無い。実際に `GET /api/v1/notes` が readonly instance から本文ごと
-    # 読めていた。Tier1 (Cloudflare Access 認証済み) では従来どおり閲覧できる。
-    "/api/v1/notes",
-    "/api/v1/event-notes",
+# 匿名 (Tier0) が読める API の **allowlist**。ここに無い /api/ の GET はすべて 403。
+#
+# 2026-08-25 に denylist (既定は許可) から反転した。denylist 方式では **書き忘れが
+# そのまま露出**になり、実際に `GET /api/v1/notes` (分析者の所見) が公開面から匿名で
+# 読めていた。反転前の実測では 98 個の GET API のうち **67 個が匿名で読め**、PIR
+# (収集関心の定義)・取込履歴・購読ソース構成・Grok アカウント状態・LLM を消費する
+# 精密検索まで含まれていた。公開面は default-deny でなければ守れない。
+#
+# 追加するときは「未認証の第三者に見せてよいか」だけで判断すること。運用者は
+# Cloudflare Access で認証すれば従来どおり全 GET を読める (Tier1)。
+PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
+    # 死活 (監視が叩く)
+    "/api/health",
+    # SPA が起動時に読む最小限: 認証状態と表示ラベル
+    "/api/v1/runtime-flags",
+    "/api/v1/vocabularies",
+    # 公開ニュース (kuebiko が生成した事象ニュース。出典必須・原記事本文は返さない)
+    "/api/v1/public/news",
 )
 
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に
@@ -93,9 +76,20 @@ def is_read_only_allowed_post(path: str) -> bool:
     return path.startswith("/api/v1/articles/") and path.endswith("/translate")
 
 
+def is_public_get(path: str) -> bool:
+    """匿名 (Tier0) が読める GET か判定する (境界一致: prefix そのもの or prefix/)。
+
+    ``/api/`` 以外 (SPA の shell・assets・manifest・/auth/*) は公開のまま — ここで
+    弾くと公開サイトそのものが表示できなくなる。判定対象は API だけに閉じる。
+    """
+    if not path.startswith("/api/"):
+        return True
+    return any(path == p or path.startswith(f"{p}/") for p in PUBLIC_GET_ALLOWLIST)
+
+
 def is_read_only_blocked_get(path: str) -> bool:
-    """匿名では遮断する GET か判定する (境界一致: prefix そのもの or prefix/)。"""
-    return any(path == p or path.startswith(f"{p}/") for p in READ_ONLY_GET_DENYLIST)
+    """匿名では遮断する GET か判定する (allowlist の否定)。"""
+    return not is_public_get(path)
 
 
 def is_job_trigger_path(path: str) -> bool:

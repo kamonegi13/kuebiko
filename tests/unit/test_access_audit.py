@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.storage.run_history import RunHistoryRepository
-from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST, is_read_only_blocked_get
+from src.ui.read_only_policy import is_read_only_blocked_get
 from tests.unit.test_read_only_middleware import (
     _VALID_TOKEN,
     _StubVerifier,
@@ -133,7 +133,7 @@ class TestAuditRecording:
 class TestAuditExposure:
     def test_audit_endpoint_is_denylisted(self) -> None:
         # 監査証跡自体が公開面から読めてはいけない
-        assert "/api/v1/access-audit" in READ_ONLY_GET_DENYLIST
+        assert is_read_only_blocked_get("/api/v1/access-audit")
         assert is_read_only_blocked_get("/api/v1/access-audit") is True
 
     def test_anonymous_cannot_read_audit(

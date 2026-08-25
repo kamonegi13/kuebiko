@@ -2,7 +2,7 @@
 
 - 検証ロジック (id 形式 / 重複 / 上限)
 - config_store への版保存 round-trip (tmp SQLite)
-- 公開 readonly 面に出さないこと (READ_ONLY_GET_DENYLIST 登録) の回帰固定
+- 公開 readonly 面に出さないこと (allowlist 非登録) の回帰固定
 """
 
 from __future__ import annotations
@@ -98,9 +98,9 @@ class TestRoundTrip:
 class TestExposurePolicy:
     def test_tasks_api_is_denied_on_public_face(self) -> None:
         # 収集関心の詳細 (プロンプト本文) を公開面に出さない (§12 / Tier1 denylist)
-        from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST
+        from src.ui.read_only_policy import is_public_get
 
-        assert "/api/v1/grok/tasks" in READ_ONLY_GET_DENYLIST
+        assert not is_public_get("/api/v1/grok/tasks")
 
     def test_config_history_knows_key(self) -> None:
         # 版履歴/revert が config-history 経由で使えること (whitelist 登録)

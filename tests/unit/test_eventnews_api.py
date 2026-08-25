@@ -9,17 +9,17 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.ui.api.eventnews import GENERATED_NOTE
-from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST
+from src.ui.read_only_policy import is_public_get
 
 
 class TestPublicExposure:
-    def test_event_news_is_tier0_not_in_denylist(self) -> None:
-        """公開判断 (2026-08-24): 公開記事から生成した読み物で運用情報を含まない。
-
-        denylist に入れると公開面から消えるため、**入れない**ことを明示的に固定する
-        (将来 denylist を編集する人に、これが判断済みであることを伝える)。
+    def test_event_news_is_not_anonymous(self) -> None:
+        """2026-08-25 改訂: 分析者向けの判定メタデータや原記事の本文冒頭まで返すため
+        **匿名には出さない**。公開面は `/api/v1/public/news` が担う。
         """
-        assert not any(path.startswith("/api/v1/eventnews") for path in READ_ONLY_GET_DENYLIST)
+        assert not is_public_get("/api/v1/eventnews")
+        assert not is_public_get("/api/v1/eventnews/ev-1")
+        assert is_public_get("/api/v1/public/news")
 
     def test_routes_are_get_only(self) -> None:
         """readonly instance は POST/PUT/PATCH/DELETE を 403 で塞ぐ。GET のみなら追加ガード不要。"""

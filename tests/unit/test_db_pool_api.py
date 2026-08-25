@@ -9,13 +9,13 @@ from __future__ import annotations
 import pytest
 
 from src.ui.api.db_pool import db_pool_api, get_db_pool_status
-from src.ui.read_only_policy import READ_ONLY_GET_DENYLIST
+from src.ui.read_only_policy import is_public_get
 
 
 class TestExposure:
     def test_is_not_public(self) -> None:
         """運用情報なので公開面 (Tier0) には出さない。"""
-        assert "/api/v1/db-pool" in READ_ONLY_GET_DENYLIST
+        assert not is_public_get("/api/v1/db-pool")
 
     def test_is_read_only(self) -> None:
         for route in db_pool_api.routes:

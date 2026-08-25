@@ -642,6 +642,7 @@ def create_app() -> FastAPI:
     from src.ui.api.product_routing import product_routing_api
     from src.ui.api.prompt_blocks import prompt_blocks_api
     from src.ui.api.prompt_rubric import prompt_rubric_api
+    from src.ui.api.public_news import public_news_api
     from src.ui.api.routing_rules import routing_rules_api
     from src.ui.api.runs import dash_api, runs_api
     from src.ui.api.situations import situations_api
@@ -654,6 +655,7 @@ def create_app() -> FastAPI:
     app.include_router(api_v1)
     app.include_router(assistant_api)
     app.include_router(db_pool_api)
+    app.include_router(public_news_api)
     app.include_router(runs_api)
     app.include_router(dash_api)
     app.include_router(pages_api)
