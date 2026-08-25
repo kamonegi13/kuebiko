@@ -229,3 +229,50 @@ describe("地図", () => {
     await waitFor(() => expect(window.location.search).toContain("country=JP"));
   });
 });
+
+describe("PC のレイアウト", () => {
+  it("本文幅を広げる (46rem では PC で左右が盛大に余っていた)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const main = document.querySelector("main");
+    expect(main?.className).toContain("max-w-[72rem]");
+  });
+
+  it("一覧は PC で 2 列にする", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const grid = Array.from(document.querySelectorAll("ul")).find((u) =>
+      u.className.includes("md:grid-cols-2"),
+    );
+    expect(grid).toBeTruthy();
+  });
+
+  it("右レールに被害国と地図への導線を出す", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const rail = document.querySelector("aside");
+    expect(rail).toBeTruthy();
+    expect(rail?.textContent).toContain("被害国");
+    expect(rail?.textContent).toContain("地図で見る");
+  });
+
+  it("レールでも置けなかった件数を書く (上位だけ見せて全部と読ませない)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const rail = document.querySelector("aside");
+    expect(rail?.textContent).toContain("20 件は特定できず");
+  });
+
+  it("レールは本文の後ろに置く (モバイルで読む順序を壊さない)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const main = document.querySelector("main");
+    const rail = document.querySelector("aside");
+    // DOM 順で本文が先 (lg 未満では 1 カラムに畳まれる)
+    expect(main?.compareDocumentPosition(rail!) ?? 0).toBeTruthy();
+    const headline = screen.getAllByText(ITEM.headline)[0];
+    expect(
+      headline.compareDocumentPosition(rail!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});

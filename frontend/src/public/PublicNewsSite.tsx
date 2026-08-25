@@ -14,6 +14,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { ExternalLink, Search, ChevronLeft } from "lucide-react";
 import {
   fetchPublicNews,
+  fetchPublicMap,
   fetchPublicNewsDetail,
   type PublicCitation,
   type PublicNewsItem,
@@ -78,17 +79,22 @@ export function PublicNewsSite() {
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">
       <SiteHeader route={route} />
-      <main className="flex-1 w-full max-w-[46rem] mx-auto px-5 py-8">
+      <main className="flex-1 w-full max-w-[72rem] mx-auto px-5 py-8">
         {/* 描画で落ちてもヘッダ・カテゴリ・フッタは残す (他の記事へ移れるように) */}
         <PublicErrorBoundary onReset={() => navigate(HOME_PATH)}>
           {route.kind === "map" ? (
             <PublicMapSection onCountry={(iso) => navigate(`${HOME_PATH}?country=${iso}`)} />
           ) : (
-            <NewsList
-              category={route.kind === "category" ? route.key : undefined}
-              /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
-              openedId={route.kind === "detail" ? route.id : undefined}
-            />
+            /* PC は本文 + 右レールの 2 カラム。モバイルは 1 カラムのまま
+               (レールは本文の後ろへ回して読む順序を壊さない)。 */
+            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-10 lg:items-start">
+              <NewsList
+                category={route.kind === "category" ? route.key : undefined}
+                /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
+                openedId={route.kind === "detail" ? route.id : undefined}
+              />
+              <CountryRail onCountry={(iso) => navigate(`${HOME_PATH}?country=${iso}`)} />
+            </div>
           )}
         </PublicErrorBoundary>
       </main>
@@ -100,7 +106,7 @@ export function PublicNewsSite() {
         isOpen={route.kind === "detail"}
         onClose={() => window.history.back()}
         title="記事"
-        widthClass="md:w-[44rem]"
+        widthClass="md:w-[48rem]"
         mobileGutter
         swipeToClose
       >
@@ -117,7 +123,7 @@ export function PublicNewsSite() {
 function SiteHeader({ route }: { route: Route }) {
   return (
     <header className="border-b border-border-subtle bg-surface-1/95 backdrop-blur-md sticky top-0 z-20">
-      <div className="w-full max-w-[46rem] mx-auto px-5">
+      <div className="w-full max-w-[72rem] mx-auto px-5">
         <div className="flex items-baseline gap-2.5 pt-4 pb-3">
           <button
             onClick={() => navigate(HOME_PATH)}
@@ -139,7 +145,7 @@ function SiteHeader({ route }: { route: Route }) {
 function SiteFooter() {
   return (
     <footer className="border-t border-border-subtle mt-12">
-      <div className="w-full max-w-[46rem] mx-auto px-5 py-6 text-[11px] leading-relaxed text-fg-subtle space-y-2">
+      <div className="w-full max-w-[72rem] mx-auto px-5 py-6 text-[11px] leading-relaxed text-fg-subtle space-y-2">
         <p>
           掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
           各記事の出典をご確認ください。
@@ -195,6 +201,57 @@ function CategoryTab({ href, label, active }: { href: string; label: string; act
     >
       {label}
     </a>
+  );
+}
+
+/**
+ * 右レール (PC のみ)。被害国の上位と地図への導線。
+ *
+ * 一覧の左右が余る PC で、このツールの特徴 (地図) を入口から見せる。
+ * ⚠ ここでも **置けなかった件数** を書く。上位だけ見せると「これが全部」と読まれる。
+ * モバイルでは本文の後ろに 1 カラムで続く (読む順序を壊さない)。
+ */
+function CountryRail({ onCountry }: { onCountry: (iso: string) => void }) {
+  const { data } = useQuery({
+    queryKey: ["public-map"],
+    queryFn: () => fetchPublicMap(30),
+    staleTime: 10 * 60 * 1000,
+  });
+  if (!data || data.nodes.length === 0) return null;
+  return (
+    <aside className="mt-10 lg:mt-0 lg:sticky lg:top-[7.5rem] space-y-3">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-[13px] font-semibold text-fg-muted">被害国</h2>
+        <a
+          href={`${HOME_PATH}/map`}
+          onClick={(e) => {
+            e.preventDefault();
+            navigate(`${HOME_PATH}/map`);
+          }}
+          className="ml-auto text-[11px] text-fg-subtle hover:text-accent underline underline-offset-2"
+        >
+          地図で見る
+        </a>
+      </div>
+      <ul className="space-y-1">
+        {data.nodes.slice(0, 8).map((n) => (
+          <li key={n.iso}>
+            <button
+              onClick={() => onCountry(n.iso)}
+              className="w-full flex items-baseline gap-2 text-left text-[13px] hover:text-accent transition-colors"
+            >
+              <span className="text-fg-muted">{n.label}</span>
+              <span className="flex-1 border-b border-dotted border-border-subtle" />
+              <span className="tnum text-fg-subtle">{n.count}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] leading-relaxed text-fg-subtle">
+        直近 {data.window_days} 日の掲載 {data.total} 件のうち被害国を特定できた {data.placed} 件の
+        内訳です ({data.unplaced} 件は特定できず)。
+      </p>
+    </aside>
   );
 }
 
@@ -268,7 +325,7 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
           </div>
           <LeadStory item={featuredItems[0]} />
           {featuredItems.length > 1 && (
-            <ul className="space-y-5 pt-6 border-t border-border-subtle">
+            <ul className="grid gap-x-8 gap-y-5 md:grid-cols-2 pt-6 border-t border-border-subtle">
               {featuredItems.slice(1).map((it) => (
                 <NewsCard key={it.id} item={it} />
               ))}
@@ -314,7 +371,8 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
           <p className="text-sm text-fg-muted py-6">該当する記事がありません。</p>
         )}
 
-        <ul className="space-y-6">
+        {/* PC は 2 列。カードは高さがまちまちなので grid で行を揃える */}
+        <ul className="grid gap-x-8 gap-y-7 md:grid-cols-2">
           {items.map((it) => (
             <NewsCard key={it.id} item={it} opened={it.id === openedId} />
           ))}
@@ -404,11 +462,13 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
         className="block w-full text-left group space-y-2"
       >
         <CategoryBadge category={item.category} />
-        <h2 className="text-[22px] font-bold leading-[1.4] text-fg group-hover:text-accent transition-colors">
+        <h2 className="text-[22px] lg:text-[26px] font-bold leading-[1.4] text-fg group-hover:text-accent transition-colors">
           {item.headline}
         </h2>
         {item.summary && (
-          <p className="text-[14px] leading-[1.9] text-fg-muted line-clamp-3">{item.summary}</p>
+          <p className="text-[14px] lg:text-[15px] leading-[1.9] text-fg-muted line-clamp-3">
+            {item.summary}
+          </p>
         )}
       </button>
       <div className="mt-2.5">
@@ -495,7 +555,7 @@ function NewsDetail({ id }: { id: string }) {
   }
 
   return (
-    <article className="space-y-6">
+    <article className="space-y-6 max-w-[42rem]">
       <header className="space-y-2.5">
         <CategoryBadge category={data.category} />
         <h1 className="text-[24px] font-bold leading-[1.45] text-fg">{data.headline}</h1>
