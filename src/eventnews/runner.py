@@ -40,6 +40,8 @@ _IMPORTANCE_RANK = {"low": 0, "medium": 1, "high": 2}
 # v3 (2026-08-24): 掲載場所/URL を事実として書かせない + 裏取り状態を単独行にしない
 # v4: 本文を節 (what/scope/how/response/context/action) に分ける (2026-08-25)
 _PROMPT_VERSION = "eventnews-v4"
+# これ以上の事実行があるのに節が 1 種類なら、割り当てが効いていないとみなす
+_SECTION_SPREAD_MIN_FACTS = 6
 
 
 @dataclass
@@ -125,6 +127,17 @@ async def _generate_version(
         return None, None
     version = item.snapshot.current_version + 1
     body_json = gate.draft.model_dump_json()
+    # 節が 1 種類だけ = 割り当てが効いていない疑い。実測 (2026-08-25): JSON 例が
+    # `"section": "what"` の 1 行だけだったとき、モデルが写して全文 what になった。
+    # 自動で振り直さない (創作になる) — **観測できるようにして気付けるようにする**。
+    sections = {f.section for f in gate.draft.facts}
+    if len(gate.draft.facts) >= _SECTION_SPREAD_MIN_FACTS and len(sections) <= 1:
+        _log.warning(
+            "eventnews_sections_not_spread",
+            item_id=item.snapshot.item_id,
+            facts=len(gate.draft.facts),
+            section=next(iter(sections), ""),
+        )
     repo.record_event_version(
         item_id=item.snapshot.item_id,
         version=version,

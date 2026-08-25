@@ -61,7 +61,10 @@ JSON で以下の構造で出力してください:
   "headline": "見出し。1 文、固有名詞ベース (actor / 手口 / 標的の三点セット)。generic 表現禁止",
   "bluf": "BLUF (Bottom Line Up Front)。2-3 文で結論を先に。この事象が何で、なぜ重要か",
   "facts": [
-    {"text": "報じられた事実 1 件 (1 文)", "source_index": 1, "paragraph": 1, "section": "what"}
+    {"text": "報じられた事実 1 件 (1 文)", "source_index": 1, "paragraph": 1, "section": "what"},
+    {"text": "影響の広さを述べる文", "source_index": 2, "paragraph": 2, "section": "scope"},
+    {"text": "悪用の仕組みを述べる文", "source_index": 1, "paragraph": 3, "section": "how"},
+    {"text": "取られた措置を述べる文", "source_index": 3, "paragraph": 4, "section": "response"}
   ],
   "discrepancies": [
     {"text": "ソース間の相違、または『どの媒体も特定していない』という不在の主張", "source_index": 0}
@@ -104,6 +107,9 @@ JSON で以下の構造で出力してください:
   - **一度離れた節へ戻らない**。`what` → `response` → `what` のように往復せず、
     同じ節の内容は 1 か所にまとめる
   - 節は上の並び順で出す。同じ節に複数の段落があってよい (手口が長い等)
+  - ⚠ **全ての fact を同じ節にしない**。複数の記事を束ねた事象は、必ず
+    「何が起きたか」以外の内容 (影響の広さ・悪用の仕組み・取られた措置) を含む。
+    `what` 一色になっているなら、各文が実際に何を述べているかを見直して割り当て直す
 - **facts (報じられた事実)**:
   - **「確認された事実」ではなく「報じられた事実」**。「確認」の語は原文がベンダ/政府の
     確認を報じている場合のみ使う。裏取りの無い単一媒体の主張は断定しない

@@ -55,3 +55,33 @@ class TestPromptVersion:
         from src.eventnews.runner import _PROMPT_VERSION
 
         assert _PROMPT_VERSION == "eventnews-v4"
+
+
+class TestSpreadGuard:
+    """節が 1 種類に偏ったら気付けること。
+
+    2026-08-25 実測: JSON 例が `"section": "what"` の 1 行だけだったとき、モデルが
+    それを写して **14 件の事実行が全部 what** になった (中身は影響範囲や手口を
+    含んでいた)。例を 4 行に分散したら 5/5 件で 4〜6 種に分かれた。
+    """
+
+    def test_prompt_shows_varied_section_examples(self) -> None:
+        """JSON 例に 1 種類しか出さないと、モデルがそれを写す。"""
+        prompt = pathlib.Path("prompts/eventnews/refine.j2").read_text(encoding="utf-8")
+        skeleton = prompt.split('"facts": [')[1].split("],")[0]
+        shown = set(re.findall(r'"section":\s*"([a-z_]+)"', skeleton))
+        assert len(shown) >= 3, f"JSON 例の section が偏っている: {shown}"
+
+    def test_prompt_forbids_a_single_section(self) -> None:
+        prompt = pathlib.Path("prompts/eventnews/refine.j2").read_text(encoding="utf-8")
+        assert "全ての fact を同じ節にしない" in prompt
+
+    def test_runner_warns_instead_of_reassigning(self) -> None:
+        """⚠ 自動で振り直さない (創作になる)。観測できるようにするだけ。"""
+        import inspect
+
+        from src.eventnews import runner
+
+        src = inspect.getsource(runner._generate_version)
+        assert "eventnews_sections_not_spread" in src
+        assert "_SECTION_SPREAD_MIN_FACTS" in src
