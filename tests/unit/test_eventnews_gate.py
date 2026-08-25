@@ -146,7 +146,8 @@ class TestResidualRisks:
         """創作番号を無言削除しない — 削ると主語が消えて壊れた文が残る (実測 2 行)。"""
         members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[FactItem(text="{I99} は関与を主張している。", source_index=1)],
         )
         r = verify_draft(draft, members)
@@ -156,7 +157,8 @@ class TestResidualRisks:
         """固有名詞の破損は検出のみ (文法が開いており置換すると誤りが増えるため)。"""
         members = (_member("a", body="RingCentral は侵害を公表"), _member("b", body="x"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[FactItem(text="RingCRntal は侵害を公表した。", source_index=1)],
         )
         r = verify_draft(draft, members)
@@ -167,7 +169,8 @@ class TestResidualRisks:
         """LLM は `{…}` を技術用語の装飾に使う — 中身を残して外す (実測 100 箇所超)。"""
         members = (_member("a", body="CVE-2026-1111 を悪用"), _member("b", body="x"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[FactItem(text="{I1} を {VPN} 経由で悪用した。", source_index=1)],
         )
         r = verify_draft(draft, members)
@@ -177,7 +180,8 @@ class TestResidualRisks:
         """`I`+数字 の書式を真似た `{GT42}` 型の捏造は、中身を残して外し対称照合に回す。"""
         members = (_member("a", body="GTIG が報告"), _member("b", body="x"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[FactItem(text="{GT42} は報告した。", source_index=1)],
         )
         r = verify_draft(draft, members)
@@ -187,7 +191,8 @@ class TestResidualRisks:
         """段落番号は表示層が散文に組むための構造 — 関門で失わない。"""
         members = (_member("a", body="CVE-2026-1111"), _member("b", body="x"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[FactItem(text="一つ目。", source_index=1, paragraph=2)],
         )
         r = verify_draft(draft, members)
@@ -201,7 +206,8 @@ class TestResidualRisks:
         """
         members = (_member("a", body="x"), _member("b", body="y"))
         draft = EventNewsDraft(
-            headline="h", bluf="b",
+            headline="h",
+            bluf="b",
             facts=[
                 FactItem(text="販売している [1]。", source_index=1),
                 FactItem(text="窃取した。[2]", source_index=2),
@@ -212,3 +218,30 @@ class TestResidualRisks:
         assert r.draft.facts[0].text == "販売している。"
         assert r.draft.facts[1].text == "窃取した。"
         assert r.draft.facts[2].text == "記事 [1] では A、[2] では B と報じる。"
+
+
+class TestFieldPreservation:
+    """関門は組み直しで**フィールドを落とさない**こと。
+
+    2026-08-26 実測: ``section`` を渡し忘れており本番 542 版の全 fact が既定の
+    "what" に潰れ、``key_points`` は 542 版すべてでキーごと消えていた。生成側は
+    正しく振れていたので、生成物だけ見ていると気付けない。
+    """
+
+    def test_section_and_key_points_survive_the_gate(self) -> None:
+        draft = EventNewsDraft(
+            headline="見出し",
+            bluf="要旨",
+            key_points=["要点その一", "要点その二"],
+            facts=[
+                FactItem(text="対処が公表された", source_index=1, paragraph=2, section="response")
+            ],
+            discrepancies=[],
+            unknowns=["未確認の点"],
+        )
+
+        result = verify_draft(draft, (_member("a", body="本文"),))
+
+        assert result.draft.key_points == ["要点その一", "要点その二"]
+        assert [f.section for f in result.draft.facts] == ["response"]
+        assert [f.paragraph for f in result.draft.facts] == [2]

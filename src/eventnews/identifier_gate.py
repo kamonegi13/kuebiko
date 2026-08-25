@@ -70,7 +70,17 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
         text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
         text = strip_trailing_citation(text)
         total = total.merged(st)
-        facts.append(FactItem(text=text, source_index=item.source_index, paragraph=item.paragraph))
+        # ⚠ **フィールドを 1 つでも渡し忘れると既定値に落ちる**。2026-08-26 まで
+        # section を渡しておらず、本番 542 版の全 fact が既定の "what" に潰れていた
+        # (生成側は節を振れていたのに、保存された時点で失われていた)。
+        facts.append(
+            FactItem(
+                text=text,
+                source_index=item.source_index,
+                paragraph=item.paragraph,
+                section=item.section,
+            )
+        )
 
     discrepancies: list[FactItem] = []
     for item in draft.discrepancies:
@@ -78,7 +88,12 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
         text, st = resolve_text(item.text, catalog, cited_member=cited)
         total = total.merged(st)
         discrepancies.append(
-            FactItem(text=text, source_index=item.source_index, paragraph=item.paragraph)
+            FactItem(
+                text=text,
+                source_index=item.source_index,
+                paragraph=item.paragraph,
+                section=item.section,
+            )
         )
 
     unknowns: list[str] = []
@@ -86,6 +101,12 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
         text, st = resolve_text(raw, catalog, cited_member=0)
         total = total.merged(st)
         unknowns.append(text)
+
+    key_points: list[str] = []
+    for raw in draft.key_points:
+        text, st = resolve_text(raw, catalog, cited_member=0)
+        total = total.merged(st)
+        key_points.append(text)
 
     headline, st_head = resolve_text(draft.headline, catalog, cited_member=0)
     total = total.merged(st_head)
@@ -96,6 +117,7 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
         draft=EventNewsDraft(
             headline=headline,
             bluf=bluf,
+            key_points=key_points,
             facts=facts,
             discrepancies=discrepancies,
             unknowns=unknowns,
