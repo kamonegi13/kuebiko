@@ -224,3 +224,55 @@ class TestFeatured:
         src = inspect.getsource(public_news.list_public_news)
         assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
         assert public_news._PUBLIC_IMPORTANCES == ("high",)
+
+
+class TestPublicMap:
+    """公開版の地図 (2026-08-25)。
+
+    このツールの特徴だが、**分析画面の脅威マップをそのまま公開しない**。
+    あちらはアクター帰属と意図 (Diamond Model) の層を重ねており、報道された事実
+    ではなく kuebiko の分析判断を含む。公開面では根拠の連鎖を示せない。
+    """
+
+    def test_map_is_reachable_anonymously(self) -> None:
+        """allowlist の前方一致で公開される (別途登録は要らない)。"""
+        assert is_public_get("/api/v1/public/news/map")
+
+    def test_map_returns_only_victim_countries(self) -> None:
+        """アクター帰属と意図の層を持ち込まない。"""
+        src = inspect.getsource(public_news.get_public_map)
+        for forbidden in ("actor", "intent", "nation", "geo_events"):
+            assert forbidden not in src, f"公開地図に {forbidden} 層が入っている"
+
+    def test_map_population_matches_the_article_list(self) -> None:
+        """母集団を記事一覧と揃える。
+
+        別母集団だと「地図は 592 件なのに記事は 30 件」と食い違い読み手が混乱する。
+        """
+        src = inspect.getsource(public_news.get_public_map)
+        assert "importances=list(_PUBLIC_IMPORTANCES)" in src
+        assert "exclude_duplicate_only=True" in src
+        assert "exclude_merged=True" in src
+
+    def test_map_reports_what_it_could_not_place(self) -> None:
+        """⚠ 地図は収集網の観測であって世界ではない。
+
+        実測では公開対象の 56% に被害国が付いていない。割合を隠すと「これが世界の
+        実態」と読まれる。placed / unplaced / total を必ず返す。
+        """
+        src = inspect.getsource(public_news.get_public_map)
+        for key in ('"placed"', '"unplaced"', '"total"'):
+            assert key in src
+        assert "世界全体の実態を示すものではありません" in src
+
+    def test_country_coordinates_and_labels_come_from_the_ssot(self) -> None:
+        """座標は Geocoder、表示名は countries.yaml。公開面に辞書を複製しない。"""
+        src = inspect.getsource(public_news.get_public_map)
+        assert "Geocoder()" in src
+        assert "_yaml_display_map(str(_COUNTRIES_YAML))" in src
+
+    def test_unresolvable_country_counts_as_unplaced(self) -> None:
+        """座標が引けない国を黙って消さない (合計が合わなくなる)。"""
+        src = inspect.getsource(public_news.get_public_map)
+        block = src.split("if point is None:")[1][:120]
+        assert "unplaced += count" in block

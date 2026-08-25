@@ -308,6 +308,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         has_news: bool | None = None,
         exclude_duplicate_only: bool = False,
         member_categories: Sequence[str] | None = None,
+        member_country: str | None = None,
         since: datetime | None = None,
         order_by: str = "recency",
         member_article_ids: Sequence[str] | None = None,
@@ -379,6 +380,13 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 f" WHERE cm.item_id = event_items.id AND ca.category IN ({ph}))"
             )
             params.extend(member_categories)
+        if member_country:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM event_item_members km"
+                " JOIN articles ka ON ka.article_id = km.article_id"
+                " WHERE km.item_id = event_items.id AND UPPER(ka.victim_country_iso) = ?)"
+            )
+            params.append(member_country.upper())
         if exclude_duplicate_only:
             clauses.append(
                 "(current_version > 0 OR EXISTS ("

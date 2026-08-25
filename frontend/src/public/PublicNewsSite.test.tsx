@@ -43,7 +43,17 @@ beforeEach(() => {
     return {
       ok: true,
       json: async () =>
-        url.includes("/api/v1/public/news/")
+        // ⚠ /map は詳細の path にも前方一致するので **先に**判定する
+        url.includes("/api/v1/public/news/map")
+          ? {
+              nodes: [{ iso: "JP", label: "日本", lat: 35.68, lon: 139.69, count: 12 }],
+              window_days: 30,
+              placed: 12,
+              unplaced: 20,
+              total: 32,
+              note: "収集した報道の分布であり、世界全体の実態を示すものではありません。",
+            }
+          : url.includes("/api/v1/public/news/")
           ? { ...ITEM, bluf: "要点。", facts: [{ text: "事実行。", source_index: 1, paragraph: 1 }],
               discrepancies: [], unknowns: [], first_reported_at: ITEM.published_at,
               note: "kuebiko が生成した要約であり、原記事そのものではない" }
@@ -190,5 +200,32 @@ describe("ドロワー表示", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     await waitFor(() => expect(document.body.style.overflow).not.toBe("hidden"));
+  });
+});
+
+describe("地図", () => {
+  it("ナビに地図を出す", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    const hrefs = Array.from(document.querySelectorAll("nav a")).map((a) => a.getAttribute("href"));
+    expect(hrefs).toContain("/app/news/map");
+  });
+
+  it("置けなかった件数を必ず併記する (収集網の観測≠世界)", async () => {
+    window.history.replaceState(null, "", "/app/news/map");
+    renderSite();
+    // 母集団 32 件 / 置けた 12 件 / 置けなかった 20 件 をすべて示す
+    expect(await screen.findByText(/32 件のうち/)).toBeTruthy();
+    expect(screen.getByText(/12 件/)).toBeTruthy();
+    expect(screen.getByText(/20 件は国を特定できず/)).toBeTruthy();
+    expect(screen.getByText(/世界全体の実態を示すものではありません/)).toBeTruthy();
+  });
+
+  it("国を選ぶと記事一覧が絞り込まれる", async () => {
+    window.history.replaceState(null, "", "/app/news/map");
+    renderSite();
+    const jp = await screen.findByText("日本");
+    (jp.closest("button") as HTMLElement).click();
+    await waitFor(() => expect(window.location.search).toContain("country=JP"));
   });
 });

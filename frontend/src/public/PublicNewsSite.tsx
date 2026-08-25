@@ -22,6 +22,7 @@ import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
+import { PublicMapSection } from "./PublicMapSection";
 
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
@@ -36,10 +37,12 @@ function categoryLabel(key: string): string {
 type Route =
   | { kind: "home" }
   | { kind: "category"; key: string }
+  | { kind: "map" }
   | { kind: "detail"; id: string };
 
 function parseRoute(): Route {
   const p = window.location.pathname;
+  if (/^\/app\/news\/map\/?$/.test(p)) return { kind: "map" };
   const cat = /^\/app\/news\/c\/([^/]+)\/?$/.exec(p);
   if (cat) return { kind: "category", key: decodeURIComponent(cat[1]) };
   const detail = /^\/app\/news\/([^/]+)\/?$/.exec(p);
@@ -78,11 +81,15 @@ export function PublicNewsSite() {
       <main className="flex-1 w-full max-w-[46rem] mx-auto px-5 py-8">
         {/* 描画で落ちてもヘッダ・カテゴリ・フッタは残す (他の記事へ移れるように) */}
         <PublicErrorBoundary onReset={() => navigate(HOME_PATH)}>
-          <NewsList
-            category={route.kind === "category" ? route.key : undefined}
-            /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
-            openedId={route.kind === "detail" ? route.id : undefined}
-          />
+          {route.kind === "map" ? (
+            <PublicMapSection onCountry={(iso) => navigate(`${HOME_PATH}?country=${iso}`)} />
+          ) : (
+            <NewsList
+              category={route.kind === "category" ? route.key : undefined}
+              /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
+              openedId={route.kind === "detail" ? route.id : undefined}
+            />
+          )}
         </PublicErrorBoundary>
       </main>
       <SiteFooter />
@@ -120,7 +127,10 @@ function SiteHeader({ route }: { route: Route }) {
           </button>
           <span className="text-[11px] text-fg-subtle">サイバー脅威ニュース</span>
         </div>
-        <CategoryNav active={route.kind === "category" ? route.key : undefined} />
+        <CategoryNav
+          active={route.kind === "category" ? route.key : undefined}
+          onMap={route.kind === "map"}
+        />
       </div>
     </header>
   );
@@ -145,7 +155,7 @@ function SiteFooter() {
 }
 
 /** カテゴリの並びは backend が返す順をそのまま使う (定義を frontend に複製しない)。 */
-function CategoryNav({ active }: { active?: string }) {
+function CategoryNav({ active, onMap }: { active?: string; onMap: boolean }) {
   const { data } = useQuery({
     queryKey: ["public-news-categories"],
     queryFn: () => fetchPublicNews({ limit: 1 }),
@@ -155,7 +165,7 @@ function CategoryNav({ active }: { active?: string }) {
   if (keys.length === 0) return null;
   return (
     <nav className="flex flex-wrap gap-x-4 gap-y-1 overflow-x-auto">
-      <CategoryTab href={HOME_PATH} label="新着" active={!active} />
+      <CategoryTab href={HOME_PATH} label="新着" active={!active && !onMap} />
       {keys.map((k) => (
         <CategoryTab
           key={k}
@@ -164,6 +174,7 @@ function CategoryNav({ active }: { active?: string }) {
           active={active === k}
         />
       ))}
+      <CategoryTab href={`${HOME_PATH}/map`} label="地図" active={onMap} />
     </nav>
   );
 }
@@ -195,6 +206,7 @@ function CategoryBadge({ category }: { category: string }) {
 }
 
 function NewsList({ category, openedId }: { category?: string; openedId?: string }) {
+  const country = new URLSearchParams(window.location.search).get("country") ?? undefined;
   const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [search, setSearch] = useState(term);
   const [page, setPage] = useState(0);
@@ -215,7 +227,7 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
     window.history.replaceState(null, "", `${basePath}${p.toString() ? `?${p}` : ""}`);
   }, [term, basePath]);
 
-  const showFeatured = !category && !search && page === 0;
+  const showFeatured = !category && !search && !country && page === 0;
 
   const { data: featured } = useQuery({
     queryKey: ["public-news-featured"],
@@ -225,13 +237,14 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
   });
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["public-news", category ?? "", search, page],
+    queryKey: ["public-news", category ?? "", country ?? "", search, page],
     queryFn: () =>
       fetchPublicNews({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         search: search || undefined,
         category,
+        country,
       }),
     placeholderData: keepPreviousData,
     refetchInterval: 10 * 60 * 1000,
@@ -267,7 +280,13 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
       <section className="space-y-5">
         <div className="flex items-center gap-3 pt-4 border-t border-border-subtle">
           <h2 className="text-[13px] font-semibold text-fg-muted">
-            {search ? `「${search}」の検索結果` : category ? categoryLabel(category) : "新着"}
+            {search
+              ? `「${search}」の検索結果`
+              : country
+                ? `被害国: ${country}`
+                : category
+                  ? categoryLabel(category)
+                  : "新着"}
           </h2>
           <div className="ml-auto">
             <SearchBox

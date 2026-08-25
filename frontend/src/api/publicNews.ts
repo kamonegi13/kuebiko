@@ -67,6 +67,8 @@ export interface PublicNewsQuery {
   search?: string;
   /** カテゴリ key。一覧レスポンスの `categories` が正 (フロントで定義を持たない)。 */
   category?: string;
+  /** 被害国 ISO (地図からの遷移)。 */
+  country?: string;
   /** 注目枠 = 複数媒体が報じ、かつ統合本文がある事象。 */
   featured?: boolean;
 }
@@ -76,6 +78,7 @@ export function fetchPublicNews(q: PublicNewsQuery = {}) {
   if (q.offset) p.set("offset", String(q.offset));
   if (q.search) p.set("search", q.search);
   if (q.category) p.set("category", q.category);
+  if (q.country) p.set("country", q.country);
   if (q.featured) p.set("featured", "true");
   return get<{ items: PublicNewsItem[]; note: string; categories: string[] }>(
     `/api/v1/public/news?${p}`,
@@ -84,4 +87,27 @@ export function fetchPublicNews(q: PublicNewsQuery = {}) {
 
 export function fetchPublicNewsDetail(id: string) {
   return get<PublicNewsDetail>(`/api/v1/public/news/${encodeURIComponent(id)}`);
+}
+
+/** 公開地図の 1 国。 */
+export interface PublicMapNode {
+  iso: string;
+  label: string;
+  lat: number;
+  lon: number;
+  count: number;
+}
+
+export interface PublicMapResponse {
+  nodes: PublicMapNode[];
+  window_days: number;
+  /** 地図に置けた件数 / 置けなかった件数 / 母集団。**割合を隠さない**ために全部返る。 */
+  placed: number;
+  unplaced: number;
+  total: number;
+  note: string;
+}
+
+export function fetchPublicMap(days = 30) {
+  return get<PublicMapResponse>(`/api/v1/public/news/map?days=${days}`);
 }

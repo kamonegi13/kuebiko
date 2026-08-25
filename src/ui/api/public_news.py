@@ -24,17 +24,20 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from src.cti.geocoder import Geocoder
 from src.cti.source_basis import classify_source_tier
 from src.storage.run_history import RunHistoryRepository
 
 # カテゴリのグループ定義は記事側 facet と **同じものを使う** (グループの中身を
 # 2 箇所に持つと必ずずれる)。公開面に出す 4 つだけを ``PUBLIC_CATEGORIES`` で選ぶ。
 from src.ui.api.articles_feed import _CATEGORY_GROUPS  # noqa: PLC2701 — 分類の SSoT 共有
+from src.ui.services.geo_cyber_map import _COUNTRIES_YAML, _yaml_display_map
 
 public_news_api = APIRouter(prefix="/api/v1/public/news", tags=["public"])
 
@@ -175,6 +178,7 @@ def list_public_news(
     offset: int = 0,
     search: str | None = None,
     category: str | None = None,
+    country: str | None = None,
     featured: bool = False,
 ) -> dict[str, Any]:
     """公開ニュース一覧 (high のみ、新しい順)。
@@ -182,7 +186,8 @@ def list_public_news(
     冒頭テキストは統合済みなら生成本文の BLUF、単独報なら **kuebiko が書いた要約**。
     出版社の本文 (``body`` / ``body_ja``) は決して返さない。
 
-    ``category`` は ``PUBLIC_CATEGORIES`` のいずれか。``featured`` は「注目」枠で、
+    ``country`` は被害国 ISO (地図からの遷移)。``category`` は ``PUBLIC_CATEGORIES``
+    のいずれか。``featured`` は「注目」枠で、
     複数媒体が報じ かつ 統合本文を持つ事象に絞る。どちらも **LIMIT より前**に効く。
     """
     # 未知のカテゴリで **絞らない** にすると綴り違いが全件表示になり気付けない。
@@ -201,6 +206,8 @@ def list_public_news(
         # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
         "exclude_duplicate_only": True,
         "member_categories": categories,
+        # 地図から国を選んだときの絞り込み (被害国 ISO)
+        "member_country": (country or "").strip().upper() or None,
         "search_item_ids": search_item_ids,
     }
     if featured:
@@ -243,6 +250,95 @@ def list_public_news(
         }
         items.append(item)
     return {"items": items, "note": GENERATED_NOTE, "categories": list(PUBLIC_CATEGORIES)}
+
+
+# 地図の集計はやや重い (公開対象の全事象を走査) ので短 TTL を挟む。
+_MAP_TTL_SECONDS = 300.0
+_map_cache: dict[int, tuple[float, dict[str, Any]]] = {}
+
+
+@public_news_api.get("/map")
+def get_public_map(days: int = 30) -> dict[str, Any]:
+    """公開ニュースの **被害国** 分布。
+
+    ⚠ 分析画面の脅威マップ (`/api/v1/geo/*`) を公開へ流用しない。あちらは
+    アクター帰属と意図 (Diamond Model) の層を重ねており、**報道された事実ではなく
+    kuebiko の分析判断**を含む。公開面は根拠の連鎖を示せないので出さない。
+
+    ⚠ **母集団を記事一覧と一致させる**。別母集団だと「地図は 592 件なのに記事は
+    30 件」と食い違い、読み手が混乱する。ここは公開対象 (high・重複判定のみを除く)
+    と同じ集合だけを数える。
+
+    ⚠ **地図は収集網の観測であって世界ではない**。国が特定できなかった件数を必ず
+    併せて返す (実測では公開対象の 56% に国が付いていない)。読み手が「これが世界の
+    実態」と読むのを防ぐのは、割合を隠さないことでしかできない。
+    """
+    window = max(1, min(365, days))
+    now = time.monotonic()
+    cached = _map_cache.get(window)
+    if cached is not None and now - cached[0] < _MAP_TTL_SECONDS:
+        return cached[1]
+
+    repo = _repo()
+    since = datetime.now(UTC) - timedelta(days=window)
+    records = repo.list_event_items(
+        origin="live",
+        importances=list(_PUBLIC_IMPORTANCES),
+        exclude_merged=True,
+        exclude_duplicate_only=True,
+        since=since,
+        limit=5000,
+    )
+    articles = repo.get_articles_by_ids([a for r in records for a in r.state.member_ids])
+
+    counts: dict[str, int] = {}
+    unplaced = 0
+    for r in records:
+        iso = ""
+        for aid in r.state.member_ids:
+            art = articles.get(aid)
+            value = (getattr(art, "victim_country_iso", "") or "") if art else ""
+            if value:
+                iso = value.upper()
+                break
+        if iso:
+            counts[iso] = counts.get(iso, 0) + 1
+        else:
+            unplaced += 1
+
+    geocoder = Geocoder()
+    # 表示名の SSoT は config/cti/countries.yaml (分析画面と同じ解決経路を使う)
+    labels = _yaml_display_map(str(_COUNTRIES_YAML))
+    nodes: list[dict[str, Any]] = []
+    for iso, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        point = geocoder.country(iso)
+        if point is None:
+            unplaced += count  # 座標が引けないものも「置けなかった」に数える
+            continue
+        nodes.append(
+            {
+                "iso": iso,
+                "label": labels.get(iso, iso),
+                "lat": point.lat,
+                "lon": point.lon,
+                "count": count,
+            }
+        )
+
+    payload = {
+        "nodes": nodes,
+        "window_days": window,
+        # 読み手に割合を示すための 3 値。placed / total を隠さない
+        "placed": sum(n["count"] for n in nodes),
+        "unplaced": unplaced,
+        "total": len(records),
+        "note": (
+            "掲載記事のうち被害国を特定できたものだけを地図にしています。"
+            "収集した報道の分布であり、世界全体の実態を示すものではありません。"
+        ),
+    }
+    _map_cache[window] = (now, payload)
+    return payload
 
 
 @public_news_api.get("/{item_id}")
