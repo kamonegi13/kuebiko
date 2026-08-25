@@ -62,6 +62,18 @@ MEMBER_CAP = 12
 FOCAL_CVE_MAX = 3
 FOCAL_CVE_COS = 0.55
 
+# 本文の節。**この語彙だけ**を LLM に選ばせ、表示名は frontend が解決する。
+# 対象がサイバー全般 (脆弱性・侵害・マルウェア・地政学) なので、該当が無い節は
+# 出さない前提 (地政学記事に「利用者が取るべき対応」は無い)。
+SECTION_KEYS: tuple[str, ...] = (
+    "what",  # 何が起きたか
+    "scope",  # 影響範囲
+    "how",  # 攻撃の手口
+    "response",  # 対応・緩和
+    "context",  # 背景・経緯
+    "action",  # 利用者が取るべき対応
+)
+
 DORMANT_REJOIN_COS = 0.80
 DORMANT_REJOIN_SHARED = 2
 # 失効: last_reported_at からこの日数で dormant (ENTITY_FREQ_WINDOW_HOURS と同基準)
@@ -168,6 +180,10 @@ class FactItem(BaseModel):
     text: str
     source_index: int = 0
     paragraph: int = 1
+    # 節の種類 (SECTION_KEYS のいずれか)。**表示名はコード側が持つ** —
+    # 自由記述の見出しを許すと表記が揺れる (ラベルは SSoT を参照、CLAUDE.md §7)。
+    # 既定は "what"。未知の値は表示側が「前の節の続き」として扱う (勝手に節を作らない)。
+    section: str = "what"
 
 
 class EventNewsDraft(BaseModel):

@@ -24,6 +24,7 @@ import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
 import { PublicMapSection } from "./PublicMapSection";
 import { categoryColor } from "./categoryColors";
+import { buildSections } from "./sections";
 
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
@@ -668,6 +669,24 @@ function KeyPoints({ text }: { text: string }) {
   );
 }
 
+/** 事実行 1 段落。**同じ段落の文は連結して散文にする** (行ごとに割らない)。 */
+function FactParagraph({
+  facts,
+}: {
+  facts: { text: string; source_index: number }[];
+}) {
+  return (
+    <p className="text-[14px] leading-[2] text-fg-muted indent-[1em]">
+      {facts.map((f, i) => (
+        <span key={i}>
+          {f.text}
+          {f.source_index > 0 && <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 /** 記事本文の節。見出しと罫線で区切り、節どうしの間隔を広めに取る。 */
 function ArticleSection({
   title,
@@ -742,6 +761,8 @@ function NewsDetail({ id }: { id: string }) {
   }, [id]);
 
   const paragraphs = data ? groupByParagraph(data.facts) : [];
+  // v4 以降は節を持つ。持たない記事 (既存) は節見出し無しで従来どおり描く
+  const sections = data ? buildSections(data.facts) : [];
 
   if (isFetching && !data) return <p className="text-sm text-fg-subtle">読み込み中…</p>;
   if (error || !data) {
@@ -776,26 +797,26 @@ function NewsDetail({ id }: { id: string }) {
 
       {data.bluf && <KeyPoints text={data.bluf} />}
 
-      {paragraphs.length > 0 && (
-        <ArticleSection title="報じられている内容">
-          {/* 事実行を **段落単位** に組む。生成側が paragraph を持っているのに
-              平坦な箇条書きにすると、21 行の羅列になって読み通せない。 */}
-          <div className="space-y-4">
-            {paragraphs.map((facts, i) => (
-              <p key={i} className="text-[14px] leading-[2] text-fg-muted indent-[1em]">
-                {facts.map((f, j) => (
-                  <span key={j}>
-                    {f.text}
-                    {f.source_index > 0 && (
-                      <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
-                    )}
-                  </span>
+      {sections.length > 0
+        ? sections.map((sec) => (
+            <ArticleSection key={sec.key} title={sec.label}>
+              <div className="space-y-4">
+                {sec.paragraphs.map((facts, i) => (
+                  <FactParagraph key={i} facts={facts} />
                 ))}
-              </p>
-            ))}
-          </div>
-        </ArticleSection>
-      )}
+              </div>
+            </ArticleSection>
+          ))
+        : paragraphs.length > 0 && (
+            /* 節を持たない記事 (v4 より前に生成) は従来どおり段落だけで描く */
+            <ArticleSection title="報じられている内容">
+              <div className="space-y-4">
+                {paragraphs.map((facts, i) => (
+                  <FactParagraph key={i} facts={facts} />
+                ))}
+              </div>
+            </ArticleSection>
+          )}
 
       {data.discrepancies.length > 0 && (
         <ArticleSection title="媒体間で食い違う点" tone="warning">

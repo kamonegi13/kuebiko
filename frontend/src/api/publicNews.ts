@@ -34,6 +34,9 @@ export interface PublicNewsFact {
   text: string;
   source_index: number;
   paragraph: number;
+  /** 節の種類 (what / scope / how / response / context / action)。
+   *  v4 より前に生成された記事は持たない → 表示側は節見出し無しで描く。 */
+  section?: string;
 }
 
 export interface PublicNewsDetail {
