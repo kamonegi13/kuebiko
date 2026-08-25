@@ -12,6 +12,7 @@ import { PublicNewsSite } from "./PublicNewsSite";
 const ITEM = {
   id: "ev-1",
   headline: "重大な脆弱性が実環境で悪用中",
+  category: "vuln",
   summary: "kuebiko が書いた要約。",
   generated: true,
   sources: 5,
@@ -63,17 +64,21 @@ afterEach(() => {
 });
 
 describe("公開ニュースサイト", () => {
-  it("一覧に見出しと出典媒体を出す", async () => {
+  it("一覧は「何の話か」だけを出す (カテゴリ → 見出し → 要約 → 日付)", async () => {
     renderSite();
     expect(await screen.findByText(ITEM.headline)).toBeTruthy();
-    // 出典は常に見える (契約 2)。注目枠にも同じ媒体が出るので件数は問わない
-    await waitFor(() => expect(screen.getAllByText(/Example News/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(ITEM.summary).length).toBeGreaterThan(0);
+    // カテゴリバッジ (語彙が無い環境では key がそのまま出る)
+    expect(screen.getAllByText("vuln").length).toBeGreaterThan(0);
   });
 
-  it("複数媒体が報じた事象はその旨を示す", async () => {
+  it("一覧に出典名と媒体数を出さない (2026-08-25 利用者指摘)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);
-    expect(screen.getAllByText("3 媒体が報道").length).toBeGreaterThan(0);
+    // 分析者向けの情報は開いてから見せる
+    expect(screen.queryByText(/Example News/)).toBeNull();
+    expect(screen.queryByText(/Other Wire/)).toBeNull();
+    expect(screen.queryByText(/媒体が報道/)).toBeNull();
   });
 
   it("生成物であることを常に明示する", async () => {
@@ -102,13 +107,22 @@ describe("公開ニュースサイト", () => {
     // 原記事へは外部リンク。rel を落とすと参照元が漏れる
     for (const a of external) expect(a.getAttribute("rel")).toContain("noopener");
   });
+
+  it("媒体数は記事を開いたときにだけ見せる", async () => {
+    window.history.replaceState(null, "", "/app/news/ev-1");
+    renderSite();
+    await screen.findByText(/出典 \(2\)/);
+    expect(screen.getByText(/独立 3 媒体が報道/)).toBeTruthy();
+    expect(screen.getByText(/Example News/)).toBeTruthy();
+  });
 });
 
 describe("カテゴリ", () => {
   it("カテゴリのタブを出す (並びと定義は backend が持つ)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);
-    expect(screen.getByText("新着")).toBeTruthy();
+    // ナビのタブと一覧の見出しの 2 箇所に出る
+    expect(screen.getAllByText("新着").length).toBeGreaterThan(0);
     // 語彙が無い環境では key がそのまま出る (ラベル解決は vocabularies が SSoT)
     const tabs = Array.from(document.querySelectorAll("nav a")).map((a) => a.getAttribute("href"));
     expect(tabs).toContain("/app/news/c/vuln");

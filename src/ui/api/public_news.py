@@ -47,6 +47,31 @@ _LIST_LIMIT_MAX = 60
 PUBLIC_CATEGORIES: tuple[str, ...] = ("vuln", "incident_breach", "threat", "geopolitical")
 
 
+# 記事 category → 公開カテゴリ key の逆引き (グループ定義から機械的に作る)
+_CATEGORY_OF: dict[str, str] = {
+    article_category: public_key
+    for public_key in PUBLIC_CATEGORIES
+    for article_category in _CATEGORY_GROUPS.get(public_key, [public_key])
+}
+
+
+def _dominant_category(articles: dict[str, Any], member_ids: tuple[str, ...]) -> str:
+    """事象の代表カテゴリ (構成記事の多数決)。該当が無ければ空文字。
+
+    一覧のバッジに使う。同数のときは ``PUBLIC_CATEGORIES`` の並び順で決める
+    (実行ごとに変わらないように)。
+    """
+    counts: dict[str, int] = {}
+    for aid in member_ids:
+        art = articles.get(aid)
+        key = _CATEGORY_OF.get(str(getattr(art, "category", "") or "")) if art else None
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return ""
+    return max(counts, key=lambda k: (counts[k], -PUBLIC_CATEGORIES.index(k)))
+
+
 def _categories_for(key: str) -> list[str] | None:
     """公開カテゴリ key → 記事 category の集合。未知の値は「絞らない」ではなく None。"""
     if key not in PUBLIC_CATEGORIES:
@@ -166,6 +191,8 @@ def list_public_news(
             "id": r.state.item_id,
             "headline": headline,
             "summary": summary,
+            # 一覧のバッジ用。読み手が最初に見るのは「何の話か」であって媒体数ではない
+            "category": _dominant_category(articles, r.state.member_ids),
             "generated": latest is not None,
             "sources": len(citations),
             "independent_sources": r.independent_sources,
@@ -204,6 +231,9 @@ def get_public_news(item_id: str) -> dict[str, Any]:
     return {
         "id": item_id,
         "headline": latest.headline if latest else citations[0]["title"],
+        "category": _dominant_category(
+            repo.get_articles_by_ids(list(record.state.member_ids)), record.state.member_ids
+        ),
         "generated": latest is not None,
         "bluf": bluf,
         # 事実行は出典番号を持つ (どの媒体が報じたかを本文中で示す)

@@ -18,6 +18,8 @@ export interface PublicCitation {
 export interface PublicNewsItem {
   id: string;
   headline: string;
+  /** 代表カテゴリ (構成記事の多数決)。一覧のバッジに使う。 */
+  category: string;
   /** 統合済みなら生成 BLUF、単独報なら kuebiko が書いた要約。 */
   summary: string;
   /** kuebiko が複数媒体から生成した本文を持つか。 */
@@ -37,6 +39,7 @@ export interface PublicNewsFact {
 export interface PublicNewsDetail {
   id: string;
   headline: string;
+  category: string;
   generated: boolean;
   bluf: string;
   facts: PublicNewsFact[];

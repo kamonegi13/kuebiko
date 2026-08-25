@@ -1,12 +1,13 @@
 // 公開ニュースサイト (匿名 = Tier0 が見る唯一の画面)。
 //
 // 分析者向けの AppShell (サイドバー・タブ・操作系) は出さない。読み手ができるのは
-// 「一覧を読む / 検索する / 記事を開く / 出典へ辿る」の 4 つだけ。
+// 「読む / カテゴリで絞る / 検索する / 開く / 出典へ辿る」だけ。
 //
-// 表示の原則:
-// - **出典を必ず見せる**。生成物であることも常に明示する (原記事ではない)
-// - 出版社の本文は持っていない (公開 API が返さない)。要約は kuebiko が書いたもの
-// - 画像は無いので、写真主体ではなく **文字組みの密度**で読ませる
+// **一覧に出すのは「何の話か」だけ** (カテゴリ → 見出し → 要約 → 日付)。
+// 媒体数・出典名・裏取りの内訳は分析者向けの情報なので **開いてから**見せる
+// (2026-08-25 利用者指摘:「何件が報道などは最初から見られる必要はない」)。
+//
+// 画像は持っていないので、写真ではなく **文字の大きさと余白**で階層をつくる。
 
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
@@ -17,14 +18,16 @@ import {
   type PublicCitation,
   type PublicNewsItem,
 } from "../api/publicNews";
-import { formatJstCompact } from "../utils/date";
+import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 24;
+const FEATURED_COUNT = 3;
 const HOME_PATH = "/app/news";
 
-/** カテゴリの表示名。値の定義 (どの category を束ねるか) は backend が持つ。 */
+/** カテゴリの表示名。どの category を束ねるかの定義は backend が持つ。 */
 function categoryLabel(key: string): string {
+  if (!key) return "";
   return vocabLabel("category_group", key) || vocabLabel("category", key) || key;
 }
 
@@ -55,7 +58,6 @@ export function PublicNewsSite() {
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
-  // 公開サイトが持つ path 以外 (/app/dashboard 等) は一覧へ寄せる
   useEffect(() => {
     const p = window.location.pathname;
     if (route.kind === "home" && p !== HOME_PATH) {
@@ -66,7 +68,7 @@ export function PublicNewsSite() {
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">
       <SiteHeader route={route} />
-      <main className="flex-1 w-full max-w-[52rem] mx-auto px-4 py-6">
+      <main className="flex-1 w-full max-w-[46rem] mx-auto px-5 py-8">
         {route.kind === "detail" ? (
           <NewsDetail id={route.id} />
         ) : (
@@ -78,7 +80,44 @@ export function PublicNewsSite() {
   );
 }
 
-/** カテゴリの並び。backend が返す順をそのまま使う (定義を frontend に複製しない)。 */
+function SiteHeader({ route }: { route: Route }) {
+  return (
+    <header className="border-b border-border-subtle bg-surface-1/95 backdrop-blur-md sticky top-0 z-20">
+      <div className="w-full max-w-[46rem] mx-auto px-5">
+        <div className="flex items-baseline gap-2.5 pt-4 pb-3">
+          <button
+            onClick={() => navigate(HOME_PATH)}
+            className="text-[17px] font-bold tracking-tight text-fg hover:text-accent transition-colors"
+          >
+            kuebiko
+          </button>
+          <span className="text-[11px] text-fg-subtle">サイバー脅威ニュース</span>
+        </div>
+        <CategoryNav active={route.kind === "category" ? route.key : undefined} />
+      </div>
+    </header>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-border-subtle mt-12">
+      <div className="w-full max-w-[46rem] mx-auto px-5 py-6 text-[11px] leading-relaxed text-fg-subtle space-y-2">
+        <p>
+          掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
+          各記事の出典をご確認ください。
+        </p>
+        <p>
+          <a href="/auth/" className="hover:text-accent underline underline-offset-2">
+            運用者ログイン
+          </a>
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+/** カテゴリの並びは backend が返す順をそのまま使う (定義を frontend に複製しない)。 */
 function CategoryNav({ active }: { active?: string }) {
   const { data } = useQuery({
     queryKey: ["public-news-categories"],
@@ -88,7 +127,7 @@ function CategoryNav({ active }: { active?: string }) {
   const keys = data?.categories ?? [];
   if (keys.length === 0) return null;
   return (
-    <nav className="flex flex-wrap gap-1.5 -mb-px">
+    <nav className="flex flex-wrap gap-x-4 gap-y-1 overflow-x-auto">
       <CategoryTab href={HOME_PATH} label="新着" active={!active} />
       {keys.map((k) => (
         <CategoryTab
@@ -110,10 +149,10 @@ function CategoryTab({ href, label, active }: { href: string; label: string; act
         e.preventDefault();
         navigate(href);
       }}
-      className={`px-2.5 py-1.5 text-sm rounded-t border-b-2 transition-colors ${
+      className={`shrink-0 pb-2.5 text-[13px] border-b-2 -mb-px transition-colors ${
         active
-          ? "border-accent text-accent font-medium"
-          : "border-transparent text-fg-muted hover:text-fg"
+          ? "border-accent text-fg font-semibold"
+          : "border-transparent text-fg-subtle hover:text-fg"
       }`}
     >
       {label}
@@ -121,56 +160,11 @@ function CategoryTab({ href, label, active }: { href: string; label: string; act
   );
 }
 
-function SiteHeader({ route }: { route: Route }) {
-  return (
-    <header className="border-b border-border-subtle bg-surface-1/95 backdrop-blur-md sticky top-0 z-20">
-      <div className="w-full max-w-[52rem] mx-auto px-4 pt-3">
-        <div className="flex items-baseline gap-3">
-          <button
-            onClick={() => navigate(HOME_PATH)}
-            className="text-lg font-bold tracking-tight text-fg hover:text-accent transition-colors"
-          >
-            kuebiko
-          </button>
-          <span className="text-xs text-fg-subtle">サイバー脅威ニュース</span>
-        </div>
-        <div className="mt-2">
-          <CategoryNav active={route.kind === "category" ? route.key : undefined} />
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function SiteFooter() {
-  return (
-    <footer className="border-t border-border-subtle mt-8">
-      <div className="w-full max-w-[52rem] mx-auto px-4 py-5 text-xs text-fg-subtle space-y-1.5">
-        <p>
-          掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
-          詳細は各記事の出典をご確認ください。
-        </p>
-        <p>
-          {/* 運用者向けの導線。控えめに置く (公開サイトの主役ではない) */}
-          <a href="/auth/" className="hover:text-accent underline">
-            運用者ログイン
-          </a>
-        </p>
-      </div>
-    </footer>
-  );
-}
-
-/** 出典の要約表示。媒体名を並べ、件数が多ければ残数を出す。 */
-function SourceLine({ citations, total }: { citations: PublicCitation[]; total: number }) {
-  const shown = citations.map((c) => c.source || "出典不明").filter(Boolean);
-  const rest = total - citations.length;
-  return (
-    <span className="text-fg-subtle">
-      {shown.join(" / ")}
-      {rest > 0 && ` ほか ${rest} 媒体`}
-    </span>
-  );
+/** カテゴリバッジ。一覧で「何の話か」を最初に示す唯一のメタ情報。 */
+function CategoryBadge({ category }: { category: string }) {
+  const label = categoryLabel(category);
+  if (!label) return null;
+  return <span className="text-[11px] font-semibold tracking-wide text-accent">{label}</span>;
 }
 
 function NewsList({ category }: { category?: string }) {
@@ -179,7 +173,6 @@ function NewsList({ category }: { category?: string }) {
   const [page, setPage] = useState(0);
   const basePath = category ? `${HOME_PATH}/c/${encodeURIComponent(category)}` : HOME_PATH;
 
-  // カテゴリを移ったら検索とページを持ち越さない (別の条件の続きを見せない)
   useEffect(() => {
     setTerm("");
     setSearch("");
@@ -195,6 +188,15 @@ function NewsList({ category }: { category?: string }) {
     window.history.replaceState(null, "", `${basePath}${p.toString() ? `?${p}` : ""}`);
   }, [term, basePath]);
 
+  const showFeatured = !category && !search && page === 0;
+
+  const { data: featured } = useQuery({
+    queryKey: ["public-news-featured"],
+    queryFn: () => fetchPublicNews({ limit: FEATURED_COUNT, featured: true }),
+    staleTime: 10 * 60 * 1000,
+    enabled: showFeatured,
+  });
+
   const { data, isFetching, error } = useQuery({
     queryKey: ["public-news", category ?? "", search, page],
     queryFn: () =>
@@ -208,138 +210,209 @@ function NewsList({ category }: { category?: string }) {
     refetchInterval: 10 * 60 * 1000,
   });
 
-  const items = data?.items ?? [];
-  // 注目は「新着」の 1 ページ目・検索なしのときだけ (絞り込み中に別条件の記事を混ぜない)
-  const showFeatured = !category && !search && page === 0;
+  const featuredItems = showFeatured ? (featured?.items ?? []) : [];
+  const featuredIds = new Set(featuredItems.map((i) => i.id));
+  // 注目に出したものを下でもう一度出さない (同じ見出しが 2 回並ぶと読みにくい)
+  const items = (data?.items ?? []).filter((i) => !featuredIds.has(i.id));
 
   return (
-    <div className="space-y-5">
-      {showFeatured && <FeaturedStrip />}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle" />
-          <input
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="キーワードで探す"
-            className="w-full h-9 pl-8 pr-3 bg-surface-2 border border-border-subtle rounded-md text-sm placeholder:text-fg-subtle focus:outline-none focus:border-accent"
-          />
+    <div className="space-y-8">
+      {featuredItems.length > 0 && (
+        <section className="space-y-5">
+          <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
+          <LeadStory item={featuredItems[0]} />
+          {featuredItems.length > 1 && (
+            <ul className="space-y-5 pt-6 border-t border-border-subtle">
+              {featuredItems.slice(1).map((it) => (
+                <NewsCard key={it.id} item={it} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <section className="space-y-5">
+        <div className="flex items-center gap-3 pt-4 border-t border-border-subtle">
+          <h2 className="text-[13px] font-semibold text-fg-muted">
+            {search ? `「${search}」の検索結果` : category ? categoryLabel(category) : "新着"}
+          </h2>
+          <div className="ml-auto">
+            <SearchBox
+              term={term}
+              onChange={setTerm}
+              onSubmit={submit}
+              onClear={() => {
+                setTerm("");
+                setSearch("");
+                setPage(0);
+                window.history.replaceState(null, "", basePath);
+              }}
+              active={Boolean(search)}
+            />
+          </div>
         </div>
-        <button
-          onClick={submit}
-          className="h-9 px-4 rounded-md border border-border-default text-sm text-fg-muted hover:text-accent hover:border-accent-soft transition-colors"
-        >
-          検索
-        </button>
+
+        {isFetching && !data && <p className="text-sm text-fg-subtle">読み込み中…</p>}
+        {error && (
+          <p className="text-sm text-critical">
+            読み込みに失敗しました。時間をおいてお試しください。
+          </p>
+        )}
+        {data && items.length === 0 && (
+          <p className="text-sm text-fg-muted py-6">該当する記事がありません。</p>
+        )}
+
+        <ul className="space-y-6">
+          {items.map((it) => (
+            <NewsCard key={it.id} item={it} />
+          ))}
+        </ul>
+
+        {(page > 0 || (data?.items.length ?? 0) === PAGE_SIZE) && (
+          <div className="flex items-center gap-3 pt-6 border-t border-border-subtle">
+            <button
+              disabled={page === 0}
+              onClick={() => {
+                setPage((n) => Math.max(0, n - 1));
+                window.scrollTo(0, 0);
+              }}
+              className="text-[13px] text-fg-muted hover:text-accent disabled:opacity-40 disabled:hover:text-fg-muted transition-colors"
+            >
+              ← 新しい記事
+            </button>
+            <span className="text-[11px] text-fg-subtle tnum">{page + 1}</span>
+            <button
+              disabled={(data?.items.length ?? 0) < PAGE_SIZE}
+              onClick={() => {
+                setPage((n) => n + 1);
+                window.scrollTo(0, 0);
+              }}
+              className="text-[13px] text-fg-muted hover:text-accent disabled:opacity-40 disabled:hover:text-fg-muted transition-colors"
+            >
+              古い記事 →
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SearchBox({
+  term,
+  onChange,
+  onSubmit,
+  onClear,
+  active,
+}: {
+  term: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+  active: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-subtle" />
+        <input
+          value={term}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+          placeholder="検索"
+          aria-label="記事を検索"
+          className="h-8 w-[9rem] focus:w-[13rem] pl-7 pr-2 bg-surface-2 border border-border-subtle rounded text-[13px] placeholder:text-fg-subtle focus:outline-none focus:border-accent transition-all"
+        />
       </div>
-
-      {search && (
-        <p className="text-xs text-fg-subtle">
-          「{search}」の検索結果
-          <button onClick={() => { setTerm(""); setSearch(""); setPage(0); window.history.replaceState(null, "", basePath); }} className="ml-2 underline hover:text-accent">
-            解除
-          </button>
-        </p>
-      )}
-
-      {isFetching && !data && <p className="text-sm text-fg-subtle">読み込み中…</p>}
-      {error && <p className="text-sm text-critical">読み込みに失敗しました。時間をおいてお試しください。</p>}
-      {data && items.length === 0 && (
-        <p className="text-sm text-fg-muted bg-surface-2 border border-border-subtle rounded-lg p-4">
-          該当する記事がありません。
-        </p>
-      )}
-
-      <ul className="divide-y divide-border-subtle">
-        {items.map((it) => (
-          <NewsListItem key={it.id} item={it} />
-        ))}
-      </ul>
-
-      {(page > 0 || items.length === PAGE_SIZE) && (
-        <div className="flex items-center gap-2 pt-2">
-          <button
-            disabled={page === 0}
-            onClick={() => { setPage((n) => Math.max(0, n - 1)); window.scrollTo(0, 0); }}
-            className="text-xs px-3 py-1.5 rounded border border-border-default text-fg-muted hover:text-accent disabled:opacity-40 transition-colors"
-          >
-            ← 新しい記事
-          </button>
-          <span className="text-xs text-fg-subtle tnum">{page + 1} ページ目</span>
-          <button
-            disabled={items.length < PAGE_SIZE}
-            onClick={() => { setPage((n) => n + 1); window.scrollTo(0, 0); }}
-            className="text-xs px-3 py-1.5 rounded border border-border-default text-fg-muted hover:text-accent disabled:opacity-40 transition-colors"
-          >
-            古い記事 →
-          </button>
-        </div>
+      {active && (
+        <button onClick={onClear} className="text-[11px] text-fg-subtle hover:text-accent underline">
+          解除
+        </button>
       )}
     </div>
   );
 }
 
-/** 注目 = 複数媒体が報じ、かつ統合本文がある事象。裏取りのある話題を先頭に置く。 */
-function FeaturedStrip() {
-  const { data } = useQuery({
-    queryKey: ["public-news-featured"],
-    queryFn: () => fetchPublicNews({ limit: 3, featured: true }),
-    staleTime: 10 * 60 * 1000,
-  });
-  const items = data?.items ?? [];
-  if (items.length === 0) return null;
+/** メタ行。一覧では **日付だけ**。媒体数や出典名は開いてから見せる。 */
+function CardMeta({ item }: { item: PublicNewsItem }) {
   return (
-    <section className="space-y-2.5 pb-4 border-b border-border-subtle">
-      <h2 className="text-xs font-semibold text-fg-muted tracking-wide">注目</h2>
-      <ul className="space-y-3">
-        {items.map((it) => (
-          <li key={it.id}>
-            <button
-              onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
-              className="block w-full text-left group"
-            >
-              <h3 className="text-[15px] font-semibold leading-snug text-fg group-hover:text-accent transition-colors">
-                {it.headline}
-              </h3>
-            </button>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px]">
-              <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent-soft">
-                {it.independent_sources} 媒体が報道
-              </span>
-              <SourceLine citations={it.citations} total={it.sources} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+      <time dateTime={item.published_at}>{formatJstDate(item.published_at)}</time>
+      <span>{relativeFromNow(item.published_at)}</span>
+    </div>
   );
 }
 
-function NewsListItem({ item }: { item: PublicNewsItem }) {
+/** 先頭記事。画像が無いので見出しを一段大きくして階層をつくる。 */
+function LeadStory({ item }: { item: PublicNewsItem }) {
   return (
-    <li className="py-4 first:pt-0">
+    <article>
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
-        className="block w-full text-left group"
+        className="block w-full text-left group space-y-2"
       >
-        <h2 className="text-base font-semibold leading-snug text-fg group-hover:text-accent transition-colors">
+        <CategoryBadge category={item.category} />
+        <h2 className="text-[22px] font-bold leading-[1.4] text-fg group-hover:text-accent transition-colors">
           {item.headline}
         </h2>
         {item.summary && (
-          <p className="mt-1.5 text-sm leading-relaxed text-fg-muted line-clamp-3">{item.summary}</p>
+          <p className="text-[14px] leading-[1.9] text-fg-muted line-clamp-3">{item.summary}</p>
         )}
       </button>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-        {item.independent_sources >= 2 && (
-          <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent-soft">
-            {item.independent_sources} 媒体が報道
-          </span>
-        )}
-        <SourceLine citations={item.citations} total={item.sources} />
-        <span className="ml-auto text-fg-subtle shrink-0">{formatJstCompact(item.published_at)}</span>
+      <div className="mt-2.5">
+        <CardMeta item={item} />
       </div>
+    </article>
+  );
+}
+
+function NewsCard({ item }: { item: PublicNewsItem }) {
+  return (
+    <li>
+      <article>
+        <button
+          onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
+          className="block w-full text-left group space-y-1.5"
+        >
+          <CategoryBadge category={item.category} />
+          <h3 className="text-[16px] font-semibold leading-[1.5] text-fg group-hover:text-accent transition-colors">
+            {item.headline}
+          </h3>
+          {item.summary && (
+            <p className="text-[13px] leading-[1.85] text-fg-muted line-clamp-2">{item.summary}</p>
+          )}
+        </button>
+        <div className="mt-2">
+          <CardMeta item={item} />
+        </div>
+      </article>
     </li>
+  );
+}
+
+/** 出典の並び。**詳細でだけ** 見せる。 */
+function Citations({ citations }: { citations: PublicCitation[] }) {
+  return (
+    <section className="space-y-3 pt-6 border-t border-border-subtle">
+      <h2 className="text-[13px] font-semibold text-fg-muted">出典 ({citations.length})</h2>
+      <ol className="space-y-2.5">
+        {citations.map((c) => (
+          <li key={c.index} className="text-[13px] leading-[1.7]">
+            <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>
+            <a
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="text-fg hover:text-accent underline decoration-border-default underline-offset-2"
+            >
+              {c.title}
+              <ExternalLink className="inline w-3 h-3 ml-1 align-baseline" />
+            </a>
+            {c.source && <div className="text-[11px] text-fg-subtle mt-0.5">{c.source}</div>}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -349,7 +422,9 @@ function NewsDetail({ id }: { id: string }) {
     queryFn: () => fetchPublicNewsDetail(id),
   });
 
-  useEffect(() => { window.scrollTo(0, 0); }, [id]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
 
   if (isFetching && !data) return <p className="text-sm text-fg-subtle">読み込み中…</p>;
   if (error || !data) {
@@ -364,38 +439,36 @@ function NewsDetail({ id }: { id: string }) {
   }
 
   return (
-    <article className="space-y-5">
+    <article className="space-y-6">
       <button
         onClick={() => navigate(HOME_PATH)}
-        className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-accent transition-colors"
+        className="inline-flex items-center gap-1 text-[12px] text-fg-subtle hover:text-accent transition-colors"
       >
         <ChevronLeft className="w-3.5 h-3.5" />
         一覧へ戻る
       </button>
 
-      <header className="space-y-2">
-        <h1 className="text-xl font-bold leading-snug text-fg">{data.headline}</h1>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-subtle">
-          <span>{formatJstCompact(data.published_at)}</span>
-          {data.independent_sources >= 2 && (
-            <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent-soft">
-              独立 {data.independent_sources} 媒体
-            </span>
-          )}
+      <header className="space-y-2.5">
+        <CategoryBadge category={data.category} />
+        <h1 className="text-[24px] font-bold leading-[1.45] text-fg">{data.headline}</h1>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle">
+          <time dateTime={data.published_at}>{formatJstDate(data.published_at)}</time>
+          {/* 裏取りの内訳は分析的な情報なので、開いた人にだけ見せる */}
+          {data.independent_sources >= 2 && <span>独立 {data.independent_sources} 媒体が報道</span>}
         </div>
       </header>
 
-      {data.bluf && <p className="text-[15px] leading-loose text-fg">{data.bluf}</p>}
+      {data.bluf && <p className="text-[15px] leading-[2] text-fg">{data.bluf}</p>}
 
       {data.facts.length > 0 && (
-        <section className="space-y-1.5">
-          <h2 className="text-xs font-semibold text-fg-muted">報じられている内容</h2>
-          <ul className="space-y-1.5">
+        <section className="space-y-2">
+          <h2 className="text-[13px] font-semibold text-fg-muted">報じられている内容</h2>
+          <ul className="space-y-2">
             {data.facts.map((f, i) => (
-              <li key={i} className="text-sm leading-relaxed text-fg-muted">
+              <li key={i} className="text-[14px] leading-[1.9] text-fg-muted">
                 {f.text}
                 {f.source_index > 0 && (
-                  <sup className="ml-0.5 text-accent">[{f.source_index}]</sup>
+                  <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
                 )}
               </li>
             ))}
@@ -404,45 +477,30 @@ function NewsDetail({ id }: { id: string }) {
       )}
 
       {data.discrepancies.length > 0 && (
-        <section className="space-y-1.5">
-          <h2 className="text-xs font-semibold text-warning">媒体間で食い違う点</h2>
-          <ul className="space-y-1 text-sm text-fg-muted">
-            {data.discrepancies.map((d, i) => <li key={i}>{d}</li>)}
+        <section className="space-y-2">
+          <h2 className="text-[13px] font-semibold text-warning">媒体間で食い違う点</h2>
+          <ul className="space-y-1.5 text-[14px] leading-[1.9] text-fg-muted">
+            {data.discrepancies.map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
           </ul>
         </section>
       )}
 
       {data.unknowns.length > 0 && (
-        <section className="space-y-1.5">
-          <h2 className="text-xs font-semibold text-fg-muted">わかっていない点</h2>
-          <ul className="space-y-1 text-sm text-fg-muted">
-            {data.unknowns.map((u, i) => <li key={i}>{u}</li>)}
+        <section className="space-y-2">
+          <h2 className="text-[13px] font-semibold text-fg-muted">わかっていない点</h2>
+          <ul className="space-y-1.5 text-[14px] leading-[1.9] text-fg-muted">
+            {data.unknowns.map((u, i) => (
+              <li key={i}>{u}</li>
+            ))}
           </ul>
         </section>
       )}
 
-      <section className="space-y-2 pt-2 border-t border-border-subtle">
-        <h2 className="text-xs font-semibold text-fg-muted">出典 ({data.citations.length})</h2>
-        <ol className="space-y-2">
-          {data.citations.map((c) => (
-            <li key={c.index} className="text-sm leading-relaxed">
-              <span className="text-fg-subtle mr-1">[{c.index}]</span>
-              <a
-                href={c.url}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="text-fg hover:text-accent underline decoration-border-default underline-offset-2"
-              >
-                {c.title}
-                <ExternalLink className="inline w-3 h-3 ml-0.5 align-baseline" />
-              </a>
-              {c.source && <span className="text-fg-subtle"> — {c.source}</span>}
-            </li>
-          ))}
-        </ol>
-      </section>
+      <Citations citations={data.citations} />
 
-      <p className="text-[11px] text-fg-subtle leading-relaxed pt-2">{data.note}</p>
+      <p className="text-[11px] leading-relaxed text-fg-subtle">{data.note}</p>
     </article>
   );
 }
