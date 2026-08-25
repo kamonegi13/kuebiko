@@ -412,10 +412,16 @@ describe("記事本文の組み方", () => {
     expect(sups).toContain("[2]");
   });
 
-  it("要点を独立したボックスで先に見せる", async () => {
+  it("冒頭の要約を独立したボックスで先に見せる", async () => {
     renderArticle(MULTI);
-    expect(await screen.findByText("要点")).toBeTruthy();
+    expect(await screen.findByText("要約")).toBeTruthy();
     expect(screen.getByText("要点の文。")).toBeTruthy();
+  });
+
+  it("ラベルは「要約」で統一する (要点は箇条書きの意で、中身と合わない)", () => {
+    // サイトの他の箇所 (フッタ・注記) も「生成した要約」。語を割らない
+    expect(siteSource).not.toContain(">要点<");
+    expect(siteSource).toContain(">要約<");
   });
 
   it("読了目安を出す", async () => {

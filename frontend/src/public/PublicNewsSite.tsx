@@ -668,13 +668,17 @@ function readingMinutes(data: { bluf: string; facts: { text: string }[] }): numb
 }
 
 /**
- * 生成本文の要点。記事の冒頭に置く (参照サイトの "Key points" と同じ役割)。
- * 本文と地の色を変え、拾い読みでもここだけは目に入るようにする。
+ * 記事冒頭の要約 (BLUF)。本文と地の色を変え、拾い読みでも目に入るようにする。
+ *
+ * ⚠ ラベルは **「要約」**。中身は 2〜3 文の散文で、結論を先に述べたもの。
+ * 参照サイトの "Key points" は箇条書きの要点だが、こちらは形が違う。
+ * **要点と要約は別物**なので「要点」とは呼ばない (2026-08-25 利用者指摘)。
+ * サイトの他の箇所 (フッタ・注記) も「生成した要約」で統一している。
  */
-function KeyPoints({ text }: { text: string }) {
+function LeadSummary({ text }: { text: string }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-2 px-4 py-3.5">
-      <p className="text-[11px] font-semibold tracking-wide text-fg-subtle mb-1.5">要点</p>
+      <p className="text-[11px] font-semibold tracking-wide text-fg-subtle mb-1.5">要約</p>
       <p className="text-[15px] leading-[1.95] text-fg">{text}</p>
     </div>
   );
@@ -806,7 +810,7 @@ function NewsDetail({ id }: { id: string }) {
         </div>
       </header>
 
-      {data.bluf && <KeyPoints text={data.bluf} />}
+      {data.bluf && <LeadSummary text={data.bluf} />}
 
       {sections.length > 0
         ? sections.map((sec) => (
