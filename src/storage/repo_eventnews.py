@@ -307,6 +307,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         min_independent_sources: int = 0,
         has_news: bool | None = None,
         exclude_duplicate_only: bool = False,
+        member_categories: Sequence[str] | None = None,
         member_article_ids: Sequence[str] | None = None,
         search_item_ids: Sequence[str] | None = None,
         search_member_article_ids: Sequence[str] | None = None,
@@ -317,6 +318,10 @@ class EventNewsMixin(RunHistoryRepositoryBase):
 
         ``origin`` / ``statuses`` / ``importances`` で絞り込み可能。N+1 を避けるため
         member_ids は対象アイテム群をまとめて 1 クエリで引く。
+
+        ``member_categories`` は構成記事のカテゴリでの絞り込み (公開面のカテゴリ別
+        一覧)。記事側 facet を走査してから持ち上げる経路と違い上限が無く、
+        **LIMIT より前**に効く。
 
         ``exclude_duplicate_only`` は「全メンバーが dedup で重複判定 かつ 生成本文なし」
         の事象を落とす (公開面用)。**必ず LIMIT より前に効かせる** — 取得後に間引くと
@@ -352,6 +357,14 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         if has_news is not None:
             # 生成の有無は current_version が SSoT (版が 1 本でもあれば生成済み)
             clauses.append("current_version > 0" if has_news else "current_version = 0")
+        if member_categories:
+            ph = ",".join("?" for _ in member_categories)
+            clauses.append(
+                f"EXISTS (SELECT 1 FROM event_item_members cm"  # noqa: S608 — placeholders のみ
+                f" JOIN articles ca ON ca.article_id = cm.article_id"
+                f" WHERE cm.item_id = event_items.id AND ca.category IN ({ph}))"
+            )
+            params.extend(member_categories)
         if exclude_duplicate_only:
             clauses.append(
                 "(current_version > 0 OR EXISTS ("

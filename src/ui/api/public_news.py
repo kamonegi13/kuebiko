@@ -31,11 +31,28 @@ from fastapi import APIRouter, HTTPException
 from src.cti.source_basis import classify_source_tier
 from src.storage.run_history import RunHistoryRepository
 
+# カテゴリのグループ定義は記事側 facet と **同じものを使う** (グループの中身を
+# 2 箇所に持つと必ずずれる)。公開面に出す 4 つだけを ``PUBLIC_CATEGORIES`` で選ぶ。
+from src.ui.api.articles_feed import _CATEGORY_GROUPS  # noqa: PLC2701 — 分類の SSoT 共有
+
 public_news_api = APIRouter(prefix="/api/v1/public/news", tags=["public"])
 
 # 公開するのは重要度 high の事象のみ
 _PUBLIC_IMPORTANCES = ("high",)
 _LIST_LIMIT_MAX = 60
+
+# 公開サイトのカテゴリ。実データの分布 (2026-08-25、公開候補 high) に合わせて 4 つ。
+#   地政学 212 / マルウェア・APT 247 / 侵害 290 / 脆弱性 132
+# policy(1) や recap/other は件数が僅少なので独立ページを持たない (新着には出る)。
+PUBLIC_CATEGORIES: tuple[str, ...] = ("vuln", "incident_breach", "threat", "geopolitical")
+
+
+def _categories_for(key: str) -> list[str] | None:
+    """公開カテゴリ key → 記事 category の集合。未知の値は「絞らない」ではなく None。"""
+    if key not in PUBLIC_CATEGORIES:
+        return None
+    return list(_CATEGORY_GROUPS.get(key, [key]))
+
 
 GENERATED_NOTE = "kuebiko が複数媒体の報道から生成した要約であり、原記事そのものではない"
 
@@ -94,11 +111,16 @@ def list_public_news(
     limit: int = 30,
     offset: int = 0,
     search: str | None = None,
+    category: str | None = None,
+    featured: bool = False,
 ) -> dict[str, Any]:
     """公開ニュース一覧 (high のみ、新しい順)。
 
     冒頭テキストは統合済みなら生成本文の BLUF、単独報なら **kuebiko が書いた要約**。
     出版社の本文 (``body`` / ``body_ja``) は決して返さない。
+
+    ``category`` は ``PUBLIC_CATEGORIES`` のいずれか。``featured`` は「注目」枠で、
+    複数媒体が報じ かつ 統合本文を持つ事象に絞る。どちらも **LIMIT より前**に効く。
     """
     repo = _repo()
     term = (search or "").strip()
@@ -109,6 +131,9 @@ def list_public_news(
         exclude_merged=True,
         # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
         exclude_duplicate_only=True,
+        member_categories=_categories_for(category) if category else None,
+        min_independent_sources=2 if featured else 0,
+        has_news=True if featured else None,
         search_item_ids=search_item_ids,
         limit=min(max(limit, 1), _LIST_LIMIT_MAX),
         offset=max(0, offset),
@@ -142,7 +167,7 @@ def list_public_news(
             "citations": [_public_citation(c) for c in citations[:3]],
         }
         items.append(item)
-    return {"items": items, "note": GENERATED_NOTE}
+    return {"items": items, "note": GENERATED_NOTE, "categories": list(PUBLIC_CATEGORIES)}
 
 
 @public_news_api.get("/{item_id}")

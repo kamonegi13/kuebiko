@@ -18,15 +18,27 @@ import {
   type PublicNewsItem,
 } from "../api/publicNews";
 import { formatJstCompact } from "../utils/date";
+import { vocabLabel } from "../hooks/useVocab";
 
 const PAGE_SIZE = 30;
 const HOME_PATH = "/app/news";
 
-type Route = { kind: "home" } | { kind: "detail"; id: string };
+/** カテゴリの表示名。値の定義 (どの category を束ねるか) は backend が持つ。 */
+function categoryLabel(key: string): string {
+  return vocabLabel("category_group", key) || vocabLabel("category", key) || key;
+}
+
+type Route =
+  | { kind: "home" }
+  | { kind: "category"; key: string }
+  | { kind: "detail"; id: string };
 
 function parseRoute(): Route {
-  const m = /^\/app\/news\/([^/]+)\/?$/.exec(window.location.pathname);
-  return m ? { kind: "detail", id: decodeURIComponent(m[1]) } : { kind: "home" };
+  const p = window.location.pathname;
+  const cat = /^\/app\/news\/c\/([^/]+)\/?$/.exec(p);
+  if (cat) return { kind: "category", key: decodeURIComponent(cat[1]) };
+  const detail = /^\/app\/news\/([^/]+)\/?$/.exec(p);
+  return detail ? { kind: "detail", id: decodeURIComponent(detail[1]) } : { kind: "home" };
 }
 
 function navigate(path: string): void {
@@ -43,7 +55,7 @@ export function PublicNewsSite() {
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
-  // 公開サイトが持つ path は 2 つだけ。それ以外 (/app/dashboard 等) は一覧へ寄せる
+  // 公開サイトが持つ path 以外 (/app/dashboard 等) は一覧へ寄せる
   useEffect(() => {
     const p = window.location.pathname;
     if (route.kind === "home" && p !== HOME_PATH) {
@@ -53,26 +65,78 @@ export function PublicNewsSite() {
 
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">
-      <SiteHeader onHome={() => navigate(HOME_PATH)} />
+      <SiteHeader route={route} />
       <main className="flex-1 w-full max-w-[52rem] mx-auto px-4 py-6">
-        {route.kind === "home" ? <NewsList /> : <NewsDetail id={route.id} />}
+        {route.kind === "detail" ? (
+          <NewsDetail id={route.id} />
+        ) : (
+          <NewsList category={route.kind === "category" ? route.key : undefined} />
+        )}
       </main>
       <SiteFooter />
     </div>
   );
 }
 
-function SiteHeader({ onHome }: { onHome: () => void }) {
+/** カテゴリの並び。backend が返す順をそのまま使う (定義を frontend に複製しない)。 */
+function CategoryNav({ active }: { active?: string }) {
+  const { data } = useQuery({
+    queryKey: ["public-news-categories"],
+    queryFn: () => fetchPublicNews({ limit: 1 }),
+    staleTime: 30 * 60 * 1000,
+  });
+  const keys = data?.categories ?? [];
+  if (keys.length === 0) return null;
+  return (
+    <nav className="flex flex-wrap gap-1.5 -mb-px">
+      <CategoryTab href={HOME_PATH} label="新着" active={!active} />
+      {keys.map((k) => (
+        <CategoryTab
+          key={k}
+          href={`${HOME_PATH}/c/${encodeURIComponent(k)}`}
+          label={categoryLabel(k)}
+          active={active === k}
+        />
+      ))}
+    </nav>
+  );
+}
+
+function CategoryTab({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        navigate(href);
+      }}
+      className={`px-2.5 py-1.5 text-sm rounded-t border-b-2 transition-colors ${
+        active
+          ? "border-accent text-accent font-medium"
+          : "border-transparent text-fg-muted hover:text-fg"
+      }`}
+    >
+      {label}
+    </a>
+  );
+}
+
+function SiteHeader({ route }: { route: Route }) {
   return (
     <header className="border-b border-border-subtle bg-surface-1/95 backdrop-blur-md sticky top-0 z-20">
-      <div className="w-full max-w-[52rem] mx-auto px-4 py-3 flex items-baseline gap-3">
-        <button
-          onClick={onHome}
-          className="text-lg font-bold tracking-tight text-fg hover:text-accent transition-colors"
-        >
-          kuebiko
-        </button>
-        <span className="text-xs text-fg-subtle">サイバー脅威ニュース</span>
+      <div className="w-full max-w-[52rem] mx-auto px-4 pt-3">
+        <div className="flex items-baseline gap-3">
+          <button
+            onClick={() => navigate(HOME_PATH)}
+            className="text-lg font-bold tracking-tight text-fg hover:text-accent transition-colors"
+          >
+            kuebiko
+          </button>
+          <span className="text-xs text-fg-subtle">サイバー脅威ニュース</span>
+        </div>
+        <div className="mt-2">
+          <CategoryNav active={route.kind === "category" ? route.key : undefined} />
+        </div>
       </div>
     </header>
   );
@@ -109,10 +173,18 @@ function SourceLine({ citations, total }: { citations: PublicCitation[]; total: 
   );
 }
 
-function NewsList() {
+function NewsList({ category }: { category?: string }) {
   const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
   const [search, setSearch] = useState(term);
   const [page, setPage] = useState(0);
+  const basePath = category ? `${HOME_PATH}/c/${encodeURIComponent(category)}` : HOME_PATH;
+
+  // カテゴリを移ったら検索とページを持ち越さない (別の条件の続きを見せない)
+  useEffect(() => {
+    setTerm("");
+    setSearch("");
+    setPage(0);
+  }, [category]);
 
   const submit = useCallback(() => {
     const next = term.trim();
@@ -120,21 +192,29 @@ function NewsList() {
     setPage(0);
     const p = new URLSearchParams();
     if (next) p.set("q", next);
-    window.history.replaceState(null, "", `${HOME_PATH}${p.toString() ? `?${p}` : ""}`);
-  }, [term]);
+    window.history.replaceState(null, "", `${basePath}${p.toString() ? `?${p}` : ""}`);
+  }, [term, basePath]);
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["public-news", search, page],
+    queryKey: ["public-news", category ?? "", search, page],
     queryFn: () =>
-      fetchPublicNews({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: search || undefined }),
+      fetchPublicNews({
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        search: search || undefined,
+        category,
+      }),
     placeholderData: keepPreviousData,
     refetchInterval: 10 * 60 * 1000,
   });
 
   const items = data?.items ?? [];
+  // 注目は「新着」の 1 ページ目・検索なしのときだけ (絞り込み中に別条件の記事を混ぜない)
+  const showFeatured = !category && !search && page === 0;
 
   return (
     <div className="space-y-5">
+      {showFeatured && <FeaturedStrip />}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle" />
@@ -157,7 +237,7 @@ function NewsList() {
       {search && (
         <p className="text-xs text-fg-subtle">
           「{search}」の検索結果
-          <button onClick={() => { setTerm(""); setSearch(""); setPage(0); window.history.replaceState(null, "", HOME_PATH); }} className="ml-2 underline hover:text-accent">
+          <button onClick={() => { setTerm(""); setSearch(""); setPage(0); window.history.replaceState(null, "", basePath); }} className="ml-2 underline hover:text-accent">
             解除
           </button>
         </p>
@@ -197,6 +277,42 @@ function NewsList() {
         </div>
       )}
     </div>
+  );
+}
+
+/** 注目 = 複数媒体が報じ、かつ統合本文がある事象。裏取りのある話題を先頭に置く。 */
+function FeaturedStrip() {
+  const { data } = useQuery({
+    queryKey: ["public-news-featured"],
+    queryFn: () => fetchPublicNews({ limit: 3, featured: true }),
+    staleTime: 10 * 60 * 1000,
+  });
+  const items = data?.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <section className="space-y-2.5 pb-4 border-b border-border-subtle">
+      <h2 className="text-xs font-semibold text-fg-muted tracking-wide">注目</h2>
+      <ul className="space-y-3">
+        {items.map((it) => (
+          <li key={it.id}>
+            <button
+              onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
+              className="block w-full text-left group"
+            >
+              <h3 className="text-[15px] font-semibold leading-snug text-fg group-hover:text-accent transition-colors">
+                {it.headline}
+              </h3>
+            </button>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px]">
+              <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent-soft">
+                {it.independent_sources} 媒体が報道
+              </span>
+              <SourceLine citations={it.citations} total={it.sources} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

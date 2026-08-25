@@ -55,11 +55,25 @@ async function get<T>(path: string): Promise<T> {
   return (await r.json()) as T;
 }
 
-export function fetchPublicNews(q: { limit?: number; offset?: number; search?: string } = {}) {
+export interface PublicNewsQuery {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  /** カテゴリ key。一覧レスポンスの `categories` が正 (フロントで定義を持たない)。 */
+  category?: string;
+  /** 注目枠 = 複数媒体が報じ、かつ統合本文がある事象。 */
+  featured?: boolean;
+}
+
+export function fetchPublicNews(q: PublicNewsQuery = {}) {
   const p = new URLSearchParams({ limit: String(q.limit ?? 30) });
   if (q.offset) p.set("offset", String(q.offset));
   if (q.search) p.set("search", q.search);
-  return get<{ items: PublicNewsItem[]; note: string }>(`/api/v1/public/news?${p}`);
+  if (q.category) p.set("category", q.category);
+  if (q.featured) p.set("featured", "true");
+  return get<{ items: PublicNewsItem[]; note: string; categories: string[] }>(
+    `/api/v1/public/news?${p}`,
+  );
 }
 
 export function fetchPublicNewsDetail(id: string) {

@@ -144,3 +144,40 @@ class TestDedupIsRespected:
         dup = SimpleNamespace(status="skipped_duplicate")
         assert public_news._is_duplicate_only({"a": dup, "b": posted}, ("a", "b")) is False
         assert public_news._is_duplicate_only({"a": dup}, ("a",)) is True
+
+
+class TestCategoryPages:
+    """カテゴリ別ページ (公開サイトの導線)。"""
+
+    def test_categories_match_the_shared_group_definition(self) -> None:
+        """グループの中身を公開面に複製しない (記事側 facet と同じ定義を使う)。"""
+        from src.ui.api.articles_feed import _CATEGORY_GROUPS
+
+        assert public_news._categories_for("vuln") == _CATEGORY_GROUPS["vuln"]
+        assert public_news._categories_for("threat") == _CATEGORY_GROUPS["threat"]
+        assert public_news._categories_for("incident_breach") == _CATEGORY_GROUPS["incident_breach"]
+
+    def test_single_category_passes_through(self) -> None:
+        assert public_news._categories_for("geopolitical") == ["geopolitical"]
+
+    def test_unknown_category_is_rejected_not_ignored(self) -> None:
+        """未知の値で「絞らない」にすると、綴り違いが全件表示になって気付けない。"""
+        assert public_news._categories_for("policy") is None
+        assert public_news._categories_for("../../etc") is None
+
+    def test_filter_is_applied_before_the_limit(self) -> None:
+        src = inspect.getsource(public_news.list_public_news)
+        assert "member_categories=" in src.split("for r in records:")[0]
+
+    def test_list_advertises_the_categories(self) -> None:
+        """フロントがカテゴリ一覧を別経路で持たないよう、一覧が自分で返す。"""
+        src = inspect.getsource(public_news.list_public_news)
+        assert '"categories": list(PUBLIC_CATEGORIES)' in src
+
+
+class TestFeatured:
+    def test_featured_requires_corroboration_and_a_generated_body(self) -> None:
+        """注目枠は「複数媒体が報じ、かつ統合本文がある」もの。単独報を注目にしない。"""
+        src = inspect.getsource(public_news.list_public_news)
+        assert "min_independent_sources=2 if featured else 0" in src
+        assert "has_news=True if featured else None" in src

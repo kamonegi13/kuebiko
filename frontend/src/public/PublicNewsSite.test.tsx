@@ -23,6 +23,8 @@ const ITEM = {
   ],
 };
 
+const requested: string[] = [];
+
 function renderSite() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -34,15 +36,23 @@ function renderSite() {
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/app/news");
-  vi.stubGlobal("fetch", async (url: string) => ({
-    ok: true,
-    json: async () =>
-      url.includes("/api/v1/public/news/")
-        ? { ...ITEM, bluf: "要点。", facts: [{ text: "事実行。", source_index: 1, paragraph: 1 }],
-            discrepancies: [], unknowns: [], first_reported_at: ITEM.published_at,
-            note: "kuebiko が生成した要約であり、原記事そのものではない" }
-        : { items: [ITEM], note: "kuebiko が生成した要約であり、原記事そのものではない" },
-  }));
+  requested.length = 0;
+  vi.stubGlobal("fetch", async (url: string) => {
+    requested.push(url);
+    return {
+      ok: true,
+      json: async () =>
+        url.includes("/api/v1/public/news/")
+          ? { ...ITEM, bluf: "要点。", facts: [{ text: "事実行。", source_index: 1, paragraph: 1 }],
+              discrepancies: [], unknowns: [], first_reported_at: ITEM.published_at,
+              note: "kuebiko が生成した要約であり、原記事そのものではない" }
+          : {
+              items: [ITEM],
+              note: "kuebiko が生成した要約であり、原記事そのものではない",
+              categories: ["vuln", "incident_breach", "threat", "geopolitical"],
+            },
+    };
+  });
 });
 
 afterEach(() => {
@@ -56,13 +66,14 @@ describe("公開ニュースサイト", () => {
   it("一覧に見出しと出典媒体を出す", async () => {
     renderSite();
     expect(await screen.findByText(ITEM.headline)).toBeTruthy();
-    // 出典は常に見える (契約 2)
-    await waitFor(() => expect(screen.getByText(/Example News/)).toBeTruthy());
+    // 出典は常に見える (契約 2)。注目枠にも同じ媒体が出るので件数は問わない
+    await waitFor(() => expect(screen.getAllByText(/Example News/).length).toBeGreaterThan(0));
   });
 
   it("複数媒体が報じた事象はその旨を示す", async () => {
     renderSite();
-    expect(await screen.findByText("3 媒体が報道")).toBeTruthy();
+    await screen.findByText(ITEM.headline);
+    expect(screen.getAllByText("3 媒体が報道").length).toBeGreaterThan(0);
   });
 
   it("生成物であることを常に明示する", async () => {
@@ -90,5 +101,38 @@ describe("公開ニュースサイト", () => {
     expect(external.length).toBe(2);
     // 原記事へは外部リンク。rel を落とすと参照元が漏れる
     for (const a of external) expect(a.getAttribute("rel")).toContain("noopener");
+  });
+});
+
+describe("カテゴリ", () => {
+  it("カテゴリのタブを出す (並びと定義は backend が持つ)", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    expect(screen.getByText("新着")).toBeTruthy();
+    // 語彙が無い環境では key がそのまま出る (ラベル解決は vocabularies が SSoT)
+    const tabs = Array.from(document.querySelectorAll("nav a")).map((a) => a.getAttribute("href"));
+    expect(tabs).toContain("/app/news/c/vuln");
+    expect(tabs).toContain("/app/news/c/geopolitical");
+  });
+
+  it("カテゴリページでは category を付けて取得する", async () => {
+    window.history.replaceState(null, "", "/app/news/c/threat");
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    expect(requested.some((u) => u.includes("category=threat"))).toBe(true);
+  });
+
+  it("注目は新着の 1 ページ目だけに出す (カテゴリ絞り込み中は出さない)", async () => {
+    window.history.replaceState(null, "", "/app/news/c/threat");
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    expect(requested.some((u) => u.includes("featured=true"))).toBe(false);
+  });
+
+  it("新着では注目を複数媒体 + 統合本文に限って取得する", async () => {
+    renderSite();
+    await screen.findByText(ITEM.headline);
+    await waitFor(() => expect(requested.some((u) => u.includes("featured=true"))).toBe(true));
+    expect(screen.getByText("注目")).toBeTruthy();
   });
 });
