@@ -18,8 +18,8 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from src.eventnews import coverage, grouping, identifier_gate, state
 from src.eventnews import generator as gen
-from src.eventnews import grouping, identifier_gate, state
 from src.eventnews.models import (
     UPDATE_DRIVER_TYPES,
     Assignment,
@@ -137,6 +137,20 @@ async def _generate_version(
             item_id=item.snapshot.item_id,
             facts=len(gate.draft.facts),
             section=next(iter(sections), ""),
+        )
+    # 原文の前半で打ち切っていないか (2026-08-26 実測: 単独報が 27% 地点で止まり、
+    # 後半の被害規模を落とした上で unknowns に「不明」と書いていた)。ここも
+    # **自動で書き足さない** — 観測して、プロンプト側で直すための計測。
+    reach = coverage.deepest_coverage(
+        gate.draft.facts, {index: m.body for index, m in enumerate(selected, start=1)}
+    )
+    if reach is not None and reach < coverage.WARN_BELOW:
+        _log.warning(
+            "eventnews_coverage_truncated",
+            item_id=item.snapshot.item_id,
+            coverage=round(reach, 2),
+            sources=len(selected),
+            facts=len(gate.draft.facts),
         )
     repo.record_event_version(
         item_id=item.snapshot.item_id,

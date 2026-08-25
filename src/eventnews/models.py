@@ -9,7 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 # ---------- 群化 (§5) ----------
 
@@ -166,6 +168,21 @@ class StateDecision:
 # ---------- LLM structured 出力 (§9。int|None 禁止 — 0 が未指定の番兵) ----------
 
 
+def _require_all_properties(schema: JsonSchemaValue) -> JsonSchemaValue:
+    """LLM へ渡す JSON schema の全プロパティを ``required`` にする。
+
+    既定値を持つフィールドを pydantic は ``required`` から外す。Ollama の制約デコードは
+    その schema をそのまま文法にするため、**省略が文法上許され、後発のフィールドから
+    静かに落ちる**。2026-08-26 実測: プロンプトに 2 行足しただけで ``key_points`` が
+    4/4 で欠落した (schema は変えていない = 省略が許されている限り再発する)。
+    Python 側の構築しやすさ (既定値) は保ったまま、**LLM へ渡す schema だけ**全必須にする。
+    """
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        schema["required"] = list(properties)
+    return schema
+
+
 class FactItem(BaseModel):
     """[N] 参照つきの 1 行。source_index は候補一覧の 1-based 番号、0 = 未指定。
 
@@ -185,6 +202,12 @@ class FactItem(BaseModel):
     # 既定は "what"。未知の値は表示側が「前の節の続き」として扱う (勝手に節を作らない)。
     section: str = "what"
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return _require_all_properties(dict(handler(core_schema)))
+
 
 class EventNewsDraft(BaseModel):
     """LLM の structured 出力。散文は表示層で組む。"""
@@ -193,10 +216,20 @@ class EventNewsDraft(BaseModel):
 
     headline: str
     bluf: str
+    # 冒頭に置く **要点** (箇条書き 3-4 項目)。BLUF は一覧のプレビュー用に残す
+    # (箇条書きは一覧に向かない)。要点は出典番号を持たない — 本文の事実行と違い
+    # 「1 文 = 1 事実 = 1 出典」の検証単位ではないため。
+    key_points: list[str] = Field(default_factory=list)
     facts: list[FactItem] = Field(default_factory=list)
     # 相違・不在の主張は [N] を要求しない (関門は識別子のみ適用)
     discrepancies: list[FactItem] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return _require_all_properties(dict(handler(core_schema)))
 
 
 @dataclass(frozen=True)

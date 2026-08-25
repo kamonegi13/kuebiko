@@ -26,7 +26,26 @@ _MEMBER_FIELD_CHAR_CAP = 1400
 # 圧縮済みで、事象統合の段階では失われた情報を回復できない。本文入力で情報量 +48% /
 # facts +26% (4 事象・同一プロンプト同一モデルでの実測)。プロンプト側で分量を要求する
 # 案 (v2) は +10% にとどまり、梃子は入力側だった。費用は 14 秒/件で要約入力と同等。
-_MEMBER_BODY_CHAR_CAP = 2600
+_MEMBER_BODY_CHAR_MIN = 2600
+# 1 事象ぶんの本文の総量。members が増えても prompt が線形に膨らまないよう総量で持つ。
+_PROMPT_BODY_BUDGET = 20000
+# 単独報の長い調査レポートを最後まで載せるための 1 記事あたり上限。
+_MEMBER_BODY_CHAR_MAX = 12000
+
+
+def body_cap(member_count: int) -> int:
+    """1 記事に割り当てる本文の文字数。
+
+    2026-08-26 実測: 固定 2,600 字は**単独報の 8,721 字の記事を 30% しか見せて
+    おらず**、後半にあった被害規模 (「1,000 万件」「2,000 件超流出」) を落とした上、
+    それを unknowns へ「不明」と書いていた — モデルの選抜ミスではなく、渡していない
+    範囲を正直に「不明」と答えていた。生成が到達した位置の実測 (27% / 57%) は、
+    cap による可視率 (30% / 61%) とほぼ一致した。**指示ではなく入力で直す**。
+    """
+    if member_count <= 0:
+        return _MEMBER_BODY_CHAR_MIN
+    share = _PROMPT_BODY_BUDGET // member_count
+    return max(_MEMBER_BODY_CHAR_MIN, min(_MEMBER_BODY_CHAR_MAX, share))
 
 # 本文抽出をすり抜けた媒体側の定型見出し。LLM がこれを事実の一部として写す実害が
 # 出た (The Register の "MORE CONTEXT" が「CONTEXT の文脈として」という本文になった)。
@@ -92,17 +111,18 @@ def _prompt_env() -> jinja2.Environment:
 def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str) -> str:
     """``prompts/eventnews/refine.j2`` を render する (§9)。
 
-    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** 2600 字切詰め、
-    本文が無ければ要約) / 省略件数 / 使ってよい識別子一覧 (呼び手が整形済みの文字列)。
+    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** ``body_cap``
+    字で切詰め、本文が無ければ要約) / 省略件数 / 使ってよい識別子一覧 (呼び手が整形済み)。
     """
     selected, omitted = select_members(members)
+    cap = body_cap(len(selected))
     numbered = [
         {
             "index": i,
             "title": m.title[:_MEMBER_FIELD_CHAR_CAP],
             "feed_title": m.feed_title[:_MEMBER_FIELD_CHAR_CAP],
             "anchor": m.anchor_ts.isoformat(),
-            "summary": _strip_boilerplate(m.body or m.summary)[:_MEMBER_BODY_CHAR_CAP],
+            "summary": _strip_boilerplate(m.body or m.summary)[:cap],
         }
         for i, m in enumerate(selected, start=1)
     ]
