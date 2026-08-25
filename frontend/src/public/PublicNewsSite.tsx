@@ -14,7 +14,6 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { ExternalLink, Search, ChevronLeft } from "lucide-react";
 import {
   fetchPublicNews,
-  fetchPublicMap,
   fetchPublicNewsDetail,
   type PublicCitation,
   type PublicNewsItem,
@@ -27,6 +26,9 @@ import { PublicMapSection } from "./PublicMapSection";
 
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
+// トップに出す件数。多すぎると「入口」でなく一覧になってしまう
+const PORTAL_LATEST_COUNT = 6;
+const PORTAL_CATEGORY_COUNT = 4;
 const HOME_PATH = "/app/news";
 
 /** カテゴリの表示名。どの category を束ねるかの定義は backend が持つ。 */
@@ -37,6 +39,7 @@ function categoryLabel(key: string): string {
 
 type Route =
   | { kind: "home" }
+  | { kind: "latest" }
   | { kind: "category"; key: string }
   | { kind: "map" }
   | { kind: "detail"; id: string };
@@ -44,10 +47,19 @@ type Route =
 function parseRoute(): Route {
   const p = window.location.pathname;
   if (/^\/app\/news\/map\/?$/.test(p)) return { kind: "map" };
+  if (/^\/app\/news\/latest\/?$/.test(p)) return { kind: "latest" };
   const cat = /^\/app\/news\/c\/([^/]+)\/?$/.exec(p);
   if (cat) return { kind: "category", key: decodeURIComponent(cat[1]) };
   const detail = /^\/app\/news\/([^/]+)\/?$/.exec(p);
   return detail ? { kind: "detail", id: decodeURIComponent(detail[1]) } : { kind: "home" };
+}
+
+/** 背後に出す面。詳細は「一覧の上に重なる」ので、その一覧が何かを決める。 */
+function isPortal(route: Route): boolean {
+  if (route.kind === "home") return true;
+  if (route.kind !== "detail") return false;
+  const q = new URLSearchParams(window.location.search);
+  return !q.get("q") && !q.get("country");
 }
 
 function navigate(path: string): void {
@@ -83,18 +95,17 @@ export function PublicNewsSite() {
         {/* 描画で落ちてもヘッダ・カテゴリ・フッタは残す (他の記事へ移れるように) */}
         <PublicErrorBoundary onReset={() => navigate(HOME_PATH)}>
           {route.kind === "map" ? (
-            <PublicMapSection onCountry={(iso) => navigate(`${HOME_PATH}?country=${iso}`)} />
+            <PublicMapSection onCountry={(iso) => navigate(`${HOME_PATH}/latest?country=${iso}`)} />
+          ) : isPortal(route) ? (
+            /* トップは各カテゴリの最新を少数ずつ並べた **入口**。
+               全件を追うのは「新着」タブ (/app/news/latest)。 */
+            <Portal openedId={route.kind === "detail" ? route.id : undefined} />
           ) : (
-            /* PC は本文 + 右レールの 2 カラム。モバイルは 1 カラムのまま
-               (レールは本文の後ろへ回して読む順序を壊さない)。 */
-            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-10 lg:items-start">
-              <NewsList
-                category={route.kind === "category" ? route.key : undefined}
-                /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
-                openedId={route.kind === "detail" ? route.id : undefined}
-              />
-              <CountryRail onCountry={(iso) => navigate(`${HOME_PATH}?country=${iso}`)} />
-            </div>
+            <NewsList
+              category={route.kind === "category" ? route.key : undefined}
+              /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
+              openedId={route.kind === "detail" ? route.id : undefined}
+            />
           )}
         </PublicErrorBoundary>
       </main>
@@ -136,6 +147,8 @@ function SiteHeader({ route }: { route: Route }) {
         <CategoryNav
           active={route.kind === "category" ? route.key : undefined}
           onMap={route.kind === "map"}
+          home={isPortal(route)}
+          latest={route.kind === "latest"}
         />
       </div>
     </header>
@@ -161,7 +174,17 @@ function SiteFooter() {
 }
 
 /** カテゴリの並びは backend が返す順をそのまま使う (定義を frontend に複製しない)。 */
-function CategoryNav({ active, onMap }: { active?: string; onMap: boolean }) {
+function CategoryNav({
+  active,
+  onMap,
+  home,
+  latest,
+}: {
+  active?: string;
+  onMap: boolean;
+  home: boolean;
+  latest: boolean;
+}) {
   const { data } = useQuery({
     queryKey: ["public-news-categories"],
     queryFn: () => fetchPublicNews({ limit: 1 }),
@@ -171,7 +194,8 @@ function CategoryNav({ active, onMap }: { active?: string; onMap: boolean }) {
   if (keys.length === 0) return null;
   return (
     <nav className="flex flex-wrap gap-x-4 gap-y-1 overflow-x-auto">
-      <CategoryTab href={HOME_PATH} label="新着" active={!active && !onMap} />
+      <CategoryTab href={HOME_PATH} label="ホーム" active={home} />
+      <CategoryTab href={`${HOME_PATH}/latest`} label="新着" active={latest} />
       {keys.map((k) => (
         <CategoryTab
           key={k}
@@ -205,53 +229,133 @@ function CategoryTab({ href, label, active }: { href: string; label: string; act
 }
 
 /**
- * 右レール (PC のみ)。被害国の上位と地図への導線。
+ * トップページ = 各カテゴリへの **入口**。
  *
- * 一覧の左右が余る PC で、このツールの特徴 (地図) を入口から見せる。
- * ⚠ ここでも **置けなかった件数** を書く。上位だけ見せると「これが全部」と読まれる。
- * モバイルでは本文の後ろに 1 カラムで続く (読む順序を壊さない)。
+ * 全件を時系列で追う面 (新着タブ) とは役割を分ける。トップに無限の一覧を置くと
+ * 「今どの分野で何が起きているか」が掴めないため、カテゴリごとに最新を少数ずつ
+ * 並べ、それぞれの一覧へ送る (参照サイト cyber.nexsight.co と同じ構成)。
  */
-function CountryRail({ onCountry }: { onCountry: (iso: string) => void }) {
-  const { data } = useQuery({
-    queryKey: ["public-map"],
-    queryFn: () => fetchPublicMap(30),
+function Portal({ openedId }: { openedId?: string }) {
+  const { data: featured } = useQuery({
+    queryKey: ["public-news-featured"],
+    queryFn: () => fetchPublicNews({ limit: FEATURED_COUNT, featured: true }),
     staleTime: 10 * 60 * 1000,
   });
-  if (!data || data.nodes.length === 0) return null;
+  const { data: latest } = useQuery({
+    queryKey: ["public-news-portal-latest"],
+    queryFn: () => fetchPublicNews({ limit: PORTAL_LATEST_COUNT + FEATURED_COUNT }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const featuredItems = featured?.items ?? [];
+  const seen = new Set(featuredItems.map((i) => i.id));
+  const latestItems = (latest?.items ?? []).filter((i) => !seen.has(i.id)).slice(0, PORTAL_LATEST_COUNT);
+  const categories = latest?.categories ?? [];
+
   return (
-    <aside className="mt-10 lg:mt-0 lg:sticky lg:top-[7.5rem] space-y-3">
+    <div className="space-y-10">
+      {featuredItems.length > 0 && (
+        <section className="space-y-5">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
+            <span className="text-[11px] text-fg-subtle">
+              直近 72 時間で多くの媒体が報じた事案
+            </span>
+          </div>
+          <LeadStory item={featuredItems[0]} />
+          {featuredItems.length > 1 && (
+            <ul className="grid gap-x-8 gap-y-5 md:grid-cols-2 pt-6 border-t border-border-subtle">
+              {featuredItems.slice(1).map((it) => (
+                <NewsCard key={it.id} item={it} opened={it.id === openedId} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <PortalSection title="新着" href={`${HOME_PATH}/latest`}>
+        <ul className="grid gap-x-8 gap-y-6 md:grid-cols-2">
+          {latestItems.map((it) => (
+            <NewsCard key={it.id} item={it} opened={it.id === openedId} />
+          ))}
+        </ul>
+      </PortalSection>
+
+      {/* カテゴリごとの入口。PC は 2 列に並べて幅を使う */}
+      <div className="grid gap-x-10 gap-y-10 lg:grid-cols-2">
+        {categories.map((key) => (
+          <CategoryTeaser key={key} categoryKey={key} openedId={openedId} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 節の枠 (見出し + 一覧への導線 + 罫線)。 */
+function PortalSection({
+  title,
+  href,
+  children,
+}: {
+  title: string;
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-4 pt-6 border-t border-border-subtle">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-[13px] font-semibold text-fg-muted">被害国</h2>
+        <h2 className="text-[15px] font-bold text-fg">{title}</h2>
         <a
-          href={`${HOME_PATH}/map`}
+          href={href}
           onClick={(e) => {
             e.preventDefault();
-            navigate(`${HOME_PATH}/map`);
+            navigate(href);
           }}
           className="ml-auto text-[11px] text-fg-subtle hover:text-accent underline underline-offset-2"
         >
-          地図で見る
+          一覧へ →
         </a>
       </div>
-      <ul className="space-y-1">
-        {data.nodes.slice(0, 8).map((n) => (
-          <li key={n.iso}>
-            <button
-              onClick={() => onCountry(n.iso)}
-              className="w-full flex items-baseline gap-2 text-left text-[13px] hover:text-accent transition-colors"
-            >
-              <span className="text-fg-muted">{n.label}</span>
-              <span className="flex-1 border-b border-dotted border-border-subtle" />
-              <span className="tnum text-fg-subtle">{n.count}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="text-[11px] leading-relaxed text-fg-subtle">
-        直近 {data.window_days} 日の掲載 {data.total} 件のうち被害国を特定できた {data.placed} 件の
-        内訳です ({data.unplaced} 件は特定できず)。
-      </p>
-    </aside>
+      {children}
+    </section>
+  );
+}
+
+/** 1 カテゴリの入口: 先頭 1 本を大きく + 残りを見出しだけ。 */
+function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; openedId?: string }) {
+  const { data } = useQuery({
+    queryKey: ["public-news-teaser", categoryKey],
+    queryFn: () => fetchPublicNews({ limit: PORTAL_CATEGORY_COUNT, category: categoryKey }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const items = data?.items ?? [];
+  if (items.length === 0) return null;
+  const [head, ...rest] = items;
+  return (
+    <PortalSection
+      title={categoryLabel(categoryKey)}
+      href={`${HOME_PATH}/c/${encodeURIComponent(categoryKey)}`}
+    >
+      <div className="space-y-4">
+        <NewsCard item={head} opened={head.id === openedId} />
+        {rest.length > 0 && (
+          <ul className="space-y-2.5 pt-3 border-t border-border-subtle">
+            {rest.map((it) => (
+              <li key={it.id}>
+                <button
+                  onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
+                  className={`w-full text-left text-[13px] leading-[1.6] hover:text-accent transition-colors ${
+                    it.id === openedId ? "text-fg-subtle" : "text-fg-muted"
+                  }`}
+                >
+                  {it.headline}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </PortalSection>
   );
 }
 
@@ -284,15 +388,6 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
     window.history.replaceState(null, "", `${basePath}${p.toString() ? `?${p}` : ""}`);
   }, [term, basePath]);
 
-  const showFeatured = !category && !search && !country && page === 0;
-
-  const { data: featured } = useQuery({
-    queryKey: ["public-news-featured"],
-    queryFn: () => fetchPublicNews({ limit: FEATURED_COUNT, featured: true }),
-    staleTime: 10 * 60 * 1000,
-    enabled: showFeatured,
-  });
-
   const { data, isFetching, error } = useQuery({
     queryKey: ["public-news", category ?? "", country ?? "", search, page],
     queryFn: () =>
@@ -307,33 +402,10 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
     refetchInterval: 10 * 60 * 1000,
   });
 
-  const featuredItems = showFeatured ? (featured?.items ?? []) : [];
-  const featuredIds = new Set(featuredItems.map((i) => i.id));
-  // 注目に出したものを下でもう一度出さない (同じ見出しが 2 回並ぶと読みにくい)
-  const items = (data?.items ?? []).filter((i) => !featuredIds.has(i.id));
+  const items = data?.items ?? [];
 
   return (
     <div className="space-y-8">
-      {featuredItems.length > 0 && (
-        <section className="space-y-5">
-          <div className="flex items-baseline gap-2">
-            <h2 className="text-[11px] font-semibold tracking-widest text-fg-subtle">注目</h2>
-            {/* 何を基準に選んでいるかを読み手に示す (順位の根拠を隠さない) */}
-            <span className="text-[11px] text-fg-subtle">
-              直近 72 時間で多くの媒体が報じた事案
-            </span>
-          </div>
-          <LeadStory item={featuredItems[0]} />
-          {featuredItems.length > 1 && (
-            <ul className="grid gap-x-8 gap-y-5 md:grid-cols-2 pt-6 border-t border-border-subtle">
-              {featuredItems.slice(1).map((it) => (
-                <NewsCard key={it.id} item={it} />
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
       <section className="space-y-5">
         <div className="flex items-center gap-3 pt-4 border-t border-border-subtle">
           <h2 className="text-[13px] font-semibold text-fg-muted">

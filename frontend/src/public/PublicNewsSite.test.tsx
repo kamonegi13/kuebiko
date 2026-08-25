@@ -248,35 +248,24 @@ describe("PC のレイアウト", () => {
     expect(grid).toBeTruthy();
   });
 
-  it("右レールに被害国と地図への導線を出す", async () => {
+  it("トップは各カテゴリの入口になっている (無限一覧にしない)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);
-    const rail = document.querySelector("aside");
-    expect(rail).toBeTruthy();
-    expect(rail?.textContent).toContain("被害国");
-    expect(rail?.textContent).toContain("地図で見る");
+    // カテゴリごとの節見出しと「一覧へ」の導線
+    // カテゴリ節は後から解決するので待つ
+    await waitFor(() => expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1));
+    const links = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(links).toContain("/app/news/c/vuln");
+    expect(links).toContain("/app/news/latest");
   });
 
-  it("レールでも置けなかった件数を書く (上位だけ見せて全部と読ませない)", async () => {
+  it("被害国レールは出さない (PC で違和感があった)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);
-    const rail = document.querySelector("aside");
-    expect(rail?.textContent).toContain("20 件は特定できず");
-  });
-
-  it("レールは本文の後ろに置く (モバイルで読む順序を壊さない)", async () => {
-    renderSite();
-    await screen.findByText(ITEM.headline);
-    const main = document.querySelector("main");
-    const rail = document.querySelector("aside");
-    // DOM 順で本文が先 (lg 未満では 1 カラムに畳まれる)
-    expect(main?.compareDocumentPosition(rail!) ?? 0).toBeTruthy();
-    const headline = screen.getAllByText(ITEM.headline)[0];
-    expect(
-      headline.compareDocumentPosition(rail!) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(document.querySelector("aside")).toBeNull();
   });
 });
+
 
 describe("記事本文の組み方", () => {
   const MULTI = {
