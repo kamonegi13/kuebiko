@@ -50,11 +50,35 @@ class TestPromptAndFrontendAgree:
 
 
 class TestPromptVersion:
-    def test_version_was_bumped(self) -> None:
-        """出力形が変わったら版を上げる (どの版で生成したかを版履歴に残すため)。"""
+    """プロンプトを変えたら版を上げること。
+
+    版を据え置くと、モデル別・版別の比較で「どの指示のときの出力か」が分からなく
+    なる。2026-08-26 に v3→v4 の比較で「分量の下限を落としたこと」が 31B の出力を
+    半減させた原因だと特定できたのは、版が分かれていたから。同日の複数回の変更は
+    すべて v4 のままで、切り分け不能になる寸前だった。
+
+    版番号を直書きするだけのテストは、**プロンプトを変えても通ってしまう**ので
+    意味がない。ファイルのハッシュと対にして、変更したら必ず気付くようにする。
+    """
+
+    #: prompts/eventnews/refine.j2 の SHA-256。**プロンプトを変えたら版と一緒に更新する**。
+    EXPECTED_PROMPT_SHA256 = "c5a769953a31003d2c816d9f44f3be10570d981bd073450dd5c1e60c09e85009"
+    EXPECTED_VERSION = "eventnews-v5"
+
+    def test_prompt_change_requires_a_version_bump(self) -> None:
+        import hashlib
+        from pathlib import Path
+
         from src.eventnews.runner import _PROMPT_VERSION
 
-        assert _PROMPT_VERSION == "eventnews-v4"
+        prompt = Path(__file__).resolve().parents[2] / "prompts" / "eventnews" / "refine.j2"
+        digest = hashlib.sha256(prompt.read_bytes()).hexdigest()
+
+        assert _PROMPT_VERSION == self.EXPECTED_VERSION
+        assert digest == self.EXPECTED_PROMPT_SHA256, (
+            "プロンプトが変わっています。_PROMPT_VERSION を上げ、"
+            f"EXPECTED_PROMPT_SHA256 を {digest} に更新してください"
+        )
 
 
 class TestSpreadGuard:
@@ -85,3 +109,31 @@ class TestSpreadGuard:
         src = inspect.getsource(runner._generate_version)
         assert "eventnews_sections_not_spread" in src
         assert "_SECTION_SPREAD_MIN_FACTS" in src
+
+
+class TestInternalSurfaceMatchesPublic:
+    """内部画面 (Tier1/ローカル) が公開面と同じ生成物を出すこと。
+
+    同じ ``event_item_versions`` を読んでいるのでデータは共通だが、公開面だけに
+    配線すると**内部画面の方が読みにくくなる**という逆転が起きる (2026-08-26 に
+    実際に起きた: 要点は内部 API が返さず、節は型に無く段落のみだった)。
+    """
+
+    def test_internal_api_returns_key_points(self) -> None:
+        api = pathlib.Path("src/ui/api/eventnews.py").read_text(encoding="utf-8")
+        assert '"key_points": body.get("key_points", [])' in api
+
+    def test_internal_detail_uses_the_shared_section_builder(self) -> None:
+        """節の組み方を 2 つ持つと、どちらかが古くなる。"""
+        tsx = pathlib.Path("frontend/src/pages/eventnews/EventNewsDetail.tsx").read_text(
+            encoding="utf-8"
+        )
+        assert "buildSections" in tsx
+
+    def test_summary_and_key_points_use_distinct_labels(self) -> None:
+        """BLUF は散文の「要約」、箇条書きが「要点」。片方だけ別名にすると語が割れる。"""
+        tsx = pathlib.Path("frontend/src/pages/eventnews/EventNewsDetail.tsx").read_text(
+            encoding="utf-8"
+        )
+        assert "要約 (kuebiko 生成)" in tsx
+        assert ">要点<" in tsx

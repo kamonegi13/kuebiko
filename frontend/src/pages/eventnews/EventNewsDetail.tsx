@@ -18,6 +18,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { formatJst } from "../../utils/date";
+import { buildSections } from "../../public/sections";
 import { vocabLabel } from "../../hooks/useVocab";
 import { ArticleReadView, IMPORTANCE_TONE } from "../article/ArticleReadView";
 import {
@@ -67,18 +68,16 @@ export function SourceChip({
  * グローバル・クリックインターセプトがこれを捕捉して右ドロワーで開くため、
  * 履歴統合 (バックで閉じる) や再入 guard をこちらで再実装しなくて済む。
  */
-function Body({ facts, articleIdOf }: { facts: EventNewsFact[]; articleIdOf: (n: number) => string | undefined }) {
-  const paras = new Map<number, EventNewsFact[]>();
-  for (const f of facts) {
-    const k = f.paragraph || 1;
-    if (!paras.has(k)) paras.set(k, []);
-    paras.get(k)!.push(f);
-  }
+function Paragraph({
+  facts,
+  articleIdOf,
+}: {
+  facts: EventNewsFact[];
+  articleIdOf: (n: number) => string | undefined;
+}) {
   return (
-    <div className="text-sm text-fg-muted leading-relaxed mt-3 space-y-3">
-      {[...paras.keys()].sort((a, b) => a - b).map((k) => (
-        <p key={k} className="m-0">
-          {paras.get(k)!.map((f, i) => (
+        <p className="m-0">
+          {facts.map((f, i) => (
             <span key={i}>
               {f.text}
               {f.source_index > 0 && articleIdOf(f.source_index) && (
@@ -93,7 +92,42 @@ function Body({ facts, articleIdOf }: { facts: EventNewsFact[]; articleIdOf: (n:
             </span>
           ))}
         </p>
-      ))}
+  );
+}
+
+/** 本文。**節を持つ版は節見出しつきで組む** (公開面と同じ `buildSections` を使う。
+ *  組み方を 2 つ持つとどちらかが古くなる)。節を持たない古い版は段落だけで描く。 */
+function Body({
+  facts,
+  articleIdOf,
+}: {
+  facts: EventNewsFact[];
+  articleIdOf: (n: number) => string | undefined;
+}) {
+  const sections = buildSections(facts);
+  const paragraphs = new Map<number, EventNewsFact[]>();
+  for (const f of facts) {
+    const key = f.paragraph || 1;
+    const list = paragraphs.get(key);
+    if (list) list.push(f);
+    else paragraphs.set(key, [f]);
+  }
+  return (
+    <div className="text-sm text-fg-muted leading-relaxed mt-3 space-y-4">
+      {sections.length > 0
+        ? sections.map((sec) => (
+            <section key={sec.key} className="space-y-2">
+              <div className="text-[11px] font-semibold tracking-wide text-accent">{sec.label}</div>
+              {sec.paragraphs.map((para, i) => (
+                <Paragraph key={i} facts={para as EventNewsFact[]} articleIdOf={articleIdOf} />
+              ))}
+            </section>
+          ))
+        : [...paragraphs.keys()]
+            .sort((a, b) => a - b)
+            .map((k) => (
+              <Paragraph key={k} facts={paragraphs.get(k)!} articleIdOf={articleIdOf} />
+            ))}
     </div>
   );
 }
@@ -338,15 +372,29 @@ export function EventNewsDetailBody({ id }: { id: string }) {
 
       {d.news ? (
         <>
-          {/* 要点 — 記事画面の「要約」カードと同じ位置・同じ見た目 */}
+          {/* ⚠ ラベルは公開面と揃える。BLUF は散文の**要約**、箇条書きが**要点**で
+              別物 (2026-08-25 利用者指摘)。片方だけ「要点」と呼ぶと語が割れる。 */}
           <div className={CARD}>
-            <div className={`${CARD_LABEL} mb-2`}>要点 (kuebiko 生成)</div>
+            <div className={`${CARD_LABEL} mb-2`}>要約 (kuebiko 生成)</div>
             <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap m-0">{d.news.bluf}</p>
           </div>
 
+          {(d.news.key_points ?? []).length > 0 && (
+            <div className={CARD}>
+              <div className={`${CARD_LABEL} mb-2`}>要点</div>
+              <ul className="m-0 pl-4 space-y-1">
+                {(d.news.key_points ?? []).map((point, i) => (
+                  <li key={i} className="text-sm text-fg leading-relaxed">
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <details className={CARD} open>
             <summary className={`${CARD_LABEL} cursor-pointer select-none`}>
-              本文 (kuebiko 生成・{d.news.facts.length} 文)
+              本文 (kuebiko 生成・{new Set(d.news.facts.map((f) => f.paragraph || 1)).size} 段落)
             </summary>
             <Body facts={d.news.facts} articleIdOf={articleIdOf} />
           </details>

@@ -50,6 +50,9 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
         "model": latest.model,
         "headline": latest.headline,
         "bluf": body.get("bluf", ""),
+        # 要点は公開面と同じものを返す (同一の版を読んでいるので中身は共通)。
+        # 2026-08-26 より前の版には無いので、既定は空配列。
+        "key_points": body.get("key_points", []),
         "facts": body.get("facts", []),
         "discrepancies": body.get("discrepancies", []),
         "unknowns": body.get("unknowns", []),

@@ -21,6 +21,8 @@ export interface EventNewsFact {
   text: string;
   source_index: number;
   paragraph: number;
+  /** 節の key (SECTION_KEYS)。2026-08-26 より前の版は持たない。 */
+  section?: string;
 }
 
 export interface EventNewsMember {
@@ -90,6 +92,8 @@ export interface EventNewsDetail {
     model: string;
     headline: string;
     bluf: string;
+    /** 拾い読み用の要点。公開面と同じ版を読むので中身は共通。 */
+    key_points?: string[];
     facts: EventNewsFact[];
     discrepancies: EventNewsFact[];
     unknowns: string[];
