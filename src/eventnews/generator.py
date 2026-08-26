@@ -113,7 +113,7 @@ def build_prompt(
     members: Sequence[MemberArticle],
     allowed_identifiers_text: str,
     *,
-    rewrite_hint: bool = False,
+    rewrite_hint: str = "",
 ) -> str:
     """``prompts/eventnews/refine.j2`` を render する (§9)。
 
@@ -139,7 +139,7 @@ def build_prompt(
         # 単独報は「統合」ではなく 1 記事の再構成。節ごとの要約で読み物にする
         # (文単位の [N] は出典が 1 つしかないので情報を持たない)。
         solo=len(selected) == 1,
-        # 逐語一致の関門にかかった後の書き直し (runner が 1 回だけ立てる)。
+        # 書き直しの理由 (runner が組み立てる。空なら通常生成)。
         rewrite_hint=rewrite_hint,
         allowed_identifiers_text=allowed_identifiers_text,
     )
@@ -150,7 +150,7 @@ async def generate_draft(
     allowed_identifiers_text: str,
     llm: LLMClient,
     *,
-    rewrite_hint: bool = False,
+    rewrite_hint: str = "",
 ) -> EventNewsDraft:
     """事象ニュースの structured 出力を生成する (§9、Step.EVENT_NEWS / narrative tier)。
 

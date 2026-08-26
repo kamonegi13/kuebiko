@@ -13,12 +13,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 import numpy as np
 
-from src.eventnews import coverage, grouping, identifier_gate, state, verbatim
+from src.eventnews import coverage, grouping, identifier_gate, quantities, state, verbatim
 from src.eventnews import generator as gen
 from src.eventnews.models import (
     UPDATE_DRIVER_TYPES,
@@ -118,6 +118,67 @@ def _should_generate(item: _LiveItem, selected: Sequence[MemberArticle]) -> bool
     return len(selected[0].body or "") >= _SOLO_MIN_BODY_CHARS
 
 
+_VERBATIM_HINT = """前回の出力には、原文の文をほぼそのまま写した箇所があった。**要約は原文の表現を
+借りずに書く**。原文の文をつなぎ替えたり語尾だけ変えたりせず、一度読んで理解した
+内容を**自分の語彙と語順で**書き直すこと (複数文をまとめる / 順序を変える /
+抽象度を上げる)。ただし**数値・日付・固有名詞は原文どおり**に保つ
+(これらは事実であって表現ではない)。"""
+
+
+def _rewrite_hints(
+    gate: GateResult,
+    bodies: Mapping[int, str],
+    texts: Mapping[int, str],
+    item_id: str,
+) -> list[str]:
+    """書き直しをさせる理由。空なら書き直さない。"""
+    hints: list[str] = []
+    if verbatim.needs_rewrite(gate.draft.facts, bodies):
+        _log.warning(
+            "eventnews_verbatim_rewrite",
+            item_id=item_id,
+            ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
+            transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
+        )
+        hints.append(_VERBATIM_HINT)
+    missing = quantities.unsupported_lines(gate.draft.facts, texts)
+    if missing:
+        values = sorted({v for _, vs in missing for v in vs})
+        _log.warning(
+            "eventnews_unsupported_values_rewrite",
+            item_id=item_id,
+            lines=len(missing),
+            values=values[:8],
+        )
+        hints.append(
+            "次の数値・日付は提示した記事のどこにも書かれていない: "
+            + " / ".join(values)
+            + "。**記事に書かれていない値を書かない**。足し合わせた合計、曜日から"
+            "割り出した日付、年の補完はいずれも禁止。書けないなら、その値に触れずに述べること。"
+        )
+    return hints
+
+
+def _drop_unsupported_lines(gate: GateResult, texts: Mapping[int, str], item_id: str) -> GateResult:
+    """書き直し後も原文に無い数値・日付が残る行を落とす。"""
+    missing = quantities.unsupported_lines(gate.draft.facts, texts)
+    if not missing:
+        return gate
+    drop = {index for index, _ in missing}
+    _log.warning(
+        "eventnews_unsupported_values_dropped",
+        item_id=item_id,
+        lines=len(drop),
+        values=sorted({v for _, vs in missing for v in vs})[:8],
+    )
+    kept = [f for i, f in enumerate(gate.draft.facts) if i not in drop]
+    return replace(
+        gate,
+        draft=gate.draft.model_copy(update={"facts": kept}),
+        dropped_lines=gate.dropped_lines + len(drop),
+    )
+
+
 async def _generate_version(
     repo: EventNewsMixin,
     item: _LiveItem,
@@ -146,19 +207,15 @@ async def _generate_version(
         bodies = {index: m.body for index, m in enumerate(selected, start=1)}
         draft: EventNewsDraft = await gen.generate_draft(selected, allowed, llm)
         gate: GateResult = identifier_gate.verify_draft(draft, selected)
-        # 逐語一致の関門: 原文の表現をなぞった本文は出さない。全体比が高いか丸写しの
-        # 行があれば 1 回書き直させ、**書き直し後も丸写しの行が残るときだけ版を書かない**
-        # (公開面は元記事の要約へフォールバックするので、転記を出すよりそちらが正しい)。
-        # 止める条件に全体比を使わない理由は verbatim.must_block の docstring 参照 —
-        # 事実の羅列を表現の借用と誤認する。要約を名乗る以上、指示ではなく決定論で測る。
-        if verbatim.needs_rewrite(gate.draft.facts, bodies):
-            _log.warning(
-                "eventnews_verbatim_rewrite",
-                item_id=item.snapshot.item_id,
-                ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
-                transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
-            )
-            draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint=True)
+        # 表現と数値の関門。問題があれば **1 回だけ** 理由付きで書き直させる。
+        # 書き直し後も残る場合の扱いは種類で違う:
+        #   - 丸写しの行が残る → 版を書かない (転記を出すより元記事の要約が正しい)
+        #   - 原文に無い数値・日付が残る → **その行だけ落とす** (1 つの値のために
+        #     記事全体を捨てない。識別子関門の dropped_lines と同じ粒度)
+        texts = dict(enumerate(quantities.supporting_texts(selected), start=1))
+        hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id)
+        if hints:
+            draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint="\n".join(hints))
             gate = identifier_gate.verify_draft(draft, selected)
             if verbatim.must_block(gate.draft.facts, bodies):
                 _log.warning(
@@ -168,6 +225,7 @@ async def _generate_version(
                     transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
                 )
                 return None, None
+            gate = _drop_unsupported_lines(gate, texts, item.snapshot.item_id)
     except LLMError as exc:
         _log.warning("eventnews_generation_failed", item_id=item.snapshot.item_id, error=str(exc))
         return None, None
