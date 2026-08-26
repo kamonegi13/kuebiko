@@ -128,6 +128,8 @@ services:
       # 同じ値を渡す。認証の実施は readonly instance のみ。
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
       CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      # ログアウト後の戻り先 (公開ニュースサイト。未設定なら /app/ へ戻る)
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
       # (通知再設計 web-only disposition は channel レジストリの push 属性=情報フローで設定。
       #  env フラグは廃止し制御面を routing/flow に一本化した)
       # (GIT_AUTHOR/COMMITTER env は撤去: アプリの git auto-commit は廃止済 = git を触らない)
@@ -203,6 +205,8 @@ services:
       # 認証済み利用者に運用系ページの閲覧と即時実行を解放する (未設定 = 匿名閲覧のみ)。
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
       CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      # ログアウト後の戻り先 (公開ニュースサイト。未設定なら /app/ へ戻る)
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
       # 認証済み即時実行の転送先 (write の実行主体は常に full instance)
       FULL_INSTANCE_URL: ${FULL_INSTANCE_URL:-http://kuebiko:8000}
     volumes:

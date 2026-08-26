@@ -50,3 +50,33 @@ def test_logout_is_outside_the_protected_path() -> None:
 
     source = inspect.getsource(auth.build_auth_router)
     assert '@router.get("/logout")' in source
+
+
+class TestLogoutDestination:
+    """ログアウト後は公開サイトへ戻す (運用ドメインに残さない。2026-08-27 利用者指摘)。
+
+    実ドメインはコードに書かない — .env の PUBLIC_SITE_URL で注入し、
+    未設定なら従来どおりアプリへ戻る (段階導入で壊れない)。
+    """
+
+    def test_destination_comes_from_the_environment(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        from src.ui.routers import auth
+
+        monkeypatch.setenv("PUBLIC_SITE_URL", "https://news.kuebiko.example/")
+
+        assert auth._logout_destination() == "https://news.kuebiko.example/"
+        assert "https://news.kuebiko.example/" in auth._logout_html()
+
+    def test_falls_back_to_the_app_when_unset(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        from src.ui.routers import auth
+
+        monkeypatch.delenv("PUBLIC_SITE_URL", raising=False)
+
+        assert auth._logout_destination() == "/app/"
+
+    def test_no_real_domain_in_code(self) -> None:
+        import inspect
+
+        from src.ui.routers import auth
+
+        assert "kuebiko.example" not in inspect.getsource(auth)

@@ -33,21 +33,37 @@ _APP_HOME = "/app/"
 # Cloudflare edge が処理する logout endpoint (同一オリジン。origin には到達しない)
 _EDGE_LOGOUT_PATH = "/cdn-cgi/access/logout"
 
-# 中継ページ: cookie 破棄 → アプリへ戻る。JS 無効時と失敗時も必ず戻れるように
-# noscript リンクと meta refresh を併置する (行き止まりを作らない)。
-_LOGOUT_HTML = f"""<!doctype html>
+
+def _logout_destination() -> str:
+    """ログアウト後の戻り先。
+
+    運用画面 (ops ホスト) に戻すと「ログアウトしたのに運用ドメインに居る」状態に
+    なる (2026-08-27 利用者指摘)。公開ニュースサイトがあるならそちらへ戻す。
+    実ドメインはコードに書かない (公開リポの汎用化規約) — ``.env`` の
+    ``PUBLIC_SITE_URL`` で注入し、未設定なら従来どおりアプリへ戻る。
+    """
+    import os
+
+    return os.environ.get("PUBLIC_SITE_URL", "").strip() or _APP_HOME
+
+
+def _logout_html() -> str:
+    """中継ページ: cookie 破棄 → 公開サイトへ戻る。JS 無効時と失敗時も必ず戻れる
+    ように noscript リンクと meta refresh を併置する (行き止まりを作らない)。"""
+    dest = _logout_destination()
+    return f"""<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <title>ログアウト</title>
-<meta http-equiv="refresh" content="5;url={_APP_HOME}">
+<meta http-equiv="refresh" content="5;url={dest}">
 <style>body{{font-family:system-ui,sans-serif;margin:0;height:100vh;display:flex;
 align-items:center;justify-content:center;color:#444}}</style>
 </head><body>
-<p>ログアウトしています… <a href="{_APP_HOME}">戻らない場合はこちら</a></p>
+<p>ログアウトしています… <a href="{dest}">戻らない場合はこちら</a></p>
 <noscript><p><a href="{_EDGE_LOGOUT_PATH}">ログアウト</a></p></noscript>
 <script>
 fetch({_EDGE_LOGOUT_PATH!r}, {{credentials: "same-origin", cache: "no-store"}})
   .catch(function () {{}})
-  .then(function () {{ window.location.replace({_APP_HOME!r}); }});
+  .then(function () {{ window.location.replace({dest!r}); }});
 </script>
 </body></html>"""
 
@@ -74,7 +90,7 @@ def build_auth_router(config: AccessConfig | None) -> APIRouter:
     async def logout() -> Response:
         if config is None:
             return RedirectResponse(url=_APP_HOME, status_code=302)
-        return HTMLResponse(_LOGOUT_HTML, headers={"Cache-Control": "no-store"})
+        return HTMLResponse(_logout_html(), headers={"Cache-Control": "no-store"})
 
     # 旧 URL (ブックマーク / 既存 bundle からの遷移) を新しいログアウトへ寄せる。
     # ここは Access 保護下なので、認証済みの人だけが通り抜けて /logout に着く。
