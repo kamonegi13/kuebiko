@@ -29,6 +29,7 @@ from src.tools.identifier_catalog import (
     render_catalog,
     resolve_text,
 )
+from src.tools.identifier_match import extract_identifiers
 
 # 本文末尾に LLM が書いた出典番号。表示側が source_index から付けるため二重になる
 # (実測 532 行中 155 行 = 29%)。プロンプトでも禁止したが、**指示は関門にならない**ので
@@ -53,6 +54,37 @@ def build_member_catalog(members: Sequence[MemberArticle]) -> IdentifierCatalog:
 def render_allowed_identifiers(members: Sequence[MemberArticle]) -> str:
     """プロンプトへ載せるカタログ文字列 (実値はここにだけ現れる)。"""
     return render_catalog(build_member_catalog(members))
+
+
+#: 「本文に入っているべき」種類の識別子。ドメイン・ハッシュ・IP は一括列挙の
+#: 記事で数十〜数百個になり、全部入れると記事が壊れるので対象にしない。
+IMPORTANT_KINDS: frozenset[str] = frozenset({"cve", "version", "cvss"})
+
+
+def missing_important_identifiers(
+    draft: EventNewsDraft, catalog: IdentifierCatalog
+) -> tuple[tuple[str, str, str], ...]:
+    """カタログの重要識別子のうち、生成物のどこにも現れないもの (token, 実値, 種類)。
+
+    31B の実測 (2026-08-27): カタログを見せられた上で重要識別子の半分しか使わない。
+    散文の一般指示 (「具体値を落とすな」) は 3 度無効だったが、**具体的な番号の指摘**
+    (「{I3} (version: 1.8.6) が無い」) による書き直しは不足 5 → 0 に埋めた。
+    caveats 欄と同じ「構造は効く」側の介入。
+    """
+    text = (
+        draft.bluf
+        + " ".join(f.text for f in draft.facts)
+        + " ".join(c.text for c in draft.caveats)
+        + " ".join(draft.unknowns)
+    )
+    used = {i.normalized for i in extract_identifiers(text)}
+    found: list[tuple[str, str, str]] = []
+    for entry in catalog.entries:
+        if not entry.token or entry.identifier.kind not in IMPORTANT_KINDS:
+            continue
+        if entry.identifier.normalized not in used:
+            found.append((entry.token, entry.identifier.raw, entry.identifier.kind))
+    return tuple(found)
 
 
 def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> GateResult:

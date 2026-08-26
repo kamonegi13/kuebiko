@@ -31,6 +31,7 @@ from src.eventnews.models import (
 )
 from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventNewsMixin
+from src.tools.identifier_catalog import IdentifierCatalog
 from src.tools.llm_client import LLMClient, LLMError
 
 _log = get_logger(__name__)
@@ -142,14 +143,39 @@ _VERBATIM_HINT = """前回の出力には、原文の文をほぼそのまま写
 (これらは事実であって表現ではない)。"""
 
 
+#: 書き直しで指摘する不足識別子の上限 (一括列挙の記事で暴発させない)。
+_COVERAGE_HINT_MAX = 8
+
+
 def _rewrite_hints(
     gate: GateResult,
     bodies: Mapping[int, str],
     texts: Mapping[int, str],
     item_id: str,
+    catalog: IdentifierCatalog,
 ) -> list[str]:
     """書き直しをさせる理由。空なら書き直さない。"""
     hints: list[str] = []
+    # カタログの重要識別子 (cve/version/cvss) の取りこぼし。散文の一般指示は
+    # 31B に 3 度無効だったが、**具体的な番号の指摘**は不足 5 → 0 に埋めた
+    # (2026-08-27 実測)。「関連しないなら含めなくてよい」の逃げ道を残す —
+    # 全部を強制すると一括アドバイザリの列挙で記事が壊れる。
+    missing = identifier_gate.missing_important_identifiers(gate.draft, catalog)
+    if missing:
+        shown = missing[:_COVERAGE_HINT_MAX]
+        _log.warning(
+            "eventnews_coverage_rewrite",
+            item_id=item_id,
+            missing=len(missing),
+            tokens=[token for token, _, _ in shown],
+        )
+        hints.append(
+            "前回の出力には、識別子カタログにある**重要な値**が含まれていなかった: "
+            + " / ".join(f"{{{token}}} ({kind}: {raw})" for token, raw, kind in shown)
+            + "。**事象に関連するものは本文の適切な節に `{In}` 参照で含める**。"
+            "関連しない値 (別件の列挙等) は含めなくてよい。"
+            "他の内容の質は保ったまま書き直すこと。"
+        )
     if verbatim.needs_rewrite(gate.draft.facts, bodies):
         _log.warning(
             "eventnews_verbatim_rewrite",
@@ -158,13 +184,13 @@ def _rewrite_hints(
             transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
         )
         hints.append(_VERBATIM_HINT)
-    missing = quantities.unsupported_lines(gate.draft.facts, texts)
-    if missing:
-        values = sorted({v for _, vs in missing for v in vs})
+    unsupported = quantities.unsupported_lines(gate.draft.facts, texts)
+    if unsupported:
+        values = sorted({v for _, vs in unsupported for v in vs})
         _log.warning(
             "eventnews_unsupported_values_rewrite",
             item_id=item_id,
-            lines=len(missing),
+            lines=len(unsupported),
             values=values[:8],
         )
         hints.append(
@@ -230,7 +256,8 @@ async def _generate_version(
         #   - 原文に無い数値・日付が残る → **その行だけ落とす** (1 つの値のために
         #     記事全体を捨てない。識別子関門の dropped_lines と同じ粒度)
         texts = dict(enumerate(quantities.supporting_texts(selected), start=1))
-        hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id)
+        catalog = identifier_gate.build_member_catalog(selected)
+        hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id, catalog)
         if hints:
             draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint="\n".join(hints))
             gate = identifier_gate.verify_draft(draft, selected)
@@ -243,6 +270,15 @@ async def _generate_version(
                 )
                 return None, None
             gate = _drop_unsupported_lines(gate, texts, item.snapshot.item_id)
+            still = identifier_gate.missing_important_identifiers(gate.draft, catalog)
+            if still:
+                # 書き直しても残った分は観測のみ (該当識別子が本当に別件のこともある)
+                _log.info(
+                    "eventnews_coverage_missing",
+                    item_id=item.snapshot.item_id,
+                    missing=len(still),
+                    tokens=[token for token, _, _ in still[:8]],
+                )
     except LLMError as exc:
         _log.warning("eventnews_generation_failed", item_id=item.snapshot.item_id, error=str(exc))
         return None, None
