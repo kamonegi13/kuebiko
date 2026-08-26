@@ -55,6 +55,7 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
         "key_points": body.get("key_points", []),
         "facts": body.get("facts", []),
         "discrepancies": body.get("discrepancies", []),
+        "caveats": body.get("caveats", []),
         "unknowns": body.get("unknowns", []),
         # 関門が黙って落とした量を読み手にも見せる (落下率の常設監視、§9)
         "dropped_lines": latest.dropped_lines,

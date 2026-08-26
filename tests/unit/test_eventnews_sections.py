@@ -62,8 +62,8 @@ class TestPromptVersion:
     """
 
     #: prompts/eventnews/refine.j2 の SHA-256。**プロンプトを変えたら版と一緒に更新する**。
-    EXPECTED_PROMPT_SHA256 = "c5a769953a31003d2c816d9f44f3be10570d981bd073450dd5c1e60c09e85009"
-    EXPECTED_VERSION = "eventnews-v5"
+    EXPECTED_PROMPT_SHA256 = "0cc6cf7761f03dd0f8fc7e00dca4df3b09bdd64d8473038c0b5e2ce2d28010ea"
+    EXPECTED_VERSION = "eventnews-v6"
 
     def test_prompt_change_requires_a_version_bump(self) -> None:
         import hashlib

@@ -43,9 +43,22 @@ _IMPORTANCE_RANK = {"low": 0, "medium": 1, "high": 2}
 # 「どの指示のときの出力か」が分からなくなる。2026-08-26 の実測で v3→v4 の
 # 比較ができたのは版が分かれていたからで、当日の複数回の変更はすべて v4 の
 # ままだった (分量の下限を落とした影響を切り分けられなくなる寸前だった)。
-_PROMPT_VERSION = "eventnews-v5"
+_PROMPT_VERSION = "eventnews-v6"
 # これ以上の事実行があるのに節が 1 種類なら、割り当てが効いていないとみなす
 _SECTION_SPREAD_MIN_FACTS = 6
+
+# 原文が明示的に範囲を限定している目印。**検出器ではなく下限**の役割 —
+# ここに挙げた語が原文にあるのに caveats が空なら、確実に取りこぼしている。
+# 一般的すぎる語 (「ではない」「という」) は入れない (常時警告になり無視される)。
+_CAVEAT_MARKERS: tuple[str, ...] = (
+    "とは別の指標",
+    "とは異なる指標",
+    "に限られ",
+    "保証されない",
+    "断定できない",
+    "とは別物",
+    "を意味しない",
+)
 
 # 単独報 (本文を持つメンバーが 1 件) を生成する条件。
 # 公開面は high しか出さないので、母集団を high に揃える — 全件生成すると
@@ -246,6 +259,22 @@ async def _generate_version(
             facts=len(gate.draft.facts),
             section=next(iter(sections), ""),
         )
+    # 原文が但し書きを付けているのに拾っていないか。**自動で書き足さない** —
+    # 観測して、プロンプト側で直すための計測 (節分散の警告と同じ位置づけ)。
+    # 実測 (2026-08-26): 留保語の密度は 31B が Sonnet の 55%、「相違」欄は 0.1 対 0.7。
+    # 但し書きが落ちると読み手が数字を誤読する (観測量を被害規模と読む) ので、
+    # **空のまま増えていくことに気付ける**必要がある。
+    if not gate.draft.caveats:
+        source_text = " ".join(m.body or "" for m in selected)
+        found = [m for m in _CAVEAT_MARKERS if m in source_text]
+        if found:
+            _log.warning(
+                "eventnews_caveats_dropped",
+                item_id=item.snapshot.item_id,
+                markers=found[:4],
+                facts=len(gate.draft.facts),
+            )
+
     # 原文の前半で打ち切っていないか (2026-08-26 実測: 単独報が 27% 地点で止まり、
     # 後半の被害規模を落とした上で unknowns に「不明」と書いていた)。ここも
     # **自動で書き足さない** — 観測して、プロンプト側で直すための計測。

@@ -96,6 +96,8 @@ export interface EventNewsDetail {
     key_points?: string[];
     facts: EventNewsFact[];
     discrepancies: EventNewsFact[];
+    /** 原文が自ら付けた但し書き。 */
+    caveats?: EventNewsFact[];
     unknowns: string[];
     dropped_lines: number;
     resolved_ids: number;

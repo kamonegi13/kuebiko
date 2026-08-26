@@ -52,6 +52,9 @@ export interface PublicNewsDetail {
   /** ⚠ facts と同じ形 (オブジェクト)。string[] ではない — 2026-08-25 に取り違えて
    *  公開サイトを真っ黒にした (React は object を子に渡すと throw する)。 */
   discrepancies: PublicNewsFact[];
+  /** 原文が自ら付けた但し書き (「これは投稿数であり被害数ではない」等)。
+   *  2026-08-27 より前の版には無いので、空配列を必ず既定にする。 */
+  caveats?: PublicNewsFact[];
   /** こちらは素の文字列 (backend の `list[str]`)。 */
   unknowns: string[];
   published_at: string;

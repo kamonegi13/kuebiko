@@ -102,6 +102,20 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
         total = total.merged(st)
         unknowns.append(text)
 
+    caveats: list[FactItem] = []
+    for item in draft.caveats:
+        cited = item.source_index if 1 <= item.source_index <= n_members else 0
+        text, st = resolve_text(item.text, catalog, cited_member=cited)
+        total = total.merged(st)
+        caveats.append(
+            FactItem(
+                text=text,
+                source_index=item.source_index,
+                paragraph=item.paragraph,
+                section=item.section,
+            )
+        )
+
     key_points: list[str] = []
     for raw in draft.key_points:
         text, st = resolve_text(raw, catalog, cited_member=0)
@@ -119,6 +133,7 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
             bluf=bluf,
             key_points=key_points,
             facts=facts,
+            caveats=caveats,
             discrepancies=discrepancies,
             unknowns=unknowns,
         ),

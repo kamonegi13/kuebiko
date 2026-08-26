@@ -435,6 +435,8 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         # 事実行は出典番号を持つ (どの媒体が報じたかを本文中で示す)
         "facts": body.get("facts", []),
         "discrepancies": body.get("discrepancies", []),
+        # 原文が自ら付けた但し書き。数字の誤読を防ぐので、本文と同じ面に出す
+        "caveats": body.get("caveats", []),
         "unknowns": body.get("unknowns", []),
         "published_at": record.state.last_reported_at.isoformat(),
         "first_reported_at": record.state.first_reported_at.isoformat(),

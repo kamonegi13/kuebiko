@@ -399,6 +399,19 @@ export function EventNewsDetailBody({ id }: { id: string }) {
             <Body facts={d.news.facts} articleIdOf={articleIdOf} />
           </details>
 
+          {(d.news.caveats ?? []).length > 0 && (
+            <div className={CARD}>
+              <div className={`${CARD_LABEL} mb-2`}>読むうえでの但し書き</div>
+              <ul className="m-0 pl-4 space-y-1">
+                {(d.news.caveats ?? []).map((c, i) => (
+                  <li key={i} className="text-sm text-fg-muted leading-relaxed">
+                    {c.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {d.news.discrepancies.length > 0 && (
             <div className={CARD}>
               <div className={`${CARD_LABEL} mb-2`}>ソース間の相違</div>

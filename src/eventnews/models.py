@@ -223,6 +223,13 @@ class EventNewsDraft(BaseModel):
     facts: list[FactItem] = Field(default_factory=list)
     # 相違・不在の主張は [N] を要求しない (関門は識別子のみ適用)
     discrepancies: list[FactItem] = Field(default_factory=list)
+    # 原文が自ら付けた但し書き。**要約すると最初に落ちる種類の情報**で、落ちると
+    # 読み手が数字を誤読する。実測 (2026-08-26、生成済み 196 件): 留保を示す語の
+    # 密度は 31B が Sonnet の 55% しかなく、「相違」欄に至っては 0.1 対 0.7 だった。
+    # 例: 原文「週 80 件超は公開サンドボックスへの投稿数であり被害組織数とは別の指標」
+    # → 生成が「週 80 件超が確認された」だけになると、観測量が被害規模に化ける。
+    # 散文の指示では 2 度とも効かなかったため、**構造 (独立した欄) で保持させる**。
+    caveats: list[FactItem] = Field(default_factory=list)
     unknowns: list[str] = Field(default_factory=list)
 
     @classmethod

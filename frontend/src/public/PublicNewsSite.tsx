@@ -924,6 +924,21 @@ function NewsDetail({ id }: { id: string }) {
             </ArticleSection>
           )}
 
+      {/* 原文が付けた但し書き。**本文の直後・食い違いより前**に置く —
+          数字の読み方を限定する情報なので、数字を読んだ直後に目に入る必要がある。 */}
+      {(data.caveats ?? []).length > 0 && (
+        <ArticleSection title="読むうえでの但し書き">
+          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
+            {(data.caveats ?? []).map((c, i) => (
+              <li key={i} className="flex gap-2">
+                <span aria-hidden className="mt-[0.7em] size-1 shrink-0 rounded-full bg-fg-subtle" />
+                <span>{c.text}</span>
+              </li>
+            ))}
+          </ul>
+        </ArticleSection>
+      )}
+
       {data.discrepancies.length > 0 && (
         <ArticleSection title="媒体間で食い違う点" tone="warning">
           <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
