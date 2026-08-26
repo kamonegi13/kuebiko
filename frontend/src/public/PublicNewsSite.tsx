@@ -29,6 +29,11 @@ import { buildSections } from "./sections";
 const PAGE_SIZE = 24;
 const FEATURED_COUNT = 3;
 // トップに出す件数。多すぎると「入口」でなく一覧になってしまう
+/** 開いたままのタブを更新する間隔。**一覧だけでなくトップページも更新する** —
+ *  主導線であるトップが古いまま残ると、更新されていないサイトに見える
+ *  (2026-08-26 利用者指摘)。記事詳細は開いている間に書き換わると読みにくいので除く。 */
+const REFETCH_MS = 10 * 60 * 1000;
+
 const PORTAL_LATEST_COUNT = 6;
 const PORTAL_CATEGORY_COUNT = 4;
 const HOME_PATH = "/app/news";
@@ -199,6 +204,7 @@ function CategoryNav({
     queryKey: ["public-news-categories"],
     queryFn: () => fetchPublicNews({ limit: 1 }),
     staleTime: 30 * 60 * 1000,
+    refetchInterval: REFETCH_MS,
   });
   const keys = data?.categories ?? [];
   if (keys.length === 0) return null;
@@ -253,11 +259,13 @@ function Portal({ openedId }: { openedId?: string }) {
     queryKey: ["public-news-featured"],
     queryFn: () => fetchPublicNews({ limit: FEATURED_COUNT, featured: true }),
     staleTime: 10 * 60 * 1000,
+    refetchInterval: REFETCH_MS,
   });
   const { data: latest } = useQuery({
     queryKey: ["public-news-portal-latest"],
     queryFn: () => fetchPublicNews({ limit: PORTAL_LATEST_COUNT + FEATURED_COUNT }),
     staleTime: 5 * 60 * 1000,
+    refetchInterval: REFETCH_MS,
   });
 
   const featuredItems = featured?.items ?? [];
@@ -372,6 +380,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
     queryKey: ["public-news-teaser", categoryKey],
     queryFn: () => fetchPublicNews({ limit: PORTAL_CATEGORY_COUNT, category: categoryKey }),
     staleTime: 5 * 60 * 1000,
+    refetchInterval: REFETCH_MS,
   });
   const items = data?.items ?? [];
   if (items.length === 0) return null;
@@ -475,7 +484,7 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
         country,
       }),
     placeholderData: keepPreviousData,
-    refetchInterval: 10 * 60 * 1000,
+    refetchInterval: REFETCH_MS,
   });
 
   const items = data?.items ?? [];

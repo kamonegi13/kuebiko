@@ -628,3 +628,13 @@ describe("地図の描画設定", () => {
     expect(mapSource).toContain("scrollWheelZoom: false");
   });
 });
+
+describe("開いたままの自動更新", () => {
+  it("トップページも一覧と同じ間隔で更新する", () => {
+    // 主導線であるトップが古いまま残ると、更新されていないサイトに見える
+    // (2026-08-26 利用者指摘)。間隔の定義は 1 か所に置く。
+    const intervals = siteSource.match(/refetchInterval:\s*([^,\n]+)/g) ?? [];
+    expect(intervals.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(intervals.map((s) => s.trim())).size).toBe(1);
+  });
+});
