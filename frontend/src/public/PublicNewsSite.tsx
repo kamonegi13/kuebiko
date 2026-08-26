@@ -20,6 +20,7 @@ import {
 } from "../api/publicNews";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { staticCategoryLabels } from "../api/publicNewsStatic";
 import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
 import { PublicMapSection } from "./PublicMapSection";
@@ -50,10 +51,19 @@ const HOME_PATH = import.meta.env.VITE_PUBLIC_BASE || "/app/news";
 const OPERATOR_LOGIN_URL =
   (import.meta.env.VITE_OPERATOR_ORIGIN || "") + "/auth/login";
 
-/** カテゴリの表示名。どの category を束ねるかの定義は backend が持つ。 */
+/** カテゴリの表示名。どの category を束ねるかの定義も表示名も backend が持つ。
+ *
+ * 静的配信 (Cloudflare Pages) では語彙 API を読めないので、書き出しに同梱された
+ * ラベルを使う。**入れ忘れると内部 key がそのまま画面に出る**
+ * (2026-08-26 実測: タブが vuln / incident_breach と英語で表示された)。 */
 function categoryLabel(key: string): string {
   if (!key) return "";
-  return vocabLabel("category_group", key) || vocabLabel("category", key) || key;
+  return (
+    staticCategoryLabels[key] ||
+    vocabLabel("category_group", key) ||
+    vocabLabel("category", key) ||
+    key
+  );
 }
 
 type Route =

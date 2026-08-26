@@ -28,7 +28,14 @@ interface StaticIndex {
   items: StaticIndexItem[];
   categories: string[];
   featured: string[];
+  /** カテゴリ key → 表示名。表示名の SSoT は backend で、静的配信では
+   *  語彙 API を読めないため書き出しに同梱される。 */
+  category_labels?: Record<string, string>;
 }
+
+/** 読み込んだ索引に含まれるカテゴリ表示名 (同期アクセス用)。
+ *  一覧を読む前は空なので、呼び手は素の key へ落ちること。 */
+export const staticCategoryLabels: Record<string, string> = {};
 
 let indexPromise: Promise<StaticIndex> | null = null;
 let searchPromise: Promise<Record<string, string>> | null = null;
@@ -40,7 +47,10 @@ async function json<T>(path: string): Promise<T> {
 }
 
 function loadIndex(): Promise<StaticIndex> {
-  indexPromise ??= json<StaticIndex>(`${DATA_BASE}/index.json`);
+  indexPromise ??= json<StaticIndex>(`${DATA_BASE}/index.json`).then((data) => {
+    Object.assign(staticCategoryLabels, data.category_labels ?? {});
+    return data;
+  });
   return indexPromise;
 }
 

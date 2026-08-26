@@ -72,7 +72,8 @@ def test_manifest_is_json_not_spa_html(client: TestClient) -> None:
     # Assert
     assert resp.status_code == 200
     assert "html" not in resp.headers["content-type"]
-    assert resp.json()["scope"] == "/app/"
+    # scope は /app/ より広い (ログイン経路を含めるため。上の test を参照)
+    assert resp.json()["start_url"] == "/app/"
 
 
 def test_icon_is_served_as_png(client: TestClient) -> None:
@@ -110,8 +111,12 @@ def test_manifest_scope_matches_vite_base() -> None:
     # base は静的ビルド (公開サイト) と通常ビルド (運用画面) で分岐する。
     # PWA は運用画面のものなので、**通常ビルド側が /app/ であること**を見る。
     assert 'base: process.env.VITE_PUBLIC_STATIC === "1" ? "/" : "/app/"' in vite_config
-    assert manifest["scope"] == "/app/"
     assert manifest["start_url"] == "/app/"
+    # ⚠ scope は `/app/` **より広く**取る。ログイン経路 (`/auth/login`) が scope の外に
+    # あると、iOS は PWA から別のブラウザ表示へ切り替えて戻らない (2026-08-26 実測)。
+    # id は `/app/` のまま = 同じアプリとして扱われる (入れ直し不要)。
+    assert manifest["scope"] == "/"
+    assert manifest["id"] == "/app/"
 
 
 def test_manifest_icons_exist_in_source() -> None:
@@ -124,3 +129,26 @@ def test_manifest_icons_exist_in_source() -> None:
         src: str = icon["src"]
         assert src.startswith("/app/pwa/"), src
         assert (PWA_SRC_DIR / src.removeprefix("/app/pwa/")).exists(), src
+
+
+def test_public_site_manifest_is_scoped_to_the_static_root() -> None:
+    """公開サイト (Cloudflare Pages) の manifest は scope が `/`。
+
+    運用画面の manifest (scope: /app/) を流用すると standalone にならず、
+    ブラウザの UI が出たままになる (2026-08-26 利用者指摘)。
+    """
+    import json
+
+    manifest = json.loads(
+        (REPO_ROOT / "frontend" / "public" / "pwa" / "manifest-public.webmanifest").read_text(
+            encoding="utf-8"
+        )
+    )
+    html = (REPO_ROOT / "frontend" / "public.html").read_text(encoding="utf-8")
+
+    assert manifest["scope"] == "/"
+    assert manifest["start_url"] == "/"
+    assert manifest["display"] == "standalone"
+    assert 'href="/pwa/manifest-public.webmanifest"' in html
+    for icon in manifest["icons"]:
+        assert icon["src"].startswith("/pwa/"), "アイコンの参照が /app/ を向いている"

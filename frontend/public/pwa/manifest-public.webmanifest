@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "kuebiko — サイバー脅威ニュース",
+  "short_name": "kuebiko",
+  "description": "公開報道から生成したサイバー脅威ニュース",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0d11",
+  "theme_color": "#0b0d11",
+  "icons": [
+    { "src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

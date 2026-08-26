@@ -58,3 +58,30 @@ class TestIndexStaysSmall:
     def test_index_fields_exclude_citations(self) -> None:
         # citations は 360 KB を占める。詳細ファイル側にあれば足りる
         assert "citations" not in export_public_site._INDEX_FIELDS
+
+
+class TestCategoryLabelsAreShipped:
+    """表示名の SSoT は backend。静的配信では語彙 API を読めないので同梱する。
+
+    入れ忘れるとカテゴリのタブが内部 key のまま出る (2026-08-26 実測: vuln /
+    incident_breach が英語で表示された)。
+    """
+
+    def test_export_includes_category_labels(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[2] / "scripts" / "export_public_site.py"
+        ).read_text(encoding="utf-8")
+
+        assert "category_labels" in source
+        assert "get_vocabularies" in source
+
+    def test_frontend_prefers_the_shipped_labels(self) -> None:
+        tsx = (
+            Path(__file__).resolve().parents[2]
+            / "frontend"
+            / "src"
+            / "public"
+            / "PublicNewsSite.tsx"
+        ).read_text(encoding="utf-8")
+
+        assert "staticCategoryLabels" in tsx

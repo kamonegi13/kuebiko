@@ -36,6 +36,7 @@ from src.ui.api.public_news import (  # noqa: E402
     get_public_news,
     list_public_news,
 )
+from src.ui.api.vocabularies import get_vocabularies  # noqa: E402
 
 #: 一覧 API の 1 ページ上限 (公開 API と同じ値を使い、全件をページングで集める)
 _PAGE = 60
@@ -123,9 +124,24 @@ def export(out_dir: Path) -> dict[str, Any]:
         }
         for item in items
     ]
+    # 表示名は backend が SSoT (CLAUDE.md §7)。静的配信では語彙 API を読めないので
+    # **書き出しに同梱する** — 入れ忘れるとカテゴリのタブが内部 key のまま出る
+    # (2026-08-26 実測: vuln / incident_breach が英語で表示された)。
+    vocab = get_vocabularies()
+    labels: dict[str, str] = {}
+    for name in ("category", "category_group"):
+        for entry in vocab.get(name, []):
+            value, label = entry.get("value"), entry.get("label")
+            if isinstance(value, str) and isinstance(label, str):
+                labels.setdefault(value, label)
     total = _write(
         out_dir / "index.json",
-        {"items": lean, "categories": list(PUBLIC_CATEGORIES), "featured": featured},
+        {
+            "items": lean,
+            "categories": list(PUBLIC_CATEGORIES),
+            "featured": featured,
+            "category_labels": {k: labels[k] for k in PUBLIC_CATEGORIES if k in labels},
+        },
     )
 
     # 検索は生成本文の全体が対象 (repo.search_event_versions と同じ範囲)。一覧に
