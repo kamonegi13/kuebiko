@@ -540,8 +540,13 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         verified_at: datetime | None,
         dropped_lines: int,
         repaired_ids: int,
+        prompt_text: str = "",
     ) -> None:
         """版を 1 件記録する (§6/§9)。
+
+        ``prompt_text`` は SFT 教師データ用の基底プロンプト (書き直しヒント抜き)。
+        メンバー記事が後から合流して動くため、事後の再構成では正確な対にならない —
+        生成時に対で残すのが唯一の方法 (2026-08-27)。公開 API には出さない。
 
         同一 (item_id, version) の再投入は上書き (生成リトライの冪等性)。挿入後、
         保持上限 (``VERSION_CAP``、version=1 は常に保持) を超えていれば古い版から
@@ -554,8 +559,9 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 """
                 INSERT INTO event_item_versions
                   (item_id, version, generated_at, model, prompt_version, headline,
-                   body_json, new_facts_json, verified_at, dropped_lines, repaired_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   body_json, new_facts_json, verified_at, dropped_lines, repaired_ids,
+                   prompt_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(item_id, version) DO UPDATE SET
                   generated_at   = excluded.generated_at,
                   model          = excluded.model,
@@ -565,7 +571,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                   new_facts_json = excluded.new_facts_json,
                   verified_at    = excluded.verified_at,
                   dropped_lines  = excluded.dropped_lines,
-                  repaired_ids   = excluded.repaired_ids
+                  repaired_ids   = excluded.repaired_ids,
+                  prompt_text    = excluded.prompt_text
                 """,
                 (
                     item_id,
@@ -579,6 +586,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                     _to_iso(verified_at) if verified_at is not None else None,
                     dropped_lines,
                     repaired_ids,
+                    prompt_text,
                 ),
             )
             self._prune_event_versions(conn, item_id)

@@ -759,6 +759,11 @@ CREATE TABLE IF NOT EXISTS tuning_labels (
 
 ALTER TABLE tuning_labels ADD COLUMN IF NOT EXISTS snapshot TEXT;
 
+-- SFT 教師データ用: 生成に使った基底プロンプト (書き直しヒント抜き) を版と対で残す。
+-- メンバー記事は後から合流して動くため、事後の再構成では正確な対にならない
+-- (2026-08-27)。公開 API には出さない (内部の学習データ)。
+ALTER TABLE event_item_versions ADD COLUMN IF NOT EXISTS prompt_text TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_article

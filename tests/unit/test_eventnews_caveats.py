@@ -100,3 +100,25 @@ class TestSurfacesConsumeIt:
             tsx = pathlib.Path(path).read_text(encoding="utf-8")
             assert "caveats" in tsx, f"{path} が但し書きを描いていない"
             assert "読むうえでの但し書き" in tsx
+
+
+class TestPromptPersistedForSft:
+    """SFT 教師データ: (基底プロンプト, 関門通過後の出力) の対を版に残す。
+
+    メンバー記事は後から合流して動くため、事後にプロンプトを再構成しても
+    正確な対にならない — 生成時に対で残すのが唯一の方法 (2026-08-27)。
+    Sonnet の生成を続けながら教師データを蓄積し、後で 31B へ蒸留する戦略の前提。
+    """
+
+    def test_runner_stores_the_base_prompt(self) -> None:
+        source = inspect.getsource(runner._generate_version)
+
+        # 保存するのは**基底** (書き直しヒント抜き) — 「基底 → 関門通過後の出力」の
+        # 対が、学習で目指す挙動そのもの (関門の修正を焼き込む)
+        assert "prompt_text = gen.build_prompt(selected, allowed)" in source
+        assert "prompt_text=prompt_text" in source
+
+    def test_public_api_never_exposes_the_prompt(self) -> None:
+        api = pathlib.Path("src/ui/api/public_news.py").read_text(encoding="utf-8")
+
+        assert "prompt_text" not in api

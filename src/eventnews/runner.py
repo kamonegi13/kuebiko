@@ -248,6 +248,10 @@ async def _generate_version(
             return None, None
         allowed = _allowed_identifiers_text(selected)
         bodies = {index: m.body for index, m in enumerate(selected, start=1)}
+        # SFT 教師データ用に基底プロンプト (ヒント抜き) を版と対で残す。書き直しが
+        # 走っても保存するのは基底の方 — 「基底プロンプト → 関門通過後の出力」の対が
+        # 学習で目指す挙動そのもの (関門の修正を焼き込む)。
+        prompt_text = gen.build_prompt(selected, allowed)
         draft: EventNewsDraft = await gen.generate_draft(selected, allowed, llm)
         gate: GateResult = identifier_gate.verify_draft(draft, selected)
         # 表現と数値の関門。問題があれば **1 回だけ** 理由付きで書き直させる。
@@ -337,6 +341,7 @@ async def _generate_version(
         verified_at=now if gate.verified else None,
         dropped_lines=gate.dropped_lines,
         repaired_ids=gate.repaired_ids,
+        prompt_text=prompt_text,
     )
     return gate, body_json
 

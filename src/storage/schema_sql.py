@@ -691,6 +691,7 @@ CREATE TABLE IF NOT EXISTS event_item_versions (
     new_facts_json  TEXT    NOT NULL,   -- 決定論の版差分 (§6、プロセ差分は監査用に留める)
     verified_at     TEXT,               -- 識別子照合の実施時刻 (本文 purge 済で不能なら NULL)
     dropped_lines   INTEGER NOT NULL DEFAULT 0,
+    prompt_text     TEXT,
     repaired_ids    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (item_id, version)
 );
