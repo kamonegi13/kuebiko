@@ -47,6 +47,7 @@ def body_cap(member_count: int) -> int:
     share = _PROMPT_BODY_BUDGET // member_count
     return max(_MEMBER_BODY_CHAR_MIN, min(_MEMBER_BODY_CHAR_MAX, share))
 
+
 # 本文抽出をすり抜けた媒体側の定型見出し。LLM がこれを事実の一部として写す実害が
 # 出た (The Register の "MORE CONTEXT" が「CONTEXT の文脈として」という本文になった)。
 # 指示で止めず入力側で断つ (禁止は指示では止まらない、2026-08-19 の規約)。
@@ -108,7 +109,12 @@ def _prompt_env() -> jinja2.Environment:
     )
 
 
-def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str) -> str:
+def build_prompt(
+    members: Sequence[MemberArticle],
+    allowed_identifiers_text: str,
+    *,
+    rewrite_hint: bool = False,
+) -> str:
     """``prompts/eventnews/refine.j2`` を render する (§9)。
 
     渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** ``body_cap``
@@ -133,6 +139,8 @@ def build_prompt(members: Sequence[MemberArticle], allowed_identifiers_text: str
         # 単独報は「統合」ではなく 1 記事の再構成。節ごとの要約で読み物にする
         # (文単位の [N] は出典が 1 つしかないので情報を持たない)。
         solo=len(selected) == 1,
+        # 逐語一致の関門にかかった後の書き直し (runner が 1 回だけ立てる)。
+        rewrite_hint=rewrite_hint,
         allowed_identifiers_text=allowed_identifiers_text,
     )
 
@@ -141,6 +149,8 @@ async def generate_draft(
     members: Sequence[MemberArticle],
     allowed_identifiers_text: str,
     llm: LLMClient,
+    *,
+    rewrite_hint: bool = False,
 ) -> EventNewsDraft:
     """事象ニュースの structured 出力を生成する (§9、Step.EVENT_NEWS / narrative tier)。
 
@@ -148,7 +158,7 @@ async def generate_draft(
     ``llm`` は呼出側が ``model_tiers.build_llm_for(Step.EVENT_NEWS, config)`` 等で
     組み立てて渡す — モデル名をここでハードコードしない。
     """
-    prompt = build_prompt(members, allowed_identifiers_text)
+    prompt = build_prompt(members, allowed_identifiers_text, rewrite_hint=rewrite_hint)
     return await llm.generate_structured(
         prompt=prompt,
         schema=EventNewsDraft,

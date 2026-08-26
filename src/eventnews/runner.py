@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
-from src.eventnews import coverage, grouping, identifier_gate, state
+from src.eventnews import coverage, grouping, identifier_gate, state, verbatim
 from src.eventnews import generator as gen
 from src.eventnews.models import (
     UPDATE_DRIVER_TYPES,
@@ -143,8 +143,31 @@ async def _generate_version(
             )
             return None, None
         allowed = _allowed_identifiers_text(selected)
+        bodies = {index: m.body for index, m in enumerate(selected, start=1)}
         draft: EventNewsDraft = await gen.generate_draft(selected, allowed, llm)
         gate: GateResult = identifier_gate.verify_draft(draft, selected)
+        # 逐語一致の関門: 原文の表現をなぞった本文は出さない。全体比が高いか丸写しの
+        # 行があれば 1 回書き直させ、**書き直し後も丸写しの行が残るときだけ版を書かない**
+        # (公開面は元記事の要約へフォールバックするので、転記を出すよりそちらが正しい)。
+        # 止める条件に全体比を使わない理由は verbatim.must_block の docstring 参照 —
+        # 事実の羅列を表現の借用と誤認する。要約を名乗る以上、指示ではなく決定論で測る。
+        if verbatim.needs_rewrite(gate.draft.facts, bodies):
+            _log.warning(
+                "eventnews_verbatim_rewrite",
+                item_id=item.snapshot.item_id,
+                ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
+                transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
+            )
+            draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint=True)
+            gate = identifier_gate.verify_draft(draft, selected)
+            if verbatim.must_block(gate.draft.facts, bodies):
+                _log.warning(
+                    "eventnews_verbatim_blocked",
+                    item_id=item.snapshot.item_id,
+                    ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
+                    transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
+                )
+                return None, None
     except LLMError as exc:
         _log.warning("eventnews_generation_failed", item_id=item.snapshot.item_id, error=str(exc))
         return None, None
