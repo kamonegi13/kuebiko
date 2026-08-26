@@ -20,6 +20,7 @@ import {
 } from "../api/publicNews";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { loginUrl } from "../hooks/useRuntimeFlags";
 import { staticCategoryLabels } from "../api/publicNewsStatic";
 import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
@@ -48,8 +49,9 @@ const HOME_PATH = import.meta.env.VITE_PUBLIC_BASE || "/app/news";
  *
  * 静的配信 (Cloudflare Pages) の公開サイトには運用画面が無いので、tunnel 側の
  * ホストを指す。同一オリジンで配信しているとき (運用者の PC) は相対のままでよい。 */
-const OPERATOR_LOGIN_URL =
-  (import.meta.env.VITE_OPERATOR_ORIGIN || "") + "/auth/login";
+function operatorLoginUrl(): string {
+  return loginUrl(import.meta.env.VITE_OPERATOR_ORIGIN || "");
+}
 
 /** カテゴリの表示名。どの category を束ねるかの定義も表示名も backend が持つ。
  *
@@ -212,7 +214,7 @@ function SiteFooter() {
               (2026-08-26 実測)。運用画面は別ホスト (tunnel 経由) にあるので
               絶対 URL で指す — 静的配信の公開サイトには運用画面が無い。 */}
           <a
-            href={OPERATOR_LOGIN_URL}
+            href={operatorLoginUrl()}
             className="hover:text-accent underline underline-offset-2"
           >
             運用者ログイン

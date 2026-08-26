@@ -49,9 +49,14 @@ export function useRuntimeFlags(): RuntimeFlags {
     queryFn: fetchRuntimeFlags,
     // 埋め込み seed があれば初回ペイントから確定値 (fetch は裏で整合を取るだけ)
     initialData: seedFlags,
-    staleTime: Infinity, // 起動時 1 回 fetch、以降 cache
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    staleTime: Infinity,
+    // ⚠ 前面復帰では**必ず**取り直す。iOS の PWA は Cloudflare Access のログインを
+    // 別ドメインのアプリ内ブラウザで行うため、ログイン完了はこのアプリの外で起きる。
+    // 起動時 1 回の取得だと、ログイン後にオーバーレイを閉じても匿名の表示が続く
+    // (2026-08-27 実測: ✕ で閉じると Tier0 に戻るだけだった)。"always" は
+    // staleTime: Infinity を無視して再取得する。エンドポイントは軽量 (即答の JSON)。
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: true,
   });
   return data || ANONYMOUS;
 }
@@ -60,4 +65,20 @@ export function useRuntimeFlags(): RuntimeFlags {
 // Sidebar / CommandPalette / App のルートガードが同じ判定を共有する。
 export function shouldHideFullOnly(flags: RuntimeFlags): boolean {
   return flags.read_only && !flags.authenticated;
+}
+
+/** ログイン導線の URL。
+ *
+ * インストール型 (standalone PWA) からのログインは、完了ページを出すための
+ * 目印 `?display=standalone` を付ける。iOS は別ドメインの Access ログインを
+ * アプリ内ブラウザで開くため、完了後に /app/ を返すとアプリ全体がオーバーレイ内に
+ * 描画されて紛らわしい (2026-08-27 実測)。ブラウザからのログインは従来どおり
+ * /app/ へ戻る。 */
+export function loginUrl(origin = ""): string {
+  const standalone =
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches ||
+      // iOS Safari 旧来の判定 (navigator.standalone は非標準)
+      (navigator as { standalone?: boolean }).standalone === true);
+  return `${origin}/auth/login${standalone ? "?display=standalone" : ""}`;
 }

@@ -3,7 +3,7 @@
 
 import { ChevronsLeft, ChevronsRight, LogIn, LogOut } from "lucide-react";
 import { isActive, visibleNavGroups } from "./nav";
-import { useRuntimeFlags, shouldHideFullOnly } from "../hooks/useRuntimeFlags";
+import { useRuntimeFlags, shouldHideFullOnly, loginUrl } from "../hooks/useRuntimeFlags";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -103,7 +103,7 @@ export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onC
             <a
               // ログアウトは Access 保護対象外の /logout (保護下に置くと cookie 破棄後に
               // ログイン画面へ送られてしまう)。ログインは保護対象の /auth/login。
-              href={flags.authenticated ? "/logout" : "/auth/login"}
+              href={flags.authenticated ? "/logout" : loginUrl()}
               title={flags.authenticated ? "ログアウト" : "ログイン (運用ページを表示)"}
               className={[
                 "flex items-center gap-2.5 rounded-md no-underline px-2.5 py-2",

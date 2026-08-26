@@ -34,6 +34,21 @@ _APP_HOME = "/app/"
 _EDGE_LOGOUT_PATH = "/cdn-cgi/access/logout"
 
 
+_LOGIN_DONE_HTML = """<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ログイン完了</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;height:100vh;display:flex;
+flex-direction:column;align-items:center;justify-content:center;gap:12px;
+background:#0b0d11;color:#e5e7eb;text-align:center;padding:0 24px}
+p{margin:0;line-height:1.9}.sub{color:#9ca3af;font-size:14px}</style>
+</head><body>
+<p style="font-size:40px">✓</p>
+<p><strong>ログインしました</strong></p>
+<p class="sub">右上の ✕ を押してアプリへ戻ってください。<br>戻ると運用画面に切り替わります。</p>
+</body></html>"""
+
+
 def _logout_destination() -> str:
     """ログアウト後の戻り先。
 
@@ -72,8 +87,17 @@ def build_auth_router(config: AccessConfig | None) -> APIRouter:
     router = APIRouter(tags=["auth"])
 
     @router.get("/auth/login")
-    async def login() -> RedirectResponse:
+    async def login(display: str = "") -> Response:
         # ここに到達した時点で Access の認証は完了している (未認証なら edge で止まる)
+        #
+        # ⚠ PWA (standalone) からのログインは **アプリへ戻さない**。iOS は別ドメインの
+        # Access ログインをアプリ内ブラウザ (オーバーレイ) で開き、そこへ /app/ を
+        # 返すとアプリ全体がオーバーレイ内に描画されて、利用者がそこで使い続けて
+        # しまう (2026-08-27 実測)。オーバーレイは JS から閉じられない (iOS 制約) ため、
+        # 「✕ で戻る」だけの完了ページを出す。アプリ側は前面復帰で認証状態を
+        # 取り直す (useRuntimeFlags の refetchOnWindowFocus)。
+        if display == "standalone":
+            return HTMLResponse(_LOGIN_DONE_HTML, headers={"Cache-Control": "no-store"})
         return RedirectResponse(url=_APP_HOME, status_code=302)
 
     # ⚠ **着地点を 1 つに決め打ちしない**。Cloudflare Access は認証後に

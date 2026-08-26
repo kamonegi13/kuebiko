@@ -80,3 +80,26 @@ class TestLogoutDestination:
         from src.ui.routers import auth
 
         assert "kuebiko.example" not in inspect.getsource(auth)
+
+
+class TestStandaloneLoginLanding:
+    """PWA からのログインは完了ページ、ブラウザからはアプリへ戻す。
+
+    iOS は別ドメインの Access ログインをアプリ内ブラウザで開く。/app/ を返すと
+    アプリ全体がオーバーレイ内に描画され、利用者がそこで使い続けてしまう
+    (2026-08-27 実測)。オーバーレイは JS から閉じられない (iOS 制約) ため、
+    「✕ で戻る」だけの完了ページを出す。
+    """
+
+    def test_browser_login_still_redirects_to_the_app(self) -> None:
+        response = _client().get("/auth/login")
+
+        assert response.status_code == 302
+
+    def test_standalone_login_gets_a_completion_page(self) -> None:
+        response = _client().get("/auth/login?display=standalone")
+
+        assert response.status_code == 200
+        assert "ログインしました" in response.text
+        assert "✕" in response.text
+        assert response.headers["cache-control"] == "no-store"
