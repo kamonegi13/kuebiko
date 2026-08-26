@@ -31,7 +31,10 @@ else
 fi
 
 # 2) 公開面だけのビルド
-( cd "$ROOT/frontend" && VITE_PUBLIC_STATIC=1 VITE_PUBLIC_BASE="$BASE" VITE_PUBLIC_DATA="/data" npx vite build )
+# 運用画面は静的配信側に無いので、ログインリンクは tunnel 側のホストを指す
+OPERATOR_ORIGIN="${OPERATOR_ORIGIN:-https://ops.kuebiko.example}"
+( cd "$ROOT/frontend" && VITE_PUBLIC_STATIC=1 VITE_PUBLIC_BASE="$BASE" VITE_PUBLIC_DATA="/data" \
+    VITE_OPERATOR_ORIGIN="$OPERATOR_ORIGIN" npx vite build )
 
 # 3) 配信物へまとめる
 rm -rf "$OUT"

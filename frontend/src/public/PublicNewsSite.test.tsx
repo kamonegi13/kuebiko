@@ -148,7 +148,8 @@ describe("公開ニュースサイト", () => {
     const links = Array.from(document.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
     );
-    expect(links).toContain("/auth/");
+    // 着地点は /auth/login。/auth/ はアプリにルートが無く、認証通過後に 404 になる
+    expect(links).toContain("/auth/login");
     // 分析画面への導線を出さない
     for (const analyst of [
       "/app/dashboard",
@@ -636,5 +637,19 @@ describe("開いたままの自動更新", () => {
     const intervals = siteSource.match(/refetchInterval:\s*([^,\n]+)/g) ?? [];
     expect(intervals.length).toBeGreaterThanOrEqual(5);
     expect(new Set(intervals.map((s) => s.trim())).size).toBe(1);
+  });
+});
+
+describe("運用者ログインの導線", () => {
+  it("着地点は /auth/login (/auth/ は認証後に 404 になる)", () => {
+    // Cloudflare Access は /auth/* を保護するが、アプリに /auth/ のルートは無い。
+    // 認証を通過した直後に 404 が出る (2026-08-26 実測)。
+    expect(siteSource).toContain("/auth/login");
+    expect(siteSource).not.toContain('href="/auth/"');
+  });
+
+  it("運用画面のオリジンをビルド時に差し込める", () => {
+    // 静的配信 (Pages) には運用画面が無いので、tunnel 側のホストを指す必要がある
+    expect(siteSource).toContain("VITE_OPERATOR_ORIGIN");
   });
 });
