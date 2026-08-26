@@ -394,11 +394,13 @@ async def generate_pending(
         now = datetime.now(UTC)
         gate, _ = await _generate_version(repo, item, llm, now, "[]")
         if gate is None:
+            # 対象外 (skipped) と生成失敗 (failed) の区別は **_should_generate 一箇所**で
+            # 決める。ここに条件を複製すると、対象の定義を変えたときに集計だけずれる。
             textual, _ = gen.select_members(item.members)
-            if len(textual) < 2:
-                skipped += 1
-            else:
+            if _should_generate(item, textual):
                 failed += 1
+            else:
+                skipped += 1
             continue
         generated += 1
         repo.update_event_item(
