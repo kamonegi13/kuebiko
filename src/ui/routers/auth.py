@@ -3,8 +3,11 @@
 認証そのものは Cloudflare Access が edge で行う (``/auth/*`` に Access アプリを
 被せる)。origin 側の役目は 2 つだけ:
 
-- ``/auth/login``: Access の認証を通過した後の着地点 (**Access の保護対象**)。cookie は
-  Access がドメイン全体に付与済みなので、SPA に戻すだけでよい。
+- ``/auth/login`` と ``/auth/``: Access の認証を通過した後の着地点
+  (**Access の保護対象**)。cookie は Access がドメイン全体に付与済みなので、SPA に
+  戻すだけでよい。**着地点を 1 つに決め打ちしない** — Access は認証後に
+  アプリケーションのパス (``/auth/``) へ戻すことがあり、そこにルートが無いと
+  認証は成功しているのに 404 になる (2026-08-26 実測)。
 - ``/logout``: 同一オリジンの ``/cdn-cgi/access/logout`` (Cloudflare edge が処理し、
   origin には届かない) を叩いて cookie を破棄し、**アプリに戻す**。
 
@@ -55,6 +58,15 @@ def build_auth_router(config: AccessConfig | None) -> APIRouter:
     @router.get("/auth/login")
     async def login() -> RedirectResponse:
         # ここに到達した時点で Access の認証は完了している (未認証なら edge で止まる)
+        return RedirectResponse(url=_APP_HOME, status_code=302)
+
+    # ⚠ **着地点を 1 つに決め打ちしない**。Cloudflare Access は認証後に
+    # アプリケーションのパス (`/auth/`) へ戻すことがあり、そこにルートが無いと
+    # **認証は成功しているのに 404 が出る** (2026-08-26 実測。ドメイン移行で顕在化した)。
+    # 保護対象の配下はどこに着いても SPA へ流す。
+    @router.get("/auth")
+    @router.get("/auth/")
+    async def login_landing() -> RedirectResponse:
         return RedirectResponse(url=_APP_HOME, status_code=302)
 
     # 戻り型は Response に揃える (Union だと FastAPI が response model を組めない)
