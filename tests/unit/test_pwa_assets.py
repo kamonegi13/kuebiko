@@ -107,7 +107,9 @@ def test_manifest_scope_matches_vite_base() -> None:
     manifest = _manifest()
 
     # Assert
-    assert 'base: "/app/"' in vite_config
+    # base は静的ビルド (公開サイト) と通常ビルド (運用画面) で分岐する。
+    # PWA は運用画面のものなので、**通常ビルド側が /app/ であること**を見る。
+    assert 'base: process.env.VITE_PUBLIC_STATIC === "1" ? "/" : "/app/"' in vite_config
     assert manifest["scope"] == "/app/"
     assert manifest["start_url"] == "/app/"
 

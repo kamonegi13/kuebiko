@@ -36,7 +36,12 @@ const REFETCH_MS = 10 * 60 * 1000;
 
 const PORTAL_LATEST_COUNT = 6;
 const PORTAL_CATEGORY_COUNT = 4;
-const HOME_PATH = "/app/news";
+/** 公開面の基底パス。
+ *
+ * 運用者の PC で配信するとき (`/app/news`) と、Cloudflare Pages で配信するとき
+ * (`/news`) で変わる。**経路の組み立てはすべてここを通す** — 直書きすると
+ * 配信先を変えたときに一部のリンクだけ壊れる。 */
+const HOME_PATH = import.meta.env.VITE_PUBLIC_BASE || "/app/news";
 
 /** カテゴリの表示名。どの category を束ねるかの定義は backend が持つ。 */
 function categoryLabel(key: string): string {
@@ -51,13 +56,19 @@ type Route =
   | { kind: "map" }
   | { kind: "detail"; id: string };
 
+/** 基底パスから経路の正規表現を組む (基底を直書きしない)。 */
+function routePattern(suffix: string): RegExp {
+  const base = HOME_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${base}${suffix}/?$`);
+}
+
 function parseRoute(): Route {
   const p = window.location.pathname;
-  if (/^\/app\/news\/map\/?$/.test(p)) return { kind: "map" };
-  if (/^\/app\/news\/latest\/?$/.test(p)) return { kind: "latest" };
-  const cat = /^\/app\/news\/c\/([^/]+)\/?$/.exec(p);
+  if (routePattern("/map").test(p)) return { kind: "map" };
+  if (routePattern("/latest").test(p)) return { kind: "latest" };
+  const cat = routePattern("/c/([^/]+)").exec(p);
   if (cat) return { kind: "category", key: decodeURIComponent(cat[1]) };
-  const detail = /^\/app\/news\/([^/]+)\/?$/.exec(p);
+  const detail = routePattern("/([^/]+)").exec(p);
   return detail ? { kind: "detail", id: decodeURIComponent(detail[1]) } : { kind: "home" };
 }
 

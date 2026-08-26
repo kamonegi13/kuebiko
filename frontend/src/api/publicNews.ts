@@ -61,6 +61,12 @@ export interface PublicNewsDetail {
   note: string;
 }
 
+import {
+  fetchPublicMapStatic,
+  fetchPublicNewsDetailStatic,
+  fetchPublicNewsStatic,
+} from "./publicNewsStatic";
+
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path, { credentials: "same-origin" });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -79,7 +85,14 @@ export interface PublicNewsQuery {
   featured?: boolean;
 }
 
+/** 静的配信 (Cloudflare Pages) では書き出した JSON を読む。
+ *
+ * ビルド時に決まる。**呼び手は分岐を知らない** — 画面側に if を撒くと、
+ * 片方の経路だけ壊れても気付けない。 */
+const STATIC = import.meta.env.VITE_PUBLIC_STATIC === "1";
+
 export function fetchPublicNews(q: PublicNewsQuery = {}) {
+  if (STATIC) return fetchPublicNewsStatic(q);
   const p = new URLSearchParams({ limit: String(q.limit ?? 30) });
   if (q.offset) p.set("offset", String(q.offset));
   if (q.search) p.set("search", q.search);
@@ -92,6 +105,7 @@ export function fetchPublicNews(q: PublicNewsQuery = {}) {
 }
 
 export function fetchPublicNewsDetail(id: string) {
+  if (STATIC) return fetchPublicNewsDetailStatic(id);
   return get<PublicNewsDetail>(`/api/v1/public/news/${encodeURIComponent(id)}`);
 }
 
@@ -115,5 +129,6 @@ export interface PublicMapResponse {
 }
 
 export function fetchPublicMap(days = 30) {
+  if (STATIC) return fetchPublicMapStatic();
   return get<PublicMapResponse>(`/api/v1/public/news/map?days=${days}`);
 }

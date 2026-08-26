@@ -129,3 +129,13 @@ config/cti/actor_aliases.translated.yaml
 # 運用者ローカルの私的コンテキスト (公開リポに含めない)
 CLAUDE.local.md
 prompts/_persona_local.j2*
+
+# 公開サイトの静的書き出し (生成物。リポジトリに入れない — §9 の再配布境界と
+# 履歴の肥大を避ける。配信は wrangler で直接アップロードする)
+/data/public_site/
+/data/public_site_dist/
+/data/public_site_deployed.sha256
+/frontend/dist-public/
+
+# wrangler の作業ディレクトリ (ローカルの一時状態)
+/.wrangler/
