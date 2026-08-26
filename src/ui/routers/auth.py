@@ -38,14 +38,17 @@ _LOGIN_DONE_HTML = """<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ログイン完了</title>
+<meta http-equiv="refresh" content="2;url=/app/">
 <style>body{font-family:system-ui,sans-serif;margin:0;height:100vh;display:flex;
 flex-direction:column;align-items:center;justify-content:center;gap:12px;
 background:#0b0d11;color:#e5e7eb;text-align:center;padding:0 24px}
-p{margin:0;line-height:1.9}.sub{color:#9ca3af;font-size:14px}</style>
+p{margin:0;line-height:1.9}.sub{color:#9ca3af;font-size:14px}
+a{color:#93c5fd}</style>
 </head><body>
 <p style="font-size:40px">✓</p>
 <p><strong>ログインしました</strong></p>
-<p class="sub">右上の ✕ を押してアプリへ戻ってください。<br>戻ると運用画面に切り替わります。</p>
+<p class="sub"><a href="/app/">切り替わらない場合はこちら</a></p>
+<script>setTimeout(function(){window.location.replace("/app/")}, 600);</script>
 </body></html>"""
 
 
@@ -90,12 +93,12 @@ def build_auth_router(config: AccessConfig | None) -> APIRouter:
     async def login(display: str = "") -> Response:
         # ここに到達した時点で Access の認証は完了している (未認証なら edge で止まる)
         #
-        # ⚠ PWA (standalone) からのログインは **アプリへ戻さない**。iOS は別ドメインの
-        # Access ログインをアプリ内ブラウザ (オーバーレイ) で開き、そこへ /app/ を
-        # 返すとアプリ全体がオーバーレイ内に描画されて、利用者がそこで使い続けて
-        # しまう (2026-08-27 実測)。オーバーレイは JS から閉じられない (iOS 制約) ため、
-        # 「✕ で戻る」だけの完了ページを出す。アプリ側は前面復帰で認証状態を
-        # 取り直す (useRuntimeFlags の refetchOnWindowFocus)。
+        # PWA (standalone) からのログインは完了ページ経由でアプリへ自動遷移する。
+        # manifest の scope を / に広げた後は、iOS が Access からの復帰時に
+        # オーバーレイを自動で畳み **PWA 本体に着地する** (2026-08-27 実測 —
+        # 当初は「✕ で戻る」案内を出したが、✕ 自体が存在しない状態になった)。
+        # 完了ページは 0.6 秒でアプリへ進む。SPA の直接 302 にしないのは、
+        # 認証直後の Set-Cookie とアプリ起動の競合を 1 拍分離するため。
         if display == "standalone":
             return HTMLResponse(_LOGIN_DONE_HTML, headers={"Cache-Control": "no-store"})
         return RedirectResponse(url=_APP_HOME, status_code=302)

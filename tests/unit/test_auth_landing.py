@@ -101,5 +101,7 @@ class TestStandaloneLoginLanding:
 
         assert response.status_code == 200
         assert "ログインしました" in response.text
-        assert "✕" in response.text
+        # scope=/ 化後は復帰時にオーバーレイが自動で畳まれ PWA 本体に着地する。
+        # 完了ページは自動でアプリへ進む (「✕ で閉じる」案内は実態に無い)
+        assert 'window.location.replace("/app/")' in response.text
         assert response.headers["cache-control"] == "no-store"
