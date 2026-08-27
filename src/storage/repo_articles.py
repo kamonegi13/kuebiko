@@ -285,6 +285,11 @@ class ArticlesMixin(RunHistoryRepositoryBase):
     # 流さないため、更新対象カラムはこの集合でホワイトリスト検証する。
     _REPROCESS_UPDATABLE_COLUMNS: frozenset[str] = frozenset(
         {
+            # 見出しも本文由来なので、本文を差し替えたら作り直す (2026-08-28)。
+            # 入っていなかったため、抽出がページ枠に化けていた時期に作られた見出しが
+            # **本文だけ直っても残り続けた** (Register 40 件が別記事の見出しのまま)。
+            # 呼出側は空文字を渡さない (NULL 化を防ぐ)。
+            "title",
             "summary",
             "editorial_stance",
             "socio_political_intent",

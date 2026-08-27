@@ -214,4 +214,9 @@ def _enrichment_fields(msg: object, rf: dict[str, object]) -> dict[str, object]:
         "pmesii_p_env": 1 if "P-env" in axes_set else 0,
         "pmesii_t": 1 if "T" in axes_set else 0,
     }
+    # 見出しは本文から作られるので、本文を差し替えたら作り直した見出しで上書きする。
+    # ⚠ **空なら載せない** — キーを入れると NULL 化してしまう (見出しは必須)。
+    new_title = str(getattr(msg, "title", "") or "").strip()
+    if new_title:
+        fields["title"] = new_title
     return fields

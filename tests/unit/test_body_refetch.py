@@ -87,6 +87,42 @@ def test_update_article_enrichment_allowlist(tmp_path: Path) -> None:
     assert rec.pmesii_e is True
 
 
+def test_reprocess_updates_the_title_with_the_body(tmp_path: Path) -> None:
+    """本文を差し替えたら見出しも作り直す。
+
+    見出しが allowlist に無かったため、抽出がページ枠に化けていた時期に作られた
+    見出しが **本文だけ直っても残り続けた** (別記事の見出しのまま公開されていた)。
+    """
+    # Arrange
+    repo = _repo(tmp_path)
+    _add(repo, "a1")
+
+    # Act
+    repo.update_article_enrichment("a1", {"title": "本文に即した見出し"})
+
+    # Assert
+    rec = repo.get_article("a1")
+    assert rec is not None
+    assert rec.title == "本文に即した見出し"
+
+
+def test_enrichment_fields_omit_an_empty_title(tmp_path: Path) -> None:
+    """見出しが空なら **キーごと載せない** — 載せると NULL 化して見出しが消える。"""
+    # Arrange
+    from src.pipeline.reprocess import _enrichment_fields
+
+    class _Msg:
+        title = "   "
+        summary = "要約"
+        metadata: dict[str, object] = {}
+
+    # Act
+    fields = _enrichment_fields(_Msg(), {})
+
+    # Assert
+    assert "title" not in fields
+
+
 def test_clear_body_ja(tmp_path: Path) -> None:
     """clear_article_body_ja は body_ja を NULL に戻す (再翻訳キュー投入)。"""
     repo = _repo(tmp_path)
