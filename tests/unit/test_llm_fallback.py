@@ -16,8 +16,9 @@ from src.tools.llm_client import (
     LLMForbiddenModelError,
     LLMRefusalError,
     LLMResponse,
+    LLMStructuredOutputError,
 )
-from src.tools.llm_fallback import FallbackLLMClient
+from src.tools.llm_fallback import FAILURE_STREAK, FallbackLLMClient
 
 
 class _Out(BaseModel):
@@ -168,11 +169,11 @@ class TestFallback:
         assert local.last_think is False
 
 
-class TestRefusalDoesNotCooldown:
-    """拒否は可用性の失敗ではない — 1 件だけ落として次へ進む。
+class TestPerRequestFailureDoesNotCooldown:
+    """1 件だけの失敗 (拒否・JSON 崩れ) で経路全体を止めない。
 
-    混ぜると 1 件の拒否が後続 10 分の生成を巻き添えにし、バッチが「枠切れ」と
-    誤認して止まる (2026-08-27 に遡及が実際に停止した)。
+    混ぜると 1 本の悪い記事が後続 10 分の生成を巻き添えにし、バッチが「枠切れ」と
+    誤認して止まる (2026-08-27 に遡及が 2 度停止した)。
     """
 
     @pytest.mark.asyncio
@@ -199,8 +200,8 @@ class TestRefusalDoesNotCooldown:
         assert local.calls == 1
 
     @pytest.mark.asyncio
-    async def test_availability_failure_still_cools_down(self) -> None:
-        # Arrange — 接続不可は可用性の失敗なので従来どおり cooldown する
+    async def test_unreachable_route_still_cools_down_immediately(self) -> None:
+        # Arrange — 接続不可は経路の問題なので 1 回で cooldown する
         FallbackLLMClient.reset_cooldowns()
         primary = _FakeLLM("claudecode:sonnet", error=LLMConnectionError("down"))
         local = _FakeLLM("gemma4:31b")
@@ -259,3 +260,36 @@ class TestModelLabelIsPerCall:
         # 戻らないと「1 件落ちた以降の成功分」まで作り直し対象に見える
         assert first == "claudecode:sonnet→gemma4:31b"
         assert client.model == "claudecode:sonnet"
+
+
+class TestFailureStreakEscalates:
+    """1 件ごとの失敗も **連続すれば** 系統的な故障として cooldown する。"""
+
+    @pytest.mark.asyncio
+    async def test_streak_reaches_cooldown(self) -> None:
+        # Arrange — primary が常に JSON を返せない (壊れている)
+        FallbackLLMClient.reset_cooldowns()
+        primary = _FakeLLM("claudecode:sonnet", error=LLMStructuredOutputError("broken"))
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act — FAILURE_STREAK 回まで試し、その後もう 1 回呼ぶ
+        for _ in range(FAILURE_STREAK + 1):
+            await client.generate("p")
+
+        # Assert — streak に達した時点で cooldown に入り、以降は試さない
+        assert primary.calls == FAILURE_STREAK
+
+    @pytest.mark.asyncio
+    async def test_a_success_resets_the_streak(self) -> None:
+        # Arrange — 1 回目だけ失敗し、以降は成功する
+        FallbackLLMClient.reset_cooldowns()
+        primary = _RefuseOnceLLM("claudecode:sonnet")
+        client = FallbackLLMClient(primary=primary, fallback=_FakeLLM("gemma4:31b"))
+
+        # Act — 失敗 1 回 → 成功 → さらに 2 回
+        for _ in range(4):
+            await client.generate("p")
+
+        # Assert — 途中の成功で数え直すので cooldown に入らない
+        assert primary.calls == 4

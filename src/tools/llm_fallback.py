@@ -9,13 +9,16 @@ bridge 停止・認証切れ等で**利用できない瞬間がある**。パイ
 - **可用性系の失敗のみで発動** — ``LLMForbiddenModelError`` (セキュリティゲート) は
   絶対に fallback で握り潰さない (そのまま raise)。それ以外の ``LLMError`` 系
   (接続不可 / タイムアウト / レート制限 / 構造化出力の再試行枯渇) は fallback する
-- **cooldown**: 一度失敗したら ``COOLDOWN_SECONDS`` の間は外部を試さず直接ローカルへ
+- **cooldown**: 外部が使えないときは ``COOLDOWN_SECONDS`` の間は試さず直接ローカルへ
   (レート制限中に 15 call が毎回外部の失敗を待つ無駄を避ける)。process 内で
   primary モデル別に共有 (夜間バッチは同一 client を使い回すため run 内で有効)。
-  ⭐ **拒否 (``LLMRefusalError``) は cooldown に入れない** — サービスは正常で、
-  その 1 件だけ応答しない状態だから。可用性系と混ぜると 1 件の拒否が後続の
-  無関係な生成を 10 分巻き添えにし、遡及が「枠切れ」と誤認して止まった
-  (2026-08-27 実測)。当該 1 件だけローカルへ落として次へ進む
+  ⭐ **入れる条件は失敗の種類で分ける**:
+    - 到達不能 (``LLMTimeoutError`` / ``LLMConnectionError``) = 経路の問題 → 即 cooldown
+    - **その 1 件だけの失敗** (拒否 / 構造化出力の失敗 / CLI の単発エラー) は
+      当該 1 件をローカルへ落とすだけで cooldown しない。サービスは正常だから。
+      ただし ``FAILURE_STREAK`` 回**連続**したら系統的な故障とみなして cooldown する
+  混ぜていた時期は 1 件の拒否や 1 本の JSON 崩れが後続 10 分の生成を巻き添えにし、
+  バッチが「枠切れ」と誤認して止まった (2026-08-27 に 2 度)
 - **正直な記録**: ``model`` は **直前の 1 応答を作った腕**を表す
   (fallback したなら ``"<primary>→<fallback>"``)。呼出元は生成直後に読む。
   ⭐ 以前は「一度でも fallback した client は以後ずっと → 表記」だったが、
@@ -38,10 +41,11 @@ from src.tools.llm_client import (
     DEFAULT_TEMPERATURE,
     MAX_STRUCTURED_ATTEMPTS,
     LLMClient,
+    LLMConnectionError,
     LLMError,
     LLMForbiddenModelError,
-    LLMRefusalError,
     LLMResponse,
+    LLMTimeoutError,
 )
 
 _log = get_logger(__name__)
@@ -49,6 +53,11 @@ _log = get_logger(__name__)
 # 失敗後に外部を再試行しない期間。レート制限 (5h 窓) には短いが、回復検知の遅れと
 # 無駄な失敗待ちのバランス点として 10 分 (assessments cache 等と同じ時定数)。
 COOLDOWN_SECONDS = 600.0
+
+#: 1 件ごとの失敗が何回連続したら「系統的な故障」とみなすか。
+#: 1 回で cooldown すると 1 本の悪い記事が経路全体を止める。無制限に許すと
+#: 本当に壊れているとき毎回外部の失敗を待つ — その間を取る。
+FAILURE_STREAK = 3
 
 _T = TypeVar("_T", bound=BaseModel)
 
@@ -107,6 +116,8 @@ class FallbackLLMClient(LLMClient):
     # primary モデル別の cooldown 期限 (monotonic)。process 内共有 — UI プロセスでは
     # request を跨いで効き、pipeline subprocess では run 内で効く。
     _cooldown_until: ClassVar[dict[str, float]] = {}
+    #: primary モデル別の「1 件ごとの失敗」連続回数 (成功で 0 に戻る)
+    _failure_streak: ClassVar[dict[str, int]] = {}
 
     def __init__(
         self,
@@ -132,6 +143,7 @@ class FallbackLLMClient(LLMClient):
 
     def _enter_cooldown(self, error: Exception) -> None:
         self._cooldown_until[self._primary.model] = time.monotonic() + self._cooldown_seconds
+        self._failure_streak[self._primary.model] = 0
         self._fell_back = True
         _log.warning(
             "llm_fallback_engaged",
@@ -141,17 +153,23 @@ class FallbackLLMClient(LLMClient):
             reason=str(error)[:200],
         )
 
-    def _note_refusal(self, error: Exception) -> None:
-        """拒否 1 件を記録する。**cooldown には入れない** (可用性の問題ではない)。
+    def _note_per_request_failure(self, error: Exception) -> None:
+        """1 件だけの失敗を記録する。**単発なら cooldown には入れない**。
 
-        ``_fell_back`` は立てる — 生成物の ``model`` 表記が
-        「sonnet と言いながら中身は 31B」にならないようにするため。
+        連続して ``FAILURE_STREAK`` 回起きたら、もう「たまたま悪い入力」では
+        説明できないので系統的な故障として cooldown へ移す。
         """
         self._fell_back = True
+        streak = self._failure_streak.get(self._primary.model, 0) + 1
+        self._failure_streak[self._primary.model] = streak
+        if streak >= FAILURE_STREAK:
+            self._enter_cooldown(error)
+            return
         _log.warning(
-            "llm_refusal_fallback",
+            "llm_request_failed_fallback",
             primary=self._primary.model,
             fallback=self._fallback.model,
+            streak=streak,
             reason=str(error)[:200],
         )
 
@@ -159,6 +177,7 @@ class FallbackLLMClient(LLMClient):
     def reset_cooldowns(cls) -> None:
         """tests / 明示回復用。"""
         cls._cooldown_until.clear()
+        cls._failure_streak.clear()
 
     async def generate(
         self,
@@ -178,13 +197,14 @@ class FallbackLLMClient(LLMClient):
                     think=think,
                 )
                 self._fell_back = False  # この応答は primary が作った
+                self._failure_streak[self._primary.model] = 0
                 return response
             except LLMForbiddenModelError:
                 raise  # セキュリティゲートは fallback で迂回しない
-            except LLMRefusalError as e:
-                self._note_refusal(e)  # この 1 件だけローカルへ (cooldown はしない)
+            except (LLMTimeoutError, LLMConnectionError) as e:
+                self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
             except LLMError as e:
-                self._enter_cooldown(e)
+                self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:
             self._fell_back = True
         # fallback アームは常にローカル Ollama (BUILTIN)。gemma は thinking で空応答化した
@@ -220,13 +240,14 @@ class FallbackLLMClient(LLMClient):
                     max_attempts=max_attempts,
                 )
                 self._fell_back = False  # この応答は primary が作った
+                self._failure_streak[self._primary.model] = 0
                 return parsed
             except LLMForbiddenModelError:
                 raise
-            except LLMRefusalError as e:
-                self._note_refusal(e)  # この 1 件だけローカルへ (cooldown はしない)
+            except (LLMTimeoutError, LLMConnectionError) as e:
+                self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
             except LLMError as e:
-                self._enter_cooldown(e)
+                self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:
             self._fell_back = True
         # generate と同じ理由でローカルアームは think 常時無効 (gemma thinking 前歴)。
