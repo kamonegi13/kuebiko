@@ -46,6 +46,8 @@ async def main():
     #   通れば 25 件の塊で進み、塊の fallback 率 > 20% でまた退く
     # (実測 2026-08-27: 連続 ~75 呼出/時 + 開発セッションの併用で fallback 率 24%)
     CHUNK, BACKOFF, REST = 25, 1800, 120
+    #: 別々の項目で何件連続して落ちたら「経路が使えない」とみなすか
+    PROBE_STREAK = 3
 
     def _now_iso():
         return datetime.now(UTC).isoformat()
@@ -71,6 +73,7 @@ async def main():
     factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
     total_done = 0
     i = 0
+    probe_failures = 0
     while i < len(pending):
         # 探針: 1 件だけ生成して fallback を見る
         probe = pending[i:i+1]
@@ -78,11 +81,18 @@ async def main():
         await runner.generate_pending(repo, probe, factory)
         fb, wrote = outcome(probe, since)
         if fb:
-            print(f"探針が fallback — 枠が回復するまで {BACKOFF//60} 分待つ "
-                  f"(累計 {total_done}/{len(pending)})", flush=True)
-            # 探針は 31B 版になったので後で作り直す (i は進めない)
-            await asyncio.sleep(BACKOFF)
+            # ⚠ **同じ項目で足踏みしない**。拒否は入力ごとの事象で、後で試しても
+            #    同じ結果になる (2026-08-28 実測: 1 件の拒否で 30 分退き続けた)。
+            #    別の項目で連続して落ちたときだけ「経路が使えない」と判断する。
+            probe_failures += 1
+            i += 1; total_done += 1
+            if probe_failures >= PROBE_STREAK:
+                print(f"探針が {probe_failures} 件連続で fallback — "
+                      f"{BACKOFF//60} 分待つ (累計 {total_done}/{len(pending)})", flush=True)
+                await asyncio.sleep(BACKOFF)
+                probe_failures = 0
             continue
+        probe_failures = 0
         if wrote == 0:
             # 生成対象外 (本文なし等)。判定材料にならないので次へ進める
             i += 1; total_done += 1
