@@ -24,7 +24,10 @@ set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 
 "$ROOT/scripts/build_public_site.sh" "$DIST" >/dev/null
 
-DIGEST="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['sha256'])" "$DIST/data/meta.json")"
+# ⚠ 変更検知は **データ + 配信物の両方** で行う。データの sha だけ見ていると、
+# フロント (ログイン導線・manifest 等) だけの変更が永久に配信されない
+# (2026-08-27 実測: PWA ログイン修正がデータ不変のため配信されずに残った)。
+DIGEST="$(cd "$DIST" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 PREVIOUS="$(cat "$STAMP" 2>/dev/null || true)"
 
 if [ "${1:-}" != "--force" ] && [ "$DIGEST" = "$PREVIOUS" ]; then
