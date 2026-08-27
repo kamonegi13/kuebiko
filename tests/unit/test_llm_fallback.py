@@ -229,3 +229,33 @@ class _RefuseOnceLLM(_FakeLLM):
         if self.calls == 1:
             raise LLMRefusalError("refused")
         return schema(label="ok")
+
+
+class TestModelLabelIsPerCall:
+    """``model`` は「直前の応答を作った腕」。sticky にすると再生成判定が壊れる。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("structured", [False, True])
+    async def test_success_after_a_fallback_is_not_labelled_fallback(
+        self, structured: bool
+    ) -> None:
+        # Arrange — 1 回目だけ拒否される (以降は primary が応答する)
+        FallbackLLMClient.reset_cooldowns()
+        client = FallbackLLMClient(
+            primary=_RefuseOnceLLM("claudecode:sonnet"), fallback=_FakeLLM("gemma4:31b")
+        )
+
+        # Act — 1 件目 (fallback) → 2 件目 (primary)
+        if structured:
+            await client.generate_structured("p", _Out)
+            first = client.model
+            await client.generate_structured("p", _Out)
+        else:
+            await client.generate("p")
+            first = client.model
+            await client.generate("p")
+
+        # Assert — 1 件目は fallback 表記、2 件目は primary 表記に戻る。
+        # 戻らないと「1 件落ちた以降の成功分」まで作り直し対象に見える
+        assert first == "claudecode:sonnet→gemma4:31b"
+        assert client.model == "claudecode:sonnet"

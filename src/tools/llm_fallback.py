@@ -16,9 +16,12 @@ bridge 停止・認証切れ等で**利用できない瞬間がある**。パイ
   その 1 件だけ応答しない状態だから。可用性系と混ぜると 1 件の拒否が後続の
   無関係な生成を 10 分巻き添えにし、遡及が「枠切れ」と誤認して止まった
   (2026-08-27 実測)。当該 1 件だけローカルへ落として次へ進む
-- **正直な記録**: fallback が一度でも起きた client の ``model`` は
-  ``"<primary>→<fallback>"`` 表記になる (synthesis 等の llm_model 記録が
-  「sonnet と言いながら中身は 31B」にならないように)
+- **正直な記録**: ``model`` は **直前の 1 応答を作った腕**を表す
+  (fallback したなら ``"<primary>→<fallback>"``)。呼出元は生成直後に読む。
+  ⭐ 以前は「一度でも fallback した client は以後ずっと → 表記」だったが、
+  同じ client を数百件で使い回すバッチでは **1 件の fallback 以降すべての
+  成功応答まで fallback 扱い**になり、再生成の要否判定や自己調整が
+  壊れた (2026-08-27 実測)。腕ごとの記録は per-call でなければ意味を持たない
 - 発動は WARNING ログ (``llm_fallback_engaged``) で常に可視化する
 """
 
@@ -114,6 +117,7 @@ class FallbackLLMClient(LLMClient):
         self._primary = primary
         self._fallback = fallback
         self._cooldown_seconds = cooldown_seconds
+        #: 直前の応答を fallback アームが作ったか (per-call。sticky にしない)
         self._fell_back = False
 
     @property
@@ -166,13 +170,15 @@ class FallbackLLMClient(LLMClient):
     ) -> LLMResponse:
         if not self._in_cooldown():
             try:
-                return await self._primary.generate(
+                response = await self._primary.generate(
                     prompt,
                     system=system,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     think=think,
                 )
+                self._fell_back = False  # この応答は primary が作った
+                return response
             except LLMForbiddenModelError:
                 raise  # セキュリティゲートは fallback で迂回しない
             except LLMRefusalError as e:
@@ -204,7 +210,7 @@ class FallbackLLMClient(LLMClient):
     ) -> _T:
         if not self._in_cooldown():
             try:
-                return await self._primary.generate_structured(
+                parsed = await self._primary.generate_structured(
                     prompt,
                     schema,
                     system=system,
@@ -213,6 +219,8 @@ class FallbackLLMClient(LLMClient):
                     think=think,
                     max_attempts=max_attempts,
                 )
+                self._fell_back = False  # この応答は primary が作った
+                return parsed
             except LLMForbiddenModelError:
                 raise
             except LLMRefusalError as e:
