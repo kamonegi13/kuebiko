@@ -44,7 +44,18 @@ _PAGE = 60
 #: (全文を載せると index.json が 1.3 MB になり初回読み込みが重い)。
 _TEASER_CHARS = 160
 #: 一覧が実際に使うフィールド。citations (360 KB) は詳細側にあれば足りる。
-_INDEX_FIELDS = ("id", "headline", "category", "published_at")
+#: ⚠ **allowlist なので、一覧で使う項目を足したらここにも足す** — 足し忘れると
+#: 静的配信でだけ静かに欠ける (2026-08-27 に続報バッジで実際に起きた)。
+_INDEX_FIELDS = (
+    "id",
+    "headline",
+    "category",
+    "published_at",
+    "first_reported_at",
+    "update_kind",
+    "updated_at",
+    "follow_up_sources",
+)
 #: 書き出しに入ってはいけないキー (原文・翻訳)。万一の経路増加に対する検査。
 _FORBIDDEN_KEYS = ("body", "body_ja")
 
@@ -65,6 +76,25 @@ def _all_ids(**query: Any) -> set[str]:
             return found
         found |= batch
         offset += _PAGE
+
+
+def _assert_index_fields_present(items: list[dict[str, Any]]) -> None:
+    """一覧 API が返すのに ``_INDEX_FIELDS`` が拾っていないキーが無いか検査する。
+
+    allowlist は足し忘れると **静的配信でだけ静かに欠ける** (API では出るので
+    気付けない)。ここで落として、書き出す前に気付けるようにする。
+    """
+    if not items:
+        return
+    served = set(items[0])
+    # 詳細側にあれば足りるもの (意図的に一覧へ載せない) は検査から外す
+    detail_only = {"summary", "citations", "generated", "sources", "independent_sources"}
+    missing = served - set(_INDEX_FIELDS) - detail_only
+    if missing:
+        raise SystemExit(
+            f"一覧 API の項目が index.json に載っていない: {sorted(missing)}\n"
+            "  → _INDEX_FIELDS に足すか、detail_only に明示してください"
+        )
 
 
 def _fetch_all_items() -> list[dict[str, Any]]:
@@ -115,6 +145,7 @@ def export(out_dir: Path) -> dict[str, Any]:
     by_country = {iso: _all_ids(country=iso) for iso in countries}
     featured = sorted(_ids(list_public_news(limit=FEATURED_COUNT, featured=True)))
 
+    _assert_index_fields_present(items)
     lean = [
         {
             **{k: item.get(k) for k in _INDEX_FIELDS},
