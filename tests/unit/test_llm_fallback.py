@@ -223,13 +223,29 @@ class _FailOnceLLM(_FakeLLM):
         super().__init__(name)
         self._first_error = error or LLMStructuredOutputError("broken")
 
-    async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
+    async def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        think: bool | None = None,
+    ) -> LLMResponse:
         self.calls += 1
         if self.calls == 1:
             raise self._first_error
         return LLMResponse(text="ok", model=self._name)
 
-    async def generate_structured(self, prompt: str, schema: Any, **kwargs: Any) -> Any:
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: type[Any],
+        system: str | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        think: bool | None = None,
+        max_attempts: int = MAX_STRUCTURED_ATTEMPTS,
+    ) -> Any:
         self.calls += 1
         if self.calls == 1:
             raise self._first_error
