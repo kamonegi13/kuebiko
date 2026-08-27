@@ -31,6 +31,7 @@ bridge 停止・認証切れ等で**利用できない瞬間がある**。パイ
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from typing import ClassVar, TypeVar
 
 from pydantic import BaseModel
@@ -44,6 +45,7 @@ from src.tools.llm_client import (
     LLMConnectionError,
     LLMError,
     LLMForbiddenModelError,
+    LLMRefusalError,
     LLMResponse,
     LLMTimeoutError,
 )
@@ -59,7 +61,13 @@ COOLDOWN_SECONDS = 600.0
 #: 本当に壊れているとき毎回外部の失敗を待つ — その間を取る。
 FAILURE_STREAK = 3
 
+#: 拒否は入力の性質ではなく**揺らぎ**だった (2026-08-28 実測: 拒否された記事を
+#: 再投入すると 5/5 成功、別の 3 件も再試行で成功)。拒否は 1 秒前後で返るので
+#: 1 回だけ即再試行する — これでローカルへ落ちる件数を大きく減らせる。
+REFUSAL_RETRIES = 1
+
 _T = TypeVar("_T", bound=BaseModel)
+_R = TypeVar("_R")
 
 
 class ThinkOnClient(LLMClient):
@@ -153,6 +161,26 @@ class FallbackLLMClient(LLMClient):
             reason=str(error)[:200],
         )
 
+    async def _retry_after_refusal(self, attempt: Callable[[], Awaitable[_R]]) -> _R | None:
+        """拒否されたら **同じ内容で 1 回だけ**すぐ投げ直す。
+
+        拒否は入力の性質ではなく揺らぎで、再試行すれば通ることが実測で分かって
+        いる。ここで拾えればローカルへ落とさずに済む。再び拒否されたら諦める
+        (無限に粘ると 1 件のために経路を占有する)。
+        """
+        for _ in range(REFUSAL_RETRIES):
+            try:
+                result = await attempt()
+            except LLMRefusalError:
+                continue
+            except LLMError:
+                return None  # 別の失敗に変わったら通常の経路へ委ねる
+            self._fell_back = False
+            self._failure_streak[self._primary.model] = 0
+            _log.info("llm_refusal_retry_succeeded", primary=self._primary.model)
+            return result
+        return None
+
     def _note_per_request_failure(self, error: Exception) -> None:
         """1 件だけの失敗を記録する。**単発なら cooldown には入れない**。
 
@@ -188,14 +216,18 @@ class FallbackLLMClient(LLMClient):
         think: bool | None = None,
     ) -> LLMResponse:
         if not self._in_cooldown():
-            try:
-                response = await self._primary.generate(
+
+            def attempt() -> Awaitable[LLMResponse]:
+                return self._primary.generate(
                     prompt,
                     system=system,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     think=think,
                 )
+
+            try:
+                response = await attempt()
                 self._fell_back = False  # この応答は primary が作った
                 self._failure_streak[self._primary.model] = 0
                 return response
@@ -203,6 +235,11 @@ class FallbackLLMClient(LLMClient):
                 raise  # セキュリティゲートは fallback で迂回しない
             except (LLMTimeoutError, LLMConnectionError) as e:
                 self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
+            except LLMRefusalError as e:
+                retried = await self._retry_after_refusal(attempt)
+                if retried is not None:
+                    return retried
+                self._note_per_request_failure(e)
             except LLMError as e:
                 self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:
@@ -229,8 +266,9 @@ class FallbackLLMClient(LLMClient):
         max_attempts: int = MAX_STRUCTURED_ATTEMPTS,
     ) -> _T:
         if not self._in_cooldown():
-            try:
-                parsed = await self._primary.generate_structured(
+
+            def attempt() -> Awaitable[_T]:
+                return self._primary.generate_structured(
                     prompt,
                     schema,
                     system=system,
@@ -239,6 +277,9 @@ class FallbackLLMClient(LLMClient):
                     think=think,
                     max_attempts=max_attempts,
                 )
+
+            try:
+                parsed = await attempt()
                 self._fell_back = False  # この応答は primary が作った
                 self._failure_streak[self._primary.model] = 0
                 return parsed
@@ -246,6 +287,11 @@ class FallbackLLMClient(LLMClient):
                 raise
             except (LLMTimeoutError, LLMConnectionError) as e:
                 self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
+            except LLMRefusalError as e:
+                retried = await self._retry_after_refusal(attempt)
+                if retried is not None:
+                    return retried
+                self._note_per_request_failure(e)
             except LLMError as e:
                 self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:

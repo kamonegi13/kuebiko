@@ -18,7 +18,7 @@ from src.tools.llm_client import (
     LLMResponse,
     LLMStructuredOutputError,
 )
-from src.tools.llm_fallback import FAILURE_STREAK, FallbackLLMClient
+from src.tools.llm_fallback import FAILURE_STREAK, REFUSAL_RETRIES, FallbackLLMClient
 
 
 class _Out(BaseModel):
@@ -183,7 +183,7 @@ class TestPerRequestFailureDoesNotCooldown:
     ) -> None:
         # Arrange — 1 回目は拒否、2 回目からは通る primary
         FallbackLLMClient.reset_cooldowns()
-        primary = _RefuseOnceLLM("claudecode:sonnet")
+        primary = _FailOnceLLM("claudecode:sonnet")
         local = _FakeLLM("gemma4:31b")
         client = FallbackLLMClient(primary=primary, fallback=local)
 
@@ -216,20 +216,31 @@ class TestPerRequestFailureDoesNotCooldown:
         assert local.calls == 2
 
 
-class _RefuseOnceLLM(_FakeLLM):
-    """1 回目だけ拒否し、以降は通常応答する fake。"""
+class _FailOnceLLM(_FakeLLM):
+    """1 回目だけ指定の失敗を返し、以降は通常応答する fake。"""
+
+    def __init__(self, name: str, *, error: Exception | None = None) -> None:
+        super().__init__(name)
+        self._first_error = error or LLMStructuredOutputError("broken")
 
     async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
         self.calls += 1
         if self.calls == 1:
-            raise LLMRefusalError("refused")
+            raise self._first_error
         return LLMResponse(text="ok", model=self._name)
 
     async def generate_structured(self, prompt: str, schema: Any, **kwargs: Any) -> Any:
         self.calls += 1
         if self.calls == 1:
-            raise LLMRefusalError("refused")
+            raise self._first_error
         return schema(label="ok")
+
+
+class _RefuseOnceLLM(_FailOnceLLM):
+    """1 回目だけ拒否する fake (再試行で回復する側の検証用)。"""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name, error=LLMRefusalError("refused"))
 
 
 class TestModelLabelIsPerCall:
@@ -243,7 +254,7 @@ class TestModelLabelIsPerCall:
         # Arrange — 1 回目だけ拒否される (以降は primary が応答する)
         FallbackLLMClient.reset_cooldowns()
         client = FallbackLLMClient(
-            primary=_RefuseOnceLLM("claudecode:sonnet"), fallback=_FakeLLM("gemma4:31b")
+            primary=_FailOnceLLM("claudecode:sonnet"), fallback=_FakeLLM("gemma4:31b")
         )
 
         # Act — 1 件目 (fallback) → 2 件目 (primary)
@@ -284,7 +295,7 @@ class TestFailureStreakEscalates:
     async def test_a_success_resets_the_streak(self) -> None:
         # Arrange — 1 回目だけ失敗し、以降は成功する
         FallbackLLMClient.reset_cooldowns()
-        primary = _RefuseOnceLLM("claudecode:sonnet")
+        primary = _FailOnceLLM("claudecode:sonnet")
         client = FallbackLLMClient(primary=primary, fallback=_FakeLLM("gemma4:31b"))
 
         # Act — 失敗 1 回 → 成功 → さらに 2 回
@@ -293,3 +304,41 @@ class TestFailureStreakEscalates:
 
         # Assert — 途中の成功で数え直すので cooldown に入らない
         assert primary.calls == 4
+
+
+class TestRefusalIsRetriedOnce:
+    """拒否は入力の性質ではなく揺らぎ — 落とす前に 1 回だけ投げ直す。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("structured", [False, True])
+    async def test_a_single_refusal_is_recovered_by_retry(self, structured: bool) -> None:
+        # Arrange — 1 回目だけ拒否 (再試行なら通る)
+        FallbackLLMClient.reset_cooldowns()
+        primary = _RefuseOnceLLM("claudecode:sonnet")
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act
+        if structured:
+            await client.generate_structured("p", _Out)
+        else:
+            await client.generate("p")
+
+        # Assert — ローカルへ落ちずに primary の応答を得る
+        assert local.calls == 0
+        assert client.model == "claudecode:sonnet"
+
+    @pytest.mark.asyncio
+    async def test_persistent_refusal_still_falls_back(self) -> None:
+        # Arrange — 何度投げても拒否される
+        FallbackLLMClient.reset_cooldowns()
+        primary = _FakeLLM("claudecode:sonnet", error=LLMRefusalError("no"))
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act
+        await client.generate("p")
+
+        # Assert — 粘りすぎず 1 回の再試行で諦める
+        assert primary.calls == 1 + REFUSAL_RETRIES
+        assert local.calls == 1
