@@ -392,6 +392,39 @@ class TestResolveBody:
         assert source == "feed_summary"
 
 
+class TestTitleFallbackTarget:
+    """接地に失敗したときの **退避先** の扱い (2026-08-28)。
+
+    退避先は「信用できる原題」でなければならない。原題が壊れている記事で
+    そこへ戻すと、**別記事の見出しが何度再処理しても再生産される**。
+    原題を持たない source では空文字が見出しになってしまう。
+    """
+
+    def test_keeps_the_generated_title_when_the_stored_one_is_untrusted(self) -> None:
+        # Arrange — 原題は信用できない (has_title=False) と宣言された記事
+        article = _article(title="別記事の見出し", url="https://kuebiko.example/a").model_copy(
+            update={"has_title": False}
+        )
+        summary = _summary_output(title_ja="本文に即した見出し CPO の報酬")
+
+        # Act — 接地材料に無い英字 (CPO) を含むので接地検証は落ちる
+        msg = _build_briefing(article, summary, body_text="Product chief pay package")
+
+        # Assert — 壊れた原題へは戻さない
+        assert msg.title != "別記事の見出し"
+
+    def test_falls_back_to_a_trusted_original_title(self) -> None:
+        # Arrange — 通常の記事 (原題は信用できる)
+        article = _article(title="Trusted original", url="https://kuebiko.example/b")
+        summary = _summary_output(title_ja="幻覚の Nonexistent 見出し")
+
+        # Act
+        msg = _build_briefing(article, summary, body_text="unrelated body text")
+
+        # Assert — 従来どおり原題へ退避する
+        assert msg.title == "Trusted original"
+
+
 class TestBuildBriefing:
     def test_maps_fields_correctly(self) -> None:
         article = _article(title="Cool article", url="https://x.com/")

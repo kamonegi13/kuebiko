@@ -21,6 +21,7 @@ from src.logging_config import get_logger
 from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
 from src.pipeline.briefing import _summarize_and_build, body_source_for_extraction
 from src.pipeline.persistence import _persist_article_entities
+from src.pipeline.summary import ungrounded_title_tokens
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor
@@ -93,6 +94,18 @@ async def reprocess_article_body(
     body = (extraction.text or "")[:MAX_STORED_BODY_CHARS]
     source = body_source_for_extraction(extraction)
 
+    # 保存済みの見出しが **取り直した本文に接地しているか** を先に見る。
+    # 接地しないなら、その見出しは本文と別の記事のものなので、プロンプトへ渡さず
+    # 「タイトルなし」として本文だけから作り直させる。渡してしまうと LLM は与えられた
+    # 見出しをなぞり、接地検証も入力見出しを材料に含むため必ず通って、**同じ誤りが
+    # 何度再処理しても再生産される** (2026-08-28 実測)。
+    stored_title_ok = not ungrounded_title_tokens(row.title or "", f"{row.feed_title or ''} {body}")
+    if not stored_title_ok:
+        _log.warning(
+            "reprocess_stored_title_ungrounded",
+            article_id=article_id,
+            feed_title=row.feed_title or "",
+        )
     # 全文本文で再エンリッチ (Article を DB 行から復元し body_text に全文を注入 = 再 fetch しない)。
     article = Article(
         id=article_id,
@@ -103,6 +116,7 @@ async def reprocess_article_body(
         feed_title=row.feed_title or "",
         feed_url=row.feed_url or "",
         body_text=body,
+        has_title=stored_title_ok,
     )
     import jinja2
 
@@ -115,6 +129,10 @@ async def reprocess_article_body(
         template,
         enrichment=enrichment,
         body_source=source,
+        # 本文を取り直した場面では、DB に載っている見出しに証拠能力が無い。
+        # 接地材料に含めると壊れた見出しをなぞった出力が必ず通り、**同じ誤りが
+        # 再生産され続ける** (2026-08-28 実測)。
+        trust_input_title=False,
     )
 
     # 1) body 差し替え (source=全文) — seam 経由で body_source も確定。

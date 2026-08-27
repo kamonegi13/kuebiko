@@ -153,6 +153,7 @@ async def _summarize_and_build(
     brief_count_24h: int = 0,
     body_source: str = "unknown",
     extraction_failure_reason: str | None = None,
+    trust_input_title: bool = True,
 ) -> BriefingMessage:
     """抽出済み本文 ``body`` から 要約 → IOC 抽出 → enrich → BriefingMessage 化する。
 
@@ -358,6 +359,7 @@ async def _summarize_and_build(
         provisional_actor_candidates=provisional_actor_candidates,
         body_source=body_source,
         extraction_failure_reason=extraction_failure_reason,
+        trust_input_title=trust_input_title,
     )
 
 
@@ -519,6 +521,7 @@ def _build_briefing(
     provisional_actor_candidates: list[dict[str, str]] | None = None,
     body_source: str = "unknown",
     extraction_failure_reason: str | None = None,
+    trust_input_title: bool = True,
 ) -> BriefingMessage:
     metadata: dict[str, object] = {
         "feed_url": article.feed_url,
@@ -748,17 +751,32 @@ def _build_briefing(
             # アカウント名にしか現れないことがあり、「CISA、ICS の advisory 2 件を発行」
             # のような正しい見出しが 'cisa' 未接地として弾かれていた (2026-08-24 実測)。
             # 媒体名は取り込み時に確定している既知の事実なので、幻覚判定の材料になる。
-            _bad_tokens = ungrounded_title_tokens(
-                title_translated,
-                f"{article.feed_title} {article.title} {body_text[:5000]}",
+            # ⚠ 入力の見出しを接地材料に含めると、**壊れた見出しをなぞっただけ**の
+            #    出力が必ず通る。実際、別記事の見出しが付いた記事を本文込みで
+            #    再処理しても同じ見出しが再生産され続けていた (2026-08-28)。
+            #    本文を取り直した場面では古い見出しに証拠能力が無いので材料から外す。
+            _grounding = (
+                f"{article.feed_title} {article.title} {body_text[:5000]}"
+                if trust_input_title
+                else f"{article.feed_title} {body_text[:5000]}"
+            )
+            _bad_tokens = ungrounded_title_tokens(title_translated, _grounding)
+            # 退避先が使えるのは「信用できる原題がある」ときだけ。
+            # 原題を持たない source (SNS 投稿) では空文字が見出しになり、原題が
+            # 壊れている記事では **別記事の見出しへ戻してしまう** (2026-08-28)。
+            # 退避先が無いなら、本文から作った見出しの方がまだ本文に近い。
+            _fallback_ok = bool(getattr(article, "has_title", True)) and bool(
+                (article.title or "").strip()
             )
             if _bad_tokens:
                 _log.warning(
                     "title_grounding_failed",
                     article_id=article.id,
                     ungrounded=_bad_tokens[:5],
+                    fell_back=_fallback_ok,
                 )
-                display_title = article.title
+                if _fallback_ok:
+                    display_title = article.title
     # Phase 5L-2: 表示用テキスト sanitize (二重防御)
     # feed の summary_html や LLM 出力に紛れる HTML タグ (例: </td>) や
     # HTML エンティティを除去。LLM 翻訳が元タイトルの HTML を引きずるケースを
