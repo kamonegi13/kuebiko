@@ -48,6 +48,8 @@ async def main():
     CHUNK, BACKOFF, REST = 25, 1800, 120
     #: 別々の項目で何件連続して落ちたら「経路が使えない」とみなすか
     PROBE_STREAK = 3
+    #: 塊の末尾が何件連続で落ちたら「経路が使えない」とみなすか
+    ROUTE_DOWN_STREAK = 5
 
     def _now_iso():
         return datetime.now(UTC).isoformat()
@@ -69,6 +71,23 @@ async def main():
             if "→" in v[0].model:
                 fb += 1
         return fb, wrote
+
+    def trailing_fallbacks(chunk, since):
+        """塊の末尾で連続して fallback した件数 (生成された版だけを数える)。
+
+        経路が使えないときは以降ずっと落ちるので末尾が伸びる。散発的な拒否では
+        伸びない — この 2 つを率で区別しようとすると、拒否が集中する残り物で
+        必ず誤判定する。
+        """
+        n = 0
+        for state, _ in reversed(chunk):
+            v = repo.list_event_versions(state.item_id)
+            if not v or v[0].generated_at.isoformat() < since:
+                continue  # 生成対象外は判定材料にしない
+            if "→" not in v[0].model:
+                break
+            n += 1
+        return n
 
     factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
     total_done = 0
@@ -106,11 +125,16 @@ async def main():
                 on_progress=lambda a, b, iid: progress(total_done + a, len(pending), iid),
             )
             fb, wrote = outcome(chunk, since)
+            tail = trailing_fallbacks(chunk, since)
             i += len(chunk); total_done += len(chunk)
             print(f"塊: {len(chunk)} 件 (生成 {wrote} / fallback {fb}) "
                   f"累計 {total_done}/{len(pending)}", flush=True)
-            if fb > max(1, wrote) * 0.2:
-                print(f"fallback 率 {fb}/{len(chunk)} — {BACKOFF//60} 分退く", flush=True)
+            # ⚠ **fallback 率では退かない**。拒否は記事の内容ごとに起きるので、
+            #    残り物ほど拒否が集中して率が上がる — 経路は正常なのに退き続ける。
+            #    経路が使えないときは「以降ずっと落ちる」ので、**末尾が連続で
+            #    落ちているか**だけを見る (2026-08-28)。
+            if tail >= ROUTE_DOWN_STREAK:
+                print(f"末尾 {tail} 件が連続 fallback — {BACKOFF//60} 分退く", flush=True)
                 await asyncio.sleep(BACKOFF)
             else:
                 await asyncio.sleep(REST)
