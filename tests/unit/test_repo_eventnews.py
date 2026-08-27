@@ -428,6 +428,83 @@ class TestEventMembers:
         assert items["b"].state.member_ids == ("x2",)
 
 
+class TestEventUpdateMarks:
+    """続報バッジの材料 — 「本文が書き直された」と「遡及再生成」を混ぜない。"""
+
+    def _item(self, repo: RunHistoryRepository, item_id: str) -> None:
+        repo.create_event_item(
+            item_id=item_id,
+            origin="live",
+            first_reported_at=_NOW,
+            last_reported_at=_NOW,
+            importance="high",
+        )
+
+    def _version(
+        self, repo: RunHistoryRepository, item_id: str, version: int, new_facts: str
+    ) -> None:
+        repo.record_event_version(
+            item_id=item_id,
+            version=version,
+            generated_at=_NOW,
+            model="m",
+            prompt_version="v6",
+            headline="h",
+            body_json="{}",
+            new_facts_json=new_facts,
+            verified_at=_NOW,
+            dropped_lines=0,
+            repaired_ids=0,
+        )
+
+    def test_only_versions_with_new_facts_count_as_updates(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        # Arrange — 合流で書き直した事象と、プロンプト改訂で作り直しただけの事象
+        self._item(repo, "merged")
+        self._version(repo, "merged", 1, "[]")
+        self._version(repo, "merged", 2, '{"article_id": "a2"}')
+        self._item(repo, "regenerated")
+        self._version(repo, "regenerated", 1, "[]")
+        self._version(repo, "regenerated", 2, "[]")
+
+        # Act
+        marks = repo.event_update_marks(["merged", "regenerated"])
+
+        # Assert — 遡及再生成を「更新」と呼ぶと、中身が変わっていない項目が並ぶ
+        assert marks["merged"].rewritten_at is not None
+        assert marks["merged"].rewrite_count == 1
+        assert "regenerated" not in marks
+
+    def test_later_arrivals_without_new_facts_count_as_sources(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        # Arrange — founding member は必ず contributed_new_facts=1 で入る
+        self._item(repo, "evt")
+        repo.add_event_member(
+            item_id="evt", article_id="a1", joined_at=_NOW, contributed_new_facts=1, join_signal=""
+        )
+        repo.add_event_member(
+            item_id="evt", article_id="a2", joined_at=_NOW, contributed_new_facts=0, join_signal=""
+        )
+
+        # Act
+        mark = repo.event_update_marks(["evt"])["evt"]
+
+        # Assert
+        assert mark.follow_up_sources == 1
+        assert mark.rewritten_at is None
+
+    def test_items_without_follow_up_are_absent(self, repo: RunHistoryRepository) -> None:
+        # Arrange
+        self._item(repo, "solo")
+        self._version(repo, "solo", 1, "[]")
+
+        # Act / Assert — 初報のままの事象にバッジは出さない
+        assert repo.event_update_marks(["solo"]) == {}
+        assert repo.event_update_marks([]) == {}
+
+
 class TestEventVersions:
     def test_record_and_list_versions(self, repo: RunHistoryRepository) -> None:
         repo.create_event_item(

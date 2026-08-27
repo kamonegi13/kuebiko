@@ -9,7 +9,7 @@
 //
 // 画像は持っていないので、写真ではなく **文字の大きさと余白**で階層をつくる。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { ExternalLink, Search, ChevronLeft } from "lucide-react";
 import {
@@ -17,6 +17,7 @@ import {
   fetchPublicNewsDetail,
   type PublicCitation,
   type PublicNewsItem,
+  type PublicNewsRevision,
 } from "../api/publicNews";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
@@ -91,10 +92,18 @@ function parseRoute(): Route {
   return detail ? { kind: "detail", id: decodeURIComponent(detail[1]) } : { kind: "home" };
 }
 
-/** 背後に出す面。詳細は「一覧の上に重なる」ので、その一覧が何かを決める。 */
-function isPortal(route: Route): boolean {
-  if (route.kind === "home") return true;
-  if (route.kind !== "detail") return false;
+/** 背後に出す面。詳細は「一覧の上に重なる」ので、その一覧が何かを決める。
+ *
+ * ⚠ 詳細のときは **開く前に見ていた面** を渡すこと。URL だけから推測すると、
+ * 新着やカテゴリの一覧から記事を開いたときに背景がトップページへ差し替わり、
+ * 別コンポーネントなので**先頭から描き直される** (2026-08-27 利用者報告:
+ * 「ドロワーを出すと背景が一番上に戻る」)。閉じると一覧に戻るため位置が復帰し、
+ * スクロールロックの不具合に見えるが、実体は背景の取り違え。 */
+function isPortal(route: Route, backdrop?: Route): boolean {
+  const surface = route.kind === "detail" ? (backdrop ?? route) : route;
+  if (surface.kind === "home") return true;
+  if (surface.kind !== "detail") return false;
+  // 開いた元が分からない詳細 (直リンク) だけ URL から推測する
   const q = new URLSearchParams(window.location.search);
   return !q.get("q") && !q.get("country");
 }
@@ -106,6 +115,13 @@ function navigate(path: string): void {
 
 export function PublicNewsSite() {
   const [route, setRoute] = useState(parseRoute);
+  /** 詳細を開く直前に見ていた面。ドロワーの背景をこれで固定し、開閉でスクロール
+   *  位置を失わないようにする (直リンクで詳細に来た場合は undefined)。 */
+  const backdropRef = useRef<Route | undefined>(
+    parseRoute().kind === "detail" ? undefined : parseRoute(),
+  );
+  if (route.kind !== "detail") backdropRef.current = route;
+  const backdrop = backdropRef.current;
 
   useEffect(() => {
     const handler = () => setRoute(parseRoute());
@@ -127,19 +143,27 @@ export function PublicNewsSite() {
 
   return (
     <div className="min-h-screen bg-surface-1 text-fg flex flex-col">
-      <SiteHeader route={route} />
+      <SiteHeader route={route} backdrop={backdrop} />
       <main className="flex-1 w-full max-w-[72rem] mx-auto px-5 py-8">
         {/* 描画で落ちてもヘッダ・カテゴリ・フッタは残す (他の記事へ移れるように) */}
         <PublicErrorBoundary onReset={() => navigate(HOME_PATH)}>
           {route.kind === "map" ? (
             <PublicMapSection onCountry={(iso) => navigate(`${HOME_PATH}/latest?country=${iso}`)} />
-          ) : isPortal(route) ? (
+          ) : isPortal(route, backdrop) ? (
             /* トップは各カテゴリの最新を少数ずつ並べた **入口**。
                全件を追うのは「新着」タブ (/app/news/latest)。 */
             <Portal openedId={route.kind === "detail" ? route.id : undefined} />
           ) : (
             <NewsList
-              category={route.kind === "category" ? route.key : undefined}
+              category={
+                route.kind === "category"
+                  ? route.key
+                  : // 詳細の背景は「開く前の面」— カテゴリ一覧から開いたら
+                    // そのカテゴリのまま残す (別の一覧に差し替えない)
+                    backdrop?.kind === "category"
+                    ? backdrop.key
+                    : undefined
+              }
               /* 記事を開いていても一覧は裏に残す (閉じたとき位置が戻らないように) */
               openedId={route.kind === "detail" ? route.id : undefined}
             />
@@ -168,7 +192,7 @@ export function PublicNewsSite() {
   );
 }
 
-function SiteHeader({ route }: { route: Route }) {
+function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
   return (
     <>
       {/* 題字は **スクロールで流す**。読み始めたら要らない (2026-08-25 利用者指摘)。 */}
@@ -189,10 +213,19 @@ function SiteHeader({ route }: { route: Route }) {
             (2026-08-25 利用者指摘)。iOS のブラウザ枠の直下でも詰まって見えない。 */}
         <div className="w-full max-w-[72rem] mx-auto px-5 pt-3">
           <CategoryNav
-            active={route.kind === "category" ? route.key : undefined}
+            active={
+              route.kind === "category"
+                ? route.key
+                : backdrop?.kind === "category"
+                  ? backdrop.key
+                  : undefined
+            }
             onMap={route.kind === "map"}
-            home={isPortal(route)}
-            latest={route.kind === "latest"}
+            home={isPortal(route, backdrop)}
+            latest={
+              route.kind === "latest" ||
+              (route.kind === "detail" && backdrop?.kind === "latest")
+            }
           />
         </div>
       </div>
@@ -446,6 +479,9 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   <span className="text-[9px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
+                  {it.update_kind === "rewritten" && (
+                    <span className="shrink-0 text-[9.5px] font-semibold text-accent">更新</span>
+                  )}
                   <span
                     className={`flex-1 text-[13.5px] font-medium leading-[1.6] [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
@@ -639,12 +675,42 @@ function SearchBox({
   );
 }
 
+/** 続報バッジ。
+ *
+ *  一覧の日付は **最終報** なので、続報が付いた事象は日付が動いて再浮上する。
+ *  それだけでは初報と見分けが付かない、という指摘への対応 (2026-08-27)。
+ *  「更新」(本文を書き直した) と「続報」(他媒体も報じたが内容は不変) を
+ *  分けているのは、**中身が変わっていないのに「更新」と出すと読み手が
+ *  差分を探して見つけられない**ため。 */
+function UpdateBadge({ item }: { item: PublicNewsItem }) {
+  if (item.update_kind === "rewritten") {
+    return (
+      <span className="inline-flex items-center rounded-sm bg-accent/12 px-1.5 py-px text-[10px] font-semibold text-accent">
+        更新
+      </span>
+    );
+  }
+  if (item.update_kind === "follow_up") {
+    return (
+      <span className="inline-flex items-center rounded-sm border border-border-subtle px-1.5 py-px text-[10px] font-medium text-fg-subtle">
+        続報
+      </span>
+    );
+  }
+  return null;
+}
+
 /** メタ行。一覧では **日付だけ**。媒体数や出典名は開いてから見せる。 */
 function CardMeta({ item }: { item: PublicNewsItem }) {
+  // 続報で日付が動いた事象は、いつの出来事なのかを初報で補う
+  const showFirst =
+    !!item.update_kind && !!item.first_reported_at && item.first_reported_at !== item.published_at;
   return (
-    <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-subtle">
+      <UpdateBadge item={item} />
       <time dateTime={item.published_at}>{formatJstDate(item.published_at)}</time>
       <span>{relativeFromNow(item.published_at)}</span>
+      {showFirst && <span className="tnum">初報 {formatJstDate(item.first_reported_at)}</span>}
     </div>
   );
 }
@@ -823,6 +889,44 @@ function groupByParagraph<T extends { paragraph: number }>(facts: T[]): T[][] {
   return out;
 }
 
+/** この記事が続報でどう動いたか。
+ *
+ *  ⚠ **本文の行単位の差分ではない。** 合流のたびに本文はゼロから書き直されるので、
+ *  版どうしの文面を比べても内容の異同は測れない (実測で、同じ事実を述べた 2 版の
+ *  12 行中 11 行が「新規」と出た)。ここに出すのは合流判定が決定論で記録した
+ *  「加わった要素」だけ — 測れないものを差分として見せれば、それは捏造になる。 */
+function UpdateHistory({ revisions }: { revisions: PublicNewsRevision[] }) {
+  if (revisions.length === 0) return null;
+  return (
+    <ArticleSection title="この記事の更新">
+      <ol className="space-y-3">
+        {revisions.map((r, i) => (
+          <li key={i} className="text-[13px] leading-[1.7]">
+            <div className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-fg-subtle">
+              <time dateTime={r.at} className="tnum">
+                {formatJstDate(r.at)}
+              </time>
+              {r.source && <span>{r.source} の続報を反映</span>}
+            </div>
+            {r.added.length > 0 ? (
+              <ul className="mt-1 space-y-0.5">
+                {r.added.map((a) => (
+                  <li key={a.type} className="text-fg-muted">
+                    <span className="text-fg-subtle">{a.label}: </span>
+                    {a.values.join("、")}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-fg-muted">{r.note || "報道の追加を反映して書き直しました"}</p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </ArticleSection>
+  );
+}
+
 /** 出典の並び。**詳細でだけ** 見せる。 */
 function Citations({ citations }: { citations: PublicCitation[] }) {
   // 1 件なら番号を振らない (本文側でも番号を出していないため対応が付かない)
@@ -897,6 +1001,9 @@ function NewsDetail({ id }: { id: string }) {
         {/* メタ行: 日付 / 読了目安 / 裏取り。分析的な情報は開いた人にだけ見せる */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle">
           <time dateTime={data.published_at}>{formatJstDate(data.published_at)}</time>
+          {data.update_kind === "rewritten" && data.first_reported_at !== data.published_at && (
+            <span className="tnum">初報 {formatJstDate(data.first_reported_at)}</span>
+          )}
           <span>約 {readingMinutes(data)} 分で読めます</span>
           {data.independent_sources >= 2 && <span>独立 {data.independent_sources} 媒体が報道</span>}
         </div>
@@ -970,6 +1077,7 @@ function NewsDetail({ id }: { id: string }) {
         </ArticleSection>
       )}
 
+      <UpdateHistory revisions={data.revisions ?? []} />
       <Citations citations={data.citations} />
 
       <p className="text-[11px] leading-relaxed text-fg-subtle">{data.note}</p>

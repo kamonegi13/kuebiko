@@ -5,7 +5,7 @@
  * 導線が出ないこと」を固定する。
  */
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PublicNewsSite } from "./PublicNewsSite";
 import mapSource from "./PublicMap.tsx?raw";
@@ -627,6 +627,90 @@ describe("地図の描画設定", () => {
 
   it("ホイールズームを切る (記事を読みながらの誤操作を防ぐ)", () => {
     expect(mapSource).toContain("scrollWheelZoom: false");
+  });
+});
+
+describe("続報バッジ", () => {
+  // 一覧の日付は最終報なので、続報が付いた事象は再浮上する。初報と見分ける手段が
+  // バッジしかないため、「本文が書き直された」と「媒体が増えただけ」を混ぜない
+  async function renderWith(patch: Record<string, unknown>) {
+    vi.stubGlobal("fetch", async (url: string) => ({
+      ok: true,
+      json: async () =>
+        url.includes("/api/v1/public/news/map")
+          ? { nodes: [], window_days: 30, placed: 0, unplaced: 0, total: 0, note: "" }
+          : url.includes("/api/v1/public/news/")
+            ? {
+                ...ITEM,
+                ...patch,
+                bluf: "要点。",
+                facts: [{ text: "事実行。", source_index: 1, paragraph: 1 }],
+                discrepancies: [],
+                unknowns: [],
+                note: "",
+              }
+            : { items: [{ ...ITEM, ...patch }], note: "", categories: [] },
+    }));
+    renderSite();
+    await screen.findByText(ITEM.headline);
+  }
+
+  it("本文を書き直した事象にだけ「更新」を出す", async () => {
+    await renderWith({
+      update_kind: "rewritten",
+      first_reported_at: "2026-08-25T00:00:00+00:00",
+    });
+    expect(screen.getAllByText("更新").length).toBeGreaterThan(0);
+    expect(screen.queryByText("続報")).toBeNull();
+  });
+
+  it("媒体が増えただけなら「続報」— 中身が変わっていないのに更新と言わない", async () => {
+    await renderWith({
+      update_kind: "follow_up",
+      follow_up_sources: 2,
+      first_reported_at: "2026-08-25T00:00:00+00:00",
+    });
+    expect(screen.getByText("続報")).toBeTruthy();
+    expect(screen.queryByText("更新")).toBeNull();
+  });
+
+  it("初報のままならバッジを出さない", async () => {
+    await renderWith({ update_kind: null });
+    expect(screen.queryByText("更新")).toBeNull();
+    expect(screen.queryByText("続報")).toBeNull();
+    expect(screen.queryByText(/初報/)).toBeNull();
+  });
+
+  it("更新の経緯は「加わった要素」で示す (本文の行差分ではない)", async () => {
+    await renderWith({
+      update_kind: "rewritten",
+      first_reported_at: "2026-08-25T00:00:00+00:00",
+      revisions: [
+        {
+          at: "2026-08-27T01:00:00+00:00",
+          added: [{ type: "victim_org", label: "被害組織", values: ["Federal Reserve Board"] }],
+          note: "",
+          source: "Some Wire",
+          url: "https://example.test/c",
+        },
+      ],
+    });
+    fireEvent.click(screen.getByText(ITEM.headline));
+    expect(await screen.findByText("この記事の更新")).toBeTruthy();
+    expect(screen.getByText("Federal Reserve Board")).toBeTruthy();
+  });
+});
+
+describe("ドロワーの背景", () => {
+  it("一覧から記事を開いても背景は同じ一覧のまま (先頭に戻さない)", () => {
+    // 2026-08-27 利用者報告: ドロワーを出すと背景が一番上に戻り、閉じると位置が
+    // 復帰する。実体はスクロールロックではなく **背景の取り違え** —
+    // isPortal() が URL から推測していたため、新着/カテゴリ一覧から開くと背景が
+    // トップページに差し替わり、別コンポーネントとして先頭から描き直されていた。
+    expect(siteSource).toContain("backdropRef");
+    expect(siteSource).toContain("isPortal(route, backdrop)");
+    // 一覧の絞り込みも引き継ぐ (カテゴリ一覧から開いたらそのカテゴリのまま)
+    expect(siteSource).toMatch(/backdrop\?\.kind === "category"/);
   });
 });
 

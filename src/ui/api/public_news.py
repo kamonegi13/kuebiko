@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -32,6 +33,9 @@ from fastapi import APIRouter, HTTPException
 
 from src.cti.geocoder import Geocoder
 from src.cti.source_basis import classify_source_tier
+from src.eventnews import version_diff
+from src.eventnews.models import UPDATE_DRIVER_TYPES
+from src.storage.repo_eventnews import EventUpdateMark
 from src.storage.run_history import RunHistoryRepository
 
 # カテゴリのグループ定義は記事側 facet と **同じものを使う** (グループの中身を
@@ -228,6 +232,83 @@ def _public_citation(citation: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in citation.items() if k != "article_id"}
 
 
+def _revisions(repo: RunHistoryRepository, versions: Sequence[Any]) -> list[dict[str, Any]]:
+    """続報で本文が書き直された経緯 (古い順)。
+
+    ``new_facts_json`` が空の版は **プロンプト改訂に伴う遡及再生成** であって
+    続報ではない。ここに混ぜると「更新」と称して中身が変わっていない項目が並ぶ。
+    """
+    # 並びの鍵は生成時刻 (画面に出すのも同じ時刻)。版番号順とは一致しないことがある
+    merges = [
+        v
+        for v in sorted(versions, key=lambda x: x.generated_at)
+        if v.version > 1 and _has_new_facts(v.new_facts_json)
+    ]
+    if not merges:
+        return []
+    article_ids = [
+        aid
+        for aid in (version_diff.contributing_article_id(v.new_facts_json) for v in merges)
+        if aid
+    ]
+    # 型別に 1 クエリずつ (既存 helper を使い回す — 新しい SQL を増やさない)
+    entities: dict[str, list[tuple[str, str]]] = {}
+    for entity_type in UPDATE_DRIVER_TYPES:
+        for aid, values in repo.entities_for_articles(article_ids, entity_type=entity_type).items():
+            entities.setdefault(aid, []).extend((entity_type, v) for v in values)
+    articles = repo.get_articles_by_ids(article_ids) if article_ids else {}
+    out: list[dict[str, Any]] = []
+    for v in merges:
+        aid = version_diff.contributing_article_id(v.new_facts_json) or ""
+        article = articles.get(aid)
+        out.append(
+            {
+                "at": v.generated_at.isoformat(),
+                "added": version_diff.resolve_additions(v.new_facts_json, entities.get(aid, ())),
+                "note": version_diff.corroboration_note(v.new_facts_json),
+                # どの媒体の続報で書き直したか (本文は返さない — 契約どおり)
+                "source": (getattr(article, "feed_title", "") or "") if article else "",
+                "url": (getattr(article, "url", "") or "") if article else "",
+            }
+        )
+    return out
+
+
+def _has_new_facts(new_facts_json: str) -> bool:
+    """その版が「合流で持ち込まれた新事実」を伴って作られたか。
+
+    空 (``[]``) は初回生成か遡及再生成。**続報ではない**。
+    """
+    return (new_facts_json or "").strip() not in ("", "[]", "{}", "null")
+
+
+def _update_badge(mark: EventUpdateMark | None) -> dict[str, Any]:
+    """続報の状態を表示用の 3 値に畳む。
+
+    - ``rewritten``: 新事実で本文を作り直した (差分を出せる)
+    - ``follow_up``: 他媒体が同じ内容を報じた (裏取りが増えただけ・本文は不変)
+    - ``None``: 初報のまま
+
+    区別する理由: 「更新」と出したのに本文が 1 字も変わっていないと、読み手は
+    差分を探して見つけられない。**内容が変わったときだけ「更新」を名乗る**。
+    """
+    if mark is None:
+        return {"update_kind": None, "updated_at": None, "follow_up_sources": 0}
+    if mark.rewritten_at is not None:
+        return {
+            "update_kind": "rewritten",
+            "updated_at": mark.rewritten_at.isoformat(),
+            "follow_up_sources": mark.follow_up_sources,
+        }
+    if mark.follow_up_sources > 0:
+        return {
+            "update_kind": "follow_up",
+            "updated_at": None,
+            "follow_up_sources": mark.follow_up_sources,
+        }
+    return {"update_kind": None, "updated_at": None, "follow_up_sources": 0}
+
+
 @public_news_api.get("")
 def list_public_news(
     limit: int = 30,
@@ -275,6 +356,7 @@ def list_public_news(
             offset=max(0, offset),
         )
     versions = repo.latest_event_versions([r.state.item_id for r in records])
+    marks = repo.event_update_marks([r.state.item_id for r in records])
     articles = repo.get_articles_by_ids([a for r in records for a in r.state.member_ids])
     items: list[dict[str, Any]] = []
     for r in records:
@@ -301,7 +383,12 @@ def list_public_news(
             "generated": latest is not None,
             "sources": len(citations),
             "independent_sources": r.independent_sources,
+            # published_at は **最終報の時刻** (並びの鍵と一致させる)。ただし
+            # これだけでは初報と続報が見分けられないので、初報時刻と続報の種類を
+            # 併せて返し、表示側でバッジにする (2026-08-27 利用者指摘)。
             "published_at": r.state.last_reported_at.isoformat(),
+            "first_reported_at": r.state.first_reported_at.isoformat(),
+            **_update_badge(marks.get(r.state.item_id)),
             "citations": [_public_citation(c) for c in citations[:3]],
         }
         items.append(item)
@@ -415,6 +502,7 @@ def get_public_news(item_id: str) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="not found")
     latest = versions[0] if versions else None
     body = json.loads(latest.body_json) if latest and latest.body_json else {}
+    revisions = _revisions(repo, versions)
     if latest is not None:
         bluf = str(body.get("bluf", ""))
     else:
@@ -434,12 +522,16 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         "key_points": body.get("key_points", []),
         # 事実行は出典番号を持つ (どの媒体が報じたかを本文中で示す)
         "facts": body.get("facts", []),
+        # 続報の経緯。本文は毎回書き直されるので行単位の差分は出せない — 代わりに
+        # 合流判定が決定論で記録した「加わった要素」を時系列で見せる (2026-08-27)
+        "revisions": revisions,
         "discrepancies": body.get("discrepancies", []),
         # 原文が自ら付けた但し書き。数字の誤読を防ぐので、本文と同じ面に出す
         "caveats": body.get("caveats", []),
         "unknowns": body.get("unknowns", []),
         "published_at": record.state.last_reported_at.isoformat(),
         "first_reported_at": record.state.first_reported_at.isoformat(),
+        **_update_badge(repo.event_update_marks([item_id]).get(item_id)),
         "independent_sources": record.independent_sources,
         "citations": [_public_citation(c) for c in citations],
         "note": GENERATED_NOTE,

@@ -15,6 +15,16 @@ export interface PublicCitation {
   published_at: string | null;
 }
 
+/** 続報で本文がどう動いたか。
+ *
+ *  - `rewritten`: 新しい事実が加わり、本文を書き直した (経緯を `revisions` で出せる)
+ *  - `follow_up`: 他媒体が同じ内容を報じた (裏取りが増えただけ・本文は不変)
+ *  - `null`: 初報のまま
+ *
+ *  「更新」と称して中身が変わっていないと読み手は差分を探して見つけられないので、
+ *  この 2 つを同じバッジにしない。2026-08-27 より前の静的書き出しには無い。 */
+export type PublicUpdateKind = "rewritten" | "follow_up" | null;
+
 export interface PublicNewsItem {
   id: string;
   headline: string;
@@ -26,8 +36,29 @@ export interface PublicNewsItem {
   generated: boolean;
   sources: number;
   independent_sources: number;
+  /** 最終報の時刻 (一覧の並び順と一致する)。 */
   published_at: string;
+  /** 初報の時刻。続報で `published_at` が動いたときに「いつの事象か」を示す。 */
+  first_reported_at?: string;
+  update_kind?: PublicUpdateKind;
+  /** 本文を書き直した最後の時刻 (`update_kind === "rewritten"` のときのみ)。 */
+  updated_at?: string | null;
+  /** 内容は変えずに後から報じた媒体数。 */
+  follow_up_sources?: number;
   citations: PublicCitation[];
+}
+
+/** 続報 1 件の経緯。**本文の行単位の差分ではない** — 本文は合流のたびに全面的に
+ *  書き直されるため、版どうしの文面比較では内容の異同を測れない (実測で同じ事実を
+ *  述べた 2 版が 12 行中 11 行「新規」と出た)。ここに出るのは合流判定が決定論で
+ *  記録した「加わった要素」だけ。 */
+export interface PublicNewsRevision {
+  at: string;
+  added: { type: string; label: string; values: string[] }[];
+  /** 事実そのものではない変化 (裏取りの増加・一次情報源の登場・重要度の引き上げ)。 */
+  note: string;
+  source: string;
+  url: string;
 }
 
 export interface PublicNewsFact {
@@ -59,6 +90,11 @@ export interface PublicNewsDetail {
   unknowns: string[];
   published_at: string;
   first_reported_at: string;
+  update_kind?: PublicUpdateKind;
+  updated_at?: string | null;
+  follow_up_sources?: number;
+  /** 古い順。2026-08-27 より前の静的書き出しには無いので既定を空配列にする。 */
+  revisions?: PublicNewsRevision[];
   independent_sources: number;
   citations: PublicCitation[];
   note: string;

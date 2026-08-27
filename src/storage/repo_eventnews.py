@@ -70,6 +70,18 @@ class EventMemberRecord:
 
 
 @dataclass(frozen=True)
+class EventUpdateMark:
+    """事象が初報のままか、続報で動いたか (表示バッジの材料)。"""
+
+    #: 新事実で本文を作り直した最後の時刻 (無ければ None = 本文は初報のまま)
+    rewritten_at: datetime | None
+    #: 作り直した回数
+    rewrite_count: int
+    #: 内容は変えずに後から報じた媒体数 (裏取りが増えただけ)
+    follow_up_sources: int
+
+
+@dataclass(frozen=True)
 class EventVersionRecord:
     """event_item_versions の 1 行。"""
 
@@ -639,6 +651,56 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 ids,
             ).fetchall()
         return {str(r["item_id"]): _row_to_event_version(r) for r in rows}
+
+    def event_update_marks(self, item_ids: Sequence[str]) -> dict[str, EventUpdateMark]:
+        """事象ごとの「続報の有無」を 2 クエリで返す (一覧の N+1 回避)。
+
+        読み手には **初報と続報の区別が付かない** (日付だけ動いて再浮上する) ため、
+        表示側でバッジに使う (2026-08-27 利用者指摘)。合流の種類は 2 つある:
+
+        - ``rewritten_at``: 新事実を持ち込んだ合流 → 本文を作り直した版が残る。
+          版 2 以降で ``new_facts_json`` が非空のものだけを数える。**空のものは
+          遡及再生成** (プロンプト改訂で全件作り直した分) であって続報ではない。
+        - ``follow_up_sources``: 内容は変えないが後から報じた媒体数。生成時の
+          founding member は全員 ``contributed_new_facts=1`` で入るので、
+          0 の member は必ず後着の裏取り (reinforced) になる。
+
+        ``last_reported_at > first_reported_at`` は続報の指標に**ならない** —
+        同時に群化した複数媒体でも報道時刻はばらつくため (実測 460 件中 280 件が
+        該当したが、実際に続報だったのは 103 件)。
+        """
+        ids = list(dict.fromkeys(item_ids))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rewritten: dict[str, tuple[datetime | None, int]] = {}
+        follow_up: dict[str, int] = {}
+        with self._connect() as conn:
+            for row in conn.execute(
+                "SELECT item_id, MAX(generated_at) AS at, COUNT(*) AS n"  # noqa: S608
+                " FROM event_item_versions"
+                f" WHERE item_id IN ({placeholders}) AND version > 1"
+                "   AND new_facts_json NOT IN ('[]', '{}', '', 'null')"
+                " GROUP BY item_id",
+                ids,
+            ).fetchall():
+                rewritten[str(row["item_id"])] = (_from_iso(str(row["at"])), int(row["n"]))
+            for row in conn.execute(
+                "SELECT item_id, COUNT(*) AS n FROM event_item_members"  # noqa: S608
+                f" WHERE item_id IN ({placeholders}) AND contributed_new_facts = 0"
+                " GROUP BY item_id",
+                ids,
+            ).fetchall():
+                follow_up[str(row["item_id"])] = int(row["n"])
+        return {
+            item_id: EventUpdateMark(
+                rewritten_at=rewritten.get(item_id, (None, 0))[0],
+                rewrite_count=rewritten.get(item_id, (None, 0))[1],
+                follow_up_sources=follow_up.get(item_id, 0),
+            )
+            for item_id in ids
+            if item_id in rewritten or item_id in follow_up
+        }
 
     # ---------- dedup_semantic_skips (§8b) ----------
 

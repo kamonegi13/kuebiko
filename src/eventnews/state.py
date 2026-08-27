@@ -173,6 +173,10 @@ def decide_arrival(
         new_facts["media_delta"] = breakdown_after.independent - breakdown_before.independent
     if tier_rise:
         new_facts["tier_transition"] = f"{breakdown_before.best_tier}->{breakdown_after.best_tier}"
+    if importance_rise:
+        # 理由には数えていたが記録していなかったため、後から「何が変わったのか」を
+        # 説明できなかった (2026-08-27 — 続報の経緯表示で判明)
+        new_facts["importance_transition"] = f"{importance_before}->{new_member.importance}"
 
     if not reasons:
         return StateDecision(kind="reinforced", change_kind=None, reasons=(), new_facts=new_facts)
