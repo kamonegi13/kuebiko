@@ -11,7 +11,11 @@ bridge 停止・認証切れ等で**利用できない瞬間がある**。パイ
   (接続不可 / タイムアウト / レート制限 / 構造化出力の再試行枯渇) は fallback する
 - **cooldown**: 一度失敗したら ``COOLDOWN_SECONDS`` の間は外部を試さず直接ローカルへ
   (レート制限中に 15 call が毎回外部の失敗を待つ無駄を避ける)。process 内で
-  primary モデル別に共有 (夜間バッチは同一 client を使い回すため run 内で有効)
+  primary モデル別に共有 (夜間バッチは同一 client を使い回すため run 内で有効)。
+  ⭐ **拒否 (``LLMRefusalError``) は cooldown に入れない** — サービスは正常で、
+  その 1 件だけ応答しない状態だから。可用性系と混ぜると 1 件の拒否が後続の
+  無関係な生成を 10 分巻き添えにし、遡及が「枠切れ」と誤認して止まった
+  (2026-08-27 実測)。当該 1 件だけローカルへ落として次へ進む
 - **正直な記録**: fallback が一度でも起きた client の ``model`` は
   ``"<primary>→<fallback>"`` 表記になる (synthesis 等の llm_model 記録が
   「sonnet と言いながら中身は 31B」にならないように)
@@ -33,6 +37,7 @@ from src.tools.llm_client import (
     LLMClient,
     LLMError,
     LLMForbiddenModelError,
+    LLMRefusalError,
     LLMResponse,
 )
 
@@ -132,6 +137,20 @@ class FallbackLLMClient(LLMClient):
             reason=str(error)[:200],
         )
 
+    def _note_refusal(self, error: Exception) -> None:
+        """拒否 1 件を記録する。**cooldown には入れない** (可用性の問題ではない)。
+
+        ``_fell_back`` は立てる — 生成物の ``model`` 表記が
+        「sonnet と言いながら中身は 31B」にならないようにするため。
+        """
+        self._fell_back = True
+        _log.warning(
+            "llm_refusal_fallback",
+            primary=self._primary.model,
+            fallback=self._fallback.model,
+            reason=str(error)[:200],
+        )
+
     @classmethod
     def reset_cooldowns(cls) -> None:
         """tests / 明示回復用。"""
@@ -156,6 +175,8 @@ class FallbackLLMClient(LLMClient):
                 )
             except LLMForbiddenModelError:
                 raise  # セキュリティゲートは fallback で迂回しない
+            except LLMRefusalError as e:
+                self._note_refusal(e)  # この 1 件だけローカルへ (cooldown はしない)
             except LLMError as e:
                 self._enter_cooldown(e)
         else:
@@ -194,6 +215,8 @@ class FallbackLLMClient(LLMClient):
                 )
             except LLMForbiddenModelError:
                 raise
+            except LLMRefusalError as e:
+                self._note_refusal(e)  # この 1 件だけローカルへ (cooldown はしない)
             except LLMError as e:
                 self._enter_cooldown(e)
         else:

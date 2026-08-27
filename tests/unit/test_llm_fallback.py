@@ -14,6 +14,7 @@ from src.tools.llm_client import (
     LLMClient,
     LLMConnectionError,
     LLMForbiddenModelError,
+    LLMRefusalError,
     LLMResponse,
 )
 from src.tools.llm_fallback import FallbackLLMClient
@@ -165,3 +166,66 @@ class TestFallback:
         FallbackLLMClient.reset_cooldowns()
         await c.generate_structured("p", schema=_Out, think=True)
         assert local.last_think is False
+
+
+class TestRefusalDoesNotCooldown:
+    """拒否は可用性の失敗ではない — 1 件だけ落として次へ進む。
+
+    混ぜると 1 件の拒否が後続 10 分の生成を巻き添えにし、バッチが「枠切れ」と
+    誤認して止まる (2026-08-27 に遡及が実際に停止した)。
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("structured", [False, True])
+    async def test_refusal_falls_back_without_blocking_the_next_call(
+        self, structured: bool
+    ) -> None:
+        # Arrange — 1 回目は拒否、2 回目からは通る primary
+        FallbackLLMClient.reset_cooldowns()
+        primary = _RefuseOnceLLM("claudecode:sonnet")
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act — 同じ client で 2 回呼ぶ
+        if structured:
+            await client.generate_structured("p", _Out)
+            await client.generate_structured("p", _Out)
+        else:
+            await client.generate("p")
+            await client.generate("p")
+
+        # Assert — 2 回目も primary を試している (cooldown に入っていない)
+        assert primary.calls == 2
+        assert local.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_availability_failure_still_cools_down(self) -> None:
+        # Arrange — 接続不可は可用性の失敗なので従来どおり cooldown する
+        FallbackLLMClient.reset_cooldowns()
+        primary = _FakeLLM("claudecode:sonnet", error=LLMConnectionError("down"))
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act
+        await client.generate("p")
+        await client.generate("p")
+
+        # Assert — 2 回目は primary を試さない
+        assert primary.calls == 1
+        assert local.calls == 2
+
+
+class _RefuseOnceLLM(_FakeLLM):
+    """1 回目だけ拒否し、以降は通常応答する fake。"""
+
+    async def generate(self, prompt: str, **kwargs: Any) -> LLMResponse:
+        self.calls += 1
+        if self.calls == 1:
+            raise LLMRefusalError("refused")
+        return LLMResponse(text="ok", model=self._name)
+
+    async def generate_structured(self, prompt: str, schema: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            raise LLMRefusalError("refused")
+        return schema(label="ok")

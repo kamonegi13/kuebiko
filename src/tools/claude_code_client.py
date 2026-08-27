@@ -32,6 +32,7 @@ from src.tools.llm_client import (
     LLMClient,
     LLMConnectionError,
     LLMError,
+    LLMRefusalError,
     LLMResponse,
     LLMStructuredOutputError,
     LLMTimeoutError,
@@ -48,6 +49,10 @@ DEFAULT_BRIDGE_URL = "http://host.docker.internal:8010"
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
 
 _T = TypeVar("_T", bound=BaseModel)
+
+
+#: bridge が返す CLI 出力に含まれる拒否の印 (空白除去して照合する)。
+_REFUSAL_MARKER = '"stop_reason":"refusal"'
 
 
 class ClaudeCodeClient(LLMClient):
@@ -183,9 +188,13 @@ class ClaudeCodeClient(LLMClient):
         if resp.status_code == 504:
             raise LLMTimeoutError(f"claude CLI タイムアウト: {self._detail(resp)}")
         if resp.status_code != 200:
-            raise LLMError(
-                f"claude-code-bridge エラー (HTTP {resp.status_code}): {self._detail(resp)}",
-            )
+            detail = self._detail(resp)
+            # 拒否は「その入力に対してだけ応答しない」状態でサービスは正常。
+            # 可用性系の失敗として扱うと 1 件の拒否で外部経路が cooldown に入り、
+            # 後続の無関係な生成まで巻き添えになる (2026-08-27 に遡及が停止した)。
+            if _REFUSAL_MARKER in detail.replace(" ", ""):
+                raise LLMRefusalError(f"claude が生成を拒否しました: {detail}")
+            raise LLMError(f"claude-code-bridge エラー (HTTP {resp.status_code}): {detail}")
         data = resp.json()
         if not isinstance(data, dict):
             raise LLMError("claude-code-bridge 応答が JSON object ではありません")
