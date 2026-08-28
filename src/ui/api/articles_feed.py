@@ -205,6 +205,9 @@ def list_articles_feed(  # noqa: PLR0913
     since_hours: int = Query(default=0, ge=0, le=24 * 90),
     since: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=200),
+    # 静的ミラーの書き出しが全件を辿るために要る (2026-08-29)。画面は使わないので
+    # 既定 0 のまま挙動は変わらない。repo 側は元から offset を持っていた。
+    offset: int = Query(default=0, ge=0),
     include_summary: bool = Query(default=False),
 ) -> dict[str, Any]:
     """記事を柔軟なフィルタで返す (新しい順)。
@@ -241,6 +244,7 @@ def list_articles_feed(  # noqa: PLR0913
         **facets.to_query_kwargs(),
         search=term,
         limit=limit,
+        offset=offset,
     )
 
     # malware チップ表示用に entity を batch fetch (N+1 回避)
