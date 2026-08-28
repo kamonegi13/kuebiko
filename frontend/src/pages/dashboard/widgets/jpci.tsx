@@ -78,7 +78,7 @@ export function JpCiThreatWidget({ config }: WidgetProps) {
   return (
     <WidgetCard title="重要インフラ脅威" href="/app/jpci">
       {/* ── 主役1: 前期比の推移 (同長前窓との段階昇降) ── */}
-      <div className="mb-1.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[11px]">
+      <div className="mb-1.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[13px]">
         <span className="text-fg-subtle shrink-0">前期比:</span>
         {movers.length === 0 ? (
           <span className="text-fg-muted">段階変化なし</span>
@@ -112,7 +112,7 @@ export function JpCiThreatWidget({ config }: WidgetProps) {
           return (
             <div
               key={s.nisc_sector}
-              className="relative rounded py-1.5 pl-2 pr-3.5 text-[11px] leading-tight truncate text-fg"
+              className="relative rounded py-1.5 pl-2 pr-3.5 text-[13px] leading-tight truncate text-fg"
               style={{
                 backgroundColor: `${STAGE_COLOR[s.stage]}1a`,
                 borderLeft: `3px solid ${STAGE_COLOR[s.stage]}`,
@@ -140,7 +140,7 @@ export function JpCiThreatWidget({ config }: WidgetProps) {
       </div>
 
       {/* 一行サマリ (分母と窓を明示) */}
-      <div className="mt-1.5 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[10px] text-fg-subtle">
+      <div className="mt-1.5 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[12px] text-fg-subtle">
         <span>
           JP侵害段階 <b className="text-fg">{jpBreached}</b>/{total}
         </span>
@@ -157,7 +157,7 @@ export function JpCiThreatWidget({ config }: WidgetProps) {
       {data.campaigns.slice(0, 2).map((c) => (
         <div
           key={c.actor}
-          className="mt-1 text-[11px] flex items-center gap-1.5 flex-nowrap overflow-hidden text-fg-muted"
+          className="mt-1 text-[13px] flex items-center gap-1.5 flex-nowrap overflow-hidden text-fg-muted"
           title={`${c.actor} が世界の ${c.sector_ids.length} 分野で${data.intent_labels[c.intent]} = 協調作戦の兆候 (日本への含意は示唆)`}
         >
           <Globe className="h-3 w-3 text-fg-subtle shrink-0" />
@@ -171,7 +171,7 @@ export function JpCiThreatWidget({ config }: WidgetProps) {
       ))}
 
       {/* 段階ミニ凡例 (左帯色の読み方) */}
-      <div className="mt-1.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[9px] text-fg-subtle">
+      <div className="mt-1.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-[11.5px] text-fg-subtle">
         {STAGE_ORDER.map((st) => (
           <span key={st} className="flex items-center gap-0.5">
             <span

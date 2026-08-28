@@ -73,7 +73,7 @@ export function ProductRoutingCard({ readOnly }: { readOnly: boolean }) {
               </select>
               {webOnly && (
                 <span
-                  className="inline-flex items-center gap-1 text-[10px] text-fg-subtle"
+                  className="inline-flex items-center gap-1 text-[12px] text-fg-subtle"
                   title="このチャンネルは Web のみ (Discord 配信なし)"
                 >
                   <BellOff className="h-3 w-3" /> 保存のみ

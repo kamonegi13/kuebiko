@@ -558,7 +558,7 @@ export function FlowPage() {
               className={`rounded-lg border p-2 ${data.engine_enabled ? "border-border-subtle bg-surface-2" : "border-warning bg-warning-soft"}`}
             >
               {!data.engine_enabled && (
-                <div className="mb-1.5 inline-flex items-center gap-1 text-[11px] text-warning">
+                <div className="mb-1.5 inline-flex items-center gap-1 text-[13px] text-warning">
                   <AlertTriangle className="h-3.5 w-3.5" /> ルールエンジン無効 — 表示中のルールは適用されていません
                 </div>
               )}
@@ -568,14 +568,14 @@ export function FlowPage() {
                     key={i}
                     className="flex items-center gap-1.5 rounded border border-border-subtle/60 bg-surface-1 px-1.5 py-1"
                   >
-                    <span className="tnum w-4 shrink-0 text-right text-[11px] text-fg-subtle">
+                    <span className="tnum w-4 shrink-0 text-right text-[13px] text-fg-subtle">
                       {i + 1}
                     </span>
                     {/* 主表示はルール名。条件式は 2 行目に添える (名前が無いと 14 本の
                         ルールが条件式の羅列になり、どれが何か読めなくなる)。 */}
                     <span className="min-w-0 flex-1" title={`${r.id}: ${summarizeWhen(r.when)}`}>
                       <span className="block truncate text-xs text-fg">{r.label || r.id}</span>
-                      <span className="block truncate text-[11px] text-fg-subtle">
+                      <span className="block truncate text-[13px] text-fg-subtle">
                         {summarizeWhen(r.when)}
                       </span>
                     </span>
@@ -583,7 +583,7 @@ export function FlowPage() {
                       value={r.channel}
                       disabled={readOnly}
                       onChange={(e) => setRuleChannel(i, e.target.value)}
-                      className="shrink-0 rounded border border-border-subtle bg-surface-2 px-1 py-0.5 text-[11px] text-fg"
+                      className="shrink-0 rounded border border-border-subtle bg-surface-2 px-1 py-0.5 text-[13px] text-fg"
                     >
                       {routableChannels.map((c) => (
                         <option key={c} value={c}>
@@ -596,7 +596,7 @@ export function FlowPage() {
                         <button
                           onClick={() => moveRule(i, -1)}
                           disabled={i === 0}
-                          className="px-0.5 text-[11px] text-fg-subtle hover:text-fg disabled:opacity-30"
+                          className="px-0.5 text-[13px] text-fg-subtle hover:text-fg disabled:opacity-30"
                           title="評価順を上へ"
                         >
                           ↑
@@ -604,7 +604,7 @@ export function FlowPage() {
                         <button
                           onClick={() => moveRule(i, 1)}
                           disabled={i === rules.length - 1}
-                          className="px-0.5 text-[11px] text-fg-subtle hover:text-fg disabled:opacity-30"
+                          className="px-0.5 text-[13px] text-fg-subtle hover:text-fg disabled:opacity-30"
                           title="評価順を下へ"
                         >
                           ↓
@@ -624,7 +624,7 @@ export function FlowPage() {
               {!readOnly && (
                 <button
                   onClick={openNewRuleDrawer}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                  className="mt-1.5 inline-flex items-center gap-1 text-[13px] text-accent hover:underline"
                 >
                   <Plus className="h-3 w-3" /> ルールを追加
                 </button>
@@ -653,7 +653,7 @@ export function FlowPage() {
                 </div>
               )}
             </div>
-            <div className="mt-1.5 text-[11px] text-fg-subtle">
+            <div className="mt-1.5 text-[13px] text-fg-subtle">
               判定材料 (シグナル) は KEV・0day・日本関連・既知 APT 等の固定検出。
             </div>
           </section>
@@ -704,19 +704,19 @@ export function FlowPage() {
                     )}
                   </div>
                   {channelReg && channelReg.webhook_set[ch.id] === false && (
-                    <div className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-warning">
+                    <div className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-warning">
                       <AlertTriangle className="h-3 w-3" /> 投稿先URL未設定
                     </div>
                   )}
                   {channelReg?.channels.find((c) => c.id === ch.id)?.push === false && (
                     <div
-                      className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-fg-subtle"
+                      className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-fg-subtle"
                       title="このチャンネルは Discord に配信せず Web に保存のみ"
                     >
                       <BellOff className="h-3 w-3" /> 保存のみ
                     </div>
                   )}
-                  <label className="mt-1 flex items-center gap-1 text-[11px] text-fg-subtle">
+                  <label className="mt-1 flex items-center gap-1 text-[13px] text-fg-subtle">
                     <input
                       type="checkbox"
                       checked={ch.enabled}
@@ -733,7 +733,7 @@ export function FlowPage() {
             {!readOnly && (
               <button
                 onClick={openNewChannelDrawer}
-                className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                className="mt-2 inline-flex items-center gap-1 text-[13px] text-accent hover:underline"
               >
                 <Plus className="h-3 w-3" /> チャンネルを追加
               </button>
@@ -743,7 +743,7 @@ export function FlowPage() {
       </div>
 
       {/* 凡例 */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-fg-subtle">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-fg-subtle">
         <span>
           <svg width="26" height="8" className="mr-1 inline-block align-middle">
             <line x1="0" y1="4" x2="26" y2="4" stroke="#6b88ff" strokeWidth="3" opacity="0.5" />
@@ -800,7 +800,7 @@ export function FlowPage() {
                   {previewRuleMut.isPending ? "判定中…" : "プレビュー (代表シナリオで差分確認)"}
                 </button>
                 {rulePreview && (
-                  <span className="text-[11px] text-fg-muted">
+                  <span className="text-[13px] text-fg-muted">
                     現行から <strong className="text-fg">{rulePreview.changed_count}</strong> /{" "}
                     {rulePreview.total} 件が変化
                   </span>
@@ -809,11 +809,11 @@ export function FlowPage() {
               {rulePreview && (
                 <div className="mt-2 overflow-x-auto">
                   {rulePreview.errors.length > 0 && (
-                    <div className="mb-1.5 rounded border border-critical bg-critical-soft p-1.5 text-[11px] text-critical">
+                    <div className="mb-1.5 rounded border border-critical bg-critical-soft p-1.5 text-[13px] text-critical">
                       {rulePreview.errors.join("; ")}
                     </div>
                   )}
-                  <table className="w-full text-[11px]">
+                  <table className="w-full text-[13px]">
                     <thead>
                       <tr className="border-b border-border-subtle text-fg-subtle">
                         <th className="py-1 pr-2 text-left font-medium">シナリオ</th>
@@ -843,7 +843,7 @@ export function FlowPage() {
               )}
             </div>
 
-            <p className="m-0 text-[11px] text-fg-subtle">
+            <p className="m-0 text-[13px] text-fg-subtle">
               保存すると配信ルール全体が版として記録されます (順序の未保存変更も併せて確定)。
             </p>
             {!readOnly && (
@@ -927,7 +927,7 @@ export function FlowPage() {
                 readOnly={readOnly}
               />
             ) : (
-              <p className="m-0 text-[11px] text-fg-subtle">
+              <p className="m-0 text-[13px] text-fg-subtle">
                 投稿先 URL (Discord webhook) はチャンネルを保存した後、この画面で設定できます。
               </p>
             )}
@@ -972,12 +972,12 @@ function StageHeader({ title, detail, href }: { title: string; detail: string; h
       <div className="flex items-baseline gap-2">
         <h3 className="m-0 text-sm font-bold text-fg">{title}</h3>
         {href && (
-          <a href={href} className="text-[11px] text-accent no-underline hover:underline">
+          <a href={href} className="text-[13px] text-accent no-underline hover:underline">
             詳細 →
           </a>
         )}
       </div>
-      <div className="text-[11px] text-fg-subtle">{detail}</div>
+      <div className="text-[13px] text-fg-subtle">{detail}</div>
     </div>
   );
 }
@@ -985,7 +985,7 @@ function StageHeader({ title, detail, href }: { title: string; detail: string; h
 // lg 未満 (縦積み) でのみ表示するステージ間の接続見出し
 function MobileArrow({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] text-fg-subtle lg:hidden">
+    <div className="flex items-center gap-2 text-[13px] text-fg-subtle lg:hidden">
       <span className="text-fg-muted">↓</span>
       {label}
     </div>
@@ -1024,11 +1024,11 @@ function PirCard({
         >
           {pir.title}
         </a>
-        <span className="tnum shrink-0 text-[11px] text-fg-subtle" title="期間内マッチ記事数">
+        <span className="tnum shrink-0 text-[13px] text-fg-subtle" title="期間内マッチ記事数">
           {pir.matched_total}
         </span>
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-fg-subtle">
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-fg-subtle">
         {pir.target_importance !== "auto" && (
           <span title="この PIR が選別 (重要度判定) の基準として与える水準">
             評価: {vocabLabel("importance", pir.target_importance)}

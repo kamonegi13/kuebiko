@@ -79,7 +79,7 @@ export function MobileTunnelCard({ readOnly }: { readOnly: boolean }) {
             title={enabled ? (data?.url ? "公開中" : "起動中 (URL 取得待ち)") : "停止中"}
           />
           <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${MODE_LABEL[mode].cls}`}
+            className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${MODE_LABEL[mode].cls}`}
           >
             {MODE_LABEL[mode].text}
           </span>
@@ -125,7 +125,7 @@ export function MobileTunnelCard({ readOnly }: { readOnly: boolean }) {
         {enabled && !data?.url && (
           <div>tunnel 起動中 — URL 検出待ち (数十秒かかることがあります)。</div>
         )}
-        <p className="m-0 text-[11px] text-fg-subtle">
+        <p className="m-0 text-[13px] text-fg-subtle">
           公開されるのは閲覧専用インスタンス (書込 API は 403 固定) のみ。切替状態は再起動後も維持されます。
         </p>
       </div>
@@ -136,12 +136,12 @@ export function MobileTunnelCard({ readOnly }: { readOnly: boolean }) {
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-fg">固定ドメイン (named tunnel)</span>
             {data?.token_set && (
-              <span className="rounded bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+              <span className="rounded bg-success/15 px-1.5 py-0.5 text-[12px] font-semibold text-success">
                 token 設定済み
               </span>
             )}
           </div>
-          <label className="block text-[11px] text-fg-muted">
+          <label className="block text-[13px] text-fg-muted">
             Cloudflare トンネル token
             <input
               type="password"
@@ -153,7 +153,7 @@ export function MobileTunnelCard({ readOnly }: { readOnly: boolean }) {
               className="mt-1 w-full rounded-md border border-border-subtle bg-surface-2 px-2 py-1.5 font-mono text-xs text-fg"
             />
           </label>
-          <label className="block text-[11px] text-fg-muted">
+          <label className="block text-[13px] text-fg-muted">
             公開ホスト名
             <input
               type="text"
@@ -192,12 +192,12 @@ export function MobileTunnelCard({ readOnly }: { readOnly: boolean }) {
               </button>
             )}
           </div>
-          <p className="m-0 text-[11px] text-fg-subtle">
+          <p className="m-0 text-[13px] text-fg-subtle">
             token は 0600 で保存され、保存後は「設定済み」表示のみで生値は取得できません。保存すると数秒で自動反映されます
             (再デプロイ不要)。token は Cloudflare Zero Trust → Tunnels の作成画面で取得します。
           </p>
           {saveMut.isError && (
-            <p className="m-0 text-[11px] text-critical">
+            <p className="m-0 text-[13px] text-critical">
               保存に失敗しました:{" "}
               {saveMut.error instanceof Error ? saveMut.error.message : "unknown"}
             </p>

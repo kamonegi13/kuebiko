@@ -32,7 +32,7 @@ export function BottomTabBar({ pathname, onOpenMenu }: BottomTabBarProps) {
               }`}
             >
               <item.Icon size={20} className="shrink-0" />
-              <span className="text-[10px] leading-none">{item.label}</span>
+              <span className="text-[12px] leading-none">{item.label}</span>
             </a>
           );
         })}
@@ -42,7 +42,7 @@ export function BottomTabBar({ pathname, onOpenMenu }: BottomTabBarProps) {
           className="flex-1 flex flex-col items-center justify-center gap-0.5 text-fg-muted active:text-accent"
         >
           <Menu size={20} className="shrink-0" />
-          <span className="text-[10px] leading-none">メニュー</span>
+          <span className="text-[12px] leading-none">メニュー</span>
         </button>
       </div>
     </nav>

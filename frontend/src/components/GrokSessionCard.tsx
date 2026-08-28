@@ -142,7 +142,7 @@ export function GrokSessionCard() {
             </li>
           </ol>
           <div className="flex items-center gap-2">
-            <code className="flex-1 rounded bg-surface-3 px-2 py-1.5 font-mono text-[11px] overflow-x-auto whitespace-nowrap">
+            <code className="flex-1 rounded bg-surface-3 px-2 py-1.5 font-mono text-[13px] overflow-x-auto whitespace-nowrap">
               {data?.acquire_command ?? "uv run python scripts/grok_extract_cookies.py"}
             </code>
             <button

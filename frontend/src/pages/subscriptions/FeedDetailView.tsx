@@ -135,7 +135,7 @@ export function FeedDetailView({
         {f.folder_labels.length > 0 && (
           <div className="flex gap-1.5 flex-wrap">
             {f.folder_labels.map((l) => (
-              <span key={l} className="text-[10px] uppercase bg-surface-3 text-fg-muted px-1.5 py-0.5 rounded font-mono">{l}</span>
+              <span key={l} className="text-[12px] uppercase bg-surface-3 text-fg-muted px-1.5 py-0.5 rounded font-mono">{l}</span>
             ))}
           </div>
         )}
@@ -155,7 +155,7 @@ export function FeedDetailView({
 
       {st?.quality_score !== undefined && (
         <div className="bg-surface-2 rounded p-3 space-y-2">
-          <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">貢献度スコア</h4>
+          <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">貢献度スコア</h4>
           <div className="flex items-baseline gap-2">
             <QualityBadge score={st.quality_score} />
             <span className="text-fg-subtle text-xs">/100</span>
@@ -164,7 +164,7 @@ export function FeedDetailView({
                 {st.low_contrib_labels.map((l) => (
                   <span
                     key={l}
-                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    className={`text-[12px] px-1.5 py-0.5 rounded ${
                       l === "new"
                         ? "bg-accent-subtle text-accent border border-accent/30"
                         : "bg-warning-soft text-warning border border-warning/30"
@@ -181,7 +181,7 @@ export function FeedDetailView({
 
       {st ? (
         <div className="bg-surface-2 rounded p-3 space-y-2">
-          <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">運用統計 (30 日)</h4>
+          <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">運用統計 (30 日)</h4>
           <div className="overflow-x-auto"><table className="w-full text-xs">
             <tbody className="[&>tr>th]:text-left [&>tr>th]:text-fg-muted [&>tr>th]:font-normal [&>tr>th]:py-0.5 [&>tr>th]:pr-3 [&>tr>th]:w-32 [&>tr>td]:py-0.5 [&>tr>td]:text-fg [&>tr>td]:tnum">
               <tr><th>投稿数</th><td>{st.posted_count}</td></tr>
@@ -206,11 +206,11 @@ export function FeedDetailView({
       <LivePreviewSection feedId={f.feed_id} />
 
       <div className="border-t border-border-subtle pt-3 flex items-center justify-between gap-2">
-        <span className="text-fg-subtle text-[11px]">
+        <span className="text-fg-subtle text-[13px]">
           状態: {f.enabled === false ? "無効" : "有効"}
         </span>
         {readOnly ? (
-          <span className="text-[10px] uppercase tracking-wider bg-surface-3 text-fg-subtle px-2 py-1 rounded font-mono">閲覧専用</span>
+          <span className="text-[12px] uppercase tracking-wider bg-surface-3 text-fg-subtle px-2 py-1 rounded font-mono">閲覧専用</span>
         ) : (
           <div className="flex items-center gap-2">
             <button
@@ -246,13 +246,13 @@ function LivePreviewSection({ feedId }: { feedId: string }) {
   return (
     <div className="bg-surface-2 rounded p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">
+        <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">
           ライブプレビュー (最新取得)
         </h4>
         <button
           onClick={() => refetch()}
           disabled={isFetching}
-          className="text-accent hover:underline text-[11px] disabled:text-fg-subtle"
+          className="text-accent hover:underline text-[13px] disabled:text-fg-subtle"
         >
           {isFetching ? "取得中…" : "↻ 再取得"}
         </button>
@@ -279,7 +279,7 @@ function LivePreviewSection({ feedId }: { feedId: string }) {
             <Check className="h-3.5 w-3.5" /> {data.items.length} 件取得 ({vocabLabel("transport", data.kind)})
           </div>
           {data.fetch_stage === "browser" && (
-            <div className="text-[11px] text-warning">
+            <div className="text-[13px] text-warning">
               bot UA はこのサイトにブロックされるため、ブラウザ相当 UA へ自動切替して取得しました (本番の定期取得も同じ動作)。
             </div>
           )}
@@ -297,7 +297,7 @@ function LivePreviewSection({ feedId }: { feedId: string }) {
                 {a.published && (
                   <span className="text-fg-subtle ml-2">{formatJstDate(a.published)}</span>
                 )}
-                <div className="text-[10px] text-fg-subtle font-mono break-all">{a.url}</div>
+                <div className="text-[12px] text-fg-subtle font-mono break-all">{a.url}</div>
               </li>
             ))}
           </ul>

@@ -58,34 +58,34 @@ export function BlockCard({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
         )}
         <span className="font-medium text-fg">{block.title}</span>
-        <code className="font-mono text-[11px] text-fg-subtle">{block.field_id}</code>
+        <code className="font-mono text-[13px] text-fg-subtle">{block.field_id}</code>
         {order !== null && (
           <span
-            className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[10px] text-fg-subtle"
+            className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[12px] text-fg-subtle"
             title="プロンプト内の出現順 (skeleton のマーカー順)"
           >
             順序 #{order}
           </span>
         )}
         {duplicate && (
-          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[12px] font-semibold text-critical">
             重複
           </span>
         )}
         {changed && (
-          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent-hover">
+          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[12px] font-semibold text-accent-hover">
             ● 変更あり
           </span>
         )}
       </button>
       {open && (
         <div className="space-y-2 border-t border-border-subtle px-4 pb-3 pt-2">
-          {block.note && <p className="m-0 text-[11px] text-fg-subtle">{block.note}</p>}
+          {block.note && <p className="m-0 text-[13px] text-fg-subtle">{block.note}</p>}
           {duplicate ? (
             // 同じ block id のカードが複数ある状態。編集キーが field_id なので入力欄を
             // 出すともう片方も書き換わり、保存も backend が拒否する。直す唯一の手段
             // (不要な方の削除) だけを出す。
-            <div className="space-y-1.5 rounded border border-critical bg-critical-soft px-2 py-1.5 text-[11px] leading-relaxed text-critical">
+            <div className="space-y-1.5 rounded border border-critical bg-critical-soft px-2 py-1.5 text-[13px] leading-relaxed text-critical">
               <p className="m-0">
                 同じ項目のカードが 2 枚以上あります。この状態では編集がもう一方にも及び、保存もできません。
                 不要な方を削除してください。
@@ -101,7 +101,7 @@ export function BlockCard({
           ) : (
             <AutoGrowTextarea value={block.body} onChange={onChangeBody} />
           )}
-          <div className="flex items-center justify-between text-[10px]">
+          <div className="flex items-center justify-between text-[12px]">
             <button
               type="button"
               onClick={onRevert}

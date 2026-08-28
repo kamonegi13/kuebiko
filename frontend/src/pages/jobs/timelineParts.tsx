@@ -31,7 +31,7 @@ export function AxisRuler() {
       {Array.from({ length: 9 }, (_, i) => i * 3).map((h) => (
         <div
           key={h}
-          className={`absolute top-0 text-[10px] text-fg-subtle font-mono tnum ${
+          className={`absolute top-0 text-[12px] text-fg-subtle font-mono tnum ${
             h === 0 ? "" : h === 24 ? "-translate-x-full" : "-translate-x-1/2"
           }`}
           style={{ left: `${(h / 24) * 100}%` }}
@@ -103,7 +103,7 @@ export function NowLine({ nowMin }: { nowMin: number }) {
     >
       <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-accent" />
       <span
-        className={`absolute -top-0.5 text-[9px] font-mono tnum text-bg bg-accent rounded px-1 leading-[1.4] whitespace-nowrap ${
+        className={`absolute -top-0.5 text-[11.5px] font-mono tnum text-bg bg-accent rounded px-1 leading-[1.4] whitespace-nowrap ${
           nearRight ? "right-1" : "left-1"
         }`}
       >
@@ -213,7 +213,7 @@ export function IntervalLaneLabel({ marker, isSelected, onSelectJob }: {
         type="button"
         onClick={() => onSelectJob(job.id)}
         title={buildMarkerTitle(job, offsetMinutes)}
-        className={`inline-flex max-w-full items-center gap-1 text-[10px] rounded px-1.5 py-0.5 border bg-surface-2 ${color.text} ${color.border} ${
+        className={`inline-flex max-w-full items-center gap-1 text-[12px] rounded px-1.5 py-0.5 border bg-surface-2 ${color.text} ${color.border} ${
           isSelected ? "ring-2 ring-accent-ring" : ""
         } ${!job.enabled ? "opacity-45 line-through decoration-1" : ""}`}
       >
@@ -261,7 +261,7 @@ export function ReactiveZone({ markers, selectedJobId, onSelectJob }: {
 }) {
   if (markers.length === 0) return null;
   return (
-    <div className="flex items-center gap-2 flex-wrap bg-surface-2/60 border border-dashed border-border-subtle rounded-md px-2.5 py-1.5 text-[10px]">
+    <div className="flex items-center gap-2 flex-wrap bg-surface-2/60 border border-dashed border-border-subtle rounded-md px-2.5 py-1.5 text-[12px]">
       <span className="inline-flex items-center gap-1 text-fg-muted font-semibold shrink-0">
         <Zap className="h-3.5 w-3.5 text-warning" aria-hidden />
         状況に応じて自動実行 (時刻非依存)
@@ -294,7 +294,7 @@ export function ReactiveZone({ markers, selectedJobId, onSelectJob }: {
 // ---- 凡例 ---------------------------------------------------------------
 export function Legend() {
   return (
-    <div className="flex items-center gap-3 flex-wrap text-[10px] text-fg-subtle pt-1 border-t border-border-subtle">
+    <div className="flex items-center gap-3 flex-wrap text-[12px] text-fg-subtle pt-1 border-t border-border-subtle">
       <LegendDot cls="bg-accent" text="収集" />
       <LegendDot cls="bg-success" text="配信" />
       <LegendDot cls="bg-accent-hover" text="分析・総括" />

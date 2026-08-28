@@ -65,7 +65,7 @@ function buildIocClipboard(groups: EntityGroupView[], defang: boolean): string {
 }
 
 const BTN =
-  "bg-surface-2 border border-border-default rounded px-2 py-0.5 text-[11px] text-fg-muted hover:text-accent hover:border-accent-soft transition-colors";
+  "bg-surface-2 border border-border-default rounded px-2 py-0.5 text-[13px] text-fg-muted hover:text-accent hover:border-accent-soft transition-colors";
 
 function EntityActions({
   groups,
@@ -90,9 +90,9 @@ function EntityActions({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {copied === "error" && <span className="text-[11px] text-critical">コピー失敗</span>}
+      {copied === "error" && <span className="text-[13px] text-critical">コピー失敗</span>}
       {(copied === "plain" || copied === "defang") && (
-        <span className="text-[11px] text-accent">コピーしました</span>
+        <span className="text-[13px] text-accent">コピーしました</span>
       )}
       {hasIoc && (
         <>
@@ -160,7 +160,7 @@ export function EntitySection({
         <div className="text-fg-muted text-xs uppercase">エンティティ (クリックで逆引き)</div>
         <EntityActions groups={groups} stixArticleId={stixArticleId} />
       </div>
-      {note && <div className="text-fg-subtle text-[11px] -mt-1">{note}</div>}
+      {note && <div className="text-fg-subtle text-[13px] -mt-1">{note}</div>}
 
       {/* 主題アクター = 記事の主語 (攻撃実行主体)。未帰属なら明示する。 */}
       <div>
@@ -176,7 +176,7 @@ export function EntitySection({
               >
                 {sa.label}
                 {sa.articles != null && (
-                  <span className="tnum text-[10px] text-accent/70">{sa.articles}</span>
+                  <span className="tnum text-[12px] text-accent/70">{sa.articles}</span>
                 )}
               </a>
             ))}
@@ -248,7 +248,7 @@ function GroupChips({ g, subjectIds }: { g: EntityGroupView; subjectIds: Set<str
                       </span>
                     )}
                     {v.articles != null && v.articles > 1 && (
-                      <span className="tnum text-[10px] text-fg-subtle">{v.articles}</span>
+                      <span className="tnum text-[12px] text-fg-subtle">{v.articles}</span>
                     )}
                   </a>
                 );
@@ -261,13 +261,13 @@ function GroupChips({ g, subjectIds }: { g: EntityGroupView; subjectIds: Set<str
               if (vendors.length === 0) return null;
               return (
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <span className="text-fg-subtle text-[11px]">影響ベンダ:</span>
+                  <span className="text-fg-subtle text-[13px]">影響ベンダ:</span>
                   {vendors.map((vd) => (
                     <a
                       key={vd}
                       href={`/app/news?affected_vendor=${encodeURIComponent(vd)}`}
                       title={`${vd} の脆弱性に言及する記事を絞り込む`}
-                      className="inline-flex items-center bg-warning-soft border border-warning/40 rounded px-1.5 py-0.5 text-[11px] text-warning hover:bg-warning/20 transition-colors"
+                      className="inline-flex items-center bg-warning-soft border border-warning/40 rounded px-1.5 py-0.5 text-[13px] text-warning hover:bg-warning/20 transition-colors"
                     >
                       {vd}
                     </a>

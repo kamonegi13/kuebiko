@@ -204,7 +204,7 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
           >
             kuebiko
           </button>
-          <span className="text-[11px] text-fg-subtle">サイバー脅威ニュース</span>
+          <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
         </div>
       </header>
       {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
@@ -236,7 +236,7 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
 function SiteFooter() {
   return (
     <footer className="border-t border-border-subtle mt-12">
-      <div className="w-full max-w-[72rem] mx-auto px-5 py-6 text-[11px] leading-relaxed text-fg-subtle space-y-2">
+      <div className="w-full max-w-[72rem] mx-auto px-5 py-6 text-[13px] leading-relaxed text-fg-subtle space-y-2">
         <p>
           掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
           各記事の出典をご確認ください。
@@ -354,7 +354,7 @@ function Portal({ openedId }: { openedId?: string }) {
               aria-hidden
             />
             <h2 className="text-[15px] font-bold tracking-wide text-fg">注目</h2>
-            <span className="text-[11px] text-fg-subtle">
+            <span className="text-[13px] text-fg-subtle">
               直近 72 時間で多くの媒体が報じた事案
             </span>
             <span className="flex-1 border-b border-border-subtle" />
@@ -434,7 +434,7 @@ function PortalSection({
             e.preventDefault();
             navigate(href);
           }}
-          className="shrink-0 text-[11px] text-fg-subtle hover:text-accent"
+          className="shrink-0 text-[13px] text-fg-subtle hover:text-accent"
         >
           一覧へ →
         </a>
@@ -476,14 +476,14 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
                   className="group w-full flex items-baseline gap-2 py-2.5 text-left transition-colors"
                 >
-                  <span className="text-[9px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
+                  <span className="text-[12px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
                   {it.update_kind === "rewritten" && (
-                    <span className="shrink-0 text-[9.5px] font-semibold text-accent">更新</span>
+                    <span className="shrink-0 text-[12px] font-semibold text-accent">更新</span>
                   )}
                   <span
-                    className={`flex-1 text-[13.5px] font-medium leading-[1.6] [@media(hover:hover)]:group-hover:text-accent ${
+                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
                     }`}
                   >
@@ -491,7 +491,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   </span>
                   <time
                     dateTime={it.published_at}
-                    className="shrink-0 text-[10px] text-fg-subtle tnum"
+                    className="shrink-0 text-[12px] text-fg-subtle tnum"
                   >
                     {formatJstDate(it.published_at)}
                   </time>
@@ -512,7 +512,7 @@ function CategoryBadge({ category }: { category: string }) {
   // 節の識別色と同じ色を使い、「どの区画の記事か」を一覧でも保つ
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-fg-muted"
+      className="inline-flex items-center gap-1.5 text-[13px] font-semibold tracking-wide text-fg-muted"
     >
       <span
         className="w-1.5 h-1.5 rounded-full"
@@ -622,7 +622,7 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
             >
               ← 新しい記事
             </button>
-            <span className="text-[11px] text-fg-subtle tnum">{page + 1}</span>
+            <span className="text-[13px] text-fg-subtle tnum">{page + 1}</span>
             <button
               disabled={(data?.items.length ?? 0) < PAGE_SIZE}
               onClick={() => {
@@ -667,7 +667,7 @@ function SearchBox({
         />
       </div>
       {active && (
-        <button onClick={onClear} className="text-[11px] text-fg-subtle hover:text-accent underline">
+        <button onClick={onClear} className="text-[13px] text-fg-subtle hover:text-accent underline">
           解除
         </button>
       )}
@@ -685,14 +685,14 @@ function SearchBox({
 function UpdateBadge({ item }: { item: PublicNewsItem }) {
   if (item.update_kind === "rewritten") {
     return (
-      <span className="inline-flex items-center rounded-sm bg-accent/12 px-1.5 py-px text-[10px] font-semibold text-accent">
+      <span className="inline-flex items-center rounded-sm bg-accent/12 px-1.5 py-px text-[12px] font-semibold text-accent">
         更新
       </span>
     );
   }
   if (item.update_kind === "follow_up") {
     return (
-      <span className="inline-flex items-center rounded-sm border border-border-subtle px-1.5 py-px text-[10px] font-medium text-fg-subtle">
+      <span className="inline-flex items-center rounded-sm border border-border-subtle px-1.5 py-px text-[12px] font-medium text-fg-subtle">
         続報
       </span>
     );
@@ -706,7 +706,7 @@ function CardMeta({ item }: { item: PublicNewsItem }) {
   const showFirst =
     !!item.update_kind && !!item.first_reported_at && item.first_reported_at !== item.published_at;
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-subtle">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-subtle">
       <UpdateBadge item={item} />
       <time dateTime={item.published_at}>{formatJstDate(item.published_at)}</time>
       <span>{relativeFromNow(item.published_at)}</span>
@@ -728,7 +728,7 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
           {item.headline}
         </h2>
         {item.summary && (
-          <p className="text-[14px] lg:text-[15px] leading-[1.9] text-fg-muted line-clamp-3">
+          <p className="text-[15px] lg:text-[16px] leading-[1.85] text-fg-muted line-clamp-3">
             {item.summary}
           </p>
         )}
@@ -759,11 +759,11 @@ function NewsCard({
         className="block w-full text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
-        <h3 className="text-[16px] font-semibold leading-[1.5] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        <h3 className="text-[17px] font-semibold leading-[1.55] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h3>
         {item.summary && (
-          <p className="text-[13px] leading-[1.85] text-fg-muted line-clamp-2">{item.summary}</p>
+          <p className="text-[14.5px] leading-[1.8] text-fg-muted line-clamp-2">{item.summary}</p>
         )}
       </button>
       <div className="mt-2">
@@ -797,8 +797,8 @@ function readingMinutes(data: {
 function LeadSummary({ text }: { text: string }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-2 px-4 py-3.5">
-      <p className="text-[11px] font-semibold tracking-wide text-fg-subtle mb-1.5">要約</p>
-      <p className="text-[15px] leading-[1.95] text-fg">{text}</p>
+      <p className="text-[13px] font-semibold tracking-wide text-fg-subtle mb-1.5">要約</p>
+      <p className="text-[17px] leading-[1.85] text-fg">{text}</p>
     </div>
   );
 }
@@ -813,10 +813,10 @@ function KeyPoints({ points }: { points: string[] }) {
   if (points.length === 0) return null;
   return (
     <div className="rounded-lg border border-accent/25 bg-accent/[0.06] px-4 py-3.5">
-      <p className="text-[11px] font-semibold tracking-wide text-accent mb-2">要点</p>
+      <p className="text-[13px] font-semibold tracking-wide text-accent mb-2">要点</p>
       <ul className="space-y-1.5">
         {points.map((point, i) => (
-          <li key={i} className="flex gap-2 text-[14px] leading-[1.85] text-fg">
+          <li key={i} className="flex gap-2 text-[16px] leading-[1.85] text-fg">
             <span aria-hidden className="mt-[0.55em] size-1.5 shrink-0 rounded-full bg-accent/70" />
             <span>{point}</span>
           </li>
@@ -840,7 +840,7 @@ function FactParagraph({
   showCitations: boolean;
 }) {
   return (
-    <p className="text-[14px] leading-[2] text-fg-muted indent-[1em]">
+    <p className="text-[16.5px] leading-[1.85] text-fg indent-[1em]">
       {facts.map((f, i) => (
         <span key={i}>
           {f.text}
@@ -901,8 +901,8 @@ function UpdateHistory({ revisions }: { revisions: PublicNewsRevision[] }) {
     <ArticleSection title="この記事の更新">
       <ol className="space-y-3">
         {revisions.map((r, i) => (
-          <li key={i} className="text-[13px] leading-[1.7]">
-            <div className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-fg-subtle">
+          <li key={i} className="text-[14.5px] leading-[1.8]">
+            <div className="flex flex-wrap items-baseline gap-x-2 text-[13px] text-fg-subtle">
               <time dateTime={r.at} className="tnum">
                 {formatJstDate(r.at)}
               </time>
@@ -937,7 +937,7 @@ function Citations({ citations }: { citations: PublicCitation[] }) {
         {citations.map((c) => (
           <li
             key={c.index}
-            className={`text-[13px] leading-[1.7] ${numbered ? "pl-7 -indent-7" : ""}`}
+            className={`text-[14.5px] leading-[1.8] ${numbered ? "pl-7 -indent-7" : ""}`}
           >
             {numbered && <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>}
             <a
@@ -950,7 +950,7 @@ function Citations({ citations }: { citations: PublicCitation[] }) {
               <ExternalLink className="inline w-3 h-3 ml-1 align-baseline" />
             </a>
             {c.source && (
-              <div className="text-[11px] text-fg-subtle mt-0.5 indent-0">{c.source}</div>
+              <div className="text-[13px] text-fg-subtle mt-0.5 indent-0">{c.source}</div>
             )}
           </li>
         ))}
@@ -999,7 +999,7 @@ function NewsDetail({ id }: { id: string }) {
           {data.headline}
         </h1>
         {/* メタ行: 日付 / 読了目安 / 裏取り。分析的な情報は開いた人にだけ見せる */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-subtle">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-fg-subtle">
           <time dateTime={data.published_at}>{formatJstDate(data.published_at)}</time>
           {data.update_kind === "rewritten" && data.first_reported_at !== data.published_at && (
             <span className="tnum">初報 {formatJstDate(data.first_reported_at)}</span>
@@ -1037,7 +1037,7 @@ function NewsDetail({ id }: { id: string }) {
           数字の読み方を限定する情報なので、数字を読んだ直後に目に入る必要がある。 */}
       {(data.caveats ?? []).length > 0 && (
         <ArticleSection title="読むうえでの但し書き">
-          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
+          <ul className="space-y-2 text-[15px] leading-[1.85] text-fg-muted">
             {(data.caveats ?? []).map((c, i) => (
               <li key={i} className="flex gap-2">
                 <span aria-hidden className="mt-[0.7em] size-1 shrink-0 rounded-full bg-fg-subtle" />
@@ -1050,7 +1050,7 @@ function NewsDetail({ id }: { id: string }) {
 
       {data.discrepancies.length > 0 && (
         <ArticleSection title="媒体間で食い違う点" tone="warning">
-          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
+          <ul className="space-y-2 text-[15px] leading-[1.85] text-fg-muted">
             {data.discrepancies.map((d, i) => (
               <li key={i} className="pl-4 -indent-4">
                 <span className="text-fg-subtle">・</span>
@@ -1066,7 +1066,7 @@ function NewsDetail({ id }: { id: string }) {
 
       {data.unknowns.length > 0 && (
         <ArticleSection title="わかっていない点">
-          <ul className="space-y-2 text-[14px] leading-[1.9] text-fg-muted">
+          <ul className="space-y-2 text-[15px] leading-[1.85] text-fg-muted">
             {data.unknowns.map((u, i) => (
               <li key={i} className="pl-4 -indent-4">
                 <span className="text-fg-subtle">・</span>
@@ -1080,7 +1080,7 @@ function NewsDetail({ id }: { id: string }) {
       <UpdateHistory revisions={data.revisions ?? []} />
       <Citations citations={data.citations} />
 
-      <p className="text-[11px] leading-relaxed text-fg-subtle">{data.note}</p>
+      <p className="text-[13px] leading-relaxed text-fg-subtle">{data.note}</p>
     </article>
   );
 }

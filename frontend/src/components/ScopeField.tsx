@@ -82,7 +82,7 @@ export function ScopeField({
       <div className="text-xs font-semibold text-fg inline-flex items-center gap-1.5">
         <Spline className="h-3.5 w-3.5" /> 取り込む範囲
       </div>
-      <p className="m-0 text-[11px] text-fg-muted">
+      <p className="m-0 text-[13px] text-fg-muted">
         {mode === "sitemap"
           ? "サイトマップはサイト全体の URL を含みます。"
           : "一覧ページには記事以外のリンク (タグ・対象者) も並びます。"}
@@ -94,7 +94,7 @@ export function ScopeField({
             <button
               key={seg}
               onClick={() => toggle(seg)}
-              className={`rounded border px-2 py-0.5 font-mono text-[11px] ${
+              className={`rounded border px-2 py-0.5 font-mono text-[13px] ${
                 picked.includes(seg)
                   ? "border-accent bg-accent-subtle text-accent"
                   : "border-border-subtle text-fg-muted hover:text-fg"
@@ -104,7 +104,7 @@ export function ScopeField({
             </button>
           ))}
           {picked.length === 0 && (
-            <span className="text-[11px] text-warning">未選択 = サイト全体</span>
+            <span className="text-[13px] text-warning">未選択 = サイト全体</span>
           )}
         </div>
       )}
@@ -115,25 +115,25 @@ export function ScopeField({
           setItems(null);
         }}
         spellCheck={false}
-        className="w-full rounded border border-border-subtle bg-surface-1 px-2 py-1 font-mono text-[11px] text-fg-muted"
+        className="w-full rounded border border-border-subtle bg-surface-1 px-2 py-1 font-mono text-[13px] text-fg-muted"
       />
       <div className="flex items-center gap-2">
         <button
           onClick={() => void sample()}
           disabled={busy}
-          className="rounded border border-accent/60 px-2 py-0.5 text-[11px] text-accent hover:bg-accent-subtle disabled:opacity-40"
+          className="rounded border border-accent/60 px-2 py-0.5 text-[13px] text-accent hover:bg-accent-subtle disabled:opacity-40"
         >
           {busy ? <Spinner size="xs" /> : "この条件で確認"}
         </button>
         {items && (
-          <span className="inline-flex items-center gap-1 text-[11px] text-success">
+          <span className="inline-flex items-center gap-1 text-[13px] text-success">
             <Check className="h-3.5 w-3.5" /> {items.length} 件
           </span>
         )}
-        {error && <span className="text-[11px] text-critical">{error}</span>}
+        {error && <span className="text-[13px] text-critical">{error}</span>}
       </div>
       {items && items.length > 0 && (
-        <ul className="m-0 list-disc space-y-0.5 pl-4 text-[11px] text-fg-muted">
+        <ul className="m-0 list-disc space-y-0.5 pl-4 text-[13px] text-fg-muted">
           {items.slice(0, 5).map((it) => (
             <li key={it.url} className="truncate">
               {it.title || it.url}

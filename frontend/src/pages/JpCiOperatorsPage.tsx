@@ -123,13 +123,13 @@ export function JpCiOperatorsPage() {
           <div className="flex items-center justify-between px-3 py-2 bg-surface-2/60 rounded-t-lg">
             <span className="text-sm font-semibold text-fg">
               {label}
-              <span className="ml-2 text-[11px] text-fg-subtle font-normal">
+              <span className="ml-2 text-[13px] text-fg-subtle font-normal">
                 {(bySector.get(sectorId) ?? []).length}件
               </span>
             </span>
             <button
               onClick={() => addTo(sectorId)}
-              className="inline-flex items-center gap-1 text-[11px] text-fg-muted hover:text-accent"
+              className="inline-flex items-center gap-1 text-[13px] text-fg-muted hover:text-accent"
             >
               <Plus className="h-3.5 w-3.5" />
               追加

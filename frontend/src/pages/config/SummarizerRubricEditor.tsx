@@ -338,14 +338,14 @@ export function SummarizerRubricEditor() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="m-0 text-md font-semibold text-fg">記事要約・翻訳 (summarizer)</h3>
-          <p className="m-0 text-[11px] text-fg-subtle">
+          <p className="m-0 text-[13px] text-fg-subtle">
             有効な基準:{" "}
             {data.runtime.active_source === "composed" ? `DB v${data.runtime.version ?? "?"}` : "legacy ファイル"}
             {data.runtime.saved_at && ` (${formatTimestamp(data.runtime.saved_at)})`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {previewPending && <span className="text-[11px] italic text-fg-subtle">検証中...</span>}
+          {previewPending && <span className="text-[13px] italic text-fg-subtle">検証中...</span>}
           {saveMessage && (
             <span
               className={`rounded px-2 py-0.5 text-xs ${
@@ -374,7 +374,7 @@ export function SummarizerRubricEditor() {
       {/* プロンプト長バジェット */}
       {preview && (
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] tnum text-fg-subtle">
+          <div className="flex items-center justify-between text-[13px] tnum text-fg-subtle">
             <span>プロンプト長</span>
             <span>
               {preview.composed_chars.toLocaleString()} / legacy {preview.legacy_chars.toLocaleString()} 字
@@ -435,7 +435,7 @@ export function SummarizerRubricEditor() {
             onCollapseAll={onCollapseAll}
           />
           {fieldStats && (
-            <p className="m-0 text-[10.5px] leading-snug text-fg-subtle">
+            <p className="m-0 text-[12.5px] leading-snug text-fg-subtle">
               分母: {fieldStats.denominator.label} {fieldStats.denominator.count.toLocaleString()} 件（
               {fieldStats.window.since.slice(0, 10)} 〜 {fieldStats.window.until.slice(0, 10)}）。
               {fieldStats.denominator.note}
@@ -512,14 +512,14 @@ export function SummarizerRubricEditor() {
         <summary className="cursor-pointer select-none px-4 py-2 text-sm text-fg-muted">合成プレビュー</summary>
         <div className="space-y-3 px-4 pb-3">
           <div>
-            <div className="mb-1 text-[11px] text-fg-subtle">合成後テンプレート (Jinja タグ未展開)</div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+            <div className="mb-1 text-[13px] text-fg-subtle">合成後テンプレート (Jinja タグ未展開)</div>
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
               {preview?.composed ?? ""}
             </pre>
           </div>
           <div>
-            <div className="mb-1 text-[11px] text-fg-subtle">サンプル記事での展開後プロンプト</div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+            <div className="mb-1 text-[13px] text-fg-subtle">サンプル記事での展開後プロンプト</div>
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
               {preview?.rendered_sample ?? ""}
             </pre>
           </div>
@@ -553,7 +553,7 @@ export function SummarizerRubricEditor() {
             {testMut.data.empty_fields.length > 0 && (
               <div className="text-warning">空だったフィールド: {testMut.data.empty_fields.join(", ")}</div>
             )}
-            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
               {JSON.stringify(testMut.data.output, null, 2)}
             </pre>
           </div>

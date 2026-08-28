@@ -84,7 +84,7 @@ function Paragraph({
                 <a
                   href={`/app/article/${encodeURIComponent(articleIdOf(f.source_index)!)}`}
                   title={`出典 [${f.source_index}] を開く`}
-                  className="align-super text-[10px] font-mono text-fg-subtle hover:text-accent ml-0.5 mr-0.5 no-underline"
+                  className="align-super text-[12px] font-mono text-fg-subtle hover:text-accent ml-0.5 mr-0.5 no-underline"
                 >
                   [{f.source_index}]
                 </a>
@@ -117,7 +117,7 @@ function Body({
       {sections.length > 0
         ? sections.map((sec) => (
             <section key={sec.key} className="space-y-2">
-              <div className="text-[11px] font-semibold tracking-wide text-accent">{sec.label}</div>
+              <div className="text-[13px] font-semibold tracking-wide text-accent">{sec.label}</div>
               {sec.paragraphs.map((para, i) => (
                 <Paragraph key={i} facts={para as EventNewsFact[]} articleIdOf={articleIdOf} />
               ))}
@@ -236,7 +236,7 @@ function MembersCard({ d }: { d: EventNewsDetail }) {
               >
                 {m.title}
               </a>
-              <div className="text-[11px] text-fg-subtle flex flex-wrap items-center gap-x-2 mt-0.5">
+              <div className="text-[13px] text-fg-subtle flex flex-wrap items-center gap-x-2 mt-0.5">
                 <span>{m.feed_title}</span>
                 <span>{vocabLabel("source_tier", m.source_tier) || m.source_tier}</span>
                 {m.account_class && (

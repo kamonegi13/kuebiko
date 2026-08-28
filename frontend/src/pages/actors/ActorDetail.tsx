@@ -59,7 +59,7 @@ export function ActorDetail({
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold mb-1">{label}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold mb-1">{label}</div>
       {children}
     </div>
   );
@@ -70,7 +70,7 @@ export function Chips({ items }: { items: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((x, i) => (
-        <span key={i} className="text-[11px] px-1.5 py-0.5 rounded bg-surface-2 border border-border-subtle text-fg">
+        <span key={i} className="text-[13px] px-1.5 py-0.5 rounded bg-surface-2 border border-border-subtle text-fg">
           {x}
         </span>
       ))}
@@ -133,7 +133,7 @@ function ObservationBlock({
       {/* 言及 (30日): 本文照合ベース。主題 (下の行動史) とは基底が異なることをラベルで明示 */}
       <div className="flex items-center gap-2.5 text-xs">
         <span
-          className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold"
+          className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold"
           title="本文照合で名前がヒットした記事数 (主題でない言及も含む)"
         >
           言及 (直近 30 日)
@@ -153,7 +153,7 @@ function ObservationBlock({
       {/* organization: 配下グループの活動 rollup (機関単位で全体動向を俯瞰) */}
       {isOrg && childGroups.length > 0 && (
         <div className="pt-1.5 border-t border-border-subtle">
-          <div className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold mb-1">
+          <div className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold mb-1">
             配下グループの活動 (30 日)
           </div>
           <div className="space-y-1">
@@ -176,7 +176,7 @@ function ObservationBlock({
       <div className="pt-1.5 border-t border-border-subtle">
         <div className="flex items-center gap-2.5 text-xs mb-1">
           <span
-            className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold"
+            className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold"
             title="当該アクターを主題として報じた記事のみを数える永久記録 (言及だけの記事は含まない)"
           >
             主題記事の行動史 (月次・永年)
@@ -188,7 +188,7 @@ function ObservationBlock({
           )}
           <span className="text-fg font-semibold tnum">{subjectTotal} 件</span>
           {(history?.merged_from ?? []).length > 0 && (
-            <span className="text-[10px] text-fg-subtle">統合前 id の観測を含む</span>
+            <span className="text-[12px] text-fg-subtle">統合前 id の観測を含む</span>
           )}
         </div>
         {months.length > 0 ? (
@@ -202,7 +202,7 @@ function ObservationBlock({
         )}
         {novelKit.length > 0 && (
           <div
-            className="mt-1.5 text-[11px] text-warning"
+            className="mt-1.5 text-[13px] text-warning"
             title="自網の主題記事で観測されたが、公表情報 (使用マルウェア・ツール) に未記載の装備 — 行動変化または誤抽出の可能性"
           >
             ⚠ 公知リスト外の観測装備: {novelKit.join(" / ")}
@@ -212,7 +212,7 @@ function ObservationBlock({
 
       {situations.length > 0 && (
         <div className="pt-1.5 border-t border-border-subtle">
-          <div className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold mb-1">
+          <div className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold mb-1">
             関連する情勢台帳
           </div>
           <div className="space-y-1">
@@ -223,7 +223,7 @@ function ObservationBlock({
                 className="flex items-center gap-2 text-xs text-fg-muted hover:text-accent-hover"
               >
                 <span className="flex-1 truncate">{s.title}</span>
-                <span className="text-[10px] text-fg-subtle shrink-0">
+                <span className="text-[12px] text-fg-subtle shrink-0">
                   {vocabLabel("situation_status", s.status)}
                 </span>
               </a>
@@ -231,7 +231,7 @@ function ObservationBlock({
           </div>
         </div>
       )}
-      {history?.note && <p className="m-0 text-[10px] text-fg-subtle">{history.note}</p>}
+      {history?.note && <p className="m-0 text-[12px] text-fg-subtle">{history.note}</p>}
     </div>
   );
 }
@@ -258,14 +258,14 @@ function MonthRow({ actorId, m }: { actorId: string; m: ActorMonthRow }) {
           <span className="text-fg-muted tnum w-[54px] shrink-0">{m.month}</span>
           <span className="text-fg font-semibold tnum shrink-0">主題 {m.subject_articles} 件</span>
           <span
-            className="text-[10px] text-fg-subtle tnum shrink-0"
+            className="text-[12px] text-fg-subtle tnum shrink-0"
             title="この月に当該アクターを主題として報じた情報源 (feed) の数 — 1 ソース量産と多ソース裏取りを区別する"
           >
             {m.distinct_sources} 源
           </span>
           {m.japan_targeted > 0 && (
             <span
-              className="text-[10px] px-1 py-0.5 rounded bg-critical-soft text-critical font-semibold shrink-0"
+              className="text-[12px] px-1 py-0.5 rounded bg-critical-soft text-critical font-semibold shrink-0"
               title="日本標的 (victim=JP または japan_watch 配信) の主題記事数"
             >
               JP {m.japan_targeted}
@@ -273,7 +273,7 @@ function MonthRow({ actorId, m }: { actorId: string; m: ActorMonthRow }) {
           )}
           {m.kev_hits > 0 && (
             <span
-              className="text-[10px] px-1 py-0.5 rounded bg-warning-soft text-warning font-semibold shrink-0"
+              className="text-[12px] px-1 py-0.5 rounded bg-warning-soft text-warning font-semibold shrink-0"
               title="KEV (実環境悪用) 掲載 CVE を含む主題記事数"
             >
               KEV {m.kev_hits}
@@ -310,7 +310,7 @@ function MonthArticles({
     queryKey: ["actorMonthArticles", actorId, month],
     queryFn: () => pagesApi.actorMonthArticles(actorId, month),
   });
-  if (isLoading) return <div className="mt-1 pl-[72px] text-[11px] text-fg-subtle">読み込み中…</div>;
+  if (isLoading) return <div className="mt-1 pl-[72px] text-[13px] text-fg-subtle">読み込み中…</div>;
   const articles = data?.articles ?? [];
   const total = data?.total ?? 0;
   return (
@@ -319,11 +319,11 @@ function MonthArticles({
         <MonthArticleRow key={a.article_id} a={a} />
       ))}
       {total > MONTH_ARTICLES_SHOWN && (
-        <div className="text-[10px] text-fg-subtle tnum">他 {total - MONTH_ARTICLES_SHOWN} 件</div>
+        <div className="text-[12px] text-fg-subtle tnum">他 {total - MONTH_ARTICLES_SHOWN} 件</div>
       )}
-      {total === 0 && <div className="text-[11px] text-fg-subtle">記事が見つかりません</div>}
+      {total === 0 && <div className="text-[13px] text-fg-subtle">記事が見つかりません</div>}
       {data && total !== expected && (
-        <div className="text-[10px] text-fg-subtle">
+        <div className="text-[12px] text-fg-subtle">
           集計 ({expected} 件) と件数が異なります — 蒸留は週次のため次回蒸留で一致します
         </div>
       )}
@@ -333,7 +333,7 @@ function MonthArticles({
 
 function MonthArticleRow({ a }: { a: ActorMonthArticle }) {
   return (
-    <div className="flex items-center gap-2 text-[11px] min-w-0">
+    <div className="flex items-center gap-2 text-[13px] min-w-0">
       <span className="text-fg-subtle tnum shrink-0">{a.created_at.slice(5, 10)}</span>
       <a
         href={`/app/article/${encodeURIComponent(a.article_id)}`}
@@ -342,10 +342,10 @@ function MonthArticleRow({ a }: { a: ActorMonthArticle }) {
         {a.title || a.article_id}
       </a>
       {a.japan_targeted && (
-        <span className="text-[10px] px-1 rounded bg-critical-soft text-critical font-semibold shrink-0">JP</span>
+        <span className="text-[12px] px-1 rounded bg-critical-soft text-critical font-semibold shrink-0">JP</span>
       )}
       {a.kev_hit && (
-        <span className="text-[10px] px-1 rounded bg-warning-soft text-warning font-semibold shrink-0">KEV</span>
+        <span className="text-[12px] px-1 rounded bg-warning-soft text-warning font-semibold shrink-0">KEV</span>
       )}
       {a.url && (
         <a
@@ -381,7 +381,7 @@ function NameChips({ actor }: { actor: ActorRecord }) {
           return (
             <span
               key={n}
-              className={`text-[11px] px-1.5 py-0.5 rounded border border-border-subtle ${
+              className={`text-[13px] px-1.5 py-0.5 rounded border border-border-subtle ${
                 !hasUsage || count > 0 ? "bg-surface-2 text-fg" : "bg-surface-1 text-fg-subtle"
               }`}
               title={
@@ -485,7 +485,7 @@ function ActorCard({ actor, onEdit }: { actor: ActorRecord; onEdit?: () => void 
       )}
       {(actor.mitre_ttps ?? []).length > 0 && (
         <details className="group">
-          <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-fg-muted font-semibold list-none select-none">
+          <summary className="cursor-pointer text-[12px] uppercase tracking-wider text-fg-muted font-semibold list-none select-none">
             <span className="inline-block transition-transform group-open:rotate-90">▸</span>{" "}
             既知 TTP (MITRE) · {actor.mitre_ttps.length} 件
           </summary>
@@ -502,7 +502,7 @@ function ActorCard({ actor, onEdit }: { actor: ActorRecord; onEdit?: () => void 
       {/* 6. 出典 (折畳 — 件数のみ常時表示) */}
       {actor.references.length > 0 && (
         <details className="group">
-          <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-fg-muted font-semibold list-none select-none">
+          <summary className="cursor-pointer text-[12px] uppercase tracking-wider text-fg-muted font-semibold list-none select-none">
             <span className="inline-block transition-transform group-open:rotate-90">▸</span>{" "}
             出典 · {actor.references.length} 件
           </summary>
@@ -595,7 +595,7 @@ function ActorEditForm({
   });
 
   const field = "w-full bg-surface-2 border border-border-subtle rounded px-2.5 py-1.5 text-sm text-fg";
-  const label = "block text-[11px] uppercase tracking-wider text-fg-muted font-semibold mb-1";
+  const label = "block text-[13px] uppercase tracking-wider text-fg-muted font-semibold mb-1";
 
   return (
     <div className="space-y-4">
@@ -615,7 +615,7 @@ function ActorEditForm({
           onChange={(e) => setAliasesText(e.target.value)}
           disabled={readOnly}
         />
-        <p className="m-0 mt-1 text-[11px] text-fg-subtle">他アクターと重複する別名は保存時に拒否されます。</p>
+        <p className="m-0 mt-1 text-[13px] text-fg-subtle">他アクターと重複する別名は保存時に拒否されます。</p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -646,7 +646,7 @@ function ActorEditForm({
             />
             一般語と衝突する名前 (文脈 cue 共起時のみ照合)
           </label>
-          <p className="m-0 mt-1 text-[11px] text-fg-subtle">
+          <p className="m-0 mt-1 text-[13px] text-fg-subtle">
             一般語の名前を持つアクターはこれを有効にしないと保存できません。
           </p>
         </div>
@@ -672,12 +672,12 @@ function ActorEditForm({
               <option key={k} value={k}>{vocabLabel("actor_kind", k)}</option>
             ))}
           </select>
-          <p className="m-0 mt-1 text-[11px] text-fg-subtle">国家機関・請負は「活動」でなく「言及」として集計されます。</p>
+          <p className="m-0 mt-1 text-[13px] text-fg-subtle">国家機関・請負は「活動」でなく「言及」として集計されます。</p>
         </div>
         <div>
           <label className={label}>親機関</label>
           <input className={field} value={sponsorOrg} onChange={(e) => setSponsorOrg(e.target.value)} disabled={readOnly} placeholder="russia_gru" />
-          <p className="m-0 mt-1 text-[11px] text-fg-subtle">グループの親機関のアクター ID。記事帰属の二重計上を防ぎます。</p>
+          <p className="m-0 mt-1 text-[13px] text-fg-subtle">グループの親機関のアクター ID。記事帰属の二重計上を防ぎます。</p>
         </div>
       </div>
       <div>
@@ -690,7 +690,7 @@ function ActorEditForm({
       </div>
 
       <div className="pt-3 border-t border-border-subtle space-y-3">
-        <p className="m-0 text-[11px] text-fg-subtle font-semibold uppercase tracking-wider">参照用の詳細情報</p>
+        <p className="m-0 text-[13px] text-fg-subtle font-semibold uppercase tracking-wider">参照用の詳細情報</p>
         <div>
           <label className={label}>概要</label>
           <textarea className={field} rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} disabled={readOnly} />

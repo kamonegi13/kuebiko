@@ -23,7 +23,7 @@ function CopyPromptButton({ prompt }: { prompt: string }) {
   return (
     <button
       title="プロンプト本文をコピー (Grok 側へ貼り付け用)"
-      className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[11px] text-fg hover:bg-surface-3 shrink-0"
+      className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[13px] text-fg hover:bg-surface-3 shrink-0"
       onClick={(e) => {
         e.stopPropagation();
         void navigator.clipboard.writeText(prompt);
@@ -75,7 +75,7 @@ function TaskView({ task }: { task: GrokTaskDef }) {
       {open && (
         <div className="border-t border-border-subtle px-3 py-2">
           {task.note && <p className="m-0 mb-2 text-xs text-fg-muted">{task.note}</p>}
-          <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-surface-3 p-2 font-mono text-[11px] text-fg">
+          <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-surface-3 p-2 font-mono text-[13px] text-fg">
             {task.prompt}
           </pre>
         </div>
@@ -94,7 +94,7 @@ function TaskEditor({
   onDelete: () => void;
 }) {
   const field = (label: string, key: keyof GrokTaskDef, placeholder: string) => (
-    <label className="flex flex-col gap-0.5 text-[11px] text-fg-muted">
+    <label className="flex flex-col gap-0.5 text-[13px] text-fg-muted">
       {label}
       <input
         className="rounded border border-border-subtle bg-surface-1 px-2 py-1 text-xs text-fg"
@@ -114,16 +114,16 @@ function TaskEditor({
         {field("Grok 側へ反映した日", "synced_at", "2026-08-15")}
         {field("補足", "note", "テーマ A-F (グローバル早期シグナル)")}
       </div>
-      <label className="flex flex-col gap-0.5 text-[11px] text-fg-muted">
+      <label className="flex flex-col gap-0.5 text-[13px] text-fg-muted">
         プロンプト本文
         <textarea
-          className="min-h-40 rounded border border-border-subtle bg-surface-1 px-2 py-1 font-mono text-[11px] text-fg"
+          className="min-h-40 rounded border border-border-subtle bg-surface-1 px-2 py-1 font-mono text-[13px] text-fg"
           value={task.prompt}
           onChange={(e) => onChange({ ...task, prompt: e.target.value })}
         />
       </label>
       <button
-        className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[11px] text-critical hover:bg-surface-3"
+        className="inline-flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-[13px] text-critical hover:bg-surface-3"
         onClick={onDelete}
       >
         <Trash2 className="h-3 w-3" /> このタスクを削除
@@ -235,7 +235,7 @@ export function GrokTasksCard({ readOnly }: { readOnly: boolean }) {
         )}
       </div>
 
-      <p className="m-0 mt-1 text-[11px] text-fg-subtle">
+      <p className="m-0 mt-1 text-[13px] text-fg-subtle">
         実体 (SSoT) は Grok 側のスケジュールタスクです。ここは喪失に備えた記録用の写しで、
         保存しても Grok には反映されません。Grok 側を変更したら写しも更新し「反映した日」を記録してください。
       </p>

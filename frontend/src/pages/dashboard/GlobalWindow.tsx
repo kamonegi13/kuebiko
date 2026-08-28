@@ -16,7 +16,7 @@ export function GlobalWindowSelector() {
         <button
           key={c.value}
           onClick={() => setOverviewWindow(c.value)}
-          className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`px-2 py-0.5 text-[13px] font-medium transition-colors ${
             days === c.value ? "bg-accent text-white" : "text-fg-muted hover:bg-surface-3"
           }`}
         >

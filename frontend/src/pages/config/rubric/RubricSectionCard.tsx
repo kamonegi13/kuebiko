@@ -31,17 +31,17 @@ function TypeBadges({ contract }: { contract: ContractField | undefined }) {
   if (!contract) return null;
   return (
     <>
-      <span className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[10px] text-fg-subtle">
+      <span className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[12px] text-fg-subtle">
         {contract.json_type}
       </span>
       {contract.required && (
-        <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[10px] font-semibold text-warning">必須</span>
+        <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[12px] font-semibold text-warning">必須</span>
       )}
       {contract.nullable && (
-        <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">省略可</span>
+        <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[12px] text-fg-subtle">省略可</span>
       )}
       {contract.enum.length > 0 && (
-        <span className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[10px] text-fg-subtle">
+        <span className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[12px] text-fg-subtle">
           {contract.enum.join(" / ")}
         </span>
       )}
@@ -115,50 +115,50 @@ export function RubricSectionCard({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-fg-subtle" />
         )}
         <span className="font-medium text-fg">{section.title}</span>
-        <code className="font-mono text-[11px] text-fg-subtle">{section.field_id}</code>
+        <code className="font-mono text-[13px] text-fg-subtle">{section.field_id}</code>
         <TypeBadges contract={contract} />
         {section.kind === "suppressed" && (
-          <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] font-semibold text-fg-subtle">
+          <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[12px] font-semibold text-fg-subtle">
             {KIND_LABEL.suppressed}
           </span>
         )}
         {promptOrder !== null ? (
           <span
-            className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[10px] text-fg-subtle"
+            className="rounded-sm bg-surface-3 px-1.5 py-px font-mono text-[12px] text-fg-subtle"
             title="プロンプト出力順 (本文が空でないセクション中の位置)"
           >
             出力順 #{promptOrder}
           </span>
         ) : (
           <span
-            className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle"
+            className="rounded-sm bg-surface-3 px-1.5 py-px text-[12px] text-fg-subtle"
             title="本文が空のためプロンプトに出力されません"
           >
             未出力
           </span>
         )}
         {duplicate && (
-          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[12px] font-semibold text-critical">
             重複
           </span>
         )}
         {changed && (
-          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent-hover">
+          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[12px] font-semibold text-accent-hover">
             ● 変更あり
           </span>
         )}
         {errorCount > 0 && (
-          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[12px] font-semibold text-critical">
             ⚠ {errorCount}
           </span>
         )}
         {errorCount === 0 && warnCount > 0 && (
-          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[10px] font-semibold text-warning">
+          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[12px] font-semibold text-warning">
             ⚠ {warnCount}
           </span>
         )}
         {!open && (
-          <span className="ml-auto flex min-w-0 items-center gap-2 text-[11px]">
+          <span className="ml-auto flex min-w-0 items-center gap-2 text-[13px]">
             <FieldStatBlock stat={stat} loading={statsLoading} days={statsDays} compact />
             {section.body.trim() && (
               <span className="max-w-[240px] truncate italic text-fg-subtle">{previewLine(section.body)}</span>
@@ -169,19 +169,19 @@ export function RubricSectionCard({
       {open && (
         <div className="space-y-2 border-t border-border-subtle px-4 pb-3 pt-2">
           {guide && (
-            <p className="m-0 text-[11px] text-fg-muted" title={guide.sources.join("\n")}>
+            <p className="m-0 text-[13px] text-fg-muted" title={guide.sources.join("\n")}>
               効く先: {guide.effect}
             </p>
           )}
-          {section.note && <p className="m-0 text-[11px] text-fg-subtle">{section.note}</p>}
+          {section.note && <p className="m-0 text-[13px] text-fg-subtle">{section.note}</p>}
           {suppressedWithBody && (
-            <p className="m-0 text-[11px] text-warning">本文があるためプロンプトに出力されます。</p>
+            <p className="m-0 text-[13px] text-warning">本文があるためプロンプトに出力されます。</p>
           )}
           <FieldStatBlock stat={stat} loading={statsLoading} days={statsDays} />
           {issues.map((issue, i) => (
             <div
               key={`${issue.code}-${i}`}
-              className={`rounded px-1.5 py-0.5 text-[11px] ${
+              className={`rounded px-1.5 py-0.5 text-[13px] ${
                 issue.severity === "error" ? "bg-critical-soft text-critical" : "bg-warning-soft text-warning"
               }`}
             >
@@ -192,7 +192,7 @@ export function RubricSectionCard({
             /* 同じ field_id のカードが複数ある状態。編集キーが field_id なので入力欄を
                出すともう片方も書き換わり、保存も backend が拒否する。直す唯一の手段
                (不要な方の削除) だけを出す。 */
-            <div className="space-y-1.5 rounded border border-critical bg-critical-soft px-2 py-1.5 text-[11px] leading-relaxed text-critical">
+            <div className="space-y-1.5 rounded border border-critical bg-critical-soft px-2 py-1.5 text-[13px] leading-relaxed text-critical">
               <p className="m-0">
                 同じ項目のカードが 2 枚以上あります。この状態では編集がもう一方にも及び、保存もできません。
                 不要な方を削除してください。
@@ -208,14 +208,14 @@ export function RubricSectionCard({
           ) : guide?.editable === false ? (
             /* 下流が必ず上書きするフィールド。空の入力欄は「ここに書けば判定される」と
                誤解させるので、書ける場所を出さずに理由を書く (2026-08-18)。 */
-            <p className="m-0 rounded border border-border-subtle bg-surface-2 px-2 py-1.5 text-[11px] leading-relaxed text-fg-muted">
+            <p className="m-0 rounded border border-border-subtle bg-surface-2 px-2 py-1.5 text-[13px] leading-relaxed text-fg-muted">
               この項目は取込時の分類器が確定するため、判定基準を書いても出力は上書きされます。
               {guide.sources.length > 0 && <> 判定は <code className="text-fg-subtle">{guide.sources[0]}</code> にあります。</>}
             </p>
           ) : (
             <AutoGrowTextarea value={section.body} onChange={onChangeBody} />
           )}
-          <div className="flex items-center justify-between text-[10px]">
+          <div className="flex items-center justify-between text-[12px]">
             <button
               type="button"
               onClick={onRevert}

@@ -297,7 +297,7 @@ export function EventNewsPage() {
               {it.preview && (
                 <p className="text-xs text-fg-muted leading-relaxed mt-1 line-clamp-4">{it.preview}</p>
               )}
-              <div className="text-[11px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
+              <div className="text-[13px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
                 <SourceChip item={it} />
                 {it.member_count > 1 && (
                   <span className="px-1 rounded bg-surface-2 text-fg-muted">{it.member_count} 記事を統合</span>

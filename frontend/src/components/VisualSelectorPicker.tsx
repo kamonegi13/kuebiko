@@ -122,7 +122,7 @@ export function VisualSelectorPicker({
 
       <div className="border border-border-subtle rounded overflow-hidden bg-surface-1">
         {!iframeReady && (
-          <div className="px-3 py-2 text-[11px] text-fg-subtle">ページ読み込み中…</div>
+          <div className="px-3 py-2 text-[13px] text-fg-subtle">ページ読み込み中…</div>
         )}
         {/* sandbox は allow-scripts のみ (allow-same-origin なし)。proxied ページは opaque
             origin となり、親 DOM / cookie へ到達できず frameElement で自身の sandbox を外す
@@ -158,7 +158,7 @@ export function VisualSelectorPicker({
           </button>
         </div>
         {matchCount !== null && (
-          <div className="text-[11px] text-fg-subtle">
+          <div className="text-[13px] text-fg-subtle">
             ページ内で一致: {matchCount} 件
           </div>
         )}
@@ -173,14 +173,14 @@ export function VisualSelectorPicker({
 
       {candidate && (
         <div className="bg-surface-1 border border-border-subtle rounded">
-          <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-fg-muted">
+          <div className="px-3 py-2 text-[12px] uppercase tracking-wider text-fg-muted">
             抽出結果 ({candidate.preview_articles.length} 件)
           </div>
           <ul className="divide-y divide-border-subtle">
             {candidate.preview_articles.map((a, i) => (
               <li key={i} className="px-3 py-2 text-xs">
                 <span className="text-fg font-medium">{a.title}</span>
-                <div className="text-[10px] text-fg-subtle font-mono break-all">{a.url}</div>
+                <div className="text-[12px] text-fg-subtle font-mono break-all">{a.url}</div>
               </li>
             ))}
           </ul>

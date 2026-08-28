@@ -10,6 +10,18 @@
     <meta name="theme-color" content="#0b0d11" />
     <title>Kuebiko — 久延毘古</title>
 
+    <!-- 和文 Web フォント (2026-08-28 可読性診断)。
+         これが無いと和文は OS 任せ (macOS=ヒラギノ / Windows=Meiryo / Linux=総称) で、
+         閲覧環境ごとに別の書体で出る。CTI のテキストは "CVE-2026-16232" のように
+         和欧が一行で何度も切り替わるため、混植が揃わないと字面とウェイトがばらつく。
+         preconnect は Google Fonts の 2 ホスト両方に要る (CSS と font 本体で別ホスト)。 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+    />
+
     <!-- PWA: manifest とアイコンのみ。Service Worker は意図的に入れない
          (SW はインストールしていないブラウザ利用者にも効いてしまい、
           index.html の no-cache 設計 / Cloudflare Access の 302 と競合するため)。

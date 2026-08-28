@@ -439,7 +439,7 @@ export function NewsPage() {
                     {mode === "summary" && a.summary && (
                       <p className="text-xs text-fg-muted leading-relaxed mt-1 line-clamp-4">{a.summary}</p>
                     )}
-                    <div className="text-[11px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
+                    <div className="text-[13px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
                       {cves.slice(0, 4).map((c) => (
                         <Chip key={c} tone="critical" mono active={cve === c} onClick={() => setCve(cve === c ? "" : c)}>{c}</Chip>
                       ))}
@@ -480,7 +480,7 @@ export function NewsPage() {
                       )}
                     </div>
                     {a.technical_axis_summary && (
-                      <p className="text-[11px] text-fg-subtle leading-relaxed mt-1 flex items-start gap-1"
+                      <p className="text-[13px] text-fg-subtle leading-relaxed mt-1 flex items-start gap-1"
                         title="Diamond Model の技術面 (使用ツールと基盤の結びつき)">
                         <span className="line-clamp-2">{a.technical_axis_summary}</span>
                       </p>

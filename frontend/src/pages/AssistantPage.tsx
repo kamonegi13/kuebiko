@@ -181,7 +181,7 @@ export function AssistantPage() {
                         {m.tools.map((t, ti) => (
                           <span
                             key={ti}
-                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border-default text-fg-muted"
+                            className="inline-flex items-center gap-1 text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-muted"
                           >
                             <Wrench className="h-3 w-3" />
                             {t.summary}
@@ -195,7 +195,7 @@ export function AssistantPage() {
                       <MarkdownText>{m.content}</MarkdownText>
                     </div>
                     {m.model && (
-                      <div className="text-[10px] text-fg-subtle inline-flex items-center gap-1">
+                      <div className="text-[12px] text-fg-subtle inline-flex items-center gap-1">
                         <Cpu className="h-3 w-3" />
                         {m.model}
                         {m.model.includes("→") && (

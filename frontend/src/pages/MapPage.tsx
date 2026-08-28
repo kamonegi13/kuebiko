@@ -414,7 +414,7 @@ export function MapPage() {
           ]}
         />
         {timeBasis === "event" && data?.time_coverage && (
-          <span className="self-center text-[10px] leading-snug text-fg-subtle">
+          <span className="self-center text-[12px] leading-snug text-fg-subtle">
             発生日付き {data.time_coverage.dated}/{data.time_coverage.total}・未抽出は
             <span className="text-warning">非表示(不明≠無し)</span>
           </span>
@@ -551,7 +551,7 @@ export function MapPage() {
       </div>
 
       {/* 常設の正直化ラベル: 地図は世界でなく「我々の収集網が見たもの」。暗域≠安全を明示。 */}
-      <div className="shrink-0 border-b border-border-subtle bg-surface-1 px-3 py-1 text-[10px] leading-snug text-fg-subtle">
+      <div className="shrink-0 border-b border-border-subtle bg-surface-1 px-3 py-1 text-[12px] leading-snug text-fg-subtle">
         地図＝収集網の観測（攻撃分布ではない）。暗い国は「攻撃が少ない」ではなく「我々が見ていない」可能性。
         丸の大きさ＝<span className="text-fg-muted">期間内の相対件数</span>（絶対数・情報源の信頼度は丸の上／
         右パネルで確認）。
@@ -654,7 +654,7 @@ export function MapPage() {
       {/* 地図下: 日次件数推移 (地図の window+threat_class に連動、国別/セクター別) */}
       <div className="shrink-0 border-t border-border-default bg-surface-1 px-3 py-1.5">
         <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-medium text-fg-muted">日次推移</span>
+          <span className="text-[13px] font-medium text-fg-muted">日次推移</span>
           <Seg
             items={[
               { label: "国別", active: trendGroup === "country", on: () => setTrendGroup("country") },
@@ -680,7 +680,7 @@ export function MapPage() {
           >
             平滑
           </button>
-          <span className="text-[10px] text-fg-subtle">
+          <span className="text-[12px] text-fg-subtle">
             直近 {trendDays} 日 ·{" "}
             {trendDomain === "geopolitical"
               ? "地政学"
@@ -783,7 +783,7 @@ function ArticleRow({ a, onOpen }: { a: CountryArticle; onOpen: () => void }) {
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-fg-subtle">
             {a.status === "collected" && (
               <span
-                className="rounded-sm border border-border-subtle px-1 text-[10px] text-fg-subtle"
+                className="rounded-sm border border-border-subtle px-1 text-[12px] text-fg-subtle"
                 title="台帳: ransomware.live 等の未加工リスト由来 (未投稿・地図専用)"
               >
                 台帳
@@ -791,7 +791,7 @@ function ArticleRow({ a, onOpen }: { a: CountryArticle; onOpen: () => void }) {
             )}
             {a.socio_political_intent && a.socio_political_intent !== "unknown" && (
               <span
-                className="inline-flex items-center gap-1 rounded-sm px-1 text-[10px]"
+                className="inline-flex items-center gap-1 rounded-sm px-1 text-[12px]"
                 style={{
                   color: intentHex(a.socio_political_intent),
                   border: `1px solid ${intentHex(a.socio_political_intent)}55`,
@@ -922,7 +922,7 @@ function RightPanel({
                   />
                   <span className="text-fg">{g.label}</span>
                   {g.top_intent && (
-                    <span className="text-[11px] text-fg-subtle">{intentLabel(g.top_intent)}</span>
+                    <span className="text-[13px] text-fg-subtle">{intentLabel(g.top_intent)}</span>
                   )}
                   <span className="ml-auto text-fg-muted">{g.count}</span>
                 </button>

@@ -146,7 +146,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
         <div className="px-3.5 py-3 border-b border-border-subtle flex items-center justify-between gap-2">
           <span className="text-xs uppercase tracking-wider text-fg-muted font-semibold">actors</span>
           <span className="inline-flex items-center gap-2">
-            <span className="inline-flex rounded border border-border-subtle overflow-hidden text-[10px]">
+            <span className="inline-flex rounded border border-border-subtle overflow-hidden text-[12px]">
               <button
                 onClick={() => setSortBy("threat")}
                 title="ミッション脅威度 (関連度×能力) の降順 — 休眠アクターも評価順に並ぶ"
@@ -174,7 +174,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
             placeholder="名前・別名・系統・国で絞込…"
             className="w-full bg-surface-2 border border-border-subtle rounded px-2 py-1 text-xs text-fg focus:outline-none focus:border-accent"
           />
-          <label className="flex items-center gap-1.5 text-[11px] text-fg-muted cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-[13px] text-fg-muted cursor-pointer select-none">
             <input
               type="checkbox"
               checked={changedOnly}
@@ -190,7 +190,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
           {threatsData && railActors.length === 0 && (
             <div className="p-10 text-center text-fg-subtle text-sm">
               条件に一致する actor がいません<br />
-              <span className="text-[11px]">絞り込み条件を変更してください</span>
+              <span className="text-[13px]">絞り込み条件を変更してください</span>
             </div>
           )}
           {isFlatRail
@@ -206,7 +206,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
                         e.preventDefault();
                         setOpenTiers((m) => ({ ...m, [s.key]: !open }));
                       }}
-                      className="sticky top-0 z-10 cursor-pointer list-none px-3 py-1.5 bg-surface-2 border-b border-border-subtle text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center justify-between select-none [&::-webkit-details-marker]:hidden"
+                      className="sticky top-0 z-10 cursor-pointer list-none px-3 py-1.5 bg-surface-2 border-b border-border-subtle text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center justify-between select-none [&::-webkit-details-marker]:hidden"
                     >
                       <span>{open ? "▾" : "▸"} {s.label}</span>
                       <span className="tnum">{s.actors.length}</span>
@@ -251,7 +251,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
             {/* < xl では右 rail が無いので relations を detail 末尾に折りたたみ表示 */}
             {detail.relations && (
               <details className="xl:hidden border-t border-border-subtle">
-                <summary className="cursor-pointer px-6 py-3 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold select-none">
+                <summary className="cursor-pointer px-6 py-3 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold select-none">
                   関係 (系統 / 共起) を表示
                 </summary>
                 <Relations
@@ -345,9 +345,9 @@ function ActorRowCompact({ actor: a, selected, onClick }: { actor: ActorBrief; s
       </span>
       {a.kind === "organization" && <Badge color="warning">機関</Badge>}
       {a.kind === "contractor" && <Badge color="warning">請負</Badge>}
-      {dormant && <span className="text-[9px] text-fg-subtle shrink-0">休眠</span>}
+      {dormant && <span className="text-[11.5px] text-fg-subtle shrink-0">休眠</span>}
       {a.nation && (
-        <span className="text-[9.5px] font-semibold text-fg-muted bg-surface-3 px-1 rounded-sm shrink-0">{a.nation.toUpperCase()}</span>
+        <span className="text-[11.5px] font-semibold text-fg-muted bg-surface-3 px-1 rounded-sm shrink-0">{a.nation.toUpperCase()}</span>
       )}
       <span className={`tnum text-xs font-semibold w-6 text-right shrink-0 ${a.total_articles > 0 ? "text-fg" : "text-fg-subtle"}`}>
         {a.total_articles}
@@ -357,7 +357,7 @@ function ActorRowCompact({ actor: a, selected, onClick }: { actor: ActorBrief; s
           <Badge key={b.label} color={b.color}>{b.label}</Badge>
         ))}
         {rest.length > 0 && (
-          <span className="text-[9px] text-fg-subtle self-center" title={rest.map((b) => b.label).join(" / ")}>
+          <span className="text-[11.5px] text-fg-subtle self-center" title={rest.map((b) => b.label).join(" / ")}>
             +{rest.length}
           </span>
         )}
@@ -374,7 +374,7 @@ function Badge({ color, children }: { color: "success" | "critical" | "accent" |
     warning: "bg-warning-soft text-warning",
   };
   return (
-    <span className={`inline-flex items-center px-1.5 rounded-sm text-[9.5px] font-bold tracking-wide h-4 ${styles[color]}`}>{children}</span>
+    <span className={`inline-flex items-center px-1.5 rounded-sm text-[11.5px] font-bold tracking-wide h-4 ${styles[color]}`}>{children}</span>
   );
 }
 
@@ -390,7 +390,7 @@ function MonthlyHistoryStrip({ actorId, onOpenDict }: { actorId: string; onOpenD
   return (
     <div className="flex items-center gap-2.5 px-6 py-2 border-b border-border-subtle text-xs">
       <span
-        className="text-[10px] uppercase tracking-wider text-fg-muted font-semibold"
+        className="text-[12px] uppercase tracking-wider text-fg-muted font-semibold"
         title="当該アクターを主題として報じた記事のみを数える永久記録 (このページの期間内件数は言及ベース)"
       >
         主題記事の行動史 (月次)
@@ -399,7 +399,7 @@ function MonthlyHistoryStrip({ actorId, onOpenDict }: { actorId: string; onOpenD
         <Sparkline data={spark} width={110} height={18} highlightLast />
       </span>
       <span className="text-fg font-semibold tnum">{total} 件</span>
-      <span className="text-[10px] text-fg-subtle">{data?.epoch_month ?? ""} 以降の主題記事</span>
+      <span className="text-[12px] text-fg-subtle">{data?.epoch_month ?? ""} 以降の主題記事</span>
       <button type="button" onClick={onOpenDict} className="ml-auto text-accent-hover whitespace-nowrap">
         辞書で恒久史を見る ↗
       </button>
@@ -479,7 +479,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
       {/* organization: 配下グループの活動 rollup */}
       {a.kind === "organization" && (detail.child_groups?.length ?? 0) > 0 && (
         <div className="px-6 py-3 border-b border-border-subtle">
-          <div className="text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold mb-2">
+          <div className="text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold mb-2">
             配下グループの活動 (期間内)
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -534,7 +534,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
       {/* Activity timeline: 報道時刻↔発生時刻トグル + カバレッジ正直化 */}
       <Section title="活動タイムライン">
         <div className="flex items-center justify-end mb-1">
-          <div className="inline-flex rounded border border-border-subtle overflow-hidden text-[10.5px]">
+          <div className="inline-flex rounded border border-border-subtle overflow-hidden text-[12.5px]">
             <button
               onClick={() => setTlBasis("report")}
               className={`px-2 py-0.5 transition-colors ${!tlIsEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
@@ -553,7 +553,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
         </div>
         <TimelineBars data={(tlIsEvent ? detail.timeline_event : detail.timeline_daily) || []} />
         {tlIsEvent && tlCov && (
-          <div className="mt-1 text-[10px] leading-snug text-fg-subtle">
+          <div className="mt-1 text-[12px] leading-snug text-fg-subtle">
             発生日付き {tlCov.dated}/{tlCov.total} 件（期間内 {tlCov.event_in_window}）。未抽出（速報の
             大半）は非表示＝<span className="text-warning">不明（≠無し）</span>。期間を長く（1年など）とるほど活動年代が出る。
           </div>
@@ -565,7 +565,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
         <div className="hidden md:block">
           <DiamondDiagram activity={a} />
           {/* 配色凡例 (ベンダー慣行準拠): Adversary 頂点の nation 色 */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-subtle">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-fg-subtle">
             <span className="text-fg-muted">Adversary 帰属色:</span>
             <LegendDot hex="#e5484d" label="中国" />
             <LegendDot hex="#6b88ff" label="ロシア" />
@@ -611,7 +611,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
                   <span
                     key={i}
                     title={isKnown ? "MITRE 既知の TTP" : "MITRE 既知 TTP に含まれない観測 — 行動変化 / 誤抽出の可能性"}
-                    className={`text-[11px] px-1.5 py-0.5 rounded border font-mono ${
+                    className={`text-[13px] px-1.5 py-0.5 rounded border font-mono ${
                       isKnown
                         ? "bg-surface-2 border-border-subtle text-fg"
                         : "bg-warning-soft border-warning text-warning font-semibold"
@@ -623,7 +623,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
               })}
             </div>
             {knownTtps.length > 0 && (
-              <p className="m-0 mt-1.5 text-[11px] text-fg-subtle">
+              <p className="m-0 mt-1.5 text-[13px] text-fg-subtle">
                 既知 TTP (MITRE / 辞書): {knownTtps.length} 件 —{" "}
                 <button onClick={() => setDictOpen(true)} className="text-accent-hover underline">
                   辞書カードで一覧
@@ -728,13 +728,13 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
               }`} />
               <div className="flex-1 min-w-0">
                 <a href={art.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline text-sm font-medium block truncate">{art.title}</a>
-                <div className="text-fg-subtle text-[11px] mt-0.5 flex gap-2 flex-wrap items-center">
+                <div className="text-fg-subtle text-[13px] mt-0.5 flex gap-2 flex-wrap items-center">
                   <span>{art.feed_title.slice(0, 20)}</span>
                   <span>·</span>
                   <span>{art.created_at}</span>
-                  {art.posted_channel && <span className="bg-surface-3 text-fg-muted px-1.5 rounded-sm text-[10px] font-mono">{chMeta(art.posted_channel).label}</span>}
+                  {art.posted_channel && <span className="bg-surface-3 text-fg-muted px-1.5 rounded-sm text-[12px] font-mono">{chMeta(art.posted_channel).label}</span>}
                   {art.socio_political_intent && intentMeta(art.socio_political_intent) && (
-                    <span className={`px-1.5 rounded-sm text-[10px] bg-surface-2 ${intentMeta(art.socio_political_intent)?.tone}`}
+                    <span className={`px-1.5 rounded-sm text-[12px] bg-surface-2 ${intentMeta(art.socio_political_intent)?.tone}`}
                       title="socio-political 軸 (この事案の意図)">
                       {intentLabel(art.socio_political_intent)}
                       {isHypothesisIntent(art.intent_confidence) && <span className="opacity-70"> (仮説)</span>}
@@ -742,7 +742,7 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
                   )}
                 </div>
                 {art.technical_axis_summary && (
-                  <p className="text-fg-subtle text-[11px] mt-1 flex items-start gap-1 leading-relaxed"
+                  <p className="text-fg-subtle text-[13px] mt-1 flex items-start gap-1 leading-relaxed"
                     title="technical 軸 (Capability⇄Infrastructure の技術的なつながり)">
                     <span className="line-clamp-2">{art.technical_axis_summary}</span>
                   </p>
@@ -775,7 +775,7 @@ function MissionThreatSection({ threat }: { threat: ActorThreat }) {
         <span className="text-xs text-fg-muted bg-surface-2 px-2 py-0.5 rounded">
           {vocabLabel("activity_state", threat.activity_state)}
         </span>
-        <span className="text-[11px] text-fg-subtle">{threat.tier_rule}</span>
+        <span className="text-[13px] text-fg-subtle">{threat.tier_rule}</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <FactorGroup
@@ -795,7 +795,7 @@ function MissionThreatSection({ threat }: { threat: ActorThreat }) {
         />
       </div>
       {threat.coverage_note && (
-        <p className="m-0 mt-2.5 text-[11px] text-warning bg-warning-soft rounded px-2.5 py-1.5">
+        <p className="m-0 mt-2.5 text-[13px] text-warning bg-warning-soft rounded px-2.5 py-1.5">
           {threat.coverage_note}
         </p>
       )}
@@ -806,11 +806,11 @@ function MissionThreatSection({ threat }: { threat: ActorThreat }) {
 function FactorGroup({ label, hint, factors }: { label: string; hint: string; factors: string[] }) {
   return (
     <div className="bg-surface-2 rounded-md p-2.5">
-      <div className="text-[10.5px] font-semibold text-fg mb-0.5">{label}</div>
-      <div className="text-[9.5px] text-fg-subtle mb-1.5 leading-snug">{hint}</div>
+      <div className="text-[12.5px] font-semibold text-fg mb-0.5">{label}</div>
+      <div className="text-[11.5px] text-fg-subtle mb-1.5 leading-snug">{hint}</div>
       <ul className="list-none m-0 p-0 space-y-1">
         {factors.map((f, i) => (
-          <li key={i} className="text-[11px] text-fg-muted leading-snug flex gap-1.5">
+          <li key={i} className="text-[13px] text-fg-muted leading-snug flex gap-1.5">
             <span className="text-fg-subtle shrink-0">·</span>
             <span>{f}</span>
           </li>
@@ -836,7 +836,7 @@ function Stat({ label, value, suffix, trend, trendText, small }: {
 }) {
   return (
     <div className="bg-surface-1 px-4 py-3.5">
-      <div className="text-[10.5px] text-fg-subtle uppercase tracking-wider font-semibold mb-1">{label}</div>
+      <div className="text-[12.5px] text-fg-subtle uppercase tracking-wider font-semibold mb-1">{label}</div>
       <div className={`font-bold text-fg leading-tight tnum tracking-tight ${small ? "text-base font-mono" : "text-xl"}`}>
         {value}{suffix && <span className="text-fg-muted text-xs ml-0.5 font-medium">{suffix}</span>}
       </div>
@@ -850,7 +850,7 @@ function Stat({ label, value, suffix, trend, trendText, small }: {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="px-6 py-4 border-b border-border-subtle last:border-b-0">
-      <h4 className="m-0 mb-3 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center gap-2">{title}</h4>
+      <h4 className="m-0 mb-3 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center gap-2">{title}</h4>
       {children}
     </div>
   );
@@ -878,7 +878,7 @@ function DiamondGroup({
   if (empty) {
     return (
       <div id={anchorId} className="px-6 py-3 border-b border-border-subtle last:border-b-0 bg-surface-1/40 scroll-mt-4">
-        <h4 className="m-0 text-[11px] uppercase tracking-wider text-fg-subtle font-semibold flex items-center gap-2">{title}</h4>
+        <h4 className="m-0 text-[13px] uppercase tracking-wider text-fg-subtle font-semibold flex items-center gap-2">{title}</h4>
         <p className="m-0 mt-1 text-fg-subtle text-xs italic">
           {emptyHint || "該当データなし"}
         </p>
@@ -888,8 +888,8 @@ function DiamondGroup({
   return (
     <details id={anchorId} className="border-b border-border-subtle last:border-b-0 open:bg-surface-1/50 scroll-mt-4" open={defaultOpen}>
       <summary className="cursor-pointer list-none px-6 py-3 hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
-        <h4 className="m-0 text-[11px] uppercase tracking-wider text-accent-hover font-semibold flex items-center gap-2">
-          <span className="text-fg-subtle text-[9px]">▼</span>{title}
+        <h4 className="m-0 text-[13px] uppercase tracking-wider text-accent-hover font-semibold flex items-center gap-2">
+          <span className="text-fg-subtle text-[11.5px]">▼</span>{title}
         </h4>
       </summary>
       <div className="px-6 pb-4 pt-1 space-y-2.5">
@@ -911,7 +911,7 @@ function LegendDot({ hex, label }: { hex: string; label: string }) {
 function Subsection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] text-fg-subtle mb-1 uppercase tracking-wider">{label}</div>
+      <div className="text-[12px] text-fg-subtle mb-1 uppercase tracking-wider">{label}</div>
       {children}
     </div>
   );
@@ -927,9 +927,9 @@ function Relations({ family, familyMembers, cooccurActors, actorLookup, onSelect
   return (
     <>
       <div className="p-3.5 border-b border-border-subtle">
-        <h4 className="m-0 mb-2.5 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center justify-between gap-2">
+        <h4 className="m-0 mb-2.5 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold flex items-center justify-between gap-2">
           <span>系統</span>
-          {family && <span className="bg-accent-subtle text-accent-hover px-1.5 py-0.5 rounded-sm text-[10.5px] font-mono normal-case tracking-normal font-medium">{family}</span>}
+          {family && <span className="bg-accent-subtle text-accent-hover px-1.5 py-0.5 rounded-sm text-[12.5px] font-mono normal-case tracking-normal font-medium">{family}</span>}
         </h4>
         {familyMembers.length === 0 ? <div className="text-fg-subtle text-xs italic">系統メンバーなし</div> : familyMembers.map(([id, n]) => (
           <div key={id} onClick={() => onSelect(id)} className="py-1 px-2 -mx-2 rounded-sm cursor-pointer flex justify-between gap-2 text-sm hover:bg-surface-2 hover:text-accent-hover transition-all">
@@ -939,7 +939,7 @@ function Relations({ family, familyMembers, cooccurActors, actorLookup, onSelect
         ))}
       </div>
       <div className="p-3.5 border-b border-border-subtle">
-        <h4 className="m-0 mb-2.5 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">共起</h4>
+        <h4 className="m-0 mb-2.5 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">共起</h4>
         {cooccurActors.length === 0 ? <div className="text-fg-subtle text-xs italic">共起 actor なし</div> : cooccurActors.map(([id, n]) => (
           <div key={id} onClick={() => onSelect(id)} className="py-1 px-2 -mx-2 rounded-sm cursor-pointer flex justify-between gap-2 text-sm hover:bg-surface-2 hover:text-accent-hover transition-all">
             <span className="text-fg font-medium truncate">{actorLookup[id] || id}</span>
@@ -987,7 +987,7 @@ function TimelineBars({ data }: { data: [string, number][] }) {
           );
         })}
       </svg>
-      <div className="flex justify-between mt-1 text-[9px] text-fg-subtle tnum">
+      <div className="flex justify-between mt-1 text-[11.5px] text-fg-subtle tnum">
         <span>{data[0]?.[0].slice(5)}</span>
         <span className="text-fg-muted">max {max}</span>
         <span>{data[data.length - 1]?.[0].slice(5)}</span>

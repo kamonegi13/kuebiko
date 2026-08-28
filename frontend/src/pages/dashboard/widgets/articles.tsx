@@ -65,10 +65,10 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
                   </a>
                   {/* L3 要約 (補助): 淡 (11px / muted)。mobile は 1 行で密度を抑える */}
                   {wantSummary && a.summary && (
-                    <p className={`text-[11px] text-fg-muted leading-relaxed mt-1 ${mobile ? "line-clamp-1" : "line-clamp-2"}`}>{a.summary}</p>
+                    <p className={`text-[13px] text-fg-muted leading-relaxed mt-1 ${mobile ? "line-clamp-1" : "line-clamp-2"}`}>{a.summary}</p>
                   )}
                   {/* L4 メタ: 弱 (10px / subtle) */}
-                  <div className="text-[10px] text-fg-subtle flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                  <div className="text-[12px] text-fg-subtle flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
                     {cves.length > 0 && cves.slice(0, 3).map((c) => (
                       <a key={c} href={`https://nvd.nist.gov/vuln/detail/${c}`} target="_blank" rel="noopener noreferrer"
                         className="px-1 rounded bg-critical-soft text-critical font-mono hover:underline">{c}</a>

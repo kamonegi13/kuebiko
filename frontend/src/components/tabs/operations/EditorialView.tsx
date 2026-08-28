@@ -131,10 +131,10 @@ function ReviewRow({ article: a, stances, qc }: { article: import("../../../api/
     <tr className="border-t border-border-subtle align-top">
       <td className="px-4 py-2 text-fg-subtle text-xs whitespace-nowrap hidden sm:table-cell">{formatJstShort(a.created_at)}</td>
       <td className="px-4 py-2 text-fg-muted text-xs hidden md:table-cell">{a.feed_title.slice(0, 18)}</td>
-      <td className="px-4 py-2"><a href={a.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline text-xs">{a.title.slice(0, 70)}</a><div className="text-fg-subtle text-[10px] mt-0.5">[{a.importance ? vocabLabel("importance", a.importance) : "-"}] [{a.category ? vocabLabel("category", a.category) : "-"}] → {a.posted_channel ? chMeta(a.posted_channel).label : "-"}</div></td>
+      <td className="px-4 py-2"><a href={a.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline text-xs">{a.title.slice(0, 70)}</a><div className="text-fg-subtle text-[12px] mt-0.5">[{a.importance ? vocabLabel("importance", a.importance) : "-"}] [{a.category ? vocabLabel("category", a.category) : "-"}] → {a.posted_channel ? chMeta(a.posted_channel).label : "-"}</div></td>
       <td className="px-4 py-2"><StanceBadge stance={a.stance} /></td>
       <td className="px-4 py-2">
-        {a.review && <div className="text-fg-subtle text-[10px] mb-1 inline-flex items-center gap-1"><Pencil className="h-3.5 w-3.5" /><strong>{vocabLabel("stance", a.review.corrected_stance)}</strong>{a.review.comment && ` — ${a.review.comment.slice(0, 30)}`}</div>}
+        {a.review && <div className="text-fg-subtle text-[12px] mb-1 inline-flex items-center gap-1"><Pencil className="h-3.5 w-3.5" /><strong>{vocabLabel("stance", a.review.corrected_stance)}</strong>{a.review.comment && ` — ${a.review.comment.slice(0, 30)}`}</div>}
         {!read_only && (
           <div className="flex gap-1 items-center">
             <select value={corrected} onChange={(e) => setCorrected(e.target.value)} className="bg-surface-2 border border-border-subtle rounded px-1.5 py-0.5 text-xs">

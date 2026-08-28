@@ -60,7 +60,7 @@ export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onC
           {visibleNavGroups(hideFullOnly).map((group) => (
             <div key={group.title}>
               {!collapsed && (
-                <div className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">{group.title}</div>
+                <div className="px-2 mb-1 text-[12px] font-semibold uppercase tracking-wider text-fg-subtle">{group.title}</div>
               )}
               {collapsed && <div className="mx-2 mb-1 h-px bg-border-subtle" aria-hidden />}
               <ul className="space-y-0.5">

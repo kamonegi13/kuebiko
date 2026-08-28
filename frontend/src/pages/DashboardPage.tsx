@@ -282,9 +282,9 @@ export function DashboardPage() {
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-medium text-fg leading-snug truncate">{def.title}</span>
               {def.multi ? (
-                <span className="block text-[9px] text-accent">複数配置可{placedCount > 0 ? ` ・${placedCount}個配置中` : ""}</span>
+                <span className="block text-[11.5px] text-accent">複数配置可{placedCount > 0 ? ` ・${placedCount}個配置中` : ""}</span>
               ) : placedCount > 0 ? (
-                <span className="block text-[9px] text-fg-subtle">配置済み (1つのみ)</span>
+                <span className="block text-[11.5px] text-fg-subtle">配置済み (1つのみ)</span>
               ) : null}
             </span>
           </button>
@@ -299,7 +299,7 @@ export function DashboardPage() {
         <div className="flex items-baseline gap-2 flex-wrap">
           <h2 className="m-0 text-xl font-bold text-fg tracking-tight">Intelligence Overview</h2>
           {isMobile && (
-            <span className="text-[10px] uppercase tracking-wider bg-accent-subtle text-accent-hover px-1.5 py-0.5 rounded font-mono" title="モバイル専用レイアウト (この端末に保存・PC とは独立)">モバイル</span>
+            <span className="text-[12px] uppercase tracking-wider bg-accent-subtle text-accent-hover px-1.5 py-0.5 rounded font-mono" title="モバイル専用レイアウト (この端末に保存・PC とは独立)">モバイル</span>
           )}
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -307,7 +307,7 @@ export function DashboardPage() {
           <GlobalWindowSelector />
           {!isMobile && pcLayout && !editing && (
             <span
-              className="inline-flex items-center gap-1.5 text-[10px] bg-warning-soft text-warning px-1.5 py-0.5 rounded"
+              className="inline-flex items-center gap-1.5 text-[12px] bg-warning-soft text-warning px-1.5 py-0.5 rounded"
               title="サーバへ保存できなかったため、この端末内に保存されたレイアウトを表示しています。共有版 (サーバ) の更新は反映されません"
             >
               この端末専用レイアウト
@@ -344,10 +344,10 @@ export function DashboardPage() {
       {editing && !isMobile && (
         <aside className="fixed left-0 top-0 bottom-0 w-60 z-[80] !mt-0 overflow-y-auto bg-surface-2 border-r border-border-emphasized shadow-2xl p-2">
           <div className="flex items-center justify-between gap-1 px-1 mt-1 mb-1">
-            <span className="text-[11px] uppercase tracking-wider text-fg-muted">ツールボックス</span>
+            <span className="text-[13px] uppercase tracking-wider text-fg-muted">ツールボックス</span>
             <div className="flex items-center gap-1.5">
               <button onClick={() => handleSave(draft)} disabled={saveMut.isPending}
-                className="inline-flex items-center gap-1 bg-accent hover:bg-accent-hover text-white px-2 py-1 rounded text-[11px] font-semibold disabled:opacity-50"
+                className="inline-flex items-center gap-1 bg-accent hover:bg-accent-hover text-white px-2 py-1 rounded text-[13px] font-semibold disabled:opacity-50"
                 title="レイアウトを保存して終了">
                 {saveMut.isPending ? "保存中…" : <><Save className="h-3 w-3" /> 保存</>}
               </button>
@@ -357,11 +357,11 @@ export function DashboardPage() {
               </button>
             </div>
           </div>
-          <div className="text-[10px] text-fg-subtle px-1 mb-2 leading-snug">
+          <div className="text-[12px] text-fg-subtle px-1 mb-2 leading-snug">
             クリックで最後に追加 / ドラッグで好きな位置へ / マウスを乗せると実物プレビュー
           </div>
           <button onClick={fitAllHeights}
-            className="w-full mb-2 inline-flex items-center justify-center gap-1 border border-border-subtle rounded px-2 py-1 text-[11px] text-fg hover:bg-surface-1 hover:border-accent/60"
+            className="w-full mb-2 inline-flex items-center justify-center gap-1 border border-border-subtle rounded px-2 py-1 text-[13px] text-fg hover:bg-surface-1 hover:border-accent/60"
             title="全タイルの高さを中身の自然な高さにぴったり合わせる (地図など全面表示のものは除く)">
             <ChevronsDownUp className="h-3 w-3" /> 全タイルの高さを中身に合わせる
           </button>
@@ -376,10 +376,10 @@ export function DashboardPage() {
           {pickerOpen && (
             <div className="max-h-[55vh] overflow-y-auto border-b border-border-subtle p-2">
               <div className="flex items-center justify-between px-1 mb-1.5">
-                <span className="text-[11px] uppercase tracking-wider text-fg-muted">ウィジェットを追加</span>
+                <span className="text-[13px] uppercase tracking-wider text-fg-muted">ウィジェットを追加</span>
                 <button onClick={() => setPickerOpen(false)} className="text-fg-subtle hover:text-fg"><X className="h-4 w-4" /></button>
               </div>
-              <div className="text-[10px] text-fg-subtle px-1 mb-2">タップで最後に追加 (配置済みは無効)</div>
+              <div className="text-[12px] text-fg-subtle px-1 mb-2">タップで最後に追加 (配置済みは無効)</div>
               {widgetItems}
             </div>
           )}
@@ -489,7 +489,7 @@ export function DashboardPage() {
             left: Math.max(8, Math.min(preview.left, window.innerWidth - 396)),
           }}>
           <div className="bg-surface-2 border border-border-emphasized rounded-lg shadow-2xl p-2">
-            <div className="text-[10px] uppercase tracking-wider text-fg-subtle mb-1 px-1">
+            <div className="text-[12px] uppercase tracking-wider text-fg-subtle mb-1 px-1">
               プレビュー — {WIDGET_REGISTRY[preview.id].title}
             </div>
             <div className="max-h-[260px] overflow-hidden rounded">
@@ -520,7 +520,7 @@ function TileChrome({ def, cfg, isMobile, isFirst, isLast, onUp, onDown, onRemov
 }) {
   return (
     <div className="shrink-0">
-      <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-fg-muted">
+      <div className="flex items-center gap-1.5 mb-1 px-1 text-[13px] text-fg-muted">
         {isMobile ? (
           <span className="font-semibold truncate flex-1">{def.title}</span>
         ) : (

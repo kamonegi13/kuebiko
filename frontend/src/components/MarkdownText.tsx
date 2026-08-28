@@ -14,7 +14,7 @@ const MARKDOWN_OPTS = {
     li: { props: { className: "leading-relaxed" } },
     strong: { props: { className: "font-semibold text-fg" } },
     em: { props: { className: "italic text-fg-muted" } },
-    code: { props: { className: "bg-surface-2 text-accent-hover px-1 py-0.5 rounded text-[12px] font-mono" } },
+    code: { props: { className: "bg-surface-2 text-accent-hover px-1 py-0.5 rounded text-[13.5px] font-mono" } },
     a: { props: { className: "text-accent hover:underline", target: "_blank", rel: "noopener noreferrer" } },
     h1: { props: { className: "text-md font-bold text-fg mt-2 mb-1.5" } },
     h2: { props: { className: "text-sm font-bold text-fg mt-2 mb-1.5" } },

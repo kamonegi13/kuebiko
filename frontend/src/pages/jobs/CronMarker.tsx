@@ -77,7 +77,7 @@ export function CronMarker(props: CronMarkerProps) {
         title={buildMarkerTitle(job, displayMin)}
         aria-label={`${job.title} ${minutesToHhmm(displayMin)}`}
         // leading-frame アンカー: 枠左端 = 時刻 x。右端付近は右→左へ展開。
-        className={`absolute top-1/2 -translate-y-1/2 z-20 inline-flex items-center gap-0.5 rounded-full border pl-1 pr-1.5 py-0.5 text-[9.5px] font-mono tnum leading-none transition-shadow bg-surface-2 ${color.border} ${color.text} ${
+        className={`absolute top-1/2 -translate-y-1/2 z-20 inline-flex items-center gap-0.5 rounded-full border pl-1 pr-1.5 py-0.5 text-[11.5px] font-mono tnum leading-none transition-shadow bg-surface-2 ${color.border} ${color.text} ${
           isSelected ? "ring-2 ring-accent-ring" : ""
         } ${active ? "" : "border-dashed"} ${notToday ? "opacity-70" : ""} ${
           draggable ? "cursor-grab active:cursor-grabbing touch-none" : "cursor-pointer"
@@ -106,9 +106,9 @@ export function CronMarker(props: CronMarkerProps) {
       {isPending && (
         <div className={`absolute z-30 top-full ${flip ? "-translate-x-full" : ""}`} style={{ left }}>
           <div className="inline-flex items-center gap-1 bg-bg border border-border-emphasized rounded shadow-lg px-1 py-0.5">
-            <span className="text-[10px] font-mono text-fg tnum px-1">{minutesToHhmm(pending!.minutes)}</span>
+            <span className="text-[12px] font-mono text-fg tnum px-1">{minutesToHhmm(pending!.minutes)}</span>
             {clash && (
-              <span className="text-[9.5px] text-warning inline-flex items-center gap-0.5" title={`重処理と重複: ${clash}`}>
+              <span className="text-[11.5px] text-warning inline-flex items-center gap-0.5" title={`重処理と重複: ${clash}`}>
                 <AlertTriangle className="h-3 w-3" aria-hidden /> 重処理重複
               </span>
             )}

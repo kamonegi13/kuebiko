@@ -405,7 +405,7 @@ function StepIndicator({ step }: { step: Step }) {
         return (
           <li key={l.key} className="flex items-center gap-1">
             <span
-              className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+              className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[12px] font-bold ${
                 isActive
                   ? "bg-accent text-white"
                   : isDone
@@ -594,16 +594,16 @@ function CandidateCard({
       <div className="border border-border-subtle hover:border-accent rounded-lg overflow-hidden">
         <div className="p-3 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-3 font-mono uppercase text-fg-muted">
+            <span className="text-[12px] px-1.5 py-0.5 rounded bg-surface-3 font-mono uppercase text-fg-muted">
               {transportLabel}
             </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${healthTone} font-semibold tnum`}>
+            <span className={`text-[12px] px-1.5 py-0.5 rounded border ${healthTone} font-semibold tnum`}>
               Q {c.quality.health_score}
             </span>
             <span className="text-sm text-fg font-semibold">{c.source_name}</span>
           </div>
           <div className="text-xs text-accent font-mono break-all">{c.path_display}</div>
-          <div className="flex items-center gap-3 flex-wrap text-[11px]">
+          <div className="flex items-center gap-3 flex-wrap text-[13px]">
             <span className="text-fg-muted tnum">
               <span className="text-fg font-semibold">{c.quality.entries_count}</span> 件
             </span>
@@ -617,7 +617,7 @@ function CandidateCard({
         {/* preview articles (Inoreader 風 user 意図確認 gate) */}
         {c.preview_articles.length > 0 && (
           <div className="bg-surface-2 border-t border-border-subtle p-2.5">
-            <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1.5">
+            <div className="text-[12px] uppercase tracking-wider text-fg-muted mb-1.5">
               直近 {c.preview_articles.length} 記事 (このソースから取り込まれる例)
             </div>
             <ul className="space-y-0.5">
@@ -711,7 +711,7 @@ function Step4bHtmlUrl({
             className="w-full bg-surface-2 border border-border-subtle rounded px-3 py-2 text-sm"
           />
           {originalUrl && originalUrl !== listingUrl && (
-            <div className="text-[11px] text-fg-subtle mt-1">
+            <div className="text-[13px] text-fg-subtle mt-1">
               元の URL を使う場合: <code className="text-accent">{originalUrl}</code>{" "}
               <button
                 onClick={() => setListingUrl(originalUrl)}
@@ -824,7 +824,7 @@ function Step5bHtmlPreview({
 
       {/* preview articles (user 意図確認 gate) */}
       <div className="bg-surface-1 border border-border-subtle rounded">
-        <div className="px-3 py-2 text-[10px] uppercase tracking-wider text-fg-muted">
+        <div className="px-3 py-2 text-[12px] uppercase tracking-wider text-fg-muted">
           LLM が抽出した記事
         </div>
         <ul className="divide-y divide-border-subtle">
@@ -838,7 +838,7 @@ function Step5bHtmlPreview({
               >
                 {a.title}
               </a>
-              <div className="text-[10px] text-fg-subtle font-mono break-all">{a.url}</div>
+              <div className="text-[12px] text-fg-subtle font-mono break-all">{a.url}</div>
             </li>
           ))}
         </ul>

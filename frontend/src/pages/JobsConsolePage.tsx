@@ -61,7 +61,7 @@ function ConfirmModal({ state, pending, onCancel, onConfirm }: {
         <div className="p-4 space-y-3">
           <div className="text-sm text-fg font-semibold">{job.title}</div>
           <div className="bg-surface-2 border border-border-subtle rounded-md px-3 py-2 text-xs text-fg-muted leading-relaxed">
-            <span className="text-fg-subtle uppercase text-[10px] font-semibold tracking-wider block mb-1">停止による影響</span>
+            <span className="text-fg-subtle uppercase text-[12px] font-semibold tracking-wider block mb-1">停止による影響</span>
             {job.disable_impact || "影響情報なし"}
           </div>
           <div className="flex items-center justify-end gap-2 pt-1">

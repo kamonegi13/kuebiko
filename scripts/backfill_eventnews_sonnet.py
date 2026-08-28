@@ -4,7 +4,9 @@
 持たないもの全部 — 未生成 (元記事の要約を表示中) と旧フォーマットの両方。
 目的は 2 つ: 読者に見える面を最高品質で揃える / SFT の教師対を一括で貯める。
 """
+
 import asyncio, json, sys, time
+
 sys.path.insert(0, "/app")
 from datetime import UTC, datetime, timedelta
 from src.config_loader import load_app_config
@@ -13,16 +15,23 @@ from src.storage.run_history import RunHistoryRepository
 from src.tools.model_tiers import Step, build_llm_for
 from src.ui.services.eventnews_hourly_job import _entity_counts, _load_members
 
+
 async def main():
-    ids = json.load(open("/tmp/backfill_ids.json"))
+    # 対象 id の一覧 (引数で差し替え可能 — 一部だけ作り直したいときに使う)
+    ids = json.load(open(sys.argv[1] if len(sys.argv) > 1 else "/tmp/backfill_ids.json"))
     repo = RunHistoryRepository()
-    recs = {r.state.item_id: r for r in repo.list_event_items(origin="live", limit=20000)
-            if not r.merged_into}
+    recs = {
+        r.state.item_id: r
+        for r in repo.list_event_items(origin="live", limit=20000)
+        if not r.merged_into
+    }
     counts = _entity_counts(repo, datetime.now(UTC) - timedelta(days=14))
-    pending = []; already = 0
+    pending = []
+    already = 0
     for item_id in ids:
         rec = recs.get(item_id)
-        if rec is None: continue
+        if rec is None:
+            continue
         v = repo.list_event_versions(item_id)
         # fallback (→gemma4:31b) 版は教師データとして数えない — Sonnet で作り直す
         if v and v[0].body_json and '"caveats"' in v[0].body_json and "→" not in v[0].model:
@@ -39,7 +48,7 @@ async def main():
         el = time.monotonic() - t0
         eta = (el / max(1, i - 1)) * (total - i + 1) if i > 1 else 0
         if i % 10 == 0 or i == 1:
-            print(f"[{i}/{total}] 経過{el/60:.0f}分 残り約{eta/60:.0f}分", flush=True)
+            print(f"[{i}/{total}] 経過{el / 60:.0f}分 残り約{eta / 60:.0f}分", flush=True)
 
     # 移動枠 (4-5 時間の転がる窓) に**自己調整**する:
     #   探針 1 件 → fallback なら 30 分退いて再試行 (枠が回復したら自然に通る)
@@ -95,7 +104,7 @@ async def main():
     probe_failures = 0
     while i < len(pending):
         # 探針: 1 件だけ生成して fallback を見る
-        probe = pending[i:i+1]
+        probe = pending[i : i + 1]
         since = _now_iso()
         await runner.generate_pending(repo, probe, factory)
         fb, wrote = outcome(probe, since)
@@ -104,40 +113,53 @@ async def main():
             #    同じ結果になる (2026-08-28 実測: 1 件の拒否で 30 分退き続けた)。
             #    別の項目で連続して落ちたときだけ「経路が使えない」と判断する。
             probe_failures += 1
-            i += 1; total_done += 1
+            i += 1
+            total_done += 1
             if probe_failures >= PROBE_STREAK:
-                print(f"探針が {probe_failures} 件連続で fallback — "
-                      f"{BACKOFF//60} 分待つ (累計 {total_done}/{len(pending)})", flush=True)
+                print(
+                    f"探針が {probe_failures} 件連続で fallback — "
+                    f"{BACKOFF // 60} 分待つ (累計 {total_done}/{len(pending)})",
+                    flush=True,
+                )
                 await asyncio.sleep(BACKOFF)
                 probe_failures = 0
             continue
         probe_failures = 0
         if wrote == 0:
             # 生成対象外 (本文なし等)。判定材料にならないので次へ進める
-            i += 1; total_done += 1
+            i += 1
+            total_done += 1
             continue
-        i += 1; total_done += 1
-        chunk = pending[i:i+CHUNK]
+        i += 1
+        total_done += 1
+        chunk = pending[i : i + CHUNK]
         if chunk:
             since = _now_iso()
             await runner.generate_pending(
-                repo, chunk, factory,
+                repo,
+                chunk,
+                factory,
                 on_progress=lambda a, b, iid: progress(total_done + a, len(pending), iid),
             )
             fb, wrote = outcome(chunk, since)
             tail = trailing_fallbacks(chunk, since)
-            i += len(chunk); total_done += len(chunk)
-            print(f"塊: {len(chunk)} 件 (生成 {wrote} / fallback {fb}) "
-                  f"累計 {total_done}/{len(pending)}", flush=True)
+            i += len(chunk)
+            total_done += len(chunk)
+            print(
+                f"塊: {len(chunk)} 件 (生成 {wrote} / fallback {fb}) "
+                f"累計 {total_done}/{len(pending)}",
+                flush=True,
+            )
             # ⚠ **fallback 率では退かない**。拒否は記事の内容ごとに起きるので、
             #    残り物ほど拒否が集中して率が上がる — 経路は正常なのに退き続ける。
             #    経路が使えないときは「以降ずっと落ちる」ので、**末尾が連続で
             #    落ちているか**だけを見る (2026-08-28)。
             if tail >= ROUTE_DOWN_STREAK:
-                print(f"末尾 {tail} 件が連続 fallback — {BACKOFF//60} 分退く", flush=True)
+                print(f"末尾 {tail} 件が連続 fallback — {BACKOFF // 60} 分退く", flush=True)
                 await asyncio.sleep(BACKOFF)
             else:
                 await asyncio.sleep(REST)
-    print(f"完了: 所要 {(time.monotonic()-t0)/60:.0f} 分", flush=True)
+    print(f"完了: 所要 {(time.monotonic() - t0) / 60:.0f} 分", flush=True)
+
 
 asyncio.run(main())

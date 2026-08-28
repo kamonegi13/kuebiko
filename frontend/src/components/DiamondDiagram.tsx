@@ -25,7 +25,7 @@ function scrollToSection(id: string): void {
 function Chip({ children, mono }: { children: React.ReactNode; mono?: boolean }) {
   return (
     <span
-      className={`inline-block max-w-full truncate bg-surface-3 border border-border-subtle text-fg px-1.5 py-0.5 rounded text-[10px] leading-tight ${mono ? "font-mono" : ""}`}
+      className={`inline-block max-w-full truncate bg-surface-3 border border-border-subtle text-fg px-1.5 py-0.5 rounded text-[12px] leading-tight ${mono ? "font-mono" : ""}`}
     >
       {children}
     </span>
@@ -52,7 +52,7 @@ function VertexCard({
         accentHex ? "" : "border-border-default"
       } ${onClick ? "cursor-pointer hover:bg-surface-3 hover:border-accent-soft transition-colors" : ""} ${posClass}`}
     >
-      <div className="text-[9px] uppercase tracking-wider font-semibold mb-1" style={accentHex ? { color: accentHex } : undefined}>
+      <div className="text-[11.5px] uppercase tracking-wider font-semibold mb-1" style={accentHex ? { color: accentHex } : undefined}>
         {kicker}
       </div>
       {/* チップ領域は 2 行に固定 (max-h + overflow) してカード高さの暴れを防ぐ。
@@ -66,7 +66,7 @@ function VertexCard({
 function NumBadge({ n, hex, posClass }: { n: number; hex: string; posClass: string }) {
   return (
     <span
-      className={`absolute z-20 w-[18px] h-[18px] rounded-[3px] flex items-center justify-center text-[10px] font-bold text-white ring-1 ring-surface-1/60 ${posClass}`}
+      className={`absolute z-20 w-[18px] h-[18px] rounded-[3px] flex items-center justify-center text-[12px] font-bold text-white ring-1 ring-surface-1/60 ${posClass}`}
       style={{ backgroundColor: hex }}
     >
       {n}
@@ -131,7 +131,7 @@ export function DiamondDiagram({ activity: a }: { activity: ActorActivity }) {
           >
             <div className="w-full">
               <span className="text-sm font-bold text-fg leading-tight">{a.canonical}</span>
-              {a.family && <span className="ml-1.5 text-[10px] text-fg-muted font-mono">系統: {a.family}</span>}
+              {a.family && <span className="ml-1.5 text-[12px] text-fg-muted font-mono">系統: {a.family}</span>}
             </div>
           </VertexCard>
 
@@ -173,10 +173,10 @@ export function DiamondDiagram({ activity: a }: { activity: ActorActivity }) {
           onClick={() => scrollToSection("dm-socio")}
           className="flex items-start gap-2 p-2.5 rounded-lg bg-surface-1 border border-border-subtle text-left hover:bg-surface-2 transition-colors"
         >
-          <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white mt-0.5" style={{ backgroundColor: intentHexVal }}>1</span>
+          <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[13px] font-bold text-white mt-0.5" style={{ backgroundColor: intentHexVal }}>1</span>
           <div className="min-w-0">
             <div className="text-xs font-semibold text-fg">意図軸 <span className="text-fg-subtle font-normal">socio-political</span></div>
-            <div className="text-[10px] text-fg-subtle mb-1">攻撃者 → 被害者 の動機</div>
+            <div className="text-[12px] text-fg-subtle mb-1">攻撃者 → 被害者 の動機</div>
             {intent ? (
               <a
                 href={`/app/news?intent=${encodeURIComponent(intent)}&search=${encodeURIComponent(a.canonical)}`}
@@ -197,10 +197,10 @@ export function DiamondDiagram({ activity: a }: { activity: ActorActivity }) {
           onClick={() => scrollToSection("dm-capability")}
           className="flex items-start gap-2 p-2.5 rounded-lg bg-surface-1 border border-border-subtle text-left hover:bg-surface-2 transition-colors"
         >
-          <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white mt-0.5" style={{ backgroundColor: TECH_GRAY }}>2</span>
+          <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[13px] font-bold text-white mt-0.5" style={{ backgroundColor: TECH_GRAY }}>2</span>
           <div className="min-w-0">
             <div className="text-xs font-semibold text-fg">技術軸 <span className="text-fg-subtle font-normal">technical · TTPs</span></div>
-            <div className="text-[10px] text-fg-subtle mb-1">capability ⇄ infrastructure</div>
+            <div className="text-[12px] text-fg-subtle mb-1">capability ⇄ infrastructure</div>
             <div className="flex flex-wrap gap-1">
               {ttps.length ? ttps.map((t) => <Chip key={t} mono>{t}</Chip>) : <span className="text-fg-subtle text-xs italic">TTP 未抽出</span>}
             </div>

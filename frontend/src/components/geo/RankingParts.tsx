@@ -76,7 +76,7 @@ export function ConfidenceDot({
 export function LedgerTag() {
   return (
     <span
-      className="shrink-0 rounded-sm border border-border-subtle px-1 text-[10px] text-fg-subtle"
+      className="shrink-0 rounded-sm border border-border-subtle px-1 text-[12px] text-fg-subtle"
       title="報道(選別済)が無く、台帳(ransomware.live 等の未加工リスト)のみで観測された国"
     >
       台帳のみ

@@ -163,7 +163,7 @@ export function HistoryPage() {
       {/* Articles table (paginated) */}
       <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-surface-2 text-fg-muted text-[10.5px] uppercase tracking-wider">
+          <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
             <tr>
               <th className="text-left px-3 py-2 w-28 hidden sm:table-cell">時刻</th>
               <th className="text-left px-3 py-2 w-32 hidden md:table-cell">フィード</th>
@@ -234,8 +234,8 @@ function ArticleDetailView({ article: a }: { article: HistoryArticle }) {
       <div className="bg-surface-2 rounded p-3">
         <div className="flex items-baseline gap-2 mb-1 flex-wrap">
           <ImportanceBadge value={a.importance} />
-          <span className="text-[10px] uppercase bg-surface-3 text-fg-muted px-2 py-0.5 rounded font-mono">{vocabLabel("article_status", a.status)}</span>
-          {a.posted_channel && <span className="text-[10px] uppercase bg-accent-subtle text-accent-hover px-2 py-0.5 rounded font-mono">{chMeta(a.posted_channel).label}</span>}
+          <span className="text-[12px] uppercase bg-surface-3 text-fg-muted px-2 py-0.5 rounded font-mono">{vocabLabel("article_status", a.status)}</span>
+          {a.posted_channel && <span className="text-[12px] uppercase bg-accent-subtle text-accent-hover px-2 py-0.5 rounded font-mono">{chMeta(a.posted_channel).label}</span>}
           <span className="text-fg-subtle text-xs ml-auto">{formatJst(a.created_at)}</span>
         </div>
         <h3 className="m-0 mt-1 text-md font-semibold text-fg">{a.title}</h3>
@@ -244,16 +244,16 @@ function ArticleDetailView({ article: a }: { article: HistoryArticle }) {
 
       <div className="space-y-2 text-sm">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">URL</div>
+          <div className="text-[12px] uppercase tracking-wider text-fg-muted mb-1">URL</div>
           <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline text-xs break-all">{a.url}</a>
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">article_id</div>
+            <div className="text-[12px] uppercase tracking-wider text-fg-muted mb-1">article_id</div>
             <code className="text-fg-muted">{a.article_id}</code>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">実行</div>
+            <div className="text-[12px] uppercase tracking-wider text-fg-muted mb-1">実行</div>
             <a href={`/app/run/${a.run_id}`} className="text-accent hover:underline">#{a.run_id}</a>
           </div>
         </div>
@@ -267,7 +267,7 @@ function ArticleDetailView({ article: a }: { article: HistoryArticle }) {
         )}
       </div>
 
-      <div className="text-fg-subtle text-[11px] italic border-t border-border-subtle pt-2">
+      <div className="text-fg-subtle text-[13px] italic border-t border-border-subtle pt-2">
         要約・IoC・アクター言及などの詳細は今後表示予定です。
         現在は基本情報のみ表示しています。
       </div>
@@ -281,5 +281,5 @@ function ImportanceBadge({ value }: { value: string }) {
     value === "high" ? "bg-critical-soft text-critical" :
     value === "medium" ? "bg-warning-soft text-warning" :
     "bg-surface-3 text-fg-muted";
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${cls}`}>{vocabLabel("importance", value)}</span>;
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold ${cls}`}>{vocabLabel("importance", value)}</span>;
 }

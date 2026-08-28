@@ -101,7 +101,7 @@ export function JpCiBoardPage() {
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
             <span>{data.note}</span>
           </div>
-          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-fg-subtle px-1">
+          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[13px] text-fg-subtle px-1">
             <span className="font-semibold text-fg-muted">凡例:</span>
             <span>
               <span className="text-accent font-semibold">指定事業者</span> = 経済安保推進法 特定社会基盤事業者 + 補完 (防衛産業/衛星/主要ISP)
@@ -141,7 +141,7 @@ export function JpCiBoardPage() {
         <div className="overflow-x-auto border border-border-subtle rounded-lg bg-surface-1">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="text-[11px] text-fg-subtle border-b border-border-subtle">
+              <tr className="text-[13px] text-fg-subtle border-b border-border-subtle">
                 <th className="text-left font-semibold px-3 py-2">分野</th>
                 {MATRIX_COLUMNS.map((c) => (
                   <th
@@ -165,7 +165,7 @@ export function JpCiBoardPage() {
                   <tr className="bg-surface-2/60">
                     <td
                       colSpan={MATRIX_COLUMNS.length + 4}
-                      className="px-3 py-1 text-[10px] font-semibold text-fg-subtle tracking-wide"
+                      className="px-3 py-1 text-[12px] font-semibold text-fg-subtle tracking-wide"
                     >
                       {g.label}
                     </td>
@@ -209,7 +209,7 @@ function PostureSection({ cards }: { cards: PostureCard[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <div className="border border-border-subtle rounded-lg p-3 space-y-2 bg-surface-1">
-      <div className="text-[11px] font-bold text-fg-muted flex items-center gap-2 flex-wrap">
+      <div className="text-[13px] font-bold text-fg-muted flex items-center gap-2 flex-wrap">
         <span>事前配置の見立て (常設情報要求 — 台帳の確度の推移。観測データとは別の視点)</span>
         <a href="/app/intel/synthesis" className="text-accent hover:underline font-normal">
           台帳で検証 →
@@ -230,22 +230,22 @@ function PostureSection({ cards }: { cards: PostureCard[] }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-bold text-fg">{c.nation_label}</span>
                 {c.assessed && confTone ? (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${confTone}`}>
+                  <span className={`text-[12px] px-1.5 py-0.5 rounded border whitespace-nowrap ${confTone}`}>
                     {vocabLabel("confidence", c.confidence)}
                   </span>
                 ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle whitespace-nowrap">
+                  <span className="text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle whitespace-nowrap">
                     未評価 (証拠なし)
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-fg leading-relaxed line-clamp-3">
+              <div className="text-[13px] text-fg leading-relaxed line-clamp-3">
                 {c.assessed ? c.leading_label : "帰属済みの証拠が期間内に無い (観測の不在は不在の証明ではない)"}
               </div>
               {c.assessed && c.confidence_basis && (
-                <div className="text-[10px] text-fg-subtle">確度の根拠: {c.confidence_basis}</div>
+                <div className="text-[12px] text-fg-subtle">確度の根拠: {c.confidence_basis}</div>
               )}
-              <div className="text-[10px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-0.5">
+              <div className="text-[12px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-0.5">
                 <span>直接 (JP) {c.evidence_direct_30d} / 関連 {c.evidence_related_30d} 件 (30日)</span>
                 {c.assessed && (
                   <span>
@@ -258,7 +258,7 @@ function PostureSection({ cards }: { cards: PostureCard[] }) {
                   {[...c.trajectory].reverse().map((t) => {
                     const tcTone = CONF_TONE[t.confidence] ?? null;
                     return (
-                      <li key={t.rev} className="text-[10px] leading-relaxed flex items-start gap-1.5 flex-wrap">
+                      <li key={t.rev} className="text-[12px] leading-relaxed flex items-start gap-1.5 flex-wrap">
                         <span className="text-fg-subtle tnum shrink-0">{t.at.slice(5, 10)}</span>
                         <span className="text-fg font-medium shrink-0">
                           {vocabLabel("delta_type", t.delta_type)}
@@ -282,7 +282,7 @@ function CampaignBanner({ campaigns }: { campaigns: Campaign[] }) {
   // 世界コーパス由来の示唆情報 — 警報級 (赤枠/赤⚠) にしない (認識論的視覚階層)。
   return (
     <div className="border border-border-default bg-surface-2 rounded-lg p-3 space-y-1.5">
-      <div className="text-[11px] font-bold text-fg-muted inline-flex items-center gap-1.5">
+      <div className="text-[13px] font-bold text-fg-muted inline-flex items-center gap-1.5">
         <Globe className="h-3.5 w-3.5 text-fg-subtle" />
         横断キャンペーンの兆候 (同一アクターが複数分野で行動 = 協調的インフラ作戦の可能性)
       </div>
@@ -299,7 +299,7 @@ function CampaignBanner({ campaigns }: { campaigns: Campaign[] }) {
           </li>
         ))}
       </ul>
-      <div className="text-[10px] text-fg-subtle">
+      <div className="text-[12px] text-fg-subtle">
         ※ 情報源全体の集約による相関。報道時刻は実発生と異なり、因果は主張しない。
       </div>
     </div>
@@ -315,7 +315,7 @@ function ChangesStrip({
 }) {
   return (
     <div className="border border-border-subtle rounded-lg bg-surface-1 p-3 space-y-1.5">
-      <div className="text-[11px] font-semibold text-fg-muted">前期間からの変化</div>
+      <div className="text-[13px] font-semibold text-fg-muted">前期間からの変化</div>
       <ul className="m-0 p-0 list-none space-y-1">
         {changes.map((c) => (
           <li key={c.nisc_sector} className="text-xs text-fg flex items-start gap-2 flex-wrap">
@@ -361,14 +361,14 @@ function SectorRow({
             {s.label}
             {s.systemic_hit && <SystemicBadge />}
           </div>
-          <div className="mt-0.5 text-[11px] text-fg-subtle leading-snug line-clamp-2 pl-5">
+          <div className="mt-0.5 text-[13px] text-fg-subtle leading-snug line-clamp-2 pl-5">
             {s.headline}
           </div>
           {s.threat_behavior.length > 0 && (
             <div className="mt-1 pl-5 flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] text-fg-subtle shrink-0">世界:</span>
+              <span className="text-[12px] text-fg-subtle shrink-0">世界:</span>
               <IntentBadge intent={s.threat_behavior[0].intent} />
-              <span className="text-[10px] text-fg-muted">
+              <span className="text-[12px] text-fg-muted">
                 {s.threat_behavior[0].actor}
                 <NationTag nation={s.threat_behavior[0].nation} />
                 {s.threat_behavior.length > 1 && (
@@ -421,7 +421,7 @@ function StageCell({ count, stage }: { count: number; stage: ActiveStageId }) {
 function CoverageCell({ total, observed }: { total: number; observed: number }) {
   if (total === 0) return <span className="text-fg-subtle/50">—</span>;
   return (
-    <span className="text-[11px] tabular-nums" title={`指定 ${total} 事業者中 ${observed} 者に観測`}>
+    <span className="text-[13px] tabular-nums" title={`指定 ${total} 事業者中 ${observed} 者に観測`}>
       <span className={observed > 0 ? "text-fg font-semibold" : "text-fg-subtle/60"}>
         {observed}
       </span>
@@ -442,7 +442,7 @@ function SectorDetail({ sector: s }: { sector: SectorPosture }) {
   const empty = DETAIL_ORDER.every((st) => s.stages[st].length === 0);
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3 flex-wrap text-[11px] text-fg-subtle">
+      <div className="flex items-center gap-3 flex-wrap text-[13px] text-fg-subtle">
         {s.designated_total > 0 && (
           <span>
             指定 {s.designated_total} 事業者中{" "}
@@ -487,7 +487,7 @@ function PeripheralSection({ sector: s }: { sector: SectorPosture }) {
     <div className="border-t border-border-subtle/60 pt-2">
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 text-[11px] text-fg-subtle hover:text-fg"
+        className="inline-flex items-center gap-1 text-[13px] text-fg-subtle hover:text-fg"
         aria-expanded={open}
       >
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -509,7 +509,7 @@ function BehaviorSection({ sector: s }: { sector: SectorPosture }) {
   // 示唆レンズ — 枠/見出しを警報色にしない (認識論的視覚階層)。
   return (
     <div className="border border-border-default bg-surface-2 rounded p-2 space-y-1.5">
-      <div className="text-[11px] font-semibold text-fg-muted">
+      <div className="text-[13px] font-semibold text-fg-muted">
         世界の国家アクター行動 — この分野への先行指標 (日本の被害の名指しなし・日本への含意は示唆)
       </div>
       <ul className="m-0 p-0 list-none space-y-1">
@@ -527,19 +527,19 @@ function BehaviorRow({ b }: { b: ThreatBehavior }) {
       <IntentBadge intent={b.intent} />
       <span className="font-semibold">{b.actor}</span>
       <NationTag nation={b.nation} />
-      <span className="text-[10px] text-fg-subtle">{b.articles}報道</span>
+      <span className="text-[12px] text-fg-subtle">{b.articles}報道</span>
       {b.ics && (
         <span
-          className="text-[10px] px-1 rounded bg-warning-soft text-warning"
+          className="text-[12px] px-1 rounded bg-warning-soft text-warning"
           title="制御システム(ICS)への攻撃手口"
         >
           ICS-TTP
         </span>
       )}
-      {b.spike && <span className="text-[10px] text-critical font-semibold">急増</span>}
-      {b.is_new && <span className="text-[10px] text-accent font-semibold">新規</span>}
+      {b.spike && <span className="text-[12px] text-critical font-semibold">急増</span>}
+      {b.is_new && <span className="text-[12px] text-accent font-semibold">新規</span>}
       {b.jp_targeted && (
-        <span className="text-[10px] px-1 rounded bg-critical/15 text-critical font-semibold">
+        <span className="text-[12px] px-1 rounded bg-critical/15 text-critical font-semibold">
           日本標的
         </span>
       )}
@@ -559,7 +559,7 @@ function StageSection({
   const color = STAGE_STYLE[stage];
   return (
     <div>
-      <div className="text-[11px] font-semibold mb-1" style={{ color }}>
+      <div className="text-[13px] font-semibold mb-1" style={{ color }}>
         {vocabLabel("jpci_stage", stage)}
         {total > items.length && (
           <span className="text-fg-subtle font-normal">
@@ -587,13 +587,13 @@ function ItemRow({ item }: { item: BoardItem }) {
         <SystemDomainBadge domain={item.system_domain} />
         <PrecisionBadge level={item.precision} />
         {item.kev && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-critical/15 text-critical font-semibold">
+          <span className="text-[12px] px-1.5 py-0.5 rounded bg-critical/15 text-critical font-semibold">
             KEV
           </span>
         )}
         <ConfidencePill confidence={item.confidence} />
         {(item.report_count ?? 0) > 1 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-subtle">
+          <span className="text-[12px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-subtle">
             {item.report_count}報道
           </span>
         )}
@@ -613,7 +613,7 @@ function ItemRow({ item }: { item: BoardItem }) {
           <span>{item.title}</span>
         )}
       </div>
-      <div className="mt-0.5 text-[11px] text-fg-subtle flex flex-wrap gap-x-2">
+      <div className="mt-0.5 text-[13px] text-fg-subtle flex flex-wrap gap-x-2">
         {item.operator && <span>事業者: {item.operator}</span>}
         {item.cves && item.cves.length > 0 && <span>{item.cves.join(", ")}</span>}
         {item.event_date && <span>発生: {item.event_date}</span>}

@@ -11,7 +11,7 @@ export function ConfidenceBadge({ sb }: { sb: SourceBasis | undefined | null }) 
     return (
       <span
         title={sb.reason || "引用元の記事が見つからないため出典を検証できません"}
-        className="text-[10px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle shrink-0 whitespace-nowrap"
+        className="text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle shrink-0 whitespace-nowrap"
       >
         出典未照合
       </span>
@@ -31,7 +31,7 @@ export function ConfidenceBadge({ sb }: { sb: SourceBasis | undefined | null }) 
   return (
     <span
       title={sb.reason}
-      className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap ${tone}`}
+      className={`text-[12px] px-1.5 py-0.5 rounded border shrink-0 whitespace-nowrap ${tone}`}
     >
       {label}
       {suffix}

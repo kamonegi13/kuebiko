@@ -110,7 +110,7 @@ function MultiSelect({
             disabled={readOnly}
             onClick={() => toggle(o)}
             title={o}
-            className={`rounded border px-1.5 py-0.5 text-[11px] ${on ? "border-accent bg-accent-soft text-accent-hover" : "border-border-subtle bg-surface-2 text-fg-subtle hover:bg-surface-3"}`}
+            className={`rounded border px-1.5 py-0.5 text-[13px] ${on ? "border-accent bg-accent-soft text-accent-hover" : "border-border-subtle bg-surface-2 text-fg-subtle hover:bg-surface-3"}`}
           >
             {label(o)}
           </button>
@@ -219,7 +219,7 @@ function NegToggle({
   onChange: (n: boolean) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-1 text-[11px] text-fg-subtle">
+    <label className="inline-flex items-center gap-1 text-[13px] text-fg-subtle">
       <input
         type="checkbox"
         checked={negated}
@@ -357,7 +357,7 @@ function GroupEditor({
       </div>
       <div className="space-y-1.5 border-l border-border-subtle pl-2">
         {group.children.length === 0 && (
-          <div className="text-[11px] text-fg-subtle">条件なし = すべての記事が該当</div>
+          <div className="text-[13px] text-fg-subtle">条件なし = すべての記事が該当</div>
         )}
         {group.children.map((c, i) => (
           <ConditionEditor
@@ -375,14 +375,14 @@ function GroupEditor({
             <button
               type="button"
               onClick={addLeaf}
-              className="rounded border border-border-default px-2 py-0.5 text-[11px] text-fg-muted hover:text-accent hover:border-accent-soft"
+              className="rounded border border-border-default px-2 py-0.5 text-[13px] text-fg-muted hover:text-accent hover:border-accent-soft"
             >
               + 条件
             </button>
             <button
               type="button"
               onClick={addGroup}
-              className="rounded border border-border-default px-2 py-0.5 text-[11px] text-fg-muted hover:text-accent hover:border-accent-soft"
+              className="rounded border border-border-default px-2 py-0.5 text-[13px] text-fg-muted hover:text-accent hover:border-accent-soft"
             >
               + グループ
             </button>
@@ -426,19 +426,19 @@ function ConditionEditor({
   if (cond.kind === "raw") {
     return (
       <div className="flex items-center gap-1.5">
-        <span className="text-[11px] text-warning">JSON を直接入力:</span>
+        <span className="text-[13px] text-warning">JSON を直接入力:</span>
         <input
           value={cond.json}
           disabled={readOnly}
           onChange={(e) => onChange({ kind: "raw", json: e.target.value })}
-          className="min-w-[200px] flex-1 rounded border border-border-subtle bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-fg"
+          className="min-w-[200px] flex-1 rounded border border-border-subtle bg-surface-2 px-1.5 py-0.5 font-mono text-[13px] text-fg"
         />
         <RemoveBtn readOnly={readOnly} onRemove={onRemove} />
       </div>
     );
   }
   // always
-  return <div className="text-[11px] text-fg-subtle">すべての記事が該当</div>;
+  return <div className="text-[13px] text-fg-subtle">すべての記事が該当</div>;
 }
 
 // root を編集用に group へ寄せる (leaf/always/raw を group(all) で包む)。

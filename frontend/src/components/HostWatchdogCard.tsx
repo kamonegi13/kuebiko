@@ -49,7 +49,7 @@ export function HostWatchdogCard({ readOnly }: { readOnly: boolean }) {
           <HeartPulse className="h-4 w-4 text-fg-muted" />
           <h3 className="m-0 text-sm font-semibold text-fg">ホスト復旧 watchdog</h3>
           {enabled && meta && (
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${meta.cls}`}>
+            <span className={`px-1.5 py-0.5 rounded text-[12px] font-semibold ${meta.cls}`}>
               {meta.text}
             </span>
           )}
@@ -72,19 +72,19 @@ export function HostWatchdogCard({ readOnly }: { readOnly: boolean }) {
         )}
       </div>
 
-      <p className="m-0 text-[11px] text-fg-subtle leading-relaxed">
+      <p className="m-0 text-[13px] text-fg-subtle leading-relaxed">
         スリープからの復帰に失敗して Docker が固まったとき、自動で復旧します。スリープ自体は
         止めません (収集は復帰後の追い付きで自己回復し、遅れるのは配信時刻だけです)。
       </p>
 
       {!installed && (
-        <div className="bg-surface-2 rounded p-2.5 text-[11px] text-fg-muted space-y-1">
+        <div className="bg-surface-2 rounded p-2.5 text-[13px] text-fg-muted space-y-1">
           <div className="text-fg">未導入です (この端末では動いていません)。</div>
           <div>
             導入するにはターミナルで次を実行してください (UI はコンテナ内のため
             LaunchAgent を登録できません):
           </div>
-          <code className="block bg-surface-3 rounded px-2 py-1 font-mono text-[10.5px] break-all">
+          <code className="block bg-surface-3 rounded px-2 py-1 font-mono text-[12.5px] break-all">
             bash scripts/install_orbstack_watchdog_launchagent.sh
           </code>
           <div>macOS 専用です。Linux サーバでは導入不要 (何も動きません)。</div>
@@ -92,7 +92,7 @@ export function HostWatchdogCard({ readOnly }: { readOnly: boolean }) {
       )}
 
       {installed && (
-        <div className="space-y-1.5 text-[11px]">
+        <div className="space-y-1.5 text-[13px]">
           <Row label="最終チェック">
             {data?.checked_at ? formatJst(data.checked_at) : "—"}
           </Row>
@@ -116,13 +116,13 @@ export function HostWatchdogCard({ readOnly }: { readOnly: boolean }) {
           {(data?.log_tail?.length ?? 0) > 0 && (
             <button
               onClick={() => setShowLog((v) => !v)}
-              className="text-accent hover:underline text-[11px]"
+              className="text-accent hover:underline text-[13px]"
             >
               {showLog ? "履歴を隠す" : `履歴を表示 (${data?.log_tail.length} 行)`}
             </button>
           )}
           {showLog && (
-            <pre className="bg-surface-2 rounded p-2 text-[10px] font-mono text-fg-muted overflow-x-auto max-h-48">
+            <pre className="bg-surface-2 rounded p-2 text-[12px] font-mono text-fg-muted overflow-x-auto max-h-48">
               {data?.log_tail.join("\n")}
             </pre>
           )}

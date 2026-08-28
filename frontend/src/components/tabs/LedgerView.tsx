@@ -44,11 +44,11 @@ export function LedgerView() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] text-fg-subtle">
+        <div className="text-[13px] text-fg-subtle">
           追跡中の情勢 {items.length} 件 — 重要度 (使命序列 × 変化 × PIR × 日本関連 × 確度) 順。
           判定・確度・変化は状況総括処理が台帳更新で刻む (ここは読み取りのみ)。
         </div>
-        <label className="text-[11px] text-fg-subtle flex items-center gap-1.5 cursor-pointer">
+        <label className="text-[13px] text-fg-subtle flex items-center gap-1.5 cursor-pointer">
           <input
             type="checkbox"
             checked={showDormant}
@@ -101,18 +101,18 @@ function SituationCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {s.kind === "standing" && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded border border-accent/30 bg-accent-subtle text-accent shrink-0">
+              <span className="text-[12px] px-1.5 py-0.5 rounded border border-accent/30 bg-accent-subtle text-accent shrink-0">
                 常設
               </span>
             )}
             <span className="text-[13px] font-medium">{s.title}</span>
             {delta && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-subtle text-accent-hover">
+              <span className="text-[12px] px-1.5 py-0.5 rounded bg-accent-subtle text-accent-hover">
                 {delta}
               </span>
             )}
           </div>
-          <div className="mt-1.5 text-[11px] text-fg-subtle flex flex-wrap gap-3">
+          <div className="mt-1.5 text-[13px] text-fg-subtle flex flex-wrap gap-3">
             <span>{s.domain}</span>
             <span>{vocabLabel("situation_status", s.status)}</span>
             <span className={confTone}>{vocabLabel("confidence", s.latest?.confidence)}</span>
@@ -126,10 +126,10 @@ function SituationCard({
             {s.pir_ids.length > 0 && <span>PIR {s.pir_ids.length}</span>}
           </div>
           {s.latest?.implication && (
-            <div className="mt-1.5 text-[11px] text-fg-default">含意: {s.latest.implication}</div>
+            <div className="mt-1.5 text-[13px] text-fg-default">含意: {s.latest.implication}</div>
           )}
         </div>
-        <span className="text-[10px] text-fg-subtle tnum shrink-0">{s.salience}</span>
+        <span className="text-[12px] text-fg-subtle tnum shrink-0">{s.salience}</span>
       </button>
       {open && <SituationDetailPane id={s.situation_id} />}
     </div>
@@ -141,7 +141,7 @@ function SituationDetailPane({ id }: { id: string }) {
     queryKey: ["situation", id],
     queryFn: () => situationsApi.detail(id),
   });
-  if (isLoading) return <div className="text-fg-subtle text-[11px] px-3.5 pb-3">読込中…</div>;
+  if (isLoading) return <div className="text-fg-subtle text-[13px] px-3.5 pb-3">読込中…</div>;
   if (!data) return null;
   return (
     <div className="px-3.5 pb-3.5 space-y-3 border-t border-border-subtle pt-3">
@@ -155,14 +155,14 @@ function SituationDetailPane({ id }: { id: string }) {
 function RevisionTimeline({ revisions }: { revisions: SituationRevision[] }) {
   return (
     <div>
-      <h5 className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
+      <h5 className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
         判定の推移
       </h5>
       <div className="space-y-1.5">
         {[...revisions].reverse().map((r) => {
           const confTone = CONF_TONE[r.confidence] ?? "";
           return (
-            <div key={r.rev} className="text-[11px] flex gap-2 items-baseline">
+            <div key={r.rev} className="text-[13px] flex gap-2 items-baseline">
               <span className="text-fg-subtle tnum shrink-0">#{r.rev}</span>
               <span className="text-fg-subtle shrink-0">{fmtDate(r.created_at)}</span>
               <span className="px-1 rounded bg-surface-2 shrink-0">
@@ -185,10 +185,10 @@ function RelationsList({ detail }: { detail: SituationDetail }) {
   if (detail.relations.length === 0) return null;
   return (
     <div>
-      <h5 className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
+      <h5 className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
         関係する情勢 (機械的に導出 — 因果は主張しない)
       </h5>
-      <ul className="text-[11px] space-y-1">
+      <ul className="text-[13px] space-y-1">
         {detail.relations.map((r, i) => (
           <li key={i}>
             {vocabLabel("situation_rel_type", r.rel_type)} ({r.basis}): {r.other_title || "(不明)"}
@@ -207,10 +207,10 @@ function EvidenceList({ detail }: { detail: SituationDetail }) {
   return (
     <div className="space-y-2">
       <div>
-        <h5 className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
+        <h5 className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
           根拠となる証拠 — ACH 評価済み ({assessed.length} 件)
         </h5>
-        <ul className="text-[11px] space-y-1.5">
+        <ul className="text-[13px] space-y-1.5">
           {assessed.slice(0, 15).map((e, i) => (
             <li key={i} className="flex gap-2 items-baseline">
               <span
@@ -251,10 +251,10 @@ function EvidenceList({ detail }: { detail: SituationDetail }) {
       </div>
       {unassessed.length > 0 && (
         <div>
-          <h5 className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
+          <h5 className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">
             未評価の割当記事 ({unassessed.length} 件) — ACH は未引用 (中立の証拠ではない)
           </h5>
-          <ul className="text-[11px] space-y-1">
+          <ul className="text-[13px] space-y-1">
             {unassessed.slice(0, 10).map((e, i) => (
               <li key={i} className="flex gap-2 items-baseline text-fg-muted">
                 <span className="shrink-0 px-1 rounded bg-surface-2 text-fg-subtle">

@@ -20,7 +20,7 @@ export function IntentBadge({ intent }: { intent: IntentId }) {
   const color = INTENT_COLOR[intent];
   return (
     <span
-      className="text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap"
+      className="text-[12px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap"
       style={{ color, border: `1px solid ${color}40` }}
     >
       {intentLabel(intent) || intent}
@@ -32,7 +32,7 @@ export function IntentBadge({ intent }: { intent: IntentId }) {
 // 複製辞書によるドリフトを防ぐ (DiamondDiagram.tsx と同じ出典)。
 export function NationTag({ nation }: { nation: string }) {
   const label = nationMeta(nation)?.label ?? nation.toUpperCase();
-  return <span className="text-[10px] text-fg-muted font-semibold">{label}</span>;
+  return <span className="text-[12px] text-fg-muted font-semibold">{label}</span>;
 }
 
 /** 事業者判定層: 指定事業者 (名簿) / 分野該当 (種別サフィックス型判定)。 */
@@ -41,7 +41,7 @@ export function OperatorTierBadge({ tier }: { tier: OperatorTier | undefined }) 
   const isDesignated = tier === "designated";
   return (
     <span
-      className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+      className={`text-[12px] px-1.5 py-0.5 rounded font-semibold ${
         isDesignated
           ? "bg-accent/15 text-accent border border-accent/40"
           : "border border-border-subtle text-fg-muted"
@@ -56,7 +56,7 @@ export function OperatorTierBadge({ tier }: { tier: OperatorTier | undefined }) 
 export function SystemicBadge() {
   return (
     <span
-      className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-critical/20 text-critical border border-critical/50"
+      className="text-[12px] px-1.5 py-0.5 rounded font-bold bg-critical/20 text-critical border border-critical/50"
       title="決済清算・取引所・DNS 等の集中点。侵害の影響が分野横断に波及する"
     >
       基幹ノード
@@ -78,7 +78,7 @@ export function StageBadge({ stage }: { stage: StageId }) {
   const color = STAGE_STYLE[stage];
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded border font-semibold whitespace-nowrap"
+      className="inline-flex items-center gap-1.5 text-[13px] px-2 py-0.5 rounded border font-semibold whitespace-nowrap"
       style={{
         color,
         backgroundColor: `${color}1a`,
@@ -92,10 +92,10 @@ export function StageBadge({ stage }: { stage: StageId }) {
 }
 
 export function DeltaBadge({ delta }: { delta: -1 | 0 | 1 | null }) {
-  if (delta === null) return <span className="text-[11px] text-fg-subtle">—</span>;
-  if (delta > 0) return <span className="text-[11px] font-bold text-critical">▲ 上昇</span>;
-  if (delta < 0) return <span className="text-[11px] font-bold text-accent">▼ 後退</span>;
-  return <span className="text-[11px] text-fg-subtle">→</span>;
+  if (delta === null) return <span className="text-[13px] text-fg-subtle">—</span>;
+  if (delta > 0) return <span className="text-[13px] font-bold text-critical">▲ 上昇</span>;
+  if (delta < 0) return <span className="text-[13px] font-bold text-accent">▼ 後退</span>;
+  return <span className="text-[13px] text-fg-subtle">→</span>;
 }
 
 // 色のみ保持。ラベルは backend vocab "jpci_domain" (vocabLabel) を SSoT に解決。
@@ -110,7 +110,7 @@ export function SystemDomainBadge({ domain }: { domain: SystemDomain }) {
   const color = DOMAIN_COLOR[domain];
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
+      className="inline-flex items-center gap-1 text-[12px] px-1.5 py-0.5 rounded"
       style={{ color, backgroundColor: `${color}1f` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
@@ -142,7 +142,7 @@ export function SystemDomainMix({
       {order
         .filter((k) => mix[k] > 0)
         .map((k) => (
-          <span key={k} className="text-[10px] text-fg-subtle">
+          <span key={k} className="text-[12px] text-fg-subtle">
             {vocabLabel("jpci_domain", k)} {mix[k]}
           </span>
         ))}
@@ -153,7 +153,7 @@ export function SystemDomainMix({
 export function PrecisionBadge({ level }: { level: Precision }) {
   // ラベルは backend vocab "jpci_precision" (vocabLabel) を SSoT に解決。
   return (
-    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border-subtle text-fg-subtle">
+    <span className="text-[12px] px-1.5 py-0.5 rounded border border-border-subtle text-fg-subtle">
       {vocabLabel("jpci_precision", level)}
     </span>
   );
@@ -165,7 +165,7 @@ export function StatusBadge({ status }: { status: "actual" | "potential" }) {
     ? "bg-critical/10 text-critical"
     : "bg-warning-soft text-warning";
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${cls}`}>
+    <span className={`text-[12px] px-1.5 py-0.5 rounded font-semibold ${cls}`}>
       {isActual ? "実被害" : "潜在"}
     </span>
   );
@@ -182,5 +182,5 @@ export function ConfidencePill({ confidence }: { confidence: "high" | "medium" |
         : confidence === "medium"
           ? "text-warning"
           : "text-fg-subtle";
-  return <span className={`text-[10px] ${cls}`}>{label}</span>;
+  return <span className={`text-[12px] ${cls}`}>{label}</span>;
 }

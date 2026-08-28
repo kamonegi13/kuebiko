@@ -222,7 +222,7 @@ export function JobTimeline({
                   type="button"
                   onClick={() => setShowUpkeep((v) => !v)}
                   title="定常キュー処理 (時刻に運用上の意味がない補助ジョブ)。クリックで展開/折畳"
-                  className="inline-flex items-center gap-1 text-[10px] rounded px-1.5 py-0.5 border bg-surface-2 text-fg-subtle border-border-subtle hover:text-fg transition-colors"
+                  className="inline-flex items-center gap-1 text-[12px] rounded px-1.5 py-0.5 border bg-surface-2 text-fg-subtle border-border-subtle hover:text-fg transition-colors"
                 >
                   {showUpkeep ? (
                     <ChevronDown className="h-3 w-3" aria-hidden />
@@ -307,7 +307,7 @@ export function JobTimeline({
                 type="button"
                 onClick={() => setShowUpkeep(true)}
                 title="展開して個別の実行タイミングを表示"
-                className="flex h-full w-full items-center px-2 text-[10px] text-fg-subtle hover:text-fg-muted text-left"
+                className="flex h-full w-full items-center px-2 text-[12px] text-fg-subtle hover:text-fg-muted text-left"
               >
                 <span className="truncate">{upkeepSummary}</span>
               </button>

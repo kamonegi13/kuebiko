@@ -139,7 +139,7 @@ export function RunDetailPage({ runId }: { runId: number }) {
           )}
           {lines.map((ln) => (
             <div key={ln.seq} className="flex gap-3">
-              <span className="text-fg-faint shrink-0 tnum text-[10px] mt-0.5 select-none">{ln.seq}</span>
+              <span className="text-fg-faint shrink-0 tnum text-[12px] mt-0.5 select-none">{ln.seq}</span>
               <span className={lineColor(ln.line)}>{ln.line}</span>
             </div>
           ))}

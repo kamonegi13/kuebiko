@@ -129,7 +129,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             placeholder="ページ / アクター / PIR を検索…"
             className="flex-1 bg-transparent text-[15px] text-fg placeholder:text-fg-subtle focus:outline-none"
           />
-          <kbd className="text-[10px] font-mono text-fg-subtle bg-surface-3 px-1.5 py-0.5 rounded">esc</kbd>
+          <kbd className="text-[12px] font-mono text-fg-subtle bg-surface-3 px-1.5 py-0.5 rounded">esc</kbd>
         </div>
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1.5">
@@ -142,7 +142,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
               return (
                 <div key={it.key}>
                   {showHeader && (
-                    <div className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">{it.group}</div>
+                    <div className="px-3.5 pt-2 pb-1 text-[12px] font-semibold uppercase tracking-wider text-fg-subtle">{it.group}</div>
                   )}
                   <button
                     data-idx={idx}
@@ -153,7 +153,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     }`}
                   >
                     <span className={`flex-1 min-w-0 truncate text-sm ${idx === active ? "text-accent-hover font-medium" : "text-fg"}`}>{it.label}</span>
-                    {it.sub && <span className="text-[11px] text-fg-subtle font-mono truncate max-w-[180px] shrink-0">{it.sub}</span>}
+                    {it.sub && <span className="text-[13px] text-fg-subtle font-mono truncate max-w-[180px] shrink-0">{it.sub}</span>}
                   </button>
                 </div>
               );
@@ -161,7 +161,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-3.5 h-8 border-t border-border-subtle text-[10px] text-fg-subtle">
+        <div className="flex items-center gap-3 px-3.5 h-8 border-t border-border-subtle text-[12px] text-fg-subtle">
           <span><kbd className="font-mono">↑↓</kbd> 移動</span>
           <span><kbd className="font-mono">↵</kbd> 開く</span>
           <span className="ml-auto">{items.length} 件</span>

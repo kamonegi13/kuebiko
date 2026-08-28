@@ -161,7 +161,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
         <div className="space-y-3">
           {isNew && (
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">PIR id (英数 + アンダースコア)</label>
+              <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">PIR id (英数 + アンダースコア)</label>
               <input
                 type="text"
                 value={pir.id}
@@ -172,7 +172,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
             </div>
           )}
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">タイトル</label>
+            <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">タイトル</label>
             <input
               type="text"
               value={pir.title}
@@ -182,7 +182,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
             />
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">
+            <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">
               説明文 (この文章を元に AI が条件を自動生成します)
             </label>
             <textarea
@@ -244,14 +244,14 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               />
               <span>AI の主題判定を必須にする</span>
             </label>
-            <span className="text-[10px] text-fg-subtle">
+            <span className="text-[12px] text-fg-subtle">
               上の条件を「候補の絞り込み」とし、記事が本当にこの PIR を主題としているかを
               AI が確定します (判定は夜間の自動処理後に反映。プレビューは候補のみ)。
             </span>
           </div>
           {pir.llm_judge.enabled && (
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">
+              <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">
                 判定基準 (空欄ならタイトル + 説明文が基準になります)
               </label>
               <textarea
@@ -301,7 +301,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
                 >
                   条件に反映
                 </button>
-                <span className="text-[10px] text-fg-subtle">
+                <span className="text-[12px] text-fg-subtle">
                   反映後にプレビューで件数を確認してから保存してください (構造は保存時にも検証されます)。
                 </span>
               </div>
@@ -314,7 +314,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
       {/* Step 4-5: 6 カテゴリ別 structured */}
       <Section title="重要シグナル (補助情報 — 脅威アクター連携・旧方式の予備)">
         {pir.match && (
-          <div className="text-[10px] text-fg-subtle mb-2">
+          <div className="text-[12px] text-fg-subtle mb-2">
             照合は上の「照合条件」で行われます。この欄は補助用途
             (攻撃主体は脅威アクター画面との連携に使用。他は旧方式に切り戻した場合の予備) です。
           </div>
@@ -413,7 +413,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               }}
               onChange={(v) => updatePir({ target_importance: v as RoutingImportance })}
             />
-            <div className="text-[10px] text-fg-subtle italic mt-1">
+            <div className="text-[12px] text-fg-subtle italic mt-1">
               high / medium にすると、この PIR が重要度判定の基準として使われます。
               "auto" は基準に使いません。<strong>配信先チャンネルはここでは決めません</strong>
               (チャンネル決定は <a href="/app/flow" className="text-accent hover:underline not-italic">情報フロー</a> の
@@ -432,7 +432,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               <span>有効</span>
             </label>
             <div>
-              <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">タイトル</label>
+              <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">タイトル</label>
               <input
                 type="text"
                 value={pir.spotlight.title}
@@ -546,7 +546,7 @@ function ChipEditor({
   return (
     <div className={className}>
       <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-fg-muted">{label}</span>
+        <span className="text-[12px] uppercase tracking-wider text-fg-muted">{label}</span>
         {confidence && (
           <span title={`確度: ${confidence}`} className={`w-1.5 h-1.5 rounded-full ${confDot}`} />
         )}
@@ -598,7 +598,7 @@ function ChipEditor({
         )}
       </div>
       {hasWarn && warnHint && (
-        <p className="m-0 mt-1 text-[11px] text-warning">{warnHint}</p>
+        <p className="m-0 mt-1 text-[13px] text-warning">{warnHint}</p>
       )}
     </div>
   );
@@ -619,7 +619,7 @@ function Selector({
 }) {
   return (
     <div>
-      <label className="block text-[10px] uppercase tracking-wider text-fg-muted mb-1">{label}</label>
+      <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}

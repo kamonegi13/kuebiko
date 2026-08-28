@@ -22,12 +22,12 @@ function PmesiiHeadlines({ per }: { per: number }) {
             <HeadlineGroup key={c.axis_id} label={c.display}
               badge={
                 c.is_degraded ? (
-                  <span className="text-[9px] px-1 rounded bg-critical-soft text-critical" title="収集量が平常の2割未満に低下 — 事象がないのではなく取りこぼしの可能性">供給劣化</span>
+                  <span className="text-[11.5px] px-1 rounded bg-critical-soft text-critical" title="収集量が平常の2割未満に低下 — 事象がないのではなく取りこぼしの可能性">供給劣化</span>
                 ) : c.is_spike ? (
-                  <span className="text-[9px] px-1 rounded bg-warning-soft text-warning">急増</span>
+                  <span className="text-[11.5px] px-1 rounded bg-warning-soft text-warning">急増</span>
                 ) : undefined
               }>
-              {c.recent_incidents.length === 0 ? <div className="text-fg-subtle text-[11px] italic pl-1">—</div> : (
+              {c.recent_incidents.length === 0 ? <div className="text-fg-subtle text-[13px] italic pl-1">—</div> : (
                 <ul className="space-y-1">
                   {c.recent_incidents.slice(0, per).map((it, i) => (
                     <HeadlineLine key={it.url || i} title={it.title} url={it.url} importance={it.importance} feed={it.feed_title} />
@@ -56,7 +56,7 @@ function PirHeadlines({ per }: { per: number }) {
           {items.map((it) => (
             <HeadlineGroup key={it.pir_id}
               label={it.title}
-              badge={<span className="text-[9px] text-fg-subtle">(直近7日 {it.match_count_7d}件)</span>}>
+              badge={<span className="text-[11.5px] text-fg-subtle">(直近7日 {it.match_count_7d}件)</span>}>
               <ul className="space-y-1">
                 {(it.headlines ?? []).slice(0, per).map((h, i) => (
                   <HeadlineLine key={h.url || i} title={h.title} url={h.url} importance={h.importance} feed={h.feed_title} />

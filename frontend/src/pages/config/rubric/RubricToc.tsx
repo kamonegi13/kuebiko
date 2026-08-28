@@ -63,7 +63,7 @@ export function RubricToc({
         />
       </div>
 
-      <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex items-center gap-2 text-[13px]">
         <button type="button" onClick={onExpandAll} className="text-accent hover:underline">
           すべて開く
         </button>
@@ -74,14 +74,14 @@ export function RubricToc({
       </div>
 
       <div className="space-y-1">
-        <div className="text-[10.5px] uppercase tracking-wide text-fg-subtle">統計の対象期間</div>
+        <div className="text-[12.5px] uppercase tracking-wide text-fg-subtle">統計の対象期間</div>
         <div className="inline-flex rounded-md border border-border-subtle bg-surface-2 p-0.5">
           {STATS_DAY_OPTS.map((d) => (
             <button
               key={d}
               type="button"
               onClick={() => onStatsDaysChange(d)}
-              className={`rounded-sm px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              className={`rounded-sm px-2.5 py-1 text-[13px] font-medium transition-colors ${
                 statsDays === d ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg"
               }`}
             >

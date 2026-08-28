@@ -85,17 +85,17 @@ export function RubricExampleCard({
           {example.label ? `（${example.label}）` : ""}
         </span>
         {changed && (
-          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent-hover">
+          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[12px] font-semibold text-accent-hover">
             ● 変更あり
           </span>
         )}
         {errorCount > 0 && (
-          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[12px] font-semibold text-critical">
             ⚠ {errorCount}
           </span>
         )}
         {errorCount === 0 && warnCount > 0 && (
-          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[10px] font-semibold text-warning">
+          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[12px] font-semibold text-warning">
             ⚠ {warnCount}
           </span>
         )}
@@ -103,7 +103,7 @@ export function RubricExampleCard({
         {!open && mismatchKeys.length > 0 && (
           <span className="ml-auto flex flex-wrap gap-1">
             {mismatchKeys.map((k) => (
-              <span key={k} className="rounded-sm bg-warning-soft px-1.5 py-px font-mono text-[10px] text-warning">
+              <span key={k} className="rounded-sm bg-warning-soft px-1.5 py-px font-mono text-[12px] text-warning">
                 ⚠ {k}
               </span>
             ))}
@@ -127,13 +127,13 @@ export function RubricExampleCard({
               jsonError ? "border-critical" : "border-border-subtle"
             }`}
           />
-          {jsonError && <div className="text-[11px] text-critical">JSON が不正です: {jsonError}</div>}
+          {jsonError && <div className="text-[13px] text-critical">JSON が不正です: {jsonError}</div>}
           {!jsonError && mismatchKeys.length > 0 && (
             <div className="space-y-0.5">
               {mismatchKeys.map((k) => {
                 const line = findKeyLine(example.json_text, k);
                 return (
-                  <div key={k} className="text-[11px] text-warning">
+                  <div key={k} className="text-[13px] text-warning">
                     ⚠ <span className="font-mono">{k}</span>
                     {line !== null && ` — ${line} 行目`}
                     <span className="text-fg-subtle"> (出力スキーマの有効値ではありません)</span>
@@ -145,14 +145,14 @@ export function RubricExampleCard({
           {otherIssues.map((issue, i) => (
             <div
               key={`${issue.code}-${i}`}
-              className={`rounded px-1.5 py-0.5 text-[11px] ${
+              className={`rounded px-1.5 py-0.5 text-[13px] ${
                 issue.severity === "error" ? "bg-critical-soft text-critical" : "bg-warning-soft text-warning"
               }`}
             >
               {issue.message}
             </div>
           ))}
-          <div className="flex items-center justify-between text-[10px]">
+          <div className="flex items-center justify-between text-[12px]">
             <button
               type="button"
               onClick={onRevert}

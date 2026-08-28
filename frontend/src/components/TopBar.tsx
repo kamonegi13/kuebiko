@@ -20,7 +20,7 @@ export function TopBar({ pathname, onOpenPalette }: TopBarProps) {
       <nav aria-label="現在地" className="flex items-center gap-1.5 min-w-0">
         {crumb ? (
           <>
-            <span className="hidden sm:inline text-[12px] text-fg-subtle">{crumb.group}</span>
+            <span className="hidden sm:inline text-[13.5px] text-fg-subtle">{crumb.group}</span>
             <ChevronRight size={13} className="hidden sm:block text-fg-subtle shrink-0" />
             <span className="flex items-center gap-1.5 min-w-0">
               <crumb.item.Icon size={15} className="text-accent shrink-0" />
@@ -40,8 +40,8 @@ export function TopBar({ pathname, onOpenPalette }: TopBarProps) {
         aria-label="検索"
       >
         <Search size={15} />
-        <span className="hidden md:inline text-[12px]">検索…</span>
-        <kbd className="hidden md:inline text-[10px] font-mono bg-surface-3 px-1.5 py-0.5 rounded ml-1">⌘K</kbd>
+        <span className="hidden md:inline text-[13.5px]">検索…</span>
+        <kbd className="hidden md:inline text-[12px] font-mono bg-surface-3 px-1.5 py-0.5 rounded ml-1">⌘K</kbd>
       </button>
 
       <NotificationsBell />

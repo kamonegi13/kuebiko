@@ -47,7 +47,7 @@ export function EventNewsWidget({ config }: WidgetProps) {
               >
                 {it.headline}
               </button>
-              <div className="flex flex-wrap items-center gap-2 text-[10px] mt-0.5">
+              <div className="flex flex-wrap items-center gap-2 text-[12px] mt-0.5">
                 <span className={TONE[it.importance] ?? "text-fg-subtle"}>
                   {vocabLabel("importance", it.importance)}
                 </span>

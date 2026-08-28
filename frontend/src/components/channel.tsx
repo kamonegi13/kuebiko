@@ -63,7 +63,7 @@ export function ChannelChip({ meta }: { meta: ChannelMeta }) {
   const color = channelColor(meta.id);
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-semibold"
+      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[13px] font-semibold"
       style={{ color, backgroundColor: `${color}1f` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />

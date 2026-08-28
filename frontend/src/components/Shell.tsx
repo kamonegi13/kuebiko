@@ -103,7 +103,7 @@ function renderTabControls(
           <FamilySelect f={f} families={families} />
           <Chip on={f.japan_only} onClick={() => f.toggleChip("japan_only")}>JP</Chip>
           <Chip on={f.high_only} onClick={() => f.toggleChip("high_only")}>高</Chip>
-          <span className="ml-auto text-[10.5px] tnum text-fg-subtle bg-surface-2 border border-border-subtle rounded-md h-7 leading-7 px-2">
+          <span className="ml-auto text-[12.5px] tnum text-fg-subtle bg-surface-2 border border-border-subtle rounded-md h-7 leading-7 px-2">
             系統 <span className="text-fg font-semibold">{Object.keys(families).length}</span>
           </span>
         </>

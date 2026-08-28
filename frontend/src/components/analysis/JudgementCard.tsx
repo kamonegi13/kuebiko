@@ -134,7 +134,7 @@ export function JudgementCard({ j, title = "Diamond / 判定" }: { j: Judgement;
                   <span key={i} className="block">
                     {it.text}
                     {it.sourceIndex != null && (
-                      <span className="align-super text-[10px] font-mono text-fg-subtle ml-0.5">
+                      <span className="align-super text-[12px] font-mono text-fg-subtle ml-0.5">
                         [{it.sourceIndex}]
                       </span>
                     )}

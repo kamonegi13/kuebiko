@@ -92,7 +92,7 @@ export function EventNoteEditor({ itemId }: { itemId: string }) {
         </div>
       )}
       {data?.updated_at && !dirty && (
-        <div className="text-fg-subtle text-[11px]">最終更新 {data.updated_at.slice(0, 16).replace("T", " ")}</div>
+        <div className="text-fg-subtle text-[13px]">最終更新 {data.updated_at.slice(0, 16).replace("T", " ")}</div>
       )}
     </div>
   );

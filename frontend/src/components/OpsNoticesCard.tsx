@@ -36,36 +36,36 @@ export function OpsNoticesCard() {
         <h3 className="m-0 text-sm font-semibold text-fg">運用通知 (ops)</h3>
       </div>
 
-      <p className="m-0 text-[11px] text-fg-subtle leading-relaxed">
+      <p className="m-0 text-[13px] text-fg-subtle leading-relaxed">
         パイプライン失敗・週次監査の警告など Discord #ops チャンネルへの通知を、送信の成否に
         関わらず記録しています。webhook 未設定・不達でも痕跡が残ります。
       </p>
 
       <div className="space-y-1.5">
-        <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">
+        <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">
           直近 {notices.length} 件 (保持 180 日)
         </h4>
         {isError || data?.error ? (
-          <div className="text-[11px] text-critical">
+          <div className="text-[13px] text-critical">
             通知を読み出せませんでした{data?.error ? `: ${data.error}` : ""}
           </div>
         ) : notices.length === 0 ? (
-          <div className="text-[11px] text-fg-subtle">まだ記録がありません。</div>
+          <div className="text-[13px] text-fg-subtle">まだ記録がありません。</div>
         ) : (
           <div className="space-y-2">
             {notices.map((n) => (
-              <div key={n.id} className="border-t border-border-subtle pt-2 text-[11px]">
+              <div key={n.id} className="border-t border-border-subtle pt-2 text-[13px]">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-fg-subtle whitespace-nowrap">{formatJst(n.created_at)}</span>
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                    className={`px-1.5 py-0.5 rounded text-[12px] font-semibold ${
                       IMPORTANCE_CLASS[n.importance] ?? IMPORTANCE_CLASS.low
                     }`}
                   >
                     {vocabLabel("importance", n.importance)}
                   </span>
                   {!n.sent && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-critical-soft text-critical">
+                    <span className="px-1.5 py-0.5 rounded text-[12px] font-semibold bg-critical-soft text-critical">
                       ⚠️ 未送信
                     </span>
                   )}

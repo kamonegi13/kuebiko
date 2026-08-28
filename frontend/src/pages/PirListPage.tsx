@@ -78,7 +78,7 @@ export function PirListPage() {
       {items.length > 0 && (
         <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-surface-2 text-fg-muted text-[10.5px] uppercase tracking-wider">
+            <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
               <tr>
                 <th className="text-left px-3 py-2.5 font-semibold">PIR</th>
                 <th className="text-left px-3 py-2.5 font-semibold w-24">状態</th>
@@ -119,26 +119,26 @@ function PirRow({
             {pir.title}
           </a>
           {!pir.approved_by_user && (
-            <span className="ml-2 text-[9px] uppercase bg-warning-soft text-warning px-1.5 py-0.5 rounded font-mono">
+            <span className="ml-2 text-[11.5px] uppercase bg-warning-soft text-warning px-1.5 py-0.5 rounded font-mono">
               未承認
             </span>
           )}
           {pir.enabled && pir.match_count_30d === 0 && (
             <span
-              className="ml-2 text-[9px] bg-critical-soft text-critical px-1.5 py-0.5 rounded font-mono"
+              className="ml-2 text-[11.5px] bg-critical-soft text-critical px-1.5 py-0.5 rounded font-mono"
               title="有効なのに 30 日間 1 件も一致していない — 定義文の再作成か絞り込みの見直し候補"
             >
               30日 一致0件
             </span>
           )}
         </div>
-        <div className="text-[11px] text-fg-subtle font-mono">{pir.id}</div>
+        <div className="text-[13px] text-fg-subtle font-mono">{pir.id}</div>
       </td>
       <td className="px-3 py-2.5">
         {pir.enabled ? (
-          <span className="text-[10px] uppercase bg-success-soft text-success px-2 py-0.5 rounded font-mono">有効</span>
+          <span className="text-[12px] uppercase bg-success-soft text-success px-2 py-0.5 rounded font-mono">有効</span>
         ) : (
-          <span className="text-[10px] uppercase bg-surface-3 text-fg-subtle px-2 py-0.5 rounded font-mono">無効</span>
+          <span className="text-[12px] uppercase bg-surface-3 text-fg-subtle px-2 py-0.5 rounded font-mono">無効</span>
         )}
       </td>
       <td className="px-3 py-2.5 text-fg text-xs hidden md:table-cell">{importanceOrAuto(pir.target_importance)}</td>

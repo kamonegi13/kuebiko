@@ -52,7 +52,7 @@ function DistributionRow({ bucket }: { bucket: StatBucket }) {
   const label = resolveLabel(bucket.label, bucket.vocab, bucket.value);
   const share = pct(bucket.share);
   return (
-    <div className="flex items-center gap-1.5 text-[11px]">
+    <div className="flex items-center gap-1.5 text-[13px]">
       <span className="w-24 shrink-0 truncate text-fg-muted" title={label}>
         {label}
       </span>
@@ -73,7 +73,7 @@ function DistributionRow({ bucket }: { bucket: StatBucket }) {
 function SubMetricRow({ metric }: { metric: StatSubMetric }) {
   const label = resolveLabel(metric.label, metric.vocab, metric.key);
   return (
-    <div className="flex items-center justify-between gap-2 text-[11px] text-fg-muted">
+    <div className="flex items-center justify-between gap-2 text-[13px] text-fg-muted">
       <span className="truncate" title={metric.note || label}>
         {label}
       </span>
@@ -101,14 +101,14 @@ export function FieldStatBlock({ stat, loading, days, compact = false }: FieldSt
   }
 
   if (loading) {
-    return <p className="m-0 text-[11px] italic text-fg-subtle">直近{days}日の統計を取得中…</p>;
+    return <p className="m-0 text-[13px] italic text-fg-subtle">直近{days}日の統計を取得中…</p>;
   }
   if (!stat) {
-    return <p className="m-0 text-[11px] text-fg-subtle">統計データを取得できませんでした。</p>;
+    return <p className="m-0 text-[13px] text-fg-subtle">統計データを取得できませんでした。</p>;
   }
   if (stat.availability === "none") {
     return (
-      <p className="m-0 inline-flex items-start gap-1 text-[11px] text-fg-subtle">
+      <p className="m-0 inline-flex items-start gap-1 text-[13px] text-fg-subtle">
         <Info className="mt-0.5 h-3 w-3 shrink-0" />
         <span>統計なし — {stat.source_note}</span>
       </p>
@@ -117,16 +117,16 @@ export function FieldStatBlock({ stat, loading, days, compact = false }: FieldSt
 
   return (
     <div className="space-y-1.5">
-      <p className="m-0 text-[11px] text-fg-subtle">
+      <p className="m-0 text-[13px] text-fg-subtle">
         直近{days}日の実際の出力{stat.availability === "partial" && "（一部代理指標）"} — {stat.source_note}
       </p>
       {stat.notes.map((n, i) => (
-        <p key={i} className="m-0 text-[10.5px] italic text-fg-subtle">
+        <p key={i} className="m-0 text-[12.5px] italic text-fg-subtle">
           ※ {n}
         </p>
       ))}
       {stat.coverage && (
-        <div className="text-[11px] tnum text-fg-muted">
+        <div className="text-[13px] tnum text-fg-muted">
           充足率 {pct(stat.coverage.rate)}%（{stat.coverage.filled.toLocaleString()} / {stat.coverage.total.toLocaleString()} 件、
           {stat.coverage.scope_label}）
         </div>
@@ -146,7 +146,7 @@ export function FieldStatBlock({ stat, loading, days, compact = false }: FieldSt
         </div>
       )}
       {stat.average && (
-        <div className="text-[11px] tnum text-fg-muted">
+        <div className="text-[13px] tnum text-fg-muted">
           {stat.average.label}: {stat.average.value.toLocaleString()} {stat.average.unit}
         </div>
       )}

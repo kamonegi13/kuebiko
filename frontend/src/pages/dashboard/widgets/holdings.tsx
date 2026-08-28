@@ -49,9 +49,9 @@ export function SourceContributionWidget({ config }: WidgetProps) {
           {rows.map((r) => (
             <HBar key={r.feed_title} label={r.feed_title} value={r.posted_count} max={max}
               tone={r.high_count > 0 ? "critical" : "accent"}
-              suffix={r.high_count > 0 ? <span className="text-[9px] text-critical w-9 text-right shrink-0">H{r.high_count}</span> : <span className="w-9 shrink-0" />} />
+              suffix={r.high_count > 0 ? <span className="text-[11.5px] text-critical w-9 text-right shrink-0">H{r.high_count}</span> : <span className="w-9 shrink-0" />} />
           ))}
-          <div className="text-[10px] text-fg-subtle text-right">累計投稿数 · 赤=重要度高の実績あり</div>
+          <div className="text-[12px] text-fg-subtle text-right">累計投稿数 · 赤=重要度高の実績あり</div>
         </div>
       )}
     </WidgetCard>

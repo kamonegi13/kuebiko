@@ -39,7 +39,7 @@ export function PirCoverageWidget() {
               </a>
             );
           })}
-          <div className="mt-1 text-[10px] text-fg-subtle text-right">直近7日の該当件数 · 0件=収集の空白</div>
+          <div className="mt-1 text-[12px] text-fg-subtle text-right">直近7日の該当件数 · 0件=収集の空白</div>
         </div>
       )}
     </WidgetCard>
@@ -71,19 +71,19 @@ export function PirSpotlightWidget({ mobile }: WidgetProps) {
               {/* L1 PIR ラベル + 件数 (走査アンカー)。accent バーで「見出し」を明示 */}
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="w-0.5 h-3.5 rounded-full bg-accent/60 shrink-0" aria-hidden />
-                <span className="flex-1 min-w-0 truncate text-[12px] font-semibold text-accent-hover" title={sp.pir_title}>
+                <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-accent-hover" title={sp.pir_title}>
                   {sp.pir_title}
                 </span>
-                <span className="shrink-0 text-[11px] text-fg-subtle tnum" title="該当件数">{sp.article_count} 件</span>
+                <span className="shrink-0 text-[13px] text-fg-subtle tnum" title="該当件数">{sp.article_count} 件</span>
               </div>
               {/* L2 BLUF (主役): 少し大きく濃く、2 行でバウンド */}
               <div className="text-fg font-medium text-[14px] leading-snug line-clamp-2">{sp.headline}</div>
               {/* L3 分析 (補助): 淡く小さく、mobile は省略 / desktop は 2 行 */}
               {!mobile && sp.outlook && (
-                <div className="text-[12px] text-fg-muted leading-relaxed line-clamp-2 mt-1">{sp.outlook}</div>
+                <div className="text-[13.5px] text-fg-muted leading-relaxed line-clamp-2 mt-1">{sp.outlook}</div>
               )}
               {/* L4 メタ (最弱) */}
-              <div className="text-[10px] text-fg-subtle mt-1.5">{formatJstCompact(sp.generated_at)}</div>
+              <div className="text-[12px] text-fg-subtle mt-1.5">{formatJstCompact(sp.generated_at)}</div>
             </div>
           ))}
         </div>

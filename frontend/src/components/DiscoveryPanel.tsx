@@ -15,9 +15,9 @@ export function DiscoveryPanel({ snapshot }: { snapshot: SnapshotResponse }) {
       className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden mt-2"
     >
       <summary className="list-none flex items-center gap-3 px-4 py-2 text-sm cursor-pointer text-fg-muted hover:bg-surface-2 transition-colors [&::-webkit-details-marker]:hidden">
-        <span className={`text-[9px] text-fg-subtle transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+        <span className={`text-[11.5px] text-fg-subtle transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
         <span className="font-semibold text-fg">変化・異常</span>
-        <div className="flex gap-3.5 ml-auto text-[11px]">
+        <div className="flex gap-3.5 ml-auto text-[13px]">
           <span>新規 <strong className="text-fg tnum font-semibold">{d.new_actors.length}</strong></span>
           <span>急増 <strong className="text-fg tnum font-semibold">{d.spiking_actors.length}</strong></span>
           <span>再活性化 <strong className="text-fg tnum font-semibold">{d.waking_actors.length}</strong></span>
@@ -29,9 +29,9 @@ export function DiscoveryPanel({ snapshot }: { snapshot: SnapshotResponse }) {
         <Col title="急増" actors={d.spiking_actors} suffix={(a) => a.spike_ratio ? `×${a.spike_ratio.toFixed(1)}` : "NEW"} onSelect={goToActor} />
         <Col title="再活性化" actors={d.waking_actors} suffix={(a) => `${a.total_articles}件`} onSelect={goToActor} />
         <div className="p-4 border-l border-border-subtle bg-gradient-to-br from-surface-1 to-warning-soft">
-          <h4 className="m-0 mb-2 text-[11px] text-fg-muted uppercase tracking-wider font-semibold">アクター未特定</h4>
+          <h4 className="m-0 mb-2 text-[13px] text-fg-muted uppercase tracking-wider font-semibold">アクター未特定</h4>
           <div className="text-xl font-bold text-warning leading-none mb-1 tnum">{d.unknown_bucket_count}</div>
-          <div className="text-[11px] text-fg-muted leading-snug">
+          <div className="text-[13px] text-fg-muted leading-snug">
             アクター未抽出。<a href="/app/intel/operations" className="text-accent cursor-pointer">→ 運用</a>
           </div>
         </div>
@@ -48,8 +48,8 @@ function Col({ title, actors, suffix, onSelect }: {
 }) {
   return (
     <div className="p-4 border-r border-border-subtle last:border-r-0 min-h-[110px]">
-      <h4 className="m-0 mb-2 text-[11px] text-fg-muted uppercase tracking-wider font-semibold">{title}</h4>
-      {actors.length === 0 && <div className="text-[11px] text-fg-subtle italic">該当なし</div>}
+      <h4 className="m-0 mb-2 text-[13px] text-fg-muted uppercase tracking-wider font-semibold">{title}</h4>
+      {actors.length === 0 && <div className="text-[13px] text-fg-subtle italic">該当なし</div>}
       {actors.map((a) => (
         <div
           key={a.actor_id}
@@ -57,7 +57,7 @@ function Col({ title, actors, suffix, onSelect }: {
           className="py-1 cursor-pointer text-sm flex justify-between items-baseline gap-2 text-fg hover:text-accent-hover hover:pl-1 transition-all"
         >
           <span>{a.canonical}</span>
-          <span className="text-[11px] text-fg-subtle tnum">{suffix(a)}</span>
+          <span className="text-[13px] text-fg-subtle tnum">{suffix(a)}</span>
         </div>
       ))}
     </div>

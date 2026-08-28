@@ -177,7 +177,7 @@ export function SourceEditForm({
 
   return (
     <div className="bg-surface-2 rounded p-3 space-y-3">
-      <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">
+      <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">
         取得設定を編集
       </h4>
 
@@ -190,7 +190,7 @@ export function SourceEditForm({
           spellCheck={false}
         />
         {urlChanged && form.url_is_identity && (
-          <div className="mt-1.5 flex gap-1.5 items-start rounded border border-warning/40 bg-warning-soft p-1.5 text-[11px] text-warning">
+          <div className="mt-1.5 flex gap-1.5 items-start rounded border border-warning/40 bg-warning-soft p-1.5 text-[13px] text-warning">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" />
             <span>
               RSS は URL がソースの識別子です。変更すると、これまでの記事は旧 URL に
@@ -245,10 +245,10 @@ export function SourceEditForm({
               AI に検出させる
             </button>
           </div>
-          <div className="mt-1.5 rounded bg-surface-3 px-2 py-1 font-mono text-[11px] text-fg-muted break-all">
+          <div className="mt-1.5 rounded bg-surface-3 px-2 py-1 font-mono text-[13px] text-fg-muted break-all">
             {form.article_link_selector || "(未設定)"}
           </div>
-          <p className="m-0 mt-1 text-[11px] text-fg-subtle">
+          <p className="m-0 mt-1 text-[13px] text-fg-subtle">
             一覧ページで記事へのリンクを選ぶルール。サイト改修で取得が止まったら選び直す
           </p>
         </div>
@@ -263,7 +263,7 @@ export function SourceEditForm({
             className={`${field} font-mono text-xs`}
             spellCheck={false}
           />
-          <p className="m-0 mt-1 text-[11px] text-fg-subtle">
+          <p className="m-0 mt-1 text-[13px] text-fg-subtle">
             一致した URL だけを記事として取り込む (例 <code>/news/</code>)。
             記事以外のリンク (タグ・対象者・採用情報) を落とすのに使う
           </p>
@@ -290,21 +290,21 @@ export function SourceEditForm({
             {test.status === "running" ? "取得中…" : "取得テスト"}
           </button>
           {needsTest && test.status !== "ok" && (
-            <span className="text-[11px] text-warning">
+            <span className="text-[13px] text-warning">
               取得に関わる変更があります。テストに成功すると保存できます
             </span>
           )}
           {test.status === "ok" && (
-            <span className="inline-flex items-center gap-1 text-[11px] text-success">
+            <span className="inline-flex items-center gap-1 text-[13px] text-success">
               <Check className="h-3.5 w-3.5" /> {test.items.length} 件取得できました
             </span>
           )}
         </div>
         {test.status === "error" && (
-          <div className="text-[11px] text-critical">取得できませんでした: {test.error}</div>
+          <div className="text-[13px] text-critical">取得できませんでした: {test.error}</div>
         )}
         {test.status === "ok" && test.items.length > 0 && (
-          <ul className="m-0 list-disc space-y-0.5 pl-4 text-[11px] text-fg-muted">
+          <ul className="m-0 list-disc space-y-0.5 pl-4 text-[13px] text-fg-muted">
             {test.items.slice(0, 5).map((it) => (
               <li key={it.url} className="truncate">
                 {it.title || it.url}
@@ -314,7 +314,7 @@ export function SourceEditForm({
         )}
       </div>
 
-      {msg && <div className="text-[11px] text-critical">{msg}</div>}
+      {msg && <div className="text-[13px] text-critical">{msg}</div>}
 
       <div className="flex items-center gap-2">
         <button
@@ -327,7 +327,7 @@ export function SourceEditForm({
         <button onClick={onCancel} className="text-xs text-fg-subtle hover:text-fg">
           取消
         </button>
-        {dirty && <span className="text-[11px] text-fg-subtle">未保存の変更があります</span>}
+        {dirty && <span className="text-[13px] text-fg-subtle">未保存の変更があります</span>}
       </div>
     </div>
   );

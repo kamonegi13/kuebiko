@@ -127,14 +127,14 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
           <h3 className="m-0 text-md font-semibold text-fg">
             {data.title} <span className="font-mono text-xs font-normal text-fg-subtle">{data.prompt_id}</span>
           </h3>
-          <p className="m-0 text-[11px] text-fg-subtle">
+          <p className="m-0 text-[13px] text-fg-subtle">
             有効な基準:{" "}
             {data.runtime.active_source === "composed" ? `DB v${data.runtime.version ?? "?"}` : "legacy ファイル"}
             {data.runtime.saved_at && ` (${formatTimestamp(data.runtime.saved_at)})`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {previewPending && <span className="text-[11px] italic text-fg-subtle">検証中...</span>}
+          {previewPending && <span className="text-[13px] italic text-fg-subtle">検証中...</span>}
           {saveMessage && (
             <span
               className={`rounded px-2 py-0.5 text-xs ${
@@ -162,7 +162,7 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
 
       {/* プロンプト長 */}
       {preview && (
-        <p className="m-0 text-[11px] tnum text-fg-subtle">
+        <p className="m-0 text-[13px] tnum text-fg-subtle">
           合成後プロンプト長: {preview.composed_chars.toLocaleString()} 字
         </p>
       )}
@@ -205,17 +205,17 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
         <summary className="cursor-pointer select-none px-4 py-2 text-sm text-fg-muted">合成プレビュー</summary>
         <div className="space-y-3 px-4 pb-3">
           <div>
-            <div className="mb-1 text-[11px] text-fg-subtle">
+            <div className="mb-1 text-[13px] text-fg-subtle">
               {data.kind === "python_block" ? "合成結果 (サンプル候補)" : "合成後テンプレート (Jinja タグ未展開)"}
             </div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
               {preview?.composed ?? ""}
             </pre>
           </div>
           {data.kind !== "python_block" && (
             <div>
-              <div className="mb-1 text-[11px] text-fg-subtle">サンプル context での展開後プロンプト</div>
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[11px] text-fg">
+              <div className="mb-1 text-[13px] text-fg-subtle">サンプル context での展開後プロンプト</div>
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
                 {preview?.rendered_sample ?? ""}
               </pre>
             </div>

@@ -104,15 +104,15 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
           <div className="flex items-center gap-2 flex-wrap">
             <Icon className={`h-4 w-4 shrink-0 ${categoryForId(job.id).accentText}`} aria-hidden />
             <span className="text-sm font-semibold text-fg break-all">{job.title}</span>
-            <span className="text-[10px] uppercase bg-surface-3 text-fg-subtle px-1.5 py-0.5 rounded font-mono tracking-wide">{vocabLabel("job_kind", job.kind)}</span>
-            <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded font-mono tracking-wide ${protCls}`}>{vocabLabel("job_protection", job.protection)}</span>
+            <span className="text-[12px] uppercase bg-surface-3 text-fg-subtle px-1.5 py-0.5 rounded font-mono tracking-wide">{vocabLabel("job_kind", job.kind)}</span>
+            <span className={`text-[12px] uppercase px-1.5 py-0.5 rounded font-mono tracking-wide ${protCls}`}>{vocabLabel("job_protection", job.protection)}</span>
             {job.heavy && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning-soft text-warning border border-warning/40 inline-flex items-center gap-1">
+              <span className="text-[12px] px-1.5 py-0.5 rounded bg-warning-soft text-warning border border-warning/40 inline-flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" aria-hidden /> 重処理 {job.max_runtime_minutes}分
               </span>
             )}
             {job.respects_analysis_window && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted border border-border-subtle">
+              <span className="text-[12px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted border border-border-subtle">
                 重処理中は自動停止 (終了後に再開)
               </span>
             )}
@@ -132,7 +132,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
 
         {/* 設定 (meta → danger → 実行 → スケジュール編集 を一続きに): モバイル上 / デスクトップ右 */}
         <div className="order-1 lg:order-2 min-w-0 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[13px]">
             <Meta label="スケジュール"><span className="font-mono text-fg">{job.schedule_label}</span></Meta>
             <Meta label="次回 (JST)">
               {isReactive ? <span className="text-fg-subtle">状況に応じて自動実行</span> : <span className="font-mono text-fg">{nextRun}</span>}
@@ -140,7 +140,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
           </div>
 
           {job.danger_note && (
-            <div className="bg-warning-soft border border-warning/50 rounded px-2.5 py-1.5 text-[11px] text-warning flex items-start gap-1.5">
+            <div className="bg-warning-soft border border-warning/50 rounded px-2.5 py-1.5 text-[13px] text-warning flex items-start gap-1.5">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {job.danger_note}
             </div>
           )}
@@ -160,7 +160,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
                   今すぐ実行
                 </button>
               )}
-              {flash && <span className="text-[11px] text-success">{flash}</span>}
+              {flash && <span className="text-[13px] text-success">{flash}</span>}
             </div>
           )}
 
@@ -177,7 +177,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
 function Meta({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="bg-surface-2 rounded px-2.5 py-1.5 min-w-0">
-      <div className="text-fg-subtle uppercase text-[9.5px] font-semibold tracking-wider mb-0.5">{label}</div>
+      <div className="text-fg-subtle uppercase text-[11.5px] font-semibold tracking-wider mb-0.5">{label}</div>
       <div className="truncate">{children}</div>
     </div>
   );
@@ -194,7 +194,7 @@ function RunHistory({ jobId }: { jobId: string }) {
 
   return (
     <div className="bg-surface-2/30 border border-border-subtle rounded-md p-2.5 space-y-1.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-fg-subtle font-semibold">
+      <div className="flex items-center gap-1.5 text-[12px] uppercase tracking-wider text-fg-subtle font-semibold">
         <History className="h-3 w-3" aria-hidden /> 実行履歴
       </div>
       {/* 固定高のスクロール枠。件数に依らず常にこの高さ (超過分だけ内部スクロール) → パネル高さ統一。 */}
@@ -204,9 +204,9 @@ function RunHistory({ jobId }: { jobId: string }) {
             {[1, 2, 3].map((i) => <div key={i} className="h-6 bg-surface-2 animate-shimmer rounded" />)}
           </div>
         ) : isError ? (
-          <div className="text-[11px] text-fg-subtle">履歴を取得できませんでした。</div>
+          <div className="text-[13px] text-fg-subtle">履歴を取得できませんでした。</div>
         ) : !data || data.runs.length === 0 ? (
-          <div className="text-[11px] text-fg-subtle">実行履歴なし</div>
+          <div className="text-[13px] text-fg-subtle">実行履歴なし</div>
         ) : (
           <div className="space-y-0.5">
             {data.runs.map((run, i) => <RunHistoryRow key={`${run.started_at}-${i}`} run={run} />)}
@@ -225,7 +225,7 @@ function RunHistoryRow({ run }: { run: JobRunRecord }) {
   const detailIsError = health === "failed";
 
   return (
-    <div className="flex items-start gap-2 text-[11px] py-0.5">
+    <div className="flex items-start gap-2 text-[13px] py-0.5">
       <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${color.dot} ${health === "running" ? "animate-pulse" : ""}`} aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -235,7 +235,7 @@ function RunHistoryRow({ run }: { run: JobRunRecord }) {
           {metrics && <span className="text-fg-muted font-mono">· {metrics}</span>}
         </div>
         {run.detail && (
-          <div className={`truncate text-[10px] ${detailIsError ? "text-critical" : "text-fg-subtle"}`} title={run.detail}>
+          <div className={`truncate text-[12px] ${detailIsError ? "text-critical" : "text-fg-subtle"}`} title={run.detail}>
             {run.detail}
           </div>
         )}
@@ -351,12 +351,12 @@ function ScheduleEditor({ job, onSaved }: { job: JobView; onSaved: (msg: string)
             <select value={dow} onChange={(e) => setDow(e.target.value)} className={`${INP} w-28`} aria-label="曜日">
               {DOW_OPTIONS.map((o) => <option key={o.value || "daily"} value={o.value}>{o.label}</option>)}
             </select>
-            <span className="text-fg-subtle text-[10px]">週次のみ (毎日=空)</span>
+            <span className="text-fg-subtle text-[12px]">週次のみ (毎日=空)</span>
           </div>
           <div className="flex items-center gap-2 text-xs flex-wrap">
             <span className="text-fg-muted w-16">実施日</span>
             <input type="number" min={1} max={31} value={day} onChange={(e) => setDay(e.target.value === "" ? "" : String(clampInt(e.target.value, 1, 31)))} placeholder="毎日" className={`${INP} w-20 text-center`} aria-label="実施日 (day)" />
-            <span className="text-fg-subtle text-[10px]">月次のみ (1–31 / 空=毎日)</span>
+            <span className="text-fg-subtle text-[12px]">月次のみ (1–31 / 空=毎日)</span>
           </div>
         </>
       )}
@@ -385,12 +385,12 @@ function ScheduleEditor({ job, onSaved }: { job: JobView; onSaved: (msg: string)
       )}
 
       {error && (
-        <div className="bg-critical-soft border border-critical rounded px-2.5 py-1.5 text-[11px] text-critical flex items-start gap-1.5">
+        <div className="bg-critical-soft border border-critical rounded px-2.5 py-1.5 text-[13px] text-critical flex items-start gap-1.5">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {error}
         </div>
       )}
       {warn && !error && (
-        <div className="bg-warning-soft border border-warning/50 rounded px-2.5 py-1.5 text-[11px] text-warning flex items-start gap-1.5">
+        <div className="bg-warning-soft border border-warning/50 rounded px-2.5 py-1.5 text-[13px] text-warning flex items-start gap-1.5">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {warn}
         </div>
       )}

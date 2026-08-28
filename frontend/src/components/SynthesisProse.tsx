@@ -108,7 +108,7 @@ export function parseSynthesisRows(text: string): ProseRow[][] {
 function Row({ row }: { row: ProseRow }) {
   if (row.kind === "marker") {
     return (
-      <div className="pt-1 text-[12px] font-bold text-accent-hover tracking-wide">{row.text}</div>
+      <div className="pt-1 text-[13.5px] font-bold text-accent-hover tracking-wide">{row.text}</div>
     );
   }
   const confCls = row.conf ? CONF_CLS[row.conf] : null;
@@ -128,7 +128,7 @@ function Row({ row }: { row: ProseRow }) {
       {confCls && (
         <span
           title={row.confNote ? `${confLabel}: ${row.confNote}` : confLabel}
-          className={`shrink-0 self-start mt-1 inline-flex px-1.5 py-px rounded-sm text-[10px] font-semibold ${confCls}`}
+          className={`shrink-0 self-start mt-1 inline-flex px-1.5 py-px rounded-sm text-[12px] font-semibold ${confCls}`}
         >
           {confLabel}
         </span>

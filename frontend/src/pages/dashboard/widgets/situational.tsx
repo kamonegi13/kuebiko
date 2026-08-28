@@ -79,7 +79,7 @@ export function StandingAssessmentWidget({ config }: WidgetProps) {
       ) : (
         <div className="space-y-1.5">
           <div className="text-fg font-semibold text-[15px] leading-snug">{data.latest.headline || "(見出しなし)"}</div>
-          <div className="text-[11px] text-fg-subtle">
+          <div className="text-[13px] text-fg-subtle">
             {vocabLabel("period_type", data.period_type)} · {formatJstCompact(data.latest.generated_at)} 生成 · {data.latest.article_count} 件分析
           </div>
         </div>
@@ -139,9 +139,9 @@ export function ImportanceMixWidget() {
         <div className="space-y-1.5">
           {rows.map(([key, value, tone]) => (
             <HBar key={key} label={vocabLabel("importance", key)} value={value} max={max} tone={tone}
-              suffix={<span className="text-[10px] text-fg-subtle w-9 text-right shrink-0">{total > 0 ? `${Math.round((value / total) * 100)}%` : ""}</span>} />
+              suffix={<span className="text-[12px] text-fg-subtle w-9 text-right shrink-0">{total > 0 ? `${Math.round((value / total) * 100)}%` : ""}</span>} />
           ))}
-          <div className="text-[10px] text-fg-subtle text-right">直近7日 · 脅威カテゴリ計 {total} 件 (地政/研究は除外)</div>
+          <div className="text-[12px] text-fg-subtle text-right">直近7日 · 脅威カテゴリ計 {total} 件 (地政/研究は除外)</div>
         </div>
       )}
     </WidgetCard>

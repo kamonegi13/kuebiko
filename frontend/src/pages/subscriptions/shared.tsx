@@ -35,7 +35,7 @@ export function QualityBadge({ score }: { score: number | undefined }) {
         : "text-critical bg-critical-soft border-critical/40";
   return (
     <span
-      className={`inline-block min-w-[2.2rem] text-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${tone}`}
+      className={`inline-block min-w-[2.2rem] text-center px-1.5 py-0.5 rounded text-[12px] font-semibold border ${tone}`}
     >
       {score}
     </span>

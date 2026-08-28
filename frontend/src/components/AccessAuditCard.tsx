@@ -40,7 +40,7 @@ export function AccessAuditCard() {
         <ShieldCheck className="h-4 w-4 text-fg-muted" />
         <h3 className="m-0 text-sm font-semibold text-fg">外部公開の認証 (Cloudflare Access)</h3>
         <span
-          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+          className={`px-1.5 py-0.5 rounded text-[12px] font-semibold ${
             configured ? "bg-success/15 text-success" : "bg-surface-3 text-fg-muted"
           }`}
         >
@@ -48,7 +48,7 @@ export function AccessAuditCard() {
         </span>
       </div>
 
-      <p className="m-0 text-[11px] text-fg-subtle leading-relaxed">
+      <p className="m-0 text-[13px] text-fg-subtle leading-relaxed">
         {configured ? (
           <>
             公開ページ (匿名で閲覧可) に加えて、認証した利用者だけが運用ページの閲覧と
@@ -63,27 +63,27 @@ export function AccessAuditCard() {
       </p>
 
       {configured && data?.auth.team_domain && (
-        <div className="text-[11px] text-fg-subtle font-mono break-all">
+        <div className="text-[13px] text-fg-subtle font-mono break-all">
           {data.auth.team_domain}
         </div>
       )}
 
       <div className="space-y-1.5">
-        <h4 className="m-0 text-[10.5px] uppercase tracking-wider text-fg-muted font-semibold">
+        <h4 className="m-0 text-[12.5px] uppercase tracking-wider text-fg-muted font-semibold">
           アクセス履歴 (最新 {events.length} 件 / 保持 180 日)
         </h4>
         {isError || data?.error ? (
-          <div className="text-[11px] text-critical">
+          <div className="text-[13px] text-critical">
             履歴を読み出せませんでした{data?.error ? `: ${data.error}` : ""}
           </div>
         ) : events.length === 0 ? (
-          <div className="text-[11px] text-fg-subtle">
+          <div className="text-[13px] text-fg-subtle">
             まだ記録がありません。
             {configured && "ログイン・認証失敗・即時実行が発生すると記録されます。"}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[13px]">
               <thead className="text-fg-subtle">
                 <tr className="[&>th]:text-left [&>th]:font-normal [&>th]:pb-1 [&>th]:pr-3">
                   <th>日時</th>
@@ -103,7 +103,7 @@ export function AccessAuditCard() {
                       <td className="text-fg-subtle whitespace-nowrap">{formatJst(e.at)}</td>
                       <td>
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${meta.cls}`}
+                          className={`px-1.5 py-0.5 rounded text-[12px] font-semibold ${meta.cls}`}
                         >
                           {meta.text}
                         </span>
@@ -122,7 +122,7 @@ export function AccessAuditCard() {
             </table>
           </div>
         )}
-        <p className="m-0 text-[10.5px] text-fg-subtle">
+        <p className="m-0 text-[12.5px] text-fg-subtle">
           メールアドレスは記録していません (識別は匿名化したハッシュのみ)。
           資格情報を提示しない匿名アクセスは記録対象外です。
         </p>
@@ -150,14 +150,14 @@ export function AccessStatusLine() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-fg">公開面の認証 (Cloudflare Access)</span>
           <span
-            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+            className={`px-1.5 py-0.5 rounded text-[12px] font-semibold ${
               configured ? "bg-success/15 text-success" : "bg-surface-3 text-fg-muted"
             }`}
           >
             {configured ? "設定済み" : "未設定"}
           </span>
         </div>
-        <p className="m-0 text-[11px] text-fg-subtle">
+        <p className="m-0 text-[13px] text-fg-subtle">
           {configured
             ? "認証した利用者だけが運用ページの閲覧とジョブの即時実行を行えます。"
             : "未設定のため公開面は匿名閲覧のみです (運用ページは遮断)。"}

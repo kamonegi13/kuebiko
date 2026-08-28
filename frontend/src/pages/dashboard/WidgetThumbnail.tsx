@@ -141,7 +141,7 @@ function Body({ kind }: { kind: ThumbKind }) {
         </div>
       );
     default:
-      return <div className="h-full flex items-center justify-center text-fg-subtle text-[10px]">preview</div>;
+      return <div className="h-full flex items-center justify-center text-fg-subtle text-[12px]">preview</div>;
   }
 }
 

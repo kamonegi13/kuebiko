@@ -244,7 +244,7 @@ function ActorTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-surface-2 text-fg-muted text-[10.5px] uppercase tracking-wider">
+        <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
           <tr>
             <th className="text-left px-3 py-2 w-56">正式名</th>
             <th className="text-left px-3 py-2 hidden sm:table-cell">概要</th>
@@ -280,7 +280,7 @@ function ActorTable({
               >
                 <td className="px-3 py-2">
                   <div className="text-fg font-medium">{a.canonical}</div>
-                  <div className="text-fg-subtle text-[11px] tnum">
+                  <div className="text-fg-subtle text-[13px] tnum">
                     別名 {(a.aliases ?? []).length}
                     {(a.associated_malware ?? []).length > 0 && <> ・ マルウェア {(a.associated_malware ?? []).length}</>}
                   </div>
@@ -333,7 +333,7 @@ function ActorCardGrid({ actors, onSelect }: { actors: ActorRecord[]; onSelect: 
               <span className="text-sm font-semibold text-fg flex-1 truncate">{a.canonical}</span>
               <NationBadge nation={a.nation} />
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+            <div className="flex items-center gap-2 text-[13px] text-fg-subtle">
               {a.mitre_group && <span className="font-mono">{a.mitre_group}</span>}
               {a.family && <span>{vocabLabel("actor_family", a.family)}</span>}
               <span className="tnum">別名 {(a.aliases ?? []).length}</span>
@@ -344,12 +344,12 @@ function ActorCardGrid({ actors, onSelect }: { actors: ActorRecord[]; onSelect: 
             {malware.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {malware.slice(0, CARD_MALWARE_MAX).map((m, i) => (
-                  <span key={i} className="text-[10.5px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted">
+                  <span key={i} className="text-[12.5px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted">
                     {m}
                   </span>
                 ))}
                 {malware.length > CARD_MALWARE_MAX && (
-                  <span className="text-[10.5px] text-fg-subtle tnum">+{malware.length - CARD_MALWARE_MAX}</span>
+                  <span className="text-[12.5px] text-fg-subtle tnum">+{malware.length - CARD_MALWARE_MAX}</span>
                 )}
               </div>
             )}

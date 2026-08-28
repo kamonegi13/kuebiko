@@ -35,7 +35,7 @@ export function KpiTile({ label, value, delta, deltaTitle = "前日比", trend, 
   const body = (
     <div className={`bg-surface-1 border border-border-subtle rounded-lg h-full flex flex-col group-hover:border-border-emphasized transition-colors ${compact ? "p-2.5 gap-0.5" : "p-4 gap-1.5"}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className={`inline-flex items-center gap-1.5 text-fg-muted truncate ${compact ? "text-[11px]" : "text-xs"}`} title={label}>
+        <span className={`inline-flex items-center gap-1.5 text-fg-muted truncate ${compact ? "text-[13px]" : "text-xs"}`} title={label}>
           {icon}
           {label}
         </span>
@@ -53,7 +53,7 @@ export function KpiTile({ label, value, delta, deltaTitle = "前日比", trend, 
         )}
       </div>
       {!compact && trend && trend.length > 0 && <Sparkline data={trend} width={140} height={16} className="text-accent/40 w-full" />}
-      {note && <span className={`text-fg-subtle truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>{note}</span>}
+      {note && <span className={`text-fg-subtle truncate ${compact ? "text-[12px]" : "text-[13px]"}`}>{note}</span>}
     </div>
   );
   return href ? (

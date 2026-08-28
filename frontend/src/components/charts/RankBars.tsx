@@ -21,7 +21,7 @@ function DeltaBadge({ delta, suffix, title = "前期比" }: { delta: number; suf
   if (delta === 0) return null;
   const up = delta > 0;
   return (
-    <span className="inline-flex items-center text-[11px] tnum text-fg-subtle w-12 shrink-0" title={title}>
+    <span className="inline-flex items-center text-[13px] tnum text-fg-subtle w-12 shrink-0" title={title}>
       {up ? <ArrowUp className="h-2.5 w-2.5" aria-hidden /> : <ArrowDown className="h-2.5 w-2.5" aria-hidden />}
       {Math.abs(delta)}{suffix}
     </span>
@@ -53,7 +53,7 @@ export function RankBars({ items, max, emptyLabel = "該当なし", labelWidth =
           const pct = Math.max(2, (it.value / m) * 100);
           return (
             <div key={`${it.label}-${i}`} className="space-y-1">
-              <div className="flex items-baseline gap-2 text-[12px]">
+              <div className="flex items-baseline gap-2 text-[13.5px]">
                 {it.href ? (
                   <a href={it.href} className="min-w-0 flex-1 truncate text-fg-muted hover:text-accent" title={it.label}>{it.label}</a>
                 ) : (
@@ -86,7 +86,7 @@ export function RankBars({ items, max, emptyLabel = "該当なし", labelWidth =
           </span>
         );
         return (
-          <div key={`${it.label}-${i}`} className="flex items-center gap-2.5 text-[12px]">
+          <div key={`${it.label}-${i}`} className="flex items-center gap-2.5 text-[13.5px]">
             {label}
             <div className="flex-1 h-3 bg-surface-3 rounded-sm overflow-hidden">
               <div className="h-full rounded-sm" style={{ width: `${pct}%`, background: it.color ?? DEFAULT_BAR }} />

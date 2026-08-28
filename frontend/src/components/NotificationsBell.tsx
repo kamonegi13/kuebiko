@@ -46,7 +46,7 @@ export function NotificationsBell() {
       >
         <Bell size={17} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-critical text-white text-[9px] font-bold leading-[15px] text-center">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-critical text-white text-[11.5px] font-bold leading-[15px] text-center">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -55,9 +55,9 @@ export function NotificationsBell() {
       {open && (
         <div className="absolute right-0 mt-1.5 w-[340px] max-w-[90vw] bg-surface-1 border border-border-emphasized rounded-lg shadow-2xl z-[90] overflow-hidden">
           <div className="flex items-center justify-between px-3 h-9 border-b border-border-subtle">
-            <span className="text-[12px] font-semibold text-fg">通知</span>
+            <span className="text-[13.5px] font-semibold text-fg">通知</span>
             {items.length > 0 && (
-              <button onClick={clear} className="text-[11px] text-fg-subtle hover:text-fg">クリア</button>
+              <button onClick={clear} className="text-[13px] text-fg-subtle hover:text-fg">クリア</button>
             )}
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
@@ -73,7 +73,7 @@ export function NotificationsBell() {
                   <span className="text-base shrink-0 leading-tight">{n.icon}</span>
                   <span className="flex-1 min-w-0">
                     <span className="block text-[13px] text-fg leading-snug">{n.title}</span>
-                    <span className="block text-[10px] text-fg-subtle mt-0.5">{relTime(n.ts)}</span>
+                    <span className="block text-[12px] text-fg-subtle mt-0.5">{relTime(n.ts)}</span>
                   </span>
                 </a>
               ))

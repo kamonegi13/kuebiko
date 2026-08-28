@@ -25,7 +25,7 @@ export function FileGroupList({ groups, selected, onSelect, stripPrefix }: FileG
     <>
       {groups.map((g) => (
         <div key={g.category}>
-          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
+          <div className="px-3 py-1.5 text-[12px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
             {g.category}
           </div>
           {g.files.map((f) => (
@@ -40,7 +40,7 @@ export function FileGroupList({ groups, selected, onSelect, stripPrefix }: FileG
               }`}
             >
               <div className="text-sm leading-tight">{f.label}</div>
-              <div className="font-mono text-[10px] text-fg-subtle leading-tight mt-0.5">
+              <div className="font-mono text-[12px] text-fg-subtle leading-tight mt-0.5">
                 {f.path.startsWith(stripPrefix) ? f.path.slice(stripPrefix.length) : f.path}
               </div>
             </div>

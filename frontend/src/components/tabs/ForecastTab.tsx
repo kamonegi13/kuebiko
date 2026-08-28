@@ -59,7 +59,7 @@ function TrendRow({ t }: { t: EntityTrend }) {
       </a>
       {(t.matched_pir_ids?.length ?? 0) > 0 && (
         <span
-          className="text-[10px] font-semibold text-accent bg-accent/15 rounded px-1.5 py-0.5 shrink-0"
+          className="text-[12px] font-semibold text-accent bg-accent/15 rounded px-1.5 py-0.5 shrink-0"
           title={`該当 PIR: ${t.matched_pir_ids.join(", ")}`}
         >
           PIR{t.matched_pir_ids.length > 1 ? `×${t.matched_pir_ids.length}` : ""}
@@ -67,7 +67,7 @@ function TrendRow({ t }: { t: EntityTrend }) {
       )}
       {t.is_spike && (
         <span
-          className="text-[10px] font-semibold text-critical bg-critical/15 rounded px-1.5 py-0.5 shrink-0"
+          className="text-[12px] font-semibold text-critical bg-critical/15 rounded px-1.5 py-0.5 shrink-0"
           title="平常時と比べてどれだけ多いか (標準偏差の倍数)"
         >
           平常比 z={t.z_score.toFixed(1)}
@@ -87,7 +87,7 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
     <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
       <div className="px-3 py-2 bg-surface-2 border-b border-border-subtle">
         <div className="text-fg text-sm font-semibold">{title}</div>
-        {hint && <div className="text-fg-subtle text-[11px] mt-0.5">{hint}</div>}
+        {hint && <div className="text-fg-subtle text-[13px] mt-0.5">{hint}</div>}
       </div>
       {children}
     </div>
@@ -153,7 +153,7 @@ export function ForecastTab() {
           className="bg-surface-1 border border-border-subtle rounded-lg px-3 py-2 text-center"
           title="週ごとに件数を正規化し、平常時と比べて統計的に有意な増加だけを「的中」と数えます。平常並みの継続は「一部的中」、下回った場合は「外れ」。旧方式は観測が平常値以上ならほぼ常に的中となるため参考表示です。"
         >
-          <div className="text-[11px] text-fg-subtle">監視指標の的中率 (補正済み)</div>
+          <div className="text-[13px] text-fg-subtle">監視指標の的中率 (補正済み)</div>
           <div className="text-fg font-bold tnum">
             {statsV2 && statsV2.verified > 0
               ? `${(statsV2.hit_rate * 100).toFixed(0)}%`
@@ -164,7 +164,7 @@ export function ForecastTab() {
               </span>
             )}
           </div>
-          <div className="text-[10px] text-fg-subtle tnum">
+          <div className="text-[12px] text-fg-subtle tnum">
             旧方式(参考): {stats.verified > 0 ? `${(stats.hit_rate * 100).toFixed(0)}%` : "—"} ({stats.hits}/{stats.verified})
           </div>
         </div>
@@ -195,8 +195,8 @@ export function ForecastTab() {
                   <span className="font-medium text-fg truncate flex-1">
                     {entityLabel(ind.scope, ind.target_value)}
                   </span>
-                  <span className="text-[11px] text-fg-subtle">{vocabLabel("forecast_scope", ind.scope)}</span>
-                  <span className="text-[10px] font-semibold text-warning bg-warning/15 rounded px-1.5 py-0.5">
+                  <span className="text-[13px] text-fg-subtle">{vocabLabel("forecast_scope", ind.scope)}</span>
+                  <span className="text-[12px] font-semibold text-warning bg-warning/15 rounded px-1.5 py-0.5">
                     {vocabLabel("forecast_direction", ind.direction)}
                   </span>
                 </li>

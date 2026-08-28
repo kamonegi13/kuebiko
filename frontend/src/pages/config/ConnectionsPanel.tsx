@@ -23,7 +23,7 @@ function SetupChip({ label, ok, detail }: { label: string; ok: boolean | null; d
     <div className="flex items-center gap-1.5 rounded bg-surface-2 px-2.5 py-1.5">
       <span className={`inline-block h-2 w-2 rounded-full ${dot}`} />
       <span className="text-xs font-semibold text-fg">{label}</span>
-      <span className={`text-[11px] ${tone}`}>{detail}</span>
+      <span className={`text-[13px] ${tone}`}>{detail}</span>
     </div>
   );
 }
@@ -74,7 +74,7 @@ export function ConnectionsPanel({ onOpenModels }: { onOpenModels: () => void })
           detail={tiers ? (tiers.external_enabled ? "キー設定済" : "未設定 (任意)") : "確認中…"}
         />
       </div>
-      <p className="m-0 text-[11px] text-fg-subtle">
+      <p className="m-0 text-[13px] text-fg-subtle">
         「外部と繋ぐ」設定だけをここに集約しています。値の保存先は .env (即時反映・常にマスク表示)。
         同じ設定は各対象画面 (情報フロー / 購読ソース / モデルタブ / ジョブ管理) にもあり、
         どちらで編集しても同じです。
@@ -84,7 +84,7 @@ export function ConnectionsPanel({ onOpenModels }: { onOpenModels: () => void })
       <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3">
         <div className="flex items-baseline justify-between flex-wrap gap-2">
           <h3 className="m-0 text-md font-semibold text-fg">Discord 配信先 (チャンネル別 webhook)</h3>
-          <a href="/app/flow" className="inline-flex items-center gap-1 text-[11px] text-accent no-underline hover:underline">
+          <a href="/app/flow" className="inline-flex items-center gap-1 text-[13px] text-accent no-underline hover:underline">
             チャンネルの追加・配信設定は情報フローで <ExternalLink className="h-3 w-3" />
           </a>
         </div>
@@ -94,7 +94,7 @@ export function ConnectionsPanel({ onOpenModels }: { onOpenModels: () => void })
             <div key={ch.id} className={ch.enabled ? "" : "opacity-60"}>
               <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold" style={{ color: channelColor(ch.id) }}>
                 {ch.label || ch.id}
-                {!ch.enabled && <span className="text-[10px] font-normal text-fg-subtle">(無効)</span>}
+                {!ch.enabled && <span className="text-[12px] font-normal text-fg-subtle">(無効)</span>}
               </div>
               <ChannelWebhookField
                 channelId={ch.id}
@@ -116,7 +116,7 @@ export function ConnectionsPanel({ onOpenModels }: { onOpenModels: () => void })
           <h3 className="m-0 text-md font-semibold text-fg">LLM 接続 (Ollama / 外部)</h3>
           <button
             onClick={onOpenModels}
-            className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-[13px] text-accent hover:underline"
           >
             モデルタブで管理 (URL 変更・キー設定・ティア割当) <ExternalLink className="h-3 w-3" />
           </button>
@@ -132,7 +132,7 @@ export function ConnectionsPanel({ onOpenModels }: { onOpenModels: () => void })
             {tiers?.ollama_error && " — 接続できません"}
           </span>
         </div>
-        <p className="m-0 text-[11px] text-fg-subtle">
+        <p className="m-0 text-[13px] text-fg-subtle">
           既定はローカル Ollama で完結。外部 LLM (Anthropic / OpenAI 互換 / Claude Code) は
           任意 — キーを設定しティアに明示割当した処理だけが外部に出ます。
         </p>

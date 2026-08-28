@@ -74,9 +74,9 @@ export function ChannelWebhookField({
         <span className="text-xs font-semibold text-fg">投稿先 URL (Discord webhook)</span>
         <WebhookStatusDot status={health?.status ?? (isSet ? "unset" : "warning")} detail={health?.detail} />
         {isSet ? (
-          <span className="text-[10px] text-fg-subtle">設定済 ({masked})</span>
+          <span className="text-[12px] text-fg-subtle">設定済 ({masked})</span>
         ) : (
-          <span className="text-[10px] text-warning">未設定</span>
+          <span className="text-[12px] text-warning">未設定</span>
         )}
       </div>
       {!readOnly && (
@@ -104,7 +104,7 @@ export function ChannelWebhookField({
                 if (confirm("投稿先 URL を削除します。よろしいですか?")) saveMut.mutate("");
               }}
               disabled={saveMut.isPending}
-              className="text-[11px] text-critical hover:underline disabled:opacity-50"
+              className="text-[13px] text-critical hover:underline disabled:opacity-50"
             >
               削除
             </button>
@@ -112,11 +112,11 @@ export function ChannelWebhookField({
         </div>
       )}
       {message && (
-        <p className={`m-0 text-[11px] ${message.kind === "success" ? "text-success" : "text-critical"}`}>
+        <p className={`m-0 text-[13px] ${message.kind === "success" ? "text-success" : "text-critical"}`}>
           {message.text}
         </p>
       )}
-      <p className="m-0 text-[10px] text-fg-subtle">
+      <p className="m-0 text-[12px] text-fg-subtle">
         保存先は .env (即時反映・再起動不要)。表示は常にマスクされ、平文は画面に出ません。
       </p>
     </div>

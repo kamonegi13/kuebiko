@@ -33,12 +33,12 @@ export function ConfigOptionEditor({
     : (opt.choices ?? []);
   const current = value !== "" ? value : (choices[0]?.value ?? "");
   return (
-    <label className="flex items-center gap-1 text-[11px] text-fg-muted">
+    <label className="flex items-center gap-1 text-[13px] text-fg-muted">
       {opt.label}:
       <select
         value={current}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-surface-2 border border-border-subtle rounded px-1 py-0.5 text-[11px] max-w-[180px]"
+        className="bg-surface-2 border border-border-subtle rounded px-1 py-0.5 text-[13px] max-w-[180px]"
       >
         {opt.loadChoices && !dynamic && <option value={current}>{value || "読み込み中…"}</option>}
         {choices.map((ch) => (
@@ -94,7 +94,7 @@ export function ViewSettingsPill({
     >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex items-center gap-1 rounded-full border border-border-emphasized bg-surface-2 px-1.5 py-0.5 text-[10px] text-fg-muted hover:text-fg shadow-sm"
+        className="inline-flex items-center gap-1 rounded-full border border-border-emphasized bg-surface-2 px-1.5 py-0.5 text-[12px] text-fg-muted hover:text-fg shadow-sm"
         title="このウィジェットの表示設定 (この端末のみ・即時反映)"
       >
         <SlidersHorizontal className="h-3 w-3" />
@@ -106,7 +106,7 @@ export function ViewSettingsPill({
           {/* 外側クリックで閉じる backdrop */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border border-border-emphasized bg-surface-2 shadow-2xl p-2.5 space-y-2">
-            <div className="text-[10px] uppercase tracking-wider text-fg-subtle">
+            <div className="text-[12px] uppercase tracking-wider text-fg-subtle">
               {def.title} の表示設定
             </div>
             {def.configOptions.map((opt) => (
@@ -118,11 +118,11 @@ export function ViewSettingsPill({
               />
             ))}
             <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border-subtle">
-              <span className="text-[10px] text-fg-subtle">この端末のみ・即時反映</span>
+              <span className="text-[12px] text-fg-subtle">この端末のみ・即時反映</span>
               {overridden && (
                 <button
                   onClick={() => clearWidgetView(uid)}
-                  className="inline-flex items-center gap-1 text-[10px] text-accent hover:underline shrink-0"
+                  className="inline-flex items-center gap-1 text-[12px] text-accent hover:underline shrink-0"
                 >
                   <RotateCcw className="h-3 w-3" /> 全体の初期設定に戻す
                 </button>

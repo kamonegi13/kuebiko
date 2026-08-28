@@ -216,7 +216,7 @@ function ProposalCard({
                 ))}
             </ul>
           )}
-          <p className="m-0 text-[11px] text-fg-subtle">
+          <p className="m-0 text-[13px] text-fg-subtle">
             承認すると辞書に確定登録し、既存の暫定帰属も確定アクターに昇格します。
           </p>
         </div>
@@ -243,7 +243,7 @@ function ProposalCard({
             <strong>『{str(p.alias)}』</strong> が報道で併記 ({Number(ev.article_count) || 0} 記事)
           </p>
           {str(ev.excerpt) && (
-            <p className="m-0 text-[11px] text-fg-subtle bg-surface-3 rounded px-2 py-1 line-clamp-2">
+            <p className="m-0 text-[13px] text-fg-subtle bg-surface-3 rounded px-2 py-1 line-clamp-2">
               …{str(ev.excerpt)}…
             </p>
           )}

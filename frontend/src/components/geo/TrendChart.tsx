@@ -78,7 +78,7 @@ export function TrendChart({
   return (
     <div className="flex flex-col gap-1">
       {/* 凡例 (クリックで表示/非表示) */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 text-[11px] text-fg-muted">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 text-[13px] text-fg-muted">
         {series.map((ser) => {
           const off = hidden.has(ser.key);
           return (
@@ -187,7 +187,7 @@ export function TrendChart({
       )}
 
       {/* x 軸日付ラベル (間引き) */}
-      <div className="flex gap-px px-0 text-[10px] text-fg-subtle">
+      <div className="flex gap-px px-0 text-[12px] text-fg-subtle">
         {buckets.map((b, i) => (
           <div key={b} className="flex-1 text-center">
             {i % labelStep === 0 ? dayLabel(b) : ""}

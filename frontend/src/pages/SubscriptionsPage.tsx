@@ -209,7 +209,7 @@ export function SubscriptionsPage() {
         <div className="flex items-center gap-3">
           <span className="text-fg-subtle text-xs tnum">{filtered.length} / {enriched.length} 件</span>
           {read_only ? (
-            <span className="text-[10px] uppercase tracking-wider bg-surface-3 text-fg-subtle px-2 py-1 rounded font-mono">閲覧専用</span>
+            <span className="text-[12px] uppercase tracking-wider bg-surface-3 text-fg-subtle px-2 py-1 rounded font-mono">閲覧専用</span>
           ) : (
             <button
               onClick={() => openSourceWizard()}
@@ -323,7 +323,7 @@ export function SubscriptionsPage() {
       {/* Folder filter axis (全 transport 共通の分類軸) */}
       {(folders.length > 0 || hasUncategorized) && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-fg-muted mr-1">folder</span>
+          <span className="text-[12px] uppercase tracking-wider text-fg-muted mr-1">folder</span>
           <FolderChip label="all" active={folderFilter === null} onClick={() => setFolderFilter(null)} />
           {folders.map((fl) => (
             <FolderChip
@@ -358,7 +358,7 @@ export function SubscriptionsPage() {
                 <span className="text-fg-subtle text-xs tnum">{items.length} feeds</span>
               </summary>
               <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead className="bg-surface-2 text-fg-muted text-[10.5px] uppercase tracking-wider">
+                <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
                   <tr>
                     <th className="px-2 py-2 w-8">
                       {!read_only && (
@@ -420,7 +420,7 @@ export function SubscriptionsPage() {
                         <td className="px-3 py-2 text-fg text-sm">
                           <TransportBadge transport={f.transport} />
                           {isDisabled && (
-                            <span className="mr-2 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-fg-subtle/40 text-fg-subtle align-middle">
+                            <span className="mr-2 px-1.5 py-0.5 rounded text-[11.5px] font-semibold border border-fg-subtle/40 text-fg-subtle align-middle">
                               無効
                             </span>
                           )}
@@ -547,7 +547,7 @@ function ReliabilitySelect({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as ReliabilityTier | "auto")}
       title="briefing 信頼度ティア。「自動」を選ぶと自動判定に戻す"
-      className={`text-[11px] bg-surface-2 border border-border-subtle rounded px-1 py-0.5 ${tone} disabled:opacity-50`}
+      className={`text-[13px] bg-surface-2 border border-border-subtle rounded px-1 py-0.5 ${tone} disabled:opacity-50`}
     >
       {_TIER_OPTS.map((o) => (
         <option key={o.v} value={o.v}>
@@ -567,7 +567,7 @@ function TransportBadge({ transport }: { transport?: string }) {
   };
   const cls = tone[transport] ?? "text-fg-subtle border-border-subtle";
   return (
-    <span className={`inline-block mr-2 px-1.5 py-0.5 rounded text-[9px] font-semibold border align-middle ${cls}`}>
+    <span className={`inline-block mr-2 px-1.5 py-0.5 rounded text-[11.5px] font-semibold border align-middle ${cls}`}>
       {vocabLabel("transport", transport)}
     </span>
   );
@@ -611,7 +611,7 @@ function HealthCard({ summary }: { summary: HealthSummary }) {
 function HealthMetric({ label, value, unit, tone }: { label: string; value: number; unit?: string; tone: string }) {
   return (
     <div className="bg-surface-2 rounded p-2">
-      <div className="text-[10px] text-fg-muted uppercase tracking-wider">{label}</div>
+      <div className="text-[12px] text-fg-muted uppercase tracking-wider">{label}</div>
       <div className={`text-lg tnum font-bold ${tone}`}>
         {value}
         {unit && <span className="text-xs text-fg-subtle ml-0.5">{unit}</span>}

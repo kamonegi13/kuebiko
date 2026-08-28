@@ -199,7 +199,7 @@ export function HBar({ label, value, max, tone = "accent", suffix }: {
   const pct = max > 0 ? Math.max(2, (value / max) * 100) : 0;
   const barColor = { accent: "bg-accent/60", critical: "bg-critical/70", warning: "bg-warning/70", success: "bg-success/70" }[tone];
   return (
-    <div className="flex items-center gap-2.5 text-[12px]">
+    <div className="flex items-center gap-2.5 text-[13.5px]">
       <span className="w-24 shrink-0 truncate text-fg-muted" title={label}>{label}</span>
       <div className="flex-1 h-3 bg-surface-3 rounded-sm overflow-hidden">
         <div className={`h-full ${barColor} rounded-sm`} style={{ width: `${pct}%` }} />

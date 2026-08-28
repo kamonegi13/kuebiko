@@ -10,6 +10,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PublicNewsSite } from "./PublicNewsSite";
 import mapSource from "./PublicMap.tsx?raw";
 import siteSource from "./PublicNewsSite.tsx?raw";
+import tailwindSource from "../../tailwind.config.ts?raw";
+import indexHtml from "../../index.html?raw";
 
 const ITEM = {
   id: "ev-1",
@@ -721,6 +723,48 @@ describe("開いたままの自動更新", () => {
     const intervals = siteSource.match(/refetchInterval:\s*([^,\n]+)/g) ?? [];
     expect(intervals.length).toBeGreaterThanOrEqual(5);
     expect(new Set(intervals.map((s) => s.trim())).size).toBe(1);
+  });
+});
+
+describe("可読性の下限", () => {
+  // 2026-08-28 の可読性診断で直した値が、後の編集で静かに戻らないようにする。
+  // 基準: 本文 16px 以上 / 表示文字は 12px 以上 / 二次色は WCAG AA (4.5:1)。
+  const contrast = (hex: string, bg: string) => {
+    const lum = (h: string) => {
+      const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+      const f = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2]);
+    };
+    const [a, b] = [lum(hex), lum(bg)].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  };
+
+  it("公開面に 12px 未満の文字を置かない", () => {
+    const sizes = [...siteSource.matchAll(/text-\[([0-9.]+)px\]/g)].map((m) => Number(m[1]));
+    expect(sizes.length).toBeGreaterThan(10);
+    expect(sizes.filter((n) => n < 12)).toEqual([]);
+  });
+
+  it("記事本文は推奨帯 (16px 以上) にある", () => {
+    // 本文段落と要点。読み物なので密度より可読性を優先する
+    expect(siteSource).toMatch(/text-\[16\.5px\][^"]*indent-\[1em\]/);
+    expect(siteSource).toMatch(/text-\[17px\][^"]*text-fg/);
+  });
+
+  it("二次テキストの色が AA を満たす", () => {
+    const tokens = tailwindSource.match(/"fg-(?:subtle|faint)":\s*"(#[0-9a-f]{6})"/gi) ?? [];
+    expect(tokens.length).toBe(2);
+    for (const t of tokens) {
+      const hex = (t.match(/#[0-9a-f]{6}/i) ?? [""])[0];
+      // 最も明るいカード面 (#212733) でも 4.5:1 を割らないこと
+      expect(contrast(hex, "#212733")).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("和文の Web フォントを読み込んでいる", () => {
+    // 無いと和文は OS 任せになり、閲覧環境ごとに別の書体で出る
+    expect(indexHtml).toContain("Noto+Sans+JP");
+    expect(tailwindSource).toContain('"Noto Sans JP"');
   });
 });
 

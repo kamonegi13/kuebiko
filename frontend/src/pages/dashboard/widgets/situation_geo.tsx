@@ -43,7 +43,7 @@ export function SituationWidget({ config }: WidgetProps = {}) {
         <Empty>情勢データなし。</Empty>
       ) : (
         <div className="space-y-0.5">
-          <div className="flex items-center gap-2 px-1 pb-0.5 text-[10px] text-fg-subtle">
+          <div className="flex items-center gap-2 px-1 pb-0.5 text-[12px] text-fg-subtle">
             <span className="flex-1">国</span>
             <span className="w-9 text-right text-accent">攻撃者</span>
             <span className="w-9 text-right text-cyan-400">標的</span>
@@ -57,7 +57,7 @@ export function SituationWidget({ config }: WidgetProps = {}) {
             >
               <span className="min-w-0 flex-1 truncate text-fg">
                 {n.role === "home" && (
-                  <span className="mr-1 rounded bg-accent-soft px-1 text-[9px] text-accent-hover">自国</span>
+                  <span className="mr-1 rounded bg-accent-soft px-1 text-[11.5px] text-accent-hover">自国</span>
                 )}
                 {n.label}
               </span>

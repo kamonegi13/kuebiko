@@ -34,14 +34,14 @@ export function RubricGroupSection({
     <section id={`group:${groupId}`} className="scroll-mt-24 space-y-2">
       <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle pb-1.5">
         <h4 className="m-0 text-sm font-semibold text-fg">{label}</h4>
-        <span className="tnum text-[10.5px] text-fg-subtle">{sections.length} 件</span>
+        <span className="tnum text-[12.5px] text-fg-subtle">{sections.length} 件</span>
         {errorCount > 0 && (
-          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[10px] font-semibold text-critical">
+          <span className="rounded-sm bg-critical-soft px-1.5 py-px text-[12px] font-semibold text-critical">
             ⚠ {errorCount}
           </span>
         )}
         {errorCount === 0 && warnCount > 0 && (
-          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[10px] font-semibold text-warning">
+          <span className="rounded-sm bg-warning-soft px-1.5 py-px text-[12px] font-semibold text-warning">
             ⚠ {warnCount}
           </span>
         )}
@@ -49,15 +49,15 @@ export function RubricGroupSection({
           <button
             type="button"
             onClick={() => onToggleGroup(!allOpen)}
-            className="ml-auto text-[11px] text-accent hover:underline"
+            className="ml-auto text-[13px] text-accent hover:underline"
           >
             {allOpen ? "すべて閉じる" : "すべて開く"}
           </button>
         )}
       </div>
-      <p className="m-0 text-[11px] text-fg-subtle">{description}</p>
+      <p className="m-0 text-[13px] text-fg-subtle">{description}</p>
       {sections.length === 0 ? (
-        <p className="m-0 text-[11px] italic text-fg-subtle">一致するフィールドがありません。</p>
+        <p className="m-0 text-[13px] italic text-fg-subtle">一致するフィールドがありません。</p>
       ) : (
         <div className="space-y-2">
           {sections.map((s) => (

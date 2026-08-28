@@ -70,7 +70,7 @@ export function BriefDeliveryPanel({ readOnly }: { readOnly: boolean }) {
         <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
           <div className="min-w-[220px] flex-1">
             <div className="text-sm text-fg">1 日の投稿上限</div>
-            <div className="text-[11px] text-fg-subtle">
+            <div className="text-[13px] text-fg-subtle">
               この件数を超えた分は、重要度「中」以下の記事を {watchLabel} チャンネルへ回します。
               重要度「高」は上限に関わらず必ず {briefLabel} に載ります。0 で上限なし。
             </div>
@@ -92,11 +92,11 @@ export function BriefDeliveryPanel({ readOnly }: { readOnly: boolean }) {
         <li className="py-2">
           <div className="flex items-baseline justify-between gap-2">
             <div className="text-sm text-fg">{briefLabel} へ優先する脅威カテゴリ</div>
-            <span className="tnum shrink-0 text-[10px] text-fg-subtle">
+            <span className="tnum shrink-0 text-[12px] text-fg-subtle">
               {cats.length}/{data.available_categories.length} 選択
             </span>
           </div>
-          <div className="text-[11px] text-fg-subtle">
+          <div className="text-[13px] text-fg-subtle">
             重要度「高」の記事のうち、選んだカテゴリ (実際に対処が要る脅威) は、通常なら {watchLabel} へ回る場合でも
             {briefLabel} に載せます。取りこぼしたくない種別だけを選びます。
           </div>

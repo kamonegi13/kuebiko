@@ -33,7 +33,7 @@ function ActorMiniList({ tagged, limit = 6 }: { tagged: { a: ActorBrief; tag: Ac
           <a href={actorHref(a.actor_id)} className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-surface-2 no-underline group" title={`${a.canonical}${a.nation ? ` (${a.nation})` : ""}`}>
             <TagIcon tag={tag} />
             <span className="flex-1 min-w-0 truncate text-sm text-fg group-hover:text-accent-hover">{a.canonical}</span>
-            {a.nation && <span className="text-[10px] text-fg-subtle shrink-0 uppercase">{a.nation}</span>}
+            {a.nation && <span className="text-[12px] text-fg-subtle shrink-0 uppercase">{a.nation}</span>}
             {a.sparkline && (
               <span className="sparkline-svg shrink-0 inline-flex items-center" dangerouslySetInnerHTML={{ __html: a.sparkline }} />
             )}
@@ -117,10 +117,10 @@ function DossierChips({ label, items }: { label: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <div className="flex items-start gap-1.5">
-      <span className="text-[10px] text-fg-subtle uppercase tracking-wider shrink-0 w-12 pt-0.5">{label}</span>
+      <span className="text-[12px] text-fg-subtle uppercase tracking-wider shrink-0 w-12 pt-0.5">{label}</span>
       <div className="flex flex-wrap gap-1">
         {items.map((it) => (
-          <span key={it} className="px-1.5 py-0.5 rounded bg-surface-2 text-fg-muted text-[11px] truncate max-w-[140px]" title={it}>{it}</span>
+          <span key={it} className="px-1.5 py-0.5 rounded bg-surface-2 text-fg-muted text-[13px] truncate max-w-[140px]" title={it}>{it}</span>
         ))}
       </div>
     </div>

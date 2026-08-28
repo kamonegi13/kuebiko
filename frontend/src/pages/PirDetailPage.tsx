@@ -76,7 +76,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
           <div className="flex items-baseline gap-2 flex-wrap">
             <a href="/app/pir" className="text-fg-muted text-sm no-underline hover:text-fg">← PIR 一覧</a>
             <span className="text-fg-subtle">/</span>
-            <code className="text-[12px] text-fg-subtle font-mono">{pir.id}</code>
+            <code className="text-[13.5px] text-fg-subtle font-mono">{pir.id}</code>
           </div>
           <h2 className="m-0 mt-1 text-xl font-bold text-fg tracking-tight">{pir.title}</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
@@ -142,7 +142,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
         <p className="m-0 text-fg whitespace-pre-wrap leading-relaxed">{pir.description || "(説明なし)"}</p>
         {pir.metadata.rationale && (
           <div className="mt-3 pt-3 border-t border-border-subtle">
-            <div className="text-[10px] uppercase tracking-wider text-fg-subtle mb-1">AI 判断根拠</div>
+            <div className="text-[12px] uppercase tracking-wider text-fg-subtle mb-1">AI 判断根拠</div>
             <p className="m-0 text-fg-muted text-xs italic">{pir.metadata.rationale}</p>
           </div>
         )}
@@ -203,17 +203,17 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
           {latestSpotlight ? (
             <div className="space-y-3">
               <div className="bg-accent-subtle border-l-[3px] border-l-accent rounded p-3">
-                <div className="text-[10px] text-accent-hover uppercase tracking-wider font-semibold mb-1">見出し</div>
+                <div className="text-[12px] text-accent-hover uppercase tracking-wider font-semibold mb-1">見出し</div>
                 <div className="text-fg text-sm leading-relaxed">{latestSpotlight.headline}</div>
               </div>
-              <div className="flex items-center gap-2 text-[11px] text-fg-subtle flex-wrap">
+              <div className="flex items-center gap-2 text-[13px] text-fg-subtle flex-wrap">
                 <span>生成日時 {formatJst(latestSpotlight.generated_at)}</span>
                 <span>·</span>
                 <span>記事数 {latestSpotlight.article_count}</span>
                 <span>·</span>
                 <span>主要イベント {latestSpotlight.key_events.length}</span>
                 <span>·</span>
-                <code className="bg-surface-2 px-1.5 py-0.5 rounded text-[10px]">{latestSpotlight.llm_model}</code>
+                <code className="bg-surface-2 px-1.5 py-0.5 rounded text-[12px]">{latestSpotlight.llm_model}</code>
                 <span>·</span>
                 <a href="/app/synthesis" className="text-fg-muted hover:text-accent-hover no-underline">→ Synthesis タブで全文表示</a>
               </div>
@@ -262,7 +262,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
           {showDetails && (
             <div className="space-y-4">
               <div>
-                <h4 className="m-0 mb-2 text-[11px] uppercase tracking-wider text-fg-subtle font-semibold">配信チャンネル別の分布</h4>
+                <h4 className="m-0 mb-2 text-[13px] uppercase tracking-wider text-fg-subtle font-semibold">配信チャンネル別の分布</h4>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(kpi.channel_distribution).map(([ch, n]) => (
                     <span key={ch} className="bg-surface-2 border border-border-subtle rounded px-2 py-1 text-xs">
@@ -275,12 +275,12 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
                 </div>
               </div>
               <div>
-                <h4 className="m-0 mb-2 text-[11px] uppercase tracking-wider text-fg-subtle font-semibold">最新の該当記事 (上位 10 件)</h4>
+                <h4 className="m-0 mb-2 text-[13px] uppercase tracking-wider text-fg-subtle font-semibold">最新の該当記事 (上位 10 件)</h4>
                 <ul className="m-0 p-0 list-none space-y-1.5">
                   {kpi.samples.map((s) => (
                     <li key={s.article_id} className="text-sm flex items-baseline gap-2">
-                      <span className="text-[10px] text-fg-subtle font-mono">{formatJstShort(s.created_at)}</span>
-                      <span className="bg-surface-3 text-fg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{s.posted_channel ? chMeta(s.posted_channel).label : "—"}</span>
+                      <span className="text-[12px] text-fg-subtle font-mono">{formatJstShort(s.created_at)}</span>
+                      <span className="bg-surface-3 text-fg-muted px-1.5 py-0.5 rounded text-[12px] font-mono">{s.posted_channel ? chMeta(s.posted_channel).label : "—"}</span>
                       <a href={s.url} target="_blank" rel="noreferrer" className="text-fg hover:text-accent-hover">{s.title || s.article_id}</a>
                     </li>
                   ))}
@@ -298,7 +298,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
 function KpiCard({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
   return (
     <div className="bg-surface-1 border border-border-subtle rounded p-3">
-      <div className="text-[10px] uppercase tracking-wider text-fg-subtle">{label}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-subtle">{label}</div>
       <div className={`mt-1 text-fg font-semibold ${small ? "text-xs" : "text-lg"} tnum break-all`}>{value}</div>
     </div>
   );
@@ -316,7 +316,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SignalCategory({ label, items, className = "" }: { label: string; items: string[]; className?: string }) {
   return (
     <div className={className}>
-      <div className="text-[10px] uppercase tracking-wider text-fg-subtle mb-1">{label}</div>
+      <div className="text-[12px] uppercase tracking-wider text-fg-subtle mb-1">{label}</div>
       <div className="flex flex-wrap gap-1">
         {items.length > 0 ? items.map((it, i) => (
           <span key={i} className="bg-surface-2 text-fg px-2 py-0.5 rounded text-xs font-mono">{it}</span>

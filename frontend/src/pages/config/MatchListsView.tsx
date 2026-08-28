@@ -85,7 +85,7 @@ export function MatchListsView({ onOpenHistory }: { onOpenHistory?: () => void }
                 placeholder="例: Fortinet, FortiOS, FortiGate"
                 className="mt-1 w-full rounded border border-border-subtle bg-surface-2 px-2 py-1 text-sm text-fg"
               />
-              <div className="text-[11px] text-fg-subtle mt-0.5 tnum">{l.terms.length} 語</div>
+              <div className="text-[13px] text-fg-subtle mt-0.5 tnum">{l.terms.length} 語</div>
             </div>
           </div>
         ))}

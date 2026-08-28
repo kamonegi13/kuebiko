@@ -31,7 +31,7 @@ export function RecentIncidentsWidget({ config }: WidgetProps) {
               <div className="flex-1 min-w-0">
                 <a href={`/app/article/${encodeURIComponent(a.article_id)}`}
                   className="block text-[13px] font-medium leading-snug text-fg hover:text-accent hover:underline line-clamp-2" title={a.title}>{a.title}</a>
-                <div className="text-[10px] text-fg-subtle flex gap-2 mt-1">
+                <div className="text-[12px] text-fg-subtle flex gap-2 mt-1">
                   <span className="truncate">{a.feed_title}</span>
                   {(a.published_at ?? a.created_at) && (
                     <span className="shrink-0 ml-auto tnum" title={a.published_at ? "公開時刻" : "取得時刻 (公開時刻不明)"}>
@@ -62,12 +62,12 @@ export function DailyPostsTrendWidget({ config }: WidgetProps) {
           <div className="flex items-end gap-px h-24">
             {series.map(([date, n]) => (
               <div key={date} className="flex-1 flex flex-col justify-end items-center group" title={`${date}: ${n}件`}>
-                <span className="text-[9px] text-fg-subtle tnum opacity-0 group-hover:opacity-100">{n}</span>
+                <span className="text-[11.5px] text-fg-subtle tnum opacity-0 group-hover:opacity-100">{n}</span>
                 <div className="w-full bg-accent/60 hover:bg-accent rounded-sm" style={{ height: `${Math.max(2, (n / max) * 88)}px` }} />
               </div>
             ))}
           </div>
-          <div className="text-[10px] text-fg-subtle text-right">直近{days}日 · 計 {total} 件</div>
+          <div className="text-[12px] text-fg-subtle text-right">直近{days}日 · 計 {total} 件</div>
         </div>
       )}
     </WidgetCard>

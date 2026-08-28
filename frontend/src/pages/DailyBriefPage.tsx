@@ -50,7 +50,7 @@ function MarkedText({ text }: { text: string }) {
           <li key={i} className="text-sm text-fg leading-relaxed flex items-start gap-2">
             {m ? (
               <>
-                <span className="shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded border border-border-default text-fg-muted whitespace-nowrap">
+                <span className="shrink-0 mt-0.5 text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-muted whitespace-nowrap">
                   {m[1]}
                 </span>
                 <span className="min-w-0">{m[2]}</span>
@@ -74,7 +74,7 @@ function ImportanceChip({ importance }: { importance: string }) {
         : "border-border-default text-fg-subtle";
   return (
     <span
-      className={`shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${tone}`}
+      className={`shrink-0 mt-0.5 text-[12px] px-1.5 py-0.5 rounded border whitespace-nowrap ${tone}`}
     >
       {vocabLabel("importance", importance)}
     </span>
@@ -84,14 +84,14 @@ function ImportanceChip({ importance }: { importance: string }) {
 function TierChip({ tier }: { tier: string }) {
   if (tier === "official") {
     return (
-      <span className="shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded border bg-accent-subtle text-accent border-accent/30 whitespace-nowrap">
+      <span className="shrink-0 mt-0.5 text-[12px] px-1.5 py-0.5 rounded border bg-accent-subtle text-accent border-accent/30 whitespace-nowrap">
         一次
       </span>
     );
   }
   if (tier === "social") {
     return (
-      <span className="shrink-0 mt-0.5 text-[10px] px-1.5 py-0.5 rounded border bg-warning-soft text-warning border-warning/30 whitespace-nowrap">
+      <span className="shrink-0 mt-0.5 text-[12px] px-1.5 py-0.5 rounded border bg-warning-soft text-warning border-warning/30 whitespace-nowrap">
         SNS 要裏取り
       </span>
     );
@@ -141,7 +141,7 @@ function PirCard({ sec }: { sec: BriefPirSection }) {
     <div className="border border-border-subtle rounded-md p-3 space-y-1.5 min-w-0">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm font-semibold text-fg">{sec.title}</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle whitespace-nowrap">
+        <span className="text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-subtle whitespace-nowrap">
           {sec.total} 件
         </span>
       </div>

@@ -178,7 +178,7 @@ function SystemEditor() {
               <option key={lv} value={lv}>{lv}</option>
             ))}
           </select>
-          <span className="mt-0.5 block text-[11px] text-fg-subtle">
+          <span className="mt-0.5 block text-[13px] text-fg-subtle">
             本番は INFO。保存後に起動するジョブ実行から反映 (アプリ本体のログ出力は再起動後)。
           </span>
         </label>
@@ -190,7 +190,7 @@ function SystemEditor() {
             placeholder="Asia/Tokyo"
             className="mt-0.5 block w-full rounded border border-border-subtle bg-surface-2 px-2 py-1.5 font-mono text-sm text-fg"
           />
-          <span className="mt-0.5 block text-[11px] text-fg-subtle">
+          <span className="mt-0.5 block text-[13px] text-fg-subtle">
             画面の時刻表示に即時反映。スケジューラの cron 解釈は Asia/Tokyo 固定でこの設定の影響を受けません。
           </span>
         </label>
@@ -213,7 +213,7 @@ function SystemEditor() {
           外部サービスとの接続ではないので接続タブではなくここが正しい (2026-08-02 整理)。 */}
       <HostWatchdogCard readOnly={false} />
 
-      <p className="m-0 text-[11px] text-fg-subtle">
+      <p className="m-0 text-[13px] text-fg-subtle">
         接続系の設定 (Discord webhook / Grok メール / LLM / モバイル公開) は「接続」タブ。
         配信ルール・チャンネルは情報フロー、ソースは購読ソース、ジョブは実行管理と、
         設定は対象画面の隣にも置いています (どちらで編集しても同じ保存先)。
@@ -378,7 +378,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
       <aside className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden h-[calc(100vh-13rem)] min-h-[24rem] overflow-y-auto">
         {(list.groups ?? []).map((g) => (
           <div key={g.category}>
-            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
+            <div className="px-3 py-1.5 text-[12px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
               {g.category}
             </div>
             {g.files.map((f) => {
@@ -393,7 +393,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
                   }`}
                 >
                   <div className="text-sm leading-tight">{m ? m.title : f.label}</div>
-                  <div className="font-mono text-[10px] text-fg-subtle leading-tight mt-0.5">
+                  <div className="font-mono text-[12px] text-fg-subtle leading-tight mt-0.5">
                     {m ? m.prompt_id : f.path.replace(/^prompts\//, "")}
                   </div>
                 </div>
@@ -404,7 +404,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
         {/* 実ファイルを持たない managed prompt (python_block 系) 専用の区分 */}
         {codeOwnedGroup && (
           <div key={codeOwnedGroup.category}>
-            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
+            <div className="px-3 py-1.5 text-[12px] uppercase tracking-wider font-semibold text-fg-subtle bg-surface-2 border-b border-border-subtle sticky top-0">
               {codeOwnedGroup.category}
             </div>
             {codeOwnedGroup.files.map((m) => (
@@ -417,7 +417,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
                 }`}
               >
                 <div className="text-sm leading-tight">{m.title}</div>
-                <div className="font-mono text-[10px] text-fg-subtle leading-tight mt-0.5">{m.prompt_id}</div>
+                <div className="font-mono text-[12px] text-fg-subtle leading-tight mt-0.5">{m.prompt_id}</div>
               </div>
             ))}
           </div>
@@ -441,7 +441,7 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
                 </button>
               ))}
             </div>
-            <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[10px] text-fg-subtle">
+            <span className="rounded-sm bg-surface-3 px-1.5 py-px text-[12px] text-fg-subtle">
               {MANAGED_KIND_LABEL[current.kind]}
             </span>
           </div>
@@ -520,7 +520,7 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
         <span className="whitespace-nowrap">Claude Code (サブスク枠)</span>
         <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${enabled ? "bg-success" : "bg-fg-subtle"}`} title={enabled ? "外部LLM接続 稼働中" : "外部LLM接続 停止中"} />
         {auth && (
-          <span className="text-[10px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold whitespace-nowrap">
+          <span className="text-[12px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold whitespace-nowrap">
             認証: {auth.token_set ? "トークン" : "ホストログイン"}
           </span>
         )}
@@ -532,7 +532,7 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
         </p>
       )}
       {enabled && update && (
-        <div className="flex items-center gap-2 flex-wrap text-[10.5px]">
+        <div className="flex items-center gap-2 flex-wrap text-[12.5px]">
           <span className="text-fg-subtle">CLI {update.current.split(" ")[0]}</span>
           {update.available ? (
             <>
@@ -540,7 +540,7 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
               <button
                 onClick={() => updateMut.mutate()}
                 disabled={updateMut.isPending}
-                className="px-2 py-0.5 rounded text-[10.5px] font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+                className="px-2 py-0.5 rounded text-[12.5px] font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 {updateMut.isPending ? "更新中… (~1分)" : "更新"}
               </button>
@@ -580,24 +580,24 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
               <button
                 onClick={() => tokenMut.mutate("")}
                 disabled={tokenMut.isPending}
-                className="text-[11px] text-fg-subtle hover:underline disabled:opacity-50"
+                className="text-[13px] text-fg-subtle hover:underline disabled:opacity-50"
               >
                 削除
               </button>
             )}
           </div>
           <div className="space-y-1">
-            <p className="m-0 text-[10px] text-fg-subtle">
+            <p className="m-0 text-[12px] text-fg-subtle">
               トークンの発行はターミナルで下記を実行 (URL 認可 → コード貼付 → トークン表示)。
               出力されたトークンを上の欄に貼付 (保存は即時反映)。
             </p>
-            <pre className="m-0 bg-surface-2 border border-border-subtle rounded px-2 py-1 text-[9.5px] text-fg-muted overflow-x-auto whitespace-pre">
+            <pre className="m-0 bg-surface-2 border border-border-subtle rounded px-2 py-1 text-[11.5px] text-fg-muted overflow-x-auto whitespace-pre">
 {`docker exec -it -e HOME=/data/claude-home claude-bridge \\
   /data/claude-home/.local/bin/claude setup-token`}
             </pre>
           </div>
           {tokenMut.isError && (
-            <p className="m-0 text-[11px] text-critical">{(tokenMut.error as Error).message}</p>
+            <p className="m-0 text-[13px] text-critical">{(tokenMut.error as Error).message}</p>
           )}
         </div>
       )}
@@ -605,7 +605,7 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
         <div className="overflow-x-auto">
           <table className="text-xs text-fg-muted w-full max-w-lg">
             <thead>
-              <tr className="text-fg-subtle text-[10.5px] uppercase tracking-wider">
+              <tr className="text-fg-subtle text-[12.5px] uppercase tracking-wider">
                 <th className="text-left py-1 pr-3">期間</th>
                 <th className="text-right py-1 px-2">呼出回数</th>
                 <th className="text-right py-1 px-2">入力トークン</th>
@@ -625,7 +625,7 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
               ))}
             </tbody>
           </table>
-          <p className="m-0 mt-1.5 text-[10.5px] text-fg-subtle">
+          <p className="m-0 mt-1.5 text-[12.5px] text-fg-subtle">
             サブスクのレート上限は 5 時間ごとに回復します（残量は取得できないため使用量を表示）。
             {usage.last_call_at && <> 最終呼出: {usage.last_call_at.slice(0, 16).replace("T", " ")}</>}
           </p>
@@ -722,7 +722,7 @@ function ModelTiersEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
             <span className="text-critical text-sm">保存失敗: {(saveMut.error as Error).message}</span>
           )}
           {data.excluded.length > 0 && (
-            <span className="ml-auto text-[11px] text-fg-subtle" title={data.excluded.join(", ")}>
+            <span className="ml-auto text-[13px] text-fg-subtle" title={data.excluded.join(", ")}>
               方針により除外: {data.excluded.length} 件
             </span>
           )}
@@ -776,7 +776,7 @@ function UsageMiniTable({ title, usage }: {
       <h3 className="m-0 text-xs font-semibold text-fg">{title}</h3>
       <table className="text-xs text-fg-muted w-full">
         <thead>
-          <tr className="text-fg-subtle text-[10px] uppercase tracking-wider">
+          <tr className="text-fg-subtle text-[12px] uppercase tracking-wider">
             <th className="text-left py-0.5 pr-2">期間</th>
             <th className="text-right py-0.5 px-2">呼出</th>
             <th className="text-right py-0.5 px-2">入力</th>
@@ -865,7 +865,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
   return (
     <div className="border border-border-subtle rounded-md p-3 space-y-3">
       <h3 className="m-0 text-sm font-semibold text-fg">接続先 (LLM)</h3>
-      <p className="m-0 text-[11px] text-fg-subtle leading-snug">
+      <p className="m-0 text-[13px] text-fg-subtle leading-snug">
         既定はローカル Ollama。Anthropic API / OpenAI / Gemini / LM Studio /
         リモート Ollama 等を登録すると各ティアの選択肢に現れます。キーは .env に保存
         (即時反映)。中華系モデルは方針により除外。
@@ -875,7 +875,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
       <div className="border border-border-subtle rounded p-2.5 space-y-1.5 bg-surface-2/40">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-fg">ollama</span>
-          <span className="text-[10px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">組み込み・ローカル</span>
+          <span className="text-[12px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">組み込み・ローカル</span>
           <span
             className={`inline-block w-2 h-2 rounded-full ${ollama.error ? "bg-critical" : "bg-success"}`}
             title={ollama.error ? `接続できません: ${ollama.error}` : "稼働中"}
@@ -901,14 +901,14 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
             {ollamaUrlMut.isPending ? "保存中…" : "URL 保存"}
           </button>
         </div>
-        <p className="m-0 text-[10px] text-fg-subtle">
+        <p className="m-0 text-[12px] text-fg-subtle">
           {ollama.error
             ? "Ollama に接続できません。ホスト側の Ollama と接続 URL を確認してください。"
             : `モデル ${ollama.modelCount} 件を取得済み — 全ティアの既定・外部障害時の自動切替先のため削除できません。`}
           {" "}Docker からホストの Ollama を見る場合は http://host.docker.internal:11434。保存は即時反映。
         </p>
         {ollamaMsg && (
-          <p className={`m-0 text-[11px] ${ollamaMsg.kind === "success" ? "text-success" : "text-critical"}`}>
+          <p className={`m-0 text-[13px] ${ollamaMsg.kind === "success" ? "text-success" : "text-critical"}`}>
             {ollamaMsg.text}
           </p>
         )}
@@ -918,13 +918,13 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
         <div className="border border-border-subtle rounded p-2.5 space-y-1.5 bg-surface-2/40">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-fg">anthropic</span>
-            <span className="text-[10px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">組み込み</span>
-            <code className="text-[10px] text-fg-subtle">Anthropic Messages API (従量課金)</code>
+            <span className="text-[12px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">組み込み</span>
+            <code className="text-[12px] text-fg-subtle">Anthropic Messages API (従量課金)</code>
             <button
               onClick={() => anthropicKeyMut.mutate("")}
               disabled={anthropicKeyMut.isPending}
               title="キーを削除して無効化 (先に全ティアをローカルへ戻す必要があります)"
-              className="ml-auto text-[11px] text-critical hover:underline disabled:opacity-50"
+              className="ml-auto text-[13px] text-critical hover:underline disabled:opacity-50"
             >
               削除
             </button>
@@ -948,7 +948,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
           </div>
           {anthropic.usage && <UsageMiniTable title="消費" usage={anthropic.usage} />}
           {anthropicKeyMut.isError && (
-            <p className="m-0 text-[11px] text-critical">{(anthropicKeyMut.error as Error).message}</p>
+            <p className="m-0 text-[13px] text-critical">{(anthropicKeyMut.error as Error).message}</p>
           )}
         </div>
       )}
@@ -957,11 +957,11 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
         <div key={ep.name} className="border border-border-subtle rounded p-2.5 space-y-1.5 bg-surface-2/40">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-fg">{ep.name}</span>
-            <code className="text-[10px] text-fg-subtle break-all">{ep.base_url}</code>
+            <code className="text-[12px] text-fg-subtle break-all">{ep.base_url}</code>
             <button
               onClick={() => saveMut.mutate(current.filter((c) => c.name !== ep.name))}
               disabled={saveMut.isPending}
-              className="ml-auto text-[11px] text-critical hover:underline disabled:opacity-50"
+              className="ml-auto text-[13px] text-critical hover:underline disabled:opacity-50"
             >
               削除
             </button>
@@ -986,13 +986,13 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
               <button
                 onClick={() => keyMut.mutate({ name: ep.name, api_key: "" })}
                 disabled={keyMut.isPending}
-                className="text-[11px] text-fg-subtle hover:underline disabled:opacity-50"
+                className="text-[13px] text-fg-subtle hover:underline disabled:opacity-50"
               >
                 キー削除
               </button>
             )}
           </div>
-          <p className="m-0 text-[10px] text-fg-subtle">
+          <p className="m-0 text-[12px] text-fg-subtle">
             {ep.models.length > 0
               ? `モデル ${ep.models.length} 件を取得済み — 各ティアの選択肢に表示中`
               : "モデル一覧を取得できていません (接続先の稼働とキーを確認)"}
@@ -1038,7 +1038,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
           </div>
           {adding === "anthropic" ? (
             <>
-              <p className="m-0 text-[10.5px] text-fg-subtle">
+              <p className="m-0 text-[12.5px] text-fg-subtle">
                 Anthropic は専用接続 (Messages API)。キーを保存すると接続先として現れます。
               </p>
               <input
@@ -1062,7 +1062,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
                 </button>
               </div>
               {anthropicKeyMut.isError && (
-                <p className="m-0 text-[11px] text-critical">{(anthropicKeyMut.error as Error).message}</p>
+                <p className="m-0 text-[13px] text-critical">{(anthropicKeyMut.error as Error).message}</p>
               )}
             </>
           ) : (
@@ -1092,7 +1092,7 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
                 </button>
               </div>
               {saveMut.isError && (
-                <p className="m-0 text-[11px] text-critical">{(saveMut.error as Error).message}</p>
+                <p className="m-0 text-[13px] text-critical">{(saveMut.error as Error).message}</p>
               )}
             </>
           )}
@@ -1141,13 +1141,13 @@ function TierCard({ tier, meta, current, saved, data, onChange, narrativeThink, 
       <div className="flex items-center gap-2 flex-wrap">
         <h3 className="m-0 text-sm font-semibold text-fg">{meta?.label ?? tier}</h3>
         {isExternal ? (
-          <span className="text-[10px] px-1.5 py-px rounded-sm bg-warning-soft text-warning font-semibold">外部</span>
+          <span className="text-[12px] px-1.5 py-px rounded-sm bg-warning-soft text-warning font-semibold">外部</span>
         ) : (
-          <span className="text-[10px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">ローカル</span>
+          <span className="text-[12px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">ローカル</span>
         )}
-        {dirty && <span className="text-[10px] text-warning ml-auto">未保存</span>}
+        {dirty && <span className="text-[12px] text-warning ml-auto">未保存</span>}
       </div>
-      <p className="m-0 text-[11px] text-fg-subtle leading-snug">{meta?.description}</p>
+      <p className="m-0 text-[13px] text-fg-subtle leading-snug">{meta?.description}</p>
       <select
         value={current}
         onChange={(e) => onChange(e.target.value)}
@@ -1190,14 +1190,14 @@ function TierCard({ tier, meta, current, saved, data, onChange, narrativeThink, 
         )}
       </select>
       {isExternal && (
-        <p className="m-0 text-[10.5px] text-warning leading-snug">
+        <p className="m-0 text-[12.5px] text-warning leading-snug">
           {externalKind}で実行。利用できないときは自動的にローカルモデルへ切替。
         </p>
       )}
       {onChangeThink !== undefined && (
         <div className="pt-1.5 border-t border-border-subtle space-y-1">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-fg-muted shrink-0">拡張思考 (think)</span>
+            <span className="text-[13px] text-fg-muted shrink-0">拡張思考 (think)</span>
             <select
               value={narrativeThink ?? "auto"}
               onChange={(e) => onChangeThink(e.target.value)}
@@ -1208,7 +1208,7 @@ function TierCard({ tier, meta, current, saved, data, onChange, narrativeThink, 
               <option value="off">使わない</option>
             </select>
           </div>
-          <p className="m-0 text-[10px] text-fg-subtle leading-snug">
+          <p className="m-0 text-[12px] text-fg-subtle leading-snug">
             {isExternal
               ? "分析の深さが上がる一方、生成時間は 2〜3 倍になります。"
               : "ローカルモデルでは常に無効です（外部モデル割当時のみ選べます）。"}
@@ -1218,7 +1218,7 @@ function TierCard({ tier, meta, current, saved, data, onChange, narrativeThink, 
       {meta?.examples && (
         <div className="flex flex-wrap gap-1">
           {meta.examples.split(/\s*\/\s*/).map((ex) => (
-            <span key={ex} className="text-[10px] px-1.5 py-px rounded-full bg-surface-3 text-fg-muted">
+            <span key={ex} className="text-[12px] px-1.5 py-px rounded-full bg-surface-3 text-fg-muted">
               {ex}
             </span>
           ))}

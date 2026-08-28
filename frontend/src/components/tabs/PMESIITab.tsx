@@ -92,10 +92,10 @@ export function PMESIITab() {
           {tempo && (
             <div className="bg-surface-1 border border-border-subtle rounded-lg px-3 py-2">
               <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-                <div className="text-[11px] font-medium text-fg-muted">
+                <div className="text-[13px] font-medium text-fg-muted">
                   テンポ — {data.label} の日次活動（{isEvent ? "発生時刻" : "報道時刻"}）
                 </div>
-                <div className="inline-flex rounded border border-border-subtle overflow-hidden text-[10.5px]">
+                <div className="inline-flex rounded border border-border-subtle overflow-hidden text-[12.5px]">
                   <button
                     onClick={() => setTempoBasis("report")}
                     className={`px-2 py-0.5 transition-colors ${!isEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
@@ -115,7 +115,7 @@ export function PMESIITab() {
               <TrendChart data={tempo} mode="line" />
               {/* 発生時刻は dated subset のみ=未抽出を「無し」と誤読させない (暗域=不明≠安全)。 */}
               {isEvent && data.tempo.coverage && (
-                <div className="mt-1 text-[10px] leading-snug text-fg-subtle">
+                <div className="mt-1 text-[12px] leading-snug text-fg-subtle">
                   発生日付き {data.tempo.coverage.dated}/{data.tempo.coverage.total} 件（期間内{" "}
                   {data.tempo.coverage.event_in_window}）。未抽出（速報の大半）は非表示＝
                   <span className="text-warning">不明（≠無し）</span>。
@@ -126,7 +126,7 @@ export function PMESIITab() {
           )}
 
           {/* 凡例: 攻撃者(accent) / 標的(cyan) / 地政学(warning) */}
-          <div className="flex items-center gap-3 px-1 text-[10.5px] text-fg-subtle">
+          <div className="flex items-center gap-3 px-1 text-[12.5px] text-fg-subtle">
             <span className="inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-accent" />攻撃者=その国が主体のサイバー攻勢 (帰属済み・国家機関含む)
             </span>
@@ -211,7 +211,7 @@ function NationSelector({
         const hidden = items.length - shown.length;
         return (
           <div key={g.role} className="flex items-start gap-2">
-            <span className="shrink-0 w-9 pt-1.5 text-[11px] font-medium text-fg-subtle">{vocabLabel("pmesii_role", g.role)}</span>
+            <span className="shrink-0 w-9 pt-1.5 text-[13px] font-medium text-fg-subtle">{vocabLabel("pmesii_role", g.role)}</span>
             <div className="flex flex-wrap gap-1.5">
               {shown.map((n) => (
                 <NationChip key={n.iso} n={n} selected={selected === n.iso} onClick={() => onSelect(n.iso)} />
@@ -284,10 +284,10 @@ function FacePanel({
         <span className="text-sm font-bold text-fg">{title}</span>
         <span className={`tnum text-base font-bold ${accent}`}>
           {total}
-          <span className="text-[10px] text-fg-subtle ml-1 font-normal">件</span>
+          <span className="text-[12px] text-fg-subtle ml-1 font-normal">件</span>
         </span>
       </div>
-      {note && <div className="text-[10px] leading-snug text-fg-subtle -mt-1">{note}</div>}
+      {note && <div className="text-[12px] leading-snug text-fg-subtle -mt-1">{note}</div>}
 
       {total === 0 ? (
         <div className="text-xs text-fg-subtle italic py-3">{emptyHint}</div>
@@ -296,7 +296,7 @@ function FacePanel({
           {/* アクター (攻撃者面=その国の攻撃主体 / 標的面=攻撃元) — click でアクター詳細へドリル */}
           {face?.actors && face.actors.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-fg-subtle uppercase tracking-wider">{actorsLabel}</span>
+              <span className="text-[12px] text-fg-subtle uppercase tracking-wider">{actorsLabel}</span>
               {face.actors.map((a) => (
                 <button
                   key={a.actor_id}
@@ -313,11 +313,11 @@ function FacePanel({
           {/* 標的セクター (標的面のみ: どの分野が狙われたか) */}
           {face?.sectors && face.sectors.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-fg-subtle uppercase tracking-wider">分野</span>
+              <span className="text-[12px] text-fg-subtle uppercase tracking-wider">分野</span>
               {face.sectors.map((s) => (
                 <span
                   key={s.sector}
-                  className="inline-flex items-center gap-1 rounded bg-surface-2 border border-cyan-400/30 px-1.5 py-0.5 text-[11px] text-fg-muted"
+                  className="inline-flex items-center gap-1 rounded bg-surface-2 border border-cyan-400/30 px-1.5 py-0.5 text-[13px] text-fg-muted"
                 >
                   {s.label} <span className="text-fg-subtle tnum">{s.count}</span>
                 </span>
@@ -328,11 +328,11 @@ function FacePanel({
           {/* 動機 (intent) */}
           {face && face.intents.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-fg-subtle uppercase tracking-wider">動機</span>
+              <span className="text-[12px] text-fg-subtle uppercase tracking-wider">動機</span>
               {face.intents.map((i) => (
                 <span
                   key={i.intent}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[13px]"
                   style={{ color: intentHex(i.intent), border: `1px solid ${intentHex(i.intent)}55` }}
                 >
                   {intentLabel(i.intent)} <span className="text-fg-subtle tnum">{i.count}</span>
@@ -344,11 +344,11 @@ function FacePanel({
           {/* PMESII ドメイン (足場=内訳) */}
           {face && face.domains.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-fg-subtle uppercase tracking-wider">領域</span>
+              <span className="text-[12px] text-fg-subtle uppercase tracking-wider">領域</span>
               {face.domains.map((d) => (
                 <span
                   key={d.axis}
-                  className="inline-flex items-center gap-1 rounded bg-surface-2 border border-border-subtle px-1.5 py-0.5 text-[11px] text-fg-muted"
+                  className="inline-flex items-center gap-1 rounded bg-surface-2 border border-border-subtle px-1.5 py-0.5 text-[13px] text-fg-muted"
                 >
                   {d.label} <span className="text-fg-subtle tnum">{d.count}</span>
                 </span>
@@ -377,7 +377,7 @@ function FacePanel({
                     >
                       {r.title}
                     </a>
-                    <span className="text-[10px] text-fg-subtle ml-0.5">
+                    <span className="text-[12px] text-fg-subtle ml-0.5">
                       {r.intent && (
                         <span style={{ color: intentHex(r.intent) }}>{intentLabel(r.intent)} · </span>
                       )}

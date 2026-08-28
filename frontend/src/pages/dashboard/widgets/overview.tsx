@@ -42,7 +42,7 @@ function moversToRows(ms: Mover[], opts?: { share?: boolean }): RankRow[] {
       delta: m.share_delta_pp,
       deltaSuffix: "pp",
       deltaTitle: "前期比 (ポイント差)",
-      suffix: <span className="text-[10px] text-fg-subtle tnum w-7 text-right shrink-0">{m.current}</span>,
+      suffix: <span className="text-[12px] text-fg-subtle tnum w-7 text-right shrink-0">{m.current}</span>,
     }));
   }
   return ms.map((m) => ({ label: m.label, value: m.current, delta: m.delta }));
@@ -63,7 +63,7 @@ function asOfLabel(iso: string | undefined): string {
 function WindowSelector({ asOf }: { asOf: string }) {
   const days = useOverviewWindow();
   return (
-    <div className="flex items-center gap-2 shrink-0 text-[11px] text-fg-subtle">
+    <div className="flex items-center gap-2 shrink-0 text-[13px] text-fg-subtle">
       <span>直近{days === 1 ? "24h" : `${days}日`}</span>
       {asOf && (
         <span className="inline-flex items-center gap-1" title="集計時刻">
@@ -91,14 +91,14 @@ function AttentionStrip({ items, mobile }: { items: AttentionItem[]; mobile?: bo
         mobile ? "space-y-1.5" : "flex flex-wrap items-center gap-x-3 gap-y-1.5"
       }`}
     >
-      <span className={`text-[11px] font-semibold text-warning ${mobile ? "block mb-1" : "shrink-0"}`}>今日の要注意</span>
+      <span className={`text-[13px] font-semibold text-warning ${mobile ? "block mb-1" : "shrink-0"}`}>今日の要注意</span>
       {items.map((it, i) => (
         <a
           key={`${it.kind}-${it.label}-${i}`}
           href={it.href}
           target={it.href.startsWith("http") ? "_blank" : undefined}
           rel="noopener noreferrer"
-          className={`${mobile ? "flex" : "inline-flex"} items-center gap-1.5 text-[12px] text-fg hover:text-accent`}
+          className={`${mobile ? "flex" : "inline-flex"} items-center gap-1.5 text-[13.5px] text-fg hover:text-accent`}
           title={it.detail}
         >
           {ATTENTION_ICON[it.kind]}
@@ -127,7 +127,7 @@ export function ConfidenceStrip({ c }: { c: Record<string, number> }) {
         <div className="bg-accent/50" style={{ width: seg(news) }} title={`ニュース ${news}`} />
         <div className="bg-warning/50" style={{ width: seg(social) }} title={`SNS ${social}`} />
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-fg-muted tnum">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-fg-muted tnum">
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-success" /> 一次/研究 {pct(auth)}%</span>
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent" /> ニュース {pct(news)}%</span>
         <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> SNS {pct(social)}%</span>
@@ -151,7 +151,7 @@ function ImportanceBreakdown({ ov }: { ov: OverviewData }) {
             <div className="bg-warning/70" style={{ width: seg(imp.medium) }} title={`中 ${imp.medium}`} />
             <div className="bg-fg-subtle/40" style={{ width: seg(imp.low) }} title={`低 ${imp.low}`} />
           </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-fg-muted tnum">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-fg-muted tnum">
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-critical" /> 高 {imp.high}</span>
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> 中 {imp.medium}</span>
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-fg-subtle" /> 低 {imp.low}</span>
@@ -268,7 +268,7 @@ export function ThreatPictureWidget({ config, mobile }: WidgetProps = {}) {
           <RankBars items={rows(data.regions)} max={100} emptyLabel="該当なし" compact={mobile} />
         </Section>
       </div>
-      <p className="text-[11px] text-fg-subtle mt-3 pt-2 border-t border-border-subtle">
+      <p className="text-[13px] text-fg-subtle mt-3 pt-2 border-t border-border-subtle">
         %=各分類の観測に占める割合 / pp=前期比のポイント差{mobile ? "" : " / 右端=件数"}。
         収集量の増減に左右されない比較です。
       </p>
@@ -312,7 +312,7 @@ export function NotableActorsWidget({ config, mobile }: WidgetProps = {}) {
               <a href={actorHref(a.actor_id)} className="font-medium text-fg hover:text-accent truncate">
                 {a.canonical}
               </a>
-              {a.nation && <span className="text-[11px] text-fg-subtle shrink-0">{a.nation}</span>}
+              {a.nation && <span className="text-[13px] text-fg-subtle shrink-0">{a.nation}</span>}
               <span
                 className="ml-auto shrink-0 text-accent inline-flex items-center"
                 aria-hidden
@@ -346,18 +346,18 @@ export function VulnerabilitiesWidget({ config, mobile }: WidgetProps = {}) {
         <ul className="space-y-1.5">
           {list.map((v) => (
             <li key={v.cve} className="border-l-2 border-border-emphasized pl-2.5 py-0.5">
-              <div className="flex items-center gap-2 text-[12px]">
+              <div className="flex items-center gap-2 text-[13.5px]">
                 <a href={v.is_roundup ? v.nvd_url : v.url} target="_blank" rel="noopener noreferrer" className="font-mono text-accent hover:underline">
                   {v.cve}
                 </a>
                 {v.kev && (
-                  <span className="px-1 rounded bg-critical-soft text-critical text-[10px] font-semibold">KEV 悪用中</span>
+                  <span className="px-1 rounded bg-critical-soft text-critical text-[12px] font-semibold">KEV 悪用中</span>
                 )}
                 {v.cvss != null && <span className="tnum text-fg-muted">CVSS {v.cvss}</span>}
               </div>
               {v.is_roundup ? (
                 // まとめ記事 title は情報ゼロ → NVD 詳細へ誘導し、出典はまとめとして控えめに
-                <a href={v.nvd_url} target="_blank" rel="noopener noreferrer" className="block text-[12px] text-fg-muted hover:text-accent">
+                <a href={v.nvd_url} target="_blank" rel="noopener noreferrer" className="block text-[13.5px] text-fg-muted hover:text-accent">
                   NVD 詳細を見る <span className="text-fg-subtle">(検出元: まとめ記事)</span>
                 </a>
               ) : (

@@ -39,7 +39,7 @@ function GlobalSynthesisView() {
         <h3 className="m-0 text-lg font-bold text-fg tracking-tight">状況総括</h3>
         {/* セクションジャンプ (長文レポートの目次) */}
         {data?.has_data && (
-          <nav className="flex flex-wrap gap-1.5 text-[11px]">
+          <nav className="flex flex-wrap gap-1.5 text-[13px]">
             {[
               ["#syn-narrative", "総括本文"],
               ["#syn-tradecraft", "トレードクラフト"],
@@ -78,9 +78,9 @@ function GlobalSynthesisView() {
         <>
           {/* Hero */}
           <div className="bg-accent-subtle border border-accent-soft border-l-[3px] border-l-accent rounded-lg p-5 mb-5">
-            <div className="text-[11px] text-accent-hover uppercase tracking-wider font-semibold mb-1.5">見出し</div>
+            <div className="text-[13px] text-accent-hover uppercase tracking-wider font-semibold mb-1.5">見出し</div>
             <div className="text-md leading-[1.8] text-fg">{data.latest.headline}</div>
-            <div className="mt-2.5 text-[11px] text-fg-subtle flex flex-wrap gap-3.5">
+            <div className="mt-2.5 text-[13px] text-fg-subtle flex flex-wrap gap-3.5">
               <span><strong className="text-fg-muted font-semibold">期間:</strong> {formatJstDate(data.latest.period_start)} 〜 {formatJstDate(data.latest.period_end)}</span>
               <span>
                 <strong className="text-fg-muted font-semibold">根拠:</strong> {data.latest.article_count} 記事
@@ -89,7 +89,7 @@ function GlobalSynthesisView() {
                   : ""}
               </span>
               <span><strong className="text-fg-muted font-semibold">生成:</strong> {formatJst(data.latest.generated_at)}</span>
-              <span><strong className="text-fg-muted font-semibold">モデル:</strong> <code className="text-[11px]">{data.latest.llm_model}</code></span>
+              <span><strong className="text-fg-muted font-semibold">モデル:</strong> <code className="text-[13px]">{data.latest.llm_model}</code></span>
             </div>
           </div>
 
@@ -152,7 +152,7 @@ function Section({ title, body, className = "", columns = false }: {
 }) {
   return (
     <div className={`bg-surface-1 border border-border-subtle rounded-lg p-4 transition-colors hover:border-border-default ${className}`}>
-      <h4 className="m-0 mb-2.5 text-[11px] text-accent-hover uppercase tracking-wider font-semibold pb-1.5 border-b border-border-subtle">{title}</h4>
+      <h4 className="m-0 mb-2.5 text-[13px] text-accent-hover uppercase tracking-wider font-semibold pb-1.5 border-b border-border-subtle">{title}</h4>
       <SynthesisProse text={body} columns={columns} />
     </div>
   );
@@ -178,11 +178,11 @@ function TradecraftSection({ tc }: { tc: Tradecraft }) {
     <div id="syn-tradecraft" className="bg-surface-1 border border-accent-soft rounded-lg p-4 mb-5 scroll-mt-24">
       <h4 className="m-0 mb-3 text-md text-fg font-semibold tracking-tight flex items-center gap-2">
         分析トレードクラフト
-        <span className="text-[10px] text-fg-subtle font-normal">— トンネル視を防ぐ別解・前提・監視指標 (ICD 203)</span>
+        <span className="text-[12px] text-fg-subtle font-normal">— トンネル視を防ぐ別解・前提・監視指標 (ICD 203)</span>
       </h4>
       {tc.leading_assessment && (
         <div className="mb-3">
-          <div className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1">主見立て</div>
+          <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1">主見立て</div>
           <SynthesisProse text={tc.leading_assessment} collapsedHeight={180} />
         </div>
       )}
@@ -190,7 +190,7 @@ function TradecraftSection({ tc }: { tc: Tradecraft }) {
         {lists.map((l) =>
           l.items && l.items.length > 0 ? (
             <div key={l.title}>
-              <div className={`text-[11px] font-semibold mb-1.5 ${l.tone}`}>
+              <div className={`text-[13px] font-semibold mb-1.5 ${l.tone}`}>
                 {l.title}
               </div>
               <ul className="m-0 p-0 list-none space-y-1">
@@ -209,19 +209,19 @@ function TradecraftSection({ tc }: { tc: Tradecraft }) {
         <div className="mt-3 pt-3 border-t border-border-subtle space-y-1.5">
           {tc.source_caveat && (
             <div className="text-[13px]">
-              <span className="text-[10px] text-warning uppercase tracking-wider font-semibold mr-1.5">出典の割引</span>
+              <span className="text-[12px] text-warning uppercase tracking-wider font-semibold mr-1.5">出典の割引</span>
               <span className="text-fg-muted">{tc.source_caveat}</span>
             </div>
           )}
           {tc.forecast_alignment && (
             <div className="text-[13px]">
-              <span className="text-[10px] text-accent-hover uppercase tracking-wider font-semibold mr-1.5">予測整合</span>
+              <span className="text-[12px] text-accent-hover uppercase tracking-wider font-semibold mr-1.5">予測整合</span>
               <span className="text-fg-muted">{tc.forecast_alignment}</span>
             </div>
           )}
           {tc.freshness_note && (
             <div className="text-[13px]">
-              <span className="text-[10px] text-cyan-400 uppercase tracking-wider font-semibold mr-1.5">鮮度</span>
+              <span className="text-[12px] text-cyan-400 uppercase tracking-wider font-semibold mr-1.5">鮮度</span>
               <span className="text-fg-muted">{tc.freshness_note}</span>
             </div>
           )}
@@ -247,11 +247,11 @@ function GroundedEstimateSection({ est, generatedAt }: { est: GroundedEstimate; 
     <div id="syn-ach" className="bg-surface-1 border border-accent-soft rounded-lg p-4 mb-5 scroll-mt-24">
       <h4 className="m-0 mb-3 text-md text-fg font-semibold tracking-tight flex items-center gap-2 flex-wrap">
         証拠駆動評価 (ACH)
-        <span className="text-[10px] text-fg-subtle font-normal">
+        <span className="text-[12px] text-fg-subtle font-normal">
           — 競合仮説・根拠となる証拠・確度の根拠 (本文と照合可能・対称客観性)
         </span>
         {generatedAt && (
-          <span className="text-[10px] text-fg-subtle font-normal ml-auto whitespace-nowrap">
+          <span className="text-[12px] text-fg-subtle font-normal ml-auto whitespace-nowrap">
             {formatJstDate(generatedAt)} 生成時点のスナップショット — 台帳更新がある判定には現在値を併記
           </span>
         )}
@@ -277,15 +277,15 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
       <summary className="list-none cursor-pointer px-3 py-2 bg-surface-2 hover:bg-surface-3 flex flex-wrap items-center gap-2 [&::-webkit-details-marker]:hidden">
         <span className="text-sm text-fg flex-1 min-w-0">{j.claim}</span>
         <span className="text-xs text-accent-hover">{vocabLabel("ach_hypothesis", j.leading_hypothesis)}</span>
-        <span className={`text-[10px] font-bold ${confTone}`}>{vocabLabel("confidence", j.confidence)}</span>
+        <span className={`text-[12px] font-bold ${confTone}`}>{vocabLabel("confidence", j.confidence)}</span>
         {j.adversarial_refuted && (
-          <span className="text-[10px] text-warning" title={j.adversarial_note}>検証で反証</span>
+          <span className="text-[12px] text-warning" title={j.adversarial_note}>検証で反証</span>
         )}
         {/* 台帳現在値 (2026-07-25): このカードはレポート生成時点の凍結スナップショット。
             台帳がその後更新/是正されていれば現在値を chip で併記する (記録は改変しない)。 */}
         {j.ledger_now?.differs && (
           <span
-            className="text-[10px] px-1.5 py-px rounded-sm bg-accent-subtle text-accent-hover font-semibold whitespace-nowrap"
+            className="text-[12px] px-1.5 py-px rounded-sm bg-accent-subtle text-accent-hover font-semibold whitespace-nowrap"
             title={`このカードはレポート生成時点の評価。台帳は rev${j.ledger_now.rev} (${formatJstDate(j.ledger_now.updated_at)}) で更新済み`}
           >
             台帳の現在値: {vocabLabel("ach_hypothesis", j.ledger_now.leading_hypothesis)} / {vocabLabel("confidence", j.ledger_now.confidence)}
@@ -293,9 +293,9 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
         )}
       </summary>
       <div className="p-3 space-y-2">
-        <div className="text-[11px] text-fg-subtle">確度の根拠: {j.confidence_basis}</div>
+        <div className="text-[13px] text-fg-subtle">確度の根拠: {j.confidence_basis}</div>
         {j.ledger_now?.differs && (
-          <div className="text-[11px] text-accent-hover">
+          <div className="text-[13px] text-accent-hover">
             この評価はレポート生成時点のスナップショットです。情勢台帳の現在値 (rev{j.ledger_now.rev} ·{" "}
             {formatJstDate(j.ledger_now.updated_at)}) は「
             {vocabLabel("ach_hypothesis", j.ledger_now.leading_hypothesis)} /{" "}
@@ -304,7 +304,7 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
         )}
 
         <div>
-          <div className="text-[11px] font-semibold text-fg-muted mb-1">競合仮説 (ACH)</div>
+          <div className="text-[13px] font-semibold text-fg-muted mb-1">競合仮説 (ACH)</div>
           <ul className="m-0 p-0 list-none space-y-0.5">
             {j.hypotheses.map((h) => (
               <li key={h.hypothesis} className="text-[13px] flex items-center gap-2">
@@ -319,10 +319,10 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
                 >
                   {vocabLabel("ach_hypothesis", h.hypothesis)}
                 </span>
-                <span className="text-[10px] text-fg-subtle tnum">
+                <span className="text-[12px] text-fg-subtle tnum">
                   整合{h.consistent}/反{h.inconsistent}
                 </span>
-                <span className="text-[10px] text-fg-subtle">{h.verdict === "leading" ? "主説" : h.verdict === "refuted" ? "反証" : h.verdict === "neutral" ? "中立" : h.verdict}</span>
+                <span className="text-[12px] text-fg-subtle">{h.verdict === "leading" ? "主説" : h.verdict === "refuted" ? "反証" : h.verdict === "neutral" ? "中立" : h.verdict}</span>
               </li>
             ))}
           </ul>
@@ -330,12 +330,12 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
 
         {assessedEvidence.length > 0 && (
           <div>
-            <div className="text-[11px] font-semibold text-fg-muted mb-1">根拠となる証拠 (本文と照合)</div>
+            <div className="text-[13px] font-semibold text-fg-muted mb-1">根拠となる証拠 (本文と照合)</div>
             <ul className="m-0 p-0 list-none space-y-1">
               {assessedEvidence.map((e, i) => (
                 <li key={i} className="text-[13px] leading-snug">
                   <span
-                    className={`text-[10px] mr-1 font-semibold ${
+                    className={`text-[12px] mr-1 font-semibold ${
                       e.polarity === "contradicts"
                         ? "text-critical"
                         : e.polarity === "supports"
@@ -351,14 +351,14 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
                         : "中立"}
                     ]
                   </span>
-                  <span className="text-[10px] text-fg-subtle mr-1">
+                  <span className="text-[12px] text-fg-subtle mr-1">
                     {e.attribution_basis}/{e.source_tier}
                   </span>
                   <span className="text-fg">{e.excerpt}</span>
                   {e.article_id && (
                     <a
                       href={`/app/article/${encodeURIComponent(e.article_id)}`}
-                      className="text-accent text-[11px] ml-1 no-underline hover:underline"
+                      className="text-accent text-[13px] ml-1 no-underline hover:underline"
                     >
                       →本文
                     </a>
@@ -369,20 +369,20 @@ function GroundedJudgmentCard({ j }: { j: GroundedJudgment }) {
           </div>
         )}
         {unassessedCount > 0 && (
-          <div className="text-[11px] text-fg-subtle">
+          <div className="text-[13px] text-fg-subtle">
             ほかに未評価の割当記事 {unassessedCount} 件 — ACH は未読/未引用 (情勢台帳の証拠台帳で確認可能)
           </div>
         )}
 
         {j.missing_evidence.length > 0 && (
-          <div className="text-[12px]">
-            <span className="text-[10px] text-warning font-semibold mr-1">欠落証拠</span>
+          <div className="text-[13.5px]">
+            <span className="text-[12px] text-warning font-semibold mr-1">欠落証拠</span>
             {j.missing_evidence.join(" / ")}
           </div>
         )}
         {j.adversarial_note && (
-          <div className="text-[12px]">
-            <span className="text-[10px] text-fg-subtle font-semibold mr-1">検証(red-team)</span>
+          <div className="text-[13.5px]">
+            <span className="text-[12px] text-fg-subtle font-semibold mr-1">検証(red-team)</span>
             {j.adversarial_note}
           </div>
         )}
@@ -407,7 +407,7 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
     <div id="syn-forecast" className="bg-surface-1 border border-border-subtle rounded-lg p-4 mb-5 scroll-mt-24">
       <h4 className="m-0 mb-3 text-md text-fg font-semibold tracking-tight flex items-center gap-2">
         予測スコアカード
-        <span className="text-[10px] text-fg-subtle font-normal">— 予測の説明責任と的中率</span>
+        <span className="text-[12px] text-fg-subtle font-normal">— 予測の説明責任と的中率</span>
         {acc && acc.scored > 0 && acc.hit_rate_pct != null && (
           <span className="ml-auto text-xs tnum text-fg-muted">
             直近的中率{" "}
@@ -431,12 +431,12 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
       </h4>
       {tc.forecast_scorecard && tc.forecast_scorecard.length > 0 && (
         <div className="mb-3">
-          <div className="text-[11px] font-semibold mb-1.5 text-fg-subtle">前期予測の採点</div>
+          <div className="text-[13px] font-semibold mb-1.5 text-fg-subtle">前期予測の採点</div>
           <ul className="m-0 p-0 list-none space-y-1.5">
             {tc.forecast_scorecard.map((s, i) => (
               <li key={i} className="text-sm text-fg leading-snug">
                 <span
-                  className={`text-[10px] font-bold mr-1.5 ${_VERDICT_TONE[s.verdict] ?? "text-fg-muted"}`}
+                  className={`text-[12px] font-bold mr-1.5 ${_VERDICT_TONE[s.verdict] ?? "text-fg-muted"}`}
                 >
                   {vocabLabel("forecast_verdict", s.verdict)}
                 </span>
@@ -449,12 +449,12 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
       )}
       {tc.forecasts && tc.forecasts.length > 0 && (
         <div>
-          <div className="text-[11px] font-semibold mb-1.5 text-accent-hover">今期の予測 (次期に採点)</div>
+          <div className="text-[13px] font-semibold mb-1.5 text-accent-hover">今期の予測 (次期に採点)</div>
           <ul className="m-0 p-0 list-none space-y-1">
             {tc.forecasts.map((f, i) => (
               <li key={i} className="text-sm text-fg leading-snug pl-3 -indent-3">
                 ・{f.claim}
-                <span className="text-fg-subtle text-[11px]"> [{vocabLabel("confidence", f.confidence)}]</span>
+                <span className="text-fg-subtle text-[13px]"> [{vocabLabel("confidence", f.confidence)}]</span>
               </li>
             ))}
           </ul>
@@ -577,30 +577,30 @@ function SpotlightCard({
       {/* Header */}
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
         <h4 className="m-0 text-md font-bold text-fg">{s.pir_title}</h4>
-        <div className="flex items-center gap-2 text-[11px] text-fg-subtle">
+        <div className="flex items-center gap-2 text-[13px] text-fg-subtle">
           <span>生成 {formatJst(s.generated_at)}</span>
           <span>·</span>
           <span>記事数 {s.article_count}</span>
           <span>·</span>
-          <code className="text-[10px] bg-surface-2 px-1.5 py-0.5 rounded">{s.llm_model}</code>
+          <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">{s.llm_model}</code>
           <a href={`/app/pir/${encodeURIComponent(s.pir_id)}`} className="text-fg-muted hover:text-accent-hover no-underline ml-1">→ PIR</a>
         </div>
       </div>
 
       {/* Headline */}
       <div className="bg-accent-subtle border-l-[3px] border-l-accent rounded p-3 mb-3">
-        <div className="text-[10px] text-accent-hover uppercase tracking-wider font-semibold mb-1">見出し</div>
+        <div className="text-[12px] text-accent-hover uppercase tracking-wider font-semibold mb-1">見出し</div>
         <div className="text-fg text-base leading-relaxed">{s.headline}</div>
       </div>
 
       {/* Key events */}
       {s.key_events.length > 0 && (
         <div className="mb-3">
-          <div className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">主要イベント ({s.key_events.length})</div>
+          <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">主要イベント ({s.key_events.length})</div>
           <ul className="m-0 p-0 list-none space-y-1">
             {s.key_events.map((ke) => (
               <li key={ke.article_id} className="flex items-baseline gap-2 text-sm">
-                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                <span className={`text-[12px] px-1.5 py-0.5 rounded font-mono ${
                   ke.importance === "high" ? "bg-critical-soft text-critical" :
                   ke.importance === "medium" ? "bg-warning-soft text-warning" :
                   "bg-surface-3 text-fg-subtle"
@@ -610,7 +610,7 @@ function SpotlightCard({
                 </a>
                 {/* S1: 出典基盤の確度バッジ (source メタから決定的に算出、reason は hover) */}
                 <ConfidenceBadge sb={ke.source_basis} />
-                <span className="text-[10px] text-fg-subtle">{ke.feed_title}</span>
+                <span className="text-[12px] text-fg-subtle">{ke.feed_title}</span>
               </li>
             ))}
           </ul>
@@ -619,7 +619,7 @@ function SpotlightCard({
 
       {/* Outlook — (a)〜(d) 構造の長文。読了幅 + 再段落化 + 折りたたみで表示 */}
       <div>
-        <div className="text-[10px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">見通し</div>
+        <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">見通し</div>
         <SynthesisProse text={s.outlook} />
       </div>
 
