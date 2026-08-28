@@ -132,15 +132,17 @@ describe("公開ニュースサイト", () => {
     expect(screen.getAllByText("vuln").length).toBeGreaterThan(0);
   });
 
-  it("先頭記事以外は見出しだけにする (2026-08-28 利用者提案)", () => {
-    // 見出しが中央値 62 字あり、要約の冒頭は見出しを中央値 53% なぞる。
-    // 1 件の高さを倍にする割に足す情報が少ないので、カードは見出しで止める。
+  it("要約は画面幅で出し分ける (モバイルは見出しのみ・PC は要約あり)", () => {
+    // 制約が縦か横かで最適が逆になる。モバイルは縦が足りないので見出しだけ、
+    // PC は 2 列で横に広く、見出しだけだとカードが間延びする (2026-08-28 利用者指摘)。
     const card = siteSource.slice(
       siteSource.indexOf("function NewsCard("),
-      siteSource.indexOf("function NewsCard(") + 2000,
+      siteSource.indexOf("function NewsCard(") + 2600,
     );
     expect(card).toContain("{item.headline}");
-    expect(card).not.toContain("{item.summary}");
+    // 要約は出すが、段数が変わる境目 (md) より下では隠す
+    const summaryLine = card.slice(card.indexOf("{item.summary}") - 400, card.indexOf("{item.summary}"));
+    expect(summaryLine).toContain("hidden md:block");
   });
 
   it("一覧に出典名と媒体数を出さない (2026-08-25 利用者指摘)", async () => {

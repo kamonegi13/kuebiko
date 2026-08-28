@@ -802,31 +802,39 @@ function NewsCard({
   return (
     // 記事ごとに面を持たせて境界を出す。余白だけで区切ると、見出しと要約と
     // 次の記事の見出しが同じ「文字の連なり」に見えて切れ目が読み取れない。
+    // グリッドの行内で高さを揃える。揃えないと下端がばらつき、PC の 2 列表示で
+    // 隙間が目立つ (2026-08-28 利用者指摘)。日付は常にカードの下端へ送る。
     <article
-      className={`rounded-xl border border-border-subtle bg-surface-1 px-4 py-3.5 transition-colors [@media(hover:hover)]:hover:border-border-default ${
+      className={`flex h-full flex-col rounded-xl border border-border-subtle bg-surface-1 px-4 py-3.5 transition-colors [@media(hover:hover)]:hover:border-border-default ${
         opened ? "opacity-60" : ""
       }`}
     >
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
-        className="block w-full text-left group space-y-1.5"
+        className="block w-full flex-1 text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
         {/* ⚠ **見出しは切らない。** 要約を外した今、見出しが唯一の情報なので、
             省略記号で消すと何の記事か分からなくなる (2026-08-28 利用者指摘)。
             3 行で止めていたときは **63% の記事が切れていた**。長すぎるのは
-            生成側の問題 (中央値 62 字) なので、そちらで直す。
-
-            ⚠ **要約は出さない。** 見出しが中央値 62 字あり (30 字未満は 2%)、
-            それだけで何の話かは判る。要約の冒頭は見出しを中央値 53% なぞっており、
-            1 件の高さを倍にする割に足す情報が少ない (2026-08-28 実測・利用者提案)。
-            一覧の仕事は「読む」ではなく「選ぶ」。全文は開けば出る。
-            先頭記事 (LeadStory) だけは別 — そこは読ませる枠なので要約を残す。 */}
+            生成側の問題 (中央値 62 字) なので、そちらで直す。 */}
         <h3 className="text-[17px] font-semibold leading-[1.6] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h3>
+        {/* 要約は **画面幅で出し分ける**。制約が縦か横かで最適が逆になる:
+            - モバイル (1 列): 縦が足りない。見出しが中央値 62 字あるので
+              それだけで選べる。要約は 1 件の高さを倍にする割に、冒頭が見出しを
+              中央値 53% なぞっていて足す情報が少ない
+            - PC (2 列): 横に広く、見出しだけだとカードが空いて間延びする。
+              ここは要約を入れたほうが密度が釣り合う (2026-08-28 利用者指摘)
+            段数の切替 (md) と同じ境目で出し分ける。 */}
+        {item.summary && (
+          <p className="hidden md:block border-l-2 border-border-default pl-3 text-[14.5px] leading-[1.75] text-fg-muted line-clamp-3">
+            {item.summary}
+          </p>
+        )}
       </button>
-      <div className="mt-2.5">
+      <div className="mt-2.5 pt-0.5">
         <CardMeta item={item} />
       </div>
     </article>
