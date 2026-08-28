@@ -7,23 +7,21 @@
          BottomTabBar の safe-area padding が両方とも効かない。 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#0b0d11" />
+    <meta name="theme-color" content="#faf9f6" />
     <title>Kuebiko — 久延毘古</title>
 
     <!-- テーマ確定。**描画前に属性を立てる** (React 待ちだと初回に別配色が一瞬出る)。
-         運用画面の既定は **ダーク** — 分析作業は暗い面を前提に設計してある。
-         利用者が明示的に選んだ値があればそれを優先する (公開サイトと同じ鍵)。 -->
+         既定は **ライト** (2026-08-28 利用者判断)。利用者が明示的に選んだ値が
+         あればそれを優先する (公開サイトと同じ鍵)。 -->
     <script>
       (function () {
         try {
           var saved = localStorage.getItem("kuebiko-theme");
-          document.documentElement.setAttribute("data-theme", saved || "dark");
-          if (saved === "light") {
-            var meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) meta.setAttribute("content", "#faf9f6");
-          }
+          document.documentElement.setAttribute("data-theme", saved || "light");
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", saved === "dark" ? "#0b0d11" : "#faf9f6");
         } catch (e) {
-          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-theme", "light");
         }
       })();
     </script>

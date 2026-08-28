@@ -35,6 +35,12 @@
   --cat-threat: #fb923c;
   --cat-geopolitical: #a3e635;
   --cat-neutral: #94a3b8;
+  /* 地図。Leaflet は色を JS で渡すので、値は getComputedStyle で読む
+     (CSS 変数のままでは SVG 属性として解決されない環境がある)。 */
+  --map-sea: #0a0e16;
+  --map-sea-rgb: 10 14 22;
+  --map-land: #1a2030;
+  --map-border: rgba(255, 255, 255, 0.13);
   color-scheme: dark;
 }
 
@@ -66,6 +72,10 @@
   --cat-threat: #b45309;
   --cat-geopolitical: #4d7c0f;
   --cat-neutral: #475569;
+  --map-sea: #eef2f7;
+  --map-sea-rgb: 238 242 247;
+  --map-land: #ffffff;
+  --map-border: rgba(24, 28, 36, 0.22);
   color-scheme: light;
 }
 

@@ -208,14 +208,14 @@ export function BlockPromptEditor({ promptId }: BlockPromptEditorProps) {
             <div className="mb-1 text-[13px] text-fg-subtle">
               {data.kind === "python_block" ? "合成結果 (サンプル候補)" : "合成後テンプレート (Jinja タグ未展開)"}
             </div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-3 p-3 font-mono text-[13px] text-fg">
               {preview?.composed ?? ""}
             </pre>
           </div>
           {data.kind !== "python_block" && (
             <div>
               <div className="mb-1 text-[13px] text-fg-subtle">サンプル context での展開後プロンプト</div>
-              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
+              <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-3 p-3 font-mono text-[13px] text-fg">
                 {preview?.rendered_sample ?? ""}
               </pre>
             </div>

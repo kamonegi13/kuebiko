@@ -12,6 +12,7 @@
 // 1.4MB あるので **地図ページを開いたときにだけ**取りに行く。
 
 import { useEffect, useRef } from "react";
+import { readMapColors, onThemeChange } from "../components/geo/mapTheme";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import countriesUrl from "../components/geo/ne_countries.geojson?url";
@@ -43,6 +44,7 @@ export function PublicMap({
 
   useEffect(() => {
     if (!divRef.current || mapRef.current) return;
+    let stopThemeWatch: (() => void) | undefined;
     const map = L.map(divRef.current, {
       center: [28, 12],
       zoom: 1,
@@ -61,23 +63,32 @@ export function PublicMap({
       .then((r) => r.json())
       .then((geo) => {
         if (!mapRef.current) return;
-        L.geoJSON(geo, {
+        const landLayer = L.geoJSON(geo, {
           style: {
-            fillColor: "#1a2030",
+            // 色はテーマから読む。ライトで海だけ明るく陸が黒い、が起きないように
+            // 陸・境界・海の 3 つをまとめて切り替える (2026-08-28 利用者指摘)。
+            fillColor: readMapColors().land,
             fillOpacity: 1,
-            color: "rgba(255,255,255,0.13)",
+            color: readMapColors().border,
             weight: 0.5,
           },
           interactive: false,
         })
           .addTo(map)
           .bringToBack();
+        // テーマが変わったら塗り直す。Leaflet は色を JS の値で持つので
+        // CSS だけでは追従しない (ライトにしても陸だけ黒いまま、が起きる)。
+        stopThemeWatch = onThemeChange(() => {
+          const c = readMapColors();
+          landLayer.setStyle({ fillColor: c.land, color: c.border });
+        });
       })
       .catch(() => {
         /* 基図が出なくてもバブルは描ける (機能を落として止めない) */
       });
 
     return () => {
+      stopThemeWatch?.();
       map.remove();
       mapRef.current = null;
     };
@@ -111,7 +122,7 @@ export function PublicMap({
     <div
       ref={divRef}
       className="relative z-0 w-full h-[52vh] min-h-[280px] rounded-lg overflow-hidden"
-      style={{ background: "#0a0e16" }}
+      style={{ background: "rgb(var(--map-sea-rgb, 10 14 22))" }}
     />
   );
 }

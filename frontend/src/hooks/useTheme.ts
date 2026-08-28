@@ -21,6 +21,9 @@ export function useTheme(): { theme: Theme; toggle: () => void } {
     document
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute("content", next === "light" ? "#faf9f6" : "#0b0d11");
+    // 地図のように **JS で色を持つ** 描画は CSS だけでは追従できないので、
+    // 切替を event で知らせる (購読側は mapTheme.onThemeChange)。
+    window.dispatchEvent(new CustomEvent("kuebiko-theme"));
     try {
       localStorage.setItem("kuebiko-theme", next);
     } catch {

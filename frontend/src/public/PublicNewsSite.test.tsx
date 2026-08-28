@@ -635,8 +635,18 @@ describe("地図の描画設定", () => {
    * ソースに残っていることを固定する。2026-08-25 に両方落として、
    * 「海が真っ白」「バブルが sticky ヘッダの上に描かれる」を実機で出した。
    */
-  it("暗色の背景を当てる (既定のままだと海が真っ白になる)", () => {
-    expect(mapSource).toContain('background: "#0a0e16"');
+  it("海の色をテーマから取る (既定のままだと真っ白 / 固定だとライトで真っ黒)", () => {
+    // 2026-08-25: 背景を当て忘れて海が真っ白になった。
+    // 2026-08-28: 逆に暗色で固定していたため、ライトにしても地図だけ黒いままだった。
+    expect(mapSource).toContain("--map-sea-rgb");
+    expect(mapSource).not.toContain('background: "#0a0e16"');
+  });
+
+  it("陸と境界もテーマから取り、切替で塗り直す", () => {
+    // Leaflet は色を **JS の値**で持つので CSS だけでは追従しない
+    expect(mapSource).toContain("readMapColors()");
+    expect(mapSource).toContain("onThemeChange(");
+    expect(mapSource).toContain("setStyle(");
   });
 
   it("スタッキング文脈を作る (Leaflet の pane は z-index 400+ でヘッダを突き抜ける)", () => {
@@ -826,12 +836,11 @@ describe("可読性の下限", () => {
     expect(before).toMatch(/line-clamp-2/);
   });
 
-  it("公開サイトの既定はライト、運用画面の既定はダーク", () => {
-    // ニュースは日中の屋外でも読まれるので明るい面を標準にする。
-    // 運用画面は分析作業を暗い面で設計しているのでダークのまま。
+  it("公開サイト・運用画面とも既定はライト", () => {
+    // 日中に見ることが多いので明るい面を標準にする (2026-08-28 利用者判断)。
     const ops = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
     expect(indexHtml).toMatch(/prefersDark \? "dark" : "light"/);
-    expect(ops).toMatch(/saved \|\| "dark"/);
+    expect(ops).toMatch(/saved \|\| "light"/);
     // どちらも描画前に属性を立てる (React 待ちだと初回に別配色が一瞬出る)
     expect(indexHtml).toContain("setAttribute(\"data-theme\"");
     expect(ops).toContain("setAttribute(\"data-theme\"");

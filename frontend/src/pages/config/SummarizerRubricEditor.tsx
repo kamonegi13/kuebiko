@@ -513,13 +513,13 @@ export function SummarizerRubricEditor() {
         <div className="space-y-3 px-4 pb-3">
           <div>
             <div className="mb-1 text-[13px] text-fg-subtle">合成後テンプレート (Jinja タグ未展開)</div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-3 p-3 font-mono text-[13px] text-fg">
               {preview?.composed ?? ""}
             </pre>
           </div>
           <div>
             <div className="mb-1 text-[13px] text-fg-subtle">サンプル記事での展開後プロンプト</div>
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-3 p-3 font-mono text-[13px] text-fg">
               {preview?.rendered_sample ?? ""}
             </pre>
           </div>
@@ -553,7 +553,7 @@ export function SummarizerRubricEditor() {
             {testMut.data.empty_fields.length > 0 && (
               <div className="text-warning">空だったフィールド: {testMut.data.empty_fields.join(", ")}</div>
             )}
-            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-black/60 p-3 font-mono text-[13px] text-fg">
+            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-3 p-3 font-mono text-[13px] text-fg">
               {JSON.stringify(testMut.data.output, null, 2)}
             </pre>
           </div>

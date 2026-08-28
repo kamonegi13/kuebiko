@@ -5,6 +5,7 @@
 // 動的レイヤーを props 変化時に作り直す。Leaflet は lat/lon を Mercator 投影する。
 
 import { useEffect, useRef } from "react";
+import { readMapColors, onThemeChange } from "./mapTheme";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CyberMapResponse, GeoEventNode, GeoNode, SubCountryPoint } from "../../api/geo";
@@ -233,6 +234,7 @@ export function LeafletThreatMap({
   useEffect(() => {
     if (!divRef.current || mapRef.current) return;
     const saved = persistViewKey ? readSavedView(persistViewKey) : null;
+    let stopThemeWatch: (() => void) | undefined;
     const map = L.map(divRef.current, {
       center: saved?.center ?? [28, 12],
       zoom: saved?.zoom ?? 2,
@@ -257,14 +259,22 @@ export function LeafletThreatMap({
         if (!mapRef.current) return;
         const layer = L.geoJSON(geo, {
           style: {
-            fillColor: "#1a2030",
+            // 色はテーマから読む。ライトで海だけ明るく陸が黒い、が起きないように
+            // 陸・境界・海の 3 つをまとめて切り替える (2026-08-28 利用者指摘)。
+            fillColor: readMapColors().land,
             fillOpacity: 1,
-            color: "rgba(255,255,255,0.13)",
+            color: readMapColors().border,
             weight: 0.5,
           },
           interactive: false,
         }).addTo(map);
         layer.bringToBack();
+        // テーマが変わったら塗り直す。Leaflet は色を JS の値で持つので
+        // CSS だけでは追従しない (ライトにしても陸だけ黒いまま、が起きる)。
+        stopThemeWatch = onThemeChange(() => {
+          const c = readMapColors();
+          layer.setStyle({ fillColor: c.land, color: c.border });
+        });
       })
       .catch(() => {});
 
@@ -291,6 +301,7 @@ export function LeafletThreatMap({
     setTimeout(() => map.invalidateSize(), 60);
 
     return () => {
+      stopThemeWatch?.();
       ro.disconnect();
       map.remove();
       mapRef.current = null;
@@ -471,5 +482,5 @@ export function LeafletThreatMap({
     }
   }, [region]);
 
-  return <div ref={divRef} className="h-full w-full" style={{ background: "#0a0e16" }} />;
+  return <div ref={divRef} className="h-full w-full" style={{ background: "rgb(var(--map-sea-rgb, 10 14 22))" }} />;
 }

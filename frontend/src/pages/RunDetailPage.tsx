@@ -132,7 +132,7 @@ export function RunDetailPage({ runId }: { runId: number }) {
         </div>
         <div
           ref={logRef}
-          className="bg-black/60 font-mono text-xs text-fg leading-relaxed p-3 max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words"
+          className="bg-surface-3 font-mono text-xs text-fg leading-relaxed p-3 max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words"
         >
           {lines.length === 0 && (
             <div className="text-fg-subtle italic">ログを待機中...</div>
