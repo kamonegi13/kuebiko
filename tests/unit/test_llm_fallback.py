@@ -18,7 +18,7 @@ from src.tools.llm_client import (
     LLMResponse,
     LLMStructuredOutputError,
 )
-from src.tools.llm_fallback import FAILURE_STREAK, REFUSAL_RETRIES, FallbackLLMClient
+from src.tools.llm_fallback import FAILURE_STREAK, REQUEST_RETRIES, FallbackLLMClient
 
 
 class _Out(BaseModel):
@@ -183,7 +183,8 @@ class TestPerRequestFailureDoesNotCooldown:
     ) -> None:
         # Arrange — 1 回目は拒否、2 回目からは通る primary
         FallbackLLMClient.reset_cooldowns()
-        primary = _FailOnceLLM("claudecode:sonnet")
+        # 再試行 (1 回) でも回復しない = 先頭 2 回が失敗する fake
+        primary = _FailOnceLLM("claudecode:sonnet", fails=1 + REQUEST_RETRIES)
         local = _FakeLLM("gemma4:31b")
         client = FallbackLLMClient(primary=primary, fallback=local)
 
@@ -196,7 +197,9 @@ class TestPerRequestFailureDoesNotCooldown:
             await client.generate("p")
 
         # Assert — 2 回目も primary を試している (cooldown に入っていない)
-        assert primary.calls == 2
+        # 1 回目: 本試行 + 再試行 = 2 回 → ローカルへ。2 回目: cooldown に入って
+        # いないので再び primary を試す
+        assert primary.calls == 2 + 1
         assert local.calls == 1
 
     @pytest.mark.asyncio
@@ -217,11 +220,15 @@ class TestPerRequestFailureDoesNotCooldown:
 
 
 class _FailOnceLLM(_FakeLLM):
-    """1 回目だけ指定の失敗を返し、以降は通常応答する fake。"""
+    """先頭 ``fails`` 回だけ指定の失敗を返し、以降は通常応答する fake。
 
-    def __init__(self, name: str, *, error: Exception | None = None) -> None:
+    既定 1 回。再試行 (REQUEST_RETRIES) で回復しない状況を作るときは 2 以上にする。
+    """
+
+    def __init__(self, name: str, *, error: Exception | None = None, fails: int = 1) -> None:
         super().__init__(name)
         self._first_error = error or LLMStructuredOutputError("broken")
+        self._fails = fails
 
     async def generate(
         self,
@@ -232,7 +239,7 @@ class _FailOnceLLM(_FakeLLM):
         think: bool | None = None,
     ) -> LLMResponse:
         self.calls += 1
-        if self.calls == 1:
+        if self.calls <= self._fails:
             raise self._first_error
         return LLMResponse(text="ok", model=self._name)
 
@@ -247,7 +254,7 @@ class _FailOnceLLM(_FakeLLM):
         max_attempts: int = MAX_STRUCTURED_ATTEMPTS,
     ) -> Any:
         self.calls += 1
-        if self.calls == 1:
+        if self.calls <= self._fails:
             raise self._first_error
         return schema(label="ok")
 
@@ -270,7 +277,8 @@ class TestModelLabelIsPerCall:
         # Arrange — 1 回目だけ拒否される (以降は primary が応答する)
         FallbackLLMClient.reset_cooldowns()
         client = FallbackLLMClient(
-            primary=_FailOnceLLM("claudecode:sonnet"), fallback=_FakeLLM("gemma4:31b")
+            primary=_FailOnceLLM("claudecode:sonnet", fails=1 + REQUEST_RETRIES),
+            fallback=_FakeLLM("gemma4:31b"),
         )
 
         # Act — 1 件目 (fallback) → 2 件目 (primary)
@@ -304,8 +312,9 @@ class TestFailureStreakEscalates:
         for _ in range(FAILURE_STREAK + 1):
             await client.generate("p")
 
-        # Assert — streak に達した時点で cooldown に入り、以降は試さない
-        assert primary.calls == FAILURE_STREAK
+        # Assert — streak に達した時点で cooldown に入り、以降は試さない。
+        # 1 回の呼出が本試行 + 再試行を消費する
+        assert primary.calls == FAILURE_STREAK * (1 + REQUEST_RETRIES)
 
     @pytest.mark.asyncio
     async def test_a_success_resets_the_streak(self) -> None:
@@ -319,16 +328,20 @@ class TestFailureStreakEscalates:
             await client.generate("p")
 
         # Assert — 途中の成功で数え直すので cooldown に入らない
-        assert primary.calls == 4
+        # (1 回目が本試行 + 再試行で 2 回、以降 3 回は 1 回ずつ)
+        assert primary.calls == 5
 
 
-class TestRefusalIsRetriedOnce:
-    """拒否は入力の性質ではなく揺らぎ — 落とす前に 1 回だけ投げ直す。"""
+class TestPerRequestFailureIsRetriedOnce:
+    """1 件ごとの失敗は揺らぎのことが多い — 落とす前に 1 回だけ投げ直す。
+
+    拒否だけでなく、CLI が API を呼ばずに落ちる類の失敗も同じ (2026-08-28 実測)。
+    """
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("structured", [False, True])
-    async def test_a_single_refusal_is_recovered_by_retry(self, structured: bool) -> None:
-        # Arrange — 1 回目だけ拒否 (再試行なら通る)
+    async def test_a_single_failure_is_recovered_by_retry(self, structured: bool) -> None:
+        # Arrange — 1 回目だけ失敗 (再試行なら通る)
         FallbackLLMClient.reset_cooldowns()
         primary = _RefuseOnceLLM("claudecode:sonnet")
         local = _FakeLLM("gemma4:31b")
@@ -356,5 +369,24 @@ class TestRefusalIsRetriedOnce:
         await client.generate("p")
 
         # Assert — 粘りすぎず 1 回の再試行で諦める
-        assert primary.calls == 1 + REFUSAL_RETRIES
+        assert primary.calls == 1 + REQUEST_RETRIES
         assert local.calls == 1
+
+
+class TestTransientCliFailureIsRetried:
+    """CLI が API を呼ばずに落ちる失敗も再試行の対象 (拒否だけに限らない)。"""
+
+    @pytest.mark.asyncio
+    async def test_structured_failure_recovers_without_local_fallback(self) -> None:
+        # Arrange — 1 回目だけ JSON が壊れる
+        FallbackLLMClient.reset_cooldowns()
+        primary = _FailOnceLLM("claudecode:opus", error=LLMStructuredOutputError("broken"))
+        local = _FakeLLM("gemma4:31b")
+        client = FallbackLLMClient(primary=primary, fallback=local)
+
+        # Act
+        await client.generate("p")
+
+        # Assert — ローカルへ落ちずに primary の応答を得る
+        assert local.calls == 0
+        assert client.model == "claudecode:opus"

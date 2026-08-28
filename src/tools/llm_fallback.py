@@ -45,7 +45,6 @@ from src.tools.llm_client import (
     LLMConnectionError,
     LLMError,
     LLMForbiddenModelError,
-    LLMRefusalError,
     LLMResponse,
     LLMTimeoutError,
 )
@@ -61,10 +60,11 @@ COOLDOWN_SECONDS = 600.0
 #: 本当に壊れているとき毎回外部の失敗を待つ — その間を取る。
 FAILURE_STREAK = 3
 
-#: 拒否は入力の性質ではなく**揺らぎ**だった (2026-08-28 実測: 拒否された記事を
-#: 再投入すると 5/5 成功、別の 3 件も再試行で成功)。拒否は 1 秒前後で返るので
-#: 1 回だけ即再試行する — これでローカルへ落ちる件数を大きく減らせる。
-REFUSAL_RETRIES = 1
+#: 1 件ごとの失敗は**揺らぎであることが多い** (2026-08-28 実測: 拒否された記事を
+#: 再投入すると 5/5 成功。CLI が API を呼ばずに落ちる stop_sequence も、同じ入力を
+#: 投げ直すと 3/3 成功した)。落とす前に 1 回だけ投げ直す。
+#: 粘りすぎないよう 1 回まで — 通らなければローカルへ渡す。
+REQUEST_RETRIES = 1
 
 _T = TypeVar("_T", bound=BaseModel)
 _R = TypeVar("_R")
@@ -161,23 +161,22 @@ class FallbackLLMClient(LLMClient):
             reason=str(error)[:200],
         )
 
-    async def _retry_after_refusal(self, attempt: Callable[[], Awaitable[_R]]) -> _R | None:
-        """拒否されたら **同じ内容で 1 回だけ**すぐ投げ直す。
+    async def _retry_once(self, attempt: Callable[[], Awaitable[_R]]) -> _R | None:
+        """1 件ごとの失敗で **同じ内容を 1 回だけ**すぐ投げ直す。
 
-        拒否は入力の性質ではなく揺らぎで、再試行すれば通ることが実測で分かって
-        いる。ここで拾えればローカルへ落とさずに済む。再び拒否されたら諦める
-        (無限に粘ると 1 件のために経路を占有する)。
+        拒否も、CLI が API を呼ばずに落ちる類の失敗も、実測では**同じ入力を
+        投げ直すと通る**ことが多い。ここで拾えればローカルへ落とさずに済む。
+        再び失敗したら諦めて呼出元の fallback に委ねる (無限に粘ると 1 件のために
+        経路を占有する)。到達不能系はここへ来ない — 呼出元で即 cooldown する。
         """
-        for _ in range(REFUSAL_RETRIES):
+        for _ in range(REQUEST_RETRIES):
             try:
                 result = await attempt()
-            except LLMRefusalError:
-                continue
             except LLMError:
-                return None  # 別の失敗に変わったら通常の経路へ委ねる
+                continue
             self._fell_back = False
             self._failure_streak[self._primary.model] = 0
-            _log.info("llm_refusal_retry_succeeded", primary=self._primary.model)
+            _log.info("llm_retry_succeeded", primary=self._primary.model)
             return result
         return None
 
@@ -235,13 +234,13 @@ class FallbackLLMClient(LLMClient):
                 raise  # セキュリティゲートは fallback で迂回しない
             except (LLMTimeoutError, LLMConnectionError) as e:
                 self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
-            except LLMRefusalError as e:
-                retried = await self._retry_after_refusal(attempt)
+            except LLMError as e:
+                # 1 件ごとの失敗 (拒否 / JSON 崩れ / CLI の単発エラー)。
+                # 揺らぎのことが多いので 1 回だけ投げ直してから諦める。
+                retried = await self._retry_once(attempt)
                 if retried is not None:
                     return retried
                 self._note_per_request_failure(e)
-            except LLMError as e:
-                self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:
             self._fell_back = True
         # fallback アームは常にローカル Ollama (BUILTIN)。gemma は thinking で空応答化した
@@ -287,13 +286,13 @@ class FallbackLLMClient(LLMClient):
                 raise
             except (LLMTimeoutError, LLMConnectionError) as e:
                 self._enter_cooldown(e)  # 経路が使えない → しばらく試さない
-            except LLMRefusalError as e:
-                retried = await self._retry_after_refusal(attempt)
+            except LLMError as e:
+                # 1 件ごとの失敗 (拒否 / JSON 崩れ / CLI の単発エラー)。
+                # 揺らぎのことが多いので 1 回だけ投げ直してから諦める。
+                retried = await self._retry_once(attempt)
                 if retried is not None:
                     return retried
                 self._note_per_request_failure(e)
-            except LLMError as e:
-                self._note_per_request_failure(e)  # この 1 件だけローカルへ
         else:
             self._fell_back = True
         # generate と同じ理由でローカルアームは think 常時無効 (gemma thinking 前歴)。

@@ -12,13 +12,18 @@ from datetime import UTC, datetime, timedelta
 from src.config_loader import load_app_config
 from src.eventnews import runner
 from src.storage.run_history import RunHistoryRepository
-from src.tools.model_tiers import Step, build_llm_for
+from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref
 from src.ui.services.eventnews_hourly_job import _entity_counts, _load_members
 
 
 async def main():
     # 対象 id の一覧 (引数で差し替え可能 — 一部だけ作り直したいときに使う)
     ids = json.load(open(sys.argv[1] if len(sys.argv) > 1 else "/tmp/backfill_ids.json"))
+    # モデルを固定したいとき (Opus 教師層など) は第 2 引数で ref を渡す。
+    # **ティア設定は変えない** — 変えると毎時の生成まで巻き込む。
+    model_ref = sys.argv[2] if len(sys.argv) > 2 else ""
+    if model_ref:
+        print(f"モデル固定: {model_ref}", flush=True)
     repo = RunHistoryRepository()
     recs = {
         r.state.item_id: r
@@ -34,7 +39,13 @@ async def main():
             continue
         v = repo.list_event_versions(item_id)
         # fallback (→gemma4:31b) 版は教師データとして数えない — Sonnet で作り直す
-        if v and v[0].body_json and '"caveats"' in v[0].body_json and "→" not in v[0].model:
+        done = bool(v) and bool(v[0].body_json) and '"caveats"' in v[0].body_json
+        if model_ref:
+            # 固定モデル指定時は「そのモデルで作られたか」で判定する
+            done = done and v[0].model == model_ref
+        else:
+            done = done and "→" not in v[0].model
+        if done:
             already += 1
             continue
         mm = _load_members(repo, list(rec.state.member_ids), counts)
@@ -54,7 +65,10 @@ async def main():
     #   探針 1 件 → fallback なら 30 分退いて再試行 (枠が回復したら自然に通る)
     #   通れば 25 件の塊で進み、塊の fallback 率 > 20% でまた退く
     # (実測 2026-08-27: 連続 ~75 呼出/時 + 開発セッションの併用で fallback 率 24%)
-    CHUNK, BACKOFF, REST = 25, 1800, 120
+    # Opus は 1 件が重く枠を食うので、塊を小さく休みを長くする。
+    # 4 時間の移動枠に当たったら退く自己調整はそのまま効く。
+    heavy = "opus" in model_ref
+    CHUNK, BACKOFF, REST = (10, 1800, 240) if heavy else (25, 1800, 120)
     #: 別々の項目で何件連続して落ちたら「経路が使えない」とみなすか
     PROBE_STREAK = 3
     #: 塊の末尾が何件連続で落ちたら「経路が使えない」とみなすか
@@ -98,7 +112,10 @@ async def main():
             n += 1
         return n
 
-    factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
+    if model_ref:
+        factory = lambda: build_llm_for_ref(model_ref, Step.EVENT_NEWS, load_app_config())
+    else:
+        factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
     total_done = 0
     i = 0
     probe_failures = 0
