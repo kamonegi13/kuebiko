@@ -779,6 +779,20 @@ describe("可読性の下限", () => {
     }
   });
 
+  it("見出しの行頭はバッジの有無で動かない", () => {
+    // バッジを見出しの前に置くと、付いている行だけ開始位置が右へずれる。
+    // 密な一覧では行頭が揃っていることが拾い読みの前提なので、
+    // バッジは日付と同じ右の列に積む (2026-08-28 利用者指摘)。
+    const row = siteSource.slice(
+      siteSource.indexOf("{rest.map("),
+      siteSource.indexOf("{rest.map(") + 1600,
+    );
+    const headlineAt = row.indexOf("{it.headline}");
+    const badgeAt = row.indexOf("更新<");
+    expect(headlineAt).toBeGreaterThan(0);
+    expect(badgeAt).toBeGreaterThan(headlineAt);
+  });
+
   it("一覧の見出しは行数を止める", () => {
     // 生成見出しは中央値 62 字・最長 173 字あり、スマホでは 3〜7 行になる。
     // 止めないと 1 件で画面の半分を占め、一覧が「選ぶ」道具として機能しない。

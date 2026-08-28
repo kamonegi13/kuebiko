@@ -515,9 +515,6 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   <span className="text-[12px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
-                  {it.update_kind === "rewritten" && (
-                    <span className="shrink-0 text-[12px] font-semibold text-accent">更新</span>
-                  )}
                   <span
                     className={`flex-1 text-[15.5px] font-medium leading-[1.65] line-clamp-2 [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
@@ -525,12 +522,17 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   >
                     {it.headline}
                   </span>
-                  <time
-                    dateTime={it.published_at}
-                    className="shrink-0 text-[12px] text-fg-subtle tnum"
-                  >
-                    {formatJstDate(it.published_at)}
-                  </time>
+                  {/* ⚠ バッジを見出しの **前** に置かない。付いている行だけ見出しの
+                      開始位置が右へずれ、行頭が揃わなくなる (2026-08-28 利用者指摘)。
+                      日付と同じ右の列に積めば、見出しは常に同じ位置から始まる。 */}
+                  <span className="shrink-0 flex flex-col items-end gap-0.5">
+                    <time dateTime={it.published_at} className="text-[12px] text-fg-subtle tnum">
+                      {formatJstDate(it.published_at)}
+                    </time>
+                    {it.update_kind === "rewritten" && (
+                      <span className="text-[12px] font-semibold text-accent">更新</span>
+                    )}
+                  </span>
                 </button>
               </li>
             ))}
