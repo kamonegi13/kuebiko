@@ -761,6 +761,16 @@ describe("可読性の下限", () => {
     }
   });
 
+  it("一覧の見出しは行数を止める", () => {
+    // 生成見出しは中央値 62 字・最長 173 字あり、スマホでは 3〜7 行になる。
+    // 止めないと 1 件で画面の半分を占め、一覧が「選ぶ」道具として機能しない。
+    // 見出しを描く 3 箇所すべてに line-clamp が要る (先頭記事 / カード / 見出しのみ行)。
+    const headlineLines = [...siteSource.matchAll(/\{item\.headline\}/g)];
+    expect(headlineLines.length).toBeGreaterThanOrEqual(2);
+    const clamps = [...siteSource.matchAll(/line-clamp-\d/g)];
+    expect(clamps.length).toBeGreaterThanOrEqual(5);
+  });
+
   it("和文の Web フォントを読み込んでいる", () => {
     // 無いと和文は OS 任せになり、閲覧環境ごとに別の書体で出る
     expect(indexHtml).toContain("Noto+Sans+JP");

@@ -361,7 +361,7 @@ function Portal({ openedId }: { openedId?: string }) {
           </div>
           <LeadStory item={featuredItems[0]} />
           {featuredItems.length > 1 && (
-            <ul className="grid gap-x-8 gap-y-5 md:grid-cols-2 pt-6 border-t border-border-subtle">
+            <ul className="grid gap-x-8 gap-y-4 md:gap-y-6 md:grid-cols-2 pt-5 border-t border-border-subtle">
               {featuredItems.slice(1).map((it) => (
                 <li key={it.id}>
                   <NewsCard item={it} opened={it.id === openedId} />
@@ -373,7 +373,7 @@ function Portal({ openedId }: { openedId?: string }) {
       )}
 
       <PortalSection title="新着" href={`${HOME_PATH}/latest`}>
-        <ul className="grid gap-x-8 gap-y-6 md:grid-cols-2">
+        <ul className="grid gap-x-8 gap-y-4 md:gap-y-7 md:grid-cols-2">
           {latestItems.map((it) => (
             <li key={it.id}>
               <NewsCard item={it} opened={it.id === openedId} />
@@ -483,7 +483,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                     <span className="shrink-0 text-[12px] font-semibold text-accent">更新</span>
                   )}
                   <span
-                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] [@media(hover:hover)]:group-hover:text-accent ${
+                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] line-clamp-2 [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
                     }`}
                   >
@@ -602,7 +602,7 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
         )}
 
         {/* PC は 2 列。カードは高さがまちまちなので grid で行を揃える */}
-        <ul className="grid gap-x-8 gap-y-7 md:grid-cols-2">
+        <ul className="grid gap-x-8 gap-y-5 md:gap-y-7 md:grid-cols-2">
           {items.map((it) => (
             <li key={it.id}>
               <NewsCard item={it} opened={it.id === openedId} />
@@ -715,25 +715,31 @@ function CardMeta({ item }: { item: PublicNewsItem }) {
   );
 }
 
-/** 先頭記事。画像が無いので見出しを一段大きくして階層をつくる。 */
+/** 先頭記事。画像が無いので見出しを一段大きくして階層をつくる。
+ *
+ *  ⚠ **行数を必ず抑える。** 生成された見出しは中央値 62 字・最長 173 字あり、
+ *  スマートフォンの 1 行 20〜25 字では 3〜7 行になる。22px 太字が 5 行続くと
+ *  1 件で画面の半分を占め、一覧としての拾い読みが成立しない (2026-08-28 実機で確認)。
+ *  見出しを途中で切ることになるが、**一覧の役割は「読む」ではなく「選ぶ」**なので、
+ *  全文が読めることより件数が見えることを優先する。 */
 function LeadStory({ item }: { item: PublicNewsItem }) {
   return (
     <article>
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
-        className="block w-full text-left group space-y-2"
+        className="block w-full text-left group space-y-1.5"
       >
         <CategoryBadge category={item.category} />
-        <h2 className="text-[22px] lg:text-[26px] font-bold leading-[1.4] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        <h2 className="text-[20px] lg:text-[25px] font-bold leading-[1.45] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h2>
         {item.summary && (
-          <p className="text-[15px] lg:text-[16px] leading-[1.85] text-fg-muted line-clamp-3">
+          <p className="text-[15px] lg:text-[16px] leading-[1.8] text-fg-muted line-clamp-2">
             {item.summary}
           </p>
         )}
       </button>
-      <div className="mt-2.5">
+      <div className="mt-2">
         <CardMeta item={item} />
       </div>
     </article>
@@ -759,11 +765,11 @@ function NewsCard({
         className="block w-full text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
-        <h3 className="text-[17px] font-semibold leading-[1.55] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        <h3 className="text-[17px] font-semibold leading-[1.55] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h3>
         {item.summary && (
-          <p className="text-[14.5px] leading-[1.8] text-fg-muted line-clamp-2">{item.summary}</p>
+          <p className="text-[14.5px] leading-[1.75] text-fg-muted line-clamp-2">{item.summary}</p>
         )}
       </button>
       <div className="mt-2">
