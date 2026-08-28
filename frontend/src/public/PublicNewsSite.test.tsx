@@ -409,12 +409,12 @@ describe("PC のレイアウト", () => {
       expect(screen.getAllByText("一覧へ →").length).toBeGreaterThan(1),
     );
 
-    const bullets = Array.from(document.querySelectorAll("li button")).filter(
-      (b) => b.textContent?.includes("●"),
-    );
-    expect(bullets.length).toBeGreaterThan(0);
-    const headline = bullets[0].querySelector("span:nth-of-type(2)");
-    // ⚠ 先頭カードの要約と同じ text-fg-muted にしない (本文の続きに見える)
+    // 行頭記号は置かない (罫線が区切るので記号は繰り返しがくどいだけ、
+    // 2026-08-28 利用者指摘)。区別は **色と太さ** で付ける。
+    const rows = Array.from(document.querySelectorAll("li button"));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((b) => b.textContent?.includes("●"))).toBe(false);
+    const headline = rows[0].querySelector("span");
     expect(headline?.className).toContain("text-fg");
     expect(headline?.className).not.toContain("text-fg-muted");
     expect(headline?.className).toContain("font-medium");

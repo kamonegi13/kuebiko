@@ -504,7 +504,9 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
         {rest.length > 0 && (
           /* ⚠ 先頭カードの **要約と同じ色・同じ字送り**にしない。13px の text-fg-muted
              だと本文の続きに見えて、見出しの一覧だと分からなくなる (利用者指摘)。
-             行頭記号 + 通常色 + 中太 で「別の記事の見出し」だと分かる形にする。 */
+             通常色 + 中太 で「別の記事の見出し」だと分かる形にする。
+             行頭記号 (●) は **置かない** — 罫線が既に行を区切っており、
+             記号は繰り返しがくどいだけで情報を足さない (2026-08-28 利用者指摘)。 */
           <ul className="divide-y divide-border-subtle border-t border-border-subtle">
             {rest.map((it) => (
               <li key={it.id}>
@@ -518,9 +520,6 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   // (2026-08-28 利用者判断)。カードと先頭記事は切らないまま。
                   className="group w-full flex items-stretch gap-2 py-2.5 min-h-[4.4rem] text-left transition-colors"
                 >
-                  <span className="text-[12px] leading-[1.65] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
-                    ●
-                  </span>
                   <span
                     className={`flex-1 text-[15.5px] font-medium leading-[1.65] line-clamp-2 [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
