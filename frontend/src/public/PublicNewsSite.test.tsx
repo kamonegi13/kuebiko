@@ -868,6 +868,20 @@ describe("可読性の下限", () => {
     }
   });
 
+  it("明暗の切替は両画面ともヘッダ右に置く", () => {
+    // 面ごとに場所が変わると覚えられない。公開サイトは題字の右、運用画面は
+    // 通知ベルの隣 (= どちらも画面の右上) に揃える (2026-08-28 利用者指摘)。
+    expect(siteSource).toContain("<ThemeToggle />");
+    const topbar = readFileSync(resolve(process.cwd(), "src/components/TopBar.tsx"), "utf8");
+    const toggleAt = topbar.indexOf("<ThemeToggleButton />");
+    const bellAt = topbar.indexOf("<NotificationsBell />");
+    expect(toggleAt).toBeGreaterThan(0);
+    expect(bellAt).toBeGreaterThan(toggleAt);
+    // サイドバーには置かない (折りたたむと見えなくなる)
+    const sidebar = readFileSync(resolve(process.cwd(), "src/components/Sidebar.tsx"), "utf8");
+    expect(sidebar).not.toContain("useTheme");
+  });
+
   it("和文の Web フォントを読み込んでいる", () => {
     // 無いと和文は OS 任せになり、閲覧環境ごとに別の書体で出る
     expect(indexHtml).toContain("Noto+Sans+JP");

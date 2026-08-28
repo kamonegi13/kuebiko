@@ -4,6 +4,7 @@
 import { ChevronRight, Search } from "lucide-react";
 import { findActiveWithGroup } from "./nav";
 import { NotificationsBell } from "./NotificationsBell";
+import { ThemeToggleButton } from "./ThemeToggleButton";
 
 interface TopBarProps {
   pathname: string;
@@ -44,6 +45,7 @@ export function TopBar({ pathname, onOpenPalette }: TopBarProps) {
         <kbd className="hidden md:inline text-[12px] font-mono bg-surface-3 px-1.5 py-0.5 rounded ml-1">⌘K</kbd>
       </button>
 
+      <ThemeToggleButton />
       <NotificationsBell />
     </header>
   );
