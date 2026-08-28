@@ -868,15 +868,24 @@ describe("可読性の下限", () => {
     }
   });
 
-  it("明暗の切替は両画面ともヘッダ右に置く", () => {
-    // 面ごとに場所が変わると覚えられない。公開サイトは題字の右、運用画面は
-    // 通知ベルの隣 (= どちらも画面の右上) に揃える (2026-08-28 利用者指摘)。
-    expect(siteSource).toContain("<ThemeToggle />");
+  it("検索と明暗の切替は追従する行に置く", () => {
+    // 題字はスクロールで流れるので、そこに置くと一番上まで戻らないと使えない
+    // (2026-08-28 利用者指摘)。運用画面のヘッダ右と同じ「常に見える右上」に揃える。
+    const stickyAt = siteSource.indexOf("sticky top-0");
+    const searchAt = siteSource.indexOf("<NavSearch />");
+    const toggleAt = siteSource.indexOf("<ThemeToggle />");
+    const navEnd = siteSource.indexOf("function NavSearch(");
+    expect(stickyAt).toBeGreaterThan(0);
+    expect(searchAt).toBeGreaterThan(stickyAt);
+    expect(searchAt).toBeLessThan(navEnd);
+    expect(toggleAt).toBeGreaterThan(stickyAt);
+    expect(toggleAt).toBeLessThan(navEnd);
+    // 運用画面は通知ベルの隣 (= 同じく画面の右上)
     const topbar = readFileSync(resolve(process.cwd(), "src/components/TopBar.tsx"), "utf8");
-    const toggleAt = topbar.indexOf("<ThemeToggleButton />");
+    const opsToggleAt = topbar.indexOf("<ThemeToggleButton />");
     const bellAt = topbar.indexOf("<NotificationsBell />");
-    expect(toggleAt).toBeGreaterThan(0);
-    expect(bellAt).toBeGreaterThan(toggleAt);
+    expect(opsToggleAt).toBeGreaterThan(0);
+    expect(bellAt).toBeGreaterThan(opsToggleAt);
     // サイドバーには置かない (折りたたむと見えなくなる)
     const sidebar = readFileSync(resolve(process.cwd(), "src/components/Sidebar.tsx"), "utf8");
     expect(sidebar).not.toContain("useTheme");

@@ -9,7 +9,7 @@
 //
 // 画像は持っていないので、写真ではなく **文字の大きさと余白**で階層をつくる。
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { ExternalLink, Search, ChevronLeft, Sun, Moon } from "lucide-react";
 import {
@@ -155,6 +155,9 @@ export function PublicNewsSite() {
             <Portal openedId={route.kind === "detail" ? route.id : undefined} />
           ) : (
             <NewsList
+              // ⚠ query を key にする。検索語だけが変わったときは route の種類が
+              //    変わらないので、key が無いと初期値を読み直さない
+              key={window.location.search}
               category={
                 route.kind === "category"
                   ? route.key
@@ -240,14 +243,15 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
             kuebiko
           </button>
           <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
-          <ThemeToggle />
         </div>
       </header>
       {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
       <div className="sticky top-0 z-20 border-b border-border-subtle bg-surface-1/95 backdrop-blur-md">
         {/* 追従時にタブが画面の上端へ貼り付かないよう、内側に上余白を取る
             (2026-08-25 利用者指摘)。iOS のブラウザ枠の直下でも詰まって見えない。 */}
-        <div className="w-full max-w-[72rem] mx-auto px-5 pt-3">
+        {/* 検索と明暗の切替は **追従する行**に置く。題字はスクロールで流れるので、
+            そこに置くと一番上まで戻らないと使えない (2026-08-28 利用者指摘)。 */}
+        <div className="w-full max-w-[72rem] mx-auto px-5 pt-3 flex items-start gap-3">
           <CategoryNav
             active={
               route.kind === "category"
@@ -263,9 +267,40 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
               (route.kind === "detail" && backdrop?.kind === "latest")
             }
           />
+          <div className="ml-auto shrink-0 flex items-center gap-1 pb-2.5">
+            <NavSearch />
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </>
+  );
+}
+
+/** 追従行の検索。**URL を通して**一覧へ伝える (状態を持たない)。
+ *
+ *  一覧側は ``?q=`` を初期値として読むので、ここは navigate するだけでよい。
+ *  一覧を query で key しているため、同じ面のまま語だけ変えても読み直される。 */
+function NavSearch() {
+  const [term, setTerm] = useState(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
+  const submit = () => {
+    const q = term.trim();
+    navigate(q ? `${HOME_PATH}/latest?q=${encodeURIComponent(q)}` : `${HOME_PATH}/latest`);
+  };
+  return (
+    <div className="relative">
+      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-subtle" />
+      <input
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="検索"
+        aria-label="記事を検索"
+        className="h-8 w-[8rem] focus:w-[12rem] pl-7 pr-2 bg-surface-2 border border-border-subtle rounded text-[13px] placeholder:text-fg-subtle focus:outline-none focus:border-accent transition-all"
+      />
+    </div>
   );
 }
 
@@ -583,14 +618,6 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
     setPage(0);
   }, [category]);
 
-  const submit = useCallback(() => {
-    const next = term.trim();
-    setSearch(next);
-    setPage(0);
-    const p = new URLSearchParams();
-    if (next) p.set("q", next);
-    window.history.replaceState(null, "", `${basePath}${p.toString() ? `?${p}` : ""}`);
-  }, [term, basePath]);
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["public-news", category ?? "", country ?? "", search, page],
@@ -621,20 +648,15 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
                   ? categoryLabel(category)
                   : "新着"}
           </h2>
-          <div className="ml-auto">
-            <SearchBox
-              term={term}
-              onChange={setTerm}
-              onSubmit={submit}
-              onClear={() => {
-                setTerm("");
-                setSearch("");
-                setPage(0);
-                window.history.replaceState(null, "", basePath);
-              }}
-              active={Boolean(search)}
-            />
-          </div>
+          {search && (
+            // 検索窓は追従行に移したので、ここには **解除だけ**を残す
+            <button
+              onClick={() => navigate(basePath)}
+              className="ml-auto text-[13px] text-fg-subtle hover:text-accent underline"
+            >
+              検索を解除
+            </button>
+          )}
         </div>
 
         {isFetching && !data && <p className="text-sm text-fg-subtle">読み込み中…</p>}
@@ -686,48 +708,6 @@ function NewsList({ category, openedId }: { category?: string; openedId?: string
   );
 }
 
-function SearchBox({
-  term,
-  onChange,
-  onSubmit,
-  onClear,
-  active,
-}: {
-  term: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  onClear: () => void;
-  active: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="relative">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-subtle" />
-        <input
-          value={term}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
-          placeholder="検索"
-          aria-label="記事を検索"
-          className="h-8 w-[9rem] focus:w-[13rem] pl-7 pr-2 bg-surface-2 border border-border-subtle rounded text-[13px] placeholder:text-fg-subtle focus:outline-none focus:border-accent transition-all"
-        />
-      </div>
-      {active && (
-        <button onClick={onClear} className="text-[13px] text-fg-subtle hover:text-accent underline">
-          解除
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** 続報バッジ。
- *
- *  一覧の日付は **最終報** なので、続報が付いた事象は日付が動いて再浮上する。
- *  それだけでは初報と見分けが付かない、という指摘への対応 (2026-08-27)。
- *  「更新」(本文を書き直した) と「続報」(他媒体も報じたが内容は不変) を
- *  分けているのは、**中身が変わっていないのに「更新」と出すと読み手が
- *  差分を探して見つけられない**ため。 */
 function UpdateBadge({ item }: { item: PublicNewsItem }) {
   if (item.update_kind === "rewritten") {
     return (
