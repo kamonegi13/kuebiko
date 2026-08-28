@@ -326,16 +326,25 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
     return client
 
 
-def build_llm_for_ref(model_ref: str, step: Step, config: AppConfig) -> LLMClient:
+def build_llm_for_ref(
+    model_ref: str, step: Step, config: AppConfig, *, timeout_seconds: float | None = None
+) -> LLMClient:
     """明示 model ref で step 用 client を組む (画面単位の一時 override 用)。
 
     分析チャットの「この会話だけ別モデル」のような UI override が使う。tier 解決を
     飛ばす以外は ``build_llm_for`` と同一 — denylist 検証・step timeout・外部 ref の
     ローカル自動フォールバックがすべて同じに掛かる。
+
+    ``timeout_seconds`` は step 既定の上書き。**モデルを変えると所要時間も変わる**
+    ため必要になる (2026-08-28: 同じ入力で Opus が step 既定 600s を超え、
+    timeout が「到達不能」と判定されて経路ごと cooldown に入っていた)。
+    既定の step timeout は本番経路のものなので、ここを恒久的に上げない。
     """
     from src.tools.llm_client import validate_model_name
 
     spec = STEP_REGISTRY[step]
+    if timeout_seconds is not None:
+        spec = StepSpec(spec.tier, timeout_seconds)
     if spec.tier is Tier.EMBEDDING:
         raise ValueError(f"{step.value} は埋込 step です")
     bare = model_ref

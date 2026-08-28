@@ -113,7 +113,13 @@ async def main():
         return n
 
     if model_ref:
-        factory = lambda: build_llm_for_ref(model_ref, Step.EVENT_NEWS, load_app_config())
+        # Opus は同じ入力でも Sonnet より時間がかかり、step 既定 600s を超えることが
+        # ある。timeout は「到達不能」として即 cooldown を引くので、超えると
+        # 巻き添えで後続もローカルへ落ちる (実測 10 件中 5 件)。固定モデル時だけ延ばす。
+        tmo = 1500.0 if heavy else None
+        factory = lambda: build_llm_for_ref(
+            model_ref, Step.EVENT_NEWS, load_app_config(), timeout_seconds=tmo
+        )
     else:
         factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
     total_done = 0
