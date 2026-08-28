@@ -500,7 +500,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
     >
       <div className="space-y-5">
         {/* 節の見出しが既にカテゴリを示しているのでバッジは出さない (重複) */}
-        <NewsCard item={head} opened={head.id === openedId} hideCategory />
+        <NewsCard item={head} opened={head.id === openedId} hideCategory flat />
         {rest.length > 0 && (
           /* ⚠ 先頭カードの **要約と同じ色・同じ字送り**にしない。13px の text-fg-muted
              だと本文の続きに見えて、見出しの一覧だと分からなくなる (利用者指摘)。
@@ -510,9 +510,15 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
               <li key={it.id}>
                 <button
                   onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(it.id)}`)}
-                  className="group w-full flex items-baseline gap-2 py-2.5 text-left transition-colors"
+                  // 見出しは上寄せ、日付とバッジは下寄せ。見出しの行数が
+                  // 1〜3 行と揺れるので、上下を突き放したほうが行の切れ目が
+                  // 読み取りやすい (2026-08-28 利用者指摘)。
+                  // 行の高さに下限を置く。見出しが 1 行の行と 2 行の行が混ざると、
+                  // 2 列表示で左右の行位置がずれて格子が崩れて見える
+                  // (2026-08-28 利用者指摘)。**切らずに揃える**ための下限。
+                  className="group w-full flex items-stretch gap-2 py-2.5 min-h-[4.4rem] text-left transition-colors"
                 >
-                  <span className="text-[12px] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
+                  <span className="text-[12px] leading-[1.65] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
                   <span
@@ -525,7 +531,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   {/* ⚠ バッジを見出しの **前** に置かない。付いている行だけ見出しの
                       開始位置が右へずれ、行頭が揃わなくなる (2026-08-28 利用者指摘)。
                       日付と同じ右の列に積めば、見出しは常に同じ位置から始まる。 */}
-                  <span className="shrink-0 flex flex-col items-end gap-0.5">
+                  <span className="shrink-0 flex flex-col items-end justify-end gap-0.5">
                     <time dateTime={it.published_at} className="text-[12px] text-fg-subtle tnum">
                       {formatJstDate(it.published_at)}
                     </time>
@@ -791,10 +797,13 @@ function NewsCard({
   item,
   opened,
   hideCategory,
+  flat,
 }: {
   item: PublicNewsItem;
   opened?: boolean;
   hideCategory?: boolean;
+  /** 既に枠のある場所 (カテゴリ節の中) で使うとき。枠を二重にしない。 */
+  flat?: boolean;
 }) {
   // ⚠ ここで <li> を返さない。カテゴリ節では <ul> の外 (先頭記事) にも置くため、
   // 裸の <li> がブラウザ既定のマーカー (●) を出してしまう (2026-08-25 利用者指摘)。
@@ -805,9 +814,13 @@ function NewsCard({
     // グリッドの行内で高さを揃える。揃えないと下端がばらつき、PC の 2 列表示で
     // 隙間が目立つ (2026-08-28 利用者指摘)。日付は常にカードの下端へ送る。
     <article
-      className={`flex h-full flex-col rounded-xl border border-border-subtle bg-surface-1 px-4 py-3.5 transition-colors [@media(hover:hover)]:hover:border-border-default ${
-        opened ? "opacity-60" : ""
-      }`}
+      // ⚠ 枠を入れ子にしない。節が既に枠を持つ場所で更に枠を描くと、その 1 件だけ
+      //    **選択されているように見える** (2026-08-28 利用者指摘)。
+      className={`flex h-full flex-col ${
+        flat
+          ? "pb-1"
+          : "rounded-xl border border-border-subtle bg-surface-1 px-4 py-3.5 transition-colors [@media(hover:hover)]:hover:border-border-default"
+      } ${opened ? "opacity-60" : ""}`}
     >
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}

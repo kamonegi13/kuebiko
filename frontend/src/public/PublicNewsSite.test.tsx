@@ -798,7 +798,7 @@ describe("可読性の下限", () => {
     // バッジは日付と同じ右の列に積む (2026-08-28 利用者指摘)。
     const row = siteSource.slice(
       siteSource.indexOf("{rest.map("),
-      siteSource.indexOf("{rest.map(") + 1600,
+      siteSource.indexOf("{rest.map(") + 2600,
     );
     const headlineAt = row.indexOf("{it.headline}");
     const badgeAt = row.indexOf("更新<");
