@@ -804,17 +804,15 @@ describe("可読性の下限", () => {
     expect(badgeAt).toBeGreaterThan(headlineAt);
   });
 
-  it("一覧の見出しは行数を止める", () => {
-    // 生成見出しは中央値 62 字・最長 173 字あり、スマホでは 3〜7 行になる。
-    // 止めないと 1 件で画面の半分を占め、一覧が「選ぶ」道具として機能しない。
-    // 見出しを描く 3 箇所すべてに line-clamp が要る (先頭記事 / カード / 見出しのみ行)。
-    // 件数ではなく「見出しを描く箇所すべてに clamp が掛かっているか」を見る。
-    // 数を数えると、要約を消したときのような無関係な増減で落ちる。
+  it("見出しは省略しない", () => {
+    // 要約を外した今、見出しが唯一の情報。省略記号で消すと何の記事か分からない。
+    // 3 行で止めていたときは 63% の記事が切れていた (2026-08-28 実測・利用者指摘)。
+    // 長すぎるのは生成側の問題なので、表示では切らない。
     const sites = [...siteSource.matchAll(/\{it(?:em)?\.headline\}/g)];
     expect(sites.length).toBeGreaterThanOrEqual(3);
     for (const m of sites) {
       const before = siteSource.slice(Math.max(0, m.index! - 300), m.index!);
-      expect(before, `clamp の無い見出し: …${before.slice(-90)}`).toMatch(/line-clamp-\d/);
+      expect(before, `見出しが省略されている: …${before.slice(-90)}`).not.toMatch(/line-clamp-\d/);
     }
   });
 

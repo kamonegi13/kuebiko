@@ -516,7 +516,7 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                     ●
                   </span>
                   <span
-                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] line-clamp-2 [@media(hover:hover)]:group-hover:text-accent ${
+                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
                     }`}
                   >
@@ -771,7 +771,7 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
         className="block w-full text-left group space-y-1.5"
       >
         <CategoryBadge category={item.category} />
-        <h2 className="text-[20px] lg:text-[25px] font-bold leading-[1.45] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        <h2 className="text-[20px] lg:text-[25px] font-bold leading-[1.45] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h2>
         {item.summary && (
@@ -812,12 +812,17 @@ function NewsCard({
         className="block w-full text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
-        {/* ⚠ **要約は出さない。** 見出しが中央値 62 字あり (30 字未満は 2%)、
+        {/* ⚠ **見出しは切らない。** 要約を外した今、見出しが唯一の情報なので、
+            省略記号で消すと何の記事か分からなくなる (2026-08-28 利用者指摘)。
+            3 行で止めていたときは **63% の記事が切れていた**。長すぎるのは
+            生成側の問題 (中央値 62 字) なので、そちらで直す。
+
+            ⚠ **要約は出さない。** 見出しが中央値 62 字あり (30 字未満は 2%)、
             それだけで何の話かは判る。要約の冒頭は見出しを中央値 53% なぞっており、
             1 件の高さを倍にする割に足す情報が少ない (2026-08-28 実測・利用者提案)。
             一覧の仕事は「読む」ではなく「選ぶ」。全文は開けば出る。
             先頭記事 (LeadStory) だけは別 — そこは読ませる枠なので要約を残す。 */}
-        <h3 className="text-[17px] font-semibold leading-[1.6] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        <h3 className="text-[17px] font-semibold leading-[1.6] text-fg [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h3>
       </button>
