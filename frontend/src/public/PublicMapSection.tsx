@@ -31,7 +31,7 @@ export function PublicMapSection({ onCountry }: { onCountry: (iso: string) => vo
     <div className="space-y-4">
       <div className="space-y-1">
         <h2 className="text-[13px] font-semibold text-fg-muted">被害国の分布</h2>
-        <p className="text-[11px] leading-relaxed text-fg-subtle">
+        <p className="text-[13px] leading-relaxed text-fg-subtle">
           直近 {data.window_days} 日の掲載記事 {data.total} 件のうち、被害国を特定できた{" "}
           <span className="text-fg-muted">{data.placed} 件</span>
           を地図にしています ({data.unplaced} 件は国を特定できず地図に出ていません)。
@@ -42,7 +42,7 @@ export function PublicMapSection({ onCountry }: { onCountry: (iso: string) => vo
         <PublicMap nodes={data.nodes} onCountryClick={onCountry} />
       </Suspense>
 
-      <p className="text-[11px] leading-relaxed text-fg-subtle">{data.note}</p>
+      <p className="text-[13px] leading-relaxed text-fg-subtle">{data.note}</p>
 
       <section className="space-y-2">
         <h3 className="text-[13px] font-semibold text-fg-muted">件数の多い国</h3>
