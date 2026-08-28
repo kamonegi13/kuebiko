@@ -11,7 +11,10 @@ import { PublicNewsSite } from "./PublicNewsSite";
 import mapSource from "./PublicMap.tsx?raw";
 import siteSource from "./PublicNewsSite.tsx?raw";
 import tailwindSource from "../../tailwind.config.ts?raw";
-import indexHtml from "../../index.html?raw";
+import indexHtml from "../../public.html?raw";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 
 const ITEM = {
   id: "ev-1",
@@ -729,13 +732,15 @@ describe("開いたままの自動更新", () => {
 describe("可読性の下限", () => {
   // 2026-08-28 の可読性診断で直した値が、後の編集で静かに戻らないようにする。
   // 基準: 本文 16px 以上 / 表示文字は 12px 以上 / 二次色は WCAG AA (4.5:1)。
-  const contrast = (hex: string, bg: string) => {
-    const lum = (h: string) => {
-      const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-      const f = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-      return 0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2]);
+  const contrastRgb = (fg: readonly number[], bg: readonly number[]) => {
+    const lum = (c: readonly number[]) => {
+      const f = (x: number) => {
+        const s = x / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
     };
-    const [a, b] = [lum(hex), lum(bg)].sort((x, y) => y - x);
+    const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
     return (a + 0.05) / (b + 0.05);
   };
 
@@ -751,13 +756,26 @@ describe("可読性の下限", () => {
     expect(siteSource).toMatch(/text-\[17px\][^"]*text-fg/);
   });
 
-  it("二次テキストの色が AA を満たす", () => {
-    const tokens = tailwindSource.match(/"fg-(?:subtle|faint)":\s*"(#[0-9a-f]{6})"/gi) ?? [];
-    expect(tokens.length).toBe(2);
-    for (const t of tokens) {
-      const hex = (t.match(/#[0-9a-f]{6}/i) ?? [""])[0];
-      // 最も明るいカード面 (#212733) でも 4.5:1 を割らないこと
-      expect(contrast(hex, "#212733")).toBeGreaterThanOrEqual(4.5);
+  it.each([
+    ["ダーク", /:root\s*\{([^}]*)\}/],
+    ["ライト", /\[data-theme="light"\]\s*\{([^}]*)\}/],
+  ])("%s配色の文字色が AA を満たす", (_name, re) => {
+    // 明暗どちらの palette でも、本文・副文・メタが背景と面の両方で 4.5:1 以上あること。
+    // 片方だけ直して他方を割る、が起きやすいのでテーマごとに測る。
+    // ⚠ CSS を `?raw` で import すると Vite の CSS プラグインが横取りして
+    //    空文字になる (2026-08-28 実測)。ファイルとして読む。
+    const cssSource = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+    const block = (cssSource.match(re) ?? [])[1] ?? "";
+    const v = (name: string) => {
+      const m = block.match(new RegExp(`--c-${name}:\\s*([0-9]+) ([0-9]+) ([0-9]+)`));
+      expect(m, `--c-${name} が見つからない`).toBeTruthy();
+      return [Number(m![1]), Number(m![2]), Number(m![3])] as const;
+    };
+    const grounds = [v("bg"), v("surface-1"), v("surface-2")];
+    for (const fgName of ["fg", "fg-muted", "fg-subtle"]) {
+      for (const ground of grounds) {
+        expect(contrastRgb(v(fgName), ground)).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 

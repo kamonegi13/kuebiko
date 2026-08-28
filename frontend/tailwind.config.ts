@@ -4,41 +4,44 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // 色は CSS 変数を通す (2026-08-28 ライトモード対応)。
+      // ``:root`` の既定値は従来のダーク値そのままなので、運用画面の見た目は変わらない。
+      // ライト値は **公開サイトだけ** が `data-theme="light"` で拾う (src/index.css)。
+      // 不透明度つき (`bg-accent/20` 等) を保つため、変数は RGB 三値で持ち
+      // `rgb(var(--x) / <alpha-value>)` の形にする。hex を入れると alpha が効かない。
       colors: {
-        // CTI dark theme refined palette
-        bg: "#0b0d11",
-        "surface-1": "#14181f",
-        "surface-2": "#1a1f28",
-        "surface-3": "#212733",
-        "surface-overlay": "#2a3140",
-        fg: "#e8ebf0",
-        "fg-muted": "#a0a8b4",
+        bg: "rgb(var(--c-bg) / <alpha-value>)",
+        "surface-1": "rgb(var(--c-surface-1) / <alpha-value>)",
+        "surface-2": "rgb(var(--c-surface-2) / <alpha-value>)",
+        "surface-3": "rgb(var(--c-surface-3) / <alpha-value>)",
+        "surface-overlay": "rgb(var(--c-surface-overlay) / <alpha-value>)",
+        fg: "rgb(var(--c-fg) / <alpha-value>)",
+        "fg-muted": "rgb(var(--c-fg-muted) / <alpha-value>)",
         // 2026-08-28 可読性診断: 旧値 #6b7280 は背景上 4.02:1 / カード上 3.68:1 で
         // WCAG AA (4.5:1) 未達だった。しかも **公開面で最も多用する文字色**を
         // 10〜11px に当てていた (小さい文字ほど高コントラストが要る原則と逆)。
-        // 新値は 4 つの面すべてで 5.0:1 以上。
-        "fg-subtle": "#8f97a6",
+        "fg-subtle": "rgb(var(--c-fg-subtle) / <alpha-value>)",
         // 旧値 #4a5260 は 2.47:1 で読めない。灰色の階層を 4 段持つのが無理だったので
         // fg-subtle に畳む (トークン名は残す — 参照箇所が多く、消すと差分が読めなくなる)。
-        "fg-faint": "#8f97a6",
+        "fg-faint": "rgb(var(--c-fg-subtle) / <alpha-value>)",
         accent: {
-          DEFAULT: "#6b88ff",
-          hover: "#8aa1ff",
-          subtle: "rgba(107,136,255,0.08)",
-          soft: "rgba(107,136,255,0.18)",
-          strong: "rgba(107,136,255,0.32)",
-          ring: "rgba(107,136,255,0.35)",
+          DEFAULT: "rgb(var(--c-accent) / <alpha-value>)",
+          hover: "rgb(var(--c-accent-hover) / <alpha-value>)",
+          subtle: "rgb(var(--c-accent) / 0.08)",
+          soft: "rgb(var(--c-accent) / 0.18)",
+          strong: "rgb(var(--c-accent) / 0.32)",
+          ring: "rgb(var(--c-accent) / 0.35)",
         },
-        critical: "#ff6b6b",
-        "critical-soft": "rgba(255,107,107,0.12)",
-        warning: "#f5a623",
-        "warning-soft": "rgba(245,166,35,0.12)",
-        success: "#45b878",
-        "success-soft": "rgba(69,184,120,0.12)",
-        "border-subtle": "rgba(255,255,255,0.05)",
-        "border-default": "rgba(255,255,255,0.09)",
-        "border-emphasized": "rgba(255,255,255,0.16)",
-        "border-strong": "rgba(255,255,255,0.24)",
+        critical: "rgb(var(--c-critical) / <alpha-value>)",
+        "critical-soft": "rgb(var(--c-critical) / 0.12)",
+        warning: "rgb(var(--c-warning) / <alpha-value>)",
+        "warning-soft": "rgb(var(--c-warning) / 0.12)",
+        success: "rgb(var(--c-success) / <alpha-value>)",
+        "success-soft": "rgb(var(--c-success) / 0.12)",
+        "border-subtle": "rgb(var(--c-border) / var(--c-border-a-subtle))",
+        "border-default": "rgb(var(--c-border) / var(--c-border-a-default))",
+        "border-emphasized": "rgb(var(--c-border) / var(--c-border-a-emphasized))",
+        "border-strong": "rgb(var(--c-border) / var(--c-border-a-strong))",
       },
       fontFamily: {
         // 和文を先頭に置かない: 欧文は各 OS の UI 書体に任せ、和文だけ Noto Sans JP で

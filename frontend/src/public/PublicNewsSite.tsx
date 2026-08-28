@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { ExternalLink, Search, ChevronLeft } from "lucide-react";
+import { ExternalLink, Search, ChevronLeft, Sun, Moon } from "lucide-react";
 import {
   fetchPublicNews,
   fetchPublicNewsDetail,
@@ -192,6 +192,41 @@ export function PublicNewsSite() {
   );
 }
 
+/** 明暗の切替。
+ *
+ *  既定は **OS の設定に従う** (public.html が描画前に属性を立てる)。ここでは
+ *  利用者が明示的に選んだときだけ localStorage に残す。ニュースは屋外の昼間にも
+ *  読まれるので、暗い画面固定は読み物として無理がある (2026-08-28 利用者指摘)。 */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.theme === "light"
+      ? "light"
+      : "dark",
+  );
+  const flip = () => {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", next === "light" ? "#faf9f6" : "#0b0d11");
+    try {
+      localStorage.setItem("kuebiko-theme", next);
+    } catch {
+      /* プライベートブラウズ等で書けなくても切替自体は効かせる */
+    }
+  };
+  return (
+    <button
+      onClick={flip}
+      aria-label={theme === "light" ? "暗い配色に切り替える" : "明るい配色に切り替える"}
+      className="ml-auto shrink-0 p-1.5 -mr-1.5 rounded text-fg-subtle [@media(hover:hover)]:hover:text-accent transition-colors"
+    >
+      {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+    </button>
+  );
+}
+
 function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
   return (
     <>
@@ -205,6 +240,7 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
             kuebiko
           </button>
           <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
+          <ThemeToggle />
         </div>
       </header>
       {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
@@ -510,9 +546,12 @@ function CategoryBadge({ category }: { category: string }) {
   const label = categoryLabel(category);
   if (!label) return null;
   // 節の識別色と同じ色を使い、「どの区画の記事か」を一覧でも保つ
+  // 色は点だけでなく **文字にも乗せる**。点だけだと 1.5px の面積しかなく、
+  // 分類の違いが一覧を流し読みしたときに残らない (2026-08-28 利用者指摘)。
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[13px] font-semibold tracking-wide text-fg-muted"
+      className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold tracking-wide"
+      style={{ color: categoryColor(category) }}
     >
       <span
         className="w-1.5 h-1.5 rounded-full"
@@ -734,7 +773,7 @@ function LeadStory({ item }: { item: PublicNewsItem }) {
           {item.headline}
         </h2>
         {item.summary && (
-          <p className="text-[15px] lg:text-[16px] leading-[1.8] text-fg-muted line-clamp-2">
+          <p className="border-l-2 border-accent/40 pl-3 text-[15px] lg:text-[16px] leading-[1.8] text-fg-muted line-clamp-2">
             {item.summary}
           </p>
         )}
@@ -759,7 +798,13 @@ function NewsCard({
   // 裸の <li> がブラウザ既定のマーカー (●) を出してしまう (2026-08-25 利用者指摘)。
   // リストに入れるのは呼び手の責務。
   return (
-    <article className={opened ? "opacity-60" : undefined}>
+    // 記事ごとに面を持たせて境界を出す。余白だけで区切ると、見出しと要約と
+    // 次の記事の見出しが同じ「文字の連なり」に見えて切れ目が読み取れない。
+    <article
+      className={`rounded-xl border border-border-subtle bg-surface-1 px-4 py-3.5 transition-colors [@media(hover:hover)]:hover:border-border-default ${
+        opened ? "opacity-60" : ""
+      }`}
+    >
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
         className="block w-full text-left group space-y-1.5"
@@ -769,10 +814,14 @@ function NewsCard({
           {item.headline}
         </h3>
         {item.summary && (
-          <p className="text-[14.5px] leading-[1.75] text-fg-muted line-clamp-2">{item.summary}</p>
+          // 要約は **左に罫を引いて字下げ**する。見出しの続きではなく
+          // 「見出しを説明する従属の文」だと形で分かるようにする
+          <p className="border-l-2 border-border-default pl-3 text-[14.5px] leading-[1.75] text-fg-muted line-clamp-2">
+            {item.summary}
+          </p>
         )}
       </button>
-      <div className="mt-2">
+      <div className="mt-2.5">
         <CardMeta item={item} />
       </div>
     </article>

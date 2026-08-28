@@ -9,6 +9,33 @@
     <meta name="theme-color" content="#0b0d11" />
     <title>kuebiko — サイバー脅威ニュース</title>
 
+    <!-- ⚠ 和文 Web フォント。運用画面 (index.html) にだけ入れて**ここに入れ忘れていた**
+         ため、公開サイトは Noto Sans JP を指定しているのに読み込んでいなかった
+         (2026-08-28)。公開面と運用画面は別ビルド・別 HTML なので、head の追加は両方に要る。 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+    />
+
+    <!-- テーマ確定。**描画前に属性を立てる** (React 待ちだと初回に暗い画面が一瞬出る)。
+         保存値があればそれ、無ければ OS の設定に従う。 -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("kuebiko-theme");
+          var prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+          var theme = saved || (prefersLight ? "light" : "dark");
+          document.documentElement.setAttribute("data-theme", theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "light" ? "#faf9f6" : "#0b0d11");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+
     <!-- PWA: manifest とアイコンのみ。Service Worker は入れない (運用画面と同じ方針 —
          SW はインストールしていない利用者にも効き、キャッシュの陳腐化を招く)。
          ⚠ scope / start_url は **静的配信のルート** (`/`)。運用画面の manifest
