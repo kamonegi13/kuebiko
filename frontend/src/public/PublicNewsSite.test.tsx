@@ -826,6 +826,17 @@ describe("可読性の下限", () => {
     expect(before).toMatch(/line-clamp-2/);
   });
 
+  it("公開サイトの既定はライト、運用画面の既定はダーク", () => {
+    // ニュースは日中の屋外でも読まれるので明るい面を標準にする。
+    // 運用画面は分析作業を暗い面で設計しているのでダークのまま。
+    const ops = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+    expect(indexHtml).toMatch(/prefersDark \? "dark" : "light"/);
+    expect(ops).toMatch(/saved \|\| "dark"/);
+    // どちらも描画前に属性を立てる (React 待ちだと初回に別配色が一瞬出る)
+    expect(indexHtml).toContain("setAttribute(\"data-theme\"");
+    expect(ops).toContain("setAttribute(\"data-theme\"");
+  });
+
   it("和文の Web フォントを読み込んでいる", () => {
     // 無いと和文は OS 任せになり、閲覧環境ごとに別の書体で出る
     expect(indexHtml).toContain("Noto+Sans+JP");

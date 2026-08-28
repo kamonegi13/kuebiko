@@ -6,7 +6,7 @@
     <!-- 広く公開する意図はない。組織内の限られた読者に URL を渡す運用なので、
          検索エンジンには載せない (robots.txt も併せて置く)。 -->
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#0b0d11" />
+    <meta name="theme-color" content="#faf9f6" />
     <title>kuebiko — サイバー脅威ニュース</title>
 
     <!-- ⚠ 和文 Web フォント。運用画面 (index.html) にだけ入れて**ここに入れ忘れていた**
@@ -20,13 +20,15 @@
     />
 
     <!-- テーマ確定。**描画前に属性を立てる** (React 待ちだと初回に暗い画面が一瞬出る)。
-         保存値があればそれ、無ければ OS の設定に従う。 -->
+         既定は **ライト** (2026-08-28)。ニュースは日中の屋外でも読まれるので、
+         読み物としては明るい面を標準にする。OS が暗い設定のときだけそちらに従い、
+         利用者が明示的に選んだ値があれば常にそれを優先する。 -->
     <script>
       (function () {
         try {
           var saved = localStorage.getItem("kuebiko-theme");
-          var prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
-          var theme = saved || (prefersLight ? "light" : "dark");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = saved || (prefersDark ? "dark" : "light");
           document.documentElement.setAttribute("data-theme", theme);
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute("content", theme === "light" ? "#faf9f6" : "#0b0d11");
@@ -45,7 +47,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/pwa/favicon-32.png" />
     <link rel="apple-touch-icon" href="/pwa/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="kuebiko" />
   </head>
   <body class="bg-bg text-fg antialiased">

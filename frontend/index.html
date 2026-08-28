@@ -10,6 +10,24 @@
     <meta name="theme-color" content="#0b0d11" />
     <title>Kuebiko — 久延毘古</title>
 
+    <!-- テーマ確定。**描画前に属性を立てる** (React 待ちだと初回に別配色が一瞬出る)。
+         運用画面の既定は **ダーク** — 分析作業は暗い面を前提に設計してある。
+         利用者が明示的に選んだ値があればそれを優先する (公開サイトと同じ鍵)。 -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem("kuebiko-theme");
+          document.documentElement.setAttribute("data-theme", saved || "dark");
+          if (saved === "light") {
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute("content", "#faf9f6");
+          }
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
+
     <!-- 和文 Web フォント (2026-08-28 可読性診断)。
          これが無いと和文は OS 任せ (macOS=ヒラギノ / Windows=Meiryo / Linux=総称) で、
          閲覧環境ごとに別の書体で出る。CTI のテキストは "CVE-2026-16232" のように

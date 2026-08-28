@@ -1,9 +1,10 @@
 // 左サイドバー (グループ化ナビ + 折りたたみレール + モバイル drawer)。
 // 折りたたみ時はアイコンのみ + tooltip。href は plain anchor (既存どおり full reload)。
 
-import { ChevronsLeft, ChevronsRight, LogIn, LogOut } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, LogIn, LogOut, Moon, Sun } from "lucide-react";
 import { isActive, visibleNavGroups } from "./nav";
 import { useRuntimeFlags, shouldHideFullOnly, loginUrl } from "../hooks/useRuntimeFlags";
+import { useTheme } from "../hooks/useTheme";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -16,6 +17,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onCloseMobile }: SidebarProps) {
   // readonly instance の未認証時のみ fullOnly (編集/操作系) 項目をメニューから隠す
   const flags = useRuntimeFlags();
+  const { theme, toggle: toggleTheme } = useTheme();
   const hideFullOnly = shouldHideFullOnly(flags);
   const width = collapsed ? "md:w-14" : "md:w-60";
   return (
@@ -90,6 +92,31 @@ export function Sidebar({ collapsed, mobileOpen, pathname, onToggleCollapse, onC
             </div>
           ))}
         </nav>
+
+        {/* 明暗の切替。運用画面の既定はダーク (分析作業は暗い面が前提の設計) だが、
+            日中に見るときのために切り替えられるようにする (2026-08-28)。 */}
+        <div className="shrink-0 border-t border-border-subtle p-2">
+          <button
+            onClick={toggleTheme}
+            title={theme === "light" ? "暗い配色に切り替える" : "明るい配色に切り替える"}
+            className={[
+              "w-full flex items-center gap-2.5 rounded-md px-2.5 py-2",
+              "text-fg-muted hover:bg-surface-2 hover:text-fg",
+              collapsed ? "md:justify-center md:px-0" : "",
+            ].join(" ")}
+          >
+            {theme === "light" ? (
+              <Moon size={17} className="shrink-0" strokeWidth={2} />
+            ) : (
+              <Sun size={17} className="shrink-0" strokeWidth={2} />
+            )}
+            <span
+              className={collapsed ? "md:hidden text-[13px] truncate" : "text-[13px] truncate"}
+            >
+              {theme === "light" ? "暗い配色" : "明るい配色"}
+            </span>
+          </button>
+        </div>
 
         {/* ログイン導線 (公開 instance で Cloudflare Access が設定済みのときだけ表示)。
             認証すると運用系ページの閲覧とジョブ即時実行が解放される (write はローカル専用)。 */}

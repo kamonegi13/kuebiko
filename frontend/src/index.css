@@ -80,13 +80,13 @@
 
 @layer components {
   /* SVG sparkline accent */
-  .sparkline-svg path { stroke: #6b88ff; stroke-width: 1.5; fill: none; }
-  .sparkline-svg .area { fill: #6b88ff; opacity: 0.18; stroke: none; }
+  .sparkline-svg path { stroke: rgb(var(--c-accent)); stroke-width: 1.5; fill: none; }
+  .sparkline-svg .area { fill: rgb(var(--c-accent)); opacity: 0.18; stroke: none; }
 
   /* Progress bar (top of content during loading) */
   .progress-bar {
     background: linear-gradient(90deg,
-      transparent 0%, #6b88ff 50%, transparent 100%);
+      transparent 0%, rgb(var(--c-accent)) 50%, transparent 100%);
     background-size: 200% 100%;
     animation: progress 700ms ease-in-out infinite;
   }
@@ -98,13 +98,13 @@
 
 /* react-grid-layout (ダッシュボード座標グリッド): ダークテーマ調整 */
 .react-grid-item.react-grid-placeholder {
-  background: #6b88ff; /* 既定の red を accent に */
+  background: rgb(var(--c-accent)); /* 既定の red を accent に */
   opacity: 0.15;
   border-radius: 0.5rem;
 }
 .react-grid-item > .react-resizable-handle::after {
-  border-right-color: rgba(255, 255, 255, 0.45);
-  border-bottom-color: rgba(255, 255, 255, 0.45);
+  border-right-color: rgb(var(--c-border) / 0.45);
+  border-bottom-color: rgb(var(--c-border) / 0.45);
 }
 
 /* Leaflet: クリック時のフォーカス枠 (青い線) を消す */
@@ -120,10 +120,11 @@
   white-space: nowrap;
 }
 .geo-city-label span {
-  color: #c3cad6;
+  color: rgb(var(--c-fg));
   /* 2026-08-28 可読性診断: 10px は下限割れ。地図上は背景が一定しないので
      影を残したまま 1 段上げ、色も明るくする。 */
   font-size: 12px;
   font-weight: 500;
-  text-shadow: 0 0 3px #0a0e16, 0 0 3px #0a0e16, 0 0 4px #0a0e16;
+  /* 地図は背景が一定しないので、文字色と反対の縁取りで可読性を確保する */
+  text-shadow: 0 0 3px rgb(var(--c-bg)), 0 0 3px rgb(var(--c-bg)), 0 0 4px rgb(var(--c-bg));
 }
