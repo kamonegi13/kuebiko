@@ -1,3 +1,4 @@
+import { fetchEventNewsStatic, fetchEventNewsDetailStatic } from "./opsMirrorStatic";
 /** 事象ニュースの一覧行。裏取りは independent_sources で表す (member_count ではない)。 */
 export interface EventNewsListItem {
   id: string;
@@ -145,7 +146,12 @@ export interface EventNewsQuery {
   semantic?: boolean;
 }
 
+/** 写し (Cloudflare Pages) から読むか。ビルド時に決まる。
+ *  **呼び手は分岐を知らない** — 画面に if を撒くと片方の経路だけ壊れても気付けない。 */
+const MIRROR = import.meta.env.VITE_OPS_MIRROR === "1";
+
 export function fetchEventNews(q: EventNewsQuery = {}) {
+  if (MIRROR) return fetchEventNewsStatic(q.limit ?? 50);
   const p = new URLSearchParams({ limit: String(q.limit ?? 50) });
   if (q.offset) p.set("offset", String(q.offset));
   if (q.since_hours) p.set("since_hours", String(q.since_hours));
@@ -166,6 +172,7 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
 }
 
 export function fetchEventNewsDetail(id: string) {
+  if (MIRROR) return fetchEventNewsDetailStatic(id);
   return get<EventNewsDetail>(`/api/v1/eventnews/${encodeURIComponent(id)}`);
 }
 
