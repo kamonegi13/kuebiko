@@ -27,6 +27,14 @@
   --c-border-a-default: 0.09;
   --c-border-a-emphasized: 0.16;
   --c-border-a-strong: 0.24;
+  /* カテゴリ色。分類の符号なので意味色 (critical/warning) と衝突させない。
+     **テーマごとに別の値**が要る — 暗い面で読める明るい色は、白い紙の上では
+     1.4〜2.2:1 にしかならず読めない (2026-08-28 実測)。 */
+  --cat-vuln: #38bdf8;
+  --cat-incident_breach: #f0abfc;
+  --cat-threat: #fb923c;
+  --cat-geopolitical: #a3e635;
+  --cat-neutral: #94a3b8;
   color-scheme: dark;
 }
 
@@ -52,6 +60,12 @@
   --c-border-a-default: 0.16;
   --c-border-a-emphasized: 0.26;
   --c-border-a-strong: 0.38;
+  /* 同じ色相を暗くして紙の上で 4.7:1 以上にする */
+  --cat-vuln: #0369a1;
+  --cat-incident_breach: #a21caf;
+  --cat-threat: #b45309;
+  --cat-geopolitical: #4d7c0f;
+  --cat-neutral: #475569;
   color-scheme: light;
 }
 

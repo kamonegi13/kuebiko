@@ -837,6 +837,28 @@ describe("可読性の下限", () => {
     expect(ops).toContain("setAttribute(\"data-theme\"");
   });
 
+  it("カテゴリ色は明暗どちらでも AA を満たす", () => {
+    // カテゴリ名を色そのもので描いているので、読めない色は分類が読めないのと同じ。
+    // 暗い面で読める明るい色は白い紙では 1.4〜2.2:1 にしかならない (実測)。
+    const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+    const hex = (block: string, name: string) => {
+      const m = block.match(new RegExp(`--cat-${name}:\\s*#([0-9a-f]{6})`, "i"));
+      expect(m, `--cat-${name} が見つからない`).toBeTruthy();
+      const h = m![1];
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    };
+    const blocks: [string, RegExp, number[]][] = [
+      ["ダーク", /:root\s*\{([^}]*)\}/, [11, 13, 17]],
+      ["ライト", /\[data-theme="light"\]\s*\{([^}]*)\}/, [255, 255, 255]],
+    ];
+    for (const [, re, ground] of blocks) {
+      const block = (css.match(re) ?? [])[1] ?? "";
+      for (const name of ["vuln", "incident_breach", "threat", "geopolitical", "neutral"]) {
+        expect(contrastRgb(hex(block, name), ground)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it("和文の Web フォントを読み込んでいる", () => {
     // 無いと和文は OS 任せになり、閲覧環境ごとに別の書体で出る
     expect(indexHtml).toContain("Noto+Sans+JP");
