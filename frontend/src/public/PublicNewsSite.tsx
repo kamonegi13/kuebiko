@@ -513,16 +513,16 @@ function CategoryTeaser({ categoryKey, openedId }: { categoryKey: string; opened
                   // 見出しは上寄せ、日付とバッジは下寄せ。見出しの行数が
                   // 1〜3 行と揺れるので、上下を突き放したほうが行の切れ目が
                   // 読み取りやすい (2026-08-28 利用者指摘)。
-                  // 行の高さに下限を置く。見出しが 1 行の行と 2 行の行が混ざると、
-                  // 2 列表示で左右の行位置がずれて格子が崩れて見える
-                  // (2026-08-28 利用者指摘)。**切らずに揃える**ための下限。
+                  // 行の高さを 2 行で固定する。ここは「一覧へ」で全件が見える
+                  // **入口**なので、見出しを切ってでも行位置を揃える方を採る
+                  // (2026-08-28 利用者判断)。カードと先頭記事は切らないまま。
                   className="group w-full flex items-stretch gap-2 py-2.5 min-h-[4.4rem] text-left transition-colors"
                 >
                   <span className="text-[12px] leading-[1.65] text-fg-subtle [@media(hover:hover)]:group-hover:text-accent shrink-0">
                     ●
                   </span>
                   <span
-                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] [@media(hover:hover)]:group-hover:text-accent ${
+                    className={`flex-1 text-[15.5px] font-medium leading-[1.65] line-clamp-2 [@media(hover:hover)]:group-hover:text-accent ${
                       it.id === openedId ? "text-fg-subtle" : "text-fg"
                     }`}
                   >
@@ -824,7 +824,10 @@ function NewsCard({
     >
       <button
         onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(item.id)}`)}
-        className="block w-full flex-1 text-left group space-y-1.5"
+        // ⚠ ここに flex-1 を置かない。**button は内容を上下中央に置く**ため、
+        //    伸ばすと見出しが下がって上寄せにならない (2026-08-28 利用者指摘)。
+        //    伸ばすのはメタ側 (mt-auto) の役目。
+        className="block w-full text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
         {/* ⚠ **見出しは切らない。** 要約を外した今、見出しが唯一の情報なので、
@@ -847,7 +850,7 @@ function NewsCard({
           </p>
         )}
       </button>
-      <div className="mt-2.5 pt-0.5">
+      <div className="mt-auto pt-2.5">
         <CardMeta item={item} />
       </div>
     </article>

@@ -806,16 +806,24 @@ describe("可読性の下限", () => {
     expect(badgeAt).toBeGreaterThan(headlineAt);
   });
 
-  it("見出しは省略しない", () => {
-    // 要約を外した今、見出しが唯一の情報。省略記号で消すと何の記事か分からない。
-    // 3 行で止めていたときは 63% の記事が切れていた (2026-08-28 実測・利用者指摘)。
-    // 長すぎるのは生成側の問題なので、表示では切らない。
-    const sites = [...siteSource.matchAll(/\{it(?:em)?\.headline\}/g)];
-    expect(sites.length).toBeGreaterThanOrEqual(3);
+  it("読ませる枠の見出しは省略しない", () => {
+    // カード (item) と先頭記事は、見出しが唯一の情報になる場所。省略記号で
+    // 消すと何の記事か分からない。3 行で止めていたときは 63% が切れていた。
+    const sites = [...siteSource.matchAll(/\{item\.headline\}/g)];
+    expect(sites.length).toBeGreaterThanOrEqual(2);
     for (const m of sites) {
       const before = siteSource.slice(Math.max(0, m.index! - 300), m.index!);
       expect(before, `見出しが省略されている: …${before.slice(-90)}`).not.toMatch(/line-clamp-\d/);
     }
+  });
+
+  it("入口の密な一覧だけは 2 行で揃える", () => {
+    // ここは「一覧へ」で全件が見える入口。見出しを切ってでも行位置を揃える方を
+    // 採る (2026-08-28 利用者判断)。左右 2 列で行がずれると格子が崩れて見える。
+    const at = siteSource.indexOf("{it.headline}");
+    expect(at).toBeGreaterThan(0);
+    const before = siteSource.slice(at - 400, at);
+    expect(before).toMatch(/line-clamp-2/);
   });
 
   it("和文の Web フォントを読み込んでいる", () => {
