@@ -124,12 +124,23 @@ afterEach(() => {
 });
 
 describe("公開ニュースサイト", () => {
-  it("一覧は「何の話か」だけを出す (カテゴリ → 見出し → 要約 → 日付)", async () => {
+  it("先頭記事はカテゴリ・見出し・要約・日付を出す", async () => {
     renderSite();
     expect(await screen.findByText(ITEM.headline)).toBeTruthy();
     expect(screen.getAllByText(ITEM.summary).length).toBeGreaterThan(0);
     // カテゴリバッジ (語彙が無い環境では key がそのまま出る)
     expect(screen.getAllByText("vuln").length).toBeGreaterThan(0);
+  });
+
+  it("先頭記事以外は見出しだけにする (2026-08-28 利用者提案)", () => {
+    // 見出しが中央値 62 字あり、要約の冒頭は見出しを中央値 53% なぞる。
+    // 1 件の高さを倍にする割に足す情報が少ないので、カードは見出しで止める。
+    const card = siteSource.slice(
+      siteSource.indexOf("function NewsCard("),
+      siteSource.indexOf("function NewsCard(") + 2000,
+    );
+    expect(card).toContain("{item.headline}");
+    expect(card).not.toContain("{item.summary}");
   });
 
   it("一覧に出典名と媒体数を出さない (2026-08-25 利用者指摘)", async () => {
@@ -797,10 +808,14 @@ describe("可読性の下限", () => {
     // 生成見出しは中央値 62 字・最長 173 字あり、スマホでは 3〜7 行になる。
     // 止めないと 1 件で画面の半分を占め、一覧が「選ぶ」道具として機能しない。
     // 見出しを描く 3 箇所すべてに line-clamp が要る (先頭記事 / カード / 見出しのみ行)。
-    const headlineLines = [...siteSource.matchAll(/\{item\.headline\}/g)];
-    expect(headlineLines.length).toBeGreaterThanOrEqual(2);
-    const clamps = [...siteSource.matchAll(/line-clamp-\d/g)];
-    expect(clamps.length).toBeGreaterThanOrEqual(5);
+    // 件数ではなく「見出しを描く箇所すべてに clamp が掛かっているか」を見る。
+    // 数を数えると、要約を消したときのような無関係な増減で落ちる。
+    const sites = [...siteSource.matchAll(/\{it(?:em)?\.headline\}/g)];
+    expect(sites.length).toBeGreaterThanOrEqual(3);
+    for (const m of sites) {
+      const before = siteSource.slice(Math.max(0, m.index! - 300), m.index!);
+      expect(before, `clamp の無い見出し: …${before.slice(-90)}`).toMatch(/line-clamp-\d/);
+    }
   });
 
   it("和文の Web フォントを読み込んでいる", () => {

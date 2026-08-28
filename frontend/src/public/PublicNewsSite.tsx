@@ -812,16 +812,14 @@ function NewsCard({
         className="block w-full text-left group space-y-1.5"
       >
         {!hideCategory && <CategoryBadge category={item.category} />}
-        <h3 className="text-[17px] font-semibold leading-[1.55] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
+        {/* ⚠ **要約は出さない。** 見出しが中央値 62 字あり (30 字未満は 2%)、
+            それだけで何の話かは判る。要約の冒頭は見出しを中央値 53% なぞっており、
+            1 件の高さを倍にする割に足す情報が少ない (2026-08-28 実測・利用者提案)。
+            一覧の仕事は「読む」ではなく「選ぶ」。全文は開けば出る。
+            先頭記事 (LeadStory) だけは別 — そこは読ませる枠なので要約を残す。 */}
+        <h3 className="text-[17px] font-semibold leading-[1.6] text-fg line-clamp-3 [@media(hover:hover)]:group-hover:text-accent transition-colors">
           {item.headline}
         </h3>
-        {item.summary && (
-          // 要約は **左に罫を引いて字下げ**する。見出しの続きではなく
-          // 「見出しを説明する従属の文」だと形で分かるようにする
-          <p className="border-l-2 border-border-default pl-3 text-[14.5px] leading-[1.75] text-fg-muted line-clamp-2">
-            {item.summary}
-          </p>
-        )}
       </button>
       <div className="mt-2.5">
         <CardMeta item={item} />
