@@ -457,7 +457,13 @@ kuebiko/
 - **中国系モデル / Embedding の利用** (§4 参照)
 - **Discord 以外への配信** (Slack / Teams / メール等)。必要になった時点で別途検討
 - **マルチテナント化 / 他ユーザーへの提供**。本プロジェクトは個人運用専用
-- **収集した記事の再配布**。要約と引用 URL に留める
+- **収集した記事の再配布**。要約と引用 URL に留める — **匿名で読める公開サイト (Tier0) の話**
+  (2026-08-29 線引きを明確化)。Cloudflare Access で要員を限定した写し (Tier1) と
+  ローカル (Tier2) は本文を持つ。本文が無いと単独媒体の事象は要約しか読めず、
+  「Mac に到達できないときに続きを読む」という写しの目的を果たせない。
+  関門は面ごとに独立している (公開サイトは `scripts/export_public_site.py` の
+  `_FORBIDDEN_KEYS`、写しは `scripts/export_mirror.py` の `--no-bodies`) ため、
+  片方を緩めても他方は緩まない
 - **クラウドへのデプロイ** (AWS/GCP/Azure)。MacBook 上での常駐運用に限定
 - **Web UI (write 可能 instance) の外部公開**。port 8001 の full instance は 127.0.0.1 のみバインド、LAN/外部からの到達を不可とする (§12)。読み取り専用 instance (port 8002 + READ_ONLY=1, write API は middleware で 403 固定) のみ Cloudflare Tunnel 経由の外部公開を許容する
 - **Web UI の認証実装** (Phase 1.5 では不採用、§12 のセキュリティ境界で防御)

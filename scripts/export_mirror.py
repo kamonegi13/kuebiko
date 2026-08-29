@@ -58,6 +58,14 @@ DEFAULT_MIN_EVENTS = 50
 #: 「関門を外して先へ進む」は解にならない。
 #:
 #: いずれも数十 KB 以下で、絞り込み条件を持たない全体一覧。
+#: 記事本文を写しに含めるか の既定。
+#:
+#: ⭐ **再配布の禁止は匿名の公開サイト (Tier0) の話** (2026-08-29 利用者が線引きを明確化)。
+#: 写し (Tier1) は Cloudflare Access で限られた要員だけが読む面なので、本文を含める。
+#: 本文が無いと単独媒体の事象は要約しか読めず、「Mac に到達できないときに続きを読む」
+#: という写しの目的を果たせない。
+#: 公開サイト側の禁止は export_public_site.py の _FORBIDDEN_KEYS が別に守っている
+#: (こちらを緩めても向こうは緩まない — 関門は面ごとに独立している)。
 REFERENCE_ENDPOINTS = (
     "/api/v1/vocabularies",
     "/api/v1/runtime-flags",
@@ -121,6 +129,7 @@ def _fetch_articles(client: httpx.Client, days: int, cap: int) -> list[dict[str,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8001")
+    ap.set_defaults(with_bodies=True)
     ap.add_argument("--out", required=True, help="書き出し先ディレクトリ")
     ap.add_argument("--days", type=int, default=DEFAULT_DAYS)
     ap.add_argument("--max-articles", type=int, default=MAX_ARTICLES)
@@ -128,10 +137,10 @@ def main() -> int:
     ap.add_argument("--min-articles", type=int, default=DEFAULT_MIN_ARTICLES)
     ap.add_argument("--min-events", type=int, default=DEFAULT_MIN_EVENTS)
     ap.add_argument(
-        "--with-bodies",
-        action="store_true",
-        help="記事本文も書き出す (既定は出さない — 45MB あり、"
-        "エッジに置く量と機微が増える。出典 URL から原記事に当たれる)",
+        "--no-bodies",
+        dest="with_bodies",
+        action="store_false",
+        help="記事本文を書き出さない (既定は書き出す)",
     )
     args = ap.parse_args()
 
@@ -170,9 +179,9 @@ def main() -> int:
             if not args.with_bodies:
                 art = detail.get("article")
                 if isinstance(art, dict):
-                    # 本文は写さない (既定)。**キーごと消す**のではなく空にする —
-                    # 画面が「取得できなかった」と「写していない」を区別できるように、
-                    # meta.json の with_bodies と合わせて読ませる。
+                    # **キーごと消す**のではなく空にする — 画面が「取得できなかった」と
+                    # 「写していない」を区別できるように、meta.json の with_bodies と
+                    # 合わせて読ませる。
                     art["body"] = ""
                     art["body_ja"] = ""
             total_bytes += _write(out / "articles" / f"{_safe_name(aid)}.json", detail)
