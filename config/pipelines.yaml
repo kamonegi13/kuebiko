@@ -205,7 +205,12 @@ pipelines:
     extract_min_length: 200
     target_language: ja
 - name: pir-spotlight
-  # 毎日 03:30 に **直近 7 日** を作り直す (2026-08-29 に週次から変更)。
+  # 毎日 04:50 に **直近 7 日** を作り直す (2026-08-29 に週次から変更)。
+  #
+  # ⚠ **実行時刻の SSoT は DB** (job_registry の override)。ここを変えても
+  #    既に override があるジョブには効かない (実際にこれを踏んだ — yaml を
+  #    日次にしたのに次回実行は月曜のままだった)。変更は UI か
+  #    POST /api/v1/jobs/pir-spotlight/schedule から行い、ここは seed として揃える。
   #
   # なぜ 7 日窓を毎日か: 日次窓では材料が足りない。実測で 20 PIR 中 7 件は
   # 1 日あたり 0〜2.6 件しか該当が無く、Spotlight の形式 (主要事象 5-8 件 +
@@ -215,8 +220,8 @@ pipelines:
   # 費用: 実測 90 秒/PIR。全 20 PIR で ~30 分。深夜帯に収まる。
   schedule:
     enabled: true
-    hour: 3
-    minute: 30
+    hour: 4
+    minute: 50
   source:
     type: pir_spotlight
     max_articles: 1
