@@ -3,7 +3,13 @@ import { create } from "zustand";
 export type Tab = "synthesis" | "pmesii" | "threats" | "operations" | "forecast";
 export type PeriodType = "daily" | "weekly" | "monthly";
 export type OperationsView = "taxonomy" | "editorial";
-export type SynthesisView = "global" | "spotlight" | "ledger";
+// 現況の 3 面 (2026-08-29 に再編)。**役割で分ける** — 利用者が何をしているかで切る。
+//   read   = 読む   (全体総括 + PIR ごとの Spotlight を 1 本に)
+//   basis  = 根拠   (ACH / 証拠 / 分析トレードクラフト)
+//   review = 点検   (予測スコアカード / 情勢台帳)
+// 旧 global/spotlight/ledger は、読み物と根拠と点検が同じ画面に縦積みされ、
+// 実測でページの 92% が根拠・点検、読むものは 8% だった。
+export type SynthesisView = "read" | "basis" | "review";
 
 export interface FilterState {
   tab: Tab;
@@ -17,7 +23,7 @@ export interface FilterState {
   axis: string;              // focused axis in pmesii tab
   period_type: PeriodType;   // synthesis tab
   op: OperationsView;        // operations tab sub-view
-  synthesisView: SynthesisView; // synthesis tab: global / spotlight
+  synthesisView: SynthesisView; // 現況: 読む / 根拠 / 点検
 
   setTab: (t: Tab) => void;
   setFilter: <K extends keyof FilterState>(k: K, v: FilterState[K]) => void;
@@ -42,7 +48,7 @@ const initial = {
   axis: "",
   period_type: "weekly" as PeriodType,
   op: "taxonomy" as OperationsView,
-  synthesisView: "global" as SynthesisView,
+  synthesisView: "read" as SynthesisView,
 };
 
 // URL hash <-> state sync (bookmark / share / back-button 対応)。
@@ -78,7 +84,8 @@ function parseHash(): Partial<FilterState> {
   if (axis) out.axis = axis;
   // situation deep link (#situation=<id>): 台帳ビューへ強制。id 自体は LedgerView が
   // mount 時に hash から直接消費する (filter state には持たない — 1 回限りの着地情報)。
-  if (p.get("situation")) out.synthesisView = "ledger";
+  // 旧 URL (?situation=1) は台帳 = 点検面へ。
+  if (p.get("situation")) out.synthesisView = "review";
   return out;
 }
 

@@ -28,9 +28,9 @@ const PERIODS: { v: PeriodType; label: string }[] = [
   { v: "monthly", label: "月次" },
 ];
 const VIEWS: { v: SynthesisView; label: string }[] = [
-  { v: "global", label: "全体総括" },
-  { v: "spotlight", label: "Spotlight" },
-  { v: "ledger", label: "情勢台帳" },
+  { v: "read", label: "読む" },
+  { v: "basis", label: "根拠" },
+  { v: "review", label: "点検" },
 ];
 const OPS: { v: OperationsView; label: string }[] = [
   { v: "taxonomy", label: "分類語彙" },
@@ -77,11 +77,11 @@ function renderTabControls(
 ): React.ReactNode {
   switch (tab) {
     case "synthesis":
-      // 現況: 期間 (日/週/月) と全体総括/Spotlight が本質。time/国/family 等は効かないので出さない。
+      // 現況: 面 (読む/根拠/点検) と期間が本質。time/国/family 等は効かないので出さない。
       return (
         <>
           <Seg items={VIEWS} value={f.synthesisView} onChange={f.setSynthesisView} />
-          {f.synthesisView === "global" && (
+          {f.synthesisView === "read" && (
             <Seg items={PERIODS} value={f.period_type} onChange={f.setPeriodType} />
           )}
         </>

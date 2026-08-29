@@ -19,10 +19,26 @@ import { intelHref } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
 
 export function SynthesisTab() {
-  // 全体総括 / Spotlight の切替は上部コントロールバー (Shell) が担う。ここは選択値を読むだけ。
+  // 面 (読む / 根拠 / 点検) の切替は上部コントロールバー (Shell) が担う。ここは読むだけ。
   const view = useFilters((s) => s.synthesisView);
-  if (view === "ledger") return <LedgerView />;
-  return <div>{view === "global" ? <GlobalSynthesisView /> : <SpotlightView />}</div>;
+  if (view === "basis") return <BasisView />;
+  if (view === "review") return <ReviewView />;
+  return <ReadView />;
+}
+
+/** 読む面: 全体総括を先頭に固定し、PIR ごとの Spotlight を続ける。
+ *
+ *  ⭐ **根拠と点検はここに置かない。** 旧構成は読み物・根拠・点検を 1 本に縦積みして
+ *  おり、実測でページ 16,165px のうち読むものは 1,283px (8%) しかなかった。
+ *  「なぜそう言えるか」(根拠) と「当たっているか」(点検) は、読むこととは別の行為。
+ */
+function ReadView() {
+  return (
+    <div className="space-y-6">
+      <GlobalSynthesisView />
+      <SpotlightView />
+    </div>
+  );
 }
 
 function GlobalSynthesisView() {
@@ -36,27 +52,9 @@ function GlobalSynthesisView() {
     <div>
       {/* 期間 (日/週/月) の切替は上部コントロールバー (Shell) が担う。 */}
       <div className="mb-3 px-1 flex items-baseline justify-between flex-wrap gap-2">
-        <h3 className="m-0 text-lg font-bold text-fg tracking-tight">状況総括</h3>
-        {/* セクションジャンプ (長文レポートの目次) */}
-        {data?.has_data && (
-          <nav className="flex flex-wrap gap-1.5 text-[13px]">
-            {[
-              ["#syn-narrative", "総括本文"],
-              ["#syn-tradecraft", "トレードクラフト"],
-              ["#syn-ach", "ACH"],
-              ["#syn-forecast", "予測"],
-              ["#syn-evidence", "証拠"],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                href={href}
-                className="px-2 py-0.5 rounded-full bg-surface-2 border border-border-subtle text-fg-muted hover:text-fg hover:border-border-default no-underline"
-              >
-                {label}
-              </a>
-            ))}
-          </nav>
-        )}
+        <h3 className="m-0 text-lg font-bold text-fg tracking-tight">全体</h3>
+        {/* 目次は撤去 (2026-08-29)。飛び先の 3/5 は別の面へ移った — 面をまたぐ
+            アンカーは無言で効かなくなるので、残さず消す。 */}
       </div>
 
       {isLoading && <SkeletonRows />}
@@ -103,43 +101,110 @@ function GlobalSynthesisView() {
             <Section title="6. PIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
           </div>
 
-          {/* S2: 分析トレードクラフト (対立仮説・前提・覆る指標) */}
-          {data.tradecraft && <TradecraftSection tc={data.tradecraft} />}
-
-          {/* 証拠駆動評価 (ACH): 各判定の競合仮説・接地証拠・確度の根拠 (本文と照合可能) */}
-          {data.tradecraft?.grounded_estimate && (
-            <GroundedEstimateSection
-              est={data.tradecraft.grounded_estimate}
-              generatedAt={data.latest.generated_at}
-            />
-          )}
-
-          {/* B(2): 予測スコアカード (前期予測の採点 + 的中率 + 今期の予測) */}
-          {data.tradecraft &&
-            (data.tradecraft.forecast_scorecard?.length ||
-              data.tradecraft.forecasts?.length) && (
-              <ForecastScorecard tc={data.tradecraft} acc={data.forecast_accuracy} />
-            )}
-
-          {/* Axes evidence */}
-          {data.axes_evidence && Object.keys(data.axes_evidence).length > 0 && (
-            <div id="syn-evidence" className="scroll-mt-24">
-              <div className="flex items-baseline justify-between gap-2 mb-2.5">
-                <h4 className="m-0 text-md text-fg font-semibold tracking-tight">7. 軸別の証拠 (深掘り)</h4>
-                {/* ページ間 cross-nav の一貫性: 現況から関連ビュー (国家情勢 = 全 PMESII 軸) へ */}
-                <a href={intelHref("pmesii")} className="text-xs text-accent hover:text-accent-hover no-underline shrink-0">
-                  国家情勢で軸を見る →
-                </a>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-                {Object.entries(data.axes_evidence).map(([axisId, events]) => (
-                  <AxisCard key={axisId} axisId={axisId} events={events} />
-                ))}
-              </div>
-            </div>
-          )}
+          {/* 根拠と点検はここに置かない (面が違う)。主張から辿れる導線だけ残す。 */}
+          <BasisLink tc={data.tradecraft} />
         </>
       )}
+    </div>
+  );
+}
+
+/** 読み物から根拠へ降りる導線。**根拠が読み物と同居しないことと、根拠へ辿れないことは別**
+ *  なので、何件の判定に裏付けがあるかを示して 1 クリックで渡す。 */
+function BasisLink({ tc }: { tc?: Tradecraft }) {
+  const n = tc?.grounded_estimate?.judgments?.length ?? 0;
+  const setView = useFilters((s) => s.setSynthesisView);
+  if (!tc) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => setView("basis")}
+      className="w-full text-left bg-surface-1 border border-border-subtle rounded-lg px-4 py-3 text-sm text-fg-muted hover:border-border-default hover:text-fg cursor-pointer"
+    >
+      根拠を見る
+      {n > 0 && <span className="ml-2 text-fg-subtle">競合仮説と証拠 {n} 件</span>}
+      <span className="ml-2 text-accent">→</span>
+    </button>
+  );
+}
+
+/** 根拠の面: なぜそう言えるか。ACH (競合仮説と証拠) / 分析トレードクラフト / 軸別の証拠。
+ *
+ *  ⭐ 読み物とは **別の行為**。ここは照合しに来る場所で、通読する場所ではない。 */
+function BasisView() {
+  const f = useFilters();
+  const { data, isLoading } = useQuery({
+    queryKey: ["synthesis", f.period_type],
+    queryFn: () => api.synthesis(f.period_type),
+  });
+  if (isLoading) return <SkeletonRows />;
+  if (!data?.has_data || !data.latest) return <EmptyBasis />;
+  return (
+    <div>
+      <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">根拠</h3>
+      <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
+        現況の各判定が何に基づくか。競合仮説・証拠・前提・覆る指標を、本文と照合できる形で示す。
+      </p>
+      {data.tradecraft && <TradecraftSection tc={data.tradecraft} />}
+      {data.tradecraft?.grounded_estimate && (
+        <GroundedEstimateSection
+          est={data.tradecraft.grounded_estimate}
+          generatedAt={data.latest.generated_at}
+        />
+      )}
+      {data.axes_evidence && Object.keys(data.axes_evidence).length > 0 && (
+        <div id="syn-evidence" className="scroll-mt-24">
+          <div className="flex items-baseline justify-between gap-2 mb-2.5">
+            <h4 className="m-0 text-md text-fg font-semibold tracking-tight">軸別の証拠</h4>
+            <a
+              href={intelHref("pmesii")}
+              className="text-xs text-accent hover:text-accent-hover no-underline shrink-0"
+            >
+              国家情勢で軸を見る →
+            </a>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            {Object.entries(data.axes_evidence).map(([axisId, events]) => (
+              <AxisCard key={axisId} axisId={axisId} events={events} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 点検の面: 当たっているか。予測スコアカードと情勢台帳。
+ *
+ *  ⭐ 根拠 (なぜ言えるか) とは別。定期的に振り返る材料で、読む流れには挟まない。 */
+function ReviewView() {
+  const f = useFilters();
+  const { data, isLoading } = useQuery({
+    queryKey: ["synthesis", f.period_type],
+    queryFn: () => api.synthesis(f.period_type),
+  });
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">点検</h3>
+        <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
+          出した予測が当たったか、情勢の見立てが今どうなっているか。
+        </p>
+        {isLoading && <SkeletonRows />}
+        {data?.tradecraft &&
+          (data.tradecraft.forecast_scorecard?.length || data.tradecraft.forecasts?.length) && (
+            <ForecastScorecard tc={data.tradecraft} acc={data.forecast_accuracy} />
+          )}
+      </div>
+      <LedgerView />
+    </div>
+  );
+}
+
+function EmptyBasis() {
+  return (
+    <div className="bg-surface-1 border border-dashed border-border-default rounded-lg p-10 text-center text-fg-muted">
+      まだ状況総括が生成されていないため、根拠もありません
     </div>
   );
 }
@@ -521,34 +586,43 @@ function SpotlightView() {
     queryFn: () => spotlightApi.list("rolling7"),
   });
 
+  // 並びは **該当件数の多い順**。今どこが動いているかが、並びそのもので分かる
+  // (2026-08-29 利用者判断)。元配列は触らない。
+  const items = [...(data?.items ?? [])].sort((a, b) => b.article_count - a.article_count);
+
   return (
     <div>
       <div className="flex justify-between items-baseline mb-4 px-1 flex-wrap gap-2">
         <div>
-          <h3 className="m-0 text-lg font-bold text-fg tracking-tight">PIR Spotlight — 縦断的なまとめ</h3>
+          <h3 className="m-0 text-lg font-bold text-fg tracking-tight">PIR ごと</h3>
           <p className="m-0 mt-1 text-fg-muted text-xs">
-            各 PIR を切り口とした戦術-作戦レベルの深掘り。全体状況総括 (横断) の補完。
-            毎週月曜 09:00 JST に自動で再生成。
+            関心 (PIR) を切り口にした縦断のまとめ。直近 7 日を毎日 04:50 JST に作り直す。
           </p>
         </div>
-        <span className="text-fg-subtle text-xs">期間: 週次</span>
+        <span className="text-fg-subtle text-xs">該当の多い順</span>
       </div>
 
       {isLoading && <SkeletonRows />}
 
-      {!isLoading && (!data || data.items.length === 0) && (
+      {!isLoading && items.length === 0 && (
         <div className="bg-surface-1 border border-dashed border-border-default rounded-lg p-10 text-center text-fg-muted">
           <p className="m-0">まだ Spotlight が生成されていません</p>
           <p className="text-xs mt-2">
-            次回の自動実行 (月曜 09:00 JST) で生成。すぐ作るには各 PIR の詳細画面の「Spotlight 手動実行」から
+            次回の自動実行 (毎日 04:50 JST) で生成。すぐ作るには各 PIR の詳細画面の「Spotlight 手動実行」から
           </p>
         </div>
       )}
 
-      {data && data.items.length > 0 && (
+      {items.length > 0 && (
         <div className="space-y-4">
-          {data.items.map((s) => (
-            <SpotlightCard key={s.pir_id} spotlight={s} qc={qc} readOnly={!canEditOperationalConfig(flags)} />
+          {items.map((s, i) => (
+            <SpotlightCard
+              key={s.pir_id}
+              spotlight={s}
+              qc={qc}
+              readOnly={!canEditOperationalConfig(flags)}
+              defaultOpen={i === 0}
+            />
           ))}
         </div>
       )}
@@ -560,15 +634,21 @@ function SpotlightCard({
   spotlight: s,
   qc,
   readOnly,
+  defaultOpen,
 }: {
   spotlight: SpotlightSummary;
   qc: ReturnType<typeof useQueryClient>;
   readOnly: boolean;
+  /** 一覧の先頭 (該当が最も多い PIR) だけ開いて置く。全部閉じていると空に見える。 */
+  defaultOpen?: boolean;
 }) {
   const [showCompare, setShowCompare] = useState(false);
+  // ⚠ 既定は畳む。全 20 PIR を開いたまま並べると 20 画面ぶんになり、
+  //   「一覧できる」が成立しない。見出しは 150-280 字あるので畳んでも中身は分かる。
+  const [open, setOpen] = useState<boolean>(defaultOpen ?? false);
 
   const regenMain = useMutation({
-    mutationFn: (model?: string) => spotlightApi.regenerate(s.pir_id, "weekly", model),
+    mutationFn: (model?: string) => spotlightApi.regenerate(s.pir_id, "rolling7", model),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["spotlight-list"] }),
   });
 
@@ -578,20 +658,28 @@ function SpotlightCard({
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
         <h4 className="m-0 text-md font-bold text-fg">{s.pir_title}</h4>
         <div className="flex items-center gap-2 text-[13px] text-fg-subtle">
-          <span>生成 {formatJst(s.generated_at)}</span>
+          <span>該当 {s.article_count} 件</span>
           <span>·</span>
-          <span>記事数 {s.article_count}</span>
-          <span>·</span>
-          <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">{s.llm_model}</code>
+          <span>{formatJst(s.generated_at)}</span>
           <a href={`/app/pir/${encodeURIComponent(s.pir_id)}`} className="text-fg-muted hover:text-accent-hover no-underline ml-1">→ PIR</a>
         </div>
       </div>
 
-      {/* Headline */}
+      {/* Headline — 畳んでいてもここは常に出す (これが一覧の中身) */}
       <div className="bg-accent-subtle border-l-[3px] border-l-accent rounded p-3 mb-3">
-        <div className="text-[12px] text-accent-hover uppercase tracking-wider font-semibold mb-1">見出し</div>
         <div className="text-fg text-base leading-relaxed">{s.headline}</div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mb-3 text-[13px] text-accent hover:text-accent-hover bg-transparent border-0 p-0 cursor-pointer"
+      >
+        {open ? "閉じる" : `続きを読む (主要事象 ${s.key_events.length} 件と見通し)`}
+      </button>
+
+      {open && (
+        <>
 
       {/* Key events */}
       {s.key_events.length > 0 && (
@@ -622,6 +710,8 @@ function SpotlightCard({
         <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">見通し</div>
         <SynthesisProse text={s.outlook} />
       </div>
+        </>
+      )}
 
       {/* Regenerate controls (LLM 比較用) */}
       {!readOnly && (
