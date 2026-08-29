@@ -16,7 +16,9 @@ import { ForecastTab } from "./tabs/ForecastTab";
 import { DiscoveryPanel } from "./DiscoveryPanel";
 
 // 各ページの「実際に効く」コントロールだけを並べる定義 (旧・全ページ共通ツールバーを廃止)。
-const TIMES: { v: string; label: string }[] = [
+/** 期間の選択肢。フリックの前後もこの順で辿るので export する
+ *  (画面ごとに別の並びを持つと、切替とフリックで順序がずれる)。 */
+export const TIMES: { v: string; label: string }[] = [
   { v: "7", label: "7d" },
   { v: "30", label: "30d" },
   { v: "90", label: "90d" },

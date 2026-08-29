@@ -15,6 +15,7 @@ import { actorHref } from "../../utils/intelNav";
 import { useChannelMeta } from "../channel";
 import { vocabLabel } from "../../hooks/useVocab";
 import { Sparkline } from "../charts";
+import { usePeriodSwipe } from "../../hooks/usePeriodSwipe";
 
 // 辞書の参照カードをその場で開くローダ (脅威アクターページの context を保つ)。
 // getActors は react-query で辞書ページと共有キャッシュ。actor 未収載なら案内を出す。
@@ -71,6 +72,7 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
   const [changedOnly, setChangedOnly] = useState(false);
   // ティア節の開閉 (既定: Critical/High 展開、Moderate/Watch/評価対象外 折畳)。
   const [openTiers, setOpenTiers] = useState<Record<string, boolean>>({});
+  const swipeRef = usePeriodSwipe<HTMLDivElement>();
 
   const sortedActors = useMemo(() => {
     const actors = threatsData?.actors ?? [];
@@ -138,7 +140,11 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
   );
 
   return (
-    <div className={`grid grid-cols-1 md:grid-cols-[300px_1fr] ${hasRelations ? "xl:grid-cols-[300px_1fr_260px]" : ""} gap-3.5 min-h-[640px]`}>
+    // モバイルは左右フリックでも期間を切り替える (現況と同じ動き)。
+    <div
+      ref={swipeRef}
+      className={`grid grid-cols-1 md:grid-cols-[300px_1fr] ${hasRelations ? "xl:grid-cols-[300px_1fr_260px]" : ""} gap-3.5 min-h-[640px]`}
+    >
 
       {/* LEFT: actor list — mobile では actor 選択時に非表示。
           md+ では sticky 化 (top-24 = AppHeader+toolbar の下) し、中央詳細が長くても追従させる。 */}

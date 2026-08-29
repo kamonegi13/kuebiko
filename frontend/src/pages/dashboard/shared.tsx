@@ -94,6 +94,16 @@ export const COUNT_CHOICES: ConfigChoice[] = [
   { value: "12", label: "12件" },
 ];
 
+// ⚠ 枠線は **カスタマイズ中だけ** 出す (2026-08-29 利用者判断)。確定した配置では
+// 12 個の箱線が並んで画面がうるさく、中の数字より枠のほうが目立っていた。
+// 並べ替えているときは境界が見えないと掴めないので、そのときだけ出す。
+// 地色 (surface-1) は常に残す — 線が無くても面として読める
+// (light: 白 vs 生成り / dark: 20,24,31 vs 11,13,17)。
+// 判定は DashboardPage が root に付ける data-dash-editing を CSS で拾う
+// (widget 全部に prop を配ると 20 箇所の付け忘れが起きる)。
+export const TILE_CHROME =
+  "bg-surface-1 border border-transparent [[data-dash-editing]_&]:border-border-subtle rounded-lg";
+
 // ── カード枠 ──
 export function WidgetCard({ title, href, linkLabel, children }: { title: string; href?: string; linkLabel?: string; children: ReactNode }) {
   // h-full + flex-col で枠 (tile) 高さを満たし、本文 (flex-1) が残りを埋める。
@@ -105,7 +115,7 @@ export function WidgetCard({ title, href, linkLabel, children }: { title: string
   // 内側に描画されて他ページ (ページ全体スクロール = 右端) と食い違って見える。
   // スクロール要素をカード幅いっぱいにし、内容だけを px で inset する。
   return (
-    <div className="bg-surface-1 border border-border-subtle rounded-lg py-4 h-full flex flex-col min-h-0">
+    <div className={`${TILE_CHROME} py-4 h-full flex flex-col min-h-0`}>
       <div className="flex items-baseline justify-between mb-3 shrink-0 px-4">
         <h3 className="m-0 text-sm font-semibold text-fg">{title}</h3>
         {href && <a href={href} className="text-accent text-xs hover:underline shrink-0 ml-2">{linkLabel || "詳細 →"}</a>}
@@ -117,7 +127,7 @@ export function WidgetCard({ title, href, linkLabel, children }: { title: string
 export function WidgetShell({ children }: { children: ReactNode }) {
   // h-full: 座標グリッドの tile (固定高さ) を枠まで満たす。auto 文脈 (mobile) では中身の高さ。
   // 超過分は内部スクロール (背景/枠は tile に固定)。
-  return <div className="bg-surface-1 border border-border-subtle rounded-lg p-3 h-full overflow-y-auto">{children}</div>;
+  return <div className={`${TILE_CHROME} p-3 h-full overflow-y-auto`}>{children}</div>;
 }
 export function Loading() {
   return <div className="text-fg-subtle text-sm italic">読み込み中…</div>;

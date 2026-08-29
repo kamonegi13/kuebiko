@@ -16,6 +16,7 @@ import { intentHex, intentLabel } from "../../utils/diamond";
 import { formatJstDate } from "../../utils/date";
 import { goToActor } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
+import { usePeriodSwipe } from "../../hooks/usePeriodSwipe";
 
 // セレクタの役割グループ (敵対 → 同盟 → その他 の順で前面化)。ラベルは backend vocab
 // "pmesii_role" (vocabLabel) を SSoT に解決する (静的 value→label マップは持たない)。
@@ -67,8 +68,10 @@ export function PMESIITab() {
   // アクタードリル: 脅威アクタービュー (/app/intel/threats) へ遷移し当該 actor を選択。
   const drillToActor = (id: string) => goToActor(id);
 
+  // モバイルは左右フリックでも期間を切り替える (現況と同じ動き)。
+  const swipeRef = usePeriodSwipe<HTMLDivElement>();
   return (
-    <div className="space-y-3.5">
+    <div ref={swipeRef} className="space-y-3.5">
       <div className="flex items-baseline justify-between gap-2 flex-wrap px-1">
         <h3 className="m-0 text-lg font-bold text-fg tracking-tight">国家情勢ボード</h3>
         <span className="text-fg-muted text-xs">

@@ -105,18 +105,34 @@ function TradecraftCard({ tc }: { tc: BriefTradecraft }) {
     { key: "key_assumptions", label: "前提" },
     { key: "indicators", label: "監視指標" },
   ];
+  // ⚠ 既定で畳む。**読み物のページなのに根拠が半分を占めていた**
+  // (2026-08-29 実測: ページ 3,422px のうち 1,757px = 51%)。
+  // 現況では別の面へ移したが、ブリーフは 1 本の読み物なので、
+  // 流れを切らずにここで畳む。何件あるかは畳んでいても示す。
+  const [open, setOpen] = useState(false);
+  const count = lists.reduce(
+    (n, { key }) => n + (Array.isArray(tc[key]) ? (tc[key] as unknown[]).length : 0),
+    0,
+  );
   return (
     <div className="border border-border-subtle rounded-md p-3 space-y-2 bg-surface-2/50">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-muted m-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left text-xs font-semibold uppercase tracking-wide text-fg-muted bg-transparent border-0 p-0 cursor-pointer hover:text-fg"
+      >
         分析トレードクラフト (別解・前提・監視指標)
-      </h4>
-      {tc.leading_assessment && (
+        {count > 0 && <span className="ml-1.5 normal-case tracking-normal">{count} 件</span>}
+        <span className="ml-1.5 text-accent">{open ? "閉じる" : "開く"}</span>
+      </button>
+      {!open && null}
+      {open && tc.leading_assessment && (
         <p className="text-sm text-fg leading-relaxed m-0">
           <span className="font-semibold">主見立て: </span>
           {tc.leading_assessment}
         </p>
       )}
-      {lists.map(({ key, label }) => {
+      {open && lists.map(({ key, label }) => {
         const items = tc[key];
         if (!Array.isArray(items) || items.length === 0) return null;
         return (

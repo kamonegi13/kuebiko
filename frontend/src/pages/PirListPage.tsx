@@ -11,6 +11,7 @@ import { pirApi, type PirListItem } from "../api/pir";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { formatJstShort } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { THEAD } from "../components/tableChrome";
 
 // PIR 固有の値 "auto" は共通 SSoT に無い (PIR 以外では使わない値のため)。
 function importanceOrAuto(v: string): string {
@@ -78,7 +79,7 @@ export function PirListPage() {
       {items.length > 0 && (
         <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
+            <thead className={THEAD}>
               <tr>
                 <th className="text-left px-3 py-2.5 font-semibold">PIR</th>
                 <th className="text-left px-3 py-2.5 font-semibold w-24">状態</th>

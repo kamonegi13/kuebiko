@@ -19,7 +19,7 @@ import {
 import { dashboardApi } from "../../../api/runs";
 import { overviewApi, type Mover, type AttentionItem, type OverviewData } from "../../../api/overview";
 import { KpiTile, RankBars, type RankRow } from "../../../components/charts";
-import { INTEL, WidgetCard, WidgetShell, WidgetError, Loading, Empty, type WidgetProps } from "../shared";
+import { TILE_CHROME, INTEL, WidgetCard, WidgetShell, WidgetError, Loading, Empty, type WidgetProps } from "../shared";
 import { useOverviewWindow, useWidgetWindow } from "../overviewWindow";
 import { actorHref } from "../../../utils/intelNav";
 
@@ -120,7 +120,7 @@ export function ConfidenceStrip({ c }: { c: Record<string, number> }) {
   const pct = (n: number) => Math.round((n / total) * 100);
   const seg = (n: number) => `${(n / total) * 100}%`;
   return (
-    <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 h-full flex flex-col gap-2">
+    <div className={`${TILE_CHROME} p-4 h-full flex flex-col gap-2`}>
       <span className="text-xs text-fg-muted">観測の足場 (信頼度構成)</span>
       <div className="flex h-3 rounded-sm overflow-hidden bg-surface-3">
         <div className="bg-success/60" style={{ width: seg(auth) }} title={`一次/研究 ${auth}`} />
@@ -142,7 +142,7 @@ function ImportanceBreakdown({ ov }: { ov: OverviewData }) {
   const total = imp.high + imp.medium + imp.low;
   const seg = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
   return (
-    <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 h-full flex flex-col gap-2">
+    <div className={`${TILE_CHROME} p-4 h-full flex flex-col gap-2`}>
       <span className="text-xs text-fg-muted">重要度の内訳 (観測 {total.toLocaleString()})</span>
       {total > 0 ? (
         <>

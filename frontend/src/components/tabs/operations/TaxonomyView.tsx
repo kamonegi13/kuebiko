@@ -1,3 +1,4 @@
+import { useState } from "react";
 // Operations tab の sub-view: Taxonomy Review。
 // 旧 /app/taxonomy の TaxonomyPage を inline 用に再構成 (page wrapper を除く)。
 
@@ -7,6 +8,7 @@ import { pagesApi, type TaxonomyProposal } from "../../../api/pages";
 import { useRuntimeFlags } from "../../../hooks/useRuntimeFlags";
 import { formatJstShort } from "../../../utils/date";
 import { vocabLabel } from "../../../hooks/useVocab";
+import { THEAD } from "../../tableChrome";
 
 // proposal_type (src/taxonomy/proposal_generator.py の GeneratedProposal.proposal_type) →
 // 日本語ラベル。内部コード (pattern_N) をそのまま出さない。未知キーは原値 fallback。
@@ -18,6 +20,7 @@ const PROPOSAL_TYPE_JA: Record<string, string> = {
 
 export function TaxonomyView() {
   const qc = useQueryClient();
+  const [historyOpen, setHistoryOpen] = useState(false);
   const { data } = useQuery({
     queryKey: ["taxonomy"],
     queryFn: () => pagesApi.taxonomyReview(),
@@ -34,10 +37,21 @@ export function TaxonomyView() {
       <TierSection title="区分3 — 戦略的な検討" tone="warning" items={data?.tier_3 || []} qc={qc} />
 
       {data?.recent_reviewed && data.recent_reviewed.length > 0 && (
+        // ⚠ 履歴は既定で畳む。**これから捌く提案** (区分1-3) を読む面に、過去の記録が
+        //    41% (1,174px) を占めていた。件数は畳んでいても示す。
         <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-border-subtle"><h3 className="m-0 text-md font-semibold text-fg">最近の確認履歴</h3></div>
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="w-full text-left px-4 py-2.5 border-b border-border-subtle bg-transparent cursor-pointer hover:bg-surface-2"
+          >
+            <h3 className="m-0 text-md font-semibold text-fg inline">最近の確認履歴</h3>
+            <span className="ml-2 text-[13px] text-fg-subtle">{data.recent_reviewed.length} 件</span>
+            <span className="ml-2 text-[13px] text-accent">{historyOpen ? "閉じる" : "開く"}</span>
+          </button>
+          {historyOpen && (
           <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead className="bg-surface-2 text-fg-muted text-xs uppercase"><tr>
+            <thead className={THEAD}><tr>
               <th className="text-left px-4 py-2 hidden sm:table-cell">種別</th>
               <th className="text-left px-4 py-2">対象</th>
               <th className="text-left px-4 py-2 hidden md:table-cell">変更内容</th>
@@ -56,6 +70,7 @@ export function TaxonomyView() {
               ))}
             </tbody>
           </table></div>
+          )}
         </div>
       )}
     </div>

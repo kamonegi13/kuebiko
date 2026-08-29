@@ -8,6 +8,7 @@ import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { vocabLabel } from "../hooks/useVocab";
 import { ActorDetail, NationBadge } from "./actors/ActorDetail";
 import { ActorSyncPanel } from "./actors/ActorSyncPanel";
+import { TABLE_SCROLL, THEAD_STICKY } from "../components/tableChrome";
 
 type ViewMode = "table" | "cards";
 type SortKey = "canonical" | "nation" | "family" | "last_seen";
@@ -242,9 +243,11 @@ function ActorTable({
   // 照合実績 (F5) はデータが貯まるまで全体非表示 (全ゼロを「死に辞書」と誤読させない)
   const hasAnyUsage = Object.values(summaries).some((s) => s.matched_names.length > 0);
   return (
-    <div className="overflow-x-auto">
+    // 262 行あるので表の中でスクロールさせ、見出しを中で固定する
+    // (ページ全体スクロールのままだと sticky が効かない — tableChrome の注記参照)。
+    <div className={TABLE_SCROLL}>
       <table className="w-full text-sm">
-        <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
+        <thead className={THEAD_STICKY}>
           <tr>
             <th className="text-left px-3 py-2 w-56">正式名</th>
             <th className="text-left px-3 py-2 hidden sm:table-cell">概要</th>

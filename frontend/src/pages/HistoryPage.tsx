@@ -13,6 +13,7 @@ import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { Drawer } from "../components/Drawer";
 import { useChannelMeta } from "../components/channel";
 import { vocabLabel } from "../hooks/useVocab";
+import { THEAD } from "../components/tableChrome";
 
 const PAGE_SIZE = 30;
 
@@ -125,7 +126,7 @@ export function HistoryPage() {
           <span className="text-fg-subtle text-xs">クリックで展開</span>
         </summary>
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
+          <thead className={THEAD}>
             <tr>
               <th className="text-left px-4 py-2">ID</th>
               <th className="text-left px-4 py-2">パイプライン</th>
@@ -163,7 +164,7 @@ export function HistoryPage() {
       {/* Articles table (paginated) */}
       <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
+          <thead className={THEAD}>
             <tr>
               <th className="text-left px-3 py-2 w-28 hidden sm:table-cell">時刻</th>
               <th className="text-left px-3 py-2 w-32 hidden md:table-cell">フィード</th>

@@ -294,7 +294,9 @@ export function DashboardPage() {
   ) : null;
 
   return (
-    <div className={`${pageContainer("wide")} space-y-4`}>
+    // ⚠ カスタマイズ中の印を root に置き、枠線は CSS で拾う (shared.tsx の
+    //    TILE_CHROME)。widget 全部に prop を配ると 20 箇所の付け忘れが起きる。
+    <div className={`${pageContainer("wide")} space-y-4`} {...(editing ? { "data-dash-editing": "" } : {})}>
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <div className="flex items-baseline gap-2 flex-wrap">
           <h2 className="m-0 text-xl font-bold text-fg tracking-tight">Intelligence Overview</h2>

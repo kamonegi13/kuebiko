@@ -5,6 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { pagesApi } from "../../../api/pages";
 import { formatJstShort } from "../../../utils/date";
+import { THEAD } from "../../tableChrome";
 
 // 内部コード → 日本語 (生 enum 直接表示禁止の規約)。未知キーは原値 fallback。
 const FIELD_JA: Record<string, string> = {
@@ -57,7 +58,7 @@ export function TuningLabelsCard() {
       {data && data.summary.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-surface-2 text-fg-muted text-xs uppercase">
+            <thead className={THEAD}>
               <tr>
                 <th className="text-left px-4 py-2">種別</th>
                 <th className="text-left px-4 py-2">証拠源</th>

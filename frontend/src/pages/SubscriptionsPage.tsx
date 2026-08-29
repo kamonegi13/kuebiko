@@ -21,6 +21,7 @@ import { QualityBadge, type EnrichedFeed, type GroupKey } from "./subscriptions/
 import { Spinner } from "../components/Spinner";
 import { formatJstDate } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { THEAD } from "../components/tableChrome";
 
 // 実値は src/ui/services/subscription_analytics.py:low_contrib_labels に対応。
 // 連続取得失敗がこの回数以上 = 取得系の異常 (要対処)。毎時 fetch なので 3 ≈ 3 時間分
@@ -358,7 +359,7 @@ export function SubscriptionsPage() {
                 <span className="text-fg-subtle text-xs tnum">{items.length} feeds</span>
               </summary>
               <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead className="bg-surface-2 text-fg-muted text-[12.5px] uppercase tracking-wider">
+                <thead className={THEAD}>
                   <tr>
                     <th className="px-2 py-2 w-8">
                       {!read_only && (
