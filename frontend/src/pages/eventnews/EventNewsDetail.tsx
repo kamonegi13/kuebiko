@@ -44,6 +44,11 @@ import {
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
 const CARD_LABEL = "text-fg-muted text-xs uppercase";
 
+// 読む面 (要約 / 要点 / 本文) は枠で囲わない。単独記事のドロワーと同じ扱いにする
+// — 統合記事だけ箱のままだと、同じ画面で 2 つの様式が並ぶ (2026-08-29 利用者指摘)。
+const READ_PANEL = "bg-surface-2/60 rounded-lg p-4";
+const READ_LABEL = "text-fg-subtle text-[12px] font-semibold";
+
 /** 裏取り = 独立媒体数。記事数では表さない (docs/event_news_design.md §3-3)。 */
 export function SourceChip({
   item,
@@ -359,32 +364,21 @@ export function EventNewsDetailBody({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* 記事画面と同じ 2 カラム (判定 / エンティティ)。描画は共有コンポーネント。 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <EventJudgement d={d} />
-        <EntitySection
-          subjectActors={d.metadata.subject_actors}
-          subjectActorSource={d.metadata.subject_actors.length > 0 ? "aggregate" : null}
-          groups={d.metadata.entities}
-          note="構成記事の抽出結果を集計（数字 = 言及した記事数）"
-        />
-      </div>
-
       {d.news ? (
         <>
           {/* ⚠ ラベルは公開面と揃える。BLUF は散文の**要約**、箇条書きが**要点**で
               別物 (2026-08-25 利用者指摘)。片方だけ「要点」と呼ぶと語が割れる。 */}
-          <div className={CARD}>
-            <div className={`${CARD_LABEL} mb-2`}>要約 (kuebiko 生成)</div>
-            <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap m-0">{d.news.bluf}</p>
+          <div className={READ_PANEL}>
+            <div className={`${READ_LABEL} mb-1.5`}>要約 (kuebiko 生成)</div>
+            <p className="m-0 text-[15px] text-fg leading-[1.85] whitespace-pre-wrap">{d.news.bluf}</p>
           </div>
 
           {(d.news.key_points ?? []).length > 0 && (
-            <div className={CARD}>
-              <div className={`${CARD_LABEL} mb-2`}>要点</div>
-              <ul className="m-0 pl-4 space-y-1">
+            <div className={READ_PANEL}>
+              <div className={`${READ_LABEL} mb-1.5`}>要点</div>
+              <ul className="m-0 pl-4 space-y-1.5">
                 {(d.news.key_points ?? []).map((point, i) => (
-                  <li key={i} className="text-sm text-fg leading-relaxed">
+                  <li key={i} className="text-[15px] text-fg leading-[1.8]">
                     {point}
                   </li>
                 ))}
@@ -392,16 +386,16 @@ export function EventNewsDetailBody({ id }: { id: string }) {
             </div>
           )}
 
-          <details className={CARD} open>
-            <summary className={`${CARD_LABEL} cursor-pointer select-none`}>
+          <details className="border-t border-border-subtle pt-3" open>
+            <summary className={`${READ_LABEL} cursor-pointer select-none`}>
               本文 (kuebiko 生成・{new Set(d.news.facts.map((f) => f.paragraph || 1)).size} 段落)
             </summary>
             <Body facts={d.news.facts} articleIdOf={articleIdOf} />
           </details>
 
           {(d.news.caveats ?? []).length > 0 && (
-            <div className={CARD}>
-              <div className={`${CARD_LABEL} mb-2`}>読むうえでの但し書き</div>
+            <div className={READ_PANEL}>
+              <div className={`${READ_LABEL} mb-1.5`}>読むうえでの但し書き</div>
               <ul className="m-0 pl-4 space-y-1">
                 {(d.news.caveats ?? []).map((c, i) => (
                   <li key={i} className="text-sm text-fg-muted leading-relaxed">
@@ -413,8 +407,8 @@ export function EventNewsDetailBody({ id }: { id: string }) {
           )}
 
           {d.news.discrepancies.length > 0 && (
-            <div className={CARD}>
-              <div className={`${CARD_LABEL} mb-2`}>ソース間の相違</div>
+            <div className={READ_PANEL}>
+              <div className={`${READ_LABEL} mb-1.5`}>ソース間の相違</div>
               <ul className="list-disc pl-5 text-sm text-fg-muted leading-relaxed space-y-1 m-0">
                 {d.news.discrepancies.map((x, i) => <li key={i}>{x.text}</li>)}
               </ul>
@@ -422,8 +416,8 @@ export function EventNewsDetailBody({ id }: { id: string }) {
           )}
 
           {d.news.unknowns.length > 0 && (
-            <div className={CARD}>
-              <div className={`${CARD_LABEL} mb-2`}>未確認・不明</div>
+            <div className={READ_PANEL}>
+              <div className={`${READ_LABEL} mb-1.5`}>未確認・不明</div>
               <ul className="list-disc pl-5 text-sm text-fg-muted leading-relaxed space-y-1 m-0">
                 {d.news.unknowns.map((x, i) => <li key={i}>{x}</li>)}
               </ul>
@@ -432,8 +426,8 @@ export function EventNewsDetailBody({ id }: { id: string }) {
         </>
       ) : (
         /* 複数記事だが生成がまだ (または失敗した) 状態。空振りで終わらせない。 */
-        <div className={CARD}>
-          <div className={`${CARD_LABEL} mb-2`}>要約 (原記事)</div>
+        <div className={READ_PANEL}>
+          <div className={`${READ_LABEL} mb-1.5`}>要約 (原記事)</div>
           <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap m-0">
             {d.members[0]?.summary}
           </p>
@@ -442,6 +436,20 @@ export function EventNewsDetailBody({ id }: { id: string }) {
           </p>
         </div>
       )}
+
+      {/* 分析メタ (判定 / エンティティ) は **本文の後ろ**。読むものを先に置く
+          — 判定の箱を先頭に積むと、記事に辿り着く前に分析画面を読まされる
+          (単独記事のドロワーと同じ扱い。2026-08-29 利用者指摘)。
+          描画は共有コンポーネント (components/analysis/*)。 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <EventJudgement d={d} />
+        <EntitySection
+          subjectActors={d.metadata.subject_actors}
+          subjectActorSource={d.metadata.subject_actors.length > 0 ? "aggregate" : null}
+          groups={d.metadata.entities}
+          note="構成記事の抽出結果を集計（数字 = 言及した記事数）"
+        />
+      </div>
 
       <MembersCard d={d} />
       <EventNoteEditor itemId={d.id} />
