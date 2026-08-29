@@ -32,8 +32,13 @@ rm -rf "$DIST/data"
 uv run --directory "$ROOT" python "$ROOT/scripts/export_ops_mirror.py" \
   --base-url "$BASE_URL" --out "$DIST/data"
 
-# SPA は公開サイトと同じ成果物を使う (画面のコードは共通)。
-# ⚠ ここは第 2 段階で「写し用ビルド」に差し替える。いまはデータだけ配る。
+# ⚠ **写し用ビルド**で作る (VITE_OPS_MIRROR=1)。通常ビルドを置くと、
+#    API を叩きに行って全部失敗し、しかも「写しである」帯が出ない。
+( cd "$ROOT/frontend" && VITE_OPS_MIRROR=1 VITE_OPS_DATA=/data npm run build >/dev/null )
+rm -rf "$DIST/assets" "$DIST/index.html" "$DIST/pwa"
+cp -R "$ROOT/frontend/dist/." "$DIST/"
+# 通常ビルドへ戻す (ローカルの運用画面が写しビルドのままにならないように)
+( cd "$ROOT/frontend" && npm run build >/dev/null )
 DIGEST="$(cd "$DIST" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 if [ "${1:-}" != "--force" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$DIGEST" ]; then
   echo "変更なし (sha256 ${DIGEST:0:12}) — 配信しない"
