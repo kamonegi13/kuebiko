@@ -9,6 +9,8 @@ import type { ArticleFeedResponse } from "./articles";
 import type { EventNewsDetail, EventNewsListItem } from "./eventnews";
 
 /** 書き出したデータの置き場 (ページの基底に対する相対)。 */
+import { STATIC_TTL_MS, ttlCached } from "./ttlCache";
+
 const DATA_BASE = import.meta.env.VITE_MIRROR_DATA || "/data";
 
 /** 写しの素性。画面はこれを読んで「○○時点の写し」を常時出す。
@@ -41,21 +43,31 @@ export async function fileName(id: string): Promise<string> {
     .slice(0, 32);
 }
 
-let metaCache: Promise<MirrorMeta> | null = null;
 
-/** 写しの素性を読む (1 回だけ取りに行く)。 */
+
+// 期限付きで握る。無期限だと画面が取り直しても通信が起きず、再読込するまで
+// 古いままになる (2026-08-29 に公開サイトで実際に起きた)。
+const loadMeta = ttlCached(() => getJson<MirrorMeta>("/meta.json"), STATIC_TTL_MS);
+const loadArticles = ttlCached(
+  () => getJson<ArticleFeedResponse>("/articles.json"),
+  STATIC_TTL_MS,
+);
+const loadEvents = ttlCached(
+  () => getJson<{ items: EventNewsListItem[] }>("/eventnews.json"),
+  STATIC_TTL_MS,
+);
+
+/** 写しの素性を読む。 */
 export function fetchMirrorMeta(): Promise<MirrorMeta> {
-  metaCache ??= getJson<MirrorMeta>("/meta.json");
-  return metaCache;
+  return loadMeta();
 }
 
-let articlesCache: Promise<ArticleFeedResponse> | null = null;
+
 
 /** 記事一覧。**絞り込みはブラウザ側で行う** — 写しは 1 ファイルなので、
  *  条件ごとに別ファイルを持つと組み合わせ爆発する。 */
 export async function fetchArticlesStatic(limit = 200): Promise<ArticleFeedResponse> {
-  articlesCache ??= getJson<ArticleFeedResponse>("/articles.json");
-  const all = await articlesCache;
+  const all = await loadArticles();
   return { articles: all.articles.slice(0, limit), count: all.count };
 }
 
@@ -63,13 +75,12 @@ export async function fetchArticleDetailStatic(articleId: string): Promise<unkno
   return getJson(`/articles/${await fileName(articleId)}.json`);
 }
 
-let eventsCache: Promise<{ items: EventNewsListItem[] }> | null = null;
+
 
 export async function fetchEventNewsStatic(
   limit = 50,
 ): Promise<{ items: EventNewsListItem[]; note: string; scan_capped?: boolean }> {
-  eventsCache ??= getJson<{ items: EventNewsListItem[] }>("/eventnews.json");
-  const all = await eventsCache;
+  const all = await loadEvents();
   // scan_capped は「走査を打ち切った」ことを示すライブ側の事情。写しには無い。
   return { items: all.items.slice(0, limit), note: "" };
 }

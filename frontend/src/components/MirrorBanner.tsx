@@ -17,7 +17,9 @@ export function MirrorBanner() {
     queryKey: ["mirror-meta"],
     queryFn: fetchMirrorMeta,
     enabled: mirror,
-    staleTime: Infinity,
+    // 帯の時刻自体が古くなる。開きっぱなしでも書き出しに追随させる。
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
   if (!mirror) return null;
 

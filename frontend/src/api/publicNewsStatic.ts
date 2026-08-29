@@ -15,6 +15,8 @@ import type {
 } from "./publicNews";
 
 /** 書き出したデータの置き場。ページの基底に対する相対。 */
+import { STATIC_TTL_MS, ttlCached } from "./ttlCache";
+
 const DATA_BASE = import.meta.env.VITE_PUBLIC_DATA || "/data";
 
 interface StaticIndexItem extends PublicNewsItem {
@@ -37,27 +39,29 @@ interface StaticIndex {
  *  一覧を読む前は空なので、呼び手は素の key へ落ちること。 */
 export const staticCategoryLabels: Record<string, string> = {};
 
-let indexPromise: Promise<StaticIndex> | null = null;
-let searchPromise: Promise<Record<string, string>> | null = null;
-
 async function json<T>(path: string): Promise<T> {
   const r = await fetch(path);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return (await r.json()) as T;
 }
 
-function loadIndex(): Promise<StaticIndex> {
-  indexPromise ??= json<StaticIndex>(`${DATA_BASE}/index.json`).then((data) => {
-    Object.assign(staticCategoryLabels, data.category_labels ?? {});
-    return data;
-  });
-  return indexPromise;
-}
+// 期限付きで握る。無期限だと画面が取り直しても通信が起きず、再読込するまで
+// 永久に古い記事が出る (2026-08-29 利用者指摘の「自動で更新されない」の正体)。
+const loadIndex = ttlCached(
+  () =>
+    json<StaticIndex>(`${DATA_BASE}/index.json`).then((data) => {
+      Object.assign(staticCategoryLabels, data.category_labels ?? {});
+      return data;
+    }),
+  STATIC_TTL_MS,
+);
 
-function loadSearch(): Promise<Record<string, string>> {
-  searchPromise ??= json<Record<string, string>>(`${DATA_BASE}/search.json`);
-  return searchPromise;
-}
+// 全文は重いので、最初に検索したときだけ取りに行く。中身は索引より変わらないが、
+// 同じ理由で期限は付ける。
+const loadSearch = ttlCached(
+  () => json<Record<string, string>>(`${DATA_BASE}/search.json`),
+  STATIC_TTL_MS,
+);
 
 export async function fetchPublicNewsStatic(q: PublicNewsQuery = {}) {
   const data = await loadIndex();
