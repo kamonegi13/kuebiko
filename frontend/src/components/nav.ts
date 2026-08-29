@@ -60,6 +60,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/app/eventnews", mirror: true, label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
       // 分析チャット (2026-07-12): 自然言語でデータ照会 → 簡易レポート。
       // read-only ツールのみのため readonly instance でも利用可 (2026-07-19 allowlist 化)
+      // 分析チャットは写しに入れない — LLM を都度呼ぶので、静止画では成立しない
+      // (利用者と合意済。運用・設定も同じく Tier2 のみ)。
       { href: "/app/assistant", label: "分析チャット", Icon: MessageSquareText, prefixes: ["/app/assistant"] },
     ],
   },
@@ -71,10 +73,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/app/daily-brief", mirror: true, label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
       // 収集した個々の記事を探す画面。生成物ではないので コンテンツ に残す
       // (事象ニュースは生成物なので インテリジェンス へ移動した)。
-      { href: "/app/news", label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
-      { href: "/app/notes", label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
-      { href: "/app/subscriptions", label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
-      { href: "/app/actors", label: "アクター辞書", Icon: Users, prefixes: ["/app/actors"] },
+      { href: "/app/news", mirror: true, label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
+      { href: "/app/notes", mirror: true, label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
+      { href: "/app/subscriptions", mirror: true, label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
+      { href: "/app/actors", mirror: true, label: "アクター辞書", Icon: Users, prefixes: ["/app/actors"] },
     ],
   },
   {

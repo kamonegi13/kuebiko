@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import urllib.parse
 from datetime import UTC, datetime
@@ -66,6 +67,31 @@ DEFAULT_MIN_EVENTS = 50
 #: という写しの目的を果たせない。
 #: 公開サイト側の禁止は export_public_site.py の _FORBIDDEN_KEYS が別に守っている
 #: (こちらを緩めても向こうは緩まない — 関門は面ごとに独立している)。
+#: 記事一覧の絞り込み。**列挙できる facet だけ** を、既定の組み合わせ 1 段で写す。
+#:
+#: ⭐ 絞り込みの意味をブラウザ側で書き直さない。サーバは本文まで含めて検索し、
+#: entity (CVE/マルウェア/アクター) は別表を引く。写し側で真似ると **黙って
+#: 少なく返す** 実装になり、利用者からは違いが見えない。写せる組み合わせだけを
+#: そのまま持ち、外れたら 501 = 「写しに含まれていません」と出す。
+#: ⚠ 語彙 (vocabularies) の値ではなく、**画面の選択肢** に合わせる。
+#: 画面はカテゴリ群 (vuln / threat / incident_breach) も同じ引数で送るため、
+#: 語彙だけ見て並べると実際に押される値と噛み合わない (実測でずれた)。
+#: SSoT は frontend/src/components/news/facets.tsx の useFacetOptions。
+_ARTICLE_CATEGORIES = (
+    "vuln",
+    "threat",
+    "incident_breach",
+    "vulnerability",
+    "breach",
+    "malware",
+    "apt",
+    "geopolitical",
+    "policy",
+    "research",
+    "advisory",
+)
+_ARTICLE_IMPORTANCE = ("high", "medium", "low")
+
 #: 期間の選択肢 (frontend/src/state/filters.ts の FilterState と対)。
 _TIMES = ("7", "30", "90", "365")
 
@@ -104,6 +130,21 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
         "&source_status=all&min_importance=medium_up&pmesii=all"
         for d in _TIMES
     ),
+    # 重要インフラ (事業者一覧)
+    "/api/v1/jp-ci-operators",
+    # コンテンツ: ブックマーク・メモ / 購読ソース / アクター辞書
+    "/api/v1/notes",
+    "/api/v1/subscriptions",
+    "/api/v1/grok/tasks",
+    "/api/v1/grok/session",
+    "/api/v1/grok-mail/health",
+    "/api/v1/actors",
+    "/api/v1/actors/sync",
+    "/api/v1/actors/observed-summary",
+    # ニュース検索 (既定 + 列挙できる facet 1 段)
+    "/api/v1/articles?status=posted&limit=30",
+    *(f"/api/v1/articles?category={c}&status=posted&limit=30" for c in _ARTICLE_CATEGORIES),
+    *(f"/api/v1/articles?importance={i}&status=posted&limit=30" for i in _ARTICLE_IMPORTANCE),
     # PIR / Spotlight
     "/api/v1/pir",
     "/api/v1/spotlight",
@@ -126,6 +167,61 @@ REFERENCE_ENDPOINTS = (
 )
 
 
+#: 資格情報らしい **フィールド名**。語を含むだけでは弾かない — アクター名に
+#: "secret" を含むものがあり (global_secret_group)、部分一致では誤検知する。
+#: フィールド名の**末尾**で判定する。
+_CREDENTIAL_KEY = re.compile(
+    r"(?i)(api_?key|_key|token|password|passwd|secret|webhook|authorization|credential)$"
+)
+
+#: 環境変数名 (鍵の置き場を指す値)。値そのものではないので通す。
+_ENV_VAR_NAME = re.compile(r"[A-Z][A-Z0-9_]{2,}")
+
+#: 鍵そのものの形。**キー名に関わらず** 弾く。フィールド名を頼りにすると、
+#: 名前を変えた経路が素通りする。
+_SECRET_VALUE = re.compile(
+    # ⚠ 語の途中に当てない。記事 URL の "task-host-flaw" が "sk-host-flaw…" に
+    # 見えて止まった (2026-08-29 実測)。前が英数・ハイフンなら鍵の始まりではない。
+    r"(?i)(?<![A-Za-z0-9_-])("
+    r"https://\S*(discord|slack)\.com/api/webhooks/\S+"
+    r"|sk-(ant|proj|live)-[A-Za-z0-9_-]{12,}"
+    r"|ghp_[A-Za-z0-9]{20,}"
+    r"|xox[baprs]-[A-Za-z0-9-]{10,}"
+    r"|bearer\s+[A-Za-z0-9._-]{20,}"
+    r")"
+)
+
+
+def _assert_no_credentials(payload: Any, where: str) -> None:
+    """資格情報らしい値が混じっていたら**書き出しを止める**。
+
+    写しは限定公開とはいえエッジに置くので、鍵は載せない。公開サイト側の禁止
+    (本文) とは対象が違う — 面ごとに守るものが違うため、関門も別に持つ
+    (片方を緩めても他方は緩まない)。
+
+    通すもの: 短い値 (件数・真偽・空) と、**鍵の置き場を指す値**
+    (`webhook_env_key: "DISCORD_WEBHOOK_ALERT"` のような環境変数名)。
+    弾きすぎると関門を外したくなり、結局守られなくなる。
+    """
+    if isinstance(payload, str):
+        if _SECRET_VALUE.search(payload):
+            raise SystemExit(f"鍵そのものを書き出そうとした: {where}")
+        return
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if (
+                _CREDENTIAL_KEY.search(str(key))
+                and isinstance(value, str)
+                and len(value) >= 12
+                and not _ENV_VAR_NAME.fullmatch(value)
+            ):
+                raise SystemExit(f"資格情報らしい値を書き出そうとした: {where}.{key}")
+            _assert_no_credentials(value, f"{where}.{key}")
+    elif isinstance(payload, list):
+        for i, value in enumerate(payload):
+            _assert_no_credentials(value, f"{where}[{i}]")
+
+
 def _get(client: httpx.Client, path: str, **params: Any) -> Any:
     r = client.get(path, params=params or None)
     r.raise_for_status()
@@ -133,6 +229,7 @@ def _get(client: httpx.Client, path: str, **params: Any) -> Any:
 
 
 def _write(path: Path, payload: Any) -> int:
+    _assert_no_credentials(payload, path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     path.write_bytes(body)
@@ -217,19 +314,65 @@ def main() -> int:
                 continue
             total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
 
+        # --- 掘り下げ (アクター / 国) ---
+        # 一覧から id を取り、個別ページの取得を写す。期間は既定 (30 日) のみ —
+        # 4 通り持つとファイル数が 4 倍になり Pages の上限に近づく。
+        try:
+            actors = _get(client, "/api/v1/actors")
+            ids = [
+                str(a.get("id"))
+                for a in (actors if isinstance(actors, list) else actors.get("actors", []))
+                if a.get("id")
+            ]
+            for aid in ids:
+                enc = urllib.parse.quote(aid, safe="")
+                for ep in (
+                    f"/api/v1/intel-graph/threats/actor/{enc}?time=30",
+                    f"/api/v1/actors/{enc}/history",
+                    f"/api/v1/actors/{enc}/situations",
+                ):
+                    try:
+                        total_bytes += _write(
+                            out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                        )
+                    except httpx.HTTPError:
+                        continue
+        except httpx.HTTPError as exc:
+            missing.append(f"アクター個別 ({type(exc).__name__})")
+
+        try:
+            nations = _get(client, "/api/v1/intel-graph/situation/nations", time=30)
+            codes = [
+                # 国の鍵は iso (code / nation ではない)。
+                str(n.get("iso") or "")
+                for n in (nations if isinstance(nations, list) else nations.get("nations", []))
+            ]
+            for code in [c for c in codes if c]:
+                for ep in (
+                    f"/api/v1/intel-graph/snapshot?time=30&nation={code}",
+                    f"/api/v1/intel-graph/situation?nation={code}&time=30",
+                ):
+                    try:
+                        total_bytes += _write(
+                            out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                        )
+                    except httpx.HTTPError:
+                        continue
+        except httpx.HTTPError as exc:
+            missing.append(f"国別 ({type(exc).__name__})")
+
         # 日次ブリーフの本体。一覧の新しい方から数本たどる。
         try:
-            briefs = _get(client, "/api/v1/intel-graph/daily-briefs", limit=BRIEF_DETAILS,
-                          meta_only=1)
+            briefs = _get(
+                client, "/api/v1/intel-graph/daily-briefs", limit=BRIEF_DETAILS, meta_only=1
+            )
             for b in (briefs.get("briefs") or briefs.get("items") or [])[:BRIEF_DETAILS]:
                 bid = b.get("id")
                 if bid is None:
                     continue
                 ep = f"/api/v1/intel-graph/daily-briefs/{bid}"
                 try:
-                    total_bytes += _write(
-                        out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
-                    )
+                    total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", _get(client, ep))
                 except httpx.HTTPError:
                     continue
         except httpx.HTTPError as exc:

@@ -61,3 +61,35 @@ describe("写しの fetch 差し替え", () => {
     expect(await (await fetch("/data/meta.json")).json()).toEqual({ generated_at: "x" });
   });
 });
+
+describe("一覧の全件ファイル", () => {
+  let served: Record<string, unknown>;
+  let original: typeof window.fetch;
+  beforeEach(() => {
+    original = window.fetch;
+    served = {};
+    window.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const u = String(input);
+      return u in served
+        ? new Response(JSON.stringify(served[u]), { headers: { "content-type": "application/json" } })
+        : new Response("<!doctype html>", { headers: { "content-type": "text/html" } });
+    }) as typeof window.fetch;
+    installMirrorFetch();
+  });
+  afterEach(() => {
+    window.fetch = original;
+  });
+
+  test("絞り込み無しなら全件ファイルを返す", async () => {
+    served["/data/articles.json"] = { articles: [1, 2, 3], count: 3 };
+    expect(await (await fetch("/api/v1/articles")).json()).toEqual({ articles: [1, 2, 3], count: 3 });
+  });
+
+  // ⚠ 写していない絞り込みに全件を返すと、画面は黙って違うものを出す
+  //    (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
+  test("写していない絞り込みに全件を返さない", async () => {
+    served["/data/articles.json"] = { articles: [1, 2, 3], count: 3 };
+    const r = await fetch("/api/v1/articles?category=apt&status=posted&limit=30");
+    expect(r.status).toBe(501);
+  });
+});

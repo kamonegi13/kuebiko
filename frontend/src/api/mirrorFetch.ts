@@ -26,14 +26,19 @@ function notMirrored(path: string): Response {
  *  「取得できませんでした」の形で表に出る。
  *  一覧の絞り込みは写しでは効かない (条件ごとにファイルを持つと組み合わせ爆発する)
  *  ため、全件を返してブラウザ側で絞る。 */
-async function locate(pathname: string): Promise<string | null> {
+async function locate(pathname: string, search: string): Promise<string | null> {
   const detail = pathname.match(/^\/api\/v1\/(articles|eventnews)\/([^/]+)$/);
   if (detail) {
     const id = decodeURIComponent(detail[2]);
     return `${DATA_BASE}/${detail[1]}/${await fileName(id)}.json`;
   }
-  if (pathname === "/api/v1/articles") return `${DATA_BASE}/articles.json`;
-  if (pathname === "/api/v1/eventnews") return `${DATA_BASE}/eventnews.json`;
+  // ⚠ 一覧の**全件ファイル**は、絞り込みが無いときだけ使う。絞り込み付きの
+  //    取得に全件を返すと、画面は黙って違うものを出す (実測: 30 件のはずが
+  //    6,443 件出ていた)。写していない絞り込みは 501 にして表に出す。
+  if (!search) {
+    if (pathname === "/api/v1/articles") return `${DATA_BASE}/articles.json`;
+    if (pathname === "/api/v1/eventnews") return `${DATA_BASE}/eventnews.json`;
+  }
   return null;
 }
 
@@ -53,7 +58,7 @@ export function installMirrorFetch(): void {
     // 絞り込みごとに別ファイルとして写しているので、**問い合わせ文字列まで含めて**
     // 引く。無ければ path だけで引き直す (時刻など毎回変わる引数を持つ経路のため)。
     const [pathname, search] = path.split("?");
-    const named = await locate(pathname);
+    const named = await locate(pathname, search);
     const candidates = named
       ? [named]
       : [

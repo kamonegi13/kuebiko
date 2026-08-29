@@ -39,7 +39,8 @@ describe("写しの帯", () => {
       }),
     }));
     renderBanner();
-    expect(await screen.findByText(/時点の写し/)).toBeTruthy();
+    // 読み手が要るのは「写しである」ことではなく **いつの情報か**。
+    expect(await screen.findByText(/現在の情報/)).toBeTruthy();
     expect(screen.getByText(/記事本文は含まれません/)).toBeTruthy();
   });
 
@@ -48,6 +49,8 @@ describe("写しの帯", () => {
     vi.stubEnv("VITE_MIRROR", "1");
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 404, statusText: "Not Found" }));
     renderBanner();
-    await waitFor(() => expect(screen.getByText(/保存された写しです/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText(/いつ時点の情報かを取得できませんでした/)).toBeTruthy(),
+    );
   });
 });
