@@ -429,13 +429,13 @@ export function NewsPage() {
                         元記事は末尾の ↗ で併置 (2026-07-25)。article_id 無しの旧レコードのみ外部直行。 */}
                     {a.article_id ? (
                       <a href={`/app/article/${encodeURIComponent(a.article_id)}`}
-                        className="block text-sm font-medium leading-snug text-fg hover:text-accent hover:underline"
+                        className="block text-[15.5px] font-semibold leading-[1.6] text-fg hover:text-accent hover:underline"
                         title="記事の分析結果 (Diamond 判定・IoC・逆引き) を表示">
                         {a.title}
                       </a>
                     ) : (
                       <a href={a.url} target="_blank" rel="noopener noreferrer"
-                        className="block text-sm font-medium leading-snug text-fg hover:text-accent hover:underline" title={a.title}>
+                        className="block text-[15.5px] font-semibold leading-[1.6] text-fg hover:text-accent hover:underline" title={a.title}>
                         {a.title}
                       </a>
                     )}

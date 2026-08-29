@@ -291,13 +291,13 @@ export function EventNewsPage() {
             <div className="flex-1 min-w-0">
               <button
                 onClick={() => setOpenId(it.id)}
-                className="block w-full text-left text-sm font-medium leading-snug text-fg hover:text-accent hover:underline"
+                className="block w-full text-left text-[15.5px] font-semibold leading-[1.6] text-fg hover:text-accent hover:underline"
                 title="事象の詳細を開く"
               >
                 {it.headline}
               </button>
               {it.preview && (
-                <p className="text-xs text-fg-muted leading-relaxed mt-1 line-clamp-4">{it.preview}</p>
+                <p className="text-[13.5px] text-fg-muted leading-[1.75] mt-1 line-clamp-3">{it.preview}</p>
               )}
               <div className="text-[13px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
                 <SourceChip item={it} />

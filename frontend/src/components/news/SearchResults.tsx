@@ -38,9 +38,9 @@ export function SearchResults({ data, precising }: { data: SearchResponse; preci
                 <span className="text-fg-subtle shrink-0 w-9 text-right text-xs tnum" title="総合スコア">·</span>
               )}
               <div className="min-w-0 flex-1">
-                <a href={`/app/article/${encodeURIComponent(r.article_id)}`} className="text-sm text-fg hover:text-accent block">{r.title}</a>
+                <a href={`/app/article/${encodeURIComponent(r.article_id)}`} className="block text-[15.5px] font-semibold leading-[1.6] text-fg hover:text-accent">{r.title}</a>
                 {r.reason && <p className="text-[13px] text-accent/80 mt-0.5">↳ {r.reason}</p>}
-                {r.summary && <p className="text-xs text-fg-subtle mt-0.5 line-clamp-2">{r.summary}</p>}
+                {r.summary && <p className="text-[13.5px] text-fg-muted leading-[1.75] mt-0.5 line-clamp-2">{r.summary}</p>}
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs">
                   {r.importance && <span className={`font-medium ${IMPORTANCE_TONE[r.importance] || "text-fg-subtle"}`}>{vocabLabel("importance", r.importance)}</span>}
                   {r.category && <span className="text-fg-subtle">{vocabLabel("category", r.category)}</span>}
