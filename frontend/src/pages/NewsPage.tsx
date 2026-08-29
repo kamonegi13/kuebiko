@@ -414,11 +414,13 @@ export function NewsPage() {
             )}
           </div>
         ) : (
-          <ul className="space-y-1.5">
+          // 記事 1 件ずつを箱で囲わず、罫線で区切る (公開サイトと同じ)。
+          // 30 件が箱で並ぶと枠のほうが目立ち、見出しが沈む。
+          <ul className="divide-y divide-border-subtle">
             {arts.map((a) => {
               const cves = a.title ? extractCves(a.title) : [];
               return (
-                <li key={a.id ?? a.article_id} className="flex items-start gap-2 bg-surface-1 border border-border-subtle rounded-lg px-3 py-2.5">
+                <li key={a.id ?? a.article_id} className="flex items-start gap-2 px-1 py-2.5 hover:bg-surface-1">
                   <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
                     a.importance === "high" ? "bg-critical" : a.importance === "medium" ? "bg-warning" : "bg-fg-subtle"
                   }`} />

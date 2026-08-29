@@ -13,6 +13,7 @@ import { MarkdownText } from "../components/MarkdownText";
 import { formatJst } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 import { SUBHEAD } from "../components/headings";
+import { SectionHeading } from "../components/SectionHeading";
 import { WeeklyRetrospectView } from "./brief/WeeklyRetrospectView";
 import type {
   BriefContextResponse,
@@ -197,10 +198,10 @@ function StructuredBrief({ payload }: { payload: DailyBriefPayload }) {
             <p className="text-base font-semibold text-fg leading-relaxed m-0">{syn.headline}</p>
           )}
           {syn.sections.map((s) => (
-            <section key={s.key} className="space-y-1.5">
-              <h4 className={SUBHEAD}>
-                {s.label}
-              </h4>
+            <section key={s.key}>
+              {/* 節として読ませる (現況・将来予測と同じ縦バー + 罫線)。
+                  小さな灰色文字のままだと、本文の一部にしか見えない。 */}
+              <SectionHeading title={s.label} />
               <MarkedText text={s.text} />
             </section>
           ))}
@@ -286,7 +287,7 @@ export function DailyBriefPage() {
       )}
 
       {view === "daily" && !isFetching && briefs.length === 0 && (
-        <div className="text-fg-subtle text-sm p-10 text-center bg-surface-1 border border-border-subtle rounded-lg">
+        <div className="text-fg-subtle text-sm p-10 text-center border border-dashed border-border-default rounded-lg">
           まだ日次ブリーフがありません。次回の朝刊 (06:30) / 夕刊 (19:30) から表示されます。
         </div>
       )}
@@ -323,12 +324,13 @@ export function DailyBriefPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start">
           {/* 左: 選択中ブリーフ本文 (payload=構造描画 / 旧行=markdown fallback) */}
           {isFetchingDetail && !selected && (
-            <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 text-fg-subtle text-sm">
+            <div className="text-fg-subtle text-sm py-4">
               本文を読み込み中…
             </div>
           )}
           {selected && (
-            <article className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3 min-w-0">
+            // 読む面なので箱で囲わない (現況・将来予測と同じ)。
+            <article className="space-y-3 min-w-0">
               <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle pb-2">
                 <h3 className="text-base font-bold text-fg m-0">{selected.title}</h3>
                 <span className="text-xs text-fg-subtle ml-auto tnum">
@@ -371,10 +373,8 @@ export function DailyBriefPage() {
 
           {/* 右: コンテキスト (週次振り返りと同じ文法 — 一覧 + 活動アクター + 予測) */}
           <div className="space-y-4">
-            <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-surface-2 text-fg-muted text-xs uppercase border-b border-border-subtle">
-                最近のブリーフ {briefs.length} 件
-              </div>
+            <div>
+              <SectionHeading title="最近のブリーフ" note={`${briefs.length} 件`} />
               <ul className="divide-y divide-border-subtle max-h-[40vh] overflow-y-auto">
                 {briefs.map((b) => {
                   const m = slotMeta(b.slot);
@@ -396,11 +396,8 @@ export function DailyBriefPage() {
             </div>
 
             {/* P2: この 24h の活動アクター (閲覧時計算、配信物には焼き込まない) */}
-            <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-surface-2 text-fg-muted text-xs uppercase border-b border-border-subtle flex items-baseline justify-between gap-2">
-                <span>活動したアクター (24h)</span>
-                {ctx?.window_label && <span className="normal-case text-fg-subtle tnum">{ctx.window_label}</span>}
-              </div>
+            <div>
+              <SectionHeading title="活動したアクター (24h)" note={ctx?.window_label} />
               {!ctx || ctx.top_actors.length === 0 ? (
                 <div className="px-3 py-4 text-fg-subtle text-sm text-center">{ctx ? "記録なし" : "読み込み中…"}</div>
               ) : (
@@ -417,10 +414,8 @@ export function DailyBriefPage() {
             </div>
 
             {/* P3: 今週の予測 (的中判定は週次 — 未検証は観測中として表示) */}
-            <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-surface-2 text-fg-muted text-xs uppercase border-b border-border-subtle">
-                今週の予測
-              </div>
+            <div>
+              <SectionHeading title="今週の予測" />
               {!ctx || ctx.forecast_indicators.length === 0 ? (
                 <div className="px-3 py-4 text-fg-subtle text-sm text-center">
                   {ctx ? "予測指標なし" : "読み込み中…"}

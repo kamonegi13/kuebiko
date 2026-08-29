@@ -271,16 +271,17 @@ export function EventNewsPage() {
       {isFetching && !data && <div className="text-fg-subtle text-sm">読み込み中…</div>}
       {error && <div className="text-critical text-sm">エラー: {String(error)}</div>}
       {data && items.length === 0 && (
-        <div className="text-fg-muted text-sm bg-surface-1 border border-border-subtle rounded-lg p-4">
+        <div className="text-fg-muted text-sm border border-dashed border-border-default rounded-lg p-6 text-center">
           該当する事象がありません。
         </div>
       )}
 
-      <ul className="space-y-1.5">
+      {/* 記事 1 件ずつを箱で囲わず、罫線で区切る (公開サイト・ニュース検索と同じ)。 */}
+      <ul className="divide-y divide-border-subtle">
         {items.map((it) => (
           <li
             key={it.id}
-            className="flex items-start gap-2 bg-surface-1 border border-border-subtle rounded-lg px-3 py-2.5"
+            className="flex items-start gap-2 px-1 py-2.5 hover:bg-surface-1"
           >
             <span
               className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
