@@ -87,8 +87,10 @@ def _resolve_period(
         start_jst = day_start
         end_jst = day_start + timedelta(days=1)
     elif period_type == "rolling7":
-        # 直近 7 日。period_start は当日 00:00 なので、毎日 1 行ずつ増え、
-        # 同じ日に再生成すれば同じ行へ UPSERT される。
+        # 直近 7 日。period_start は **窓の先頭 (当日 00:00 の 7 日前)** で、
+        # 当日 00:00 ではない (行の同一性を決める鍵なので取り違えない)。
+        # 先頭も毎日 1 日ずつずれるため、毎日 1 行増え、同じ日に再生成すれば
+        # 同じ行へ UPSERT される、という挙動は変わらない。
         start_jst = day_start - timedelta(days=7)
         end_jst = day_start + timedelta(days=1)
     elif period_type == "monthly":
