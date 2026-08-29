@@ -152,3 +152,25 @@
   /* 地図は背景が一定しないので、文字色と反対の縁取りで可読性を確保する */
   text-shadow: 0 0 3px rgb(var(--c-bg)), 0 0 3px rgb(var(--c-bg)), 0 0 4px rgb(var(--c-bg));
 }
+
+/* 期間の切替 (現況の総括)。フリック・タップのどちらでも、内容が入れ替わる向きに
+   合わせて滑り込ませる。**いきなり差し替わると操作が効いたのか分からない**
+   (2026-08-29 利用者指摘)。 */
+@keyframes slide-in-from-right {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-in-from-left {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+.period-in-next { animation: slide-in-from-right 220ms ease-out; }
+.period-in-prev { animation: slide-in-from-left 220ms ease-out; }
+
+/* 動きを減らす設定では位置を動かさず、淡く出すだけにする。 */
+@media (prefers-reduced-motion: reduce) {
+  .period-in-next,
+  .period-in-prev {
+    animation: none;
+  }
+}

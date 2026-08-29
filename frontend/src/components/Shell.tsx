@@ -146,12 +146,12 @@ export function Seg<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-7 items-center">
+    <div className="inline-flex shrink-0 bg-surface-2 border border-border-subtle rounded-md p-0.5 h-7 items-center">
       {items.map((it) => (
         <span
           key={it.v}
           onClick={() => onChange(it.v)}
-          className={`px-2.5 h-6 leading-6 cursor-pointer rounded-sm text-sm font-medium tnum transition-all ${
+          className={`px-2.5 h-6 leading-6 cursor-pointer rounded-sm text-sm font-medium tnum whitespace-nowrap transition-all ${
             value === it.v
               ? "bg-surface-overlay text-fg shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
               : "text-fg-muted hover:text-fg hover:bg-surface-3"

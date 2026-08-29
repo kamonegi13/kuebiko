@@ -58,11 +58,20 @@ function GlobalSynthesisView() {
     queryFn: () => api.synthesis(f.period_type),
   });
 
+  // 切り替わる向き。滑り込む方向を決めるためだけに持つ。
+  const [dir, setDir] = useState<1 | -1>(1);
+  const setPeriod = (v: PeriodType) => {
+    const from = PERIODS.findIndex((p) => p.v === f.period_type);
+    const to = PERIODS.findIndex((p) => p.v === v);
+    if (to === from) return;
+    setDir(to > from ? 1 : -1);
+    f.setPeriodType(v);
+  };
   // モバイルは左右フリックでも切り替える (小さい画面で切替を探させない)。
   const step = (d: 1 | -1) => {
     const i = PERIODS.findIndex((p) => p.v === f.period_type);
     const next = PERIODS[Math.min(PERIODS.length - 1, Math.max(0, i + d))];
-    if (next) f.setPeriodType(next.v);
+    if (next) setPeriod(next.v);
   };
   const swipeRef = useHorizontalSwipe<HTMLDivElement>({
     onNext: () => step(1),
@@ -85,7 +94,8 @@ function GlobalSynthesisView() {
             ? `${formatJstDate(data.latest.period_start)} 〜 ${formatJstDate(data.latest.period_end)}`
             : undefined
         }
-        action={<Seg items={PERIODS} value={f.period_type} onChange={f.setPeriodType} />}
+        action={<Seg items={PERIODS} value={f.period_type} onChange={setPeriod} />}
+        sticky
       />
 
       {isLoading && <SkeletonRows />}
@@ -104,8 +114,9 @@ function GlobalSynthesisView() {
       )}
 
       {data?.has_data && data.latest && (
-        <>
-          {/* Hero */}
+        // ⚠ key に期間を入れて **要素を作り直す** — 同じ要素のままだと
+        //    animation が再生されず、いきなり差し替わったように見える。
+        <div key={f.period_type} className={dir > 0 ? "period-in-next" : "period-in-prev"}>
           {/* リード。公開ページの「注目」と同じ扱い — ラベルを付けず、見出しそのものを
               大きく出す。素性 (件数・生成時刻) は下に小さく添える。 */}
           <div className="mb-5">
@@ -134,7 +145,7 @@ function GlobalSynthesisView() {
 
           {/* 根拠と点検はここに置かない (面が違う)。主張から辿れる導線だけ残す。 */}
           <BasisLink tc={data.tradecraft} />
-        </>
+        </div>
       )}
     </div>
   );
@@ -641,7 +652,7 @@ function SpotlightView() {
     <div>
       {/* 期間の切替に従わないことを、節の側で明示する
           (上で日次/週次を選んでもここは変わらない — 黙って据え置くと故障に見える)。 */}
-      <SectionHeading title="PIR 別の動向" note="直近 7 日で固定 · 該当の多い順" />
+      <SectionHeading title="PIR 別の動向" note="直近 7 日で固定 · 該当の多い順" sticky />
 
       {isLoading && <SkeletonRows />}
 
