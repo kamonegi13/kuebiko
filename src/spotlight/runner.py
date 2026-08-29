@@ -12,7 +12,7 @@ from pathlib import Path
 
 from src.assessment.context import build_assessment_context
 from src.logging_config import get_logger
-from src.pir.loader import load_pir_config
+from src.pir.integration import get_pir_config
 from src.pir.models import Pir
 from src.spotlight.generator import _resolve_period, generate_spotlight
 from src.spotlight.models import SpotlightPeriod
@@ -52,7 +52,10 @@ async def run_pir_spotlights(
     Returns:
         SpotlightRunResult
     """
-    cfg = load_pir_config()
+    # ⚠ **実行時 SSoT は DB** (config_store)。seed の yaml を直読みすると UI/DB で
+    # 広げた spotlight.enabled が届かない — 2026-08-30 に 20 件へ広げたのに
+    # yaml のままの 5 件しか回っていなかった。
+    cfg = get_pir_config()
     candidates: list[Pir] = []
     for p in cfg.priorities:
         if target_pir_ids is not None:

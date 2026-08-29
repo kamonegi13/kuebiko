@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from src.config_loader import load_app_config
 from src.cti.source_basis import compute_source_basis
 from src.logging_config import get_logger
-from src.pir.loader import load_pir_config
+from src.pir.integration import get_pir_config
 from src.spotlight.generator import generate_spotlight
 from src.spotlight.models import KeyEvent, SpotlightPeriod, SpotlightRecord
 from src.storage.run_history import RunHistoryRepository
@@ -147,7 +147,8 @@ class RegenerateRequest(BaseModel):
 @spotlight_api.post("/{pir_id}/regenerate", response_model=SpotlightSummary)
 async def regenerate_spotlight(pir_id: str, req: RegenerateRequest) -> SpotlightSummary:
     """1 PIR の Spotlight を即時 regenerate (主に LLM 比較 / debug 用)。"""
-    pir_cfg = load_pir_config()
+    # 取得元はジョブ側 (src/spotlight/runner.py) と同じ DB 正。片方だけ seed に戻さない。
+    pir_cfg = get_pir_config()
     pir = pir_cfg.find(pir_id)
     if pir is None:
         raise HTTPException(status_code=404, detail=f"PIR が見つかりません: {pir_id}")
