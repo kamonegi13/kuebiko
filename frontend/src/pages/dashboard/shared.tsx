@@ -94,15 +94,21 @@ export const COUNT_CHOICES: ConfigChoice[] = [
   { value: "12", label: "12件" },
 ];
 
-// ⚠ 枠線は **カスタマイズ中だけ** 出す (2026-08-29 利用者判断)。確定した配置では
-// 12 個の箱線が並んで画面がうるさく、中の数字より枠のほうが目立っていた。
-// 並べ替えているときは境界が見えないと掴めないので、そのときだけ出す。
-// 地色 (surface-1) は常に残す — 線が無くても面として読める
-// (light: 白 vs 生成り / dark: 20,24,31 vs 11,13,17)。
+// ⚠ **読むときは枠も塗りも出さない。カスタマイズ中だけ出す** (2026-08-29 利用者判断)。
+//
+// 読み手に「どこまでが 1 つの widget か」は要らない — 必要なのは見出しと内容の
+// 対応で、それは見出しと余白が担う (ニュース記事と同じ)。widget の識別が要るのは
+// 並べ替えているときだけ。確定した配置で 12 個の箱線が並ぶと、中の数字より枠の
+// ほうが目立っていた。
+//
+// ⚠ **平らにするなら全部平らにする。** tile だけ塗りを外して KPI カードに枠が
+// 残ると、前より不揃いに見える (実物で確認した)。KpiTile も同じ印を見る。
+//
 // 判定は DashboardPage が root に付ける data-dash-editing を CSS で拾う
 // (widget 全部に prop を配ると 20 箇所の付け忘れが起きる)。
 export const TILE_CHROME =
-  "bg-surface-1 border border-transparent [[data-dash-editing]_&]:border-border-subtle rounded-lg";
+  "border border-transparent rounded-lg " +
+  "[[data-dash-editing]_&]:border-border-subtle [[data-dash-editing]_&]:bg-surface-1";
 
 // ── カード枠 ──
 export function WidgetCard({ title, href, linkLabel, children }: { title: string; href?: string; linkLabel?: string; children: ReactNode }) {

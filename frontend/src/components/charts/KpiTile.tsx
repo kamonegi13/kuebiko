@@ -33,7 +33,11 @@ export function KpiTile({ label, value, delta, deltaTitle = "前日比", trend, 
   const up = (delta ?? 0) > 0;
   const down = (delta ?? 0) < 0;
   const body = (
-    <div className={`bg-surface-1 border border-border-subtle rounded-lg h-full flex flex-col group-hover:border-border-emphasized transition-colors ${compact ? "p-2.5 gap-0.5" : "p-4 gap-1.5"}`}>
+    <div className={// ダッシュボードの tile と同じ規則 (shared.tsx TILE_CHROME)。読むときは平ら、
+      // カスタマイズ中だけ枠と塗りを出す。片方だけ枠が残ると不揃いに見える。
+      `border border-transparent rounded-lg h-full flex flex-col transition-colors ` +
+      `[[data-dash-editing]_&]:border-border-subtle [[data-dash-editing]_&]:bg-surface-1 ` +
+      `group-hover:border-border-subtle ${compact ? "p-2.5 gap-0.5" : "p-4 gap-1.5"}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`inline-flex items-center gap-1.5 text-fg-muted truncate ${compact ? "text-[13px]" : "text-xs"}`} title={label}>
           {icon}

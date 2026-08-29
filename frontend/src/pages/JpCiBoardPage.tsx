@@ -138,7 +138,7 @@ export function JpCiBoardPage() {
       )}
 
       {data && (
-        <div className="overflow-x-auto border border-border-subtle rounded-lg bg-surface-1">
+        <div className="overflow-x-auto rounded-lg">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-[13px] text-fg-subtle border-b border-border-subtle">
@@ -208,7 +208,7 @@ const CONF_BAR: Record<string, string> = { high: "█", moderate: "▄", low: "�
 function PostureSection({ cards }: { cards: PostureCard[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
   return (
-    <div className="border border-border-subtle rounded-lg p-3 space-y-2 bg-surface-1">
+    <div className="rounded-lg p-3 space-y-2">
       <div className="text-[13px] font-bold text-fg-muted flex items-center gap-2 flex-wrap">
         <span>事前配置の見立て (常設情報要求 — 台帳の確度の推移。観測データとは別の視点)</span>
         <a href="/app/intel/synthesis" className="text-accent hover:underline font-normal">
@@ -314,7 +314,7 @@ function ChangesStrip({
   stageLabels: Record<string, string>;
 }) {
   return (
-    <div className="border border-border-subtle rounded-lg bg-surface-1 p-3 space-y-1.5">
+    <div className="rounded-lg p-3 space-y-1.5">
       <div className="text-[13px] font-semibold text-fg-muted">前期間からの変化</div>
       <ul className="m-0 p-0 list-none space-y-1">
         {changes.map((c) => (
