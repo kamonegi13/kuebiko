@@ -34,29 +34,37 @@ async function locate(pathname: string): Promise<string | null> {
   }
   if (pathname === "/api/v1/articles") return `${DATA_BASE}/articles.json`;
   if (pathname === "/api/v1/eventnews") return `${DATA_BASE}/eventnews.json`;
-  // 絞り込みを持たない参照データ (語彙・チャンネル等)。
-  return `${DATA_BASE}/api/${await fileName(pathname)}.json`;
+  return null;
 }
 
 export function installMirrorFetch(): void {
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const path = url.startsWith("/") ? url : new URL(url, window.location.origin).pathname;
+    // 絶対 URL でも問い合わせ文字列を落とさない (落とすと絞り込みの写しに当たらない)。
+    const u = new URL(url, window.location.origin);
+    const path = u.pathname + u.search;
     if (!path.startsWith("/api/")) return original(input as RequestInfo, init);
 
     // 書き込みは写しには存在しない。試みさせず、その場で断る。
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (method !== "GET") return notMirrored(path);
 
-    const pathname = path.split("?")[0];
-    const file = await locate(pathname);
-    if (!file) return notMirrored(pathname);
-    const r = await original(file);
-    // 静的配信の取りこぼしは 200 + HTML で返ってくる。中身で判定する。
-    if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) {
-      return notMirrored(pathname);
+    // 絞り込みごとに別ファイルとして写しているので、**問い合わせ文字列まで含めて**
+    // 引く。無ければ path だけで引き直す (時刻など毎回変わる引数を持つ経路のため)。
+    const [pathname, search] = path.split("?");
+    const named = await locate(pathname);
+    const candidates = named
+      ? [named]
+      : [
+          ...(search ? [`${DATA_BASE}/api/${await fileName(path)}.json`] : []),
+          `${DATA_BASE}/api/${await fileName(pathname)}.json`,
+        ];
+    for (const file of candidates) {
+      const r = await original(file);
+      // 静的配信の取りこぼしは 200 + HTML で返ってくる。中身で判定する。
+      if (r.ok && (r.headers.get("content-type") || "").includes("json")) return r;
     }
-    return r;
+    return notMirrored(path);
   };
 }

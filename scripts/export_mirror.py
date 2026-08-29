@@ -66,6 +66,55 @@ DEFAULT_MIN_EVENTS = 50
 #: という写しの目的を果たせない。
 #: 公開サイト側の禁止は export_public_site.py の _FORBIDDEN_KEYS が別に守っている
 #: (こちらを緩めても向こうは緩まない — 関門は面ごとに独立している)。
+#: 期間の選択肢 (frontend/src/state/filters.ts の FilterState と対)。
+_TIMES = ("7", "30", "90", "365")
+
+#: 画面ごとの取得。**稼働中の運用画面を実際に開いて記録した** ものに基づく
+#: (推測で並べると、足りない 1 本が「読み込み中で固まる」形で表に出る)。
+#:
+#: 絞り込みは既定の組み合わせだけを写す。地図の脅威種別・出典状態のような facet は
+#: 掛け合わせると爆発するので持たない — 写しで動かすと 501 になり、画面に
+#: 「写しに含まれていません」と出る (黙って固まるよりよい)。
+SCREEN_ENDPOINTS: tuple[str, ...] = (
+    # 現況 (総括)
+    *(f"/api/v1/intel-graph/synthesis?period_type={p}" for p in ("daily", "weekly", "monthly")),
+    *(f"/api/v1/intel-graph/snapshot?time={t}" for t in _TIMES),
+    # 脅威アクター
+    *(f"/api/v1/intel-graph/threats?time={t}" for t in _TIMES),
+    # 国家情勢
+    *(f"/api/v1/intel-graph/situation?time={t}" for t in _TIMES),
+    *(f"/api/v1/intel-graph/situation/nations?time={t}" for t in _TIMES),
+    # 将来予測
+    *(f"/api/v1/intel-graph/forecast?weeks={w}" for w in ("4", "8", "12")),
+    # 重要インフラ脅威
+    *(f"/api/v1/jp-ci-board?days={d}" for d in _TIMES),
+    # 脅威マップ (facet は既定のみ)
+    *(
+        f"/api/v1/geo/cyber-map?days={d}&threat_class=all&source_status=all"
+        "&min_importance=medium_up&pmesii=all&time_basis=report"
+        for d in _TIMES
+    ),
+    *(
+        f"/api/v1/geo/sub-country-points?days={d}&threat_class=all&source_status=all"
+        "&min_importance=medium_up&time_basis=report"
+        for d in _TIMES
+    ),
+    *(
+        f"/api/v1/geo/trend?days={d}&threat_class=all&group_by=country&domain=cyber"
+        "&source_status=all&min_importance=medium_up&pmesii=all"
+        for d in _TIMES
+    ),
+    # PIR / Spotlight
+    "/api/v1/pir",
+    "/api/v1/spotlight",
+    # ブリーフ・振り返り (一覧。本体は最新から数本を別途たどる)
+    "/api/v1/intel-graph/daily-briefs?limit=60&meta_only=1",
+    "/api/v1/intel-graph/brief-context",
+)
+
+#: 日次ブリーフの本体を何本たどるか。1 本 ~77KB。
+BRIEF_DETAILS = 30
+
 REFERENCE_ENDPOINTS = (
     "/api/v1/vocabularies",
     "/api/v1/runtime-flags",
@@ -155,6 +204,42 @@ def main() -> int:
         for ep in REFERENCE_ENDPOINTS:
             payload = _get(client, ep)
             total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
+
+        # --- 画面ごとの取得 ---
+        # 1 本の失敗で写し全体を止めない。落ちた画面は 501 になり、
+        # 「写しに含まれていません」と出る (黙って固まるよりよい)。
+        missing: list[str] = []
+        for ep in SCREEN_ENDPOINTS:
+            try:
+                payload = _get(client, ep)
+            except httpx.HTTPError as exc:
+                missing.append(f"{ep} ({type(exc).__name__})")
+                continue
+            total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
+
+        # 日次ブリーフの本体。一覧の新しい方から数本たどる。
+        try:
+            briefs = _get(client, "/api/v1/intel-graph/daily-briefs", limit=BRIEF_DETAILS,
+                          meta_only=1)
+            for b in (briefs.get("briefs") or briefs.get("items") or [])[:BRIEF_DETAILS]:
+                bid = b.get("id")
+                if bid is None:
+                    continue
+                ep = f"/api/v1/intel-graph/daily-briefs/{bid}"
+                try:
+                    total_bytes += _write(
+                        out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                    )
+                except httpx.HTTPError:
+                    continue
+        except httpx.HTTPError as exc:
+            missing.append(f"daily-briefs ({type(exc).__name__})")
+
+        if missing:
+            # 黙って欠けさせない。何が写せなかったかを毎回出す。
+            print(f"写せなかった画面 {len(missing)} 本:", file=sys.stderr)
+            for m in missing:
+                print(f"  - {m}", file=sys.stderr)
 
         # --- 記事 ---
         articles = _fetch_articles(client, args.days, args.max_articles)

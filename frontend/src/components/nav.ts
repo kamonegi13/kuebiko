@@ -45,14 +45,14 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "インテリジェンス",
     items: [
-      { href: "/app/intel/synthesis", label: "現況", Icon: FileText, exact: ["/app/intel", "/app/intel/"], prefixes: ["/app/intel/synthesis"] },
-      { href: "/app/intel/pmesii", label: "国家情勢", Icon: Scale, prefixes: ["/app/intel/pmesii"] },
-      { href: "/app/intel/threats", label: "脅威アクター", Icon: Crosshair, prefixes: ["/app/intel/threats"] },
-      { href: "/app/map", label: "脅威マップ", Icon: Map, prefixes: ["/app/map"] },
-      { href: "/app/jpci", label: "重要インフラ脅威", Icon: ShieldAlert, prefixes: ["/app/jpci"] },
-      { href: "/app/intel/forecast", label: "将来予測", Icon: TrendingUp, prefixes: ["/app/intel/forecast"] },
+      { href: "/app/intel/synthesis", mirror: true, label: "現況", Icon: FileText, exact: ["/app/intel", "/app/intel/"], prefixes: ["/app/intel/synthesis"] },
+      { href: "/app/intel/pmesii", mirror: true, label: "国家情勢", Icon: Scale, prefixes: ["/app/intel/pmesii"] },
+      { href: "/app/intel/threats", mirror: true, label: "脅威アクター", Icon: Crosshair, prefixes: ["/app/intel/threats"] },
+      { href: "/app/map", mirror: true, label: "脅威マップ", Icon: Map, prefixes: ["/app/map"] },
+      { href: "/app/jpci", mirror: true, label: "重要インフラ脅威", Icon: ShieldAlert, prefixes: ["/app/jpci"] },
+      { href: "/app/intel/forecast", mirror: true, label: "将来予測", Icon: TrendingUp, prefixes: ["/app/intel/forecast"] },
       // 振り返り (過去参照) はブリーフページの週次ビューに統合 (2026-07-25 時間軸統合)
-      { href: "/app/pir", label: "PIR / Spotlight", Icon: Flag, prefixes: ["/app/pir"] },
+      { href: "/app/pir", mirror: true, label: "PIR / Spotlight", Icon: Flag, prefixes: ["/app/pir"] },
       // 事象ニュース (2026-08-24 交代 → 2026-08-24 インテリジェンスへ移動)。
       // 同一事象の複数報道を束ね、**ツールが生成した**読み物。収集物そのものではなく
       // 生成された分析なので コンテンツ ではなく インテリジェンス に置く
@@ -68,7 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
-      { href: "/app/daily-brief", label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
+      { href: "/app/daily-brief", mirror: true, label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
       // 収集した個々の記事を探す画面。生成物ではないので コンテンツ に残す
       // (事象ニュースは生成物なので インテリジェンス へ移動した)。
       { href: "/app/news", label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
@@ -153,8 +153,8 @@ export const BOTTOM_NAV: NavLink[] = [
   { href: "/app", label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
   // モバイルの主導線も事象ニュース (読む画面)。記事一覧はメニューから辿る。
   { href: "/app/eventnews", mirror: true, label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
-  { href: "/app/intel/pmesii", label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },
-  { href: "/app/map", label: "マップ", Icon: Map, prefixes: ["/app/map"] },
+  { href: "/app/intel/pmesii", mirror: true, label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },
+  { href: "/app/map", mirror: true, label: "マップ", Icon: Map, prefixes: ["/app/map"] },
 ];
 
 /** モバイル下部タブ。写しでは写した画面だけ (サイドバーと同じ規則)。 */

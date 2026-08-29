@@ -26,7 +26,7 @@ export function MirrorBanner() {
     return (
       <div className="flex items-center gap-2 px-4 py-2 text-[13px] bg-warning-soft border-b border-warning/40 text-fg">
         <Archive size={15} className="shrink-0 text-warning" />
-        <span>これは保存された写しです (いつ時点かを取得できませんでした)</span>
+        <span>いつ時点の情報かを取得できませんでした</span>
       </div>
     );
   }
@@ -34,9 +34,9 @@ export function MirrorBanner() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px] bg-warning-soft border-b border-warning/40 text-fg">
       <Archive size={15} className="shrink-0 text-warning" />
-      <span className="font-semibold">
-        {formatJstDate(data.generated_at)} 時点の写し
-      </span>
+      {/* 読み手が要るのは「写しである」ことではなく **いつの情報か**
+          (2026-08-29 利用者指摘)。仕組みではなく中身を先に言う。 */}
+      <span className="font-semibold">{formatJstDate(data.generated_at)} 現在の情報</span>
       <span className="text-fg-muted">{relativeFromNow(data.generated_at)}</span>
       <span className="text-fg-muted">
         記事 {data.counts.articles.toLocaleString()} 件 / 事象{" "}
