@@ -543,7 +543,9 @@ kuebiko/
 ## 12. Web UI セキュリティポリシー (Phase 1.5 必須)
 
 - [ ] **127.0.0.1 のみバインド**: docker-compose の `ports` は `127.0.0.1:8001:8000` 固定 (ホスト 8001 → コンテナ 8000)。LAN/外部公開禁止
-  - **例外: readonly mobile 公開 (Phase Diamond verify-mobile)**: 別 service `readonly` を `127.0.0.1:8002:8000` で起動 (full instance とは別 container、`READ_ONLY=1` 環境変数)。FastAPI middleware が POST/PUT/PATCH/DELETE を **すべて 403** で block。Cloudflare Tunnel が `127.0.0.1:8002` のみを HTTPS で外部公開し、外部から到達できるのは **閲覧専用 API のみ**。write 不可は構造的に保証 (認証ゲートではなく物理的隔離)。詳細手順は [docs/mobile-access.md](docs/mobile-access.md)
+  - **例外: readonly mobile 公開 (Phase Diamond verify-mobile)**: 別 service `readonly` を `127.0.0.1:8002:8000` で起動 (full instance とは別 container、`READ_ONLY=1` 環境変数)。FastAPI middleware が POST/PUT/PATCH/DELETE を **すべて 403** で block。Cloudflare Tunnel が `127.0.0.1:8002` のみを HTTPS で外部公開し、外部から到達できるのは **閲覧専用 API のみ**。write 不可は公開プロセス側で保証 (認証ゲートではなく、80 本のハンドラに
+    到達する **前** の関門。⚠ DB・config ボリュームは full と共有しているので
+    「物理的隔離」ではない — 正確には「公開されているプロセスが write を受け付けない」)。詳細手順は [docs/mobile-access.md](docs/mobile-access.md)
   - **公開 instance の到達範囲は 3 層 (2026-08-01)**。SSoT は `src/ui/read_only_policy.py` **1 箇所**:
     **Tier0 匿名** = 閲覧系 read API と SPA / **Tier1 認証済み (Cloudflare Access)** = 運用系 read API
     (`READ_ONLY_GET_DENYLIST`: ジョブ計画・設定・プロンプト・ルーティング・レビューキュー) の閲覧 +
@@ -553,6 +555,15 @@ kuebiko/
     - Tier1 の write は**ジョブ即時実行 1 つだけ**。readonly は scheduler を起動しないため、
       認証済みの `POST /api/v1/jobs/{id}/run` のみ full instance (`FULL_INSTANCE_URL`) へ
       narrow proxy する。**write の実行主体は常に full** で §12 の境界は不変。
+    - **遠隔 write の開閉 (2026-08-29、既定 off)**: `READ_ONLY_ALLOW_REMOTE_WRITE=1` で
+      認証済みの write を遠隔に開ける。将来「遠隔でもローカル同等に触りたい」場面に
+      備えた口で、**既定は閉じている**。開けると防御が「公開プロセスが write を
+      持たない」という構造から「Access の設定が正しいこと」へ移る — 開ける前に
+      その移動を理解していること。開いた場合でも:
+      ・資格情報 (`CREDENTIAL_WRITE_PATHS`: anthropic-key / claudecode-token /
+        endpoint-key) は **flag に関わらず遮断**。鍵の差し替えはローカルのみ
+      ・すべての遠隔 write を `access_audit` に記録してから通す。**追えない遠隔
+        write は開いていないのと同じくらい危険** (事後に何が起きたか再構成できない)
     - 認証は Cloudflare Access (`/auth/*` にのみ適用) の JWT を JWKS 検証 (`src/ui/services/cf_access.py`)。
       **fail-closed** (署名不正・期限切れ・aud/iss 不一致・鍵取得失敗はすべて未認証)。
       `.env` の `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` を消せば Tier1 が消えて従来挙動に戻る

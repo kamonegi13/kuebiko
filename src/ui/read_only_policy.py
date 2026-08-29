@@ -61,6 +61,22 @@ PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
 # 化けないよう完全一致で判定する (path traversal / endpoint すり替えの排除)。
 _TRIGGER_PATH_RE = re.compile(r"^/api/v1/jobs/[A-Za-z0-9._-]{1,64}/run$")
 
+#: 遠隔 write を開けても **決して開かない** path。資格情報そのものを扱うため、
+#: Access のセッションが 1 つ破られたときの被害が「情報を読まれる」から
+#: 「鍵を差し替えられる」に変わる。ここだけはローカル (Tier2) に残す。
+#: §4 により鍵は .env にあり、DB には無い — つまりこれらは .env を書き換える口。
+CREDENTIAL_WRITE_PATHS: tuple[str, ...] = (
+    "/api/v1/model-tiers/anthropic-key",
+    "/api/v1/model-tiers/claudecode-token",
+    "/api/v1/model-tiers/endpoint-key",
+)
+
+
+def is_credential_write(path: str) -> bool:
+    """資格情報を書き換える path か。遠隔 write を開けた場合でも遮断する。"""
+    return path in CREDENTIAL_WRITE_PATHS
+
+
 _PROXY_TIMEOUT_SECONDS = 30.0
 _DEFAULT_FULL_INSTANCE_URL = "http://kuebiko:8000"
 
@@ -129,6 +145,17 @@ def _forbidden(detail: str, request: Request) -> JSONResponse:
 # 認証済み read の記録間隔。1 画面が多数の API を呼ぶため毎回記録すると証跡が
 # 埋もれる。同一 subject はこの間隔で 1 行に畳む (write と失敗は常に記録)。
 _AUTH_AUDIT_INTERVAL_SECONDS = 600.0
+
+
+#: 認証済みの write を遠隔に開くか (既定 off)。将来「遠隔でもローカル同等に
+#: 触りたい」場面が来たときに **env 1 つで開閉できる**ようにしておく。
+#: ⚠ 開けると防御が「公開プロセスが write を持たない」という構造から
+#: 「Access の設定が正しいこと」へ移る。開けるときは監査 (下記) が前提。
+#: 資格情報 (CREDENTIAL_WRITE_PATHS) はこの flag に関わらず常に遮断する。
+def _remote_write_enabled() -> bool:
+    return os.environ.get("READ_ONLY_ALLOW_REMOTE_WRITE", "0") == "1"
+
+
 _last_auth_audit: dict[str, float] = {}
 
 
@@ -250,6 +277,26 @@ def build_read_only_middleware(
             return _forbidden("認証が必要です (ログインしてください)", request)
 
         if method in WRITE_METHODS:
+            # 遠隔 write が開いている場合だけ、認証済みに限って通す。
+            # ⚠ **記録してから通す**。何を変更したか追えない遠隔 write は、
+            #    開いていないのと同じくらい危険 (事後に何が起きたか再構成できない)。
+            if _remote_write_enabled() and identity is not None:
+                if is_credential_write(path):
+                    # flag に関わらず遮断。鍵の差し替えはローカルでしか行わせない
+                    _record_audit(
+                        request,
+                        event="rejected",
+                        subject_hash=identity.subject_hash,
+                        detail=f"credential_write_blocked:{path}",
+                    )
+                    return _forbidden("資格情報の変更はローカルでのみ可能です", request)
+                _record_audit(
+                    request,
+                    event="tier1_write",
+                    subject_hash=identity.subject_hash,
+                    detail=f"{method} {path}",
+                )
+                return await call_next(request)
             return _forbidden("read-only instance: write operations are blocked", request)
 
         if method in ("GET", "HEAD") and is_read_only_blocked_get(path):

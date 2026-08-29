@@ -434,3 +434,49 @@ class TestSpaReadOnlySeed:
             res = c.get("/app")
             assert res.status_code == 200
             assert "window.__READ_ONLY__=false" in res.text
+
+
+class TestRemoteWriteSwitch:
+    """遠隔 write の開閉 (既定 off)。将来「遠隔でもローカル同等に触りたい」場面が
+    来たときに env 1 つで開けられるようにしてある。"""
+
+    def test_default_is_closed(self) -> None:
+        # 既定は閉じている。開いていないことを明示的に固定する
+        import os
+
+        from src.ui.read_only_policy import _remote_write_enabled
+
+        os.environ.pop("READ_ONLY_ALLOW_REMOTE_WRITE", None)
+        assert _remote_write_enabled() is False
+
+    def test_switch_opens_only_on_exact_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.ui.read_only_policy import _remote_write_enabled
+
+        for value, expected in (("1", True), ("0", False), ("true", False), ("", False)):
+            monkeypatch.setenv("READ_ONLY_ALLOW_REMOTE_WRITE", value)
+            assert _remote_write_enabled() is expected, value
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/model-tiers/anthropic-key",
+            "/api/v1/model-tiers/claudecode-token",
+            "/api/v1/model-tiers/endpoint-key",
+        ],
+    )
+    def test_credential_paths_are_never_remote(self, path: str) -> None:
+        # ⚠ flag を開けても資格情報だけは遮断する。Access のセッションが 1 つ
+        #    破られたときの被害が「読まれる」から「鍵を差し替えられる」に変わる。
+        from src.ui.read_only_policy import is_credential_write
+
+        assert is_credential_write(path) is True
+
+    def test_ordinary_write_is_not_treated_as_credential(self) -> None:
+        from src.ui.read_only_policy import is_credential_write
+
+        assert is_credential_write("/api/v1/notes/abc") is False
+
+    def test_switch_closed_still_blocks_write(self, read_only_client: TestClient) -> None:
+        res = read_only_client.post("/api/v1/config", json={})
+        assert res.status_code == 403
+        assert res.json()["detail"] == "read-only instance: write operations are blocked"
