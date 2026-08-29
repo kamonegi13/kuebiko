@@ -137,7 +137,10 @@ export function ActorsPage() {
         MITRE ATT&CK との差分は週次で自動同期されます (概要は和訳)。
       </p>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* ⚠ 検索は **モバイルだけ** 上に固定する。262 件を縦に流す面なので、
+          絞り込むために毎回上まで戻ることになる (2026-08-29 実測: モバイル
+          16,099px = 16 画面)。PC は表の中でスクロールするので固定は要らない。 */}
+      <div className="sticky top-12 z-20 -mx-4 px-4 py-2 bg-bg/95 backdrop-blur-md md:static md:mx-0 md:px-0 md:py-0 md:bg-transparent md:backdrop-blur-none flex items-center gap-2 flex-wrap">
         <input
           type="search"
           value={search}

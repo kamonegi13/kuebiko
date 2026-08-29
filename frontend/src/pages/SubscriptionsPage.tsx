@@ -50,11 +50,14 @@ function classify(s: FeedStats | undefined, health?: Subscription["health"]): Gr
   return "quiet";
 }
 
+// ⚠ 既定で開くのは **対処が要る群だけ**。高貢献 (うまく回っている群) を開いて
+// おくと、実測でページの 66% (1,934px) を占め、対処の要る取得エラーが下に押し
+// やられていた (2026-08-29)。うまくいっているものは開かなくてよい。
 const GROUP_META: Record<GroupKey, { label: string; Icon: LucideIcon; tone: string; defaultOpen: boolean }> = {
   fetch_error: { label: "取得エラー (feed 取得が連続失敗中)", Icon: AlertTriangle, tone: "border-l-critical", defaultOpen: true },
   body_error: { label: "本文取得エラー (feed は取れるが本文抽出が失敗)", Icon: AlertTriangle, tone: "border-l-critical", defaultOpen: true },
   warn: { label: "要対処 (取得は成功・30日 記事化なし)", Icon: AlertTriangle, tone: "border-l-critical", defaultOpen: true },
-  high_value: { label: "高貢献 (重要度: 高 が多い)", Icon: Flame, tone: "border-l-success", defaultOpen: true },
+  high_value: { label: "高貢献 (重要度: 高 が多い)", Icon: Flame, tone: "border-l-success", defaultOpen: false },
   normal: { label: "正常稼働", Icon: Check, tone: "border-l-accent", defaultOpen: false },
   quiet: { label: "静観 (低頻度 / 新規)", Icon: Moon, tone: "border-l-fg-subtle", defaultOpen: false },
   no_data: { label: "統計データなし", Icon: Info, tone: "border-l-fg-subtle", defaultOpen: false },

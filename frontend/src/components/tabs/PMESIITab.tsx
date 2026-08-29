@@ -17,6 +17,7 @@ import { formatJstDate } from "../../utils/date";
 import { goToActor } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
 import { usePeriodSwipe } from "../../hooks/usePeriodSwipe";
+import { SectionHeading } from "../SectionHeading";
 
 // セレクタの役割グループ (敵対 → 同盟 → その他 の順で前面化)。ラベルは backend vocab
 // "pmesii_role" (vocabLabel) を SSoT に解決する (静的 value→label マップは持たない)。
@@ -72,12 +73,11 @@ export function PMESIITab() {
   const swipeRef = usePeriodSwipe<HTMLDivElement>();
   return (
     <div ref={swipeRef} className="space-y-3.5">
-      <div className="flex items-baseline justify-between gap-2 flex-wrap px-1">
-        <h3 className="m-0 text-lg font-bold text-fg tracking-tight">国家情勢ボード</h3>
-        <span className="text-fg-muted text-xs">
-          攻撃者(帰属) / 標的(被害) / 地政学(当事国) を国家で相関 · 過去 {f.time}日
-        </span>
-      </div>
+      <SectionHeading
+        title="国家情勢ボード"
+        note={`攻撃者(帰属) / 標的(被害) / 地政学(当事国) を国家で相関 · 過去 ${f.time}日`}
+        sticky
+      />
 
       {/* 国家セレクタ: 役割 (敵対/同盟/その他) でグループ化し折り返し表示。
           横スクロールを解消し、防衛 CTI で最も使う敵対・同盟を最前面に。 */}
