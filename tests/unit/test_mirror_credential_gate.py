@@ -37,7 +37,7 @@ from export_mirror import _assert_no_credentials  # noqa: E402
         ),
     ],
 )
-def test_通す(name: str, payload: dict[str, object]) -> None:
+def test_allows(name: str, payload: dict[str, object]) -> None:
     _assert_no_credentials(payload, "t")
 
 
@@ -52,6 +52,6 @@ def test_通す(name: str, payload: dict[str, object]) -> None:
         ("password", {"password": "correct-horse-battery"}),
     ],
 )
-def test_止める(name: str, payload: dict[str, object]) -> None:
+def test_blocks(name: str, payload: dict[str, object]) -> None:
     with pytest.raises(SystemExit):
         _assert_no_credentials(payload, "t")

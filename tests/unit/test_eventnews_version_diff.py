@@ -8,12 +8,12 @@ from src.eventnews import version_diff
 from src.eventnews.models import UPDATE_DRIVER_TYPES
 
 
-def test_ラベルは駆動entity型を網羅する() -> None:
+def test_labels_cover_all_driver_entity_types() -> None:
     # Arrange / Act / Assert — 型が増えたら日本語ラベルも足す (生 enum を画面に出さない)
     assert set(version_diff.DRIVER_TYPE_LABELS) == set(UPDATE_DRIVER_TYPES)
 
 
-def test_正規化キーを原文の表記に戻す() -> None:
+def test_normalized_key_maps_back_to_source_wording() -> None:
     # Arrange — 記録されるのは正規化キー、記事側は原文表記
     payload = json.dumps(
         {"article_id": "a1", "added_entities": {"victim_org": ["federalreserveboard"]}}
@@ -24,10 +24,12 @@ def test_正規化キーを原文の表記に戻す() -> None:
     added = version_diff.resolve_additions(payload, rows)
 
     # Assert — 加わった 1 件だけが、読める形で返る
-    assert added == [{"type": "victim_org", "label": "被害組織", "values": ["Federal Reserve Board"]}]
+    assert added == [
+        {"type": "victim_org", "label": "被害組織", "values": ["Federal Reserve Board"]}
+    ]
 
 
-def test_復元できないキーは落とす() -> None:
+def test_unresolvable_keys_are_dropped() -> None:
     # Arrange — 記事側に対応する entity が残っていない (再抽出等でずれた場合)
     payload = json.dumps({"article_id": "a1", "added_entities": {"cve": ["cve-2026-1"]}})
 
@@ -35,14 +37,14 @@ def test_復元できないキーは落とす() -> None:
     assert version_diff.resolve_additions(payload, []) == []
 
 
-def test_壊れたJSONでも例外を投げない() -> None:
+def test_malformed_json_does_not_raise() -> None:
     # Arrange / Act / Assert — 表示経路なので、記録が壊れていても記事は出す
     assert version_diff.resolve_additions("{not json", []) == []
     assert version_diff.contributing_article_id(None) is None
     assert version_diff.corroboration_note("") == ""
 
 
-def test_確度の変化は事実の列挙と別に返る() -> None:
+def test_corroboration_change_is_separate_from_new_facts() -> None:
     # Arrange
     payload = json.dumps(
         {

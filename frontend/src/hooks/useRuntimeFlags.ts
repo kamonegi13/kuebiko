@@ -10,9 +10,17 @@ export interface RuntimeFlags {
   authenticated: boolean;
   // Access が設定済みか (未設定ならログイン導線そのものを出さない)
   auth_available: boolean;
+  // 遠隔からの設定変更が開いているか (2026-08-29)。開いていても書けるのは
+  // DB 由来の運用設定だけ。**遮断の実体は常にサーバ側の名簿** で、これは表示用。
+  remote_write: boolean;
 }
 
-const ANONYMOUS: RuntimeFlags = { read_only: false, authenticated: false, auth_available: false };
+const ANONYMOUS: RuntimeFlags = {
+  read_only: false,
+  authenticated: false,
+  auth_available: false,
+  remote_write: false,
+};
 
 declare global {
   interface Window {
@@ -30,6 +38,8 @@ function seedFlags(): RuntimeFlags | undefined {
     read_only: window.__READ_ONLY__,
     authenticated: window.__AUTHENTICATED__ === true,
     auth_available: window.__AUTH_AVAILABLE__ === true,
+    // 初期値には無い (埋め込みは認証状態までで十分)。fetch 後に確定する。
+    remote_write: false,
   };
 }
 
@@ -81,4 +91,16 @@ export function loginUrl(origin = ""): string {
       // iOS Safari 旧来の判定 (navigator.standalone は非標準)
       (navigator as { standalone?: boolean }).standalone === true);
   return `${origin}/auth/login${standalone ? "?display=standalone" : ""}`;
+}
+
+/** DB 由来の運用設定を、この画面から変更できるか。
+ *
+ *  ⚠ **ファイル由来の操作 (接続設定 / raw YAML / .j2 直編集 / 名簿 yaml) には使わない。**
+ *  それらは遠隔からは書けないので、素の read_only で隠したままにする。
+ *  ここで true を返しても、実際に通るかはサーバ側の名簿が決める — 画面は
+ *  「出すか隠すか」だけを決める (2026-08-01 の fullOnly と同じ関係)。
+ */
+export function canEditOperationalConfig(flags: RuntimeFlags): boolean {
+  if (!flags.read_only) return true; // ローカル (full instance)
+  return flags.authenticated && flags.remote_write;
 }

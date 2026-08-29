@@ -7,11 +7,17 @@
   (ジョブ計画 / 設定 / プロンプト / ルーティング / レビューキュー) の閲覧と、
   ジョブの即時実行 (full instance へ narrow proxy)。分析チャット・記事翻訳の
   LLM 消費もこの層に上げる (Access 設定時のみ。未設定なら従来どおり匿名可)。
-- **Tier2 ローカル専用**: それ以外の write (設定保存 / キー / プロンプト保存 /
-  レビュー承認 等) は認証の有無に関わらず 403。full instance (127.0.0.1) でのみ可能。
+- **Tier2 ローカル専用**: 上記以外の write。認証の有無に関わらず 403。
 
-readonly コンテナは scheduler を起動しないため、即時実行だけは full instance へ
-HTTP proxy する (write の実行主体は full のまま = CLAUDE.md §12 の境界を保つ)。
+``READ_ONLY_ALLOW_REMOTE_WRITE=1`` を立てると Tier1 の write が広がる (2026-08-29)。
+広がる範囲は **書き先が DB のものだけ** (``REMOTE_WRITE_ALLOWLIST``、未登録は拒否)。
+線引きの根拠は版管理の有無 — DB 由来の運用設定は版履歴が残り revert できるが、
+ファイル由来 (.env / raw YAML / .j2 直編集 / 名簿 yaml) は残らない。資格情報は
+flag に関わらず遮断する。
+
+readonly コンテナは scheduler を持たず config/prompts/.env を :ro で持つため、
+**write はすべて full instance へ HTTP proxy する** (実行主体は full のまま =
+CLAUDE.md §12 の「公開しているプロセスが write を持たない」構造を保つ)。
 """
 
 from __future__ import annotations
@@ -69,12 +75,107 @@ CREDENTIAL_WRITE_PATHS: tuple[str, ...] = (
     "/api/v1/model-tiers/anthropic-key",
     "/api/v1/model-tiers/claudecode-token",
     "/api/v1/model-tiers/endpoint-key",
+    # Discord webhook URL は URL の形をしているが **それ自体が資格情報** —
+    # 知っていれば誰でも投稿できる。channels の他の編集 (DB) とは扱いを分ける。
+    "/api/v1/channels/*/webhook",
+    "/api/v1/model-tiers/ollama-url",
 )
+
+
+def _matches(template: str, path: str) -> bool:
+    """`*` が 1 セグメントに対応する path 照合。
+
+    前方一致は使わない。`/api/v1/channels` を前方一致で許すと
+    `/api/v1/channels/{id}/webhook` (資格情報) まで巻き込む。
+    """
+    t = template.split("/")
+    p = path.split("/")
+    if len(t) != len(p):
+        return False
+    return all(a == "*" or a == b for a, b in zip(t, p, strict=True))
 
 
 def is_credential_write(path: str) -> bool:
     """資格情報を書き換える path か。遠隔 write を開けた場合でも遮断する。"""
-    return path in CREDENTIAL_WRITE_PATHS
+    return any(_matches(t, path) for t in CREDENTIAL_WRITE_PATHS)
+
+
+#: 遠隔 (Tier1) から書ける path。**未登録は拒否** (fail-closed)。
+#:
+#: 線引きは「書き先が DB か、ファイルか」(2026-08-29 利用者判断)。DB 由来の運用設定は
+#: 版履歴が残り revert できる (config_history の _KNOWN_KEYS がその名簿)。
+#: ファイル由来 (.env / raw YAML / .j2 直編集 / actor_aliases.yaml / Playwright state) は
+#: 版管理が無く、readonly では :ro マウントで物理的にも書けない。
+#:
+#: ⚠ 一覧は **明示的に並べる**。前方一致でまとめると、後から生えた下位 path
+#: (資格情報など) を意図せず巻き込む。追加は 1 行ずつ、書き先を確かめてから。
+REMOTE_WRITE_ALLOWLIST: tuple[str, ...] = (
+    # 配信ルール / チャンネル / プロダクト配信
+    "/api/v1/routing-rules",
+    "/api/v1/routing-rules/preview",
+    "/api/v1/channels",
+    "/api/v1/product-routing",
+    # PIR
+    "/api/v1/pir/save",
+    "/api/v1/pir/compile",
+    "/api/v1/pir/preview",
+    "/api/v1/pir/*",
+    "/api/v1/pir/*/approve",
+    "/api/v1/pir/*/toggle",
+    # 語彙 / 品質 / 名簿
+    "/api/v1/match-lists",
+    "/api/v1/config/source-quality",
+    "/api/v1/jp-ci-operators",
+    # 購読ソース (feeds / watchers / scrapers はいずれも DB)
+    "/api/v1/sources/register",
+    "/api/v1/sources/update",
+    "/api/v1/sources/delete",
+    "/api/v1/sources/bulk",
+    "/api/v1/sources/set_folder",
+    "/api/v1/sources/set_display_name",
+    "/api/v1/sources/discover",
+    "/api/v1/sources/preview_url",
+    "/api/v1/sources/live_preview",
+    "/api/v1/sources/preview_html_listing",
+    # モデル割当 / 接続先 (鍵は CREDENTIAL_WRITE_PATHS で別に遮断)
+    "/api/v1/model-tiers",
+    "/api/v1/model-tiers/endpoints",
+    # プロンプト編集層 (2026-08-20 以降 DB。.j2 直編集の /prompts/save は対象外)
+    "/api/v1/prompts/summarizer/rubric",
+    "/api/v1/prompts/summarizer/rubric/preview",
+    "/api/v1/prompts/summarizer/rubric/test",
+    "/api/v1/prompts/*/blocks",
+    "/api/v1/prompts/*/blocks/preview",
+    # ダッシュボード配置 / Grok タスク定義
+    "/api/v1/dashboard/layout",
+    "/api/v1/grok/tasks",
+    # ジョブの計画と実行 (job_registry は DB)
+    "/api/v1/jobs/*/schedule",
+    "/api/v1/jobs/*/toggle",
+    "/api/v1/runs/start",
+    "/api/v1/schedule/*/cron",
+    "/api/v1/schedule/*/pause",
+    "/api/v1/schedule/*/resume",
+    "/api/v1/schedule/*/trigger",
+    "/api/v1/schedule/*/update_dedup",
+    "/api/v1/schedule/*/update_schedule",
+    "/api/v1/schedule/*/update_source",
+    "/api/v1/schedule/*/update_think",
+    "/api/v1/schedule/*/update_triage",
+    "/api/v1/schedule/*/scrapers/*/toggle",
+    "/api/v1/spotlight/*/regenerate",
+    # 設定の版を戻す (DB の版履歴が対象)
+    "/api/v1/config-history/*/revert",
+)
+
+
+def is_remote_writable(path: str) -> bool:
+    """遠隔から書いてよい path か。**未登録は False** (fail-closed)。
+
+    ここに無い write は 403 で断る。見落としがあっても「遠隔で書けない」に倒れる
+    だけで、誤って書けてしまうことは無い。
+    """
+    return any(_matches(t, path) for t in REMOTE_WRITE_ALLOWLIST)
 
 
 _PROXY_TIMEOUT_SECONDS = 30.0
@@ -212,28 +313,56 @@ def _audit_authentication(request: Request, identity: Identity, path: str) -> No
     _record_audit(request, event="authenticated", subject_hash=key, detail=path[:120])
 
 
-async def _proxy_job_run(path: str, identity: Identity) -> JSONResponse:
-    """認証済みの即時実行を full instance へ転送する (readonly は scheduler 不在)。"""
+async def _proxy_write(
+    request: Request, path: str, identity: Identity, *, label: str
+) -> JSONResponse:
+    """認証済みの write を full instance へ転送する。
+
+    ⭐ **write の実行主体は常に full**。readonly 自身に書かせると 3 つ壊れる:
+    (a) scheduler が居ないので、ジョブ計画の変更が実際の実行に届かない
+    (b) config / prompts / .env は :ro マウントなのでファイル書き込みが落ちる
+    (c) 「公開しているプロセスが write を持たない」という §12 の構造が崩れる。
+    転送なら readonly は口を持つだけで、能力は持たない。
+    """
     import httpx
 
     base = os.environ.get("FULL_INSTANCE_URL", _DEFAULT_FULL_INSTANCE_URL).rstrip("/")
+    body = await request.body()
+    # 転送してよいヘッダだけを選ぶ。認証情報 (cookie / Cf-Access-*) は **渡さない** —
+    # full は 127.0.0.1 バインドのローカル専用で認証を行わない。検証はここで済んでいる。
+    headers = {
+        k: v for k, v in request.headers.items() if k.lower() in ("content-type", "accept")
+    }
     try:
         async with httpx.AsyncClient(timeout=_PROXY_TIMEOUT_SECONDS) as client:
-            res = await client.post(f"{base}{path}")
-        payload: Any = res.json()
+            res = await client.request(
+                request.method,
+                f"{base}{path}",
+                params=dict(request.query_params),
+                content=body or None,
+                headers=headers,
+            )
+        payload: Any = res.json() if res.content else None
     except Exception as e:  # noqa: BLE001 — 到達不可/非 JSON は 502 に畳む
-        _log.warning("job_run_proxy_failed", path=path, error=str(e))
+        _log.warning("write_proxy_failed", path=path, label=label, error=str(e))
         return JSONResponse(
             status_code=502,
-            content={"detail": "実行の転送に失敗しました (full instance へ到達できません)"},
+            content={"detail": "変更の転送に失敗しました (full instance へ到達できません)"},
         )
     _log.info(
-        "job_run_proxied",
+        "write_proxied",
         path=path,
+        label=label,
+        method=request.method,
         status=res.status_code,
         identity=identity.subject_hash,
     )
     return JSONResponse(status_code=res.status_code, content=payload)
+
+
+async def _proxy_job_run(request: Request, path: str, identity: Identity) -> JSONResponse:
+    """認証済みの即時実行を full instance へ転送する (readonly は scheduler 不在)。"""
+    return await _proxy_write(request, path, identity, label="job_run")
 
 
 def build_read_only_middleware(
@@ -268,7 +397,7 @@ def build_read_only_middleware(
             _record_audit(
                 request, event="tier1_write", subject_hash=identity.subject_hash, detail=path
             )
-            return await _proxy_job_run(path, identity)
+            return await _proxy_job_run(request, path, identity)
 
         if method == "POST" and is_read_only_allowed_post(path):
             # Access 未設定なら従来どおり匿名可 (段階導入で既存挙動を壊さない)
@@ -290,13 +419,31 @@ def build_read_only_middleware(
                         detail=f"credential_write_blocked:{path}",
                     )
                     return _forbidden("資格情報の変更はローカルでのみ可能です", request)
+                if not is_remote_writable(path):
+                    # 名簿に無い = ファイル由来か、遠隔で触らせたくないもの。
+                    # 記録は残す — 「遠隔で何をしようとしたか」は監査の一部。
+                    _record_audit(
+                        request,
+                        event="rejected",
+                        subject_hash=identity.subject_hash,
+                        detail=f"not_remote_writable:{method} {path}",
+                    )
+                    return _forbidden(
+                        "この変更はローカルでのみ可能です "
+                        "(設定ファイル・接続設定・資格情報は遠隔から変更できません)",
+                        request,
+                    )
+                # ⚠ **記録してから通す**。何を変更したか追えない遠隔 write は、
+                #    開いていないのと同じくらい危険 (事後に何が起きたか再構成できない)。
                 _record_audit(
                     request,
                     event="tier1_write",
                     subject_hash=identity.subject_hash,
                     detail=f"{method} {path}",
                 )
-                return await call_next(request)
+                # ⚠ ここで call_next してはいけない。readonly には scheduler が無く
+                #    config / prompts / .env は :ro なので、書けたつもりで落ちる。
+                return await _proxy_write(request, path, identity, label="remote_write")
             return _forbidden("read-only instance: write operations are blocked", request)
 
         if method in ("GET", "HEAD") and is_read_only_blocked_get(path):

@@ -584,15 +584,29 @@ kuebiko/
     - Tier1 の write は**ジョブ即時実行 1 つだけ**。readonly は scheduler を起動しないため、
       認証済みの `POST /api/v1/jobs/{id}/run` のみ full instance (`FULL_INSTANCE_URL`) へ
       narrow proxy する。**write の実行主体は常に full** で §12 の境界は不変。
-    - **遠隔 write の開閉 (2026-08-29、既定 off)**: `READ_ONLY_ALLOW_REMOTE_WRITE=1` で
-      認証済みの write を遠隔に開ける。将来「遠隔でもローカル同等に触りたい」場面に
-      備えた口で、**既定は閉じている**。開けると防御が「公開プロセスが write を
-      持たない」という構造から「Access の設定が正しいこと」へ移る — 開ける前に
-      その移動を理解していること。開いた場合でも:
-      ・資格情報 (`CREDENTIAL_WRITE_PATHS`: anthropic-key / claudecode-token /
-        endpoint-key) は **flag に関わらず遮断**。鍵の差し替えはローカルのみ
-      ・すべての遠隔 write を `access_audit` に記録してから通す。**追えない遠隔
-        write は開いていないのと同じくらい危険** (事後に何が起きたか再構成できない)
+    - **遠隔 write (2026-08-29 に開放、`READ_ONLY_ALLOW_REMOTE_WRITE=1`)**: 認証済みの
+      設定変更を遠隔から行えるようにした。既定値は 0 のままで、`.env` で明示的に開ける。
+      開けると防御が「公開プロセスが write を持たない」という構造から「Access の設定が
+      正しいこと」へ移る。その移動を、以下の 4 つで受け止めている:
+      - **線引きは書き先が DB かファイルか** (利用者判断)。DB 由来の運用設定は
+        版履歴が残り revert できる (`config_history._KNOWN_KEYS` がその名簿)。
+        ファイル由来 (.env / raw YAML / .j2 直編集 / actor_aliases.yaml /
+        Playwright state) は版管理が無く、readonly では :ro マウントで物理的にも
+        書けない。許可は `REMOTE_WRITE_ALLOWLIST` に **1 行ずつ明示**し、
+        **未登録は拒否** (fail-closed) — 見落としは「遠隔で書けない」に倒れる。
+        ⚠ 前方一致でまとめない。`/api/v1/channels` を前方一致で許すと
+        `/api/v1/channels/{id}/webhook` (資格情報) まで巻き込む
+      - **実行主体は常に full instance へ転送** (`_proxy_write`)。readonly 自身に
+        書かせると (a) scheduler 不在でジョブ計画の変更が届かない (b) :ro マウントで
+        ファイル書き込みが落ちる (c) §12 の構造が崩れる。転送なら readonly は
+        **口を持つだけで能力は持たない**
+      - 資格情報 (`CREDENTIAL_WRITE_PATHS`: anthropic-key / claudecode-token /
+        endpoint-key / ollama-url / channels の webhook) は **flag に関わらず遮断**。
+        webhook URL は URL の形をしているが**それ自体が資格情報**
+      - すべての遠隔 write を `access_audit` に記録してから通す。名簿に無い write の
+        拒否も記録する。**追えない遠隔 write は開いていないのと同じくらい危険**
+      frontend の `canEditOperationalConfig` は**表示上の出し分けにすぎない** —
+      遮断の実体は常にサーバ側の名簿 (`fullOnly` と同じ関係)
     - 認証は Cloudflare Access (`/auth/*` にのみ適用) の JWT を JWKS 検証 (`src/ui/services/cf_access.py`)。
       **fail-closed** (署名不正・期限切れ・aud/iss 不一致・鍵取得失敗はすべて未認証)。
       `.env` の `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` を消せば Tier1 が消えて従来挙動に戻る

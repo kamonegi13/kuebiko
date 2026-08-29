@@ -207,8 +207,16 @@ services:
       CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
       # ログアウト後の戻り先 (公開ニュースサイト。未設定なら /app/ へ戻る)
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
-      # 認証済み即時実行の転送先 (write の実行主体は常に full instance)
+      # 認証済み write の転送先 (write の実行主体は常に full instance)
       FULL_INSTANCE_URL: ${FULL_INSTANCE_URL:-http://kuebiko:8000}
+      # 遠隔 (Tier1) からの設定変更を許可するか。既定は 0 = 閉じる。
+      # ⚠ 開けると防御が「公開プロセスが write を持たない」構造から
+      #    「Access の設定が正しいこと」へ移る。開けた場合でも:
+      #    ・書けるのは DB 由来の運用設定だけ (REMOTE_WRITE_ALLOWLIST、未登録は拒否)
+      #    ・資格情報は flag に関わらず遮断
+      #    ・実行主体は full へ転送 (readonly は口だけ持ち能力は持たない)
+      #    ・すべて access_audit に記録してから通す
+      READ_ONLY_ALLOW_REMOTE_WRITE: ${READ_ONLY_ALLOW_REMOTE_WRITE:-0}
     volumes:
       # readonly side は config / prompts / .env を :ro でマウント (改変防止の二重防御)
       # data は SQLite WAL を共有のため :rw (read のみだが lock 用)

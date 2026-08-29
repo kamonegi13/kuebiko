@@ -13,7 +13,7 @@ import type {
   GroundedEstimate,
   GroundedJudgment,
 } from "../../api/types";
-import { useRuntimeFlags } from "../../hooks/useRuntimeFlags";
+import { canEditOperationalConfig, useRuntimeFlags } from "../../hooks/useRuntimeFlags";
 import { ConfidenceBadge } from "../ConfidenceBadge";
 import { intelHref } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
@@ -515,7 +515,7 @@ function SkeletonRows() {
 
 function SpotlightView() {
   const qc = useQueryClient();
-  const { read_only } = useRuntimeFlags();
+  const flags = useRuntimeFlags();
   const { data, isLoading } = useQuery({
     queryKey: ["spotlight-list", "rolling7"],
     queryFn: () => spotlightApi.list("rolling7"),
@@ -548,7 +548,7 @@ function SpotlightView() {
       {data && data.items.length > 0 && (
         <div className="space-y-4">
           {data.items.map((s) => (
-            <SpotlightCard key={s.pir_id} spotlight={s} qc={qc} readOnly={read_only} />
+            <SpotlightCard key={s.pir_id} spotlight={s} qc={qc} readOnly={!canEditOperationalConfig(flags)} />
           ))}
         </div>
       )}

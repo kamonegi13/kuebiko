@@ -273,7 +273,13 @@ class TestTier1Access:
 
     def test_runtime_flags_report_auth_state(self, access_client: TestClient) -> None:
         anon = access_client.get("/api/v1/runtime-flags").json()
-        assert anon == {"read_only": True, "authenticated": False, "auth_available": True}
+        assert anon == {
+            "read_only": True,
+            "authenticated": False,
+            "auth_available": True,
+            # 遠隔 write は既定で閉じている (2026-08-29)。
+            "remote_write": False,
+        }
         authed = access_client.get("/api/v1/runtime-flags", headers=_auth()).json()
         assert authed["authenticated"] is True
 
@@ -310,6 +316,7 @@ class TestJobRunProxy:
 
         class _FakeResponse:
             status_code = 200
+            content = b"{}"
 
             def json(self) -> dict[str, Any]:
                 return {"ok": True, "job_id": "direct-rss-fetch"}
@@ -324,7 +331,8 @@ class TestJobRunProxy:
             async def __aexit__(self, *args: Any) -> bool:
                 return False
 
-            async def post(self, url: str) -> _FakeResponse:
+            async def request(self, method: str, url: str, **kwargs: Any) -> _FakeResponse:
+                # 転送は request() 経由 (即時実行も設定変更も同じ口を通る)。
                 calls.append(url)
                 return _FakeResponse()
 
@@ -480,3 +488,85 @@ class TestRemoteWriteSwitch:
         res = read_only_client.post("/api/v1/config", json={})
         assert res.status_code == 403
         assert res.json()["detail"] == "read-only instance: write operations are blocked"
+
+
+class TestRemoteWrite:
+    """遠隔 (Tier1) からの設定変更 (READ_ONLY_ALLOW_REMOTE_WRITE=1)。
+
+    ⚠ 述語 (is_remote_writable) の単体テストとは別に、**middleware を通した結果**を
+       見る。関門を入れたら「通した結果」を実際に測る (2026-08-22 の教訓)。
+    """
+
+    @pytest.fixture
+    def proxied(self, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+        import httpx
+
+        calls: list[tuple[str, str]] = []
+
+        class _Res:
+            status_code = 200
+            content = b"{}"
+
+            def json(self) -> dict[str, Any]:
+                return {"ok": True}
+
+        class _Client:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, *args: Any) -> bool:
+                return False
+
+            async def request(self, method: str, url: str, **kwargs: Any) -> _Res:
+                calls.append((method, url))
+                return _Res()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        monkeypatch.setenv("READ_ONLY_ALLOW_REMOTE_WRITE", "1")
+        monkeypatch.setenv("FULL_INSTANCE_URL", "http://kuebiko:8000")
+        return calls
+
+    def test_db_backed_write_is_proxied_to_full(
+        self, access_client: TestClient, proxied: list[tuple[str, str]]
+    ) -> None:
+        res = access_client.post("/api/v1/match-lists", json={"x": 1}, headers=_auth())
+        assert res.status_code == 200
+        # ⚠ 実行主体は常に full。readonly 自身で処理してはいけない
+        #    (scheduler が無く config は :ro なので、書けたつもりで落ちる)。
+        assert proxied == [("POST", "http://kuebiko:8000/api/v1/match-lists")]
+
+    def test_file_backed_write_is_not_proxied(
+        self, access_client: TestClient, proxied: list[tuple[str, str]]
+    ) -> None:
+        res = access_client.post("/api/v1/config/env", json={"x": 1}, headers=_auth())
+        assert res.status_code == 403
+        assert proxied == []
+
+    def test_credential_write_blocked_regardless_of_flag(
+        self, access_client: TestClient, proxied: list[tuple[str, str]]
+    ) -> None:
+        for path in (
+            "/api/v1/model-tiers/anthropic-key",
+            "/api/v1/channels/alert/webhook",
+        ):
+            assert access_client.post(path, json={}, headers=_auth()).status_code == 403
+        assert proxied == []
+
+    def test_anonymous_write_rejected_even_when_open(
+        self, access_client: TestClient, proxied: list[tuple[str, str]]
+    ) -> None:
+        assert access_client.post("/api/v1/match-lists", json={"x": 1}).status_code == 403
+        assert proxied == []
+
+    def test_db_backed_write_rejected_when_flag_closed(
+        self, access_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """既定 (0) では従来どおり全 write が 403。開放は明示的な操作でのみ起きる。"""
+        monkeypatch.setenv("READ_ONLY_ALLOW_REMOTE_WRITE", "0")
+        assert (
+            access_client.post("/api/v1/match-lists", json={"x": 1}, headers=_auth()).status_code
+            == 403
+        )

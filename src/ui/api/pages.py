@@ -182,6 +182,9 @@ def runtime_flags(request: Request) -> dict[str, Any]:
     - ``authenticated`` / ``auth_available``: Cloudflare Access の Tier1 状態
       (2026-08-01)。認証済みなら fullOnly ページの閲覧と即時実行を UI で解放する。
       判定の実体は middleware (src/ui/read_only_policy.py) 側にあり、ここは表示用。
+    - ``remote_write``: 遠隔からの設定変更が開いているか (2026-08-29)。開いていても
+      書けるのは DB 由来の運用設定だけ。**画面はこれを「隠すか出すか」にしか使わない** —
+      遮断の実体は常にサーバ側の名簿 (REMOTE_WRITE_ALLOWLIST)。
     """
     import os as _os
 
@@ -189,10 +192,17 @@ def runtime_flags(request: Request) -> dict[str, Any]:
 
     read_only = _os.environ.get("READ_ONLY", "0").strip() in ("1", "true", "yes", "on")
     authenticated, auth_available = request_auth_state(request)
+    remote_write = _os.environ.get("READ_ONLY_ALLOW_REMOTE_WRITE", "0").strip() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     return {
         "read_only": read_only,
         "authenticated": authenticated,
         "auth_available": auth_available,
+        "remote_write": remote_write,
     }
 
 
