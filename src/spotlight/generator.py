@@ -26,7 +26,16 @@ _log = get_logger(__name__)
 
 _PROMPT_TEMPLATE = "spotlight/pir_spotlight.j2"
 _CANDIDATE_LIMIT = 30  # LLM に渡す article 候補数 (prompt サイズ制御)
-_KEY_EVENTS_MIN = 1
+#: この件数を下回る PIR は **生成しない**。
+#:
+#: ⭐ 旧値は 1 だった。Spotlight の形式は「主要事象 5-8 件 + 見通し 600-1000 字」で、
+#: 1-2 件の記事からこれを求めると **LLM は埋める**。材料が無いのに形式だけ満たさせるのは、
+#: 過確信を生む最短経路 (証拠駆動 synthesis で繰り返し問題になった型)。
+#: 5 件 = プロンプトが求める主要事象の下限。下回るときは黙って欠かさず、
+#: 「材料不足」として記録する (runner の skipped_no_matches)。
+#: 実測 (2026-08-29、7 日窓): 20 PIR 中 17 件が 5 件以上を確保。届かないのは
+#: apt_leak (2) / apt_attribution (0) / emergency_alerts (2) の 3 件。
+_KEY_EVENTS_MIN = 5
 _KEY_EVENTS_MAX = 10
 
 
@@ -76,6 +85,11 @@ def _resolve_period(
     day_start = base_jst.replace(hour=0, minute=0, second=0, microsecond=0)
     if period_type == "daily":
         start_jst = day_start
+        end_jst = day_start + timedelta(days=1)
+    elif period_type == "rolling7":
+        # 直近 7 日。period_start は当日 00:00 なので、毎日 1 行ずつ増え、
+        # 同じ日に再生成すれば同じ行へ UPSERT される。
+        start_jst = day_start - timedelta(days=7)
         end_jst = day_start + timedelta(days=1)
     elif period_type == "monthly":
         # 案2: 完結した前月 (1 日未明実行)。period_start=前月1日 / period_end=当月1日。

@@ -205,20 +205,25 @@ pipelines:
     extract_min_length: 200
     target_language: ja
 - name: pir-spotlight
-  # 案2: 月 09:00 → 月 03:30 (深夜)。最も重い 31B×5PIR (~45分)、朝に読む必要なし。
-  # _resolve_period prev-period 化で月曜未明実行でも前週を覆う。weekly-synthesis(02:45) の後に連鎖。
+  # 毎日 03:30 に **直近 7 日** を作り直す (2026-08-29 に週次から変更)。
+  #
+  # なぜ 7 日窓を毎日か: 日次窓では材料が足りない。実測で 20 PIR 中 7 件は
+  # 1 日あたり 0〜2.6 件しか該当が無く、Spotlight の形式 (主要事象 5-8 件 +
+  # 見通し 600-1000 字) を求めると LLM が埋める。7 日窓なら 17 件が 5 件以上を
+  # 確保できる。週次との違いは鮮度 — 週次は最大 7 日古い。
+  #
+  # 費用: 実測 90 秒/PIR。全 20 PIR で ~30 分。深夜帯に収まる。
   schedule:
     enabled: true
     hour: 3
     minute: 30
-    day_of_week: mon
   source:
     type: pir_spotlight
     max_articles: 1
     digest_lookback_hours: 168
     digest_max_items: 1
     synthesis_periods:
-    - weekly
+    - rolling7
   processor:
     extract_method: trafilatura
     extract_min_length: 200

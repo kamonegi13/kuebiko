@@ -517,8 +517,8 @@ function SpotlightView() {
   const qc = useQueryClient();
   const { read_only } = useRuntimeFlags();
   const { data, isLoading } = useQuery({
-    queryKey: ["spotlight-list", "weekly"],
-    queryFn: () => spotlightApi.list("weekly"),
+    queryKey: ["spotlight-list", "rolling7"],
+    queryFn: () => spotlightApi.list("rolling7"),
   });
 
   return (

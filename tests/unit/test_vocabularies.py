@@ -231,16 +231,19 @@ def test_period_type_matches_all_backend_constants() -> None:
     """period_type の複数分散定数がすべて vocab と一致する (SSoT 未指定の drift 検出)。"""
     from src.pir.models import SpotlightWindow
     from src.scheduler.job_recovery import Cadence
-    from src.spotlight.models import SpotlightPeriod
+    from src.spotlight.models import SPOTLIGHT_ONLY_PERIODS, SpotlightPeriod
     from src.synthesis.runner import _VALID_PERIODS
 
     vocab = get_vocabulary("period_type")
     assert vocab is not None
     keys = set(vocab.values())
-    assert set(_VALID_PERIODS) == keys
+    # Spotlight は語彙の全値を持つ (専用の rolling7 を含む)。
     assert set(get_args(SpotlightPeriod)) == keys
-    assert set(get_args(SpotlightWindow)) == keys
-    assert set(get_args(Cadence)) == keys
+    # 他は共有部分だけ。専用値がこちらへ紛れ込んでいないことも同時に確認する。
+    shared = keys - set(SPOTLIGHT_ONLY_PERIODS)
+    assert set(_VALID_PERIODS) == shared
+    assert set(get_args(SpotlightWindow)) == shared
+    assert set(get_args(Cadence)) == shared
 
 
 def test_article_type_matches_backend_literal() -> None:

@@ -241,10 +241,14 @@ _REGISTRY: dict[str, Vocabulary] = {
     ),
     # period_type: 運用語 (日本語)。backend は複数定数 (_VALID_PERIODS/SpotlightPeriod/
     # SpotlightWindow/Cadence) に分散、値は共通。test が全定数の一致を確認する。
+    #
+    # ⚠ rolling7 は **Spotlight 専用**で共有ではない (2026-08-29)。synthesis の期間にも
+    # ジョブの周期にも存在しない。ラベルの SSoT はここ 1 箇所なので語彙には載せるが、
+    # 共有の意味からは外れることを SPOTLIGHT_ONLY_PERIODS で明示する。
     "period_type": _vocab(
         "period_type",
-        {"daily": "日次", "weekly": "週次", "monthly": "月次"},
-        canonical=frozenset({"daily", "weekly", "monthly"}),
+        {"daily": "日次", "rolling7": "直近 7 日", "weekly": "週次", "monthly": "月次"},
+        canonical=frozenset({"daily", "rolling7", "weekly", "monthly"}),
     ),
     # transport: ソースの取得方式。RSS/Atom は CTI/tech 語彙で英語維持、他は日本語。
     # atom は表示上の変種で TransportT (rss/sitemap/html_scraper) には無いため canonical に加える。

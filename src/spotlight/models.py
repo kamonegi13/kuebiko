@@ -7,7 +7,18 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SpotlightPeriod = Literal["daily", "weekly", "monthly"]
+#: rolling7 = **直近 7 日を毎日作り直す**窓 (2026-08-29)。
+#:
+#: ⭐ 日次の窓では材料が足りない。実測で 20 PIR 中 7 件は 1 日あたり 0〜2.6 件しか
+#: 該当が無く (中国 APT 2.6 / 北朝鮮 1.9 / ロシア 1.1)、Spotlight の形式
+#: (主要事象 5〜8 件 + 見通し 600〜1000 字) を求めると LLM が埋める。
+#: 7 日窓なら 20 件中 17 件が 5 件以上を確保できる。
+#: 週次との違いは鮮度 — 週次は最大 7 日古いが、rolling7 は毎日作り直す。
+SpotlightPeriod = Literal["daily", "rolling7", "weekly", "monthly"]
+
+#: Spotlight だけが持つ period。synthesis の期間にもジョブの周期にも存在しない。
+#: 語彙との一致テストは、この集合を差し引いてから他の定数と突き合わせる。
+SPOTLIGHT_ONLY_PERIODS: frozenset[str] = frozenset({"rolling7"})
 
 
 class KeyEvent(BaseModel):

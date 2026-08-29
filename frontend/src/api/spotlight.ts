@@ -20,7 +20,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export type SpotlightPeriod = "daily" | "weekly" | "monthly";
+export type SpotlightPeriod = "daily" | "rolling7" | "weekly" | "monthly";
 
 export interface SourceBasis {
   confidence: "high" | "medium" | "low";
@@ -60,12 +60,13 @@ export interface SpotlightListResponse {
   items: SpotlightSummary[];
 }
 
+// 既定は rolling7 (毎日作り直す直近 7 日)。週次は最大 7 日古いので既定に据えない。
 export const spotlightApi = {
-  list: (period_type: SpotlightPeriod = "weekly") =>
+  list: (period_type: SpotlightPeriod = "rolling7") =>
     getJson<SpotlightListResponse>(`/api/v1/spotlight?period_type=${period_type}`),
-  get: (pir_id: string, period_type: SpotlightPeriod = "weekly") =>
+  get: (pir_id: string, period_type: SpotlightPeriod = "rolling7") =>
     getJson<SpotlightSummary>(`/api/v1/spotlight/${encodeURIComponent(pir_id)}?period_type=${period_type}`),
-  regenerate: (pir_id: string, period_type: SpotlightPeriod = "weekly", model?: string) =>
+  regenerate: (pir_id: string, period_type: SpotlightPeriod = "rolling7", model?: string) =>
     postJson<SpotlightSummary>(`/api/v1/spotlight/${encodeURIComponent(pir_id)}/regenerate`, {
       period_type,
       model,

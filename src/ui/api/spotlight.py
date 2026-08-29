@@ -29,7 +29,13 @@ _log = get_logger(__name__)
 spotlight_api = APIRouter(prefix="/api/v1/spotlight", tags=["spotlight"])
 
 # period_type (生 enum) → UI 表示用の日本語ラベル。
-_PERIOD_LABELS: dict[str, str] = {"daily": "日次", "weekly": "週次", "monthly": "月次"}
+# ⚠ 生 enum を画面へ直接出さない (UI 文言規約)。新しい period を足したらここへ 1 行。
+_PERIOD_LABELS: dict[str, str] = {
+    "daily": "日次",
+    "rolling7": "直近 7 日",
+    "weekly": "週次",
+    "monthly": "月次",
+}
 
 
 class SourceBasisView(BaseModel):
@@ -108,7 +114,8 @@ class SpotlightListResponse(BaseModel):
 
 
 @spotlight_api.get("", response_model=SpotlightListResponse)
-def list_spotlights(period_type: SpotlightPeriod = "weekly") -> SpotlightListResponse:
+# 既定は rolling7 (毎日作り直す直近 7 日)。週次は最大 7 日古いので既定に据えない。
+def list_spotlights(period_type: SpotlightPeriod = "rolling7") -> SpotlightListResponse:
     """全 PIR の最新 Spotlight を取得 (UI 一覧用)。"""
     repo = RunHistoryRepository()
     kev_set = get_kev_cve_set()

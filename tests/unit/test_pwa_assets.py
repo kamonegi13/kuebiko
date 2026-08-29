@@ -108,9 +108,13 @@ def test_manifest_scope_matches_vite_base() -> None:
     manifest = _manifest()
 
     # Assert
-    # base は静的ビルド (公開サイト) と通常ビルド (運用画面) で分岐する。
+    # base は静的配信 (公開サイト / 写し) と通常ビルド (運用画面) で分岐する。
     # PWA は運用画面のものなので、**通常ビルド側が /app/ であること**を見る。
-    assert 'base: process.env.VITE_PUBLIC_STATIC === "1" ? "/" : "/app/"' in vite_config
+    # ⚠ 文字列の完全一致で見ると、静的配信の条件が増えるたびに落ちる (写しを
+    # 足したときに実際に落ちた)。見るべきは「既定が /app/ であること」だけ。
+    base_expr = vite_config[vite_config.index("base:") : vite_config.index("build:")]
+    assert '"/app/"' in base_expr
+    assert 'VITE_PUBLIC_STATIC === "1"' in base_expr
     assert manifest["start_url"] == "/app/"
     # ⚠ scope は `/app/` **より広く**取る。ログイン経路 (`/auth/login`) が scope の外に
     # あると、iOS は PWA から別のブラウザ表示へ切り替えて戻らない (2026-08-26 実測)。
