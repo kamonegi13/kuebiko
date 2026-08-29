@@ -468,6 +468,12 @@ const _VERDICT_TONE: Record<string, string> = {
 };
 
 function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy }) {
+  // ⚠ 過去の採点は既定で畳む。全件描くと 241 件で 35,848px (33 画面) になり、
+  //   先頭にあるはずの的中率と今期の予測が埋もれる (2026-08-29 実測)。
+  //   **件数は畳んでいても常に出す** — 説明責任の面なので、隠していること自体は
+  //   見えていなければならない。
+  const [showPast, setShowPast] = useState(false);
+  const past = tc.forecast_scorecard ?? [];
   return (
     <div id="syn-forecast" className="bg-surface-1 border border-border-subtle rounded-lg p-4 mb-5 scroll-mt-24">
       <h4 className="m-0 mb-3 text-md text-fg font-semibold tracking-tight flex items-center gap-2">
@@ -494,24 +500,6 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
           </span>
         )}
       </h4>
-      {tc.forecast_scorecard && tc.forecast_scorecard.length > 0 && (
-        <div className="mb-3">
-          <div className="text-[13px] font-semibold mb-1.5 text-fg-subtle">前期予測の採点</div>
-          <ul className="m-0 p-0 list-none space-y-1.5">
-            {tc.forecast_scorecard.map((s, i) => (
-              <li key={i} className="text-sm text-fg leading-snug">
-                <span
-                  className={`text-[12px] font-bold mr-1.5 ${_VERDICT_TONE[s.verdict] ?? "text-fg-muted"}`}
-                >
-                  {vocabLabel("forecast_verdict", s.verdict)}
-                </span>
-                {s.claim}
-                {s.reason && <span className="text-fg-subtle text-xs">（{s.reason}）</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {tc.forecasts && tc.forecasts.length > 0 && (
         <div>
           <div className="text-[13px] font-semibold mb-1.5 text-accent-hover">今期の予測 (次期に採点)</div>
@@ -523,6 +511,32 @@ function ForecastScorecard({ tc, acc }: { tc: Tradecraft; acc?: ForecastAccuracy
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {past.length > 0 && (
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setShowPast((v) => !v)}
+            className="text-[13px] font-semibold mb-1.5 text-fg-muted hover:text-fg bg-transparent border-0 p-0 cursor-pointer"
+          >
+            過去の採点 {past.length} 件 {showPast ? "を閉じる" : "の内訳を見る"}
+          </button>
+          {showPast && (
+            <ul className="m-0 p-0 list-none space-y-1.5">
+              {past.map((s, i) => (
+                <li key={i} className="text-sm text-fg leading-snug">
+                  <span
+                    className={`text-[12px] font-bold mr-1.5 ${_VERDICT_TONE[s.verdict] ?? "text-fg-muted"}`}
+                  >
+                    {vocabLabel("forecast_verdict", s.verdict)}
+                  </span>
+                  {s.claim}
+                  {s.reason && <span className="text-fg-subtle text-xs">（{s.reason}）</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
