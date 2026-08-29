@@ -119,7 +119,6 @@ export function EventNewsPage() {
   });
 
   const items = data?.items ?? [];
-  const openItem = items.find((i) => i.id === openId) ?? null;
   const set = (patch: Partial<typeof q>) => setQ((prev) => ({ ...prev, ...patch }));
 
   // 記事側の絞り込みが 1 つでも効いているか (解除ボタンの出し分け)
@@ -344,7 +343,9 @@ export function EventNewsPage() {
       <Drawer
         isOpen={openId !== null}
         onClose={() => setOpenId(null)}
-        title={openItem?.headline ?? "事象"}
+        // ⚠ ドロワーの題に見出しを入れない。中身の側にも見出しが出るので
+        //    同じ文が 2 回並ぶ (公開ページは「記事」と総称にしている)。
+        title="事象ニュース"
         widthClass="md:w-[46rem]"
         mobileGutter
         swipeToClose

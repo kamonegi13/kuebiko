@@ -129,7 +129,8 @@ function BodySection({
     : `本文 (抽出済 ${(body ?? "").length.toLocaleString()} 字${bodyJa ? "・日本語訳あり" : ""})`;
 
   return (
-    <details className="bg-surface-1 border border-border-subtle rounded-lg p-4" open>
+    // 要約と同じく枠で囲わない。読む面は罫線と余白で区切る (公開ページと同じ)。
+    <details className="border-t border-border-subtle pt-3" open>
       <summary
         className={`text-xs uppercase cursor-pointer select-none ${isStump ? "text-warning" : "text-fg-muted"}`}
       >
@@ -329,25 +330,12 @@ export function ArticleReadView({
         </div>
       </div>
 
-      {/* Diamond 軸 + 判定メタ / エンティティ — 描画は共有コンポーネント
-          (components/analysis/*) に一本化する。事象ニュース側で同じカードを
-          書き直したら行の並びもラベルもズレたため (2026-08-24)。 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <JudgementCard j={judgement} />
-        <EntitySection
-          subjectActors={a.subject_actors}
-          subjectActorSource={a.subject_actor_source}
-          subjectActorRationale={a.subject_actor_rationale}
-          groups={entityGroups}
-          stixArticleId={a.article_id}
-        />
-      </div>
-
-      {/* 要約 */}
+      {/* 要約 — 公開ページと同じ扱い。**見出しの次に来る** (読み手が最初に読むもの)。
+          淡い面に載せて本文と区別する。 */}
       {a.summary && (
-        <div className="bg-surface-1 border border-border-subtle rounded-lg p-4">
-          <div className="text-fg-muted text-xs uppercase mb-2">要約</div>
-          <p className="text-sm text-fg leading-relaxed whitespace-pre-wrap">{a.summary}</p>
+        <div className="bg-surface-2/60 rounded-lg p-4">
+          <div className="text-fg-subtle text-[12px] font-semibold mb-1.5">要約</div>
+          <p className="m-0 text-[15px] text-fg leading-[1.85] whitespace-pre-wrap">{a.summary}</p>
         </div>
       )}
 
@@ -361,6 +349,22 @@ export function ArticleReadView({
         sourceUrl={a.url ?? null}
         fullFlow={variant === "peek"}
       />
+
+      {/* 分析メタ (Diamond 判定 / エンティティ) は **本文の後**。
+          公開ページと同じく、読むものを先に置く — 判定の箱を先頭に積むと
+          記事に辿り着く前に分析画面を読まされる (2026-08-29 利用者指摘)。
+          描画は共有コンポーネント (components/analysis/*) に一本化する。
+          事象ニュース側で同じカードを書き直したら行の並びもラベルもズレたため。 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <JudgementCard j={judgement} />
+        <EntitySection
+          subjectActors={a.subject_actors}
+          subjectActorSource={a.subject_actor_source}
+          subjectActorRationale={a.subject_actor_rationale}
+          groups={entityGroups}
+          stixArticleId={a.article_id}
+        />
+      </div>
     </div>
   );
 }

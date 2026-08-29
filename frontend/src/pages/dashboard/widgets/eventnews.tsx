@@ -30,7 +30,6 @@ export function EventNewsWidget({ config }: WidgetProps) {
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);
-  const openItem = items.find((i) => i.id === openId) ?? null;
 
   return (
     <WidgetCard title="事象ニュース" href="/app/eventnews" linkLabel="すべて →">
@@ -63,7 +62,9 @@ export function EventNewsWidget({ config }: WidgetProps) {
       <Drawer
         isOpen={openId !== null}
         onClose={() => setOpenId(null)}
-        title={openItem?.headline ?? "事象"}
+        // ⚠ ドロワーの題に見出しを入れない。中身の側にも見出しが出るので
+        //    同じ文が 2 回並ぶ (公開ページは「記事」と総称にしている)。
+        title="事象ニュース"
         widthClass="md:w-[46rem]"
         mobileGutter
         swipeToClose
