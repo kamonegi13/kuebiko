@@ -43,6 +43,7 @@ function BodySection({
   bodyJa,
   bodySource,
   extractionFailureReason,
+  sourceUrl,
   fullFlow = false,
 }: {
   articleId: string;
@@ -50,6 +51,8 @@ function BodySection({
   bodyJa: string | null;
   bodySource: string | null;
   extractionFailureReason: string | null;
+  /** 原文の所在。写しは本文を持たないので、そこへ案内する。 */
+  sourceUrl: string | null;
   /** true = 本文を個別スクロールさせず全文フロー表示 (サイドピーク: パネルが単一スクロール) */
   fullFlow?: boolean;
 }) {
@@ -86,7 +89,26 @@ function BodySection({
     },
   });
 
-  if (!body && !bodyJa) return null;
+  if (!body && !bodyJa) {
+    // 写しは原文を持たない (収集した記事は再配布しない方針)。**黙って欄ごと消さない** —
+    // 取得に失敗したのか、そもそも写していないのかを読み手が区別できなくなる。
+    if (import.meta.env.VITE_MIRROR === "1") {
+      return (
+        <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3 text-sm text-fg-muted">
+          本文は写しに含まれません。
+          {sourceUrl && (
+            <>
+              {" "}
+              <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+                元記事を開く
+              </a>
+            </>
+          )}
+        </div>
+      );
+    }
+    return null;
+  }
   // 翻訳進行中は訳せた先頭部分を先に読めるようにする (完訳で bodyJa に置き換わる)
   const text = showJa && bodyJa ? bodyJa : (partialText ?? body ?? bodyJa ?? "");
   // body_ja='' は「処理済・訳不要 (原文が日本語)」の番兵 — 翻訳 UI 自体を出さない。
@@ -336,6 +358,7 @@ export function ArticleReadView({
         bodyJa={a.body_ja}
         bodySource={a.body_source}
         extractionFailureReason={a.extraction_failure_reason}
+        sourceUrl={a.url ?? null}
         fullFlow={variant === "peek"}
       />
     </div>

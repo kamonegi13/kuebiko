@@ -20,6 +20,24 @@ function notMirrored(path: string): Response {
   });
 }
 
+/** API の path → 写しのファイル。
+ *
+ *  書き出し側 (export_mirror.py) の置き場と **対で** 決まる。片方だけ変えると
+ *  「取得できませんでした」の形で表に出る。
+ *  一覧の絞り込みは写しでは効かない (条件ごとにファイルを持つと組み合わせ爆発する)
+ *  ため、全件を返してブラウザ側で絞る。 */
+async function locate(pathname: string): Promise<string | null> {
+  const detail = pathname.match(/^\/api\/v1\/(articles|eventnews)\/([^/]+)$/);
+  if (detail) {
+    const id = decodeURIComponent(detail[2]);
+    return `${DATA_BASE}/${detail[1]}/${await fileName(id)}.json`;
+  }
+  if (pathname === "/api/v1/articles") return `${DATA_BASE}/articles.json`;
+  if (pathname === "/api/v1/eventnews") return `${DATA_BASE}/eventnews.json`;
+  // 絞り込みを持たない参照データ (語彙・チャンネル等)。
+  return `${DATA_BASE}/api/${await fileName(pathname)}.json`;
+}
+
 export function installMirrorFetch(): void {
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
@@ -31,9 +49,10 @@ export function installMirrorFetch(): void {
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (method !== "GET") return notMirrored(path);
 
-    // 絞り込みを持たない参照データだけを写している。問い合わせ文字列は落とす。
     const pathname = path.split("?")[0];
-    const r = await original(`${DATA_BASE}/api/${await fileName(pathname)}.json`);
+    const file = await locate(pathname);
+    if (!file) return notMirrored(pathname);
+    const r = await original(file);
     // 静的配信の取りこぼしは 200 + HTML で返ってくる。中身で判定する。
     if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) {
       return notMirrored(pathname);
