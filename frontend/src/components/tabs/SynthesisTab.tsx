@@ -15,6 +15,7 @@ import type {
 } from "../../api/types";
 import { canEditOperationalConfig, useRuntimeFlags } from "../../hooks/useRuntimeFlags";
 import { ConfidenceBadge } from "../ConfidenceBadge";
+import { SectionHeading } from "../SectionHeading";
 import { intelHref } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
 
@@ -51,11 +52,12 @@ function GlobalSynthesisView() {
   return (
     <div>
       {/* 期間 (日/週/月) の切替は上部コントロールバー (Shell) が担う。 */}
-      <div className="mb-3 px-1 flex items-baseline justify-between flex-wrap gap-2">
-        <h3 className="m-0 text-lg font-bold text-fg tracking-tight">全体</h3>
-        {/* 目次は撤去 (2026-08-29)。飛び先の 3/5 は別の面へ移った — 面をまたぐ
-            アンカーは無言で効かなくなるので、残さず消す。 */}
-      </div>
+      {/* 目次は撤去 (2026-08-29)。飛び先の 3/5 は別の面へ移った — 面をまたぐ
+          アンカーは無言で効かなくなるので、残さず消す。 */}
+      <SectionHeading
+        title="全体"
+        note={data?.latest ? `${formatJstDate(data.latest.period_start)} 〜 ${formatJstDate(data.latest.period_end)}` : undefined}
+      />
 
       {isLoading && <SkeletonRows />}
 
@@ -75,30 +77,30 @@ function GlobalSynthesisView() {
       {data?.has_data && data.latest && (
         <>
           {/* Hero */}
-          <div className="bg-accent-subtle border border-accent-soft border-l-[3px] border-l-accent rounded-lg p-5 mb-5">
-            <div className="text-[13px] text-accent-hover uppercase tracking-wider font-semibold mb-1.5">見出し</div>
-            <div className="text-md leading-[1.8] text-fg">{data.latest.headline}</div>
-            <div className="mt-2.5 text-[13px] text-fg-subtle flex flex-wrap gap-3.5">
-              <span><strong className="text-fg-muted font-semibold">期間:</strong> {formatJstDate(data.latest.period_start)} 〜 {formatJstDate(data.latest.period_end)}</span>
+          {/* リード。公開ページの「注目」と同じ扱い — ラベルを付けず、見出しそのものを
+              大きく出す。素性 (件数・生成時刻) は下に小さく添える。 */}
+          <div className="mb-5">
+            <p className="m-0 text-[19px] leading-[1.75] font-bold text-fg">{data.latest.headline}</p>
+            <div className="mt-2 text-[12px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-1">
               <span>
-                <strong className="text-fg-muted font-semibold">根拠:</strong> {data.latest.article_count} 記事
+                根拠 {data.latest.article_count} 記事
                 {data.tradecraft?.grounded_estimate?.considered_count
                   ? ` / 考慮 ${data.tradecraft.grounded_estimate.considered_count}`
                   : ""}
               </span>
-              <span><strong className="text-fg-muted font-semibold">生成:</strong> {formatJst(data.latest.generated_at)}</span>
-              <span><strong className="text-fg-muted font-semibold">モデル:</strong> <code className="text-[13px]">{data.latest.llm_model}</code></span>
+              <span>{formatJst(data.latest.generated_at)}</span>
+              <span>{data.latest.llm_model}</span>
             </div>
           </div>
 
           {/* Sections — 2 カラム grid。行内のカード高さは stretch で揃える (隙間ガタつき防止)。
               奇数個の最後 (6. PIR) は全幅 + 内部 2 段組で空きスロットを作らない。 */}
-          <div id="syn-narrative" className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 scroll-mt-24">
-            <Section title="2. 軸別の重みと不均衡" body={data.latest.weight_section} />
-            <Section title="3. 軸間連鎖の解釈" body={data.latest.chain_section} />
-            <Section title="4. 重心 (Center of Gravity)" body={data.latest.cog_section} />
-            <Section title="5. 波及解釈 (中期予想)" body={data.latest.spillover_section} />
-            <Section title="6. PIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
+          <div id="syn-narrative" className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1 mb-5 scroll-mt-24">
+            <Section title="軸別の重みと不均衡" body={data.latest.weight_section} />
+            <Section title="軸間連鎖の解釈" body={data.latest.chain_section} />
+            <Section title="重心" body={data.latest.cog_section} />
+            <Section title="波及解釈 (中期予想)" body={data.latest.spillover_section} />
+            <Section title="PIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
           </div>
 
           {/* 根拠と点検はここに置かない (面が違う)。主張から辿れる導線だけ残す。 */}
@@ -216,8 +218,10 @@ function Section({ title, body, className = "", columns = false }: {
   columns?: boolean;
 }) {
   return (
-    <div className={`bg-surface-1 border border-border-subtle rounded-lg p-4 transition-colors hover:border-border-default ${className}`}>
-      <h4 className="m-0 mb-2.5 text-[13px] text-accent-hover uppercase tracking-wider font-semibold pb-1.5 border-b border-border-subtle">{title}</h4>
+    // 枠を並べるのではなく **区切り線で節を切る** (公開ページと同じ)。箱が 5 つ
+    // 並ぶと、どれも同じ重さに見えて読み進む手掛かりが無くなる。
+    <div className={`border-t border-border-subtle pt-3 ${className}`}>
+      <h4 className="m-0 mb-2 text-[13px] text-fg-muted font-semibold tracking-wide">{title}</h4>
       <SynthesisProse text={body} columns={columns} />
     </div>
   );
@@ -606,15 +610,7 @@ function SpotlightView() {
 
   return (
     <div>
-      <div className="flex justify-between items-baseline mb-4 px-1 flex-wrap gap-2">
-        <div>
-          <h3 className="m-0 text-lg font-bold text-fg tracking-tight">PIR ごと</h3>
-          <p className="m-0 mt-1 text-fg-muted text-xs">
-            関心 (PIR) を切り口にした縦断のまとめ。直近 7 日を毎日 04:50 JST に作り直す。
-          </p>
-        </div>
-        <span className="text-fg-subtle text-xs">該当の多い順</span>
-      </div>
+      <SectionHeading title="PIR 別の動向" note="直近 7 日 · 該当の多い順" />
 
       {isLoading && <SkeletonRows />}
 
@@ -628,14 +624,15 @@ function SpotlightView() {
       )}
 
       {items.length > 0 && (
-        <div className="space-y-4">
-          {items.map((s, i) => (
+        // 2 カラムの格子 (公開ページと同じ密度)。1 カラムで縦に積むと、
+        // 20 件では「並べているだけ」になり全体を見渡せない。
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+          {items.map((s) => (
             <SpotlightCard
               key={s.pir_id}
               spotlight={s}
               qc={qc}
               readOnly={!canEditOperationalConfig(flags)}
-              defaultOpen={i === 0}
             />
           ))}
         </div>
@@ -648,18 +645,16 @@ function SpotlightCard({
   spotlight: s,
   qc,
   readOnly,
-  defaultOpen,
 }: {
   spotlight: SpotlightSummary;
   qc: ReturnType<typeof useQueryClient>;
   readOnly: boolean;
-  /** 一覧の先頭 (該当が最も多い PIR) だけ開いて置く。全部閉じていると空に見える。 */
-  defaultOpen?: boolean;
 }) {
   const [showCompare, setShowCompare] = useState(false);
-  // ⚠ 既定は畳む。全 20 PIR を開いたまま並べると 20 画面ぶんになり、
-  //   「一覧できる」が成立しない。見出しは 150-280 字あるので畳んでも中身は分かる。
-  const [open, setOpen] = useState<boolean>(defaultOpen ?? false);
+  // ⚠ **全件畳んだ状態が既定** (2026-08-29 利用者指示)。1 枚だけ開いて置くと、
+  //   その 1 件だけ扱いが違って見え、格子の並びも崩れる。
+  //   見出しは 150-280 字あるので、畳んでいても中身は分かる。
+  const [open, setOpen] = useState(false);
 
   const regenMain = useMutation({
     mutationFn: (model?: string) => spotlightApi.regenerate(s.pir_id, "rolling7", model),
@@ -667,30 +662,35 @@ function SpotlightCard({
   });
 
   return (
-    <div className="bg-surface-1 border border-border-subtle rounded-lg p-4">
-      {/* Header */}
-      <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
-        <h4 className="m-0 text-md font-bold text-fg">{s.pir_title}</h4>
-        <div className="flex items-center gap-2 text-[13px] text-fg-subtle">
-          <span>該当 {s.article_count} 件</span>
-          <span>·</span>
-          <span>{formatJst(s.generated_at)}</span>
-          <a href={`/app/pir/${encodeURIComponent(s.pir_id)}`} className="text-fg-muted hover:text-accent-hover no-underline ml-1">→ PIR</a>
-        </div>
+    // 公開ページの記事カードと同じ組み立て: 小さなラベル → 太い見出し → 灰色の本文。
+    <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 hover:border-border-default">
+      {/* ラベル行 (公開ページの「● カテゴリ」に相当) */}
+      <div className="flex items-center gap-2 mb-1.5 text-[12px]">
+        <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" aria-hidden />
+        <a
+          href={`/app/pir/${encodeURIComponent(s.pir_id)}`}
+          className="font-semibold text-accent hover:text-accent-hover no-underline"
+        >
+          {s.pir_title}
+        </a>
+        <span className="flex-1" />
+        <span className="text-fg-subtle tnum">該当 {s.article_count} 件</span>
       </div>
 
-      {/* Headline — 畳んでいてもここは常に出す (これが一覧の中身) */}
-      <div className="bg-accent-subtle border-l-[3px] border-l-accent rounded p-3 mb-3">
-        <div className="text-fg text-base leading-relaxed">{s.headline}</div>
-      </div>
+      {/* 見出し — 畳んでいても常に出す。これが一覧の中身。 */}
+      <p className="m-0 mb-2 text-[15px] font-bold leading-[1.7] text-fg">{s.headline}</p>
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="mb-3 text-[13px] text-accent hover:text-accent-hover bg-transparent border-0 p-0 cursor-pointer"
-      >
-        {open ? "閉じる" : `続きを読む (主要事象 ${s.key_events.length} 件と見通し)`}
-      </button>
+      <div className="flex items-baseline gap-2 text-[12px] mb-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-accent hover:text-accent-hover bg-transparent border-0 p-0 cursor-pointer"
+        >
+          {open ? "閉じる" : `続きを読む · 主要事象 ${s.key_events.length} 件`}
+        </button>
+        <span className="flex-1" />
+        <span className="text-fg-subtle">{formatJst(s.generated_at)}</span>
+      </div>
 
       {open && (
         <>
@@ -727,8 +727,8 @@ function SpotlightCard({
         </>
       )}
 
-      {/* Regenerate controls (LLM 比較用) */}
-      {!readOnly && (
+      {/* 再生成は運用操作。読み物の一覧で毎カード見えると邪魔なので、開いたときだけ出す。 */}
+      {!readOnly && open && (
         <div className="mt-3 pt-3 border-t border-border-subtle flex items-center gap-2 text-xs">
           <button
             onClick={() => setShowCompare((v) => !v)}
