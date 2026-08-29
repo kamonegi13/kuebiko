@@ -18,6 +18,7 @@ import { vocabLabel } from "../hooks/useVocab";
 import { Sel, SINCE_OPTS, useFacetOptions, VendorInput } from "../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
+import { PAGE_TITLE } from "../components/headings";
 
 // 事象の重要度は複数指定 (カンマ区切り) を使うため、記事側の IMPORTANCE_OPTS とは別定義。
 // 既定は high+medium — low まで出すと単独報の低重要度が一覧を埋める。
@@ -141,7 +142,7 @@ export function EventNewsPage() {
   return (
     <div className={`${pageContainer("wide")} space-y-4`}>
       <div>
-        <h2 className="m-0 text-xl font-bold text-fg tracking-tight">事象ニュース</h2>
+        <h2 className={PAGE_TITLE}>事象ニュース</h2>
         <p className="text-fg-muted text-sm mt-1">
           収集した記事を事象単位で読む。複数媒体が報じた事象は 1 本に統合して生成し、新しい記事が加わると更新される。単独報はその記事をそのまま読める。
           <a href="/app/news" className="text-fg-subtle hover:text-accent ml-1 underline">
@@ -152,7 +153,7 @@ export function EventNewsPage() {
 
       {/* 絞り込みバー。選択肢はニュース検索と共有 (components/news/facets.tsx)。
           検索だけは Enter 確定 — 打鍵ごとに走らせると記事を最大 2,000 件走査する。 */}
-      <div className="md:sticky md:top-12 z-20 bg-surface-1/90 backdrop-blur-md border border-border-subtle rounded-lg p-2.5 flex flex-wrap items-center gap-2">
+      <div className="md:sticky md:top-12 z-20 bg-bg/95 backdrop-blur-md border-b border-border-subtle -mx-4 px-4 md:mx-0 md:px-0 py-2 flex flex-wrap items-center gap-2">
         <input
           value={term}
           onChange={(e) => setTerm(e.target.value)}

@@ -12,6 +12,7 @@ import { pageContainer, PageHeader } from "../components/Page";
 import { MarkdownText } from "../components/MarkdownText";
 import { formatJst } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
+import { SUBHEAD } from "../components/headings";
 import { WeeklyRetrospectView } from "./brief/WeeklyRetrospectView";
 import type {
   BriefContextResponse,
@@ -197,7 +198,7 @@ function StructuredBrief({ payload }: { payload: DailyBriefPayload }) {
           )}
           {syn.sections.map((s) => (
             <section key={s.key} className="space-y-1.5">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-muted m-0">
+              <h4 className={SUBHEAD}>
                 {s.label}
               </h4>
               <MarkedText text={s.text} />
@@ -208,7 +209,7 @@ function StructuredBrief({ payload }: { payload: DailyBriefPayload }) {
       )}
       {payload.pir.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-muted m-0 border-t border-border-subtle pt-3">
+          <h4 className={`${SUBHEAD} border-t border-border-subtle pt-3`}>
             PIR Daily Focus — {payload.pir.length} 領域 (24h)
           </h4>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">

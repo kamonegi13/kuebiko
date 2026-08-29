@@ -121,19 +121,23 @@ export function WidgetCard({ title, href, linkLabel, children }: { title: string
   // 内側に描画されて他ページ (ページ全体スクロール = 右端) と食い違って見える。
   // スクロール要素をカード幅いっぱいにし、内容だけを px で inset する。
   return (
-    <div className={`${TILE_CHROME} py-4 h-full flex flex-col min-h-0`}>
-      <div className="flex items-baseline justify-between mb-3 shrink-0 px-4">
+    // ⚠ 枠が無いときは padding を詰める。枠があった頃の padding は「枠と中身の
+    //   間隔」だったが、平らにするとただの空きになり、内容どうしが遠くなる
+    //   (2026-08-29 利用者指摘)。グリッドの margin (12px) が既に tile を分けている。
+    //   カスタマイズ中は枠が出るので、そのときだけ元の余裕に戻す。
+    <div className={`${TILE_CHROME} py-1.5 [[data-dash-editing]_&]:py-4 h-full flex flex-col min-h-0`}>
+      <div className="flex items-baseline justify-between mb-2 shrink-0 px-1.5 [[data-dash-editing]_&]:px-4">
         <h3 className="m-0 text-sm font-semibold text-fg">{title}</h3>
         {href && <a href={href} className="text-accent text-xs hover:underline shrink-0 ml-2">{linkLabel || "詳細 →"}</a>}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4">{children}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-1.5 [[data-dash-editing]_&]:px-4">{children}</div>
     </div>
   );
 }
 export function WidgetShell({ children }: { children: ReactNode }) {
   // h-full: 座標グリッドの tile (固定高さ) を枠まで満たす。auto 文脈 (mobile) では中身の高さ。
   // 超過分は内部スクロール (背景/枠は tile に固定)。
-  return <div className={`${TILE_CHROME} p-3 h-full overflow-y-auto`}>{children}</div>;
+  return <div className={`${TILE_CHROME} p-1.5 [[data-dash-editing]_&]:p-3 h-full overflow-y-auto`}>{children}</div>;
 }
 export function Loading() {
   return <div className="text-fg-subtle text-sm italic">読み込み中…</div>;

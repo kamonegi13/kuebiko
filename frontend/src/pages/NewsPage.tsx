@@ -26,6 +26,7 @@ import { useChannelMeta } from "../components/channel";
 import { vocabLabel } from "../hooks/useVocab";
 import { sectorLabel } from "../components/geo/sectorColors";
 import { countryLabel } from "../utils/countryLabels";
+import { PAGE_TITLE } from "../components/headings";
 
 // 構造化エンティティ (CVE/IP/ドメイン/ハッシュ) を検出 → 逆引きへ自動ルート。
 function detectEntity(raw: string): { type: string; value: string } | null {
@@ -240,11 +241,11 @@ export function NewsPage() {
   return (
     <div className={`${pageContainer("wide")} space-y-4`}>
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
-        <h2 className="m-0 text-xl font-bold text-fg tracking-tight">ニュース・検索</h2>
+        <h2 className={PAGE_TITLE}>ニュース・検索</h2>
         <span className="text-xs text-fg-subtle">{headerCount} 件{busy ? " · 更新中…" : ""}</span>
       </div>
 
-      <div className={`md:sticky md:top-12 z-20 bg-surface-1/90 backdrop-blur-md border border-border-subtle rounded-lg p-2.5 flex flex-wrap items-center gap-2`}>
+      <div className="md:sticky md:top-12 z-20 bg-bg/95 backdrop-blur-md border-b border-border-subtle -mx-4 px-4 md:mx-0 md:px-0 py-2 flex flex-wrap items-center gap-2">
         <input
           value={searchRaw}
           onChange={(e) => onSearchInput(e.target.value)}
