@@ -44,10 +44,16 @@ import {
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
 const CARD_LABEL = "text-fg-muted text-xs uppercase";
 
-// 読む面 (要約 / 要点 / 本文) は枠で囲わない。単独記事のドロワーと同じ扱いにする
-// — 統合記事だけ箱のままだと、同じ画面で 2 つの様式が並ぶ (2026-08-29 利用者指摘)。
-const READ_PANEL = "bg-surface-2/60 rounded-lg p-4";
-const READ_LABEL = "text-fg-subtle text-[12px] font-semibold";
+// 読む面の様式は **公開ページ (PublicNewsSite の LeadSummary / KeyPoints) と同じ**。
+// 要約は灰の面、要点はアクセントの面で、どちらも枠を持つ — 拾い読みで目に入る
+// ようにするための区別なので、外すと役目を失う (2026-08-29 利用者指摘で戻した)。
+const SUMMARY_PANEL = "rounded-lg border border-border-subtle bg-surface-2 px-4 py-3.5";
+const SUMMARY_LABEL = "text-[13px] font-semibold tracking-wide text-fg-subtle";
+const POINTS_PANEL = "rounded-lg border border-accent/25 bg-accent/[0.06] px-4 py-3.5";
+const POINTS_LABEL = "text-[13px] font-semibold tracking-wide text-accent";
+// 本文に続く補足 (但し書き / 相違 / 未確認)。要約と同じ地だが、ラベルは控えめ。
+const READ_PANEL = SUMMARY_PANEL;
+const READ_LABEL = SUMMARY_LABEL;
 
 /** 裏取り = 独立媒体数。記事数では表さない (docs/event_news_design.md §3-3)。 */
 export function SourceChip({
@@ -368,18 +374,19 @@ export function EventNewsDetailBody({ id }: { id: string }) {
         <>
           {/* ⚠ ラベルは公開面と揃える。BLUF は散文の**要約**、箇条書きが**要点**で
               別物 (2026-08-25 利用者指摘)。片方だけ「要点」と呼ぶと語が割れる。 */}
-          <div className={READ_PANEL}>
-            <div className={`${READ_LABEL} mb-1.5`}>要約 (kuebiko 生成)</div>
-            <p className="m-0 text-[15px] text-fg leading-[1.85] whitespace-pre-wrap">{d.news.bluf}</p>
+          <div className={SUMMARY_PANEL}>
+            <p className={`${SUMMARY_LABEL} m-0 mb-1.5`}>要約 (kuebiko 生成)</p>
+            <p className="m-0 text-[17px] leading-[1.85] text-fg whitespace-pre-wrap">{d.news.bluf}</p>
           </div>
 
           {(d.news.key_points ?? []).length > 0 && (
-            <div className={READ_PANEL}>
-              <div className={`${READ_LABEL} mb-1.5`}>要点</div>
-              <ul className="m-0 pl-4 space-y-1.5">
+            <div className={POINTS_PANEL}>
+              <p className={`${POINTS_LABEL} m-0 mb-2`}>要点</p>
+              <ul className="m-0 p-0 list-none space-y-1.5">
                 {(d.news.key_points ?? []).map((point, i) => (
-                  <li key={i} className="text-[15px] text-fg leading-[1.8]">
-                    {point}
+                  <li key={i} className="flex gap-2 text-[16px] leading-[1.85] text-fg">
+                    <span aria-hidden className="mt-[0.55em] size-1.5 shrink-0 rounded-full bg-accent/70" />
+                    <span>{point}</span>
                   </li>
                 ))}
               </ul>

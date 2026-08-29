@@ -330,12 +330,12 @@ export function ArticleReadView({
         </div>
       </div>
 
-      {/* 要約 — 公開ページと同じ扱い。**見出しの次に来る** (読み手が最初に読むもの)。
-          淡い面に載せて本文と区別する。 */}
+      {/* 要約 — 様式は **公開ページ (PublicNewsSite の LeadSummary) と同じ**。
+          枠付きの灰面で、拾い読みでも目に入るようにする。見出しの次に来る。 */}
       {a.summary && (
-        <div className="bg-surface-2/60 rounded-lg p-4">
-          <div className="text-fg-subtle text-[12px] font-semibold mb-1.5">要約</div>
-          <p className="m-0 text-[15px] text-fg leading-[1.85] whitespace-pre-wrap">{a.summary}</p>
+        <div className="rounded-lg border border-border-subtle bg-surface-2 px-4 py-3.5">
+          <p className="m-0 mb-1.5 text-[13px] font-semibold tracking-wide text-fg-subtle">要約</p>
+          <p className="m-0 text-[17px] leading-[1.85] text-fg whitespace-pre-wrap">{a.summary}</p>
         </div>
       )}
 
