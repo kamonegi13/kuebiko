@@ -20,14 +20,14 @@ afterEach(() => {
 
 describe("写しの帯", () => {
   it("ライブでは何も出さない", () => {
-    vi.stubEnv("VITE_OPS_MIRROR", "");
+    vi.stubEnv("VITE_MIRROR", "");
     const { container } = renderBanner();
     expect(container.textContent).toBe("");
   });
 
   it("写しではいつ時点かを出す", async () => {
     // ⚠ これが無いと古い情報をライブと見分けられない。写しの前提そのもの。
-    vi.stubEnv("VITE_OPS_MIRROR", "1");
+    vi.stubEnv("VITE_MIRROR", "1");
     vi.stubGlobal("fetch", async () => ({
       ok: true,
       json: async () => ({
@@ -45,7 +45,7 @@ describe("写しの帯", () => {
 
   it("素性が読めなくても黙らない", async () => {
     // 写しなのに「写し」と言えない状態が一番危ない
-    vi.stubEnv("VITE_OPS_MIRROR", "1");
+    vi.stubEnv("VITE_MIRROR", "1");
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 404, statusText: "Not Found" }));
     renderBanner();
     await waitFor(() => expect(screen.getByText(/保存された写しです/)).toBeTruthy());

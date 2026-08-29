@@ -139,4 +139,4 @@ prompts/_persona_local.j2*
 
 # wrangler の作業ディレクトリ (ローカルの一時状態)
 /.wrangler/
-data/ops_mirror_dist/
+data/mirror_dist/

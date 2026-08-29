@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 運用画面の写しを 3 時間ごとに書き出して配信する LaunchAgent。
 #
-#   bash scripts/install_ops_mirror_launchagent.sh
-#   bash scripts/install_ops_mirror_launchagent.sh --uninstall
+#   bash scripts/install_mirror_launchagent.sh
+#   bash scripts/install_mirror_launchagent.sh --uninstall
 #
 # 間隔を 3 時間にした理由 (2026-08-29):
 #   Pages の配信回数には無料枠があり、毎時だと月 720 回で超える見込み。
@@ -11,9 +11,9 @@
 #   足りなければ間隔を詰める — 判断材料は access_audit と実際の不便さ。
 set -euo pipefail
 
-LABEL="com.cti.kuebiko-ops-mirror"
+LABEL="com.cti.kuebiko-mirror"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-LOG="$HOME/Library/Logs/kuebiko-ops-mirror.log"
+LOG="$HOME/Library/Logs/kuebiko-mirror.log"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
@@ -39,7 +39,7 @@ cat >| "$PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>${REPO}/scripts/deploy_ops_mirror.sh</string>
+    <string>${REPO}/scripts/deploy_mirror.sh</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO}</string>
   <!-- 3 時間ごとの :50。収集 (:00) と事象ニュース生成 (:20) の後に回すことで、

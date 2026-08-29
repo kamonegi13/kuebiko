@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Archive } from "lucide-react";
-import { fetchMirrorMeta } from "../api/opsMirrorStatic";
+import { fetchMirrorMeta } from "../api/mirrorStatic";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 
 /** 「これは写しである」を常時出す帯。
@@ -9,10 +9,10 @@ import { formatJstDate, relativeFromNow } from "../utils/date";
  *  いつの状態を見ているか判断できない。Mac に到達できないときの継続が目的なので、
  *  「古い」こと自体は問題ではない — **古いと分からないこと**が問題。
  *
- *  写しビルドでのみ描く。ライブでは何も出さない (VITE_OPS_MIRROR で切り替わる)。
+ *  写しビルドでのみ描く。ライブでは何も出さない (VITE_MIRROR で切り替わる)。
  */
 export function MirrorBanner() {
-  const mirror = import.meta.env.VITE_OPS_MIRROR === "1";
+  const mirror = import.meta.env.VITE_MIRROR === "1";
   const { data, isError } = useQuery({
     queryKey: ["mirror-meta"],
     queryFn: fetchMirrorMeta,

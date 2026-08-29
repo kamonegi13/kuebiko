@@ -9,7 +9,7 @@ import type { ArticleFeedResponse } from "./articles";
 import type { EventNewsDetail, EventNewsListItem } from "./eventnews";
 
 /** 書き出したデータの置き場 (ページの基底に対する相対)。 */
-const DATA_BASE = import.meta.env.VITE_OPS_DATA || "/data";
+const DATA_BASE = import.meta.env.VITE_MIRROR_DATA || "/data";
 
 /** 写しの素性。画面はこれを読んで「○○時点の写し」を常時出す。
  *  無いとライブと見分けが付かず、いつの情報を見ているか判断できない。 */

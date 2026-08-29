@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 運用画面の写しを **ローカルで確認する** (配信しない)。
 #
-#   scripts/preview_ops_mirror.sh [--skip-export] [--port 8788]
+#   scripts/preview_mirror.sh [--skip-export] [--port 8788]
 #
 # ⚠ 試作中に毎回 Pages へ上げると配信回数の無料枠を食う (2026-08-29 利用者指摘。
 #    実測: 公開サイトだけで 1 日 25 回配信していた)。**ローカルで通してから
@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST="$ROOT/data/ops_mirror_dist"
+DIST="$ROOT/data/mirror_dist"
 PORT=8788
 SKIP_EXPORT=0
 while [ $# -gt 0 ]; do
@@ -24,8 +24,8 @@ done
 
 if [ "$SKIP_EXPORT" = "0" ]; then
   rm -rf "$DIST/data"
-  uv run --directory "$ROOT" python "$ROOT/scripts/export_ops_mirror.py" \
-    --base-url "${OPS_MIRROR_SOURCE:-http://127.0.0.1:8001}" --out "$DIST/data"
+  uv run --directory "$ROOT" python "$ROOT/scripts/export_mirror.py" \
+    --base-url "${MIRROR_SOURCE:-http://127.0.0.1:8001}" --out "$DIST/data"
 fi
 
 echo
