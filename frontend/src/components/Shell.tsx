@@ -81,7 +81,11 @@ function renderTabControls(
       return (
         <>
           <Seg items={VIEWS} value={f.synthesisView} onChange={f.setSynthesisView} />
-          {f.synthesisView === "read" && (
+          {/* ⚠ 読む面では期間をここに置かない。期間で変わるのは全体総括だけで、
+              PIR 別の動向は常に直近 7 日 — 画面上部に置くと「全部が切り替わる」と
+              読めてしまう (2026-08-29 利用者指摘)。全体の節見出しへ移した。
+              根拠・点検は面ぜんぶが期間に従うので、ここで切り替える。 */}
+          {f.synthesisView !== "read" && (
             <Seg items={PERIODS} value={f.period_type} onChange={f.setPeriodType} />
           )}
         </>
@@ -130,7 +134,9 @@ function ControlBar({ children }: { children: React.ReactNode }) {
 }
 
 // 汎用 segmented control (期間 / view / op など)。
-function Seg<T extends string>({
+/** 区分の切替 (期間・面など)。読む面の期間切替からも使うので export する
+ *  — 同じ見た目のものを 2 つ持つと、片方だけ直したときにずれる。 */
+export function Seg<T extends string>({
   items,
   value,
   onChange,

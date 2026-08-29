@@ -2,7 +2,7 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
-import { useFilters } from "../../state/filters";
+import { useFilters, type PeriodType } from "../../state/filters";
 import { SynthesisProse } from "../SynthesisProse";
 import { formatJst, formatJstDate } from "../../utils/date";
 import { spotlightApi, type SpotlightSummary, type SourceBasis } from "../../api/spotlight";
@@ -16,6 +16,8 @@ import type {
 import { canEditOperationalConfig, useRuntimeFlags } from "../../hooks/useRuntimeFlags";
 import { ConfidenceBadge } from "../ConfidenceBadge";
 import { SectionHeading } from "../SectionHeading";
+import { Seg } from "../Shell";
+import { useHorizontalSwipe } from "../../hooks/useHorizontalSwipe";
 import { intelHref } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
 
@@ -42,6 +44,13 @@ function ReadView() {
   );
 }
 
+//: 期間の並び (フリックの前後もこの順)。
+const PERIODS: { v: PeriodType; label: string }[] = [
+  { v: "daily", label: "日次" },
+  { v: "weekly", label: "週次" },
+  { v: "monthly", label: "月次" },
+];
+
 function GlobalSynthesisView() {
   const f = useFilters();
   const { data, isLoading } = useQuery({
@@ -49,14 +58,34 @@ function GlobalSynthesisView() {
     queryFn: () => api.synthesis(f.period_type),
   });
 
+  // モバイルは左右フリックでも切り替える (小さい画面で切替を探させない)。
+  const step = (d: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.v === f.period_type);
+    const next = PERIODS[Math.min(PERIODS.length - 1, Math.max(0, i + d))];
+    if (next) f.setPeriodType(next.v);
+  };
+  const swipeRef = useHorizontalSwipe<HTMLDivElement>({
+    onNext: () => step(1),
+    onPrev: () => step(-1),
+  });
+
+  const periodLabel = PERIODS.find((p) => p.v === f.period_type)?.label ?? "";
+
   return (
-    <div>
+    <div ref={swipeRef}>
       {/* 期間 (日/週/月) の切替は上部コントロールバー (Shell) が担う。 */}
       {/* 目次は撤去 (2026-08-29)。飛び先の 3/5 は別の面へ移った — 面をまたぐ
           アンカーは無言で効かなくなるので、残さず消す。 */}
+      {/* 期間の切替は **この節の中** に置く。変わるのは全体総括だけで、
+          PIR 別の動向は常に直近 7 日 — 画面上部に置くと全部が切り替わると読める。 */}
       <SectionHeading
-        title="全体"
-        note={data?.latest ? `${formatJstDate(data.latest.period_start)} 〜 ${formatJstDate(data.latest.period_end)}` : undefined}
+        title={`${periodLabel}総括`}
+        note={
+          data?.latest
+            ? `${formatJstDate(data.latest.period_start)} 〜 ${formatJstDate(data.latest.period_end)}`
+            : undefined
+        }
+        action={<Seg items={PERIODS} value={f.period_type} onChange={f.setPeriodType} />}
       />
 
       {isLoading && <SkeletonRows />}
@@ -610,7 +639,9 @@ function SpotlightView() {
 
   return (
     <div>
-      <SectionHeading title="PIR 別の動向" note="直近 7 日 · 該当の多い順" />
+      {/* 期間の切替に従わないことを、節の側で明示する
+          (上で日次/週次を選んでもここは変わらない — 黙って据え置くと故障に見える)。 */}
+      <SectionHeading title="PIR 別の動向" note="直近 7 日で固定 · 該当の多い順" />
 
       {isLoading && <SkeletonRows />}
 

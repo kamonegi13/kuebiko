@@ -15,8 +15,12 @@
 
 import { useEffect, useRef, type RefObject } from "react";
 
-const DIRECTION_LOCK_PX = 6; // これ未満の移動では方向をまだ確定しない
-const DIRECTION_LOCK_RATIO = 2; // |dx| > RATIO * |dy| を「水平優勢」とみなす
+import {
+  DIRECTION_LOCK_PX,
+  DIRECTION_LOCK_RATIO,
+  startsInsideScrollRoom,
+} from "./swipeGeometry";
+
 const CLOSE_RATIO_THRESHOLD = 0.3; // パネル幅に対する移動量の閾値 (30%)
 const CLOSE_VELOCITY_PX_MS = 0.5; // 離す瞬間の速度閾値 (px/ms)
 const SNAP_BACK_TRANSITION_MS = 200;
@@ -29,23 +33,6 @@ export interface UseSwipeToCloseOptions {
 }
 
 type DragPhase = "idle" | "pending" | "swiping" | "rejected";
-
-function isHorizontallyScrollable(el: Element): boolean {
-  if (el.scrollWidth <= el.clientWidth) return false;
-  const overflowX = window.getComputedStyle(el).overflowX;
-  return overflowX === "auto" || overflowX === "scroll";
-}
-
-/** タッチ開始点から boundary まで祖先を辿り、「横スクロール可能かつ左へスクロール
- * 余地がある (scrollLeft > 0)」要素があるか調べる。 */
-function startsInsideScrollRoom(target: Element | null, boundary: Element): boolean {
-  let node: Element | null = target;
-  while (node && node !== boundary) {
-    if (isHorizontallyScrollable(node) && node.scrollLeft > 0) return true;
-    node = node.parentElement;
-  }
-  return false;
-}
 
 export function useSwipeToClose<T extends HTMLElement>(
   options: UseSwipeToCloseOptions,
@@ -86,7 +73,8 @@ export function useSwipeToClose<T extends HTMLElement>(
         return;
       }
       const touch = e.touches[0];
-      if (startsInsideScrollRoom(e.target as Element | null, el)) {
+      // 右フリックで閉じる = 左へスクロールする操作と競合する。競合する向きだけ譲る。
+      if (startsInsideScrollRoom(e.target as Element | null, el, "right")) {
         phase = "rejected";
         return;
       }
