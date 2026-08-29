@@ -54,6 +54,10 @@ function operatorLoginUrl(): string {
   return loginUrl(import.meta.env.VITE_OPERATOR_ORIGIN || "");
 }
 
+/** 写し (Cloudflare Pages) の入口。未設定なら導線を出さない。
+ *  運用画面と **別のアカウントで入る**面なので、URL も別ホストになる。 */
+const MIRROR_URL: string = import.meta.env.VITE_MIRROR_ORIGIN || "";
+
 /** カテゴリの表示名。どの category を束ねるかの定義も表示名も backend が持つ。
  *
  * 静的配信 (Cloudflare Pages) では語彙 API を読めないので、書き出しに同梱された
@@ -312,17 +316,27 @@ function SiteFooter() {
           掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
           各記事の出典をご確認ください。
         </p>
-        <p>
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {/* ⚠ 着地点は `/auth/login`。`/auth/` は Access の保護対象ではあるが
               アプリにルートが無く、**認証を通過した直後に 404 になる**
               (2026-08-26 実測)。運用画面は別ホスト (tunnel 経由) にあるので
-              絶対 URL で指す — 静的配信の公開サイトには運用画面が無い。 */}
+              絶対 URL で指す — 静的配信の公開サイトには運用画面が無い。
+
+              ⭐ **導線を 2 つ出す理由**: 運用画面は Mac に届かないと開けない。
+              公開サイトは Pages 配信で Mac の状態に依存しないため、ここが
+              「Mac が落ちているときでも必ず開ける集合場所」になる。片方しか
+              置かないと、落ちているときに写しへ辿り着けない (2026-08-29)。 */}
           <a
             href={operatorLoginUrl()}
             className="hover:text-accent underline underline-offset-2"
           >
-            運用者ログイン
+            運用画面 (最新)
           </a>
+          {MIRROR_URL && (
+            <a href={MIRROR_URL} className="hover:text-accent underline underline-offset-2">
+              保存された写し
+            </a>
+          )}
         </p>
       </div>
     </footer>

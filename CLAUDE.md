@@ -546,6 +546,22 @@ kuebiko/
   - **例外: readonly mobile 公開 (Phase Diamond verify-mobile)**: 別 service `readonly` を `127.0.0.1:8002:8000` で起動 (full instance とは別 container、`READ_ONLY=1` 環境変数)。FastAPI middleware が POST/PUT/PATCH/DELETE を **すべて 403** で block。Cloudflare Tunnel が `127.0.0.1:8002` のみを HTTPS で外部公開し、外部から到達できるのは **閲覧専用 API のみ**。write 不可は公開プロセス側で保証 (認証ゲートではなく、80 本のハンドラに
     到達する **前** の関門。⚠ DB・config ボリュームは full と共有しているので
     「物理的隔離」ではない — 正確には「公開されているプロセスが write を受け付けない」)。詳細手順は [docs/mobile-access.md](docs/mobile-access.md)
+  - **層は「鮮度の契約」で分ける (2026-08-29 再定義)**。認証の強さではなく、
+    *いつ時点の情報か* が層を決める。アカウントも層ごとに分ける (Access のポリシーは
+    ホスト名単位なので、写し用と運用用で別アカウントを当てられる):
+    | 層 | 面 | 鮮度 | 到達 |
+    |---|---|---|---|
+    | Tier0 | 公開記事 (Pages) | 3 時間ごと | 匿名 |
+    | Tier1 | 写し (Pages) | 3 時間ごと | Access (写し用アカウント) |
+    | Tier2 | リアルタイム | 常に最新 | 127.0.0.1 / tunnel (運用アカウント) |
+    - **Tier1 は Mac 不達時の継続**が目的。ライブの代わりではない。画面上部に
+      「○○時点の写し」を常時出す (`MirrorBanner`) — **古いことではなく、古いと
+      分からないことが危険**。書き出しは `scripts/export_ops_mirror.py`
+    - tunnel は**層ではなく到達手段**。Tier2 に遠隔から届くための経路で、
+      畳まない (将来の遠隔 write 要件と、写せない情報 — host-watchdog の
+      現在状態など — のために要る)
+    - **公開サイトが集合場所**。Pages 配信なので Mac の状態に依存せず、
+      運用画面と写しの両方への導線を置く。片方だけだと落ちているとき辿り着けない
   - **公開 instance の到達範囲は 3 層 (2026-08-01)**。SSoT は `src/ui/read_only_policy.py` **1 箇所**:
     **Tier0 匿名** = 閲覧系 read API と SPA / **Tier1 認証済み (Cloudflare Access)** = 運用系 read API
     (`READ_ONLY_GET_DENYLIST`: ジョブ計画・設定・プロンプト・ルーティング・レビューキュー) の閲覧 +

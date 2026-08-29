@@ -906,6 +906,15 @@ describe("運用者ログインの導線", () => {
     expect(siteSource).not.toContain('href="/auth/"');
   });
 
+  it("Mac が落ちていても写しへ辿り着ける導線がある", () => {
+    // 公開サイトは Pages 配信で Mac の状態に依存しないため、ここが
+    // 「落ちているときでも必ず開ける集合場所」になる。運用画面への導線しか
+    // 無いと、落ちているときに写しへ辿り着けない (2026-08-29)。
+    expect(siteSource).toContain("VITE_MIRROR_ORIGIN");
+    expect(siteSource).toContain("保存された写し");
+    expect(siteSource).toContain("運用画面 (最新)");
+  });
+
   it("運用画面のオリジンをビルド時に差し込める", () => {
     // 静的配信 (Pages) には運用画面が無いので、tunnel 側のホストを指す必要がある
     expect(siteSource).toContain("VITE_OPERATOR_ORIGIN");
