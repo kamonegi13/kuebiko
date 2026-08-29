@@ -5,12 +5,13 @@ src.main から分割。
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast, get_args
 
 from src.config_loader import AppConfig, PipelineConfig
 from src.logging_config import get_logger
 from src.pipeline.publish import _build_publishers
 from src.pipeline.result import PipelineRunResult
+from src.spotlight.models import SpotlightPeriod
 from src.storage.run_history import RunHistoryRepository
 from src.tools.channel_registry import push_map
 from src.tools.discord_publisher import BriefingMessage, Source
@@ -464,6 +465,29 @@ async def _run_daily_brief_default(
     return PipelineRunResult(total_fetched=len(sections), summarized=1, posted=1, errors=[])
 
 
+def _resolve_spotlight_period(pipeline: PipelineConfig) -> SpotlightPeriod:
+    """pipelines.yaml の ``source.synthesis_periods`` から period を決める。
+
+    ⚠ **許可値は SpotlightPeriod (SSoT) から導出する。**固定タプルで持つと、
+    新しい period を足したときに宣言が黙って捨てられ既定へ落ちる — 2026-08-30 に
+    ``rolling7`` でこれを踏み、毎日 04:50 の実行が週次を作り続けていた。
+    宣言があるのに 1 つも通らないときは警告を残す (静かな故障にしない)。
+    """
+    declared = list(pipeline.source.synthesis_periods or [])
+    allowed = set(get_args(SpotlightPeriod))
+    for p in declared:
+        if p in allowed:
+            return cast(SpotlightPeriod, p)
+    if declared:
+        _log.warning(
+            "spotlight_period_unknown",
+            declared=declared,
+            allowed=sorted(allowed),
+            fallback="weekly",
+        )
+    return "weekly"
+
+
 async def _run_pir_spotlight_default(
     *,
     config: AppConfig,
@@ -489,18 +513,11 @@ async def _run_pir_spotlight_default(
         timeout_seconds=600.0,
     )
     repo: RunHistoryRepository | None = None if dry_run else RunHistoryRepository()
-    # pipelines.yaml の source.synthesis_periods で period_type を override 可能
-    # (未指定なら weekly)
-    period = "weekly"
-    if pipeline.source.synthesis_periods:
-        for p in pipeline.source.synthesis_periods:
-            if p in ("daily", "weekly", "monthly"):
-                period = p
-                break
+    period = _resolve_spotlight_period(pipeline)
     result = await run_pir_spotlights(
         llm=llm,
         repo=repo,
-        period_type=period,  # type: ignore[arg-type]
+        period_type=period,
     )
     # Phase 2 K6: 生成済 spotlight を watch に配信 (dry-run は永続化しないので対象外)。
     if not dry_run and repo is not None:
