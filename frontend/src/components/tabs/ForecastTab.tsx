@@ -3,6 +3,7 @@ import { api } from "../../api/client";
 import { intentLabel } from "../../utils/diamond";
 import { vocabLabel } from "../../hooks/useVocab";
 import type { CorrelationPair, EntityTrend, ForecastResponse } from "../../api/types";
+import { SectionHeading } from "../SectionHeading";
 
 // scope+value を表示名に (intent は日本語ラベル、actor 等は value)。
 function entityLabel(scope: string, value: string): string {
@@ -82,13 +83,13 @@ function TrendRow({ t }: { t: EntityTrend }) {
   );
 }
 
+// 節は箱で囲わず、見出し + 罫線で切る (公開サイトと同じ)。
+// 中の行は自前の区切り線を持つので、外枠が無くても要素の切れ目は残る。
 function Panel({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-surface-1 border border-border-subtle rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-surface-2 border-b border-border-subtle">
-        <div className="text-fg text-sm font-semibold">{title}</div>
-        {hint && <div className="text-fg-subtle text-[13px] mt-0.5">{hint}</div>}
-      </div>
+    <div>
+      <SectionHeading title={title} />
+      {hint && <p className="m-0 -mt-1.5 mb-2 text-[13px] text-fg-subtle">{hint}</p>}
       {children}
     </div>
   );
