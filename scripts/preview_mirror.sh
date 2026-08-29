@@ -22,10 +22,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$SKIP_EXPORT" = "0" ]; then
-  rm -rf "$DIST/data"
-  uv run --directory "$ROOT" python "$ROOT/scripts/export_mirror.py" \
-    --base-url "${MIRROR_SOURCE:-http://127.0.0.1:8001}" --out "$DIST/data"
+# 確認用も配信用と **同じ組み立て** を通す。
+if [ "$SKIP_EXPORT" = "1" ]; then
+  bash "$ROOT/scripts/build_mirror.sh" --skip-export
+else
+  bash "$ROOT/scripts/build_mirror.sh"
 fi
 
 echo

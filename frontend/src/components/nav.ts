@@ -22,6 +22,12 @@ export interface NavLink {
   // full instance 専用 (主目的が編集/操作のページ)。readonly instance (Cloudflare 公開)
   // では write が全て 403 のため、メニューに出さない (機能しない項目を見せない)。
   fullOnly?: boolean;
+  /** 写し (Cloudflare Pages) に含める画面。**書き出したデータがある画面だけ** true。
+   *
+   *  ⚠ 印が無い画面を写しのナビに残すと、データが無いまま開いて読み込み中のまま
+   *  固まる (2026-08-29 実測: 着地先のダッシュボードがこれで固まっていた)。
+   *  写しへ画面を足すときは export_mirror.py の書き出しと必ず同時に印を付ける。 */
+  mirror?: boolean;
 }
 
 export interface NavGroup {
@@ -51,7 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // 同一事象の複数報道を束ね、**ツールが生成した**読み物。収集物そのものではなく
       // 生成された分析なので コンテンツ ではなく インテリジェンス に置く
       // (収集 = コンテンツ / 生成 = インテリジェンス の区分)。
-      { href: "/app/eventnews", label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
+      { href: "/app/eventnews", mirror: true, label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
       // 分析チャット (2026-07-12): 自然言語でデータ照会 → 簡易レポート。
       // read-only ツールのみのため readonly instance でも利用可 (2026-07-19 allowlist 化)
       { href: "/app/assistant", label: "分析チャット", Icon: MessageSquareText, prefixes: ["/app/assistant"] },
@@ -102,14 +108,35 @@ export const NAV_FLAT: NavLink[] = NAV_GROUPS.flatMap((g) => g.items);
 // readonly instance (Cloudflare 公開) 向け: fullOnly 項目を除いた nav。
 // hideFullOnly の判定は useRuntimeFlags.shouldHideFullOnly (readonly かつ未認証) が持つ。
 // 認証済み (Tier1) では閲覧できるためメニューにも出す。
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
+
 export function visibleNavGroups(hideFullOnly: boolean): NavGroup[] {
+  // 絞り込みは **ここ 1 箇所** に集約する。サイドバーとコマンドパレットで別々に
+  // 判定すると、片方に写していない画面が残って読み込み中で固まる。
+  if (MIRROR) return mirrorNavGroups();
   if (!hideFullOnly) return NAV_GROUPS;
   return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => !it.fullOnly) })).filter(
     (g) => g.items.length > 0,
   );
 }
 
+// 写し用: mirror 印のある項目だけを残す。fullOnly の絞り込みと同じ形。
+export function mirrorNavGroups(): NavGroup[] {
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((it) => it.mirror) })).filter(
+    (g) => g.items.length > 0,
+  );
+}
+
+/** 写しに含まれない path か。含まれないなら「写しに無い」と伝えて止める。 */
+export function isOutsideMirror(pathname: string): boolean {
+  return !NAV_FLAT.some((it) => it.mirror && isActive(it, pathname));
+}
+
+/** 写しの着地先。ダッシュボードは写しに無いので、写した画面へ着地させる。 */
+export const MIRROR_HOME = "/app/eventnews";
+
 export function visibleNavFlat(hideFullOnly: boolean): NavLink[] {
+  if (MIRROR) return mirrorNavGroups().flatMap((g) => g.items);
   return visibleNavGroups(hideFullOnly).flatMap((g) => g.items);
 }
 
@@ -125,10 +152,15 @@ export function isFullOnlyPath(pathname: string): boolean {
 export const BOTTOM_NAV: NavLink[] = [
   { href: "/app", label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
   // モバイルの主導線も事象ニュース (読む画面)。記事一覧はメニューから辿る。
-  { href: "/app/eventnews", label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
+  { href: "/app/eventnews", mirror: true, label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
   { href: "/app/intel/pmesii", label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },
   { href: "/app/map", label: "マップ", Icon: Map, prefixes: ["/app/map"] },
 ];
+
+/** モバイル下部タブ。写しでは写した画面だけ (サイドバーと同じ規則)。 */
+export function visibleBottomNav(): NavLink[] {
+  return MIRROR ? BOTTOM_NAV.filter((it) => it.mirror) : BOTTOM_NAV;
+}
 
 function normalize(p: string): string {
   return p.length > 1 ? p.replace(/\/$/, "") : p;

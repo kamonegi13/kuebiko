@@ -27,6 +27,8 @@ import { JpCiBoardPage } from "./pages/JpCiBoardPage";
 import { JpCiOperatorsPage } from "./pages/JpCiOperatorsPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useRuntimeFlags, shouldHideFullOnly } from "./hooks/useRuntimeFlags";
+import { isOutsideMirror } from "./components/nav";
+import { OutsideMirror } from "./components/OutsideMirror";
 import { isFullOnlyPath } from "./components/nav";
 import { ArticlePeekHost } from "./components/ArticlePeek";
 import { PublicNewsSite } from "./public/PublicNewsSite";
@@ -165,6 +167,18 @@ export default function App() {
   // 従来の AppShell を描いても中身が 403 だらけになる。認証 (Cloudflare Access) すれば
   // 従来どおり全機能に戻る。判定は shouldHideFullOnly と同じ述語を共有する。
   if (shouldHideFullOnly(flags)) return <PublicNewsSite />;
+
+  // 写し (Cloudflare Pages) では、書き出した画面しか描かない。
+  // 着地先のダッシュボードは写していないため、そのままだと読み込み中で固まる。
+  // 既定の着地 (/ と /app) の付け替えは main.tsx が mount 前に済ませている。
+  // ここに残るのは「写しに無い画面を直に開いた」場合だけ。
+  if (import.meta.env.VITE_MIRROR === "1" && isOutsideMirror(pathname)) {
+    return (
+      <AppShell pathname={pathname}>
+        <OutsideMirror />
+      </AppShell>
+    );
+  }
 
   // readonly instance かつ未認証では fullOnly ページを直 URL でも描画しない
   // (nav.ts fullOnly が SSoT)。API はサーバ側 READ_ONLY_GET_DENYLIST が 403 で遮断する

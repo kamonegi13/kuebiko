@@ -27,22 +27,9 @@ set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 : "${CLOUDFLARE_ACCOUNT_ID:?.env に CLOUDFLARE_ACCOUNT_ID がありません}"
 : "${CLOUDFLARE_MIRROR_PAGES_PROJECT:?.env に CLOUDFLARE_MIRROR_PAGES_PROJECT がありません}"
 
-# 稼働中の API を叩いて写す。落ちていれば失敗する = 空の写しを配らない。
-rm -rf "$DIST/data"
-uv run --directory "$ROOT" python "$ROOT/scripts/export_mirror.py" \
-  --base-url "$BASE_URL" --out "$DIST/data"
+# 組み立ては build_mirror.sh が唯一知っている (確認用と同じ手順を通す)。
+bash "$ROOT/scripts/build_mirror.sh"
 
-# ⚠ **写し用ビルド**で作る (VITE_MIRROR=1)。通常ビルドを置くと、
-#    API を叩きに行って全部失敗し、しかも「写しである」帯が出ない。
-( cd "$ROOT/frontend" && VITE_MIRROR=1 VITE_MIRROR_DATA=/data npm run build >/dev/null )
-rm -rf "$DIST/assets" "$DIST/index.html" "$DIST/pwa"
-cp -R "$ROOT/frontend/dist/." "$DIST/"
-# ⚠ PWA の参照は index.html に **/app/pwa/… で直書き**されており vite の base が
-#    効かない。写しはルート直下に置くので、その分だけ書き換える
-#    (残すと manifest が Access のログインへ飛ばされ CORS で落ちる。2026-08-29 実測)。
-sed -i '' 's#"/app/pwa/#"/pwa/#g' "$DIST/index.html"
-# 通常ビルドへ戻す (ローカルの運用画面が写しビルドのままにならないように)
-( cd "$ROOT/frontend" && npm run build >/dev/null )
 DIGEST="$(cd "$DIST" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 if [ "${1:-}" != "--force" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$DIGEST" ]; then
   echo "変更なし (sha256 ${DIGEST:0:12}) — 配信しない"

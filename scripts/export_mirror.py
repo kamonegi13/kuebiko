@@ -50,6 +50,24 @@ MAX_EVENTS = 4000
 DEFAULT_MIN_ARTICLES = 100
 DEFAULT_MIN_EVENTS = 50
 
+#: 画面が起動時・描画時に必ず引く小さな参照データ。
+#:
+#: ⭐ これを写さないと、写しは記事があっても**表示できない**。語彙 (value→日本語ラベル)
+#: は起動関門になっていて、解決するまで本体を描かないため、取得が失敗し続けると
+#: 読み込み中のまま固まる (2026-08-29 の実障害)。ラベルが無いと生の enum が出るので、
+#: 「関門を外して先へ進む」は解にならない。
+#:
+#: いずれも数十 KB 以下で、絞り込み条件を持たない全体一覧。
+REFERENCE_ENDPOINTS = (
+    "/api/v1/vocabularies",
+    "/api/v1/runtime-flags",
+    "/api/v1/channels",
+    "/api/v1/feed-options",
+    "/api/v1/actor-options",
+    "/api/v1/affected-vendors",
+    "/api/v1/pir/options",
+)
+
 
 def _get(client: httpx.Client, path: str, **params: Any) -> Any:
     r = client.get(path, params=params or None)
@@ -122,6 +140,13 @@ def main() -> int:
     total_bytes = 0
 
     with httpx.Client(base_url=args.base_url, timeout=120.0) as client:
+        # --- 画面が引く参照データ ---
+        # 記事より先に取る。ここが欠けると画面が描けないので、
+        # 記事だけ揃った「読めない写し」を作らない。
+        for ep in REFERENCE_ENDPOINTS:
+            payload = _get(client, ep)
+            total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
+
         # --- 記事 ---
         articles = _fetch_articles(client, args.days, args.max_articles)
         if len(articles) < args.min_articles:

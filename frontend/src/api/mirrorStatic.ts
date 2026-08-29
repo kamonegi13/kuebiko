@@ -31,7 +31,9 @@ async function getJson<T>(path: string): Promise<T> {
 
 /** id → ファイル名。書き出し側 (_safe_name) と **同じ規則**でなければ引けない。
  *  記事 id は URL をそのまま使う経路があるため、ハッシュに落として桁を揃える。 */
-async function fileName(id: string): Promise<string> {
+/** 書き出し側 export_mirror.py `_safe_name` と **同じ規則**。
+ *  ここを唯一の実装にする — 2 つ持つとどちらかがずれ、ファイルが見つからない形で出る。 */
+export async function fileName(id: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id));
   return [...new Uint8Array(buf)]
     .map((b) => b.toString(16).padStart(2, "0"))

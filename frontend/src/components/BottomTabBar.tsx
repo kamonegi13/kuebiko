@@ -3,7 +3,7 @@
 // fixed bottom のため、AppShell 側で本体に下部 padding を足してコンテンツの隠れを防ぐ。
 
 import { Menu } from "lucide-react";
-import { BOTTOM_NAV, isActive } from "./nav";
+import { isActive, visibleBottomNav } from "./nav";
 
 interface BottomTabBarProps {
   pathname: string;
@@ -21,7 +21,7 @@ export function BottomTabBar({ pathname, onOpenMenu }: BottomTabBarProps) {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="h-14 flex items-stretch">
-        {BOTTOM_NAV.map((item) => {
+        {visibleBottomNav().map((item) => {
           const active = isActive(item, pathname);
           return (
             <a
