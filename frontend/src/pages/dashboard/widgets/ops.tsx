@@ -30,7 +30,7 @@ export function RecentIncidentsWidget({ config }: WidgetProps) {
               <ImportanceDot importance={a.importance} className="mt-[6px] w-1.5 h-1.5" />
               <div className="flex-1 min-w-0">
                 <a href={`/app/article/${encodeURIComponent(a.article_id)}`}
-                  className="block text-[13px] font-medium leading-snug text-fg hover:text-accent hover:underline line-clamp-2" title={a.title}>{a.title}</a>
+                  className="block text-[14px] font-semibold leading-[1.55] text-fg hover:text-accent hover:underline line-clamp-2" title={a.title}>{a.title}</a>
                 <div className="text-[12px] text-fg-subtle flex gap-2 mt-1">
                   <span className="truncate">{a.feed_title}</span>
                   {(a.published_at ?? a.created_at) && (

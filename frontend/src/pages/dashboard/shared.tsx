@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useVocabMap } from "../../hooks/useVocab";
+import { SectionHeading } from "../../components/SectionHeading";
 
 export const INTEL = "/app/intel"; // Intel Graph (深掘り) へのドリルダウン先
 
@@ -126,9 +127,19 @@ export function WidgetCard({ title, href, linkLabel, children }: { title: string
     //   (2026-08-29 利用者指摘)。グリッドの margin (12px) が既に tile を分けている。
     //   カスタマイズ中は枠が出るので、そのときだけ元の余裕に戻す。
     <div className={`${TILE_CHROME} py-1.5 [[data-dash-editing]_&]:py-4 h-full flex flex-col min-h-0`}>
-      <div className="flex items-baseline justify-between mb-2 shrink-0 px-1.5 [[data-dash-editing]_&]:px-4">
-        <h3 className="m-0 text-sm font-semibold text-fg">{title}</h3>
-        {href && <a href={href} className="text-accent text-xs hover:underline shrink-0 ml-2">{linkLabel || "詳細 →"}</a>}
+      {/* 題は他ページの節見出しと同じ様式 (縦バー + 罫線 + 右の導線)。
+          画面ごとに題の書き方が違うと、同じ製品に見えない (2026-08-29 利用者指摘)。 */}
+      <div className="shrink-0 px-1.5 [[data-dash-editing]_&]:px-4">
+        <SectionHeading
+          title={title}
+          action={
+            href ? (
+              <a href={href} className="shrink-0 text-[13px] text-fg-subtle hover:text-accent no-underline">
+                {linkLabel || "詳細 →"}
+              </a>
+            ) : undefined
+          }
+        />
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-1.5 [[data-dash-editing]_&]:px-4">{children}</div>
     </div>

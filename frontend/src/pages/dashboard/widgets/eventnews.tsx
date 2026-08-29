@@ -42,7 +42,7 @@ export function EventNewsWidget({ config }: WidgetProps) {
             <li key={it.id} className="leading-snug">
               <button
                 onClick={() => setOpenId(it.id)}
-                className="block w-full text-left text-[13px] text-fg hover:text-accent hover:underline"
+                className="block w-full text-left text-[14.5px] font-semibold leading-[1.55] text-fg hover:text-accent hover:underline"
                 title="事象の詳細を開く"
               >
                 {it.headline}

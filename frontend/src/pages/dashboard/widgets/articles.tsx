@@ -60,12 +60,12 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
                 <div className="flex-1 min-w-0">
                   {/* L2 タイトル (主役): 強 (13.5px / medium)。クリックで in-app 記事詳細 (CTI 分析付き)。 */}
                   <a href={`/app/article/${encodeURIComponent(a.article_id)}`}
-                    className="block text-[13.5px] font-medium leading-snug text-fg hover:text-accent hover:underline line-clamp-2" title={a.title}>
+                    className="block text-[14.5px] font-semibold leading-[1.55] text-fg hover:text-accent hover:underline line-clamp-2" title={a.title}>
                     {a.title}
                   </a>
                   {/* L3 要約 (補助): 淡 (11px / muted)。mobile は 1 行で密度を抑える */}
                   {wantSummary && a.summary && (
-                    <p className={`text-[13px] text-fg-muted leading-relaxed mt-1 ${mobile ? "line-clamp-1" : "line-clamp-2"}`}>{a.summary}</p>
+                    <p className={`text-[12.5px] text-fg-muted leading-[1.7] mt-0.5 ${mobile ? "line-clamp-1" : "line-clamp-2"}`}>{a.summary}</p>
                   )}
                   {/* L4 メタ: 弱 (10px / subtle) */}
                   <div className="text-[12px] text-fg-subtle flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
