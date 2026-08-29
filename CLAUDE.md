@@ -562,6 +562,13 @@ kuebiko/
       現在状態など — のために要る)
     - **公開サイトが集合場所**。Pages 配信なので Mac の状態に依存せず、
       運用画面と写しの両方への導線を置く。片方だけだと落ちているとき辿り着けない
+    - ⚠ **Access の Path 設定は面ごとに非対称。揃えてはいけない** (2026-08-29):
+      | 面 | Access の Path | 理由 |
+      |---|---|---|
+      | ops.kuebiko.example | `/auth` **のみ** | アプリが JWT を検証して層を判定する。全体を守ると公開ニュースが匿名で読めなくなる |
+      | mirror.kuebiko.example | **空欄 (全体)** | 静的サイトで判定する場所が無い。Path を入れるとデータが匿名で読める |
+      後から「設定を揃えよう」として mirror に `/auth` を入れると、**写しが丸ごと
+      公開される**。逆に ops を全体保護にすると Tier0 が壊れる
   - **公開 instance の到達範囲は 3 層 (2026-08-01)**。SSoT は `src/ui/read_only_policy.py` **1 箇所**:
     **Tier0 匿名** = 閲覧系 read API と SPA / **Tier1 認証済み (Cloudflare Access)** = 運用系 read API
     (`READ_ONLY_GET_DENYLIST`: ジョブ計画・設定・プロンプト・ルーティング・レビューキュー) の閲覧 +
