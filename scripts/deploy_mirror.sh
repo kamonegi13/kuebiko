@@ -37,6 +37,10 @@ uv run --directory "$ROOT" python "$ROOT/scripts/export_mirror.py" \
 ( cd "$ROOT/frontend" && VITE_MIRROR=1 VITE_MIRROR_DATA=/data npm run build >/dev/null )
 rm -rf "$DIST/assets" "$DIST/index.html" "$DIST/pwa"
 cp -R "$ROOT/frontend/dist/." "$DIST/"
+# ⚠ PWA の参照は index.html に **/app/pwa/… で直書き**されており vite の base が
+#    効かない。写しはルート直下に置くので、その分だけ書き換える
+#    (残すと manifest が Access のログインへ飛ばされ CORS で落ちる。2026-08-29 実測)。
+sed -i '' 's#"/app/pwa/#"/pwa/#g' "$DIST/index.html"
 # 通常ビルドへ戻す (ローカルの運用画面が写しビルドのままにならないように)
 ( cd "$ROOT/frontend" && npm run build >/dev/null )
 DIGEST="$(cd "$DIST" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"

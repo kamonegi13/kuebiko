@@ -7,6 +7,9 @@ export function useWebSocket(onEvent: (ev: WsEvent) => void): void {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // 写しは静的ファイルだけで、繋ぐ相手がいない。止めないと接続失敗と再接続を
+    // 際限なく繰り返し、コンソールが埋まる (2026-08-29 実測: 17 回で継続中)。
+    if (import.meta.env.VITE_MIRROR === "1") return;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/ws/v1/events`;
     let ws: WebSocket | null = null;

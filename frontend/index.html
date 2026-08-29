@@ -42,7 +42,10 @@
          (SW はインストールしていないブラウザ利用者にも効いてしまい、
           index.html の no-cache 設計 / Cloudflare Access の 302 と競合するため)。
          manifest はインストールするまで不活性なので、ブラウザ側の挙動は変わらない。 -->
-    <link rel="manifest" href="/app/pwa/manifest.webmanifest" />
+    <!-- ⚠ crossorigin="use-credentials" が要る。Access 配下では manifest の取得に
+         cookie が付かず、ログインへリダイレクトされて CORS で落ちる
+         (2026-08-29 実測)。同一オリジンでも manifest は既定で無資格取得になる。 -->
+    <link rel="manifest" href="/app/pwa/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="icon" type="image/svg+xml" href="/app/pwa/icon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/app/pwa/favicon-32.png" />
     <link rel="apple-touch-icon" href="/app/pwa/apple-touch-icon.png" />
