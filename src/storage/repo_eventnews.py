@@ -12,7 +12,7 @@ event_time.py の錨式を再計算しない)。
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -38,6 +38,39 @@ _EVENT_ITEM_UPDATABLE_COLUMNS = frozenset(
         "related_to",
     }
 )
+
+
+@dataclass(frozen=True)
+class ImportanceRule:
+    """重要度ごとに追加で課す掲載条件。
+
+    重要度によって「出す資格」が違うときに使う。公開面では high は単独報でも
+    出す (重要だから 1 媒体でも知らせる、という判断が既に働いている) 一方、
+    medium にはその判断が無いぶん **突き合わせ (複数媒体)** を求める。
+
+    ⚠ 条件を呼び手が取得後の filter で掛けると **LIMIT より後**になり
+    「新着 N 件のうち該当するもの」しか出ない。クエリの中で表現すること。
+    """
+
+    #: 独立媒体数の下限 (0 = 課さない)
+    min_independent_sources: int = 0
+    #: 統合記事が生成済みであること (current_version > 0)
+    requires_news: bool = False
+
+    @property
+    def is_open(self) -> bool:
+        """追加条件が無い (= 重要度だけで通る)。"""
+        return self.min_independent_sources <= 0 and not self.requires_news
+
+    def allows(self, *, independent_sources: int, has_news: bool) -> bool:
+        """1 件が条件を満たすか。**一覧 (SQL) と同じ判定を Python でも行う**。
+
+        一覧と詳細で条件が分かれると、一覧に出ないものが直リンクでは読める
+        状態になる。両方をこの 1 つの述語から導くこと。
+        """
+        if independent_sources < self.min_independent_sources:
+            return False
+        return has_news if self.requires_news else True
 
 
 @dataclass(frozen=True)
@@ -315,6 +348,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         origin: str | None = None,
         statuses: Sequence[str] | None = None,
         importances: Sequence[str] | None = None,
+        importance_rules: Mapping[str, ImportanceRule] | None = None,
         exclude_merged: bool = False,
         min_independent_sources: int = 0,
         has_news: bool | None = None,
@@ -370,9 +404,24 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             clauses.append(f"status IN ({placeholders})")
             params.extend(statuses)
         if importances:
-            placeholders = ",".join("?" for _ in importances)
-            clauses.append(f"importance IN ({placeholders})")
-            params.extend(importances)
+            # 重要度ごとに条件が違いうる (``importance_rules``)。条件のあるものは
+            # その重要度と AND で括り、全体を OR で束ねる。
+            parts: list[str] = []
+            for imp in importances:
+                rule = (importance_rules or {}).get(imp)
+                if rule is None or rule.is_open:
+                    parts.append("importance = ?")
+                    params.append(imp)
+                    continue
+                sub = ["importance = ?"]
+                params.append(imp)
+                if rule.min_independent_sources > 0:
+                    sub.append("independent_sources >= ?")
+                    params.append(int(rule.min_independent_sources))
+                if rule.requires_news:
+                    sub.append("current_version > 0")
+                parts.append("(" + " AND ".join(sub) + ")")
+            clauses.append("(" + " OR ".join(parts) + ")")
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
         if since is not None:

@@ -126,16 +126,36 @@ class TestCitationsAreMandatory:
 
 
 class TestHighOnly:
-    def test_only_high_importance_is_public(self) -> None:
-        assert public_news._PUBLIC_IMPORTANCES == ("high",)
+    """公開する重要度 (2026-08-31 に medium を条件付きで開放)。
+
+    high は単独報でも出す / medium は「生成済み かつ 独立 2 媒体以上」/ low は出さない。
+    条件の中身は tests/unit/test_public_importance_gate.py が持つ。
+    """
+
+    def test_low_is_never_public(self) -> None:
+        assert "low" not in public_news._PUBLIC_IMPORTANCES
+
+    def test_high_has_no_extra_condition(self) -> None:
+        """重要だから 1 媒体でも知らせる、という判断が既に働いている (案 A)。"""
+        assert "high" in public_news._PUBLIC_IMPORTANCES
+        assert "high" not in public_news._PUBLIC_IMPORTANCE_RULES
+
+    def test_medium_is_gated(self) -> None:
+        assert "medium" in public_news._PUBLIC_IMPORTANCES
+        rule = public_news._PUBLIC_IMPORTANCE_RULES["medium"]
+        assert rule.min_independent_sources >= 2
+        assert rule.requires_news
 
     def test_list_filters_by_importance(self) -> None:
         src = inspect.getsource(public_news.list_public_news)
         assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
+        # 条件も **クエリに渡す** (取得後に filter すると LIMIT より後になる)
+        assert '"importance_rules": _PUBLIC_IMPORTANCE_RULES' in src
 
-    def test_detail_rejects_non_high(self) -> None:
+    def test_detail_uses_the_same_predicate_as_the_list(self) -> None:
+        """詳細だけ条件が緩いと、一覧に出ないものが直リンクで読める。"""
         src = inspect.getsource(public_news.get_public_news)
-        assert "importance not in _PUBLIC_IMPORTANCES" in src
+        assert "_is_public(record)" in src
 
 
 class TestDedupIsRespected:
@@ -249,7 +269,8 @@ class TestFeatured:
         """重要性は PIR → importance が決める。行動要度はその中の順位付け。"""
         src = inspect.getsource(public_news.list_public_news)
         assert '"importances": list(_PUBLIC_IMPORTANCES)' in src
-        assert public_news._PUBLIC_IMPORTANCES == ("high",)
+        # 収集量ではなく importance が母集団を決める (low は入れない)
+        assert "low" not in public_news._PUBLIC_IMPORTANCES
 
 
 class TestPublicMap:

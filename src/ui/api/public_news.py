@@ -35,7 +35,7 @@ from src.cti.geocoder import Geocoder
 from src.cti.source_basis import classify_source_tier
 from src.eventnews import version_diff
 from src.eventnews.models import UPDATE_DRIVER_TYPES
-from src.storage.repo_eventnews import EventUpdateMark
+from src.storage.repo_eventnews import EventItemRecord, EventUpdateMark, ImportanceRule
 from src.storage.run_history import RunHistoryRepository
 
 # カテゴリのグループ定義は記事側 facet と **同じものを使う** (グループの中身を
@@ -45,8 +45,47 @@ from src.ui.services.geo_cyber_map import _COUNTRIES_YAML, _yaml_display_map
 
 public_news_api = APIRouter(prefix="/api/v1/public/news", tags=["public"])
 
-# 公開するのは重要度 high の事象のみ
-_PUBLIC_IMPORTANCES = ("high",)
+# 公開する重要度と、重要度ごとの追加条件 (2026-08-31 に medium を開放)。
+#
+# ⭐ **medium は「統合記事が生成済み かつ 独立 2 媒体以上」のときだけ出す。**
+# 生成済み medium は 84% が複数媒体で、生成済み high (24%) より突き合わせの
+# 条件を満たしている — 既に作ってある 400 件強が見えていなかった。一方で
+# medium を素通しすると 1 日 24 件 → 138 件になり、増えた分の 9 割が単独報の
+# 要約になる。それは「事象単位で突き合わせた記事」から「収集の流し込み」への
+# 変質で、この面を他と区別している性質そのものを薄める。
+#
+# ⭐ **high は単独報でも出す** (案 A)。重要だから 1 媒体でも知らせる、という
+# 判断が既に働いた結果なので、突き合わせを条件にしない。medium にはその判断が
+# 無いぶん条件を課す、という非対称は意図的なもの。
+_PUBLIC_IMPORTANCES = ("high", "medium")
+_PUBLIC_IMPORTANCE_RULES: dict[str, ImportanceRule] = {
+    "medium": ImportanceRule(min_independent_sources=2, requires_news=True),
+}
+
+
+def _is_public(record: EventItemRecord) -> bool:
+    """1 件が公開面に出せるか。**一覧・地図・詳細はすべてこの条件を通す。**
+
+    一覧 (SQL) と詳細 (Python) で条件が分かれると、一覧に出ないものが直リンク
+    では読める状態になる。判定は ``ImportanceRule`` 1 つから導く。
+    """
+    if record.merged_into:
+        return False
+    importance = record.state.importance
+    if importance not in _PUBLIC_IMPORTANCES:
+        return False
+    rule = _PUBLIC_IMPORTANCE_RULES.get(importance)
+    if rule is None:
+        return True
+    # ⚠ 生成の有無は **SQL 側と同じ列** (current_version) から見る。詳細だけ
+    # 「版が 1 本でもあるか」で判定すると、列が古いときに一覧と食い違い、
+    # 一覧に出ないものが直リンクで読める状態になる。
+    return rule.allows(
+        independent_sources=record.independent_sources,
+        has_news=record.state.current_version > 0,
+    )
+
+
 _LIST_LIMIT_MAX = 60
 
 # 公開サイトのカテゴリ。実データの分布 (2026-08-25、公開候補 high) に合わせて 4 つ。
@@ -339,6 +378,7 @@ def list_public_news(
     common: dict[str, Any] = {
         "origin": "live",
         "importances": list(_PUBLIC_IMPORTANCES),
+        "importance_rules": _PUBLIC_IMPORTANCE_RULES,
         "exclude_merged": True,
         # **LIMIT より前**に効かせる (取得後の間引きはページングを壊す)
         "exclude_duplicate_only": True,
@@ -427,6 +467,7 @@ def get_public_map(days: int = 30) -> dict[str, Any]:
     records = repo.list_event_items(
         origin="live",
         importances=list(_PUBLIC_IMPORTANCES),
+        importance_rules=_PUBLIC_IMPORTANCE_RULES,
         exclude_merged=True,
         exclude_duplicate_only=True,
         since=since,
@@ -489,7 +530,9 @@ def get_public_news(item_id: str) -> dict[str, Any]:
     """公開ニュース 1 件。生成本文 (見出し / BLUF / 事実行) と **出典全件**。"""
     repo = _repo()
     record = repo.get_event_item(item_id)
-    if record is None or record.merged_into or record.state.importance not in _PUBLIC_IMPORTANCES:
+    if record is None:
+        raise HTTPException(status_code=404, detail="not found")
+    if not _is_public(record):
         raise HTTPException(status_code=404, detail="not found")
     citations = _citations(repo, item_id)
     if not citations:
