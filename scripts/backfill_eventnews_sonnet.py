@@ -122,9 +122,13 @@ async def main():
         )
     else:
         factory = lambda: build_llm_for(Step.EVENT_NEWS, load_app_config())
+    #: 経路が戻らないまま待った回数の上限 (30 分 × 12 = 6 時間)。転がる窓は
+    #: 数時間で空くので、これを超えるなら枠以外の故障を疑う。
+    MAX_ROUTE_DOWN_WAITS = 12
     total_done = 0
     i = 0
     probe_failures = 0
+    route_down_waits = 0
     while i < len(pending):
         # 探針: 1 件だけ生成して fallback を見る
         probe = pending[i : i + 1]
@@ -139,15 +143,35 @@ async def main():
             i += 1
             total_done += 1
             if probe_failures >= PROBE_STREAK:
+                # ⚠ **経路が使えないと分かった時点で、その分を戻す。**
+                #    拒否は記事ごとの事象なので進めてよい (2026-08-28) が、枠切れは
+                #    経路全体の問題で項目に非がない。進めてしまうと窓が詰まっている
+                #    間ずっと 31B 版で消費され、30 分あたり PROBE_STREAK 件が
+                #    「あとで焼き直す」在庫に変わる (2026-08-30 に実際に起きた)。
+                #    区別は結果で付く — 別々の項目で連続して落ちたなら経路。
+                i -= probe_failures
+                total_done -= probe_failures
+                route_down_waits += 1
                 print(
-                    f"探針が {probe_failures} 件連続で fallback — "
-                    f"{BACKOFF // 60} 分待つ (累計 {total_done}/{len(pending)})",
+                    f"探針が {probe_failures} 件連続で fallback — 経路とみなして "
+                    f"{BACKOFF // 60} 分待つ (戻し {probe_failures} 件 / "
+                    f"累計 {total_done}/{len(pending)} / 待機 {route_down_waits} 回目)",
                     flush=True,
                 )
+                if route_down_waits >= MAX_ROUTE_DOWN_WAITS:
+                    # 転がる窓は数時間で空く。それでも空かないなら枠以外の故障
+                    # (認証切れ等) を疑うべきで、待ち続けても意味がない。
+                    print(
+                        f"経路が {MAX_ROUTE_DOWN_WAITS} 回連続で戻らない — 中止する。"
+                        "bridge の health (auth.env_file_error) を確認すること",
+                        flush=True,
+                    )
+                    return
                 await asyncio.sleep(BACKOFF)
                 probe_failures = 0
             continue
         probe_failures = 0
+        route_down_waits = 0  # 通ったら連続待機はリセット
         if wrote == 0:
             # 生成対象外 (本文なし等)。判定材料にならないので次へ進める
             i += 1
@@ -178,7 +202,18 @@ async def main():
             #    経路が使えないときは「以降ずっと落ちる」ので、**末尾が連続で
             #    落ちているか**だけを見る (2026-08-28)。
             if tail >= ROUTE_DOWN_STREAK:
-                print(f"末尾 {tail} 件が連続 fallback — {BACKOFF // 60} 分退く", flush=True)
+                # 探針と同じ理由で **末尾の分を戻す** (経路の問題で項目に非はない)
+                i -= tail
+                total_done -= tail
+                route_down_waits += 1
+                print(
+                    f"末尾 {tail} 件が連続 fallback — 経路とみなして "
+                    f"{BACKOFF // 60} 分退く (戻し {tail} 件)",
+                    flush=True,
+                )
+                if route_down_waits >= MAX_ROUTE_DOWN_WAITS:
+                    print(f"経路が {MAX_ROUTE_DOWN_WAITS} 回連続で戻らない — 中止する", flush=True)
+                    return
                 await asyncio.sleep(BACKOFF)
             else:
                 await asyncio.sleep(REST)
