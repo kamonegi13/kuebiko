@@ -903,6 +903,32 @@ function KeyPoints({ points }: { points: string[] }) {
   );
 }
 
+/** 本文中の出典番号。**押すと下の「出典」の該当行へ飛ぶ。**
+ *
+ * ⚠ 番号を出しておいて飛べないと、読み手は「押したのに何も起きない」経験をする
+ * (2026-08-30 利用者報告)。運用画面 (EventNewsDetail) は記事ページへのリンクに
+ * していたのに、**公開面だけが素の sup のまま取り残されていた**。
+ *
+ * 飛び先を出典一覧にするのは、公開面が記事本文を持たないため。外部サイトへ直接
+ * 飛ばすと、どの媒体なのか分からないまま離脱させることになる。
+ *
+ * 本文側の 2 箇所 (事実の段落 / 食い違う点) で必ず同じ実装を使う — 片方だけ
+ * リンクになっている状態がこの不具合そのものだった。
+ */
+function CiteRef({ index }: { index: number }) {
+  return (
+    <sup className="ml-0.5 tnum">
+      <a
+        href={`#cite-${index}`}
+        aria-label={`出典 ${index} へ移動`}
+        className="text-accent no-underline hover:underline underline-offset-2"
+      >
+        [{index}]
+      </a>
+    </sup>
+  );
+}
+
 /** 事実行 1 段落。**同じ段落の文は連結して散文にする** (行ごとに割らない)。
  *
  * ⚠ 出典が 1 件しかない記事では **番号を出さない**。全部 [1] になり情報を持たない
@@ -921,9 +947,7 @@ function FactParagraph({
       {facts.map((f, i) => (
         <span key={i}>
           {f.text}
-          {showCitations && f.source_index > 0 && (
-            <sup className="ml-0.5 text-accent tnum">[{f.source_index}]</sup>
-          )}
+          {showCitations && f.source_index > 0 && <CiteRef index={f.source_index} />}
         </span>
       ))}
     </p>
@@ -1014,7 +1038,12 @@ function Citations({ citations }: { citations: PublicCitation[] }) {
         {citations.map((c) => (
           <li
             key={c.index}
-            className={`text-[14.5px] leading-[1.8] ${numbered ? "pl-7 -indent-7" : ""}`}
+            // 本文の [N] からの飛び先。sticky ヘッダに隠れないよう scroll-mt を置き、
+            // 飛んだ先がどれか分かるよう :target で一瞬だけ地色を変える。
+            id={`cite-${c.index}`}
+            className={`scroll-mt-24 rounded-sm target:bg-accent/[0.10] text-[14.5px] leading-[1.8] ${
+              numbered ? "pl-7 -indent-7" : ""
+            }`}
           >
             {numbered && <span className="text-fg-subtle mr-1.5 tnum">[{c.index}]</span>}
             <a
@@ -1132,9 +1161,7 @@ function NewsDetail({ id }: { id: string }) {
               <li key={i} className="pl-4 -indent-4">
                 <span className="text-fg-subtle">・</span>
                 {d.text}
-                {showCitations && d.source_index > 0 && (
-                  <sup className="ml-0.5 text-accent tnum">[{d.source_index}]</sup>
-                )}
+                {showCitations && d.source_index > 0 && <CiteRef index={d.source_index} />}
               </li>
             ))}
           </ul>
