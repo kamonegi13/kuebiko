@@ -75,3 +75,31 @@ def test_spotlight_regenerate_api_reads_runtime_config() -> None:
     src = inspect.getsource(api)
     assert "get_pir_config" in src
     assert "load_pir_config" not in src
+
+
+def test_bridge_reports_unreadable_env_file() -> None:
+    """共有 .env が読めないとき、黙って env fallback へ落ちない。
+
+    単一ファイルの bind mount はホスト側の置き換え (inode 交代) で参照先を失う。
+    app だけを再作成する運用では sidecar のマウントだけが古いまま残り、
+    **認証が静かに消える** (2026-08-30: 15 時間ローカルへ落ちていた)。
+    """
+    import importlib.util
+    from pathlib import Path
+    from unittest.mock import patch
+
+    spec = importlib.util.spec_from_file_location(
+        "claude_code_bridge", Path("scripts/claude_code_bridge.py")
+    )
+    assert spec is not None and spec.loader is not None
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+
+    bridge._ENV_FILE_ERROR.clear()
+    with patch.dict(
+        "os.environ",
+        {"BRIDGE_ENV_FILE": "/nonexistent/.env", "CLAUDE_CODE_OAUTH_TOKEN": ""},
+        clear=False,
+    ):
+        assert bridge.resolve_oauth_token() == ""
+    assert bridge._ENV_FILE_ERROR.get("reason"), "読取失敗を記録していない"

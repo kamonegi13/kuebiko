@@ -51,6 +51,15 @@ DEFAULT_TIMEOUT_SECONDS = 300.0
 MAX_TIMEOUT_SECONDS = 1200.0
 _STDERR_CLIP = 400
 
+#: 共有 .env が読めなかった理由 (空 = 正常)。health に出して静かな認証消失を見えるようにする。
+_ENV_FILE_ERROR: dict[str, str] = {}
+
+
+def _log(event: str, **fields: object) -> None:
+    """stderr へ 1 行 JSON。app 側の structlog と揃える必要はないが docker logs には残る。"""
+    print(json.dumps({"event": event, **fields}, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
 # claude CLI の探索場所 (PATH に無い環境向け。native installer は ~/.local/bin に置く)
 _CLI_CANDIDATES = ("claude", str(Path.home() / ".local" / "bin" / "claude"))
 
@@ -99,13 +108,26 @@ def resolve_oauth_token() -> str:
     読むため、UI での保存・削除が bridge 再起動なしで即時反映される。
     """
     env_file = os.environ.get("BRIDGE_ENV_FILE", "")
-    if env_file and Path(env_file).exists():
+    if env_file:
         try:
             for line in Path(env_file).read_text(encoding="utf-8").splitlines():
                 if line.strip().startswith("CLAUDE_CODE_OAUTH_TOKEN="):
                     return line.split("=", 1)[1].strip()
-        except OSError:
-            pass  # 読取失敗は env fallback へ
+        except OSError as e:
+            # ⚠ **黙って env fallback へ落ちない**。単一ファイルの bind mount は、
+            # ホスト側で .env が置き換えられる (atomic rename = inode 交代) と
+            # 参照先を失い、以降ずっと読めなくなる。app だけを再作成する運用では
+            # sidecar のマウントだけが古いまま残るため、**認証が静かに消える**
+            # (2026-08-30: 15 時間すべての外部呼出がローカルへ落ちていた)。
+            _ENV_FILE_ERROR["reason"] = f"{type(e).__name__}: {e}"
+            _log(
+                "env_file_unreadable",
+                path=env_file,
+                error=str(e),
+                hint="ホスト側で .env が置き換わった可能性 — bridge を再作成する",
+            )
+        else:
+            _ENV_FILE_ERROR.pop("reason", None)
     return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
 
 
@@ -302,7 +324,13 @@ async def health() -> dict[str, Any]:
             "available": bool(latest) and version_tuple(latest) > version_tuple(current),
         },
         # 認証モード: UI 管理トークン or CLI 既定 (ホストログイン)。UI 表示用
-        "auth": {"token_set": bool(token), "mode": "token" if token else "cli-default"},
+        "auth": {
+            "token_set": bool(token),
+            "mode": "token" if token else "cli-default",
+            # 共有 .env が読めているか。読めていないのに token_set=false のときは
+            # 「未設定」ではなく **mount が切れている** 疑いが濃い。
+            "env_file_error": _ENV_FILE_ERROR.get("reason", ""),
+        },
         # サブスク消費の自己観測 (5h 窓 = レート律速の単位 / 今日 / 7日)
         "usage": summarize_usage(_usage_records, time.time()),
     }
