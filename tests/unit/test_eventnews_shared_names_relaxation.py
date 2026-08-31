@@ -74,3 +74,56 @@ def test_bulk_advisory_sharing_two_cves_gets_the_names_relaxation() -> None:
 
 def test_nothing_shared_keeps_the_default() -> None:
     assert required_cos(frozenset(), frozenset(), []) == COS_THRESHOLD
+
+
+def test_merged_into_is_updatable() -> None:
+    """遡及統合が ``merged_into`` を立てられること。
+
+    ⚠ update_event_item は allowlist 制御で、**列名が無いと黙って無視される**。
+    読む側 (一覧・詳細・公開面・写し) は全経路が merged_into を見て除外するのに、
+    書く側の allowlist に無いまま統合スクリプトを走らせると、
+    「成功した」と表示されて 1 件も統合されない。
+    """
+    from src.storage.repo_eventnews import _EVENT_ITEM_UPDATABLE_COLUMNS
+
+    assert "merged_into" in _EVENT_ITEM_UPDATABLE_COLUMNS
+
+
+class TestDifferentVictimsAreDifferentEvents:
+    """名指しの被害者が食い違うなら、cos がいくら高くても別の事象。
+
+    身代金リークサイトの投稿は「アクター: 被害者 (国)」という**ほぼ同一の書式**
+    なので、被害者が違っても cos が 0.75-0.78 に来る (実測 2026-08-31)。actor 名を
+    共有するだけで既定の 0.70 を超えるため、**アクター名を辞書へ入れた瞬間に
+    そのグループの被害者が全部 1 事象へ潰れる**。
+    """
+
+    def test_different_victims_are_blocked(self) -> None:
+        from src.eventnews.grouping import blocked_by_different_victims
+
+        a = frozenset({("actor", "xpl0itrs"), ("victim_org", "bmwgroup")})
+        b = frozenset({("actor", "xpl0itrs"), ("victim_org", "gruppospaggiariparma")})
+        assert blocked_by_different_victims(a, b)
+
+    def test_same_victim_is_allowed(self) -> None:
+        from src.eventnews.grouping import blocked_by_different_victims
+
+        a = frozenset({("actor", "qilin"), ("victim_org", "atf")})
+        b = frozenset({("victim_org", "atf")})
+        assert not blocked_by_different_victims(a, b)
+
+    def test_one_side_without_a_named_victim_is_not_blocked(self) -> None:
+        """技術解説や続報は被害者名を持たないことがある。塞ぐと正しい合流が落ちる。"""
+        from src.eventnews.grouping import blocked_by_different_victims
+
+        a = frozenset({("actor", "qilin"), ("victim_org", "atf")})
+        b = frozenset({("actor", "qilin")})
+        assert not blocked_by_different_victims(a, b)
+
+    def test_an_article_covering_several_victims_still_joins(self) -> None:
+        """「新たに 3 つの被害者」型の記事は、そのうち 1 つと重なれば繋がる。"""
+        from src.eventnews.grouping import blocked_by_different_victims
+
+        a = frozenset({("victim_org", "x"), ("victim_org", "y"), ("victim_org", "z")})
+        b = frozenset({("victim_org", "y")})
+        assert not blocked_by_different_victims(a, b)

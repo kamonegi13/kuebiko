@@ -36,6 +36,9 @@ _EVENT_ITEM_UPDATABLE_COLUMNS = frozenset(
         "last_reported_at",
         "updated_at",
         "related_to",
+        # 遡及統合 (scripts/retro_merge_events.py) が立てる。読む側 (一覧・詳細・
+        # 公開面・写し) は既に全経路が merged_into を見て除外している。
+        "merged_into",
     }
 )
 

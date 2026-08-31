@@ -143,6 +143,36 @@ def required_cos(
     return COS_THRESHOLD
 
 
+def names_of_type(entities: frozenset[tuple[str, str]], entity_type: str) -> set[str]:
+    """その型の値だけを取り出す。"""
+    return {value for etype, value in entities if etype == entity_type}
+
+
+def blocked_by_different_victims(
+    cand_entities: frozenset[tuple[str, str]],
+    member_entities: frozenset[tuple[str, str]],
+) -> bool:
+    """**名指しの被害者が食い違うなら別の事象**。cos がいくら高くても繋がない。
+
+    ⭐ 動機: 身代金リークサイトの投稿は「アクター: 被害者 (国)」という**ほぼ同一の
+    書式**なので、被害者が違っても cos が 0.75-0.78 に来る (実測 2026-08-31:
+    ``Xpl0itrs: Gruppo Spaggiari Parma`` ⇔ ``xpl0itrs: BMW Group`` が 0.774)。
+    actor 名を共有するだけで既定の 0.70 を超えるため、**アクター名を辞書へ入れた
+    瞬間に、そのグループの被害者が全部 1 事象へ潰れる**。
+    2026-07-26 に Play/Chaos/Deadlock 等を一括承認して言及層の 59% が誤検出化した
+    のと同じ経路で、辞書の充実がそのまま群化の破壊になる。
+
+    ⚠ **片方にしか被害者が無いときは塞がない。** 技術解説や続報は被害者名を持たない
+    ことがあり、塞ぐと正しい合流まで落ちる。両方が名指ししていて、かつ 1 つも
+    重ならないときだけ「別の事象」と判断する。
+    """
+    cand = names_of_type(cand_entities, "victim_org")
+    member = names_of_type(member_entities, "victim_org")
+    if not cand or not member:
+        return False
+    return not (cand & member)
+
+
 def _member_edges(
     cand_entities: frozenset[tuple[str, str]],
     cand_unit: np.ndarray,
@@ -154,6 +184,8 @@ def _member_edges(
     for member in members:
         shared = tuple(sorted(cand_entities & member.entities))
         if len(shared) < _MIN_SHARED_FOR_EDGE:
+            continue
+        if blocked_by_different_victims(cand_entities, member.entities):
             continue
         vec = member_vecs.get(member.article_id)
         if vec is None:
