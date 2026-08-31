@@ -23,6 +23,8 @@ from src.eventnews.models import (
     FREQ_CAP_EXEMPT_TYPES,
     JOIN_ENTITY_TYPES,
     MEMBER_CAP,
+    SHARED_NAMES_COS,
+    SHARED_NAMES_MIN,
     WINDOW_HOURS,
     Assignment,
     ItemState,
@@ -93,22 +95,52 @@ def _cve_count(entities: frozenset[tuple[str, str]]) -> int:
     return sum(1 for entity_type, _ in entities if entity_type == "cve")
 
 
+def distinct_shared_names(shared: Sequence[tuple[str, str]]) -> int:
+    """共有している **名前の数**。entity の数ではない。
+
+    同じ名前が複数の type で抽出されることがある (実例: ``kimsuky`` が actor と
+    malware_family の両方)。entity の数で数えると 1 つの根拠が 2 つに見え、
+    別キャンペーンの記事が繋がる。
+    """
+    return len({value.casefold() for _, value in shared})
+
+
+def _shares_focal_cve(
+    cand_entities: frozenset[tuple[str, str]],
+    member_entities: frozenset[tuple[str, str]],
+    shared: Sequence[tuple[str, str]],
+) -> bool:
+    """CVE を **主題として** 共有しているか (一括アドバイザリを除く)。"""
+    if not any(entity_type == "cve" for entity_type, _ in shared):
+        return False
+    return not (
+        _cve_count(cand_entities) > FOCAL_CVE_MAX or _cve_count(member_entities) > FOCAL_CVE_MAX
+    )
+
+
 def required_cos(
     cand_entities: frozenset[tuple[str, str]],
     member_entities: frozenset[tuple[str, str]],
     shared: Sequence[tuple[str, str]],
 ) -> float:
-    """このペアに要求する cos。
+    """このペアに要求する cos。緩めるのは 2 つの場合だけ。
 
-    **CVE を主題として共有する**ときだけ緩める。主題の定義は「両方の記事が
-    CVE を ``FOCAL_CVE_MAX`` 個以下しか持たない」= 一括アドバイザリではないこと。
-    列挙側 (1 記事で数十〜278 個) を緩めると無関係な事案が接着する。
+    1. **CVE を主題として共有する** — 主題の定義は「両方の記事が CVE を
+       ``FOCAL_CVE_MAX`` 個以下しか持たない」= 一括アドバイザリではないこと。
+       列挙側 (1 記事で数十〜278 個) を緩めると無関係な事案が接着する。
+    2. **特異な名前を ``SHARED_NAMES_MIN`` 個以上共有する** (2026-08-31 追加) —
+       1 の発想を CVE 以外へ広げたもの。⚠ **名前の数で数える** (同じ名前が
+       actor と malware_family に重複して出ると 1 つの根拠が 2 つに見える)。
+       ⚠ **1 名では緩めない** — ランサム流出サイトの「同じグループ・別の被害者」
+       が接着する。
+
+    どちらにも当たらなければ ``COS_THRESHOLD``。
     """
-    if not any(entity_type == "cve" for entity_type, _ in shared):
-        return COS_THRESHOLD
-    if _cve_count(cand_entities) > FOCAL_CVE_MAX or _cve_count(member_entities) > FOCAL_CVE_MAX:
-        return COS_THRESHOLD
-    return FOCAL_CVE_COS
+    if _shares_focal_cve(cand_entities, member_entities, shared):
+        return FOCAL_CVE_COS
+    if distinct_shared_names(shared) >= SHARED_NAMES_MIN:
+        return SHARED_NAMES_COS
+    return COS_THRESHOLD
 
 
 def _member_edges(
