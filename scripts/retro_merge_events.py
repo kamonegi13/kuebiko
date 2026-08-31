@@ -13,6 +13,7 @@
 """
 
 import argparse
+import asyncio
 import sys
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
@@ -21,12 +22,21 @@ sys.path.insert(0, "/app")
 
 import numpy as np
 
+from src.config_loader import load_app_config
+from src.eventnews import pair_shadow
 from src.eventnews.grouping import build_join_entities, edge_is_allowed
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, WINDOW_HOURS
+from src.eventnews.models import MemberArticle as _MemberArticle  # noqa: F401
 from src.eventnews.runner import _max_importance
 from src.eventnews.state import compute_source_breakdown
 from src.storage.run_history import RunHistoryRepository
-from src.ui.services.eventnews_hourly_job import _entity_counts, _load_members, _load_vectors
+from src.tools.model_tiers import Step, build_llm_for
+from src.ui.services.eventnews_hourly_job import (
+    _embed_summaries,
+    _entity_counts,
+    _load_members,
+    _load_vectors,
+)
 
 
 def _find(parent: dict[str, str], x: str) -> str:
@@ -34,6 +44,35 @@ def _find(parent: dict[str, str], x: str) -> str:
         parent[x] = parent[parent[x]]
         x = parent[x]
     return x
+
+
+def _keep_ml_approved(
+    edges: list[tuple[str, str, float]],
+    candidate_pairs: list[tuple[str, str]],
+    members: dict[str, _MemberArticle],
+    vecs: dict[str, np.ndarray],
+) -> list[tuple[str, str, float]]:
+    """毎時の群化と**同じ判定**で辺をふるいにかける。落とした数を表示する。"""
+    config = load_app_config()
+    llm = build_llm_for(Step.TRIAGE, config)
+    pairs = [(members[a], members[b]) for a, b in candidate_pairs]
+    verdicts = asyncio.run(
+        pair_shadow.judge_pairs(
+            pairs,
+            vecs,
+            llm=llm,
+            embed_summary=lambda arts: _embed_summaries(config, arts),
+        )
+    )
+    ok = pair_shadow.decisions_of(verdicts)
+    kept = [
+        e for e, (a, b) in zip(edges, candidate_pairs, strict=True) if ok.get(frozenset((a, b)))
+    ]
+    print(
+        f"ML 判定: 辺 {len(edges)} 本 → {len(kept)} 本 ({len(edges) - len(kept)} 本を却下)",
+        flush=True,
+    )
+    return kept
 
 
 def main() -> None:
@@ -84,6 +123,7 @@ def main() -> None:
                     pairs.add((a, b))
 
     edges: list[tuple[str, str, float]] = []
+    candidate_pairs: list[tuple[str, str]] = []
     for a, b in pairs:
         ra, rb = art_of[a], art_of[b]
         if ra.state.item_id == rb.state.item_id:
@@ -97,6 +137,16 @@ def main() -> None:
         cos = float(np.dot(vecs[a], vecs[b]))
         if edge_is_allowed(ents[a], ents[b], shared, cos):
             edges.append((ra.state.item_id, rb.state.item_id, cos))
+            candidate_pairs.append((a, b))
+
+    # ⭐ 本番の群化が ML を使っているなら、遡及も **同じ判定**を通す。
+    #    決定論だけで遡及すると、ML が抑えているまとめ記事・ニュースレター・
+    #    トレンド記事を潰してしまう (2026-09-01 の全期間 dry-run で実際に出た:
+    #    週刊まとめ同士 / ニュースレター同士 / 別キャンペーン 9 件を 1 事象へ)。
+    if pair_shadow.is_ml_ready():
+        edges = _keep_ml_approved(edges, candidate_pairs, members, vecs)
+    else:
+        print("⚠ ML 判定が使えない (EVENTNEWS_PAIR_ML / モデル) — 決定論のみで統合する", flush=True)
 
     parent = {r.state.item_id: r.state.item_id for r in single}
     for x, y, _ in edges:
@@ -131,8 +181,8 @@ def main() -> None:
         mm = _load_members(repo, all_articles, counts)
         breakdown = compute_source_breakdown([mm[a] for a in all_articles if a in mm])
         importance = ""
-        for i in ordered:
-            importance = _max_importance(importance, rec_of[i].state.importance)
+        for iid in ordered:
+            importance = _max_importance(importance, rec_of[iid].state.importance)
         repo.update_event_item(
             target,
             {
@@ -143,12 +193,12 @@ def main() -> None:
                 "independent_sources": breakdown.independent,
                 "state_media_count": breakdown.state_media,
                 "unclassified_sources": breakdown.unclassified,
-                "last_reported_at": max(rec_of[i].state.last_reported_at for i in ordered),
+                "last_reported_at": max(rec_of[iid].state.last_reported_at for iid in ordered),
                 "updated_at": datetime.now(UTC),
             },
         )
-        for i in absorbed:
-            repo.update_event_item(i, {"merged_into": target, "updated_at": datetime.now(UTC)})
+        for iid in absorbed:
+            repo.update_event_item(iid, {"merged_into": target, "updated_at": datetime.now(UTC)})
         applied += 1
 
     print(f"\n{'適用' if args.apply else 'dry-run'}: {applied}/{len(merges)} 群", flush=True)

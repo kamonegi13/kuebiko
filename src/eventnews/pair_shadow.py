@@ -118,7 +118,27 @@ async def evaluate(
     embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
 ) -> list[PairVerdict]:
     """観測対象のペアを 1 回だけ評価する。**群化にも記録にもこの結果を使う。**"""
-    pairs = select_pairs(candidates, members, vectors)
+    return await judge_pairs(
+        select_pairs(candidates, members, vectors),
+        vectors,
+        llm=llm,
+        embed_summary=embed_summary,
+    )
+
+
+async def judge_pairs(
+    pairs: Sequence[tuple[MemberArticle, MemberArticle]],
+    vectors: dict[str, np.ndarray],
+    *,
+    llm: LLMClient,
+    embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
+) -> list[PairVerdict]:
+    """**明示したペア**を評価する。ペアの選び方は呼び手が決める。
+
+    ⚠ 判定の実装はここ 1 か所だけ。毎時の群化と遡及統合が別々に持つと必ずずれる
+    (2026-08-31 に遡及側が自前の条件を持っていたため本番のガードが効かなかった。
+    2026-09-01 には本番だけ ML になり、遡及が決定論のままでまとめ記事を潰していた)。
+    """
     if not pairs:
         return []
     involved = {m.article_id: m for pair in pairs for m in pair}
