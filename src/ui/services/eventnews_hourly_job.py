@@ -250,35 +250,32 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     }
 
 
-def _embed_summaries(config: AppConfig, articles: Sequence[MemberArticle]) -> dict[str, np.ndarray]:
+async def _embed_summaries(
+    config: AppConfig, articles: Sequence[MemberArticle]
+) -> dict[str, np.ndarray]:
     """見出し + 要約の埋込をその場で作る (シャドー観測用・永続化しない)。
 
     ⭐ 本文の埋込 (article_embeddings) は **触らない** — あれは意味的重複排除も
     使っているので、入れ替えると別の機能に影響する。群化の材料としては
     「書式の揃った要約」の方が効く (実測 +4pt) ので、2 本目として持つ。
     """
-    import asyncio
-
     from src.tools.embedding_client import OllamaEmbeddingClient
     from src.tools.model_tiers import resolve_embedding_model
 
     client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=resolve_embedding_model())
 
-    async def run() -> dict[str, np.ndarray]:
-        out: dict[str, np.ndarray] = {}
-        for art in articles:
-            text = f"{art.title}\n\n{art.summary}".strip()
-            if not text:
-                continue
-            try:
-                res = await client.embed(text)
-            except Exception as e:  # noqa: BLE001 — 1 件の失敗で観測を止めない
-                _log.warning("summary_embed_failed", article_id=art.article_id, error=str(e)[:120])
-                continue
-            out[art.article_id] = np.asarray(res.vector, dtype=np.float32)
-        return out
-
-    return asyncio.run(run())
+    out: dict[str, np.ndarray] = {}
+    for art in articles:
+        text = f"{art.title}\n\n{art.summary}".strip()
+        if not text:
+            continue
+        try:
+            res = await client.embed(text)
+        except Exception as e:  # noqa: BLE001 — 1 件の失敗で観測を止めない
+            _log.warning("summary_embed_failed", article_id=art.article_id, error=str(e)[:120])
+            continue
+        out[art.article_id] = np.asarray(res.vector, dtype=np.float32)
+    return out
 
 
 def _load_vectors(repo: RunHistoryRepository, article_ids: list[str]) -> dict[str, np.ndarray]:

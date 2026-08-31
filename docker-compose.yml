@@ -123,6 +123,9 @@ services:
       # 概念 PIR の LLM 主題判定 (0 で候補ゲートのみに degrade)。
       # 設計: docs/pir_concept_llm_judge_design.md
       PIR_LLM_JUDGE: ${PIR_LLM_JUDGE:-1}
+      # 群化の ML 判定をシャドー観測する (2026-08-31)。本番の挙動は変えず、
+      # 26B の判定と 19 特徴を event_pair_shadow へ貯めるだけ。0 で停止。
+      EVENTNEWS_PAIR_SHADOW: ${EVENTNEWS_PAIR_SHADOW:-0}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
       # ローカル専用) が、設定画面が「公開面の認証が設定済みか」を正しく表示するために
       # 同じ値を渡す。認証の実施は readonly instance のみ。

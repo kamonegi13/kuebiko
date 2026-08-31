@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 
 import numpy as np
@@ -92,7 +92,7 @@ async def observe(
     vectors: dict[str, np.ndarray],
     *,
     llm: LLMClient,
-    embed_summary: Callable[[Sequence[MemberArticle]], dict[str, np.ndarray]],
+    embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
     now: datetime | None = None,
 ) -> int:
     """ペアを観測して記録する。**戻り値は記録した件数**。例外は呼び手で握り潰す。"""
@@ -100,7 +100,7 @@ async def observe(
     if not pairs:
         return 0
     involved = {m.article_id: m for pair in pairs for m in pair}
-    svecs = embed_summary(list(involved.values()))
+    svecs = await embed_summary(list(involved.values()))
     stamp = now or datetime.now(UTC)
     recorded = 0
     for cand, member in pairs:

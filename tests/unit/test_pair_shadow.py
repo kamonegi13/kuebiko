@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import numpy as np
+import pytest
 
 from src.eventnews.models import MemberArticle
 from src.eventnews.pair_shadow import _MAX_PAIRS, is_enabled, select_pairs
+from src.tools.llm_client import LLMClient
 
 
 def _member(
@@ -82,3 +85,51 @@ def test_pair_count_is_capped() -> None:
     members = [_member(f"m{i}", entities=ents) for i in range(30)]
     vec = {m.article_id: np.asarray([1.0, 0.0], dtype=np.float32) for m in cands + members}
     assert len(select_pairs(cands, members, vec)) == _MAX_PAIRS
+
+
+@pytest.mark.asyncio
+async def test_observe_awaits_the_embedding_callback() -> None:
+    """埋込のコールバックは **async** で呼ばれる。
+
+    ⚠ 2026-08-31: 同期関数の中で ``asyncio.run()`` を呼ぶ実装にしていたため、
+    async の中から呼ぶと ``cannot be called from a running event loop`` で落ちた。
+    単体テストは実物のコールバックを通していなかったので捕まらず、**実データで
+    1 度通して初めて分かった**。契約 (await される) をここで固定する。
+    """
+    import json
+    from types import SimpleNamespace
+
+    from src.eventnews import pair_shadow
+
+    ents = {("cve", "CVE-2026-1")}
+    left, right = _member("a", entities=ents), _member("b", entities=ents)
+    awaited = False
+
+    async def embed(arts):  # type: ignore[no-untyped-def]
+        nonlocal awaited
+        awaited = True
+        return {a.article_id: np.asarray([1.0, 0.0], dtype=np.float32) for a in arts}
+
+    saved: list[dict[str, object]] = []
+    repo = SimpleNamespace(record_pair_shadow=lambda **kw: saved.append(kw))
+
+    class _Llm:
+        model = "test"
+
+        async def generate_structured(self, *a, **k):  # type: ignore[no-untyped-def]
+            raise RuntimeError("判定できない")
+
+    n = await pair_shadow.observe(
+        repo,
+        [left],
+        [right],
+        _VEC,
+        llm=cast(LLMClient, _Llm()),
+        embed_summary=embed,
+    )
+
+    assert awaited, "コールバックが await されていない"
+    assert n == 1
+    # ⭐ 判定できなかったときは None を保つ (False へ倒さない)
+    assert saved[0]["llm_same"] is None
+    assert set(json.loads(str(saved[0]["features_json"]))) >= {"cos", "cos_summary"}
