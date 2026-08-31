@@ -45,16 +45,25 @@ def main() -> None:
 
     judged = [r for r in rows if r["llm_same"] is not None]
     scored = [r for r in rows if r["ml_joined"] is not None]
-    disagree = [r for r in scored if bool(r["ml_joined"]) != bool(r["rule_joined"])] or [
-        r for r in judged if bool(r["llm_same"]) != bool(r["rule_joined"])
-    ]
+    # ⚠ 食い違いの母集団は「何と比べたか」で変わる。ML 採点があれば ML×規則 (母は scored)、
+    #    無ければ LLM×規則 (母は judged)。ここを取り違えると率が薄まって見える。
+    if scored:
+        base, disagree = (
+            scored,
+            [r for r in scored if bool(r["ml_joined"]) != bool(r["rule_joined"])],
+        )
+    else:
+        base, disagree = (
+            judged,
+            [r for r in judged if bool(r["llm_same"]) != bool(r["rule_joined"])],
+        )
     print(f"記録 {len(rows)} 組 / LLM 判定 {len(judged)} / ML 採点 {len(scored)}")
     if scored:
         ml_join = sum(bool(r["ml_joined"]) for r in scored)
         rule_join = sum(bool(r["rule_joined"]) for r in scored)
         print(f"ML が繋ぐ {ml_join} / 規則が繋ぐ {rule_join} / **食い違い {len(disagree)}**")
-    if judged:
-        pct = 100 * len(disagree) / len(judged)
+    if base:
+        pct = 100 * len(disagree) / len(base)
         print(
             f"食い違い率 {pct:.0f}%  (LLM が繋ぐ {sum(bool(r['llm_same']) for r in judged)} / "
             f"規則が繋ぐ {sum(bool(r['rule_joined']) for r in judged)})"
