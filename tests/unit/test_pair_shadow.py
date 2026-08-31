@@ -146,25 +146,75 @@ def test_live_switch_is_off_by_default(monkeypatch) -> None:  # type: ignore[no-
 
 
 @pytest.mark.asyncio
-async def test_decide_returns_empty_without_a_model(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """モデルが読めなければ **空** を返す → 呼び手は決定論のまま動く。
+async def test_ml_is_not_used_when_the_model_is_missing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """モデルが読めなければ **ML は群化に使わない** → 決定論のまま動く。
 
-    ⭐ 「モデルが無い」を沈黙の挙動変更にしない。空 = pair_decision を渡さない =
+    ⭐ 「モデルが無い」を沈黙の挙動変更にしない。呼び手は pair_decision を渡さず、
     edge_is_allowed が決める、という既存経路へ倒れる。
     """
     from src.eventnews import pair_model, pair_shadow
 
+    monkeypatch.setenv("EVENTNEWS_PAIR_ML", "1")
     monkeypatch.setattr(pair_model, "load_model", lambda *a, **k: None)
+    assert not pair_shadow.is_ml_ready()
+
+    # 採点できていない評価からは判定表を作らない (空 = 決定論)
+    ents = {("cve", "CVE-2026-1")}
+    left, right = _member("a", entities=ents), _member("b", entities=ents)
 
     async def embed(arts):  # type: ignore[no-untyped-def]
-        raise AssertionError("モデルが無いのに埋込を呼んではいけない")
+        return {a.article_id: np.asarray([1.0, 0.0], dtype=np.float32) for a in arts}
+
+    class _Llm:
+        model = "test"
+
+        async def generate_structured(self, *a, **k):  # type: ignore[no-untyped-def]
+            raise RuntimeError("判定できない")
+
+    verdicts = await pair_shadow.evaluate(
+        [left], [right], _VEC, llm=cast(LLMClient, _Llm()), embed_summary=embed
+    )
+    assert len(verdicts) == 1
+    assert verdicts[0].ml_joined is None
+    assert pair_shadow.decisions_of(verdicts) == {}
+
+
+@pytest.mark.asyncio
+async def test_each_pair_is_judged_once() -> None:
+    """1 ペアにつき LLM 判定は **1 回だけ**。
+
+    ⭐ 2026-09-01: 切替前は decide (群化用) と observe (記録用) が同じペア集合に
+    それぞれ 26B を掛けており、EVENTNEWS_PAIR_ML=1 にした瞬間に呼出が倍になる
+    構造だった。評価を 1 回にまとめ、群化用の判定表も記録もその結果から作る。
+    """
+    from types import SimpleNamespace
+
+    from src.eventnews import pair_shadow
 
     ents = {("cve", "CVE-2026-1")}
-    got = await pair_shadow.decide(
-        [_member("a", entities=ents)],
-        [_member("b", entities=ents)],
-        _VEC,
-        llm=cast(LLMClient, object()),
-        embed_summary=embed,
+    left, right = _member("a", entities=ents), _member("b", entities=ents)
+    calls = 0
+
+    async def embed(arts):  # type: ignore[no-untyped-def]
+        return {a.article_id: np.asarray([1.0, 0.0], dtype=np.float32) for a in arts}
+
+    class _Llm:
+        model = "test"
+
+        async def generate_structured(self, *a, **k):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("判定できない")
+
+    verdicts = await pair_shadow.evaluate(
+        [left], [right], _VEC, llm=cast(LLMClient, _Llm()), embed_summary=embed
     )
-    assert got == {}
+    judged_once = calls
+
+    # 群化用の判定表と記録は、**追加の LLM 呼出なしで**同じ評価から作れる
+    saved: list[dict[str, object]] = []
+    repo = SimpleNamespace(record_pair_shadow=lambda **kw: saved.append(kw))
+    pair_shadow.decisions_of(verdicts)
+    assert pair_shadow.record(repo, verdicts) == 1
+    assert calls == judged_once, "判定表や記録を作るために LLM を呼び直している"
+    assert saved[0]["llm_same"] is None

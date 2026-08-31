@@ -213,20 +213,28 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
 
     members_all = [m for _, members in existing for m in members]
 
-    # ⭐ ML 判定を群化に反映する (EVENTNEWS_PAIR_ML=1)。既定 off。
-    #    モデルが読めない / 判定が作れないときは空になり、決定論のまま動く。
-    pair_decision: dict[frozenset[str], bool] = {}
-    if pair_shadow.is_live():
+    # ⭐ ペアの評価は **1 回だけ**。群化に渡す判定 (EVENTNEWS_PAIR_ML=1) と
+    #    シャドー記録 (EVENTNEWS_PAIR_SHADOW=1) の両方がこの結果を使う。
+    #    以前は decide/observe が同じペアに同じ 26B 判定を二重に掛けていた。
+    #    評価が作れなければ空 → 群化は決定論のまま動き、記録も残らない。
+    verdicts: list[pair_shadow.PairVerdict] = []
+    ml_ready = pair_shadow.is_ml_ready()
+    if ml_ready or pair_shadow.is_enabled():
         try:
-            pair_decision = await pair_shadow.decide(
+            verdicts = await pair_shadow.evaluate(
                 candidates,
                 members_all,
                 vectors,
+                # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
                 llm=build_llm_for(Step.TRIAGE, config),
                 embed_summary=lambda arts: _embed_summaries(config, arts),
             )
-        except Exception as e:  # noqa: BLE001 — 判定が作れなくても群化は続ける
-            _log.warning("eventnews_pair_ml_failed", error=str(e)[:200])
+        except Exception as e:  # noqa: BLE001 — 評価が作れなくても群化は続ける
+            _log.warning("eventnews_pair_eval_failed", error=str(e)[:200])
+
+    pair_decision = pair_shadow.decisions_of(verdicts) if ml_ready else {}
+    if pair_decision:
+        _log.info("eventnews_pair_ml", pairs=len(pair_decision), joined=sum(pair_decision.values()))
 
     result = await run_hourly(
         repo,
@@ -237,21 +245,14 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         pair_decision=pair_decision or None,
     )
 
-    # ⭐ シャドー観測は **群化の後**に走らせる。本番の挙動には一切触れない。
-    #    失敗しても毎時ジョブを止めない (観測は本流ではない)。
+    # ⭐ 記録は **群化の後**。書き込みに失敗しても毎時ジョブを止めない (観測は本流ではない)。
+    #    ⚠ 規則の判定 (rule_joined) は評価時に独立して計算してある —
+    #    ML を群化に使っていても「規則ならどうしたか」の比較が成立する。
     shadow_pairs = 0
-    if pair_shadow.is_enabled():
+    if verdicts and pair_shadow.is_enabled():
         try:
-            shadow_pairs = await pair_shadow.observe(
-                repo,
-                candidates,
-                members_all,
-                vectors,
-                # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
-                llm=build_llm_for(Step.TRIAGE, config),
-                embed_summary=lambda arts: _embed_summaries(config, arts),
-            )
-        except Exception as e:  # noqa: BLE001 — 観測の失敗で群化を落とさない
+            shadow_pairs = pair_shadow.record(repo, verdicts)
+        except Exception as e:  # noqa: BLE001 — 記録の失敗で群化を落とさない
             _log.warning("eventnews_pair_shadow_failed", error=str(e)[:200])
 
     elapsed = round(time.monotonic() - started, 1)
