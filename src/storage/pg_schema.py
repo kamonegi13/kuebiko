@@ -809,6 +809,18 @@ CREATE TABLE IF NOT EXISTS event_items (
 CREATE INDEX IF NOT EXISTS idx_event_items_origin_status
     ON event_items(origin, status, last_reported_at);
 
+-- 群化のシャドー記録 (2026-08-31)。本番の挙動は変えず、ML 判定の材料を貯める。
+CREATE TABLE IF NOT EXISTS event_pair_shadow (
+    id             BIGSERIAL PRIMARY KEY,
+    observed_at    TEXT      NOT NULL,
+    left_id        TEXT      NOT NULL,
+    right_id       TEXT      NOT NULL,
+    features_json  TEXT      NOT NULL,
+    llm_same       INTEGER,
+    rule_joined    INTEGER   NOT NULL,
+    cos            REAL      NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS event_item_versions (
     item_id         TEXT     NOT NULL,
     version         INTEGER  NOT NULL,
@@ -849,6 +861,7 @@ CREATE TABLE IF NOT EXISTS dedup_semantic_skips (
     ts            TEXT      NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dedup_semantic_skips_ts ON dedup_semantic_skips(ts);
+CREATE INDEX IF NOT EXISTS idx_event_pair_shadow_observed ON event_pair_shadow(observed_at);
 """
 
 

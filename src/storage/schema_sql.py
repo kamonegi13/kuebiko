@@ -680,6 +680,20 @@ CREATE INDEX IF NOT EXISTS idx_event_items_origin_status
     ON event_items(origin, status, last_reported_at);
 
 -- 版履歴 (§6/§9)。保持上限 20/item、ただし version=1 は常に保持 (訂正の追跡可能性)。
+-- 群化のシャドー記録 (2026-08-31)。ML 判定の材料を実トラフィックで貯める。
+-- 本番の挙動は変えない — 現行の規則の判定 (rule_joined) と並べて残すだけ。
+CREATE TABLE IF NOT EXISTS event_pair_shadow (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    observed_at    TEXT     NOT NULL,
+    left_id        TEXT     NOT NULL,
+    right_id       TEXT     NOT NULL,
+    features_json  TEXT     NOT NULL,
+    llm_same       INTEGER,
+    rule_joined    INTEGER  NOT NULL,
+    cos            REAL     NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_pair_shadow_observed ON event_pair_shadow(observed_at);
+
 CREATE TABLE IF NOT EXISTS event_item_versions (
     item_id         TEXT    NOT NULL,
     version         INTEGER NOT NULL,

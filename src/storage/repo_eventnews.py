@@ -566,6 +566,38 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 (item_id, article_id, _to_iso(joined_at), contributed_new_facts, join_signal),
             )
 
+    def record_pair_shadow(
+        self,
+        *,
+        observed_at: datetime,
+        left_id: str,
+        right_id: str,
+        features_json: str,
+        llm_same: bool | None,
+        rule_joined: bool,
+        cos: float,
+    ) -> None:
+        """群化のシャドー記録を 1 行残す (本番の挙動は変えない)。
+
+        ``llm_same`` は **None を保つ** — 「別と判定した」と「判定できなかった」は
+        別の情報なので、False へ倒さない。
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO event_pair_shadow"
+                " (observed_at, left_id, right_id, features_json, llm_same, rule_joined, cos)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    _to_iso(observed_at),
+                    left_id,
+                    right_id,
+                    features_json,
+                    None if llm_same is None else int(llm_same),
+                    int(rule_joined),
+                    float(cos),
+                ),
+            )
+
     def list_event_members(self, item_id: str) -> list[EventMemberRecord]:
         """アイテムの構成記事を参加順 (joined_at ASC) で返す。"""
         with self._connect() as conn:

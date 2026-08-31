@@ -18,7 +18,8 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
-from src.config_loader import load_app_config
+from src.config_loader import AppConfig, load_app_config
+from src.eventnews import pair_shadow
 from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.hourly import hydrate_open_items, run_hourly
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, MemberArticle
@@ -211,6 +212,24 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         return build_llm_for(Step.EVENT_NEWS, config)
 
     result = await run_hourly(repo, candidates, vectors, existing, _llm if generate else None)
+
+    # ⭐ シャドー観測は **群化の後**に走らせる。本番の挙動には一切触れない。
+    #    失敗しても毎時ジョブを止めない (観測は本流ではない)。
+    shadow_pairs = 0
+    if pair_shadow.is_enabled():
+        try:
+            shadow_pairs = await pair_shadow.observe(
+                repo,
+                candidates,
+                [m for _, members in existing for m in members],
+                vectors,
+                # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
+                llm=build_llm_for(Step.TRIAGE, config),
+                embed_summary=lambda arts: _embed_summaries(config, arts),
+            )
+        except Exception as e:  # noqa: BLE001 — 観測の失敗で群化を落とさない
+            _log.warning("eventnews_pair_shadow_failed", error=str(e)[:200])
+
     elapsed = round(time.monotonic() - started, 1)
     _log.info(
         "eventnews_hourly_summary",
@@ -222,12 +241,44 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     return {
         "candidates": result.candidates,
         "hydrated_items": result.hydrated_items,
+        "shadow_pairs": shadow_pairs,
         "created": result.stats.created,
         "updated": result.stats.updated,
         "reinforced": result.stats.reinforced,
         "generated": result.stats.generated,
         "elapsed_seconds": elapsed,
     }
+
+
+def _embed_summaries(config: AppConfig, articles: Sequence[MemberArticle]) -> dict[str, np.ndarray]:
+    """見出し + 要約の埋込をその場で作る (シャドー観測用・永続化しない)。
+
+    ⭐ 本文の埋込 (article_embeddings) は **触らない** — あれは意味的重複排除も
+    使っているので、入れ替えると別の機能に影響する。群化の材料としては
+    「書式の揃った要約」の方が効く (実測 +4pt) ので、2 本目として持つ。
+    """
+    import asyncio
+
+    from src.tools.embedding_client import OllamaEmbeddingClient
+    from src.tools.model_tiers import resolve_embedding_model
+
+    client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=resolve_embedding_model())
+
+    async def run() -> dict[str, np.ndarray]:
+        out: dict[str, np.ndarray] = {}
+        for art in articles:
+            text = f"{art.title}\n\n{art.summary}".strip()
+            if not text:
+                continue
+            try:
+                res = await client.embed(text)
+            except Exception as e:  # noqa: BLE001 — 1 件の失敗で観測を止めない
+                _log.warning("summary_embed_failed", article_id=art.article_id, error=str(e)[:120])
+                continue
+            out[art.article_id] = np.asarray(res.vector, dtype=np.float32)
+        return out
+
+    return asyncio.run(run())
 
 
 def _load_vectors(repo: RunHistoryRepository, article_ids: list[str]) -> dict[str, np.ndarray]:
