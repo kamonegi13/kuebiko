@@ -256,12 +256,21 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
             _log.warning("eventnews_pair_shadow_failed", error=str(e)[:200])
 
     elapsed = round(time.monotonic() - started, 1)
+    # ⚠ ML の承認と実際の合流を **同じ行に**出す。2026-09-01 の切替では承認 13 組に
+    #    対し合流 1 件という乖離が起きていたのに、両者が別の行に散っていたため
+    #    「ジョブは succeeded」以上のことが分からなかった。ml_approved と
+    #    joined が桁で食い違っていたら、判定がどこかで打ち消されている。
+    #    (候補側は verdict.left — frozenset からはどちらが候補か分からない)
+    approved_articles = len({v.left.article_id for v in verdicts if pair_decision.get(v.key)})
     _log.info(
         "eventnews_hourly_summary",
         elapsed_seconds=elapsed,
         candidates=result.candidates,
         hydrated=result.hydrated_items,
         generated=result.stats.generated,
+        ml_approved_pairs=sum(pair_decision.values()),
+        ml_approved_articles=approved_articles,
+        joined=result.stats.reinforced + result.stats.updated,
     )
     return {
         "candidates": result.candidates,
