@@ -148,6 +148,27 @@ def names_of_type(entities: frozenset[tuple[str, str]], entity_type: str) -> set
     return {value for etype, value in entities if etype == entity_type}
 
 
+def shared_is_actor_name_only(shared: Sequence[tuple[str, str]]) -> bool:
+    """共有が実質「アクター名 1 つ」だけか。だとしたら辺にしない。
+
+    ⭐ **アクターは「誰が」であって「何が起きたか」ではない。** 同じ攻撃者の別々の
+    作戦は必ずアクター名を共有するので、これを単独で辺の根拠にすると、活動が活発な
+    攻撃者ほど全部 1 つに潰れる (実測 2026-08-31: Kimsuky の 6 記事が 1 事象になり、
+    うち 3 件は Chrome 拡張 / 予備軍標的 / 漏洩問い合わせ詐称の**別作戦**だった)。
+
+    CVE・被害者名・マルウェア名・ツール名は「何が起きたか」を指すので 1 つでも
+    根拠になる。アクター名だけが例外。実測でこの条件に依存する辺は全体の 3%。
+
+    ⚠ **型ではなく名前で見る。** ``kimsuky`` は actor と malware_family の両方に
+    抽出されることがあり、型で判定すると「2 種類あるから可」と誤って通る。
+    """
+    names = {value.casefold() for _, value in shared}
+    if len(names) != 1:
+        return False
+    only = next(iter(names))
+    return any(etype == "actor" and value.casefold() == only for etype, value in shared)
+
+
 def blocked_by_different_victims(
     cand_entities: frozenset[tuple[str, str]],
     member_entities: frozenset[tuple[str, str]],
@@ -173,6 +194,27 @@ def blocked_by_different_victims(
     return not (cand & member)
 
 
+def edge_is_allowed(
+    cand_entities: frozenset[tuple[str, str]],
+    member_entities: frozenset[tuple[str, str]],
+    shared: Sequence[tuple[str, str]],
+    cos: float,
+) -> bool:
+    """このペアを辺にしてよいか。**参加判定と遡及統合は必ずこれを共有する。**
+
+    判定を 2 箇所に持つと必ずずれる — 2026-08-31 に遡及統合スクリプトが自前の
+    条件を持っていたため、本番へ入れたガードが遡及側で効かず、別作戦の
+    Kimsuky 記事が統合対象のまま残った。
+    """
+    if len(shared) < _MIN_SHARED_FOR_EDGE:
+        return False
+    if blocked_by_different_victims(cand_entities, member_entities):
+        return False
+    if shared_is_actor_name_only(shared):
+        return False
+    return cos >= required_cos(cand_entities, member_entities, shared)
+
+
 def _member_edges(
     cand_entities: frozenset[tuple[str, str]],
     cand_unit: np.ndarray,
@@ -183,14 +225,12 @@ def _member_edges(
     edges: list[tuple[float, tuple[tuple[str, str], ...], float]] = []
     for member in members:
         shared = tuple(sorted(cand_entities & member.entities))
-        if len(shared) < _MIN_SHARED_FOR_EDGE:
-            continue
-        if blocked_by_different_victims(cand_entities, member.entities):
-            continue
         vec = member_vecs.get(member.article_id)
         if vec is None:
             continue
         cos = float(np.dot(cand_unit, _unit_vector(vec)))
+        if not edge_is_allowed(cand_entities, member.entities, shared, cos):
+            continue
         edges.append((cos, shared, required_cos(cand_entities, member.entities, shared)))
     return edges
 

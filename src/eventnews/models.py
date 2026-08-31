@@ -18,7 +18,13 @@ from pydantic_core import CoreSchema
 # 結合エッジの埋込コサイン下限
 COS_THRESHOLD = 0.70
 # 結合信号に使う entity 種別 (actor_provisional は汚染前科のため明示除外)
-JOIN_ENTITY_TYPES: tuple[str, ...] = ("cve", "victim_org", "actor", "malware_family")
+# tool は 2026-08-31 に追加。動機: 同じアクターの**別作戦**はアクター名しか共有せず、
+# それだけで繋ぐと活動が活発な攻撃者ほど 1 事象へ潰れる (実測 Kimsuky で 6 記事が
+# 1 つになり、うち 3 件は別作戦だった)。作戦を分けるのは「何を使ったか」で、
+# ``AnyDesk + Chrome Remote Desktop`` のような組み合わせが指紋として効く。
+# 汎用サービス名 (Dropbox / OneDrive 等) は頻出ガードが落とす — 実測 14 日で
+# 252 種のうち cap 超は 3 種のみ、179 種は 1 記事だけ。
+JOIN_ENTITY_TYPES: tuple[str, ...] = ("cve", "victim_org", "actor", "malware_family", "tool")
 # entity 値の頻出ガード: 窓内でこれを超える記事に出る値は結合信号に使わない
 ENTITY_FREQ_CAP = 12
 # 頻出ガードを **適用しない** 型。CVE ID は脆弱性 1 件を指す大域一意な識別子で、

@@ -21,7 +21,7 @@ import numpy as np
 from src.config_loader import load_app_config
 from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.hourly import hydrate_open_items, run_hourly
-from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
+from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, MemberArticle
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
 from src.storage.run_history import RunHistoryRepository
@@ -69,10 +69,15 @@ ORDER BY 2
 # ここを時刻で絞ると、復元した既存メンバー (最大 72h 前) の entity が空になり、
 # 「共有 entity >= 1」が永久に不成立 → **合流が構造的に起きなくなる**
 # (2026-08-24: 本番で 25 アイテム全件が単独記事のままだった原因)。
-_SQL_ENTITIES_BY_ID = """
+# ⚠ **型の一覧をここに書かない。** JOIN_ENTITY_TYPES から組み立てる — 2026-08-31 に
+# tool を定数へ足したのに、この SQL がベタ書きのままで読み込まれず、変更が丸ごと
+# 無効だった (「同じものが 2 箇所」)。
+_JOIN_TYPES_SQL = ",".join(f"'{t}'" for t in JOIN_ENTITY_TYPES)
+
+_SQL_ENTITIES_BY_ID = f"""
 SELECT article_id, entity_type, LOWER(TRIM(value)) FROM article_entities
-WHERE entity_type IN ('cve','victim_org','actor','malware_family')
-  AND LENGTH(TRIM(value)) >= 4 AND article_id IN ({placeholders})
+WHERE entity_type IN ({_JOIN_TYPES_SQL})
+  AND LENGTH(TRIM(value)) >= 4 AND article_id IN ({{placeholders}})
 """
 
 # 頻出ガード (ENTITY_FREQ_CAP) の分母。窓内コーパス全体で数えないと、
@@ -84,7 +89,7 @@ WHERE entity_type IN ('cve','victim_org','actor','malware_family')
 _SQL_ENTITY_COUNTS = f"""
 SELECT e.entity_type, LOWER(TRIM(e.value)), e.article_id
 FROM article_entities e
-WHERE e.entity_type IN ('cve','victim_org','actor','malware_family')
+WHERE e.entity_type IN ({_JOIN_TYPES_SQL})
   AND LENGTH(TRIM(e.value)) >= 4
   AND e.article_id IN (
     SELECT a.article_id FROM {DEDUP_ARTICLES} a WHERE a.created_at >= ?

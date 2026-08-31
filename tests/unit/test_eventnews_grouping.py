@@ -131,7 +131,10 @@ def test_cos_and_shared_entity_together_join() -> None:
 
 def test_entity_chain_drift_blocked_by_invariant() -> None:
     common = ("malware_family", "shared-mal")
-    side = ("actor", "actor-y")
+    # ⚠ side を actor にしない — 2026-08-31 以降「アクター名だけの共有」は辺の
+    #    段階で落ちるので、invariant まで到達せずこのテストの主題が確かめられない
+    #    (アクター名単独の遮断は test_eventnews_shared_names_relaxation.py が持つ)。
+    side = ("malware_family", "side-mal")
     a = _member("a", frozenset({common}))
     b = _member("b", frozenset({common}))
     c = _member("c", frozenset({common, side}))
@@ -358,7 +361,8 @@ def test_build_join_entities_normalizes_victim_org() -> None:
 
 
 def test_build_join_entities_excludes_non_join_types() -> None:
-    raw = [("a1", "actor_provisional", "maybe-actor"), ("a1", "tool", "cobalt-strike")]
+    # ⚠ tool は 2026-08-31 に結合信号へ昇格した。除外の例には使えない
+    raw = [("a1", "actor_provisional", "maybe-actor"), ("a1", "ttp", "T1059")]
     counts: dict[tuple[str, str], int] = {}
 
     result = build_join_entities(raw, counts)

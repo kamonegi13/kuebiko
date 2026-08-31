@@ -21,11 +21,7 @@ sys.path.insert(0, "/app")
 
 import numpy as np
 
-from src.eventnews.grouping import (
-    blocked_by_different_victims,
-    build_join_entities,
-    required_cos,
-)
+from src.eventnews.grouping import build_join_entities, edge_is_allowed
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, WINDOW_HOURS
 from src.eventnews.runner import _max_importance
 from src.eventnews.state import compute_source_breakdown
@@ -95,11 +91,11 @@ def main() -> None:
         gap = abs((ra.state.last_reported_at - rb.state.last_reported_at).total_seconds())
         if gap > WINDOW_HOURS * 3600:
             continue
-        if blocked_by_different_victims(ents[a], ents[b]):
-            continue  # 名指しの被害者が食い違う = 別の事象 (cos は見ない)
+        # ⚠ 条件を自前で書かない。参加判定と**同じ関数**を通す
+        #    (2026-08-31 に自前の条件を持っていてガードが片方だけ効かなかった)。
         shared = tuple(sorted(ents[a] & ents[b]))
         cos = float(np.dot(vecs[a], vecs[b]))
-        if cos >= required_cos(ents[a], ents[b], shared):
+        if edge_is_allowed(ents[a], ents[b], shared, cos):
             edges.append((ra.state.item_id, rb.state.item_id, cos))
 
     parent = {r.state.item_id: r.state.item_id for r in single}

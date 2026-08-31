@@ -127,3 +127,63 @@ class TestDifferentVictimsAreDifferentEvents:
         a = frozenset({("victim_org", "x"), ("victim_org", "y"), ("victim_org", "z")})
         b = frozenset({("victim_org", "y")})
         assert not blocked_by_different_victims(a, b)
+
+
+class TestActorNameAloneIsNotEnough:
+    """アクター名だけの共有では繋がない (2026-08-31)。
+
+    アクターは「誰が」であって「何が起きたか」ではない。同じ攻撃者の別作戦は必ず
+    アクター名を共有するので、単独で辺の根拠にすると活動が活発な攻撃者ほど 1 事象へ
+    潰れる。実測: Kimsuky の 6 記事が 1 つになり、うち 3 件は別作戦だった。
+    """
+
+    def test_actor_alone_is_blocked(self) -> None:
+        from src.eventnews.grouping import shared_is_actor_name_only
+
+        assert shared_is_actor_name_only([("actor", "kimsuky")])
+
+    def test_same_name_as_actor_and_malware_is_still_actor_alone(self) -> None:
+        """⚠ 型ではなく名前で見る。``kimsuky`` は両方の型に抽出される (実例)。"""
+        from src.eventnews.grouping import shared_is_actor_name_only
+
+        assert shared_is_actor_name_only([("actor", "kimsuky"), ("malware_family", "Kimsuky")])
+
+    def test_actor_plus_a_tool_is_allowed(self) -> None:
+        """作戦を分けるのは「何を使ったか」。ENKI の Kimsuky 報告 3 件がこの形。"""
+        from src.eventnews.grouping import shared_is_actor_name_only
+
+        assert not shared_is_actor_name_only(
+            [("actor", "kimsuky"), ("tool", "Chrome Remote Desktop")]
+        )
+
+    def test_a_cve_alone_is_still_enough(self) -> None:
+        """CVE・被害者名・マルウェア名は「何が起きたか」を指すので 1 つで足りる。"""
+        from src.eventnews.grouping import shared_is_actor_name_only
+
+        assert not shared_is_actor_name_only([("cve", "CVE-2026-1000")])
+        assert not shared_is_actor_name_only([("victim_org", "atf")])
+        assert not shared_is_actor_name_only([("malware_family", "Medusa")])
+
+
+def test_tool_is_a_join_signal() -> None:
+    from src.eventnews.models import JOIN_ENTITY_TYPES
+
+    assert "tool" in JOIN_ENTITY_TYPES
+
+
+def test_the_loader_reads_every_join_entity_type() -> None:
+    """読み込み SQL の型一覧が ``JOIN_ENTITY_TYPES`` から導かれていること。
+
+    ⚠ 2026-08-31: 定数に ``tool`` を足したのに、毎時ジョブの SQL が型名をベタ書き
+    していたため一切読み込まれず、**変更が丸ごと無効**だった。定数と SQL が別々に
+    存在する限り必ずずれるので、導出になっていることをここで固定する。
+    """
+    from src.eventnews.models import JOIN_ENTITY_TYPES
+    from src.ui.services.eventnews_hourly_job import (
+        _SQL_ENTITIES_BY_ID,
+        _SQL_ENTITY_COUNTS,
+    )
+
+    for entity_type in JOIN_ENTITY_TYPES:
+        assert f"'{entity_type}'" in _SQL_ENTITIES_BY_ID, entity_type
+        assert f"'{entity_type}'" in _SQL_ENTITY_COUNTS, entity_type
