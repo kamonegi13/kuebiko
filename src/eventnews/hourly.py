@@ -9,7 +9,7 @@ v1 は shadow: この関数はスケジューラに登録しない (scripts か�
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -70,6 +70,8 @@ async def run_hourly(
     vectors: dict[str, np.ndarray],
     existing: Sequence[tuple[ItemState, list[MemberArticle]]],
     llm_factory: object,  # Callable[[], LLMClient] | None
+    *,
+    pair_decision: Mapping[frozenset[str], bool] | None = None,
 ) -> HourlyResult:
     """新着記事のみを既存状態の続きとして処理する。
 
@@ -86,6 +88,7 @@ async def run_hourly(
         llm_factory,  # type: ignore[arg-type]
         generate=True,
         existing=existing,
+        pair_decision=pair_decision,
     )
     _log.info(
         "eventnews_hourly_done",

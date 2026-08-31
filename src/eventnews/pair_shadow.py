@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from src.eventnews import pair_model
 from src.eventnews.grouping import edge_is_allowed
 from src.eventnews.models import WINDOW_HOURS, MemberArticle
 from src.eventnews.pair_features import (
@@ -133,3 +134,60 @@ async def observe(
         recorded += 1
     _log.info("eventnews_pair_shadow", pairs=recorded)
     return recorded
+
+
+#: ML 判定を **本番の群化に使う** フラグ。既定は off (シャドーだけ回す)。
+_ENV_LIVE = "EVENTNEWS_PAIR_ML"
+
+
+def is_live() -> bool:
+    """ML の判定を群化に反映するか。⭐ 有効化には観測 (shadow) も必要ない —
+    こちらだけ立てても動くが、切替後も観測を続けると比較ができる。"""
+    return os.environ.get(_ENV_LIVE, "0") == "1"
+
+
+async def decide(
+    candidates: Sequence[MemberArticle],
+    members: Sequence[MemberArticle],
+    vectors: dict[str, np.ndarray],
+    *,
+    llm: LLMClient,
+    embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
+) -> dict[frozenset[str], bool]:
+    """群化に渡す判定表を作る。**モデルが読めなければ空** (呼び手は決定論のまま)。
+
+    ⭐ 群単位の実測 (2026-08-31・365 組): 決定論 67% → これ 83%、誤結合 33 → 14。
+    ペア単位では 70% → 88% で、差は連鎖と割当の取り合いによるもの。
+    """
+    model = pair_model.load_model()
+    if model is None:
+        return {}
+    pairs = select_pairs(candidates, members, vectors)
+    if not pairs:
+        return {}
+    involved = {m.article_id: m for pair in pairs for m in pair}
+    svecs = await embed_summary(list(involved.values()))
+    out: dict[frozenset[str], bool] = {}
+    for cand, member in pairs:
+        left = _side(cand, vectors[cand.article_id], svecs.get(cand.article_id))
+        right = _side(member, vectors[member.article_id], svecs.get(member.article_id))
+        same = await judge_pair(
+            llm,
+            build_prompt(
+                left.title,
+                cand.summary,
+                left.feed_title,
+                right.title,
+                member.summary,
+                right.feed_title,
+            ),
+        )
+        feats = pair_features(left, right) + [
+            1.0 if same else 0.0,
+            0.0 if same is None else 1.0,
+        ]
+        out[frozenset((left.article_id, right.article_id))] = model.joins(
+            feats, llm_available=same is not None
+        )
+    _log.info("eventnews_pair_ml", pairs=len(out), joined=sum(out.values()))
+    return out

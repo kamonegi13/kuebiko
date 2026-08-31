@@ -220,6 +220,9 @@ def _member_edges(
     cand_unit: np.ndarray,
     members: Sequence[MemberArticle],
     member_vecs: Mapping[str, np.ndarray],
+    *,
+    cand_id: str = "",
+    pair_decision: Mapping[frozenset[str], bool] | None = None,
 ) -> list[tuple[float, tuple[tuple[str, str], ...], float]]:
     """各メンバーとの (cos, 共有 entity, 要求 cos) を、共有 entity があるものだけ集める。"""
     edges: list[tuple[float, tuple[tuple[str, str], ...], float]] = []
@@ -229,7 +232,12 @@ def _member_edges(
         if vec is None:
             continue
         cos = float(np.dot(cand_unit, _unit_vector(vec)))
-        if not edge_is_allowed(cand_entities, member.entities, shared, cos):
+        if pair_decision is not None:
+            # ⭐ 判定を外へ委ねる (ML)。**cos は辺の順位付けにだけ使う** —
+            #    どのアイテムを選ぶかは従来どおり最高 cos で決める。
+            if not pair_decision.get(frozenset((cand_id, member.article_id)), False):
+                continue
+        elif not edge_is_allowed(cand_entities, member.entities, shared, cos):
             continue
         edges.append((cos, shared, required_cos(cand_entities, member.entities, shared)))
     return edges
@@ -242,13 +250,21 @@ def _item_candidate(
     members: Sequence[MemberArticle],
     member_vecs: Mapping[str, np.ndarray],
     now: datetime,
+    pair_decision: Mapping[frozenset[str], bool] | None = None,
 ) -> _EdgeOutcome:
     """1 アイテムに対する参加可否を判定する。
 
     戻り値: 参加不可 (エッジ自体が無い) は None、参加不可だが理由がある場合は
     その理由文字列 (例: 'dormant_strict')、参加可能なら (cos, 共有 entity)。
     """
-    edges = _member_edges(candidate.entities, cand_unit, members, member_vecs)
+    edges = _member_edges(
+        candidate.entities,
+        cand_unit,
+        members,
+        member_vecs,
+        cand_id=candidate.article_id,
+        pair_decision=pair_decision,
+    )
     if not edges:
         return None
 
@@ -290,6 +306,7 @@ def assign_article(
     item_members: Mapping[str, tuple[MemberArticle, ...]],
     member_vecs: Mapping[str, np.ndarray],
     now: datetime,
+    pair_decision: Mapping[frozenset[str], bool] | None = None,
 ) -> Assignment:
     """1 記事をどのアイテムに参加させるか判定する (§5)。
 
@@ -297,6 +314,10 @@ def assign_article(
     アイテムのうち、MEMBER_CAP とアイテム不変条件を満たすものの中から
     最高 cos (同点は first_reported_at の古い方) を選ぶ。どこにも入らなければ
     ``target_item_id=None`` (呼出側が新アイテムを起こす)。
+
+    ⭐ ``pair_decision`` を渡すと、辺の可否の判定を**そこへ委ねる** (ML 判定)。
+    渡さなければ従来どおり ``edge_is_allowed`` (決定論) が決める。**どのアイテムを
+    選ぶかは常に最高 cos** — 判定を差し替えても選び方は変えない。
     """
     cand_unit = _unit_vector(cand_vec)
     rejected: list[str] = []
@@ -309,7 +330,9 @@ def assign_article(
         if not members:
             continue
 
-        outcome = _item_candidate(item, candidate, cand_unit, members, member_vecs, now)
+        outcome = _item_candidate(
+            item, candidate, cand_unit, members, member_vecs, now, pair_decision
+        )
         if outcome is None:
             continue
         if isinstance(outcome, str):

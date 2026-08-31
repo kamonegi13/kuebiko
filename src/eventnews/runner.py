@@ -355,6 +355,7 @@ async def process_candidates(
     *,
     generate: bool = True,
     existing: Sequence[tuple[ItemState, Sequence[MemberArticle]]] = (),
+    pair_decision: Mapping[frozenset[str], bool] | None = None,
 ) -> ProcessStats:
     """錨時刻順の逐次適用。candidates は anchor_ts 昇順であること。
 
@@ -392,7 +393,7 @@ async def process_candidates(
         snapshot_list = [it.snapshot for it in items.values()]
         member_map = {it.snapshot.item_id: tuple(it.members) for it in items.values()}
         assignment: Assignment = grouping.assign_article(
-            cand, vec, snapshot_list, member_map, vectors, now
+            cand, vec, snapshot_list, member_map, vectors, now, pair_decision
         )
 
         if assignment.target_item_id is None:

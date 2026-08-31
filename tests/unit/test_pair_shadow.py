@@ -133,3 +133,38 @@ async def test_observe_awaits_the_embedding_callback() -> None:
     # ⭐ 判定できなかったときは None を保つ (False へ倒さない)
     assert saved[0]["llm_same"] is None
     assert set(json.loads(str(saved[0]["features_json"]))) >= {"cos", "cos_summary"}
+
+
+def test_live_switch_is_off_by_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """ML を群化に使うのは明示的に開けたときだけ。"""
+    from src.eventnews import pair_shadow
+
+    monkeypatch.delenv("EVENTNEWS_PAIR_ML", raising=False)
+    assert not pair_shadow.is_live()
+    monkeypatch.setenv("EVENTNEWS_PAIR_ML", "1")
+    assert pair_shadow.is_live()
+
+
+@pytest.mark.asyncio
+async def test_decide_returns_empty_without_a_model(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """モデルが読めなければ **空** を返す → 呼び手は決定論のまま動く。
+
+    ⭐ 「モデルが無い」を沈黙の挙動変更にしない。空 = pair_decision を渡さない =
+    edge_is_allowed が決める、という既存経路へ倒れる。
+    """
+    from src.eventnews import pair_model, pair_shadow
+
+    monkeypatch.setattr(pair_model, "load_model", lambda *a, **k: None)
+
+    async def embed(arts):  # type: ignore[no-untyped-def]
+        raise AssertionError("モデルが無いのに埋込を呼んではいけない")
+
+    ents = {("cve", "CVE-2026-1")}
+    got = await pair_shadow.decide(
+        [_member("a", entities=ents)],
+        [_member("b", entities=ents)],
+        _VEC,
+        llm=cast(LLMClient, object()),
+        embed_summary=embed,
+    )
+    assert got == {}

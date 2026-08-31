@@ -211,7 +211,31 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     def _llm() -> LLMClient:
         return build_llm_for(Step.EVENT_NEWS, config)
 
-    result = await run_hourly(repo, candidates, vectors, existing, _llm if generate else None)
+    members_all = [m for _, members in existing for m in members]
+
+    # ⭐ ML 判定を群化に反映する (EVENTNEWS_PAIR_ML=1)。既定 off。
+    #    モデルが読めない / 判定が作れないときは空になり、決定論のまま動く。
+    pair_decision: dict[frozenset[str], bool] = {}
+    if pair_shadow.is_live():
+        try:
+            pair_decision = await pair_shadow.decide(
+                candidates,
+                members_all,
+                vectors,
+                llm=build_llm_for(Step.TRIAGE, config),
+                embed_summary=lambda arts: _embed_summaries(config, arts),
+            )
+        except Exception as e:  # noqa: BLE001 — 判定が作れなくても群化は続ける
+            _log.warning("eventnews_pair_ml_failed", error=str(e)[:200])
+
+    result = await run_hourly(
+        repo,
+        candidates,
+        vectors,
+        existing,
+        _llm if generate else None,
+        pair_decision=pair_decision or None,
+    )
 
     # ⭐ シャドー観測は **群化の後**に走らせる。本番の挙動には一切触れない。
     #    失敗しても毎時ジョブを止めない (観測は本流ではない)。
@@ -221,7 +245,7 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
             shadow_pairs = await pair_shadow.observe(
                 repo,
                 candidates,
-                [m for _, members in existing for m in members],
+                members_all,
                 vectors,
                 # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
                 llm=build_llm_for(Step.TRIAGE, config),
