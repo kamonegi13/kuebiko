@@ -422,3 +422,67 @@ def test_relaxed_threshold_still_requires_a_shared_entity() -> None:
     from src.eventnews.models import COS_THRESHOLD
 
     assert required_cos(_cves("cve-a"), _cves("cve-b"), []) == COS_THRESHOLD
+
+
+def test_ml_decision_is_not_overridden_by_the_deterministic_cos_floor() -> None:
+    """ML に判定を委ねたら、下流で要求 cos を掛け直さない。
+
+    ⚠ 2026-09-01 の切替直後、_member_edges が edge_is_allowed を飛ばしても
+    required_cos を辺に載せ続けていたため、_item_candidate の `cos >= need` が
+    ML の承認を打ち消していた。実測では承認 13 組のうち通ったのは 2 組だけで、
+    ML は辺を**減らせても増やせない**状態だった (候補 6 件 → 実際の合流 1 件)。
+    ML が拾う値打ちのある組は cos が低い側にあるので、これが残ると切替の効果が
+    そのまま消える。
+    """
+    # Arrange — 決定論なら cos 不足で落ちる組 (ML は「同じ事象」と判定)
+    shared = ("cve", "cve-2024-1111")
+    member = _member("m1", frozenset({shared}))
+    item = _item("item-1")
+    candidate = _member("cand", frozenset({shared}))
+    low_cos = {"m1": _vec(0.50)}
+
+    # Act — 同じ材料を、判定を委ねずに / 委ねて 通す
+    without_ml = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": (member,)},
+        member_vecs=low_cos,
+        now=_NOW,
+    )
+    with_ml = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": (member,)},
+        member_vecs=low_cos,
+        now=_NOW,
+        pair_decision={frozenset(("cand", "m1")): True},
+    )
+
+    # Assert — 決定論は落とし、ML に委ねたときは繋がる
+    assert without_ml.target_item_id is None
+    assert with_ml.target_item_id == "item-1"
+
+
+def test_ml_refusal_still_blocks_a_pair_the_rule_would_join() -> None:
+    """委ねた先が「繋がない」と言えば、cos が足りていても繋がない。"""
+    # Arrange — 決定論なら通る組
+    shared = ("cve", "cve-2024-1111")
+    member = _member("m1", frozenset({shared}))
+    item = _item("item-1")
+    candidate = _member("cand", frozenset({shared}))
+
+    # Act
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": (member,)},
+        member_vecs={"m1": _vec(0.95)},
+        now=_NOW,
+        pair_decision={frozenset(("cand", "m1")): False},
+    )
+
+    # Assert
+    assert assignment.target_item_id is None

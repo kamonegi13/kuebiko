@@ -237,7 +237,14 @@ def _member_edges(
             #    どのアイテムを選ぶかは従来どおり最高 cos で決める。
             if not pair_decision.get(frozenset((cand_id, member.article_id)), False):
                 continue
-        elif not edge_is_allowed(cand_entities, member.entities, shared, cos):
+            # ⚠ 委ねた以上、要求 cos を下流で掛け直さない。2026-09-01 の切替直後、
+            #    _item_candidate の `cos >= need` が残っていたため ML の承認 13 組の
+            #    うち通ったのは 2 組だけで、ML は辺を**減らせても増やせない**状態
+            #    だった (承認された候補 6 件に対し実際の合流は 1 件)。
+            #    dormant への再参加だけは別の定数で厳しいまま (掘り起こしは緩めない)。
+            edges.append((cos, shared, 0.0))
+            continue
+        if not edge_is_allowed(cand_entities, member.entities, shared, cos):
             continue
         edges.append((cos, shared, required_cos(cand_entities, member.entities, shared)))
     return edges
