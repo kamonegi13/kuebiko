@@ -84,6 +84,7 @@ def build_heartbeat_text(
     standing_line: str | None = None,
     products_line: str | None = None,
     proposals_line: str | None = None,
+    external_tier_line: str | None = None,
 ) -> tuple[str, str, str]:
     """heartbeat の (title, body, importance) を組み立てる (純粋関数)。
 
@@ -92,6 +93,7 @@ def build_heartbeat_text(
     products_line = 製品鮮度 dead-man (週次総括/recap/spotlight/月次、監査 2026-07-16:
     weekly 9 日間欠落を誰も検知できなかった穴の閉鎖)。
     proposals_line = アクター提案の滞留 (人承認キューは pull 専用のため注意誘導が必要)。
+    external_tier_line = 外部ティアが黙って fallback し続けていないか (2026-08-30)。
     """
     ok = run_counts.get("succeeded", 0)
     partial = run_counts.get("partial_failure", 0)
@@ -108,12 +110,17 @@ def build_heartbeat_text(
         parts.append(products_line)
     if proposals_line:
         parts.append(proposals_line)
+    if external_tier_line:
+        parts.append(external_tier_line)
     if silent:
         names = ", ".join(s.name for s in silent[:_MAX_NAMES_IN_HEARTBEAT])
         if len(silent) > _MAX_NAMES_IN_HEARTBEAT:
             names += f" …他 {len(silent) - _MAX_NAMES_IN_HEARTBEAT} 件"
         parts.append(f"⚠️ {SILENT_FEED_THRESHOLD_DAYS}日以上無産出: {names}")
-    has_line_warn = any(line and "⚠️" in line for line in (fill_line, products_line, proposals_line))
+    has_line_warn = any(
+        line and "⚠️" in line
+        for line in (fill_line, products_line, proposals_line, external_tier_line)
+    )
     importance = "medium" if (silent or failed or has_line_warn) else "low"
     return ("💓 daily heartbeat", " · ".join(parts), importance)
 
@@ -129,6 +136,54 @@ _PRODUCT_FRESHNESS_LIMITS: tuple[tuple[str, str, str, int], ...] = (
     # 実測の期待収量は 3-4 件/日なので、2 日ゼロは異常。
     ("事象ニュース", "event_item_versions", "", 2),
 )
+
+
+#: 外部ティアが黙って fallback し続けているとみなす時間。
+#: 枠 (4-5 時間の転がる窓) で退くのは正常なので、それを超える幅を取る。
+_EXTERNAL_TIER_STALE_HOURS = 8
+
+
+def _build_external_tier_line(repo: RunHistoryRepository) -> str | None:
+    """意図した腕で動いているか (2026-08-30 の穴の閉鎖)。
+
+    bridge の認証が切れ、**15 時間すべての外部呼出がローカルへ落ちていた**のに、
+    ジョブは毎回 succeeded を返すので死活は緑のままだった。
+    ⭐ **「動いている」と「意図した腕で動いている」は別**。
+
+    見るのは「最後の生成」と「最後に外部で成功した生成」の**開き**。差で見れば、
+    Mac が眠って生成そのものが止まっている間は誤検知しない (両方が同じだけ古くなる)。
+    外部モデルを割り当てていない構成では何も言わない。
+    """
+    try:
+        from src.tools.model_tiers import Tier, resolve_tier_model
+
+        assigned = resolve_tier_model(Tier.NARRATIVE)
+        if not any(assigned.startswith(p) for p in ("claudecode:", "anthropic:")):
+            return None  # ローカル構成 — 監視する対象が無い
+        with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用
+            # ⚠ **集約列には必ず別名を付ける。** PG は行を dict で返すので、
+            #    別名の無い MAX(...) が 2 つあると同じキーで潰れ、2 列目が消える
+            #    (SQLite は通るので単体テストをすり抜けた。2026-08-31 に本番で踏んだ)。
+            # ⚠ LIKE のパターンも引数で渡す (SQL 文中の `%` は psycopg が解釈する)。
+            row = conn.execute(
+                "SELECT MAX(generated_at) AS last_any, "
+                "MAX(CASE WHEN model NOT LIKE ? AND (model LIKE ? OR model LIKE ?) "
+                "THEN generated_at END) AS last_ok FROM event_item_versions",
+                ("%→%", "claudecode:%", "anthropic:%"),
+            ).fetchone()
+        if not row or not row["last_any"]:
+            return None  # 生成が一度も無い = 製品鮮度 dead-man の担当
+        last_any = datetime.fromisoformat(str(row["last_any"])).astimezone(UTC)
+        if not row["last_ok"]:
+            return f"⚠️外部ティア({assigned}): 成功記録なし"
+        last_ok = datetime.fromisoformat(str(row["last_ok"])).astimezone(UTC)
+        gap_h = (last_any - last_ok).total_seconds() / 3600
+        if gap_h > _EXTERNAL_TIER_STALE_HOURS:
+            return f"⚠️外部ティア({assigned}): {gap_h:.0f}h ローカルへ落ち続けている"
+        return f"外部ティア({assigned}): 正常 (最終成功 {gap_h:.0f}h 前)"
+    except Exception as e:  # noqa: BLE001 — heartbeat 本体を止めない
+        _log.warning("external_tier_line_failed", error=str(e))
+        return None
 
 
 def _build_product_freshness_line(repo: RunHistoryRepository) -> str | None:
@@ -244,6 +299,7 @@ async def run_daily_heartbeat() -> None:
             standing_line=_build_standing_line(),
             products_line=_build_product_freshness_line(repo),
             proposals_line=_build_proposals_line(repo),
+            external_tier_line=_build_external_tier_line(repo),
         )
         from src.ui.services.ops_notify import post_ops_message
 
