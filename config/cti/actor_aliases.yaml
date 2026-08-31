@@ -7407,7 +7407,8 @@ actors:
   canonical: Emperador
 - id: armored_likho
   canonical: Armored Likho
-  aliases: []
+  aliases:
+  - Eagle Werewolf
   kind: group
   family: ''
 - id: thehatman
@@ -7431,3 +7432,70 @@ actors:
   aliases: []
   kind: group
   family: ''
+- id: uat_10147
+  canonical: UAT-10147
+  aliases: []
+  kind: group
+  family: ''
+- id: unc5976
+  canonical: UNC5976
+  aliases: []
+  kind: group
+  family: ''
+- id: unc6293
+  canonical: UNC6293
+  aliases: []
+  kind: group
+  family: ''
+- id: unc7005
+  canonical: UNC7005
+  aliases: []
+  kind: group
+  family: ''
+- id: kazu
+  canonical: Kazu
+  aliases: []
+  kind: group
+  family: ''
+- id: dysphor1a
+  canonical: Dysphor1a
+  aliases: []
+  kind: group
+  family: ''
+- id: metaencryptor
+  canonical: Metaencryptor
+  aliases: []
+  kind: group
+  family: ''
+- id: silkparasite
+  canonical: Silkparasite
+  aliases: []
+  kind: group
+  family: ''
+- id: dark_storm_team
+  canonical: Dark Storm Team
+  aliases: []
+  kind: group
+  family: ''
+- id: 313_team
+  canonical: 313 Team
+  aliases: []
+  kind: group
+  family: ''
+- id: iah6477
+  canonical: Iah6477
+  aliases: []
+  kind: group
+  family: ''
+- id: ransom_busters
+  canonical: Ransom Busters
+  aliases: []
+  kind: group
+  family: ''
+- id: fire_ant
+  canonical: Fire Ant
+  aliases: []
+  kind: group
+  family: ''
+  summary: Fire Ant は Sygnia が追跡する中国関連とみられる脅威アクター。仮想化基盤 (ハイパーバイザ) から、ネットワーク機器や認証基盤といった信頼されたインフラ層へ
+    標的を広げている。TACACS 認証情報の収集手法に UNC3886 として文書化された ツールとの技術的な重なりが報告されているが、報道は同一とは述べていない。

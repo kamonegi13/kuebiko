@@ -24,6 +24,12 @@ async def main():
     model_ref = sys.argv[2] if len(sys.argv) > 2 else ""
     if model_ref:
         print(f"モデル固定: {model_ref}", flush=True)
+    # ``--force``: 生成済みでも作り直す。**メンバーが変わったとき**に要る —
+    # 遡及統合の直後は「版はあるが、その版は統合前のメンバーで書かれている」ので、
+    # 生成済み判定で飛ばすと古い本文が残る (2026-08-31 に 12 件取りこぼした)。
+    force = "--force" in sys.argv
+    if force:
+        print("強制再生成 (生成済みでも作り直す)", flush=True)
     repo = RunHistoryRepository()
     recs = {
         r.state.item_id: r
@@ -39,7 +45,7 @@ async def main():
             continue
         v = repo.list_event_versions(item_id)
         # fallback (→gemma4:31b) 版は教師データとして数えない — Sonnet で作り直す
-        done = bool(v) and bool(v[0].body_json) and '"caveats"' in v[0].body_json
+        done = (not force) and bool(v) and bool(v[0].body_json) and '"caveats"' in v[0].body_json
         if model_ref:
             # 固定モデル指定時は「そのモデルで作られたか」で判定する
             done = done and v[0].model == model_ref
