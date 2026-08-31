@@ -105,7 +105,7 @@ def test_block_only_on_transcribed_lines_not_on_fact_density() -> None:
 
     # Act / Assert — 書き直しは促すが、公開は止めない
     assert verbatim.needs_rewrite([dense], {1: _SOURCE}) is True
-    assert verbatim.must_block([dense], {1: _SOURCE}) is False
+    assert verbatim.transcribed_lines([dense], {1: _SOURCE}) == ()
 
 
 def test_block_when_a_whole_sentence_is_copied() -> None:
@@ -116,4 +116,4 @@ def test_block_when_a_whole_sentence_is_copied() -> None:
     )
 
     # Act / Assert
-    assert verbatim.must_block([copied], {1: _SOURCE}) is True
+    assert verbatim.transcribed_lines([copied], {1: _SOURCE}) == (0,)

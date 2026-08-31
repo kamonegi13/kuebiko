@@ -88,7 +88,19 @@ def article_ratio(facts: Sequence[FactItem], bodies: Mapping[int, str]) -> float
 
 
 def transcribed_lines(facts: Sequence[FactItem], bodies: Mapping[int, str]) -> tuple[int, ...]:
-    """ほぼ丸ごと原文と一致している行の位置 (0 始まり)。"""
+    """ほぼ丸ごと原文と一致している行の位置 (0 始まり)。**落とす行はこれだけ**。
+
+    ⚠ 全体比 (``article_ratio``) を落とす条件に使わない。実測 (2026-08-26) で、
+    書き直し後に残る一致は表現ではなく事実の羅列だった::
+
+        「costexplorerを確認できた1059キーの範囲では2026年7月に50アカウントが
+          1000ドル超9アカウントが1万ドル超を利用し…合計42万631ドル」
+
+    数値とその関係だけで構成されており、避けるには事実を歪めるしかない。句読点を
+    落として正規化するため、数値の列挙が長い「一致」として現れる —
+    **全体比は事実密度を測ってしまう**。表現の借用を測れるのは行単位の方で、
+    書き直しにより丸写しの行は 0 になった (61.6% の記事で 6 行 → 0 行)。
+    """
     found: list[int] = []
     for index, fact in enumerate(facts):
         body = _body_for(fact, bodies)
@@ -106,22 +118,3 @@ def needs_rewrite(facts: Sequence[FactItem], bodies: Mapping[int, str]) -> bool:
     return article_ratio(facts, bodies) > ARTICLE_MAX_RATIO or bool(
         transcribed_lines(facts, bodies)
     )
-
-
-def must_block(facts: Sequence[FactItem], bodies: Mapping[int, str]) -> bool:
-    """公開を止めるか。**丸写しの行が残っているときだけ**。
-
-    全体比を止める条件に使わない。実測 (2026-08-26) で、書き直し後に残る一致は
-    事実の羅列であって表現ではなかった::
-
-        「costexplorerを確認できた1059キーの範囲では2026年7月に50アカウントが
-          1000ドル超9アカウントが1万ドル超を利用し…合計42万631ドル」
-
-    数値とその関係だけで構成されており、これを避けるには事実を歪めるしかない。
-    句読点を落として正規化するため、数値の列挙は長い「一致」として現れる —
-    **全体比は事実密度を測ってしまう**。表現の借用を測れるのは行単位の方で、
-    書き直しにより丸写しの行は 0 になった (61.6% の記事で 6 行 → 0 行)。
-    """
-    if not facts:
-        return False
-    return bool(transcribed_lines(facts, bodies))

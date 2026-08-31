@@ -202,6 +202,33 @@ def _rewrite_hints(
     return hints
 
 
+def _drop_transcribed_lines(
+    gate: GateResult, bodies: Mapping[int, str], item_id: str
+) -> GateResult:
+    """書き直し後も原文をなぞったままの行を落とす。
+
+    事実に著作権は無いが表現にはある。転記した行は出せない — しかし残りの行は
+    自分の言葉で書かれた要約なので、1 行のために記事全体を捨てる理由はない。
+    ⭐ 落とした割合をログに残す (薄い本文が出ていないかを後から見るため)。
+    """
+    drop = set(verbatim.transcribed_lines(gate.draft.facts, bodies))
+    if not drop:
+        return gate
+    kept = [f for i, f in enumerate(gate.draft.facts) if i not in drop]
+    _log.warning(
+        "eventnews_verbatim_dropped",
+        item_id=item_id,
+        dropped=len(drop),
+        kept=len(kept),
+        ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
+    )
+    return replace(
+        gate,
+        draft=gate.draft.model_copy(update={"facts": kept}),
+        dropped_lines=gate.dropped_lines + len(drop),
+    )
+
+
 def _drop_unsupported_lines(gate: GateResult, texts: Mapping[int, str], item_id: str) -> GateResult:
     """書き直し後も原文に無い数値・日付が残る行を落とす。"""
     missing = quantities.unsupported_lines(gate.draft.facts, texts)
@@ -255,23 +282,21 @@ async def _generate_version(
         draft: EventNewsDraft = await gen.generate_draft(selected, allowed, llm)
         gate: GateResult = identifier_gate.verify_draft(draft, selected)
         # 表現と数値の関門。問題があれば **1 回だけ** 理由付きで書き直させる。
-        # 書き直し後も残る場合の扱いは種類で違う:
-        #   - 丸写しの行が残る → 版を書かない (転記を出すより元記事の要約が正しい)
-        #   - 原文に無い数値・日付が残る → **その行だけ落とす** (1 つの値のために
-        #     記事全体を捨てない。識別子関門の dropped_lines と同じ粒度)
+        # 書き直し後も残る場合は、種類を問わず **その行だけ落とす** (1 行のために
+        # 記事全体を捨てない。識別子関門の dropped_lines と同じ粒度)。
+        # ⭐ 2026-09-01: 丸写しの行が残ると版ごと捨てていたため、原文が日本語の
+        #    記事 (逐語率が構造的に高い) で本文が一度も作られない事象が出ていた。
+        #    落とすのは転記した行だけで、残りは自分の言葉で書かれた要約なので出せる。
+        #    **全部落ちたときだけ版を書かない** (空の本文は出せない)。
         texts = dict(enumerate(quantities.supporting_texts(selected), start=1))
         catalog = identifier_gate.build_member_catalog(selected)
         hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id, catalog)
         if hints:
             draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint="\n".join(hints))
             gate = identifier_gate.verify_draft(draft, selected)
-            if verbatim.must_block(gate.draft.facts, bodies):
-                _log.warning(
-                    "eventnews_verbatim_blocked",
-                    item_id=item.snapshot.item_id,
-                    ratio=round(verbatim.article_ratio(gate.draft.facts, bodies), 3),
-                    transcribed=len(verbatim.transcribed_lines(gate.draft.facts, bodies)),
-                )
+            gate = _drop_transcribed_lines(gate, bodies, item.snapshot.item_id)
+            if not gate.draft.facts:
+                _log.warning("eventnews_verbatim_blocked", item_id=item.snapshot.item_id)
                 return None, None
             gate = _drop_unsupported_lines(gate, texts, item.snapshot.item_id)
             still = identifier_gate.missing_important_identifiers(gate.draft, catalog)
