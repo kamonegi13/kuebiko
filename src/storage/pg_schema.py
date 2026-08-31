@@ -763,6 +763,9 @@ ALTER TABLE tuning_labels ADD COLUMN IF NOT EXISTS snapshot TEXT;
 -- メンバー記事は後から合流して動くため、事後の再構成では正確な対にならない
 -- (2026-08-27)。公開 API には出さない (内部の学習データ)。
 ALTER TABLE event_item_versions ADD COLUMN IF NOT EXISTS prompt_text TEXT;
+-- 群化シャドーへ ML の判定を併記する (2026-08-31)。既存行は NULL のまま。
+ALTER TABLE event_pair_shadow ADD COLUMN IF NOT EXISTS ml_proba REAL;
+ALTER TABLE event_pair_shadow ADD COLUMN IF NOT EXISTS ml_joined INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);
@@ -818,7 +821,9 @@ CREATE TABLE IF NOT EXISTS event_pair_shadow (
     features_json  TEXT      NOT NULL,
     llm_same       INTEGER,
     rule_joined    INTEGER   NOT NULL,
-    cos            REAL      NOT NULL
+    cos            REAL      NOT NULL,
+    ml_proba       REAL,
+    ml_joined      INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS event_item_versions (

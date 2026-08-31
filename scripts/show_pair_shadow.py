@@ -29,7 +29,7 @@ def main() -> None:
         cur = conn.cursor()
         cur.execute("""
             SELECT s.observed_at, s.left_id, s.right_id, s.features_json,
-                   s.llm_same, s.rule_joined, s.cos,
+                   s.llm_same, s.rule_joined, s.cos, s.ml_proba, s.ml_joined,
                    la.title AS left_title, ra.title AS right_title,
                    la.feed_title AS left_feed, ra.feed_title AS right_feed
             FROM event_pair_shadow s
@@ -44,8 +44,15 @@ def main() -> None:
         return
 
     judged = [r for r in rows if r["llm_same"] is not None]
-    disagree = [r for r in judged if bool(r["llm_same"]) != bool(r["rule_joined"])]
-    print(f"記録 {len(rows)} 組 / 判定できた {len(judged)} / **食い違い {len(disagree)}**")
+    scored = [r for r in rows if r["ml_joined"] is not None]
+    disagree = [r for r in scored if bool(r["ml_joined"]) != bool(r["rule_joined"])] or [
+        r for r in judged if bool(r["llm_same"]) != bool(r["rule_joined"])
+    ]
+    print(f"記録 {len(rows)} 組 / LLM 判定 {len(judged)} / ML 採点 {len(scored)}")
+    if scored:
+        ml_join = sum(bool(r["ml_joined"]) for r in scored)
+        rule_join = sum(bool(r["rule_joined"]) for r in scored)
+        print(f"ML が繋ぐ {ml_join} / 規則が繋ぐ {rule_join} / **食い違い {len(disagree)}**")
     if judged:
         pct = 100 * len(disagree) / len(judged)
         print(
@@ -58,7 +65,12 @@ def main() -> None:
     for r in target[: args.limit]:
         llm = "繋ぐ" if r["llm_same"] else ("繋がない" if r["llm_same"] is not None else "判定不可")
         rule = "繋ぐ" if r["rule_joined"] else "繋がない"
-        print(f"\ncos={r['cos']:.3f}  LLM={llm} / 規則={rule}")
+        ml = (
+            f"{'繋ぐ' if r['ml_joined'] else '繋がない'} ({r['ml_proba']:.2f})"
+            if r["ml_joined"] is not None
+            else "未採点"
+        )
+        print(f"\ncos={r['cos']:.3f}  ML={ml} / LLM={llm} / 規則={rule}")
         print(f"  A {r['left_title'][:58]} [{r['left_feed'][:18]}]")
         print(f"  B {r['right_title'][:58]} [{r['right_feed'][:18]}]")
 

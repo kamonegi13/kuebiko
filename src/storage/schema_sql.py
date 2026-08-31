@@ -690,7 +690,9 @@ CREATE TABLE IF NOT EXISTS event_pair_shadow (
     features_json  TEXT     NOT NULL,
     llm_same       INTEGER,
     rule_joined    INTEGER  NOT NULL,
-    cos            REAL     NOT NULL
+    cos            REAL     NOT NULL,
+    ml_proba       REAL,
+    ml_joined      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_event_pair_shadow_observed ON event_pair_shadow(observed_at);
 

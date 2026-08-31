@@ -111,6 +111,7 @@ async def observe(
         shared = tuple(sorted(left.entities & right.entities))
         cos = feats[0]
         rule = edge_is_allowed(left.entities, right.entities, shared, cos)
+        model = pair_model.load_model()
         same = await judge_pair(
             llm,
             build_prompt(
@@ -122,6 +123,11 @@ async def observe(
                 right.feed_title,
             ),
         )
+        proba = joined = None
+        if model is not None:
+            full = feats + [1.0 if same else 0.0, 0.0 if same is None else 1.0]
+            proba = model.probability(full)
+            joined = model.joins(full, llm_available=same is not None)
         repo.record_pair_shadow(  # type: ignore[attr-defined]
             observed_at=stamp,
             left_id=left.article_id,
@@ -130,6 +136,8 @@ async def observe(
             llm_same=same,
             rule_joined=rule,
             cos=cos,
+            ml_proba=proba,
+            ml_joined=joined,
         )
         recorded += 1
     _log.info("eventnews_pair_shadow", pairs=recorded)

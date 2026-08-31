@@ -576,6 +576,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         llm_same: bool | None,
         rule_joined: bool,
         cos: float,
+        ml_proba: float | None = None,
+        ml_joined: bool | None = None,
     ) -> None:
         """群化のシャドー記録を 1 行残す (本番の挙動は変えない)。
 
@@ -585,8 +587,9 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO event_pair_shadow"
-                " (observed_at, left_id, right_id, features_json, llm_same, rule_joined, cos)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " (observed_at, left_id, right_id, features_json, llm_same, rule_joined,"
+                "  cos, ml_proba, ml_joined)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     _to_iso(observed_at),
                     left_id,
@@ -595,6 +598,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                     None if llm_same is None else int(llm_same),
                     int(rule_joined),
                     float(cos),
+                    None if ml_proba is None else float(ml_proba),
+                    None if ml_joined is None else int(ml_joined),
                 ),
             )
 
