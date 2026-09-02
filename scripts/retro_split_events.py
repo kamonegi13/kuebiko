@@ -1,0 +1,183 @@
+"""過剰統合された事象を、ペア判定に基づいて割り直す (遡及分割)。
+
+遡及統合の対称操作。群内の全ペアを本番と同じ判定 (``pair_shadow.judge_pairs``) に
+通し、承認辺の連結成分に割る。最大成分が既存の id と URL を保つ本体で、
+外れたメンバーは単独の事象として立て直す。
+
+⭐ 較正 (2026-09-02、監査済み 106 群・過剰統合 43・群内 1,250 ペアを本番判定に通した):
+   連結成分 t=0.70 が頂点 — 群 P 100% / R 70%、記事 P 99% / R 76%、誤除去 1 件
+   (その 1 件はデイリーダイジェストの分離で、運用原則ではむしろ正しい側)。
+   t を上げると誤 split が 2〜6 件出て一括適用に向かない。quorum 系 (平均確率 /
+   承認率) は R 84-90% まで届くが誤除去 8〜24 件で不採用 — 正しい群を壊す方が
+   残る過剰統合より高くつく。
+⚠ 統合と同じく、適用は本文の再生成までがセット (--no-generate で外せる)。
+
+使い方:
+    python scripts/retro_split_events.py [--min-members 3] [--apply] [--limit N]
+既定は dry-run。
+"""
+
+import argparse
+import asyncio
+import sys
+import time
+from datetime import UTC, datetime, timedelta
+
+sys.path.insert(0, "/app")
+
+import hashlib
+
+import numpy as np
+
+from src.config_loader import load_app_config
+from src.eventnews import pair_shadow
+from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
+from src.eventnews.runner import _max_importance
+from src.eventnews.split import largest_component
+from src.eventnews.state import compute_source_breakdown
+from src.storage.run_history import RunHistoryRepository
+from src.tools.model_tiers import Step, build_llm_for
+from src.ui.services.eventnews_hourly_job import (
+    _embed_summaries,
+    _entity_counts,
+    _load_members,
+    _load_vectors,
+    regenerate_pending_bodies,
+)
+
+#: 承認辺の閾値。較正 (2026-09-02) の結果で確定する。
+DEFAULT_EDGE_THRESHOLD = 0.7
+
+
+def _split_target_id(repo: RunHistoryRepository, article_id: str, current_item: str) -> str:
+    """外すメンバーの新しい事象 id。創設者を外す場合は群 id と衝突するため別名にする。"""
+    base = "ev-" + hashlib.sha256(article_id.encode("utf-8")).hexdigest()[:16]
+    if base != current_item:
+        existing = repo.get_event_item(base)
+        if existing is None:
+            return base
+        if existing.merged_into:
+            # 過去に吸収された自分の事象を蘇生する (URL が戻る)
+            return base
+    return "ev-" + hashlib.sha256(f"{article_id}:split".encode()).hexdigest()[:16]
+
+
+def _refresh_item_state(
+    repo: RunHistoryRepository, item_id: str, members: list[MemberArticle]
+) -> None:
+    breakdown = compute_source_breakdown(members)
+    importance = ""
+    for m in members:
+        importance = _max_importance(importance, m.importance)
+    repo.update_event_item(
+        item_id,
+        {
+            "current_version": 0,  # メンバーが変わったので本文を作り直す
+            "importance": importance,
+            "best_source_tier": breakdown.best_tier,
+            "independent_sources": breakdown.independent,
+            "state_media_count": breakdown.state_media,
+            "unclassified_sources": breakdown.unclassified,
+            "first_reported_at": min(m.anchor_ts for m in members),
+            "last_reported_at": max(m.anchor_ts for m in members),
+            "merged_into": None,
+            "updated_at": datetime.now(UTC),
+        },
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--min-members", type=int, default=3)
+    ap.add_argument("--threshold", type=float, default=DEFAULT_EDGE_THRESHOLD)
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--limit", type=int, default=None, help="判定する群の上限 (LLM 節約)")
+    ap.add_argument("--no-generate", action="store_true")
+    ap.add_argument("--sleep", type=float, default=3.0)
+    args = ap.parse_args()
+
+    repo = RunHistoryRepository()
+    records = [
+        r
+        for r in repo.list_event_items(origin="live", limit=20000)
+        if not r.merged_into and len(r.state.member_ids) >= args.min_members
+    ]
+    records.sort(key=lambda r: r.state.last_reported_at, reverse=True)
+    if args.limit:
+        records = records[: args.limit]
+    print(f"対象 (メンバー {args.min_members} 件以上): {len(records)} 群", flush=True)
+
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
+    config = load_app_config()
+    llm = build_llm_for(Step.TRIAGE, config)
+
+    split_count = 0
+    t0 = time.monotonic()
+    for gi, r in enumerate(records, 1):
+        members_map = _load_members(repo, list(r.state.member_ids), counts)
+        ordered = sorted(members_map.values(), key=lambda m: m.anchor_ts)
+        vecs: dict[str, np.ndarray] = {}
+        for aid, v in _load_vectors(repo, [m.article_id for m in ordered]).items():
+            n = float(np.linalg.norm(v))
+            if n:
+                vecs[aid] = v / n
+        pairs = [
+            (ordered[i], ordered[j])
+            for i in range(len(ordered))
+            for j in range(i + 1, len(ordered))
+            if ordered[i].article_id in vecs and ordered[j].article_id in vecs
+        ]
+        verdicts = asyncio.run(
+            pair_shadow.judge_pairs(
+                pairs,
+                vecs,
+                llm=llm,
+                embed_summary=lambda arts: _embed_summaries(config, arts),
+            )
+        )
+        probas = {v.key: v.ml_proba for v in verdicts}
+        ids = [m.article_id for m in ordered]
+        main_ids, rest = largest_component(ids, probas, edge_threshold=args.threshold)
+        if not rest or len(main_ids) < 1:
+            continue
+        split_count += 1
+        by_id = {m.article_id: m for m in ordered}
+        titles = " / ".join(by_id[a].title[:36] for a in rest)
+        print(f"  {r.state.item_id} から {len(rest)} 件を分離: {titles}", flush=True)
+        if not args.apply:
+            continue
+        for aid in rest:
+            member = by_id[aid]
+            target = _split_target_id(repo, aid, r.state.item_id)
+            if repo.get_event_item(target) is None:
+                repo.create_event_item(
+                    item_id=target,
+                    origin="live",
+                    first_reported_at=member.anchor_ts,
+                    last_reported_at=member.anchor_ts,
+                    importance=member.importance,
+                )
+            repo.move_event_member(
+                article_id=aid,
+                from_item=r.state.item_id,
+                to_item=target,
+                join_signal="retro_split",
+            )
+            _refresh_item_state(repo, target, [member])
+        _refresh_item_state(repo, r.state.item_id, [by_id[a] for a in main_ids])
+        if gi % 10 == 0:
+            print(f"  … {gi}/{len(records)} ({time.monotonic() - t0:.0f}s)", flush=True)
+
+    print(
+        f"\n{'適用' if args.apply else 'dry-run'}: {split_count} 群を分割"
+        f" ({time.monotonic() - t0:.0f}s)",
+        flush=True,
+    )
+    if args.apply and split_count and not args.no_generate:
+        regenerate_pending_bodies(repo, args.sleep)
+    if not args.apply:
+        print("書き込むには --apply を付ける", flush=True)
+
+
+if __name__ == "__main__":
+    main()

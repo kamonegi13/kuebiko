@@ -603,6 +603,21 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 ),
             )
 
+    def move_event_member(
+        self, *, article_id: str, from_item: str, to_item: str, join_signal: str
+    ) -> int:
+        """メンバー記事を別の事象へ移す (遡及分割用)。戻り値は移した行数。
+
+        ⚠ 行を消して作り直さない — joined_at / contributed_new_facts を保つ。
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE event_item_members SET item_id=?, join_signal=?"
+                " WHERE item_id=? AND article_id=?",
+                (to_item, join_signal, from_item, article_id),
+            )
+            return int(cur.rowcount or 0)
+
     def list_event_members(self, item_id: str) -> list[EventMemberRecord]:
         """アイテムの構成記事を参加順 (joined_at ASC) で返す。"""
         with self._connect() as conn:

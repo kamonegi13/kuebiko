@@ -686,3 +686,58 @@ class TestLatestVersionsBulk:
     def test_empty_input_does_not_query(self, tmp_path: Path) -> None:
         repo = RunHistoryRepository(tmp_path / "t.db")
         assert repo.latest_event_versions([]) == {}
+
+
+class TestMoveEventMember:
+    """遡及分割の書込 seam。行を消して作り直さず joined_at 等を保つ。"""
+
+    def test_moves_the_member_between_items(self, repo: RunHistoryRepository) -> None:
+        # Arrange
+        now = datetime(2026, 9, 2, tzinfo=UTC)
+        for iid in ("ev-src", "ev-dst"):
+            repo.create_event_item(
+                item_id=iid,
+                origin="live",
+                first_reported_at=now,
+                last_reported_at=now,
+                importance="high",
+            )
+        repo.add_event_member(
+            item_id="ev-src",
+            article_id="art-1",
+            joined_at=now,
+            contributed_new_facts=1,
+            join_signal="entity+cos",
+        )
+
+        # Act
+        moved = repo.move_event_member(
+            article_id="art-1", from_item="ev-src", to_item="ev-dst", join_signal="retro_split"
+        )
+
+        # Assert — 移動先に 1 件、元は空。joined_at と new_facts は保たれる
+        assert moved == 1
+        assert repo.list_event_members("ev-src") == []
+        dst = repo.list_event_members("ev-dst")
+        assert [m.article_id for m in dst] == ["art-1"]
+        assert dst[0].join_signal == "retro_split"
+        assert dst[0].contributed_new_facts == 1
+
+    def test_missing_member_moves_nothing(self, repo: RunHistoryRepository) -> None:
+        # Arrange
+        now = datetime(2026, 9, 2, tzinfo=UTC)
+        repo.create_event_item(
+            item_id="ev-a",
+            origin="live",
+            first_reported_at=now,
+            last_reported_at=now,
+            importance="high",
+        )
+
+        # Act / Assert
+        assert (
+            repo.move_event_member(
+                article_id="ghost", from_item="ev-a", to_item="ev-b", join_signal="retro_split"
+            )
+            == 0
+        )

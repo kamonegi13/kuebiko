@@ -203,6 +203,46 @@ def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[Memb
     return out
 
 
+def regenerate_pending_bodies(repo: RunHistoryRepository, sleep_seconds: float = 3.0) -> None:
+    """版を失った事象の本文を作り直す (遡及統合・遡及分割の後始末)。
+
+    ⚠ 統合/分割と**セット**でなければ意味がない — current_version を 0 に戻す操作は
+    これを呼ばない限り「本文が消えた」で終わる (2026-09-02 に実際に 45 件で発生)。
+    """
+    import asyncio
+    import time as _time
+
+    from src.eventnews.runner import generate_pending
+
+    pending = pending_items(repo)
+    print(f"\n再生成の対象: {len(pending)} 件", flush=True)
+    if not pending:
+        return
+    config = load_app_config()
+    last = _time.monotonic()
+
+    def _progress(i: int, total: int, item_id: str) -> None:
+        nonlocal last
+        now = _time.monotonic()
+        print(f"  [{i}/{total}] {item_id} (前件 {now - last:.0f}s)", flush=True)
+        last = now
+        if sleep_seconds > 0:
+            _time.sleep(sleep_seconds)
+
+    stats = asyncio.run(
+        generate_pending(
+            repo,
+            pending,
+            lambda: build_llm_for(Step.EVENT_NEWS, config),
+            on_progress=_progress,
+        )
+    )
+    print(
+        f"生成 {stats.generated} / 素材不足で skip {stats.skipped} / 失敗 {stats.failed}",
+        flush=True,
+    )
+
+
 async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) -> dict[str, object]:
     """指定した遡及幅で群化 (+ 生成) を 1 回走らせる。
 

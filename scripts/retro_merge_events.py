@@ -20,7 +20,6 @@
 import argparse
 import asyncio
 import sys
-import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -33,7 +32,7 @@ from src.eventnews import pair_shadow
 from src.eventnews.grouping import build_join_entities, edge_is_allowed
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, WINDOW_HOURS
 from src.eventnews.models import MemberArticle as _MemberArticle  # noqa: F401
-from src.eventnews.runner import _max_importance, generate_pending
+from src.eventnews.runner import _max_importance
 from src.eventnews.state import compute_source_breakdown
 from src.storage.run_history import RunHistoryRepository
 from src.tools.model_tiers import Step, build_llm_for
@@ -42,7 +41,7 @@ from src.ui.services.eventnews_hourly_job import (
     _entity_counts,
     _load_members,
     _load_vectors,
-    pending_items,
+    regenerate_pending_bodies,
 )
 
 
@@ -80,37 +79,6 @@ def _keep_ml_approved(
         flush=True,
     )
     return kept
-
-
-def _regenerate(repo: RunHistoryRepository, sleep_seconds: float) -> None:
-    """統合で版を失った事象の本文を作り直す。**統合とセットでなければ意味がない。**"""
-    pending = pending_items(repo)
-    print(f"\n再生成の対象: {len(pending)} 件", flush=True)
-    if not pending:
-        return
-    config = load_app_config()
-    last = time.monotonic()
-
-    def _progress(i: int, total: int, item_id: str) -> None:
-        nonlocal last
-        now = time.monotonic()
-        print(f"  [{i}/{total}] {item_id} (前件 {now - last:.0f}s)", flush=True)
-        last = now
-        if sleep_seconds > 0:
-            time.sleep(sleep_seconds)
-
-    stats = asyncio.run(
-        generate_pending(
-            repo,
-            pending,
-            lambda: build_llm_for(Step.EVENT_NEWS, config),
-            on_progress=_progress,
-        )
-    )
-    print(
-        f"生成 {stats.generated} / 素材不足で skip {stats.skipped} / 失敗 {stats.failed}",
-        flush=True,
-    )
 
 
 def main() -> None:
@@ -247,7 +215,7 @@ def main() -> None:
 
     print(f"\n{'適用' if args.apply else 'dry-run'}: {applied}/{len(merges)} 群", flush=True)
     if args.apply and applied and not args.no_generate:
-        _regenerate(repo, args.sleep)
+        regenerate_pending_bodies(repo, args.sleep)
     if not args.apply:
         print("書き込むには --apply を付ける", flush=True)
 
