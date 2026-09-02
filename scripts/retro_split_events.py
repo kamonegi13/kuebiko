@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import sys
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, "/app")
@@ -29,12 +30,13 @@ import hashlib
 
 import numpy as np
 
-from src.config_loader import load_app_config
+from src.config_loader import AppConfig, load_app_config
 from src.eventnews import pair_shadow
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
 from src.eventnews.runner import _max_importance
-from src.eventnews.split import largest_component
+from src.eventnews.split import split_components
 from src.eventnews.state import compute_source_breakdown
+from src.storage.repo_eventnews import EventItemRecord
 from src.storage.run_history import RunHistoryRepository
 from src.tools.model_tiers import Step, build_llm_for
 from src.ui.services.eventnews_hourly_job import (
@@ -86,6 +88,52 @@ def _refresh_item_state(
     )
 
 
+async def _judge_all(
+    records: list[EventItemRecord],
+    repo: RunHistoryRepository,
+    counts: Mapping[tuple[str, str], int],
+    config: AppConfig,
+    threshold: float,
+) -> list[tuple[EventItemRecord, list[MemberArticle], list[str], list[list[str]]]]:
+    """全群の判定と成分分解。⚠ イベントループは **1 つ** — 群ごとに asyncio.run すると
+    2 群目以降で LLM クライアントの接続が `Event loop is closed` で死ぬ
+    (2026-09-03 の dry-run で発覚。判定失敗 → 中立 → 切れやすい、まで連鎖した)。"""
+    llm = build_llm_for(Step.TRIAGE, config)
+    out: list[tuple[EventItemRecord, list[MemberArticle], list[str], list[list[str]]]] = []
+    failed_pairs = 0
+    for gi, r in enumerate(records, 1):
+        members_map = _load_members(repo, list(r.state.member_ids), counts)
+        ordered = sorted(members_map.values(), key=lambda m: m.anchor_ts)
+        vecs: dict[str, np.ndarray] = {}
+        for aid, v in _load_vectors(repo, [m.article_id for m in ordered]).items():
+            n = float(np.linalg.norm(v))
+            if n:
+                vecs[aid] = v / n
+        pairs = [
+            (ordered[i], ordered[j])
+            for i in range(len(ordered))
+            for j in range(i + 1, len(ordered))
+            if ordered[i].article_id in vecs and ordered[j].article_id in vecs
+        ]
+        verdicts = await pair_shadow.judge_pairs(
+            pairs,
+            vecs,
+            llm=llm,
+            embed_summary=lambda arts: _embed_summaries(config, arts),
+        )
+        probas = {v.key: v.ml_proba for v in verdicts}
+        failed_pairs += sum(1 for v in verdicts if v.ml_proba is None)
+        ids = [m.article_id for m in ordered]
+        main_ids, rest = split_components(ids, probas, edge_threshold=threshold)
+        if rest:
+            out.append((r, ordered, main_ids, rest))
+        if gi % 25 == 0:
+            print(f"  … {gi}/{len(records)} 判定済み", flush=True)
+    if failed_pairs:
+        print(f"⚠ 判定できなかったペア {failed_pairs} 件 (繋がっている扱い)", flush=True)
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-members", type=int, default=3)
@@ -109,47 +157,25 @@ def main() -> None:
 
     counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
     config = load_app_config()
-    llm = build_llm_for(Step.TRIAGE, config)
 
-    split_count = 0
     t0 = time.monotonic()
-    for gi, r in enumerate(records, 1):
-        members_map = _load_members(repo, list(r.state.member_ids), counts)
-        ordered = sorted(members_map.values(), key=lambda m: m.anchor_ts)
-        vecs: dict[str, np.ndarray] = {}
-        for aid, v in _load_vectors(repo, [m.article_id for m in ordered]).items():
-            n = float(np.linalg.norm(v))
-            if n:
-                vecs[aid] = v / n
-        pairs = [
-            (ordered[i], ordered[j])
-            for i in range(len(ordered))
-            for j in range(i + 1, len(ordered))
-            if ordered[i].article_id in vecs and ordered[j].article_id in vecs
-        ]
-        verdicts = asyncio.run(
-            pair_shadow.judge_pairs(
-                pairs,
-                vecs,
-                llm=llm,
-                embed_summary=lambda arts: _embed_summaries(config, arts),
-            )
-        )
-        probas = {v.key: v.ml_proba for v in verdicts}
-        ids = [m.article_id for m in ordered]
-        main_ids, rest = largest_component(ids, probas, edge_threshold=args.threshold)
-        if not rest or len(main_ids) < 1:
-            continue
+    proposals = asyncio.run(_judge_all(records, repo, counts, config, args.threshold))
+    split_count = 0
+    for r, ordered, main_ids, rest in proposals:
         split_count += 1
         by_id = {m.article_id: m for m in ordered}
-        titles = " / ".join(by_id[a].title[:36] for a in rest)
-        print(f"  {r.state.item_id} から {len(rest)} 件を分離: {titles}", flush=True)
+        pieces = " ｜ ".join(" / ".join(by_id[a].title[:34] for a in comp) for comp in rest)
+        print(
+            f"  {r.state.item_id} 本体 {len(main_ids)} 件、分離 {len(rest)} 塊: {pieces}",
+            flush=True,
+        )
         if not args.apply:
             continue
-        for aid in rest:
-            member = by_id[aid]
-            target = _split_target_id(repo, aid, r.state.item_id)
+        for comp in rest:
+            lead = comp[0]
+            target = _split_target_id(repo, lead, r.state.item_id)
             if repo.get_event_item(target) is None:
+                member = by_id[lead]
                 repo.create_event_item(
                     item_id=target,
                     origin="live",
@@ -157,16 +183,15 @@ def main() -> None:
                     last_reported_at=member.anchor_ts,
                     importance=member.importance,
                 )
-            repo.move_event_member(
-                article_id=aid,
-                from_item=r.state.item_id,
-                to_item=target,
-                join_signal="retro_split",
-            )
-            _refresh_item_state(repo, target, [member])
+            for aid in comp:
+                repo.move_event_member(
+                    article_id=aid,
+                    from_item=r.state.item_id,
+                    to_item=target,
+                    join_signal="retro_split",
+                )
+            _refresh_item_state(repo, target, [by_id[a] for a in comp])
         _refresh_item_state(repo, r.state.item_id, [by_id[a] for a in main_ids])
-        if gi % 10 == 0:
-            print(f"  … {gi}/{len(records)} ({time.monotonic() - t0:.0f}s)", flush=True)
 
     print(
         f"\n{'適用' if args.apply else 'dry-run'}: {split_count} 群を分割"

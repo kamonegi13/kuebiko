@@ -6,7 +6,8 @@
 分割ステップでしか直せない。ここはラベル不要の組合せ処理で、判定は常に
 ``pair_shadow.judge_pairs`` の出力 (確率) を使う — 判定を 2 か所に持たない。
 
-規則の較正は 2026-09-02 の監査済み 106 群 (過剰統合 43) に対して行う。
+規則の較正は 2026-09-02 の監査済み 106 群 (過剰統合 43・1,250 ペア) に対して実施:
+連結成分 t=0.70 で群 P 100% / R 70%、記事 P 99% / R 76%。
 """
 
 from __future__ import annotations
@@ -14,20 +15,22 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
-#: 判定できなかったペアに置く中立の確率 (証拠が無いことを分割の根拠にしない)。
-NEUTRAL_PROBA = 0.5
 
-
-def largest_component(
+def split_components(
     member_ids: Sequence[str],
     pair_probas: Mapping[frozenset[str], float | None],
     *,
     edge_threshold: float,
-) -> tuple[list[str], list[str]]:
-    """承認辺 (proba >= threshold) の連結成分に割り、(最大成分, その外) を返す。
+) -> tuple[list[str], list[list[str]]]:
+    """承認辺の連結成分に割り、(本体, 分離する成分の列) を返す。
 
-    最大成分が群の本体 = 既存の id と URL を保持する側。同数のときは
-    ``member_ids`` の並びで先に現れるメンバーを含む成分を本体とする (決定論)。
+    - 本体 = 最大成分。既存の id と URL を保持する側。同数のときは
+      ``member_ids`` の並びで先に現れるメンバーを含む成分 (決定論)。
+    - 分離側は **成分ごとに一塊** — 正しく繋がっている組 (例: 同一被害者の
+      公開記事と掲載記録) を単独事象へバラさない (2026-09-03 dry-run で発覚)。
+    - ⚠ 判定できなかったペア (None) は **繋がっている扱い** — 証拠の欠如を
+      分割の根拠にしない。中立値を閾値と比べる方式は、閾値 > 中立値のとき
+      「判定に失敗したペアほど切れやすい」逆転を起こす (同 dry-run で発覚)。
     """
     parent: dict[str, str] = {m: m for m in member_ids}
 
@@ -38,9 +41,8 @@ def largest_component(
         return x
 
     for key, proba in pair_probas.items():
-        p = NEUTRAL_PROBA if proba is None else proba
-        if p < edge_threshold:
-            continue
+        if proba is not None and proba < edge_threshold:
+            continue  # 否認された辺だけが「繋がっていない」
         pair = [m for m in key if m in parent]
         if len(pair) != 2:
             continue
@@ -52,6 +54,4 @@ def largest_component(
     for m in member_ids:  # member_ids の並びを保つ
         groups[find(m)].append(m)
     ordered = sorted(groups.values(), key=lambda g: (-len(g), min(member_ids.index(m) for m in g)))
-    main = ordered[0]
-    rest = [m for g in ordered[1:] for m in g]
-    return main, rest
+    return ordered[0], ordered[1:]
