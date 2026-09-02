@@ -28,45 +28,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config_loader import load_app_config
-from src.eventnews.generator import select_members
-from src.eventnews.models import (
-    ENTITY_FREQ_WINDOW_HOURS,  # noqa: E402  (定数のみ)
-    ItemState,
-    MemberArticle,
-)
 from src.eventnews.runner import generate_pending
 from src.storage.run_history import RunHistoryRepository
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step, build_llm_for
 from src.ui.services.eventnews_hourly_job import (
-    _entity_counts,
-    _load_members,
+    pending_items,
     run_eventnews_window,
 )
-
-
-def _pending_items(
-    repo: RunHistoryRepository,
-) -> list[tuple[ItemState, list[MemberArticle]]]:
-    """まだ版を持たず、本文を持つメンバーが 2 件以上あるアイテム。"""
-    from datetime import UTC, datetime, timedelta
-
-    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
-    records = [
-        r
-        for r in repo.list_event_items(origin="live", limit=20000)
-        if not r.merged_into and r.state.current_version == 0 and len(r.state.member_ids) >= 2
-    ]
-    members_by_id = _load_members(repo, [a for r in records for a in r.state.member_ids], counts)
-    out: list[tuple[ItemState, list[MemberArticle]]] = []
-    for r in records:
-        members = [members_by_id[a] for a in r.state.member_ids if a in members_by_id]
-        textual, _ = select_members(members)
-        if len(textual) >= 2:
-            out.append((r.state, members))
-    # 新しい事象から順に (読み手にとっての価値が高い順)
-    out.sort(key=lambda pair: pair[0].last_reported_at, reverse=True)
-    return out
 
 
 async def _main() -> None:
@@ -87,7 +56,7 @@ async def _main() -> None:
         result = await run_eventnews_window(lookback_hours=args.days * 24, generate=False)
         print(f"群化: {result} ({time.monotonic() - t0:.0f}s)", flush=True)
 
-    pending = _pending_items(repo)
+    pending = pending_items(repo)
     print(f"未生成のアイテム: {len(pending)} 件", flush=True)
     if args.group_only or not pending:
         return

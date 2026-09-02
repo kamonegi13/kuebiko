@@ -20,9 +20,15 @@ import numpy as np
 
 from src.config_loader import AppConfig, load_app_config
 from src.eventnews import pair_shadow
+from src.eventnews.generator import select_members
 from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.hourly import hydrate_open_items, run_hourly
-from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, MemberArticle
+from src.eventnews.models import (
+    ENTITY_FREQ_WINDOW_HOURS,
+    JOIN_ENTITY_TYPES,
+    ItemState,
+    MemberArticle,
+)
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
 from src.storage.run_history import RunHistoryRepository
@@ -169,6 +175,32 @@ async def run_eventnews_hourly() -> dict[str, object]:
         _log.info("eventnews_hourly_disabled")
         return {"skipped": "flag_off"}
     return await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
+
+
+def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[MemberArticle]]]:
+    """まだ版を持たず、本文を持つメンバーが 2 件以上あるアイテム (新しい順)。
+
+    ⚠ 遡及統合とバックフィルの **両方** がここを通る。2026-09-02 まで
+    ``scripts/eventnews_backfill.py`` の私有関数だったため、遡及統合は統合先の
+    ``current_version`` を 0 に戻すだけで再生成の口を持たず、**統合しただけで
+    本文が消える**状態を作れてしまった (毎時ジョブは新着が入った事象しか生成しない)。
+    """
+    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
+    records = [
+        r
+        for r in repo.list_event_items(origin="live", limit=20000)
+        if not r.merged_into and r.state.current_version == 0 and len(r.state.member_ids) >= 2
+    ]
+    members_by_id = _load_members(repo, [a for r in records for a in r.state.member_ids], counts)
+    out: list[tuple[ItemState, list[MemberArticle]]] = []
+    for r in records:
+        members = [members_by_id[a] for a in r.state.member_ids if a in members_by_id]
+        textual, _ = select_members(members)
+        if len(textual) >= 2:
+            out.append((r.state, members))
+    # 新しい事象から順に (読み手にとっての価値が高い順)
+    out.sort(key=lambda pair: pair[0].last_reported_at, reverse=True)
+    return out
 
 
 async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) -> dict[str, object]:

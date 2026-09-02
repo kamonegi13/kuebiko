@@ -7,14 +7,20 @@
 統合先は **最初に立った事象** — URL がそこに残る。吸収した側は ``merged_into`` を
 立てて全経路から外れる (一覧・詳細・公開面・写しはすべて既に対応済み)。
 
+⚠ 統合先は ``current_version`` を 0 に戻す = **本文が消える**。毎時ジョブは新着が
+入った事象しか生成しないので、統合しただけでは二度と本文が付かない。そのため
+``--apply`` は続けて再生成まで行う (2026-09-02: 統合だけ適用して 45 件を本文なしに
+した実例がある。統合前より悪い状態を作って「実施した」と報告しかけた)。
+
 使い方:
-    python scripts/retro_merge_events.py --since 2026-08-17 [--apply]
-既定は dry-run。``--apply`` を付けたときだけ書き込む。
+    python scripts/retro_merge_events.py --since 2026-08-17 [--apply] [--no-generate]
+既定は dry-run。``--apply`` を付けたときだけ書き込み、そのまま再生成する。
 """
 
 import argparse
 import asyncio
 import sys
+import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
@@ -27,7 +33,7 @@ from src.eventnews import pair_shadow
 from src.eventnews.grouping import build_join_entities, edge_is_allowed
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, WINDOW_HOURS
 from src.eventnews.models import MemberArticle as _MemberArticle  # noqa: F401
-from src.eventnews.runner import _max_importance
+from src.eventnews.runner import _max_importance, generate_pending
 from src.eventnews.state import compute_source_breakdown
 from src.storage.run_history import RunHistoryRepository
 from src.tools.model_tiers import Step, build_llm_for
@@ -36,6 +42,7 @@ from src.ui.services.eventnews_hourly_job import (
     _entity_counts,
     _load_members,
     _load_vectors,
+    pending_items,
 )
 
 
@@ -75,10 +82,47 @@ def _keep_ml_approved(
     return kept
 
 
+def _regenerate(repo: RunHistoryRepository, sleep_seconds: float) -> None:
+    """統合で版を失った事象の本文を作り直す。**統合とセットでなければ意味がない。**"""
+    pending = pending_items(repo)
+    print(f"\n再生成の対象: {len(pending)} 件", flush=True)
+    if not pending:
+        return
+    config = load_app_config()
+    last = time.monotonic()
+
+    def _progress(i: int, total: int, item_id: str) -> None:
+        nonlocal last
+        now = time.monotonic()
+        print(f"  [{i}/{total}] {item_id} (前件 {now - last:.0f}s)", flush=True)
+        last = now
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+
+    stats = asyncio.run(
+        generate_pending(
+            repo,
+            pending,
+            lambda: build_llm_for(Step.EVENT_NEWS, config),
+            on_progress=_progress,
+        )
+    )
+    print(
+        f"生成 {stats.generated} / 素材不足で skip {stats.skipped} / 失敗 {stats.failed}",
+        flush=True,
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", default="2026-08-17")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument(
+        "--no-generate",
+        action="store_true",
+        help="統合だけ行い本文を再生成しない (⚠ 統合した事象は本文なしのまま残る)",
+    )
+    ap.add_argument("--sleep", type=float, default=3.0, help="生成 1 件ごとの待機秒")
     args = ap.parse_args()
 
     repo = RunHistoryRepository()
@@ -202,6 +246,8 @@ def main() -> None:
         applied += 1
 
     print(f"\n{'適用' if args.apply else 'dry-run'}: {applied}/{len(merges)} 群", flush=True)
+    if args.apply and applied and not args.no_generate:
+        _regenerate(repo, args.sleep)
     if not args.apply:
         print("書き込むには --apply を付ける", flush=True)
 
