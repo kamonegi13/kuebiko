@@ -167,6 +167,36 @@ def supporting_texts(members: Sequence[MemberArticle]) -> tuple[str, ...]:
     return tuple(f"{m.title}\n{m.summary}\n{m.body}\n{m.anchor_ts.isoformat()}" for m in members)
 
 
+#: 割合は「事実が増えた」の指標にならない (「100%」「0.5%」は分析の比であって、
+#: 事象そのものの規模ではない)。実データ 2,091 合流の目視で雑音はここに集中していた。
+_RATIO_UNITS = ("%", "％")
+
+
+def new_values(text: str, prior_texts: Sequence[str]) -> tuple[str, ...]:
+    """``text`` の数量のうち、既存メンバーのどこにも無いもの (**割合と日付は除く**)。
+
+    ⭐ 続報で「事実が増えたか」を決定論で言うための材料 (2026-09-02)。
+    文面の差分は採らない — 生成は毎回書き直されるので一致率は内容の異同を測らない
+    (``version_diff`` の冒頭と同じ理由)。原文に書かれた数値だけを見る。
+
+    ⚠ 日付を含めない。実測では大半が公開日・報道日で、事象についての新事実ではない
+    (2,091 合流で日付込み 15.9% → 数量のみ 12.8%、差はほぼ日付の雑音)。
+    """
+    if not prior_texts:
+        return ()
+    haystack = " ".join(_normalize(b) for b in prior_texts if b)
+    if not haystack:
+        return ()
+    found: list[str] = []
+    for match in _QUANTITY_RE.finditer(text):
+        digits, scale, unit = match.groups()
+        if unit in _RATIO_UNITS:
+            continue
+        if not any(_normalize(f) in haystack for f in _quantity_forms(digits, scale)):
+            found.append(match.group(0))
+    return tuple(dict.fromkeys(found))
+
+
 def unsupported(text: str, bodies: Sequence[str]) -> tuple[str, ...]:
     """``text`` の数量・日付のうち、どの原文にも現れないもの。
 

@@ -124,6 +124,7 @@ def decide_arrival(
     breakdown_before: SourceBreakdown,
     breakdown_after: SourceBreakdown,
     importance_before: str,
+    new_quantities: Sequence[str] = (),
 ) -> StateDecision:
     """新メンバー到着時の状態判定 (§7)。すべて決定論。
 
@@ -135,6 +136,12 @@ def decide_arrival(
          恒真にする [リプレイ実測 reinforced 1%、レビュー B D3 の予言どおり])
       ③ best_tier の上昇 (news/social/state_media → research/official)
       ④ importance の上昇
+      ⑤ 事象がまだ持っていない数値が本文に書かれている (2026-09-02 の利用者指摘:
+         「規模が大きく変わっていなくても、記事内容が更新されるなら更新」。
+         ①〜④ はすべて entity ベースなので、同じ被害組織・同じアクターのまま
+         事実だけが増える続報 — 国内クラウド事業者の第 2 報「営業管理システムも
+         被害、最大 120 万件」型 — が reinforced に落ちていた。実測 2,091 合流で
+         ①に該当せず数値だけが増えるのは 5.0%、恒真にはならない)
 
     ``existing_driver_entities`` は新メンバー参加前のアイテムが持つ駆動 entity
     (型別、正規化済み値の集合)。``breakdown_before``/``breakdown_after`` は
@@ -165,8 +172,14 @@ def decide_arrival(
         reasons.append("tier_rise")
     if importance_rise:
         reasons.append("importance_rise")
+    if new_quantities:
+        reasons.append("new_quantities")
 
     new_facts: dict[str, object] = {"article_id": new_member.article_id}
+    if new_quantities:
+        # ⭐ 「何が増えたか」を値そのもので残す。読み手が差分を探して見つけられない、
+        #    という 2026-08-27 の指摘への答えは **原文にある値を見せること**。
+        new_facts["new_quantities"] = list(new_quantities)
     if added:
         new_facts["added_entities"] = {t: sorted(v) for t, v in added.items()}
     if media_increase:

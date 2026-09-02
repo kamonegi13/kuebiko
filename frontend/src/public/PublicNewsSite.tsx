@@ -1009,7 +1009,7 @@ function UpdateHistory({ revisions }: { revisions: PublicNewsRevision[] }) {
               </time>
               {r.source && <span>{r.source} の続報を反映</span>}
             </div>
-            {r.added.length > 0 ? (
+            {r.added.length > 0 || r.quantities.length > 0 ? (
               <ul className="mt-1 space-y-0.5">
                 {r.added.map((a) => (
                   <li key={a.type} className="text-fg-muted">
@@ -1017,6 +1017,12 @@ function UpdateHistory({ revisions }: { revisions: PublicNewsRevision[] }) {
                     {a.values.join("、")}
                   </li>
                 ))}
+                {r.quantities.length > 0 && (
+                  <li className="text-fg-muted">
+                    <span className="text-fg-subtle">新たに報じられた数値: </span>
+                    {r.quantities.join("、")}
+                  </li>
+                )}
               </ul>
             ) : (
               <p className="mt-1 text-fg-muted">{r.note || "報道の追加を反映して書き直しました"}</p>

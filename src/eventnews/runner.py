@@ -460,10 +460,21 @@ async def process_candidates(
         breakdown_before = item.breakdown or state.compute_source_breakdown(item.members)
         drivers_before = _driver_entities(item.members)
         importance_before = item.snapshot.importance
+        # ⭐ 「事象がまだ持っていない数値」は **参加前のメンバー**と突き合わせる。
+        #    算出は呼出側 — decide_arrival はメンバー集合の差分計算をしない (既存の規約)。
+        new_quantities = quantities.new_values(
+            quantities.supporting_texts([cand])[0],
+            quantities.supporting_texts(item.members),
+        )
         item.members.append(cand)
         breakdown_after = state.compute_source_breakdown(item.members)
         decision = state.decide_arrival(
-            drivers_before, cand, breakdown_before, breakdown_after, importance_before
+            drivers_before,
+            cand,
+            breakdown_before,
+            breakdown_after,
+            importance_before,
+            new_quantities=new_quantities,
         )
         new_importance = _max_importance(importance_before, cand.importance)
         version = item.snapshot.current_version

@@ -55,6 +55,8 @@ export interface PublicNewsItem {
 export interface PublicNewsRevision {
   at: string;
   added: { type: string; label: string; values: string[] }[];
+  /** その版で事象が初めて持った数値。割合と日付は含まない (大半が公開日で新事実ではない)。 */
+  quantities: string[];
   /** 事実そのものではない変化 (裏取りの増加・一次情報源の登場・重要度の引き上げ)。 */
   note: string;
   source: string;

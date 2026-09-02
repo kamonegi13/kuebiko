@@ -305,6 +305,8 @@ def _revisions(repo: RunHistoryRepository, versions: Sequence[Any]) -> list[dict
                 "at": v.generated_at.isoformat(),
                 "added": version_diff.resolve_additions(v.new_facts_json, entities.get(aid, ())),
                 "note": version_diff.corroboration_note(v.new_facts_json),
+                # 事象が初めて持った数値 (割合と日付は含めない — 大半が公開日で新事実ではない)
+                "quantities": version_diff.new_quantities(v.new_facts_json),
                 # どの媒体の続報で書き直したか (本文は返さない — 契約どおり)
                 "source": (getattr(article, "feed_title", "") or "") if article else "",
                 "url": (getattr(article, "url", "") or "") if article else "",

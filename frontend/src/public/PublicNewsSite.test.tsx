@@ -717,6 +717,7 @@ describe("続報バッジ", () => {
         {
           at: "2026-08-27T01:00:00+00:00",
           added: [{ type: "victim_org", label: "被害組織", values: ["Federal Reserve Board"] }],
+          quantities: [],
           note: "",
           source: "Some Wire",
           url: "https://example.test/c",

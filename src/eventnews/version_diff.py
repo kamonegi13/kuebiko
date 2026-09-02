@@ -88,6 +88,19 @@ def resolve_additions(
     return out
 
 
+def new_quantities(new_facts_json: str | None) -> list[str]:
+    """その版で **事象が初めて持った数値**。無ければ空。
+
+    ⭐ 2026-09-02: 「規模が大きく変わっていなくても、記事内容が更新されるなら更新」
+    (利用者指摘)。①〜④ の条件はすべて entity ベースなので、同じ被害組織・同じ
+    アクターのまま事実だけ増える続報を拾えていなかった。**原文に書かれた値を
+    そのまま見せる** — 読み手が差分を探して見つけられない、という指摘への答えは
+    文面の差分ではなく、増えた値そのもの。
+    """
+    values = _payload(new_facts_json).get("new_quantities")
+    return [str(v) for v in values] if isinstance(values, list) else []
+
+
 def corroboration_note(new_facts_json: str | None) -> str:
     """entity 以外の「加わり方」を 1 文にする (裏取り・出典の格上げ)。
 
