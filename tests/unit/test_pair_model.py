@@ -21,7 +21,7 @@ _TOLERANCE = 0.01
 def test_model_loads() -> None:
     model = load_model()
     assert model is not None, "config/models/pair_model.json が読めない"
-    assert len(model.feature_names) == 21
+    assert len(model.feature_names) == 25
     assert model.feature_names[-2:] == ("llm_same", "llm_known")
 
 

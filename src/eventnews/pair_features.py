@@ -21,6 +21,7 @@ from datetime import datetime
 
 import numpy as np
 
+from src.eventnews.event_kind import kind_pair_features
 from src.eventnews.grouping import blocked_by_different_victims, names_of_type
 
 #: まとめ記事の見出しに出る語。個別の出来事とは別に扱うための手掛かり。
@@ -54,6 +55,11 @@ FEATURE_NAMES: tuple[str, ...] = (
     "title_len_diff",
     "count_both",
     "count_one",
+    # 種別対 (event_kind、2026-09-03)。定義の SSoT は event_kind.KIND_FEATURE_NAMES
+    "kind_same",
+    "kind_advisory_vs_incident",
+    "kind_roundup_one",
+    "kind_stats_one",
 )
 
 
@@ -71,6 +77,8 @@ class PairSide:
     vector: np.ndarray
     #: 見出し + 要約の埋込。⭐ 書式が揃うので同じ出来事どうしが近づく
     summary_vector: np.ndarray | None = None
+    #: 記事の種別 (event_kind.KINDS)。未分類は "other" — 学習時の退避先と揃える
+    kind: str = "other"
 
 
 def _bigrams(text: str) -> set[str]:
@@ -122,6 +130,7 @@ def pair_features(left: PairSide, right: PairSide) -> list[float]:
         abs(len(left.title) - len(right.title)) / 50.0,
         float(ca and cb),
         float(ca != cb),
+        *kind_pair_features(left.kind, right.kind),
     ]
 
 

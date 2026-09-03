@@ -44,6 +44,7 @@ from src.ui.services.eventnews_hourly_job import (
     _entity_counts,
     _load_members,
     _load_vectors,
+    _resolve_kinds,
     regenerate_pending_bodies,
 )
 
@@ -115,11 +116,13 @@ async def _judge_all(
             for j in range(i + 1, len(ordered))
             if ordered[i].article_id in vecs and ordered[j].article_id in vecs
         ]
+        kinds = await _resolve_kinds(repo, config, ordered)
         verdicts = await pair_shadow.judge_pairs(
             pairs,
             vecs,
             llm=llm,
             embed_summary=lambda arts: _embed_summaries(config, arts),
+            kinds=kinds,
         )
         probas = {v.key: v.ml_proba for v in verdicts}
         failed_pairs += sum(1 for v in verdicts if v.ml_proba is None)

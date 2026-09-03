@@ -637,6 +637,27 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             )
             return int(cur.rowcount or 0)
 
+    def get_article_kinds(self, article_ids: Sequence[str]) -> dict[str, str]:
+        """記事の種別キャッシュを一括で引く (無い記事は返さない)。"""
+        if not article_ids:
+            return {}
+        placeholders = ",".join("?" for _ in article_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT article_id, kind FROM article_kinds WHERE article_id IN ({placeholders})",  # noqa: S608
+                list(article_ids),
+            ).fetchall()
+        return {str(r[0]): str(r[1]) for r in rows}
+
+    def set_article_kind(self, article_id: str, kind: str, model: str) -> None:
+        """種別を記録する (冪等 — 既存は上書きしない。分類は記事ごとに 1 回)。"""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO article_kinds (article_id, kind, model, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (article_id, kind, model, _to_iso(datetime.now(UTC))),
+            )
+
     def list_event_members(self, item_id: str) -> list[EventMemberRecord]:
         """アイテムの構成記事を参加順 (joined_at ASC) で返す。"""
         with self._connect() as conn:

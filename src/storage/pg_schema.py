@@ -826,6 +826,14 @@ CREATE TABLE IF NOT EXISTS event_pair_shadow (
     ml_joined      INTEGER
 );
 
+-- 記事の種別キャッシュ (event_kind、2026-09-03)。群化の特徴量。記事ごとに 1 回だけ分類する
+CREATE TABLE IF NOT EXISTS article_kinds (
+    article_id  TEXT PRIMARY KEY,
+    kind        TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS event_item_versions (
     item_id         TEXT     NOT NULL,
     version         INTEGER  NOT NULL,

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -44,7 +44,12 @@ def is_enabled() -> bool:
     return os.environ.get(_ENV_FLAG, "0") == "1"
 
 
-def _side(member: MemberArticle, vec: np.ndarray, summary_vec: np.ndarray | None) -> PairSide:
+def _side(
+    member: MemberArticle,
+    vec: np.ndarray,
+    summary_vec: np.ndarray | None,
+    kind: str = "other",
+) -> PairSide:
     return PairSide(
         article_id=member.article_id,
         title=member.title,
@@ -54,6 +59,7 @@ def _side(member: MemberArticle, vec: np.ndarray, summary_vec: np.ndarray | None
         entities=member.entities,
         vector=vec,
         summary_vector=summary_vec,
+        kind=kind,
     )
 
 
@@ -116,6 +122,7 @@ async def evaluate(
     *,
     llm: LLMClient,
     embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
+    kinds: Mapping[str, str] | None = None,
 ) -> list[PairVerdict]:
     """観測対象のペアを 1 回だけ評価する。**群化にも記録にもこの結果を使う。**"""
     return await judge_pairs(
@@ -123,6 +130,7 @@ async def evaluate(
         vectors,
         llm=llm,
         embed_summary=embed_summary,
+        kinds=kinds,
     )
 
 
@@ -132,6 +140,7 @@ async def judge_pairs(
     *,
     llm: LLMClient,
     embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
+    kinds: Mapping[str, str] | None = None,
 ) -> list[PairVerdict]:
     """**明示したペア**を評価する。ペアの選び方は呼び手が決める。
 
@@ -145,9 +154,20 @@ async def judge_pairs(
     svecs = await embed_summary(list(involved.values()))
     model = pair_model.load_model()  # ⭐ ループの外で 1 回だけ (以前はペアごとに読み直していた)
     out: list[PairVerdict] = []
+    kmap = kinds or {}
     for cand, member in pairs:
-        left = _side(cand, vectors[cand.article_id], svecs.get(cand.article_id))
-        right = _side(member, vectors[member.article_id], svecs.get(member.article_id))
+        left = _side(
+            cand,
+            vectors[cand.article_id],
+            svecs.get(cand.article_id),
+            kind=kmap.get(cand.article_id, "other"),
+        )
+        right = _side(
+            member,
+            vectors[member.article_id],
+            svecs.get(member.article_id),
+            kind=kmap.get(member.article_id, "other"),
+        )
         feats = pair_features(left, right)
         shared = tuple(sorted(left.entities & right.entities))
         same = await judge_pair(

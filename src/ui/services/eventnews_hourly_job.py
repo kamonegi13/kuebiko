@@ -177,6 +177,30 @@ async def run_eventnews_hourly() -> dict[str, object]:
     return await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
 
 
+async def _resolve_kinds(
+    repo: RunHistoryRepository,
+    config: AppConfig,
+    articles: Sequence[MemberArticle],
+) -> dict[str, str]:
+    """判定に使う記事の種別 (event_kind) を、キャッシュ優先で解決する。
+
+    分類は記事ごとに 1 回 (26B・fast ティア)。失敗は "other" (学習時の退避先と同じ)。
+    """
+    from src.eventnews import event_kind
+
+    ids = [a.article_id for a in articles]
+    kinds = repo.get_article_kinds(ids)
+    missing = [a for a in articles if a.article_id not in kinds]
+    if missing:
+        llm = build_llm_for(Step.TRIAGE, config)
+        for a in missing:
+            kind = await event_kind.classify(llm, a.title, a.summary)
+            kinds[a.article_id] = kind
+            repo.set_article_kind(a.article_id, kind, getattr(llm, "model", ""))
+        _log.info("event_kind_classified", articles=len(missing))
+    return kinds
+
+
 def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[MemberArticle]]]:
     """まだ版を持たず、本文を持つメンバーが 2 件以上あるアイテム (新しい順)。
 
@@ -293,13 +317,16 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
     ml_ready = pair_shadow.is_ml_ready()
     if ml_ready or pair_shadow.is_enabled():
         try:
-            verdicts = await pair_shadow.evaluate(
-                candidates,
-                members_all,
+            pairs_now = pair_shadow.select_pairs(candidates, members_all, vectors)
+            involved = list({m.article_id: m for pair in pairs_now for m in pair}.values())
+            kinds = await _resolve_kinds(repo, config, involved)
+            verdicts = await pair_shadow.judge_pairs(
+                pairs_now,
                 vectors,
                 # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
                 llm=build_llm_for(Step.TRIAGE, config),
                 embed_summary=lambda arts: _embed_summaries(config, arts),
+                kinds=kinds,
             )
         except Exception as e:  # noqa: BLE001 — 評価が作れなくても群化は続ける
             _log.warning("eventnews_pair_eval_failed", error=str(e)[:200])

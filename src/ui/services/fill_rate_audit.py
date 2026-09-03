@@ -68,6 +68,14 @@ def _entity_cond(entity_type: str) -> str:
 # (CLAUDE.md §7 の規約)。
 METRICS: tuple[FillMetric, ...] = (
     FillMetric(
+        # 記事種別 (event_kind、2026-09-03)。群化 ML の特徴量。判定に使った記事にだけ
+        # 付く (遅延分類) ので、母集団全体では低くても正常 — 見るのは急落だけ
+        "event_kind",
+        "記事種別",
+        "EXISTS (SELECT 1 FROM article_kinds k WHERE k.article_id = a.article_id)",
+        None,
+    ),
+    FillMetric(
         "intent",
         "intent",
         "a.socio_political_intent IS NOT NULL AND a.socio_political_intent NOT IN ('', 'unknown')",

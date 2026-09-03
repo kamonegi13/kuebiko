@@ -70,8 +70,25 @@ def load_model(path: str | None = None) -> PairModel | None:
         return None
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
+        from src.eventnews.pair_features import FEATURE_NAMES
+
+        expected = tuple(FEATURE_NAMES) + ("llm_same", "llm_known")
+        got = tuple(raw["feature_names"])
+        if got != expected:
+            # ⚠ 特徴の並びが違うモデルを黙って使うと、木が別の列を読んで**静かに
+            #    誤判定**する (2026-09-03 に種別対 4 特徴を足した際の防御)。
+            #    不一致は None = 決定論へ退避し、ログで気付けるようにする。
+            _log.warning(
+                "pair_model_feature_mismatch",
+                expected=len(expected),
+                got=len(got),
+                first_diff=next(
+                    (i for i, (a, b) in enumerate(zip(expected, got, strict=False)) if a != b), -1
+                ),
+            )
+            return None
         return PairModel(
-            feature_names=tuple(raw["feature_names"]),
+            feature_names=got,
             threshold_llm_on=float(raw["threshold_llm_on"]),
             threshold_llm_off=float(raw["threshold_llm_off"]),
             _trees=tuple(raw["trees"]),
