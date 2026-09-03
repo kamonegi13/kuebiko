@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -586,6 +586,45 @@ def list_event_news(  # noqa: PLR0913
     }
 
 
+def related_payload(
+    repo: RunHistoryRepository,
+    record: Any,
+    *,
+    visible: Callable[[Any], bool] | None = None,
+) -> dict[str, Any]:
+    """「別事象だが関連」(related_to) の親と子。app / 公開面 / 静的書き出しで共通。
+
+    ⭐ 分割は読み手から一覧性を奪う (SafePay の別被害者 11 件が別ページになる) ので、
+    同一性を偽らずにここで返す (2026-09-03)。親子は分割の由来 = 決定論のみ。
+    ``visible`` は公開面のゲート (非公開の子へのリンクは 404 になるので出さない)。
+    """
+    parent_rec = repo.get_event_item(record.related_to) if record.related_to else None
+    if parent_rec is not None and parent_rec.merged_into:
+        parent_rec = None
+    children = repo.list_related_events(record.state.item_id)
+    if visible is not None:
+        parent_rec = parent_rec if parent_rec is not None and visible(parent_rec) else None
+        children = [c for c in children if visible(c)]
+    shown = ([parent_rec] if parent_rec else []) + children
+    if not shown:
+        return {"parent": None, "children": []}
+    titles = _headlines_and_previews(repo, shown)
+
+    def entry(r: Any) -> dict[str, Any]:
+        headline, _ = titles.get(r.state.item_id, ("", ""))
+        return {
+            "id": r.state.item_id,
+            "headline": headline,
+            "member_count": len(r.state.member_ids),
+            "last_reported_at": r.state.last_reported_at.isoformat(),
+        }
+
+    return {
+        "parent": entry(parent_rec) if parent_rec else None,
+        "children": [entry(c) for c in children],
+    }
+
+
 @eventnews_api.get("/{item_id}")
 def get_event_news(item_id: str) -> dict[str, Any]:
     """1 事象の詳細 — 生成本文 + 構成記事 (全件)。"""
@@ -613,5 +652,7 @@ def get_event_news(item_id: str) -> dict[str, Any]:
         # 原記事から抽出済みのメタデータ (決定論の集約。生成本文とは別枠で出す)。
         # **members と同じ並び** を渡す — 自由記述の出典番号 [N] を一致させるため。
         "metadata": _metadata_payload(repo, repo.list_event_members(item_id)),
+        # 「別事象だが関連」 — 分割の由来リンク (親) と逆引き (子)
+        "related": related_payload(repo, record),
         "note": GENERATED_NOTE,
     }

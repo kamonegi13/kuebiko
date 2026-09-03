@@ -41,6 +41,7 @@ from src.storage.run_history import RunHistoryRepository
 # カテゴリのグループ定義は記事側 facet と **同じものを使う** (グループの中身を
 # 2 箇所に持つと必ずずれる)。公開面に出す 4 つだけを ``PUBLIC_CATEGORIES`` で選ぶ。
 from src.ui.api.articles_feed import _CATEGORY_GROUPS  # noqa: PLC2701 — 分類の SSoT 共有
+from src.ui.api.eventnews import related_payload
 from src.ui.services.geo_cyber_map import _COUNTRIES_YAML, _yaml_display_map
 
 public_news_api = APIRouter(prefix="/api/v1/public/news", tags=["public"])
@@ -579,5 +580,7 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         **_update_badge(repo.event_update_marks([item_id]).get(item_id)),
         "independent_sources": record.independent_sources,
         "citations": [_public_citation(c) for c in citations],
+        # 「別事象だが関連」— 非公開の子は出さない (リンク先が 404 になる)
+        "related": related_payload(repo, record, visible=_is_public),
         "note": GENERATED_NOTE,
     }

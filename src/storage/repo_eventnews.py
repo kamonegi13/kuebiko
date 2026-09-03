@@ -603,6 +603,25 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 ),
             )
 
+    def list_related_events(self, item_id: str) -> list[EventItemRecord]:
+        """この事象を親 (``related_to``) として指す生存事象 — 分割の子など。
+
+        「別事象だが関連」の逆引き。親→子のリストを親側に持たせると更新が
+        二重になるため、常にこの逆引きで出す (2026-09-03)。
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT * FROM event_items WHERE related_to = ? AND merged_into IS NULL"
+                " ORDER BY last_reported_at DESC",
+                (item_id,),
+            )
+            rows = cur.fetchall()
+        out: list[EventItemRecord] = []
+        for row in rows:
+            members = self.list_event_members(str(row["id"]))
+            out.append(_row_to_event_item(row, tuple(m.article_id for m in members)))
+        return out
+
     def move_event_member(
         self, *, article_id: str, from_item: str, to_item: str, join_signal: str
     ) -> int:

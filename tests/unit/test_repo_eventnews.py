@@ -741,3 +741,40 @@ class TestMoveEventMember:
             )
             == 0
         )
+
+
+class TestRelatedEvents:
+    """「別事象だが関連」(related_to) の逆引き。分割の一覧性回復に使う。"""
+
+    def test_children_are_listed_and_merged_ones_are_excluded(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        # Arrange — 親 1 + 子 2 (うち 1 つは統合で吸収済み)
+        now = datetime(2026, 9, 3, tzinfo=UTC)
+        repo.create_event_item(
+            item_id="ev-parent",
+            origin="live",
+            first_reported_at=now,
+            last_reported_at=now,
+            importance="high",
+        )
+        for iid in ("ev-kid1", "ev-kid2"):
+            repo.create_event_item(
+                item_id=iid,
+                origin="live",
+                first_reported_at=now,
+                last_reported_at=now,
+                importance="medium",
+                related_to="ev-parent",
+            )
+        repo.update_event_item("ev-kid2", {"merged_into": "ev-parent"})
+
+        # Act
+        got = repo.list_related_events("ev-parent")
+
+        # Assert — 生存している子だけ
+        assert [r.state.item_id for r in got] == ["ev-kid1"]
+        assert got[0].related_to == "ev-parent"
+
+    def test_no_relations_returns_empty(self, repo: RunHistoryRepository) -> None:
+        assert repo.list_related_events("ev-nothing") == []

@@ -182,6 +182,9 @@ def main() -> None:
                     first_reported_at=member.anchor_ts,
                     last_reported_at=member.anchor_ts,
                     importance=member.importance,
+                    # ⭐ 分割の由来 = 「別事象だが関連」。読み手が失う一覧性を
+                    #    関連事象欄で返すための決定論リンク (2026-09-03)。
+                    related_to=r.state.item_id,
                 )
             for aid in comp:
                 repo.move_event_member(

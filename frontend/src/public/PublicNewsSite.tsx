@@ -1034,6 +1034,36 @@ function UpdateHistory({ revisions }: { revisions: PublicNewsRevision[] }) {
   );
 }
 
+/** 「別事象だが関連」— 分割で分かれた同一作戦・同一掲載シリーズへの導線。
+    非公開の関連はサーバ側で落ちて来る (リンク先 404 を作らない)。 */
+function RelatedEvents({
+  related,
+}: {
+  related?: { parent: { id: string; headline: string } | null; children: { id: string; headline: string }[] };
+}) {
+  if (!related || (!related.parent && related.children.length === 0)) return null;
+  const row = (r: { id: string; headline: string }, tag: string) => (
+    <li key={r.id} className="text-[14.5px] leading-[1.8]">
+      <span className="text-fg-subtle mr-1.5 text-[12px]">{tag}</span>
+      <button
+        type="button"
+        onClick={() => navigate(`${HOME_PATH}/${encodeURIComponent(r.id)}`)}
+        className="text-left text-fg hover:text-accent underline decoration-border-default underline-offset-2"
+      >
+        {r.headline || r.id}
+      </button>
+    </li>
+  );
+  return (
+    <ArticleSection title="関連する事象">
+      <ul className="space-y-1.5 list-none p-0 m-0">
+        {related.parent && row(related.parent, "本体")}
+        {related.children.map((c) => row(c, "関連"))}
+      </ul>
+    </ArticleSection>
+  );
+}
+
 /** 出典の並び。**詳細でだけ** 見せる。 */
 function Citations({ citations }: { citations: PublicCitation[] }) {
   // 1 件なら番号を振らない (本文側でも番号を出していないため対応が付かない)
@@ -1189,6 +1219,7 @@ function NewsDetail({ id }: { id: string }) {
 
       <UpdateHistory revisions={data.revisions ?? []} />
       <Citations citations={data.citations} />
+      <RelatedEvents related={data.related} />
 
       <p className="text-[13px] leading-relaxed text-fg-subtle">{data.note}</p>
     </article>

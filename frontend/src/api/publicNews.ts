@@ -99,6 +99,11 @@ export interface PublicNewsDetail {
   revisions?: PublicNewsRevision[];
   independent_sources: number;
   citations: PublicCitation[];
+  /** 「別事象だが関連」。古い静的書き出しには無いので optional。 */
+  related?: {
+    parent: { id: string; headline: string } | null;
+    children: { id: string; headline: string }[];
+  };
   note: string;
 }
 

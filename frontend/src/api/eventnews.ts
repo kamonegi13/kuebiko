@@ -108,7 +108,16 @@ export interface EventNewsDetail {
   /** 裏取りの内訳 = 媒体単位の tier 分布 (記事数ではない)。 */
   corroboration: { tier: string; media: number }[];
   metadata: EventNewsMetadata;
+  /** 「別事象だが関連」(分割の由来)。parent = この事象が外れてきた本体。 */
+  related: { parent: RelatedEvent | null; children: RelatedEvent[] };
   note: string;
+}
+
+export interface RelatedEvent {
+  id: string;
+  headline: string;
+  member_count: number;
+  last_reported_at: string;
 }
 
 async function get<T>(path: string): Promise<T> {

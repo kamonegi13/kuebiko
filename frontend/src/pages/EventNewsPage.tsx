@@ -350,7 +350,7 @@ export function EventNewsPage() {
         mobileGutter
         swipeToClose
       >
-        {openId && <EventNewsDetailBody id={openId} />}
+        {openId && <EventNewsDetailBody id={openId} onOpenItem={setOpenId} />}
       </Drawer>
     </div>
   );

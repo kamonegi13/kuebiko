@@ -227,6 +227,49 @@ function EventJudgement({ d }: { d: EventNewsDetail }) {
   return <JudgementCard j={judgement} />;
 }
 
+/** 「別事象だが関連」— 分割の由来リンク。分割は読み手から一覧性を奪う
+    (同一アクターの別被害者が別ページになる) ので、同一性を偽らずにここで返す。 */
+function RelatedCard({
+  d,
+  onOpenItem,
+}: {
+  d: EventNewsDetail;
+  onOpenItem?: (id: string) => void;
+}) {
+  const rel = d.related;
+  if (!rel || (!rel.parent && rel.children.length === 0)) return null;
+  const row = (r: { id: string; headline: string; member_count: number }, tag: string) => (
+    <li key={r.id} className="flex items-start gap-2">
+      <span className="text-[11px] text-fg-subtle border border-border-subtle rounded px-1.5 py-0.5 shrink-0 mt-0.5">
+        {tag}
+      </span>
+      {onOpenItem ? (
+        <button
+          type="button"
+          onClick={() => onOpenItem(r.id)}
+          className="text-left text-fg hover:text-accent underline decoration-border-default underline-offset-2"
+        >
+          {r.headline || r.id}
+        </button>
+      ) : (
+        <span>{r.headline || r.id}</span>
+      )}
+    </li>
+  );
+  return (
+    <div className={CARD}>
+      <p className={CARD_LABEL}>関連する事象</p>
+      <p className="text-xs text-fg-subtle mt-1 mb-2 m-0">
+        同一の事象ではないが、同じ一連の掲載・作戦から分かれたもの
+      </p>
+      <ul className="space-y-1.5 m-0 p-0 list-none">
+        {rel.parent && row(rel.parent, "本体")}
+        {rel.children.map((c) => row(c, "関連"))}
+      </ul>
+    </div>
+  );
+}
+
 /** 構成記事カード。記事ドロワーへ入る動線 (§3-1: 折りたたみは可・省略は不可)。 */
 function MembersCard({ d }: { d: EventNewsDetail }) {
   return (
@@ -315,7 +358,14 @@ function SingleArticleBody({ d }: { d: EventNewsDetail }) {
   );
 }
 
-export function EventNewsDetailBody({ id }: { id: string }) {
+export function EventNewsDetailBody({
+  id,
+  onOpenItem,
+}: {
+  id: string;
+  /** 関連事象リンクの遷移先 (ドロワーの id を差し替える)。無ければ非リンク表示。 */
+  onOpenItem?: (id: string) => void;
+}) {
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews", id],
     queryFn: () => fetchEventNewsDetail(id),
@@ -459,6 +509,7 @@ export function EventNewsDetailBody({ id }: { id: string }) {
       </div>
 
       <MembersCard d={d} />
+      <RelatedCard d={d} onOpenItem={onOpenItem} />
       <EventNoteEditor itemId={d.id} />
 
       {d.news && <p className="text-xs text-fg-subtle m-0">{d.note}</p>}
