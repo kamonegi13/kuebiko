@@ -834,6 +834,18 @@ CREATE TABLE IF NOT EXISTS article_kinds (
     created_at  TEXT NOT NULL
 );
 
+-- 関門に落ちた草稿 (DPO の rejected 側、2026-09-03)。採用版 (event_item_versions) と
+-- 対で読む: 基底プロンプトと採用本文は版の側に既にある。書き直しが走った版にだけ 1 行
+CREATE TABLE IF NOT EXISTS event_draft_rejects (
+    id          BIGSERIAL PRIMARY KEY,
+    item_id     TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    model       TEXT NOT NULL,
+    hints       TEXT NOT NULL,
+    draft_json  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS event_item_versions (
     item_id         TEXT     NOT NULL,
     version         INTEGER  NOT NULL,

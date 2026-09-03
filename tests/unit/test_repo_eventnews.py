@@ -778,3 +778,19 @@ class TestRelatedEvents:
 
     def test_no_relations_returns_empty(self, repo: RunHistoryRepository) -> None:
         assert repo.list_related_events("ev-nothing") == []
+
+
+class TestDraftRejects:
+    """DPO の rejected 側の蛇口。採用版と対で読めることが契約。"""
+
+    def test_record_and_list(self, repo: RunHistoryRepository) -> None:
+        # Arrange / Act
+        repo.record_draft_reject(
+            item_id="ev-a", version=2, model="m", hints="逐語", draft_json='{"facts":[]}'
+        )
+
+        # Assert
+        got = repo.list_draft_rejects()
+        assert len(got) == 1
+        assert got[0]["item_id"] == "ev-a" and got[0]["version"] == 2
+        assert got[0]["hints"] == "逐語"

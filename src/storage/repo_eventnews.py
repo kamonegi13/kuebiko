@@ -637,6 +637,38 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             )
             return int(cur.rowcount or 0)
 
+    def get_version_prompt(self, item_id: str, version: int) -> str:
+        """版の基底プロンプト (SFT/DPO 用)。Record には載せない — 一覧が太るため。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT prompt_text FROM event_item_versions WHERE item_id=? AND version=?",
+                (item_id, version),
+            ).fetchone()
+        return str(row[0]) if row and row[0] else ""
+
+    def record_draft_reject(
+        self, *, item_id: str, version: int, model: str, hints: str, draft_json: str
+    ) -> None:
+        """関門に落ちた草稿を残す (DPO の rejected 側)。採用版と対で読む。"""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO event_draft_rejects"
+                " (item_id, version, model, hints, draft_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (item_id, version, model, hints, draft_json, _to_iso(datetime.now(UTC))),
+            )
+
+    def list_draft_rejects(self, *, limit: int = 500) -> list[dict[str, object]]:
+        """棄却草稿を新しい順に読む (学習エクスポータ用の読み口)。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT item_id, version, model, hints, draft_json, created_at"
+                " FROM event_draft_rejects ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        cols = ("item_id", "version", "model", "hints", "draft_json", "created_at")
+        return [dict(zip(cols, tuple(r), strict=True)) for r in rows]
+
     def get_article_kinds(self, article_ids: Sequence[str]) -> dict[str, str]:
         """記事の種別キャッシュを一括で引く (無い記事は返さない)。"""
         if not article_ids:

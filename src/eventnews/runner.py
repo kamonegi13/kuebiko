@@ -291,6 +291,7 @@ async def _generate_version(
         texts = dict(enumerate(quantities.supporting_texts(selected), start=1))
         catalog = identifier_gate.build_member_catalog(selected)
         hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id, catalog)
+        rejected_json = draft.model_dump_json() if hints else None  # DPO の rejected 側
         if hints:
             draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint="\n".join(hints))
             gate = identifier_gate.verify_draft(draft, selected)
@@ -368,6 +369,20 @@ async def _generate_version(
         repaired_ids=gate.repaired_ids,
         prompt_text=prompt_text,
     )
+    if rejected_json is not None:
+        # ⭐ 関門に落ちた草稿と書き直し理由を捨てない (2026-09-03)。同じ入力の
+        #    「落ちた版 → 通った版」は客観基準でラベル済みの選好対で、DPO の材料。
+        #    失う一方のデータなので、保存の失敗だけは握って生成を止めない。
+        try:
+            repo.record_draft_reject(
+                item_id=item.snapshot.item_id,
+                version=version,
+                model=llm.model,
+                hints="\n".join(hints),
+                draft_json=rejected_json,
+            )
+        except Exception as e:  # noqa: BLE001
+            _log.warning("draft_reject_record_failed", error=str(e)[:120])
     return gate, body_json
 
 
