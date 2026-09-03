@@ -570,6 +570,28 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="weekly-triage-drift",
+            kind="bespoke",
+            heavy=True,
+            max_runtime_minutes=60,
+            title="triage ドリフト週次検知",
+            description=(
+                "凍結 goldset (150 記事・本番と同一プロンプト) を現在の 26B に通し、"
+                "day-0 (2026-09-03) の判定からの移動率で警告する (26B を 150 呼出)。"
+            ),
+            disable_impact=(
+                "triage の静かな劣化 (プロンプト/PIR/モデル変更の副作用) を"
+                "手動実行しない限り誰も見なくなる。day-0 実測: Sonnet 対比で"
+                "見逃し方向 0 件の健全状態が基準。"
+            ),
+            protection="important",
+            schedule_type="cron",
+            day_of_week="sun",
+            # 深夜帯の空白 (土 04:45 の goldset 評価と重ねない)。LLM heavy。
+            hour=4,
+            minute=40,
+        ),
+        JobDef(
             id="weekly-fill-rate-audit",
             kind="bespoke",
             title="抽出 fill-rate 週次監査",

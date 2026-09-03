@@ -255,6 +255,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         )
 
     from src.eval.goldset_cron import run_weekly_goldset_eval
+    from src.eval.triage_drift import run_weekly_triage_drift
     from src.ui.services.actor_history_distill import run_actor_history_distill
     from src.ui.services.body_refetch_backlog import run_body_refetch_backlog
     from src.ui.services.body_translate_backlog import run_body_translate_backlog
@@ -290,6 +291,7 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,
         "weekly-goldset-eval": run_weekly_goldset_eval,
+        "weekly-triage-drift": run_weekly_triage_drift,
         "actor-history-distill": run_actor_history_distill,
         "job-recovery-watchdog": _job_recovery,
     }
