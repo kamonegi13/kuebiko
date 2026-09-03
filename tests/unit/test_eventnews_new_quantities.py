@@ -114,3 +114,30 @@ def test_without_new_quantities_the_arrival_stays_reinforced() -> None:
     # Assert
     assert decision.kind == "reinforced"
     assert "new_quantities" not in decision.new_facts
+
+
+def test_compound_numeral_tail_is_not_extracted_as_a_value() -> None:
+    """「1万3131件」の尾を「3131件」として拾わない。
+
+    ⚠ 2026-09-03: 実値 13,131 件を「3131件」として続報バッジに出した。
+    複合数詞は取り逃してよい — 誤った値を出すより安全。
+    """
+    # Arrange
+    first = _member("a", body="サーバが侵害された。")
+    second = _member("b", body="脆弱性DB登録は約13%増となる1万3131件だった。")
+
+    # Act / Assert
+    assert _new_values(second, [first]) == ()
+
+
+def test_normal_man_scale_quantity_still_works() -> None:
+    """「120万件」「57.9 万件」のような通常の 万 表記は引き続き拾う。"""
+    # Arrange
+    first = _member("a", body="侵害が確認された。")
+    second = _member("b", body="約57.9万件の医療カードが含まれる。")
+
+    # Act
+    got = _new_values(second, [first])
+
+    # Assert
+    assert any("57.9" in v for v in got)

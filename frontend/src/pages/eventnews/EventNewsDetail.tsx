@@ -87,7 +87,7 @@ function Paragraph({
   articleIdOf: (n: number) => string | undefined;
 }) {
   return (
-        <p className="m-0">
+        <p className="m-0 break-words">
           {facts.map((f, i) => (
             <span key={i}>
               {f.text}

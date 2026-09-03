@@ -83,3 +83,52 @@ def test_trafilatura_on_pretrimmed_html_returns_article_not_nav() -> None:
     # Assert
     assert "actual article body" in text
     assert "MOST POPULAR" not in text
+
+
+def test_pretrim_keeps_article_paragraphs_and_drops_nav_for_security_next() -> None:
+    """Security NEXT は署名「（Security NEXT - 日付）」より前の <p> だけが本文。
+
+    ⚠ 2026-09-03: 全 1,164 記事で関連記事ナビが本文に混入し、別記事の見出しの
+    数値が続報バッジに出た。署名以降 (ツイート/PR/関連リンク/関連記事) を落とす。
+    """
+    # Arrange — 実ページの構造を縮約した fixture
+    html = """
+    <html><body><div class="content">
+      <div class="prtxt">広告</div>
+      <div class="title"><h1>見出し</h1></div>
+      <p>本文の第一段落。7件の脆弱性が悪用されている。</p>
+      <p>本文の第二段落。</p>
+      <div class="pnavi"><a href="https://kuebiko.example/1">次のページ</a></div>
+      <p>（Security NEXT - 2026/09/03 ）</p>
+      <div class="linkc"><h3>関連リンク</h3></div>
+      <p><a href="https://kuebiko.example/2">関連記事: 1万3131件</a></p>
+    </div></body></html>
+    """
+
+    # Act
+    got = pretrim_main_content("https://www.security-next.com/189777", html)
+
+    # Assert — 本文は残り、署名・関連記事は落ちる
+    assert "本文の第一段落" in got and "本文の第二段落" in got
+    assert "関連記事" not in got
+    assert "1万3131件" not in got
+    assert "Security NEXT - 2026" not in got
+
+
+def test_pretrim_without_pagination_still_stops_at_the_signature() -> None:
+    """ページ送り (pnavi) の無い短い記事は署名の条件だけで本文を選べる。"""
+    # Arrange
+    html = """
+    <html><body><div class="content">
+      <p>短い記事の本文。</p>
+      <p>（Security NEXT - 2026/09/03 ）</p>
+      <p><a href="https://kuebiko.example/2">関連記事</a></p>
+    </div></body></html>
+    """
+
+    # Act
+    got = pretrim_main_content("https://www.security-next.com/1", html)
+
+    # Assert
+    assert "短い記事の本文" in got
+    assert "関連記事" not in got

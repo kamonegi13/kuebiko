@@ -942,8 +942,10 @@ function FactParagraph({
   facts: { text: string; source_index: number }[];
   showCitations: boolean;
 }) {
+  // break-words: CVSS ベクトルや URL のような分割不能トークンが段落幅を押し広げ、
+  // モバイルで本文列が画面外へはみ出す (2026-09-03 利用者報告)。
   return (
-    <p className="text-[16.5px] leading-[1.85] text-fg indent-[1em]">
+    <p className="text-[16.5px] leading-[1.85] text-fg indent-[1em] break-words">
       {facts.map((f, i) => (
         <span key={i}>
           {f.text}

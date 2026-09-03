@@ -52,6 +52,15 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 # 約 2 か月抽出されていた (全記事が同一 2,494 字の MOST POPULAR 列)。実本文は k5a-article。
 _MAIN_CONTENT_XPATH_BY_HOST: dict[str, str] = {
     "theregister.com": "//*[contains(@class, 'k5a-article')]",
+    # 記事本文は div.content 直下の <p> 群で、後ろに ページ送り (div.pnavi) →
+    # 署名「（Security NEXT - 日付）」→ 関連リンク/関連記事ナビが続く。全 1,164 記事で
+    # ナビが本文に混入していた (2026-09-03 — 別記事の見出しの数値「1万3131件」が
+    # 続報バッジに「3131件」として出た)。署名より前の p だけを取る。ページ送りの無い
+    # 短い記事は署名の条件が拾う。
+    "security-next.com": (
+        '//div[@class="content"]/p[following-sibling::div[@class="pnavi"]'
+        ' or following-sibling::p[contains(., "（Security NEXT")]]'
+    ),
 }
 
 # 本文取得の UA 戦略 (2026-07-27, docs/body_extraction_and_entity_integrity_redesign.md §2.2)。
@@ -594,7 +603,9 @@ def pretrim_main_content(url: str, html: str) -> str:
         if not nodes:
             _log.info("content_pretrim_selector_missed", url=url)
             return html
-        sub = lxml_html.tostring(nodes[0], encoding="unicode")
+        # 複数ノードの選択に対応する (security-next は本文 <p> の列を選ぶ。
+        # 2026-09-03 まで nodes[0] だけを取り、2 段落目以降が落ちていた)
+        sub = "\n".join(lxml_html.tostring(n, encoding="unicode") for n in nodes)
     except Exception as e:  # noqa: BLE001 — pre-trim は最適化であり失敗を致命化しない
         _log.debug("content_pretrim_failed", url=url, error=str(e))
         return html
