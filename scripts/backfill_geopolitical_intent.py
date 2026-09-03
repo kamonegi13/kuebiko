@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.config_loader import load_app_config  # noqa: E402
 from src.cti.diamond_model import INTENT_LABELS_JA, normalize_intent  # noqa: E402
 from src.storage.db_backend import connect  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 _GEO = "('geopolitical','policy')"
 # --cyber: サイバー被害カテゴリ (geo_cyber_map._CYBER_ATTACK_CATEGORIES と一致)。
@@ -91,11 +91,7 @@ def _first_word(text: str) -> str:
 
 async def main(limit: int, apply: bool, include_no_country: bool, cyber: bool) -> int:
     config = load_app_config()
-    client = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.ollama_main_model,
-        timeout_seconds=120.0,
-    )
+    client = build_llm_for(Step.ARTICLE_SUMMARY, config)
     items = _fetch(limit, include_no_country, cyber)
     domain = "サイバー" if cyber else "地政学"
     scope = "全件" if include_no_country else "地図対象 (国あり)"

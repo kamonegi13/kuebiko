@@ -28,7 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.config_loader import load_app_config  # noqa: E402
 from src.cti.editorial_stance_classifier import classify_editorial_stance  # noqa: E402
 from src.storage.db_backend import connect  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.llm_client import LLMClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 _CHUNK = 150
 
@@ -51,7 +52,7 @@ def _fetch(limit: int) -> list[tuple[int, str, str]]:
 
 
 async def _classify(
-    client: OllamaClient, sem: asyncio.Semaphore, item: tuple[int, str, str]
+    client: LLMClient, sem: asyncio.Semaphore, item: tuple[int, str, str]
 ) -> tuple[int, str] | None:
     aid, title, body = item
     async with sem:
@@ -79,9 +80,7 @@ def _apply(updates: list[tuple[int, str]]) -> None:
 
 async def main(limit: int, apply: bool, concurrency: int) -> int:
     cfg = load_app_config()
-    client = OllamaClient(
-        base_url=cfg.ollama_base_url, model=cfg.ollama_main_model, timeout_seconds=120.0
-    )
+    client = build_llm_for(Step.ARTICLE_SUMMARY, cfg)
     items = _fetch(limit)
     print(f"=== editorial_stance focused 補完: 候補 {len(items)} 件 (null, 並列 {concurrency}) ===")
     sem = asyncio.Semaphore(concurrency)

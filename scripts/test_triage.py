@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -12,9 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.config_loader import load_app_config  # noqa: E402
 from src.tools.article_model import Article  # noqa: E402
 from src.tools.article_triage import ArticleTriage  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 # サンプル記事 — 13 種類の判定基準と low/medium 例を網羅
 SAMPLES: list[tuple[str, str, str, str]] = [
@@ -162,12 +162,10 @@ def _make_article(title: str, summary: str) -> Article:
 
 
 async def main() -> None:
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_EXTRACT_MODEL", "gemma4:26b")
-    client = OllamaClient(base_url=base_url, model=model, timeout_seconds=300)
+    client = build_llm_for(Step.TRIAGE, load_app_config())
     triage = ArticleTriage(client)
 
-    print(f"Model: {model}")
+    print(f"Model: {client.model}")
     print(f"Samples: {len(SAMPLES)}\n")
     print(f"{'expected':<8} {'actual':<8} {'criterion':<28} {'reason'}")
     print("-" * 100)

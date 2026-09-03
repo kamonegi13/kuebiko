@@ -467,7 +467,7 @@ def _try_build_embedder(config: AppConfig) -> EmbeddingClient | None:
         # 0.92 hard + cluster) が無効化されるため、INFO でなく WARNING で可視化する。
         _log.warning(
             "embedding_disabled",
-            reason="OLLAMA_EMBED_MODEL not set",
+            reason="embedding tier unassigned",
             impact="semantic dedup (embedding cosine) is OFF; only url-hash + Jaccard active",
         )
         return None

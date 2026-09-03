@@ -38,7 +38,6 @@ OPTIONAL_ENV_KEYS: tuple[str, ...] = (
     "IMAP_USER",
     "IMAP_PASSWORD",
     "OLLAMA_BASE_URL",
-    "OLLAMA_MAIN_MODEL",
     "LOG_LEVEL",
     "TIMEZONE",
 )

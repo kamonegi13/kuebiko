@@ -43,7 +43,7 @@ async def run_pir_spotlights(
     """Spotlight pipeline 本体。
 
     Args:
-        llm: Ollama client (主に ``OLLAMA_SPOTLIGHT_MODEL`` を model に指定)
+        llm: LLM client (``build_llm_for(Step.PIR_SPOTLIGHT, ...)`` で組む)
         repo: 永続化用、None なら dry-run
         period_type: 生成 window (daily/weekly/monthly)
         target_pir_ids: 対象 PIR id list (None なら spotlight.enabled=true 全件)

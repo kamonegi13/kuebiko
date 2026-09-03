@@ -115,8 +115,11 @@ class Step(StrEnum):
 
     # --- fast tier (収集系バッチ) ---
     ARTICLE_SUMMARY = "article_summary"  # per-article 要約・翻訳 (RSS/Grok)
-    GROK_EXTRACT = "grok_extract"  # Grok レポート構造化抽出 (旧 extract slot)
-    TRIAGE = "triage"  # 重要度 pre-filter
+    # GROK_EXTRACT は撤去 (2026-09-04)。Grok は Phase 2.6a で LLM 抽出を廃し JSONL
+    # パーサへ移行したため、この step を解決する呼出は 1 つも無かった。登録だけが残ると
+    # 「ここを割り当てれば Grok の抽出モデルが変わる」という誤認を生む (config/agents.yaml
+    # を撤去したのと同じ理由)。復活させるならスケルトンから書き直すこと。
+    TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
     DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap deep-dive (narrative + rubric)
     SYNTHESIS_DETECT = "synthesis_detect"  # synthesis 内 detect-new (大量入力 triage)
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
@@ -158,7 +161,6 @@ class StepSpec:
 # timeout は同一ティアでも入力量で異なる (step 属性であることの証左)。
 STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
-    Step.GROK_EXTRACT: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),

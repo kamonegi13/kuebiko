@@ -598,7 +598,7 @@ def get_article_detail(request: Request, article_id: str) -> dict[str, Any]:
 def _resolve_embedder(request: Request) -> EmbeddingClient | None:
     """app.state にキャッシュした embedder を返す (Phase 2 K1)。
 
-    - 初回呼出時に ``.env`` の ``OLLAMA_EMBED_MODEL`` から構築し app.state に cache。
+    - 初回呼出時に embedding ティア (``resolve_embedding_model``) から構築し app.state に cache。
     - 未設定なら None を cache (毎回 config を読み直さない)。
     - テストでは ``app.state.embedder`` に fake を直接 set して差し替え可能。
     """
@@ -615,7 +615,7 @@ def _resolve_embedder(request: Request) -> EmbeddingClient | None:
     model = resolve_embedding_model().strip()
     embedder: EmbeddingClient | None = None
     if not model:
-        _log.warning("semantic_search_disabled", reason="OLLAMA_EMBED_MODEL not set")
+        _log.warning("semantic_search_disabled", reason="embedding tier unassigned")
     else:
         try:
             embedder = OllamaEmbeddingClient(
@@ -649,7 +649,7 @@ async def semantic_search(
     if embedder is None:
         raise HTTPException(
             status_code=503,
-            detail="意味検索は無効です (.env の OLLAMA_EMBED_MODEL を設定してください)",
+            detail="意味検索は無効です (設定 → モデル の embedding ティアを割り当ててください)",
         )
 
     term = query.strip()

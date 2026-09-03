@@ -1,7 +1,7 @@
 """Actor 辞書の英語 summary をローカル LLM で日本語に一括翻訳する (Stage 4 backfill)。
 
 Stage 2 の enrich で MITRE 英語 summary がそのまま入った actor を対象に、
-ローカル Ollama (OLLAMA_MAIN_MODEL) で和訳する。固有名詞 (アクター名・マルウェア/
+ローカル LLM (actor_sync ティア) で和訳する。固有名詞 (アクター名・マルウェア/
 ツール名等) と MITRE ID / CVE は原文のまま維持 (mitre_sync.TRANSLATE_SYSTEM_PROMPT)。
 
 翻訳と同時に ``mitre_summary_sha1`` (翻訳元 = MITRE 英語 summary の sha1) を記録し、
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.config_loader import load_app_config  # noqa: E402
 from src.cti.actor_editor import load_actors_raw, render_actors_yaml  # noqa: E402
 from src.cti.mitre_sync import translate_summary  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 # 英語判定: ASCII 文字が大半なら未翻訳とみなす (和訳済は仮名・漢字で ratio が下がる)
 _ASCII_RATIO_THRESHOLD = 0.9
@@ -44,10 +44,7 @@ def _looks_english(text: str) -> bool:
 
 async def _run(apply: bool, limit: int | None) -> None:
     config = load_app_config()
-    llm = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.ollama_main_model,
-    )
+    llm = build_llm_for(Step.ACTOR_SYNC, config)
     data = load_actors_raw()
     actors: list[dict[str, Any]] = data["actors"]
 
@@ -58,7 +55,7 @@ async def _run(apply: bool, limit: int | None) -> None:
     ]
     if limit is not None:
         targets = targets[:limit]
-    print(f"翻訳対象: {len(targets)} 件 (model={config.ollama_main_model})", file=sys.stderr)
+    print(f"翻訳対象: {len(targets)} 件 (model={llm.model})", file=sys.stderr)
 
     failed: list[str] = []
     for i, actor in enumerate(targets, 1):

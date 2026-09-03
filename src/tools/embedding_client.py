@@ -12,7 +12,7 @@ Ollama の embed API を呼び出して dense vector を返す。
 - 入力テキストはタイトル + 本文先頭 ~2000 文字に制限 (LLM 側と同じ機密境界)
 
 CLAUDE.md §4 の推奨は ``intfloat/multilingual-e5-large-instruct`` (Microsoft)
-だが、Ollama のモデル名は環境次第なので ``.env`` の ``OLLAMA_EMBED_MODEL``
+だが、Ollama のモデル名は環境次第なので embedding ティア (``resolve_embedding_model``)
 で上書き可能にする。
 """
 

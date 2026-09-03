@@ -140,7 +140,7 @@ def get_spotlight(pir_id: str, period_type: SpotlightPeriod = "weekly") -> Spotl
 
 class RegenerateRequest(BaseModel):
     period_type: SpotlightPeriod = "weekly"
-    # LLM model override (None なら .env の OLLAMA_SPOTLIGHT_MODEL or MAIN_MODEL)
+    # LLM model override (None なら Step.PIR_SPOTLIGHT のティア割当を使う)
     model: str | None = None
 
 

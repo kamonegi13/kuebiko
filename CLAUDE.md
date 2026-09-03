@@ -123,11 +123,20 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 
 ### LLM スタック
 
-- **メイン (per-article 要約・翻訳)**: `OLLAMA_MAIN_MODEL`、現用 Gemma 4 26B (MoE, active 4B) on Ollama
+> ⚠ **`OLLAMA_*_MODEL` 系の環境変数は 2026-07-08 に撤去済**。`AppConfig` に残るのは
+> `ollama_base_url` / `ollama_embed_query_prefix` だけで、`.env` に書いても
+> pydantic-settings の `extra="ignore"` が黙って捨てる。**モデル割当の runtime SSoT は
+> DB (config_store, key=model_tiers)**、fail-safe は `BUILTIN_MODEL_TIERS`。
+> 割当は UI「設定 → モデル」タブから行う (2026-09-04 に本節の記述を実装へ同期)。
+
+- **fast ティア (per-article 要約・翻訳 / triage / 分類系)**: 現用 Gemma 4 26B (MoE, active 4B)
   - daily-briefing で 1 article = 1 LLM 呼出を大量実行するため**速度重視**。26B の think=False で 5-15 秒/件
   - Dense 31B も指定可能だが per-article で 40-100 秒/件 → 30 分 timeout 内に処理不能なため非推奨
-- **抽出・分類 (Phase 3.0)**: `OLLAMA_EXTRACT_MODEL`、現用 Gemma 4 26B (MoE, active 4B) — Grok レポートの構造化抽出 / IoC verifier。未設定なら main を流用
-- **状況総括 (Phase 3 Synthesis)**: `OLLAMA_SYNTHESIS_MODEL`、現用 Gemma 4 31B Dense — Intel Graph の status_synthesis pipeline で narrative reasoning。1 run につき 1 呼出 (~21k char prompt) のため品質重視で Dense 採用、timeout 900s 設定済。未設定なら main を流用
+- **narrative ティア (状況総括 / 事象ニュース / Spotlight / 台帳精読)**: 既定 Gemma 4 31B Dense。
+  1 run につき 1 呼出 (~21k char prompt) のため品質重視で Dense 採用、timeout 600-900s。
+  外部割当時 (`claudecode:` / `anthropic:`) はローカル既定が自動フォールバックになる
+- **reasoning ティア (ACH 分析)** / **dialog ティア (対話・検索・PIR compile)**: `src/tools/model_tiers.py`
+  の `STEP_REGISTRY` が step → ティアの SSoT。step 一覧もそこを見る
 - **サブ**: Gemma 4 E4B / Llama 3.1 8B (軽量タスク・フォールバック用)
 - **外部 LLM (任意、2026-07-18 開放)**: ティアに `anthropic:<model>` を明示割当すると当該処理を
   Anthropic API で実行 (`.env` の `ANTHROPIC_API_KEY` 必須)。既定はローカルのまま。§4 参照
@@ -141,7 +150,8 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 
 1. `ollama pull <new-model>` で新モデルをローカルに pull
 2. `ollama list` で取得を確認
-3. **Web UI の設定タブ** または `.env` の `OLLAMA_MAIN_MODEL` / `OLLAMA_EXTRACT_MODEL` / `OLLAMA_SYNTHESIS_MODEL` を書き換え (用途別)
+3. **Web UI「設定 → モデル」タブ**でティア (fast / narrative / reasoning / dialog) に割り当てる。
+   `.env` にモデル名を書いても効かない (上の警告を参照)
 4. CLAUDE.md §2 の記述を新モデル名に同期
 5. `uv run pytest tests/unit/test_llm_client.py` でホワイトリスト検証 (中華系排除) 通過確認
 6. **Web UI の即時実行で 1 件 dry-run** し品質を目視確認 — 特に per-article main model 変更時は 1 件あたりの応答時間も計測 (40s 超なら daily-briefing が timeout する)
@@ -314,7 +324,7 @@ kuebiko/
 | Phase 2.5 | Grok チャットページの DOM 抽出 (Playwright locator) | **完了** |
 | **Phase 2.6a** | **Grok 専用パーサ + LLM スキップ + セクション単位 Discord 投稿** | **現在地** |
 | Phase 3a | URL 正規化 + SHA-256 ハッシュベースの重複排除 (SQLite dedup_seen_urls) | 完了 |
-| Phase 3b | Embedding + SQLite blob + numpy コサイン類似度 | 完了 (実機は OLLAMA_EMBED_MODEL 設定後) |
+| Phase 3b | Embedding + SQLite blob + numpy コサイン類似度 | 完了 (実機は embedding ティア割当後) |
 | Phase 4 | CTI 観点メタデータ付与 (脅威アクター, MITRE ATT&CK, IOC) | 未着手 |
 | Phase 5 | 責務別パッケージへの再構成 (完了) / CrewAI 化は保留・残骸撤去済 (2026-08-15) | 一部完了 |
 
@@ -337,7 +347,8 @@ kuebiko/
   - `grok_unseen_only: false` で既読メールも対象にできる (テスト・初回キャッチアップ用)
 - **Phase 3a**: 同一 URL の再投稿が起きない (UTM 等の揺らぎを正規化して SHA-256 で判定)
 - **Phase 3b**:
-  - `OLLAMA_EMBED_MODEL=intfloat/multilingual-e5-large-instruct` を `.env` に設定 (先に `ollama pull`)
+  - 埋込モデルを設定 (先に `ollama pull`)。当時は `.env` の `OLLAMA_EMBED_MODEL`、
+    **現在は UI「設定 → モデル」の embedding ティア** (`resolve_embedding_model`)
   - 中国系 embedding モデル (qwen-, bge-, m3e 等) は CLAUDE.md §4 と同じホワイトリストで起動段階で弾く
   - 同一インシデントを扱う英語記事と日本語記事のコサイン類似度が threshold (default 0.88) 以上で重複扱い
   - embedding は SQLite に float32 BLOB で保存、numpy で全件コサイン (個人運用規模では十分高速)
@@ -699,7 +710,7 @@ config/delivery/pir.yaml の `spotlight.enabled=true` な PIR each に対して�
 narrative を生成し、Intel Graph の Synthesis tab "Spotlight" sub-tab に表示。
 
 - **pipeline**: `pir-spotlight` (月曜 03:30 JST cron)
-- **LLM**: `OLLAMA_SPOTLIGHT_MODEL` (未設定なら MAIN_MODEL を流用、26B/31B 両対応)
+- **LLM**: narrative ティア (`Step.PIR_SPOTLIGHT`)。26B/31B 両対応
 - **構造**: headline (150-280 字、actor+TTP+標的) + key_events (5-8 件) + outlook (600-1000 字、4観点 a/b/c/d)
 - **DB**: `pir_spotlight` table (pir_id × period_type × period_start で UPSERT)
 - **API**: GET `/api/v1/spotlight`、`POST /api/v1/spotlight/{id}/regenerate`
@@ -719,6 +730,6 @@ PIR each に section + 上位 3 article + LLM 1-2 文要点 で集約、brief ch
 
 - **pipeline**: `morning-brief` に統合 (毎日 06:30 JST。旧 research-digest → 独立 pipeline pir-daily-focus を経て統合)
 - **対象**: enabled な全 PIR (現在 21 件)、24h match (importance ≥ medium) >= 1 件のみ
-- **LLM**: per-PIR で 1 call (~5 sec)、`OLLAMA_MAIN_MODEL` を使用
+- **LLM**: per-PIR で 1 call (~5 sec)、fast ティア (`Step.PIR_DAILY_FOCUS`)
 - **出力先**: brief ch (朝の通読チャンネル)、Discord 4096 字超は auto-split
 - **旧 design (廃止)**: research-digest = watch ch + high+(apt/vuln/malware) 厳格 filter で月数件 yield に陥っていたため、PIR-driven daily 集約に再構築。`digest_research` Literal + `critical_research.py` + `fetch_for_research_digest` + `prompts/research_digest.j2` は完全削除。

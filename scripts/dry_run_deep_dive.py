@@ -25,15 +25,16 @@ from src.digest.deep_dive_selector import (
     select_deep_dive_articles,
 )
 from src.storage.run_history import RunHistoryRepository
-from src.tools.llm_client import OllamaClient
+from src.tools.model_tiers import Step, build_llm_for
 
 
 async def main() -> None:
     cfg = load_app_config()
     repo = RunHistoryRepository()
+    llm = build_llm_for(Step.DIGEST_DEEP_DIVE, cfg)
     print("=== Phase 5T-T2 dry-run ===")
     print("DB: data/run_history.db")
-    print(f"Model: {cfg.ollama_main_model}")
+    print(f"Model: {llm.model}")
     print()
 
     # 1. 過去 F1 選定の dedup_key を取得 (novelty 判定用)
@@ -68,10 +69,6 @@ async def main() -> None:
     print()
 
     # 5. LLM を実行
-    llm = OllamaClient(
-        base_url=cfg.ollama_base_url,
-        model=cfg.ollama_main_model,
-    )
     print("LLM 実行中...")
     selected = await select_deep_dive_articles(
         llm=llm,
@@ -120,7 +117,7 @@ async def main() -> None:
     out_path.write_text(
         json.dumps(
             {
-                "model": cfg.ollama_main_model,
+                "model": llm.model,
                 "candidates_count": len(pref.candidates),
                 "stage_counts": pref.stage_counts,
                 "raw_response": response.text,

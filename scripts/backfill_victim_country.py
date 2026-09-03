@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.config_loader import load_app_config  # noqa: E402
 from src.cti.taxonomy_normalizer import load_normalizer  # noqa: E402
 from src.storage.db_backend import connect  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 # 地図対象のサイバー攻撃カテゴリ (geo_cyber_map._CYBER_ATTACK_CATEGORIES と一致)。
 _CYBER = "('breach','incident','apt','apt_leak','malware','phishing')"
@@ -103,11 +103,7 @@ def _first_line(text: str) -> str:
 async def main(limit: int, apply: bool) -> int:
     config = load_app_config()
     normalizer = load_normalizer()
-    client = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.ollama_main_model,
-        timeout_seconds=120.0,
-    )
+    client = build_llm_for(Step.ARTICLE_SUMMARY, config)
     items = _fetch(limit)
     print(f"=== victim_country LLM 補完: 候補 {len(items)} 記事 (iso=null / cyber) ===")
     print(f"{'id':>7}  {'判定':>4}  {'org → 国':40}")

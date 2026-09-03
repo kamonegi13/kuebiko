@@ -333,7 +333,7 @@ async def run_pipeline(
     dedup_repo: RunHistoryRepository | None = None,
     embedder: EmbeddingClient | None = None,
     skip_dedup: bool = False,
-    extract_llm: LLMClient | None = None,
+    triage_llm: LLMClient | None = None,
     run_id: int | None = None,
     channel_routing: ChannelRouting | None = None,
     enrichment: object | None = None,  # LlmEnrichment (Phase 5D)
@@ -522,7 +522,9 @@ async def run_pipeline(
                     count=prefetched_thin,
                     source_type=pipeline.source.type,
                 )
-        triage_llm = extract_llm if extract_llm is not None else llm
+        # 呼出側 (dispatch) が Step.TRIAGE で解決した client を渡す。None は
+        # テスト等の注入省略時のみで、その場合だけ要約用 client を流用する。
+        effective_triage_llm = triage_llm if triage_llm is not None else llm
         (
             articles,
             skipped_triage,
@@ -531,7 +533,7 @@ async def run_pipeline(
             rejected_triage,
         ) = await _filter_by_triage(
             articles,
-            triage_llm,
+            effective_triage_llm,
             keep_importance=set(pipeline.processor.triage_keep_importance),
             max_keep=pipeline.processor.triage_max_keep,
             think=pipeline.processor.think_enabled,

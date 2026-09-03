@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 from src.config_loader import load_app_config
 from src.tools.article_model import Article
 from src.tools.article_triage import ArticleTriage
-from src.tools.llm_client import OllamaClient
+from src.tools.model_tiers import Step, build_llm_for
 
 JP_FEED_KEYWORDS = ["ScanNet", "Security NEXT", "セキュリティニュース", "ITmedia エンタープライズ", "@IT セキュリティ", "JPCERT"]
 KEY_ACTORS = ["Volt Typhoon", "Salt Typhoon", "APT41", "Lazarus", "Kimsuky", "Sandworm", "APT28", "APT29"]
@@ -82,10 +82,7 @@ async def verify(n: int, days: int) -> int:
     print(f"Sampled {len(samples)} articles from past {days} days\n")
 
     # Both prompts share the same LLM client
-    llm = OllamaClient(
-        base_url=cfg.ollama_base_url,
-        model=cfg.ollama_main_model,
-    )
+    llm = build_llm_for(Step.TRIAGE, cfg)
     triage = ArticleTriage(llm=llm, think=False)
 
     # Run A (legacy hardcoded) and B (PIR-driven) per article

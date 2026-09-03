@@ -148,9 +148,12 @@ async def run_default(
     async with AsyncExitStack() as stack:
         extractor = await stack.enter_async_context(ContentExtractor())
         llm = build_llm_for(Step.ARTICLE_SUMMARY, config)
-        # 旧 extract slot は fast ティアに統合済 (要約/抽出/triage は同一 fast モデル)。
-        # triage は llm (fast) をそのまま使う (orchestrator が None を llm に吸収)。
-        extract_llm: LLMClient | None = None
+        # triage は **Step.TRIAGE で解決する** (2026-09-04)。以前は要約用 client を
+        # 流用していたが、そうすると STEP_REGISTRY[Step.TRIAGE] が本番経路を支配せず、
+        # ティアを分けても効かない / 週次ドリフト検知 (src/eval/triage_drift.py) が
+        # 本番と別の client を測る、という乖離が起きる。現状は両者とも fast ティアの
+        # ため解決結果は同一で、挙動は変わらない。
+        triage_llm: LLMClient | None = build_llm_for(Step.TRIAGE, config)
 
         # Phase 2: Grok email source の場合のみ IMAP / Playwright を立ち上げる
         imap_client: ImapClient | None = None
@@ -193,7 +196,7 @@ async def run_default(
             dedup_repo=dedup_repo,
             embedder=embedder,
             skip_dedup=skip_dedup,
-            extract_llm=extract_llm,
+            triage_llm=triage_llm,
             run_id=run_id,
             channel_routing=channel_routing,
             enrichment=enrichment,

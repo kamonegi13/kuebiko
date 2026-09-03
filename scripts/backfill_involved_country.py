@@ -34,7 +34,7 @@ from src.config_loader import load_app_config  # noqa: E402
 from src.cti.taxonomy_normalizer import load_normalizer  # noqa: E402
 from src.storage.db_backend import connect  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 _GEO = "('geopolitical','policy')"
 _SUMMARY_MAX = 600
@@ -85,11 +85,7 @@ async def main(limit: int, apply: bool) -> int:
     config = load_app_config()
     normalizer = load_normalizer()
     repo = RunHistoryRepository()
-    client = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.ollama_main_model,
-        timeout_seconds=120.0,
-    )
+    client = build_llm_for(Step.ARTICLE_SUMMARY, config)
     items = _fetch(limit)
     print(f"=== 関与国 LLM 補完: 候補 {len(items)} 記事 (geopol / involved_country 未付与) ===")
 

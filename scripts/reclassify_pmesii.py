@@ -27,7 +27,8 @@ from pydantic import BaseModel, Field
 from src.config_loader import load_app_config
 from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
-from src.tools.llm_client import OllamaClient
+from src.tools.llm_client import LLMClient
+from src.tools.model_tiers import Step, build_llm_for
 
 _log = get_logger(__name__)
 
@@ -97,7 +98,7 @@ def _trim_body(body: str | None, max_chars: int = 1500) -> str:
 
 
 async def reclassify_one(
-    llm: OllamaClient,
+    llm: LLMClient,
     article_id: int,
     title: str,
     summary: str | None,
@@ -125,7 +126,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     config = load_app_config()
-    llm = OllamaClient(base_url=config.ollama_base_url, model=config.ollama_main_model)
+    llm = build_llm_for(Step.ARTICLE_SUMMARY, config)
     repo = RunHistoryRepository()
 
     print("=== reclassify_pmesii ===", file=sys.stderr)

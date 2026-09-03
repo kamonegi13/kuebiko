@@ -32,7 +32,7 @@ from src.config_loader import load_app_config  # noqa: E402
 from src.main import _load_template, _process_article  # noqa: E402
 from src.tools.article_model import Article  # noqa: E402
 from src.tools.content_extractor import ContentExtractor  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 DB_PATH = Path("data/run_history.db")
 REPORT_MD = Path("data/phase5l_replay_report.md")
@@ -47,9 +47,10 @@ async def main() -> None:
     args = parser.parse_args()
 
     cfg = load_app_config()
+    llm = build_llm_for(Step.ARTICLE_SUMMARY, cfg)
     print(f"Ollama: {cfg.ollama_base_url}")
-    print(f"main model: {cfg.ollama_main_model}")
-    print(f"extract model: {cfg.ollama_extract_model or '(=main)'}")
+    # 旧 extract slot は撤去済 (要約と同じ fast ティアに統合)。表示も 1 本に畳む。
+    print(f"model: {llm.model}")
 
     rows = _fetch_articles_from_db(hours=args.hours, limit=args.limit, skip_grok=args.skip_grok)
     if not rows:
@@ -58,7 +59,6 @@ async def main() -> None:
     print(f"replay 対象: {len(rows)} 件")
 
     template = _load_template()
-    llm = OllamaClient(base_url=cfg.ollama_base_url, model=cfg.ollama_main_model)
 
     results: list[dict[str, object]] = []
     async with ContentExtractor() as extractor:

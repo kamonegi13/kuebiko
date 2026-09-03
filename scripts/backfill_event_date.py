@@ -36,7 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.config_loader import load_app_config  # noqa: E402
 from src.main import _normalize_temporal  # noqa: E402
 from src.storage.db_backend import connect  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.llm_client import LLMClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 _PROMPT = """記事から「主要事象の時間軸」を抽出。**本文に明示された日付のみ**、推測禁止。
 
@@ -95,7 +96,7 @@ def _ref_date(raw: object) -> date:
 
 
 async def _extract_one(
-    client: OllamaClient,
+    client: LLMClient,
     sem: asyncio.Semaphore,
     item: tuple[int, str, str, object],
 ) -> tuple[int, str, str | None, str | None] | None:
@@ -136,11 +137,7 @@ _CHUNK = 150  # チャンクごとに commit (大規模 overnight 実行の dura
 
 async def main(limit: int, apply: bool, concurrency: int) -> int:
     config = load_app_config()
-    client = OllamaClient(
-        base_url=config.ollama_base_url,
-        model=config.ollama_main_model,
-        timeout_seconds=120.0,
-    )
+    client = build_llm_for(Step.ARTICLE_SUMMARY, config)
     items = _fetch(limit)
     print(
         f"=== event_date LLM 補完: 候補 {len(items)} 記事 "
