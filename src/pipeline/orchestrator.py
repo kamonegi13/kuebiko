@@ -448,6 +448,27 @@ async def run_pipeline(
         effective_window_hard = getattr(proc, "dedup_window_hours_hard", 168)
         effective_window_cluster = getattr(proc, "dedup_window_hours_cluster", 48)
         pre_semantic_by_id = {a.id: a for a in articles}
+        # ⭐ cluster 帯の救済網 (DEDUP_CLUSTER_JUDGE=1)。実測 10.2% の誤 dedup
+        #    (同一ベンダの別製品) を、skip 確定前の一問で取込へ倒す。既定 off。
+        cluster_judge = None
+        if os.environ.get("DEDUP_CLUSTER_JUDGE", "0") == "1":
+            from src.pipeline.dedup_judge import is_duplicate
+            from src.tools.model_tiers import Step as _Step
+            from src.tools.model_tiers import build_llm_for as _build_llm
+
+            _judge_llm = _build_llm(_Step.TRIAGE, config)
+
+            async def cluster_judge(article: Article, matched_hash: str) -> bool | None:
+                seen = dedup_repo.get_seen_url(matched_hash)
+                if seen is None or not seen[0]:
+                    return None  # 一致先の題が引けなければ取込へ (救済側に倒す)
+                return await is_duplicate(
+                    _judge_llm,
+                    skipped_title=article.title,
+                    skipped_feed=article.feed_title,
+                    matched_title=seen[0],
+                )
+
         (
             articles,
             skipped_dup_semantic,
@@ -462,6 +483,7 @@ async def run_pipeline(
             threshold_cluster=effective_threshold_cluster,
             window_hours_hard=effective_window_hard,
             window_hours_cluster=effective_window_cluster,
+            cluster_judge=cluster_judge,
         )
         skipped_for_mark_read.extend(skipped_semantic_ids)
         # semantic 重複 = 判断済み (embedding 一致で不採用)。URL が異なるため URL-dedup では

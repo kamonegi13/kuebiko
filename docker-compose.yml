@@ -130,6 +130,8 @@ services:
       # 決定論 67% → 83%、誤結合 33 → 14。LLM が落ちても 85% を保つ
       # (欠測を「不明」として学習済み)。0 で決定論へ戻る。
       EVENTNEWS_PAIR_ML: ${EVENTNEWS_PAIR_ML:-0}
+      # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
+      DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
       # ローカル専用) が、設定画面が「公開面の認証が設定済みか」を正しく表示するために
       # 同じ値を渡す。認証の実施は readonly instance のみ。

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -276,6 +277,7 @@ async def _filter_semantic_duplicates(
     threshold_cluster: float,
     window_hours_hard: int,
     window_hours_cluster: int,
+    cluster_judge: Callable[[Article, str], Awaitable[bool | None]] | None = None,
 ) -> tuple[list[Article], int, dict[str, tuple[str, list[float]]], list[str], list[SemanticSkip]]:
     """embedding コサイン類似度で意味的重複をスキップする (Phase 5L-2: 2 段階)。
 
@@ -373,6 +375,22 @@ async def _filter_semantic_duplicates(
                 threshold=threshold_cluster,
                 window_hours=window_hours_cluster,
             )
+            if match_cluster is not None:
+                matched_hash, similarity = match_cluster
+                # ⭐ 一方向の救済網 (2026-09-03): cluster 帯の 10.2% が別内容だった
+                #    (同一ベンダの別製品など)。duplicate と確答したときだけ skip。
+                if cluster_judge is not None:
+                    verdict = await cluster_judge(article, matched_hash)
+                    if verdict is not True:
+                        _log.info(
+                            "dedup_cluster_rescued",
+                            article_id=article.id,
+                            url=article.url,
+                            similar_to=matched_hash,
+                            similarity=round(similarity, 4),
+                            verdict="different" if verdict is False else "unclear",
+                        )
+                        match_cluster = None
             if match_cluster is not None:
                 matched_hash, similarity = match_cluster
                 skipped_ids.append(article.id)
