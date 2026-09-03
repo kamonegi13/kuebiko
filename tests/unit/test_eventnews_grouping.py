@@ -486,3 +486,87 @@ def test_ml_refusal_still_blocks_a_pair_the_rule_would_join() -> None:
 
     # Assert
     assert assignment.target_item_id is None
+
+
+def _key(a: str, b: str) -> frozenset[str]:
+    return frozenset((a, b))
+
+
+def test_hub_with_one_strong_edge_is_blocked_by_the_quorum() -> None:
+    """辺 1 本では入れない — 一括勧告 (ハブ) は 1 メンバーとだけ強く繋がる。
+
+    ⭐ 実例 (2026-09-03): SonicWall 事象へ混入した KEV 一括記事は最大辺 0.75 で
+    通ったが、全メンバーとの判定平均は 0.49。分布で判定していれば止まっていた。
+    """
+    # Arrange — 3 メンバーのうち 1 人とだけ強い辺 (平均 0.35 < 0.5)
+    shared = ("cve", "cve-2024-1111")
+    members = tuple(_member(f"m{i}", frozenset({shared})) for i in range(3))
+    item = _item("item-1")
+    candidate = _member("cand", frozenset({shared}))
+    vecs = {m.article_id: _vec(0.9) for m in members}
+
+    # Act
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": members},
+        member_vecs=vecs,
+        now=_NOW,
+        pair_decision={_key("cand", "m0"): True},
+        pair_proba={_key("cand", "m0"): 0.75, _key("cand", "m1"): 0.2, _key("cand", "m2"): 0.1},
+    )
+
+    # Assert — 参加せず、理由が残る
+    assert assignment.target_item_id is None
+    assert "ml_quorum" in assignment.rejected
+
+
+def test_follow_up_with_broad_support_passes_the_quorum() -> None:
+    """群全体と繋がる続報 (平均 >= 0.5) は従来どおり入る。"""
+    # Arrange
+    shared = ("cve", "cve-2024-1111")
+    members = tuple(_member(f"m{i}", frozenset({shared})) for i in range(3))
+    item = _item("item-1")
+    candidate = _member("cand", frozenset({shared}))
+    vecs = {m.article_id: _vec(0.9) for m in members}
+
+    # Act
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": members},
+        member_vecs=vecs,
+        now=_NOW,
+        pair_decision={_key("cand", "m0"): True, _key("cand", "m1"): True},
+        pair_proba={_key("cand", "m0"): 0.9, _key("cand", "m1"): 0.7, _key("cand", "m2"): 0.3},
+    )
+
+    # Assert
+    assert assignment.target_item_id == "item-1"
+
+
+def test_single_judged_pair_does_not_trigger_the_quorum() -> None:
+    """判定済みが 1 対だけなら分布にならない — quorum は適用しない (単独報の続報)。"""
+    # Arrange
+    shared = ("cve", "cve-2024-1111")
+    member = _member("m1", frozenset({shared}))
+    item = _item("item-1")
+    candidate = _member("cand", frozenset({shared}))
+    key = frozenset(("cand", "m1"))
+
+    # Act
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(item,),
+        item_members={"item-1": (member,)},
+        member_vecs={"m1": _vec(0.9)},
+        now=_NOW,
+        pair_decision={key: True},
+        pair_proba={key: 0.55},
+    )
+
+    # Assert
+    assert assignment.target_item_id == "item-1"

@@ -185,6 +185,11 @@ def decisions_of(verdicts: Sequence[PairVerdict]) -> dict[frozenset[str], bool]:
     return {v.key: bool(v.ml_joined) for v in verdicts if v.ml_joined is not None}
 
 
+def probas_of(verdicts: Sequence[PairVerdict]) -> dict[frozenset[str], float]:
+    """ペアごとの ML 確率 (採点できたものだけ)。quorum 参加の材料。"""
+    return {v.key: float(v.ml_proba) for v in verdicts if v.ml_proba is not None}
+
+
 def record(repo: object, verdicts: Sequence[PairVerdict], now: datetime | None = None) -> int:
     """評価結果をシャドー観測として残す。**戻り値は記録した件数**。"""
     stamp = now or datetime.now(UTC)

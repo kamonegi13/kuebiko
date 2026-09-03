@@ -215,6 +215,34 @@ def edge_is_allowed(
     return cos >= required_cos(cand_entities, member_entities, shared)
 
 
+#: ML 参加の quorum — 候補×既存メンバーの判定平均がこれ未満なら参加させない。
+#: 較正 (2026-09-02・監査 106 群): 平均確率 0.5 で 記事 P 95% / R 84%。実例検証
+#: (2026-09-03): SonicWall 事象へ混入した KEV 一括記事は最大辺 0.75 で通ったが
+#: 平均 0.49 — この規則なら止まっていた。残る過剰統合 11.7% はハブ (一括勧告) が
+#: 1 本の強い辺で入る形なので、辺 1 本でなく分布で判定する。
+ML_JOIN_QUORUM_MEAN = 0.5
+#: 判定済みペアがこれ未満なら quorum を適用しない (1 対だけでは分布にならない)。
+_QUORUM_MIN_JUDGED = 2
+
+
+def _quorum_blocks(
+    cand_id: str,
+    members: Sequence[MemberArticle],
+    pair_proba: Mapping[frozenset[str], float] | None,
+) -> bool:
+    """候補とアイテムの判定済みペアの平均が quorum を割っているか。"""
+    if not pair_proba:
+        return False
+    judged = [
+        pair_proba[key]
+        for member in members
+        if (key := frozenset((cand_id, member.article_id))) in pair_proba
+    ]
+    if len(judged) < _QUORUM_MIN_JUDGED:
+        return False
+    return sum(judged) / len(judged) < ML_JOIN_QUORUM_MEAN
+
+
 def _member_edges(
     cand_entities: frozenset[tuple[str, str]],
     cand_unit: np.ndarray,
@@ -258,6 +286,7 @@ def _item_candidate(
     member_vecs: Mapping[str, np.ndarray],
     now: datetime,
     pair_decision: Mapping[frozenset[str], bool] | None = None,
+    pair_proba: Mapping[frozenset[str], float] | None = None,
 ) -> _EdgeOutcome:
     """1 アイテムに対する参加可否を判定する。
 
@@ -274,6 +303,10 @@ def _item_candidate(
     )
     if not edges:
         return None
+    if pair_decision is not None and _quorum_blocks(candidate.article_id, members, pair_proba):
+        # ⭐ 辺 1 本で入れない (2026-09-03)。ハブ (一括勧告) は 1 メンバーとだけ強く
+        #    繋がり、群全体とは繋がらない。判定済みペアの**平均**で参加を決める。
+        return "ml_quorum"
 
     if _is_dormant(item, now):
         # dormant への再参加は緩めない (古いアイテムを掘り起こす条件は厳しいまま)
@@ -314,6 +347,7 @@ def assign_article(
     member_vecs: Mapping[str, np.ndarray],
     now: datetime,
     pair_decision: Mapping[frozenset[str], bool] | None = None,
+    pair_proba: Mapping[frozenset[str], float] | None = None,
 ) -> Assignment:
     """1 記事をどのアイテムに参加させるか判定する (§5)。
 
@@ -338,7 +372,7 @@ def assign_article(
             continue
 
         outcome = _item_candidate(
-            item, candidate, cand_unit, members, member_vecs, now, pair_decision
+            item, candidate, cand_unit, members, member_vecs, now, pair_decision, pair_proba
         )
         if outcome is None:
             continue

@@ -305,6 +305,7 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
             _log.warning("eventnews_pair_eval_failed", error=str(e)[:200])
 
     pair_decision = pair_shadow.decisions_of(verdicts) if ml_ready else {}
+    pair_proba = pair_shadow.probas_of(verdicts) if ml_ready else {}
     if pair_decision:
         _log.info("eventnews_pair_ml", pairs=len(pair_decision), joined=sum(pair_decision.values()))
 
@@ -315,6 +316,7 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         existing,
         _llm if generate else None,
         pair_decision=pair_decision or None,
+        pair_proba=pair_proba or None,
     )
 
     # ⭐ 記録は **群化の後**。書き込みに失敗しても毎時ジョブを止めない (観測は本流ではない)。

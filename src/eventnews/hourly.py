@@ -72,6 +72,7 @@ async def run_hourly(
     llm_factory: object,  # Callable[[], LLMClient] | None
     *,
     pair_decision: Mapping[frozenset[str], bool] | None = None,
+    pair_proba: Mapping[frozenset[str], float] | None = None,
 ) -> HourlyResult:
     """新着記事のみを既存状態の続きとして処理する。
 
@@ -89,6 +90,7 @@ async def run_hourly(
         generate=True,
         existing=existing,
         pair_decision=pair_decision,
+        pair_proba=pair_proba,
     )
     _log.info(
         "eventnews_hourly_done",
