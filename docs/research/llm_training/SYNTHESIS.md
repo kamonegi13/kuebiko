@@ -190,3 +190,32 @@ v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + �
 - Ollama tag の N/S 揃え (kuebiko-n:1 / kuebiko-s:1 等) は**次の再学習時に**行う
   (稼働中の割当 config を呼称のためだけに触らない)。
 - 以前の文書・メモリの「v1」「モデル N/S」表記は本表で読み替える。
+
+
+## 11. N2/S2 (IPO/DPO) の着手記録 (2026-09-06)
+
+### 実現可能性の関門: IPO × MoE 26B = **可** (疎通 PoC 済)
+
+- mlx-lm-lora 3.1.2 (`--no-deps` 導入 — venv の gemma4_text.py stop_gradient パッチを保全)。
+  `--train-mode dpo --dpo-cpo-loss-type ipo` が存在し、データ形式は
+  `{"prompt","chosen","rejected"}` jsonl (chat template 自動適用)。
+- smoke (6 対・triage 実プロンプト): **loss 0.693→0.06 / accuracy 1.0 / margin 2.8、
+  adapters 保存成功**。MoE router VJP 問題なし・NaN なし。peak 44.6〜49.3GB。
+- ⚠ **OOM は非決定的に発生し、正体は Ollama との GPU 共有圧** (iters 3/7=成功、6/8=失敗、
+  失敗時は Ollama が 22GB 保持中)。epoch 境界説は 6/7 の反例で棄却。
+  → 運用則: **本学習は Ollama 静穏時 (夜間) に単独で回す** (SFT と同じ)。
+  長系列対では peak が上がるため、対の token 長に上限を敷く (組み立て時に実測して決める)。
+
+### 材料 (蛇口だけでは足りない)
+
+- 蛇口 (event_draft_rejects) = 3 日で 26 件 → 主材料にならない。補助扱い。
+- 主材料 = **学生の実出力を rejected 側に使う乖離ペア** (on-policy に近い):
+  `scripts/build_dpo_student_outputs.py` が教師プロンプトに対する S1/N1 出力を生成
+  (本番同一条件: schema 制約・think=False・temp 0.2)。S1-triage 1013 / S1-summary 802 /
+  N1-event 721 の 3 系列。ペア化 (乖離の判定基準) は学生出力が出揃ってから実データで決める。
+
+### 主腕/fallback の学習カバレッジ規律 (利用者指摘 2026-09-06)
+
+主腕は「学習+測定済み step だけ」(S1=2 step のみ、他は base 継続)。
+ティア単位 fallback の穴 = **ledger_deep_review は N1 未学習の構造化出力** (縮退様式に
+該当しうる) → ground_and_score の N1 vs 31B probe で測定 (結果は追記)。
