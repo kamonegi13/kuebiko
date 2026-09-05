@@ -142,3 +142,27 @@ N は narrative 特化のまま希釈されない。v2/v3 の干渉問題は分�
 1. narrative ティア → kuebiko-sft:26b (31B 退役)。条件: 識別子関門の spotlight 延長
 2. step 単位割当の実装 → triage / article_summary のみ kuebiko-sft:s1 へ
 3. S 第 2 陣 (pir_llm_judge / event_kind / pair_judge / dedup_judge) の教師生成
+
+
+## 9. 配備の最終形 (2026-09-06 07:10 稼働中)
+
+利用者の運用方針: **v1 は Sonnet 主腕の fallback の立場。十分な精度が出たら v1 単独へ。**
+(まだ SFT のみ — DPO/RLVR は未実施。単独切替の判定は凍結評価 + 対応検定で行う)
+
+| step / 腕 | 割当 | 変更 |
+|---|---|---|
+| triage / article_summary | **kuebiko-sft:s1** (主腕・ローカル) | 26B base → s1。初本番 (07:00 rss) 成功・出力健全 |
+| event_news / pir_spotlight / synthesis_narrative | claudecode:sonnet (主腕・従来どおり) | 変更なし (蛇口 = 教師供給も継続) |
+| **narrative の fallback** | **kuebiko-sft:26b (v1)** | 31B → v1 (`fallback:narrative` キー、外部拒否/cooldown 時に発動 ~12%) |
+| reasoning の fallback | gemma4:31b | 変更なし (ACH は v1 の守備範囲外) |
+
+機構: `step:<step名>` (主腕の step 単位上書き) + `fallback:<tier名>` (外部主腕のローカル
+受け皿、ローカル限定) — いずれも model_tiers config doc の予約キー。spotlight には
+識別子関門を敷設済み (SPOTLIGHT_IDENTIFIER_GATE=0 で rollback)。
+
+31B の残る役割 = reasoning fallback + BUILTIN fail-safe (退役は v1 が ACH 相当まで
+届くか、reasoning も外部単独で賄うと決めた時)。
+
+v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + 教師 chosen) →
+②RLVR PoC (識別子/引用/schema 関門 = 報酬)。判定基準は「Sonnet 主腕との一致 +
+関門通過率」を凍結セットで。
