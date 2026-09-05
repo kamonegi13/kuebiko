@@ -29,6 +29,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
+from pydantic import BaseModel
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config_loader import load_app_config  # noqa: E402
@@ -36,7 +38,7 @@ from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
 from src.tools.model_tiers import Step, build_llm_for_ref  # noqa: E402
 
 DEFAULT_OUT = Path("data/mlx/teacher/synthesis.jsonl")
-_T = TypeVar("_T")
+_T = TypeVar("_T", bound=BaseModel)
 _MIN_COMPLETION_CHARS = 400  # これ未満の narrative は教師として保存しない
 
 
@@ -57,10 +59,10 @@ class RecordingClient:
         self.captured.append((prompt, json.dumps(dump, ensure_ascii=False)))
         return out
 
-    async def generate(self, prompt: str, **kw: Any) -> str:
-        text = await self._inner.generate(prompt, **kw)
-        self.captured.append((prompt, text))
-        return text
+    async def generate(self, prompt: str, **kw: Any) -> Any:
+        resp = await self._inner.generate(prompt, **kw)
+        self.captured.append((prompt, resp.text))
+        return resp
 
 
 def _done_keys(path: Path) -> set[str]:
