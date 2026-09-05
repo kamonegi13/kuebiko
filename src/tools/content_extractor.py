@@ -22,6 +22,7 @@ from types import TracebackType
 from typing import Any, Self
 from urllib.parse import urlparse
 
+import charset_normalizer
 import httpx
 import trafilatura
 from pydantic import BaseModel, ConfigDict
@@ -171,6 +172,20 @@ class ExtractionResult(BaseModel):
     extraction_method: str = EXTRACTION_METHOD_TRAFILATURA
 
 
+def _detect_charset(content: bytes) -> str:
+    """HTTP ヘッダに charset が無い応答の文字コードをバイト列から判定する。
+
+    httpx はヘッダ不在時に UTF-8 を仮定するため、meta タグでのみ charset を宣言する
+    Shift_JIS サイト (@IT / ITmedia) の本文が U+FFFD へ不可逆に化けていた。
+    判定失敗時は従来どおり UTF-8 (挙動保存)。
+    """
+    try:
+        best = charset_normalizer.from_bytes(content[:65536]).best()
+    except Exception:  # noqa: BLE001 — 判定失敗で取得自体を落とさない
+        return "utf-8"
+    return best.encoding if best is not None else "utf-8"
+
+
 class ContentExtractor:
     """trafilatura で記事 URL から本文を抽出する非同期クライアント。
 
@@ -207,6 +222,11 @@ class ContentExtractor:
                 headers={"User-Agent": self._user_agent, **_BROWSER_HEADERS},
                 follow_redirects=True,
                 event_hooks=redirect_guard_hooks_async(),
+                # ヘッダに charset が無いとき httpx は UTF-8 を仮定する。@IT / ITmedia は
+                # ヘッダ無し + meta で Shift_JIS 宣言のため本文が U+FFFD に化けて保存されて
+                # いた (2026-09-04 実測: 28,378 件中 241 件、ほぼこの 2 feed)。化けは保存後
+                # 不可逆なので、取得時にバイト列から判定する。
+                default_encoding=_detect_charset,
             )
             self._owns_client = True
         else:
