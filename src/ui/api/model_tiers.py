@@ -270,13 +270,15 @@ async def get_model_tiers() -> dict[str, Any]:
                 "usage": usage_by_provider.get(ep.name),
             }
         )
-    from src.tools.model_tiers import load_step_overrides
+    from src.tools.model_tiers import load_local_fallbacks, load_step_overrides
 
     return {
         "tiers": tiers,
-        # step 単位の上書き (2026-09-06、2 族 SFT の配備単位)。保存は POST の tiers に
-        # ``step:<step名>`` キーを含める (含めない保存は現値を持ち越す)。
+        # step 単位の上書きと外部主腕のローカル fallback (2026-09-06、2 族 SFT の配備単位)。
+        # 保存は POST の tiers に ``step:<step名>`` / ``fallback:<tier名>`` キーを含める
+        # (含めない保存は現値を持ち越す)。
         "step_overrides": load_step_overrides(),
+        "local_fallbacks": load_local_fallbacks(),
         "narrative_think": narrative_think,
         "meta": TIER_META,
         # コード既定 (fresh DB / rollback の bootstrap 値)。UI の「既定に戻す」参照用。
@@ -552,9 +554,12 @@ def save_model_tiers(req: SaveModelTiersRequest) -> dict[str, Any]:
     """ティア割当を検証 (中華系拒否) して保存 (版履歴は config_store に残る)。"""
     from src.storage.config_store import save_config
     from src.tools.model_tiers import (
+        LOCAL_FALLBACK_PREFIX,
         MODEL_TIERS_CONFIG_KEY,
         NARRATIVE_THINK_KEY,
+        STEP_OVERRIDE_PREFIX,
         invalidate_model_tiers_cache,
+        load_local_fallbacks,
         load_step_overrides,
         merge_preserving_step_overrides,
         resolve_narrative_think,
@@ -565,9 +570,12 @@ def save_model_tiers(req: SaveModelTiersRequest) -> dict[str, Any]:
     invalidate_model_tiers_cache()
     think = req.narrative_think if req.narrative_think is not None else resolve_narrative_think()
     doc: dict[str, str] = {**req.tiers, NARRATIVE_THINK_KEY: think}
-    # step override (``step:<step名>``、2026-09-06) も同一 doc の予約 key。UI のティア保存が
-    # override を黙って消さないよう、doc が step キーを持たない場合は現値を持ち越す。
-    doc = merge_preserving_step_overrides(doc, load_step_overrides())
+    # step override (``step:<step名>``) と fallback (``fallback:<tier名>``) も同一 doc の
+    # 予約 key (2026-09-06)。UI のティア保存が黙って消さないよう、doc に当該族のキーが
+    # 無い場合は現値を持ち越す (族ごとに独立判定)。
+    current = {f"{STEP_OVERRIDE_PREFIX}{k}": v for k, v in load_step_overrides().items()}
+    current.update({f"{LOCAL_FALLBACK_PREFIX}{k}": v for k, v in load_local_fallbacks().items()})
+    doc = merge_preserving_step_overrides(doc, current)
     errs = validate_model_tiers(doc)
     if errs:
         raise HTTPException(status_code=400, detail="; ".join(errs))

@@ -302,21 +302,52 @@ def load_step_overrides(*, db_path: Path | None = None) -> dict[str, str]:
     return out
 
 
+# 外部主腕のローカル fallback の設定キー (2026-09-06)。``fallback:<tier名>``。
+# 運用意図: 主腕は外部 (Sonnet 等) のまま、障害時の受け皿を BUILTIN (31B) から
+# 特化 SFT (v1) へ差し替える —「十分な精度が出たら単独へ」の前段の立ち位置。
+# fallback は外部障害時の受け皿なので **ローカルモデル限定** (保存検証で強制)。
+LOCAL_FALLBACK_PREFIX = "fallback:"
+
+
+def resolve_local_fallback_model(tier: Tier, *, db_path: Path | None = None) -> str:
+    """外部主腕が落ちたときのローカル fallback モデル。DB 未設定は BUILTIN。"""
+    if _db_enabled():
+        value = _load_tier_map(db_path=db_path).get(f"{LOCAL_FALLBACK_PREFIX}{tier.value}", "")
+        if value:
+            return value
+    return BUILTIN_MODEL_TIERS[tier.value]
+
+
+def load_local_fallbacks(*, db_path: Path | None = None) -> dict[str, str]:
+    """設定済みの fallback 上書き一覧 (UI GET 用)。空文字 (解除) は含めない。"""
+    if not _db_enabled():
+        return {}
+    out: dict[str, str] = {}
+    for key, value in _load_tier_map(db_path=db_path).items():
+        if key.startswith(LOCAL_FALLBACK_PREFIX) and value:
+            out[key.removeprefix(LOCAL_FALLBACK_PREFIX)] = value
+    return out
+
+
 def merge_preserving_step_overrides(
     new_doc: dict[str, str], current_overrides: dict[str, str]
 ) -> dict[str, str]:
-    """保存 doc に既存 step override を持ち越す (UI のティア保存が override を消さないため)。
+    """保存 doc に既存の予約キー (step override / fallback) を持ち越す。
 
-    - doc が ``step:`` キーを 1 つも持たない (= UI のティア編集): 既存 override を全て継承。
-    - doc が ``step:`` キーを持つ (= override を明示管理する API 呼出): doc をそのまま採用
-      (含めなかった override は削除の意思とみなす。混在させない)。
-    ``current_overrides`` は ``load_step_overrides()`` の形式 (prefix なし・有効分のみ)。
+    - doc が当該 prefix のキーを 1 つも持たない (= UI のティア編集): 既存値を全て継承。
+    - doc が当該 prefix のキーを持つ (= 明示管理する API 呼出): doc をそのまま採用
+      (含めなかったものは削除の意思とみなす。混在させない)。族ごとに独立に判定する。
+    ``current_overrides`` は prefix 付きの現況 (``step:triage`` / ``fallback:narrative``
+    形式)。``load_step_overrides``/``load_local_fallbacks`` の prefix なし形式は呼び出し側で
+    prefix を付けて渡す。
     """
-    if any(k.startswith(STEP_OVERRIDE_PREFIX) for k in new_doc):
-        return dict(new_doc)
     merged = dict(new_doc)
-    for step_name, model in current_overrides.items():
-        merged[f"{STEP_OVERRIDE_PREFIX}{step_name}"] = model
+    for prefix in (STEP_OVERRIDE_PREFIX, LOCAL_FALLBACK_PREFIX):
+        if any(k.startswith(prefix) for k in new_doc):
+            continue
+        for key, model in current_overrides.items():
+            if key.startswith(prefix) and model:
+                merged[key] = model
     return merged
 
 
@@ -360,7 +391,12 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
             f"{step.value} は埋込 step です。resolve_embedding_model を使ってください",
         )
     model_ref = resolve_step_model(step, db_path=db_path)
-    client = _build_client_for_ref(model_ref, spec, config)
+    client = _build_client_for_ref(
+        model_ref,
+        spec,
+        config,
+        local_fallback=resolve_local_fallback_model(spec.tier, db_path=db_path),
+    )
     # narrative ティアの think 方針 (外部モデル割当 + 設定 auto のときだけ ON)。
     # ローカル割当時は wrapper を掛けない = call site の think=False がそのまま効く。
     if (
@@ -400,7 +436,9 @@ def build_llm_for_ref(
         bare = bare.removeprefix(prefix)
     validate_model_name(bare)
     validate_model_name(model_ref)
-    return _build_client_for_ref(model_ref, spec, config)
+    return _build_client_for_ref(
+        model_ref, spec, config, local_fallback=resolve_local_fallback_model(spec.tier)
+    )
 
 
 def _usage_recorder(provider: str, model: str) -> UsageRecorder:
@@ -441,14 +479,20 @@ def _endpoint_ref(model_ref: str) -> tuple[str, str] | None:
     return (prefix, rest) if rest and resolve_endpoint(prefix) is not None else None
 
 
-def _build_client_for_ref(model_ref: str, spec: StepSpec, config: AppConfig) -> LLMClient:
-    """model ref → client 構築の共通本体 (外部 dispatch + ローカル fallback 包装)。"""
+def _build_client_for_ref(
+    model_ref: str, spec: StepSpec, config: AppConfig, *, local_fallback: str | None = None
+) -> LLMClient:
+    """model ref → client 構築の共通本体 (外部 dispatch + ローカル fallback 包装)。
+
+    ``local_fallback``: 外部主腕が落ちたときのローカル受け皿 (``fallback:<tier>`` の
+    解決値)。None なら BUILTIN (従来挙動)。
+    """
     from src.tools.llm_client import LLMError, OllamaClient  # 遅延 import (循環回避)
 
     def _local(model: str | None = None) -> OllamaClient:
         return OllamaClient(
             base_url=config.ollama_base_url,
-            model=model or BUILTIN_MODEL_TIERS[spec.tier.value],
+            model=model or local_fallback or BUILTIN_MODEL_TIERS[spec.tier.value],
             timeout_seconds=spec.timeout_seconds,
             num_ctx=TIER_NUM_CTX.get(spec.tier),
         )
@@ -574,6 +618,28 @@ def validate_model_tiers(raw: object) -> list[str]:
             validate_model_name(value.strip())
         except LLMForbiddenModelError as e:
             errs.append(f"step override '{step_name}': {e}")
+    # ローカル fallback (``fallback:<tier名>``): 外部障害時の受け皿なのでローカル限定。
+    known_tiers = {t.value for t in Tier}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.startswith(LOCAL_FALLBACK_PREFIX):
+            continue
+        tier_name = key.removeprefix(LOCAL_FALLBACK_PREFIX)
+        if tier_name not in known_tiers or tier_name == Tier.EMBEDDING.value:
+            errs.append(f"fallback '{tier_name}': 対象にできないティア名です")
+            continue
+        if not isinstance(value, str):
+            errs.append(f"fallback '{tier_name}': モデル名 (文字列) が必要です")
+            continue
+        model = value.strip()
+        if not model:
+            continue  # 空 = 解除
+        if is_external_model(model):
+            errs.append(f"fallback '{tier_name}': fallback は外部プロバイダに割当できません")
+            continue
+        try:
+            validate_model_name(model)
+        except LLMForbiddenModelError as e:
+            errs.append(f"fallback '{tier_name}': {e}")
     for tier in Tier:
         value = raw.get(tier.value)
         if value is None and tier is Tier.NARRATIVE:

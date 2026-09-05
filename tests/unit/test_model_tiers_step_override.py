@@ -133,6 +133,69 @@ class TestValidation:
         assert any("triage" in e for e in errs)
 
 
+class TestLocalFallbackOverride:
+    """外部主腕のローカル fallback を設定可能にする (2026-09-06)。
+
+    運用意図: narrative 主腕は外部 Sonnet のまま、fallback を 31B → v1 (特化 SFT) に
+    置き換える。「十分な精度が出たら v1 単独へ」の前段の立ち位置。
+    """
+
+    def test_default_fallback_is_builtin(self, db_path: Path) -> None:
+        from src.tools.model_tiers import Tier, resolve_local_fallback_model
+
+        assert resolve_local_fallback_model(Tier.NARRATIVE, db_path=db_path) == "gemma4:31b"
+        assert resolve_local_fallback_model(Tier.FAST, db_path=db_path) == "gemma4:26b"
+
+    def test_db_key_overrides_fallback(self, db_path: Path) -> None:
+        from src.tools.model_tiers import Tier, resolve_local_fallback_model
+
+        save_config(
+            MODEL_TIERS_CONFIG_KEY, {"fallback:narrative": "kuebiko-sft:26b"}, db_path=db_path
+        )
+        invalidate_model_tiers_cache()
+        assert resolve_local_fallback_model(Tier.NARRATIVE, db_path=db_path) == "kuebiko-sft:26b"
+        # 他ティアは BUILTIN のまま
+        assert resolve_local_fallback_model(Tier.REASONING, db_path=db_path) == "gemma4:31b"
+
+    def test_external_primary_gets_configured_fallback_arm(self, db_path: Path) -> None:
+        from src.tools.llm_fallback import FallbackLLMClient
+        from src.tools.model_tiers import Step
+
+        # narrative_think=off で ThinkOnClient wrapper を外し fallback 構造を直接検査する
+        save_config(
+            MODEL_TIERS_CONFIG_KEY,
+            {
+                "narrative": "claudecode:sonnet",
+                "fallback:narrative": "kuebiko-sft:26b",
+                "narrative_think": "off",
+            },
+            db_path=db_path,
+        )
+        invalidate_model_tiers_cache()
+        llm = build_llm_for(Step.EVENT_NEWS, _cfg(), db_path=db_path)
+        assert isinstance(llm, FallbackLLMClient)
+        assert llm._fallback.model == "kuebiko-sft:26b"  # noqa: SLF001
+
+    def test_validation_rejects_external_fallback(self) -> None:
+        # fallback は外部障害時の受け皿なので外部プロバイダは不可
+        raw = dict(_BASE_TIERS, **{"fallback:narrative": "anthropic:claude-sonnet-5"})
+        errs = validate_model_tiers(raw)
+        assert any("fallback" in e for e in errs)
+
+    def test_validation_rejects_unknown_tier_and_embedding(self) -> None:
+        errs = validate_model_tiers(dict(_BASE_TIERS, **{"fallback:no_such": "gemma4:26b"}))
+        assert any("no_such" in e for e in errs)
+        errs = validate_model_tiers(dict(_BASE_TIERS, **{"fallback:embedding": "gemma4:26b"}))
+        assert any("embedding" in e for e in errs)
+
+    def test_validation_rejects_forbidden_model(self) -> None:
+        errs = validate_model_tiers(dict(_BASE_TIERS, **{"fallback:narrative": "qwen2:7b"}))
+        assert errs != []
+
+    def test_empty_fallback_allowed(self) -> None:
+        assert validate_model_tiers(dict(_BASE_TIERS, **{"fallback:narrative": ""})) == []
+
+
 class TestMergePreservingStepOverrides:
     """UI のティア保存 (step キーなし) が既存 override を消さないこと。"""
 
@@ -140,8 +203,10 @@ class TestMergePreservingStepOverrides:
         from src.tools.model_tiers import merge_preserving_step_overrides
 
         doc = dict(_BASE_TIERS)
-        merged = merge_preserving_step_overrides(doc, {"triage": "kuebiko-sft:s1"})
+        current = {"step:triage": "kuebiko-sft:s1", "fallback:narrative": "kuebiko-sft:26b"}
+        merged = merge_preserving_step_overrides(doc, current)
         assert merged["step:triage"] == "kuebiko-sft:s1"
+        assert merged["fallback:narrative"] == "kuebiko-sft:26b"
         assert merged["fast"] == "gemma4:26b"
         assert doc == _BASE_TIERS  # 入力は変異させない
 
@@ -149,10 +214,13 @@ class TestMergePreservingStepOverrides:
         from src.tools.model_tiers import merge_preserving_step_overrides
 
         doc = dict(_BASE_TIERS, **{"step:event_news": "kuebiko-sft:26b"})
-        merged = merge_preserving_step_overrides(doc, {"triage": "kuebiko-sft:s1"})
-        # doc が step キーを持つ = 明示管理。含めなかった override は削除の意思
+        current = {"step:triage": "kuebiko-sft:s1", "fallback:narrative": "kuebiko-sft:26b"}
+        merged = merge_preserving_step_overrides(doc, current)
+        # doc が step キーを持つ = step 族は明示管理 (含めなかったものは削除の意思)。
+        # fallback 族は doc に無いので現値を継承 (族ごとに独立判定)
         assert "step:triage" not in merged
         assert merged["step:event_news"] == "kuebiko-sft:26b"
+        assert merged["fallback:narrative"] == "kuebiko-sft:26b"
 
 
 _BASE_TIERS: dict[str, str] = {
