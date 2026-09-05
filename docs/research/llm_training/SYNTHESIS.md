@@ -174,3 +174,19 @@ v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + �
 - RLVR: 抽出系のみ (schema 妥当性 / placeholder・重複ゲート / victim_orgs 接地検査が
   報酬)。triage は正解の決定論検証ができず RLVR 不向き → DPO 側で扱う
 - 判定は同じ凍結 goldset (86/150) + 対応検定
+
+
+## 10. 呼称規約 (2026-09-06 制定)
+
+**narrative 族 = N / 構造化族 = S** と呼ぶ。世代は番号 (N1, S1, N2, ...)。
+
+| 呼称 | 実体 (Ollama tag) | 旧称 |
+|---|---|---|
+| **N1** | kuebiko-sft:26b | v1 (narrative 特化 SFT 初版) |
+| **S1** | kuebiko-sft:s1 | s1 (構造化族 SFT 初版) |
+| (退役実験) | kuebiko-sft:v2 / :v2trial / :v3 | v2 (33:33:33 混合) / v3 (2:1:1) — 干渉の実証記録 |
+
+- 学習手法の進行は世代番号で表す: N1/S1 = SFT のみ → N2/S2 = +IPO/DPO → 以降 RLVR。
+- Ollama tag の N/S 揃え (kuebiko-n:1 / kuebiko-s:1 等) は**次の再学習時に**行う
+  (稼働中の割当 config を呼称のためだけに触らない)。
+- 以前の文書・メモリの「v1」「モデル N/S」表記は本表で読み替える。
