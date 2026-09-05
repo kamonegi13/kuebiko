@@ -166,3 +166,11 @@ N は narrative 特化のまま希釈されない。v2/v3 の干渉問題は分�
 v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + 教師 chosen) →
 ②RLVR PoC (識別子/引用/schema 関門 = 報酬)。判定基準は「Sonnet 主腕との一致 +
 関門通過率」を凍結セットで。
+
+**s1 も SFT のみ** (2026-09-06 利用者確認)。s1 が主腕なのは置換相手がローカル 26B base
+だから (外部品質を失っていない) であって、完成ではない。s1 の post-training 道筋:
+- IPO/DPO: 同一入力の Opus 教師 (chosen) × base/s1 (rejected) 乖離ペア — 教師 802 対と
+  評価 run が既に対応済み。triage は Sonnet/Opus と割れた事例がペア候補
+- RLVR: 抽出系のみ (schema 妥当性 / placeholder・重複ゲート / victim_orgs 接地検査が
+  報酬)。triage は正解の決定論検証ができず RLVR 不向き → DPO 側で扱う
+- 判定は同じ凍結 goldset (86/150) + 対応検定
