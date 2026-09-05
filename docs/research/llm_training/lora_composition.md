@@ -117,3 +117,45 @@ Step → tier → model 解決がそのままタスクルータとして機能�
 | v2 の混合で生成タスクが劣化 | MixLoRA の多タスク LoRA -1.9% と同型 |
 | 「Ollama が基盤を共有するか」の問い | **ディスクは共有・実行時メモリは非共有**。llama.cpp 直なら真に共有できるが Ollama 経由では不可 |
 | ルータ方式への期待 | ⚠ **この構成では実装不能**。CUDA でも未解決 |
+
+
+## ⭐⭐ 追加調査: この構成でアダプタ単体の運用は**できない** (ソース確認)
+
+`mlx_lm.fuse --export-gguf` は **llama / mixtral / mistral に hard-gate されている**
+(`mlx_lm/fuse.py` の `if model_type not in [...]: raise ValueError`)。**Gemma は世代を問わず対象外。**
+
+Ollama の `ADAPTER <safetensors ディレクトリ>` も、`convert/convert.go` の
+`ConvertAdapter` が **`"llama"` と `"gemma2"` しか受け付けず**、gemma3/gemma4 は
+`default: unsupported architecture` に落ちる。**ドキュメントの対応表はコードより古い。**
+
+### 決定的な障害: MoE の expert LoRA は 3 次元
+
+`mlx_lm/tuner/lora.py` の switch/expert 用 LoRA は
+`mx.zeros(shape=(num_experts, output_dims, r))` と **先頭に num_experts 軸を持つ 3D**。
+一方、MLX → PEFT の変換スクリプト
+([mlx#1507](https://github.com/ml-explore/mlx/discussions/1507)) は
+**2D の dense 層しか扱わず**、動作確認も dense な Gemma 2 のみ。
+
+⚠ **mlx-lm で学習したアダプタを MoE モデル向けに GGUF 化した前例は、探した範囲で 1 件も無い。**
+`llama-adapter.cpp` を直接読んでも MoE 固有の処理はゼロで、名前と形の一致だけで適用するため、
+**変換がわずかに誤っていても大声で落ちずに静かに劣化する**。
+
+### llama.cpp 側の Gemma 4 バグは修正済み
+
+| 不具合 | 修正 |
+|---|---|
+| `LoraTorchTensor` に `split()` が無く gate+up 結合 expert を分割できない ([#21864](https://github.com/ggml-org/llama.cpp/issues/21864)) | [#22832](https://github.com/ggml-org/llama.cpp/pull/22832) 2026-05-12 |
+| `model.language_model.*` の接頭辞を剥がせない ([#23047](https://github.com/ggml-org/llama.cpp/issues/23047)) | 2026-05-19 |
+| `architectures` が `text_config` 配下でアーキ判定が落ちる | [#24621](https://github.com/ggml-org/llama.cpp/pull/24621) 2026-06-14 |
+
+→ 2026-06 以降の checkout なら機械的な障害は越えられる。**しかし 3D の expert テンソルを
+どう変形すべきかは誰も文書化しておらず、新規の未検証コードが必要。**
+
+### ⭐ 結論: 現行経路が唯一の確認済みルート
+
+**`mlx_lm.fuse` (`--export-gguf` なし) → 本体を HF 名へ remap → `convert_hf_to_gguf.py`**
+という、いま使っている経路が de-risked な唯一の道。代償は**アダプタの hot-swap を諦め、
+課題ごとに 16GB のモデルを持つこと**。
+
+これは 9月4日の引き継ぎにあった「Ollama 配備が MoE 非対応で塞がれた」という記述の、
+より正確な姿でもある — **本体の変換は可能** (実際に成功させた)、**塞がっているのはアダプタ単体の変換**。
