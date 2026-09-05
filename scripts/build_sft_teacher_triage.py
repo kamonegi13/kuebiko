@@ -107,8 +107,16 @@ async def main_async(args: argparse.Namespace) -> int:
 
     candidates = [a for a in _fetch(args.days, args.candidate_limit) if a.id not in excluded]
     done = _done_ids(args.out)
-    todo = [a for a in candidates if a.id not in done][: args.limit]
-    print(f"候補 {len(candidates)} / 済 {len(done)} / 今回 {len(todo)}", file=sys.stderr)
+    # ⚠ ``--limit`` は **累計の目標件数** であって増分ではない (2026-09-05 修正)。
+    # build_sft_teacher_summaries.py が累計で解釈するのに対し、ここだけ増分として
+    # 解釈していたため、500 件済のところに --limit 750 を与えて 1250 件へ向かった。
+    # 同じ名前の引数を姉妹スクリプトで別の意味にしない。
+    remaining = max(0, args.limit - len(done))
+    todo = [a for a in candidates if a.id not in done][:remaining]
+    print(
+        f"候補 {len(candidates)} / 済 {len(done)} / 目標 {args.limit} / 今回 {len(todo)}",
+        file=sys.stderr,
+    )
 
     llm = build_llm_for_ref(args.model, Step.TRIAGE, load_app_config())
     # プロンプト組み立てだけ本番から借りる (triage() は失敗時に medium を返すので使わない)。

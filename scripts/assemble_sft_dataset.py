@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -53,6 +54,44 @@ def _task_of(pair: dict[str, str]) -> str:
     if "重要度判定" in prompt:
         return "triage"
     return "article_summary"
+
+
+def _select_capped(pairs: list[dict[str, str]], cap: int) -> list[dict[str, str]]:
+    """課題の上限まで絞る。**クラス比は保ち、feed の偏りだけ均す**。
+
+    クラス比を均等化すると base rate が変わり判定の較正がずれる (triage は実分布を
+    反映すべき課題)。一方 feed の偏りは特定媒体の文体への過学習を招くので、クラス内で
+    feed をラウンドロビンして薄める。
+    """
+    if len(pairs) <= cap:
+        return pairs
+
+    def cls(p: dict[str, str]) -> str:
+        try:
+            return str(json.loads(p["completion"]).get("importance", "?"))
+        except json.JSONDecodeError:
+            return "?"
+
+    def feed(p: dict[str, str]) -> str:
+        m = re.search(r"フィード:\s*(.+)", p["prompt"])
+        return m.group(1).strip() if m else "?"
+
+    by_class: dict[str, dict[str, list[dict[str, str]]]] = {}
+    for p in pairs:
+        by_class.setdefault(cls(p), {}).setdefault(feed(p), []).append(p)
+
+    out: list[dict[str, str]] = []
+    for _cls_name, feeds in by_class.items():
+        quota = round(cap * sum(len(v) for v in feeds.values()) / len(pairs))
+        picked: list[dict[str, str]] = []
+        queues = [list(v) for v in feeds.values()]
+        while len(picked) < quota and any(queues):  # feed をラウンドロビン
+            for q in queues:
+                if q and len(picked) < quota:
+                    picked.append(q.pop(0))
+            queues = [q for q in queues if q]
+        out.extend(picked)
+    return out
 
 
 def _empty_field_count(completion: str) -> int:
@@ -88,6 +127,9 @@ def main() -> int:
     ap.add_argument("--model", default="mlx-community/gemma-4-26b-a4b-it-8bit")
     ap.add_argument("--valid-size", type=int, default=60)
     ap.add_argument("--seed", type=int, default=13)
+    ap.add_argument("--cap-triage", type=int, default=0, help="triage の上限 (0 で無制限)")
+    ap.add_argument("--cap-summary", type=int, default=0, help="article_summary の上限")
+    ap.add_argument("--cap-eventnews", type=int, default=0, help="事象ニュースの上限")
     args = ap.parse_args()
 
     pairs: list[dict[str, str]] = []
@@ -113,6 +155,23 @@ def main() -> int:
             continue
         kept.append(pair)
 
+    # 課題ごとの上限。生成しすぎた分は捨てず、**混合の段階で件数を決める**。
+    # v2 (32:35:33) では事象ニュースの慎重さ (caveats/unknowns) が構造化タスクに
+    # 押し流され base より有意に悪化した。比率は結果を左右する一級のつまみ。
+    caps = {
+        "triage": args.cap_triage,
+        "article_summary": args.cap_summary,
+        "eventnews": args.cap_eventnews,
+    }
+    for task, cap in caps.items():
+        if not cap:
+            continue
+        group = [p for p in kept if _task_of(p) == task]
+        if len(group) > cap:
+            selected = _select_capped(group, cap)
+            print(f"{task} を {len(group)} → {len(selected)} 件に選別")
+            kept = [p for p in kept if _task_of(p) != task] + selected
+
     by_task = Counter(_task_of(p) for p in kept)
     print("=== 課題ごとの構成 ===")
     total = len(kept)
@@ -126,10 +185,13 @@ def main() -> int:
         )
 
     # 「正しく空にする」例が無い課題があると v1 の "null" 欠陥が再発する。
+    # triage は schema が {importance, reason} で任意欄が無く、常に両方埋まるのが正しい。
+    # ここで警告を出すと恒常的な誤検知になり、本物の警告を見逃す訓練になるので除外する。
     missing = [
         t
         for t in by_task
-        if not any(_task_of(p) == t and _empty_field_count(p["completion"]) for p in kept)
+        if t != "triage"
+        and not any(_task_of(p) == t and _empty_field_count(p["completion"]) for p in kept)
     ]
     if missing:
         print(
