@@ -420,6 +420,40 @@ async def generate_spotlight(
         think=False,
     )
 
+    # 識別子関門 (2026-09-06、事象ニュース関門の narrative 延長)。プロンプトに無い
+    # 識別子 (転記破損・出典外) を検知したら、具体値を示して 1 回だけ書き直させる。
+    # 再試行後も残る場合は保存を止めず記録する (週次成果物の可用性を優先。残余の
+    # 計数は将来の enforcement 強化 / RLVR 報酬設計の測定を兼ねる)。
+    from src.spotlight.identifier_check import (
+        find_unsupported_identifiers,
+        gate_enabled,
+        render_identifier_feedback,
+    )
+
+    if gate_enabled():
+        generated_text = f"{output.headline}\n{output.outlook}"
+        unsupported = find_unsupported_identifiers(generated_text, prompt)
+        if unsupported:
+            _log.warning(
+                "spotlight_identifier_retry",
+                pir_id=pir.id,
+                values=[i.raw for i in unsupported][:10],
+            )
+            output = await llm.generate_structured(
+                prompt=prompt + render_identifier_feedback(unsupported),
+                schema=_LLMSpotlightOutput,
+                temperature=0.3,
+                max_tokens=6144,
+                think=False,
+            )
+            still = find_unsupported_identifiers(f"{output.headline}\n{output.outlook}", prompt)
+            if still:
+                _log.warning(
+                    "spotlight_identifier_unverified",
+                    pir_id=pir.id,
+                    values=[i.raw for i in still][:10],
+                )
+
     # LLM の参照 (index 優先 / article_id fallback) を実 article match に対応付け
     candidate_matches = matches[:candidate_limit]  # [N] 番号の母体
     article_index = {m.article_id: m for m in matches}

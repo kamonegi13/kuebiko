@@ -274,6 +274,52 @@ def resolve_embedding_model(*, db_path: Path | None = None) -> str:
     return resolve_tier_model(Tier.EMBEDDING, db_path=db_path)
 
 
+# step 単位のモデル上書き (2026-09-06、2 族分割 SFT の配備単位)。model_tiers config doc
+# 内の予約キー ``step:<step名>``。**フラットな str→str** — ネスト dict は
+# ``_load_tier_map`` の型フィルタで黙って落ちるため使わない。不在・空文字は
+# ティア解決に fallback (挙動保存 = 既存環境で migration 不要)。
+STEP_OVERRIDE_PREFIX = "step:"
+
+
+def resolve_step_model(step: Step, *, db_path: Path | None = None) -> str:
+    """step の実効モデル名。解決順: step override (DB) → ティア割当 (DB → BUILTIN)。"""
+    spec = STEP_REGISTRY[step]
+    if _db_enabled():
+        override = _load_tier_map(db_path=db_path).get(f"{STEP_OVERRIDE_PREFIX}{step.value}", "")
+        if override:
+            return override
+    return resolve_tier_model(spec.tier, db_path=db_path)
+
+
+def load_step_overrides(*, db_path: Path | None = None) -> dict[str, str]:
+    """有効な step override の一覧 (UI GET 用)。空文字 (解除) は含めない。"""
+    if not _db_enabled():
+        return {}
+    out: dict[str, str] = {}
+    for key, value in _load_tier_map(db_path=db_path).items():
+        if key.startswith(STEP_OVERRIDE_PREFIX) and value:
+            out[key.removeprefix(STEP_OVERRIDE_PREFIX)] = value
+    return out
+
+
+def merge_preserving_step_overrides(
+    new_doc: dict[str, str], current_overrides: dict[str, str]
+) -> dict[str, str]:
+    """保存 doc に既存 step override を持ち越す (UI のティア保存が override を消さないため)。
+
+    - doc が ``step:`` キーを 1 つも持たない (= UI のティア編集): 既存 override を全て継承。
+    - doc が ``step:`` キーを持つ (= override を明示管理する API 呼出): doc をそのまま採用
+      (含めなかった override は削除の意思とみなす。混在させない)。
+    ``current_overrides`` は ``load_step_overrides()`` の形式 (prefix なし・有効分のみ)。
+    """
+    if any(k.startswith(STEP_OVERRIDE_PREFIX) for k in new_doc):
+        return dict(new_doc)
+    merged = dict(new_doc)
+    for step_name, model in current_overrides.items():
+        merged[f"{STEP_OVERRIDE_PREFIX}{step_name}"] = model
+    return merged
+
+
 # narrative ティアの拡張思考 (extended thinking) 設定。model_tiers config doc 内の予約 key。
 # "auto" = 外部モデル割当時のみ think ON (think A/B 2026-07-24: 分析の階層化で優位) /
 # "off" = 常に無効。ローカルモデルは値に関わらず常に OFF (gemma thinking 空応答前歴)。
@@ -313,7 +359,7 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
         raise ValueError(
             f"{step.value} は埋込 step です。resolve_embedding_model を使ってください",
         )
-    model_ref = resolve_tier_model(spec.tier, db_path=db_path)
+    model_ref = resolve_step_model(step, db_path=db_path)
     client = _build_client_for_ref(model_ref, spec, config)
     # narrative ティアの think 方針 (外部モデル割当 + 設定 auto のときだけ ON)。
     # ローカル割当時は wrapper を掛けない = call site の think=False がそのまま効く。
@@ -506,6 +552,28 @@ def validate_model_tiers(raw: object) -> list[str]:
     think = raw.get(NARRATIVE_THINK_KEY)
     if think is not None and think not in _NARRATIVE_THINK_VALUES:
         errs.append(f"{NARRATIVE_THINK_KEY}: 'auto' か 'off' を指定してください")
+    # step override (``step:<step名>``): 未知 step 名は typo として fail-fast。
+    # 空文字 = 解除は許容。denylist はティア割当と同じ 3 層で効く。
+    known_steps = {s.value for s in Step}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.startswith(STEP_OVERRIDE_PREFIX):
+            continue
+        step_name = key.removeprefix(STEP_OVERRIDE_PREFIX)
+        if step_name not in known_steps:
+            errs.append(f"step override '{step_name}': 未知の step 名です")
+            continue
+        if STEP_REGISTRY[Step(step_name)].tier is Tier.EMBEDDING:
+            errs.append(f"step override '{step_name}': 埋込 step は上書きできません")
+            continue
+        if not isinstance(value, str):
+            errs.append(f"step override '{step_name}': モデル名 (文字列) が必要です")
+            continue
+        if not value.strip():
+            continue  # 空 = 解除
+        try:
+            validate_model_name(value.strip())
+        except LLMForbiddenModelError as e:
+            errs.append(f"step override '{step_name}': {e}")
     for tier in Tier:
         value = raw.get(tier.value)
         if value is None and tier is Tier.NARRATIVE:
