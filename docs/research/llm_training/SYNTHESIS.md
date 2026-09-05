@@ -218,4 +218,10 @@ v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + �
 
 主腕は「学習+測定済み step だけ」(S1=2 step のみ、他は base 継続)。
 ティア単位 fallback の穴 = **ledger_deep_review は N1 未学習の構造化出力** (縮退様式に
-該当しうる) → ground_and_score の N1 vs 31B probe で測定 (結果は追記)。
+該当しうる) → **probe で測定済み・縮退なし** (実 Situation 3 件 × N1/31B):
+- N1 は全欄充足・重複 0・placeholder 0・証拠 article_id 実形式 100%・仮説 verdict 分布が
+  31B と完全一致 (leading 1 / viable 0-1 / refuted 5-6)。抜粋もむしろ長い。9 倍速。
+- 観察項目: N1 の llm_confidence が 3 件とも moderate に平坦化 (31B は low/high/high)。
+  n=3 で断定不可 + 本番は ACH 整合 seam が verdict を導出するため実害は限定。
+  N2 の学習に ACH 課題を足すか判断する際の材料。
+→ **fallback 席の学習カバレッジ問題はクローズ** (全 narrative step が測定済みになった)。
