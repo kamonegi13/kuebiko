@@ -225,3 +225,27 @@ v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + �
   n=3 で断定不可 + 本番は ACH 整合 seam が verdict を導出するため実害は限定。
   N2 の学習に ACH 課題を足すか判断する際の材料。
 → **fallback 席の学習カバレッジ問題はクローズ** (全 narrative step が測定済みになった)。
+
+
+## 12. 系譜の再編成 — 拡張 SFT を IPO の前に置く (2026-09-06 利用者決定)
+
+利用者の問い「未学習 step の教師データ SFT で精度向上があるのでは」→ ある。順序は
+**「N1.5/S1.5 (task 拡張 SFT) → その上に N2/S2 (IPO)」の 1 本系譜**に再編成
+(preference は SFT の上に載せるのが標準順)。走行中の学生出力生成 + 近日の IPO は
+レシピ確定用 (学習率・ペア閾値・token 上限) として活かす。
+
+### 教師データ収穫 (稼働中、Opus・リミット自動リトライ付き)
+
+| task | 方式 | 量の目安 | train/eval 分離 |
+|---|---|---|---|
+| spotlight | 本番 generate_spotlight を過去日付駆動 + RecordingClient 捕獲 | ~150-200 対 (20 PIR × stride 3 日) | 直近 3 日を評価予約 |
+| synthesis | 同方式 (足場 detect/ACH はローカル = 外部消費を narrative 段に限定) | ~19 窓 | 同上 |
+| pair_judge | event_pair_shadow のラベル期 (09-01) 以降のみ | 700 | 時間分離 |
+| event_kind | 60 日窓の記事 − ラベル 455 id | 600 | ラベル id 除外 |
+| pir_judge | 本番選抜 (_load_posted_rows + state 空) ラウンドロビン | 800 | 直近 3 日予約 |
+
+- **dedup_judge は第 3 陣へ**: 本番の候補対がどこにも記録されず忠実サンプリング不能。
+  先に候補の shadow 記録を敷く (pair_shadow と同型)。
+- spotlight 収穫は識別子関門 OFF (書き直し指示がプロンプト形を汚すため)。識別子検査は
+  **組み立て時のオフライン関門**に移設 (教師出力にも適用)。
+- 収穫スクリプト 3 本 = build_sft_teacher_{spotlight,synthesis,s2}.py (5c42019d)。
