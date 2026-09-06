@@ -145,8 +145,8 @@ async def main_async(args: argparse.Namespace) -> int:
                 consecutive += 1
                 print(f"  {i}/{len(todo)} FAIL {type(exc).__name__}: {str(exc)[:90]}", flush=True)
                 if consecutive >= _MAX_CONSECUTIVE_FAILURES:
-                    print("連続失敗が上限に達したため中断 (経路の恒久障害を疑う)", file=sys.stderr)
-                    break
+                    print("連続失敗が上限 — 中断 (rc=1)", file=sys.stderr)
+                    return 1
                 continue
             consecutive = 0
             payload = out.model_dump()

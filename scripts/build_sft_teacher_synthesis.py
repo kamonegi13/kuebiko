@@ -98,6 +98,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     ok = failed = rejected = 0
+    consecutive = 0
     with args.out.open("a", encoding="utf-8") as fh:
         for date in dates:
             base_key = f"synth:{args.period}:{date.date().isoformat()}"
@@ -114,8 +115,13 @@ async def main_async(args: argparse.Namespace) -> int:
                 )
             except Exception as exc:  # noqa: BLE001 — 1 窓の失敗で全体を落とさない
                 failed += 1
+                consecutive += 1
                 print(f"  {base_key} FAIL {type(exc).__name__}: {str(exc)[:80]}", flush=True)
+                if consecutive >= 3:
+                    print("連続失敗が上限 — 中断 (rc=1)", file=sys.stderr)
+                    return 1
                 continue
+            consecutive = 0
             if res.record is None or not rec.captured:
                 rejected += 1
                 print(f"  {base_key} 生成なし ({res.error})", flush=True)

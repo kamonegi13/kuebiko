@@ -29,6 +29,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 
+from pydantic import BaseModel
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.config_loader import load_app_config  # noqa: E402
@@ -36,7 +38,7 @@ from src.tools.llm_client import LLMClient  # noqa: E402
 from src.tools.model_tiers import Step, build_llm_for_ref  # noqa: E402
 
 DEFAULT_OUT = Path("data/mlx/teacher/spotlight.jsonl")
-_T = TypeVar("_T")
+_T = TypeVar("_T", bound=BaseModel)
 
 # 出力の最低品質 (これ未満は教師として保存しない)
 _MIN_HEADLINE_CHARS = 40
@@ -95,6 +97,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     ok = skipped = failed = rejected = 0
+    consecutive = 0
     with args.out.open("a", encoding="utf-8") as fh:
         for date in dates:
             for pir in pirs:
@@ -108,8 +111,14 @@ async def main_async(args: argparse.Namespace) -> int:
                     )
                 except Exception as exc:  # noqa: BLE001 — 1 件の失敗で全体を落とさない
                     failed += 1
+                    consecutive += 1
                     print(f"  {key} FAIL {type(exc).__name__}: {str(exc)[:80]}", flush=True)
+                    if consecutive >= 5:
+                        # 中断 = 失敗で返す (rc=0 だとリトライ層が完了と誤認する)
+                        print("連続失敗が上限 — 中断 (rc=1)", file=sys.stderr)
+                        return 1
                     continue
+                consecutive = 0
                 if record is None or rec.last is None:
                     skipped += 1  # 材料不足 — 記録して以後スキップ
                     fh.write(json.dumps({"key": key, "skipped": True}) + "\n")

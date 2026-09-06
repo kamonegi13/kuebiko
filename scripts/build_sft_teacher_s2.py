@@ -208,8 +208,10 @@ async def main_async(args: argparse.Namespace) -> int:
                 consecutive += 1
                 print(f"  {i}/{len(todo)} FAIL {type(exc).__name__}: {str(exc)[:80]}", flush=True)
                 if consecutive >= _MAX_CONSECUTIVE_FAILURES:
-                    print("連続失敗が上限 — 中断", file=sys.stderr)
-                    break
+                    # ⚠ rc=0 で返すとリトライ層が「完了」と誤認する (2026-09-06 実害:
+                    # bridge 停止中に 3 課題が 0 行のまま素通りした)。中断 = 失敗。
+                    print("連続失敗が上限 — 中断 (rc=1)", file=sys.stderr)
+                    return 1
                 continue
             consecutive = 0
             fh.write(
