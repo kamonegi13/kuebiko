@@ -388,3 +388,32 @@ remediation 5 — **「不明」等の文字列で欄を埋める**振る舞い�
   triage の以後の測定は「high→low の危険方向ゼロ / 悪用中脆弱性・日本関連の
   取りこぼしゼロ」の的絞り指標へ移行する。
 - 測定資産: data/mlx/triage_opus_goldset.json (Opus の 150 判定、再利用可)。
+
+
+## 17. S/N × preference の構造論と ORPO probe (2026-09-07 利用者仮説の検証)
+
+**利用者仮説**: S 族 (構造化・離散出力) は preference の信号が実質ラベル正誤 1 bit で
+SFT が学び切っており IPO の効果が構造的に低い。N 族 (narrative) こそ「程度の差」を学ぶ
+preference の本来の適用対象。→ **同意**。§15 の否定的結果はこの構造の帰結と読める。
+
+### N 族での技術的閂を probe した結果 (ORPO = 参照モデル不要 + SFT 項内蔵)
+
+| 設定 (event ペア・N1 継続) | 結果 |
+|---|---|
+| ORPO / max-seq 12000 | OOM (初回検証で死) |
+| ORPO / max-seq 8000 / layers 2 (Ollama 解放) | **rc=0・NaN なし・peak 84.0GB** |
+
+- **N 族の preference は「event ペアの ≤7.5k token 部分集合 (178/238 = 75%)」なら
+  技術的に可能**。spotlight (14.5k) は不可のまま。
+- peak 84GB は night-solo 専用 (Ollama 19GB と同居不可)。余裕も薄い (~96GB 上限)。
+- ⚠ **要精査**: probe 10 iters で loss 0.069 固定・rewards/margin/accuracy が全て 0.000。
+  preference 項が実質 no-op の疑い (mlx-lm-lora 3.1.2 の ORPO 実装 or beta 既定値)。
+  採用前に実装を読み、動く条件を確認すること。動かなければ CPO / 長さ正規化 DPO を候補に。
+
+### N2 の設計方針 (更新)
+
+1. **N1.5 (拡張 SFT) が先** — 実測済みの最大ギャップ (caveats 過少 244/721) は模倣で
+   閉じるのが低リスク。
+2. その上で preference (ORPO 系・短半分集合) と RLVR は**補完関係**として検討:
+   - RLVR = 検証可能な次元 (識別子・引用・schema) を関門報酬で
+   - preference = 検証不能な質の次元 (散文の質・分析の深さ) を教師対比で
