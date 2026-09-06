@@ -127,21 +127,28 @@ def main() -> int:
         "--max-tokens", type=int, default=8000, help="prompt+長い方の completion の上限"
     )
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument(
+        "--only",
+        choices=["s", "n", "all"],
+        default="all",
+        help="族の選択 (IPO は族ごとに別モデルへ掛けるため混ぜない: s=triage+summary / n=event)",
+    )
     args = ap.parse_args()
 
-    pairs = (
-        _pairs_triage(
+    pairs: list[dict[str, str]] = []
+    if args.only in ("s", "all"):
+        pairs += _pairs_triage(
             Path("data/mlx/teacher/triage.jsonl"), Path("data/mlx/dpo/student_s1_triage.jsonl")
         )
-        + _pairs_summary(
+        pairs += _pairs_summary(
             Path("data/mlx/teacher/article_summary.jsonl"),
             Path("data/mlx/dpo/student_s1_summary.jsonl"),
         )
-        + _pairs_event(
+    if args.only in ("n", "all"):
+        pairs += _pairs_event(
             Path("data/mlx/dpo/event_teacher_all.jsonl"),
             Path("data/mlx/dpo/student_n1_event.jsonl"),
         )
-    )
     print(f"乖離ペア {len(pairs)} 対", file=sys.stderr)
 
     # token 長の実測 (SFT 組み立てと同じ tokenizer 経由) と上限適用
