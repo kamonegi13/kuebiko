@@ -84,7 +84,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["discord_webhook", "apscheduler.*", "playwright.*"]
+module = ["discord_webhook", "apscheduler.*", "playwright.*", "transformers"]
 ignore_missing_imports = true
 
 
