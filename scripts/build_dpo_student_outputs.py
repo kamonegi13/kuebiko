@@ -45,6 +45,20 @@ def _schema_for(task: str) -> type[Any]:
         from src.eventnews.models import EventNewsDraft
 
         return EventNewsDraft
+    # S 第 2 陣 (N1.5/S1.5 学習後の on-policy 再生成用 — 明白マージン回避のため
+    # 拡張 SFT 前のモデルでは呼ばないこと)
+    if task == "pair_judge":
+        from src.eventnews.pair_judge import PairVerdict
+
+        return PairVerdict
+    if task == "event_kind":
+        from src.eventnews.event_kind import KindVerdict
+
+        return KindVerdict
+    if task == "pir_judge":
+        from src.pir.llm_judge import JudgeVerdict
+
+        return JudgeVerdict
     raise ValueError(f"未知の task: {task}")
 
 
@@ -54,7 +68,9 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
         if not line.strip():
             continue
         d = json.loads(line)
-        d.setdefault("article_id", f"{path.stem}:{i}")
+        if d.get("skipped"):
+            continue  # 収穫時の材料不足マーカー (対にならない)
+        d.setdefault("article_id", d.get("key", f"{path.stem}:{i}"))
         rows.append(d)
     return rows
 
@@ -76,9 +92,7 @@ async def main_async(args: argparse.Namespace) -> int:
     todo = [r for r in rows if r["article_id"] not in done]
     print(f"教師 {len(rows)} / 済 {len(done)} / 今回 {len(todo)}", file=sys.stderr)
 
-    llm = OllamaClient(
-        base_url=args.base_url, model=args.model, timeout_seconds=args.timeout
-    )
+    llm = OllamaClient(base_url=args.base_url, model=args.model, timeout_seconds=args.timeout)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     ok = failed = 0
     consecutive = 0
@@ -86,7 +100,11 @@ async def main_async(args: argparse.Namespace) -> int:
         for i, row in enumerate(todo, start=1):
             try:
                 out = await llm.generate_structured(
-                    row["prompt"], schema=schema, think=False, temperature=0.2
+                    row["prompt"],
+                    schema=schema,
+                    system=row.get("system"),
+                    think=False,
+                    temperature=0.2,
                 )
             except Exception as exc:  # noqa: BLE001 — 1 件の失敗で全体を落とさない
                 failed += 1
@@ -118,7 +136,18 @@ async def main_async(args: argparse.Namespace) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--teacher", type=Path, required=True)
-    ap.add_argument("--task", required=True, choices=["triage", "article_summary", "event_news"])
+    ap.add_argument(
+        "--task",
+        required=True,
+        choices=[
+            "triage",
+            "article_summary",
+            "event_news",
+            "pair_judge",
+            "event_kind",
+            "pir_judge",
+        ],
+    )
     ap.add_argument("--model", required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--base-url", default="http://localhost:11434")
