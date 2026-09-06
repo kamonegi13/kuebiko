@@ -5,9 +5,13 @@
 プロンプトを RecordingClient で捕獲して教師の出力と対で保存する。プロンプトと出力は
 同時に生成されるため再構築の時代錯誤は生じない (spotlight 収穫と同じ方式)。
 
-コスト設計: 上流 (detect / ACH) は**ローカル**で回す — 教師出力として保存するのは
-narrative 段だけであり、足場の外部消費は無駄。プロンプトに載る台帳判定の質が本番
-(reasoning=外部) と微差になる点は許容 (docstring 明記の設計判断)。
+⚠ **grounded モード (本番既定) では narrative ティアの ``llm`` は一切呼ばれない**
+(2026-09-06 実測で判明)。``pipeline.build_estimate`` も ``render_record`` も
+``ach_llm = analysis_llm`` を使う。よって教師は **analysis_llm 側**に挿す必要がある。
+
+コスト設計: 1 窓あたり ACH 系が 7-8 呼出あるため全部を外部に投げると高い。本スクリプトは
+**プロンプトが render テンプレート由来のときだけ教師 (外部) へ、それ以外はローカルへ**
+振り分ける選択的ラッパを使う (捕獲対象 = 状況総括の散文 1 呼出/窓)。
 
 不変条件:
 - 直近 ``--eval-reserve-days`` 日は凍結評価用に予約 (収穫しない)。
@@ -42,26 +46,40 @@ _T = TypeVar("_T", bound=BaseModel)
 _MIN_COMPLETION_CHARS = 400  # これ未満の narrative は教師として保存しない
 
 
-class RecordingClient:
-    """narrative 段の全 (prompt, 出力) を捕獲する透過ラッパ。"""
+#: render.j2 由来のプロンプトだけを教師へ回すための識別文字列 (テンプレート冒頭の固定句)。
+#: 変わると**黙って 0 件になる**ので、実行時に 1 件も捕獲できなければ失敗として返す。
+_RENDER_MARKER = "これは射影であって再分析ではない"
 
-    def __init__(self, inner: LLMClient) -> None:
-        self._inner = inner
+
+class SelectiveTeacherClient:
+    """render 段だけ教師 (外部) へ、他はローカルへ振り分けて捕獲する。"""
+
+    def __init__(self, teacher: LLMClient, local: LLMClient) -> None:
+        self._teacher = teacher
+        self._local = local
         self.captured: list[tuple[str, str]] = []
 
     @property
     def model(self) -> str:
-        return self._inner.model
+        return self._teacher.model
+
+    def _pick(self, prompt: str) -> tuple[LLMClient, bool]:
+        is_render = _RENDER_MARKER in prompt
+        return (self._teacher if is_render else self._local), is_render
 
     async def generate_structured(self, prompt: str, schema: type[_T], **kw: Any) -> _T:
-        out = await self._inner.generate_structured(prompt, schema, **kw)
-        dump = out.model_dump() if hasattr(out, "model_dump") else vars(out)
-        self.captured.append((prompt, json.dumps(dump, ensure_ascii=False)))
+        client, is_render = self._pick(prompt)
+        out = await client.generate_structured(prompt, schema, **kw)
+        if is_render:
+            dump = out.model_dump() if hasattr(out, "model_dump") else vars(out)
+            self.captured.append((prompt, json.dumps(dump, ensure_ascii=False)))
         return out
 
     async def generate(self, prompt: str, **kw: Any) -> Any:
-        resp = await self._inner.generate(prompt, **kw)
-        self.captured.append((prompt, resp.text))
+        client, is_render = self._pick(prompt)
+        resp = await client.generate(prompt, **kw)
+        if is_render:
+            self.captured.append((prompt, resp.text))
         return resp
 
 
@@ -80,11 +98,10 @@ async def main_async(args: argparse.Namespace) -> int:
 
     cfg = load_app_config()
     teacher = build_llm_for_ref(args.model, Step.SYNTHESIS_NARRATIVE, cfg)
-    # 足場はローカル (外部消費の節約。本番は reasoning=外部でも、保存対象は narrative のみ)
     fast_llm = OllamaClient(
         base_url=cfg.ollama_base_url, model="gemma4:26b", timeout_seconds=900.0
     )
-    analysis_llm = OllamaClient(
+    local_analysis = OllamaClient(
         base_url=cfg.ollama_base_url, model="gemma4:31b", timeout_seconds=900.0
     )
 
@@ -104,14 +121,15 @@ async def main_async(args: argparse.Namespace) -> int:
             base_key = f"synth:{args.period}:{date.date().isoformat()}"
             if any(k.startswith(base_key) for k in done):
                 continue
-            rec = RecordingClient(teacher)
+            rec = SelectiveTeacherClient(teacher, local_analysis)
             try:
                 res = await generate_synthesis(
-                    llm=rec,  # type: ignore[arg-type]  # LLMClient 互換の透過ラッパ
+                    # ⚠ grounded では narrative 側は使われない。教師は analysis に挿す
+                    llm=local_analysis,
                     period_type=args.period,
                     now=date,
                     fast_llm=fast_llm,
-                    analysis_llm=analysis_llm,
+                    analysis_llm=rec,  # type: ignore[arg-type]  # LLMClient 互換ラッパ
                 )
             except Exception as exc:  # noqa: BLE001 — 1 窓の失敗で全体を落とさない
                 failed += 1
@@ -141,6 +159,11 @@ async def main_async(args: argparse.Namespace) -> int:
             print(f"  {base_key} 採用 (捕獲 {len(rec.captured)} 呼出)", flush=True)
 
     print(f"\n完了: 窓 {ok} / 失敗 {failed} / 生成なし {rejected} → {args.out}")
+    if ok == 0:
+        # 1 件も捕獲できないのは経路の不整合 (marker 変更 / 呼出先の変更)。
+        # 実害 2026-09-06: 19 窓を回して 0 件だったのに rc=0 で「完了」と記録された。
+        print("⚠ 捕獲 0 件 — 教師の挿し先か marker を疑う (rc=1)", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -276,3 +276,31 @@ v1 単独への関門 (§7 の次段): ①IPO/DPO (蛇口の rejected 草稿 + �
   128GB 機なので単独なら可。**Ollama が 16-22GB 保持したままだと危険** → 学習前に
   ollama のモデルを落とす (`ollama stop` / 静穏帯)。
   組み立て側の除外閾値も N 族は 17,500 に上げる (S 族は従来どおり 12,000 で足りる)。
+
+
+## 13. ⚠⚠ synthesis は narrative ティアを使っていない (2026-09-06 判明・要是正)
+
+教師収穫が **19 窓すべてで 0 件**だったことから発覚。grounded モード (本番既定
+`SYNTHESIS_GROUNDED=1`) では:
+
+- `pipeline.generate_grounded_synthesis` は `ach_llm = analysis_llm or llm` を作り、
+  **`build_estimate(llm=ach_llm)` も `render_record(llm=ach_llm)` も ach_llm を使う**。
+- したがって引数 `llm` (= `Step.SYNTHESIS_NARRATIVE` で解決されるクライアント) は
+  **一度も呼ばれない**。散文 (状況総括の各節) を書いているのは **reasoning ティア**。
+
+### 二つの帰結
+
+1. **2026-09-06 朝の「synthesis narrative 転移測定 (N1 vs 31B)」は無効**。両アームとも
+   測定対象モデルを未使用の `llm` に渡しており、実際の生成は両方とも
+   `build_llm_for(SYNTHESIS_ANALYSIS)` = claudecode:sonnet だった。出力差は Sonnet の
+   run 間非決定性にすぎない。**「N1 は synthesis でも fallback 資格あり」という結論は撤回する**
+   (再測定は analysis 側を差し替えて行う)。
+2. **ティア乖離の再発** (2026-09-04 監査と同型)。UI の narrative ティア割当は synthesis に
+   効かず、reasoning ティアが実効値。`fallback:narrative` も synthesis には効かない
+   (event_news / spotlight には効く)。是正案は「render 段だけ narrative ティアで呼ぶ」
+   (設計意図どおり) が本筋 — ただし本番挙動が変わるので別途 A/B が要る。
+
+### 収穫スクリプト側の対処 (実施済)
+
+`SelectiveTeacherClient` を導入し、**プロンプトが render.j2 由来のときだけ教師 (外部)**、
+他はローカルへ振り分けて捕獲する (ACH 7-8 呼出/窓を外部に投げない)。捕獲 0 件は rc=1。
