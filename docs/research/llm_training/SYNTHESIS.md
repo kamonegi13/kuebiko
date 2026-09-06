@@ -417,3 +417,19 @@ preference の本来の適用対象。→ **同意**。§15 の否定的結果�
 2. その上で preference (ORPO 系・短半分集合) と RLVR は**補完関係**として検討:
    - RLVR = 検証可能な次元 (識別子・引用・schema) を関門報酬で
    - preference = 検証不能な質の次元 (散文の質・分析の深さ) を教師対比で
+
+
+## 18. ORPO の再評価 — no-op 疑惑は解消、N2 の本命候補へ (2026-09-07)
+
+- **実装精査で §17 の疑惑を解消**: orpo_trainer は logp を**長さ正規化**して比較する
+  (8k で NaN が出なかった構造的理由)。rewards 0.000 は beta×平均logp の**表示丸め**、
+  accuracy 0.000 は「rejected = 学生自身の出力 (on-policy) を学習前モデルは自分の文
+  として高評価する」ため**初期状態として正当**。probe は正常動作だった。
+- **Metal 上限を 115GB へ解放 (利用者実施)**: `sudo sysctl iogpu.wired_limit_mb=115000`。
+  event 全ペア (最大 11.6k tok) の 12k ORPO が射程に入った (N1.5 後に probe 自動実行)。
+  spotlight (14.5k、必要 ~136GB) は物理 128GB 超で不可のまま。
+- ORPO の利点整理: 参照モデル不要 (メモリ半減) / 長さ正規化 (NaN 回避) /
+  **SFT 項内蔵 = replay 相当の干渉抑制が構造的に入る** (S レシピの教訓に適合)。
+- N2-ORPO 本走の前提: **rejected は N1.5 の出力で組み直す** (on-policy 原則 §12)。
+  手順 = N1.5 完成 → 12k probe (メモリ確定) → N1.5 で学生 721 件再生成 (~6h) →
+  乖離ペア再組み立て → ORPO 学習 → 凍結 39 件 + spotlight 予約日で前後比較。
