@@ -41,16 +41,26 @@ class TestFindUnsupportedIdentifiers:
         flagged = find_unsupported_identifiers(generated, _REFERENCE)
         assert [i.raw for i in flagged] == ["CVE-2026-99999"]
 
-    def test_corrupted_proper_noun_flagged(self) -> None:
-        # 語中大文字型の破損 (RingCentral → RingCRntal) は対称照合で拾える
+    def test_proper_noun_not_enforced_by_default(self) -> None:
+        # 2026-09-07 較正: proper_noun は SaaS/SBOM/YARA 等の一般技術語を大量誤検知する
+        # (教師データ実測 87% 誤棄却) ため既定 (STRICT_KINDS) では強制しない
+        generated = "RingCRntal を装う攻撃。SBOM と YARA の整備を推奨。"
+        assert find_unsupported_identifiers(generated, _REFERENCE) == ()
+
+    def test_proper_noun_observable_with_all_kinds(self) -> None:
+        # 観測用途 (soft watch) では ALL_KINDS で拾える
+        from src.spotlight.identifier_check import ALL_KINDS
+
         generated = "RingCRntal を装う攻撃。"
-        flagged = find_unsupported_identifiers(generated, _REFERENCE)
+        flagged = find_unsupported_identifiers(generated, _REFERENCE, kinds=ALL_KINDS)
         assert [i.raw for i in flagged] == ["RingCRntal"]
 
     def test_short_acronyms_not_flagged(self) -> None:
-        # EDR / C2 / IoC 等の短い一般略語は参照不在でも拾わない (誤検出抑制)
+        # EDR / C2 / IoC 等の短い一般略語は ALL_KINDS でも拾わない (長さ足切り)
+        from src.spotlight.identifier_check import ALL_KINDS
+
         generated = "EDR と IoC の監視、C2 通信の遮断を推奨する。"
-        assert find_unsupported_identifiers(generated, _REFERENCE) == ()
+        assert find_unsupported_identifiers(generated, _REFERENCE, kinds=ALL_KINDS) == ()
 
     def test_defanged_reference_matches_refanged_output(self) -> None:
         # 参照側が defang 表記でも正規化で一致する
@@ -65,8 +75,8 @@ class TestRenderFeedback:
     def test_lists_offending_values(self) -> None:
         flagged = find_unsupported_identifiers("CVE-2026-99999 と EvilCorpX の活動。", _REFERENCE)
         text = render_identifier_feedback(flagged)
-        assert "CVE-2026-99999" in text
-        assert "EvilCorpX" in text
+        assert "CVE-2026-99999" in text  # 厳密文法 kind は列挙される
+        assert "EvilCorpX" not in text  # proper_noun は既定で強制対象外 (2026-09-07)
 
 
 # ---------- 配線 (generate_spotlight が関門を通すこと) ----------

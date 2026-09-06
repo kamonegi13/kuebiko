@@ -27,8 +27,15 @@ from src.tools.identifier_match import Identifier, contains_identifier, extract_
 # rollback flag: 0 で関門を無効化し従来挙動 (検査なし) に戻す。
 GATE_FLAG_ENV = "SPOTLIGHT_IDENTIFIER_GATE"
 
+# 書き直しを強制する kind = **厳密文法のもののみ** (2026-09-07 較正)。
+# proper_noun は SaaS/SMTP/SBOM/YARA/SIEM 等の一般技術語を大量に誤検知する —
+# 教師データ実測で 313 件中 271 件 (87%) を誤棄却、本番でも YARA/SIEM/NATO14 で
+# 誤発火した。proper_noun は観測 (soft watch) に降格し、強制しない。
+STRICT_KINDS: frozenset[str] = frozenset(
+    {"cve", "ip", "domain", "hash", "version", "cvss", "actor_id"}
+)
+
 # proper_noun のみ最小長で足切り (EDR/C2/IoC 等の一般略語の誤検出抑制)。
-# 厳密文法の kind (cve/ip/domain/hash/version/cvss/actor_id) は長さ制限なし。
 _PROPER_NOUN_MIN_LEN = 4
 
 
@@ -37,17 +44,29 @@ def gate_enabled() -> bool:
     return os.environ.get(GATE_FLAG_ENV, "1").strip() not in ("0", "false", "False")
 
 
-def find_unsupported_identifiers(generated: str, reference: str) -> tuple[Identifier, ...]:
-    """生成文の識別子のうち、参照文 (プロンプト) に存在しないものを返す。"""
+def find_unsupported_identifiers(
+    generated: str, reference: str, *, kinds: frozenset[str] = STRICT_KINDS
+) -> tuple[Identifier, ...]:
+    """生成文の識別子のうち、参照文 (プロンプト) に存在しないものを返す。
+
+    ``kinds``: 対象 kind の絞り込み。既定は厳密文法のみ (proper_noun を含めると
+    一般技術語の誤検知が支配的になる — 観測用途でのみ広げること)。
+    """
     if not generated:
         return ()
     out: list[Identifier] = []
     for ident in extract_identifiers(generated):
+        if ident.kind not in kinds:
+            continue
         if ident.kind == "proper_noun" and len(ident.normalized) < _PROPER_NOUN_MIN_LEN:
             continue
         if not contains_identifier(reference, ident):
             out.append(ident)
     return tuple(out)
+
+
+# 観測用 (強制しない): proper_noun を含む全 kind。誤検知率の測定と RLVR 報酬設計の材料。
+ALL_KINDS: frozenset[str] = STRICT_KINDS | {"proper_noun"}
 
 
 def render_identifier_feedback(unsupported: tuple[Identifier, ...]) -> str:

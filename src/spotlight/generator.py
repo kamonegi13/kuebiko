@@ -425,6 +425,8 @@ async def generate_spotlight(
     # 再試行後も残る場合は保存を止めず記録する (週次成果物の可用性を優先。残余の
     # 計数は将来の enforcement 強化 / RLVR 報酬設計の測定を兼ねる)。
     from src.spotlight.identifier_check import (
+        ALL_KINDS,
+        STRICT_KINDS,
         find_unsupported_identifiers,
         gate_enabled,
         render_identifier_feedback,
@@ -432,7 +434,20 @@ async def generate_spotlight(
 
     if gate_enabled():
         generated_text = f"{output.headline}\n{output.outlook}"
-        unsupported = find_unsupported_identifiers(generated_text, prompt)
+        # 強制は厳密文法 kind のみ (proper_noun は誤検知が支配的 — 2026-09-07 較正)。
+        # proper_noun の不支持は観測ログのみ (誤検知率の測定と将来の RLVR 報酬材料)。
+        soft = tuple(
+            i
+            for i in find_unsupported_identifiers(generated_text, prompt, kinds=ALL_KINDS)
+            if i.kind == "proper_noun"
+        )
+        if soft:
+            _log.info(
+                "spotlight_identifier_softwatch",
+                pir_id=pir.id,
+                values=[i.raw for i in soft][:10],
+            )
+        unsupported = find_unsupported_identifiers(generated_text, prompt, kinds=STRICT_KINDS)
         if unsupported:
             _log.warning(
                 "spotlight_identifier_retry",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""多タスク SFT の学習データを組み立てる (事象ニュース + article_summary + triage)。
+"""多タスク SFT の学習データを組み立てる (S 族 / N 族の両系譜に対応)。
 
 単一タスクで学習した v1 は、**学習時に見ていないスキーマ**で縮退した (同一 ID の重複
 56.8% / 空欄に文字列 "null")。よって複数課題を混ぜ、どの課題かはプロンプトに教えさせる。
@@ -8,12 +8,29 @@
 - **切り詰めない。上限を超える標本は除外する**。mlx-lm の「上限ちょうどへの切り詰め」が
   学習中の NaN を起こした実績がある (2026-09-03)。
 - **文字数をトークン数の代理にしない**。実トークン数をチャットテンプレート込みで数える。
-  文字数で切ったとき、日本語の換算誤差で completion 全切断の標本が残り 0/0 損失になった。
-- **「正しく空にする」例が各課題に含まれていることを確認してから出す**。v1 の "null"
-  欠陥はこの例を一度も見ていないことが原因なので、ここを検査しないと再発する。
+- **「正しく空にする」例が各課題に含まれていることを確認してから出す**。
+
+2026-09-07 拡張 (S1.5/N1.5):
+- 出力は ``{"messages": [...]}`` 形式に統一。**CompletionsDataset と ChatDataset は
+  同一トークン化**であることを実装読みで確認済み (system 無し行は従来と等価)。
+  S 第 2 陣 (pair_judge/event_kind/pir_judge) は本番が system prompt を使うため、
+  学習側も system turn を持たないと serving と書式が食い違う (gemma は system を
+  独立 turn として持つ — user への折り込みではない)。
+- 課題の判別はプロンプト推測をやめ**読み込み元でタグ付け** (誤判別の余地を消す)。
+- ⚠ spotlight は**識別子のオフライン関門を通した後のファイルを渡す**こと
+  (scripts/filter_spotlight_teacher.py — 本スクリプトは mlx venv で動くため src の
+  依存連鎖 (structlog 等) を辿れず、関門を内蔵すると黙って壊れる)。
 
 使用例:
-    data/mlx/venv/bin/python scripts/assemble_sft_dataset.py --out-dir data/mlx/dataset_v2
+    # S1.5 (構造化族): 事象/spotlight を除外
+    data/mlx/venv/bin/python scripts/assemble_sft_dataset.py \\
+        --eventnews /nonexistent --spotlight /nonexistent \\
+        --cap-triage 750 --out-dir data/mlx/dataset_s15
+    # N1.5 (narrative 族): 構造化系を除外、長系列を許容
+    data/mlx/venv/bin/python scripts/assemble_sft_dataset.py \\
+        --summary /nonexistent --triage /nonexistent --pair-judge /nonexistent \\
+        --event-kind /nonexistent --pir-judge /nonexistent \\
+        --max-tokens 17500 --out-dir data/mlx/dataset_n15
 """
 
 from __future__ import annotations
@@ -27,14 +44,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-# v1 の最終構成に合わせる (seq 12288 で学習し、合計 12,000 tok 超は除外した)。
-_MAX_TOKENS = 12000
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# 事象ニュースの 2 書式を見分けるための目印 (プロンプト冒頭の文言)。
-_EVENTNEWS_MARKERS = ("同一事象", "1 つの事象を報じている 1 件の記事")
+# 事象ニュースの旧ファイル (data/mlx/dataset) は prompt/completion のみでタグが無い。
+_TEACHER = Path("data/mlx/teacher")
 
 
-def _load_pairs(path: Path) -> list[dict[str, str]]:
+def _load_pairs(path: Path, task: str) -> list[dict[str, str]]:
+    """1 ファイル = 1 課題としてタグ付きで読む。skip マーカー行は捨てる。"""
     if not path.exists():
         return []
     out = []
@@ -42,27 +59,18 @@ def _load_pairs(path: Path) -> list[dict[str, str]]:
         if not line.strip():
             continue
         d = json.loads(line)
+        if d.get("skipped"):
+            continue
         if d.get("prompt") and d.get("completion"):
-            out.append({"prompt": d["prompt"], "completion": d["completion"]})
+            row = {"prompt": d["prompt"], "completion": d["completion"], "_task": task}
+            if d.get("system"):
+                row["system"] = d["system"]
+            out.append(row)
     return out
 
 
-def _task_of(pair: dict[str, str]) -> str:
-    prompt = pair["prompt"]
-    if any(m in prompt for m in _EVENTNEWS_MARKERS):
-        return "eventnews"
-    if "重要度判定" in prompt:
-        return "triage"
-    return "article_summary"
-
-
 def _select_capped(pairs: list[dict[str, str]], cap: int) -> list[dict[str, str]]:
-    """課題の上限まで絞る。**クラス比は保ち、feed の偏りだけ均す**。
-
-    クラス比を均等化すると base rate が変わり判定の較正がずれる (triage は実分布を
-    反映すべき課題)。一方 feed の偏りは特定媒体の文体への過学習を招くので、クラス内で
-    feed をラウンドロビンして薄める。
-    """
+    """課題の上限まで絞る。**クラス比は保ち、feed の偏りだけ均す** (triage 用)。"""
     if len(pairs) <= cap:
         return pairs
 
@@ -105,38 +113,55 @@ def _empty_field_count(completion: str) -> int:
     return sum(1 for v in payload.values() if v is None or v == [] or v == "")
 
 
+def _messages_of(pair: dict[str, str]) -> list[dict[str, str]]:
+    msgs = []
+    if pair.get("system"):
+        msgs.append({"role": "system", "content": pair["system"]})
+    msgs.append({"role": "user", "content": pair["prompt"]})
+    msgs.append({"role": "assistant", "content": pair["completion"]})
+    return msgs
+
+
 def _token_len(tokenizer: Any, pair: dict[str, str]) -> int:
     """チャットテンプレート込みの実トークン数 (学習時と同じ数え方)。"""
+    msgs = _messages_of(pair)
     try:
         rendered = tokenizer.apply_chat_template(
-            [{"role": "user", "content": pair["prompt"]}],
-            tokenize=False,
-            add_generation_prompt=True,
+            msgs[:-1], tokenize=False, add_generation_prompt=True
         )
     except Exception:  # noqa: BLE001 — テンプレート未提供の tokenizer は素の連結で数える
-        rendered = pair["prompt"]
+        rendered = pair.get("system", "") + pair["prompt"]
     return len(tokenizer.encode(rendered)) + len(tokenizer.encode(pair["completion"]))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--eventnews", type=Path, default=Path("data/mlx/dataset"))
-    ap.add_argument("--summary", type=Path, default=Path("data/mlx/teacher/article_summary.jsonl"))
-    ap.add_argument("--triage", type=Path, default=Path("data/mlx/teacher/triage.jsonl"))
+    ap.add_argument("--summary", type=Path, default=_TEACHER / "article_summary.jsonl")
+    ap.add_argument("--triage", type=Path, default=_TEACHER / "triage.jsonl")
+    ap.add_argument("--pair-judge", type=Path, default=_TEACHER / "pair_judge.jsonl")
+    ap.add_argument("--event-kind", type=Path, default=_TEACHER / "event_kind.jsonl")
+    ap.add_argument("--pir-judge", type=Path, default=_TEACHER / "pir_judge.jsonl")
+    ap.add_argument("--spotlight", type=Path, default=_TEACHER / "spotlight.jsonl")
     ap.add_argument("--out-dir", type=Path, default=Path("data/mlx/dataset_v2"))
     ap.add_argument("--model", default="mlx-community/gemma-4-26b-a4b-it-8bit")
     ap.add_argument("--valid-size", type=int, default=60)
     ap.add_argument("--seed", type=int, default=13)
+    ap.add_argument("--max-tokens", type=int, default=12000, help="超過標本は除外 (切り詰めない)")
     ap.add_argument("--cap-triage", type=int, default=0, help="triage の上限 (0 で無制限)")
     ap.add_argument("--cap-summary", type=int, default=0, help="article_summary の上限")
     ap.add_argument("--cap-eventnews", type=int, default=0, help="事象ニュースの上限")
     args = ap.parse_args()
 
     pairs: list[dict[str, str]] = []
-    pairs += _load_pairs(args.eventnews / "train.jsonl")
-    pairs += _load_pairs(args.eventnews / "valid.jsonl")
-    pairs += _load_pairs(args.summary)
-    pairs += _load_pairs(args.triage)
+    pairs += _load_pairs(args.eventnews / "train.jsonl", "eventnews")
+    pairs += _load_pairs(args.eventnews / "valid.jsonl", "eventnews")
+    pairs += _load_pairs(args.summary, "article_summary")
+    pairs += _load_pairs(args.triage, "triage")
+    pairs += _load_pairs(args.pair_judge, "pair_judge")
+    pairs += _load_pairs(args.event_kind, "event_kind")
+    pairs += _load_pairs(args.pir_judge, "pir_judge")
+    pairs += _load_pairs(args.spotlight, "spotlight")
     if not pairs:
         print("入力が空", file=sys.stderr)
         return 1
@@ -148,16 +173,14 @@ def main() -> int:
     kept: list[dict[str, str]] = []
     dropped: Counter[str] = Counter()
     for pair in pairs:
-        task = _task_of(pair)
+        task = pair["_task"]
         n = _token_len(tokenizer, pair)
-        if n > _MAX_TOKENS:
+        if n > args.max_tokens:
             dropped[task] += 1
             continue
         kept.append(pair)
 
-    # 課題ごとの上限。生成しすぎた分は捨てず、**混合の段階で件数を決める**。
-    # v2 (32:35:33) では事象ニュースの慎重さ (caveats/unknowns) が構造化タスクに
-    # 押し流され base より有意に悪化した。比率は結果を左右する一級のつまみ。
+    # 課題ごとの上限。比率は結果を左右する一級のつまみ (v2 の干渉実測より)。
     caps = {
         "triage": args.cap_triage,
         "article_summary": args.cap_summary,
@@ -166,18 +189,18 @@ def main() -> int:
     for task, cap in caps.items():
         if not cap:
             continue
-        group = [p for p in kept if _task_of(p) == task]
+        group = [p for p in kept if p["_task"] == task]
         if len(group) > cap:
             selected = _select_capped(group, cap)
             print(f"{task} を {len(group)} → {len(selected)} 件に選別")
-            kept = [p for p in kept if _task_of(p) != task] + selected
+            kept = [p for p in kept if p["_task"] != task] + selected
 
-    by_task = Counter(_task_of(p) for p in kept)
+    by_task = Counter(p["_task"] for p in kept)
     print("=== 課題ごとの構成 ===")
     total = len(kept)
     for task, n in by_task.most_common():
         empties = sum(
-            1 for p in kept if _task_of(p) == task and _empty_field_count(p["completion"])
+            1 for p in kept if p["_task"] == task and _empty_field_count(p["completion"])
         )
         print(
             f"  {task:16s} {n:5d} 件 ({100 * n / total:4.1f}%) "
@@ -185,13 +208,15 @@ def main() -> int:
         )
 
     # 「正しく空にする」例が無い課題があると v1 の "null" 欠陥が再発する。
-    # triage は schema が {importance, reason} で任意欄が無く、常に両方埋まるのが正しい。
-    # ここで警告を出すと恒常的な誤検知になり、本物の警告を見逃す訓練になるので除外する。
+    # 任意欄を持たない schema の課題は常に全欄が埋まるのが正しいため対象外:
+    # triage {importance, reason} / pair_judge {same_event, reason} /
+    # event_kind {kind} / pir_judge (verdict 系) / spotlight (headline/outlook 必須)。
+    _no_optional = {"triage", "pair_judge", "event_kind", "pir_judge", "spotlight"}
     missing = [
         t
         for t in by_task
-        if t != "triage"
-        and not any(_task_of(p) == t and _empty_field_count(p["completion"]) for p in kept)
+        if t not in _no_optional
+        and not any(p["_task"] == t and _empty_field_count(p["completion"]) for p in kept)
     ]
     if missing:
         print(
@@ -205,7 +230,11 @@ def main() -> int:
     for name, rows in (("train", train), ("valid", valid)):
         path = args.out_dir / f"{name}.jsonl"
         path.write_text(
-            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8"
+            "".join(
+                json.dumps({"messages": _messages_of(r)}, ensure_ascii=False) + "\n"
+                for r in rows
+            ),
+            encoding="utf-8",
         )
         print(f"\n{path}: {len(rows)} 件")
     return 0
