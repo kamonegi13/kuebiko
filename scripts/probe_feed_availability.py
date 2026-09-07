@@ -106,10 +106,7 @@ def _detect_cloudflare(response: httpx.Response) -> tuple[bool, bool]:
         - blocking: 403/503 + challenge page らしき body かどうか
     """
     headers = response.headers
-    detected = (
-        "cf-ray" in headers
-        or headers.get("server", "").lower() == "cloudflare"
-    )
+    detected = "cf-ray" in headers or headers.get("server", "").lower() == "cloudflare"
     body_sample = response.text[:2000].lower() if response.content else ""
     is_challenge = any(
         marker in body_sample
@@ -312,7 +309,10 @@ def render_markdown(results: list[ProbeResult]) -> str:
 
 
 async def main() -> None:
-    headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,application/xml,*/*;q=0.9"}
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml,*/*;q=0.9",
+    }
     async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers) as client:
         tasks = [probe_site(client, name, site) for name, site in WATCHERS]
         results = await asyncio.gather(*tasks)

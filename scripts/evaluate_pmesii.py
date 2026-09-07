@@ -40,7 +40,9 @@ PMESII_COLS = {
 
 
 def f1_for_axis(
-    expected: list[set[str]], actual: list[set[str]], axis: str,
+    expected: list[set[str]],
+    actual: list[set[str]],
+    axis: str,
 ) -> tuple[float, float, float, int, int]:
     """1 軸の precision / recall / F1。 戻り値: (P, R, F1, support_expected, support_actual)。"""
     tp = sum(1 for e, a in zip(expected, actual, strict=True) if axis in e and axis in a)
@@ -117,9 +119,7 @@ def main() -> int:
 
     micro_p = micro_tp / (micro_tp + micro_fp) if (micro_tp + micro_fp) else 0.0
     micro_r = micro_tp / (micro_tp + micro_fn) if (micro_tp + micro_fn) else 0.0
-    micro_f1 = (
-        (2 * micro_p * micro_r) / (micro_p + micro_r) if (micro_p + micro_r) else 0.0
-    )
+    micro_f1 = (2 * micro_p * micro_r) / (micro_p + micro_r) if (micro_p + micro_r) else 0.0
     print("-" * 50)
     print(f"{'micro-avg':<10} {micro_p:6.2f} {micro_r:6.2f} {micro_f1:6.2f}")
 
@@ -128,12 +128,14 @@ def main() -> int:
     mismatches = []
     for it, exp, act in zip(labeled, expected_list, actual_list, strict=True):
         if exp != act:
-            mismatches.append({
-                "article_id": it["article_id"],
-                "title": it["title"][:80],
-                "expected": sorted(exp),
-                "actual": sorted(act),
-            })
+            mismatches.append(
+                {
+                    "article_id": it["article_id"],
+                    "title": it["title"][:80],
+                    "expected": sorted(exp),
+                    "actual": sorted(act),
+                }
+            )
     for m in mismatches[:5]:
         print(f"  - {m['title']}")
         print(f"      expected: {m['expected']}")

@@ -228,6 +228,19 @@ class TestGetPreviousSpotlight:
         assert got is not None
         assert got.headline == "前期"
 
+    def test_caveats_unknowns_roundtrip(self, tmp_path: Path) -> None:
+        """schema 整合 (2026-09-07): 不確実性欄が upsert → 読み出しを往復する。"""
+        repo = RunHistoryRepository(db_path=tmp_path / "sp3.db")
+        now = datetime.now(UTC).replace(microsecond=0)
+        rec = self._rec("pir_cv", now, "当期").model_copy(
+            update={"caveats": ["単一ソースの主張"], "unknowns": ["侵入経路が未特定"]}
+        )
+        repo.upsert_pir_spotlight(rec)
+        got = repo.get_latest_spotlight(pir_id="pir_cv", period_type="weekly")
+        assert got is not None
+        assert got.caveats == ["単一ソースの主張"]
+        assert got.unknowns == ["侵入経路が未特定"]
+
     def test_returns_none_when_nothing_earlier(self, tmp_path: Path) -> None:
         repo = RunHistoryRepository(db_path=tmp_path / "sp2.db")
         now = datetime.now(UTC).replace(microsecond=0)

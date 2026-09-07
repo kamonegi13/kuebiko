@@ -183,9 +183,7 @@ async def run(limit: int | None, *, dry_run: bool, sleep_seconds: float, cron_gu
     ):
         await _wait_for_clear_window(cron_guard=cron_guard)
         pub = _published_date(published_at)
-        prompt = build_axes_prompt(
-            title, category, body, summary, pub.isoformat() if pub else None
-        )
+        prompt = build_axes_prompt(title, category, body, summary, pub.isoformat() if pub else None)
         if prompt is None:
             stats["no_text"] += 1
             if not dry_run:

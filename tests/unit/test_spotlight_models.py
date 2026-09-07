@@ -59,3 +59,24 @@ def test_spotlight_with_key_events() -> None:
     assert len(r.key_events) == 2
     assert r.key_events[0].article_id == "a1"
     assert r.llm_model == "gemma4:26b"
+
+
+def test_spotlight_caveats_unknowns_default_empty() -> None:
+    """schema 整合 (2026-09-07): 旧データ互換 — 未指定は空 list。"""
+    from datetime import UTC, datetime
+
+    from src.spotlight.models import SpotlightRecord
+
+    rec = SpotlightRecord(
+        pir_id="p",
+        pir_title="t",
+        period_type="weekly",
+        period_start=datetime.now(UTC),
+        period_end=datetime.now(UTC),
+        headline="h",
+        outlook="o",
+    )
+    assert rec.caveats == []
+    assert rec.unknowns == []
+    rec2 = rec.model_copy(update={"caveats": ["単一ソース"], "unknowns": ["侵入経路"]})
+    assert rec2.caveats == ["単一ソース"]

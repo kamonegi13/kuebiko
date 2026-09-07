@@ -19,6 +19,7 @@ Usage (production = PG、コンテナ内で実行):
     docker exec kuebiko /app/.venv/bin/python3 \\
         scripts/backfill_victim_city.py --limit 150 --apply    # 実行
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -111,7 +111,9 @@ def main() -> int:
     print(f"  Page type distribution: {page_types}")
     total_pages = len(data) // page_size
     valid_pages = sum(page_types.values())
-    print(f"  Valid pages: {valid_pages} / {total_pages} ({valid_pages * 100 // max(total_pages, 1)}%)")
+    print(
+        f"  Valid pages: {valid_pages} / {total_pages} ({valid_pages * 100 // max(total_pages, 1)}%)"
+    )
 
     print("\n=== URL extraction ===")
     url_counts = scan_urls(data)

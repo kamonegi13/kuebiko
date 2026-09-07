@@ -51,6 +51,12 @@ class SpotlightRecord(BaseModel):
     headline: str  # 1-2 文の状況総括 (60-120 字目安)
     outlook: str  # 短い展望 / 来週見るべき指標 (200-400 字目安)
     key_events: list[KeyEvent] = Field(default_factory=list)
+    # schema 整合 (2026-09-07): 「不確実性を明示欄に書く」行動を event/synthesis と揃える。
+    # 正直さドクトリン (過確信のみ防ぐ) の spotlight への延長でもあり、N 族 SFT の
+    # 混合干渉 (SYNTHESIS §19: 欄を持たない spotlight が event の caveats を崩壊させた)
+    # の根治でもある。旧行は NULL → 空 list で読む (後方互換)。
+    caveats: list[str] = Field(default_factory=list)  # 留保・単一ソース注意等 (0-4 件)
+    unknowns: list[str] = Field(default_factory=list)  # 現時点で分からないこと (0-4 件)
     article_count: int = 0  # 該当 PIR の match 総件数 (period 内)
     llm_model: str = ""  # 生成に使った LLM model 名 (26B vs 31B 比較用)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

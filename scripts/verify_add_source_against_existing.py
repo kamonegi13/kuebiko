@@ -49,8 +49,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=15, help="サンプル feed 数")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--include-third-party", action="store_true",
-                        help="feedburner 等の hosted feed も対象に含める")
+    parser.add_argument(
+        "--include-third-party",
+        action="store_true",
+        help="feedburner 等の hosted feed も対象に含める",
+    )
     args = parser.parse_args()
 
     with FEEDS_YAML.open(encoding="utf-8") as f:
@@ -66,9 +69,9 @@ def main() -> int:
     random.seed(args.seed)
     sample = random.sample(feeds, min(args.n, len(feeds)))
 
-    print(f"\n{'='*78}")
+    print(f"\n{'=' * 78}")
     print(f"sampling {len(sample)} feeds for self-consistency test")
-    print(f"{'='*78}\n")
+    print(f"{'=' * 78}\n")
 
     stats = {"EXACT": 0, "EQUIV": 0, "ALT_RSS": 0, "SITEMAP_ONLY": 0, "MISSING": 0, "ERROR": 0}
     failures: list[dict] = []
@@ -83,7 +86,9 @@ def main() -> int:
         t_start = time.time()
         try:
             r = httpx.post(
-                API_URL, json={"url": site_url}, timeout=TIMEOUT,
+                API_URL,
+                json={"url": site_url},
+                timeout=TIMEOUT,
             )
             r.raise_for_status()
             data = r.json()
@@ -91,7 +96,9 @@ def main() -> int:
             elapsed = time.time() - t_start
             stats["ERROR"] += 1
             print(f"  ✗ ERROR    {name:42s}  ({elapsed:.1f}s) {e}")
-            failures.append({"name": name, "feed_url": feed_url, "site_url": site_url, "error": str(e)})
+            failures.append(
+                {"name": name, "feed_url": feed_url, "site_url": site_url, "error": str(e)}
+            )
             continue
         elapsed = time.time() - t_start
 
@@ -116,7 +123,9 @@ def main() -> int:
             stats["MISSING"] += 1
             verdict = "✗ MISSING"
 
-        print(f"  {verdict}  {name:42s}  ({elapsed:.1f}s)  rss={len(rss_candidates)} sm={len(sm_candidates)}")
+        print(
+            f"  {verdict}  {name:42s}  ({elapsed:.1f}s)  rss={len(rss_candidates)} sm={len(sm_candidates)}"
+        )
         if verdict in ("→ ALT_RSS", "✗ MISSING", "S SITEMAP"):
             print(f"      expected: {feed_url}")
             if rss_candidates:
@@ -125,24 +134,26 @@ def main() -> int:
             elif sm_candidates:
                 for c in sm_candidates[:1]:
                     print(f"      found sm:  {c['url']}  ({c.get('url_count')} URLs)")
-            failures.append({
-                "name": name,
-                "expected": feed_url,
-                "found_rss": rss_urls,
-                "found_sitemap": [c["url"] for c in sm_candidates],
-                "verdict": verdict.strip(),
-            })
+            failures.append(
+                {
+                    "name": name,
+                    "expected": feed_url,
+                    "found_rss": rss_urls,
+                    "found_sitemap": [c["url"] for c in sm_candidates],
+                    "verdict": verdict.strip(),
+                }
+            )
 
-    print(f"\n{'='*78}")
+    print(f"\n{'=' * 78}")
     print("SUMMARY")
-    print(f"{'='*78}")
+    print(f"{'=' * 78}")
     total = sum(stats.values())
     for k, v in stats.items():
         if total > 0:
-            print(f"  {k:13s} {v:3d}  ({v/total*100:.0f}%)")
+            print(f"  {k:13s} {v:3d}  ({v / total * 100:.0f}%)")
 
     success_rate = (stats["EXACT"] + stats["EQUIV"]) / total if total else 0
-    print(f"\n  exact + equiv (期待結果): {success_rate*100:.0f}%")
+    print(f"\n  exact + equiv (期待結果): {success_rate * 100:.0f}%")
     if stats["MISSING"]:
         print(f"  ⚠ MISSING ({stats['MISSING']} 件): 既登録 site なのに auto_detect 候補なし")
 

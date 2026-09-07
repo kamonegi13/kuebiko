@@ -73,14 +73,16 @@ def main() -> int:
     out: list[dict] = []
     for row in rows:
         current = [name for name, col in PMESII_COLS if row[col] == 1]
-        out.append({
-            "article_id": row["article_id"],
-            "title": row["title"] or "",
-            "summary": (row["summary"] or "")[:300],
-            "body_preview": (row["body"] or "")[:800],
-            "current_axes": sorted(current),
-            "expected_axes": None,
-        })
+        out.append(
+            {
+                "article_id": row["article_id"],
+                "title": row["title"] or "",
+                "summary": (row["summary"] or "")[:300],
+                "body_preview": (row["body"] or "")[:800],
+                "current_axes": sorted(current),
+                "expected_axes": None,
+            }
+        )
 
     with args.out.open("w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
@@ -88,7 +90,9 @@ def main() -> int:
     print(f"sampled {len(out)} articles → {args.out}", file=sys.stderr)
     print("次の手順:", file=sys.stderr)
     print(f"  1. {args.out} を editor で開く", file=sys.stderr)
-    print('  2. 各 article の "expected_axes" に 8 軸のうち該当を JSON list で記入', file=sys.stderr)
+    print(
+        '  2. 各 article の "expected_axes" に 8 軸のうち該当を JSON list で記入', file=sys.stderr
+    )
     print('     (例: ["I-cyber", "P"])', file=sys.stderr)
     print("  3. scripts/evaluate_pmesii.py で F1 score を計算", file=sys.stderr)
     return 0

@@ -81,9 +81,7 @@ class TestWriteSeamGate:
     @staticmethod
     def _seed_article(store: SituationStore, article_id: str, body: str) -> None:
         repo = store._repo  # noqa: SLF001 — テストからの意図的な内部参照
-        rid = repo.start_run(
-            RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False)
-        )
+        rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))
         repo.add_article(
             ArticleRecord(
                 run_id=rid,

@@ -48,9 +48,9 @@ def main() -> int:
     random.seed(args.seed)
     sample = random.sample(feeds, min(args.n, len(feeds)))
 
-    print(f"\n{'='*78}")
+    print(f"\n{'=' * 78}")
     print(f"V2 /discover endpoint で {len(sample)} feeds を verify")
-    print(f"{'='*78}\n")
+    print(f"{'=' * 78}\n")
 
     stats = {"EXACT": 0, "EQUIV": 0, "ALT_RSS": 0, "SITEMAP_ONLY": 0, "MISSING": 0, "ERROR": 0}
 
@@ -63,7 +63,9 @@ def main() -> int:
 
         t_start = time.time()
         try:
-            r = httpx.post(API_URL, json={"url": site_url, "max_preview_per_candidate": 3}, timeout=TIMEOUT)
+            r = httpx.post(
+                API_URL, json={"url": site_url, "max_preview_per_candidate": 3}, timeout=TIMEOUT
+            )
             r.raise_for_status()
             data = r.json()
         except Exception as e:
@@ -96,19 +98,21 @@ def main() -> int:
             stats["MISSING"] += 1
             verdict = "✗ MISSING"
 
-        print(f"  {verdict}  {name:42s}  ({elapsed:.1f}s)  rss={len(rss_candidates)} sm={len(sm_candidates)}")
+        print(
+            f"  {verdict}  {name:42s}  ({elapsed:.1f}s)  rss={len(rss_candidates)} sm={len(sm_candidates)}"
+        )
 
-    print(f"\n{'='*78}")
+    print(f"\n{'=' * 78}")
     print("SUMMARY (V2 /discover)")
-    print(f"{'='*78}")
+    print(f"{'=' * 78}")
     total = sum(stats.values())
     for k, v in stats.items():
         if total > 0:
-            print(f"  {k:13s} {v:3d}  ({v/total*100:.0f}%)")
+            print(f"  {k:13s} {v:3d}  ({v / total * 100:.0f}%)")
     success = (stats["EXACT"] + stats["EQUIV"] + stats["ALT_RSS"]) / total if total else 0
-    any_source = (success + stats["SITEMAP_ONLY"]/total) if total else 0
-    print(f"\n  ANY RSS (実用): {success*100:.0f}%")
-    print(f"  RSS or sitemap: {any_source*100:.0f}%")
+    any_source = (success + stats["SITEMAP_ONLY"] / total) if total else 0
+    print(f"\n  ANY RSS (実用): {success * 100:.0f}%")
+    print(f"  RSS or sitemap: {any_source * 100:.0f}%")
     return 0
 
 

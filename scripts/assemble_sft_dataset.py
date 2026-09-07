@@ -199,9 +199,7 @@ def main() -> int:
     print("=== 課題ごとの構成 ===")
     total = len(kept)
     for task, n in by_task.most_common():
-        empties = sum(
-            1 for p in kept if p["_task"] == task and _empty_field_count(p["completion"])
-        )
+        empties = sum(1 for p in kept if p["_task"] == task and _empty_field_count(p["completion"]))
         print(
             f"  {task:16s} {n:5d} 件 ({100 * n / total:4.1f}%) "
             f"/ 上限超過で除外 {dropped[task]:3d} / **空欄を含む例 {empties:4d} 件**"
@@ -231,8 +229,7 @@ def main() -> int:
         path = args.out_dir / f"{name}.jsonl"
         path.write_text(
             "".join(
-                json.dumps({"messages": _messages_of(r)}, ensure_ascii=False) + "\n"
-                for r in rows
+                json.dumps({"messages": _messages_of(r)}, ensure_ascii=False) + "\n" for r in rows
             ),
             encoding="utf-8",
         )

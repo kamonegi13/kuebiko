@@ -298,6 +298,8 @@ CREATE TABLE IF NOT EXISTS pir_spotlight (
     article_count   INTEGER NOT NULL,
     llm_model       TEXT    NOT NULL,
     generated_at    TEXT    NOT NULL,
+    caveats         TEXT,              -- JSON list[str] (schema 整合 2026-09-07)
+    unknowns        TEXT,              -- JSON list[str]
     UNIQUE(pir_id, period_type, period_start)
 );
 

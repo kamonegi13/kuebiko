@@ -69,6 +69,9 @@ class SpotlightSummary(BaseModel):
     article_count: int
     llm_model: str
     generated_at: str
+    # schema 整合 (2026-09-07): 不確実性の明示欄。旧行は空 list。
+    caveats: list[str] = []
+    unknowns: list[str] = []
 
 
 def _enrich_event(
@@ -105,6 +108,8 @@ def _record_to_summary(
         article_count=rec.article_count,
         llm_model=rec.llm_model,
         generated_at=rec.generated_at.isoformat(),
+        caveats=list(rec.caveats),
+        unknowns=list(rec.unknowns),
     )
 
 

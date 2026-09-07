@@ -85,7 +85,9 @@ async def _run(apply: bool, limit: int | None) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む")
+    ap.add_argument(
+        "--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む"
+    )
     ap.add_argument("--limit", type=int, default=None, help="先頭 N 件のみ翻訳 (動作確認用)")
     args = ap.parse_args()
     asyncio.run(_run(apply=args.apply, limit=args.limit))

@@ -36,8 +36,11 @@ async def dump(n: int) -> None:
     repo = RunHistoryRepository()
     registry = load_actor_aliases()
     llms = {
-        name: (build_llm_for(Step.ARTICLE_SUMMARY, cfg) if ref is None
-               else build_llm_for_ref(ref, Step.ARTICLE_SUMMARY, cfg))
+        name: (
+            build_llm_for(Step.ARTICLE_SUMMARY, cfg)
+            if ref is None
+            else build_llm_for_ref(ref, Step.ARTICLE_SUMMARY, cfg)
+        )
         for name, ref in _MODELS.items()
     }
     cyber_ph = ",".join("?" for _ in _CYBER)
@@ -65,8 +68,12 @@ async def dump(n: int) -> None:
         for name, llm in llms.items():
             try:
                 j = await classify_judgment(
-                    llm, title=title, category=category, body=body,
-                    published=None, candidates=cands,
+                    llm,
+                    title=title,
+                    category=category,
+                    body=body,
+                    published=None,
+                    candidates=cands,
                 )
             except Exception as e:  # noqa: BLE001
                 print(f"    {name:8s} ERR {str(e)[:40]}")

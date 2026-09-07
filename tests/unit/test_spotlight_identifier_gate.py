@@ -111,6 +111,8 @@ class _FakeLLM:
             headline="CVE-2026-12345 の悪用",
             key_events=[{"index": i + 1} for i in range(5)],
             outlook=outlook,
+            caveats=["単一ソースの主張である"],
+            unknowns=["被害範囲は未確認"],
         )
 
 
@@ -159,6 +161,9 @@ async def test_generate_spotlight_retries_on_unsupported_identifier(
     assert len(llm.prompts) == 2
     assert "CVE-2026-99999" in llm.prompts[1]
     assert "CVE-2026-99999" not in record.outlook
+    # schema 整合 (2026-09-07): 不確実性欄が record へ写像される
+    assert record.caveats == ["単一ソースの主張である"]
+    assert record.unknowns == ["被害範囲は未確認"]
 
 
 @pytest.mark.asyncio

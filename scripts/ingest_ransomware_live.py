@@ -12,6 +12,7 @@ Usage (production = PG、コンテナ内で実行):
     docker exec kuebiko /app/.venv/bin/python3 \
         scripts/ingest_ransomware_live.py --apply --backfill-jp
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,6 +43,4 @@ async def _main(apply: bool, backfill_jp: bool) -> int:
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    sys.exit(
-        asyncio.run(_main(apply="--apply" in args, backfill_jp="--backfill-jp" in args))
-    )
+    sys.exit(asyncio.run(_main(apply="--apply" in args, backfill_jp="--backfill-jp" in args)))

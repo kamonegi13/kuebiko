@@ -354,6 +354,9 @@ ALTER TABLE status_synthesis ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
 -- S2 (analytic tradecraft): 主見立て + 対立仮説 + 前提 + 覆る指標 (ICD 203)。
 ALTER TABLE status_synthesis ADD COLUMN IF NOT EXISTS tradecraft JSONB;
 ALTER TABLE pir_spotlight    ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ;
+-- schema 整合 (2026-09-07): 不確実性の明示欄 (JSON list[str])。旧行 NULL = 空。
+ALTER TABLE pir_spotlight    ADD COLUMN IF NOT EXISTS caveats  TEXT;
+ALTER TABLE pir_spotlight    ADD COLUMN IF NOT EXISTS unknowns TEXT;
 -- flow Phase 3: 投稿先決定の監査情報 (記事単位の「なぜこのチャンネルか」)。
 -- article_id (PK) で引くだけで集計用途は無いため index は不要。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS routing_rule_id TEXT;

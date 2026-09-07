@@ -194,8 +194,11 @@ async def main() -> None:
                 "control_false_subject": round(fp / len(ctrl), 3) if ctrl else None,
             }
             results[f"{key}_detail"] = details
-            print(f"[{key}] recall={results[key]['positive_recall']}"
-                  f" ctrl_fp={results[key]['control_false_subject']}", flush=True)
+            print(
+                f"[{key}] recall={results[key]['positive_recall']}"
+                f" ctrl_fp={results[key]['control_false_subject']}",
+                flush=True,
+            )
 
     print(json.dumps(results, ensure_ascii=False, indent=1))
 

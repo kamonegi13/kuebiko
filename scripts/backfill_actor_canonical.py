@@ -57,18 +57,26 @@ def _run(apply: bool) -> None:
         total_deduped = 0
         for slug, canon in sorted(remaps):
             # 衝突: 同一記事に既に canonical 行がある slug 行は削除 (dedup)
-            deduped = con.execute(
-                "DELETE FROM article_entities WHERE entity_type='actor' AND value=? "
-                "AND EXISTS (SELECT 1 FROM article_entities e2 "
-                "  WHERE e2.article_id=article_entities.article_id "
-                "  AND e2.entity_type='actor' AND e2.value=?)",
-                (slug, canon),
-            ).rowcount if apply else _count_collisions(con, slug, canon)
+            deduped = (
+                con.execute(
+                    "DELETE FROM article_entities WHERE entity_type='actor' AND value=? "
+                    "AND EXISTS (SELECT 1 FROM article_entities e2 "
+                    "  WHERE e2.article_id=article_entities.article_id "
+                    "  AND e2.entity_type='actor' AND e2.value=?)",
+                    (slug, canon),
+                ).rowcount
+                if apply
+                else _count_collisions(con, slug, canon)
+            )
             # 残りは value を canonical へ UPDATE
-            updated = con.execute(
-                "UPDATE article_entities SET value=? WHERE entity_type='actor' AND value=?",
-                (canon, slug),
-            ).rowcount if apply else _count_plain(con, slug, canon)
+            updated = (
+                con.execute(
+                    "UPDATE article_entities SET value=? WHERE entity_type='actor' AND value=?",
+                    (canon, slug),
+                ).rowcount
+                if apply
+                else _count_plain(con, slug, canon)
+            )
             total_updated += int(updated or 0)
             total_deduped += int(deduped or 0)
             print(f"  {slug:22} -> {canon:20}  update={updated}  dedup_delete={deduped}")

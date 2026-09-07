@@ -10,6 +10,7 @@
 Usage:
     docker exec kuebiko /app/.venv/bin/python3 /app/scripts/cleanup_article_entities.py
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -22,9 +23,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # 削除すべき tool entries (実データ検証で false positive 確認済)
 INVALID_TOOLS = (
     # 軍事兵器 / 防空 / ドローン
-    "BARAK MX", "Blue Spear", "Harop", "Harpy", "Mini-Harpy", "Neros Archer", "UAV",
+    "BARAK MX",
+    "Blue Spear",
+    "Harop",
+    "Harpy",
+    "Mini-Harpy",
+    "Neros Archer",
+    "UAV",
     # AI モデル / 学習関連
-    "LoRA", "LORA", "Mythos AI", "AI-generated nudes",
+    "LoRA",
+    "LORA",
+    "Mythos AI",
+    "AI-generated nudes",
     # installer / DLL ファイル名 (IoC として別途扱う)
     "InitInstall.dll",
     # その他 generic 名詞 / 中国 IT
@@ -43,17 +53,45 @@ def main() -> int:
 
     # ① benign domain 削除 (163.com 105 件等)
     BENIGN_DOMAINS = (
-        "163.com", "126.com", "qq.com", "yeah.net", "sina.com", "sina.com.cn",
-        "gmail.com", "outlook.com", "hotmail.com", "yahoo.com", "yahoo.co.jp",
-        "icloud.com", "protonmail.com",
-        "weibo.com", "wechat.com", "baidu.com",
-        "siemens.com", "abb.com", "hitachienergy.com", "hitachi.com",
-        "schneider-electric.com", "cisco.com", "microsoft.com",
-        "fortinet.com", "paloaltonetworks.com",
-        "stealthmole.com", "recordedfuture.com", "mandiant.com",
-        "cert.pl", "cert.org", "first.org",
-        "cisa.gov", "us-cert.cisa.gov", "www.cisa.gov",
-        "12339.gov.cn", "ASP.NET", "System.Net", "asp.net", "system.net",
+        "163.com",
+        "126.com",
+        "qq.com",
+        "yeah.net",
+        "sina.com",
+        "sina.com.cn",
+        "gmail.com",
+        "outlook.com",
+        "hotmail.com",
+        "yahoo.com",
+        "yahoo.co.jp",
+        "icloud.com",
+        "protonmail.com",
+        "weibo.com",
+        "wechat.com",
+        "baidu.com",
+        "siemens.com",
+        "abb.com",
+        "hitachienergy.com",
+        "hitachi.com",
+        "schneider-electric.com",
+        "cisco.com",
+        "microsoft.com",
+        "fortinet.com",
+        "paloaltonetworks.com",
+        "stealthmole.com",
+        "recordedfuture.com",
+        "mandiant.com",
+        "cert.pl",
+        "cert.org",
+        "first.org",
+        "cisa.gov",
+        "us-cert.cisa.gov",
+        "www.cisa.gov",
+        "12339.gov.cn",
+        "ASP.NET",
+        "System.Net",
+        "asp.net",
+        "system.net",
         "git-tanstack.com",
     )
     # case-insensitive 削除
@@ -67,8 +105,12 @@ def main() -> int:
 
     # ② benign URL 削除 (vendor advisory / cert / 公式 contact)
     BENIGN_URL_PATTERNS = (
-        "%siemens.com%", "%abb.com/global%", "%hitachienergy.com/contact%",
-        "%cert.pl/cvd%", "%cisa.gov%", "%first.org%",
+        "%siemens.com%",
+        "%abb.com/global%",
+        "%hitachienergy.com/contact%",
+        "%cert.pl/cvd%",
+        "%cisa.gov%",
+        "%first.org%",
     )
     n_url = 0
     for pattern in BENIGN_URL_PATTERNS:
@@ -82,8 +124,7 @@ def main() -> int:
     # ③ tool false positive 削除
     placeholders = ",".join("?" * len(INVALID_TOOLS))
     cur.execute(
-        f"DELETE FROM article_entities WHERE entity_type='tool' "
-        f"AND value IN ({placeholders})",
+        f"DELETE FROM article_entities WHERE entity_type='tool' AND value IN ({placeholders})",
         INVALID_TOOLS,
     )
     deleted["tool (military / AI / installer)"] = cur.rowcount

@@ -80,7 +80,9 @@ async def main() -> None:
     # 6. 結果
     print(f"\n=== 選定結果 ({len(selected)} 件) ===\n")
     for s in selected:
-        print(f"composite={s.composite:.2f}  (pir={s.pir} roi={s.roi} t={s.timeliness} n={s.novelty})")
+        print(
+            f"composite={s.composite:.2f}  (pir={s.pir} roi={s.roi} t={s.timeliness} n={s.novelty})"
+        )
         print(f"  feed:   {s.candidate.feed_title}")
         print(f"  title:  {s.candidate.title}")
         print(f"  rationale: {s.rationale}")
@@ -110,7 +112,7 @@ async def main() -> None:
     for axis, vals in score_dist.items():
         if vals:
             dist = {i: vals.count(i) for i in range(6)}
-            print(f"  {axis:<11}: avg={sum(vals)/len(vals):.2f}  dist={dist}")
+            print(f"  {axis:<11}: avg={sum(vals) / len(vals):.2f}  dist={dist}")
 
     # raw 出力 save
     out_path = Path("scripts/dry_run_output.json")

@@ -12,6 +12,7 @@ Usage:
     docker exec kuebiko /app/.venv/bin/python3 -m scripts.backfill_article_bodies \\
         --max-articles 200 --rate-limit-seconds 1.0
 """
+
 from __future__ import annotations
 
 import argparse

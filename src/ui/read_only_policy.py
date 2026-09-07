@@ -330,9 +330,7 @@ async def _proxy_write(
     body = await request.body()
     # 転送してよいヘッダだけを選ぶ。認証情報 (cookie / Cf-Access-*) は **渡さない** —
     # full は 127.0.0.1 バインドのローカル専用で認証を行わない。検証はここで済んでいる。
-    headers = {
-        k: v for k, v in request.headers.items() if k.lower() in ("content-type", "accept")
-    }
+    headers = {k: v for k, v in request.headers.items() if k.lower() in ("content-type", "accept")}
     try:
         async with httpx.AsyncClient(timeout=_PROXY_TIMEOUT_SECONDS) as client:
             res = await client.request(

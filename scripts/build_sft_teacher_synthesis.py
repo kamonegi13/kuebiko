@@ -98,17 +98,14 @@ async def main_async(args: argparse.Namespace) -> int:
 
     cfg = load_app_config()
     teacher = build_llm_for_ref(args.model, Step.SYNTHESIS_NARRATIVE, cfg)
-    fast_llm = OllamaClient(
-        base_url=cfg.ollama_base_url, model="gemma4:26b", timeout_seconds=900.0
-    )
+    fast_llm = OllamaClient(base_url=cfg.ollama_base_url, model="gemma4:26b", timeout_seconds=900.0)
     local_analysis = OllamaClient(
         base_url=cfg.ollama_base_url, model="gemma4:31b", timeout_seconds=900.0
     )
 
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     dates = [
-        today - timedelta(days=d)
-        for d in range(args.eval_reserve_days, args.days, args.stride)
+        today - timedelta(days=d) for d in range(args.eval_reserve_days, args.days, args.stride)
     ]
     done = _done_keys(args.out)
     print(f"日付 {len(dates)} / 済 {len(done)}", file=sys.stderr)

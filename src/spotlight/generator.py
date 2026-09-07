@@ -62,6 +62,9 @@ class _LLMSpotlightOutput(BaseModel):
     headline: str = ""
     key_events: list[_LLMKeyEvent] = Field(default_factory=list)
     outlook: str = ""
+    # schema 整合 (2026-09-07): 不確実性の明示欄。空を正しく空で返すのも valid。
+    caveats: list[str] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
 
 
 # ----- period 解決 -----
@@ -433,7 +436,9 @@ async def generate_spotlight(
     )
 
     if gate_enabled():
-        generated_text = f"{output.headline}\n{output.outlook}"
+        generated_text = "\n".join(
+            [output.headline, output.outlook, *output.caveats, *output.unknowns]
+        )
         # 強制は厳密文法 kind のみ (proper_noun は誤検知が支配的 — 2026-09-07 較正)。
         # proper_noun の不支持は観測ログのみ (誤検知率の測定と将来の RLVR 報酬材料)。
         soft = tuple(
@@ -461,7 +466,10 @@ async def generate_spotlight(
                 max_tokens=6144,
                 think=False,
             )
-            still = find_unsupported_identifiers(f"{output.headline}\n{output.outlook}", prompt)
+            retry_text = "\n".join(
+                [output.headline, output.outlook, *output.caveats, *output.unknowns]
+            )
+            still = find_unsupported_identifiers(retry_text, prompt)
             if still:
                 _log.warning(
                     "spotlight_identifier_unverified",
@@ -503,6 +511,8 @@ async def generate_spotlight(
         headline=output.headline.strip(),
         outlook=output.outlook.strip(),
         key_events=key_events,
+        caveats=[c.strip() for c in output.caveats if isinstance(c, str) and c.strip()][:6],
+        unknowns=[u.strip() for u in output.unknowns if isinstance(u, str) and u.strip()][:6],
         article_count=len(matches),
         llm_model=llm.model,
         generated_at=datetime.now(UTC),

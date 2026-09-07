@@ -14,6 +14,7 @@ Usage:
     curl -s -o /tmp/ne_places.geojson $NE/ne_10m_populated_places_simple.geojson
     uv run python scripts/gen_ne_basemap.py /tmp/ne_50m_countries.geojson /tmp/ne_places.geojson
 """
+
 from __future__ import annotations
 
 import json

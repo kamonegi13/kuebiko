@@ -133,7 +133,9 @@ async def dump(n: int) -> None:
             s = await llm.generate_structured(
                 template.render(article=art, body=body), schema=SummaryOutput, think=False
             )
-            c = await _consolidated(llm, title=title, body=body, category=category, candidates=cands)
+            c = await _consolidated(
+                llm, title=title, body=body, category=category, candidates=cands
+            )
         except Exception as e:  # noqa: BLE001
             print(f"[{i}] err: {e}")
             continue

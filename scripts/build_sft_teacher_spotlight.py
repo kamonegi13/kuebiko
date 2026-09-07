@@ -85,8 +85,7 @@ async def main_async(args: argparse.Namespace) -> int:
     # 直近 eval_reserve_days は凍結評価用に予約 (収穫しない)
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     dates = [
-        today - timedelta(days=d)
-        for d in range(args.eval_reserve_days, args.days, args.stride)
+        today - timedelta(days=d) for d in range(args.eval_reserve_days, args.days, args.stride)
     ]
     done = _done_keys(args.out)
     print(
@@ -107,7 +106,10 @@ async def main_async(args: argparse.Namespace) -> int:
                 rec.last = None
                 try:
                     record = await generate_spotlight(
-                        pir, llm=rec, period_type=args.period, now=date  # type: ignore[arg-type]
+                        pir,
+                        llm=rec,
+                        period_type=args.period,
+                        now=date,  # type: ignore[arg-type]
                     )
                 except Exception as exc:  # noqa: BLE001 — 1 件の失敗で全体を落とさない
                     failed += 1

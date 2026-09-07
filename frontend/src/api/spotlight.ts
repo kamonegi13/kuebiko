@@ -53,6 +53,8 @@ export interface SpotlightSummary {
   article_count: number;
   llm_model: string;
   generated_at: string;
+  caveats?: string[];
+  unknowns?: string[];
 }
 
 export interface SpotlightListResponse {

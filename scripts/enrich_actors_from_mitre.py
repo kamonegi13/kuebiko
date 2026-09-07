@@ -75,7 +75,9 @@ def _enrich_existing(actor: dict[str, Any], grp: MitreGroup) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む")
+    ap.add_argument(
+        "--apply", action="store_true", help="config/cti/actor_aliases.yaml に直接書き込む"
+    )
     args = ap.parse_args()
 
     data = load_actors_raw()

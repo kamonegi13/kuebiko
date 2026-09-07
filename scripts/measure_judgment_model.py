@@ -105,10 +105,7 @@ async def measure(n: int, models: list[str]) -> None:
                         f"| {str(rows[i]['title'])[:38]}"
                     )
         print(f"\n[{model}] {_stats(lat)}")
-        print(
-            "  一致(vs26B): "
-            + " ".join(f"{f}={100 * agree[f] // len(rows)}%" for f in _FIELDS)
-        )
+        print("  一致(vs26B): " + " ".join(f"{f}={100 * agree[f] // len(rows)}%" for f in _FIELDS))
         if diffs:
             print("  差分:")
             print("\n".join(diffs))

@@ -11,6 +11,7 @@ Usage:
     uv run python scripts/ingest_wikidata_orgs.py            # dry-run (取得のみ)
     uv run python scripts/ingest_wikidata_orgs.py --apply    # geo_orgs に投入
 """
+
 from __future__ import annotations
 
 import json
@@ -41,6 +42,7 @@ _TYPES: list[tuple[str, str]] = [
     ("Q1254933", "astronomical observatory"),
     ("Q11691", "stock exchange"),
 ]
+
 
 # 全 type を 1 クエリ (VALUES) で取得 → **リクエスト1回** で WDQS の 1req/分 制限に当たらない。
 def _build_query() -> str:

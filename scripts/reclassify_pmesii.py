@@ -111,7 +111,10 @@ async def reclassify_one(
     )
     try:
         out = await llm.generate_structured(
-            prompt, PmesiiOutput, temperature=0.0, think=False,
+            prompt,
+            PmesiiOutput,
+            temperature=0.0,
+            think=False,
         )
         return set(out.pmesii_axes) & set(PMESII_AXES)
     except Exception as e:  # noqa: BLE001

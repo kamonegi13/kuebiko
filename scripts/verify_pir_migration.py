@@ -37,8 +37,24 @@ from src.tools.article_model import Article
 from src.tools.article_triage import ArticleTriage
 from src.tools.model_tiers import Step, build_llm_for
 
-JP_FEED_KEYWORDS = ["ScanNet", "Security NEXT", "セキュリティニュース", "ITmedia エンタープライズ", "@IT セキュリティ", "JPCERT"]
-KEY_ACTORS = ["Volt Typhoon", "Salt Typhoon", "APT41", "Lazarus", "Kimsuky", "Sandworm", "APT28", "APT29"]
+JP_FEED_KEYWORDS = [
+    "ScanNet",
+    "Security NEXT",
+    "セキュリティニュース",
+    "ITmedia エンタープライズ",
+    "@IT セキュリティ",
+    "JPCERT",
+]
+KEY_ACTORS = [
+    "Volt Typhoon",
+    "Salt Typhoon",
+    "APT41",
+    "Lazarus",
+    "Kimsuky",
+    "Sandworm",
+    "APT28",
+    "APT29",
+]
 
 
 async def fetch_samples(db_path: Path, n: int, lookback_days: int) -> list[Article]:
@@ -58,17 +74,20 @@ async def fetch_samples(db_path: Path, n: int, lookback_days: int) -> list[Artic
         ).fetchall()
     samples: list[Article] = []
     from datetime import datetime as _dt
+
     now = _dt.now(UTC)
     for r in rows:
-        samples.append(Article(
-            id=r["article_id"],
-            title=r["title"] or "",
-            url=r["url"] or "",
-            feed_title=r["feed_title"] or "",
-            summary_html=r["summary"] or "",
-            published=now,
-            feed_url="",
-        ))
+        samples.append(
+            Article(
+                id=r["article_id"],
+                title=r["title"] or "",
+                url=r["url"] or "",
+                feed_title=r["feed_title"] or "",
+                summary_html=r["summary"] or "",
+                published=now,
+                feed_url="",
+            )
+        )
     return samples
 
 
@@ -92,6 +111,7 @@ async def verify(n: int, days: int) -> int:
         # A: legacy
         os.environ["PIR_DRIVEN_TRIAGE"] = "0"
         from src.pir.integration import invalidate_cache
+
         invalidate_cache()
         a_decision = await triage.triage(article)
 
@@ -100,14 +120,18 @@ async def verify(n: int, days: int) -> int:
         invalidate_cache()
         b_decision = await triage.triage(article)
 
-        results.append({
-            "article": article,
-            "legacy": a_decision.importance,
-            "pir_driven": b_decision.importance,
-            "is_jp_feed": any(kw in (article.feed_title or "") for kw in JP_FEED_KEYWORDS),
-            "is_key_actor": any(actor in (article.title or "") or actor in (article.summary_html or "")
-                                for actor in KEY_ACTORS),
-        })
+        results.append(
+            {
+                "article": article,
+                "legacy": a_decision.importance,
+                "pir_driven": b_decision.importance,
+                "is_jp_feed": any(kw in (article.feed_title or "") for kw in JP_FEED_KEYWORDS),
+                "is_key_actor": any(
+                    actor in (article.title or "") or actor in (article.summary_html or "")
+                    for actor in KEY_ACTORS
+                ),
+            }
+        )
         if i % 10 == 0:
             print(f"  {i}/{len(samples)} done...")
 
@@ -123,8 +147,12 @@ async def verify(n: int, days: int) -> int:
 
     jp_results = [r for r in results if r["is_jp_feed"]]
     jp_medium_plus_legacy = [r for r in jp_results if r["legacy"] in ("high", "medium")]
-    jp_kept_medium_plus = [r for r in jp_medium_plus_legacy if r["pir_driven"] in ("high", "medium")]
-    jp_retention = len(jp_kept_medium_plus) / len(jp_medium_plus_legacy) if jp_medium_plus_legacy else 1.0
+    jp_kept_medium_plus = [
+        r for r in jp_medium_plus_legacy if r["pir_driven"] in ("high", "medium")
+    ]
+    jp_retention = (
+        len(jp_kept_medium_plus) / len(jp_medium_plus_legacy) if jp_medium_plus_legacy else 1.0
+    )
 
     actor_results = [r for r in results if r["is_key_actor"]]
     actor_high_legacy = [r for r in actor_results if r["legacy"] == "high"]
@@ -138,34 +166,41 @@ async def verify(n: int, days: int) -> int:
     print()
     print(f"Sample size: {len(results)} articles, past {days} days")
     print()
-    print(f"  Overall agreement rate:           {agreement_rate*100:.1f}% (target: >=90%)")
+    print(f"  Overall agreement rate:           {agreement_rate * 100:.1f}% (target: >=90%)")
     print(f"  high → low flip (CRITICAL):       {len(high_to_low)} (target: 0)")
-    print(f"  medium → low flip:                {len(medium_to_low)} ({len(medium_to_low)/len(results)*100:.1f}%, target: <=2%)")
-    print(f"  JP feed medium+ retention:        {jp_retention*100:.1f}% ({len(jp_kept_medium_plus)}/{len(jp_medium_plus_legacy)}, target: >=95%)")
-    print(f"  Key actor high retention:         {actor_retention*100:.1f}% ({len(actor_kept_high)}/{len(actor_high_legacy)}, target: >=95%)")
+    print(
+        f"  medium → low flip:                {len(medium_to_low)} ({len(medium_to_low) / len(results) * 100:.1f}%, target: <=2%)"
+    )
+    print(
+        f"  JP feed medium+ retention:        {jp_retention * 100:.1f}% ({len(jp_kept_medium_plus)}/{len(jp_medium_plus_legacy)}, target: >=95%)"
+    )
+    print(
+        f"  Key actor high retention:         {actor_retention * 100:.1f}% ({len(actor_kept_high)}/{len(actor_high_legacy)}, target: >=95%)"
+    )
     print()
 
     # Flip 内訳 (全 9 patterns)
     from collections import Counter
+
     pattern_counts = Counter((r["legacy"], r["pir_driven"]) for r in results)
     print("  Decision flip breakdown (legacy → pir):")
     for (a, b), n in sorted(pattern_counts.items(), key=lambda x: -x[1]):
         marker = "✅" if a == b else "🔄"
-        print(f"    {marker} {a:6s} → {b:6s}: {n:3d} ({n/len(results)*100:5.1f}%)")
+        print(f"    {marker} {a:6s} → {b:6s}: {n:3d} ({n / len(results) * 100:5.1f}%)")
     print()
 
     # Pass/fail
     failures: list[str] = []
     if agreement_rate < 0.90:
-        failures.append(f"agreement {agreement_rate*100:.1f}% < 90%")
+        failures.append(f"agreement {agreement_rate * 100:.1f}% < 90%")
     if len(high_to_low) > 0:
         failures.append(f"high→low flip: {len(high_to_low)} > 0")
     if len(medium_to_low) / max(len(results), 1) > 0.02:
-        failures.append(f"medium→low flip rate {len(medium_to_low)/len(results)*100:.1f}% > 2%")
+        failures.append(f"medium→low flip rate {len(medium_to_low) / len(results) * 100:.1f}% > 2%")
     if jp_medium_plus_legacy and jp_retention < 0.95:
-        failures.append(f"JP retention {jp_retention*100:.1f}% < 95%")
+        failures.append(f"JP retention {jp_retention * 100:.1f}% < 95%")
     if actor_high_legacy and actor_retention < 0.95:
-        failures.append(f"Actor retention {actor_retention*100:.1f}% < 95%")
+        failures.append(f"Actor retention {actor_retention * 100:.1f}% < 95%")
 
     if failures:
         print("❌ FAIL:")

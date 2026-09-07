@@ -111,7 +111,9 @@ def main() -> int:
                     except Exception as e:  # noqa: BLE001
                         print(f"  [{table}] row insert failed: {e}")
             pg_conn.commit()
-            print(f"[{table}] SQLite={src_count}, PG inserted={inserted}, common_cols={len(common_cols)}")
+            print(
+                f"[{table}] SQLite={src_count}, PG inserted={inserted}, common_cols={len(common_cols)}"
+            )
 
     finally:
         sqlite_conn.close()

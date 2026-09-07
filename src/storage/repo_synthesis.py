@@ -152,14 +152,16 @@ class SynthesisMixin(RunHistoryRepositoryBase):
             [ke.model_dump() for ke in record.key_events],
             ensure_ascii=False,
         )
+        caveats_json = _json.dumps(list(record.caveats), ensure_ascii=False)
+        unknowns_json = _json.dumps(list(record.unknowns), ensure_ascii=False)
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO pir_spotlight
                   (pir_id, pir_title, period_type, period_start, period_end,
                    headline, outlook, key_events, article_count,
-                   llm_model, generated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   llm_model, generated_at, caveats, unknowns)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(pir_id, period_type, period_start) DO UPDATE SET
                   pir_title       = excluded.pir_title,
                   period_end      = excluded.period_end,
@@ -168,7 +170,9 @@ class SynthesisMixin(RunHistoryRepositoryBase):
                   key_events      = excluded.key_events,
                   article_count   = excluded.article_count,
                   llm_model       = excluded.llm_model,
-                  generated_at    = excluded.generated_at
+                  generated_at    = excluded.generated_at,
+                  caveats         = excluded.caveats,
+                  unknowns        = excluded.unknowns
                 """,
                 (
                     record.pir_id,
@@ -182,6 +186,8 @@ class SynthesisMixin(RunHistoryRepositoryBase):
                     record.article_count,
                     record.llm_model,
                     _to_iso(record.generated_at),
+                    caveats_json,
+                    unknowns_json,
                 ),
             )
             conn.commit()

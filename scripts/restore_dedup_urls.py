@@ -73,7 +73,7 @@ def main() -> int:
 
         inserted = 0
         for i in range(0, len(rows), BATCH_SIZE):
-            batch = rows[i:i + BATCH_SIZE]
+            batch = rows[i : i + BATCH_SIZE]
             conn.executemany(
                 """
                 INSERT OR IGNORE INTO dedup_seen_urls

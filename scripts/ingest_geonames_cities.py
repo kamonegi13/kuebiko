@@ -15,6 +15,7 @@ Usage:
     uv run python scripts/ingest_geonames_cities.py /tmp/cities15000.txt          # dry-run
     uv run python scripts/ingest_geonames_cities.py /tmp/cities15000.txt --apply  # 取込
 """
+
 from __future__ import annotations
 
 import sys

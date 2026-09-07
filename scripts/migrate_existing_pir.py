@@ -45,8 +45,15 @@ _HIGH_CRITERIA: list[dict] = [
             "PLA/MSS 系の事前配置 (pre-positioning)、台湾標的、サプライチェーン汚染も含む。"
         ),
         "actors": [
-            "Volt Typhoon", "Salt Typhoon", "Silk Typhoon", "Flax Typhoon",
-            "Storm-0558", "APT41", "APT10", "APT40", "Mustang Panda",
+            "Volt Typhoon",
+            "Salt Typhoon",
+            "Silk Typhoon",
+            "Flax Typhoon",
+            "Storm-0558",
+            "APT41",
+            "APT10",
+            "APT40",
+            "Mustang Panda",
         ],
         "countries": ["CN"],
         "spotlight_title": "🇨🇳 中国 APT 動向",
@@ -93,7 +100,14 @@ _HIGH_CRITERIA: list[dict] = [
             "AI/宇宙・電磁波アセット、衛星・宇宙資産。広く重要インフラへの脅威。"
         ),
         "keywords": ["OT", "ICS", "SCADA", "重要インフラ", "防衛産業"],
-        "sectors": ["defense", "government", "energy", "telecom", "transportation", "critical_infra"],
+        "sectors": [
+            "defense",
+            "government",
+            "energy",
+            "telecom",
+            "transportation",
+            "critical_infra",
+        ],
     },
     {
         "id": "pir_state_ransomware",
@@ -167,8 +181,7 @@ _HIGH_CRITERIA: list[dict] = [
         "id": "pir_geopolitical_cyber",
         "title": "国家戦略 / 地政学的サイバー分析",
         "description": (
-            "日本・同盟国 (米英豪韓)・東アジア敵対国 (中朝露) の "
-            "国家戦略 / 地政学的サイバー分析。"
+            "日本・同盟国 (米英豪韓)・東アジア敵対国 (中朝露) の 国家戦略 / 地政学的サイバー分析。"
         ),
         "keywords": ["geopolitical", "cyber strategy", "国家戦略", "doctrine"],
         "countries": ["JP", "US", "GB", "AU", "KR", "CN", "KP", "RU"],
@@ -198,8 +211,11 @@ _MEDIUM_CRITERIA: list[dict] = [
         "keywords": ["不正アクセス", "情報漏洩", "ランサムウェア攻撃", "breach", "ransomware"],
         "countries": ["JP"],
         "feed_titles": [
-            "ScanNetSecurity", "Security NEXT", "セキュリティニュース",
-            "ITmedia エンタープライズ", "@IT セキュリティ",
+            "ScanNetSecurity",
+            "Security NEXT",
+            "セキュリティニュース",
+            "ITmedia エンタープライズ",
+            "@IT セキュリティ",
         ],
         "spotlight_title": "🇯🇵 JP company breach",
     },

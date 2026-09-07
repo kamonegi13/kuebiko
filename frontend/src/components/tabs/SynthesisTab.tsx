@@ -766,6 +766,24 @@ function SpotlightCard({
         <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">見通し</div>
         <SynthesisProse text={s.outlook} />
       </div>
+
+      {/* schema 整合 (2026-09-07): 不確実性の明示欄。空なら出さない (正しく空 = 正常) */}
+      {(s.caveats?.length ?? 0) > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">留保</div>
+          <ul className="space-y-1 text-[13px] text-fg-muted list-disc pl-5">
+            {s.caveats!.map((c, i) => (<li key={i}>{c}</li>))}
+          </ul>
+        </div>
+      )}
+      {(s.unknowns?.length ?? 0) > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">不明点</div>
+          <ul className="space-y-1 text-[13px] text-fg-muted list-disc pl-5">
+            {s.unknowns!.map((u, i) => (<li key={i}>{u}</li>))}
+          </ul>
+        </div>
+      )}
         </>
       )}
 

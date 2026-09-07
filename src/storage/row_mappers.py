@@ -268,6 +268,18 @@ def _row_to_spotlight(row: sqlite3.Row) -> Any:
     except (ValueError, TypeError):
         key_events = []
     posted_raw = row["posted_at"] if "posted_at" in keys else None
+
+    def _str_list(col: str) -> list[str]:
+        # 旧スキーマ行 (列なし) / 旧データ (NULL) は空 list (後方互換)
+        raw = row[col] if col in keys else None
+        if not raw:
+            return []
+        try:
+            vals = _json.loads(_normalize_jsonb(raw))
+        except (ValueError, TypeError):
+            return []
+        return [v for v in vals if isinstance(v, str)] if isinstance(vals, list) else []
+
     return SpotlightRecord(
         pir_id=row["pir_id"],
         pir_title=row["pir_title"],
@@ -281,6 +293,8 @@ def _row_to_spotlight(row: sqlite3.Row) -> Any:
         llm_model=row["llm_model"] or "",
         generated_at=_from_iso(row["generated_at"]) or datetime.now(UTC),
         posted_at=_from_iso(posted_raw) if posted_raw else None,
+        caveats=_str_list("caveats"),
+        unknowns=_str_list("unknowns"),
     )
 
 
