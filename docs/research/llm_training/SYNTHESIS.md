@@ -569,3 +569,26 @@ spotlight 出力に caveats/unknowns 欄を追加 (生成 schema / DB / UI 表�
 | 速度 (decode 1.3-1.8 倍) | ドメイン知識 (base の事前学習) |
 | schema 規律・欄の埋め方 (placeholder/重複の根絶) | 天井を超える正確さ (存在しない) |
 | 訓練分布の base rate (⚠ 教師の偏りごと移る — §21) | |
+
+
+## 23. self-consistency probe (2026-09-07 夜) + ORPO 即席実験の中断
+
+### 投票 probe = 方向性肯定 (s1 triage 150 件 × 5 票 @temp0.8)
+
+- 多数決 70.7% (単発 68.0%、判定者間天井 67.3%) — 歴代最良 v2 と同値。ただし変化 7 件
+  では単独有意でない (p≈0.2)。**票割れ 23.3% = モデル側の揺らぎの実在を定量化**。
+  両極ずれ 2→1 (危険誤りの吸収方向)。
+- コスト: 全件 5 票は 5 倍 → 案: (a) **標的投票** (high/low 判定のみ再投票、~1.7 倍) /
+  (b) **8B 下方蒸留で常駐並列化** — 8B の便益は速度でなく**常駐性** (26B MoE A4B は
+  per-token では 8B dense より速い)。Swallow 8B は Llama 系で mlx fuse の GGUF 直接
+  輸出が効き remap 工程も消える。
+
+### ORPO 即席対照実験 (IPO の隣接破壊を SFT 項が防ぐか) = 中断・持ち帰り
+
+- s1 継続 + pairs_tiny で起動したが (a) Ollama 再ロード共存の OOM (peak 33.9GB でも死ぬ
+  既知の共存問題)、(b) **初期 loss 9.3 = 乱数域** — mlx-lm-lora の orpo モードは
+  DPO と別のデータ経路 (ORPODataset: prompt mask なし・system 分岐で template 不整合) で、
+  resume かトークン整合に不具合の疑い。**この経路の測定値は信用不可**。
+- 再開の前提: ①orpo 経路の loss/トークン整合の机上検証 ②Ollama 完全静止窓。
+- 運用教訓: **収穫 (kuebiko 依存) と学習 (kuebiko 停止) を並走させない** — 即席実験が
+  spotlight3 の docker exec を巻き添えにした (リトライで自動復旧、実害は失速のみ)。
