@@ -463,3 +463,35 @@ caveats/discrepancies/unknowns 欄を**持たない**流れる散文 — 「不�
   3. 2 段カリキュラム + replay の厳密設計 (最終 150 iters の event 集中では回復せず — 弱い)
 - 学習運用の教訓: 18k 級は +30GB 台の seq² スパイクで cap 105 でも死ぬ (4 回)。
   **12.5k 構成が現環境の安全上限**。以後の長系列は 20-iter probe で頻度を測ってから。
+
+
+## 20. schema 整合の実装 + N2 設計オプション 3 案の評価 (2026-09-07 利用者提案)
+
+### schema 整合 (デプロイ済 0c6d3ab9・本番検証済)
+
+spotlight 出力に caveats/unknowns 欄を追加 (生成 schema / DB / UI 表示 / rubric v2)。
+本番 Sonnet の再生成で即座に高品質な留保が出た (「単一 SNS ソースの未確認情報」
+「台帳判定で確度 low かつ反証、断定は避けるべき」) — **製品価値が学習実験と独立に成立**。
+新 schema での教師再収穫 → N1.5' 従来比較 (干渉解消の検証) が進行中。
+
+### 利用者提案 3 案の評価
+
+1. **ORPO のペナルティ λ をタスク別に変える** — **採用 (N2 の設計に組み込む)**。
+   ORPO 損失 = SFT 項 + λ·OR 項なので、λ を行ごとに変えれば「event 行 = preference、
+   spotlight 行 = λ≈0 の純 SFT replay」を **1 回の学習で両立**できる。これは §15 で
+   確立した IPO 再訪 3 条件のうち replay を損失構造として実装する形。mlx-lm-lora の
+   trainer への小改造 (per-row weight) が必要 — N2 着手時に実装。
+2. **think / output 領域の分割** — **保留**。gemma4 は thought channel を持つが、
+   (a) 本番は think=False 固定 (gemma thinking の空応答前歴)、(b) 教師データに思考
+   過程が無く合成は別プロジェクト級、(c) serving と学習の書式一致が崩れる。
+   mode/schema の 2 手で不足したときの研究項目として記録。
+3. **システムプロンプトによるモード切り替え** — **次の一手として有力 (schema 整合で
+   不足した場合)**。干渉は「条件付けが弱く行動が平均化する」ことなので、短く一貫した
+   モードタグを system turn に置く明示的条件付けは干渉を減らす定石。messages 形式へ
+   移行済みで訓練側の準備はある。serving 側も system を渡す変更が必要 (書式一致のため
+   学習・配備を原子的に)。判定: N1.5' の結果で干渉が残った場合に発動。
+
+### ORPO 12k probe (Metal 115GB + プロセス cap)
+
+**rc=0・peak 108.09GB** — event 全 238 対の ORPO が成立。ただし kuebiko/Ollama 完全
+停止の単独実行が前提 (余裕 7GB)。N2 の実行様式は「夜間・単独・cap 付き」で確定。
