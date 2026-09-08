@@ -32,9 +32,50 @@ import numpy as np
 from mlx.utils import tree_flatten
 from mlx_lm.tuner.utils import linear_to_lora_layers
 from mlx_lm.utils import load
-from mlx_lm_lora.trainer.orpo_trainer import ORPOTrainingArgs, evaluate_orpo, train_orpo
+from mlx_lm_lora.trainer.orpo_trainer import (
+    ORPOTrainingArgs,
+    evaluate_orpo,
+    orpo_loss,
+    train_orpo,
+)
 
 PAD_TO = 8
+
+# 記憶済み chosen (継続学習では自明) は平均 logp → 0 に張り付き、_log1mexp の勾配
+# (-e^x/(1-e^x)) が -1e7 級に爆発 → iter 1 で重みが NaN 化する。損失側の nan_to_num が
+# それを 0 に潰すため **loss は β·ln2 = 0.0693 に固定表示され NaN が見えない** (2026-09-08
+# に n2p 全 42 キー NaN で発覚。09-07 の「loss 0.069 固定・全指標 0」も同一現象)。
+# 対策: logp を -_LOGP_CEIL 以下へクランプしてから上流 orpo_loss へ渡す。
+_LOGP_CEIL = 0.01
+
+
+def stable_orpo_loss(
+    chosen_logps: Any,
+    chosen_logits_mean: Any,
+    rejected_logps: Any,
+    rejected_logits_mean: Any,
+    chosen_masks: Any,
+    rejected_masks: Any,
+    preference_scores: Any,
+    beta: float = 0.1,
+) -> Any:
+    """orpo_loss と同シグネチャ (train_orpo の loss= に渡す)。logp を 0 から引き離す。
+
+    クランプ域では chosen 側の勾配が 0 になる — 記憶済み chosen から学ぶものは無く、
+    rejected の押し下げ (選好の本体) はそのまま生きる。
+    """
+    chosen_logps = mx.minimum(chosen_logps, mx.array(-_LOGP_CEIL))
+    rejected_logps = mx.minimum(rejected_logps, mx.array(-_LOGP_CEIL))
+    return orpo_loss(
+        chosen_logps=chosen_logps,
+        chosen_logits_mean=chosen_logits_mean,
+        rejected_logps=rejected_logps,
+        rejected_logits_mean=rejected_logits_mean,
+        chosen_masks=chosen_masks,
+        rejected_masks=rejected_masks,
+        preference_scores=preference_scores,
+        beta=beta,
+    )
 
 
 class MaskedORPODataset:
@@ -118,6 +159,63 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in lines if line.strip()]
 
 
+def _train_self(
+    model: Any, optimizer: Any, train_set: MaskedORPODataset, args: argparse.Namespace
+) -> int:
+    """自前 ORPO ループ。mlx_lm の SFT と同じ逆伝播経路 (全グラフ value_and_grad)。"""
+    import mlx.nn as nn
+    from mlx_lm.tuner.trainer import grad_checkpoint
+
+    layers = model.model.layers if hasattr(model, "model") else model.layers
+    grad_checkpoint(layers[0])
+
+    def loss_fn(mdl: Any, c: Any, r: Any, cm: Any, rm: Any) -> Any:
+        def avg_logp(tokens: Any, mask: Any) -> Any:
+            logits = mdl(tokens[:, :-1]).astype(mx.float32)
+            lp = -nn.losses.cross_entropy(logits, tokens[:, 1:], reduction="none")
+            # softmax アンダーフローの -inf を遮断 (上流 get_logps と同じガード。
+            # これを欠くと iter 1 の forward から NaN になる — 2026-09-08 実測)
+            lp = mx.clip(lp, -1000.0, 0.0)
+            m = mask[:, :-1]
+            return (lp * m).sum(-1) / mx.maximum(m.sum(-1), 1.0)
+
+        c_lp = mx.minimum(avg_logp(c, cm), mx.array(-_LOGP_CEIL))
+        r_lp = mx.minimum(avg_logp(r, rm), mx.array(-_LOGP_CEIL))
+        nll = -c_lp
+        log1m = lambda x: mx.log(-mx.expm1(mx.minimum(x, mx.array(-1e-6))))  # noqa: E731
+        log_odds = (c_lp - r_lp) - (log1m(c_lp) - log1m(r_lp))
+        loss = nll - args.beta * nn.log_sigmoid(log_odds)
+        return mx.mean(loss), (mx.mean(c_lp), mx.mean(r_lp))
+
+    vag = nn.value_and_grad(model, loss_fn)
+    it = 0
+    for batch in iterate_masked_orpo_batches(
+        train_set, args.batch_size, args.max_seq_length, train=True
+    ):
+        c, r, cm, rm, _scores = batch
+        (loss, (c_lp, r_lp)), grads = vag(model, c, r, cm, rm)
+        optimizer.update(model, grads)
+        mx.eval(model.parameters(), optimizer.state, loss)
+        it += 1
+        lv = float(loss)
+        if lv != lv:  # NaN — 隠さず即中断 (nan_to_num の隠蔽が今回の教訓)
+            print(f"Iter {it}: loss NaN — 中断", flush=True)
+            return 1
+        if it % 10 == 0 or it == 1:
+            print(
+                f"Iter {it}: loss {lv:.4f} / c_lp {float(c_lp):.4f} / r_lp {float(r_lp):.4f} "
+                f"/ margin {float(c_lp - r_lp):+.4f} / peak {mx.get_peak_memory() / 1e9:.1f}GB",
+                flush=True,
+            )
+        if it % args.save_every == 0 or it >= args.iters:
+            weights = dict(tree_flatten(model.trainable_parameters()))
+            mx.save_safetensors(str(args.adapter_path / "adapters.safetensors"), weights)
+        if it >= args.iters:
+            break
+    print(f"自前ループ完了: {it} iters", flush=True)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", required=True)
@@ -140,6 +238,12 @@ def main() -> int:
         help="既存 adapter から継続 (N2 = v1 継続。layer 構成は当該 adapter と一致させること)",
     )
     ap.add_argument(
+        "--engine",
+        choices=["self", "upstream"],
+        default="self",
+        help="self = 自前ループ (mlx_lm 同型逆伝播、既定) / upstream = mlx-lm-lora (NaN 前歴)",
+    )
+    ap.add_argument(
         "--train-layers",
         type=int,
         default=0,
@@ -156,7 +260,11 @@ def main() -> int:
     linear_to_lora_layers(model, args.num_layers, {"rank": 8, "dropout": 0.0, "scale": 20.0})
     if args.resume_adapter_file is not None:
         model.load_weights(str(args.resume_adapter_file), strict=False)
-        print(f"adapter 継続: {args.resume_adapter_file}")
+        # ⭐ dtype 正規化 (2026-09-08 分離実測): モデル本体は bf16 だが、継続元 adapter
+        # ファイルの重みが fp16 で混入すると長系列 (≳5k) の forward が全 NaN になる
+        # (fp16 の範囲 65504 を活性が超える)。bf16 へ揃えると NaN 0・メモリ据え置き。
+        model.apply(lambda p: p.astype(mx.bfloat16) if mx.issubdtype(p.dtype, mx.floating) else p)
+        print(f"adapter 継続: {args.resume_adapter_file} (dtype を bf16 に正規化)")
     if args.train_layers and args.train_layers < args.num_layers:
         # LoRA を巻いた num_layers のうち、末尾 train_layers 以外は凍結する。
         # resume した adapter の全層は forward に効き続ける (部分 resume の黙落を防ぐ)。
@@ -223,14 +331,24 @@ def main() -> int:
         )
     )
     optimizer = optim.Adam(learning_rate=args.learning_rate)
-    train_orpo(
-        model=model,
-        optimizer=optimizer,
-        train_dataset=train_set,
-        val_dataset=valid_set,
-        args=training_args,
-        training_callback=None,
-    )
+    if args.engine == "upstream":
+        train_orpo(
+            model=model,
+            optimizer=optimizer,
+            train_dataset=train_set,
+            val_dataset=valid_set,
+            loss=stable_orpo_loss,
+            args=training_args,
+            training_callback=None,
+        )
+    else:
+        # 自前ループ (2026-09-08): mlx-lm-lora の chunked 逆伝播はこの MoE で NaN を
+        # 量産し、loss 側の nan_to_num が β·ln2=0.0693 の定数表示に隠蔽していた。
+        # mlx_lm の SFT と同じプリミティブ (nn.value_and_grad + 全グラフ forward) で
+        # ORPO を素直に組む。NaN は隠さず即中断する。
+        rc = _train_self(model, optimizer, train_set, args)
+        if rc != 0:
+            return rc
 
     if args.resume_adapter_file is not None and args.train_layers:
         # 上流は trainable のみ保存する → 凍結した継続元の層が adapter から欠落する。
