@@ -192,7 +192,8 @@ async def _resolve_kinds(
     kinds = repo.get_article_kinds(ids)
     missing = [a for a in articles if a.article_id not in kinds]
     if missing:
-        llm = build_llm_for(Step.TRIAGE, config)
+        # Step.TRIAGE 借用は triage の S 族上書きを継承してしまう (2026-09-08 分離)
+        llm = build_llm_for(Step.EVENT_KIND, config)
         for a in missing:
             kind = await event_kind.classify(llm, a.title, a.summary)
             kinds[a.article_id] = kind

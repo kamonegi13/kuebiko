@@ -121,6 +121,7 @@ class Step(StrEnum):
     # を撤去したのと同じ理由)。復活させるならスケルトンから書き直すこと。
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
     PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
+    EVENT_KIND = "event_kind"  # 記事種別分類 (ML pair モデルの特徴量供給 — 供給元を固定する)
     DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap deep-dive (narrative + rubric)
     SYNTHESIS_DETECT = "synthesis_detect"  # synthesis 内 detect-new (大量入力 triage)
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
@@ -168,6 +169,9 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # 関係判定 (同一性照合) は S 族の適用対象外 — 分類 SFT が分割方向へ歪める実測あり
     # (SYNTHESIS.md §25、held-out 149 で base 89.3% vs S 混合 83.9%)。
     Step.PAIR_JUDGE: StepSpec(Tier.FAST, 120.0),
+    # kind 分類は 1 記事 = 小さな分類呼出。ML pair モデルは base 産の kind を特徴量として
+    # 学習しているため、供給元モデルの無断シフト (step 借用による継承) を遮断する。
+    Step.EVENT_KIND: StepSpec(Tier.FAST, 120.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),
     Step.PIR_DAILY_FOCUS: StepSpec(Tier.FAST, 120.0),

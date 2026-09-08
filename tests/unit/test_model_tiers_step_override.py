@@ -80,10 +80,14 @@ class TestResolveStepModel:
 
         assert STEP_REGISTRY[Step.PAIR_JUDGE].tier is Tier.FAST
         assert STEP_REGISTRY[Step.PAIR_JUDGE].timeout_seconds == 120.0
+        # event_kind も同じ借用欠陥があった。kind は ML pair モデルの特徴量で、
+        # ML は base 産の kind で学習済み — 供給元の無断シフトを許さない。
+        assert STEP_REGISTRY[Step.EVENT_KIND].tier is Tier.FAST
         save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": "kuebiko-sft:s1"}, db_path=db_path)
         invalidate_model_tiers_cache()
         assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "kuebiko-sft:s1"
         assert resolve_step_model(Step.PAIR_JUDGE, db_path=db_path) == "gemma4:26b"
+        assert resolve_step_model(Step.EVENT_KIND, db_path=db_path) == "gemma4:26b"
 
     def test_empty_override_means_absent(self, db_path: Path) -> None:
         # 空文字 = 解除 (UI で消したときの表現)。ティアに戻る。
