@@ -173,7 +173,8 @@ async def main_async(args: argparse.Namespace) -> int:
                     continue
                 # 引用実在チェック: 窓の証拠 excerpt が再構築ソースに実在すること
                 joined = _norm(" ".join(s.get("text", "") for s in sources))
-                used = [e for e in window if any(s["article_id"] == e["article_id"] for s in sources)]
+                source_aids = {s["article_id"] for s in sources}
+                used = [e for e in window if e["article_id"] in source_aids]
                 if not used or any(
                     e["excerpt"] and _norm(e["excerpt"])[:80] not in joined for e in used
                 ):
