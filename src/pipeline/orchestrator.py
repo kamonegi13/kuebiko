@@ -642,6 +642,23 @@ async def run_pipeline(
                     template=template,
                     brief_count_24h=brief_count_24h_snapshot,
                 )
+                # run 横断の tweet 重複を ledger で弾く (2026-09-08)。親レポート URL は
+                # 毎回新規のため fetch 段の未見選別を素通りし、別レポート内の同一 tweet
+                # が別 sub-article 化していた (実測 30 日で余剰 209 記事)。
+                from src.pipeline.grok_convert import filter_expanded_by_seen
+
+                expanded, _dup_dropped = filter_expanded_by_seen(
+                    expanded,
+                    None
+                    if (skip_dedup or dedup_repo is None)
+                    else dedup_repo.filter_seen_and_touch,
+                )
+                if _dup_dropped:
+                    _log.info(
+                        "grok_subarticle_cross_run_dedup",
+                        article_id=article.id,
+                        dropped=_dup_dropped,
+                    )
                 if not expanded:
                     # Grok 報告 (親) は briefing ゼロなら記事 row を一切作らない (2026-08-15)。
                     # 報告の実体はチャットページであり、記事テーブル = 検索面に残骸
@@ -649,7 +666,14 @@ async def run_pipeline(
                     # 障害の可視性は run_logs (下記 warning + heartbeat) と枯渇監視が担保する。
                     from src.pipeline.grok_convert import grok_report_is_quiet
 
-                    if grok_report_is_quiet(article):
+                    if _dup_dropped:
+                        # 全 tweet が run 横断 dedup で既知 = 健全な空 (生成不全ではない)
+                        _log.info(
+                            "grok_article_all_duplicates",
+                            article_id=article.id,
+                            dropped=_dup_dropped,
+                        )
+                    elif grok_report_is_quiet(article):
                         _log.info(
                             "grok_article_quiet_no_events",
                             article_id=article.id,

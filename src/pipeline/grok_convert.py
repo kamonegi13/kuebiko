@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 
 import jinja2
 
@@ -11,6 +12,7 @@ from src.pipeline.briefing import _summarize_and_build
 from src.tools.article_model import Article
 from src.tools.discord_publisher import BriefingMessage
 from src.tools.llm_client import LLMClient
+from src.tools.url_normalizer import url_hash
 
 _log = get_logger(__name__)
 
@@ -39,6 +41,31 @@ def _strip_html_keep_newlines(raw: str) -> str:
     if "<" in raw and ">" in raw:
         return re.sub(r"<[^>]+>", "", raw)
     return raw
+
+
+def filter_expanded_by_seen(
+    expanded: list[BriefingMessage],
+    seen_filter: Callable[[Sequence[str]], set[str]] | None,
+) -> tuple[list[BriefingMessage], int]:
+    """run 横断の tweet 重複を ledger 照会で弾く (2026-09-08 利用者発見)。
+
+    親レポート URL は毎回新規のため fetch 段の未見選別 (seen_hash_filter) を素通りし、
+    別レポートに含まれる同一 tweet が run を跨いで別 sub-article 化していた
+    (30 日実測: X 投稿 191 URL 重複 / 余剰 209 記事。dedup_seen_urls は tweet URL を
+    既読化済みなのに、展開経路に照会する関門が無かった)。展開直後に照会して落とす。
+    dedup_key 無しの msg は落とさない (fail-open — 落とし過ぎは収集喪失)。
+    """
+    if seen_filter is None or not expanded:
+        return expanded, 0
+    keys: list[str] = []
+    for msg in expanded:
+        raw = str(msg.metadata.get("dedup_key") or "")
+        if not raw and msg.sources:
+            raw = msg.sources[0].url or ""
+        keys.append(url_hash(raw) if raw else "")
+    seen = seen_filter([k for k in keys if k])
+    kept = [m for m, k in zip(expanded, keys, strict=True) if not k or k not in seen]
+    return kept, len(expanded) - len(kept)
 
 
 def grok_report_is_quiet(article: Article) -> bool:
