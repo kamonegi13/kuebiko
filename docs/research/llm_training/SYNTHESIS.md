@@ -787,3 +787,42 @@ s15 (pair 教師 699・False 64%) と s16 (966・True 50%) が held-out 149 件�
   (学習が不活性なため入れる理由が無い)。
 - 残る真の差分は triage 71.3% (s16) vs 68.0% (s1) のみ (凍結ファイル評価で時代混在なし)。
   s16 配備の判断材料はこれと event_kind/pir_judge 対応に絞られた。
+
+
+## 28. ORPO 経路の根治 + N2 probe 投入 (2026-09-08 午後)
+
+### 「loss 9.3 異常」の全容解明 — 故障ではなく mask 不在
+
+机上検証 + 実測の連鎖: ①ORPODataset のテンプレ/トークンは SFT 経路と等価 (無罪)、
+②素の forward で NLL 9-12 → 一時は破損を疑ったが、③トレーナー方式 evaluate は同一
+プロセスで 3.495 (ログと一致) — 差は **mask**。分解実測: **prompt 領域 NLL 10.5 /
+completion 領域 2.86**。mlx-lm-lora の orpo は prompt を mask しないため、prompt が
+7-8 割の事象ペアでは loss ≈ 9 (=prompt 込み平均) になっていた。**乱数でも resume
+不具合でも Metal 共存でもない** (CPU/共存の各対照で棄却済み)。
+
+含意: mask 無し ORPO は (a) SFT 項が prompt 再生産で埋まり (b) 選好対比が希釈される。
+実験としては無意味ではないが信号が ~5 倍薄い。
+
+### 対処: scripts/train_orpo_masked.py (コミット済み)
+
+dataset/iterator だけ差し替え (ChatDataset と同じ offset 捕獲 → prompt 領域 mask 0)、
+loss と学習ループは上流流用。上流 train_orpo が `mx.set_wired_limit(max_recommended)`
+で cap を上書きする問題 (クラッシュ経路) もガード。per-row preference_score は
+per-task β 変調の口として素通し。
+
+dry-run 実測: mask 無し 9.33 → **mask 有り 4.65** → v1 継続 1.56。
+
+### N2 probe (今夜 21:00〜 自動実行)
+
+- **v1 継続 ORPO** (adapters/v1 を resume、layers 8 一致) — 継続設計なので
+  from-scratch 分散 (§25) の影響を受けない対応比較ができる
+- data: event pairs_n8 178 対 (chosen=Opus 教師 / rejected=N1 自身の出力 = on-policy)
+- 300 iters / lr 5e-6 / β 0.1 / 8k / cap 100 / Ollama 完全停止
+- 判定: 凍結 39 件で v1 vs n2p の対応比較 (caveats・引用健全性・識別子)
+
+### RLVR / S2 の処遇 (2026-09-08 判断)
+
+- **RLVR は当面見送り**: mlx の GRPO ~0.02 it/s で実用不能。関門 (識別子/引用/schema)
+  は当面 (a) データフィルタ (実施中) と (b) 評価軸として使う。
+- **S2 (選好) はやらない**: S 課題は判定者間天井に到達済みで測定された欠陥が無い
+  (§7 の ROI 原則)。IPO-S の副作用実測 (§14) も否定的。
