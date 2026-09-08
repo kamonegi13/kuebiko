@@ -259,12 +259,17 @@ def main() -> int:
     model.freeze()
     linear_to_lora_layers(model, args.num_layers, {"rank": 8, "dropout": 0.0, "scale": 20.0})
     if args.resume_adapter_file is not None:
-        model.load_weights(str(args.resume_adapter_file), strict=False)
         # ⭐ dtype 正規化 (2026-09-08 分離実測): モデル本体は bf16 だが、継続元 adapter
         # ファイルの重みが fp16 で混入すると長系列 (≳5k) の forward が全 NaN になる
-        # (fp16 の範囲 65504 を活性が超える)。bf16 へ揃えると NaN 0・メモリ据え置き。
-        model.apply(lambda p: p.astype(mx.bfloat16) if mx.issubdtype(p.dtype, mx.floating) else p)
-        print(f"adapter 継続: {args.resume_adapter_file} (dtype を bf16 に正規化)")
+        # (fp16 の範囲 65504 を活性が超える)。読み込む adapter 側だけを bf16 へ cast する
+        # — model.apply で全体を cast すると量子化 scale のカーネル経路が変わり
+        # 学習が ~6 倍遅くなる (74s/iter を実測)。
+        resumed = [
+            (k, v.astype(mx.bfloat16) if mx.issubdtype(v.dtype, mx.floating) else v)
+            for k, v in mx.load(str(args.resume_adapter_file)).items()
+        ]
+        model.load_weights(resumed, strict=False)
+        print(f"adapter 継続: {args.resume_adapter_file} (adapter 側のみ bf16 正規化)")
     if args.train_layers and args.train_layers < args.num_layers:
         # LoRA を巻いた num_layers のうち、末尾 train_layers 以外は凍結する。
         # resume した adapter の全層は forward に効き続ける (部分 resume の黙落を防ぐ)。
