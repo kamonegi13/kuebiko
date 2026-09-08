@@ -866,3 +866,48 @@ dry-run 実測: mask 無し 9.33 → **mask 有り 4.65** → v1 継続 1.56。
 - 推奨: `step:event_news → kuebiko-sft:26b` の段階的切替 (最大トラフィックの step を
   ローカル化、spotlight/ledger は Sonnet 継続)。step 上書き機構でそのまま表現でき即時
   rollback 可。判断は利用者へ。
+
+
+## 30. N2 = 不採用、think A/B = 夜間精査の前提崩壊、event_news 本番 N1 化 (2026-09-08 夕)
+
+### N2 (v1 継続 ORPO 150 iters) — 逆効果で不採用
+
+学習は健全化した (acc 1.000 / margin +1.49 / NaN 0) が、凍結 39 件で**全欄が悪化**:
+caveats 1.54→0.79 (N1 勝ち 23-1) / disc 0.97→0.36 (21-0) / unknowns 2.44→0.72 (31-0)。
+
+機構: rejected = N1 自身の出力には各欄が (1.5/2.4 水準で) 含まれる。ORPO の分離は
+「Opus の中身に近づく」方向ではなく「自分の旧分布から離れる」方向に進み、欄の放出が
+巻き添えで抑制された。**on-policy rejected の一括押し下げは、自分の長所も一緒に潰す**。
+欄の充実はプロンプト (rubric) 側の梃子で攻める (spotlight の実測 §27 と同結論)。
+adapters/n2p・kuebiko-sft:n2p は捨てる。
+
+到達した ORPO 工学 (次回への資産): ①prompt mask 必須 (scripts/train_orpo_masked.py)
+②継続 adapter の fp16 混入は長系列 NaN → **adapter 側のみ** bf16 cast (全体 cast は
+量子化カーネルが 6 倍遅くなる) ③nan_to_num は NaN を loss=β·ln2 に隠蔽する — 重みの
+NaN 直接検査を工程に入れる ④分割 50 iters + プロセス新調で断片化 OOM を回避。
+
+### think A/B 再測定 (同一スナップショット 10 situations・3 腕) — 07-24 の前提が崩壊
+
+| 腕 | 完走 | vs Sonnet+think: leading / 確信度 | 平均所要 |
+|---|---|---|---|
+| Sonnet+think (夜間本番構成) | 10/10 | — | 59s |
+| **Sonnet+off** | 10/10 | **10/10 / 8/10** (相違 2 件は逆方向ずつ = 揺らぎ) | 24s |
+| N1+off | 10/10 | 8/10 / 7/10 | 21s |
+
+- 07-24 の「OFF は仮説を採点漏れ」は再現せず (両腕とも全数採点) — **正体は 08-21 に
+  根治した schema required 途中閉じだった可能性が濃厚**。仮定の質も精読で同等
+  (OFF 腕が最鋭のメタソース批判を出す例あり)。
+- **N1 は ACH に不適**: leading 2/10 流れ + 仮定が主張を鵜呑みにする方向
+  (「個別の侵害事案である」「効率化に寄与している」— 懐疑の欠如)。R 型 (pair) と同様、
+  判定系の懐疑性は N 族 SFT が運ばない。
+- 帰結: **夜間 deep review の think 前提は消滅**。残る価値は日次一括の整理 (増分の
+  二重加算・順序依存の掃除) のみで、それは think 不要 = Sonnet+off (24s×20=8 分) で
+  足りる。夜間の担い手はモデル品質の理由で Sonnet 維持 (N1 不可)。think OFF 化は
+  コード変更 (ThinkOnClient 剥がし) — n=10 のため利用者判断待ち。
+
+### 本番切替 (Phase 1 実行済み、config v12)
+
+`step:event_news → kuebiko-sft:26b` (N1)。根拠 = §29 (信頼性層で Sonnet に有意勝ち)。
+narrative ティアの残り (spotlight / ledger_review) は Sonnet 継続。rollback は
+step 上書きを外すだけ。次の毎時 eventnews から N1 が本番生成する — 初回実運用の
+出力を観察すること。
