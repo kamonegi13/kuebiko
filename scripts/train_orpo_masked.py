@@ -73,8 +73,12 @@ class MaskedORPODataset:
 def iterate_masked_orpo_batches(
     dataset: MaskedORPODataset, batch_size: int, max_seq_length: int, train: bool = False
 ) -> Any:
-    """prompt 領域を 0 にした mask を流す (それ以外は上流 iterate_orpo_batches と同形)。"""
-    idx = sorted(range(len(dataset)), key=lambda i: len(dataset[i]["chosen"]))
+    """prompt 領域を 0 にした mask を流す (それ以外は上流 iterate_orpo_batches と同形)。
+
+    長い順に並べる (上流は短い順): 最長バッチが最初に来るため、メモリ包絡の超過が
+    iter 1 で露見する (昇順 + シャッフルだと数十 iter 先で不意に OOM する)。
+    """
+    idx = sorted(range(len(dataset)), key=lambda i: len(dataset[i]["chosen"]), reverse=True)
     if len(dataset) < batch_size:
         raise ValueError(f"データ {len(dataset)} 行 < batch_size {batch_size}")
     batch_idx = [idx[i : i + batch_size] for i in range(0, len(idx) - batch_size + 1, batch_size)]
@@ -235,7 +239,12 @@ def main() -> int:
         base_weights = dict(mx.load(str(args.resume_adapter_file)))
         trained = dict(mx.load(str(args.adapter_path / "adapters.safetensors")))
         merged = {**base_weights, **trained}
-        mx.save_safetensors(str(args.adapter_path / "adapters.safetensors"), merged)
+        # mx.load は memory-map するため、読み元と同じパスへ直接保存すると read エラーに
+        # なる。実体化してから一時ファイル経由の原子的 rename で書く。
+        mx.eval(*merged.values())
+        tmp = args.adapter_path / "adapters.merged.safetensors"
+        mx.save_safetensors(str(tmp), merged)
+        tmp.replace(args.adapter_path / "adapters.safetensors")
         print(f"継続元 {len(base_weights)} keys + 学習済み {len(trained)} keys → merge 保存")
     return 0
 
