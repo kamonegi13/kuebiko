@@ -120,6 +120,7 @@ class Step(StrEnum):
     # 「ここを割り当てれば Grok の抽出モデルが変わる」という誤認を生む (config/agents.yaml
     # を撤去したのと同じ理由)。復活させるならスケルトンから書き直すこと。
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
+    PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
     DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap deep-dive (narrative + rubric)
     SYNTHESIS_DETECT = "synthesis_detect"  # synthesis 内 detect-new (大量入力 triage)
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
@@ -162,6 +163,11 @@ class StepSpec:
 STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
+    # pair 判定は 1 呼出 = 小さな関係判定 (max_tokens 300)。専用 step の理由: 以前は
+    # Step.TRIAGE を借用しており、triage の step 上書き (S 族 SFT) を黙って継承していた。
+    # 関係判定 (同一性照合) は S 族の適用対象外 — 分類 SFT が分割方向へ歪める実測あり
+    # (SYNTHESIS.md §25、held-out 149 で base 89.3% vs S 混合 83.9%)。
+    Step.PAIR_JUDGE: StepSpec(Tier.FAST, 120.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),
     Step.PIR_DAILY_FOCUS: StepSpec(Tier.FAST, 120.0),

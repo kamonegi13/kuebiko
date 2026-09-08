@@ -323,8 +323,10 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
             verdicts = await pair_shadow.judge_pairs(
                 pairs_now,
                 vectors,
-                # ⭐ 判定は fast ティア (26B)。31B は 4 倍遅く、外部は枠を食う (2026-08-31 実測)
-                llm=build_llm_for(Step.TRIAGE, config),
+                # ⭐ 判定は fast ティア既定 (base 26B)。31B は 4 倍遅く、外部は枠を食う
+                #    (2026-08-31 実測)。Step.TRIAGE 借用は triage の S 族上書きを黙って
+                #    継承するため専用 step に分離 (2026-09-08、SYNTHESIS.md §25)
+                llm=build_llm_for(Step.PAIR_JUDGE, config),
                 embed_summary=lambda arts: _embed_summaries(config, arts),
                 kinds=kinds,
             )

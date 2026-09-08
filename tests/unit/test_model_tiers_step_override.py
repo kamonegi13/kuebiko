@@ -70,6 +70,21 @@ class TestResolveStepModel:
         assert resolve_step_model(Step.ARTICLE_SUMMARY, db_path=db_path) == "gemma4:26b"
         assert resolve_step_model(Step.EVENT_NEWS, db_path=db_path) == "gemma4:31b"
 
+    def test_pair_judge_has_own_step_and_ignores_triage_override(self, db_path: Path) -> None:
+        """pair 判定が Step.TRIAGE 借用で triage の s1 上書きを黙って継承していた (2026-09-08)。
+
+        R 型 (関係判定) は S 族 SFT の適用対象外 — 専用 step を持ち、triage の
+        上書きに影響されず fast ティア既定 (base) に解決されること。
+        """
+        from src.tools.model_tiers import STEP_REGISTRY, Tier
+
+        assert STEP_REGISTRY[Step.PAIR_JUDGE].tier is Tier.FAST
+        assert STEP_REGISTRY[Step.PAIR_JUDGE].timeout_seconds == 120.0
+        save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": "kuebiko-sft:s1"}, db_path=db_path)
+        invalidate_model_tiers_cache()
+        assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "kuebiko-sft:s1"
+        assert resolve_step_model(Step.PAIR_JUDGE, db_path=db_path) == "gemma4:26b"
+
     def test_empty_override_means_absent(self, db_path: Path) -> None:
         # 空文字 = 解除 (UI で消したときの表現)。ティアに戻る。
         save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": ""}, db_path=db_path)
