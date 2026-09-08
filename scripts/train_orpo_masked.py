@@ -29,6 +29,7 @@ from typing import Any
 import mlx.core as mx
 import mlx.optimizers as optim
 import numpy as np
+from mlx.utils import tree_flatten
 from mlx_lm.tuner.utils import linear_to_lora_layers
 from mlx_lm.utils import load
 from mlx_lm_lora.trainer.orpo_trainer import ORPOTrainingArgs, evaluate_orpo, train_orpo
@@ -134,6 +135,13 @@ def main() -> int:
         default=None,
         help="既存 adapter から継続 (N2 = v1 継続。layer 構成は当該 adapter と一致させること)",
     )
+    ap.add_argument(
+        "--train-layers",
+        type=int,
+        default=0,
+        help="勾配を流す層数 (0 = num-layers 全部)。v1 の 8 層を全ロードしつつ"
+        "末尾 2 層だけ学習する等、resume の完全性とメモリを両立させる",
+    )
     args = ap.parse_args()
 
     mx.set_memory_limit(int(args.cap_gb * 1024**3))
@@ -145,6 +153,14 @@ def main() -> int:
     if args.resume_adapter_file is not None:
         model.load_weights(str(args.resume_adapter_file), strict=False)
         print(f"adapter 継続: {args.resume_adapter_file}")
+    if args.train_layers and args.train_layers < args.num_layers:
+        # LoRA を巻いた num_layers のうち、末尾 train_layers 以外は凍結する。
+        # resume した adapter の全層は forward に効き続ける (部分 resume の黙落を防ぐ)。
+        layers = model.model.layers if hasattr(model, "model") else model.layers
+        for layer in layers[: len(layers) - args.train_layers]:
+            layer.freeze()
+        n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
+        print(f"学習対象を末尾 {args.train_layers} 層に限定 (trainable {n_trainable / 1e6:.1f}M)")
 
     train_set = MaskedORPODataset(_load_rows(args.data / "train.jsonl"), tokenizer)
     valid_path = args.data / "valid.jsonl"
@@ -211,6 +227,16 @@ def main() -> int:
         args=training_args,
         training_callback=None,
     )
+
+    if args.resume_adapter_file is not None and args.train_layers:
+        # 上流は trainable のみ保存する → 凍結した継続元の層が adapter から欠落する。
+        # 継続元の全層に学習済み層を上書きマージして完全な adapter を再保存する
+        # (これを怠ると fuse 時に v1 の凍結 6 層が黙って消える)。
+        base_weights = dict(mx.load(str(args.resume_adapter_file)))
+        trained = dict(mx.load(str(args.adapter_path / "adapters.safetensors")))
+        merged = {**base_weights, **trained}
+        mx.save_safetensors(str(args.adapter_path / "adapters.safetensors"), merged)
+        print(f"継続元 {len(base_weights)} keys + 学習済み {len(trained)} keys → merge 保存")
     return 0
 
 
