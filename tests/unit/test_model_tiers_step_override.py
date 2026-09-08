@@ -73,7 +73,7 @@ class TestResolveStepModel:
     def test_pair_judge_has_own_step_and_ignores_triage_override(self, db_path: Path) -> None:
         """pair 判定が Step.TRIAGE 借用で triage の s1 上書きを黙って継承していた (2026-09-08)。
 
-        R 型 (関係判定) は S 族 SFT の適用対象外 — 専用 step を持ち、triage の
+        LLM を呼ぶ処理は自分の Step を持つ (借用禁止) — 専用 step は triage の
         上書きに影響されず fast ティア既定 (base) に解決されること。
         """
         from src.tools.model_tiers import STEP_REGISTRY, Tier

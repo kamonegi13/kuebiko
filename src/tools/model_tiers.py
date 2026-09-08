@@ -165,9 +165,9 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     # pair 判定は 1 呼出 = 小さな関係判定 (max_tokens 300)。専用 step の理由: 以前は
-    # Step.TRIAGE を借用しており、triage の step 上書き (S 族 SFT) を黙って継承していた。
-    # 関係判定 (同一性照合) は S 族の適用対象外 — 分類 SFT が分割方向へ歪める実測あり
-    # (SYNTHESIS.md §25、held-out 149 で base 89.3% vs S 混合 83.9%)。
+    # Step.TRIAGE を借用しており、triage の step 上書きを黙って継承していた (借用禁止の衛生)。
+    # 実測では pair 判定は SFT に不変 (base/s1/s15/s16/N1 の 5 腕が held-out 149 で全問一致、
+    # SYNTHESIS.md §27) — serving は base 維持、学習ミックスにも入れない (不活性)。
     Step.PAIR_JUDGE: StepSpec(Tier.FAST, 120.0),
     # kind 分類は 1 記事 = 小さな分類呼出。ML pair モデルは base 産の kind を特徴量として
     # 学習しているため、供給元モデルの無断シフト (step 借用による継承) を遮断する。
