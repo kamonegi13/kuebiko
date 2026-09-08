@@ -920,3 +920,35 @@ Opus SFT で獲得した挙動)。ACH で鵜呑み仮定を出すのは「懐疑
 **「ACH ドメインを一度も学習していない = base の挙動が出ている」**が正しい読み。
 懐疑的スタンスは文体・認識論的レジスタの一種で、SFT が運ぶ側 (§22 表) に属する。
 ACH の懐疑性獲得は原理的に可能な訓練課題であり、§31 で設計する。
+
+
+## 31. ACH 蒸留 Phase A — 保存済み Sonnet 判定からの枠ゼロ抽出 (2026-09-08 夜)
+
+利用者の 2 判断: ①教師収穫は週間枠回復後 (水曜夜) — だが「元々あるデータで
+できないか」の指摘で **DB 抽出に転換 (bridge 枠ゼロ)**。②**ACH の Opus 教師化は
+「今後の向上幅」として温存** — 今回は Sonnet 単独 (現職 = 昼夜とも Sonnet、
+参照も Sonnet、教師は混ぜない原則とも整合)。
+
+### 材料 (検分済み)
+
+- situation_revisions **1,937 件** — completion に要る欄はほぼ全部保存済み
+  (hypotheses/assumptions/missing/indicators/implication/leading/confidence)
+- reasoning = Sonnet は **2026-07-23 (config v8) から連続** → Sonnet 期 ~1,400 件
+- prior = 直前 revision (完全保存)、証拠窓 = situation_evidence.added_at で
+  era-忠実に分割可能 (prior 抜粋 / 新着ソース)
+
+### 抽出設計 (scripts/build_ach_teacher_from_db.py)
+
+- prompt は**本物の incremental_ground_and_score に捕獲クライアント** (sentinel 例外で
+  中断) — テンプレ再実装なしで byte 一致
+- 防御: 引用実在チェック (時代混在の遮断、§27 の教訓) / Sonnet 期フィルタ /
+  fallback 31B 混入 ~1 割は抽出後の分布監査で特徴付け
+- 既知の割り切り: confidence は後処理済み最終値 / carried 指標は空
+  (fired=[] と自己整合) / fired・scope_expanded 非保存 → 空
+- 水曜夜の bridge 収穫 (build_sft_teacher_ach.py) は**不足時の補充に格下げ**
+
+### 次工程 (収量確認後)
+
+分布監査 + 精読 → 学習 (S 型構造なので S 系レシピ、ローカルのみ) → 評価 =
+凍結スナップショット (Mon 10 件 + 追加採取) で leading 一致・仮定の懐疑性精読
+vs Sonnet 参照。成立すれば ledger_deep_review どころか昼 ACH のローカル化も射程。
