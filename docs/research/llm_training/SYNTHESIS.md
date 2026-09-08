@@ -1036,3 +1036,21 @@ kind の未測定点 (base との相互一致 — ML 特徴の供給元シフト
 - base 26B に残る fast: digest_deep_dive (→N1 候補・転移比較待ち) /
   synthesis_detect (評価セットが先 — Recall 致命) / pir_daily_focus (内容比較待ち)。
   全て通れば base は BUILTIN fail-safe のみになり、常駐 = s16 + N1 に集約。
+
+### §32 追記 3: fast 統合の完遂間近 (config v16、2026-09-08 深夜)
+
+利用者「①②③は今日できないのか」→ ①② を実測・切替、③ は設計完了:
+
+- **pir_daily_focus → s16**: 同一入力 19 sections 比較 — s16 は感染チェーン実体・件数・
+  時期まで具体化し、base の「警戒が必要です」型定型文が消える (既知の SFT 効果)。
+- **digest_deep_dive → N1**: 直近本番選抜 5 記事で同一入力生成 — 同じ 5 見出しで
+  **N1 は URL 全健全 vs base 1 本破損** (URL 内に日本語混入 = 製品リンク死)。内容同等+
+  (出典タイトルの APT28 帰属を接地して追加)、13% 簡潔。narrative 転移の期待どおり。
+- **synthesis_detect の評価セット設計 (③)**: situation_detection_log (11,534 行) が
+  run_at ごとの候補集合 + 判定 + 理由を完全保存 → **遡及リプレイ評価が可能**。
+  直近 3 週 = 56 run / opened 36 / assigned 140 / unassigned 237 / rejected 2,876。
+  設計: 56 run の候補集合を capture-client 方式で再構築し、s16/base をリプレイ、
+  logged Sonnet 判定と比較。**主指標 = open-recall (Sonnet の opened 36 件をどれだけ
+  拾うか — Recall 致命の軸)**、副 = 過剰 open 率 + 不一致の理由精読。ハーネスは翌日。
+- これで fast 帯の base 26B は synthesis_detect のみ。通れば base は BUILTIN fail-safe
+  専用となり、**常駐 = s16 + N1 の 2 本に集約**。
