@@ -28,32 +28,34 @@ TIER_META: dict[str, dict[str, str]] = {
     "reasoning": {
         "label": "構造化分析 (reasoning)",
         "description": (
-            "台帳の構造化分析 (昼の即時判定)。ACH 仮説採点・敵対的検証・増分評価・"
-            "報告書射影。拡張思考は常に無効 (実行時間の制約)。"
+            "台帳 ACH (仮説採点・増分評価) の既定ティア。⚠ 該当処理に「処理別の上書き」"
+            "がある場合はそちらが優先され、この割当は上書き解除時の既定になります。"
         ),
-        "examples": "台帳 ACH / adversarial / 増分評価 / 報告書射影",
+        "examples": "台帳 ACH / adversarial / 増分評価",
     },
     "narrative": {
-        "label": "散文生成・夜間精査 (narrative)",
+        "label": "散文生成 (narrative)",
         "description": (
-            "読み物の散文生成と、台帳 ACH の夜間精査 (当日判定の think 再評価)。"
+            "読み物の散文生成 (事象ニュース / PIR Spotlight / 週次深掘り)。"
             "外部モデル割当時は拡張思考 (think) を使えます (下の設定)。"
-            "夜間精査は拡張思考が有効な構成のときだけ実行されます。"
+            "夜間精査は 2026-09-10 に廃止 (実測: 判定変更の定着率がコイン投げ水準)。"
         ),
-        "examples": "状況総括の文章 / PIR Spotlight / 夜間精査",
+        "examples": "事象ニュース / PIR Spotlight / 週次深掘り",
     },
     "fast": {
         "label": "軽量 (fast)",
         "description": (
-            "高スループットの収集系バッチ。記事要約・翻訳・triage・抽出・deep-dive・PIR要点。"
-            "呼出 ~2500 回/日 — 外部モデル割当はコスト大 (月2億トークン級) なので注意。"
+            "高スループットの収集系バッチの既定ティア。呼出 ~2500 回/日 — 外部モデル"
+            "割当はコスト大 (月2億トークン級) なので注意。⚠ 多くの処理は「処理別の"
+            "上書き」で特化モデルに割当済みで、この既定が効くのは上書きの無い処理のみ。"
         ),
-        "examples": "記事要約 / 本文翻訳 / detect-new / 抽出 / PIR focus",
+        "examples": "detect-new ほか上書きの無い処理",
     },
     "dialog": {
         "label": "対話 (dialog)",
         "description": (
-            "user-facing の対話系。低頻度なので外部モデルを割り当てても収集系のコストに波及しない。"
+            "user-facing の対話系。低頻度なので外部モデルを割り当てても収集系のコストに"
+            "波及しない。ローカルモデル (kuebiko-sft:26b 等) への切替もここから可能。"
         ),
         "examples": "分析チャット / LLM支援検索 / PIR compile / selector 提案",
     },

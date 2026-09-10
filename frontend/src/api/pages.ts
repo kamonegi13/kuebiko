@@ -427,6 +427,10 @@ export interface LlmEndpointPreset {
 
 export interface ModelTiersResponse {
   tiers: Record<string, string>;
+  // 処理別の上書き (step → モデル)。ティア割当より優先される実効配線
+  step_overrides: Record<string, string>;
+  // 外部主腕のローカル受け皿 (tier → ローカルモデル)
+  local_fallbacks: Record<string, string>;
   // narrative ティアの拡張思考: "auto" (外部モデル割当時のみ ON) / "off"
   narrative_think: string;
   endpoints: LlmEndpointInfo[];

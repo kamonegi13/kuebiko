@@ -492,6 +492,24 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
 
 const TIER_ORDER = ["narrative", "reasoning", "dialog", "fast", "embedding"] as const;
 
+// 処理別上書きの日本語ラベル (UI 文言規約: 生 enum を直接表示しない)
+const STEP_LABELS: Record<string, string> = {
+  triage: "重要度判定 (triage)",
+  article_summary: "記事要約・翻訳",
+  article_translate: "本文翻訳",
+  pair_judge: "事象ペア同一性判定",
+  event_kind: "記事種別分類",
+  pir_llm_judge: "PIR 主題判定",
+  pir_daily_focus: "PIR 日次要点",
+  actor_sync: "アクター名同期",
+  digest_deep_dive: "週次深掘り",
+  event_news: "事象ニュース生成",
+  pir_spotlight: "PIR Spotlight",
+  synthesis_analysis: "台帳 ACH 分析",
+  synthesis_detect: "新規事象検知",
+  ledger_deep_review: "夜間精査 (廃止済み)",
+};
+
 // Claude Code サブスク bridge の状態 + 消費量。レート残量 API は存在しないため、
 // bridge が自己観測した消費 (5h 窓 = レート律速の単位 / 今日 / 7日) を表示する。
 function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
@@ -701,6 +719,33 @@ function ModelTiersEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
             />
           ))}
         </div>
+
+        {Object.keys(data.step_overrides ?? {}).length > 0 && (
+          <div className="border border-border-subtle rounded p-3 space-y-1.5">
+            <p className="m-0 text-xs font-medium text-fg-muted">
+              処理別の上書き — ティア割当より<strong>優先</strong>される実効配線
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+              {Object.entries(data.step_overrides).map(([step, model]) => (
+                <div key={step} className="flex items-baseline justify-between text-xs gap-2">
+                  <span className="text-fg-subtle">{STEP_LABELS[step] ?? step}</span>
+                  <code className="text-fg-muted">{model}</code>
+                </div>
+              ))}
+            </div>
+            {Object.keys(data.local_fallbacks ?? {}).length > 0 && (
+              <p className="m-0 pt-1 text-[11px] text-fg-subtle">
+                ローカル受け皿:{" "}
+                {Object.entries(data.local_fallbacks)
+                  .map(([t, m]) => `${t} → ${m}`)
+                  .join(" / ")}
+              </p>
+            )}
+            <p className="m-0 text-[11px] text-fg-subtle">
+              上書きは測定に基づき運用側で設定されます (履歴は「履歴・監査」タブ)。
+            </p>
+          </div>
+        )}
 
         <div className="flex items-center gap-3 pt-3 border-t border-border-subtle flex-wrap">
           <button
