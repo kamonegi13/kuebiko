@@ -1192,3 +1192,22 @@ NaN 事故の教訓: 教師対のトークン長は**全数実測**でフィル�
    4.6 倍速。要コード変更 — 「外部割当時のみ実行」ゲートの前提が消えたため撤去し、
    ThinkOnClient wrap を外部時のみに (小変更)。1 週間 leading flip を夜間ログで監視
 2. 昼 ACH (47 判定/日) は Sonnet 継続 → 夜間の観察合格後に判断 (完全ローカル化の最終盤)
+
+### §35 追記: 昼 ACH の遡及評価 → 本番切替 (config v17、2026-09-10 午後)
+
+利用者提案「過去データで昼 ACH の置換を判断できるのでは」→ DB 抽出 73 対 (再構築
+prompt + 実昼 Sonnet 出力) がそのまま凍結評価セットになった。学習キー汚染除去後の
+held-out 52 件で:
+
+- **leading 43/52 (82.7%)**。相違 9 件の内訳: 6 件は懐疑側への相違 (unverified/
+  reporting_artifact へ — 使命整合)、2 件は境界例、**1 situation (2 rev) のみ実弱点**
+  = 弱い SNS 連関 (QTFY→Salt Typhoon) を受容し Sonnet の情報源批判を落とした。
+  既存の adversarial 検証 + posture cap (モデル非依存のコード層) が安全網として残る。
+- conf 一致 24/52 は **cap アーティファクト** (参照=後処理済み最終値、方向 25:3 で
+  「ach1 生値が高い」一方向 — 本番では同じ cap を通るため実効一致はより高い)。
+
+**`step:synthesis_analysis → kuebiko-sft:ach1` (v17)** — 昼 ACH (47 判定/日) が
+ローカル化。日次 Sonnet 呼出の最大口が消える。監視: hypothesis_flip 率・adversarial
+発動率を 1 週間。夜間 deep review の処遇は別判断 (外部専用ゲートのコード変更が要る):
+(A) 廃止 (think 前提消滅 + 昼が同品質化で存在意義が縮小) / (B) ach1 化 (日次一括
+整理として保持)。残る外部 = spotlight (rubric 作業中)・夜間 (A/B 判断待ち)・対話系。
