@@ -1344,3 +1344,35 @@ fallback:narrative は冗長化のため撤去。
 
 直近の実行列: detect v3 審判 → s17 統合 (常駐 2 本化) → event rubric 観点リスト化 →
 埋込対比学習。ORPO/RL はこの結果で出番が自然に決まる (「測定された欠陥が先」§7/§34)。
+
+
+## 39. s17 統合 = 全ゲート合格 → 常駐 2 本化達成 (config v20、2026-09-10 夕)
+
+**レシピ**: dataset_s16 (4,224) + dataset_ach1 (355) **×4 複製** = 5,644 train / 80 valid、
+shuffle seed 13。s16 レシピ踏襲 (layers 8 / lr 1e-5 / max-seq 12500 / cap 95 / mask-prompt)、
+iters のみ 1400 (= S 露出 ~1,050 ≈ s16 の 900 + ACH 露出 ~350 ≈ ach1 の 500 相当)。
+学習 2h17m、val 0.907 (700 iters で 0.901 — 収束)、NaN なし。
+
+**ゲート結果 (5 系)**:
+
+| ゲート | s17 | 参照 | 判定 |
+|---|---|---|---|
+| pair 凍結 149 | **s16 と 149/149 全問一致** (Opus 一致 125 = s16 同数) | s16: 125 | ✅ 不変 |
+| event_kind 300 | 278/300 (相互 297/300) | s15: 279 | ✅ 同等 |
+| triage goldset 150 | 相互 146/150・**high→low flip 0**・1 件は gold 側へ改善 | s16 | ✅ |
+| 昼 ACH held-out 52 | leading **43/52 = ach1 と同数** (相互 48/52、相違 9 中 7 共通) | ach1: 43 | ✅ 同等 |
+| ACH 凍結 snapshot 20 | run1 17/20 → 再走で揺らぎ切り分け: 再現相違は隣接仮説 1 件のみ | ach1: 19 | ✅ 実質同等 |
+
+snapshot の切り分けが方法論的に重要: run1 の相違 2 件のうち「新着を無関係と判定した
+のに leading を動かした」ように見えた 1 件は、**同一入力の再走で Sonnet 一致に戻った =
+温度による揺らぎ** (Modelfile temp 1)。再現したのは criminal_financial vs
+opportunistic_commodity の隣接境界 1 件だけ。**単発 run の少数件差は、まず同一入力で
+再走して揺らぎと系統差を切り分ける** (分散 doctrine §25 の評価側への適用)。
+
+**config v20**: fast 系 8 step (triage/summary/pair/kind/pir_judge/translate/actor_sync/
+daily_focus) + synthesis_analysis を `kuebiko-sft:s17` へ。digest_deep_dive = N1 のまま、
+fast 既定 = gemma4:26b (detect は現行 base のまま — §36 決着どおり)。
+
+**常駐の最終形 (当初計画どおり)**: **s17 + N1 (+ base = fast 既定の fail-safe)**。
+s16 / ach1 は rollback 用に disk 保全 (1 週間の監視後に剪定判断)。監視は ach1 と同じ
+hypothesis_flip / adversarial 発動率 + 切替直後の毎時 run 観察。
