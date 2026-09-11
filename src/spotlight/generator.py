@@ -423,6 +423,42 @@ async def generate_spotlight(
         think=False,
     )
 
+    # 尾部最小件数関門 (2026-09-11)。蒸留モデルは caveats / unknowns を系統的に
+    # under-produce する (教師はゼロ件なし)。指示では埋まらないため同一プロンプトで
+    # 再サンプルし最良候補を採る。識別子関門より前に置く (採用候補を検査対象にする)。
+    from src.spotlight.tail_gate import MAX_RESAMPLES, tail_deficit, tail_score
+    from src.spotlight.tail_gate import gate_enabled as tail_gate_enabled
+
+    if tail_gate_enabled():
+        best = output
+        for attempt in range(MAX_RESAMPLES):
+            deficit = tail_deficit(best)
+            if not deficit:
+                break
+            _log.warning(
+                "spotlight_tail_resample",
+                pir_id=pir.id,
+                attempt=attempt + 1,
+                deficit=list(deficit),
+            )
+            candidate: _LLMSpotlightOutput = await llm.generate_structured(
+                prompt=prompt,
+                schema=_LLMSpotlightOutput,
+                temperature=0.3,
+                max_tokens=6144,
+                think=False,
+            )
+            if tail_score(candidate) > tail_score(best):
+                best = candidate
+        if tail_deficit(best):
+            _log.warning(
+                "spotlight_tail_unmet",
+                pir_id=pir.id,
+                caveats=len(best.caveats),
+                unknowns=len(best.unknowns),
+            )
+        output = best
+
     # 識別子関門 (2026-09-06、事象ニュース関門の narrative 延長)。プロンプトに無い
     # 識別子 (転記破損・出典外) を検知したら、具体値を示して 1 回だけ書き直させる。
     # 再試行後も残る場合は保存を止めず記録する (週次成果物の可用性を優先。残余の

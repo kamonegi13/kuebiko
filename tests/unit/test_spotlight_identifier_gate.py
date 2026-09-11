@@ -139,6 +139,8 @@ def _patched_generator(monkeypatch: pytest.MonkeyPatch) -> _FakeLLM:
             return {}
 
     monkeypatch.setattr(gen, "RunHistoryRepository", _FakeRepo)
+    # 尾部最小件数関門 (2026-09-11) は本テストの関心外 — fake は 1 件ずつしか返さない
+    monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "0")
     return _FakeLLM()
 
 
