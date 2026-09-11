@@ -11,10 +11,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import jinja2
+import structlog
 
 from src.cti.source_basis import classify_source_tier
+from src.eventnews.list_dedup import dedup_draft
 from src.eventnews.models import PROMPT_MEMBER_CAP, EventNewsDraft, MemberArticle
 from src.tools.llm_client import LLMClient
+
+_log = structlog.get_logger(__name__)
 
 _PROMPT_TEMPLATE = "eventnews/refine.j2"
 _PROMPTS_DIR = Path("prompts")
@@ -159,9 +163,16 @@ async def generate_draft(
     組み立てて渡す — モデル名をここでハードコードしない。
     """
     prompt = build_prompt(members, allowed_identifiers_text, rewrite_hint=rewrite_hint)
-    return await llm.generate_structured(
+    draft: EventNewsDraft = await llm.generate_structured(
         prompt=prompt,
         schema=EventNewsDraft,
         temperature=0.2,
         think=False,
     )
+    # 契約正規化 (2026-09-11): リスト欄の同文反復を畳む (SFT の反復ループ対策、教師に重複は無い)。
+    # 関門 (識別子・[N]) は runner が統合する方針のままだが、これは生成物の契約整形なので
+    # 通常生成と書き直しの両方に効くようここで行う。
+    draft, removed = dedup_draft(draft)
+    if removed:
+        _log.warning("eventnews_list_dedup", removed=removed)
+    return draft
