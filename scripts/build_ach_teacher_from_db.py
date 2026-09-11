@@ -98,8 +98,11 @@ def _evidence_rows(store: SituationStore, sid: str) -> list[dict[str, str]]:
 
 
 async def _capture_prompt(
-    row: Any, prior: RevisionRow, prior_excerpts: list[dict[str, str]],
-    sources: list[dict[str, str]], tier_by_id: dict[str, str]
+    row: Any,
+    prior: RevisionRow,
+    prior_excerpts: list[dict[str, str]],
+    sources: list[dict[str, str]],
+    tier_by_id: dict[str, str],
 ) -> str | None:
     cap = CaptureClient()
     try:
@@ -149,9 +152,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 if prior is None:
                     stats["no_prior"] += 1
                     continue
-                window = [
-                    e for e in ev_all if prior.created_at < e["added_at"] <= r.created_at
-                ]
+                window = [e for e in ev_all if prior.created_at < e["added_at"] <= r.created_at]
                 if not window:
                     stats["no_sources"] += 1
                     continue
@@ -160,7 +161,8 @@ async def main_async(args: argparse.Namespace) -> int:
                     for e in ev_all
                     if e["added_at"] <= prior.created_at and e["excerpt"]
                 ]
-                sources, tier_by_id = [], {}
+                sources: list[dict[str, str]] = []
+                tier_by_id: dict[str, str] = {}
                 for e in window[:8]:
                     src = _build_source(repo, e["article_id"])
                     if src:
@@ -171,15 +173,44 @@ async def main_async(args: argparse.Namespace) -> int:
                 if not sources:
                     stats["no_sources"] += 1
                     continue
+
                 # 引用実在チェック: 窓の証拠 excerpt が再構築ソースに実在すること
-                joined = _norm(" ".join(s.get("text", "") for s in sources))
+                def _citations_ok(srcs: list[dict[str, str]], ev: list[dict[str, str]]) -> bool:
+                    joined = _norm(" ".join(s.get("text", "") for s in srcs))
+                    return bool(ev) and all(
+                        not e["excerpt"] or _norm(e["excerpt"])[:80] in joined for e in ev
+                    )
+
                 source_aids = {s["article_id"] for s in sources}
                 used = [e for e in window if e["article_id"] in source_aids]
-                if not used or any(
-                    e["excerpt"] and _norm(e["excerpt"])[:80] not in joined for e in used
-                ):
-                    stats["citation_fail"] += 1
-                    continue
+                if not _citations_ok(sources, used):
+                    # 切り詰め長のドリフト回収: 判定当時より短い truncate_body だと
+                    # 当時の excerpt が今日の再構築文の外に出る。historical (長尺) で
+                    # 再構築して通れば採用 (本文が実際に変わった行は落ちたまま)。
+                    sources_h: list[dict[str, str]] = []
+                    for e in window[:8]:
+                        src = _build_source(repo, e["article_id"], historical=True)
+                        if src:
+                            sources_h.append(src)
+                    if sources_h and _citations_ok(
+                        sources_h,
+                        [
+                            e
+                            for e in window
+                            if any(s["article_id"] == e["article_id"] for s in sources_h)
+                        ],
+                    ):
+                        sources = sources_h
+                        tier_by_id = {
+                            s["article_id"]: classify_source_tier(s["feed_title"], s["feed_url"])
+                            for s in sources
+                        }
+                        source_aids = {s["article_id"] for s in sources}
+                        used = [e for e in window if e["article_id"] in source_aids]
+                        stats["citation_recovered"] = stats.get("citation_recovered", 0) + 1
+                    else:
+                        stats["citation_fail"] += 1
+                        continue
                 prompt = await _capture_prompt(row, prior, prior_ex, sources, tier_by_id)
                 if prompt is None:
                     stats["build_fail"] += 1
