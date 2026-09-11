@@ -30,6 +30,7 @@ kuebiko のローカル LLM を SFT する過程で直面した具体的な問�
 | `distillation_transfer.md` | 強い教師から何が転移するか |
 | `preference_optimization.md` | SFT 後段の選好最適化 (DPO 系) |
 | `evaluation_methodology.md` | 静かな劣化をどう検出するか |
+| `sft_transfer_failure_diagnosis.md` | 継続学習の不動・seed 分散・尾部欄の欠落 — 学習経路 (lr・容量・露出) の診断と是正順序 (2026-09-11) |
 
 ## 関連する repo 内の資産
 
