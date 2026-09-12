@@ -1532,3 +1532,17 @@ cap 95 の内側)。系列長のメモリ壁 (§40) とは別の壁で、buffer 
 3. 混合 (event + spotlight) は上記レシピで from-scratch。本番 N1 の差替え判断は混合版の
    凍結審判 2 種 + 定性対読の後 (s1 単独は event 専用で spotlight 未学習)。
 4. unknowns の天井はレシピでは破れない → 関門と尾部補筆 (C4) を並行。
+
+### 追記 (09-13): Stage 2 の壁の正体 = MLX の未修正バグ (mlx-lm#1185)
+
+再走も iter 353 で同じ死に方 (8 iters の探りは通る = 累積型)。調査の結果:
+- 499000 は MLX の Metal allocator が数える **live MTLBuffer の個数**上限 (mlx#1718、sysctl
+  `iogpu.rsrc_limit` が無い Mac では固定値)。bytes の壁とは独立。
+- **mlx-lm#1185 (open)**: LoRA 学習で個数が step ごとに数万単位で増え、cache は毎 step 空 —
+  `mx.compile` した学習 step と MoE の `gather_qmm` (routing で形が毎回変わる) の相互作用が疑い。
+  Qwen3.5/3.6 MoE・Gemma3 で再現報告、maintainer は未修正 (09-09 時点)。
+- 回避策の序列: `MLX_MAX_OPS_PER_BUFFER` (早期 commit、経験的) → `MLX_DISABLE_COMPILE=1`
+  (利用者報告で有効、≈2 倍遅) → LoRA keys を attention 限定 (文献の「MLP/expert が鍵」と衝突) →
+  層数を減らす (8 層は完走、16〜20 は未検証)。
+- 8 層で完走するのは「層ごとの 1 step あたりの増分」が小さく 3,410 iters でも上限に届かないため。
+  30 層は ~350 iter で到達 → 層数を上げるほど早く死ぬ。
