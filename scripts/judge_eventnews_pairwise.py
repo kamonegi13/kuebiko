@@ -21,7 +21,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -90,7 +90,7 @@ async def main_async(args: argparse.Namespace) -> int:
     n = min(len(rows_a), len(rows_b), args.limit or 10**9)
     client = ClaudeCodeClient(model=args.model, bridge_url=args.bridge_url, timeout_seconds=180)
     out_path = Path(f"data/mlx/judge_{label_a}_vs_{label_b}.json")
-    results: list[dict[str, object]] = []
+    results: list[dict[str, Any]] = []
     if out_path.exists() and not args.fresh:
         results = json.loads(out_path.read_text())
     done = {r["index"] for r in results}
