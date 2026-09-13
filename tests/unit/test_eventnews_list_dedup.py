@@ -94,3 +94,33 @@ class TestGenerateDraftWiring:
         draft = EventNewsDraft(headline="h", bluf="b", unknowns=["u1", "u2"])
         result = asyncio.run(generate_draft([_member("a1")], "", cast(LLMClient, _FakeLLM(draft))))
         assert result is draft
+
+
+class TestNearDuplicates:
+    def test_paraphrase_variants_collapse(self) -> None:
+        a = (
+            "影響を受けるバージョンについて、一方は最新版まで、もう一方はそれ以前としており、"
+            "表記の粒度が異なります。"
+        )
+        b = (
+            "影響を受けるバージョン表記について、一方は最新版まで、もう一方はそれ以前としており、"
+            "表記の粒度が異なります。"
+        )
+        assert dedup_items([a, b]) == [a]
+
+    def test_numeric_difference_is_not_a_duplicate(self) -> None:
+        # 日付・件数・版数の違いは別主張 (差分に数字があれば畳まない)
+        a = "報告日について、一方は 2026 年 8 月 20 日とされ、もう一方は同日に報じられたと記載。"
+        b = "報告日について、一方は 2026 年 8 月 21 日とされ、もう一方は同日に報じられたと記載。"
+        assert dedup_items([a, b]) == [a, b]
+
+    def test_short_claims_are_never_collapsed_by_similarity(self) -> None:
+        assert dedup_items(["被害は 80 組織", "被害は 80 組織超"]) == [
+            "被害は 80 組織",
+            "被害は 80 組織超",
+        ]
+
+    def test_distinct_claims_are_kept(self) -> None:
+        a = "初期侵入経路は特定されていない。"
+        b = "窃取されたデータの内容は公表されていない。"
+        assert dedup_items([a, b]) == [a, b]

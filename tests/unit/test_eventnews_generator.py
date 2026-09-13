@@ -9,6 +9,8 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+import pytest
+
 from src.eventnews.generator import build_prompt, generate_draft, select_members
 from src.eventnews.models import PROMPT_MEMBER_CAP, EventNewsDraft, FactItem, MemberArticle
 from src.tools.llm_client import LLMClient
@@ -135,7 +137,11 @@ class _FakeLLM:
 
 
 class TestGenerateDraft:
-    def test_generate_draft_returns_llm_structured_output(self) -> None:
+    def test_generate_draft_returns_llm_structured_output(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 尾部全空関門 (2026-09-13) は本テストの関心外 (fake は facts しか返さない)
+        monkeypatch.setenv("EVENTNEWS_TAIL_GATE", "0")
         members = [_member("a1", summary="Actor abused CVE-2024-1234")]
         draft = EventNewsDraft(
             headline="h",

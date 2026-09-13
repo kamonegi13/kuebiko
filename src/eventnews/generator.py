@@ -16,6 +16,8 @@ import structlog
 from src.cti.source_basis import classify_source_tier
 from src.eventnews.list_dedup import dedup_draft
 from src.eventnews.models import PROMPT_MEMBER_CAP, EventNewsDraft, MemberArticle
+from src.eventnews.tail_gate import MAX_RESAMPLES, tail_all_empty, tail_score
+from src.eventnews.tail_gate import gate_enabled as tail_gate_enabled
 from src.tools.llm_client import LLMClient
 
 _log = structlog.get_logger(__name__)
@@ -175,4 +177,24 @@ async def generate_draft(
     draft, removed = dedup_draft(draft)
     if removed:
         _log.warning("eventnews_list_dedup", removed=removed)
+    # 尾部全空関門 (2026-09-13): 相違点・注意点・未解明点が 3 欄とも空なら同一プロンプトで
+    # 再サンプルし、尾部が最も充足した候補を採る (教師 0/39・N1 0/39 に対し是正レシピは 3/39)。
+    if tail_gate_enabled() and tail_all_empty(draft):
+        best = draft
+        for attempt in range(MAX_RESAMPLES):
+            _log.warning("eventnews_tail_resample", attempt=attempt + 1)
+            candidate: EventNewsDraft = await llm.generate_structured(
+                prompt=prompt,
+                schema=EventNewsDraft,
+                temperature=0.2,
+                think=False,
+            )
+            candidate, _ = dedup_draft(candidate)
+            if tail_score(candidate) > tail_score(best):
+                best = candidate
+            if not tail_all_empty(best):
+                break
+        if tail_all_empty(best):
+            _log.warning("eventnews_tail_unmet")
+        draft = best
     return draft

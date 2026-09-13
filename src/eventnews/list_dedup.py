@@ -10,12 +10,19 @@
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Sequence
 from typing import Any
 
 from src.eventnews.models import EventNewsDraft, FactItem
 
 LIST_FIELDS: tuple[str, ...] = ("key_points", "facts", "discrepancies", "caveats", "unknowns")
+# 言い換えだけの近傍重複 (「〜と記載している」/「〜と記載」等) を畳む類似度の下限。
+# 実測 (2026-09-13、凍結 39 件): 教師と N1 は 0.8 以上の対が 0、是正レシピの生徒は 2/39 item。
+# 0.8 未満は別主張とみなす (近い別主張を消す誤りの方が重い)。
+NEAR_DUP_RATIO = 0.85
+# 近傍重複の判定は長文の言い換えに限る。短い主張は 1 語の差が意味差 (「80 組織」/「80 組織超」)。
+NEAR_DUP_MIN_CHARS = 40
 
 
 def _key(item: str | FactItem) -> str:
@@ -23,15 +30,38 @@ def _key(item: str | FactItem) -> str:
     return " ".join(text.split())
 
 
+def _diff_has_digit(a: str, b: str) -> bool:
+    """差分側に数字が含まれるか (数値・日付・版数の違いは別主張とみなす)。"""
+    sm = difflib.SequenceMatcher(None, a, b)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag != "equal" and any(ch.isdigit() for ch in a[i1:i2] + b[j1:j2]):
+            return True
+    return False
+
+
+def _is_near_dup(key: str, kept_keys: Sequence[str]) -> bool:
+    if len(key) < NEAR_DUP_MIN_CHARS:
+        return False
+    for other in kept_keys:
+        if len(other) < NEAR_DUP_MIN_CHARS:
+            continue
+        if difflib.SequenceMatcher(None, key, other).ratio() < NEAR_DUP_RATIO:
+            continue
+        if _diff_has_digit(key, other):
+            continue
+        return True
+    return False
+
+
 def dedup_items[T: (str, FactItem)](items: Sequence[T]) -> list[T]:
-    """同文 (空白正規化後) を先頭 1 件に畳む。順序は保持。"""
-    seen: set[str] = set()
+    """同文と近傍重複 (長文・類似度 NEAR_DUP_RATIO 以上・数字差なし) を先頭 1 件に畳む。"""
+    kept_keys: list[str] = []
     kept: list[T] = []
     for item in items:
         key = _key(item)
-        if key in seen:
+        if key in kept_keys or _is_near_dup(key, kept_keys):
             continue
-        seen.add(key)
+        kept_keys.append(key)
         kept.append(item)
     return kept
 
