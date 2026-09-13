@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.tools.claude_code_client import ClaudeCodeClient  # noqa: E402
+from src.tools.llm_client import LLMError  # noqa: E402
 
 _SYSTEM = (
     "あなたは CTI 記事の要約品質を審査する編集者です。与えられた候補記事 (入力) に対する "
@@ -75,13 +76,21 @@ def _load(spec: str) -> tuple[str, list[dict[str, str]]]:
 
 
 async def _judge_one(client: ClaudeCodeClient, prompt: str, a: str, b: str) -> Verdict:
-    return await client.generate_structured(
-        prompt=_TEMPLATE.format(prompt=prompt, a=a, b=b),
-        schema=Verdict,
-        system=_SYSTEM,
-        temperature=0.0,
-        max_tokens=1200,
-    )
+    last: LLMError | None = None
+    for _ in range(3):  # bridge のタイムアウト・一時失敗は 2 回まで再試行
+        try:
+            return await client.generate_structured(
+                prompt=_TEMPLATE.format(prompt=prompt, a=a, b=b),
+                schema=Verdict,
+                system=_SYSTEM,
+                temperature=0.0,
+                max_tokens=1200,
+            )
+        except LLMError as e:
+            last = e
+            await asyncio.sleep(10)
+    assert last is not None
+    raise last
 
 
 async def main_async(args: argparse.Namespace) -> int:
