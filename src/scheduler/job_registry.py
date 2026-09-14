@@ -156,7 +156,8 @@ def default_jobs() -> list[JobDef]:
             id="morning-brief",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=15,  # 実測 p90 13 分 (2026-09-15 見直し)
+            # 台帳の増分 ACH 上限を 6 → 12 に上げたぶん (+6 × 32 秒 ≒ +3.2 分) を加算。
+            max_runtime_minutes=20,  # 実測 p90 13 分 + 台帳 cap 引上げ分 (2026-09-15)
             title="朝ブリーフィング",
             description=(
                 "毎朝の日次総括を生成し brief チャンネルへ配信。standing 常設情報要求の"
@@ -172,7 +173,8 @@ def default_jobs() -> list[JobDef]:
             id="evening-brief",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=15,  # 実測 p90 13 分 (2026-09-15 見直し)
+            # 台帳の増分 ACH 上限を 6 → 12 に上げたぶん (+6 × 32 秒 ≒ +3.2 分) を加算。
+            max_runtime_minutes=20,  # 実測 p90 13 分 + 台帳 cap 引上げ分 (2026-09-15)
             title="夕ブリーフィング",
             description=(
                 "夕方の日次状況更新を生成し brief チャンネルへ配信。standing 常設情報要求の"

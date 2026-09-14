@@ -1663,3 +1663,61 @@ event 682 + 圧縮 spotlight 161×3 (40%)、Stage 1 レシピ (rank 32 / lr 3e-5
 - 監視 1 週間: 関門発動率 + 週次審判 (本番 event 対 保存 N1 出力) + spotlight の定性。
 - 次: 状況総括の教師収穫 (§41 CoT) を n17m30 の混合に足す第 3 課題として。seed 2 本目で
   再現性の確認 (今回は全腕 1 seed)。
+
+## 44. CoT 蒸留の着手準備 (外部枠を使わない実装 + 長さの実測、2026-09-15)
+
+§41 の設計を実装に落とし、収穫の前に**長さと歩留まりを実測**した。外部 LLM 呼出ゼロ。
+
+### 実装 (3 点)
+
+1. **schema 内 CoT**: `src/synthesis/grounded/render.py` に `_WireSectionsCoT` を追加。
+   `analysis_notes` を **properties の先頭**に置く (制約デコードは宣言順に生成するので、
+   思考は本文より前でないと意味がない)。`_WireSections` を継承しないのは pydantic が基底の
+   フィールドを先に並べるため — 欄の同一性は `tests/unit/test_synthesis_cot_notes.py` が固定する。
+   **既定 OFF** (`SYNTHESIS_COT_NOTES=1` で有効)。本番 narrative を担う n17m30 は CoT を
+   学習していないので、収穫と配備までは本番の出力形を変えない (下流は常に `_WireSections`)。
+2. **全欄 required 化**: `_WireSections` は全欄に既定値があり required ゼロ = Qiita 記事 1 の
+   「途中閉じ」条件そのものだった。`src/tools/llm_schema.py:require_all_properties` に共通化し
+   (eventnews から移設)、render にも当てた。**これは CoT とは独立の欠陥修正**。
+3. **prompt seam の分離**: `build_render_plan()` が LLM を呼ばずにプロンプトを組む。本番も
+   オフライン評価もこの 1 箇所を通る = 全腕が同じ再構築で測られる (§27 の時代混在の再発防止)。
+   併せて `estimate_from_dict()` を追加 (`tradecraft.grounded_estimate` → Estimate)。
+
+プロンプトの 5 観点は §41/§40 の **Opus 増分 5 種**をそのまま置いた (出典の上流依存 / 時制監査 /
+期跨ぎ継続性 / 判断連結 unknowns / 日本への接点)。層分け規約どおり skeleton に slot を足し、
+seed yaml・legacy .j2・**DB (synthesis_render_rubric v3)** を同時更新した。
+⚠ skeleton は hot-mount で即時反映されるため、**DB に block を入れるまで composer は
+legacy へ fallback する** (実際に一時 fallback した。内容は byte 一致なので無害)。
+
+### 凍結審判セット (`scripts/build_synthesis_judge_set.py`)
+
+直近 15 窓 (判定 2 件以上) の render プロンプトを凍結 → `data/mlx/synthesis_judge_set.json`
+(CoT 版は `_cot.json`)。**headline mode は 15 件すべて moved** で quiet/plain がゼロ — 静穏日の
+挙動はこのセットでは測れない (必要なら別途 quiet 窓を足す)。収穫側に渡すべき予約日数
+(`--eval-reserve-days 15`) をスクリプトが印字する。
+
+### 長さの実測 — §41 の「系列が短く壁と干渉しない」は**誤り**
+
+Gemma-4 26B tokenizer で実測 (chars/token = 1.85、1.76-1.91)。daily 78 窓:
+
+| | 中央 | 最大 | ≤10.5k tok |
+|---|---|---|---|
+| プロンプト (通常) | 8.7k tok | 15.8k tok | 約 66% |
+| プロンプト (CoT) | 9.0k tok | 16.0k tok | 約 64% |
+| 凍結 15 窓 (直近) | 11.3k tok | 14.2k tok | 3/15 |
+
+**直近ほど長い** (台帳の判定数が増えた: 中央 10 件・最大 20 件)。completion は本番実測で
+中央 2,110 字 ≒ 1.1k tok (教師はこれより長く CoT も乗るので 2.5k を見込む)。
+→ pair 予算 13k (壁 14.1k の内側) に収めるとプロンプト上限は 10.5k tok。
+**予約 15 窓を除く 63 窓のうち収穫可能は約 46 窓** (§41 の想定 100-200 対には届かない)。
+
+そこで収穫は**収穫時に落とす**: 予算超過の render は教師に回さず (外部枠を使わない)、
+生成後も pair 見積りで足切りする (`build_sft_teacher_synthesis.py --cot
+--max-prompt-tokens 10500 --max-pair-tokens 13000`)。歩留まりを上げるなら次手は spotlight と
+同じ**入力の圧縮変換** (根拠抜粋の本数・standing 判定の切り詰め) だが、**本番プロンプトも
+同じ形にしないと生徒の入力分布がずれる**ため、実施するなら本番側と同時にやる。
+
+### 収穫前に決めること
+
+- 対 46 窓で足りるか (足りなければ weekly/monthly 窓も収穫対象に入れる — 形は同じ)。
+- 凍結 15 窓が全部 moved なので、合否線を「moved 窓での品質」に限定して読む。

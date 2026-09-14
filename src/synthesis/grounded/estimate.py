@@ -7,7 +7,8 @@ Estimate は「証拠接地 → ACH → 敵対的検証」を経た期間の情�
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from typing import Any, Literal
 
@@ -244,3 +245,68 @@ def final_confidence(
         reasons.append(f"帰属根拠不足により {conf}→{attr_cap} に抑制")
         conf = attr_cap
     return conf, "; ".join(reasons)
+
+
+def _dataclass_kwargs(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:
+    """dataclass の既知フィールドだけを取り出す (未知キーは捨てる)。"""
+    known = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in known}
+
+
+def _evidence_from(data: Any) -> tuple[EvidenceItem, ...]:
+    if not isinstance(data, list | tuple):
+        return ()
+    return tuple(
+        EvidenceItem(**_dataclass_kwargs(EvidenceItem, d)) for d in data if isinstance(d, dict)
+    )
+
+
+def _hypotheses_from(data: Any) -> tuple[HypothesisScore, ...]:
+    if not isinstance(data, list | tuple):
+        return ()
+    return tuple(
+        HypothesisScore(**_dataclass_kwargs(HypothesisScore, d))
+        for d in data
+        if isinstance(d, dict)
+    )
+
+
+def _judgment_from(data: Mapping[str, Any]) -> KeyJudgment:
+    kwargs = _dataclass_kwargs(KeyJudgment, data)
+    kwargs["evidence"] = _evidence_from(data.get("evidence"))
+    kwargs["hypotheses"] = _hypotheses_from(data.get("hypotheses"))
+    for tuple_field in (
+        "key_assumptions",
+        "missing_evidence",
+        "indicators",
+        "fired_indicators",
+        "pir_ids",
+    ):
+        value = kwargs.get(tuple_field)
+        kwargs[tuple_field] = tuple(value) if isinstance(value, list | tuple) else ()
+    return KeyJudgment(**kwargs)
+
+
+def estimate_from_dict(data: Mapping[str, Any]) -> Estimate:
+    """``estimate_to_dict`` の逆 (tradecraft.grounded_estimate → Estimate)。
+
+    過去記録は schema 進化の途中版を含む (optional 欄の後付け) ため、**未知キーは捨て、
+    欠落は dataclass の既定値に倒す**。凍結評価では過去窓を 1 件でも読み落とすと母集団が
+    変わるので、ここは例外を投げずに読み切れることを優先する (壊れた値は呼出側が検査する)。
+    """
+    judgments = data.get("judgments")
+    relations = data.get("relations")
+    kwargs = _dataclass_kwargs(Estimate, data)
+    kwargs["period_start"] = datetime.fromisoformat(str(data["period_start"]))
+    kwargs["period_end"] = datetime.fromisoformat(str(data["period_end"]))
+    kwargs["judgments"] = tuple(
+        _judgment_from(j)
+        for j in (judgments if isinstance(judgments, list | tuple) else ())
+        if isinstance(j, dict)
+    )
+    kwargs["relations"] = tuple(
+        (str(r[0]), str(r[1]), str(r[2]), str(r[3]))
+        for r in (relations if isinstance(relations, list | tuple) else ())
+        if isinstance(r, list | tuple) and len(r) >= 4
+    )
+    return Estimate(**kwargs)

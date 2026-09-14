@@ -79,10 +79,17 @@ _STATEFUL_POOL_LIMIT = 500
 # 通常週の未割当を全件読める)。旧 150 は遅い 31B の 900s timeout を招いていた根治。
 _DETECT_INPUT_MAX = 500
 _MAX_NEW_SOURCES_PER_UPDATE = 8  # 増分 ACH で読む新着本文の上限/Situation
-# 1 run で増分 ACH にかける Situation 数の上限 (Dense 31B は 1 呼出が数十〜百秒級のため予算制。
-# 超過分は繰越し = 次 run が再回収する。no-silent-caps: 繰越は必ず log)。
-# monthly は実測 29 分 (timeout 30 分に近接) かつ軌跡射影が主のため小さく。
-_MAX_UPDATES_BY_PERIOD: dict[str, int] = {"daily": 6, "weekly": 12, "monthly": 4}
+# 1 run で増分 ACH にかける Situation 数の上限。超過分は繰越し = 次 run が再回収する
+# (no-silent-caps: 繰越は必ず log)。monthly は軌跡射影が主のため小さい。
+#
+# daily 6 → 12 (2026-09-15): 旧値は **Dense 31B が 1 呼出 数十〜百秒級だった時期の予算制**。
+# 全 26B 化後の実測では増分 ACH 1 呼出 = 中央 32 秒 (s17、入力 2.4-7.0k tok) で約 1/3。
+# 上限は毎 run 拘束されており (25 run で updated がほぼ常に cap 貼り付き、繰越 14-107)、
+# 証拠の滞留は中央 0.8 日 / p90 3.6 日だった。12 なら +6×32s ≒ +3.2 分/run で滞留が半減する。
+# ⚠ 上げると Estimate の moved も増えるため、報告の幅は render 側で別に有界化する
+# (render._MOVED_SECTION_MAX — 台帳の鮮度と報告の幅は別の要求)。
+# weekly/monthly は幅の設計が別途必要 (weekly は判定 中央 92 件 / prompt 40k tok) なので据置。
+_MAX_UPDATES_BY_PERIOD: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 4}
 # 運用弁: backlog の強制排水用に cap を一時上書きする env (通常は未設定 = period 別既定)。
 # 手動 run (docker exec) と併用する。定時 cron に恒常設定しない (timeout 予算を壊す)。
 _REASSESS_CAP_ENV = "SYNTHESIS_REASSESS_CAP"

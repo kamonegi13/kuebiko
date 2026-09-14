@@ -29,7 +29,7 @@ _EXPECTED_SLOT_COUNT: dict[str, int] = {
     "nominate": 5,
     "detect_new": 5,
     "adversarial": 4,
-    "synthesis_render": 9,
+    "synthesis_render": 10,
 }
 
 # 各プロンプトの render 結果に必ず含まれるはずの block 由来テキスト (実証用の目印)。

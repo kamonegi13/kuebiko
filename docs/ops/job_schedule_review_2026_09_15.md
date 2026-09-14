@@ -109,3 +109,62 @@ in-process (job_run_log に所要なし、docker logs の summary から):
 
 - job_run_log に段ごとの所要を持たせ、`weekly-fill-rate-audit` 同様に週次で p90 を見る。
 - Ollama の load 回数 (server.log の runner started) を日次 heartbeat に載せる。
+
+---
+
+## 5. 追補 (2026-09-15 朝): 台帳の更新上限も 31B 起点だった
+
+§1 で「スケジュールと `max_runtime_minutes` の多くは Dense 31B 期の実測で決めた値」と書いたが、
+**同じことが状況総括の分析幅にも当てはまっていた**。`src/assessment/stateful.py` の
+`_MAX_UPDATES_BY_PERIOD` (1 run で増分 ACH にかける Situation 数) のコメントは
+「Dense 31B は 1 呼出が数十〜百秒級のため予算制」と明記していた。
+
+### 実測
+
+| 項目 | 実測値 |
+|---|---|
+| 増分 ACH 1 呼出 (s17 / 26B) | **中央 32 秒** (26-57 s、入力 2.4-7.0k tok、出力 0.5-1.6k tok) |
+| detect-new 1 呼出 (base 26B) | 92.7 s (入力 17.0k tok) |
+| 上限の拘束 | 25 run で `updated` がほぼ常に cap 貼り付き、**繰越 14-107 件** |
+| 証拠の滞留 | 中央 0.8 日 / **p90 3.6 日** (未読 59 件の最古 7.6 日) |
+| active situation 数 | 216 (10 日で 198 → 216) |
+
+31B 期は narrative 1 呼出 p50 101 秒だったので、ACH の実コストは約 1/3 になっている。
+破綻はしていないが、**上限は「証拠反映の遅れ」を買っている**状態だった。
+
+### 変更 (daily のみ)
+
+| 対象 | 旧 | 新 | 根拠 |
+|---|---|---|---|
+| `_MAX_UPDATES_BY_PERIOD["daily"]` | 6 | **12** | +6 × 32 s ≒ +3.2 分/run。繰越とp90 滞留が半減する見込み |
+| `render._MOVED_SECTION_MAX["daily"]` (新設) | — | **12 + 件数明示** | 台帳の鮮度と報告の幅を分離するためのガード |
+| morning/evening の `max_runtime_minutes` | 15 | **20** | 上記 +3.2 分 |
+
+**なぜ幅のガードを別に持つか**: 変更前は台帳の更新上限がそのまま「報告に載る変化の件数」に
+なっていた (standing だけは salience 上位 3 件に絞られていたのに moved は無制限)。台帳を広げると
+報告まで一緒に広がり、プロンプトが **判定 1 件 ≒ 600 tok** で伸びる。両者は別の要求なので分ける。
+落とした件数はプロンプトに明記する (no-silent-caps)。落ちた判定も **PIR ロールアップには残る**
+ので関心領域そのものは消えない。
+
+### 測ったうえで**入れなかった**もの
+
+- **PIR 別の最低 1 件保証 (daily)**: 過去 73 窓で moved は中央 5 件、上位 12 の cap が効く窓は
+  1 件のみ、PIR を落とす窓も 1 件のみだった。実需が無いので入れない (YAGNI)。
+- **weekly/monthly の幅の cap**: ここで一律に切ると報告が壊れる。別途設計する (下記)。
+
+## 6. 次の課題: weekly / monthly の幅 (未着手)
+
+| 期間 | 判定数 (中央) | render プロンプト (中央 / 最大) | 出力上限 |
+|---|---|---|---|
+| daily | 10 | 8.7k tok / 15.8k | 6,000 tok |
+| **weekly** | **92** | **40.2k tok / 55.9k** | 6,000 tok |
+| **monthly** | **137** | **60.7k tok / 73.4k** | 6,000 tok |
+
+weekly は 92 件の判定を約 4,000 字に押し込んでいる (1 件あたり 40 字強)。
+[SYNTHESIS.md §41](../research/llm_training/SYNTHESIS.md) が観察した「chain の因果/相関の峻別が
+同型列挙に退化」は、モデルの能力ではなく**この幅**が原因である可能性が高い。
+
+ただし weekly を salience 上位 8-12 に単純に切ると、測定した 11 窓**すべて**で PIR を落とす
+(`pir_general_agency_alert` ×9、`pir_apt_attribution` ×6、`pir_sw_supply_chain` ×4 ほか)。
+daily で不要だった PIR 別の最低保証が、weekly では必要になる。
+想定形: **salience 上位 N + PIR 別に最低 1 件 + 残りは件数のみ明示**。

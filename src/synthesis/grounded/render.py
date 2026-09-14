@@ -8,10 +8,14 @@
 from __future__ import annotations
 
 import json
+import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from src.logging_config import get_logger
 from src.storage.run_history import StatusSynthesisRecord
@@ -24,6 +28,7 @@ from src.synthesis.grounded.estimate import (
 from src.synthesis.grounded.hypotheses import get_hypothesis
 from src.synthesis.grounded.passes import _render
 from src.tools.llm_client import LLMClient
+from src.tools.llm_schema import require_all_properties
 
 _log = get_logger(__name__)
 _TEMPERATURE = 0.2
@@ -123,6 +128,13 @@ def project_tradecraft(est: Estimate, forecast_ctx: dict[str, Any] | None = None
 
 
 class _WireSections(BaseModel):
+    """LLM が返す narrative セクション (本番 schema)。
+
+    既定値は Python 側の構築しやすさのために残し、**LLM へ渡す schema だけ全必須**に
+    する (``require_all_properties``)。既定値持ち = required ゼロは、制約デコードで
+    省略が文法上許され後発の欄から静かに落ちる条件そのものだった (2026-08-26 実測)。
+    """
+
     model_config = {"extra": "ignore"}
     headline: str = ""
     weight_section: str = ""
@@ -130,6 +142,58 @@ class _WireSections(BaseModel):
     cog_section: str = ""
     spillover_section: str = ""
     pir_section: str = ""
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return require_all_properties(dict(handler(core_schema)))
+
+
+class _WireSectionsCoT(BaseModel):
+    """CoT (analysis_notes) つき schema。``SYNTHESIS_COT_NOTES=1`` のときだけ使う。
+
+    ``analysis_notes`` を **先頭** に置くのが要件 — 制約デコードは schema の properties 順に
+    生成するため、思考を本文より後ろに置くと「書いた後の後付け」にしかならない。
+    ``_WireSections`` を継承しないのは pydantic が基底のフィールドを先に並べるためで、
+    欄の同一性は ``tests/unit/test_synthesis_cot_notes.py`` が固定する。
+
+    既定 OFF の理由: 本番 narrative を担う生徒は CoT を学習していない。教師収穫と、
+    CoT を学習した生徒の配備までは本番の出力形を変えない (下流は常に ``_WireSections``)。
+    """
+
+    model_config = {"extra": "ignore"}
+    analysis_notes: str = ""
+    headline: str = ""
+    weight_section: str = ""
+    chain_section: str = ""
+    cog_section: str = ""
+    spillover_section: str = ""
+    pir_section: str = ""
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return require_all_properties(dict(handler(core_schema)))
+
+
+#: 本文に載せる「変化した判定」の上限 (報告の幅)。台帳の更新上限とは**別の要求**なので
+#: 別に持つ — 台帳は鮮度 (証拠をどれだけ早く消化するか)、こちらは読み物としての幅。
+#: 落とした件数はプロンプトに明記する (no silent caps)。落ちた判定も PIR ロールアップには
+#: 残るため、関心領域そのものが消えることはない。
+#: daily=12: 実測 (2026-09-15、過去 73 窓) の moved は中央 5 件で、台帳 cap を 12 に上げても
+#: 約 10 件。つまり通常は非発動の安全網。weekly/monthly は軌跡射影で中央 92/137 件を載せる
+#: 設計 (prompt 40k/61k tok) であり、幅の再設計が済むまで**切らない** (切ると報告が壊れる)。
+_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12}
+
+#: CoT 欄の有効化 flag (既定 OFF)。収穫スクリプトが 1 を立てて教師の思考を捕獲する。
+_COT_NOTES_ENV = "SYNTHESIS_COT_NOTES"
+
+
+def cot_notes_enabled() -> bool:
+    """analysis_notes (CoT) 欄を出力させるか。"""
+    return os.environ.get(_COT_NOTES_ENV, "0") == "1"
 
 
 # 段C: delta の日本語ラベル (射影用の決定論マッピング)。
@@ -281,28 +345,45 @@ def _pir_rollup(judgments: tuple[KeyJudgment, ...]) -> list[dict[str, Any]]:
     return out[:6]
 
 
-async def render_sections(
-    *,
-    llm: LLMClient,
-    est: Estimate,
-    period_label: str,
-    prev_headline_judgment_id: str | None = None,
-) -> _WireSections:
-    """Estimate のみを入力に、制約付きで narrative セクションを LLM render する。
+@dataclass(frozen=True)
+class RenderPlan:
+    """render 段の決定論部分 (プロンプトと、コードが指名した headline)。
 
-    段C: 判定は salience 決定論順、headline 対象もコードが指名する (LLM は順位を選ばない)。
-    新規/変化/継続のグルーピングも決定論 (delta_type) — LLM は変化の散文化のみ。
-    ``prev_headline_judgment_id`` = 前回 (daily は前日) の headline に立った判定 id。
-    quiet 日に同一判定が再掲される場合は決定論の継続表記へ置き換える (反復抑制)。
+    LLM を呼ばずにプロンプトだけを再構築できるようにするための seam。凍結評価は
+    **全腕を同じ再構築で測る**必要があり (2026-09-08 の時代混在の教訓)、本番と
+    オフライン評価がこの 1 箇所を共有することでその不変量を構造で保つ。
+    """
+
+    prompt: str
+    head: KeyJudgment | None
+    mode: str
+    ranked: tuple[KeyJudgment, ...]
+
+
+def build_render_plan(
+    *, est: Estimate, period_label: str, cot_notes: bool | None = None
+) -> RenderPlan:
+    """Estimate から render プロンプトを組む (LLM 呼出なし)。
+
+    ``cot_notes`` 未指定時は env flag (``SYNTHESIS_COT_NOTES``) に従う。
     """
     from src.assessment.salience import pick_headline, rank_judgments
 
-    if not est.judgments:
-        return _WireSections(headline="本期間に確度ある主要判定は得られなかった。")
     ranked = rank_judgments(est.judgments)
     head = pick_headline(est.judgments)
-    moved = [j for j in ranked if j.delta_type not in ("", "no_change")]
+    moved_all = [j for j in ranked if j.delta_type not in ("", "no_change")]
     standing = [j for j in ranked if j.delta_type in ("", "no_change")]
+    cap = _MOVED_SECTION_MAX.get(est.period_type)
+    moved = moved_all[:cap] if cap is not None else moved_all
+    moved_omitted = len(moved_all) - len(moved)
+    if moved_omitted:
+        _log.info(
+            "synthesis_moved_section_capped",
+            period_type=est.period_type,
+            moved=len(moved_all),
+            shown=len(moved),
+            omitted=moved_omitted,
+        )
     # 段D: 関係エッジ (決定論・共有 anchor 由来) を chain セクションの事実供給にする
     claim_by_id = {j.id: j.claim for j in est.judgments}
     rel_ja = {
@@ -323,13 +404,47 @@ async def render_sections(
         headline_view=_judgment_view(head) if head else None,
         headline_mode=mode,
         moved=[_judgment_view(j) for j in moved],
+        moved_omitted=moved_omitted,
         standing=[_judgment_view(j) for j in standing],
         pir_rollup=_pir_rollup(est.judgments),
         relation_lines=relation_lines,
+        cot_notes=cot_notes_enabled() if cot_notes is None else cot_notes,
     )
-    sections = await llm.generate_structured(
-        prompt, _WireSections, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
+    return RenderPlan(prompt=prompt, head=head, mode=mode, ranked=tuple(ranked))
+
+
+async def render_sections(
+    *,
+    llm: LLMClient,
+    est: Estimate,
+    period_label: str,
+    prev_headline_judgment_id: str | None = None,
+) -> _WireSections:
+    """Estimate のみを入力に、制約付きで narrative セクションを LLM render する。
+
+    段C: 判定は salience 決定論順、headline 対象もコードが指名する (LLM は順位を選ばない)。
+    新規/変化/継続のグルーピングも決定論 (delta_type) — LLM は変化の散文化のみ。
+    ``prev_headline_judgment_id`` = 前回 (daily は前日) の headline に立った判定 id。
+    quiet 日に同一判定が再掲される場合は決定論の継続表記へ置き換える (反復抑制)。
+    """
+    if not est.judgments:
+        return _WireSections(headline="本期間に確度ある主要判定は得られなかった。")
+    cot = cot_notes_enabled()
+    plan = build_render_plan(est=est, period_label=period_label, cot_notes=cot)
+    head, mode, ranked = plan.head, plan.mode, list(plan.ranked)
+    schema: type[_WireSections] | type[_WireSectionsCoT] = (
+        _WireSectionsCoT if cot else _WireSections
     )
+    raw = await llm.generate_structured(
+        plan.prompt, schema, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
+    )
+    if isinstance(raw, _WireSectionsCoT):
+        # 下流 (射影・保存・表示) は CoT 欄を知らない。長さだけ観測に残す
+        # (「欄は作ったが空だった」を後から数えられるようにする)。
+        _log.info("synthesis_cot_notes", chars=len(raw.analysis_notes.strip()))
+        sections = _WireSections.model_validate(raw.model_dump())
+    else:
+        sections = raw
     sections = _guard_headline(sections, head, mode)
     # 反復抑制 (2026-08-07): daily の quiet 日に前日と同一の standing 判定が headline へ
     # 再掲される場合、決定論の「前日から継続 + 次いで注視」合成に置き換える。
