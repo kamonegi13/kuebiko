@@ -20,6 +20,13 @@
 不当に休眠**していた (真の最終証拠は 8-10 日前 = 本来 active)。真値 = 汚染でない証拠の
 ``max(added_at)`` (無ければ ``opened_at``)。閾値は ``src.assessment.ledger`` から読む (SSoT)。
 
+**3 つ目の経路 — ``situations.title``** (``--repair-titles``、2026-09-15 追加): 増分 ACH は
+「評価済み claim が title と乖離したら title を進める」(同一性追従 P2) ため、リプレイの claim が
+``update_title`` でタイトルに焼き付いていた。revision を消してもタイトルは残る。しかも
+リプレイの 26B は日本語を壊すことがあり (「乱用調査委員会」→「事取査御会」)、
+**タイトルだけが化けた situation** が残った。復元 = 退避テーブルの claim と一致する title を、
+現存する最新 revision の claim へ戻す (コードが保つ不変量と同じ値)。
+
 **復元しないもの** (正直に記録): ``assessed_at`` を NULL に戻した 72 行の ``polarity`` /
 ``attribution_basis`` / ``excerpt`` はリプレイの ACH が上書きした値のまま残る。次の増分 ACH が
 評価し直すときに上書きされる (抜粋は本文照合済みなので捏造ではない)。
@@ -102,6 +109,42 @@ def situation_repairs(conn: Any, *, now: datetime) -> list[dict[str, Any]]:
     return out
 
 
+# タイトルがリプレイの claim (退避テーブル) と一致する situation と、現存する最新 claim。
+_POLLUTED_TITLES = """
+    SELECT s.situation_id AS situation_id, s.title AS title, r.claim AS latest_claim
+      FROM situations s
+      JOIN situation_revisions r ON r.situation_id = s.situation_id
+       AND r.rev = (SELECT MAX(rev) FROM situation_revisions x
+                     WHERE x.situation_id = s.situation_id)
+     WHERE s.title <> r.claim
+       AND EXISTS (SELECT 1 FROM {backup} b
+                    WHERE b.situation_id = s.situation_id AND b.claim = s.title)
+"""
+
+
+def repair_titles(repo: RunHistoryRepository, *, tag: str, dry_run: bool) -> int:
+    """リプレイの claim が焼き付いたタイトルを、現存する最新 claim へ戻す。"""
+    sql = _POLLUTED_TITLES.format(backup=f"_backup_replay_purge_rev_{tag}")
+    with repo._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(sql).fetchall()
+        targets = [(str(r["situation_id"]), str(r["title"]), str(r["latest_claim"])) for r in rows]
+        if dry_run:
+            for sid, title, claim in targets[:5]:
+                print(f"  {sid} 旧: {title[:38]}")
+                print(f"  {' ' * len(sid)} 新: {claim[:38]}")
+            return len(targets)
+        if targets:
+            conn.execute(
+                f"CREATE TABLE _backup_replay_purge_title_{tag} AS "
+                f"SELECT s.situation_id, s.title FROM situations s WHERE s.situation_id IN "
+                f"(SELECT situation_id FROM ({sql}) t)"
+            )
+            for sid, _title, claim in targets:
+                conn.execute("UPDATE situations SET title = ? WHERE situation_id = ?", (claim, sid))
+            conn.commit()
+    return len(targets)
+
+
 def counts(repo: RunHistoryRepository) -> dict[str, int]:
     out: dict[str, int] = {}
     with repo._connect() as conn:  # noqa: SLF001 — 監査スクリプトの接続 seam 共有
@@ -170,8 +213,19 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--apply", action="store_true", help="実際に退避 + 除去 + 復元する")
+    ap.add_argument(
+        "--repair-titles",
+        action="store_true",
+        help="タイトルに焼き付いたリプレイ claim を最新 claim へ戻す (--apply と併用で実行)",
+    )
+    ap.add_argument("--tag", default="20260914", help="退避テーブルの日付タグ")
     args = ap.parse_args()
     repo = RunHistoryRepository()
+    if args.repair_titles:
+        n = repair_titles(repo, tag=args.tag, dry_run=not args.apply)
+        verb = "復元した" if args.apply else "が対象 (dry-run — 変更なし)"
+        print(f"タイトル汚染 {n} 件{verb}")
+        return 0
     before = counts(repo)
     print("汚染行 (署名 = UTC 00:00:00 ちょうど):")
     for k, v in before.items():

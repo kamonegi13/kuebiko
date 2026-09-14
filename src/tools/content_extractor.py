@@ -121,6 +121,16 @@ DEFAULT_MIN_CONTENT_LENGTH = 200
 # 公式 advisory 型の「短いが完全なページ」を一律閾値で捨てないための汎用ルール。
 # 0.7 の根拠: JVN 型 (189 字 / min 200) を救い、明白な断片 (数十字) は弾く水準。
 _SHORT_PAGE_ACCEPT_RATIO = 0.7
+# 化け本文の関門 (2026-09-15)。U+FFFD (REPLACEMENT CHARACTER) は復号の不可逆な失敗の痕跡で、
+# 混入した本文はここで捨てる — 保存すると要約・entity・triage・群化のすべてが化けた本文で
+# 計算され、しかもジョブは succeeded で通るため死活監視にかからない (2026-09-04 の 241 件)。
+# charset 判定 (_detect_charset) は原因側の手当だが、判定失敗・壊れたソース・将来の別サイトで
+# 再発しうるので、**書込側にも関門を置く** (CLAUDE.md §7「禁止は指示では止まらない」と同型)。
+# 閾値は実測 (残存 5 件): 壊れた本文は 1,585-2,973 個 = 本文の 33-100%、健全な本文が引用で
+# 持つ U+FFFD は 1-3 個 = 0.01% 未満。**件数と比率の両方**を要求して引用を巻き込まない。
+_REPLACEMENT_CHAR = "\ufffd"
+_MOJIBAKE_MIN_COUNT = 5
+_MOJIBAKE_MIN_RATIO = 0.005
 
 # Cloudflare / bot 検知 を回避する init script (src/watchers/playwright_base.py と同じ)。
 # navigator.webdriver の隠蔽 + plugins の偽装でヘッドレス検知を回避。
@@ -368,6 +378,15 @@ class ContentExtractor:
                     length=len(text),
                 )
 
+        # 3b. 化け関門: 復号に失敗した本文を success で通さない (再取得へ回す)
+        if _is_mojibake(text):
+            return self._fail(
+                url,
+                "mojibake",
+                length=len(text),
+                replacement_chars=text.count(_REPLACEMENT_CHAR),
+            )
+
         # 4. metadata extraction (best-effort)
         metadata = _safe_extract_metadata(html)
         result = ExtractionResult(
@@ -591,6 +610,18 @@ class ContentExtractor:
 
 
 # ---------- module-level helpers ----------
+
+
+def _is_mojibake(text: str) -> bool:
+    """本文が復号失敗で化けているか (U+FFFD の件数と比率の両方で判定)。
+
+    比率だけだと短文で誤検出し、件数だけだと長文の引用を巻き込む。実測の分離は明瞭
+    (壊れ 33-100% 対 健全 0.01% 未満) なので、両方の条件で安全側に倒す。
+    """
+    if not text:
+        return False
+    count = text.count(_REPLACEMENT_CHAR)
+    return count >= _MOJIBAKE_MIN_COUNT and count / len(text) >= _MOJIBAKE_MIN_RATIO
 
 
 def pretrim_main_content(url: str, html: str) -> str:

@@ -81,3 +81,55 @@ async def test_extracts_shift_jis_body_without_replacement_chars() -> None:
     assert result.text is not None
     assert "�" not in result.text
     assert "ニチレイ" in result.text
+
+
+# ---- 恒久関門: 化けた本文を「成功」として通さない (2026-09-15) ----
+#
+# charset 判定 (上記) は原因側の修正。それでも化けが起きうる経路 (判定失敗・壊れた
+# ソース・将来の別サイト) で、**化けた本文が success=True で保存されるのを止める**関門を
+# 書込側に置く。2026-09-04 の事故は「ジョブは succeeded・本文は化け」で死活監視を
+# すり抜けた (241 件が要約・entity・triage・群化まで化けた本文で計算された)。
+#
+# 閾値の根拠 (2026-09-15 実測、残存 5 件): 壊れた本文は U+FFFD が 1,585-2,973 個
+# (本文の 33-100%)、健全な本文に混じる U+FFFD は 1-3 個 (11k-60k 字中 = 0.01% 未満)。
+# 引用された壊れ文字列を持つ正常記事を落とさないため、件数と比率の **両方** を要求する。
+
+
+def _mojibake_html(replacement_chars: int, filler: str = _JA_PARAGRAPH) -> bytes:
+    body = "�" * replacement_chars + filler * 3
+    return (
+        f"<html><head><title>t</title></head><body><article><p>{body}</p></article></body></html>"
+    ).encode()
+
+
+def _extractor_for(content: bytes) -> ContentExtractor:
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=content, headers={"content-type": "text/html"})
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), headers={"User-Agent": "TestUA/1.0"}
+    )
+    return ContentExtractor(min_content_length=200, user_agent="TestUA/1.0", client=client)
+
+
+@pytest.mark.asyncio
+async def test_mojibake_body_is_failed_not_stored() -> None:
+    """化けた本文は success=False。body_source の状態機械が再取得へ回す。"""
+    extractor = _extractor_for(_mojibake_html(400))
+
+    result = await extractor.extract("https://example.com/mojibake")
+
+    assert result.success is False
+    assert result.failure_reason == "mojibake"
+    assert result.text == ""
+
+
+@pytest.mark.asyncio
+async def test_isolated_replacement_chars_are_kept() -> None:
+    """正常記事が引用する少数の壊れ文字で本文を捨てない (件数と比率の両方を要求)。"""
+    extractor = _extractor_for(_mojibake_html(3))
+
+    result = await extractor.extract("https://example.com/quoted-fffd")
+
+    assert result.success is True
+    assert "ニチレイ" in result.text
