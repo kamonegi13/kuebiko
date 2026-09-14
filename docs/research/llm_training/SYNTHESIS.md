@@ -1652,3 +1652,14 @@ event 682 + 圧縮 spotlight 161×3 (40%)、Stage 1 レシピ (rank 32 / lr 3e-5
   観点リスト付きで Opus 超え。key_events も Opus と同数。
 - 統合 (常駐 2 本 = s17 + N) の判断は、event の対読 (混合 vs 単独 30 層、判定中) と spotlight の定性で。
   混合が event で単独に僅差なら 1 本化、差が品質に出るなら課題別 (event=単独 30 層、spotlight=混合)。
+
+### 追記 (09-14 深夜): 対読で混合 30 層が単独 30 層に勝ち越し → 統合完了 (常駐 2 本 = s17 + n17m30)
+
+- 審判 (event 凍結 39、混合 M30 対 単独 L30): **M30 18 勝 / L30 6 勝 / 引き分け 15** (39 件)。接地違反 M30 0.94 / L30 1.10、網羅 3.86 / 3.81、冗長同等。件数では単独が
+  上 (disc・unknowns) だったが品質では混合が上 — **件数差は品質差にならない**の再確認。
+- **切替 (config v22)**: narrative ティア = kuebiko-sft:n17m30 (event_news / pir_spotlight /
+  synthesis_narrative)、digest_deep_dive 上書き = n17m30、event_news 上書きは撤去 (ティアに従う)。
+  N1 (kuebiko-sft:26b) は退役 (disk 保全、rollback = v20/v21 revert)。**常駐 2 本 = s17 + n17m30 達成**。
+- 監視 1 週間: 関門発動率 + 週次審判 (本番 event 対 保存 N1 出力) + spotlight の定性。
+- 次: 状況総括の教師収穫 (§41 CoT) を n17m30 の混合に足す第 3 課題として。seed 2 本目で
+  再現性の確認 (今回は全腕 1 seed)。
