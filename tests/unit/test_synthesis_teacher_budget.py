@@ -1,90 +1,214 @@
-"""状況総括の教師収穫における長さ制御 (収穫時に落とす) の不変量。
+"""状況総括の教師収穫 (保存 estimate からの射影方式) の不変量。
 
-MLX 学習の系列長メモリ壁は ~14.1k トークン。学習に使えない長さの対を外部枠で作っても
-捨てるだけなので、**予算超過の窓は教師 (外部) に回さない**。2026-09-15 実測:
-凍結 15 窓の render プロンプトは中央 11.0k / 最大 13.9k トークン。
+- 台帳を書き換える経路 (``generate_synthesis(now=過去)``) を **import しない** — 2026-09-06 の
+  収穫が revision 95 件・既読マーク 133 件を過去時刻で汚染した再発防止。
+- 凍結審判の窓は収穫しない。
+- 長さは収穫時に落とす (MLX の壁 ~14.1k tok)。予算超過は教師に投げない。
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
+import build_sft_teacher_synthesis as harvest_mod  # noqa: E402
 from build_sft_teacher_synthesis import (  # noqa: E402
-    _RENDER_MARKER,
-    SelectiveTeacherClient,
+    Window,
     _est_tokens,
-    _has_notes,
+    accept_completion,
+    harvest,
+    reserved_keys,
+    select_windows,
+)
+
+from src.storage.run_history import StatusSynthesisRecord  # noqa: E402
+from src.synthesis.grounded.estimate import (  # noqa: E402
+    Estimate,
+    EvidenceItem,
+    HypothesisScore,
+    KeyJudgment,
+    estimate_to_dict,
 )
 
 
-class _Sections(BaseModel):
-    analysis_notes: str = ""
-    headline: str = ""
+def _record(day: int, judgments: int = 3) -> StatusSynthesisRecord:
+    start = datetime(2026, 8, day, 15, tzinfo=UTC)
+    js = tuple(
+        KeyJudgment(
+            id=f"j{i}",
+            claim=f"判定 {i}",
+            domain="cyber_incident",
+            leading_hypothesis="criminal_financial",
+            confidence="moderate",
+            confidence_basis="b",
+            hypotheses=(
+                HypothesisScore(
+                    hypothesis="criminal_financial", consistent=1, inconsistent=0, verdict="leading"
+                ),
+            ),
+            evidence=(
+                EvidenceItem(
+                    article_id="a",
+                    source_tier="t",
+                    attribution_basis="vendor_confirmed",
+                    excerpt="e",
+                ),
+            ),
+            delta_type="escalated",
+        )
+        for i in range(judgments)
+    )
+    est = Estimate(period_type="daily", period_start=start, period_end=start, judgments=js)
+    return StatusSynthesisRecord(
+        period_type="daily",
+        period_start=start,
+        period_end=start,
+        headline="h",
+        weight_section="",
+        chain_section="",
+        cog_section="",
+        spillover_section="",
+        pir_section="",
+        axes_evidence="{}",
+        tradecraft=json.dumps({"grounded_estimate": estimate_to_dict(est)}),
+        article_count=0,
+        llm_model=None,
+        generated_at=start,
+    )
 
 
-class _Arm:
-    def __init__(self, name: str) -> None:
-        self.model = name
+class TestNoReplayPath:
+    def test_harvest_never_imports_the_pipeline_replay(self) -> None:
+        """generate_synthesis は台帳を書く経路。静的に断つ (import しない)。"""
+        source = Path(harvest_mod.__file__).read_text(encoding="utf-8")
+        assert "from src.synthesis.generator import generate_synthesis" not in source
+        assert "generate_grounded_synthesis" not in source
+
+
+class TestWindowSelection:
+    def test_reserved_keys_and_recent_windows_are_excluded(self, tmp_path: Path) -> None:
+        judge = tmp_path / "synthesis_judge_set.json"
+        judge.write_text(json.dumps({"items": [{"key": "synth:daily:2026-08-02"}]}))
+        records = [_record(1), _record(2), _record(20)]
+        windows, skipped = select_windows(
+            records,
+            period_type="daily",
+            reserved=reserved_keys([judge]),
+            reserve_before=datetime(2026, 8, 10, tzinfo=UTC),
+            cot=False,
+        )
+        assert [w.key for w in windows] == ["synth:daily:2026-08-01"]
+        assert skipped["reserved_key"] == 1
+        assert skipped["reserved_recent"] == 1
+
+    def test_thin_windows_are_skipped_and_counted(self) -> None:
+        windows, skipped = select_windows(
+            [_record(1, judgments=1)],
+            period_type="daily",
+            reserved=set(),
+            reserve_before=datetime(2026, 9, 1, tzinfo=UTC),
+            cot=False,
+        )
+        assert windows == []
+        assert skipped["thin"] == 1
+
+    def test_cot_windows_carry_the_cot_instruction(self) -> None:
+        windows, _ = select_windows(
+            [_record(1)],
+            period_type="daily",
+            reserved=set(),
+            reserve_before=datetime(2026, 9, 1, tzinfo=UTC),
+            cot=True,
+        )
+        assert "analysis_notes" in windows[0].prompt
+
+
+class TestBudget:
+    def test_estimate_uses_measured_chars_per_token(self) -> None:
+        assert 9_500 <= _est_tokens("あ" * 18_500) <= 10_500  # 実測比 1.85
+
+    def test_pair_too_long_is_rejected(self) -> None:
+        reason = accept_completion("x" * 20_000, "y" * 10_000, cot=False, max_pair_tokens=13_000)
+        assert reason == "pair_too_long"
+
+    def test_missing_notes_is_rejected_only_in_cot_mode(self) -> None:
+        completion = json.dumps({"headline": "h" * 500})
+        assert accept_completion("p", completion, cot=True, max_pair_tokens=13_000) == "no_notes"
+        assert accept_completion("p", completion, cot=False, max_pair_tokens=13_000) is None
+
+
+class _Teacher:
+    def __init__(self) -> None:
+        self.model = "teacher"
         self.calls = 0
 
     async def generate_structured(self, prompt: str, schema: type, **kw: Any) -> Any:
         self.calls += 1
-        return schema(headline=f"{self.model} の出力")
+        return schema(analysis_notes="点検メモ", headline="h" * 500)
 
 
-def _client(max_prompt_tokens: int) -> tuple[SelectiveTeacherClient, _Arm, _Arm]:
-    teacher, local = _Arm("teacher"), _Arm("local")
-    client = SelectiveTeacherClient(teacher, local, max_prompt_tokens=max_prompt_tokens)
-    return client, teacher, local
-
-
-class TestTokenEstimate:
-    def test_estimate_uses_measured_chars_per_token(self) -> None:
-        # 実測比 1.85 (1.76-1.91 の中央付近) — 18,500 字 ≒ 10k トークン
-        assert 9_500 <= _est_tokens("あ" * 18_500) <= 10_500
-
-
-class TestOversizeRouting:
+class TestHarvestLoop:
     @pytest.mark.asyncio
-    async def test_oversized_render_never_reaches_the_teacher(self) -> None:
-        client, teacher, local = _client(max_prompt_tokens=100)
-        await client.generate_structured(_RENDER_MARKER + "x" * 10_000, _Sections)
+    async def test_oversized_prompt_never_reaches_the_teacher(self, tmp_path: Path) -> None:
+        teacher = _Teacher()
+        stats = await harvest(
+            teacher,
+            [Window(key="k", prompt="x" * 100_000, judgments=3)],
+            out=tmp_path / "o.jsonl",
+            cot=True,
+            max_prompt_tokens=10_500,
+            max_pair_tokens=13_000,
+            dry_run=False,
+        )
         assert teacher.calls == 0
-        assert local.calls == 1
-        assert client.oversize == 1
-        assert client.captured == []  # 捕獲もしない (ローカル出力の教師混入防止)
+        assert stats["oversize"] == 1
 
     @pytest.mark.asyncio
-    async def test_render_within_budget_goes_to_the_teacher_and_is_captured(self) -> None:
-        client, teacher, local = _client(max_prompt_tokens=10_000)
-        await client.generate_structured(_RENDER_MARKER + "短い", _Sections)
-        assert teacher.calls == 1
-        assert local.calls == 0
-        assert client.oversize == 0
-        assert len(client.captured) == 1
+    async def test_accepted_pair_is_written_and_resumable(self, tmp_path: Path) -> None:
+        teacher = _Teacher()
+        out = tmp_path / "o.jsonl"
+        w = Window(key="k", prompt="短いプロンプト", judgments=3)
+        await harvest(
+            teacher,
+            [w],
+            out=out,
+            cot=True,
+            max_prompt_tokens=10_500,
+            max_pair_tokens=13_000,
+            dry_run=False,
+        )
+        stats = await harvest(
+            teacher,
+            [w],
+            out=out,
+            cot=True,
+            max_prompt_tokens=10_500,
+            max_pair_tokens=13_000,
+            dry_run=False,
+        )
+        assert teacher.calls == 1  # 2 回目は done として飛ばす
+        assert stats["done"] == 1
+        row = json.loads(out.read_text().splitlines()[0])
+        assert json.loads(row["completion"])["analysis_notes"] == "点検メモ"
 
     @pytest.mark.asyncio
-    async def test_non_render_calls_always_go_local(self) -> None:
-        client, teacher, local = _client(max_prompt_tokens=10_000)
-        await client.generate_structured("ACH の採点プロンプト", _Sections)
+    async def test_dry_run_calls_nothing(self, tmp_path: Path) -> None:
+        teacher = _Teacher()
+        stats = await harvest(
+            teacher,
+            [Window(key="k", prompt="p", judgments=3)],
+            out=tmp_path / "o.jsonl",
+            cot=True,
+            max_prompt_tokens=10_500,
+            max_pair_tokens=13_000,
+            dry_run=True,
+        )
         assert teacher.calls == 0
-        assert local.calls == 1
-        assert client.captured == []
-
-
-class TestNotesGate:
-    def test_empty_or_missing_notes_is_rejected(self) -> None:
-        assert not _has_notes(json.dumps({"headline": "h"}))
-        assert not _has_notes(json.dumps({"analysis_notes": "  ", "headline": "h"}))
-        assert not _has_notes("JSON ではない")
-
-    def test_filled_notes_is_accepted(self) -> None:
-        assert _has_notes(json.dumps({"analysis_notes": "確度の対応付け…", "headline": "h"}))
+        assert stats["ok"] == 1

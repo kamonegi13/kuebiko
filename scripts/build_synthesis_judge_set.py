@@ -54,9 +54,12 @@ def _estimate_of(tradecraft: str) -> Estimate | None:
         return None
 
 
-def _period_label(est: Estimate) -> str:
-    """本番と同じ体裁の期間ラベル (generator が渡す形に合わせる)。"""
-    return f"{est.period_start.date().isoformat()} 〜 {est.period_end.date().isoformat()}"
+def _period_label(period_type: str, est: Estimate) -> str:
+    """本番と同じ導出の期間ラベル (daily は「当日 00:00 JST 〜 period_end JST」)。"""
+    from src.synthesis.generator import _resolve_period
+
+    _s, _e, label, _lb, _bw = _resolve_period(period_type=period_type, now=est.period_end)
+    return label
 
 
 def build(args: argparse.Namespace) -> int:
@@ -72,7 +75,9 @@ def build(args: argparse.Namespace) -> int:
         if len(est.judgments) < _MIN_JUDGMENTS:
             skipped_thin += 1
             continue
-        plan = build_render_plan(est=est, period_label=_period_label(est), cot_notes=args.cot)
+        plan = build_render_plan(
+            est=est, period_label=_period_label(args.period, est), cot_notes=args.cot
+        )
         items.append(
             {
                 "key": f"synth:{args.period}:{est.period_start.date().isoformat()}",

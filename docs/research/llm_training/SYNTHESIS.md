@@ -1721,3 +1721,33 @@ Gemma-4 26B tokenizer で実測 (chars/token = 1.85、1.76-1.91)。daily 78 窓:
 
 - 対 46 窓で足りるか (足りなければ weekly/monthly 窓も収穫対象に入れる — 形は同じ)。
 - 凍結 15 窓が全部 moved なので、合否線を「moved 窓での品質」に限定して読む。
+
+### §44 追記 (09-15 朝): 設計の自己点検で見つけた 2 件と、収穫方式の再設計
+
+**1. 09-06 の収穫が本番台帳を汚染していた (インシデント)**。旧収穫は
+`generate_synthesis(now=過去日付)` で本番パイプラインを再生していたが、台帳駆動
+(`SYNTHESIS_STATE=1`) では `build_estimate_stateful` が過去 now で走り、revision / 証拠の
+既読マーク / 検出ログを**過去時刻で書く** (pipeline.py が「revision 順序を壊すため禁止」と
+明記していた経路)。署名 = created_at が UTC 00:00:00 ちょうど、3 日刻み (07-14 〜 09-03)。
+実測: **revision 95 件 (うち 41 件が今も最新判定)、既読マーク 133、評価マーク 72、割当 10、
+検出ログ 166**。最新 rev が汚染行の situation では、以後の daily 増分 ACH がその行を prev に
+delta を計算している。09-06 weekly の reopened=24 はこの汚染 (reopened 23 件) が流れ込んだ疑いが
+濃い。除去は `scripts/purge_replay_revisions.py` (既定 dry-run、退避テーブル付き、利用者判断待ち)。
+⭐ **教訓: 「本番コードパスを過去日付で駆動する」収穫は、状態を持つ段が 1 つでもあれば書く**。
+禁止は docstring に書いてあったが、収穫スクリプトはそれを読まずに書かれた。
+
+**2. 収穫方式を「保存 estimate からの射影」に再設計**。`status_synthesis.tradecraft.
+grounded_estimate` (本番がその日に実際に射影した estimate) から `build_render_plan` で
+プロンプトを再構築し、教師に **1 呼出だけ** 投げる。パイプラインを再実行しないので
+(a) 台帳を書かない (b) 外部枠は目的物 (render) にしか使わない (c) GPU 不要 (d) 入力は
+本番と byte 同等。`generate_synthesis` を import しないことをテストが固定する。
+dry-run 実測: **対象 47 窓 (予算超過 16 窓を除外、審判 15 窓と直近 15 日を予約)**。
+
+**3. daily 幅ガードの抜け**: headline に指名した判定 (接地ゲート通過の moved 最上位) が、
+噂クラスの高 salience 判定に押し出されて本文から落ちうる (指名 id だけが本文に無い)。
+指名判定を必ず本文に残す入替ガードを追加 (幅は増やさない)。
+
+**4. weekly / monthly の幅** は [docs/synthesis_weekly_width_design.md](../../synthesis_weekly_width_design.md)
+に設計 (未実装): A 本文 (salience 上位 12/15 + PIR 別最低 1 件、13-17 件) / B 一覧 (1 行 40 tok) /
+C 件数。プロンプト 40k → ~14k tok。PIR 保証のコストは毎窓 +1-3 件と安い
+(落ちるのは優先順位 10・18 の低位 PIR が中心)。

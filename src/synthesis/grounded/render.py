@@ -375,6 +375,11 @@ def build_render_plan(
     standing = [j for j in ranked if j.delta_type in ("", "no_change")]
     cap = _MOVED_SECTION_MAX.get(est.period_type)
     moved = moved_all[:cap] if cap is not None else moved_all
+    # headline に指名した判定は必ず本文の変化セクションにも載せる。指名は「接地ゲートを
+    # 通る moved の salience 最上位」で、通常は上位 cap 件に入るが、噂クラス/反証済みの
+    # 判定が上位を埋めた日には落ちうる (指名 id だけが本文に無い = LLM が文脈を失う)。
+    if head is not None and head in moved_all and head not in moved:
+        moved = [*moved[: max(0, len(moved) - 1)], head]
     moved_omitted = len(moved_all) - len(moved)
     if moved_omitted:
         _log.info(

@@ -185,3 +185,30 @@ class TestMovedWidthGuard:
         body, _, pir_section = plan.prompt.partition("【PIR 対応")
         assert "pir_tail" not in body  # 本文の変化セクションからは落ちている
         assert "pir_tail" in pir_section  # PIR ロールアップには残る
+
+    def test_headline_judgment_is_never_cut_from_the_moved_section(self) -> None:
+        """指名判定 (接地ゲート通過の最上位) が噂クラスの上位に押し出されても本文に残る。"""
+        base = _estimate().judgments[0]
+        rumors = tuple(
+            replace(
+                base,
+                id=f"r{i}",
+                claim=f"未実証の主張 {i}",
+                delta_type="hypothesis_flip",  # delta 3.0 で salience が高い
+                leading_hypothesis="unverified_or_false",  # 噂クラス = headline 不可
+                japan_related=True,
+                confidence="high",
+                domain="cyber_incident",
+                pir_ids=("pir_china_apt",),  # 最優先 PIR boost (salience 7.7 対 3.2)
+            )
+            for i in range(12)
+        )
+        grounded = replace(
+            base, id="g", claim="接地された変化", delta_type="strengthened", confidence="moderate"
+        )
+        est = replace(_estimate(), judgments=(*rumors, grounded))
+        plan = build_render_plan(est=est, period_label="L")
+        assert plan.head is not None and plan.head.id == "g"
+        body, _, _ = plan.prompt.partition("【継続中の判定】")
+        assert "[g]" in body
+        assert plan.prompt.count("【") >= 12  # 幅は cap のまま (入替であって追加ではない)
