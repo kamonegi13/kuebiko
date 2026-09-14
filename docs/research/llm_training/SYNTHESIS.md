@@ -1732,7 +1732,22 @@ Gemma-4 26B tokenizer で実測 (chars/token = 1.85、1.76-1.91)。daily 78 窓:
 実測: **revision 95 件 (うち 41 件が今も最新判定)、既読マーク 133、評価マーク 72、割当 10、
 検出ログ 166**。最新 rev が汚染行の situation では、以後の daily 増分 ACH がその行を prev に
 delta を計算している。09-06 weekly の reopened=24 はこの汚染 (reopened 23 件) が流れ込んだ疑いが
-濃い。除去は `scripts/purge_replay_revisions.py` (既定 dry-run、退避テーブル付き、利用者判断待ち)。
+濃い。除去は `scripts/purge_replay_revisions.py` (既定 dry-run、退避テーブル付き)。
+
+**追加で見つかった実害 (09-15 07:50、除去実施時)**: `touch_situation` が
+`situations.last_evidence_at` を過去日付に書き戻していた (40 件)。休眠 sweep
+(cyber_incident 14 日 / 他 30 日) がそれを「古い」と判定し、**14 件が不当に休眠**していた
+(真の最終証拠は 8-13 日前 = 本来 active。大手通信事業者 / 海外製造 K 社 / 駐車場運営 H 社 等)。
+つまり汚染は「過去の記録が汚れた」だけでなく **現在の追跡対象を減らしていた**。
+復元は真値 (汚染でない証拠の max(added_at)、無ければ opened_at) を書き戻し、
+真値で閾値に届かないものを active へ戻す (閾値は ledger から import = SSoT)。
+
+除去後の実測: revision の時刻逆転 **69 → 0** (逆転は全件このリプレイ由来だった)、
+孤児 situation 0、active 122 → 136 / dormant 94 → 80、未読証拠 59 → 183 (108 situation)。
+未読の増加は既読マークを戻したぶんで、cap 12 なら 4-5 日で排水される。
+**復元しないもの**: `assessed_at` を戻した 72 行の polarity / attribution_basis / excerpt は
+リプレイの ACH が書いた値のまま残る (次の増分 ACH が上書きする)。
+退避は `_backup_replay_purge_{rev,ev,det,sit}_20260914` + `data/backups/pre_purge_*.dump`。
 ⭐ **教訓: 「本番コードパスを過去日付で駆動する」収穫は、状態を持つ段が 1 つでもあれば書く**。
 禁止は docstring に書いてあったが、収穫スクリプトはそれを読まずに書かれた。
 
