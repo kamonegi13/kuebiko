@@ -378,7 +378,9 @@ class ContentExtractor:
                     length=len(text),
                 )
 
-        # 3b. 化け関門: 復号に失敗した本文を success で通さない (再取得へ回す)
+        # 3b. 化け関門: 復号に失敗した本文を success で通さない (再取得へ回す)。
+        #     PDF は上流 (_extract_pdf) で return 済みで**意図的に対象外** — グリフ写像の
+        #     失敗で U+FFFD が出るのは復号の失敗とは別物で、政府 advisory 等を誤って落とす。
         if _is_mojibake(text):
             return self._fail(
                 url,
