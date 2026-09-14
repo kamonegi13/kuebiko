@@ -89,13 +89,23 @@ in-process (job_run_log に所要なし、docker logs の summary から):
 
 - 週次ジョブの曜日分散、reactive の auto-trigger-synthesis (debounce 6h)、ransomware 3 時間間隔。
 
-## 5. 実装順序
+## 5. 実施記録 (2026-09-14 23:17 JST、利用者承認で A/B/C を即時実装)
+
+- A: max_runtime (spotlight 25 / 朝夕ブリーフ 15 / eventnews-hourly 25)、event news max_tokens 6,144、
+  nominate pool weekly 150 / monthly 200 — commit 1298cd57。
+- B: `kind="chain"` + hourly-collect (:00) / hourly-upkeep (:30) を追加、段の単独ジョブ 10 本を DB で OFF
+  (rollback = 段を ON、チェーンを OFF)。段の所要は job_run_log に `chain=… elapsed=…` で記録。
+- C: pir-entity-rebuild 00:25 / 週次系 01:10 (曜日別) / monthly 01:40 / ua 01:35 / distill 01:45 /
+  **spotlight 04:30** / triage-drift 日 05:00。GPU 静穏帯 = 01:50〜04:30。
+- 副産物: `apply_job_registry` が offset の変更を無視していた欠陥を修正。
+
+## 6. 実装順序 (計画時)
 
 1. A を先に (UI「実行管理」または job_registry の既定値 + event news max_tokens のコード 1 行)。1 日観察。
 2. B は `kind="chain"` を job_registry に足す実装 (段の失敗隔離・所要記録・UI 表示)。テスト付きで 1 日、shadow なしで切替 (rollback = 旧 11 ジョブの再有効化)。
 3. C は B の後、時刻表を UI から変更。
 
-## 6. 監視
+## 7. 監視
 
 - job_run_log に段ごとの所要を持たせ、`weekly-fill-rate-audit` 同様に週次で p90 を見る。
 - Ollama の load 回数 (server.log の runner started) を日次 heartbeat に載せる。
