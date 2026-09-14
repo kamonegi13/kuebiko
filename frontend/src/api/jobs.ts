@@ -5,7 +5,7 @@
 
 const BASE = "/api/v1/jobs";
 
-export type JobKind = "pipeline" | "bespoke" | "reactive";
+export type JobKind = "pipeline" | "bespoke" | "reactive" | "chain";
 export type JobProtection = "critical" | "important" | "optional";
 export type JobScheduleType = "cron" | "interval" | "reactive";
 

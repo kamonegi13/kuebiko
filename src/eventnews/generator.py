@@ -22,6 +22,10 @@ from src.tools.llm_client import LLMClient
 
 _log = structlog.get_logger(__name__)
 
+# 30 層 SFT モデルは 3,000 字超を書き、既定の 4,096 tok に到達した呼出を実測 (2026-09-14)。
+# spotlight と同じ 6,144 に揃える。
+EVENT_NEWS_MAX_TOKENS = 6144
+
 _PROMPT_TEMPLATE = "eventnews/refine.j2"
 _PROMPTS_DIR = Path("prompts")
 
@@ -169,6 +173,7 @@ async def generate_draft(
         prompt=prompt,
         schema=EventNewsDraft,
         temperature=0.2,
+        max_tokens=EVENT_NEWS_MAX_TOKENS,
         think=False,
     )
     # 契約正規化 (2026-09-11): リスト欄の同文反復を畳む (SFT の反復ループ対策、教師に重複は無い)。
@@ -187,6 +192,7 @@ async def generate_draft(
                 prompt=prompt,
                 schema=EventNewsDraft,
                 temperature=0.2,
+                max_tokens=EVENT_NEWS_MAX_TOKENS,
                 think=False,
             )
             candidate, _ = dedup_draft(candidate)

@@ -26,7 +26,7 @@ _log = get_logger(__name__)
 
 JOBS_KEY = "job_schedules"
 
-JobKind = Literal["pipeline", "bespoke", "reactive"]
+JobKind = Literal["pipeline", "bespoke", "reactive", "chain"]
 # protection = ミス防止ガードの強度。critical=停止でコア機能/観測が壊れる /
 # important=機能を失う / optional=自由に切替。
 Protection = Literal["critical", "important", "optional"]
@@ -76,6 +76,8 @@ class JobDef(BaseModel):
     offset_minutes: int | None = None
     # reactive
     debounce_hours: float | None = None
+    # kind="chain" の段 (既存ジョブ id を宣言順に直列実行、2026-09-15 ジョブ見直し B)
+    steps: tuple[str, ...] = ()
 
     def schedule_label(self) -> str:
         """人間可読なスケジュール表記 (UI/ログ用)。"""
@@ -98,6 +100,7 @@ def default_jobs() -> list[JobDef]:
         # ----- K1: 収集 -----
         JobDef(
             id="direct-rss-fetch",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="pipeline",
             title="RSS 取得",
             description="100+ の RSS feed を並列取得し要約・投稿する主収集経路。",
@@ -110,6 +113,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="web-scraper-watchers",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="pipeline",
             title="Web スクレイパ監視",
             description="RSS の無い一次ソース (ENISA/IPA/ISW 等) を sitemap 経由で監視。",
@@ -122,6 +126,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="grok-briefing",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="pipeline",
             title="Grok レポート取込",
             description="Grok タスクのレポートを IMAP 通知経由で取込む。",
@@ -151,7 +156,7 @@ def default_jobs() -> list[JobDef]:
             id="morning-brief",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=8,
+            max_runtime_minutes=15,  # 実測 p90 13 分 (2026-09-15 見直し)
             title="朝ブリーフィング",
             description=(
                 "毎朝の日次総括を生成し brief チャンネルへ配信。standing 常設情報要求の"
@@ -167,7 +172,7 @@ def default_jobs() -> list[JobDef]:
             id="evening-brief",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=8,
+            max_runtime_minutes=15,  # 実測 p90 13 分 (2026-09-15 見直し)
             title="夕ブリーフィング",
             description=(
                 "夕方の日次状況更新を生成し brief チャンネルへ配信。standing 常設情報要求の"
@@ -249,7 +254,7 @@ def default_jobs() -> list[JobDef]:
             id="pir-spotlight",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=10,
+            max_runtime_minutes=25,  # 実測 p90 20 分 (2026-09-15 見直し)
             title="PIR スポットライト",
             description="PIR 縦断の週次 narrative (Intel Graph)。",
             disable_impact="PIR 別の週次追跡 narrative が更新されない。",
@@ -348,6 +353,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="pir-judge-hourly",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="PIR 主題判定 毎時増分",
             description=(
@@ -368,6 +374,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="public-reachability",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="公開面 到達性チェック",
             description=(
@@ -390,6 +397,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="embedding-backfill",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="埋込の取りこぼし補完",
             description=(
@@ -413,6 +421,8 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="eventnews-hourly",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
+            max_runtime_minutes=25,  # 実測 18.6 分 (30 層モデルで 4 件生成、2026-09-15)
             kind="bespoke",
             title="事象ニュース 毎時更新",
             description=(
@@ -437,6 +447,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="body-translate-backlog",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="本文自動翻訳",
             description=(
@@ -461,6 +472,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="body-refetch-backlog",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="本文再取得",
             description=(
@@ -507,6 +519,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="nvd-cvss-refresh",
+            enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="CVSS 補給 (NVD)",
             description=(
@@ -645,6 +658,56 @@ def default_jobs() -> list[JobDef]:
             hour=4,
             minute=20,  # 深夜バッチ帯の末尾 — 朝ブリーフ (06:30) と重ねない
             max_runtime_minutes=5,
+        ),
+        # ---------- 毎時チェーン (2026-09-15 ジョブ見直し B) ----------
+        # 11 本の interval ジョブをモデル順に並べた直列 2 本へ。段の失敗は隔離、段ごとに所要を記録。
+        # 段の単独ジョブは registry に残す (rollback = 段を enabled、チェーンを disabled)。
+        JobDef(
+            id="hourly-collect",
+            kind="chain",
+            title="毎時収集チェーン",
+            description=(
+                "毎時の収集と派生処理を 1 本で直列実行: RSS → sitemap 監視 → Grok → 埋込 → "
+                "PIR 判定 → 事象ニュース。fast モデル (s17) の段を先に、narrative モデルの段を "
+                "最後に置き、Ollama のモデル切替を 1 時間に 1 回へ抑える (旧: 11 ジョブが "
+                "オフセットで並び切替 34 回/日・重なりあり)。"
+            ),
+            disable_impact="毎時の収集・事象ニュースが全て止まる (段の単独ジョブは既定 OFF)。",
+            protection="critical",
+            schedule_type="interval",
+            interval_minutes=60,
+            offset_minutes=0,
+            max_runtime_minutes=50,  # 段の合計 (実測 rss 10 + 事象 19 + 他 5) + 余裕
+            steps=(
+                "direct-rss-fetch",
+                "web-scraper-watchers",
+                "grok-briefing",
+                "embedding-backfill",
+                "pir-judge-hourly",
+                "eventnews-hourly",
+            ),
+        ),
+        JobDef(
+            id="hourly-upkeep",
+            kind="chain",
+            title="毎時保守チェーン",
+            description=(
+                "本文の翻訳バックログ → 本文の再取得 → NVD CVSS 補充 → 公開 URL の到達性を "
+                "1 本で直列実行 (fast モデルと I/O のみ)。収集チェーンの後半 (:30) に置く。"
+            ),
+            disable_impact="翻訳・再取得・CVSS・到達性監視が止まる。",
+            protection="important",
+            upkeep=True,
+            schedule_type="interval",
+            interval_minutes=60,
+            offset_minutes=30,
+            max_runtime_minutes=25,
+            steps=(
+                "body-translate-backlog",
+                "body-refetch-backlog",
+                "nvd-cvss-refresh",
+                "public-reachability",
+            ),
         ),
     ]
 
@@ -878,7 +941,16 @@ def danger_windows(jobs: list[JobDef]) -> list[dict[str, Any]]:
 
 
 def _schedule_changed(j: JobDef, d: JobDef) -> bool:
-    keys = ("schedule_type", "hour", "minute", "day_of_week", "day", "interval_minutes")
+    # offset_minutes も比較する (2026-09-15: 従来は offset の UI 変更が起動時に反映されなかった)
+    keys = (
+        "schedule_type",
+        "hour",
+        "minute",
+        "day_of_week",
+        "day",
+        "interval_minutes",
+        "offset_minutes",
+    )
     return any(getattr(j, k) != getattr(d, k) for k in keys)
 
 
@@ -906,7 +978,7 @@ def apply_job_registry(scheduler: Any, jobs: list[JobDef]) -> None:
         if j.kind == "reactive":
             continue
         try:
-            if j.kind == "pipeline":
+            if j.kind in ("pipeline", "chain"):
                 d = defaults.get(j.id)
                 if d is not None and _schedule_changed(j, d):
                     apply_schedule_to_scheduler(scheduler, j)

@@ -16,6 +16,7 @@ CLAUDE.md §11/§12 に従う:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import threading
@@ -162,14 +163,19 @@ def _collect_scheduled_pipelines() -> list[ScheduledPipeline]:
     return out
 
 
-def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryRepository) -> None:
-    """job_registry の bespoke ジョブを callable に結び付け registry schedule で登録する。
+def _register_bespoke_jobs(
+    scheduler: BriefingScheduler,
+    repo: RunHistoryRepository,
+    *,
+    run_pipeline: Callable[[str], Awaitable[int | None]] | None = None,
+) -> None:
+    """job_registry の bespoke / chain ジョブを callable に結び付け registry schedule で登録する。
 
     callable はコード所有 (user 定義不可 = 安全)。schedule/enabled は registry (DB) が持つ。
     各実行を job_last_run に記録し「いつ最後に走り成否は」を可視化する。enabled 反映
     (無効=pause) は start() 後の apply_job_registry が行う。
     """
-    from src.scheduler.job_registry import load_jobs
+    from src.scheduler.job_registry import JobDef, load_jobs
 
     def _tracked(job_id: str, fn: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[None]]:
         async def _run() -> None:
@@ -296,6 +302,56 @@ def _register_bespoke_jobs(scheduler: BriefingScheduler, repo: RunHistoryReposit
         "job-recovery-watchdog": _job_recovery,
     }
     jobs_by_id = {j.id: j for j in load_jobs()}
+
+    # 毎時チェーン (2026-09-15 ジョブ見直し B): 段 = 既存ジョブ id。bespoke 段は上の callable、
+    # pipeline 段は subprocess run を起動して完了を待つ。段の timeout は段自身の max_runtime。
+    from src.scheduler.job_chain import ChainStep, run_chain
+
+    async def _await_pipeline(name: str) -> None:
+        if run_pipeline is None:
+            raise RuntimeError("pipeline 段の runner が未配線")
+        run_id = await run_pipeline(name)
+        if run_id is None:
+            return  # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ
+        while True:
+            await asyncio.sleep(5)
+            rec = repo.get_run(run_id)
+            if rec is None or rec.status != "running":
+                if rec is not None and rec.status != "succeeded":
+                    raise RuntimeError(f"pipeline {name} run {run_id} {rec.status}")
+                return
+
+    def _pipeline_step(name: str) -> Callable[[], Awaitable[None]]:
+        async def _step() -> None:
+            await _await_pipeline(name)
+
+        return _step
+
+    def _chain_runner(chain: JobDef) -> Callable[[], Awaitable[Any]]:
+        steps: list[ChainStep] = []
+        for sid in chain.steps:
+            sd = jobs_by_id.get(sid)
+            timeout = float((sd.max_runtime_minutes if sd else 5) * 60)
+            if sid in callables:
+                steps.append(ChainStep(sid, callables[sid], timeout))
+            else:
+                steps.append(ChainStep(sid, _pipeline_step(sid), timeout))
+
+        async def _run() -> None:
+            await run_chain(
+                chain.id,
+                steps,
+                record=lambda jid, status, detail: repo.record_job_run(
+                    jid, status=status, detail=detail
+                ),
+            )
+
+        return _run
+
+    for chain_def in jobs_by_id.values():
+        if chain_def.kind == "chain":
+            callables[chain_def.id] = _chain_runner(chain_def)
+
     for jid, fn in callables.items():
         jd = jobs_by_id.get(jid)
         if jd is None:
@@ -429,8 +485,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:  # noqa: BLE001
             _log.warning("operational_config_seed_at_startup_failed", error=str(e))
 
-    async def run_named_pipeline(pipeline_name: str) -> None:
-        """APScheduler から呼ばれるコールバック (pipeline_name 指定)。
+    async def run_named_pipeline(pipeline_name: str) -> int | None:
+        """APScheduler から呼ばれるコールバック。返り値 = run_id (抑止 / 起動失敗は None)。
 
         Phase 5A fix: 即時実行 UI と同じ subprocess 経路 (``start_subprocess_run``)
         を使う。これにより stdout が ``run_logs`` に逐次永続化され、ダッシュボード
@@ -457,17 +513,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 day_of_month=_now.day,
             ):
                 _log.info("collection_suppressed_heavy_overlap", pipeline=pipeline_name)
-                return
+                return None
         except Exception as e:  # noqa: BLE001 — guard 障害で収集自体は止めない
             _log.warning("collection_guard_failed", pipeline=pipeline_name, error=str(e))
         try:
-            await runner.start_subprocess_run(
+            return await runner.start_subprocess_run(
                 triggered_by="scheduler",
                 dry_run=False,
                 pipeline_name=pipeline_name,
             )
         except Exception as e:  # noqa: BLE001
             _log.error("scheduled_run_failed", pipeline=pipeline_name, error=str(e))
+            return None
 
     # config/pipelines.yaml の pipelines[].schedule から自動起動 job を構築する
     # Phase Diamond verify-mobile fix: READ_ONLY=1 instance では scheduler を起動しない。
@@ -492,7 +549,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # schedule のみ registry (UI 編集可・再起動維持)。[[operational_config_db]] と同型。
         from src.scheduler.job_registry import apply_job_registry, load_jobs
 
-        _register_bespoke_jobs(scheduler, repo)
+        _register_bespoke_jobs(scheduler, repo, run_pipeline=run_named_pipeline)
 
         scheduler.start()
 

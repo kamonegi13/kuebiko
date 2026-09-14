@@ -32,7 +32,8 @@ _DEFAULT_DB = Path("data/run_history.db")
 _K_BY_PERIOD: dict[str, int] = {"daily": 6, "weekly": 10, "monthly": 12}
 # ノミネート・プールの記事数上限 (high+medium)。high のみだと各事案が single-source になり
 # ACH (対立仮説の反証採点) が退化するため medium の続報・裏取りまで届ける (period でスケール)。
-_POOL_BY_PERIOD: dict[str, int] = {"daily": 150, "weekly": 250, "monthly": 300}
+# 2026-09-15 見直し: weekly の detect-new (23k tok prompt × 319 s) が所要の 6 割 → 250→150、300→200
+_POOL_BY_PERIOD: dict[str, int] = {"daily": 150, "weekly": 150, "monthly": 200}
 _POOL_IMPORTANCE: tuple[str, ...] = ("high", "medium")
 _MAX_SOURCES_PER_CLAIM = 8  # 1 claim の接地に読む本文の上限 (複数ソースで ACH を機能させる)
 # 過去文脈: 対象期間より前の同一 entity 記事を ACH 証拠に引く窓 (period スケール)。

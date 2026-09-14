@@ -22,7 +22,7 @@ class TestDefaults:
     def test_default_jobs_cover_all_kinds(self) -> None:
         jobs = jr.default_jobs()
         kinds = {j.kind for j in jobs}
-        assert kinds == {"pipeline", "bespoke", "reactive"}
+        assert kinds == {"pipeline", "bespoke", "reactive", "chain"}
         ids = {j.id for j in jobs}
         # 主要ジョブが漏れなく含まれる
         for jid in (
@@ -58,8 +58,8 @@ class TestSeedAndOverride:
         jr.set_job_enabled("ransomware-live-ingest", False, db_path=db)
         loaded = {j.id: j for j in jr.load_jobs(db_path=db)}
         assert loaded["ransomware-live-ingest"].enabled is False
-        # 他ジョブは不変
-        assert loaded["direct-rss-fetch"].enabled is True
+        # 他ジョブは不変 (2026-09-15: 毎時収集はチェーン側が enabled 既定)
+        assert loaded["hourly-collect"].enabled is True
 
     def test_schedule_override_persists_and_keeps_metadata(self, db: Path) -> None:
         jr.seed_jobs_if_absent(db_path=db)
@@ -335,3 +335,58 @@ class TestUpkeepClassification:
         # 収集は「いつ走ったか」が運用上の意味を持つため畳まない
         for jid in ("direct-rss-fetch", "web-scraper-watchers"):
             assert not by_id[jid].upkeep, f"{jid} は独立行のままであるべき"
+
+
+class TestHourlyChains:
+    """毎時ジョブの 2 チェーン化 (2026-09-15 ジョブ見直し B)。"""
+
+    def test_chain_steps_reference_existing_jobs(self) -> None:
+        by_id = {j.id: j for j in jr.default_jobs()}
+        for cid in ("hourly-collect", "hourly-upkeep"):
+            chain = by_id[cid]
+            assert chain.kind == "chain" and chain.enabled
+            assert chain.schedule_type == "interval" and chain.interval_minutes == 60
+            for sid in chain.steps:
+                assert sid in by_id, f"{cid} の段 {sid} が registry に無い"
+                assert by_id[sid].kind in ("pipeline", "bespoke")
+
+    def test_chain_members_are_disabled_standalone(self) -> None:
+        by_id = {j.id: j for j in jr.default_jobs()}
+        members = [s for cid in ("hourly-collect", "hourly-upkeep") for s in by_id[cid].steps]
+        assert len(members) == 10 and len(set(members)) == 10
+        for sid in members:
+            assert by_id[sid].enabled is False, f"{sid} は段として実行されるので単独は OFF"
+
+    def test_collect_chain_ends_with_narrative_step(self) -> None:
+        # モデル順 (fast → narrative) で切替を 1 回に抑える: 事象ニュースが最後
+        by_id = {j.id: j for j in jr.default_jobs()}
+        assert by_id["hourly-collect"].steps[-1] == "eventnews-hourly"
+        assert by_id["hourly-collect"].steps[0] == "direct-rss-fetch"
+
+    def test_chains_do_not_overlap_in_offset(self) -> None:
+        by_id = {j.id: j for j in jr.default_jobs()}
+        assert (by_id["hourly-collect"].offset_minutes or 0) == 0
+        assert by_id["hourly-upkeep"].offset_minutes == 30
+
+    def test_apply_registry_reschedules_chain_override(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        class FakeScheduler:
+            def pause(self, *, job_id: str) -> None:
+                calls.append(("pause", job_id))
+
+            def update_interval(
+                self, minutes: int, *, job_id: str, offset_minutes: int = 0
+            ) -> None:
+                calls.append(("interval", (job_id, minutes, offset_minutes)))
+
+            def update_cron(self, *a: object, **k: object) -> None:
+                calls.append(("cron", k.get("job_id")))
+
+        jobs = [
+            j.model_copy(update={"offset_minutes": 5}) if j.id == "hourly-collect" else j
+            for j in jr.default_jobs()
+        ]
+        jr.apply_job_registry(FakeScheduler(), jobs)
+        assert ("interval", ("hourly-collect", 60, 5)) in calls
+        assert ("pause", "direct-rss-fetch") in calls  # 段の単独ジョブは pause される

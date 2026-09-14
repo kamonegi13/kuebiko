@@ -556,8 +556,8 @@ _REGISTRY: dict[str, Vocabulary] = {
     ),
     "job_kind": _vocab(
         "job_kind",
-        {"pipeline": "パイプライン", "bespoke": "専用", "reactive": "自動"},
-        canonical=frozenset({"pipeline", "bespoke", "reactive"}),
+        {"pipeline": "パイプライン", "bespoke": "専用", "reactive": "自動", "chain": "連鎖"},
+        canonical=frozenset({"pipeline", "bespoke", "reactive", "chain"}),
     ),
     "job_protection": _vocab(
         "job_protection",
