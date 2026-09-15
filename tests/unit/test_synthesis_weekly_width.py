@@ -250,3 +250,45 @@ class TestStandingWidth:
         section, _, _ = plan.prompt.partition("【判定間の関係】")
         assert section.count("【継続】") == 3
         assert "ほかに継続中の判定" not in plan.prompt
+
+
+class TestStandingSeedsAreNeverCut:
+    """常設情報要求 (kind='standing') は幅の上限から除外する。
+
+    「国家 N は日本の重要インフラへの事前配置を進めているか」のような常設の問いは、台帳でも
+    dormant/close の対象外 (静穏期間こそ問いが生きる = 「静か≠安全」)。静かな週ほど salience が
+    下がるため、幅の上限に任せると**最も見えているべき週に消える**。
+    """
+
+    def test_quiet_standing_seed_survives_the_standing_cap(self) -> None:
+        from src.assessment.standing import STANDING_SEEDS
+
+        seed_id = STANDING_SEEDS[0].situation_id
+        moved = _judgment(0, delta_type="escalated", confidence="high", japan_related=True)
+        loud = [
+            _judgment(i, delta_type="no_change", confidence="high", japan_related=True)
+            for i in range(1, 20)
+        ]
+        quiet_seed = replace(_judgment(99, delta_type="no_change", confidence="low"), id=seed_id)
+
+        plan = build_render_plan(est=_estimate((moved, *loud, quiet_seed)), period_label="L")
+
+        section, _, _ = plan.prompt.partition("【判定間の関係】")
+        assert f"[{seed_id}]" in section
+
+    def test_quiet_standing_seed_survives_the_moved_cap(self) -> None:
+        from src.assessment.standing import STANDING_SEEDS
+
+        seed_id = STANDING_SEEDS[0].situation_id
+        loud = [
+            _judgment(i, delta_type="hypothesis_flip", confidence="high", japan_related=True)
+            for i in range(60)
+        ]
+        quiet_seed = replace(
+            _judgment(99, delta_type="claim_revised", confidence="low"), id=seed_id
+        )
+
+        plan = build_render_plan(est=_estimate((*loud, quiet_seed)), period_label="L")
+
+        body, _, _ = plan.prompt.partition("【そのほかの動き")
+        assert f"[{seed_id}]" in body

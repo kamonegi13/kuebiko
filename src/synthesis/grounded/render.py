@@ -11,6 +11,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel, GetJsonSchemaHandler
@@ -416,6 +417,30 @@ class RenderPlan:
     omitted_count: int = 0
 
 
+@lru_cache(maxsize=1)
+def _standing_seed_ids() -> frozenset[str]:
+    """常設情報要求 (``kind='standing'``) の situation id (``STANDING_SEEDS`` が SSoT)。
+
+    これらは「国家 N は日本の重要インフラへの事前配置を進めているか」のような**常設の問い**で、
+    台帳では dormant/close の対象外 (静穏期間こそ問いが生きる — 「静か≠安全」)。同じ理由で
+    **報告の幅の上限からも除外する** — 静かな週に見えなくなるのでは常設である意味がない。
+    """
+    from src.assessment.standing import STANDING_SEEDS
+
+    return frozenset(seed.situation_id for seed in STANDING_SEEDS)
+
+
+def _keep_standing_seeds(
+    kept: list[KeyJudgment], rest: list[KeyJudgment]
+) -> tuple[list[KeyJudgment], list[KeyJudgment]]:
+    """上限で落ちた常設情報要求を掲載側へ戻す (順序は salience 順のまま)。"""
+    seeds = _standing_seed_ids()
+    forced = [j for j in rest if j.id in seeds]
+    if not forced:
+        return kept, rest
+    return [*kept, *forced], [j for j in rest if j.id not in seeds]
+
+
 def _important_count(ranked: list[KeyJudgment], *, floor: int, cap: int) -> int:
     """載せる件数 = 重要度基準 (最高 salience の一定割合以上) を下限・上限で挟む。
 
@@ -458,6 +483,7 @@ def _split_moved(
 
     shown = {j.id for j in body}
     rest = [j for j in moved_all if j.id not in shown]
+    body, rest = _keep_standing_seeds(body, rest)
     guarantee = _PIR_GUARANTEE_MAX.get(period, 0)
     if guarantee:
         covered = {p for j in body for p in j.pir_ids}
@@ -497,8 +523,10 @@ def build_render_plan(
     standing_omitted = 0
     if standing_cap is not None:
         keep = _important_count(standing, floor=_STANDING_SECTION_MIN, cap=standing_cap)
-        standing_omitted = max(0, len(standing) - keep)
-        standing = standing[:keep]
+        kept, dropped = _keep_standing_seeds(standing[:keep], standing[keep:])
+        kept_ids = {j.id for j in kept}
+        standing_omitted = len(dropped)
+        standing = [j for j in standing if j.id in kept_ids]
     if moved_list or moved_omitted:
         _log.info(
             "synthesis_moved_section_capped",
