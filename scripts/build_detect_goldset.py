@@ -63,19 +63,43 @@ _TEMPLATE = """# 任務
 見出し: {title}
 要約: {summary}
 
-# 問い
-この記事は、**継続して追跡する新しい事象**を開くに値するか。
+# 問い — **2 つの軸を別々に**答えること
 
-- open=true: 新しい侵害・キャンペーン・悪用開始・重大脆弱性の初報で、続報を追う価値がある
-- open=false: 既知事象の続報・再配信・分析記事・軽微な話題・追跡単位にならない一般論
+台帳の追跡枠は有限 (現在 active 135 件・再評価は 1 回 12 件) なので、
+「重要か」と「追跡単位になるか」を分けて判定する。
+
+1. **importance** (重要度 0-3): 任務に照らしてこの事象はどれだけ重いか。
+   影響範囲・深刻度・日本との関係で測る。**続報の有無とは無関係**。
+
+2. **trackable** (追跡価値 0-3): この事象は**この先いくつかの続報が積み上がり、
+   確度や見立てが動く**か。
+   - 3 = 被害範囲・原因・帰属が後から判明していく (侵害インシデント、進行中のキャンペーン)
+   - 2 = 悪用が始まっており、範囲や被害が広がりうる
+   - 1 = 単発で完結しうるが、続報があれば価値がある
+   - 0 = **1 本で完結する** (勧告・パッチ公開・分析記事・制裁発表・統計・意見記事)。
+     重要でも 0 になりうる — CVSS 10 の脆弱性でも、悪用が観測されず勧告だけなら
+     追跡単位にはならない。
+
+3. **open**: 上記を踏まえ、**新しい追跡事象を開くべきか** (true/false)。
+   枠が有限である以上、重要でも追跡単位にならないものは開かない。
 
 判断の理由を 1 文で述べ、確信度も返すこと。
 """
 
 
 class _Verdict(BaseModel):
+    """審判の判定。**重要度と追跡価値を分けて持つ**のが肝。
+
+    現行 detect も独立採点も、基準は書かれているのが重要度 (PIR 直結 > 日本関連 > …、
+    mission_fit / severity) で、「この先続報が積み上がるか」を問う軸を持っていない。
+    2026-09-15 の中身精査では、独立採点が CVSS 10 の勧告を選び、現行が小さいが続報の
+    積み上がる侵害を選んでいた — **この差が測れるラベルでないと方式を比べられない**。
+    """
+
     model_config = ConfigDict(extra="ignore")
 
+    importance: int = 0  # 0-3 任務に照らした重さ (続報の有無とは無関係)
+    trackable: int = 0  # 0-3 続報が積み上がり見立てが動くか (0 = 1 本で完結)
     open: bool = False
     reason: str = ""
     confidence: str = "low"  # high | moderate | low
@@ -189,6 +213,8 @@ async def main_async(args: argparse.Namespace) -> int:
                         "article_id": row["article_id"],
                         "stratum": row["stratum"],
                         "gold_open": verdict.open,
+                        "importance": verdict.importance,
+                        "trackable": verdict.trackable,
                         "reason": verdict.reason,
                         "confidence": verdict.confidence,
                         "legacy_label": row["label"],
