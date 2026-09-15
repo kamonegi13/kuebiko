@@ -8,6 +8,15 @@ sections:
 
     前回までの判定と**新着ソース**を突き合わせ、判定を更新してください。'
   note: ''
+- field_id: standing_question_framing
+  kind: rubric
+  title: 常設情報要求の枠づけ (問いと答えの区別)
+  body: '⚠ これは事象ではなく**継続して追う問い**である:
+
+    「{{ question }}」
+
+    下の【前回までの判定】の claim は、**この問いへの前回の答え**である (問いの再掲ではない)。'
+  note: ''
 - field_id: symmetric_reeval
   kind: rubric
   title: '手順1: 対称な再評価'
@@ -18,9 +27,10 @@ sections:
 - field_id: evidence_instruction
   kind: rubric
   title: '手順2: 証拠台帳'
-  body: "2) 証拠台帳: **新着ソースから**重要な事実を抽出 (index=候補一覧の[N]番号 / attribution_basis / excerpt /\n   polarity は更新後の leading\
-    \ 基準)。attribution_basis: {{ attribution_options }}\n   **excerpt は本文からの逐語抜粋** — 本文に逐語で存在しない引用は保存時に機械照合で\n   破棄される。言い換えず原文の文字列をそのまま写す (省略は ... で繋いでよい)。\n   不在の事実 (leading を支持する不在・否定する不在) も対称に拾う。\n  \
-    \ **evidence は判定に最も効く 6 件まで・excerpt は各 80 字以内** (全ソースの網羅は不要 —\n   出力が長すぎると切断され全体が無効になる。重要度順に絞る)。"
+  body: "2) 証拠台帳: **新着ソースから**重要な事実を抽出 (index=候補一覧の[N]番号 / attribution_basis / excerpt /\n   polarity は更新後の\
+    \ leading 基準)。attribution_basis: {{ attribution_options }}\n   **excerpt は本文からの逐語抜粋** — 本文に逐語で存在しない引用は保存時に機械照合で\n\
+    \   破棄される。言い換えず原文の文字列をそのまま写す (省略は ... で繋いでよい)。\n   不在の事実 (leading を支持する不在・否定する不在) も対称に拾う。\n   **evidence\
+    \ は判定に最も効く 6 件まで・excerpt は各 80 字以内** (全ソースの網羅は不要 —\n   出力が長すぎると切断され全体が無効になる。重要度順に絞る)。"
   note: ''
 - field_id: indicator_check_instruction
   kind: rubric
@@ -32,6 +42,14 @@ sections:
   kind: rubric
   title: '手順4: 拡大判定'
   body: "4) 拡大判定: 新着が**被害・標的・地理・手口の拡大**を示すか (scope_expanded: true/false)。\n   単なる続報・再報道は false。"
+  note: ''
+- field_id: confidence_fields_standing
+  kind: rubric
+  title: confidence/claim 欄 (常設情報要求)
+  body: "5) confidence / claim / claim_type / implication:\n   - confidence: 更新後 leading の確度 (high/moderate/low)。証拠が薄いままなら上げない。\n\
+    \   - claim: **問いへの答え**を 1 文で書く (例「〜の直接証拠は無い」「〜が進行している」)。\n     **問いの文をそのまま返さない** — 問いは既に上に示されている。答えが前回から変わらない\n\
+    \     ときも、答えの文を書く (前回の答えをそのまま返してよい)。\n   - claim_type: structural (問いへの答えは状態評価)。\n   - implication:\
+    \ 含意 (だから何か) 1-2 文。証拠から言える範囲のみ、日本の防衛・運用への意味。"
   note: ''
 - field_id: confidence_fields_instruction
   kind: rubric
@@ -58,9 +76,9 @@ sections:
 - field_id: output_format
   kind: rubric
   title: 出力JSON
-  body: "{\"evidence\": [{\"index\": <N>, \"attribution_basis\": \"<basis>\", \"excerpt\": \"\
-    <抜粋>\", \"polarity\": \"supports|contradicts|neutral\"}],\n \"hypotheses\": [{\"hypothesis\": \"<仮説id>\"\
-    , \"consistent\": <int>, \"inconsistent\": <int>}],\n \"leading_hypothesis\": \"<仮説id>\", \"confidence\"\
+  body: "{\"evidence\": [{\"index\": <N>, \"attribution_basis\": \"<basis>\", \"excerpt\": \"<抜粋>\", \"\
+    polarity\": \"supports|contradicts|neutral\"}],\n \"hypotheses\": [{\"hypothesis\": \"<仮説id>\", \"\
+    consistent\": <int>, \"inconsistent\": <int>}],\n \"leading_hypothesis\": \"<仮説id>\", \"confidence\"\
     : \"high|moderate|low\",\n \"claim\": \"<維持または改訂した claim 1 文>\",\n \"claim_type\": \"ongoing_activity|discrete_event|structural\"\
     ,\n \"implication\": \"<含意 1-2 文 or 空>\",\n \"fired_indicators\": [\"<発火した前回指標>\"], \"scope_expanded\"\
     : true|false,\n \"key_assumptions\": [\"...\"], \"missing_evidence\": [\"...\"], \"indicators\": [\"\

@@ -413,9 +413,7 @@ class TestQuestionIsImmutable:
     変質していた (北朝鮮の問いは「日本の重要インフラ」を落として韓国金融の話になっていた)。
     """
 
-    def test_standing_title_is_not_overwritten_by_the_answer(
-        self, store: SituationStore
-    ) -> None:
+    def test_standing_title_is_not_overwritten_by_the_answer(self, store: SituationStore) -> None:
         from src.assessment.stateful import title_follows_claim
 
         ensure_standing_situations(store=store, now_iso=_NOW_ISO)
@@ -506,3 +504,136 @@ class TestQuestionBriefPayload:
         cn = build_standing_posture(db_path=store._repo.db_path, now=_NOW)[0]  # noqa: SLF001
         by_status = {i["indicator"]: i["status"] for i in cn["indicators"]}
         assert by_status == {"未発火の指標": "open", "発火した指標": "hit"}
+
+
+class TestAnswerIsNotAnEcho:
+    """常設情報要求の claim は**問いへの答え**であって問いの再掲ではない (2026-09-15)。
+
+    実測: 事象用の claim 指示 (「変えないなら前回のまま返す」) が常設にも当たり、前回 claim が
+    問い文そのものだったため答えがオウム返しで固定されていた (cn は 75 revision 全部が問い文)。
+    散文の追記は読まれない (2026-08-27) ので、**指示そのものを差し替える**構造で直す。
+    """
+
+    def test_prompt_frames_the_question_and_asks_for_an_answer(self) -> None:
+        from src.synthesis.grounded.passes import _render
+
+        prompt = _render(
+            "synthesis/ground_incremental.j2",
+            situation_title="問いのタイトル",
+            prior=_prior_view_stub(),
+            sources=[],
+            attribution_options="",
+            hypotheses=(),
+            question="中国は日本の重要インフラに事前配置を進めているか",
+        )
+
+        assert "継続して追う問い" in prompt
+        assert "中国は日本の重要インフラに事前配置を進めているか" in prompt
+        assert "問いへの答え" in prompt
+        assert "問いの文をそのまま返さない" in prompt
+
+    def test_event_prompt_is_unchanged(self) -> None:
+        """事象は従来どおり (claim は実態が分かったら改訂・変えないなら前回のまま)。"""
+        from src.synthesis.grounded.passes import _render
+
+        prompt = _render(
+            "synthesis/ground_incremental.j2",
+            situation_title="ある事象",
+            prior=_prior_view_stub(),
+            sources=[],
+            attribution_options="",
+            hypotheses=(),
+            question="",
+        )
+
+        assert "継続して追う問い" not in prompt
+        assert "変えないなら前回のまま返す" in prompt
+
+    def test_standing_question_is_resolved_from_the_seed(self) -> None:
+        from src.assessment.stateful import _standing_question
+
+        assert _standing_question(STANDING_SEEDS[0].situation_id) == STANDING_SEEDS[0].title
+        assert _standing_question("s-some-event") == ""
+
+
+def _prior_view_stub() -> object:
+    from src.synthesis.grounded.incremental import PriorJudgmentView
+
+    return PriorJudgmentView(
+        claim="前回の答え",
+        claim_type="structural",
+        leading_hypothesis="posture_global_no_jp_evidence",
+        confidence="low",
+        hypotheses=(),
+        indicators=(),
+        key_excerpts=(),
+    )
+
+
+class TestChangeReasonAndObservation:
+    """「なぜ答えが動いたか」と「何が観測されたか」を混ぜない (2026-09-15)。
+
+    書き込み側は delta_note に発火指標を固定接頭辞つきで併記する。表示側はそれを分離して
+    別の欄に置く — 混ざったままだと「答えは動いていない (no_change) のに変化理由の欄に
+    『指標発火: …』が出る」誤読になる。
+    """
+
+    def test_split_separates_reason_from_fired_indicators(self) -> None:
+        from src.assessment.stateful import FIRED_INDICATOR_MARKER
+        from src.ui.services.standing_posture import _split_delta_note
+
+        note = f"反証が 1 件成立した / {FIRED_INDICATOR_MARKER}指標A; 指標B"
+
+        reason, fired = _split_delta_note(note)
+
+        assert reason == "反証が 1 件成立した"
+        assert fired == ["指標A", "指標B"]
+
+    def test_fired_only_note_leaves_the_reason_empty(self) -> None:
+        """動いていないのに観測だけあった場合、変化理由は空 (捏造しない)。"""
+        from src.assessment.stateful import FIRED_INDICATOR_MARKER
+        from src.ui.services.standing_posture import _split_delta_note
+
+        reason, fired = _split_delta_note(f"{FIRED_INDICATOR_MARKER}指標A")
+
+        assert reason == ""
+        assert fired == ["指標A"]
+
+    def test_plain_note_is_untouched(self) -> None:
+        from src.ui.services.standing_posture import _split_delta_note
+
+        assert _split_delta_note("被害・標的の拡大を観測") == ("被害・標的の拡大を観測", [])
+
+
+class TestFirstAnswerIsNotTheQuestion:
+    """常設の初回評価で「答え = 問い」を焼き付けない (2026-09-15)。
+
+    ``ground_and_score`` は渡された claim をそのまま判定文にするため、問いを渡すと 1 版目が
+    オウム返しになり、増分 ACH の「変えないなら前回のまま」がそれを永続化する
+    (実測: cn は 75 版すべてが問い文だった)。初回はリード仮説のラベルを答えに置く。
+    """
+
+    def test_standing_first_answer_is_the_hypothesis_label(self) -> None:
+        from src.assessment.stateful import first_answer
+
+        answer = first_answer(
+            title=STANDING_SEEDS[0].title,
+            leading="posture_global_no_jp_evidence",
+            is_standing=True,
+        )
+
+        assert answer == "世界的に活動・日本標的の直接証拠なし"
+        assert answer != STANDING_SEEDS[0].title
+
+    def test_unknown_hypothesis_falls_back_to_the_id(self) -> None:
+        from src.assessment.stateful import first_answer
+
+        assert first_answer(title="問い", leading="未知の仮説", is_standing=True) == "未知の仮説"
+
+    def test_event_first_answer_is_the_title(self) -> None:
+        """事象は従来どおり title が判定文 (事象名 = 判定の主語)。"""
+        from src.assessment.stateful import first_answer
+
+        assert first_answer(title="ある事象", leading="criminal_financial", is_standing=False) == (
+            "ある事象"
+        )

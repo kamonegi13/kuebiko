@@ -1,4 +1,7 @@
 {# BLOCK: mission #}
+{% if question is defined and question %}
+{# BLOCK: standing_question_framing #}
+{% endif %}
 
 【前回までの判定】
 - claim: {{ prior.claim }}
@@ -24,7 +27,11 @@
 {# BLOCK: evidence_instruction #}
 {# BLOCK: indicator_check_instruction #}
 {# BLOCK: expansion_instruction #}
+{% if question is defined and question %}
+{# BLOCK: confidence_fields_standing #}
+{% else %}
 {# BLOCK: confidence_fields_instruction #}
+{% endif %}
 {# BLOCK: closing_fields_instruction #}
 
 {# BLOCK: principles #}

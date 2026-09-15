@@ -25,7 +25,7 @@ from src.prompts.sample_context import sample_context_for
 # prompt_id → skeleton の slot 数 (extract_prompt_blocks.py --apply 実行時の cut-plan と一致)
 _EXPECTED_SLOT_COUNT: dict[str, int] = {
     "ground_ach": 10,
-    "ground_incremental": 9,
+    "ground_incremental": 11,
     "nominate": 5,
     "detect_new": 5,
     "adversarial": 4,

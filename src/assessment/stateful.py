@@ -47,6 +47,7 @@ from src.assessment.situation_store import (
 from src.assessment.standing import (
     POSTURE_ACTIVE_JP,
     STANDING_KIND,
+    STANDING_SEEDS,
     ensure_standing_situations,
     harvest_standing_evidence,
     has_jp_direct_evidence,
@@ -65,7 +66,7 @@ from src.synthesis.grounded.estimate import (
     KeyJudgment,
     final_confidence,
 )
-from src.synthesis.grounded.hypotheses import POSTURE_HYPOTHESES
+from src.synthesis.grounded.hypotheses import POSTURE_HYPOTHESES, get_hypothesis
 from src.synthesis.grounded.incremental import (
     CARRIED_INDICATORS_MAX,
     PriorJudgmentView,
@@ -104,6 +105,30 @@ _REASSESS_CAP_ENV = "SYNTHESIS_REASSESS_CAP"
 _UNREAD_PER_SITUATION = 20
 
 
+def first_answer(*, title: str, leading: str, is_standing: bool) -> str:
+    """revision の無い Situation の 1 版目に置く判定文。
+
+    常設情報要求では **問いを判定文にしない**。``ground_and_score`` は渡された claim を
+    そのまま判定文にするため、問いを渡すと「答え = 問い」のオウム返しが 1 版目に焼き付き、
+    増分 ACH の「変えないなら前回のまま」がそれを永続化する (2026-09-15 実測: cn は
+    75 版すべてが問い文だった)。初回はリード仮説のラベルを答えに置き、2 版目以降は
+    増分 ACH が問いへの答えを書く (プロンプトが問い用に切り替わる)。
+    """
+    if not is_standing:
+        return title
+    hyp = get_hypothesis(leading)
+    return hyp.label if hyp else leading
+
+
+def _standing_question(situation_id: str) -> str:
+    """常設情報要求の問い文 (event なら空)。``STANDING_SEEDS`` が SSoT。
+
+    問いがあると増分 ACH は「問いへの答え」を書くプロンプトに切り替わる
+    (事象用の claim 指示だと問い文をオウム返しし続ける — 2026-09-15 実測)。
+    """
+    return next((s.title for s in STANDING_SEEDS if s.situation_id == situation_id), "")
+
+
 def title_follows_claim(row: SituationRow) -> bool:
     """title を評価済み claim へ追従させてよいか (event のみ真)。
 
@@ -138,6 +163,12 @@ def select_reassessments(
 
 
 _FALLBACK_STANDING = 3  # 動いた判定ゼロの日に立てる standing 判定数
+
+#: delta_note に発火指標を併記するときの印。**書き手と読み手が共有する**
+#: (読み手 = ui/services/standing_posture)。「なぜ答えが動いたか」と「何が観測されたか」は
+#: 別の事実なので、表示側で分離できるよう code 生成の固定接頭辞にしてある
+#: (LLM の自由文を parse するのではなく、自分が書いた形式を読む)。
+FIRED_INDICATOR_MARKER = "指標発火: "
 
 # 週次対称反証 sweep の有界化 (監査 2026-07-16): 1 回の batch call で安全に収まる上限
 # (adversarial の max_tokens 4,000 ÷ ~50 tokens/review ≈ 80 の 1/3 マージン)。
@@ -760,11 +791,14 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
             )
+            first_claim = first_answer(
+                title=row.title, leading=analysis.leading_hypothesis, is_standing=is_standing
+            )
             pending.append(
                 {
                     "kind": "opened",
                     "sid": sid,
-                    "claim": row.title,
+                    "claim": first_claim,
                     "domain": row.domain,
                     "analysis": analysis,
                     "new_aids": new_aids,
@@ -793,6 +827,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 sources=sources,
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
+                question=_standing_question(sid),
             )
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))
@@ -1012,7 +1047,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 store.update_title(sid, j.claim)
                 _log.info("situation_title_evolved", situation=sid, title=j.claim[:80])
         if p["fired"]:
-            note = (note + " / " if note else "") + "指標発火: " + "; ".join(p["fired"])
+            note = (note + " / " if note else "") + FIRED_INDICATOR_MARKER + "; ".join(p["fired"])
         rev_row = _revision_from_judgment(
             j, situation_id=sid, delta_type=delta, delta_note=note, now_iso=now_iso
         )

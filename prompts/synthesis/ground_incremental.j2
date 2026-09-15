@@ -1,5 +1,10 @@
 あなたは CTI のシニア分析官です。**継続追跡中の情勢**「{{ situation_title }}」について、
 前回までの判定と**新着ソース**を突き合わせ、判定を更新してください。
+{% if question is defined and question %}
+⚠ これは事象ではなく**継続して追う問い**である:
+「{{ question }}」
+下の【前回までの判定】の claim は、**この問いへの前回の答え**である (問いの再掲ではない)。
+{% endif %}
 
 【前回までの判定】
 - claim: {{ prior.claim }}
@@ -40,11 +45,21 @@
    判断し、指標の古さを理由に見送らない。
 4) 拡大判定: 新着が**被害・標的・地理・手口の拡大**を示すか (scope_expanded: true/false)。
    単なる続報・再報道は false。
+{% if question is defined and question %}
+5) confidence / claim / claim_type / implication:
+   - confidence: 更新後 leading の確度 (high/moderate/low)。証拠が薄いままなら上げない。
+   - claim: **問いへの答え**を 1 文で書く (例「〜の直接証拠は無い」「〜が進行している」)。
+     **問いの文をそのまま返さない** — 問いは既に上に示されている。答えが前回から変わらない
+     ときも、答えの文を書く (前回の答えをそのまま返してよい)。
+   - claim_type: structural (問いへの答えは状態評価)。
+   - implication: 含意 (だから何か) 1-2 文。証拠から言える範囲のみ、日本の防衛・運用への意味。
+{% else %}
 5) confidence / claim / claim_type / implication:
    - confidence: 更新後 leading の確度 (high/moderate/low)。証拠が薄いままなら上げない。
    - claim: 事象の実態がより正確に分かったなら文言を改訂してよい (変えないなら前回のまま返す)。
    - claim_type: ongoing_activity / discrete_event / structural。
    - implication: 含意 (だから何か) 1-2 文。証拠から言える範囲のみ、日本の防衛・運用への意味。
+{% endif %}
 6) key_assumptions / missing_evidence / indicators (次に観測すべき指標、更新後) を各 1-3 件。
    **すべて日本語で書く** (英語の断片を混ぜない)。
 

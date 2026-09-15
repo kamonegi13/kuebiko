@@ -151,8 +151,10 @@ export interface PostureCard {
   confidence: string;
   confidence_basis: string;
   delta_type: string;
-  /** 前回の答えから**なぜ**動いたか。 */
+  /** 前回の答えから**なぜ**動いたか (発火指標は fired_indicators へ分離)。 */
   delta_note: string;
+  /** 前回評価以降に観測された指標 (変化の理由とは別の事実)。 */
+  fired_indicators: string[];
   /** 何が分かっていないか (答えの限界)。 */
   missing_evidence: string[];
   assessed_at: string;

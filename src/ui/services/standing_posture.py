@@ -29,6 +29,23 @@ _EVIDENCE_WINDOW_DAYS = 30
 _INDICATOR_LIMIT = 8
 
 
+def _split_delta_note(raw: object) -> tuple[str, list[str]]:
+    """delta_note を「なぜ動いたか」と「発火した指標」に分ける。
+
+    書き込み側 (``stateful.FIRED_INDICATOR_MARKER``) が付けた固定接頭辞で切る —
+    LLM の自由文でなく**自分が書いた形式**を読むので壊れにくい。混ざったままだと
+    「答えは動いていないのに『指標発火: …』が変化理由の欄に出る」誤読になる。
+    """
+    from src.assessment.stateful import FIRED_INDICATOR_MARKER
+
+    note = str(raw or "")
+    if FIRED_INDICATOR_MARKER not in note:
+        return note.strip(), []
+    head, _, tail = note.partition(FIRED_INDICATOR_MARKER)
+    fired = [x.strip() for x in tail.split(";") if x.strip()]
+    return head.rstrip(" /").strip(), fired
+
+
 def _json_list(raw: object) -> list[str]:
     """revision の JSON 列 → 文字列 list (壊れていれば空 = 面を落とさない)。"""
     if not raw:
@@ -98,7 +115,9 @@ def build_standing_posture(
                 "delta_type": str(latest[4]) if latest else "",
                 # 前回の答えから**なぜ**動いたか。問いを主語に読むとき、確度の数字より
                 # 「何が変わったのでこうなったか」が要る (docs/pir_brief_design.md §3)。
-                "delta_note": str(latest[6] or "") if latest else "",
+                "delta_note": _split_delta_note(latest[6])[0] if latest else "",
+                # 発火した指標 = 観測された事実。変化の理由とは別の欄に置く。
+                "fired_indicators": _split_delta_note(latest[6])[1] if latest else [],
                 # 何が分かっていないか (答えの限界を答えと同じ面に置く = honesty doctrine)。
                 "missing_evidence": _json_list(latest[8]) if latest else [],
                 "assessed_at": str(latest[5]) if latest else "",

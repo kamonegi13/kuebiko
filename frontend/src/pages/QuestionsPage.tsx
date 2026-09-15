@@ -114,6 +114,17 @@ function QuestionCard({ q }: { q: PostureCard }) {
             </div>
           </div>
 
+          {q.fired_indicators.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[12px] text-fg-subtle">前回評価以降に観測されたもの</div>
+              <ul className="list-disc list-inside text-[13px] text-fg space-y-0.5">
+                {q.fired_indicators.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <div className="text-[12px] text-fg-subtle">何が見えれば答えが変わるか</div>
             <Indicators items={q.indicators} />
