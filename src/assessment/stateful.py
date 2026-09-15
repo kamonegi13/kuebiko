@@ -38,7 +38,12 @@ from src.assessment.ledger import (
     _sweep_lifecycle,
     compute_delta_type,
 )
-from src.assessment.situation_store import DeltaType, RevisionRow, SituationStore
+from src.assessment.situation_store import (
+    DeltaType,
+    RevisionRow,
+    SituationRow,
+    SituationStore,
+)
 from src.assessment.standing import (
     POSTURE_ACTIVE_JP,
     STANDING_KIND,
@@ -97,6 +102,20 @@ _REASSESS_CAP_ENV = "SYNTHESIS_REASSESS_CAP"
 # _MAX_NEW_SOURCES_PER_UPDATE 件。超過分は read_at NULL のままキューに残り silent drop
 # しない — 新しい順なので新着が常に優先、静穏期に残余が排水される)。
 _UNREAD_PER_SITUATION = 20
+
+
+def title_follows_claim(row: SituationRow) -> bool:
+    """title を評価済み claim へ追従させてよいか (event のみ真)。
+
+    event situation では正しい — 単発事象で開いた situation が続報で scope 拡大しても
+    「〜が実施された」のまま固まらないため (同一性追従 P2)。
+
+    **常設情報要求では誤り**: 問いは固定で、動くのは答えだけ。LLM の claim は**答え**なので、
+    追従させると問い自体が上書きされる。2026-09-15 実測では seed 4 問のうち 3 問が別の問いへ
+    変質していた (北朝鮮の問いは「日本の重要インフラ」を落として韓国金融の話になっていた)。
+    しかも posture カードは見出しが国名・本文が仮説ラベルのため UI では劣化が見えなかった。
+    """
+    return row.kind != STANDING_KIND
 
 
 def select_reassessments(
@@ -988,7 +1007,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             # 同一性追従 (P2): 評価済み claim が title と乖離したら title を進める。
             # 単発事象で開いた Situation が続報で scope 拡大しても「〜が実施された」の
             # ままにならない (claim は incremental の sanity ガード済み。id は不変)。
-            if j.claim and j.claim != row.title:
+            # 常設情報要求は対象外 — 問いは不変で動くのは答えだけ (title_follows_claim)。
+            if j.claim and j.claim != row.title and title_follows_claim(row):
                 store.update_title(sid, j.claim)
                 _log.info("situation_title_evolved", situation=sid, title=j.claim[:80])
         if p["fired"]:

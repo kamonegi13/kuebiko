@@ -402,3 +402,39 @@ class TestPostureCards:
         kp = next(c for c in cards if c["nation"] == "kp")
         assert kp["assessed"] is False
         assert kp["evidence_related_30d"] == 0
+
+
+class TestQuestionIsImmutable:
+    """常設情報要求の**問い**は不変。動くのは答えだけ (2026-09-15)。
+
+    増分 ACH の同一性追従 (`update_title`) は event situation では正しい — 続報で事象の
+    輪郭が定まるため。しかし常設情報要求では LLM の claim は**答え**であり、それを**問い**に
+    上書きすると問い自体が失われる。実測 (2026-09-15): seed 4 問のうち 3 問が別の問いへ
+    変質していた (北朝鮮の問いは「日本の重要インフラ」を落として韓国金融の話になっていた)。
+    """
+
+    def test_standing_title_is_not_overwritten_by_the_answer(
+        self, store: SituationStore
+    ) -> None:
+        from src.assessment.stateful import title_follows_claim
+
+        ensure_standing_situations(store=store, now_iso=_NOW_ISO)
+        seed = STANDING_SEEDS[0]
+        row = store.get_situation(seed.situation_id)
+        assert row is not None
+
+        assert title_follows_claim(row) is False
+
+    def test_event_title_still_follows_the_claim(self, store: SituationStore) -> None:
+        """event は従来どおり (続報で「〜が実施された」のまま固まらないための機構)。"""
+        from src.assessment.stateful import title_follows_claim
+
+        row = store.open_situation(
+            title="ある組織への不正アクセス",
+            domain="cyber_incident",
+            anchors=frozenset({"victim_org:acme"}),
+            pir_ids=(),
+            now_iso=_NOW_ISO,
+        )
+
+        assert title_follows_claim(row) is True
