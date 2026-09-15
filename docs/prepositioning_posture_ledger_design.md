@@ -5,7 +5,15 @@
 - 上流: [synthesis_situation_ledger_design.md](synthesis_situation_ledger_design.md) /
   [jp_critical_infra_board_design.md](jp_critical_infra_board_design.md) /
   [synthesis_reliability_redesign.md](synthesis_reliability_redesign.md)
-- 状態: **設計 (実装未着手)**。段A〜C は各段単独出荷可・flag 裏
+- 状態: **稼働中** (2026-09-15 に文書を実装へ同期)。段A〜C いずれも出荷済み、
+  flag `STANDING_SITUATIONS=1`。実測 (2026-09-15): 常設 situation 4 件が active、
+  revision 計 197 件 (2026-07-12 〜 2026-09-14、cn=76 / ru=62 / kp=31 / ir=29)。
+  現在の見立ては 4 件とも `posture_global_no_jp_evidence` (確度 ru=高 / kp=中 / cn・ir=低)
+  — 「世界では観測されるが日本向けの証拠は無い」という状態を**確度つきで保持できている**
+  = 本設計の目的 (静けさの解釈を誰かが持つ) は達成されている。
+- 幅の扱い (2026-09-15): 報告の幅を重要度基準で絞る改修に際し、**常設 situation は
+  moved/継続いずれの上限からも除外**した (`render._standing_seed_ids`)。静かな週ほど
+  salience が下がるため、上限に任せると最も見えているべき週に消えるため。
 
 ---
 
