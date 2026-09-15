@@ -9,6 +9,7 @@ situation_revisions のみ** (board 集計と独立 — 「カードの確度・
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,19 @@ from src.ui.services.overview import _NATION_LABELS
 
 _TRAJECTORY_LIMIT = 12
 _EVIDENCE_WINDOW_DAYS = 30
+#: 「何が見えれば答えが変わるか」に載せる指標の上限 (新しい順)。
+_INDICATOR_LIMIT = 8
+
+
+def _json_list(raw: object) -> list[str]:
+    """revision の JSON 列 → 文字列 list (壊れていれば空 = 面を落とさない)。"""
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return []
+    return [str(x) for x in loaded if str(x).strip()] if isinstance(loaded, list) else []
 
 
 def build_standing_posture(
@@ -45,10 +59,16 @@ def build_standing_posture(
         with store._repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の意図的共有
             rev_rows = conn.execute(
                 "SELECT rev, claim, leading_hypothesis, confidence, delta_type, created_at,"
-                " delta_note, confidence_basis"
+                " delta_note, confidence_basis, missing"
                 " FROM situation_revisions WHERE situation_id=?"
                 " ORDER BY rev DESC LIMIT ?",
                 (seed.situation_id, _TRAJECTORY_LIMIT),
+            ).fetchall()
+            indicator_rows = conn.execute(
+                "SELECT indicator, status, opened_at, horizon_days"
+                " FROM situation_forecasts WHERE situation_id=?"
+                " ORDER BY opened_at DESC LIMIT ?",
+                (seed.situation_id, _INDICATOR_LIMIT),
             ).fetchall()
             counts = conn.execute(
                 "SELECT COUNT(*),"
@@ -76,7 +96,25 @@ def build_standing_posture(
                 # 記録されているが未露出だった — honesty doctrine: 確度は接地を可視化する。
                 "confidence_basis": str(latest[7]) if latest else "",
                 "delta_type": str(latest[4]) if latest else "",
+                # 前回の答えから**なぜ**動いたか。問いを主語に読むとき、確度の数字より
+                # 「何が変わったのでこうなったか」が要る (docs/pir_brief_design.md §3)。
+                "delta_note": str(latest[6] or "") if latest else "",
+                # 何が分かっていないか (答えの限界を答えと同じ面に置く = honesty doctrine)。
+                "missing_evidence": _json_list(latest[8]) if latest else [],
                 "assessed_at": str(latest[5]) if latest else "",
+                # 鮮度: この答えがいつの証拠に基づくか。静穏な問いほど重要な欄
+                # (「静か≠安全」— 古いことでなく、古いと分からないことが危険)。
+                "last_evidence_at": row.last_evidence_at,
+                # 何が見えれば答えが変わるか (I&W)。open=未発火 / hit=発火 / expired=期限切れ。
+                "indicators": [
+                    {
+                        "indicator": str(i[0]),
+                        "status": str(i[1]),
+                        "opened_at": str(i[2]),
+                        "horizon_days": int(i[3] or 0),
+                    }
+                    for i in indicator_rows
+                ],
                 "evidence_related_30d": int(counts[0] or 0),
                 "evidence_direct_30d": int(counts[1] or 0),
                 "trajectory": [

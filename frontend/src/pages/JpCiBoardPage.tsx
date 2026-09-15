@@ -22,6 +22,7 @@ import {
   NationTag,
   OperatorTierBadge,
   PrecisionBadge,
+  POSTURE_CONF_TONE,
   STAGE_STYLE,
   StageBadge,
   StatusBadge,
@@ -193,12 +194,6 @@ export function JpCiBoardPage() {
 }
 
 // 横断キャンペーン: 集約が個別記事を超えて示す創発信号 (協調的インフラ作戦の兆候)。
-// 確度ラベルは backend 配信 vocab "confidence" (vocabLabel) を SSoT に。ここは色 (tone) のみ保持。
-const CONF_TONE: Record<string, string> = {
-  high: "bg-accent-subtle text-accent border-accent/30",
-  moderate: "bg-warning-soft text-warning border-warning/30",
-  low: "border-border-default text-fg-subtle",
-};
 
 const CONF_BAR: Record<string, string> = { high: "█", moderate: "▄", low: "▁" };
 
@@ -217,7 +212,7 @@ function PostureSection({ cards }: { cards: PostureCard[] }) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
         {cards.map((c) => {
-          const confTone = CONF_TONE[c.confidence] ?? null;
+          const confTone = POSTURE_CONF_TONE[c.confidence] ?? null;
           const spark = c.trajectory.map((t) => CONF_BAR[t.confidence] ?? "▁").join("");
           const open = openId === c.situation_id;
           return (
@@ -256,7 +251,7 @@ function PostureSection({ cards }: { cards: PostureCard[] }) {
               {open && c.trajectory.length > 0 && (
                 <ul className="m-0 mt-1.5 p-0 pt-1.5 list-none space-y-1 border-t border-border-subtle">
                   {[...c.trajectory].reverse().map((t) => {
-                    const tcTone = CONF_TONE[t.confidence] ?? null;
+                    const tcTone = POSTURE_CONF_TONE[t.confidence] ?? null;
                     return (
                       <li key={t.rev} className="text-[12px] leading-relaxed flex items-start gap-1.5 flex-wrap">
                         <span className="text-fg-subtle tnum shrink-0">{t.at.slice(5, 10)}</span>

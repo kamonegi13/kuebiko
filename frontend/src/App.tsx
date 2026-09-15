@@ -24,6 +24,7 @@ import { PirEditPage } from "./pages/PirEditPage";
 import { FlowPage } from "./pages/FlowPage";
 import { MapPage } from "./pages/MapPage";
 import { JpCiBoardPage } from "./pages/JpCiBoardPage";
+import { QuestionsPage } from "./pages/QuestionsPage";
 import { JpCiOperatorsPage } from "./pages/JpCiOperatorsPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useRuntimeFlags, shouldHideFullOnly } from "./hooks/useRuntimeFlags";
@@ -51,6 +52,7 @@ type Route =
   | { kind: "config" }
   | { kind: "flow" }
   | { kind: "map" }
+  | { kind: "questions" }
   | { kind: "jpci" }
   | { kind: "jpci-operators" }
   | { kind: "schedule" }
@@ -138,6 +140,7 @@ function parseRoute(): Route {
   if (p === "/app/flow") return { kind: "flow" };
   if (p === "/app/map") return { kind: "map" };
   if (p === "/app/jpci/operators") return { kind: "jpci-operators" };
+  if (p === "/app/questions") return { kind: "questions" };
   if (p === "/app/jpci") return { kind: "jpci" };
   if (p === "/app/schedule") return { kind: "schedule" };
   // PIR pages
@@ -206,6 +209,7 @@ export default function App() {
       {effectiveRoute.kind === "config" && <ConfigPage />}
       {effectiveRoute.kind === "flow" && <FlowPage />}
       {effectiveRoute.kind === "map" && <MapPage />}
+      {effectiveRoute.kind === "questions" && <QuestionsPage />}
       {effectiveRoute.kind === "jpci" && <JpCiBoardPage />}
       {effectiveRoute.kind === "jpci-operators" && <JpCiOperatorsPage />}
       {effectiveRoute.kind === "schedule" && <JobsConsolePage />}

@@ -131,6 +131,14 @@ export interface PostureTrajectoryPoint {
   note: string;
 }
 
+/** 問いの指標 (I&W): 何が見えれば答えが変わるか。 */
+export interface QuestionIndicator {
+  indicator: string;
+  status: string;
+  opened_at: string;
+  horizon_days: number;
+}
+
 export interface PostureCard {
   situation_id: string;
   nation: string;
@@ -143,10 +151,22 @@ export interface PostureCard {
   confidence: string;
   confidence_basis: string;
   delta_type: string;
+  /** 前回の答えから**なぜ**動いたか。 */
+  delta_note: string;
+  /** 何が分かっていないか (答えの限界)。 */
+  missing_evidence: string[];
   assessed_at: string;
+  /** この答えがいつの証拠に基づくか (鮮度)。 */
+  last_evidence_at: string;
+  indicators: QuestionIndicator[];
   evidence_related_30d: number;
   evidence_direct_30d: number;
   trajectory: PostureTrajectoryPoint[];
+}
+
+export interface QuestionsResponse {
+  questions: PostureCard[];
+  summary: { total: number; assessed: number; moved: number; unassessed: number };
 }
 
 export interface JpCiBoardResponse {
@@ -161,6 +181,11 @@ export interface JpCiBoardResponse {
   sectors: SectorPosture[];
   posture: PostureCard[];
 }
+
+export const questionsApi = {
+  /** 常設情報要求の現在の答え (窓を持たない = 状態の射影)。 */
+  list: () => getJson<QuestionsResponse>("/api/v1/questions"),
+};
 
 export const jpciApi = {
   board: (days: number) => getJson<JpCiBoardResponse>(`/api/v1/jp-ci-board?days=${days}`),

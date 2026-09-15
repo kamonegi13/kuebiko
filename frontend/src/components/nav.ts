@@ -2,11 +2,7 @@
 // IA: 概観 / インテリジェンス / コンテンツ / 運用 / 設定 の 5 グループ。
 // Intel Graph の 4 タブ (synthesis/pmesii/threats/operations) は第一級項目へ昇格。
 
-import {
-  BookOpen, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText,
-  Flag, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert,
-  TrendingUp, Users, Workflow,
-} from "lucide-react";
+import { BookOpen, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText, Flag, HelpCircle, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert, TrendingUp, Users, Workflow } from "lucide-react";
 
 // lucide の LucideIcon 型は公開 export されていないため icon 値から型を取り出す
 // (全 icon が同一の ForwardRefExoticComponent 型)。
@@ -45,6 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "インテリジェンス",
     items: [
+      { href: "/app/questions", mirror: true, label: "問い", Icon: HelpCircle, prefixes: ["/app/questions"] },
       { href: "/app/intel/synthesis", mirror: true, label: "現況", Icon: FileText, exact: ["/app/intel", "/app/intel/"], prefixes: ["/app/intel/synthesis"] },
       { href: "/app/intel/pmesii", mirror: true, label: "国家情勢", Icon: Scale, prefixes: ["/app/intel/pmesii"] },
       { href: "/app/intel/threats", mirror: true, label: "脅威アクター", Icon: Crosshair, prefixes: ["/app/intel/threats"] },

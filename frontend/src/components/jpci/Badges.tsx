@@ -184,3 +184,11 @@ export function ConfidencePill({ confidence }: { confidence: "high" | "medium" |
           : "text-fg-subtle";
   return <span className={`text-[12px] ${cls}`}>{label}</span>;
 }
+
+// 常設情報要求の確度 tone (high/moderate/low)。ラベルは backend 配信 vocab "confidence" を
+// SSoT に、ここは色のみ保持。board の posture カードと問いの面が共有する (複製を増やさない)。
+export const POSTURE_CONF_TONE: Record<string, string> = {
+  high: "border-critical/40 text-critical bg-critical/10",
+  moderate: "border-warn-border text-warn-fg bg-warn-bg",
+  low: "border-border-default text-fg-subtle",
+};

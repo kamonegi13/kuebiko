@@ -438,3 +438,71 @@ class TestQuestionIsImmutable:
         )
 
         assert title_follows_claim(row) is True
+
+
+class TestQuestionBriefPayload:
+    """段A (PIR ブリーフの面): 問いを主語にして読むのに要る欄が揃っているか。
+
+    設計 docs/pir_brief_design.md §3。材料はすべて台帳に既存なので、**別集計を作らず**
+    既存の posture builder を拡張して両方の面が同じ射影を読む (本ファイルの既存不変条件)。
+    """
+
+    def _assessed_cn(self, store: SituationStore) -> None:
+        from src.assessment.situation_store import RevisionRow
+
+        ensure_standing_situations(store=store, now_iso=_NOW_ISO)
+        store.add_revision(
+            RevisionRow(
+                situation_id="s-standing-prepos-cn",
+                rev=0,
+                claim="日本標的の直接証拠は無い",
+                claim_type="structural",
+                leading_hypothesis="posture_global_no_jp_evidence",
+                confidence="low",
+                confidence_basis="ACH=low / source_basis=medium",
+                hypotheses_json="[]",
+                assumptions_json="[]",
+                missing_json='["JP CI での帰属済み観測"]',
+                indicators_json="[]",
+                implication="",
+                delta_type="weakened",
+                delta_note="反証が 1 件成立した",
+                created_at=_NOW_ISO,
+            )
+        )
+
+    def test_answer_change_and_freshness_are_exposed(self, store: SituationStore) -> None:
+        from src.ui.services.standing_posture import build_standing_posture
+
+        self._assessed_cn(store)
+
+        cn = build_standing_posture(db_path=store._repo.db_path, now=_NOW)[0]  # noqa: SLF001
+        # 問いと答えが別の欄で読める (問いは tooltip ではない)
+        assert cn["question"] == STANDING_SEEDS[0].title
+        assert cn["claim"] == "日本標的の直接証拠は無い"
+        # なぜ動いたか (前回からの変化の理由)
+        assert cn["delta_type"] == "weakened"
+        assert cn["delta_note"] == "反証が 1 件成立した"
+        # 何が分かっていないか
+        assert cn["missing_evidence"] == ["JP CI での帰属済み観測"]
+        # 鮮度 (答えがいつの証拠に基づくか)
+        assert cn["last_evidence_at"]
+
+    def test_open_indicators_are_exposed(self, store: SituationStore) -> None:
+        """「何が見えれば答えが変わるか」= 指標。発火済みと未発火を区別して出す。"""
+        from src.ui.services.standing_posture import build_standing_posture
+
+        self._assessed_cn(store)
+        with store._repo._connect() as conn:  # noqa: SLF001
+            for ind, status in (("未発火の指標", "open"), ("発火した指標", "hit")):
+                conn.execute(
+                    "INSERT INTO situation_forecasts"
+                    " (situation_id, indicator, opened_at, horizon_days, status)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    ("s-standing-prepos-cn", ind, _NOW_ISO, 30, status),
+                )
+            conn.commit()
+
+        cn = build_standing_posture(db_path=store._repo.db_path, now=_NOW)[0]  # noqa: SLF001
+        by_status = {i["indicator"]: i["status"] for i in cn["indicators"]}
+        assert by_status == {"未発火の指標": "open", "発火した指標": "hit"}
