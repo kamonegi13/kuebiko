@@ -21,7 +21,8 @@ sections:
 - field_id: sections_intro
   kind: rubric
   title: セクション指示の導入
-  body: '次の各セクションを日本語で書いてください (各 2-5 文、無ければ簡潔に「特記なし」):'
+  body: '次の各セクションを日本語で書いてください (各 {{ section_min_sentences | default(2) }}-{{ section_max_sentences | default(5)
+    }} 文、無ければ簡潔に「特記なし」。**ただし weight_section は下記のとおり件数に従う**):'
   note: ''
 - field_id: headline_instruction
   kind: rubric
@@ -51,10 +52,12 @@ sections:
 - field_id: other_sections_guidance
   kind: rubric
   title: その他セクション
-  body: "- weight_section (新規・変化): 変化した判定を【新規】【転換】等の変化種別が分かる形で概観。\n  各判定 1-2 文、**なぜ変わったか (delta_note)\
-    \ を含める**。変化なしの日は継続判定の概観\n- chain_section (連鎖): 判定間の関係 (上の決定論導出) と事象間の関連 (証拠にある範囲のみ。\n  共有アクター/国家という事実を述べ、そこから因果を創作しない)\n\
-    - cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)\n- spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標\
-    \ / 今後の注視点\n  (推測は推測と明示)\n- pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形 (確度語維持)"
+  body: "- weight_section (新規・変化): 上の【変化した判定】に挙げた **{{ moved|length }} 件すべて**を、\n  【新規】【転換】等の変化種別が分かる形で\
+    \ **1 件あたり 1-2 文**で書く (= この節だけは\n  セクションの文数指示でなく件数に従う。重要な変化が多い期間は、その分だけ長くなるのが正しい)。\n  各件に**なぜ変わったか\
+    \ (delta_note) を含める**。変化なしの日は継続判定の概観\n- chain_section (連鎖): 判定間の関係 (上の決定論導出) と事象間の関連 (証拠にある範囲のみ。\n\
+    \  共有アクター/国家という事実を述べ、そこから因果を創作しない)\n- cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)\n- spillover_section\
+    \ (注視・見通し): 発火した監視指標 / 開いている監視指標 / 今後の注視点\n  (推測は推測と明示)\n- pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形\
+    \ (確度語維持)"
   note: ''
 - field_id: other_moves_guidance
   kind: rubric

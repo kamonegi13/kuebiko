@@ -62,29 +62,76 @@ def _estimate(judgments: tuple[KeyJudgment, ...], period_type: str = "weekly") -
     )
 
 
-class TestThreeLayers:
-    def test_weekly_splits_into_body_list_and_count(self) -> None:
+class TestImportanceDrivenWidth:
+    """A 層は固定 N でなく**重要度基準** — 重要な事象が多い期間は本文も長くなる。"""
+
+    def test_body_grows_with_the_number_of_important_judgments(self) -> None:
+        """全件が同格に重要なら、上限まで全部 A 層に入る (下限 12 で止まらない)。"""
         est = _estimate(tuple(_judgment(i) for i in range(90)))
 
         plan = build_render_plan(est=est, period_label="L")
 
-        body, _, rest = plan.prompt.partition("【そのほかの動き")
-        # A 本文: 上位 12 件だけが完全な形 (根拠抜粋つき) で載る
-        assert body.count("根拠(要点)") == 12
-        # B 一覧: 1 行形で 60 件、抜粋は載せない
-        listing, _, tail = rest.partition("ほかに変化した判定")
-        assert listing.count("【拡大】") == 60
-        assert "根拠抜粋" not in listing
-        # C 件数: 残り 18 件は件数だけ (90 - 12 - 60)
-        assert "18 件" in tail
+        assert plan.body_count == 40  # 上限 (安全弁)
+        assert plan.prompt.count("根拠(要点)") == 40
 
-    def test_monthly_uses_its_own_width(self) -> None:
-        est = _estimate(tuple(_judgment(i) for i in range(40)), period_type="monthly")
+    def test_body_shrinks_to_the_floor_when_only_a_few_matter(self) -> None:
+        """重要度が突出した 1 件 + 些末な多数 → A 層は下限まで縮む (薄く広げない)。"""
+        judgments = [
+            _judgment(0, delta_type="hypothesis_flip", confidence="high", japan_related=True),
+            *[_judgment(i, delta_type="claim_revised", confidence="low") for i in range(1, 60)],
+        ]
+        est = _estimate(tuple(judgments))
 
         plan = build_render_plan(est=est, period_label="L")
 
-        assert plan.prompt.count("根拠(要点)") == 15
+        assert plan.body_count == 12  # 下限
+        assert plan.listed_count == 48
+
+    def test_weekly_splits_into_body_list_and_count(self) -> None:
+        judgments = [
+            _judgment(0, delta_type="hypothesis_flip", confidence="high", japan_related=True),
+            *[_judgment(i, delta_type="claim_revised", confidence="low") for i in range(1, 90)],
+        ]
+        est = _estimate(tuple(judgments))
+
+        plan = build_render_plan(est=est, period_label="L")
+
+        body, _, rest = plan.prompt.partition("【そのほかの動き")
+        assert body.count("根拠(要点)") == 12  # A 層 (下限)
+        listing, _, tail = rest.partition("ほかに変化した判定")
+        assert listing.count("【更新】") == 60  # B 層 (上限)
+        assert "根拠抜粋" not in listing
+        assert "18 件" in tail  # C 層 = 90 - 12 - 60
+
+    def test_monthly_uses_its_own_floor(self) -> None:
+        judgments = [
+            _judgment(0, delta_type="hypothesis_flip", confidence="high", japan_related=True),
+            *[_judgment(i, delta_type="claim_revised", confidence="low") for i in range(1, 40)],
+        ]
+        est = _estimate(tuple(judgments), period_type="monthly")
+
+        plan = build_render_plan(est=est, period_label="L")
+
+        assert plan.body_count == 15  # monthly の下限
         assert "【そのほかの動き" in plan.prompt
+
+    def test_output_budget_scales_with_the_period(self) -> None:
+        """文数指示は period 別 (判定が多い期間ほど総括も長い)。"""
+        daily = build_render_plan(est=_estimate((_judgment(1),), "daily"), period_label="L")
+        weekly = build_render_plan(est=_estimate((_judgment(1),), "weekly"), period_label="L")
+
+        assert "2-5 文" in daily.prompt
+        assert "3-8 文" in weekly.prompt
+
+    def test_weight_section_is_tied_to_the_judgment_count(self) -> None:
+        """「各セクション N 文」が「各判定 1-2 文」を握りつぶしていた矛盾の解消 (実測: weekly は
+        判定 92 件に対し weight_section が 9 文しか書かれていなかった)。"""
+        est = _estimate(tuple(_judgment(i) for i in range(30)))
+
+        plan = build_render_plan(est=est, period_label="L")
+
+        assert "30 件すべて" in plan.prompt
+        assert "1 件あたり 1-2 文" in plan.prompt
 
     def test_short_weekly_has_no_list_or_count(self) -> None:
         """判定が少ない週は現行どおり (層分けの痕跡を出さない)。"""
@@ -109,27 +156,39 @@ class TestThreeLayers:
 
 class TestPirGuarantee:
     def test_pir_only_in_low_salience_judgment_is_pulled_into_the_body(self) -> None:
-        """上位 12 に無い PIR は、その PIR を持つ最上位判定を A 層へ引き上げる。"""
-        judgments = [_judgment(i, pir_ids=("pir_common",)) for i in range(30)]
-        # salience 最下位 (証拠なし = 認識論的重みは同じだが id 順で後ろ) に固有 PIR を置く
-        judgments[29] = _judgment(29, pir_ids=("pir_rare",))
+        """A 層に無い PIR は、その PIR を持つ最上位判定を引き上げる。"""
+        judgments = [
+            _judgment(0, delta_type="hypothesis_flip", confidence="high", japan_related=True),
+            *[
+                _judgment(i, delta_type="claim_revised", confidence="low", pir_ids=("pir_common",))
+                for i in range(1, 30)
+            ],
+        ]
+        judgments[29] = _judgment(
+            29, delta_type="claim_revised", confidence="low", pir_ids=("pir_rare",)
+        )
         est = _estimate(tuple(judgments))
 
         plan = build_render_plan(est=est, period_label="L")
 
         body, _, _ = plan.prompt.partition("【そのほかの動き")
         assert "[j029]" in body  # 保証で引き上げられた
-        assert body.count("根拠(要点)") == 13  # 上位 12 + 保証 1
+        assert plan.body_count == 13  # A 層 12 (下限) + 保証 1
 
     def test_guarantee_is_bounded(self) -> None:
-        """PIR が多数落ちても A 層は上限で止める (幅が無限に伸びない)。"""
-        judgments = [_judgment(i, pir_ids=(f"pir_{i}",)) for i in range(30)]
+        """PIR が多数落ちても保証で足す件数は上限で止める (幅が無限に伸びない)。"""
+        judgments = [
+            _judgment(0, delta_type="hypothesis_flip", confidence="high", japan_related=True),
+            *[
+                _judgment(i, delta_type="claim_revised", confidence="low", pir_ids=(f"pir_{i}",))
+                for i in range(1, 30)
+            ],
+        ]
         est = _estimate(tuple(judgments))
 
         plan = build_render_plan(est=est, period_label="L")
 
-        body, _, _ = plan.prompt.partition("【そのほかの動き")
-        assert body.count("根拠(要点)") == 18  # 上位 12 + 保証上限 6
+        assert plan.body_count == 18  # A 層 12 (下限) + 保証上限 6
 
     def test_guarantee_does_not_apply_to_daily(self) -> None:
         judgments = [_judgment(i, pir_ids=(f"pir_{i}",)) for i in range(20)]

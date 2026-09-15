@@ -32,7 +32,16 @@ from src.tools.llm_schema import require_all_properties
 
 _log = get_logger(__name__)
 _TEMPERATURE = 0.2
+#: 出力上限。A 層が増えた weekly/monthly は本文も長くなるため広げる — **JSON の途中閉じを
+#: 防ぐのが目的** (max_tokens 到達 = structured 出力の破損)。daily は現行のまま。
 _MAX_TOKENS = 6_000
+_MAX_TOKENS_BY_PERIOD: dict[str, int] = {"daily": 6_000, "weekly": 10_000, "monthly": 10_000}
+#: セクションあたりの文数指示 (period 別)。判定が多い期間ほど総括も長くなる。
+_SECTION_SENTENCES: dict[str, tuple[int, int]] = {
+    "daily": (2, 5),
+    "weekly": (3, 8),
+    "monthly": (3, 8),
+}
 
 _CONF_JA: dict[str, str] = {"high": "高確度", "moderate": "中確度", "low": "低確度"}
 
@@ -185,7 +194,15 @@ class _WireSectionsCoT(BaseModel):
 #: daily=12: 実測 (2026-09-15、過去 73 窓) の moved は中央 5 件で、台帳 cap を 12 に上げても
 #: 約 10 件。つまり通常は非発動の安全網。weekly/monthly は軌跡射影で中央 92/137 件を載せる
 #: 設計 (prompt 40k/61k tok) であり、幅の再設計が済むまで**切らない** (切ると報告が壊れる)。
-_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 15}
+#: A 層 (本文) の選抜は **重要度基準** — 固定 N ではない。状況総括は「真に重要な事象を総括する」
+#: ものなので、重要な事象が多い期間は本文も長くなってよい (2026-09-15 利用者指摘)。
+#: salience が最高値の ``_BODY_SALIENCE_RATIO`` 以上の判定を全部 A 層に入れ、下限と上限で挟む。
+#: 実測 (最高の 50% 以上): daily 2-4 件 / weekly 19-36 件 (中央 29) / monthly 28-46 件。
+_BODY_SALIENCE_RATIO = 0.5
+#: 下限 = これ未満には絞らない (daily は moved 中央 5 件なので実質「全件」になる)。
+_MOVED_SECTION_MIN: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 15}
+#: 上限 = 病的な期間での暴走を防ぐ安全弁 (40 件 × 1-2 文 ≒ 5,600 字で出力上限内)。
+_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 40, "monthly": 40}
 
 #: A 層 (本文) に PIR 保証で追加してよい上限。weekly を単純に上位 12 で切ると測定 11 窓
 #: **すべて**で PIR が落ちた (pir_general_agency_alert ×9、pir_apt_attribution ×6 ほか) 一方、
@@ -393,6 +410,22 @@ class RenderPlan:
     omitted_count: int = 0
 
 
+def _body_size(moved_all: list[KeyJudgment], *, period: str, cap: int) -> int:
+    """A 層に入れる件数 = 重要度基準 (最高 salience の一定割合以上) を下限・上限で挟む。
+
+    固定 N でないのは、状況総括が「真に重要な事象」を扱うものだから — 重要な事象が多い期間は
+    本文もそれだけ長くなるのが正しい。下限は静穏期に総括が痩せないための床 (daily は実質全件)。
+    """
+    from src.assessment.salience import salience
+
+    if not moved_all:
+        return 0
+    floor = _MOVED_SECTION_MIN.get(period, cap)
+    threshold = salience(moved_all[0]) * _BODY_SALIENCE_RATIO
+    important = sum(1 for j in moved_all if salience(j) >= threshold)
+    return max(floor, min(important, cap))
+
+
 def _split_moved(
     moved_all: list[KeyJudgment], *, head: KeyJudgment | None, period: str
 ) -> tuple[list[KeyJudgment], list[KeyJudgment], int]:
@@ -411,7 +444,7 @@ def _split_moved(
     cap = _MOVED_SECTION_MAX.get(period)
     if cap is None:
         return moved_all, [], 0
-    body = moved_all[:cap]
+    body = moved_all[: _body_size(moved_all, period=period, cap=cap)]
     if head is not None and head in moved_all and head not in body:
         body = [*body[: max(0, len(body) - 1)], head]
 
@@ -483,6 +516,8 @@ def build_render_plan(
         moved=[_judgment_view(j) for j in moved],
         moved_list=[_judgment_line(j) for j in moved_list],
         moved_omitted=moved_omitted,
+        section_min_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[0],
+        section_max_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[1],
         standing=[_judgment_view(j) for j in standing],
         pir_rollup=_pir_rollup(est.judgments),
         relation_lines=relation_lines,
@@ -522,7 +557,11 @@ async def render_sections(
         _WireSectionsCoT if cot else _WireSections
     )
     raw = await llm.generate_structured(
-        plan.prompt, schema, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
+        plan.prompt,
+        schema,
+        temperature=_TEMPERATURE,
+        max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
+        think=False,
     )
     if isinstance(raw, _WireSectionsCoT):
         # 下流 (射影・保存・表示) は CoT 欄を知らない。長さだけ観測に残す

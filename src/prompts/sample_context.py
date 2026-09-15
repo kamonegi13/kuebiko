@@ -351,6 +351,8 @@ _SYNTHESIS_RENDER: dict[str, Any] = {
         },
     ],
     "moved_omitted": 3,
+    "section_min_sentences": 2,
+    "section_max_sentences": 5,
 }
 
 SAMPLE_CONTEXTS: dict[str, dict[str, Any]] = {
