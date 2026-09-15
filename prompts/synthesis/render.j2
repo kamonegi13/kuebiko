@@ -48,6 +48,10 @@
 {% else %}
 (継続判定なし)
 {% endfor %}
+{% if standing_omitted is defined and standing_omitted %}
+(ほかに継続中の判定が {{ standing_omitted }} 件あるが、重要度下位のため本文では扱わない
+ — 台帳には記録済み。PIR に紐づくものは下の PIR 対応に含まれる)
+{% endif %}
 
 【判定間の関係】(共有アクター/作戦/国家からの決定論導出 — 因果は主張していない)
 {% for r in relation_lines %}

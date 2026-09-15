@@ -351,6 +351,7 @@ _SYNTHESIS_RENDER: dict[str, Any] = {
         },
     ],
     "moved_omitted": 3,
+    "standing_omitted": 2,
     "section_min_sentences": 2,
     "section_max_sentences": 5,
 }

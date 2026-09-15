@@ -204,6 +204,12 @@ _MOVED_SECTION_MIN: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 15}
 #: 上限 = 病的な期間での暴走を防ぐ安全弁 (40 件 × 1-2 文 ≒ 5,600 字で出力上限内)。
 _MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 40, "monthly": 40}
 
+#: 継続中の判定 (standing) も **同じ重要度基準**で選ぶ (2026-09-15)。weekly では軌跡射影の
+#: no_change 判定がそのまま載り 22 件 = 3.2k tok を占めていた。daily は上流
+#: (``stateful._FALLBACK_STANDING``) で 3 件に絞られるため実質不変。
+_STANDING_SECTION_MIN = 3
+_STANDING_SECTION_MAX: dict[str, int] = {"daily": 3, "weekly": 12, "monthly": 12}
+
 #: A 層 (本文) に PIR 保証で追加してよい上限。weekly を単純に上位 12 で切ると測定 11 窓
 #: **すべて**で PIR が落ちた (pir_general_agency_alert ×9、pir_apt_attribution ×6 ほか) 一方、
 #: 保証のコストは毎窓 +1-3 件と安い。daily は 73 窓中 1 窓しか落ちないので保証を持たない
@@ -410,19 +416,19 @@ class RenderPlan:
     omitted_count: int = 0
 
 
-def _body_size(moved_all: list[KeyJudgment], *, period: str, cap: int) -> int:
-    """A 層に入れる件数 = 重要度基準 (最高 salience の一定割合以上) を下限・上限で挟む。
+def _important_count(ranked: list[KeyJudgment], *, floor: int, cap: int) -> int:
+    """載せる件数 = 重要度基準 (最高 salience の一定割合以上) を下限・上限で挟む。
 
     固定 N でないのは、状況総括が「真に重要な事象」を扱うものだから — 重要な事象が多い期間は
-    本文もそれだけ長くなるのが正しい。下限は静穏期に総括が痩せないための床 (daily は実質全件)。
+    本文もそれだけ長くなるのが正しい。下限は静穏期に総括が痩せないための床。
+    ``ranked`` は salience 降順であること (先頭が最高値)。
     """
     from src.assessment.salience import salience
 
-    if not moved_all:
+    if not ranked:
         return 0
-    floor = _MOVED_SECTION_MIN.get(period, cap)
-    threshold = salience(moved_all[0]) * _BODY_SALIENCE_RATIO
-    important = sum(1 for j in moved_all if salience(j) >= threshold)
+    threshold = salience(ranked[0]) * _BODY_SALIENCE_RATIO
+    important = sum(1 for j in ranked if salience(j) >= threshold)
     return max(floor, min(important, cap))
 
 
@@ -444,7 +450,9 @@ def _split_moved(
     cap = _MOVED_SECTION_MAX.get(period)
     if cap is None:
         return moved_all, [], 0
-    body = moved_all[: _body_size(moved_all, period=period, cap=cap)]
+    body = moved_all[
+        : _important_count(moved_all, floor=_MOVED_SECTION_MIN.get(period, cap), cap=cap)
+    ]
     if head is not None and head in moved_all and head not in body:
         body = [*body[: max(0, len(body) - 1)], head]
 
@@ -485,6 +493,12 @@ def build_render_plan(
     moved_all = [j for j in ranked if j.delta_type not in ("", "no_change")]
     standing = [j for j in ranked if j.delta_type in ("", "no_change")]
     moved, moved_list, moved_omitted = _split_moved(moved_all, head=head, period=est.period_type)
+    standing_cap = _STANDING_SECTION_MAX.get(est.period_type)
+    standing_omitted = 0
+    if standing_cap is not None:
+        keep = _important_count(standing, floor=_STANDING_SECTION_MIN, cap=standing_cap)
+        standing_omitted = max(0, len(standing) - keep)
+        standing = standing[:keep]
     if moved_list or moved_omitted:
         _log.info(
             "synthesis_moved_section_capped",
@@ -493,6 +507,8 @@ def build_render_plan(
             body=len(moved),
             listed=len(moved_list),
             omitted=moved_omitted,
+            standing=len(standing),
+            standing_omitted=standing_omitted,
         )
     # 段D: 関係エッジ (決定論・共有 anchor 由来) を chain セクションの事実供給にする
     claim_by_id = {j.id: j.claim for j in est.judgments}
@@ -519,6 +535,7 @@ def build_render_plan(
         section_min_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[0],
         section_max_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[1],
         standing=[_judgment_view(j) for j in standing],
+        standing_omitted=standing_omitted,
         pir_rollup=_pir_rollup(est.judgments),
         relation_lines=relation_lines,
         cot_notes=cot_notes_enabled() if cot_notes is None else cot_notes,

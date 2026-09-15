@@ -208,3 +208,45 @@ class TestPirGuarantee:
 
         _, _, rollup = plan.prompt.partition("【PIR 対応")
         assert "pir_tail" in rollup
+
+
+class TestStandingWidth:
+    """継続中の判定 (standing) も moved と同じ重要度基準で絞る (2026-09-15)。
+
+    weekly の軌跡射影は no_change の判定をそのまま載せ、実測で 22 件 = 3.2k tok を
+    占めていた。moved を重要度基準にした以上、ここだけ無上限なのは一貫しない。
+    """
+
+    def _with_standing(self, n: int, period_type: str = "weekly") -> Estimate:
+        moved = _judgment(0, delta_type="escalated", confidence="high", japan_related=True)
+        standing = tuple(
+            _judgment(i, delta_type="no_change", confidence="low") for i in range(1, n + 1)
+        )
+        return _estimate((moved, *standing), period_type)
+
+    def test_weekly_standing_is_bounded_and_the_omission_is_stated(self) -> None:
+        plan = build_render_plan(est=self._with_standing(30), period_label="L")
+
+        section, _, tail = plan.prompt.partition("【判定間の関係】")
+        assert section.count("【継続】") == 12  # 上限
+        assert "18 件" in section  # 落とした件数を明記 (30 - 12)
+
+    def test_standing_keeps_the_floor_when_few_are_important(self) -> None:
+        """重要度が割れていても下限 3 件は残す (継続の視界をゼロにしない)。"""
+        moved = _judgment(0, delta_type="escalated", confidence="high", japan_related=True)
+        standing = (
+            _judgment(1, delta_type="no_change", confidence="high", japan_related=True),
+            *[_judgment(i, delta_type="no_change", confidence="low") for i in range(2, 20)],
+        )
+        plan = build_render_plan(est=_estimate((moved, *standing)), period_label="L")
+
+        section, _, _ = plan.prompt.partition("【判定間の関係】")
+        assert section.count("【継続】") == 3
+
+    def test_daily_standing_is_unchanged(self) -> None:
+        """daily は上流 (_FALLBACK_STANDING=3) で既に 3 件。render 側の上限は非発動。"""
+        plan = build_render_plan(est=self._with_standing(3, "daily"), period_label="L")
+
+        section, _, _ = plan.prompt.partition("【判定間の関係】")
+        assert section.count("【継続】") == 3
+        assert "ほかに継続中の判定" not in plan.prompt
