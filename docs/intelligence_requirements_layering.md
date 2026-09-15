@@ -3,6 +3,7 @@
 - 発端: 利用者「常設情報要求は PIR より上位の要求 (問い) にも思える。実装は急がないので
   概念の整理からしたほうがいい」
 - 状態: **概念整理のみ。実装・改名は含まない** (決めるべきことは §5)
+- 続き: [pir_brief_design.md](pir_brief_design.md) (PIR ブリーフ / SIR ブリーフ の分離設計)
 - 関連: [pir_system.md](pir_system.md) / [prepositioning_posture_ledger_design.md](prepositioning_posture_ledger_design.md) /
   [synthesis_situation_ledger_design.md](synthesis_situation_ledger_design.md)
 
