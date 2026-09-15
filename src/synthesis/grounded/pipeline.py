@@ -48,6 +48,11 @@ _HISTORICAL_BODY_CHARS = 1500  # 過去ソースは短く切る (パターン si
 _GROUNDED_ENV = "SYNTHESIS_GROUNDED"
 
 
+def _render_uses_narrative() -> bool:
+    """narrative 射影を narrative ティアで書くか (既定 ON、=0 で旧挙動へ rollback)。"""
+    return os.environ.get("SYNTHESIS_RENDER_NARRATIVE", "1").strip() != "0"
+
+
 def grounded_mode() -> Literal["off", "on", "shadow"]:
     """証拠駆動 synthesis の有効化モード (既定 off = 現行 single-pass)。
 
@@ -348,10 +353,16 @@ async def generate_grounded_synthesis(
             break
     except Exception as e:  # noqa: BLE001 — 反復抑制の材料欠落で報告を止めない
         _log.warning("prev_headline_lookup_failed", error=str(e))
-    # render (台帳→報告書の射影整形) も構造化分析側 — think ティア分離後も挙動保存
-    # (narrative 側へ移すかは ACH think A/B の結果で判断)。
+    # render (台帳→報告書の射影整形) は **narrative ティア** (2026-09-15)。
+    # それまで ach_llm (Step.SYNTHESIS_ANALYSIS) を借用しており、朝刊の散文を**構造化
+    # モデル**が書いていた — 実測で weight_section が「1 判定 1 文の箇条書き」= 実質
+    # 表になり、しかも「claim 文言を改訂した」という**台帳の操作記録**が本文に出ていた。
+    # narrative ティアに割り当てた長文モデルは grounded 経路で一度も呼ばれていなかった。
+    # 借用は規約違反でもある (2026-09-08「LLM を呼ぶ処理は自分の Step を持つ」)。
+    # rollback: SYNTHESIS_RENDER_NARRATIVE=0 で従来 (ach_llm) に戻る。
+    render_llm = llm if _render_uses_narrative() else ach_llm
     record = await render_record(
-        llm=ach_llm,
+        llm=render_llm,
         est=est,
         period_label=label,
         article_count=article_count,
