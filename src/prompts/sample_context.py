@@ -340,6 +340,17 @@ _SYNTHESIS_RENDER: dict[str, Any] = {
         },
     ],
     "relation_lines": ["サンプル関係 (render 検証用)"],
+    # B 層 (1 行一覧、weekly/monthly)。daily では空 list が渡る。
+    "moved_list": [
+        {
+            "id": "sample-j3",
+            "delta_ja": "強化",
+            "claim": "サンプル一覧判定 (render 検証用)。",
+            "leading_label": "犯罪 (金銭目的)",
+            "confidence_ja": "中確度",
+        },
+    ],
+    "moved_omitted": 3,
 }
 
 SAMPLE_CONTEXTS: dict[str, dict[str, Any]] = {

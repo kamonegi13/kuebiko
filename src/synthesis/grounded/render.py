@@ -185,7 +185,18 @@ class _WireSectionsCoT(BaseModel):
 #: daily=12: 実測 (2026-09-15、過去 73 窓) の moved は中央 5 件で、台帳 cap を 12 に上げても
 #: 約 10 件。つまり通常は非発動の安全網。weekly/monthly は軌跡射影で中央 92/137 件を載せる
 #: 設計 (prompt 40k/61k tok) であり、幅の再設計が済むまで**切らない** (切ると報告が壊れる)。
-_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12}
+_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 15}
+
+#: A 層 (本文) に PIR 保証で追加してよい上限。weekly を単純に上位 12 で切ると測定 11 窓
+#: **すべて**で PIR が落ちた (pir_general_agency_alert ×9、pir_apt_attribution ×6 ほか) 一方、
+#: 保証のコストは毎窓 +1-3 件と安い。daily は 73 窓中 1 窓しか落ちないので保証を持たない
+#: (非対称は実測どおり — 要らない機構を足さない)。
+_PIR_GUARANTEE_MAX: dict[str, int] = {"weekly": 6, "monthly": 6}
+
+#: B 層 (1 行一覧) に載せる上限。1 行 ≒ 40 tok (A 層は根拠抜粋込みで ≒ 600 tok) なので、
+#: 全件を「扱う」まま プロンプトを 40k → 14k tok 帯に収められる。超過分は C 層 = 件数のみ。
+#: daily は moved 中央 5 件で一覧が無意味なため持たない (件数行のみの現行挙動を保つ)。
+_LIST_MAX: dict[str, int] = {"weekly": 60, "monthly": 90}
 
 #: CoT 欄の有効化 flag (既定 OFF)。収穫スクリプトが 1 を立てて教師の思考を捕獲する。
 _COT_NOTES_ENV = "SYNTHESIS_COT_NOTES"
@@ -309,6 +320,24 @@ def _judgment_view(j: KeyJudgment) -> dict[str, Any]:
     }
 
 
+#: B 層 1 行の claim 表示長。判定の claim は実測 100-200 字あり、そのまま並べると 1 行が
+#: ~100 tok = A 層 (~450 tok) の 1/4 になってしまう。B 層の役目は「何がどちらへ動いたか」の
+#: 提示だけなので、主語と対象が分かる長さで切る (分析は A 層に集中させる設計)。
+_LINE_CLAIM_CHARS = 60
+
+
+def _judgment_line(j: KeyJudgment) -> dict[str, Any]:
+    """B 層の 1 行形 (証拠抜粋なし・claim も短縮 = A 層 ~450 tok に対し ~45 tok)。"""
+    claim = j.claim.strip()
+    return {
+        "id": j.id,
+        "delta_ja": _DELTA_JA.get(j.delta_type, j.delta_type),
+        "claim": claim if len(claim) <= _LINE_CLAIM_CHARS else claim[:_LINE_CLAIM_CHARS] + "…",
+        "leading_label": _hyp_label(j.leading_hypothesis),
+        "confidence_ja": _CONF_JA.get(j.confidence, j.confidence),
+    }
+
+
 def _pir_titles() -> dict[str, str]:
     """pir_id → title (PIR rollup の決定論整形用)。設定不在時は空 dict。"""
     try:
@@ -358,6 +387,55 @@ class RenderPlan:
     head: KeyJudgment | None
     mode: str
     ranked: tuple[KeyJudgment, ...]
+    #: 報告の幅の内訳 (A 本文 / B 一覧 / C 件数のみ)。実装の検証と監査に使う。
+    body_count: int = 0
+    listed_count: int = 0
+    omitted_count: int = 0
+
+
+def _split_moved(
+    moved_all: list[KeyJudgment], *, head: KeyJudgment | None, period: str
+) -> tuple[list[KeyJudgment], list[KeyJudgment], int]:
+    """変化した判定を A 本文 / B 一覧 / C 件数の 3 層に分ける (決定論)。
+
+    全件を「扱う」が全件を「書かせない」— weekly は判定 92 件を出力 4,000 字に押し込んで
+    列挙へ退化していた (2026-09-15 実測)。A だけが分析対象、B は存在と方向のみ、C は件数。
+
+    A の構成順 (すべて決定論):
+    1. salience 上位 ``_MOVED_SECTION_MAX``
+    2. headline 指名判定を必ず含める (噂クラスが上位を埋めた日に指名だけ本文から消えるのを防ぐ)
+    3. **PIR 保証** — A に無い PIR を持つ判定を salience 順に引き上げる (1 件が複数 PIR を
+       満たしてよい)。追加順を PIR config 順でなく候補の salience 順にしているのは、
+       PIR 優先度が salience の boost に既に入っており、順序の SSoT を 2 つ持たないため。
+    """
+    cap = _MOVED_SECTION_MAX.get(period)
+    if cap is None:
+        return moved_all, [], 0
+    body = moved_all[:cap]
+    if head is not None and head in moved_all and head not in body:
+        body = [*body[: max(0, len(body) - 1)], head]
+
+    shown = {j.id for j in body}
+    rest = [j for j in moved_all if j.id not in shown]
+    guarantee = _PIR_GUARANTEE_MAX.get(period, 0)
+    if guarantee:
+        covered = {p for j in body for p in j.pir_ids}
+        added: list[KeyJudgment] = []
+        for j in rest:
+            if len(added) >= guarantee:
+                break
+            new_pirs = set(j.pir_ids) - covered
+            if new_pirs:
+                added.append(j)
+                covered |= new_pirs
+        if added:
+            body = [*body, *added]
+            added_ids = {j.id for j in added}
+            rest = [j for j in rest if j.id not in added_ids]
+
+    list_max = _LIST_MAX.get(period)
+    listed = rest[:list_max] if list_max is not None else []
+    return body, listed, len(rest) - len(listed)
 
 
 def build_render_plan(
@@ -373,20 +451,14 @@ def build_render_plan(
     head = pick_headline(est.judgments)
     moved_all = [j for j in ranked if j.delta_type not in ("", "no_change")]
     standing = [j for j in ranked if j.delta_type in ("", "no_change")]
-    cap = _MOVED_SECTION_MAX.get(est.period_type)
-    moved = moved_all[:cap] if cap is not None else moved_all
-    # headline に指名した判定は必ず本文の変化セクションにも載せる。指名は「接地ゲートを
-    # 通る moved の salience 最上位」で、通常は上位 cap 件に入るが、噂クラス/反証済みの
-    # 判定が上位を埋めた日には落ちうる (指名 id だけが本文に無い = LLM が文脈を失う)。
-    if head is not None and head in moved_all and head not in moved:
-        moved = [*moved[: max(0, len(moved) - 1)], head]
-    moved_omitted = len(moved_all) - len(moved)
-    if moved_omitted:
+    moved, moved_list, moved_omitted = _split_moved(moved_all, head=head, period=est.period_type)
+    if moved_list or moved_omitted:
         _log.info(
             "synthesis_moved_section_capped",
             period_type=est.period_type,
             moved=len(moved_all),
-            shown=len(moved),
+            body=len(moved),
+            listed=len(moved_list),
             omitted=moved_omitted,
         )
     # 段D: 関係エッジ (決定論・共有 anchor 由来) を chain セクションの事実供給にする
@@ -409,13 +481,22 @@ def build_render_plan(
         headline_view=_judgment_view(head) if head else None,
         headline_mode=mode,
         moved=[_judgment_view(j) for j in moved],
+        moved_list=[_judgment_line(j) for j in moved_list],
         moved_omitted=moved_omitted,
         standing=[_judgment_view(j) for j in standing],
         pir_rollup=_pir_rollup(est.judgments),
         relation_lines=relation_lines,
         cot_notes=cot_notes_enabled() if cot_notes is None else cot_notes,
     )
-    return RenderPlan(prompt=prompt, head=head, mode=mode, ranked=tuple(ranked))
+    return RenderPlan(
+        prompt=prompt,
+        head=head,
+        mode=mode,
+        ranked=tuple(ranked),
+        body_count=len(moved),
+        listed_count=len(moved_list),
+        omitted_count=moved_omitted,
+    )
 
 
 async def render_sections(

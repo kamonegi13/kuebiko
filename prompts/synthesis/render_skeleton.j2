@@ -21,6 +21,12 @@
 {% else %}
 (本期間に変化した判定なし)
 {% endfor %}
+{% if moved_list is defined and moved_list %}
+【そのほかの動き (一覧)】(salience 下位。1 行 = 1 判定・根拠は載せない — 分析は上の変化セクションに集中する)
+{% for j in moved_list %}
+- [{{ j.id }}]【{{ j.delta_ja }}】{{ j.claim }} — {{ j.leading_label }} / {{ j.confidence_ja }}
+{% endfor %}
+{% endif %}
 {% if moved_omitted is defined and moved_omitted %}
 (ほかに変化した判定が {{ moved_omitted }} 件あるが、salience 下位のため本文では扱わない
  — 台帳には記録済み。PIR に紐づくものは下の PIR 対応に含まれる)
@@ -63,6 +69,9 @@
 {# BLOCK: headline_plain_guidance #}
 {% endif %}
 {# BLOCK: other_sections_guidance #}
+{% if moved_list is defined and moved_list %}
+{# BLOCK: other_moves_guidance #}
+{% endif %}
 {% if cot_notes is defined and cot_notes %}
 {# BLOCK: analysis_notes_instruction #}
 {% endif %}

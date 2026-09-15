@@ -56,6 +56,12 @@ sections:
     - cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)\n- spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標\
     \ / 今後の注視点\n  (推測は推測と明示)\n- pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形 (確度語維持)"
   note: ''
+- field_id: other_moves_guidance
+  kind: rubric
+  title: そのほかの動き (weekly/monthly の 1 行一覧の扱い)
+  body: "- そのほかの動き: 上の【そのほかの動き (一覧)】がある場合のみ、weight_section の末尾に\n  1 段落を足す。**変化種別ごとの件数**と、そのなかで日本・最優先\
+    \ PIR に関わる代表 2-3 件の\n  言及に留める (1 件ずつの分析はしない — 一覧の判定は根拠を読んでいないため、本文と同じ\n  確度で語れない)。件数は一覧に現れた件数を数えて書く。"
+  note: ''
 - field_id: analysis_notes_instruction
   kind: rubric
   title: 分析メモ (CoT、SYNTHESIS_COT_NOTES=1 のときだけ出力)

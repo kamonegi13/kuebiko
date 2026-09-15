@@ -31,6 +31,12 @@
 {% else %}
 (本期間に変化した判定なし)
 {% endfor %}
+{% if moved_list is defined and moved_list %}
+【そのほかの動き (一覧)】(salience 下位。1 行 = 1 判定・根拠は載せない — 分析は上の変化セクションに集中する)
+{% for j in moved_list %}
+- [{{ j.id }}]【{{ j.delta_ja }}】{{ j.claim }} — {{ j.leading_label }} / {{ j.confidence_ja }}
+{% endfor %}
+{% endif %}
 {% if moved_omitted is defined and moved_omitted %}
 (ほかに変化した判定が {{ moved_omitted }} 件あるが、salience 下位のため本文では扱わない
  — 台帳には記録済み。PIR に紐づくものは下の PIR 対応に含まれる)
@@ -93,6 +99,12 @@
 - spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標 / 今後の注視点
   (推測は推測と明示)
 - pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形 (確度語維持)
+{% if moved_list is defined and moved_list %}
+- そのほかの動き: 上の【そのほかの動き (一覧)】がある場合のみ、weight_section の末尾に
+  1 段落を足す。**変化種別ごとの件数**と、そのなかで日本・最優先 PIR に関わる代表 2-3 件の
+  言及に留める (1 件ずつの分析はしない — 一覧の判定は根拠を読んでいないため、本文と同じ
+  確度で語れない)。件数は一覧に現れた件数を数えて書く。
+{% endif %}
 {% if cot_notes is defined and cot_notes %}
 **本文の前に `analysis_notes` を書く** (読者には出さない分析メモ。ここで点検したことを本文で使う)。
 次の 5 点をこの順で、各 1-2 文:
