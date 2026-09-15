@@ -1,5 +1,11 @@
 # PIR (Priority Intelligence Requirements) System
 
+> ⚠ **呼称の注記 (2026-09-15)**: 本システムの `pir_*` は doctrine の PIR (決定に紐づく問い)
+> ではなく、実体は **収集主題 + 照合信号 + 重要度** (doctrine でいう SIR 相当) である。
+> doctrine の PIR にあたるのは常設情報要求 (standing situation、答えと確度と軌跡を持つ)。
+> 層の整理は [intelligence_requirements_layering.md](intelligence_requirements_layering.md)。
+> 改名はしていない (config key / API path / UI へ波及するため。概念の分離と改名は別の決定)。
+
 CTI doctrine の中心概念 PIR を tool の first-class entity として扱うシステム。
 `config/pir.yaml` を single source of truth とし、triage / routing / synthesis /
 Spotlight を PIR-driven にする。
