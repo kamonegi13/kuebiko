@@ -15,7 +15,7 @@ sections:
   title: 選定基準1
   body: '【選定基準 (優先順)】 — この順で重要度を判断する:
 
-    1. PIR (優先情報要求) に直結するサイバー作戦・脅威活動。現在の PIR:'
+    1. SIR (優先情報要求) に直結するサイバー作戦・脅威活動。現在の SIR:'
   note: ''
 - field_id: selection_criteria_rest
   kind: rubric

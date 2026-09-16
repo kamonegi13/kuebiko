@@ -1,6 +1,6 @@
-// 情報フロー (/app/flow) — 関心から配信まで (PIR → 重要度 → 配信ルール → チャンネル) を
-// 実流量つきで図示し、軽い調整 (PIR の評価影響 / ルール順序・投稿先 / チャンネル有効) を
-// その場で行うハブページ。深い編集は各専用ページ (PIR 編集 / ルーティング / チャンネル) へ。
+// 情報フロー (/app/flow) — 関心から配信まで (SIR → 重要度 → 配信ルール → チャンネル) を
+// 実流量つきで図示し、軽い調整 (SIR の評価影響 / ルール順序・投稿先 / チャンネル有効) を
+// その場で行うハブページ。深い編集は各専用ページ (SIR 編集 / ルーティング / チャンネル) へ。
 //
 // エッジは DOM 実測 (getBoundingClientRect + ResizeObserver) の SVG ベジェ。lg 未満では
 // SVG を描かず縦積み (ステージ間は ↓ 見出しで接続、390px 横スクロールなし)。
@@ -41,7 +41,7 @@ const IMP_COLOR: Record<string, string> = {
 const FALLBACK_COLOR = "#4a5260";
 const IMP_ORDER = ["high", "medium", "low", "unknown"];
 
-const PIR_COLLAPSED_COUNT = 8;
+const SIR_COLLAPSED_COUNT = 8;
 // SVG エッジを描く最小コンテナ幅 (これ未満 = 縦積みモード)
 const MIN_GRAPH_WIDTH = 900;
 
@@ -134,7 +134,7 @@ export function FlowPage() {
   // measure の useCallback deps に入るため参照安定が必須 (毎レンダー新配列だと
   // effect → setEdges → 再レンダーの無限ループになる)
   const visiblePirs = useMemo(
-    () => (showAllPirs ? sortedPirs : sortedPirs.slice(0, PIR_COLLAPSED_COUNT)),
+    () => (showAllPirs ? sortedPirs : sortedPirs.slice(0, SIR_COLLAPSED_COUNT)),
     [sortedPirs, showAllPirs],
   );
 
@@ -173,7 +173,7 @@ export function FlowPage() {
       };
     };
 
-    // PIR → importance (点線 = 「評価基準の注入 + 実マッチ数」、決定論ではない)
+    // SIR → importance (点線 = 「評価基準の注入 + 実マッチ数」、決定論ではない)
     for (const pir of visiblePirs) {
       const el = pirRefs.current.get(pir.id);
       if (!el) continue;
@@ -257,7 +257,7 @@ export function FlowPage() {
     let observer: ResizeObserver | undefined;
     if (typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => measure());
-      // container 幅 + ladder 高さ (PIR 全表示などで変わる) の両方を監視
+      // container 幅 + ladder 高さ (SIR 全表示などで変わる) の両方を監視
       if (container) observer.observe(container);
       if (ladder) observer.observe(ladder);
     }
@@ -269,7 +269,7 @@ export function FlowPage() {
   }, [measure]);
 
   // ---------- 編集 mutation ----------
-  // PIR はインテリジェンス (関心の定義) なのでフローでは編集しない (PIR ページで著作)。
+  // SIR はインテリジェンス (関心の定義) なのでフローでは編集しない (SIR ページで著作)。
   // ここでは配信 (ルール / チャンネル) のみ編集する。
 
   // ルールセット全体を保存 (順序変更・投稿先・Drawer 編集すべて同じ経路)。
@@ -431,7 +431,7 @@ export function FlowPage() {
         <div className="min-w-0">
           <h2 className="m-0 text-xl font-bold text-fg tracking-tight">情報フロー</h2>
           <p className="m-0 mt-1 text-sm text-fg-muted">
-            関心 (PIR) から配信チャンネルまでの流れと実際の記事数。配信ルールとチャンネルはここで編集します。
+            関心 (SIR) から配信チャンネルまでの流れと実際の記事数。配信ルールとチャンネルはここで編集します。
           </p>
         </div>
         <select
@@ -483,10 +483,10 @@ export function FlowPage() {
         </svg>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(220px,1.1fr)_110px_minmax(260px,1.3fr)_150px] lg:gap-10">
-          {/* ---- 列 1: 関心 (PIR) ---- */}
+          {/* ---- 列 1: 関心 (SIR) ---- */}
           <section>
             <StageHeader
-              title="関心 (PIR)"
+              title="関心 (SIR)"
               detail="インテリジェンス — クリックで編集"
               href="/app/pir"
             />
@@ -505,14 +505,14 @@ export function FlowPage() {
                 />
               ))}
             </div>
-            {sortedPirs.length > PIR_COLLAPSED_COUNT && (
+            {sortedPirs.length > SIR_COLLAPSED_COUNT && (
               <button
                 onClick={() => setShowAllPirs((v) => !v)}
                 className="mt-2 text-xs text-accent hover:underline"
               >
                 {showAllPirs
                   ? "上位のみ表示"
-                  : `すべて表示 (残り ${sortedPirs.length - PIR_COLLAPSED_COUNT} 件)`}
+                  : `すべて表示 (残り ${sortedPirs.length - SIR_COLLAPSED_COUNT} 件)`}
               </button>
             )}
           </section>
@@ -546,7 +546,7 @@ export function FlowPage() {
           <MobileArrow label="重要度と検出シグナルで配信先が決まる（上から順に最初に一致したルール）" />
 
           {/* ---- 列 3: 配信ルール (ladder) ---- */}
-          {/* 評価・チャンネル列と同様に縦中央寄せ。PIR を全表示して左列が伸びても
+          {/* 評価・チャンネル列と同様に縦中央寄せ。SIR を全表示して左列が伸びても
               ladder が上端に張り付かず、importance/channel と高さが揃って線が読みやすい。 */}
           <section className="lg:flex lg:flex-col lg:justify-center">
             <StageHeader
@@ -754,7 +754,7 @@ export function FlowPage() {
           <svg width="26" height="8" className="mr-1 inline-block align-middle">
             <line x1="0" y1="4" x2="26" y2="4" stroke="#6b88ff" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.7" />
           </svg>
-          点線 = PIR が重要度の判定基準を提供（最終判定はAIが実施）
+          点線 = SIR が重要度の判定基準を提供（最終判定はAIが実施）
         </span>
         <span>期間: 直近 {data.period_days} 日 / 対象記事 {data.total_articles} 件</span>
       </div>
@@ -992,8 +992,8 @@ function MobileArrow({ label }: { label: string }) {
   );
 }
 
-// PIR は「設定」ではなく「インテリジェンス (関心の定義)」。フロー上では上流コンテキストの
-// 読み取りに徹し、編集 (description→compile / 重要度 / 有効) は PIR ページで行う。
+// SIR は「設定」ではなく「インテリジェンス (関心の定義)」。フロー上では上流コンテキストの
+// 読み取りに徹し、編集 (description→compile / 重要度 / 有効) は SIR ページで行う。
 function PirCard({
   pir,
   selected,
@@ -1030,7 +1030,7 @@ function PirCard({
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-fg-subtle">
         {pir.target_importance !== "auto" && (
-          <span title="この PIR が選別 (重要度判定) の基準として与える水準">
+          <span title="この SIR が選別 (重要度判定) の基準として与える水準">
             評価: {vocabLabel("importance", pir.target_importance)}
           </span>
         )}

@@ -118,7 +118,7 @@ export function JobTimeline({
   );
   // 定常処理 (upkeep) は既定で集約 1 行に畳む。展開すると従来の swimlane を出す。
   const [showUpkeep, setShowUpkeep] = useState(false);
-  // 集約行のサマリ文言 (例: "PIR判定 毎時:45 · 翻訳 毎時:15 · 自動復旧 30分毎:12")
+  // 集約行のサマリ文言 (例: "SIR判定 毎時:45 · 翻訳 毎時:15 · 自動復旧 30分毎:12")
   const upkeepSummary = useMemo(
     () =>
       upkeepIntervals

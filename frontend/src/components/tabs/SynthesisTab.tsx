@@ -29,7 +29,7 @@ export function SynthesisTab() {
   return <ReadView />;
 }
 
-/** 読む面: 全体総括を先頭に固定し、PIR ごとの Spotlight を続ける。
+/** 読む面: 全体総括を先頭に固定し、SIR ごとの Spotlight を続ける。
  *
  *  ⭐ **根拠と点検はここに置かない。** 旧構成は読み物・根拠・点検を 1 本に縦積みして
  *  おり、実測でページ 16,165px のうち読むものは 1,283px (8%) しかなかった。
@@ -86,7 +86,7 @@ function GlobalSynthesisView() {
       {/* 目次は撤去 (2026-08-29)。飛び先の 3/5 は別の面へ移った — 面をまたぐ
           アンカーは無言で効かなくなるので、残さず消す。 */}
       {/* 期間の切替は **この節の中** に置く。変わるのは全体総括だけで、
-          PIR 別の動向は常に直近 7 日 — 画面上部に置くと全部が切り替わると読める。 */}
+          SIR 別の動向は常に直近 7 日 — 画面上部に置くと全部が切り替わると読める。 */}
       <SectionHeading
         title={`${periodLabel}総括`}
         note={
@@ -134,13 +134,13 @@ function GlobalSynthesisView() {
           </div>
 
           {/* Sections — 2 カラム grid。行内のカード高さは stretch で揃える (隙間ガタつき防止)。
-              奇数個の最後 (6. PIR) は全幅 + 内部 2 段組で空きスロットを作らない。 */}
+              奇数個の最後 (6. SIR) は全幅 + 内部 2 段組で空きスロットを作らない。 */}
           <div id="syn-narrative" className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1 mb-5 scroll-mt-24">
             <Section title="軸別の重みと不均衡" body={data.latest.weight_section} />
             <Section title="軸間連鎖の解釈" body={data.latest.chain_section} />
             <Section title="重心" body={data.latest.cog_section} />
             <Section title="波及解釈 (中期予想)" body={data.latest.spillover_section} />
-            <Section title="PIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
+            <Section title="SIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
           </div>
 
           {/* 根拠と点検はここに置かない (面が違う)。主張から辿れる導線だけ残す。 */}
@@ -634,7 +634,7 @@ function SkeletonRows() {
   );
 }
 
-// ===== Phase Diamond verify-spotlight: PIR Spotlight view =====
+// ===== Phase Diamond verify-spotlight: SIR Spotlight view =====
 
 function SpotlightView() {
   const qc = useQueryClient();
@@ -652,7 +652,7 @@ function SpotlightView() {
     <div>
       {/* 期間の切替に従わないことを、節の側で明示する
           (上で日次/週次を選んでもここは変わらない — 黙って据え置くと故障に見える)。 */}
-      <SectionHeading title="PIR 別の動向" note="直近 7 日で固定 · 該当の多い順" sticky />
+      <SectionHeading title="SIR 別の動向" note="直近 7 日で固定 · 該当の多い順" sticky />
 
       {isLoading && <SkeletonRows />}
 
@@ -660,7 +660,7 @@ function SpotlightView() {
         <div className="bg-surface-1 border border-dashed border-border-default rounded-lg p-10 text-center text-fg-muted">
           <p className="m-0">まだ Spotlight が生成されていません</p>
           <p className="text-xs mt-2">
-            次回の自動実行 (毎日 04:50 JST) で生成。すぐ作るには各 PIR の詳細画面の「Spotlight 手動実行」から
+            次回の自動実行 (毎日 04:50 JST) で生成。すぐ作るには各 SIR の詳細画面の「Spotlight 手動実行」から
           </p>
         </div>
       )}

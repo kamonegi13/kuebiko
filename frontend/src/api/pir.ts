@@ -1,4 +1,5 @@
-// PIR (Priority Intelligence Requirements) API client。
+// SIR (収集要求 = Specific Information Requirements) API client。
+// ⚠ 内部識別子は pir_* のまま (段 2 = 識別子の改名は保留)。表示のみ SIR。
 // 詳細は src/ui/api/pir.py の各 endpoint 参照。
 
 async function getJson<T>(path: string): Promise<T> {
@@ -70,7 +71,7 @@ export interface MatchNode {
   value?: string | string[];
 }
 
-/** 概念 PIR の LLM 主題判定 (候補ゲート = match を通過した記事にのみ夜間バッチが判定)。 */
+/** 概念 SIR の LLM 主題判定 (候補ゲート = match を通過した記事にのみ夜間バッチが判定)。 */
 export interface LlmJudgeConfig {
   enabled: boolean;
   question: string;

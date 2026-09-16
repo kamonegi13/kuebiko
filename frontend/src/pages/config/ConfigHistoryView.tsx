@@ -65,7 +65,7 @@ export function ConfigHistoryView() {
   return (
     <div className="space-y-4">
       <p className="m-0 text-sm text-fg-muted">
-        運用設定 (ルーティング / チャンネル / ソース品質 / PIR) の保存履歴。任意の版に巻き戻せます。
+        運用設定 (ルーティング / チャンネル / ソース品質 / SIR) の保存履歴。任意の版に巻き戻せます。
       </p>
 
       {/* config key セレクタ */}

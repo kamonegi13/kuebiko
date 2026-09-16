@@ -31,7 +31,7 @@ const HEADLINE_AXES: ConfigOption = {
   key: "axis", label: "分類軸",
   choices: [
     { value: "pmesii", label: "PMESII軸" },
-    { value: "pir", label: "PIR (ミッション分類)" },
+    { value: "pir", label: "SIR (ミッション分類)" },
   ],
 };
 const SECTION_OPTION: ConfigOption = {
@@ -41,7 +41,7 @@ const SECTION_OPTION: ConfigOption = {
     { value: "spillover", label: "波及" },
     { value: "chain", label: "連鎖" },
     { value: "weight", label: "比重" },
-    { value: "pir", label: "PIR 評価" },
+    { value: "pir", label: "SIR 評価" },
   ],
 };
 const PERIOD_OPTION: ConfigOption = {
@@ -199,9 +199,9 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   jp_ci_threat: { title: "重要インフラ脅威", Component: JpCiThreatWidget, defaultSpan: 2, defaultHeight: 480, thumb: "grid", blurb: "重要インフラ脅威の要約 (3つの視点): 事前配置の常設評価 + 横断キャンペーン + 16分野の状況 (日本の観測段階×世界の国家アクター行動)", configOptions: [JPCI_DAYS_OPTION], defaultConfig: { days: "auto" } },
   status_strip: { title: "システム状態", Component: StatusStripWidget, defaultSpan: 4, defaultHeight: 48, thumb: "status", blurb: "pipeline 稼働 + 失敗 + 次回実行" },
   standing_assessment: { title: "現況評価 (synthesis)", Component: StandingAssessmentWidget, defaultSpan: 4, defaultHeight: 140, thumb: "text", blurb: "全体期間に連動した状況総括の見出し (24h=日次/7日=週次/30・90日=月次)", configOptions: [WINDOW_OPTION] },
-  synthesis_section: { title: "Synthesis セクション", Component: SynthesisSectionWidget, defaultSpan: 2, defaultHeight: 340, thumb: "text", multi: true, blurb: "重心/波及/連鎖/比重/PIR を選択表示", configOptions: [SECTION_OPTION, PERIOD_OPTION] },
+  synthesis_section: { title: "Synthesis セクション", Component: SynthesisSectionWidget, defaultSpan: 2, defaultHeight: 340, thumb: "text", multi: true, blurb: "重心/波及/連鎖/比重/SIR を選択表示", configOptions: [SECTION_OPTION, PERIOD_OPTION] },
   // ── 過去参照 ──
-  latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / PIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
+  latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / SIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
   // ── 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。裏取りは
   //    「独立媒体数」で示し記事数では示さない。単独報は「1 媒体のみ」と明示する ──
   eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)", configOptions: [EVENTNEWS_IMPORTANCE, PER_OPTION], defaultConfig: { importance: "high,medium", per: 6 } },
@@ -210,10 +210,10 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   // ── 発見支援 / 脅威 ──
   top_actors: { title: "主要アクター", Component: TopActorsWidget, defaultSpan: 2, defaultHeight: 340, thumb: "sparkline", multi: true, blurb: "追跡量 top (国フィルタ可)", configOptions: [NATION_OPTION, PER_OPTION] },
   actor_dossier: { title: "アクター・ドシエ", Component: ActorDossierWidget, defaultSpan: 2, defaultHeight: 380, thumb: "text", multi: true, blurb: "指定アクターの TTP/CVE/IOC", configOptions: [ACTOR_OPTION] },
-  // ── PIR ──
-  pir_coverage: { title: "PIR 充足 / ギャップ", Component: PirCoverageWidget, defaultSpan: 2, defaultHeight: 320, thumb: "sparkline", blurb: "PIR ごとの直近7日の該当件数" },
-  // Spotlight は週次のみ生成のため期間選択肢は持たせない (日次=PIR Daily Focus 別機能 / 月次未生成)。
-  pir_spotlight: { title: "PIR Spotlight (週次)", Component: PirSpotlightWidget, defaultSpan: 2, defaultHeight: 360, thumb: "text", blurb: "PIR ごとの週次まとめ" },
+  // ── SIR ──
+  pir_coverage: { title: "SIR 充足 / ギャップ", Component: PirCoverageWidget, defaultSpan: 2, defaultHeight: 320, thumb: "sparkline", blurb: "SIR ごとの直近7日の該当件数" },
+  // Spotlight は週次のみ生成のため期間選択肢は持たせない (日次=SIR Daily Focus 別機能 / 月次未生成)。
+  pir_spotlight: { title: "SIR Spotlight (週次)", Component: PirSpotlightWidget, defaultSpan: 2, defaultHeight: 360, thumb: "text", blurb: "SIR ごとの週次まとめ" },
   // ── 蓄積 / 運用 ──
   holdings: { title: "Intelligence Holdings", Component: HoldingsWidget, defaultSpan: 2, defaultHeight: 260, thumb: "grid", blurb: "蓄積件数 (記事/アクター/IOC 等)" },
   source_contribution: { title: "ソース貢献度", Component: SourceContributionWidget, defaultSpan: 2, defaultHeight: 320, thumb: "bars", blurb: "投稿数 top feed", configOptions: [PER_OPTION] },

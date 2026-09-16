@@ -1,4 +1,4 @@
-// 情報フロー API client (PIR → 重要度 → 配信ルール → チャンネル の流れ)。
+// 情報フロー API client (SIR → 重要度 → 配信ルール → チャンネル の流れ)。
 // バックエンドは src/ui/api/flow.py。
 
 import type { RoutingRule } from "./routingRules";

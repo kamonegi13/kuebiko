@@ -23,7 +23,7 @@ sections:
 
     4. 過去 pattern からの波及予想
 
-    5. PIR (priority intelligence requirement) との照合
+    5. SIR (priority intelligence requirement) との照合
 
 
     **地政文脈の活用 (重要)**: M (軍事) / P (政治) 軸には、サイバー事象だけでなく
@@ -82,9 +82,9 @@ sections:
     \ `\\\\to`) 禁止**>\",\n  \"cog_section\": \"<重心 (Center of Gravity) entity を 1-3 個特定、200-350 字。なぜ重心か\
     \ (複数軸を駆動 / cross-source 一致 / 戦略意図 / 構造的脆弱性のいずれか) を論述。アナリスト注目誘導>\",\n  \"spillover_section\": \"<波及解釈\
     \ 250-450 字。過去 pattern (memory 化された incident) を根拠とした中期予想 (来週 / 来月)。data 不足時は honest disclosure で '仮説段階'\
-    \ と明示しつつ、それでも観測可能 signal を列挙する>\",\n  \"pir_section\": \"<**1 つの markdown 文字列** で、上記『# PIR』に列挙された\
-    \ PIR のうち当該期間に関連 article が観測されたものを優先して checklist 化する (該当が多い場合は重要度の高い 5-8 件に絞る)。合計 400-700 字。各 PIR\
-    \ は 60-140 字で具体 incident を 1-2 件名前付きで引用。各行頭に PIR title を **太字** で示し、✅充足 / ⚠️部分 / ❌欠落 を必ず明示。観測ゼロの PIR\
+    \ と明示しつつ、それでも観測可能 signal を列挙する>\",\n  \"pir_section\": \"<**1 つの markdown 文字列** で、上記『# SIR』に列挙された\
+    \ SIR のうち当該期間に関連 article が観測されたものを優先して checklist 化する (該当が多い場合は重要度の高い 5-8 件に絞る)。合計 400-700 字。各 SIR\
+    \ は 60-140 字で具体 incident を 1-2 件名前付きで引用。各行頭に SIR title を **太字** で示し、✅充足 / ⚠️部分 / ❌欠落 を必ず明示。観測ゼロの SIR\
     \ は末尾に『❌ 当該期間観測なし: <title 列挙>』と 1 行でまとめてよい。dict / object 禁止、必ず string。例: '- **中国系 APT 動向**: ✅ 充足 —\
     \ Salt Typhoon が米通信網に pre-positioning、CISA KEV 追加\\\\n- **緊急度の高い国家機関アラート**: ⚠️ 部分 — CISA ED-26-01\
     \ 発出 (詳細未確認)'>\",\n  \"tradecraft\": {\n    \"leading_assessment\": \"<主見立て: 本期間で最も確からしい解釈を 1-2 文\

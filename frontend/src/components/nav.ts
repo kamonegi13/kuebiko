@@ -41,7 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "インテリジェンス",
     items: [
-      { href: "/app/questions", mirror: true, label: "問い", Icon: HelpCircle, prefixes: ["/app/questions"] },
+      { href: "/app/questions", mirror: true, label: "PIR (問い)", Icon: HelpCircle, prefixes: ["/app/questions"] },
       { href: "/app/intel/synthesis", mirror: true, label: "現況", Icon: FileText, exact: ["/app/intel", "/app/intel/"], prefixes: ["/app/intel/synthesis"] },
       { href: "/app/intel/pmesii", mirror: true, label: "国家情勢", Icon: Scale, prefixes: ["/app/intel/pmesii"] },
       { href: "/app/intel/threats", mirror: true, label: "脅威アクター", Icon: Crosshair, prefixes: ["/app/intel/threats"] },
@@ -49,7 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/app/jpci", mirror: true, label: "重要インフラ脅威", Icon: ShieldAlert, prefixes: ["/app/jpci"] },
       { href: "/app/intel/forecast", mirror: true, label: "将来予測", Icon: TrendingUp, prefixes: ["/app/intel/forecast"] },
       // 振り返り (過去参照) はブリーフページの週次ビューに統合 (2026-07-25 時間軸統合)
-      { href: "/app/pir", mirror: true, label: "PIR / Spotlight", Icon: Flag, prefixes: ["/app/pir"] },
+      { href: "/app/pir", mirror: true, label: "SIR / Spotlight", Icon: Flag, prefixes: ["/app/pir"] },
       // 事象ニュース (2026-08-24 交代 → 2026-08-24 インテリジェンスへ移動)。
       // 同一事象の複数報道を束ね、**ツールが生成した**読み物。収集物そのものではなく
       // 生成された分析なので コンテンツ ではなく インテリジェンス に置く

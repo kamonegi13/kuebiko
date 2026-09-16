@@ -39,7 +39,7 @@
 {% endif %}
 {% if moved_omitted is defined and moved_omitted %}
 (ほかに変化した判定が {{ moved_omitted }} 件あるが、salience 下位のため本文では扱わない
- — 台帳には記録済み。PIR に紐づくものは下の PIR 対応に含まれる)
+ — 台帳には記録済み。SIR に紐づくものは下の SIR 対応に含まれる)
 {% endif %}
 
 【継続中の判定】(変化なし・要注視の standing)
@@ -50,7 +50,7 @@
 {% endfor %}
 {% if standing_omitted is defined and standing_omitted %}
 (ほかに継続中の判定が {{ standing_omitted }} 件あるが、重要度下位のため本文では扱わない
- — 台帳には記録済み。PIR に紐づくものは下の PIR 対応に含まれる)
+ — 台帳には記録済み。SIR に紐づくものは下の SIR 対応に含まれる)
 {% endif %}
 
 【判定間の関係】(共有アクター/作戦/国家からの決定論導出 — 因果は主張していない)
@@ -64,11 +64,11 @@
 {% for j in moved + standing %}{% for i in j.indicators %}- [{{ j.id }}] {{ i }}
 {% endfor %}{% endfor %}
 
-【PIR 対応 (決定論ロールアップ)】
+【SIR 対応 (決定論ロールアップ)】
 {% for p in pir_rollup %}
 - {{ p.pir_title }}: {% for it in p.entries %}「{{ it.claim }}」({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
 {% else %}
-(PIR に紐づく判定なし)
+(SIR に紐づく判定なし)
 {% endfor %}
 
 次の各セクションを日本語で書いてください (各 {{ section_min_sentences | default(2) }}-{{ section_max_sentences | default(5) }} 文、無ければ簡潔に「特記なし」。**ただし weight_section は下記のとおり件数に従う**):
@@ -111,10 +111,10 @@
 - cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)
 - spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標 / 今後の注視点
   (推測は推測と明示)
-- pir_section (PIR対応): 上の PIR ロールアップを読みやすく整形 (確度語維持)
+- pir_section (SIR対応): 上の SIR ロールアップを読みやすく整形 (確度語維持)
 {% if moved_list is defined and moved_list %}
 - そのほかの動き: 上の【そのほかの動き (一覧)】がある場合のみ、weight_section の末尾に
-  1 段落を足す。**変化種別ごとの件数**と、そのなかで日本・最優先 PIR に関わる代表 2-3 件の
+  1 段落を足す。**変化種別ごとの件数**と、そのなかで日本・最優先 SIR に関わる代表 2-3 件の
   言及に留める (1 件ずつの分析はしない — 一覧の判定は根拠を読んでいないため、本文と同じ
   確度で語れない)。件数は一覧に現れた件数を数えて書く。
 {% endif %}

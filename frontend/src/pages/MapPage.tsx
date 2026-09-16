@@ -63,8 +63,8 @@ const SOURCE_STATUSES: { label: string; value: SourceStatus }[] = [
   { label: "報道", value: "posted" },
   { label: "台帳", value: "collected" },
 ];
-// 意義の地図 (A): バブルを生件数でなく重要度しきい値内の件数に。importance は PIR 駆動 triage の
-// 出力で日本/セクター/PIR を内包する holistic な significance (別スコアは作らない)。
+// 意義の地図 (A): バブルを生件数でなく重要度しきい値内の件数に。importance は SIR 駆動 triage の
+// 出力で日本/セクター/SIR を内包する holistic な significance (別スコアは作らない)。
 const IMPORTANCE_OPTS: { label: string; value: MinImportance }[] = [
   { label: "全件", value: "all" },
   { label: "中+", value: "medium_up" },

@@ -45,7 +45,7 @@ export function LedgerView() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-[13px] text-fg-subtle">
-          追跡中の情勢 {items.length} 件 — 重要度 (使命序列 × 変化 × PIR × 日本関連 × 確度) 順。
+          追跡中の情勢 {items.length} 件 — 重要度 (使命序列 × 変化 × SIR × 日本関連 × 確度) 順。
           判定・確度・変化は状況総括処理が台帳更新で刻む (ここは読み取りのみ)。
         </div>
         <label className="text-[13px] text-fg-subtle flex items-center gap-1.5 cursor-pointer">

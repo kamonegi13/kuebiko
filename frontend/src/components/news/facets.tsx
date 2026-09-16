@@ -112,7 +112,7 @@ export function useFacetOptions(): FacetOptions {
   });
   const pir = useMemo(
     () => [
-      { value: "", label: "全PIR" },
+      { value: "", label: "全SIR" },
       ...(pirList ?? []).filter((p) => p.enabled).map((p) => ({ value: p.id, label: p.title })),
     ],
     [pirList],

@@ -1,4 +1,4 @@
-// PIR (Priority Intelligence Requirements) 系 widget。
+// SIR (収集要求) 系 widget。
 // PirCoverage (充足/ギャップ) / PirSpotlight (縦断 narrative)。
 
 import { useQuery } from "@tanstack/react-query";
@@ -17,8 +17,8 @@ export function PirCoverageWidget() {
     return b.match_count_7d - a.match_count_7d;
   });
   return (
-    <WidgetCard title="PIR 充足 / ギャップ" href="/app/pir" linkLabel="PIR →">
-      {isError ? <WidgetError /> : !data ? <Loading /> : sorted.length === 0 ? <Empty>PIR データなし。</Empty> : (
+    <WidgetCard title="SIR 充足 / ギャップ" href="/app/pir" linkLabel="SIR →">
+      {isError ? <WidgetError /> : !data ? <Loading /> : sorted.length === 0 ? <Empty>SIR データなし。</Empty> : (
         <div className="space-y-0.5">
           {sorted.map((it) => {
             const maxSpark = Math.max(...it.sparkline_7d, 1);
@@ -46,12 +46,12 @@ export function PirCoverageWidget() {
   );
 }
 
-// ── PIR Spotlight: spotlight 有効な PIR の縦断 narrative ──
+// ── SIR Spotlight: spotlight 有効な SIR の縦断 narrative ──
 // 可読性: 展開式にせず「見えたまま読める」。冗長を削り (headline/outlook を各2行に
-// バウンド)、PIR 名をラベル化 + 件数を右肩へ、アイテム境界を強めて塊で見えるように。
+// バウンド)、SIR 名をラベル化 + 件数を右肩へ、アイテム境界を強めて塊で見えるように。
 // 全文は Synthesis ドリルに委ねる (per-item 展開の手間を排除)。
 export function PirSpotlightWidget({ mobile }: WidgetProps) {
-  // Spotlight は週次のみ生成 (cron=月曜09:00 weekly)。日次は別機能の PIR Daily Focus、
+  // Spotlight は週次のみ生成 (cron=月曜09:00 weekly)。日次は別機能の SIR Daily Focus、
   // 月次 spotlight は未スケジュール。よって週次固定とし、空になる期間選択肢は出さない。
   const period: SpotlightPeriod = "weekly";
   const { data, isError } = useQuery({
@@ -61,14 +61,14 @@ export function PirSpotlightWidget({ mobile }: WidgetProps) {
   });
   const items = data?.items ?? [];
   return (
-    <WidgetCard title={`PIR Spotlight (${vocabLabel("period_type", period)})`} href="/app/intel/synthesis" linkLabel="Synthesis →">
+    <WidgetCard title={`SIR Spotlight (${vocabLabel("period_type", period)})`} href="/app/intel/synthesis" linkLabel="Synthesis →">
       {isError ? <WidgetError /> : !data ? <Loading /> : items.length === 0 ? (
         <Empty>{vocabLabel("period_type", period)} の Spotlight はまだありません。</Empty>
       ) : (
         <div className="divide-y divide-border-subtle">
           {items.map((sp) => (
             <div key={sp.pir_id} className="py-3 first:pt-0 last:pb-0">
-              {/* L1 PIR ラベル + 件数 (走査アンカー)。accent バーで「見出し」を明示 */}
+              {/* L1 SIR ラベル + 件数 (走査アンカー)。accent バーで「見出し」を明示 */}
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="w-0.5 h-3.5 rounded-full bg-accent/60 shrink-0" aria-hidden />
                 <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-accent-hover" title={sp.pir_title}>

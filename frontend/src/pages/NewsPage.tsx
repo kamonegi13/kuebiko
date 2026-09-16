@@ -333,8 +333,8 @@ export function NewsPage() {
           {pir && (
             <button onClick={() => setPir("")}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-soft text-accent-hover border border-accent/40 hover:bg-accent/20"
-              title="PIR (優先情報要求) で絞り込み中">
-              PIR: {pirLabel.get(pir) ?? pir} <span className="text-fg-subtle">×</span>
+              title="SIR (収集要求) で絞り込み中">
+              SIR: {pirLabel.get(pir) ?? pir} <span className="text-fg-subtle">×</span>
             </button>
           )}
           {actor && (

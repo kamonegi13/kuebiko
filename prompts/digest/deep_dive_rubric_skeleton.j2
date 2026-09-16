@@ -3,13 +3,13 @@
    prompt は実出力を見て反復改善する前提 (5T-T design decision)。 #}
 {# BLOCK: mission #}
 
-# 現在の PIR (優先情報要求) — pir 軸はこれらへの直撃度で評価する
+# 現在の SIR (優先情報要求) — pir 軸はこれらへの直撃度で評価する
 {% if pir_context %}
 {% for p in pir_context %}
 - {{ p.title }}{% if p.description %}: {{ p.description }}{% endif %}
 {% endfor %}
 {% else %}
-(PIR 未登録 — pir 軸は下の anchor のみで判定)
+(SIR 未登録 — pir 軸は下の anchor のみで判定)
 {% endif %}
 
 {# BLOCK: scoring_intro #}

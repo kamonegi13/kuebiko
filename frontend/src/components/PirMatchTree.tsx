@@ -1,4 +1,4 @@
-// PIR 照合条件ツリーの可読表示 (authoring 統一 2026-07-23)。
+// SIR 照合条件ツリーの可読表示 (authoring 統一 2026-07-23)。
 // 値ラベルは backend vocab SSoT (pir_match_property / category / intent / sector) を参照。
 // ツリービルダー GUI は作らない (生成は AI、修正は JSON 直編集) — 表示だけを担う。
 

@@ -18,9 +18,9 @@ sections:
 - field_id: axis_pir
   kind: rubric
   title: pir 軸アンカー
-  body: '## pir (PIR 直撃度 — 上記「現在の PIR」への該当度で測る)
+  body: '## pir (SIR 直撃度 — 上記「現在の SIR」への該当度で測る)
 
-    - 5: 現在の PIR に具体名で該当 (日本機関/企業が標的、または PIR 記載の既知 APT)
+    - 5: 現在の SIR に具体名で該当 (日本機関/企業が標的、または SIR 記載の既知 APT)
 
     - 4: 日本セクター (半導体/防衛/エネルギー/重要インフラ) 標的で actor 推定
 

@@ -1,4 +1,4 @@
-// PIR Spotlight API client。
+// SIR Spotlight API client。
 
 async function getJson<T>(path: string): Promise<T> {
   const r = await fetch(path, { credentials: "same-origin" });

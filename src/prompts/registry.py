@@ -92,7 +92,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="pir_daily_focus",
-        title="PIR Daily Focus",
+        title="SIR Daily Focus",
         config_key="pir_daily_focus_rubric",
         env_flag="PIR_DAILY_FOCUS_COMPOSER",
         seed_path=Path("config/prompts/pir_daily_focus_rubric.yaml"),
@@ -114,7 +114,7 @@ _SPECS: tuple[PromptSpec, ...] = (
     ),
     PromptSpec(
         prompt_id="pir_spotlight",
-        title="PIR Spotlight",
+        title="SIR Spotlight",
         config_key="pir_spotlight_rubric",
         env_flag="PIR_SPOTLIGHT_COMPOSER",
         seed_path=Path("config/prompts/pir_spotlight_rubric.yaml"),

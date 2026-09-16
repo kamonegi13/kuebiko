@@ -1,4 +1,4 @@
-// 最新ヘッドライン widget。config.axis で PMESII軸 / PIR分類 を切替、config.per で件数。
+// 最新ヘッドライン widget。config.axis で PMESII軸 / SIR分類 を切替、config.per で件数。
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../api/client";
@@ -48,9 +48,9 @@ function PirHeadlines({ per }: { per: number }) {
     .filter((it) => (it.headlines?.length ?? 0) > 0)
     .sort((a, b) => b.match_count_7d - a.match_count_7d);
   return (
-    <WidgetCard title="最新ヘッドライン (PIR別)" href="/app/pir" linkLabel="PIR →">
+    <WidgetCard title="最新ヘッドライン (SIR別)" href="/app/pir" linkLabel="SIR →">
       {isError ? <WidgetError /> : !data ? <Loading /> : items.length === 0 ? (
-        <Empty>直近の PIR マッチ記事がありません。</Empty>
+        <Empty>直近の SIR マッチ記事がありません。</Empty>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-3">
           {items.map((it) => (

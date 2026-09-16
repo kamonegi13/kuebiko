@@ -4,7 +4,7 @@ export type Tab = "synthesis" | "pmesii" | "threats" | "operations" | "forecast"
 export type PeriodType = "daily" | "weekly" | "monthly";
 export type OperationsView = "taxonomy" | "editorial";
 // 現況の 3 面 (2026-08-29 に再編)。**役割で分ける** — 利用者が何をしているかで切る。
-//   read   = 読む   (全体総括 + PIR ごとの Spotlight を 1 本に)
+//   read   = 読む   (全体総括 + SIR ごとの Spotlight を 1 本に)
 //   basis  = 根拠   (ACH / 証拠 / 分析トレードクラフト)
 //   review = 点検   (予測スコアカード / 情勢台帳)
 // 旧 global/spotlight/ledger は、読み物と根拠と点検が同じ画面に縦積みされ、

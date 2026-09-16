@@ -206,7 +206,7 @@ class TestPirGuarantee:
 
         plan = build_render_plan(est=est, period_label="L")
 
-        _, _, rollup = plan.prompt.partition("【PIR 対応")
+        _, _, rollup = plan.prompt.partition("【SIR 対応")
         assert "pir_tail" in rollup
 
 

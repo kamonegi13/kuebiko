@@ -239,7 +239,7 @@ export function QuestionsPage() {
           {summary.total} 問中 {summary.moved} 問の答えが前回の評価から動いた
         </p>
         <div className="mt-2 text-[12px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-1">
-          <span>継続して追う問い</span>
+          <span>PIR (優先情報要求) = 継続して追う問い</span>
           <span>期間で区切らない — これまでに知り得たすべてから導いた現在の推定</span>
           {summary.unassessed > 0 && <span>未評価 {summary.unassessed} 問</span>}
         </div>
@@ -249,7 +249,7 @@ export function QuestionsPage() {
         <section className="mb-6">
           {/* sticky: 長いカードを読み進むと、いま「動いた問い」を見ているのか
               「動いていない問い」なのかが分からなくなる (2026-08-29 と同じ理由)。 */}
-          <SectionHeading title="動いた問い" note={`${moved.length} 問`} sticky />
+          <SectionHeading title="動いた PIR" note={`${moved.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
             前回の評価から答え・確度・見立てのいずれかが変わったもの。何がそれを動かしたかを併記する。
           </p>
@@ -263,7 +263,7 @@ export function QuestionsPage() {
 
       {quiet.length > 0 && (
         <section>
-          <SectionHeading title="動いていない問い" note={`${quiet.length} 問`} sticky />
+          <SectionHeading title="動いていない PIR" note={`${quiet.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
             答えは前回から変わっていない。静かであることは安全を意味しない —
             鮮度と、何が見えれば答えが変わるかを併せて見る。

@@ -316,7 +316,7 @@ function rowBadges(a: ActorBrief): RowBadge[] {
   else if (a.is_spike) out.push({ color: "critical", label: "急増" });
   if (a.is_quiet_waking) out.push({ color: "accent", label: "復帰" });
   if (a.japan_targeted_count > 0) out.push({ color: "warning", label: "JP" });
-  if ((a.matched_pir_ids?.length ?? 0) > 0) out.push({ color: "accent", label: "PIR" });
+  if ((a.matched_pir_ids?.length ?? 0) > 0) out.push({ color: "accent", label: "SIR" });
   return out;
 }
 

@@ -1,8 +1,8 @@
-{# PIR Spotlight: PIR 縦断 narrative。
+{# SIR Spotlight: SIR 縦断 narrative。
 
    global synthesis (P+M+E+S+I+T 横断) と棲み分け:
    - global: 戦略レベル、軸間連鎖、上位 stakeholders 報告用
-   - spotlight: 戦術-作戦レベル、1 PIR 領域の深掘り、analyst 作業用
+   - spotlight: 戦術-作戦レベル、1 SIR 領域の深掘り、analyst 作業用
 
    出力構造 (hybrid 案):
    - headline: 状況総括 (150-280 字、actor+TTP+標的の三点セット)
@@ -10,15 +10,15 @@
    - outlook: 展望 (600-1000 字、4 観点 a/b/c/d)、来週見るべき指標
 
    入力 context:
-   - pir: 当該 PIR の title + description + strong_signals
-   - candidate_articles: PIR にマッチした直近 article list (max 30 件)
+   - pir: 当該 SIR の title + description + strong_signals
+   - candidate_articles: SIR にマッチした直近 article list (max 30 件)
 #}
 
 {% include ["_persona_local.j2", "_persona.j2"] %}
-**ある特定の PIR (Priority Intelligence Requirement)** に絞り込んだ縦断 narrative を生成してください。
-全体的 (P+M+E+S+I+T) な総括ではなく、**この PIR 領域の戦術-作戦レベル深掘り** が目的です。
+**ある特定の SIR (収集要求)** に絞り込んだ縦断 narrative を生成してください。
+全体的 (P+M+E+S+I+T) な総括ではなく、**この SIR 領域の戦術-作戦レベル深掘り** が目的です。
 
-## 対象 PIR
+## 対象 SIR
 
 - ID: {{ pir.id }}
 - Title: {{ pir.title }}
@@ -37,7 +37,7 @@
 ## 期間
 {{ period_label }}
 
-## この PIR にマッチした直近の article ({{ candidate_articles | length }} 件)
+## この SIR にマッチした直近の article ({{ candidate_articles | length }} 件)
 
 {% for art in candidate_articles -%}
 [{{ loop.index }}] **{{ art.title }}** ({{ art.feed_title }}, importance={{ art.importance }}, 信頼度={{ art.reliability }}, {{ art.created_at_jst }})
@@ -52,7 +52,7 @@
 
 {% endfor %}
 {% if previous_spotlight %}
-## 前期 ({{ previous_spotlight.period_label }}) のこの PIR の見立て
+## 前期 ({{ previous_spotlight.period_label }}) のこの SIR の見立て
 
 - headline: {{ previous_spotlight.headline }}
 {%- if previous_spotlight.key_event_titles %}
@@ -67,12 +67,12 @@
 {% if ledger_situations %}
 ## 情勢台帳の確定判定 (canonical estimate — 証拠接地 ACH + 敵対的検証を経た判定)
 
-この PIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
+この SIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
 {% for s in ledger_situations %}
 - 「{{ s.claim }}」 見立て={{ s.leading_hypothesis }} / 確度={{ s.confidence }} / 直近の変化={{ s.delta_type }}{% if s.delta_note %} ({{ s.delta_note }}){% endif %}{% if s.implication %} / 含意: {{ s.implication }}{% endif %}
 {% endfor %}
 
-**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその PIR 縦断の射影)。
+**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその SIR 縦断の射影)。
 台帳より高い確度で断定しない。台帳に無い新たな帰属を創作しない — 候補記事から読み取れる事実の
 記述に留める。
 {% endif %}
@@ -89,14 +89,14 @@ JSON で以下の構造で出力してください:
 
 ```json
 {
-  "headline": "2-3 文 (150-280 字) で「今週この PIR 領域で何が最も重要だったか」を要約",
+  "headline": "2-3 文 (150-280 字) で「今週この SIR 領域で何が最も重要だったか」を要約",
   "key_events": [
     {
       "index": "上の候補一覧の [N] 番号 (整数)。article_id ではなく番号で指定すること",
       "rationale": "なぜこれが key event なのか (30-60 字)"
     }
   ],
-  "outlook": "600-1000 字で書く。次の 4 観点をそれぞれ十分な情報量で展開すること:\n\n(a) 今週の事案から見える pattern / TTP 進化 / 帰属の動き — 具体的な actor 名 / バックドア名 / TTP ID (MITRE ATT&CK) / 標的セクター・国 を必ず明示。表面的な「活動活発化」のような generic 表現は禁止、必ず固有名詞と具体的 datapoint で書く。\n\n(b) 来週警戒すべき指標 — continuing campaign の方向性、報復可能性、周辺アクター連動、地政学イベント (選挙 / 軍事演習 / 重要会合) との連動を具体的に列挙。複数の monitoring 指標を箇条書きで挙げる。\n\n(c) 我々 (日本 CTI 担当者) が取るべき注視点 / 対応 / 情報収集の追加 — 具体的な IoC 監視ターゲット、検知ルール、外部連携 (JPCERT, NISC 等) の必要性、国内対象組織への通知判断基準。\n\n(d) 全体 synthesis ではカバーしきれない、この PIR 特有の深い文脈 — 軍事・諜報戦略 / 経済安保 / サプライチェーン / 国際法 / 政治的レイヤー 等の上位文脈を 1-2 段落で論じる。",
+  "outlook": "600-1000 字で書く。次の 4 観点をそれぞれ十分な情報量で展開すること:\n\n(a) 今週の事案から見える pattern / TTP 進化 / 帰属の動き — 具体的な actor 名 / バックドア名 / TTP ID (MITRE ATT&CK) / 標的セクター・国 を必ず明示。表面的な「活動活発化」のような generic 表現は禁止、必ず固有名詞と具体的 datapoint で書く。\n\n(b) 来週警戒すべき指標 — continuing campaign の方向性、報復可能性、周辺アクター連動、地政学イベント (選挙 / 軍事演習 / 重要会合) との連動を具体的に列挙。複数の monitoring 指標を箇条書きで挙げる。\n\n(c) 我々 (日本 CTI 担当者) が取るべき注視点 / 対応 / 情報収集の追加 — 具体的な IoC 監視ターゲット、検知ルール、外部連携 (JPCERT, NISC 等) の必要性、国内対象組織への通知判断基準。\n\n(d) 全体 synthesis ではカバーしきれない、この SIR 特有の深い文脈 — 軍事・諜報戦略 / 経済安保 / サプライチェーン / 国際法 / 政治的レイヤー 等の上位文脈を 1-2 段落で論じる。",
   "caveats": ["読者が重み付けに使う留保。**各 key_event を次の観点で点検し、該当するものをすべて** 1 件 1 文で挙げる: ①情報源の階層 (単一 SNS・攻撃者の自称・リークサイト主張・ベンダ単独か、政府確認・複数社の裏取りか) ②帰属の確度 (研究者の評価か公式帰属か) ③数値の出所 (自称・推計・実測の別) ④重要な主張の裏取り状況。**件数を揃えない — 点検して該当が多ければ多く、無ければ空 list**。定型的に埋めるのは過確信より悪い"],
   "unknowns": ["**各 key_event について**次を点検し、未解明の重要事項を 1 件 1 文で挙げる: 初期侵入経路 / 実被害の範囲・件数の確認状況 / 帰属の根拠 / 日本組織への露出 / 対策の実効性。分かっていることを混ぜない。**件数を揃えない — 無ければ空 list**"]
 }

@@ -31,7 +31,7 @@ export interface SubjectActorView {
 }
 
 // 常時表示する entity 種別。CTI の読み手が最初に要る識別子は「誰が (主題アクター)」
-// 「何の脆弱性か (CVE)」「何のマルウェアか」。TTP・IOC・製品・国・PIR 等は件数が
+// 「何の脆弱性か (CVE)」「何のマルウェアか」。TTP・IOC・製品・国・SIR 等は件数が
 // 多く縦に長くなるため **必要なときに開く** (カードが長いと本文へ辿り着けない)。
 const PRIMARY_ENTITY_TYPES: readonly string[] = ["cve", "malware_family"];
 

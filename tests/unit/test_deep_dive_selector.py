@@ -303,7 +303,7 @@ class TestPirContextInjection:
                 {"id": "pir_jp", "title": "日本標的の攻撃", "description": "JP 標的 active threat"},
             ],
         )
-        assert "現在の PIR" in out
+        assert "現在の SIR" in out
         assert "中国系 APT 動向" in out
         assert "Volt Typhoon 等の検知" in out
         assert "日本標的の攻撃" in out
@@ -315,7 +315,7 @@ class TestPirContextInjection:
             past_selected_keys=[],
             pir_context=[],
         )
-        assert "PIR 未登録" in out
+        assert "SIR 未登録" in out
 
     async def test_select_injects_real_pir_config(self) -> None:
         # select_deep_dive_articles が config/delivery/pir.yaml から
@@ -328,5 +328,5 @@ class TestPirContextInjection:
         llm.generate = AsyncMock(return_value=_llm_response('{"scored_articles": []}'))
         await select_deep_dive_articles(llm=llm, candidates=[_make_candidate("a1")])
         prompt = llm.generate.call_args.kwargs["prompt"]
-        assert "現在の PIR" in prompt
+        assert "現在の SIR" in prompt
         assert "中国系 APT" in prompt  # 実 pir.yaml の代表 title

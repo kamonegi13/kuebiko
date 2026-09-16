@@ -826,7 +826,7 @@ class TestSynthesisPromptPirWiring:
 
     def test_empty_context_falls_back_gracefully(self) -> None:
         out = self._render([])
-        assert "PIR 未登録" in out
+        assert "SIR 未登録" in out
 
     def test_render_prompt_uses_real_pir_config(self) -> None:
         # _render_prompt は config/delivery/pir.yaml から pir_context を構築する。

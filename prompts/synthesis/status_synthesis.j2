@@ -14,7 +14,7 @@
 2. 不均衡の検出 (主流 / 副流 / 独立 / 静穏 / 観測弱点)
 3. 重心 (Center of Gravity) entity の特定 (アナリスト注目誘導)
 4. 過去 pattern からの波及予想
-5. PIR (priority intelligence requirement) との照合
+5. SIR (priority intelligence requirement) との照合
 
 **地政文脈の活用 (重要)**: M (軍事) / P (政治) 軸には、サイバー事象だけでなく
 **地政・軍事の文脈 (kinetic 紛争・軍事作戦・外交・制裁・同盟・戦略態勢)** が含まれる。
@@ -23,14 +23,14 @@
 **地政 → サイバーの因果**を積極的に読み解け (例: 中東緊張 → イラン系 APT、台湾情勢 →
 中国 APT、露ウ戦争 → Sandworm)。地政事象を単独記述せず、サイバー脅威との関連で論じる。
 
-# PIR (config/pir.yaml、評価対象)
+# SIR (config/pir.yaml、評価対象)
 {% if pir_context -%}
-本ツールに登録された Priority Intelligence Requirements (user が編集可能)。
-当該期間の article から **各 PIR がどの程度充足されたか** を pir_section で評価する。
+本ツールに登録された SIR = 収集要求 (user が編集可能)。
+当該期間の article から **各 SIR がどの程度充足されたか** を pir_section で評価する。
 {% for p in pir_context %}- **{{ p.title }}**{% if p.description %}: {{ p.description }}{% endif %}
 {% endfor -%}
 {%- else -%}
-(PIR 未登録 — pir_section では当該期間の主要 intelligence gap を自由記述で評価)
+(SIR 未登録 — pir_section では当該期間の主要 intelligence gap を自由記述で評価)
 {%- endif %}
 
 # 軸別 article 統計 (構造化集計、参考のみ)
@@ -112,7 +112,7 @@ chain_section / cog_section の論述にも反映する。
   "chain_section": "<軸間連鎖の解釈 500-900 字 (3-4 段落)。**主動向の三角連鎖** + 副動向 + 独立 stream を物語化。各軸が他軸とどう関係するか + 力学・因果方向 (どの軸が driver でどの軸が受け手か) まで論述。**本文に (M) (I-cyber) のようなインライン軸コードを書かない** (軸はエンティティ・文脈・自然語で表現)。**矢印は `→` (U+2192) のみ使用、LaTeX (`$\\rightarrow$`, `\\to`) 禁止**>",
   "cog_section": "<重心 (Center of Gravity) entity を 1-3 個特定、200-350 字。なぜ重心か (複数軸を駆動 / cross-source 一致 / 戦略意図 / 構造的脆弱性のいずれか) を論述。アナリスト注目誘導>",
   "spillover_section": "<波及解釈 250-450 字。過去 pattern (memory 化された incident) を根拠とした中期予想 (来週 / 来月)。data 不足時は honest disclosure で '仮説段階' と明示しつつ、それでも観測可能 signal を列挙する>",
-  "pir_section": "<**1 つの markdown 文字列** で、上記『# PIR』に列挙された PIR のうち当該期間に関連 article が観測されたものを優先して checklist 化する (該当が多い場合は重要度の高い 5-8 件に絞る)。合計 400-700 字。各 PIR は 60-140 字で具体 incident を 1-2 件名前付きで引用。各行頭に PIR title を **太字** で示し、✅充足 / ⚠️部分 / ❌欠落 を必ず明示。観測ゼロの PIR は末尾に『❌ 当該期間観測なし: <title 列挙>』と 1 行でまとめてよい。dict / object 禁止、必ず string。例: '- **中国系 APT 動向**: ✅ 充足 — Salt Typhoon が米通信網に pre-positioning、CISA KEV 追加\\n- **緊急度の高い国家機関アラート**: ⚠️ 部分 — CISA ED-26-01 発出 (詳細未確認)'>",
+  "pir_section": "<**1 つの markdown 文字列** で、上記『# SIR』に列挙された SIR のうち当該期間に関連 article が観測されたものを優先して checklist 化する (該当が多い場合は重要度の高い 5-8 件に絞る)。合計 400-700 字。各 SIR は 60-140 字で具体 incident を 1-2 件名前付きで引用。各行頭に SIR title を **太字** で示し、✅充足 / ⚠️部分 / ❌欠落 を必ず明示。観測ゼロの SIR は末尾に『❌ 当該期間観測なし: <title 列挙>』と 1 行でまとめてよい。dict / object 禁止、必ず string。例: '- **中国系 APT 動向**: ✅ 充足 — Salt Typhoon が米通信網に pre-positioning、CISA KEV 追加\\n- **緊急度の高い国家機関アラート**: ⚠️ 部分 — CISA ED-26-01 発出 (詳細未確認)'>",
   "tradecraft": {
     "leading_assessment": "<主見立て: 本期間で最も確からしい解釈を 1-2 文 (60-150 字)。headline/CoG と整合させる>",
     "alternatives": ["<対立仮説: 主見立てと両立しない別解釈を 60-120 字で 1-2 個。**必ず誠実な競合仮説**にする (藁人形でなく analyst が実際に保持すべき別解)。例:『国家系 APT でなく金銭目的犯罪が APT を模倣した可能性』『攻勢の激化でなく観測 source 増加によるバイアスの可能性』>"],

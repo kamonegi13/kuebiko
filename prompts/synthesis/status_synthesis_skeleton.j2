@@ -9,14 +9,14 @@
 
 {# BLOCK: purpose #}
 
-# PIR (config/pir.yaml、評価対象)
+# SIR (config/pir.yaml、評価対象)
 {% if pir_context -%}
-本ツールに登録された Priority Intelligence Requirements (user が編集可能)。
-当該期間の article から **各 PIR がどの程度充足されたか** を pir_section で評価する。
+本ツールに登録された SIR = 収集要求 (user が編集可能)。
+当該期間の article から **各 SIR がどの程度充足されたか** を pir_section で評価する。
 {% for p in pir_context %}- **{{ p.title }}**{% if p.description %}: {{ p.description }}{% endif %}
 {% endfor -%}
 {%- else -%}
-(PIR 未登録 — pir_section では当該期間の主要 intelligence gap を自由記述で評価)
+(SIR 未登録 — pir_section では当該期間の主要 intelligence gap を自由記述で評価)
 {%- endif %}
 
 # 軸別 article 統計 (構造化集計、参考のみ)

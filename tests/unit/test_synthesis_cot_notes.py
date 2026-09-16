@@ -182,7 +182,7 @@ class TestMovedWidthGuard:
         1 窓しか取りこぼしが起きなかった)。
         """
         plan = build_render_plan(est=self._estimate_with_moved(15), period_label="L")
-        body, _, pir_section = plan.prompt.partition("【PIR 対応")
+        body, _, pir_section = plan.prompt.partition("【SIR 対応")
         assert "pir_tail" not in body  # 本文の変化セクションからは落ちている
         assert "pir_tail" in pir_section  # PIR ロールアップには残る
 

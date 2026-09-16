@@ -1,8 +1,8 @@
-{# PIR Spotlight: PIR 縦断 narrative。
+{# SIR Spotlight: SIR 縦断 narrative。
 
    global synthesis (P+M+E+S+I+T 横断) と棲み分け:
    - global: 戦略レベル、軸間連鎖、上位 stakeholders 報告用
-   - spotlight: 戦術-作戦レベル、1 PIR 領域の深掘り、analyst 作業用
+   - spotlight: 戦術-作戦レベル、1 SIR 領域の深掘り、analyst 作業用
 
    出力構造 (hybrid 案):
    - headline: 状況総括 (150-280 字、actor+TTP+標的の三点セット)
@@ -10,14 +10,14 @@
    - outlook: 展望 (600-1000 字、4 観点 a/b/c/d)、来週見るべき指標
 
    入力 context:
-   - pir: 当該 PIR の title + description + strong_signals
-   - candidate_articles: PIR にマッチした直近 article list (max 30 件)
+   - pir: 当該 SIR の title + description + strong_signals
+   - candidate_articles: SIR にマッチした直近 article list (max 30 件)
 #}
 
 {% include ["_persona_local.j2", "_persona.j2"] %}
 {# BLOCK: mission #}
 
-## 対象 PIR
+## 対象 SIR
 
 - ID: {{ pir.id }}
 - Title: {{ pir.title }}
@@ -36,7 +36,7 @@
 ## 期間
 {{ period_label }}
 
-## この PIR にマッチした直近の article ({{ candidate_articles | length }} 件)
+## この SIR にマッチした直近の article ({{ candidate_articles | length }} 件)
 
 {% for art in candidate_articles -%}
 [{{ loop.index }}] **{{ art.title }}** ({{ art.feed_title }}, importance={{ art.importance }}, 信頼度={{ art.reliability }}, {{ art.created_at_jst }})
@@ -51,7 +51,7 @@
 
 {% endfor %}
 {% if previous_spotlight %}
-## 前期 ({{ previous_spotlight.period_label }}) のこの PIR の見立て
+## 前期 ({{ previous_spotlight.period_label }}) のこの SIR の見立て
 
 - headline: {{ previous_spotlight.headline }}
 {%- if previous_spotlight.key_event_titles %}
@@ -66,12 +66,12 @@
 {% if ledger_situations %}
 ## 情勢台帳の確定判定 (canonical estimate — 証拠接地 ACH + 敵対的検証を経た判定)
 
-この PIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
+この SIR に紐づく追跡中の情勢と、その**確定した見立て・確度**:
 {% for s in ledger_situations %}
 - 「{{ s.claim }}」 見立て={{ s.leading_hypothesis }} / 確度={{ s.confidence }} / 直近の変化={{ s.delta_type }}{% if s.delta_note %} ({{ s.delta_note }}){% endif %}{% if s.implication %} / 含意: {{ s.implication }}{% endif %}
 {% endfor %}
 
-**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその PIR 縦断の射影)。
+**narrative はこれらの判定・確度と矛盾させない** (台帳が canonical、Spotlight はその SIR 縦断の射影)。
 台帳より高い確度で断定しない。台帳に無い新たな帰属を創作しない — 候補記事から読み取れる事実の
 記述に留める。
 {% endif %}

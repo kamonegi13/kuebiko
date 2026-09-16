@@ -4,9 +4,9 @@ sections:
 - field_id: mission
   kind: rubric
   title: ミッション (分析指示)
-  body: '**ある特定の PIR (Priority Intelligence Requirement)** に直近 24h で match した article を分析し、
+  body: '**ある特定の SIR (収集要求)** に直近 24h で match した article を分析し、
 
-    **本日この PIR 領域で押さえるべき要点** を 1-2 文 (80-160 字) で書いてください。'
+    **本日この SIR 領域で押さえるべき要点** を 1-2 文 (80-160 字) で書いてください。'
   note: ''
 - field_id: output_length_style
   kind: rubric

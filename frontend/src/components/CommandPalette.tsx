@@ -1,4 +1,4 @@
-// ⌘K コマンドパレット: ページ / アクター / PIR を横断ジャンプ。
+// ⌘K コマンドパレット: ページ / アクター / SIR を横断ジャンプ。
 // データは開いた時に lazy fetch (アクター辞書 = 軽量 YAML API、pir list)。
 // アクターは canonical だけでなく別名 (aliases) / MITRE ID でも照合する。
 
@@ -16,7 +16,7 @@ interface CmdItem {
   label: string;
   sub?: string;
   href: string;
-  group: "ページ" | "アクター" | "PIR";
+  group: "ページ" | "アクター" | "SIR";
 }
 
 interface CommandPaletteProps {
@@ -71,7 +71,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       group: "アクター",
     }));
     const pirItems: CmdItem[] = (pirList?.priorities ?? []).map((p) => ({
-      key: `pir:${p.id}`, label: p.title, sub: p.id, href: `/app/pir/${encodeURIComponent(p.id)}`, group: "PIR",
+      key: `pir:${p.id}`, label: p.title, sub: p.id, href: `/app/pir/${encodeURIComponent(p.id)}`, group: "SIR",
     }));
 
     const match = (it: CmdItem) => q === "" || it.label.toLowerCase().includes(q) || (it.sub?.toLowerCase().includes(q) ?? false);
@@ -126,7 +126,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={onKeyDown}
-            placeholder="ページ / アクター / PIR を検索…"
+            placeholder="ページ / アクター / SIR を検索…"
             className="flex-1 bg-transparent text-[15px] text-fg placeholder:text-fg-subtle focus:outline-none"
           />
           <kbd className="text-[12px] font-mono text-fg-subtle bg-surface-3 px-1.5 py-0.5 rounded">esc</kbd>

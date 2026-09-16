@@ -209,7 +209,7 @@ export function HeadlineLine({ title, url, importance, feed }: { title: string; 
   );
 }
 
-// セクション見出し (PMESII軸 / PIR / カテゴリ)。左の accent バーで「ここは見出し」を明示。
+// セクション見出し (PMESII軸 / SIR / カテゴリ)。左の accent バーで「ここは見出し」を明示。
 export function HeadlineGroup({ label, badge, children }: { label: string; badge?: ReactNode; children: ReactNode }) {
   return (
     <div className="min-w-0">

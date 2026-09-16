@@ -15,7 +15,7 @@ import { formatJst, formatJstShort } from "../utils/date";
 import { useChannelMeta } from "../components/channel";
 import { vocabLabel } from "../hooks/useVocab";
 
-// PIR 固有の値 "auto" は共通 SSoT に無い (PIR 以外では使わない値のため)。
+// SIR 固有の値 "auto" は共通 SSoT に無い (SIR 以外では使わない値のため)。
 function importanceOrAuto(v: string): string {
   return v === "auto" ? "自動" : vocabLabel("importance", v);
 }
@@ -66,7 +66,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
   });
 
   if (isLoading) return <div className={`${pageContainer("wide")} text-fg-muted`}>読み込み中...</div>;
-  if (!pir) return <div className={`${pageContainer("wide")} text-fg-muted`}>PIR が見つかりません: {pirId}</div>;
+  if (!pir) return <div className={`${pageContainer("wide")} text-fg-muted`}>SIR が見つかりません: {pirId}</div>;
 
   return (
     <div className={`${pageContainer("wide")} space-y-4`}>
@@ -159,7 +159,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
               <span className="inline-block px-1.5 py-0.5 rounded bg-accent-soft text-accent-hover font-medium mr-1.5">
                 AI 主題判定あり
               </span>
-              上の条件は候補の絞り込みで、記事が本当にこの PIR を主題としているかを AI が確定します
+              上の条件は候補の絞り込みで、記事が本当にこの SIR を主題としているかを AI が確定します
               (夜間の自動処理後に反映)。
               {pir.llm_judge.question && (
                 <div className="mt-1 text-fg-subtle">判定基準: {pir.llm_judge.question}</div>
@@ -197,7 +197,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
         </Section>
       </div>
 
-      {/* Spotlight 最新生成 + 手動 trigger (enabled な PIR のみ) */}
+      {/* Spotlight 最新生成 + 手動 trigger (enabled な SIR のみ) */}
       {spotlightEnabled && (
         <Section title="Spotlight — 最新の生成結果 / 手動で生成">
           {latestSpotlight ? (

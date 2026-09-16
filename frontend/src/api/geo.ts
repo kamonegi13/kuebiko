@@ -93,7 +93,7 @@ export type ThreatClass = "all" | "ransomware" | "other";
 export type GeoDomain = "cyber" | "geopolitical";
 // 収集経路: すべて / 報道(posted=triage済ニュース) / 台帳(collected=ransomware.live 等の生レジストリ)。
 export type SourceStatus = "all" | "posted" | "collected";
-// 意義の地図: 全件 / 中+ (high+medium) / 高のみ。importance は PIR 駆動 triage の holistic な significance。
+// 意義の地図: 全件 / 中+ (high+medium) / 高のみ。importance は SIR 駆動 triage の holistic な significance。
 export type MinImportance = "all" | "medium_up" | "high";
 // PMESII 直交フィルタ (地政学レイヤー): 全領域 / 政治 / 軍事 / 経済 / 社会 / 情報インフラ /
 // サイバー / 環境 / 技術。色=動機(intent) と直交する「どの領域に作用するか」の絞り込み。

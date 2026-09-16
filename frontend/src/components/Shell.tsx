@@ -84,7 +84,7 @@ function renderTabControls(
         <>
           <Seg items={VIEWS} value={f.synthesisView} onChange={f.setSynthesisView} />
           {/* ⚠ 読む面では期間をここに置かない。期間で変わるのは全体総括だけで、
-              PIR 別の動向は常に直近 7 日 — 画面上部に置くと「全部が切り替わる」と
+              SIR 別の動向は常に直近 7 日 — 画面上部に置くと「全部が切り替わる」と
               読めてしまう (2026-08-29 利用者指摘)。全体の節見出しへ移した。
               根拠・点検は面ぜんぶが期間に従うので、ここで切り替える。 */}
           {f.synthesisView !== "read" && (

@@ -38,7 +38,7 @@ export interface ActorBrief {
   last_seen_iso: string;
   // Phase Diamond-Axes: socio-political 軸 = この actor の意図分布 [(intent, count), ...]
   top_intents: [string, number][];
-  // ③ PIR 連携: この actor が該当する enabled PIR の id 群 (UI バッジ/優先用)
+  // ③ SIR 連携: この actor が該当する enabled SIR の id 群 (UI バッジ/優先用)
   matched_pir_ids: string[];
   // ミッション脅威評価 (/threats 系 endpoint のみ添付。undefined = 添付なし、
   // null = 評価対象外 (organization/contractor) or 評価障害)
@@ -344,7 +344,7 @@ export interface EntityTrend {
   slope: number;
   z_score: number;
   is_spike: boolean;
-  // ④ PIR 連携: この trend (actor) が該当する enabled PIR の id 群
+  // ④ SIR 連携: この trend (actor) が該当する enabled SIR の id 群
   matched_pir_ids: string[];
 }
 

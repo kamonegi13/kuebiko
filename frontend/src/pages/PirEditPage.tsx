@@ -26,7 +26,7 @@ import {
 } from "../api/pir";
 import { pagesApi } from "../api/pages";
 
-// F1 (アクター辞書 Phase2): PIR actors の辞書解決チェック。評価側
+// F1 (アクター辞書 Phase2): SIR actors の辞書解決チェック。評価側
 // (src/pir/evaluator.py _resolve_pir_actor_names) の双方向 word-boundary 照合の
 // クライアント近似 — 解決されない名前はタイトル一致のみに縮退するため、入力時に警告する。
 // 評価ロジック自体は不変 (表示と補完のみ)。
@@ -60,7 +60,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
   const [matchJsonDraft, setMatchJsonDraft] = useState<string | null>(null);
   const [matchJsonError, setMatchJsonError] = useState<string | null>(null);
 
-  // Load existing PIR for edit
+  // Load existing SIR for edit
   const { data: existing } = useQuery({
     queryKey: ["pir-edit-load", pirId],
     queryFn: () => pirApi.get(pirId!),
@@ -152,7 +152,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
           ← {pirId ? "詳細" : "一覧"}に戻る
         </a>
         <h2 className="m-0 text-xl font-bold text-fg tracking-tight">
-          {isNew ? "新規 PIR 作成" : `PIR 編集: ${pir.id}`}
+          {isNew ? "新規 SIR 作成" : `SIR 編集: ${pir.id}`}
         </h2>
       </div>
 
@@ -161,7 +161,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
         <div className="space-y-3">
           {isNew && (
             <div>
-              <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">PIR id (英数 + アンダースコア)</label>
+              <label className="block text-[12px] uppercase tracking-wider text-fg-muted mb-1">SIR id (英数 + アンダースコア)</label>
               <input
                 type="text"
                 value={pir.id}
@@ -245,7 +245,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               <span>AI の主題判定を必須にする</span>
             </label>
             <span className="text-[12px] text-fg-subtle">
-              上の条件を「候補の絞り込み」とし、記事が本当にこの PIR を主題としているかを
+              上の条件を「候補の絞り込み」とし、記事が本当にこの SIR を主題としているかを
               AI が確定します (判定は夜間の自動処理後に反映。プレビューは候補のみ)。
             </span>
           </div>
@@ -371,7 +371,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               派生シグナル条件 (任意、配信判定に使う高精度な条件)
             </div>
             <div className="text-xs text-fg-subtle mb-2">
-              キーワードでは表せない判定 (KEV カタログ照合・0day 等) を PIR の該当条件に加えます。
+              キーワードでは表せない判定 (KEV カタログ照合・0day 等) を SIR の該当条件に加えます。
               KPI やプレビュー (集計値) には反映されません。
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -414,7 +414,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
               onChange={(v) => updatePir({ target_importance: v as RoutingImportance })}
             />
             <div className="text-[12px] text-fg-subtle italic mt-1">
-              high / medium にすると、この PIR が重要度判定の基準として使われます。
+              high / medium にすると、この SIR が重要度判定の基準として使われます。
               "auto" は基準に使いません。<strong>配信先チャンネルはここでは決めません</strong>
               (チャンネル決定は <a href="/app/flow" className="text-accent hover:underline not-italic">情報フロー</a> の
               配信ルールが重要度とシグナルから判定します)。

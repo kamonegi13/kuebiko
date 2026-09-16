@@ -143,7 +143,7 @@ function parseRoute(): Route {
   if (p === "/app/questions") return { kind: "questions" };
   if (p === "/app/jpci") return { kind: "jpci" };
   if (p === "/app/schedule") return { kind: "schedule" };
-  // PIR pages
+  // SIR pages
   if (p === "/app/pir") return { kind: "pir-list" };
   if (p === "/app/pir/edit") return { kind: "pir-edit", pirId: null };
   const editMatch = p.match(/^\/app\/pir\/edit\/(.+)$/);

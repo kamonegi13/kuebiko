@@ -1,6 +1,6 @@
 // W1 (通知再設計): 日次ブリーフ (朝刊/夕刊) の Web 通読サーフェス。
 // 2026-07-12: Discord は要点射影のみ、Web が全文の正。payload (構造化 JSON) があれば
-// 構造描画 (節ラベル / 変化マーカー / tradecraft / PIR 記事リンク)、旧行は markdown fallback。
+// 構造描画 (節ラベル / 変化マーカー / tradecraft / SIR 記事リンク)、旧行は markdown fallback。
 // 2026-07-25: 旧 /app/retrospect (週次振り返り) を粒度切替で統合 — 日次 (配信物) と
 // 週次 (過去参照の再構成) を同一サーフェスの時間軸ファミリーとして扱う。
 
@@ -268,7 +268,7 @@ export function DailyBriefPage() {
     <div className={`${pageContainer("wide")} space-y-5`}>
       <PageHeader
         title="ブリーフ・振り返り"
-        subtitle="毎日 06:30 の朝刊 (状況総括 + PIR 24h focus) と 19:30 の夕刊 (状況更新)。Discord には要点のみを配信し、全文はここで読む。週次は「あの週、何が起きていたか」の過去参照。"
+        subtitle="毎日 06:30 の朝刊 (状況総括 + SIR 24h focus) と 19:30 の夕刊 (状況更新)。Discord には要点のみを配信し、全文はここで読む。週次は「あの週、何が起きていたか」の過去参照。"
       />
 
       <div className="flex border-b border-border-subtle">

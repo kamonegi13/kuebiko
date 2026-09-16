@@ -271,14 +271,14 @@ def _build_compile_prompt(
     actors_str = ", ".join(known_actors[:60]) if known_actors else "(actor 辞書なし)"
     sectors_str = ", ".join(known_sectors) if known_sectors else "(sector 辞書なし)"
     return f"""\
-あなたは CTI 担当者の PIR (Priority Intelligence Requirement) を
+あなたは CTI 担当者の SIR (収集要求) を
 machine-readable な structured filter rule に変換する compiler です。
 既知 vocabulary から選択し、hallucination を避けてください。
 
-## PIR title
+## SIR title
 {title}
 
-## PIR description (canonical intent)
+## SIR description (canonical intent)
 {description}
 
 ## 既知 actor (上位 60 件、既存 actor_aliases.yaml から)
