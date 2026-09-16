@@ -1,4 +1,5 @@
-// PIR 作成 / 編集画面 (/app/pir/edit/{id?})。
+// SIR 作成 / 編集画面 (/app/config/sir/edit/{id?})。
+// S4 (2026-09-16): 定義の変更は設定カテゴリへ (CLAUDE.md §11)。閲覧は /app/pir。
 //
 // Flow (7 step):
 //   Step 1: description 入力 (Level 1)
@@ -148,7 +149,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
   return (
     <div className={`${pageContainer("wide")} space-y-4`}>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <a href={pirId ? `/app/pir/${encodeURIComponent(pirId)}` : "/app/pir"} className="text-fg-muted text-sm no-underline hover:text-fg">
+        <a href="/app/config#sir" className="text-fg-muted text-sm no-underline hover:text-fg">
           ← {pirId ? "詳細" : "一覧"}に戻る
         </a>
         <h2 className="m-0 text-xl font-bold text-fg tracking-tight">
@@ -497,7 +498,7 @@ export function PirEditPage({ pirId }: { pirId: string | null }) {
           {saveMut.isPending ? "保存中..." : "保存"}
         </button>
         <a
-          href={pirId ? `/app/pir/${encodeURIComponent(pirId)}` : "/app/pir"}
+          href="/app/config#sir"
           className="text-fg-muted hover:text-fg text-sm no-underline px-3 py-2"
         >キャンセル</a>
         {saveError && <span className="text-critical text-xs">{saveError}</span>}

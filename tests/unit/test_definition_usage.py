@@ -128,3 +128,57 @@ class TestLegacyConditionForm:
         ]
 
         assert match_list_usage(["x"], rules) == {"x": ["R_new", "R_old"]}
+
+
+class TestSirUsage:
+    """SIR の参照関係 (S4) — **常設情報要求 (PIR) がどの SIR を参照しているか**。
+
+    SIR を消すと、参照していた問いの SIR リンクが孤児になる。編集画面で
+    「この SIR は N 件の問いから参照されている」が見えることが移設の前提条件
+    (docs/settings_consolidation_plan.md §4)。
+
+    ⚠ 配信ルールは SIR を参照しない (R0 撤去済、CLAUDE.md §13 設計原則 2)。
+    参照元は**常設情報要求**であって routing ではない。
+    """
+
+    def _row(self, sid: str, pir_ids: list[str]) -> dict[str, Any]:
+        return {"situation_id": sid, "title": f"問い {sid}", "pir_ids": pir_ids}
+
+    def test_maps_sir_to_referencing_questions(self) -> None:
+        from src.cti.definition_usage import sir_usage
+
+        rows = [
+            self._row("s-a", ["pir_critical_infra", "pir_russia_apt"]),
+            self._row("s-b", ["pir_critical_infra"]),
+        ]
+
+        usage = sir_usage(["pir_critical_infra", "pir_russia_apt"], rows)
+
+        assert usage["pir_critical_infra"] == ["s-a", "s-b"]
+        assert usage["pir_russia_apt"] == ["s-a"]
+
+    def test_unreferenced_sir_maps_to_empty(self) -> None:
+        from src.cti.definition_usage import sir_usage
+
+        assert sir_usage(["pir_unused"], [self._row("s-a", ["pir_other"])]) == {"pir_unused": []}
+
+    def test_question_without_links_is_ignored(self) -> None:
+        """SIR リンクを持たない問い (閾値型など) は参照元にならない。"""
+        from src.cti.definition_usage import sir_usage
+
+        assert sir_usage(["pir_x"], [self._row("s-a", [])]) == {"pir_x": []}
+
+    def test_json_encoded_pir_ids_are_accepted(self) -> None:
+        """DB は pir_ids を JSON 文字列で持つ (situations.pir_ids は text)。"""
+        from src.cti.definition_usage import sir_usage
+
+        rows = [{"situation_id": "s-a", "pir_ids": '["pir_x"]'}]
+
+        assert sir_usage(["pir_x"], rows) == {"pir_x": ["s-a"]}
+
+    def test_malformed_rows_do_not_raise(self) -> None:
+        from src.cti.definition_usage import sir_usage
+
+        rows = [{"situation_id": "s-a", "pir_ids": "not json"}, {"pir_ids": ["pir_x"]}, "junk"]
+
+        assert sir_usage(["pir_x"], rows) == {"pir_x": []}

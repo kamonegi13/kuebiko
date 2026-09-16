@@ -116,6 +116,9 @@ export interface PirListItem {
   match_count_30d: number;
   last_match_at: string | null;
   approved_by_user: boolean;
+  /** この SIR を参照している常設情報要求 (問い) の situation_id (読み取り専用。S4)。
+   *  ⚠ 空 =「いま参照されていない」だけで「消してよい」ではない。 */
+  used_by_questions?: string[];
 }
 
 export interface PirListResponse {

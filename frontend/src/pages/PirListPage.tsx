@@ -4,8 +4,8 @@
 // - 個別 toggle (enabled on/off)
 // - 新規追加 / 詳細表示への遷移
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Info, Pause, Play } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Eye, Info } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { pirApi, type PirListItem } from "../api/pir";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
@@ -19,17 +19,11 @@ function importanceOrAuto(v: string): string {
 }
 
 export function PirListPage() {
-  const qc = useQueryClient();
   const { read_only } = useRuntimeFlags();
   const { data, isLoading } = useQuery({
     queryKey: ["pir-list"],
     queryFn: () => pirApi.list(),
     refetchInterval: 60_000,
-  });
-
-  const toggleMut = useMutation({
-    mutationFn: (id: string) => pirApi.toggle(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pir-list"] }),
   });
 
   const items = data?.priorities || [];
@@ -43,10 +37,10 @@ export function PirListPage() {
           <span className="text-fg-subtle text-xs">{items.length} SIRs · 60s 自動更新</span>
           {!read_only && (
             <a
-              href="/app/pir/edit"
-              className="bg-accent hover:bg-accent-hover text-fg rounded px-3 py-1.5 text-xs font-semibold no-underline"
+              href="/app/config#sir"
+              className="bg-surface-2 border border-border-subtle hover:bg-surface-3 text-fg rounded px-3 py-1.5 text-xs font-semibold no-underline"
             >
-              + 新規 SIR
+              定義を編集
             </a>
           )}
         </div>
@@ -70,7 +64,7 @@ export function PirListPage() {
           <p className="m-0">まだ SIR がありません。</p>
           {!read_only && (
             <p className="m-0 mt-2">
-              <a href="/app/pir/edit" className="text-accent hover:underline">+ 新規 PIR を作成</a>
+              <a href="/app/config#sir" className="text-accent hover:underline">設定で SIR を作成する</a>
             </p>
           )}
         </div>
@@ -92,7 +86,7 @@ export function PirListPage() {
             </thead>
             <tbody>
               {items.map((p) => (
-                <PirRow key={p.id} pir={p} onToggle={() => toggleMut.mutate(p.id)} readOnly={read_only} />
+                <PirRow key={p.id} pir={p} />
               ))}
             </tbody>
           </table>
@@ -104,12 +98,8 @@ export function PirListPage() {
 
 function PirRow({
   pir,
-  onToggle,
-  readOnly,
 }: {
   pir: PirListItem;
-  onToggle: () => void;
-  readOnly: boolean;
 }) {
   const detailUrl = `/app/pir/${encodeURIComponent(pir.id)}`;
   return (
@@ -152,13 +142,6 @@ function PirRow({
             href={detailUrl}
             className="text-fg bg-surface-2 border border-border-subtle hover:bg-surface-3 rounded px-2 py-1 text-xs no-underline inline-flex items-center"
           ><Eye className="h-3.5 w-3.5" /></a>
-          {!readOnly && (
-            <button
-              onClick={onToggle}
-              title={pir.enabled ? "無効化" : "有効化"}
-              className="text-fg bg-surface-2 border border-border-subtle hover:bg-surface-3 rounded px-2 py-1 text-xs inline-flex items-center"
-            >{pir.enabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</button>
-          )}
         </div>
       </td>
     </tr>

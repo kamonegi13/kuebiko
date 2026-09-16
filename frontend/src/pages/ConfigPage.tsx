@@ -8,6 +8,7 @@ import { ConnectionsPanel } from "./config/ConnectionsPanel";
 import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
 import { JpCiOperatorsView } from "./config/JpCiOperatorsView";
+import { SirDefinitionsView } from "./config/SirDefinitionsView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
 import { OpsNoticesCard } from "../components/OpsNoticesCard";
 import { HostWatchdogCard } from "../components/HostWatchdogCard";
@@ -52,6 +53,7 @@ type ConfigTab =
   | "connections"
   | "models"
   | "prompts"
+  | "sir"
   | "operators"
   | "system"
   | "history"
@@ -60,6 +62,7 @@ type ConfigTab =
 const HASH_TABS: ConfigTab[] = [
   "models",
   "prompts",
+  "sir",
   "operators",
   "system",
   "history",
@@ -73,6 +76,9 @@ export const TAB_GROUPS: { group: string; tabs: { id: ConfigTab; label: string }
     tabs: [
       { id: "models", label: "モデル" },
       { id: "prompts", label: "プロンプト" },
+      // S4 (2026-09-16): SIR の定義変更 (有効化/承認/削除/作成/編集) を移設。
+      // 閲覧 (KPI・Spotlight) は /app/pir に残る。
+      { id: "sir", label: "SIR (収集要求)" },
       // S3 (2026-09-16): 専用ページ /app/jpci/operators から移設。
       { id: "operators", label: "指定事業者名簿" },
     ],
@@ -152,6 +158,7 @@ export function ConfigPage() {
       {tab === "yaml" && <YamlEditor qc={qc} />}
       {tab === "prompts" && <PromptsEditor qc={qc} />}
       {tab === "models" && <ModelTiersEditor qc={qc} />}
+      {tab === "sir" && <SirDefinitionsView />}
       {tab === "operators" && <JpCiOperatorsView />}
       {tab === "system" && <SystemEditor />}
       {tab === "history" && (

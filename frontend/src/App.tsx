@@ -146,11 +146,18 @@ function parseRoute(): Route {
   if (p === "/app/questions") return { kind: "questions" };
   if (p === "/app/jpci") return { kind: "jpci" };
   if (p === "/app/schedule") return { kind: "schedule" };
-  // SIR pages
+  // SIR: 閲覧は /app/pir、**定義の編集は設定配下** (S4、CLAUDE.md §11)。
   if (p === "/app/pir") return { kind: "pir-list" };
-  if (p === "/app/pir/edit") return { kind: "pir-edit", pirId: null };
-  const editMatch = p.match(/^\/app\/pir\/edit\/(.+)$/);
+  if (p === "/app/config/sir/edit") return { kind: "pir-edit", pirId: null };
+  const editMatch = p.match(/^\/app\/config\/sir\/edit\/(.+)$/);
   if (editMatch) return { kind: "pir-edit", pirId: decodeURIComponent(editMatch[1]) };
+  // 旧 URL は転送する (ブックマークを壊さない)。旧入口は残さない。
+  const legacyEdit = p.match(/^\/app\/pir\/edit(?:\/(.+))?$/);
+  if (legacyEdit) {
+    const suffix = legacyEdit[1] ? `/${legacyEdit[1]}` : "";
+    window.location.replace(`/app/config/sir/edit${suffix}`);
+    return { kind: "config" };
+  }
   const detailMatch = p.match(/^\/app\/pir\/(.+)$/);
   if (detailMatch) return { kind: "pir-detail", pirId: decodeURIComponent(detailMatch[1]) };
   return { kind: "unknown" };

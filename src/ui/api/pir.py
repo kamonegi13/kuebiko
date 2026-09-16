@@ -54,6 +54,10 @@ class PirListItem(BaseModel):
     match_count_30d: int = 0
     last_match_at: str | None = None
     approved_by_user: bool = True
+    #: この SIR を参照している常設情報要求 (問い) の situation_id (S4)。
+    #: 消すと参照が孤児になるため、定義の編集画面で見えるようにする。
+    #: ⚠ 空 =「いま参照されていない」だけで「消してよい」ではない。
+    used_by_questions: list[str] = []
 
 
 class PirListResponse(BaseModel):
@@ -208,6 +212,25 @@ def list_pir_options() -> list[PirOption]:
 # 同期関数として定義する (async def にすると 30 日走査の間 event loop を占有し、
 # UI 全体が固まる)。FastAPI が threadpool で実行する。
 @pir_api.get("", response_model=PirListResponse)
+def _sir_usage_safe(pir_ids: list[str]) -> dict[str, list[str]]:
+    """SIR → 参照する問い。引けなくても一覧を壊さない (空で返す)。"""
+    from src.cti.definition_usage import sir_usage
+
+    try:
+        from src.assessment.situation_store import SituationStore
+        from src.assessment.standing import STANDING_KIND
+
+        rows = [
+            {"situation_id": r.situation_id, "pir_ids": list(r.pir_ids)}
+            for r in SituationStore().load_situations()
+            if r.kind == STANDING_KIND
+        ]
+        return sir_usage(pir_ids, rows)
+    except Exception as e:  # noqa: BLE001 — 参照が引けなくても SIR 一覧は出す
+        _log.warning("sir_usage_failed", error=str(e))
+        return dict.fromkeys(pir_ids, [])
+
+
 def list_pirs() -> PirListResponse:
     cached = _LIST_CACHE.get("list")
     if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SEC:
@@ -222,6 +245,10 @@ def list_pirs() -> PirListResponse:
         cfg = load_current_pir_config()
         matches = evaluate_pirs_batch(cfg.priorities, lookback_hours=24 * 30, limit=15000)
         items = [_to_list_item(p, matches.get(p.id, [])) for p in cfg.priorities]
+        # 参照関係 (S4): 常設情報要求がどの SIR を参照しているか。
+        # ⚠ 配信ルールは SIR を参照しない (R0 撤去済) — 参照元は問いの側。
+        usage = _sir_usage_safe([p.id for p in cfg.priorities])
+        items = [i.model_copy(update={"used_by_questions": usage.get(i.id, [])}) for i in items]
         pending = sum(1 for p in cfg.priorities if not p.metadata.approved_by_user)
         resp = PirListResponse(
             version=cfg.version,

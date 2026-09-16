@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 #: 参照を探す葉のプロパティ名 → 参照先の種別。
@@ -80,3 +81,37 @@ def match_list_usage(names: list[str], rules: list[Any]) -> dict[str, list[str]]
             if value in usage:
                 usage[value].add(rule_id)
     return {name: sorted(ids) for name, ids in usage.items()}
+
+
+def sir_usage(pir_ids: list[str], standing_rows: list[Any]) -> dict[str, list[str]]:
+    """SIR id → それを参照している常設情報要求 (問い) の situation_id (昇順)。
+
+    SIR を消すと、参照していた問いの SIR リンクが孤児になる。編集画面で
+    「この SIR は N 件の問いから参照されている」が見えることが移設の前提条件。
+
+    ⚠ **配信ルールは SIR を参照しない** (R0 撤去済、CLAUDE.md §13 設計原則 2)。
+    参照元は常設情報要求であって routing ではない — ここを取り違えると
+    「参照ゼロ」と誤表示する。
+
+    ⚠ ``situations.pir_ids`` は **JSON 文字列**で保持される (text 列)。
+    list が来る経路 (射影済み) と両方を受ける。
+    """
+    usage: dict[str, set[str]] = {p: set() for p in pir_ids}
+    for row in standing_rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("situation_id") or "")
+        if not sid:
+            continue
+        raw = row.get("pir_ids")
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+        if not isinstance(raw, list | tuple):
+            continue
+        for pid in raw:
+            if str(pid) in usage:
+                usage[str(pid)].add(sid)
+    return {p: sorted(ids) for p, ids in usage.items()}

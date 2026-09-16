@@ -4,7 +4,7 @@
 // - Edit / Delete / Approve actions
 
 import { useState } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { PirMatchTree } from "../components/PirMatchTree";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,19 +36,6 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
     enabled: !!pir,
   });
 
-  const approveMut = useMutation({
-    mutationFn: () => pirApi.approve(pirId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["pir-detail", pirId] });
-      qc.invalidateQueries({ queryKey: ["pir-list"] });
-    },
-  });
-  const deleteMut = useMutation({
-    mutationFn: () => pirApi.delete(pirId),
-    onSuccess: () => {
-      window.location.href = "/app/pir";
-    },
-  });
 
   const spotlightEnabled = !!pir?.spotlight.enabled;
   const { data: latestSpotlight } = useQuery({
@@ -98,25 +85,25 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
           </div>
         </div>
 
+        {/* S4 (2026-09-16): この面は**閲覧**。定義の変更 (編集・承認・削除・有効化) は
+            設定の【定義】タブに集約した (CLAUDE.md §11)。リンクは該当箇所まで飛ばす
+            — 設定トップに飛ばすと探し直しになる。 */}
         {!read_only && (
           <div className="flex items-center gap-1.5 shrink-0">
             <a
-              href={`/app/pir/edit/${encodeURIComponent(pir.id)}`}
-              className="bg-accent hover:bg-accent-hover text-fg rounded px-3 py-1.5 text-xs font-semibold no-underline"
-            >編集</a>
+              href={`/app/config/sir/edit/${encodeURIComponent(pir.id)}`}
+              className="bg-surface-2 border border-border-subtle hover:bg-surface-3 text-fg rounded px-3 py-1.5 text-xs font-semibold no-underline inline-flex items-center gap-1"
+            >
+              <Pencil className="h-3.5 w-3.5" /> 定義を編集
+            </a>
             {!pir.metadata.approved_by_user && (
-              <button
-                onClick={() => approveMut.mutate()}
-                disabled={approveMut.isPending}
-                className="bg-success hover:bg-success-soft text-fg rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-50 inline-flex items-center gap-1"
-              ><Check className="h-3.5 w-3.5" /> 承認</button>
+              <a
+                href="/app/config#sir"
+                className="text-warning border border-warning/40 rounded px-3 py-1.5 text-xs font-semibold no-underline"
+              >
+                未承認 — 設定で承認
+              </a>
             )}
-            <button
-              onClick={() => {
-                if (confirm(`PIR "${pir.id}" を削除しますか？`)) deleteMut.mutate();
-              }}
-              className="text-critical bg-surface-2 border border-border-subtle hover:bg-critical-soft rounded px-2 py-1.5 text-xs"
-            ><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
         )}
       </div>
