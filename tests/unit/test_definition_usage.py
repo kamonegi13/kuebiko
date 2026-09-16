@@ -46,9 +46,7 @@ class TestMatchListUsage:
 
     def test_finds_references_under_not(self) -> None:
         """否定の中の参照も参照である (消したらルールの意味が変わる)。"""
-        rules = [
-            _rule("R3", {"not": {"property": "keyword_list", "op": "in", "value": ["noise"]}})
-        ]
+        rules = [_rule("R3", {"not": {"property": "keyword_list", "op": "in", "value": ["noise"]}})]
 
         assert match_list_usage(["noise"], rules) == {"noise": ["R3"]}
 
@@ -182,3 +180,74 @@ class TestSirUsage:
         rows = [{"situation_id": "s-a", "pir_ids": "not json"}, {"pir_ids": ["pir_x"]}, "junk"]
 
         assert sir_usage(["pir_x"], rows) == {"pir_x": []}
+
+
+class TestActorUsage:
+    """アクター辞書の参照関係 (S7) — **SIR がアクターを名指ししている**。
+
+    実データ (2026-09-16): 20 SIR のうち 3 件が actors を列挙している
+    (pir_china_apt → Volt Typhoon / Salt Typhoon …)。canonical や別名を変えると
+    この名指しが外れ、**SIR が静かに該当しなくなる**。
+
+    ⚠ 名指しは **canonical でも別名でも**書かれうる。canonical だけを見ると
+    別名で書かれた参照を見落とす。
+    """
+
+    def _pir(self, pid: str, actors: list[str]) -> dict[str, Any]:
+        return {"id": pid, "strong_signals": {"actors": actors}}
+
+    def test_matches_by_canonical_name(self) -> None:
+        from src.cti.definition_usage import actor_usage
+
+        pirs = [self._pir("pir_cn", ["Volt Typhoon"])]
+
+        usage = actor_usage([("volt_typhoon", "Volt Typhoon", [])], pirs)
+
+        assert usage == {"volt_typhoon": ["pir_cn"]}
+
+    def test_matches_by_alias(self) -> None:
+        """別名で名指しされていても参照である (見落とすと「未参照」と誤表示)。"""
+        from src.cti.definition_usage import actor_usage
+
+        pirs = [self._pir("pir_ru", ["Cozy Bear"])]
+
+        usage = actor_usage([("apt29", "APT29", ["Cozy Bear", "Nobelium"])], pirs)
+
+        assert usage == {"apt29": ["pir_ru"]}
+
+    def test_match_is_case_insensitive(self) -> None:
+        from src.cti.definition_usage import actor_usage
+
+        pirs = [self._pir("pir_cn", ["volt typhoon"])]
+
+        assert actor_usage([("volt_typhoon", "Volt Typhoon", [])], pirs) == {
+            "volt_typhoon": ["pir_cn"]
+        }
+
+    def test_unreferenced_actor_maps_to_empty(self) -> None:
+        from src.cti.definition_usage import actor_usage
+
+        assert actor_usage([("x", "X", [])], [self._pir("pir_a", ["Y"])]) == {"x": []}
+
+    def test_several_pirs_are_sorted(self) -> None:
+        from src.cti.definition_usage import actor_usage
+
+        pirs = [self._pir("pir_b", ["Lazarus"]), self._pir("pir_a", ["Lazarus"])]
+
+        assert actor_usage([("lazarus", "Lazarus", [])], pirs) == {"lazarus": ["pir_a", "pir_b"]}
+
+    def test_malformed_pirs_do_not_raise(self) -> None:
+        from src.cti.definition_usage import actor_usage
+
+        pirs = [{"id": "p1"}, {"strong_signals": None}, "junk", {"id": "p2", "strong_signals": {}}]
+
+        assert actor_usage([("x", "X", [])], pirs) == {"x": []}
+
+    def test_empty_actor_list_returns_empty_mapping(self) -> None:
+        """⚠ 空入力で dict 以外を返さない (set と dict を取り違える書き方をしていた)。"""
+        from src.cti.definition_usage import actor_usage
+
+        result = actor_usage([], [{"id": "p1", "strong_signals": {"actors": ["X"]}}])
+
+        assert result == {}
+        assert isinstance(result, dict)

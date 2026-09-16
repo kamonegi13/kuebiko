@@ -10,6 +10,7 @@ import io
 import re
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -928,7 +929,44 @@ def actors_list(request: Request) -> dict[str, Any]:
     """Actor 辞書の一覧 (raw YAML でなく構造化表示・編集用)。"""
     from src.cti.actor_editor import list_actors, list_families
 
-    return {"actors": list_actors(), "families": list_families()}
+    actors = list_actors()
+    usage = _actor_usage_safe(actors)
+    # 参照関係 (S7): この別名を変えると、名指ししている SIR が静かに該当しなくなる。
+    # 実データ (2026-09-16) では 20 SIR のうち 3 件が actors を列挙している。
+    return {
+        "actors": [{**a, "used_by_pirs": usage.get(str(a.get("id")), [])} for a in actors],
+        "families": list_families(),
+    }
+
+
+@lru_cache(maxsize=1)
+def _pir_actor_signals() -> tuple[dict[str, Any], ...]:
+    """SIR の actors 名指し (参照関係の照合用)。設定変更時は cache を捨てる。"""
+    from src.pir.integration import load_current_pir_config
+
+    return tuple(
+        {
+            "id": p.id,
+            "strong_signals": {"actors": list(getattr(p.strong_signals, "actors", []) or [])},
+        }
+        for p in load_current_pir_config().priorities
+    )
+
+
+def _actor_usage_safe(actors: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """アクター → 名指ししている SIR。引けなくても辞書一覧は出す。"""
+    from src.cti.definition_usage import actor_usage
+
+    try:
+        pairs = [
+            (str(a.get("id") or ""), str(a.get("canonical") or ""), list(a.get("aliases") or []))
+            for a in actors
+            if a.get("id")
+        ]
+        return actor_usage(pairs, list(_pir_actor_signals()))
+    except Exception as e:  # noqa: BLE001 — 参照が引けなくても辞書は出す
+        _log.warning("actor_usage_failed", error=str(e))
+        return {}
 
 
 @pages_api.post("/actors/{actor_id}")

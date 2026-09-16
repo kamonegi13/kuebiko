@@ -115,3 +115,43 @@ def sir_usage(pir_ids: list[str], standing_rows: list[Any]) -> dict[str, list[st
             if str(pid) in usage:
                 usage[str(pid)].add(sid)
     return {p: sorted(ids) for p, ids in usage.items()}
+
+
+def actor_usage(actors: list[tuple[str, str, list[str]]], pirs: list[Any]) -> dict[str, list[str]]:
+    """アクター id → そのアクターを名指ししている SIR id (昇順)。
+
+    Args:
+        actors: ``(actor_id, canonical, aliases)`` の並び。
+        pirs: SIR 定義 (``strong_signals.actors`` に名前が列挙される)。
+
+    実データ (2026-09-16): 20 SIR のうち 3 件が actors を列挙している。
+    canonical や別名を変えるとこの名指しが外れ、**SIR が静かに該当しなくなる**。
+    辞書の編集画面でこれが見えることが移設の前提条件。
+
+    ⚠ 名指しは **canonical でも別名でも**書かれうる (実データに「Cozy Bear」形式がある)。
+    canonical だけを見ると別名で書かれた参照を見落とす。照合は大小文字を無視する。
+
+    ⚠ 参照ゼロを「消してよい」と読ませない。そもそも辞書は削除でなく merge + 墓標が
+    原則 (identity 8 原則)。
+    """
+    named: list[tuple[str, set[str]]] = []
+    for actor_id, canonical, aliases in actors:
+        keys = {canonical.strip().lower()} | {a.strip().lower() for a in aliases if a}
+        named.append((actor_id, {k for k in keys if k}))
+
+    usage: dict[str, set[str]] = {actor_id: set() for actor_id, _keys in named}
+    for pir in pirs:
+        if not isinstance(pir, dict):
+            continue
+        pir_id = str(pir.get("id") or "")
+        signals = pir.get("strong_signals")
+        if not pir_id or not isinstance(signals, dict):
+            continue
+        raw = signals.get("actors")
+        if not isinstance(raw, list | tuple):
+            continue
+        mentioned = {str(x).strip().lower() for x in raw if x}
+        for actor_id, keys in named:
+            if keys & mentioned:
+                usage[actor_id].add(pir_id)
+    return {a: sorted(ids) for a, ids in usage.items()}

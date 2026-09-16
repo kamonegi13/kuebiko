@@ -502,6 +502,9 @@ export interface ActorEdit {
 }
 
 export interface ActorRecord extends ActorEdit {
+  /** このアクターを名指ししている SIR id (読み取り専用。S7)。
+   *  ⚠ 別名を変えるとここの名指しが外れ、SIR が静かに該当しなくなる。 */
+  used_by_pirs?: string[];
   id: string;
   // 既知 TTP ("T1566 Phishing" 形式)。mitre_sync 所有の read-only field (編集不可)
   mitre_ttps: string[];

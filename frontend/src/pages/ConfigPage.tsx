@@ -8,6 +8,7 @@ import { ConnectionsPanel } from "./config/ConnectionsPanel";
 import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
 import { JpCiOperatorsView } from "./config/JpCiOperatorsView";
+import { ActorDictionaryView } from "./config/ActorDictionaryView";
 import { SirDefinitionsView } from "./config/SirDefinitionsView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
 import { OpsNoticesCard } from "../components/OpsNoticesCard";
@@ -54,6 +55,7 @@ type ConfigTab =
   | "models"
   | "prompts"
   | "sir"
+  | "actors"
   | "operators"
   | "system"
   | "history"
@@ -63,6 +65,7 @@ const HASH_TABS: ConfigTab[] = [
   "models",
   "prompts",
   "sir",
+  "actors",
   "operators",
   "system",
   "history",
@@ -79,6 +82,8 @@ export const TAB_GROUPS: { group: string; tabs: { id: ConfigTab; label: string }
       // S4 (2026-09-16): SIR の定義変更 (有効化/承認/削除/作成/編集) を移設。
       // 閲覧 (KPI・Spotlight) は /app/pir に残る。
       { id: "sir", label: "SIR (収集要求)" },
+      // S7 (2026-09-16): アクター辞書の定義変更を移設。閲覧は /app/actors と脅威アクター面。
+      { id: "actors", label: "アクター辞書" },
       // S3 (2026-09-16): 専用ページ /app/jpci/operators から移設。
       { id: "operators", label: "指定事業者名簿" },
     ],
@@ -159,6 +164,7 @@ export function ConfigPage() {
       {tab === "prompts" && <PromptsEditor qc={qc} />}
       {tab === "models" && <ModelTiersEditor qc={qc} />}
       {tab === "sir" && <SirDefinitionsView />}
+      {tab === "actors" && <ActorDictionaryView />}
       {tab === "operators" && <JpCiOperatorsView />}
       {tab === "system" && <SystemEditor />}
       {tab === "history" && (

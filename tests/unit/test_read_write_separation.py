@@ -22,12 +22,16 @@ _DEFINITION_WRITES = {
     "pirApi.approve": "設定 > SIR",
     "pirApi.delete": "設定 > SIR",
     "jpciOperatorsApi.save": "設定 > 指定事業者名簿",
+    "pagesApi.updateActor": "設定 > アクター辞書",
 }
 
 #: 変更を持ってよい面 (設定カテゴリ配下 + 編集画面そのもの)。
 _ALLOWED_PREFIXES = (
     "frontend/src/pages/config/",
     "frontend/src/pages/PirEditPage.tsx",  # 設定配下の編集画面 (/app/config/sir/edit)
+    # 辞書の編集フォーム本体。**設定タブからのみ mount** される
+    # (ActorDetail は表示専用になった) — 下の test がそれを固定する。
+    "frontend/src/pages/actors/ActorDetail.tsx",
 )
 
 
@@ -55,7 +59,7 @@ def test_edit_routes_live_under_config() -> None:
 
     assert '"/app/config/sir/edit"' in body
     # 旧 URL は **転送のみ** — ルートとして生かさない
-    assert re.search(r'window\.location\.replace\(`?/app/config/sir/edit', body)
+    assert re.search(r"window\.location\.replace\(`?/app/config/sir/edit", body)
 
 
 def test_old_entry_points_redirect_rather_than_duplicate() -> None:
@@ -86,3 +90,32 @@ def test_pir_list_route_is_bound_to_the_right_function() -> None:
 
     assert len(listing) == 1
     assert getattr(listing[0], "name", "") == "list_pirs"
+
+
+def test_actor_detail_is_view_only() -> None:
+    """⭐ 辞書カードはアクター辞書ページと**脅威アクター面の両方**に載っている。
+
+    編集を部品から外すことで **2 面が同時に閲覧専用になる** — 入口が 2 つでも
+    部品が 1 つなので「片方だけ直す」事故が起きない。
+    """
+    body = (_FRONTEND / "pages/actors/ActorDetail.tsx").read_text(encoding="utf-8")
+
+    # 表示/編集を切り替える内部状態を持たない
+    assert "setEditMode" not in body
+    # 編集は設定への**リンク**であってボタンではない
+    assert "/app/config#actors" in body
+
+
+def test_actor_edit_form_is_mounted_only_from_settings() -> None:
+    """編集フォームを閲覧面から直接 mount しない。"""
+    offenders = []
+    for f in (*_FRONTEND.rglob("*.tsx"),):
+        path = str(f)
+        if "__fixtures__" in path or path.startswith("frontend/src/pages/config/"):
+            continue
+        if path.endswith("pages/actors/ActorDetail.tsx"):
+            continue  # 定義元
+        if "<ActorEditForm" in f.read_text(encoding="utf-8"):
+            offenders.append(path)
+
+    assert offenders == [], f"閲覧面が編集フォームを mount している: {offenders}"

@@ -41,19 +41,15 @@ export function ActorDetail({
   readOnly: boolean;
   onSaved: () => void;
 }) {
-  const [editMode, setEditMode] = useState(false);
-  if (editMode) {
-    return (
-      <ActorEditForm
-        actor={actor}
-        families={families}
-        readOnly={readOnly}
-        onSaved={onSaved}
-        onCancel={() => setEditMode(false)}
-      />
-    );
-  }
-  return <ActorCard actor={actor} onEdit={readOnly ? undefined : () => setEditMode(true)} />;
+  // S7 (2026-09-16): **表示専用**。辞書の定義変更は設定の【定義】タブへ移した
+  // (CLAUDE.md §11「専用ページは閲覧のみ、定義の変更は設定カテゴリ」)。
+  //
+  // ⭐ この部品はアクター辞書ページと**脅威アクター面の両方**に載っている
+  // (ThreatsTab が DictActorCard として使う)。ここから編集を外すと **2 面が同時に
+  // 閲覧専用になる** — 入口が 2 つでも部品が 1 つなので「片方だけ直す」事故が起きない。
+  void families;
+  void onSaved;
+  return <ActorCard actor={actor} readOnly={readOnly} />;
 }
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
@@ -402,7 +398,7 @@ function NameChips({ actor }: { actor: ActorRecord }) {
 
 // 閲覧用 reference カード。表示要領 (2026-07-26): 知識 → 識別 → 観測 → 参考 → 保守 の順。
 // 辞書=知識レンズのため「何者か」(概要) が先頭、観測は従属要素として中段の埋込 1 箱。
-function ActorCard({ actor, onEdit }: { actor: ActorRecord; onEdit?: () => void }) {
+function ActorCard({ actor, readOnly }: { actor: ActorRecord; readOnly: boolean }) {
   const url = mitreUrl(actor.mitre_group);
   const [summaryOpen, setSummaryOpen] = useState(false);
   return (
@@ -516,21 +512,22 @@ function ActorCard({ actor, onEdit }: { actor: ActorRecord; onEdit?: () => void 
         </details>
       )}
 
-      {onEdit && (
+      {/* 定義の変更は設定へ。リンクは**該当箇所まで**飛ばす (設定トップだと探し直し)。 */}
+      {!readOnly && (
         <div className="pt-2 border-t border-border-subtle">
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-medium bg-surface-2 border border-border-subtle text-fg hover:bg-surface-3"
+          <a
+            href={`/app/config#actors`}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded text-sm font-medium bg-surface-2 border border-border-subtle text-fg hover:bg-surface-3 no-underline"
           >
-            <Pencil className="h-3.5 w-3.5" /> 編集
-          </button>
+            <Pencil className="h-3.5 w-3.5" /> 設定で定義を編集
+          </a>
         </div>
       )}
     </div>
   );
 }
 
-function ActorEditForm({
+export function ActorEditForm({
   actor,
   families,
   readOnly,
