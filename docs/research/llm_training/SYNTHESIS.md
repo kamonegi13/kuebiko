@@ -2087,3 +2087,24 @@ event_kind は `data/mlx/detect_gold_kinds.jsonl` (fast ティアで 194 件に�
   **副ファイルの 9 対が本体へ戻り本体 50 対**。新規 13 窓を足すと 63 対。
 - 副次効果: 本番 narrative の prefill が 29% 減る (31B/26B の 1 呼出 ~21k 字 → ~15k 字)。
 - rollback: `SYNTHESIS_SIR_REF=0` (コード) / rubric v7 へ revert (DB) / 再描画前は `.bak`。
+
+### §47 追記 3: 審判 601 件・時系列分割で合格 — 同量 precision 0.69 対 現行 0.38 (2026-09-17 朝)
+
+利用者判断で外部枠を前倒し、審判を 194 → 601 件 (無作為 526、Sonnet 412 呼出・失敗 0) に増量。
+`eval_detect_ml_timesplit.py` (前 60% = 360 件学習 / 後 40% = 241 件評価、同量 = 評価期間の現行開設 13):
+
+| 目標 | 現行 detect | logreg | RF | 種別関門のみ |
+|---|---|---|---|---|
+| gold_open (正 83/601) precision@13 | 0.38 | **0.69** | **0.69** | 0.34 (228 件, recall 0.93) |
+| gold_open AUC (時系列) | — | 0.89 | 0.90 | — |
+| trackable≥2 (正 110) precision@13 | 0.38 | 0.62 | 0.69 | 0.44 (recall 0.91) |
+| trackable≥2 AUC (時系列) | — | 0.86 | 0.89 | — |
+
+- 194 件 (AUC 0.85 / precision 0.54) → 601 件 (0.90 / 0.69) と、ラベルを増やすほど伸びた。
+  同量 13 件での recall が低い (0.26) のは審判の開設率 (14%) が現行の枠 (37/1,576 = 2.3%) の
+  6 倍あるためで、枠を固定した比較では precision が本体の指標。
+- 寄与上位: kind=exploitation / importance / kind=other / kind=advisory / title_len / n_ttp /
+  japan_targeted。続報・進行中マーカーは依然として上位に入らない (要約に語が乗らない)。
+- **合否線 (§47 追記 1「同じ凍結審判で現行を precision・recall とも上回る」) を通過**。
+  次 = 本番 seam を **shadow モード**で敷く (ML の選抜を記録するだけで開設は現行のまま) →
+  数日の shadow 比較で開設候補の差分を目視 → 切替。閾値は消化能力 (≈6/日) から code で決める。
