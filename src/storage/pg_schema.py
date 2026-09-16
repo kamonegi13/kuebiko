@@ -837,6 +837,17 @@ CREATE TABLE IF NOT EXISTS article_kinds (
     created_at  TEXT NOT NULL
 );
 
+-- detect ML の shadow 記録 (2026-09-17、SYNTHESIS §47)。ML が「開設する」と判定した候補を
+-- 記録するだけで開設は現行 (LLM detect) のまま。切替判断の差分比較に使う。
+CREATE TABLE IF NOT EXISTS detect_ml_shadow (
+    run_at       TEXT    NOT NULL,
+    article_id   TEXT    NOT NULL,
+    probability  REAL    NOT NULL,
+    kind         TEXT    NOT NULL,
+    llm_opened   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (run_at, article_id)
+);
+
 -- 関門に落ちた草稿 (DPO の rejected 側、2026-09-03)。採用版 (event_item_versions) と
 -- 対で読む: 基底プロンプトと採用本文は版の側に既にある。書き直しが走った版にだけ 1 行
 CREATE TABLE IF NOT EXISTS event_draft_rejects (

@@ -808,6 +808,17 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         pir_context=pir_context,
         period_label=label,
     )
+    # shadow: ML の選抜を記録するだけ (開設は上の detect のまま)。失敗しても本体を落とさない
+    try:
+        await _record_detect_ml_shadow(
+            store=store,
+            run_at=now_iso,
+            detect_input=detect_input,
+            llm_opened={a for c in detected.open for a in c.article_ids},
+            fast_llm=fast_llm or llm,
+        )
+    except Exception as exc:  # noqa: BLE001 — shadow は本体の可用性に影響させない
+        _log.warning("detect_ml_shadow_failed", error=type(exc).__name__)
 
     period_start = now_dt - timedelta(hours=lookback)
     context_start = now_dt - timedelta(hours=_CONTEXT_WINDOW_HOURS.get(period_type, 90 * 24))
@@ -1499,3 +1510,53 @@ def _delta_note(prev: RevisionRow, j: KeyJudgment, delta: DeltaType) -> str:
     if delta == "reopened":
         return "休眠から再活性化"
     return ""
+
+
+async def _record_detect_ml_shadow(
+    *,
+    store: SituationStore,
+    run_at: str,
+    detect_input: list[dict[str, object]],
+    llm_opened: set[str],
+    fast_llm: LLMClient,
+) -> None:
+    """detect ML (SYNTHESIS §47) の shadow 記録。モデル無し / flag OFF なら何もしない。"""
+    from src.eventnews import event_kind
+    from src.synthesis.grounded import detect_ml
+
+    if not detect_ml.shadow_enabled() or not detect_input:
+        return
+    model = detect_ml.load_detect_model()
+    if model is None:
+        return
+    repo = store._repo  # noqa: SLF001 — 既存の接続 seam を共有
+    triples = [
+        (
+            str(a.get("article_id", "")),
+            str(a.get("title", "") or ""),
+            str(a.get("summary", "") or ""),
+        )
+        for a in detect_input
+        if a.get("article_id")
+    ]
+
+    async def _classify(title: str, summary: str) -> str:
+        return await event_kind.classify(fast_llm, title, summary)
+
+    kinds = await detect_ml.ensure_kinds(
+        repo, triples, _classify, model_label=getattr(fast_llm, "model", "")
+    )
+    articles = detect_ml.build_detect_articles(repo, [t[0] for t in triples], kinds)
+    scores = detect_ml.score_articles(model, articles)
+    picks = detect_ml.shadow_select(scores, threshold=model.threshold)
+    store.record_detect_shadow(
+        run_at=run_at,
+        picks=[(aid, p, articles[aid].kind, aid in llm_opened) for aid, p in picks],
+    )
+    _log.info(
+        "detect_ml_shadow",
+        candidates=len(scores),
+        picked=len(picks),
+        overlap_with_llm=sum(aid in llm_opened for aid, _ in picks),
+        llm_opened=len(llm_opened),
+    )

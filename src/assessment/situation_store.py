@@ -33,9 +33,7 @@ DeltaType = Literal[
     "no_change",
     "closing",
 ]
-AssignedBy = Literal[
-    "seed", "anchor", "nation", "token", "llm", "standing", "standing_declarative"
-]
+AssignedBy = Literal["seed", "anchor", "nation", "token", "llm", "standing", "standing_declarative"]
 #: ⚠ 値を足したら `vocab/registry.py` の "assigned_by" にも日本語写像を足すこと
 #: (生 enum の UI 漏出を防ぐ)。漏れは tests/unit/test_vocabularies.py が検知する。
 
@@ -724,6 +722,23 @@ class SituationStore:
         return {str(r["article_id"]) for r in rows}
 
     # ---------- detection log (選定の監査台帳) ----------
+
+    def record_detect_shadow(
+        self, *, run_at: str, picks: list[tuple[str, float, str, bool]]
+    ) -> None:
+        """detect ML の shadow 選抜を記録する (開設の挙動は変えない。SYNTHESIS §47)。
+
+        picks = (article_id, probability, kind, llm_opened)。同 run 内の重複は無視。
+        """
+        if not picks:
+            return
+        with self._repo._connect() as conn:  # noqa: SLF001
+            for aid, prob, kind, opened in picks:
+                conn.execute(
+                    "INSERT OR IGNORE INTO detect_ml_shadow "
+                    "(run_at, article_id, probability, kind, llm_opened) VALUES (?,?,?,?,?)",
+                    (run_at, aid, float(prob), kind, 1 if opened else 0),
+                )
 
     def log_detection(
         self,

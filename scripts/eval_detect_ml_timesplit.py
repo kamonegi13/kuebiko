@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -37,13 +36,9 @@ from sklearn.model_selection import (  # type: ignore[import-untyped]  # noqa: E
 from sklearn.pipeline import make_pipeline  # type: ignore[import-untyped]  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]  # noqa: E402
 
-from src.cti.source_basis import classify_source_tier  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
-from src.synthesis.grounded.detect_features import (  # noqa: E402
-    FEATURE_NAMES,
-    DetectArticle,
-    feature_vector,
-)
+from src.synthesis.grounded.detect_features import FEATURE_NAMES, feature_vector  # noqa: E402
+from src.synthesis.grounded.detect_ml import build_detect_articles  # noqa: E402
 
 D = Path("data/mlx")
 GOLD = D / "detect_goldset.jsonl"
@@ -59,42 +54,6 @@ def _jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
-
-
-def load_articles(
-    repo: RunHistoryRepository, ids: list[str], kinds: dict[str, str]
-) -> dict[str, DetectArticle]:
-    out: dict[str, DetectArticle] = {}
-    counts: dict[str, Counter[str]] = defaultdict(Counter)
-    with repo._connect() as conn:  # noqa: SLF001 — 評価スクリプトの接続 seam 共有
-        for i in range(0, len(ids), _CHUNK):
-            chunk = ids[i : i + _CHUNK]
-            ph = ",".join("?" * len(chunk))
-            for r in conn.execute(
-                "SELECT article_id, entity_type FROM article_entities "  # noqa: S608
-                f"WHERE article_id IN ({ph})",
-                tuple(chunk),
-            ).fetchall():
-                counts[str(r["article_id"])][str(r["entity_type"])] += 1
-            for r in conn.execute(
-                "SELECT article_id, title, summary, importance, category, feed_title, feed_url, "  # noqa: S608
-                f"victim_country_iso, posted_channel FROM articles WHERE article_id IN ({ph})",
-                tuple(chunk),
-            ).fetchall():
-                aid = str(r["article_id"])
-                out[aid] = DetectArticle(
-                    article_id=aid,
-                    title=str(r["title"] or ""),
-                    summary=str(r["summary"] or ""),
-                    importance=str(r["importance"] or ""),
-                    category=str(r["category"] or ""),
-                    tier=classify_source_tier(str(r["feed_title"] or ""), str(r["feed_url"] or "")),
-                    kind=kinds.get(aid, "other"),
-                    victim_country_iso=r["victim_country_iso"],
-                    posted_channel=r["posted_channel"],
-                    entity_counts=dict(counts.get(aid, {})),
-                )
-    return out
 
 
 def _models(seed: int) -> dict[str, Any]:
@@ -129,7 +88,7 @@ def main() -> int:
     gold = {str(g["article_id"]): g for g in _jsonl(GOLD)}
     kinds = {str(r["article_id"]): str(r["kind"]) for f in KIND_FILES for r in _jsonl(f)}
     labels = {str(r["article_id"]): r for r in json.loads(LABELS.read_text(encoding="utf-8"))}
-    arts = load_articles(RunHistoryRepository(), sorted(gold), kinds)
+    arts = build_detect_articles(RunHistoryRepository(), sorted(gold), kinds)
     ids = sorted(
         (a for a in gold if a in arts and a in labels), key=lambda a: str(labels[a]["run_at"])
     )
