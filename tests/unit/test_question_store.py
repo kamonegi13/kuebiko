@@ -219,3 +219,35 @@ class TestHypothesesFollowTheFrame:
         monkeypatch.setattr(question_store, "list_questions", _boom)
 
         assert question_store.hypotheses_for_standing("s-x") == POSTURE_HYPOTHESES
+
+
+class TestAggregateSignalSelection:
+    """型によって集約シグナルの要否が決まる (A は不要、E/H は必須)。"""
+
+    def test_trend_and_threshold_need_aggregate_signal(self, clean_config: Any) -> None:
+        from src.assessment.question_store import needs_aggregate_signal
+
+        store = _FakeStore()
+        args = {"store": store, "db_path": clean_config, "now_iso": "2026-09-16T00:00:00+00:00"}
+        trend = promote(_draft("trend"), **args)
+        threshold = promote(_draft("threshold"), **args)
+
+        assert needs_aggregate_signal(trend, db_path=clean_config) is True
+        assert needs_aggregate_signal(threshold, db_path=clean_config) is True
+
+    def test_legacy_presence_seeds_do_not(self, clean_config: Any) -> None:
+        """A 型は 2 本腕の証拠規則で蓄積を扱っている — 集約は要らない (挙動不変)。"""
+        from src.assessment.question_store import needs_aggregate_signal
+
+        assert needs_aggregate_signal("s-standing-prepos-cn", db_path=clean_config) is False
+
+    def test_evidence_condition_is_recoverable_for_the_signal(self, clean_config: Any) -> None:
+        """集約は問いの証拠条件と同じ母集団で測る (別集計を作らない)。"""
+        from src.assessment.question_store import evidence_condition_for
+
+        store = _FakeStore()
+        sid = promote(
+            _draft("trend"), store=store, db_path=clean_config, now_iso="2026-09-16T00:00:00+00:00"
+        )
+
+        assert evidence_condition_for(sid, db_path=clean_config) == _COND

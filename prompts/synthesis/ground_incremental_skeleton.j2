@@ -13,6 +13,10 @@
 {% for e in prior.key_excerpts %}  - [{{ e.polarity }}] 「{{ e.excerpt }}」
 {% endfor %}{% endif %}
 
+{% if aggregate_signal is defined and aggregate_signal %}
+{{ aggregate_signal }}
+{% endif %}
+
 【新着ソース本文】(今回の期間に新しく観測された記事のみ)
 {% for s in sources %}
 --- [{{ loop.index }}] {{ s.feed_title }}{% if s.chronology is defined and s.chronology %} | {{ s.chronology }}{% endif %} ---

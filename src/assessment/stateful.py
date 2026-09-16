@@ -130,6 +130,35 @@ def _standing_question(situation_id: str) -> str:
     return next((s.title for s in STANDING_SEEDS if s.situation_id == situation_id), "")
 
 
+def _aggregate_signal_for(
+    situation_id: str,
+    *,
+    is_standing: bool,
+    repo: RunHistoryRepository,
+    db_path: Path,
+    now: datetime,
+) -> str:
+    """型が要求する問いにだけ集約シグナルを供給する (段B-3d)。
+
+    A (presence) は 2 本腕の証拠規則で既に蓄積を扱うので供給しない — 足すと同じ観測を
+    二重に数える。E/H は蓄積が無いと「新着数本を読んだ印象」で答えることになる。
+    """
+    if not is_standing:
+        return ""
+    from src.assessment.question_store import evidence_condition_for, needs_aggregate_signal
+
+    if not needs_aggregate_signal(situation_id, db_path=db_path):
+        return ""
+    from src.assessment.aggregate_signal import build_aggregate_signal
+
+    return build_aggregate_signal(
+        condition=evidence_condition_for(situation_id, db_path=db_path),
+        now=now,
+        db_path=db_path,
+        repo=repo,
+    )
+
+
 def title_follows_claim(row: SituationRow) -> bool:
     """title を評価済み claim へ追従させてよいか (event のみ真)。
 
@@ -831,6 +860,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
                 question=_standing_question(sid),
+                aggregate_signal=_aggregate_signal_for(
+                    sid, is_standing=is_standing, repo=repo, db_path=db_path, now=now_dt
+                ),
             )
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))

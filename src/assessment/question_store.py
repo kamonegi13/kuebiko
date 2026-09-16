@@ -112,6 +112,39 @@ def hypotheses_for_standing(
     return frame.hypotheses if frame else POSTURE_HYPOTHESES
 
 
+#: 集約シグナル (構成比) を判定に供給すべき型。
+#:
+#: A (presence) は**要らない** — 2 本腕の証拠規則 (直接 R1/R3 + 間接 R2) で既に蓄積を
+#: 扱っており、集約を足すと同じ観測を二重に数えることになる。
+#: E (trend) / H (threshold) は変化・水準の判定なので、蓄積の側が無いと
+#: 「新着数本を読んだ印象」で答えることになる (利用者指摘 2026-09-16)。
+_FRAMES_NEEDING_AGGREGATE = frozenset({"trend", "threshold"})
+
+
+def needs_aggregate_signal(situation_id: str, *, db_path: Path | None = None) -> bool:
+    """この常設 situation の判定に集約シグナルを供給すべきか。"""
+    try:
+        frame_id = frame_id_for(situation_id, db_path=db_path)
+    except Exception as e:  # noqa: BLE001 — 保存層の障害で評価を止めない
+        _log.warning("standing_frame_lookup_failed", situation_id=situation_id, error=str(e))
+        return False
+    return (frame_id or "") in _FRAMES_NEEDING_AGGREGATE
+
+
+def evidence_condition_for(situation_id: str, *, db_path: Path | None = None) -> dict[str, Any]:
+    """問いの証拠条件 (集約シグナルは**同じ母集団**で測る — 別集計を作らない)。"""
+    try:
+        rows = list_questions(db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("standing_condition_lookup_failed", situation_id=situation_id, error=str(e))
+        return {}
+    for r in rows:
+        if r.get("situation_id") == situation_id:
+            cond = r.get("evidence_condition")
+            return dict(cond) if isinstance(cond, dict) else {}
+    return {}
+
+
 def promote(
     draft: QuestionDraft,
     *,

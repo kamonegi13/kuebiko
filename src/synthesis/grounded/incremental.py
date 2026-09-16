@@ -134,11 +134,16 @@ async def incremental_ground_and_score(
     tier_by_id: dict[str, str],
     hypotheses_override: tuple[Hypothesis, ...] | None = None,
     question: str = "",
+    aggregate_signal: str = "",
 ) -> IncrementalAnalysis:
     """前回判定 + 新着ソースで判定を増分更新する (対称再評価・ACH 集計は加算)。
 
     ``question`` を渡すと**常設情報要求 (問い)** としてプロンプトが切り替わり、claim には
     「問いへの答え」を書かせる。既定 (空) は従来どおり事象の判定。
+
+    ``aggregate_signal`` はコードが算出した決定論の事実ブロック (構成比・コホート素性)。
+    渡すと「蓄積から組み立てる」側の材料が判定に届く — 渡さないと ACH は新着数本の印象で
+    判断することになる (利用者指摘 2026-09-16「一記事で答えてもいいが、それだけではダメ」)。
 
     背景 (2026-09-15 実測): 常設情報要求でも事象用の指示 (「claim は変えないなら前回のまま
     返す」) が当たっており、**前回 claim が問い文そのものだったため答えが未来永劫オウム返し
@@ -153,6 +158,7 @@ async def incremental_ground_and_score(
         attribution_options=_ATTRIBUTION_OPTIONS,
         hypotheses=hypotheses_override or hypotheses_for_domain(domain),
         question=question,
+        aggregate_signal=aggregate_signal,
     )
     # max_attempts=1: 増分 ACH は 1 呼出が数百秒級で、切断 JSON の同条件リトライは
     # 時間だけ倍加する (2026-07-04 実測: 800s×2 で pipeline timeout)。失敗した Situation は

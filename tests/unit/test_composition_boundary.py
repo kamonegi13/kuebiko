@@ -20,6 +20,7 @@ _MODULE = "src.assessment.composition"
 #: 構成比を読んでよい経路 — 問いの評価とその表示のみ。
 _ALLOWED = {
     Path("src/assessment/composition.py"),  # 実装本体
+    Path("src/assessment/aggregate_signal.py"),  # ACH へ供給する整形層 (段B-3d)
 }
 
 #: 背骨側 — ここが構成比を読んだら優先度付けが収集量に侵食される。
