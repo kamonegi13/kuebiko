@@ -37,6 +37,12 @@ _FLAG_ENV = "STANDING_SITUATIONS"
 _ADJACENT_INTENTS = ("espionage", "disruption")  # R2: 侵入の目的は後から判明する
 _HARVEST_CAP_PER_SITUATION = 30  # 1 run × 1 standing の上限 (超過は detection_log に記録)
 _CANDIDATE_POOL_LIMIT = 400
+#: 宣言条件用の広いプール上限 (段B-3c)。粗 filter を外すと母数が跳ねるため別値。
+#: 実測 2026-09-16 (posted・recap 除く): 24h=128 / 168h=836 / 720h=5,690。
+#: weekly (836) が収まる水準に置く。monthly は収まらないが、**日次チェーンが 24h 窓で
+#: 継続的に拾う**ので取りこぼしにはならない (record_assignment は冪等で、既収の再走査は
+#: 空振りする)。それでも切り詰めは必ず記録する — no-silent-caps (設計 §3.2)。
+_BROAD_POOL_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,7 @@ def _fetch_candidates(
             "      OR victim_country_iso = 'JP')"
         )
     )
+    limit = _BROAD_POOL_LIMIT if broad else _CANDIDATE_POOL_LIMIT
     conn = connect(db_path)
     try:
         rows = conn.execute(
@@ -156,10 +163,14 @@ def _fetch_candidates(
             " AND COALESCE(category, '') != 'recap'"
             f"{intent_filter}"
             " ORDER BY datetime(created_at) DESC LIMIT ?",
-            (since_iso, _CANDIDATE_POOL_LIMIT),
+            (since_iso, limit),
         ).fetchall()
     finally:
         conn.close()
+    if len(rows) >= limit:
+        # no-silent-caps: 窓の古い側が落ちている。日次で拾えていれば実害は無いが、
+        # 「見えていない範囲がある」ことは必ず残す (後から再現できるように)。
+        _log.warning("standing_candidate_pool_capped", broad=broad, limit=limit, since=since_iso)
     return [
         {
             "article_id": str(r[0]),

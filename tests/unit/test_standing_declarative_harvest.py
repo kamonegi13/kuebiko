@@ -125,3 +125,22 @@ class TestDeclarativeConditionsEvaluate:
         )
 
         assert _eval_condition(cond, s, _SQ) is False
+
+
+class TestPoolLimits:
+    """候補プールの上限と、切り詰めを黙らせないこと。"""
+
+    def test_broad_pool_limit_covers_the_weekly_window(self) -> None:
+        """実測 (2026-09-16) の weekly 母数 836 件が収まること。
+
+        収まらないと、宣言条件の問いは weekly 実行で古い側を見落とす。
+        """
+        from src.assessment.standing import _BROAD_POOL_LIMIT
+
+        assert _BROAD_POOL_LIMIT >= 836
+
+    def test_broad_limit_is_larger_than_the_narrow_one(self) -> None:
+        """粗 filter を外すと母数が跳ねるので、同じ上限では狭くなる (実測で逆転した)。"""
+        from src.assessment.standing import _BROAD_POOL_LIMIT, _CANDIDATE_POOL_LIMIT
+
+        assert _BROAD_POOL_LIMIT > _CANDIDATE_POOL_LIMIT
