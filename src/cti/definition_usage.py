@@ -23,13 +23,28 @@ _KEYWORD_LIST_PROPERTY = "keyword_list"
 
 
 def _referenced_values(node: Any, prop: str) -> set[str]:
-    """条件木のどこかで ``prop`` が参照している値を集める (入れ子・否定も辿る)。
+    """条件木のどこかで ``prop`` が参照している値を集める (入れ子・否定・**旧形**も辿る)。
 
     ⚠ 入れ子や ``not`` の奥を見落とすと「未参照」と誤表示し、消してよいものだと
     読ませてしまう。
+
+    ⚠⚠ **旧形の葉を必ず正規化してから見る**。本番の配信ルールは旧形
+    ``{"keyword_list": {"in": [...]}}`` で参照しており、新形だけを見ていたため実際には
+    参照されている 2 リストが「未参照」と表示された (2026-09-16 実データで発覚)。
+    評価器 ``_eval_condition`` は両形を扱う — **同じ正規化を通す** (判定が 2 箇所に
+    分かれると必ずずれる)。
     """
     if not isinstance(node, dict):
         return set()
+    if not node:
+        return set()
+    has_combinator = any(k in node for k in ("all", "any", "not", "always"))
+    if "property" not in node and not has_combinator:
+        from src.cti.routing_rules import _normalize_condition
+
+        normalized = _normalize_condition(node)
+        # 正規化で形が変わらなければ未知の葉 — 無限再帰を避けて打ち切る。
+        return _referenced_values(normalized, prop) if normalized != node else set()
     if node.get("property") == prop:
         value = node.get("value")
         if isinstance(value, list | tuple):
@@ -46,9 +61,7 @@ def _referenced_values(node: Any, prop: str) -> set[str]:
     return out
 
 
-def match_list_usage(
-    names: list[str], rules: list[Any]
-) -> dict[str, list[str]]:
+def match_list_usage(names: list[str], rules: list[Any]) -> dict[str, list[str]]:
     """マッチリスト名 → それを参照する配信ルール id (昇順・重複なし)。
 
     Args:

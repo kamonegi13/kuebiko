@@ -85,3 +85,46 @@ class TestMatchListUsage:
     def test_malformed_rules_do_not_raise(self) -> None:
         """壊れたルールで編集画面を落とさない (保存前の下書きが来る経路がある)。"""
         assert match_list_usage(["a"], [{"id": "R1"}, {"when": None}, "junk"]) == {"a": []}
+
+
+class TestLegacyConditionForm:
+    """⚠ 実データで発覚 (2026-09-16): 本番ルールは**旧形**で参照していた。
+
+        {"keyword_list": {"in": ["early_warning"]}}     ← 旧形 (本番の実体)
+        {"property": "keyword_list", "op": "in", ...}    ← 新形
+
+    新形だけを見ていたため、実際には参照されている 2 リストが「未参照」と表示された。
+    **評価器 (`_eval_condition`) は両形を扱う** — 参照検出だけ別実装にしたのが誤りで、
+    同じ正規化を通すこと (判定が 2 箇所に分かれると必ずずれる)。
+    """
+
+    def test_legacy_leaf_is_detected(self) -> None:
+        rules = [_rule("R2f", {"keyword_list": {"in": ["early_warning"]}})]
+
+        assert match_list_usage(["early_warning"], rules) == {"early_warning": ["R2f"]}
+
+    def test_legacy_leaf_nested_in_all(self) -> None:
+        """本番の実体そのままの形。"""
+        rules = [
+            _rule(
+                "R2g",
+                {
+                    "all": [
+                        {"article_type": {"not_in": ["recap", "tutorial"]}},
+                        {"keyword_list": {"in": ["emergency_directives"]}},
+                    ]
+                },
+            )
+        ]
+
+        assert match_list_usage(["emergency_directives"], rules) == {
+            "emergency_directives": ["R2g"]
+        }
+
+    def test_both_forms_coexist(self) -> None:
+        rules = [
+            _rule("R_old", {"keyword_list": {"in": ["x"]}}),
+            _rule("R_new", {"property": "keyword_list", "op": "in", "value": ["x"]}),
+        ]
+
+        assert match_list_usage(["x"], rules) == {"x": ["R_new", "R_old"]}
