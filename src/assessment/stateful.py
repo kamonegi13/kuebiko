@@ -145,14 +145,14 @@ def _aggregate_signal_for(
     """
     if not is_standing:
         return ""
-    from src.assessment.question_store import evidence_condition_for, needs_aggregate_signal
+    from src.assessment.question_store import aggregate_population_for, needs_aggregate_signal
 
     if not needs_aggregate_signal(situation_id, db_path=db_path):
         return ""
     from src.assessment.aggregate_signal import build_aggregate_signal
 
     return build_aggregate_signal(
-        condition=evidence_condition_for(situation_id, db_path=db_path),
+        condition=aggregate_population_for(situation_id, db_path=db_path),
         now=now,
         db_path=db_path,
         repo=repo,

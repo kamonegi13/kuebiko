@@ -131,8 +131,28 @@ def needs_aggregate_signal(situation_id: str, *, db_path: Path | None = None) ->
     return (frame_id or "") in _FRAMES_NEEDING_AGGREGATE
 
 
+def aggregate_population_for(situation_id: str, *, db_path: Path | None = None) -> dict[str, Any]:
+    """集約シグナルの参照母集団 (段B-3f)。
+
+    ⚠ **証拠条件ではない**。趨勢の証拠条件は脅威を固定しているため、それで構成比を
+    測ると軸が退化して動かない。母集団は型 + スロットから導出する
+    (`question_frame.aggregate_population`)。
+    """
+    from src.assessment.question_frame import aggregate_population
+
+    try:
+        rows = list_questions(db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("standing_population_lookup_failed", situation_id=situation_id, error=str(e))
+        return {}
+    for r in rows:
+        if r.get("situation_id") == situation_id:
+            return aggregate_population(str(r.get("frame_id") or ""), r.get("slots") or {})
+    return {}
+
+
 def evidence_condition_for(situation_id: str, *, db_path: Path | None = None) -> dict[str, Any]:
-    """問いの証拠条件 (集約シグナルは**同じ母集団**で測る — 別集計を作らない)。"""
+    """問いの証拠条件 (収穫が使う)。集約の母集団とは**別物**。"""
     try:
         rows = list_questions(db_path=db_path)
     except Exception as e:  # noqa: BLE001

@@ -132,7 +132,9 @@ def split_windows(*, now: datetime, window_days: int) -> Windows:
 #: ru 1,082 件) が薄さの閾値を越える水準。短くすると軸が薄くなり判定不能が増える。
 DEFAULT_WINDOW_DAYS = 45
 #: 1 窓あたりに読む行の上限 (安全弁)。超えたら log に残す — no-silent-caps。
-_ROW_CAP = 6000
+#: 実測 2026-09-16: 45 日窓に posted (recap 除く) が 8,815 件。6,000 だと窓の古い側が
+#: 落ちて実効 34 日になっていた。1 窓の取得は実測 78ms なので引き上げは安価。
+_ROW_CAP = 12000
 
 
 def load_axis_rows(

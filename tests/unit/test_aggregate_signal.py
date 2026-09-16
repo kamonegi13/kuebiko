@@ -162,3 +162,11 @@ class TestBoundaryStaysIntact:
                 offenders.append(str(py))
 
         assert offenders == []
+
+
+class TestRowCap:
+    def test_cap_covers_a_45_day_window(self) -> None:
+        """実測 8,815 件/45日窓。下回ると窓の古い側が落ちて実効期間が縮む。"""
+        from src.assessment.aggregate_signal import _ROW_CAP
+
+        assert _ROW_CAP >= 8815

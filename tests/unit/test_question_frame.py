@@ -207,3 +207,57 @@ class TestFramesAreDistinct:
         """資格要件 1 — 答えが 2 つ以上の排他的な見立てに割れること。"""
         for frame in FRAME_BY_ID.values():
             assert len(frame.hypotheses) >= 3, frame.frame_id
+
+
+class TestAggregatePopulation:
+    """集約シグナルの母集団は**問いの証拠条件ではない** (段B-3f)。
+
+    ⚠ 実際に起きた: 趨勢の問いの証拠条件は intent=disruption を固定しているので、
+    その母集団で intent の構成比を測ると 100% disruption のまま**動きようがない**
+    (実出力が「1.0pt 以上の動きは無い」になった)。
+
+    趨勢は「参照母集団の中でその脅威の**割合**が動いたか」なので、母集団は
+    **脅威を外した範囲** (対象国 × 対象分野) でなければならない。
+    """
+
+    def test_trend_population_drops_the_threat_so_the_axis_can_move(self) -> None:
+        from src.assessment.question_frame import aggregate_population
+
+        pop = aggregate_population(
+            "trend",
+            {"target_country": "JP", "target_scope": SCOPE_ALL_CI, "threat": "disruption"},
+        )
+
+        assert "disruption" not in str(pop)
+        assert "victim_country" in str(pop)
+
+    def test_threshold_population_is_the_subject_activity(self) -> None:
+        """閾値は「その主体の活動の性格」を見るので、母集団は主体の全活動。"""
+        from src.assessment.question_frame import aggregate_population
+
+        pop = aggregate_population(
+            "threshold",
+            {"subject": "ru", "target_country": "JP", "target_scope": SCOPE_ALL_CI},
+        )
+
+        assert pop == {"property": "actor_nation", "op": "in", "value": ["ru"]}
+
+    def test_presence_needs_no_aggregate_population(self) -> None:
+        """A 型は 2 本腕の証拠規則で蓄積を扱う — 集約は供給しない。"""
+        from src.assessment.question_frame import aggregate_population
+
+        assert aggregate_population("presence", {"subject": "cn"}) == {}
+
+    def test_single_sector_scope_is_refused_until_the_taxonomy_mismatch_is_fixed(self) -> None:
+        """⚠ target_scope は NISC 分類、victim_sector は canonical 分類で語彙が違う。
+
+        全 CI なら canonical 集合へ展開できるが、単一分野は静かにずれる。
+        直すまでは空を返す (誤った母集団で測るより、測らない方が良い)。
+        """
+        from src.assessment.question_frame import aggregate_population
+
+        pop = aggregate_population(
+            "trend", {"target_country": "JP", "target_scope": "finance", "threat": "espionage"}
+        )
+
+        assert pop == {}

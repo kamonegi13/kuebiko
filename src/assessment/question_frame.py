@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from src.synthesis.grounded.hypotheses import (
     POSTURE_HYPOTHESES,
@@ -168,3 +169,37 @@ FRAME_THRESHOLD = QuestionFrame(
 
 FRAMES: tuple[QuestionFrame, ...] = (FRAME_PRESENCE, FRAME_TREND, FRAME_THRESHOLD)
 FRAME_BY_ID: dict[str, QuestionFrame] = {f.frame_id: f for f in FRAMES}
+
+
+def aggregate_population(frame_id: str, slots: Mapping[str, str]) -> dict[str, Any]:
+    """集約シグナルを測る**参照母集団** (段B-3f)。空 = 集約を供給しない。
+
+    ⚠ **問いの証拠条件をそのまま使ってはいけない**。趨勢の証拠条件は脅威 (intent) を
+    固定しているので、その母集団で intent の構成比を測ると 100% 固定値のまま
+    **動きようがない** (2026-09-16 の実出力が「1.0pt 以上の動きは無い」になった)。
+
+    - trend: 脅威を外した範囲 (対象国 × 対象分野)。その中で脅威の**割合**が動いたかを見る
+    - threshold: 主体の全活動。その**性格**が変わったかを見る
+    - presence: 空 — 2 本腕の証拠規則で既に蓄積を扱っており、足すと二重に数える
+
+    ⚠ ``target_scope`` は NISC 分類、``victim_sector`` は canonical 分類で**語彙が違う**。
+    全 CI なら canonical 集合へ展開できるが、単一分野は静かにずれる。直すまでは空を返す
+    (誤った母集団で測るより、測らない方が良い)。
+    """
+    if frame_id == "threshold":
+        subject = str(slots.get("subject") or "")
+        return {"property": "actor_nation", "op": "in", "value": [subject]} if subject else {}
+    if frame_id != "trend":
+        return {}
+    country = str(slots.get("target_country") or "")
+    scope = str(slots.get("target_scope") or "")
+    if scope != SCOPE_ALL_CI or not country:
+        return {}
+    from src.cti.nisc_sectors import _CANONICAL_TO_NISC
+
+    return {
+        "any": [
+            {"property": "victim_country", "op": "eq", "value": country},
+            {"property": "victim_sector", "op": "in", "value": sorted(_CANONICAL_TO_NISC)},
+        ]
+    }
