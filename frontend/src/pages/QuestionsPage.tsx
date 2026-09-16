@@ -221,29 +221,57 @@ export function QuestionsPage() {
   if (!data) return null;
 
   const { questions, summary } = data;
-  // 動いた問いを先に (静穏な問いは下へ)。**静かな問いも省略はしない** —「静か≠安全」。
-  const ordered = [...questions].sort(
-    (a, b) =>
-      Number(isMoved(b)) - Number(isMoved(a)) || a.situation_id.localeCompare(b.situation_id)
-  );
+  // 「動いた / 動いていない」で節を分ける (現況の 根拠 / 点検 と同じ節立て)。
+  // **静かな問いも省略はしない** —「静か≠安全」。節を分けるのは畳むためではなく、
+  // 読者が「今日どこを読むべきか」を最初の一瞥で決められるようにするため。
+  const ordered = [...questions].sort((a, b) => a.situation_id.localeCompare(b.situation_id));
+
+  const moved = ordered.filter(isMoved);
+  const quiet = ordered.filter((q) => !isMoved(q));
 
   return (
-    <div className={`${pageContainer("wide")} space-y-4`}>
-      <header className="bg-surface-1 border border-border-subtle rounded-lg p-4">
+    <div className={pageContainer("wide")}>
+      {/* リード: 現況と同じ扱い — **枠で囲まず**見出しそのものを大きく出し、素性を下に小さく。
+          全般 (ページ全体の要約) を箱にすると、下の個別カードと同じ重さに見えてしまう。 */}
+      <div className="mb-5">
         <p className="m-0 text-[19px] leading-[1.75] font-bold text-fg">
           {summary.total} 問中 {summary.moved} 問の答えが前回の評価から動いた
         </p>
         <div className="mt-2 text-[12px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-1">
-          <span>継続して追う問いと、いま時点の答え</span>
-          <span>期間で区切らず、これまでに知り得たすべてから導いた現在の推定</span>
+          <span>継続して追う問い</span>
+          <span>期間で区切らない — これまでに知り得たすべてから導いた現在の推定</span>
           {summary.unassessed > 0 && <span>未評価 {summary.unassessed} 問</span>}
         </div>
-      </header>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        {ordered.map((q) => (
-          <QuestionCard key={q.situation_id} q={q} />
-        ))}
       </div>
+
+      {moved.length > 0 && (
+        <section className="mb-6">
+          <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">動いた問い</h3>
+          <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
+            前回の評価から答え・確度・見立てのいずれかが変わったもの。何がそれを動かしたかを併記する。
+          </p>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {moved.map((q) => (
+              <QuestionCard key={q.situation_id} q={q} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {quiet.length > 0 && (
+        <section>
+          <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">動いていない問い</h3>
+          <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
+            答えは前回から変わっていない。静かであることは安全を意味しない —
+            鮮度と、何が見えれば答えが変わるかを併せて見る。
+          </p>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {quiet.map((q) => (
+              <QuestionCard key={q.situation_id} q={q} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
