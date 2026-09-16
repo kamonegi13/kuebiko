@@ -2108,3 +2108,20 @@ event_kind は `data/mlx/detect_gold_kinds.jsonl` (fast ティアで 194 件に�
 - **合否線 (§47 追記 1「同じ凍結審判で現行を precision・recall とも上回る」) を通過**。
   次 = 本番 seam を **shadow モード**で敷く (ML の選抜を記録するだけで開設は現行のまま) →
   数日の shadow 比較で開設候補の差分を目視 → 切替。閾値は消化能力 (≈6/日) から code で決める。
+
+### §47 追記 4: 本番 shadow seam を敷いた (2026-09-17 朝、commit 後にデプロイ)
+
+- 推論: `src/synthesis/grounded/detect_ml.py` — 標準化 + ロジスティック回帰を JSON
+  (`config/models/detect_model.json`) から読む。sklearn 非依存、`feature_names` が
+  `FEATURE_NAMES` と違えば None (列ずれで黙って使わない)。
+- 学習: `scripts/train_detect_ml.py` (ホスト、DATABASE_URL)。601 件で学習し、閾値は held-out
+  1,576 件・25 日の確率分布から **6 件/日** の分位 = 0.859 (学習集合では 63 件中正 40)。
+  係数上位: importance +0.89 / kind=exploitation +0.79 / japan_targeted +0.66 /
+  **closed_hits −0.63** (制裁・摘発・統計の語は負) / category=geopolitical −0.41 / kind=other −0.40。
+  RF の寄与では見えなかった完結マーカーが、線形では明確に効いている。
+- seam: `stateful.py` の `detect_new_claims` 直後に `_record_detect_ml_shadow` — 候補 (≤500) の
+  種別を cache から引き (無いものは fast ティアで分類して `article_kinds` へ cache、上限 200)、
+  採点して閾値以上の上位 6 件を `detect_ml_shadow` (run_at, article_id, probability, kind,
+  llm_opened) に記録。**開設は現行のまま**。`DETECT_ML_SHADOW=0` で停止、失敗は warning のみ。
+- 切替判断の材料: 数日分の shadow で「ML だけが選んだ候補」を目視 → 追跡価値があるか。
+  切替時は detect_new_claims の入力を ML 上位に絞る (LLM は claim 文の生成に専念) が第一候補。
