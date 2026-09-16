@@ -31,6 +31,7 @@ from src.assessment.composition import (
     measure_composition,
 )
 from src.logging_config import get_logger
+from src.synthesis.grounded.estimate import Confidence
 
 _log = get_logger(__name__)
 
@@ -215,6 +216,37 @@ def _fetch_axis_candidates(db_path: Path, *, start_iso: str, end_iso: str) -> li
     ]
 
 
+def build_measurement(
+    *,
+    condition: dict[str, Any],
+    now: datetime,
+    db_path: Path,
+    repo: Any,
+    axis: str = "intent",
+    window_days: int = DEFAULT_WINDOW_DAYS,
+) -> tuple[str, CompositionMeasurement | None]:
+    """集約の (プロンプト用テキスト, 測定結果)。失敗しても判定を止めない。
+
+    テキストは LLM への提示用、測定結果は**確度上限の算出用**。テキストだけ渡しても
+    ACH の集計には効かない (2026-09-16 実測) ため、両方が要る。
+    """
+    if not condition:
+        return "", None
+    try:
+        windows = split_windows(now=now, window_days=window_days)
+        rows = load_axis_rows(
+            condition=condition, windows=windows, db_path=db_path, repo=repo, axis=axis
+        )
+        measurement = measure_composition(rows)
+        text = format_aggregate_signal(
+            measurement, p1_label=windows.p1_label, p2_label=windows.p2_label
+        )
+        return text, measurement
+    except Exception as e:  # noqa: BLE001 — 集約が出せなくても判定は続ける
+        _log.warning("aggregate_signal_failed", error=str(e))
+        return "", None
+
+
 def build_aggregate_signal(
     *,
     condition: dict[str, Any],
@@ -239,3 +271,50 @@ def build_aggregate_signal(
     except Exception as e:  # noqa: BLE001 — 集約が出せなくても判定は続ける
         _log.warning("aggregate_signal_failed", error=str(e))
         return ""
+
+
+#: 変化を主張する leading。これらだけが集約の支持を要する
+#: (「平時の変動内」「横ばい」は fail-closed の既定なので、支持が無くても抑えない)。
+_CHANGE_ASSERTING = frozenset({"trend_worsening", "trend_improving", "threshold_crossed"})
+#: 悪化方向を主張する leading (集約が下がっていたら抑える)。
+_ASSERTS_UP = frozenset({"trend_worsening", "threshold_crossed"})
+#: 閾値の問いが見る「質的に異なる行為」。脅威スロットを持たない型で使う。
+_ESCALATORY_INTENTS = ("prepositioning", "disruption")
+#: この幅未満の移動は「支持していない」と扱う (百分率ポイント)。
+_SUPPORT_MIN_POINTS = 2.0
+
+
+def aggregate_confidence_cap(
+    measurement: CompositionMeasurement | None,
+    *,
+    leading: str,
+    threat: str | None,
+) -> tuple[Confidence, str] | None:
+    """集約が支持しない「変化の主張」の確度に上限をかける。None = 上限なし。
+
+    ⚠ **leading は変えない**。ACH の証拠駆動判定を尊重し、確度だけを抑える
+    (既存 `final_confidence` と同じ方向中立の思想 —「証拠が弱ければ *どの結論でも* 抑える」)。
+
+    なぜ上限なのか: 集約を散文でプロンプトに載せても ACH の集計に席が無く、観測系の仮説が
+    0/0 (未評価) のまま強い確度が出た (2026-09-16 実測)。散文は効かず**構造だけが効く**。
+    カウントの捏造 (`reconcile_hypotheses` が禁じている) を避けつつ判定に効かせる唯一の座。
+
+    ⚠ 集約が**出せないこと**を根拠に抑えない — 無知は証拠ではない。
+    """
+    if leading not in _CHANGE_ASSERTING or measurement is None or not measurement.shifts:
+        return None
+    if measurement.is_thin:
+        return (
+            "low",
+            f"集約の母集団が薄く ({measurement.cohort.p1_articles}→"
+            f"{measurement.cohort.p2_articles} 件) 変化の主張を支持しない",
+        )
+    watched = (threat,) if threat else _ESCALATORY_INTENTS
+    delta = sum(s.shift_points for s in measurement.shifts if s.value in watched)
+    label = threat or "/".join(_ESCALATORY_INTENTS)
+    asserts_up = leading in _ASSERTS_UP
+    if abs(delta) < _SUPPORT_MIN_POINTS:
+        return ("moderate", f"集約に有意な移動がない ({label} {delta:+.1f}pt)")
+    if (asserts_up and delta < 0) or (not asserts_up and delta > 0):
+        return ("low", f"集約は逆方向を示す ({label} {delta:+.1f}pt)")
+    return None

@@ -216,3 +216,20 @@ def promote(
     )
     _log.info("standing_question_promoted", situation_id=sid, frame=draft.frame_id)
     return sid
+
+
+def threat_slot_for(situation_id: str, *, db_path: Path | None = None) -> str | None:
+    """問いが名指ししている脅威 (趨勢型の ``threat`` スロット)。持たない型は None。
+
+    閾値型は主体の活動の**性格**を見るので脅威スロットを持たず、
+    集約 cap 側が「質的に異なる行為」(事前配置・破壊) の比率で判定する。
+    """
+    try:
+        rows = list_questions(db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("standing_threat_lookup_failed", situation_id=situation_id, error=str(e))
+        return None
+    for r in rows:
+        if r.get("situation_id") == situation_id:
+            return str((r.get("slots") or {}).get("threat") or "") or None
+    return None

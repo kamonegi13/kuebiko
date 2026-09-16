@@ -205,3 +205,105 @@ class TestBothEvaluationPathsReceiveIt:
             "prompts/synthesis/ground_incremental_skeleton.j2",
         ):
             assert "aggregate_signal" in Path(f).read_text(encoding="utf-8"), f
+
+
+class TestAggregateConfidenceCap:
+    """集約を**確度の上限**として構造的に効かせる (段B-3h)。
+
+    ⚠ 実測 2026-09-16: 集約を散文でプロンプトに載せても ACH の集計に席が無く、
+    観測系仮説が 0/0 (未評価) のまま `threshold_crossed` / 確度 high が出た。
+    中国の集約はむしろ逆 (事前配置 19.2%→10.1%) を示していた。
+    「散文指示は無効・構造のみ有効」(2026-08-27) を自分で踏んだ。
+
+    → leading は変えない (ACH の証拠駆動判定を尊重)。**変化の主張をする leading の
+    確度に上限をかける**。既存の `final_confidence` と同じ方向中立の思想。
+    """
+
+    def _measurement(self, *specs: tuple[str, str, str], thin: int = 30) -> CompositionMeasurement:
+        return measure_composition(_rows(*specs), thin_threshold=thin)
+
+    def _moved(self, value: str, *, p1: int, p2: int, other: int = 100) -> CompositionMeasurement:
+        rows = _rows(
+            *[("s", "p1", value)] * p1,
+            *[("s", "p1", "other")] * other,
+            *[("s", "p2", value)] * p2,
+            *[("s", "p2", "other")] * other,
+        )
+        return measure_composition(rows)
+
+    def test_no_cap_when_leading_asserts_no_change(self) -> None:
+        """「平時の変動内」「横ばい」は集約の支持を要しない (fail-closed の既定)。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("disruption", p1=50, p2=10)
+
+        assert aggregate_confidence_cap(m, leading="threshold_within_normal", threat=None) is None
+        assert aggregate_confidence_cap(m, leading="trend_flat", threat="disruption") is None
+
+    def test_worsening_is_capped_when_the_share_fell(self) -> None:
+        """集約が逆を示すのに「悪化」と言うなら確度を落とす。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("disruption", p1=50, p2=10)
+
+        cap = aggregate_confidence_cap(m, leading="trend_worsening", threat="disruption")
+
+        assert cap is not None
+        assert cap[0] == "low"
+
+    def test_improving_is_capped_when_the_share_rose(self) -> None:
+        """方向中立 — 穏当な側の主張も同じ規律で抑える。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("disruption", p1=10, p2=50)
+
+        cap = aggregate_confidence_cap(m, leading="trend_improving", threat="disruption")
+
+        assert cap is not None
+        assert cap[0] == "low"
+
+    def test_worsening_is_not_capped_when_the_share_rose(self) -> None:
+        """集約が支持しているなら抑えない。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("disruption", p1=10, p2=50)
+
+        assert aggregate_confidence_cap(m, leading="trend_worsening", threat="disruption") is None
+
+    def test_thin_population_caps_any_change_claim(self) -> None:
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._measurement(("s", "p1", "a"), ("s", "p2", "a"))
+
+        cap = aggregate_confidence_cap(m, leading="threshold_crossed", threat=None)
+
+        assert cap is not None
+        assert cap[0] == "low"
+        assert "薄" in cap[1]
+
+    def test_threshold_uses_escalatory_intents_when_no_threat_slot(self) -> None:
+        """閾値の問いは主体の活動の**性格**で見る (事前配置・破壊の比率)。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("prepositioning", p1=50, p2=10)
+
+        cap = aggregate_confidence_cap(m, leading="threshold_crossed", threat=None)
+
+        assert cap is not None
+        assert cap[0] == "low"
+
+    def test_reason_names_the_numbers_for_audit(self) -> None:
+        """後から「なぜ抑えたか」を追えること。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        m = self._moved("disruption", p1=50, p2=10)
+        cap = aggregate_confidence_cap(m, leading="trend_worsening", threat="disruption")
+
+        assert cap is not None
+        assert "pt" in cap[1]
+
+    def test_no_measurement_means_no_cap(self) -> None:
+        """集約が出せないことを根拠に確度を下げない (無知は証拠ではない)。"""
+        from src.assessment.aggregate_signal import aggregate_confidence_cap
+
+        assert aggregate_confidence_cap(None, leading="trend_worsening", threat="x") is None

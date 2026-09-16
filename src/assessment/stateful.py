@@ -61,6 +61,8 @@ from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.clustering import anchor_entities, expand_claim_sources
 from src.synthesis.grounded.estimate import (
+    _CONF_RANK,
+    Confidence,
     Estimate,
     EvidenceItem,
     HypothesisScore,
@@ -137,25 +139,42 @@ def _aggregate_signal_for(
     repo: RunHistoryRepository,
     db_path: Path,
     now: datetime,
-) -> str:
-    """型が要求する問いにだけ集約シグナルを供給する (段B-3d)。
+) -> tuple[str, Any]:
+    """型が要求する問いにだけ集約を供給する (段B-3d)。返り値=(提示用テキスト, 測定)。
 
     A (presence) は 2 本腕の証拠規則で既に蓄積を扱うので供給しない — 足すと同じ観測を
     二重に数える。E/H は蓄積が無いと「新着数本を読んだ印象」で答えることになる。
     """
     if not is_standing:
-        return ""
+        return "", None
     from src.assessment.question_store import aggregate_population_for, needs_aggregate_signal
 
     if not needs_aggregate_signal(situation_id, db_path=db_path):
-        return ""
-    from src.assessment.aggregate_signal import build_aggregate_signal
+        return "", None
+    from src.assessment.aggregate_signal import build_measurement
 
-    return build_aggregate_signal(
+    return build_measurement(
         condition=aggregate_population_for(situation_id, db_path=db_path),
         now=now,
         db_path=db_path,
         repo=repo,
+    )
+
+
+def _aggregate_cap_for(
+    pending: dict[str, Any], *, leading: str, db_path: Path
+) -> tuple[Confidence, str] | None:
+    """集約による確度上限 (段B-3h)。standing 以外・集約なしは None。"""
+    if not pending.get("standing") or pending.get("agg") is None:
+        return None
+    from src.assessment.aggregate_signal import aggregate_confidence_cap
+    from src.assessment.question_store import threat_slot_for
+
+    sid = pending.get("sid")
+    return aggregate_confidence_cap(
+        pending["agg"],
+        leading=leading,
+        threat=threat_slot_for(str(sid), db_path=db_path) if sid else None,
     )
 
 
@@ -803,7 +822,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         # 昇格した問い (config_store 登録済み) はその型の骨格、現行 4 seed と
         # 引けなかった場合は POSTURE に倒れる = 挙動不変 (段B-3、fail-open)。
         hyp_override = hypotheses_for_standing(sid) if is_standing else None
-        agg_signal = _aggregate_signal_for(
+        agg_signal, agg_measurement = _aggregate_signal_for(
             sid, is_standing=is_standing, repo=repo, db_path=db_path, now=now_dt
         )
         prev = latest_revs.get(sid)
@@ -845,6 +864,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                     "scope_expanded": False,
                     "was_dormant": row.status == "dormant",
                     "standing": is_standing,
+                    "agg": agg_measurement,
                 }
             )
             continue
@@ -887,6 +907,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 "was_dormant": row.status == "dormant",
                 "prev": prev,
                 "standing": is_standing,
+                "agg": agg_measurement,
             }
         )
 
@@ -995,6 +1016,13 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         basis = f"ACH={analysis.llm_confidence} / source_basis={sb.confidence}"
         if reason:
             basis = f"{basis} / {reason}"
+        # 集約 cap (方向中立、段B-3h): 変化の主張を集約が支持しないなら確度を抑える。
+        # leading は変えない — ACH の証拠駆動判定を尊重し、確度だけを落とす。
+        # 散文でプロンプトに載せても ACH の集計に席が無く効かなかったため、ここが唯一の座。
+        agg_cap = _aggregate_cap_for(p, leading=analysis.leading_hypothesis, db_path=db_path)
+        if agg_cap is not None and _CONF_RANK[agg_cap[0]] < _CONF_RANK[conf]:
+            basis = f"{basis} / {agg_cap[1]}により {conf}→{agg_cap[0]}"
+            conf = agg_cap[0]
         # 段B posture cap (方向中立): H-P1 (日本 CI へ事前配置進行中) は JP 直接証拠
         # (帰属済み JP victim 観測) なしでは high にしない (設計 §4.2)。
         if (
