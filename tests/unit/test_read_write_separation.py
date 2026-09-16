@@ -66,3 +66,23 @@ def test_old_entry_points_redirect_rather_than_duplicate() -> None:
     # 指定事業者名簿の旧ルートは転送に置き換わっている
     assert 'window.location.replace("/app/config#operators")' in body
     assert '{ kind: "jpci-operators" }' not in body
+
+
+def test_pir_list_route_is_bound_to_the_right_function() -> None:
+    """⚠ デコレータと関数の間にヘルパを挿し込むとルートが別関数に付く。
+
+    2026-09-16 に実際に起きた: `_sir_usage_safe` を
+    `@pir_api.get("")` の**直後**に挿入したため、SIR 一覧 API がヘルパに束縛され
+    GET が 422 (body 必須) を返していた。**unit テストは通った** — API の経路を
+    検査していなかったため。実データで叩いて初めて出た。
+    """
+    from src.ui.api.pir import pir_api
+
+    listing = [
+        r
+        for r in pir_api.routes
+        if getattr(r, "path", "") == "/api/v1/pir" and "GET" in getattr(r, "methods", set())
+    ]
+
+    assert len(listing) == 1
+    assert getattr(listing[0], "name", "") == "list_pirs"

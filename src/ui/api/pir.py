@@ -212,25 +212,6 @@ def list_pir_options() -> list[PirOption]:
 # 同期関数として定義する (async def にすると 30 日走査の間 event loop を占有し、
 # UI 全体が固まる)。FastAPI が threadpool で実行する。
 @pir_api.get("", response_model=PirListResponse)
-def _sir_usage_safe(pir_ids: list[str]) -> dict[str, list[str]]:
-    """SIR → 参照する問い。引けなくても一覧を壊さない (空で返す)。"""
-    from src.cti.definition_usage import sir_usage
-
-    try:
-        from src.assessment.situation_store import SituationStore
-        from src.assessment.standing import STANDING_KIND
-
-        rows = [
-            {"situation_id": r.situation_id, "pir_ids": list(r.pir_ids)}
-            for r in SituationStore().load_situations()
-            if r.kind == STANDING_KIND
-        ]
-        return sir_usage(pir_ids, rows)
-    except Exception as e:  # noqa: BLE001 — 参照が引けなくても SIR 一覧は出す
-        _log.warning("sir_usage_failed", error=str(e))
-        return dict.fromkeys(pir_ids, [])
-
-
 def list_pirs() -> PirListResponse:
     cached = _LIST_CACHE.get("list")
     if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SEC:
@@ -257,6 +238,25 @@ def list_pirs() -> PirListResponse:
         )
         _LIST_CACHE["list"] = (time.monotonic(), resp)
         return resp
+
+
+def _sir_usage_safe(pir_ids: list[str]) -> dict[str, list[str]]:
+    """SIR → 参照する問い。引けなくても一覧を壊さない (空で返す)。"""
+    from src.cti.definition_usage import sir_usage
+
+    try:
+        from src.assessment.situation_store import SituationStore
+        from src.assessment.standing import STANDING_KIND
+
+        rows = [
+            {"situation_id": r.situation_id, "pir_ids": list(r.pir_ids)}
+            for r in SituationStore().load_situations()
+            if r.kind == STANDING_KIND
+        ]
+        return sir_usage(pir_ids, rows)
+    except Exception as e:  # noqa: BLE001 — 参照が引けなくても SIR 一覧は出す
+        _log.warning("sir_usage_failed", error=str(e))
+        return dict.fromkeys(pir_ids, [])
 
 
 @pir_api.get("/{pir_id}", response_model=Pir)
