@@ -1,6 +1,10 @@
 あなたは CTI のシニア分析官です。判定「{{ claim }}」を、**以下のソース本文だけ**に基づいて
 評価してください。事前知識や推測でなく、本文に書かれた証拠で判断します。
 
+{% if aggregate_signal is defined and aggregate_signal %}
+{{ aggregate_signal }}
+
+{% endif %}
 【ソース本文】(【過去の文脈】= 対象期間より前の同一アクター/CVE/被害組織の記事。前例・パターン・
 新規性の判定材料。現在の事象そのものではない)
 {% for s in sources %}

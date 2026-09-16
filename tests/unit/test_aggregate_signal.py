@@ -170,3 +170,38 @@ class TestRowCap:
         from src.assessment.aggregate_signal import _ROW_CAP
 
         assert _ROW_CAP >= 8815
+
+
+class TestBothEvaluationPathsReceiveIt:
+    """⚠ 実際に起きた: 増分にだけ配線し**初回評価に渡し忘れた**。
+
+    初回は最初の答えを決める場面で、蓄積が届かないと記事数本の印象で確度が決まる。
+    実測では趨勢の問いが初回で「悪化・確度 high」になった (集約は +3.5pt で
+    観測バイアスも未棄却だった)。
+    """
+
+    def test_first_evaluation_accepts_an_aggregate_signal(self) -> None:
+        import inspect
+
+        from src.synthesis.grounded.passes import ground_and_score
+
+        assert "aggregate_signal" in inspect.signature(ground_and_score).parameters
+
+    def test_incremental_evaluation_accepts_an_aggregate_signal(self) -> None:
+        import inspect
+
+        from src.synthesis.grounded.incremental import incremental_ground_and_score
+
+        assert "aggregate_signal" in inspect.signature(incremental_ground_and_score).parameters
+
+    def test_both_prompts_render_the_block(self) -> None:
+        """片方のプロンプトだけに入れると、その経路だけ蓄積が消える。"""
+        from pathlib import Path
+
+        for f in (
+            "prompts/synthesis/ground_ach.j2",
+            "prompts/synthesis/ground_ach_skeleton.j2",
+            "prompts/synthesis/ground_incremental.j2",
+            "prompts/synthesis/ground_incremental_skeleton.j2",
+        ):
+            assert "aggregate_signal" in Path(f).read_text(encoding="utf-8"), f

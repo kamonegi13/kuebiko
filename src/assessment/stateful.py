@@ -803,6 +803,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         # 昇格した問い (config_store 登録済み) はその型の骨格、現行 4 seed と
         # 引けなかった場合は POSTURE に倒れる = 挙動不変 (段B-3、fail-open)。
         hyp_override = hypotheses_for_standing(sid) if is_standing else None
+        agg_signal = _aggregate_signal_for(
+            sid, is_standing=is_standing, repo=repo, db_path=db_path, now=now_dt
+        )
         prev = latest_revs.get(sid)
         sources: list[dict[str, str]] = []
         tier_by_id: dict[str, str] = {}
@@ -822,6 +825,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 sources=sources,
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
+                # 初回評価にも集約を渡す — ここが最初の答えを決める場面で、
+                # 落とすと記事数本の印象で確度が決まる (2026-09-16 実測で発生)。
+                aggregate_signal=agg_signal,
             )
             first_claim = first_answer(
                 title=row.title, leading=analysis.leading_hypothesis, is_standing=is_standing
@@ -860,9 +866,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
                 question=_standing_question(sid),
-                aggregate_signal=_aggregate_signal_for(
-                    sid, is_standing=is_standing, repo=repo, db_path=db_path, now=now_dt
-                ),
+                aggregate_signal=agg_signal,
             )
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))

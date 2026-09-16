@@ -354,12 +354,18 @@ async def ground_and_score(
     sources: list[dict[str, str]],
     tier_by_id: dict[str, str],
     hypotheses_override: tuple[Hypothesis, ...] | None = None,
+    aggregate_signal: str = "",
 ) -> ClaimAnalysis:
     """段1+2: ソース本文を読み、証拠台帳 + ACH 採点を得る。
 
     sources: ``[{article_id, feed_title, text}]`` (text は本文 or summary)。
     tier_by_id: article_id → source_tier (コードが classify_source_tier で算出済、LLM 不信)。
     domain: nominate の domain。サイバー/地政学で ACH 仮説セットを切り替える。
+    aggregate_signal: コードが算出した集約シグナル (構成比・コホート素性)。
+
+    ⚠ **初回評価にも渡すこと**。初回は最初の答えを決める場面で、蓄積が届かないと
+    記事数本の印象で確度が決まる (2026-09-16 実測: 趨勢の問いが初回で「悪化・確度 high」
+    になった — 集約は +3.5pt で観測バイアスも未棄却だった)。
     """
     prompt = _render(
         "synthesis/ground_ach.j2",
@@ -367,6 +373,7 @@ async def ground_and_score(
         sources=sources,
         attribution_options=_ATTRIBUTION_OPTIONS,
         hypotheses=hypotheses_override or hypotheses_for_domain(domain),
+        aggregate_signal=aggregate_signal,
     )
     a = await llm.generate_structured(
         prompt, _WireAnalysis, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
