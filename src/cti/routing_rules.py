@@ -242,6 +242,25 @@ def _build_property_catalog() -> list[PropertySpec]:
             lambda s, _sq: s.victim_sector,
             domain="victim_sectors",
         ),
+        # 段B-1 (2026-09-16): 常設情報要求 (真の PIR) の証拠適格を宣言文法で書くための 2 つ。
+        # 設計 docs/pir_brief_design.md §6c — これが載ると R1-R3 が手書き Python から
+        # データ (UI 編集可) になり、問いの型の増設コストが仮説の記述だけに落ちる。
+        PropertySpec(
+            "intent",
+            "str",
+            "アクター",
+            "行為の目的 (intent)",
+            lambda s, _sq: s.intent,
+            domain="intents",
+        ),
+        PropertySpec(
+            "victim_country",
+            "str",
+            "被害",
+            "被害国",
+            lambda s, _sq: s.victim_country,
+            domain="countries",
+        ),
     ]
     # set
     specs += [
@@ -260,6 +279,17 @@ def _build_property_catalog() -> list[PropertySpec]:
             "キーワードリスト",
             lambda s, _sq: s.matched_keyword_lists,
             domain="keyword_lists",
+        ),
+        # ⚠ **帰属ではない** — 「その国が記事に出ている」だけ。帰属を要求する条件には
+        # `actor_nation` (辞書ゲート済み) を使うこと。両者を取り違えると、粗い国一致で
+        # 無関係な記事を吸う事故になる (prepositioning_posture_ledger_design.md §9-3)。
+        PropertySpec(
+            "involved_country",
+            "set",
+            "被害",
+            "関与国 (帰属ではない)",
+            lambda s, _sq: s.involved_countries,
+            domain="countries",
         ),
     ]
     # number

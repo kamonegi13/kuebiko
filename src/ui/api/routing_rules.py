@@ -63,6 +63,24 @@ def _resolve_domain(domain: str) -> list[str]:
         except Exception as e:  # noqa: BLE001
             _log.warning("routing_vocab_nations_failed", error=str(e))
             return []
+    if domain == "intents":
+        # SSoT = Diamond の socio-political intent 軸 (複製辞書を作らない)。
+        from src.cti.diamond_model import SOCIO_POLITICAL_INTENTS
+
+        return list(SOCIO_POLITICAL_INTENTS)
+    if domain == "countries":
+        # SSoT = config/cti/countries.yaml (vocab registry 経由)。
+        try:
+            from src.vocab.registry import get_vocabulary
+
+            vocab = get_vocabulary("country")
+            if vocab is None:
+                _log.warning("routing_vocab_countries_missing")
+                return []
+            return [i.value for i in vocab.items]
+        except Exception as e:  # noqa: BLE001
+            _log.warning("routing_vocab_countries_failed", error=str(e))
+            return []
     if domain == "keyword_lists":
         try:
             from src.cti.match_lists import get_match_lists

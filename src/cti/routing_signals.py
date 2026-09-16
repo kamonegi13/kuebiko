@@ -144,6 +144,20 @@ class RoutingSignals:
     # 語彙拡張② マッチした user 定義 match_list の name 集合 (keyword_list 条件で参照)。
     matched_keyword_lists: frozenset[str] = field(default_factory=frozenset)
 
+    # 語彙拡張③ (2026-09-16、段B-1): 常設情報要求 (真の PIR) の証拠適格を宣言文法で
+    # 書けるようにするための 3 つ。いずれも既に metadata にある値の回収で、新規抽出はしない
+    # (briefing.py が routing signal 抽出より前に metadata へ入れている)。
+    # 設計: docs/pir_brief_design.md §6c。
+    #
+    # intent = Diamond の socio-political intent (prepositioning/espionage/… 空=未判定)。
+    intent: str = ""
+    # victim_country = 被害国の ISO 2 文字 (metadata の victim_country_iso、空=未判定)。
+    victim_country: str = ""
+    # involved_countries = 記事が扱う関与国の ISO 集合。**被害国とも帰属とも別物** —
+    # 「その国が話題に出ている」だけを表す。⚠ 帰属を要求する条件 (R2/R3) にこれを
+    # 使わないこと (粗い国一致で無関係を吸う事故を招く。過剰帰属の再発防止)。
+    involved_countries: frozenset[str] = field(default_factory=frozenset)
+
     # 元データ (デバッグ用)
     extras: dict[str, object] = field(default_factory=dict)
 
@@ -358,6 +372,17 @@ def extract_signals_from_briefing(
 
     matched_keyword_lists = match_lists_for_text(full_text)
 
+    # 語彙拡張③ (段B-1) 既存 metadata の回収。briefing.py が本関数より前に入れている
+    # (victim_country_iso / involved_country_isos / socio_political_intent)。
+    # 未判定は **空文字・空集合** に倒す (None にすると葉の比較で型が揺れる)。
+    intent = str(msg.metadata.get("socio_political_intent") or "")
+    _involved_raw = msg.metadata.get("involved_country_isos")
+    involved_countries = (
+        frozenset(str(c).upper() for c in _involved_raw if c)
+        if isinstance(_involved_raw, list)
+        else frozenset()
+    )
+
     return RoutingSignals(
         source="briefing",
         importance=msg.importance,
@@ -385,6 +410,9 @@ def extract_signals_from_briefing(
         victim_sector=victim_sector,
         threat_actor_nations=threat_actor_nations,
         matched_keyword_lists=matched_keyword_lists,
+        intent=intent,
+        victim_country=victim_country_iso,
+        involved_countries=involved_countries,
     )
 
 
