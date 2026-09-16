@@ -56,7 +56,7 @@
 
 【SIR 対応 (決定論ロールアップ)】
 {% for p in pir_rollup %}
-- {{ p.pir_title }}: {% for it in p.entries %}「{{ it.claim }}」({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
+- {{ p.pir_title }}: {% for it in p.entries %}{% if it.id is defined and it.id %}[{{ it.id }}]{% endif %}{% if it.claim %}「{{ it.claim }}」{% endif %}({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
 {% else %}
 (SIR に紐づく判定なし)
 {% endfor %}

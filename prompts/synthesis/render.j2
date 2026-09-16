@@ -66,7 +66,7 @@
 
 【SIR 対応 (決定論ロールアップ)】
 {% for p in pir_rollup %}
-- {{ p.pir_title }}: {% for it in p.entries %}「{{ it.claim }}」({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
+- {{ p.pir_title }}: {% for it in p.entries %}{% if it.id is defined and it.id %}[{{ it.id }}]{% endif %}{% if it.claim %}「{{ it.claim }}」{% endif %}({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
 {% else %}
 (SIR に紐づく判定なし)
 {% endfor %}
@@ -111,7 +111,7 @@
 - cog_section (継続・重心): 継続中の判定と、全体で最も重要な判定の含意 (確度明示)
 - spillover_section (注視・見通し): 発火した監視指標 / 開いている監視指標 / 今後の注視点
   (推測は推測と明示)
-- pir_section (SIR対応): 上の SIR ロールアップを読みやすく整形 (確度語維持)
+- pir_section (SIR対応): 上の SIR ロールアップを読みやすく整形 (確度語維持。[id] は上に示した判定を指す — その判定の内容で書き、id そのものは本文に書かない)
 {% if moved_list is defined and moved_list %}
 - そのほかの動き: 上の【そのほかの動き (一覧)】がある場合のみ、weight_section の末尾に
   1 段落を足す。**変化種別ごとの件数**と、そのなかで日本・最優先 SIR に関わる代表 2-3 件の

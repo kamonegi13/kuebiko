@@ -224,6 +224,7 @@ _LIST_MAX: dict[str, int] = {"weekly": 60, "monthly": 90}
 
 #: CoT 欄の有効化 flag (既定 OFF)。収穫スクリプトが 1 を立てて教師の思考を捕獲する。
 _COT_NOTES_ENV = "SYNTHESIS_COT_NOTES"
+_SIR_REF_ENV = "SYNTHESIS_SIR_REF"
 
 
 def cot_notes_enabled() -> bool:
@@ -372,13 +373,31 @@ def _pir_titles() -> dict[str, str]:
         return {}
 
 
-def _pir_rollup(judgments: tuple[KeyJudgment, ...]) -> list[dict[str, Any]]:
-    """PIR 別ロールアップ (決定論): pir_id → 関連判定 (claim/確度/含意)。"""
+def sir_reference_mode() -> bool:
+    """SIR ロールアップを番号参照にする (既定 ON、``SYNTHESIS_SIR_REF=0`` で旧形へ rollback)。
+
+    旧形は PIR ごとに判定文と含意を再掲していた (節の 39% が上に既出の文の再掲、予算超過窓では
+    7.6k 字)。参照化で render プロンプトは中央 29% 短くなり、daily の全窓が SFT 学習の系列長壁
+    (prompt ≤10.5k tok) に入る (2026-09-17、docs/research/llm_training/SYNTHESIS.md §48)。
+    """
+    return os.environ.get(_SIR_REF_ENV, "1") != "0"
+
+
+def _pir_rollup(
+    judgments: tuple[KeyJudgment, ...], *, shown_ids: frozenset[str] = frozenset()
+) -> list[dict[str, Any]]:
+    """PIR 別ロールアップ (決定論): pir_id → 関連判定。
+
+    参照モードでは entry = ``[id](確度)`` のみで、``shown_ids`` (プロンプト本文に既出の判定) に
+    無いものだけ claim 文を残す (本文で読めない判定は本文が要る)。含意は本文側に既出のため
+    載せない。旧形 (flag OFF) は id を空にし claim + 含意を全件載せる = 従来と同一の出力。
+    """
     titles = _pir_titles()
     by_pir: dict[str, list[KeyJudgment]] = {}
     for j in judgments:
         for pid in j.pir_ids:
             by_pir.setdefault(pid, []).append(j)
+    ref = sir_reference_mode()
     out: list[dict[str, Any]] = []
     for pid, js in sorted(by_pir.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         out.append(
@@ -387,9 +406,10 @@ def _pir_rollup(judgments: tuple[KeyJudgment, ...]) -> list[dict[str, Any]]:
                 # NOTE: key 名は "items" 不可 (Jinja の属性解決が dict.items メソッドに化ける)
                 "entries": [
                     {
-                        "claim": j.claim,
+                        "id": j.id if ref else "",
+                        "claim": "" if (ref and j.id in shown_ids) else j.claim,
                         "confidence_ja": _CONF_JA.get(j.confidence, j.confidence),
-                        "implication": j.implication,
+                        "implication": "" if ref else j.implication,
                     }
                     for j in js[:3]
                 ],
@@ -564,7 +584,12 @@ def build_render_plan(
         section_max_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[1],
         standing=[_judgment_view(j) for j in standing],
         standing_omitted=standing_omitted,
-        pir_rollup=_pir_rollup(est.judgments),
+        pir_rollup=_pir_rollup(
+            est.judgments,
+            shown_ids=frozenset(
+                j.id for j in (*([head] if head else []), *moved, *moved_list, *standing)
+            ),
+        ),
         relation_lines=relation_lines,
         cot_notes=cot_notes_enabled() if cot_notes is None else cot_notes,
     )
