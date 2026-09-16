@@ -33,9 +33,30 @@ from typing import Any
 
 from src.assessment.question_frame import FRAME_BY_ID, render_question
 
-#: 語彙解決に使う domain → 値の集合を引く関数 (表示ラベルではなく **値の妥当性**)。
-#: 表示は生値へ fallback するが、台帳に載る問いは語彙統制の内側でなければならない。
-_VOCAB_DOMAINS = ("countries", "intents", "nisc_sectors")
+#: 証拠条件に使えるプロパティ (段B-3c)。**収穫時に読めるものだけ**。
+#:
+#: 収穫 (``standing.harvest_standing_evidence``) は articles の数列と entity キーしか
+#: 見ない。そこに無い property (kev / zero_day / keyword_list / llm_* / max_cvss 等) を
+#: 条件に書くと、値が常に空になり**静かに全件不一致**になる — 「器はあるが証拠が来ない
+#: 問い」ができて、しかも失敗として現れない。
+#:
+#: よって起草の時点で弾く。routing のルールでは使えても、**問いの証拠条件では使えない**
+#: という非対称は意図的で、収穫の入力が routing の入力より狭いことに由来する。
+#:
+#: ⚠ ``article_type`` / ``stance`` を**意図的に外している**。両者は既定値を持たない
+#: Literal で、DB 値が空のとき (実測 30 日で 0.16% / 0.3%) 安全な番兵が無い。どの値に
+#: 倒しても、その値を指す条件が空行に誤って一致する。``importance`` は実測 0 件なので残す。
+HARVESTABLE_PROPERTIES: frozenset[str] = frozenset(
+    {
+        "intent",
+        "victim_country",
+        "victim_sector",
+        "actor_nation",
+        "involved_country",
+        "importance",
+        "category",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -115,9 +136,29 @@ def _evidence_failures(draft: QuestionDraft) -> list[str]:
     from src.config_loader import KNOWN_ARTICLE_CATEGORIES
     from src.cti.routing_rules import _validate_condition
 
-    return _validate_condition(
+    errs = _validate_condition(
         draft.evidence_condition, set(KNOWN_ARTICLE_CATEGORIES), "evidence_condition"
     )
+    return errs + [
+        f"プロパティ '{p}' は収穫時に読めないため証拠条件に使えません"
+        f" (可: {sorted(HARVESTABLE_PROPERTIES)})"
+        for p in sorted(_referenced_properties(draft.evidence_condition) - HARVESTABLE_PROPERTIES)
+    ]
+
+
+def _referenced_properties(node: Any) -> set[str]:
+    """条件木が参照する property 名を再帰的に集める (入れ子の奥も見る)。"""
+    if not isinstance(node, dict):
+        return set()
+    if "property" in node:
+        return {str(node["property"])}
+    out: set[str] = set()
+    for key in ("all", "any"):
+        for child in node.get(key) or []:
+            out |= _referenced_properties(child)
+    if "not" in node:
+        out |= _referenced_properties(node["not"])
+    return out
 
 
 def qualify(draft: QuestionDraft) -> QualificationResult:

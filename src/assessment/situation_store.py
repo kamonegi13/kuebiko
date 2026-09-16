@@ -33,7 +33,11 @@ DeltaType = Literal[
     "no_change",
     "closing",
 ]
-AssignedBy = Literal["seed", "anchor", "nation", "token", "llm", "standing"]
+AssignedBy = Literal[
+    "seed", "anchor", "nation", "token", "llm", "standing", "standing_declarative"
+]
+#: ⚠ 値を足したら `vocab/registry.py` の "assigned_by" にも日本語写像を足すこと
+#: (生 enum の UI 漏出を防ぐ)。漏れは tests/unit/test_vocabularies.py が検知する。
 
 # anchors の肥大 (identity 汚染) を防ぐ上限。超過時は既存を優先し新規を捨てる。
 _MAX_ANCHORS = 24

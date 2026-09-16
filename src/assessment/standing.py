@@ -18,13 +18,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.cti.nisc_sectors import _CANONICAL_TO_NISC
+from src.cti.routing_signals import RoutingSignals
 from src.logging_config import get_logger
 
 if TYPE_CHECKING:
-    from src.assessment.situation_store import SituationStore
+    from src.assessment.situation_store import AssignedBy, SituationStore
     from src.storage.run_history import RunHistoryRepository
 
 _log = get_logger(__name__)
@@ -123,21 +124,37 @@ def _actor_lookup() -> dict[str, str]:
     return nation_by_key
 
 
-def _fetch_candidates(db_path: Path, *, since_iso: str) -> list[dict[str, Any]]:
-    """収穫候補 (posted × 窓内 × R1-R3 の粗 filter を SQL で先掛け)。"""
+def _fetch_candidates(
+    db_path: Path, *, since_iso: str, broad: bool = False
+) -> list[dict[str, Any]]:
+    """収穫候補 (posted × 窓内 × recap 除外)。
+
+    Args:
+        broad: True なら **intent の粗 filter を外す** (段B-3c)。
+            既定の粗 filter は R1-R3 専用に効くもので、宣言条件の問い
+            (例: intent=financial の趨勢) はこれに掛かると 1 件も拾えない。
+            seed の収穫は従来どおり狭いプールで回す (挙動不変 + 性能維持)。
+    """
     from src.storage.db_backend import connect
 
+    intent_filter = (
+        ""
+        if broad
+        else (
+            " AND (socio_political_intent IN ('prepositioning', 'espionage', 'disruption')"
+            "      OR victim_country_iso = 'JP')"
+        )
+    )
     conn = connect(db_path)
     try:
         rows = conn.execute(
             "SELECT article_id, socio_political_intent, victim_country_iso,"
-            " victim_sector_canonical"
+            " victim_sector_canonical, importance, category, article_type, editorial_stance"
             " FROM articles"
             " WHERE status = 'posted' AND datetime(created_at) >= datetime(?)"
             # recap (まとめ/ニュースレター) は一次証拠でない (較正 2026-07-13)
             " AND COALESCE(category, '') != 'recap'"
-            " AND (socio_political_intent IN ('prepositioning', 'espionage', 'disruption')"
-            "      OR victim_country_iso = 'JP')"
+            f"{intent_filter}"
             " ORDER BY datetime(created_at) DESC LIMIT ?",
             (since_iso, _CANDIDATE_POOL_LIMIT),
         ).fetchall()
@@ -149,9 +166,57 @@ def _fetch_candidates(db_path: Path, *, since_iso: str) -> list[dict[str, Any]]:
             "intent": r[1],
             "victim_country": r[2],
             "victim_sector": r[3],
+            "importance": r[4],
+            "category": r[5],
+            "article_type": r[6],
+            "stance": r[7],
         }
         for r in rows
     ]
+
+
+def _importance_of(row: dict[str, Any]) -> Literal["high", "medium", "low"]:
+    """候補行の importance (実測で posted は常に有効。想定外は最も弱い low に倒す)。"""
+    value = str(row.get("importance") or "")
+    return value if value in ("high", "medium", "low") else "low"  # type: ignore[return-value]
+
+
+def signals_from_candidate(
+    row: dict[str, Any],
+    *,
+    entity_keys: frozenset[str],
+    nation_by_key: dict[str, str],
+) -> RoutingSignals:
+    """収穫候補 1 行 → 条件評価の入力 (段B-3c)。
+
+    宣言条件 (昇格した問い) を評価するために、候補行と entity キーから
+    ``RoutingSignals`` を組む。**ここで埋まらない属性は条件に書けない** —
+    書けるものは ``question_draft.HARVESTABLE_PROPERTIES`` が関門で保証する
+    (埋まらない属性を許すと静かに全件不一致になる)。
+
+    ⚠ 帰属 (``threat_actor_nations``) は**辞書ゲート経由のみ**。生のアクター名を
+    国に直訳しない (過剰帰属の再発防止)。関与国は帰属と別枠に置く。
+    """
+    parts = [k.partition(":") for k in entity_keys]
+    actor_values = {v.lower() for t, _, v in parts if t == "actor"}
+    nations = {n for a in actor_values if (n := nation_by_key.get(a))}
+    involved = {v.upper() for t, _, v in parts if t == "involved_country"}
+    return RoutingSignals(
+        source="briefing",
+        importance=_importance_of(row),
+        # ⚠ article_type / editorial_stance は **条件から観測されない** —
+        # HARVESTABLE_PROPERTIES が除外しているため。既定値を持たない Literal で
+        # 空値に安全な番兵が無いのが理由 (question_draft の注記参照)。ここの値は
+        # 型を満たすためだけのもので、意味を持たない。
+        article_type="breaking",
+        category=str(row.get("category") or ""),
+        editorial_stance="unknown",
+        intent=str(row.get("intent") or ""),
+        victim_country=str(row.get("victim_country") or ""),
+        victim_sector=str(row.get("victim_sector") or ""),
+        threat_actor_nations=frozenset(nations),
+        involved_countries=frozenset(involved),
+    )
 
 
 def _match_rules(
@@ -187,6 +252,108 @@ def _match_rules(
     return None
 
 
+def _open_declarative_questions(*, store: SituationStore, db_path: Path) -> list[dict[str, Any]]:
+    """昇格済みかつ台帳に開設済みの問い (宣言条件つき)。障害時は空 = 収穫を止めない。"""
+    try:
+        from src.assessment.question_store import list_questions
+
+        rows = list_questions(db_path=db_path)
+    except Exception as e:  # noqa: BLE001 — 問いの保存層の障害で seed の収穫を止めない
+        _log.warning("standing_questions_load_failed", error=str(e))
+        return []
+    return [
+        q
+        for q in rows
+        if q.get("evidence_condition")
+        and store.get_situation(str(q.get("situation_id"))) is not None
+    ]
+
+
+def _record_matches(
+    *,
+    store: SituationStore,
+    situation_id: str,
+    matches: list[tuple[str, str]],
+    now_iso: str,
+    assigned_by: AssignedBy,
+) -> int:
+    """照合結果を台帳へ記録する (cap + no-silent-caps は seed / 宣言条件で共通)。"""
+    added = 0
+    for aid, _rule in matches[:_HARVEST_CAP_PER_SITUATION]:
+        if store.record_assignment(
+            situation_id=situation_id,
+            article_id=aid,
+            added_at=now_iso,
+            assigned_by=assigned_by,
+        ):
+            added += 1
+    if added:
+        store.touch_situation(situation_id, last_evidence_at=now_iso)
+    if len(matches) > _HARVEST_CAP_PER_SITUATION:
+        dropped = len(matches) - _HARVEST_CAP_PER_SITUATION
+        _log.warning("standing_harvest_capped", situation_id=situation_id, dropped=dropped)
+        store.log_detection(
+            run_at=now_iso,
+            article_id=matches[_HARVEST_CAP_PER_SITUATION][0],
+            decision="rejected",
+            reason=f"standing_cap:{situation_id}:+{dropped}",
+            situation_id=situation_id,
+        )
+    return added
+
+
+def _harvest_declarative(
+    *,
+    store: SituationStore,
+    repo: RunHistoryRepository,
+    db_path: Path,
+    now_iso: str,
+    since_iso: str,
+    questions: list[dict[str, Any]],
+) -> int:
+    """昇格した問いを宣言条件で収穫する (段B-3c)。
+
+    候補プールは **広い方** を使う — 既定の粗 filter は R1-R3 専用で、
+    宣言条件の問いはそれに掛かると 1 件も拾えない。
+    """
+    from src.cti.router import get_source_quality
+    from src.cti.routing_rules import _eval_condition
+
+    candidates = _fetch_candidates(db_path, since_iso=since_iso, broad=True)
+    if not candidates:
+        return 0
+    entities_by_id = repo.entity_keys_for_articles(
+        [c["article_id"] for c in candidates], types=("actor", "involved_country")
+    )
+    nation_by_key = _actor_lookup()
+    sq = get_source_quality()
+
+    added_total = 0
+    for q in questions:
+        sid = str(q.get("situation_id"))
+        cond = q.get("evidence_condition") or {}
+        matches: list[tuple[str, str]] = []
+        for c in candidates:
+            aid = str(c["article_id"])
+            signals = signals_from_candidate(
+                c,
+                entity_keys=frozenset(entities_by_id.get(aid, set())),
+                nation_by_key=nation_by_key,
+            )
+            if _eval_condition(cond, signals, sq):
+                matches.append((aid, "declarative"))
+        added_total += _record_matches(
+            store=store,
+            situation_id=sid,
+            matches=matches,
+            now_iso=now_iso,
+            assigned_by="standing_declarative",
+        )
+    if added_total:
+        _log.info("standing_declarative_harvested", added=added_total, questions=len(questions))
+    return added_total
+
+
 def harvest_standing_evidence(
     *,
     store: SituationStore,
@@ -195,20 +362,37 @@ def harvest_standing_evidence(
     now_iso: str,
     lookback_hours: float,
 ) -> int:
-    """開設済み standing への証拠収穫 (決定論・LLM 不使用)。返り値 = 新規追加証拠数。"""
+    """開設済み standing への証拠収穫 (決定論・LLM 不使用)。返り値 = 新規追加証拠数。
+
+    2 経路ある (段B-3c):
+    - **seed (code 所有 4 問)**: R1-R3 の手書き規則 × 狭い候補プール (挙動不変)
+    - **昇格した問い (データ)**: 宣言条件 × 広い候補プール (intent の粗 filter を外す)
+    """
     seeds = [s for s in STANDING_SEEDS if store.get_situation(s.situation_id) is not None]
-    if not seeds:
+    questions = _open_declarative_questions(store=store, db_path=db_path)
+    if not seeds and not questions:
         return 0
     since = datetime.fromisoformat(now_iso).astimezone(UTC) - timedelta(hours=lookback_hours)
+    added_total = 0
+    if questions:
+        added_total += _harvest_declarative(
+            store=store,
+            repo=repo,
+            db_path=db_path,
+            now_iso=now_iso,
+            since_iso=since.isoformat(),
+            questions=questions,
+        )
+    if not seeds:
+        return added_total
     candidates = _fetch_candidates(db_path, since_iso=since.isoformat())
     if not candidates:
-        return 0
+        return added_total
     entities_by_id = repo.entity_keys_for_articles(
         [c["article_id"] for c in candidates], types=("actor", "involved_country")
     )
     nation_by_key = _actor_lookup()
 
-    added_total = 0
     for seed in seeds:
         matches: list[tuple[str, str]] = []
         for c in candidates:
@@ -221,29 +405,14 @@ def harvest_standing_evidence(
             )
             if rule is not None:
                 matches.append((aid, rule))
-        added = 0
-        for aid, _rule in matches[:_HARVEST_CAP_PER_SITUATION]:
-            if store.record_assignment(
-                situation_id=seed.situation_id,
-                article_id=aid,
-                added_at=now_iso,
-                assigned_by="standing",
-            ):
-                added += 1
-        if added:
-            store.touch_situation(seed.situation_id, last_evidence_at=now_iso)
-        if len(matches) > _HARVEST_CAP_PER_SITUATION:
-            # no silent caps (設計 §3.2): 切り詰めは detection_log に記録して監査可能に
-            dropped = len(matches) - _HARVEST_CAP_PER_SITUATION
-            _log.warning("standing_harvest_capped", situation_id=seed.situation_id, dropped=dropped)
-            store.log_detection(
-                run_at=now_iso,
-                article_id=matches[_HARVEST_CAP_PER_SITUATION][0],
-                decision="rejected",
-                reason=f"standing_cap:{seed.situation_id}:+{dropped}",
-                situation_id=seed.situation_id,
-            )
-        added_total += added
+        # cap + no-silent-caps (設計 §3.2) は宣言条件の経路と共通ヘルパで持つ
+        added_total += _record_matches(
+            store=store,
+            situation_id=seed.situation_id,
+            matches=matches,
+            now_iso=now_iso,
+            assigned_by="standing",
+        )
     if added_total:
         _log.info("standing_evidence_harvested", added=added_total, seeds=len(seeds))
     return added_total

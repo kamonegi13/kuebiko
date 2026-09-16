@@ -177,3 +177,63 @@ class TestDraftIsData:
 
         with pytest.raises(FrozenInstanceError):
             draft.decision = "別の決心"  # type: ignore[misc]
+
+
+class TestHarvestableProperties:
+    """段B-3c: 証拠条件は**収穫時に読める**プロパティだけで書けること。
+
+    収穫は articles の数列 + entity キーしか見ない。そこに無い property
+    (kev / keyword_list / llm_* 等) を条件に書くと、**静かに全件不一致**になり
+    「器はあるが証拠が来ない問い」ができる。起草時に弾く (関門で止める)。
+    """
+
+    def test_non_harvestable_property_fails(self) -> None:
+        cond = {"property": "kev", "op": "is_true", "value": True}
+
+        result = qualify(_draft(evidence_condition=cond))
+
+        assert result.ok is False
+        assert any("収穫" in f and "kev" in f for f in result.failures)
+
+    def test_nested_non_harvestable_property_is_caught(self) -> None:
+        """入れ子の奥でも見逃さない。"""
+        cond = {
+            "all": [
+                {"property": "intent", "op": "eq", "value": "espionage"},
+                {"any": [{"property": "keyword_list", "op": "in", "value": ["x"]}]},
+            ]
+        }
+
+        assert qualify(_draft(evidence_condition=cond)).ok is False
+
+    def test_all_frames_can_be_expressed_with_harvestable_properties(self) -> None:
+        """A/E/H の証拠条件が allowlist の内側で書けること (型と収穫の整合)。"""
+        from src.assessment.question_draft import HARVESTABLE_PROPERTIES
+
+        assert {
+            "intent",
+            "victim_country",
+            "victim_sector",
+            "actor_nation",
+            "involved_country",
+            "importance",
+            "category",
+        } <= HARVESTABLE_PROPERTIES
+
+    def test_harvestable_set_is_a_subset_of_the_catalog(self) -> None:
+        """カタログに無い名前を allowlist に書いても意味がない (綴り間違いの検知)。"""
+        from src.assessment.question_draft import HARVESTABLE_PROPERTIES
+        from src.cti.routing_rules import PROPERTY_BY_ID
+
+        assert set(PROPERTY_BY_ID) >= HARVESTABLE_PROPERTIES
+
+    def test_literal_valued_properties_without_a_safe_blank_are_excluded(self) -> None:
+        """既定値を持たない Literal (article_type / stance) は allowlist に入れない。
+
+        収穫の signals ではこの 2 つに固定値を詰めている (型を満たすためだけ)。
+        allowlist に入れると、DB 値が空の行 (実測 0.16% / 0.3%) がその固定値を指す
+        条件に**誤って一致する**。入れるなら先に番兵の問題を解くこと。
+        """
+        from src.assessment.question_draft import HARVESTABLE_PROPERTIES
+
+        assert not {"article_type", "stance"} & HARVESTABLE_PROPERTIES

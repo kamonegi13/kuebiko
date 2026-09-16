@@ -369,11 +369,14 @@ _REGISTRY: dict[str, Vocabulary] = {
             "anchor": "アンカー一致",
             "nation": "国家一致",
             "standing": "常設",
+            "standing_declarative": "常設 (宣言条件)",
             "token": "語句一致",
             "seed": "初期登録",
             "llm": "LLM 判定",
         },
-        canonical=frozenset({"anchor", "nation", "standing", "token", "seed", "llm"}),
+        canonical=frozenset(
+            {"anchor", "nation", "standing", "standing_declarative", "token", "seed", "llm"}
+        ),
     ),
     "forecast_scope": _vocab(
         "forecast_scope",
