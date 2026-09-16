@@ -7,6 +7,7 @@ import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { ConnectionsPanel } from "./config/ConnectionsPanel";
 import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
+import { JpCiOperatorsView } from "./config/JpCiOperatorsView";
 import { AccessAuditCard } from "../components/AccessAuditCard";
 import { OpsNoticesCard } from "../components/OpsNoticesCard";
 import { HostWatchdogCard } from "../components/HostWatchdogCard";
@@ -47,9 +48,23 @@ const MANAGED_KIND_LABEL: Record<ManagedPromptKind, string> = {
 // UI が残り、「作ったが使われていない」状態を自分で作ることになる)。
 // ⚠ 情報フロー (配信ルール/チャンネル/マッチリスト) は **nav の「設定」グループ内に
 // 既にある**ので移設不要。画面の所属は nav.ts の NAV_GROUPS が SSoT。
-type ConfigTab = "connections" | "models" | "prompts" | "system" | "history" | "yaml";
+type ConfigTab =
+  | "connections"
+  | "models"
+  | "prompts"
+  | "operators"
+  | "system"
+  | "history"
+  | "yaml";
 
-const HASH_TABS: ConfigTab[] = ["models", "prompts", "system", "history", "yaml"];
+const HASH_TABS: ConfigTab[] = [
+  "models",
+  "prompts",
+  "operators",
+  "system",
+  "history",
+  "yaml",
+];
 
 // タブ表示 (群ごとに区切る)。ラベルは日本語で統一 (旧 "yaml"/"prompts" は英小文字だった)。
 export const TAB_GROUPS: { group: string; tabs: { id: ConfigTab; label: string }[] }[] = [
@@ -58,6 +73,8 @@ export const TAB_GROUPS: { group: string; tabs: { id: ConfigTab; label: string }
     tabs: [
       { id: "models", label: "モデル" },
       { id: "prompts", label: "プロンプト" },
+      // S3 (2026-09-16): 専用ページ /app/jpci/operators から移設。
+      { id: "operators", label: "指定事業者名簿" },
     ],
   },
   {
@@ -135,6 +152,7 @@ export function ConfigPage() {
       {tab === "yaml" && <YamlEditor qc={qc} />}
       {tab === "prompts" && <PromptsEditor qc={qc} />}
       {tab === "models" && <ModelTiersEditor qc={qc} />}
+      {tab === "operators" && <JpCiOperatorsView />}
       {tab === "system" && <SystemEditor />}
       {tab === "history" && (
         <div className="space-y-4">

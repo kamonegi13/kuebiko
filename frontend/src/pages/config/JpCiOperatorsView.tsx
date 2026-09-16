@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { pageContainer } from "../components/Page";
-import { jpciOperatorsApi, type OperatorEntry } from "../api/jpci";
+import { jpciOperatorsApi, type OperatorEntry } from "../../api/jpci";
 
-/** 重要インフラ 指定事業者名簿の管理 (DB SSoT・版履歴は config-history)。
- *  名簿は「事業者名 → 分野」のみ — 技術・露出情報は保持しない (資産インベントリ非構築の原則)。 */
-export function JpCiOperatorsPage() {
+/** 重要インフラ 指定事業者名簿の編集 (DB SSoT・版履歴は config-history)。
+ *  名簿は「事業者名 → 分野」のみ — 技術・露出情報は保持しない (資産インベントリ非構築の原則)。
+ *
+ *  2026-09-16 (S3): 専用ページ `/app/jpci/operators` から**設定の【定義】タブへ移設**。
+ *  配置基準 (CLAUDE.md §11)「専用ページは閲覧のみ、定義の変更は設定カテゴリ」。
+ *  脅威ボードからは設定の該当タブへリンクする (旧入口は残さない — 二重の入口は
+ *  「片方だけ直す」事故の温床)。 */
+export function JpCiOperatorsView() {
   const qc = useQueryClient();
   const { data, error, isLoading } = useQuery({
     queryKey: ["jpci-operators"],
@@ -64,17 +68,17 @@ export function JpCiOperatorsPage() {
   };
 
   return (
-    <div className={`${pageContainer("wide")} space-y-4`}>
+    <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3 flex-wrap">
+          <h3 className="m-0 text-lg font-bold text-fg tracking-tight">指定事業者名簿</h3>
           <a
             href="/app/jpci"
             className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-accent"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            脅威ボード
+            脅威ボードで見る
           </a>
-          <h2 className="m-0 text-xl font-bold text-fg tracking-tight">指定事業者名簿</h2>
           {data && (
             <span className="text-xs text-fg-subtle">
               {operators.length} 事業者{data.version !== null && ` / v${data.version}`}

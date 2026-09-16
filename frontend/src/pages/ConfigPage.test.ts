@@ -19,6 +19,12 @@ describe("設定タブの群立て", () => {
     expect(def!.tabs.length).toBeGreaterThan(0);
   });
 
+  it("移設済みの定義が【定義】群にある (S3: 指定事業者名簿)", () => {
+    const def = TAB_GROUPS.find((g) => g.group === "定義")!;
+
+    expect(def.tabs.map((t) => t.id)).toContain("operators");
+  });
+
   it("空の群を作らない", () => {
     // 器だけ先に置くと死んだ UI が残る。移設は中身と一緒に入れる。
     for (const g of TAB_GROUPS) {

@@ -67,7 +67,7 @@ export function JpCiBoardPage() {
             日本重要インフラ 脅威ボード
           </h2>
           <a
-            href="/app/jpci/operators"
+            href="/app/config#operators"
             className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-accent border border-border-subtle rounded px-2 py-1"
           >
             <ListChecks className="h-3.5 w-3.5" />

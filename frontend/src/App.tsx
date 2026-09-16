@@ -25,7 +25,6 @@ import { FlowPage } from "./pages/FlowPage";
 import { MapPage } from "./pages/MapPage";
 import { JpCiBoardPage } from "./pages/JpCiBoardPage";
 import { QuestionsPage } from "./pages/QuestionsPage";
-import { JpCiOperatorsPage } from "./pages/JpCiOperatorsPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useRuntimeFlags, shouldHideFullOnly } from "./hooks/useRuntimeFlags";
 import { isOutsideMirror } from "./components/nav";
@@ -54,7 +53,6 @@ type Route =
   | { kind: "map" }
   | { kind: "questions" }
   | { kind: "jpci" }
-  | { kind: "jpci-operators" }
   | { kind: "schedule" }
   | { kind: "pir-list" }
   | { kind: "pir-detail"; pirId: string }
@@ -139,7 +137,12 @@ function parseRoute(): Route {
   }
   if (p === "/app/flow") return { kind: "flow" };
   if (p === "/app/map") return { kind: "map" };
-  if (p === "/app/jpci/operators") return { kind: "jpci-operators" };
+  // S3 (2026-09-16): 指定事業者名簿は設定の【定義】タブへ移設。旧 URL は転送する
+  // (ブックマークを壊さない)。旧入口は残さない — 二重の入口は「片方だけ直す」事故の温床。
+  if (p === "/app/jpci/operators") {
+    window.location.replace("/app/config#operators");
+    return { kind: "config" };
+  }
   if (p === "/app/questions") return { kind: "questions" };
   if (p === "/app/jpci") return { kind: "jpci" };
   if (p === "/app/schedule") return { kind: "schedule" };
@@ -211,7 +214,6 @@ export default function App() {
       {effectiveRoute.kind === "map" && <MapPage />}
       {effectiveRoute.kind === "questions" && <QuestionsPage />}
       {effectiveRoute.kind === "jpci" && <JpCiBoardPage />}
-      {effectiveRoute.kind === "jpci-operators" && <JpCiOperatorsPage />}
       {effectiveRoute.kind === "schedule" && <JobsConsolePage />}
       {effectiveRoute.kind === "pir-list" && <PirListPage />}
       {effectiveRoute.kind === "pir-detail" && <PirDetailPage pirId={effectiveRoute.pirId} />}
