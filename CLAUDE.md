@@ -546,8 +546,12 @@ kuebiko/
     (マッチリストは配信ルールの語彙なので情報フローへ、等)。**廃止した理由**: 移設の根拠
     だった「見ながら直す」が実装されていなかった — マッチリスト編集画面は配信ルールを
     表示しておらず、保存後にキャッシュを無効化するだけだった。理屈だけが残り、
-    変更の入口が主題ごとに 5 画面へ分散していた。移設計画は
-    [docs/settings_consolidation_plan.md](docs/settings_consolidation_plan.md)。.env タブは 2026-07-24 廃止 — 接続系キーは接続タブ+各対象画面 (チャンネル=情報フロー / IMAP=購読ソース / Ollama・外部LLM=モデルタブ) の双方から編集でき (同一 API)、.env ファイルは不可視の保存層として存続 (docs/deployment.md §7)
+    変更の入口が主題ごとに分散していた。移設計画は
+    [docs/settings_consolidation_plan.md](docs/settings_consolidation_plan.md)。
+  - ⚠ **画面の所属は `frontend/src/components/nav.ts` の `NAV_GROUPS` が SSoT**。
+    ルートの有無では判定できない — 情報フロー (`/app/flow`) は既に「設定」グループ内で、
+    配信ルール・チャンネル・マッチリストを内蔵し**新基準に既に適合している**
+    (2026-09-16 に Claude が専用ページと誤分類し、利用者が訂正).env タブは 2026-07-24 廃止 — 接続系キーは接続タブ+各対象画面 (チャンネル=情報フロー / IMAP=購読ソース / Ollama・外部LLM=モデルタブ) の双方から編集でき (同一 API)、.env ファイルは不可視の保存層として存続 (docs/deployment.md §7)
 - **PIR 管理** `/pir`: Priority Intelligence Requirements の CRUD + KPI 表示 + LLM-assisted 構造化。詳細は [docs/pir_system.md](docs/pir_system.md) と §13
 - **スケジュール管理** `/schedule`: 次回実行時刻表示、一時停止/再開、cron 式変更
 - **死活監視**: 専用ページ `/health` は 2026-07-24 廃止。疎通状態は各対象画面 (チャンネル/購読ソース/モデルタブ) の疎通ドット + ダッシュボードの死活 widget に統合 (API `/api/v1/health-status` は存続)
