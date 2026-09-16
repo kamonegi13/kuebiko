@@ -74,6 +74,21 @@ export function MatchListsView({ onOpenHistory }: { onOpenHistory?: () => void }
                 <Trash2 className="h-3.5 w-3.5" /> 削除
               </button>
             </div>
+
+            {/* 参照関係 (S2): この語彙を誰が使っているか。定義の編集を設定へ寄せる
+                前提条件 — これが無いと「対象を見ながら直す」が理屈だけになる
+                (docs/settings_consolidation_plan.md §4)。
+                ⚠ 未参照を「消してよい」と読ませない。事実だけを出す。 */}
+            <div className="text-xs text-fg-subtle">
+              {l.used_by_rules === undefined ? null : l.used_by_rules.length > 0 ? (
+                <>
+                  参照している配信ルール:{" "}
+                  <span className="font-mono text-fg-muted">{l.used_by_rules.join(", ")}</span>
+                </>
+              ) : (
+                <>どの配信ルールからも参照されていません (未使用。下書きの可能性もある)</>
+              )}
+            </div>
             <div>
               <label className="text-xs text-fg-subtle">キーワード (カンマ区切り、いずれか一致で該当)</label>
               <textarea

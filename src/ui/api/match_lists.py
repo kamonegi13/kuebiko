@@ -30,12 +30,29 @@ class SaveMatchListsRequest(BaseModel):
 @match_lists_api.get("")
 def get_match_lists_route() -> dict[str, Any]:
     """user 定義マッチリスト一覧 (UI 編集用)。"""
+    from src.cti.definition_usage import match_list_usage
     from src.cti.match_lists import get_match_lists
+    from src.cti.routing_rules import load_routing_rules
 
     lists = get_match_lists(force_reload=True)
+    names = [ml.name for ml in lists]
+    # 参照関係 (S2): 「この語彙を誰が使っているか」を編集画面に出す。
+    # 定義の変更を設定へ寄せる前提条件 (docs/settings_consolidation_plan.md §4) で、
+    # これが無いと旧基準と同じ「理屈だけ」の状態になる。
+    # ⚠ 参照ゼロを「削除してよい」と読ませない — 事実だけ返し判断は利用者に委ねる。
+    try:
+        usage = match_list_usage(names, list(load_routing_rules()))
+    except Exception as e:  # noqa: BLE001 — 参照が引けなくても編集は壊さない
+        _log.warning("match_list_usage_failed", error=str(e))
+        usage = dict.fromkeys(names, [])
     return {
         "lists": [
-            {"name": ml.name, "description": ml.description, "terms": list(ml.terms)}
+            {
+                "name": ml.name,
+                "description": ml.description,
+                "terms": list(ml.terms),
+                "used_by_rules": usage.get(ml.name, []),
+            }
             for ml in lists
         ],
     }

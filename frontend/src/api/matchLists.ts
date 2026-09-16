@@ -24,6 +24,9 @@ export interface MatchList {
   name: string;
   description: string;
   terms: string[];
+  /** このリストを参照している配信ルール id (読み取り専用。S2)。
+   *  ⚠ 空 = 「いま使われていない」だけで「消してよい」ではない。 */
+  used_by_rules?: string[];
 }
 
 export const matchListsApi = {
