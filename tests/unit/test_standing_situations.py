@@ -637,3 +637,82 @@ class TestFirstAnswerIsNotTheQuestion:
         assert first_answer(title="ある事象", leading="criminal_financial", is_standing=False) == (
             "ある事象"
         )
+
+
+class TestPostureCoversPromotedQuestions:
+    """段B-3e: 昇格した問いも問いの面に出ること (読み取り側が seed 駆動だった)。
+
+    ⚠ 実際に起きた: 問い 5 件を昇格させて台帳には入ったのに、
+    `build_standing_posture` が `STANDING_SEEDS` (code 所有 4 件) を列挙していたため
+    UI に 1 件も出なかった。§6e「問いはデータ」に読み取り側が追従していなかった。
+    """
+
+    def test_all_standing_situations_are_returned_by_default(
+        self, store: SituationStore
+    ) -> None:
+        from src.ui.services.standing_posture import build_standing_posture
+
+        ensure_standing_situations(store=store, now_iso=_NOW_ISO)
+        store.open_situation(
+            situation_id="s-standing-q-test",
+            title="日本の重要インフラに対する破壊・妨害は悪化しているか",
+            domain="cyber_incident",
+            anchors=frozenset(),
+            pir_ids=(),
+            now_iso=_NOW_ISO,
+            kind="standing",
+        )
+
+        ids = {
+            c["situation_id"]
+            for c in build_standing_posture(db_path=store._repo.db_path, now=_NOW)  # noqa: SLF001
+        }
+
+        assert "s-standing-q-test" in ids
+        assert "s-standing-prepos-cn" in ids
+
+    def test_board_asks_for_seeds_only(self, store: SituationStore) -> None:
+        """重要インフラ board は**事前配置 posture の面**なので 4 国だけを見る。
+
+        全件返すと、趨勢・閾値の問いが国別 board に混ざって面の意味が壊れる。
+        """
+        from src.ui.services.standing_posture import build_standing_posture
+
+        ensure_standing_situations(store=store, now_iso=_NOW_ISO)
+        store.open_situation(
+            situation_id="s-standing-q-test2",
+            title="ロシアによる日本の重要インフラへの活動は平時の水準を越えたか",
+            domain="cyber_incident",
+            anchors=frozenset(),
+            pir_ids=(),
+            now_iso=_NOW_ISO,
+            kind="standing",
+        )
+
+        ids = {
+            c["situation_id"]
+            for c in build_standing_posture(
+                db_path=store._repo.db_path,  # noqa: SLF001
+                now=_NOW,
+                seed_only=True,
+            )
+        }
+
+        assert "s-standing-q-test2" not in ids
+        assert len(ids) == 4
+
+    def test_event_situations_are_never_included(self, store: SituationStore) -> None:
+        """kind='event' を混ぜない (問いの面は問いだけ)。"""
+        from src.ui.services.standing_posture import build_standing_posture
+
+        store.open_situation(
+            title="ある事象",
+            domain="cyber_incident",
+            anchors=frozenset(),
+            pir_ids=(),
+            now_iso=_NOW_ISO,
+        )
+
+        cards = build_standing_posture(db_path=store._repo.db_path, now=_NOW)  # noqa: SLF001
+
+        assert all(c["situation_id"].startswith("s-standing-") for c in cards)

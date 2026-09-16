@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from src.assessment.situation_store import SituationStore
-from src.assessment.standing import STANDING_SEEDS
+from src.assessment.standing import STANDING_KIND, STANDING_SEEDS
 from src.storage.run_history import DEFAULT_DB_PATH
 from src.synthesis.grounded.hypotheses import get_hypothesis
 
@@ -57,20 +57,68 @@ def _json_list(raw: object) -> list[str]:
     return [str(x) for x in loaded if str(x).strip()] if isinstance(loaded, list) else []
 
 
+def _standing_targets(store: SituationStore, *, seed_only: bool) -> list[tuple[str, str, str]]:
+    """カードを作る対象 (situation_id, 問い文, 主体の国コード)。
+
+    既定は台帳の ``kind='standing'`` **全件** — 昇格した問い (config_store 由来) を
+    含める (§6e「問いはデータ」)。``seed_only`` は重要インフラ board 専用で、
+    あの面は**事前配置 posture の国別 board** なので code 所有の 4 件だけを見る
+    (趨勢・閾値の問いを混ぜると面の意味が壊れる)。
+    """
+    if seed_only:
+        return [
+            (s.situation_id, s.title, s.nation)
+            for s in STANDING_SEEDS
+            if store.get_situation(s.situation_id) is not None
+        ]
+    # seed を先頭に **seed 順** で置く — この並びは脅威の序列を表しており、
+    # id 順にすると意味のない並びになる (board と共有する不変条件)。昇格分は後ろへ。
+    seeds = [
+        (s.situation_id, s.title, s.nation)
+        for s in STANDING_SEEDS
+        if store.get_situation(s.situation_id) is not None
+    ]
+    seed_ids = {sid for sid, _t, _n in seeds}
+    promoted = [
+        (r.situation_id, r.title, _subject_nation(r.situation_id))
+        for r in store.load_situations()
+        if r.kind == STANDING_KIND and r.situation_id not in seed_ids
+    ]
+    return seeds + promoted
+
+
+def _subject_nation(situation_id: str) -> str:
+    """昇格した問いの主体 (スロット ``subject``)。持たない型 (趨勢) は空。"""
+    try:
+        from src.assessment.question_store import list_questions
+
+        for q in list_questions():
+            if q.get("situation_id") == situation_id:
+                return str((q.get("slots") or {}).get("subject") or "")
+    except Exception:  # noqa: BLE001 — 保存層の障害で面を壊さない
+        return ""
+    return ""
+
+
 def build_standing_posture(
-    db_path: Path = DEFAULT_DB_PATH, *, now: datetime | None = None
+    db_path: Path = DEFAULT_DB_PATH,
+    *,
+    now: datetime | None = None,
+    seed_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """常設 4 件の posture カード payload (seed 順、未開設は除外)。
+    """常設情報要求の posture カード payload (situation_id 順、未開設は除外)。
 
     ``now`` = 30 日証拠窓の基準時刻 (既定は実時刻)。テストは fixture の固定時刻を
     渡す — 実時刻直書きだと fixture 日付 + 30 日で失効する時限テストになる
     (2026-08-13 に実際に失効した)。
+
+    ``seed_only`` = code 所有の 4 件だけ (重要インフラ board 用)。
     """
     store = SituationStore(db_path=db_path)
     since = ((now or datetime.now(UTC)) - timedelta(days=_EVIDENCE_WINDOW_DAYS)).isoformat()
     cards: list[dict[str, Any]] = []
-    for seed in STANDING_SEEDS:
-        row = store.get_situation(seed.situation_id)
+    for sid, title, nation in _standing_targets(store, seed_only=seed_only):
+        row = store.get_situation(sid)
         if row is None:
             continue
         with store._repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の意図的共有
@@ -79,20 +127,20 @@ def build_standing_posture(
                 " delta_note, confidence_basis, missing"
                 " FROM situation_revisions WHERE situation_id=?"
                 " ORDER BY rev DESC LIMIT ?",
-                (seed.situation_id, _TRAJECTORY_LIMIT),
+                (sid, _TRAJECTORY_LIMIT),
             ).fetchall()
             indicator_rows = conn.execute(
                 "SELECT indicator, status, opened_at, horizon_days"
                 " FROM situation_forecasts WHERE situation_id=?"
                 " ORDER BY opened_at DESC LIMIT ?",
-                (seed.situation_id, _INDICATOR_LIMIT),
+                (sid, _INDICATOR_LIMIT),
             ).fetchall()
             counts = conn.execute(
                 "SELECT COUNT(*),"
                 " SUM(CASE WHEN a.victim_country_iso = 'JP' THEN 1 ELSE 0 END)"
                 " FROM situation_evidence e JOIN articles a ON a.article_id = e.article_id"
                 " WHERE e.situation_id = ? AND datetime(a.created_at) >= datetime(?)",
-                (seed.situation_id, since),
+                (sid, since),
             ).fetchone()
         revs = list(reversed(rev_rows))
         latest = revs[-1] if revs else None
@@ -100,10 +148,10 @@ def build_standing_posture(
         hyp = get_hypothesis(leading) if leading else None
         cards.append(
             {
-                "situation_id": seed.situation_id,
-                "nation": seed.nation,
-                "nation_label": _NATION_LABELS.get(seed.nation, seed.nation),
-                "question": seed.title,
+                "situation_id": sid,
+                "nation": nation,
+                "nation_label": _NATION_LABELS.get(nation, nation),
+                "question": title,
                 "assessed": latest is not None,
                 "claim": str(latest[1]) if latest else "",
                 "leading_hypothesis": leading,

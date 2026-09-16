@@ -31,7 +31,9 @@ def get_jp_ci_board(days: int = Query(default=30, ge=0, le=365)) -> dict[str, An
     data = build_jp_ci_board(window_days=days or None)
     # 段C: 常設情報要求 posture カード (第 3 の独立レンズ)。board 集計と独立に
     # situations/revisions から導出 (days 窓の影響を受けない)。未開設なら空 list。
-    data["posture"] = build_standing_posture()
+    # board は**事前配置 posture の国別面**なので code 所有の 4 件だけを見る。
+    # 昇格した問い (趨勢・閾値) を混ぜると国別 board の意味が壊れる (§6e)。
+    data["posture"] = build_standing_posture(seed_only=True)
     # stale なエントリを掃除してから書く (無制限増加を防ぐ。key は days 有界だが明示的に purge)
     for k in [k for k, (ts, _) in _cache.items() if now - ts >= _TTL_SECONDS]:
         del _cache[k]
