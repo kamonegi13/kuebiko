@@ -63,6 +63,9 @@ export interface SpotlightListResponse {
 }
 
 // 既定は rolling7 (毎日作り直す直近 7 日)。週次は最大 7 日古いので既定に据えない。
+// ⚠ 呼出側で期間を**上書きしない**こと。2026-08-29 の日次化で weekly の生成は止まって
+// おり、固定していた 2 画面が 18 日前を表示していた (2026-09-16 発見)。
+export const SPOTLIGHT_DEFAULT_PERIOD: SpotlightPeriod = "rolling7";
 export const spotlightApi = {
   list: (period_type: SpotlightPeriod = "rolling7") =>
     getJson<SpotlightListResponse>(`/api/v1/spotlight?period_type=${period_type}`),

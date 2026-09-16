@@ -9,7 +9,7 @@ import { pageContainer } from "../components/Page";
 import { PirMatchTree } from "../components/PirMatchTree";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { pirApi } from "../api/pir";
-import { spotlightApi } from "../api/spotlight";
+import { spotlightApi, SPOTLIGHT_DEFAULT_PERIOD } from "../api/spotlight";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { formatJst, formatJstShort } from "../utils/date";
 import { useChannelMeta } from "../components/channel";
@@ -53,12 +53,15 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
   const spotlightEnabled = !!pir?.spotlight.enabled;
   const { data: latestSpotlight } = useQuery({
     queryKey: ["spotlight-detail", pirId],
-    queryFn: () => spotlightApi.get(pirId, "weekly"),
+    // ⚠ "weekly" 固定は 2026-08-29 の日次化に取り残され 18 日前を出していた。
+    // 既定 (rolling7) に委ねる — 既定が決定を持つ。
+    queryFn: () => spotlightApi.get(pirId),
     enabled: spotlightEnabled,
     retry: false,
   });
   const regenSpotlight = useMutation({
-    mutationFn: (model?: string) => spotlightApi.regenerate(pirId, "weekly", model),
+    mutationFn: (model?: string) =>
+      spotlightApi.regenerate(pirId, SPOTLIGHT_DEFAULT_PERIOD, model),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["spotlight-detail", pirId] });
       qc.invalidateQueries({ queryKey: ["spotlight-list"] });

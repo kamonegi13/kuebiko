@@ -5,7 +5,7 @@ import { api } from "../../api/client";
 import { useFilters, type PeriodType } from "../../state/filters";
 import { SynthesisProse } from "../SynthesisProse";
 import { formatJst, formatJstDate } from "../../utils/date";
-import { spotlightApi, type SpotlightSummary, type SourceBasis } from "../../api/spotlight";
+import { spotlightApi, type SpotlightSummary, type SourceBasis, SPOTLIGHT_DEFAULT_PERIOD } from "../../api/spotlight";
 import { LedgerView } from "./LedgerView";
 import type {
   Tradecraft,
@@ -640,8 +640,8 @@ function SpotlightView() {
   const qc = useQueryClient();
   const flags = useRuntimeFlags();
   const { data, isLoading } = useQuery({
-    queryKey: ["spotlight-list", "rolling7"],
-    queryFn: () => spotlightApi.list("rolling7"),
+    queryKey: ["spotlight-list", SPOTLIGHT_DEFAULT_PERIOD],
+    queryFn: () => spotlightApi.list(SPOTLIGHT_DEFAULT_PERIOD),
   });
 
   // 並びは **該当件数の多い順**。今どこが動いているかが、並びそのもので分かる
@@ -699,7 +699,7 @@ function SpotlightCard({
   const [open, setOpen] = useState(false);
 
   const regenMain = useMutation({
-    mutationFn: (model?: string) => spotlightApi.regenerate(s.pir_id, "rolling7", model),
+    mutationFn: (model?: string) => spotlightApi.regenerate(s.pir_id, SPOTLIGHT_DEFAULT_PERIOD, model),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["spotlight-list"] }),
   });
 

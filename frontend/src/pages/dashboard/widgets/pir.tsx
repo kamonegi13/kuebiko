@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { pirApi } from "../../../api/pir";
-import { spotlightApi, type SpotlightPeriod } from "../../../api/spotlight";
+import { spotlightApi, type SpotlightPeriod, SPOTLIGHT_DEFAULT_PERIOD } from "../../../api/spotlight";
 import { formatJstCompact } from "../../../utils/date";
 import { vocabLabel } from "../../../hooks/useVocab";
 import { WidgetCard, Loading, Empty, WidgetError, type WidgetProps } from "../shared";
@@ -51,9 +51,10 @@ export function PirCoverageWidget() {
 // バウンド)、SIR 名をラベル化 + 件数を右肩へ、アイテム境界を強めて塊で見えるように。
 // 全文は Synthesis ドリルに委ねる (per-item 展開の手間を排除)。
 export function PirSpotlightWidget({ mobile }: WidgetProps) {
-  // Spotlight は週次のみ生成 (cron=月曜09:00 weekly)。日次は別機能の SIR Daily Focus、
-  // 月次 spotlight は未スケジュール。よって週次固定とし、空になる期間選択肢は出さない。
-  const period: SpotlightPeriod = "weekly";
+  // ⚠ かつて "weekly" 固定だった。2026-08-29 の日次化で生成は rolling7 に移ったのに
+  // ここが取り残され、**18 日前の内容を出していた** (2026-09-16 実測: weekly の最終生成
+  // 08-29 / rolling7 は当日)。既定 (rolling7) が決定を持つので上書きしない。
+  const period: SpotlightPeriod = SPOTLIGHT_DEFAULT_PERIOD;
   const { data, isError } = useQuery({
     queryKey: ["dash-spotlight", period],
     queryFn: () => spotlightApi.list(period),
