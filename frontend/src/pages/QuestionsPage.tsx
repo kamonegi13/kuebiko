@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { pageContainer } from "../components/Page";
+import { SectionHeading } from "../components/SectionHeading";
 import { SynthesisProse } from "../components/SynthesisProse";
 import { vocabLabel } from "../hooks/useVocab";
 import { questionsApi, type PostureCard, type QuestionIndicator } from "../api/jpci";
@@ -246,7 +247,9 @@ export function QuestionsPage() {
 
       {moved.length > 0 && (
         <section className="mb-6">
-          <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">動いた問い</h3>
+          {/* sticky: 長いカードを読み進むと、いま「動いた問い」を見ているのか
+              「動いていない問い」なのかが分からなくなる (2026-08-29 と同じ理由)。 */}
+          <SectionHeading title="動いた問い" note={`${moved.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
             前回の評価から答え・確度・見立てのいずれかが変わったもの。何がそれを動かしたかを併記する。
           </p>
@@ -260,7 +263,7 @@ export function QuestionsPage() {
 
       {quiet.length > 0 && (
         <section>
-          <h3 className="m-0 mb-1 text-lg font-bold text-fg tracking-tight">動いていない問い</h3>
+          <SectionHeading title="動いていない問い" note={`${quiet.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
             答えは前回から変わっていない。静かであることは安全を意味しない —
             鮮度と、何が見えれば答えが変わるかを併せて見る。
