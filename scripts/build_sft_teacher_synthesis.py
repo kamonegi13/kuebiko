@@ -22,6 +22,11 @@
   2.5k を見込む)。予算超過の prompt は教師に投げない (外部枠を使わない)。
   トークン見積りは実測比 ``chars / 1.85`` (15 窓で 1.76-1.91、Gemma-4 26B tokenizer)。
   最終的な足切りは ``assemble_sft_dataset.py --max-tokens`` が正確なトークン数で行う。
+- **有料で取った completion は捨てない** (2026-09-16、1 窓目が pair_too_long で破棄され
+  た事故から): 不採用 (pair_too_long / short / no_notes) の対は ``<out>_oversize.jsonl``
+  に理由つきで保存し、再実行でも処理済みとして再課金しない。使うか否かは学習側
+  (``assemble_sft_dataset.py``) が決める。CoT 欄つきの実出力は見込み 2.5k の倍
+  (Opus 実測 5.7k tok) に達し、pair 予算 13k を prompt 7.3k 超で踏み越える。
 - ``--cot`` では ``analysis_notes`` が空の completion を採らない (目的物が無い = 経路不整合)。
 - 1 件も採れなければ rc=1 (2026-09-06 の「0 件で完了と記録」の再発防止)。
 
@@ -170,14 +175,23 @@ def accept_completion(
     return None
 
 
+def _oversize_path(out: Path) -> Path:
+    """不採用の対を保存する副ファイル (``synthesis.jsonl`` → ``synthesis_oversize.jsonl``)。"""
+    return out.with_name(f"{out.stem}_oversize{out.suffix}")
+
+
 def _done_keys(path: Path) -> set[str]:
-    if not path.exists():
-        return set()
-    return {
-        json.loads(line)["key"]
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    }
+    """本体と副ファイルの両方に載る key = 既に外部枠を使った窓 (再課金しない)。"""
+    keys: set[str] = set()
+    for p in (path, _oversize_path(path)):
+        if not p.exists():
+            continue
+        keys |= {
+            json.loads(line)["key"]
+            for line in p.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+    return keys
 
 
 async def harvest(
@@ -206,7 +220,10 @@ async def harvest(
     }
     consecutive = 0
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("a", encoding="utf-8") as fh:
+    with (
+        out.open("a", encoding="utf-8") as fh,
+        _oversize_path(out).open("a", encoding="utf-8") as fh_rej,
+    ):
         for w in windows:
             if w.key in done:
                 stats["done"] += 1
@@ -245,8 +262,27 @@ async def harvest(
                 w.prompt, completion, cot=cot, max_pair_tokens=max_pair_tokens
             )
             if reason is not None:
+                # 有料で取った出力は捨てない — 副ファイルへ理由つきで保存し学習側で判断する
                 stats[reason] += 1
-                print(f"  {w.key} 不採用 ({reason})", flush=True)
+                fh_rej.write(
+                    json.dumps(
+                        {
+                            "key": w.key,
+                            "prompt": w.prompt,
+                            "completion": completion,
+                            "reason": reason,
+                            "pair_tokens_est": _est_tokens(w.prompt) + _est_tokens(completion),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                fh_rej.flush()
+                print(
+                    f"  {w.key} 不採用 ({reason}, pair ≈"
+                    f"{_est_tokens(w.prompt) + _est_tokens(completion)} tok) → 副ファイルへ保存",
+                    flush=True,
+                )
                 continue
             fh.write(
                 json.dumps(
