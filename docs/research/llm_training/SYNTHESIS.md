@@ -2030,3 +2030,30 @@ event_kind は `data/mlx/detect_gold_kinds.jsonl` (fast ティアで 194 件に�
 4. 閾値は下流の消化能力 (≈6 開設/日、daily cap 12/run) から code で決める
 5. 合否 = 同じ凍結審判で現行 12/37 を precision・recall とも上回ること、かつ §47 の
    「進行中の国内侵害 9 件」の回収
+
+### §47 追記 2: 配管を通した — 特徴量 seam + 時系列分割ハーネス (2026-09-17 朝)
+
+- 特徴量 = `src/synthesis/grounded/detect_features.py` (`feature_vector` / `FEATURE_NAMES` 39 列、
+  純粋関数、テスト 5 件): importance 序数 / event_kind 6 / category 13 / tier 5 / entity 種別
+  件数 8 + 総数 / 日本標的 (`is_japan_targeted_row`) / 続報・進行中・完結マーカー (正規表現) /
+  タイトル長。埋込・LLM 採点は入れない (前者は効かず、後者は 8s/件で寄与小)。
+- ハーネス = `scripts/eval_detect_ml_timesplit.py` (ホストで DATABASE_URL を本番 PG へ。
+  sklearn は本番 image に無い)。時系列分割 (前 60% 学習 / 後 40% 評価) + 5-fold CV + 種別関門。
+- 194 件での結果 (評価期間 76 件・正 12・同量 = 評価期間の現行開設 13):
+
+| | precision | recall | AUC |
+|---|---|---|---|
+| 現行 detect (評価期間) | 0.38 (5/13) | — | — |
+| logreg (時系列分割) | **0.54** | 0.58 | 0.85 |
+| RF (時系列分割) | 0.41 | 0.44 | 0.82 |
+| 種別関門 {breach, exploitation} のみ | 0.33 (82 件) | 0.90 | — |
+
+  同量 13 件の比較なので誤差棒は広い。**判定は来週水曜の審判増量 (→600 件) 後**。
+- RF の寄与上位: importance / kind=exploitation / title_len / kind=other / n_ttp。
+  続報・進行中マーカーは上位に入らず (要約が短く語が乗らない可能性、600 件で再確認)。
+- event_kind は held-out 1,576 件全件へ付与済み (`data/mlx/detect_heldout_kinds.jsonl`、
+  fast ティア ~1 件/秒)。審判増量の母集団は種別で層化できる。
+
+来週水曜 23:01 の枠: `build_detect_goldset.py --random-sample 526 --apply` (既判定 194 は
+スキップ、Sonnet ~200k tok) → 同ハーネスで再測 → 合格なら RF/logreg の JSON export と
+本番 seam (`detect_new_claims` の前段で候補を絞る、閾値 = 消化能力) に進む。
