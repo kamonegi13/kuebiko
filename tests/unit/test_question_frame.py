@@ -135,3 +135,75 @@ class TestFrameIsGenericNotUseCaseSpecific:
         import src.assessment.question_frame as qf
 
         assert not [n for n in dir(qf) if "SEED" in n.upper()]
+
+
+class TestTrendFrame:
+    """型 E 趨勢 — 観測バイアスが**一級の競合仮説**であること (CLAUDE.md §7)。"""
+
+    def test_renders_readable_question(self) -> None:
+        from src.assessment.question_frame import FRAME_TREND
+
+        rendered = render_question(
+            FRAME_TREND,
+            {"target_country": "JP", "target_scope": SCOPE_ALL_CI, "threat": "espionage"},
+        )
+
+        assert rendered == "日本の重要インフラに対する諜報・情報窃取は悪化しているか"
+
+    def test_observation_artifact_is_a_first_class_hypothesis(self) -> None:
+        """「収集量を重要性の代理にしない」— 観測の変化を必ず競わせる。
+
+        これを外すと E は「記事が増えた=悪化した」を言う機械になる。
+        """
+        from src.assessment.question_frame import FRAME_TREND
+
+        assert any("observation" in h.id for h in FRAME_TREND.hypotheses)
+
+    def test_offers_improvement_not_only_worsening(self) -> None:
+        """方向中立 — 悪化だけを仮説に置くと脅威過大に倒れる (POSTURE と同じ規律)。"""
+        from src.assessment.question_frame import FRAME_TREND
+
+        ids = {h.id for h in FRAME_TREND.hypotheses}
+
+        assert {"trend_worsening", "trend_flat", "trend_improving"} <= ids
+
+
+class TestThresholdFrame:
+    """型 H 閾値・段階 — 決心 (警報・態勢) に直結する型。"""
+
+    def test_renders_readable_question(self) -> None:
+        from src.assessment.question_frame import FRAME_THRESHOLD
+
+        rendered = render_question(
+            FRAME_THRESHOLD,
+            {"subject": "cn", "target_country": "JP", "target_scope": SCOPE_ALL_CI},
+        )
+
+        assert rendered == "中国による日本の重要インフラへの活動は平時の水準を越えたか"
+
+    def test_detection_improvement_is_a_competing_hypothesis(self) -> None:
+        """「見えるようになっただけ」を競わせる — E の観測バイアスとは別物。
+
+        E = 我々の網・世界の報道量が変わった (集計の歪み)
+        H = 我々の検知能力が上がった (同じ活動がいま見えている)
+        """
+        from src.assessment.question_frame import FRAME_THRESHOLD
+
+        assert any("detection" in h.id for h in FRAME_THRESHOLD.hypotheses)
+
+    def test_normal_range_is_the_null_hypothesis(self) -> None:
+        """既定は「平時の変動内」— 越えたと言うには証拠が要る (fail-closed)。"""
+        from src.assessment.question_frame import FRAME_THRESHOLD
+
+        assert any(h.id == "threshold_within_normal" for h in FRAME_THRESHOLD.hypotheses)
+
+
+class TestFramesAreDistinct:
+    def test_trend_and_threshold_are_separate_frames(self) -> None:
+        """E は傾き、H は線を越えたか。混ぜると「増えています」で決心に届かない。"""
+        assert {"presence", "trend", "threshold"} <= set(FRAME_BY_ID)
+
+    def test_every_frame_has_at_least_three_competing_hypotheses(self) -> None:
+        """資格要件 1 — 答えが 2 つ以上の排他的な見立てに割れること。"""
+        for frame in FRAME_BY_ID.values():
+            assert len(frame.hypotheses) >= 3, frame.frame_id

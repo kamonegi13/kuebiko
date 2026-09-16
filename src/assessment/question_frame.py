@@ -26,7 +26,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from src.synthesis.grounded.hypotheses import POSTURE_HYPOTHESES, Hypothesis
+from src.synthesis.grounded.hypotheses import (
+    POSTURE_HYPOTHESES,
+    THRESHOLD_HYPOTHESES,
+    TREND_HYPOTHESES,
+    Hypothesis,
+)
 
 #: 分野スロットの「全重要インフラ」を表す値。R1-R3 の ``is_ci_sector`` (NISC 全分野) と
 #: 同義で、証拠条件では ``victim_sector in <NISC 集合>`` に展開される。
@@ -130,5 +135,36 @@ FRAME_PRESENCE = QuestionFrame(
 )
 
 
-FRAMES: tuple[QuestionFrame, ...] = (FRAME_PRESENCE,)
+# ---- 型 E: 趨勢 (2026-09-16) ----
+# 決心「防御の優先順位を変えるか」を支える。判定材料は
+# ``src.assessment.composition`` の安定コホート上の構成比 (件数では判定できない)。
+FRAME_TREND = QuestionFrame(
+    frame_id="trend",
+    label="趨勢",
+    template="{target_country}の{target_scope}に対する{threat}は悪化しているか",
+    slots=(
+        SlotSpec("target_country", "対象国", "countries"),
+        SlotSpec("target_scope", "対象分野", "nisc_sectors"),
+        SlotSpec("threat", "脅威の種別", "intents"),
+    ),
+    hypotheses=TREND_HYPOTHESES,
+)
+
+# ---- 型 H: 閾値・段階 (2026-09-16) ----
+# 決心「警報を出すか・監視態勢を上げるか」を支える。E と対 — E は傾き、H は線を越えたか。
+# 帰無仮説は「平時の変動内」で、越えたと言うには証拠が要る (fail-closed)。
+FRAME_THRESHOLD = QuestionFrame(
+    frame_id="threshold",
+    label="閾値・段階",
+    template="{subject}による{target_country}の{target_scope}への活動は平時の水準を越えたか",
+    slots=(
+        SlotSpec("subject", "主体 (国)", "countries"),
+        SlotSpec("target_country", "対象国", "countries"),
+        SlotSpec("target_scope", "対象分野", "nisc_sectors"),
+    ),
+    hypotheses=THRESHOLD_HYPOTHESES,
+)
+
+
+FRAMES: tuple[QuestionFrame, ...] = (FRAME_PRESENCE, FRAME_TREND, FRAME_THRESHOLD)
 FRAME_BY_ID: dict[str, QuestionFrame] = {f.frame_id: f for f in FRAMES}

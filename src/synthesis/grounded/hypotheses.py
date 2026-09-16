@@ -147,6 +147,83 @@ POSTURE_CORE: tuple[Hypothesis, ...] = (
     ),
 )
 
+# ---- 型 E 趨勢 (2026-09-16): 「〜は悪化しているか」への ACH フレーム ----
+# 設計 docs/pir_brief_design.md §6c。**方向中立** — 悪化だけを置くと脅威過大に倒れる
+# (POSTURE_CORE と同じ規律)。観測の変化を一級の競合仮説として必ず競わせる
+# (CLAUDE.md §7「収集量を重要性の代理にしない」が直撃する型のため)。
+TREND_CORE: tuple[Hypothesis, ...] = (
+    Hypothesis(
+        "trend_worsening",
+        "悪化している",
+        "当該対象への当該脅威は、比較期間に対して実態として強まっている。",
+        "同一フィードコホート上の構成比の上昇、被害の重篤化、新規標的分野への拡大、"
+        "独立した複数の一次観測。",
+        "構成比が横ばい、上昇が単一事案の連続報道に由来、母集団が薄い。",
+    ),
+    Hypothesis(
+        "trend_flat",
+        "横ばい (変動の範囲内)",
+        "増減は見られるが、過去の変動幅の内側で、趨勢と呼べる変化ではない。",
+        "構成比の変化が小さい、過去窓でも同程度の揺れがある、母集団が薄い。",
+        "過去の変動幅を明確に超える構成比の移動が複数期間続く。",
+    ),
+    Hypothesis(
+        "trend_improving",
+        "改善している",
+        "当該脅威は実態として弱まっている (対処の奏功・アクターの関心移動等)。",
+        "構成比の低下、既知アクターの活動停止・摘発、対処策の普及。",
+        "低下が観測の縮小で説明できる、他分野への移動にすぎない。",
+    ),
+    Hypothesis(
+        "trend_observation_change",
+        "観測の変化 (実態でなく集計の歪み)",
+        "**集計側**の変化で増減して見えている。収集網の増減、あるいは世界の報道量の変動。"
+        " (個別主張の再報道は `reporting_artifact` が担う — こちらは集計全体の歪み)",
+        "比較期間でフィード構成が変わった、コホートの記事占有率が低い、母集団が薄い、"
+        "同一コホートに限ると差が消える。",
+        "同一コホート・十分な母集団の上でも構成比が動いている。",
+    ),
+)
+
+# ---- 型 H 閾値・段階 (2026-09-16): 「〜は平時の水準を越えたか」への ACH フレーム ----
+# E (傾き) と対。決心 (警報を出すか・態勢を上げるか) に直結する。
+# **帰無仮説は「平時の変動内」** — 越えたと言うには証拠が要る (fail-closed)。
+THRESHOLD_CORE: tuple[Hypothesis, ...] = (
+    Hypothesis(
+        "threshold_within_normal",
+        "平時の変動内",
+        "観測されている活動は、当該主体の平常の活動水準の内側にある (既定の見立て)。",
+        "手口・標的選定が従来の範囲、構成比が過去の揺れの内側、質的な新しさの不在。",
+        "従来見られなかった種類の活動、標的分野の質的な拡大、作戦テンポの明確な変化。",
+    ),
+    Hypothesis(
+        "threshold_crossed",
+        "段階が上がった",
+        "活動が平時の水準を越え、質的に異なる段階に入っている"
+        " (偵察から足場確保へ、あるいは足場確保から影響行使へ等)。",
+        "従来と異なる種類の行為の出現、OT・境界系など新分野への到達、"
+        "複数の独立観測が同時期に集中、公的機関の警戒度の変更。",
+        "変化が単一事案・単一ソースに依存、従来手口の範囲内、観測側の変化で説明可能。",
+    ),
+    Hypothesis(
+        "threshold_third_party",
+        "第三者・便乗",
+        "水準の上昇に見えるものは、当該主体ではない別アクター (非国家・便乗犯・"
+        "自称勢力) の活動が混ざった結果である。",
+        "帰属の不在または弱さ、自称のみ、手口の不一致、金銭目的の痕跡。",
+        "辞書ゲート済みの帰属、当該主体の既知インフラ・手口との一致。",
+    ),
+    Hypothesis(
+        "threshold_detection_improved",
+        "検知能力の向上 (前からあったものが見えた)",
+        "活動の水準は変わっておらず、**我々または報告者の検知能力が上がった**ために"
+        " いま見えている。",
+        "新しい検知手法・調査公開の直後に集中、遡及的な過去事案の発見、"
+        "同一コホートでは構成比が動いていない。",
+        "リアルタイムの新規活動として観測、検知手法に変化がない期間での増加。",
+    ),
+)
+
 # ---- 全ドメイン共通 ----
 SHARED: tuple[Hypothesis, ...] = (
     Hypothesis(
@@ -169,8 +246,12 @@ CYBER_HYPOTHESES: tuple[Hypothesis, ...] = CYBER_CORE + SHARED
 GEO_HYPOTHESES: tuple[Hypothesis, ...] = GEO_CORE + SHARED
 # standing (常設情報要求) 専用: 呼出側が hypotheses_override で明示指定する (domain 選択外)。
 POSTURE_HYPOTHESES: tuple[Hypothesis, ...] = POSTURE_CORE + SHARED
+TREND_HYPOTHESES: tuple[Hypothesis, ...] = TREND_CORE + SHARED
+THRESHOLD_HYPOTHESES: tuple[Hypothesis, ...] = THRESHOLD_CORE + SHARED
 # 全仮説 (id 解決・is_known 用)。POSTURE は event の domain 選択には出さない (下記 union)。
-HYPOTHESIS_MENU: tuple[Hypothesis, ...] = CYBER_CORE + GEO_CORE + POSTURE_CORE + SHARED
+HYPOTHESIS_MENU: tuple[Hypothesis, ...] = (
+    CYBER_CORE + GEO_CORE + POSTURE_CORE + TREND_CORE + THRESHOLD_CORE + SHARED
+)
 # event 用 domain 不明時の union (POSTURE を含めない — 常設専用フレームの漏出防止)
 _EVENT_UNION: tuple[Hypothesis, ...] = CYBER_CORE + GEO_CORE + SHARED
 
