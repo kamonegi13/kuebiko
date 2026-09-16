@@ -38,6 +38,7 @@ from src.assessment.ledger import (
     _sweep_lifecycle,
     compute_delta_type,
 )
+from src.assessment.question_store import hypotheses_for_standing
 from src.assessment.situation_store import (
     DeltaType,
     RevisionRow,
@@ -66,7 +67,7 @@ from src.synthesis.grounded.estimate import (
     KeyJudgment,
     final_confidence,
 )
-from src.synthesis.grounded.hypotheses import POSTURE_HYPOTHESES, get_hypothesis
+from src.synthesis.grounded.hypotheses import get_hypothesis
 from src.synthesis.grounded.incremental import (
     CARRIED_INDICATORS_MAX,
     PriorJudgmentView,
@@ -769,8 +770,10 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     for sid, new_aids in sorted(new_by_sid.items()):
         row = row_by_sid[sid]
         is_standing = row.kind == STANDING_KIND
-        # standing は POSTURE 固定フレームで競合仮説を立てる (event の domain 選択を使わない)
-        hyp_override = POSTURE_HYPOTHESES if is_standing else None
+        # standing は問いの**型**が競合仮説を決める (event の domain 選択を使わない)。
+        # 昇格した問い (config_store 登録済み) はその型の骨格、現行 4 seed と
+        # 引けなかった場合は POSTURE に倒れる = 挙動不変 (段B-3、fail-open)。
+        hyp_override = hypotheses_for_standing(sid) if is_standing else None
         prev = latest_revs.get(sid)
         sources: list[dict[str, str]] = []
         tier_by_id: dict[str, str] = {}
