@@ -29,6 +29,10 @@ _log = structlog.get_logger(__name__)
 
 DEFAULT_MODEL_PATH = Path("config/models/detect_model.json")
 _SHADOW_ENV = "DETECT_ML_SHADOW"
+_PREFILTER_ENV = "DETECT_ML_PREFILTER"
+#: detect (LLM) に渡す候補を ML の上位この件数に絞る既定値。バックテスト (held-out 25 日) で
+#: 審判=開設 83 件のうち日内 top15 に 64 件 (77%)、top20 に 72 件 (87%)。0 で無効
+PREFILTER_TOP_K_DEFAULT = 15
 #: shadow で記録する上限 (下流の消化能力 ≈6 開設/日 に合わせる)
 SHADOW_TOP_K = 6
 #: 1 run で種別を新たに分類する上限 (fast ティア ~1s/件、synthesis の timeout 内に収める)
@@ -85,6 +89,21 @@ def load_detect_model(path: Path | None = None) -> DetectModel | None:
 def shadow_enabled() -> bool:
     """既定 ON。``DETECT_ML_SHADOW=0`` で記録を止める (開設の挙動は元から変えない)。"""
     return os.environ.get(_SHADOW_ENV, "1") != "0"
+
+
+def prefilter_top_k() -> int:
+    """LLM detect の前段で候補を絞る件数 (``DETECT_ML_PREFILTER``、既定 15、0 = 絞らない)。"""
+    raw = os.environ.get(_PREFILTER_ENV, str(PREFILTER_TOP_K_DEFAULT))
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return PREFILTER_TOP_K_DEFAULT
+
+
+def prefilter_select(scores: dict[str, float], *, top_k: int) -> list[str]:
+    """確率順に上位 top_k 件の article_id (純粋関数)。top_k<=0 なら全件をそのまま返す。"""
+    ranked = sorted(scores, key=lambda a: (-scores[a], a))
+    return ranked if top_k <= 0 else ranked[:top_k]
 
 
 def shadow_select(

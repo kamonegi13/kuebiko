@@ -60,6 +60,12 @@ from src.cti.nation_gazetteer import nations_in_text
 from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.clustering import anchor_entities, expand_claim_sources
+from src.synthesis.grounded.detect_ml import (
+    prefilter_select as detect_ml_prefilter_select,
+)
+from src.synthesis.grounded.detect_ml import (
+    prefilter_top_k as detect_ml_prefilter_top_k,
+)
 from src.synthesis.grounded.estimate import (
     _CONF_RANK,
     Confidence,
@@ -801,21 +807,39 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     active_titles = [r.title for r in situations if r.status == "active"]
     # detect (未割当を読んで新規 claim を選ぶ triage) は入力が多いので高速 26B を優先使用。
     # Dense 31B で 150件を読むと 900s を超えて timeout していた根治 (narrative は llm=31B のまま)。
+    # ML 前段 (SYNTHESIS §47): 候補を確率上位 K 件に絞ってから LLM が claim を選ぶ。
+    # 失敗時は絞らずに従来どおり (ML は可用性に影響させない)
+    ml_scores: dict[str, float] = {}
+    ml_kinds: dict[str, str] = {}
+    try:
+        ml_scores, ml_kinds = await _score_detect_ml(
+            store=store, detect_input=detect_input, fast_llm=fast_llm or llm
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("detect_ml_score_failed", error=type(exc).__name__)
+    llm_input = detect_input
+    top_k = detect_ml_prefilter_top_k()
+    if ml_scores and top_k > 0:
+        keep = set(detect_ml_prefilter_select(ml_scores, top_k=top_k))
+        llm_input = [a for a in detect_input if str(a.get("article_id", "")) in keep]
+        _log.info(
+            "detect_ml_prefilter", candidates=len(detect_input), kept=len(llm_input), top_k=top_k
+        )
     detected = await detect_new_claims(
         llm=fast_llm or llm,
-        articles=detect_input,
+        articles=llm_input,
         active_titles=active_titles,
         pir_context=pir_context,
         period_label=label,
     )
-    # shadow: ML の選抜を記録するだけ (開設は上の detect のまま)。失敗しても本体を落とさない
+    # shadow: 閾値以上の上位を記録 (切替判断の差分比較用)。失敗しても本体を落とさない
     try:
-        await _record_detect_ml_shadow(
+        _record_detect_ml_shadow(
             store=store,
             run_at=now_iso,
-            detect_input=detect_input,
+            scores=ml_scores,
+            kinds=ml_kinds,
             llm_opened={a for c in detected.open for a in c.article_ids},
-            fast_llm=fast_llm or llm,
         )
     except Exception as exc:  # noqa: BLE001 — shadow は本体の可用性に影響させない
         _log.warning("detect_ml_shadow_failed", error=type(exc).__name__)
@@ -1512,23 +1536,21 @@ def _delta_note(prev: RevisionRow, j: KeyJudgment, delta: DeltaType) -> str:
     return ""
 
 
-async def _record_detect_ml_shadow(
+async def _score_detect_ml(
     *,
     store: SituationStore,
-    run_at: str,
     detect_input: list[dict[str, object]],
-    llm_opened: set[str],
     fast_llm: LLMClient,
-) -> None:
-    """detect ML (SYNTHESIS §47) の shadow 記録。モデル無し / flag OFF なら何もしない。"""
+) -> tuple[dict[str, float], dict[str, str]]:
+    """detect ML (SYNTHESIS §47) で候補を採点する。モデル無し / 候補無しなら空。"""
     from src.eventnews import event_kind
     from src.synthesis.grounded import detect_ml
 
-    if not detect_ml.shadow_enabled() or not detect_input:
-        return
+    if not detect_input:
+        return {}, {}
     model = detect_ml.load_detect_model()
     if model is None:
-        return
+        return {}, {}
     repo = store._repo  # noqa: SLF001 — 既存の接続 seam を共有
     triples = [
         (
@@ -1547,11 +1569,29 @@ async def _record_detect_ml_shadow(
         repo, triples, _classify, model_label=getattr(fast_llm, "model", "")
     )
     articles = detect_ml.build_detect_articles(repo, [t[0] for t in triples], kinds)
-    scores = detect_ml.score_articles(model, articles)
+    return detect_ml.score_articles(model, articles), {a: x.kind for a, x in articles.items()}
+
+
+def _record_detect_ml_shadow(
+    *,
+    store: SituationStore,
+    run_at: str,
+    scores: dict[str, float],
+    kinds: dict[str, str],
+    llm_opened: set[str],
+) -> None:
+    """閾値以上の上位を detect_ml_shadow に記録する (flag OFF / 採点無しなら何もしない)。"""
+    from src.synthesis.grounded import detect_ml
+
+    if not detect_ml.shadow_enabled() or not scores:
+        return
+    model = detect_ml.load_detect_model()
+    if model is None:
+        return
     picks = detect_ml.shadow_select(scores, threshold=model.threshold)
     store.record_detect_shadow(
         run_at=run_at,
-        picks=[(aid, p, articles[aid].kind, aid in llm_opened) for aid, p in picks],
+        picks=[(aid, p, kinds.get(aid, "other"), aid in llm_opened) for aid, p in picks],
     )
     _log.info(
         "detect_ml_shadow",

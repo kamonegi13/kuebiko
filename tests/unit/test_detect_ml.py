@@ -127,3 +127,19 @@ def test_ensure_kinds_classifies_only_missing_and_caches(monkeypatch: pytest.Mon
     assert kinds == {"a": "breach", "b": "exploitation"}  # c は上限超過で未分類 (= other 扱い)
     assert calls == ["tb"]
     assert repo.written == [("b", "exploitation", "m")]
+
+
+def test_prefilter_select_orders_by_probability_and_zero_means_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.synthesis.grounded.detect_ml import prefilter_select, prefilter_top_k
+
+    scores = {"a": 0.1, "b": 0.9, "c": 0.5}
+    assert prefilter_select(scores, top_k=2) == ["b", "c"]
+    assert prefilter_select(scores, top_k=0) == ["b", "c", "a"]
+    monkeypatch.delenv("DETECT_ML_PREFILTER", raising=False)
+    assert prefilter_top_k() == 15
+    monkeypatch.setenv("DETECT_ML_PREFILTER", "0")
+    assert prefilter_top_k() == 0
+    monkeypatch.setenv("DETECT_ML_PREFILTER", "abc")
+    assert prefilter_top_k() == 15
