@@ -109,11 +109,14 @@ def build_detect_articles(
             chunk = ids[i : i + _CHUNK]
             ph = ",".join("?" * len(chunk))
             for r in conn.execute(
-                "SELECT article_id, entity_type FROM article_entities "  # noqa: S608
+                "SELECT article_id, entity_type, value FROM article_entities "  # noqa: S608
                 f"WHERE article_id IN ({ph})",
                 tuple(chunk),
             ).fetchall():
-                counts[str(r["article_id"])][str(r["entity_type"])] += 1
+                aid, etype = str(r["article_id"]), str(r["entity_type"])
+                counts[aid][etype] += 1
+                if etype == "involved_country":
+                    counts[aid][f"country:{str(r['value'] or '').upper()}"] += 1
             for r in conn.execute(
                 "SELECT article_id, title, summary, importance, category, feed_title, feed_url, "  # noqa: S608
                 f"victim_country_iso, posted_channel FROM articles WHERE article_id IN ({ph})",

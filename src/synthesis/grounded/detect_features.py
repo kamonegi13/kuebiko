@@ -44,7 +44,11 @@ ENTITY_TYPES: tuple[str, ...] = (
     "affected_product",
     "involved_country",
     "ttp",
+    "pir",
 )
+#: 関与国 (involved_country) のうち任務上の主敵 + 日本。entity_counts に ``country:<ISO>`` で渡す
+#: (2026-09-17 バックテストで国家系 (イラン / 北朝鮮) の事象を ML が落としていた対策)
+NATION_FLAGS: tuple[str, ...] = ("CN", "RU", "KP", "IR", "JP")
 IMPORTANCE_ORD: Mapping[str, float] = {"low": 0.0, "medium": 1.0, "high": 2.0}
 
 #: 続報・進行中を示す語 (タイトル + 要約に対して照合)。追跡価値 = 「続報で見立てが動くか」の代理
@@ -96,6 +100,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     + tuple(f"category={c}" for c in CATEGORIES)
     + tuple(f"tier={t}" for t in TIERS)
     + tuple(f"n_{e}" for e in ENTITY_TYPES)
+    + tuple(f"country={c}" for c in NATION_FLAGS)
     + (
         "n_entities",
         "japan_targeted",
@@ -111,14 +116,16 @@ def feature_vector(a: DetectArticle) -> list[float]:
     """記事 1 件 → 特徴量ベクトル。順序は FEATURE_NAMES と 1:1 (テストが固定する)。"""
     text = f"{a.title}\n{a.summary}"
     counts = [float(a.entity_counts.get(e, 0)) for e in ENTITY_TYPES]
+    nations = [1.0 if a.entity_counts.get(f"country:{c}", 0) else 0.0 for c in NATION_FLAGS]
     vec = (
         [IMPORTANCE_ORD.get(a.importance, 0.0)]
         + _one_hot(a.kind if a.kind in KINDS else "other", KINDS)
         + _one_hot(a.category, CATEGORIES)
         + _one_hot(a.tier, TIERS)
         + counts
+        + nations
         + [
-            float(sum(a.entity_counts.values())),
+            float(sum(v for k, v in a.entity_counts.items() if ":" not in k)),
             1.0 if is_japan_targeted_row(a.victim_country_iso, a.posted_channel) else 0.0,
             _count_hits(text, FOLLOWUP_PATTERNS),
             _count_hits(text, IN_PROGRESS_PATTERNS),

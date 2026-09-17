@@ -48,9 +48,13 @@ def test_closed_markers_flag_one_shot_events() -> None:
 
 
 def test_japan_and_entity_counts() -> None:
-    a = _a(victim_country_iso="jp", entity_counts={"victim_org": 2, "cve": 1, "unknown": 5})
+    a = _a(
+        victim_country_iso="jp",
+        entity_counts={"victim_org": 2, "cve": 1, "unknown": 5, "pir": 3, "country:KP": 1},
+    )
     v = dict(zip(FEATURE_NAMES, feature_vector(a), strict=True))
     assert v["japan_targeted"] == 1.0
-    assert v["n_victim_org"] == 2.0 and v["n_cve"] == 1.0
-    assert v["n_entities"] == 8.0  # 語彙外の型も総数には数える
+    assert v["n_victim_org"] == 2.0 and v["n_cve"] == 1.0 and v["n_pir"] == 3.0
+    assert v["country=KP"] == 1.0 and v["country=CN"] == 0.0
+    assert v["n_entities"] == 11.0  # 語彙外の型も総数には数える (country:* の補助 key は除く)
     assert v["importance"] == 1.0
