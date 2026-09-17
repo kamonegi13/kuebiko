@@ -2194,3 +2194,15 @@ shadow を数日待つ代わりに、学習済みモデルを held-out 25 日・
 - `build_estimate_stateful(reassess_cap=, open_new=False)` = 更新専用モード。開設判断は候補全体を
   見る朝夕の run に残す (毎時は detect_input を空にし、unassigned の監査ログも書かない)。
 - ジョブ画面: 廃止済みの夜間精査を撤去、説明をティア表記に統一 (SFT/ML 後の実態に同期)。
+
+## 49. n17c = 状況総括 CoT を第 3 課題として混合 (2026-09-17 夜、利用者判断: 夕刊終了後に起動)
+
+- データ: `dataset_n16` (event 682 + 圧縮 spotlight 161×3 = 1,141) + **CoT 教師対 126 (原窓 63 +
+  判定 65% 間引き変種 63) × 2** (valid には原窓 3 + その変種 = 6)。tokenizer フィルタ ≤12,200。
+- レシピ: n17m30 と同一 (30 層 / rank 32 / lr 3e-5 warmup 5% + cosine / accum 4 / 1 epoch /
+  max-seq 12,500 / `MLX_DISABLE_COMPILE=1`)、seed 0。`data/mlx/run_n17c.sh` (夕刊成立を待って
+  kuebiko を停止し学習、完了後 取込 → 事象 39 / spotlight 6 / **状況総括 15 窓の CoT 生成** +
+  対照 n17m30 の非 CoT 生成 = `scripts/eval_synthesis_judge_set.py`)。
+- 合否: ①event / spotlight が n17m30 から退行しない (対読) ②状況総括 15 窓の対読 (Sonnet) で
+  n17m30 に勝つ ③analysis_notes が 5 観点を持つ (関門)。量的再現≠品質再現 (§46) なので
+  seed 2 本目は合格後に。
