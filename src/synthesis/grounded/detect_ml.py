@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -35,6 +36,14 @@ _PREFILTER_ENV = "DETECT_ML_PREFILTER"
 PREFILTER_TOP_K_DEFAULT = 15
 #: shadow で記録する上限 (下流の消化能力 ≈6 開設/日 に合わせる)
 SHADOW_TOP_K = 6
+#: 月例更新・カタログ追加・注意喚起の類 = 勧告であって追跡単位でない (2026-09-15「勧告は見張り」)。
+#: ML は importance と kind で拾ってしまうため、候補から決定論で外す (バックテスト 09-17)
+ROLLUP_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"月例|定例|セキュリティ情報公開|セキュリティ更新プログラム"),
+    re.compile(r"Patch Tuesday|Security Update Guide", re.IGNORECASE),
+    re.compile(r"KEV カタログに追加|KEV に追加|Known Exploited Vulnerabilities"),
+    re.compile(r"注意喚起を発信|注意喚起を公開|advisory roundup", re.IGNORECASE),
+)
 #: 1 run で種別を新たに分類する上限 (fast ティア ~1s/件、synthesis の timeout 内に収める)
 _KIND_CLASSIFY_MAX = 200
 _CHUNK = 200
@@ -104,6 +113,30 @@ def prefilter_select(scores: dict[str, float], *, top_k: int) -> list[str]:
     """確率順に上位 top_k 件の article_id (純粋関数)。top_k<=0 なら全件をそのまま返す。"""
     ranked = sorted(scores, key=lambda a: (-scores[a], a))
     return ranked if top_k <= 0 else ranked[:top_k]
+
+
+def is_rollup_title(title: str) -> bool:
+    """月例・カタログ追加・注意喚起の記事か (追跡単位にしない、決定論)。"""
+    return any(p.search(title) for p in ROLLUP_PATTERNS)
+
+
+def compose_llm_candidates(
+    scores: dict[str, float],
+    *,
+    top_k: int,
+    high_ids: set[str],
+    excluded: set[str],
+) -> list[str]:
+    """LLM detect に渡す候補 = ML 上位 top_k ∪ importance=high (下限保証) − 除外 (純粋関数)。
+
+    high の下限保証は、国家系など特徴量に写らない文脈を LLM に見せるため (バックテストで
+    イラン / 北朝鮮の事象が閾値下に落ちた)。実測 0-2 件/run なので入力は top_k + 少数に収まる。
+    scores が空 (モデル無し) でも除外だけは効く (呼び出し側が全候補を渡す)。
+    """
+    eligible = {a: p for a, p in scores.items() if a not in excluded}
+    ordered = prefilter_select(eligible, top_k=top_k)
+    extra = sorted(a for a in high_ids if a not in excluded and a not in ordered)
+    return ordered + extra
 
 
 def shadow_select(

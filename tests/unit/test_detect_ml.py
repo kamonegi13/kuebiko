@@ -143,3 +143,32 @@ def test_prefilter_select_orders_by_probability_and_zero_means_all(
     assert prefilter_top_k() == 0
     monkeypatch.setenv("DETECT_ML_PREFILTER", "abc")
     assert prefilter_top_k() == 15
+
+
+def test_rollup_titles_are_detected() -> None:
+    from src.synthesis.grounded.detect_ml import is_rollup_title
+
+    assert is_rollup_title(
+        "マイクロソフトが 8 月のセキュリティ情報公開、悪用の事実を確認済みの脆弱性が 1 件"
+    )
+    assert is_rollup_title("Microsoftが8月の月例更新を公開 優先すべきは「緊急」ではない")
+    assert is_rollup_title(
+        "CISA、実悪用が確認された TrueConf-Server の脆弱性 2 件を KEV カタログに追加"
+    )
+    assert is_rollup_title("Shadowserver、悪用が確認された脆弱性の注意喚起を発信")
+    assert not is_rollup_title(
+        "Head Mare APT、TrueConf Server の RCE 脆弱性を悪用し PhantomCore を配布"
+    )
+    assert not is_rollup_title("A 社への不正アクセス、調査継続と新事実の判明")
+
+
+def test_compose_candidates_adds_high_floor_and_drops_excluded() -> None:
+    from src.synthesis.grounded.detect_ml import compose_llm_candidates
+
+    scores = {"a": 0.9, "b": 0.8, "c": 0.7, "roll": 0.99, "hi": 0.1}
+    got = compose_llm_candidates(scores, top_k=2, high_ids={"hi", "roll", "a"}, excluded={"roll"})
+    assert got == ["a", "b", "hi"]  # ML 上位 2 (roll は除外) + high の下限保証 (a は既出)
+    # モデル無し (top_k=0 で全件) でも除外だけは効く
+    assert compose_llm_candidates(
+        dict.fromkeys(["x", "roll"], 0.0), top_k=0, high_ids=set(), excluded={"roll"}
+    ) == ["x"]

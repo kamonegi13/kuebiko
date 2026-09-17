@@ -61,7 +61,10 @@ from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.clustering import anchor_entities, expand_claim_sources
 from src.synthesis.grounded.detect_ml import (
-    prefilter_select as detect_ml_prefilter_select,
+    compose_llm_candidates as detect_ml_compose_candidates,
+)
+from src.synthesis.grounded.detect_ml import (
+    is_rollup_title as detect_ml_is_rollup_title,
 )
 from src.synthesis.grounded.detect_ml import (
     prefilter_top_k as detect_ml_prefilter_top_k,
@@ -826,11 +829,35 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         _log.warning("detect_ml_score_failed", error=type(exc).__name__)
     llm_input = detect_input
     top_k = detect_ml_prefilter_top_k()
-    if ml_scores and top_k > 0:
-        keep = set(detect_ml_prefilter_select(ml_scores, top_k=top_k))
+    if top_k > 0:
+        # 勧告 (月例・KEV 追加・注意喚起) は追跡単位にしない — ML の有無に関わらず決定論で外す
+        rollup_ids = {
+            str(a.get("article_id", ""))
+            for a in detect_input
+            if detect_ml_is_rollup_title(str(a.get("title", "") or ""))
+        }
+        high_ids = {
+            str(a.get("article_id", ""))
+            for a in detect_input
+            if str(a.get("importance", "") or "") == "high"
+        }
+        all_ids = [str(a.get("article_id", "")) for a in detect_input]
+        keep = set(
+            detect_ml_compose_candidates(
+                ml_scores if ml_scores else dict.fromkeys(all_ids, 0.0),
+                top_k=top_k if ml_scores else 0,
+                high_ids=high_ids,
+                excluded=rollup_ids,
+            )
+        )
         llm_input = [a for a in detect_input if str(a.get("article_id", "")) in keep]
         _log.info(
-            "detect_ml_prefilter", candidates=len(detect_input), kept=len(llm_input), top_k=top_k
+            "detect_ml_prefilter",
+            candidates=len(detect_input),
+            kept=len(llm_input),
+            top_k=top_k if ml_scores else 0,
+            high_floor=len(high_ids - rollup_ids),
+            rollup_dropped=len(rollup_ids),
         )
     detected = await detect_new_claims(
         llm=fast_llm or llm,
