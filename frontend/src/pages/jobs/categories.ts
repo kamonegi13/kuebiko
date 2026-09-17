@@ -42,7 +42,7 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
   {
     key: "analysis",
     title: "分析・総括",
-    ids: ["auto-trigger-synthesis", "weekly-recap", "weekly-status-synthesis", "monthly-status-synthesis", "pir-spotlight", "ledger-deep-review"],
+    ids: ["auto-trigger-synthesis", "weekly-recap", "weekly-status-synthesis", "monthly-status-synthesis", "pir-spotlight"],
     icon: BrainCircuit,
     accentText: "text-accent-hover",
     accentBar: "bg-accent-hover",
@@ -135,9 +135,9 @@ export const SHORT_LABELS: Record<string, string> = {
   "daily-heartbeat": "死活",
   "pir-judge-hourly": "SIR判定",
   "job-recovery-watchdog": "自動復旧",
-  "ledger-deep-review": "夜間精査",
   "body-translate-backlog": "翻訳",
   "body-refetch-backlog": "再取得",
+  "ledger-reassess-hourly": "台帳再評価",
   "ua-health-check": "UA修復",
   "actor-history-distill": "行動史",
 };

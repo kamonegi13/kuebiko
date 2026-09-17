@@ -639,6 +639,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     db_path: Path = Path("data/run_history.db"),
     kev_set: frozenset[str] | None = None,
     fast_llm: LLMClient | None = None,
+    reassess_cap: int | None = None,
+    open_new: bool = True,
 ) -> Estimate:
     """台帳を更新し、本 run で動いた判定の Estimate を返す (SYNTHESIS_STATE=1 の出力源)。
 
@@ -754,6 +756,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         if cap_env.isdigit() and int(cap_env) > 0
         else _MAX_UPDATES_BY_PERIOD.get(period_type, _MAX_UPDATES_BY_PERIOD["daily"])
     )
+    if reassess_cap is not None and reassess_cap > 0:
+        cap = reassess_cap  # 毎時の増分再評価 (開設なし・小 cap) 用の明示指定
     # standing 予約枠は cap の内数 (event 側を縮めて総 LLM 呼出を不変に保つ)
     event_cap = max(1, cap - len(standing_batch))
     selected_sids, deferred_sids = select_reassessments(
@@ -811,6 +815,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     # 失敗時は絞らずに従来どおり (ML は可用性に影響させない)
     ml_scores: dict[str, float] = {}
     ml_kinds: dict[str, str] = {}
+    if not open_new:
+        # 更新専用 (毎時の増分再評価): 新規開設は朝夕の定時 run に任せる
+        detect_input = []
     try:
         ml_scores, ml_kinds = await _score_detect_ml(
             store=store, detect_input=detect_input, fast_llm=fast_llm or llm

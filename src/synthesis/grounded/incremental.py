@@ -46,7 +46,9 @@ _PRIOR_EXCERPTS_MAX = 5
 # すべて発火しうる)。active 情勢の open 予測は中央 6 / p90 22 / 最大 90 件で、
 # 20 なら 9 割の情勢を全量カバーする。実測負荷は forecast.py の module docstring 参照。
 CARRIED_INDICATORS_MAX = 20
-_DETECT_OPEN_MAX = 5  # 1 run の新規開設上限 (超過分は log、翌 run に再浮上して回復可能)
+# 1 run の新規開設上限 (超過分は log、翌 run に再浮上して回復可能)。
+# 5→8 (2026-09-17): ML 前段で候補の質が上がった分、上限が効き始めても取りこぼさない
+_DETECT_OPEN_MAX = 8
 
 # claim 改訂の文字化けガード (実測: 31B が改訂 claim に簡体字/拡張漢字を混入し
 # 「最高弔导能ンエ异席」のような破損文を生成・保存した)。CJK 拡張 A/B は日本語文で

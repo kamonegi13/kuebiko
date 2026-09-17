@@ -160,8 +160,10 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=20,  # 実測 p90 13 分 + 台帳 cap 引上げ分 (2026-09-15)
             title="朝ブリーフィング",
             description=(
-                "毎朝の日次総括を生成し brief チャンネルへ配信。standing 常設情報要求の"
-                "収穫 (R1-R3) + 予約枠再評価 (staleness 7日) もここで走る。"
+                "毎朝の日次総括を生成し brief チャンネルへ配信。"
+                "台帳の増分再評価 (cap 12、毎時段の残余) と "
+                "新規開設 (ML 前段で候補を上位 15 件に絞り LLM が選ぶ、上限 8) はここで走る。"
+                "standing 常設情報要求の収穫 (R1-R3) + 予約枠再評価 (staleness 7日) も同じ run。"
             ),
             disable_impact="朝の通読ブリーフが出なくなる。",
             protection="critical",
@@ -177,8 +179,10 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=20,  # 実測 p90 13 分 + 台帳 cap 引上げ分 (2026-09-15)
             title="夕ブリーフィング",
             description=(
-                "夕方の日次状況更新を生成し brief チャンネルへ配信。standing 常設情報要求の"
-                "収穫 (R1-R3) + 予約枠再評価 (staleness 7日) もここで走る。"
+                "夕方の日次状況更新を生成し brief チャンネルへ配信。"
+                "台帳の増分再評価 (cap 12、毎時段の残余) と "
+                "新規開設 (ML 前段で候補を上位 15 件に絞り LLM が選ぶ、上限 8) はここで走る。"
+                "standing 常設情報要求の収穫 (R1-R3) + 予約枠再評価 (staleness 7日) も同じ run。"
             ),
             disable_impact="夕方の状況更新が出なくなる。",
             protection="important",
@@ -228,7 +232,8 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=25,
             title="週次状況総括",
             description=(
-                "前週の中期情勢を総括 (reasoning ティア)。standing 常設の週次対称"
+                "前週の中期情勢を総括 (分析は reasoning ティア、散文は narrative ティア)。standing "
+                "常設の週次対称"
                 "反証 sweep (adversarial) もここで走る。"
             ),
             disable_impact="週次の中期情勢総括が出なくなる。",
@@ -258,7 +263,9 @@ def default_jobs() -> list[JobDef]:
             heavy=True,
             max_runtime_minutes=25,  # 実測 p90 20 分 (2026-09-15 見直し)
             title="PIR スポットライト",
-            description="PIR 縦断の週次 narrative (Intel Graph)。",
+            description=(
+                "PIR 縦断の narrative を毎日 04:30 に直近 7 日窓で更新 (Intel Graph の Spotlight)。"
+            ),
             disable_impact="PIR 別の週次追跡 narrative が更新されない。",
             protection="optional",
             schedule_type="cron",
@@ -312,7 +319,7 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="sat",
-            # 深夜帯の空白 (毎日 03:20 の ledger-deep-review が ~04:35 に終わってから
+            # 深夜帯の空白 (旧 03:20 の台帳夜間精査 (2026-09-10 廃止) の後の帯、
             # 06:30 朝ブリーフまで)。LLM heavy 同士を重ねない。
             hour=4,
             minute=45,
@@ -334,24 +341,6 @@ def default_jobs() -> list[JobDef]:
             schedule_type="cron",
             hour=3,
             minute=5,
-        ),
-        JobDef(
-            id="ledger-deep-review",
-            kind="bespoke",
-            heavy=True,
-            max_runtime_minutes=75,
-            title="台帳 ACH 夜間精査",
-            description=(
-                "当日更新された Situation の ACH 判定を、narrative ティアのモデルの"
-                "拡張思考 (think) で夜間に再評価し精緻化する。昼の即時判定 (think なし) を"
-                "上書きし、翌朝の報告・ACH 表示は精緻判定を自動継承。narrative ティアが"
-                "ローカルモデル、または拡張思考が無効設定のときは何もしない。"
-            ),
-            disable_impact="ACH 判定が昼の即時品質のまま (仮説採点の深さが夜間精査分だけ低下)。",
-            protection="optional",
-            schedule_type="cron",
-            hour=3,
-            minute=30,
         ),
         JobDef(
             id="pir-judge-hourly",
@@ -431,9 +420,8 @@ def default_jobs() -> list[JobDef]:
                 "収集済み記事を事象単位に群化し、複数媒体が報じた事象について 1 本の "
                 "ニュースを生成・更新する (docs/event_news_design.md)。生成はメンバー 2 件 "
                 "以上のアイテムのみ (単独記事は per-article 要約をそのまま読ませる)。"
-                "実測で生成は 0.25 回/時・65 秒/回 (narrative ティア) のため毎時占有は "
-                "20 秒前後。**v1 は shadow — 読み手向けの出口 (UI/Discord) は未配線**で、"
-                "目的は毎時運用の実証と占有時間の実測。EVENTNEWS_HOURLY=0 で完全停止。"
+                "生成は narrative ティア。事象ニュースは UI の主導線 (2026-08-24〜)。"
+                "EVENTNEWS_HOURLY=0 で完全停止。"
             ),
             disable_impact=(
                 "事象の群化と更新が止まる。記事は従来どおり per-article で表示されるため "
@@ -495,6 +483,27 @@ def default_jobs() -> list[JobDef]:
             offset_minutes=40,
             respects_analysis_window=True,  # 夜間解析帯は Ollama を奪い合わない
             max_runtime_minutes=15,
+            upkeep=True,
+        ),
+        JobDef(
+            id="ledger-reassess-hourly",
+            enabled=False,  # 毎時保守チェーンの段として実行 (単独発火は既定 OFF)
+            kind="bespoke",
+            title="台帳 増分再評価 (毎時)",
+            description=(
+                "証拠が付いた既存の台帳 (Situation) を優先度順に 6 件/時まで増分 ACH で再評価する "
+                "(開設はしない)。朝夕の定時 run だけでは cap 12 で毎 run 20-75 件を繰越していた "
+                "(2026-09-17 実測 backlog 30-87) ため、毎時で掃いて"
+                "「更新すべき台帳は全部更新される」状態に近づける。"
+                "LEDGER_REASSESS_HOURLY=0 で停止、LEDGER_REASSESS_HOURLY_CAP で件数。"
+            ),
+            disable_impact="台帳の再評価が朝夕の cap 12 だけに戻り、繰越が再び積み上がる。",
+            protection="important",
+            schedule_type="interval",
+            interval_minutes=60,
+            offset_minutes=45,
+            respects_analysis_window=True,
+            max_runtime_minutes=8,
             upkeep=True,
         ),
         JobDef(
@@ -591,8 +600,9 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=60,
             title="triage ドリフト週次検知",
             description=(
-                "凍結 goldset (150 記事・本番と同一プロンプト) を現在の 26B に通し、"
-                "day-0 (2026-09-03) の判定からの移動率で警告する (26B を 150 呼出)。"
+                "凍結 goldset (150 記事・本番と同一プロンプト) を現在の fast ティア (triage 担当)"
+                " に通し、"
+                "day-0 (2026-09-03) の判定からの移動率で警告する (150 呼出)。"
             ),
             disable_impact=(
                 "triage の静かな劣化 (プロンプト/PIR/モデル変更の副作用) を"
@@ -670,7 +680,7 @@ def default_jobs() -> list[JobDef]:
             title="毎時収集チェーン",
             description=(
                 "毎時の収集と派生処理を 1 本で直列実行: RSS → sitemap 監視 → Grok → 埋込 → "
-                "PIR 判定 → 事象ニュース。fast モデル (s17) の段を先に、narrative モデルの段を "
+                "PIR 判定 → 事象ニュース。fast ティアの段を先に、narrative ティアの段を "
                 "最後に置き、Ollama のモデル切替を 1 時間に 1 回へ抑える (旧: 11 ジョブが "
                 "オフセットで並び切替 34 回/日・重なりあり)。"
             ),
@@ -694,8 +704,10 @@ def default_jobs() -> list[JobDef]:
             kind="chain",
             title="毎時保守チェーン",
             description=(
-                "本文の翻訳バックログ → 本文の再取得 → NVD CVSS 補充 → 公開 URL の到達性を "
-                "1 本で直列実行 (fast モデルと I/O のみ)。収集チェーンの後半 (:30) に置く。"
+                "本文の翻訳バックログ → 本文の再取得 → 台帳の増分再評価 (6 件/時) → NVD CVSS 補充 "
+                "→ "
+                "公開 URL の到達性を 1 本で直列実行 (fast ティアと I/O のみ)。収集チェーンの後半 "
+                "(:30) に置く。"
             ),
             disable_impact="翻訳・再取得・CVSS・到達性監視が止まる。",
             protection="important",
@@ -707,6 +719,7 @@ def default_jobs() -> list[JobDef]:
             steps=(
                 "body-translate-backlog",
                 "body-refetch-backlog",
+                "ledger-reassess-hourly",
                 "nvd-cvss-refresh",
                 "public-reachability",
             ),

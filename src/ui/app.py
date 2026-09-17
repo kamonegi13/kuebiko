@@ -230,36 +230,6 @@ def _register_bespoke_jobs(
 
         _log.info("pir_llm_judged_hourly", **await judge_hourly())
 
-    async def _ledger_deep_review() -> None:
-        from src.assessment.deep_review import run_deep_review
-        from src.config_loader import load_app_config
-        from src.tools.model_tiers import (
-            Step,
-            build_llm_for,
-            is_external_model,
-            resolve_narrative_think,
-        )
-
-        cfg = load_app_config()
-        # narrative ティア経由 = モデルも think 設定も UI の narrative カードに従う
-        # (factory が auto+外部のとき ThinkOnClient を注入する。手動 wrap はしない)。
-        llm = build_llm_for(Step.LEDGER_DEEP_REVIEW, cfg)
-        # think 品質が目的のジョブ — think が効かない構成 (ローカル割当 or 設定 off)
-        # では昼と同品質の再評価になるだけなので skip。
-        if not is_external_model(llm.model) or resolve_narrative_think() != "auto":
-            _log.info(
-                "deep_review_skipped_no_think",
-                model=llm.model,
-                narrative_think=resolve_narrative_think(),
-            )
-            return
-        # adversarial ゲートは昼と同一条件 (reasoning ティア・think なし) に揃える
-        adversarial_llm = build_llm_for(Step.SYNTHESIS_ANALYSIS, cfg)
-        _log.info(
-            "deep_review_done_stats",
-            **await run_deep_review(llm=llm, adversarial_llm=adversarial_llm),
-        )
-
     from src.eval.goldset_cron import run_weekly_goldset_eval
     from src.eval.triage_drift import run_weekly_triage_drift
     from src.ui.services.actor_history_distill import run_actor_history_distill
@@ -269,6 +239,7 @@ def _register_bespoke_jobs(
     from src.ui.services.embedding_backfill_job import run_embedding_backfill
     from src.ui.services.eventnews_hourly_job import run_eventnews_hourly
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
+    from src.ui.services.ledger_reassess_job import run_ledger_reassess_hourly
     from src.ui.services.maintenance import run_daily_maintenance
     from src.ui.services.prompt_governance import run_weekly_prompt_governance
     from src.ui.services.public_reachability import run_public_reachability_check
@@ -284,9 +255,9 @@ def _register_bespoke_jobs(
         "ransomware-live-ingest": _ransomware_ingest,
         "pir-entity-rebuild": _pir_rebuild,
         "pir-judge-hourly": _pir_judge_hourly,
-        "ledger-deep-review": _ledger_deep_review,
         "embedding-backfill": run_embedding_backfill,
         "eventnews-hourly": run_eventnews_hourly,
+        "ledger-reassess-hourly": run_ledger_reassess_hourly,
         "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,
         "body-refetch-backlog": run_body_refetch_backlog,

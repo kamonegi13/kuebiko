@@ -210,7 +210,7 @@ class TestDetectNewClaims:
         det = _WireDetectResult(
             open=[
                 _WireOpenClaim(claim=f"新情勢 {i}", domain="cyber_incident", article_ids=["a1"])
-                for i in range(7)  # 上限 5 超
+                for i in range(10)  # 上限 8 超
             ]
             + [_WireOpenClaim(claim="偽 id", domain="x", article_ids=["not-in-pool"])],
             rejected=[
@@ -228,7 +228,7 @@ class TestDetectNewClaims:
             pir_context=[{"id": "p", "title": "PIR", "description": "d"}],
             period_label="L",
         )
-        assert len(got.open) == 5  # cap
+        assert len(got.open) == 8  # cap
         assert got.overflow == 2
         assert got.rejected == (("a2", "既知事案の再報道"),)
 

@@ -353,7 +353,7 @@ class TestHourlyChains:
     def test_chain_members_are_disabled_standalone(self) -> None:
         by_id = {j.id: j for j in jr.default_jobs()}
         members = [s for cid in ("hourly-collect", "hourly-upkeep") for s in by_id[cid].steps]
-        assert len(members) == 10 and len(set(members)) == 10
+        assert len(members) == 11 and len(set(members)) == 11
         for sid in members:
             assert by_id[sid].enabled is False, f"{sid} は段として実行されるので単独は OFF"
 
