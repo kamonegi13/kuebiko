@@ -2176,3 +2176,21 @@ shadow を数日待つ代わりに、学習済みモデルを held-out 25 日・
 - 副次効果: detect の LLM 入力が 150-500 記事 → 15 記事 (prefill 大幅減、31B でも timeout しない)。
 - 見張るもの: 夕刊/朝刊の `detect_ml_prefilter` (kept) と `grounded_detect_new_overflow`、
   開設される claim の質 (1 本で完結する事象が減ったか)、国家系の取りこぼし (KP/IR)。
+
+### §47 追記 6: 「追跡すべき事象は全部開設・更新すべき台帳は全部更新」へ — 上限の実態と是正 (2026-09-17 午後、利用者判断)
+
+利用者の問い「台帳は 1 日最大 15 件までしか解説されない?」への答え: **15 は LLM に見せる候補数**で、
+開設・更新・解説の上限はそれぞれ別にある。実態と是正:
+
+| 上限 | 実態 (09-17) | 是正 |
+|---|---|---|
+| 開設 `_DETECT_OPEN_MAX` | 5/run (10/日)、7 日で超過 1 run | **8/run** (ML 前段で候補の質が上がった分) |
+| 更新 `_MAX_UPDATES_BY_PERIOD` daily | 12/run。**毎 run 20-75 件繰越、backlog 30-87** | **毎時保守チェーンに増分再評価の段 (6 件/時 = +144/日)** を追加 (`ledger-reassess-hourly`、開設なし、`LEDGER_REASSESS_HOURLY`) |
+| 解説 (報告の幅) | render 側の幅ガード | 据え置き (台帳の鮮度と報告の幅は別の要求、§44) |
+
+- 毎時の再評価は従来の原則「収集イベント=割当のみ (LLM ゼロ)、評価は定時」(auto_trigger、
+  2026-07-04 の timeout 増幅への対処) からの明示的変更。当時の問題は**収集 pipeline の尻尾で**
+  フル synthesis を回したことで、独立した段 (予算 8 分、ACH 32 秒 × 6) なら成立する。
+- `build_estimate_stateful(reassess_cap=, open_new=False)` = 更新専用モード。開設判断は候補全体を
+  見る朝夕の run に残す (毎時は detect_input を空にし、unassigned の監査ログも書かない)。
+- ジョブ画面: 廃止済みの夜間精査を撤去、説明をティア表記に統一 (SFT/ML 後の実態に同期)。
