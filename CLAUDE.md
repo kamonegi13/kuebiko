@@ -426,6 +426,12 @@ kuebiko/
   (URL 安定・ops 静粛)。恒久安定 URL が要るなら `.env` に `CLOUDFLARE_TUNNEL_TOKEN`
   (+ `CLOUDFLARE_TUNNEL_HOSTNAME`) を設定して named tunnel 化 (再起動で URL 不変)。手順は
   [docs/mobile-access.md](docs/mobile-access.md)
+- **detect ML と毎時の台帳再評価 (2026-09-17)**: 新規追跡の候補は ML (`config/models/detect_model.json`、
+  審判ラベルで学習) が上位 15 件に絞り、claim の選定は LLM に残す (`DETECT_ML_PREFILTER`、0 で従来)。
+  更新すべき台帳が繰り越されないよう、毎時保守チェーンに増分再評価の段 (6 件/時、開設なし、
+  `LEDGER_REASSESS_HOURLY`) を置く。**候補数 (15) / 開設上限 (8/run) / 更新上限 (12/run + 毎時 6) /
+  報告の幅 (render 側) は別物**で、混同しない。設計と実測は
+  [docs/research/llm_training/SYNTHESIS.md](docs/research/llm_training/SYNTHESIS.md) §47-48
 - **モデル変更は CLAUDE.md / `.env.example` を同時更新**
 - **Phase 1 の LLM 暫定運用**: Gemma 4 31B Dense が Ollama に未公開の間は `gemma3:27b` で代替可
 - **依存追加は最小化**: 標準ライブラリで足りるものを安易にライブラリ化しない (YAGNI)
