@@ -30,6 +30,12 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 参照するのは注目の採点 (src/eventnews/urgency.py) のみで、生成物を
         # 他層へ還流させない。公開範囲の判断は test_public_news_api.py が固定する。
         "src/ui/api/public_news.py",
+        # 2026-09-17: detect ML (SYNTHESIS §47)。参照するのは記事種別の分類器
+        # (src/eventnews/event_kind: KINDS と classify、cache は article_kinds) のみで、
+        # 事象ニュースの生成物 (event_items / 版) は読まない。種別は記事単位の性質であって
+        # 事象ニュース固有の判断ではない。
+        "src/synthesis/grounded/detect_features.py",
+        "src/assessment/stateful.py",
     }
 )
 
