@@ -153,7 +153,7 @@ async def main_async(args: argparse.Namespace) -> int:
     if out_path.exists() and not args.fresh:
         results = json.loads(out_path.read_text(encoding="utf-8"))
     done = {r["key"] for r in results}
-    client = ClaudeCodeClient(model=args.model, bridge_url=args.bridge_url, timeout_seconds=180)
+    client = ClaudeCodeClient(model=args.model, bridge_url=args.bridge_url, timeout_seconds=420)
     for key in keys:
         if key in done:
             continue
