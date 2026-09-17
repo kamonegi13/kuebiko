@@ -126,3 +126,69 @@ def test_accepted_completion_goes_to_main_output_only(tmp_path: Path) -> None:
 )
 def test_accept_completion_reasons(completion: str, expected: str | None) -> None:
     assert accept_completion("p" * 100, completion, cot=True, max_pair_tokens=13_000) == expected
+
+
+def test_subsample_estimate_keeps_subset_and_filters_relations() -> None:
+    from datetime import UTC, datetime
+
+    from scripts.build_sft_teacher_synthesis import subsample_estimate
+    from src.synthesis.grounded.estimate import Estimate, KeyJudgment
+
+    def j(i: int) -> KeyJudgment:
+        return KeyJudgment(
+            id=f"s-{i}",
+            claim=f"c{i}",
+            domain="d",
+            leading_hypothesis="h",
+            confidence="high",
+            confidence_basis="b",
+            hypotheses=(),
+            evidence=(),
+        )
+
+    est = Estimate(
+        period_type="daily",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 2, tzinfo=UTC),
+        judgments=tuple(j(i) for i in range(10)),
+        relations=(("s-0", "s-1", "same_actor", "x"), ("s-0", "s-9", "same_actor", "x")),
+    )
+
+    sub = subsample_estimate(est, keep_ratio=0.6, seed=1)
+    again = subsample_estimate(est, keep_ratio=0.6, seed=1)
+
+    assert sub is not None and len(sub.judgments) == 6
+    kept = {x.id for x in sub.judgments}
+    assert kept < {x.id for x in est.judgments}
+    assert all(a in kept and b in kept for a, b, _, _ in sub.relations)
+    assert again is not None and [x.id for x in again.judgments] == [x.id for x in sub.judgments]
+    assert subsample_estimate(est, keep_ratio=1.0, seed=1) is None  # 落とせない窓は None
+
+
+def test_subsample_keeps_minimum_judgments() -> None:
+    from datetime import UTC, datetime
+
+    from scripts.build_sft_teacher_synthesis import subsample_estimate
+    from src.synthesis.grounded.estimate import Estimate, KeyJudgment
+
+    js = tuple(
+        KeyJudgment(
+            id=f"s-{i}",
+            claim="c",
+            domain="d",
+            leading_hypothesis="h",
+            confidence="low",
+            confidence_basis="b",
+            hypotheses=(),
+            evidence=(),
+        )
+        for i in range(3)
+    )
+    est = Estimate(
+        period_type="daily",
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 8, 2, tzinfo=UTC),
+        judgments=js,
+    )
+    sub = subsample_estimate(est, keep_ratio=0.1, seed=3)
+    assert sub is not None and len(sub.judgments) == 2

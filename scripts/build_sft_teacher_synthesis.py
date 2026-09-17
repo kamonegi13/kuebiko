@@ -42,8 +42,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -125,6 +126,26 @@ class Window:
     judgments: int
 
 
+def subsample_estimate(est: Estimate, *, keep_ratio: float, seed: int) -> Estimate | None:
+    """判定を間引いた変種 estimate を作る (増強用の純粋関数、2026-09-17 利用者判断 A 案)。
+
+    同じ窓から「静かな日」を合成する: 判定を keep_ratio に間引き、両端が残った関係エッジだけ
+    残す。headline の指名・幅の cap は render 側のコードが決め直すので整合する。
+    最低 ``_MIN_JUDGMENTS`` 件は残し、1 件も落とせない (元と同じになる) 窓は None。
+    乱数は seed + 窓 key で決定的 (再実行で同じ変種 = 処理済みスキップが効く)。
+    """
+    n = len(est.judgments)
+    keep = max(_MIN_JUDGMENTS, round(n * keep_ratio))
+    if keep >= n:
+        return None
+    rng = random.Random(f"{seed}:{est.period_type}:{est.period_start.isoformat()}")
+    kept = sorted(rng.sample(range(n), keep))
+    judgments = tuple(est.judgments[i] for i in kept)
+    ids = {j.id for j in judgments}
+    relations = tuple(r for r in est.relations if r[0] in ids and r[1] in ids)
+    return replace(est, judgments=judgments, relations=relations)
+
+
 def select_windows(
     records: list[StatusSynthesisRecord],
     *,
@@ -133,10 +154,13 @@ def select_windows(
     reserve_before: datetime,
     cot: bool,
     min_judgments: int = _MIN_JUDGMENTS,
+    augment_ratio: float = 0.0,
+    augment_seed: int = 0,
 ) -> tuple[list[Window], dict[str, int]]:
     """収穫対象の窓を選び、本番と同じ seam でプロンプトを組む (LLM 呼出なし)。
 
     返り値 = (窓, 除外理由ごとの件数)。除外は黙らせない (歩留まりの説明に要る)。
+    ``augment_ratio`` > 0 なら各窓に判定を間引いた変種 (key に ``#sub<seed>``) を**追加**する。
     """
     out: list[Window] = []
     skipped = {"no_estimate": 0, "thin": 0, "reserved_key": 0, "reserved_recent": 0}
@@ -159,6 +183,19 @@ def select_windows(
         _s, _e, label, _lb, _bw = _resolve_period(period_type=period_type, now=est.period_end)
         plan = build_render_plan(est=est, period_label=label, cot_notes=cot)
         out.append(Window(key=key, prompt=plan.prompt, judgments=len(est.judgments)))
+        if augment_ratio > 0:
+            sub = subsample_estimate(est, keep_ratio=augment_ratio, seed=augment_seed)
+            if sub is None:
+                skipped["augment_too_small"] = skipped.get("augment_too_small", 0) + 1
+                continue
+            sub_plan = build_render_plan(est=sub, period_label=label, cot_notes=cot)
+            out.append(
+                Window(
+                    key=f"{key}#sub{augment_seed}",
+                    prompt=sub_plan.prompt,
+                    judgments=len(sub.judgments),
+                )
+            )
     return out, skipped
 
 
@@ -313,6 +350,8 @@ async def main_async(args: argparse.Namespace) -> int:
         reserved=reserved,
         reserve_before=reserve_before,
         cot=args.cot,
+        augment_ratio=args.augment_subsample,
+        augment_seed=args.augment_seed,
     )
     print(
         f"窓 {len(windows)} (除外: 審判 key {skipped['reserved_key']} / "
@@ -361,6 +400,13 @@ def main() -> int:
         help="prompt+completion の見積りがこれを超える対は保存しない (MLX の壁 ~14.1k の内側)",
     )
     ap.add_argument("--dry-run", action="store_true", help="教師を呼ばず、対象窓と長さだけ印字する")
+    ap.add_argument(
+        "--augment-subsample",
+        type=float,
+        default=0.0,
+        help="各窓に判定を間引いた変種を追加する比率 (例 0.65)。0 で無効",
+    )
+    ap.add_argument("--augment-seed", type=int, default=1)
     return asyncio.run(main_async(ap.parse_args()))
 
 
