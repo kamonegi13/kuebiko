@@ -2154,3 +2154,25 @@ estimate (関係エッジは両端が残ったものだけ) を作り、同じ s
 (key = `<窓>#sub<seed>`、seed + 窓 key で決定的)。headline 指名と幅 cap はコードが決め直す。
 再サンプル (同一 prompt に 2 本目の completion) より入力の多様性が出て、系列も短くなる。
 dry-run: 63 変種すべて予算内 (1.8k〜3.7k tok 級が多い)。→ 126 対。
+
+### §47 追記 5: 待たずに過去データで検証 → ML 前段 (top-K) を本番投入 (2026-09-17 昼、利用者提案)
+
+shadow を数日待つ代わりに、学習済みモデルを held-out 25 日・1,576 記事に当てて一覧化
+(`scripts/report_detect_ml_backtest.py` → `data/mlx/detect_ml_backtest.md`)。
+
+- 閾値 (6 件/日) の選抜: 両方 9 / ML だけ 91 / 現行だけ 28。**ML だけ・未審判 57 件**の中身は
+  国内企業の不正アクセス (クラウド事業者 A 社・EC サイト I 社・不動産 J 社・駐車場運営 H 社・銀行 C 等) と
+  実悪用中の脆弱性 (GeoServer・PaperCut・Zimbra・GitLab・Keycloak・SonicWall 等)。**現行だけ 28**
+  は審判で見送り 14 (制裁・解体・統計・衛星画像)、開設 5。
+- 落としていたもの: イラン (リバース SSH、p=0.67) / 北朝鮮 DeFi (p=0.64、137 候補中 47 位)。
+  → 特徴量に **PIR 一致数 + 関与国フラグ (CN/RU/KP/IR/JP)** を追加 (45 列)。時系列分割の同量
+  precision 0.69 → **0.85** (logreg)。ただし北朝鮮 DeFi は依然 47 位 = 国家系の文脈判断は
+  特徴量に写りきらない。
+- **設計判断: ML は前段、claim の選定は LLM に残す**。審判=開設 83 件の日内順位は top6 40 /
+  top10 56 / **top15 64 (77%)** / top20 72 (87%)、現行 detect は 12。
+  → `DETECT_ML_PREFILTER=15` (既定): detect_input (≤500) を ML 上位 15 件に絞って
+  `detect_new_claims` へ。PIR 文脈・active titles・使命序列は LLM 側に残る。0 で従来どおり。
+  shadow 記録 (閾値上位) は採点を共有して継続。デプロイ = 本日 13:xx (初回適用は 19:30 夕刊)。
+- 副次効果: detect の LLM 入力が 150-500 記事 → 15 記事 (prefill 大幅減、31B でも timeout しない)。
+- 見張るもの: 夕刊/朝刊の `detect_ml_prefilter` (kept) と `grounded_detect_new_overflow`、
+  開設される claim の質 (1 本で完結する事象が減ったか)、国家系の取りこぼし (KP/IR)。
