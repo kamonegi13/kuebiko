@@ -34,6 +34,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,14 @@ _HELD_OUT_RATIO = 0.7  # 時系列分割: 後ろ 30% を held-out に使う
 #: 1 件あたり ~500 tok と安いため広めに取る。
 _RANDOM_SAMPLE = 120
 _SEED = 13
+#: ④ 狙い撃ちの負例候補 (2026-09-17 バックテスト目視): ML が「exploitation で importance 高」と拾う
+#: が追跡単位でない型 (月例・カタログ追加・注意喚起 / WordPress 量産 / ブラウザ 0-day・消費者向け)。
+#: 601 件にはこの型がほぼ無く、ML が負例を学べない。層ラベルは "targeted" (審判には見せない)。
+_TARGETED_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"月例|定例|セキュリティ情報公開|Patch Tuesday|KEV カタログに追加|注意喚起を発信"),
+    re.compile(r"WordPress|プラグイン|外掛|plugin", re.IGNORECASE),
+    re.compile(r"Chrome|Firefox|Safari|ブラウザ|Plex|macOS|iOS|Android|偽.*広告"),
+)
 
 _SYSTEM = (
     "あなたは日本の CTI アナリストです。1 本の記事について、"
@@ -176,6 +185,26 @@ def select_population(limit_random: int = _RANDOM_SAMPLE) -> list[dict[str, Any]
     return [{**r, "stratum": strata[r["article_id"]]} for r in (*opened, *top, *sample)]
 
 
+def select_targeted(
+    held_out: list[dict[str, Any]],
+    titles: dict[str, str],
+    *,
+    exclude: set[str],
+    limit: int,
+    seed: int = _SEED,
+) -> list[dict[str, Any]]:
+    """タイトルが負例パターンに当たる held-out 記事を最大 limit 件 (決定論、既存母集団は除外)。"""
+    cands = [
+        r
+        for r in held_out
+        if r["article_id"] not in exclude
+        and any(p.search(titles.get(str(r["article_id"]), "")) for p in _TARGETED_PATTERNS)
+    ]
+    rng = random.Random(seed)
+    rng.shuffle(cands)
+    return [{**r, "stratum": "targeted"} for r in cands[:limit]]
+
+
 def _articles(repo: RunHistoryRepository, ids: list[str]) -> dict[str, tuple[str, str]]:
     out: dict[str, tuple[str, str]] = {}
     with repo._connect() as conn:  # noqa: SLF001 — 評価スクリプトの接続 seam 共有
@@ -194,12 +223,21 @@ def _articles(repo: RunHistoryRepository, ids: list[str]) -> dict[str, tuple[str
 
 async def main_async(args: argparse.Namespace) -> int:
     population = select_population(args.random_sample)
+    repo = RunHistoryRepository()
+    if args.targeted > 0:
+        held = _held_out()
+        all_texts = _articles(repo, [str(r["article_id"]) for r in held])
+        population += select_targeted(
+            held,
+            {a: t for a, (t, _s) in all_texts.items()},
+            exclude={r["article_id"] for r in population},
+            limit=args.targeted,
+        )
     seen = {
         json.loads(line)["article_id"]
         for line in (OUT.read_text(encoding="utf-8").splitlines() if OUT.exists() else [])
         if line.strip()
     }
-    repo = RunHistoryRepository()
     texts = _articles(repo, [str(r["article_id"]) for r in population])
 
     from collections import Counter
@@ -258,6 +296,9 @@ def main() -> int:
     )
     ap.add_argument("--model", default="claudecode:sonnet", help="審判モデル ref")
     ap.add_argument("--random-sample", type=int, default=_RANDOM_SAMPLE)
+    ap.add_argument(
+        "--targeted", type=int, default=0, help="負例パターンの狙い撃ち層の上限 (0 で無効)"
+    )
     ap.add_argument("--apply", action="store_true", help="外部 LLM を呼ぶ (既定は dry-run)")
     return asyncio.run(main_async(ap.parse_args()))
 
