@@ -2197,8 +2197,11 @@ shadow を数日待つ代わりに、学習済みモデルを held-out 25 日・
 
 ## 49. n17c = 状況総括 CoT を第 3 課題として混合 (2026-09-17 夜、利用者判断: 夕刊終了後に起動)
 
-- データ: `dataset_n16` (event 682 + 圧縮 spotlight 161×3 = 1,141) + **CoT 教師対 126 (原窓 63 +
-  判定 65% 間引き変種 63) × 2** (valid には原窓 3 + その変種 = 6)。tokenizer フィルタ ≤12,200。
+- データ: `dataset_n16` (event 682 + 圧縮 spotlight 161×3 = 1,141) + **CoT 教師対 124 (原窓 63 +
+  判定 65% 間引き変種 63、12,200 tok 超 2 対除外) × 3** (valid には原窓 3 + その変種 = 6)。
+  ×3 の根拠 (利用者指摘): §42 の epoch 曲線 (8 層) で epoch 3 が頂点 → 30 層で混合全体の epoch を
+  増やすと 1 epoch ≈ 15h × 3 で本番停止が数日に及ぶため、**新課題の露出回数だけを 3 回**にする
+  (event / spotlight の露出は合格した n17m30 と同じ 1 回)。
 - レシピ: n17m30 と同一 (30 層 / rank 32 / lr 3e-5 warmup 5% + cosine / accum 4 / 1 epoch /
   max-seq 12,500 / `MLX_DISABLE_COMPILE=1`)、seed 0。`data/mlx/run_n17c.sh` (夕刊成立を待って
   kuebiko を停止し学習、完了後 取込 → 事象 39 / spotlight 6 / **状況総括 15 窓の CoT 生成** +
