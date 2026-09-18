@@ -138,11 +138,11 @@ def test_prefilter_select_orders_by_probability_and_zero_means_all(
     assert prefilter_select(scores, top_k=2) == ["b", "c"]
     assert prefilter_select(scores, top_k=0) == ["b", "c", "a"]
     monkeypatch.delenv("DETECT_ML_PREFILTER", raising=False)
-    assert prefilter_top_k() == 15
+    assert prefilter_top_k() == 30
     monkeypatch.setenv("DETECT_ML_PREFILTER", "0")
     assert prefilter_top_k() == 0
     monkeypatch.setenv("DETECT_ML_PREFILTER", "abc")
-    assert prefilter_top_k() == 15
+    assert prefilter_top_k() == 30
 
 
 def test_rollup_titles_are_detected() -> None:
@@ -172,3 +172,28 @@ def test_compose_candidates_adds_high_floor_and_drops_excluded() -> None:
     assert compose_llm_candidates(
         dict.fromkeys(["x", "roll"], 0.0), top_k=0, high_ids=set(), excluded={"roll"}
     ) == ["x"]
+
+
+def test_floor_includes_high_importance_and_japan_breach() -> None:
+    from src.synthesis.grounded.detect_features import DetectArticle
+    from src.synthesis.grounded.detect_ml import floor_article_ids
+
+    def a(**kw: object) -> DetectArticle:
+        base: dict[str, object] = {
+            "article_id": "x",
+            "title": "t",
+            "summary": "s",
+            "importance": "medium",
+            "category": "breach",
+            "tier": "news",
+            "kind": "breach",
+        }
+        return DetectArticle(**{**base, **kw})  # type: ignore[arg-type]
+
+    arts = {
+        "hi": a(article_id="hi", importance="high", kind="other"),
+        "jp": a(article_id="jp", victim_country_iso="JP"),
+        "jp_adv": a(article_id="jp_adv", victim_country_iso="JP", kind="advisory"),
+        "other": a(article_id="other"),
+    }
+    assert floor_article_ids(arts) == {"hi", "jp"}

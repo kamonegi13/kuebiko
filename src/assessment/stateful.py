@@ -818,11 +818,12 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     # 失敗時は絞らずに従来どおり (ML は可用性に影響させない)
     ml_scores: dict[str, float] = {}
     ml_kinds: dict[str, str] = {}
+    ml_floor: set[str] = set()
     if not open_new:
         # 更新専用 (毎時の増分再評価): 新規開設は朝夕の定時 run に任せる
         detect_input = []
     try:
-        ml_scores, ml_kinds = await _score_detect_ml(
+        ml_scores, ml_kinds, ml_floor = await _score_detect_ml(
             store=store, detect_input=detect_input, fast_llm=fast_llm or llm
         )
     except Exception as exc:  # noqa: BLE001
@@ -836,7 +837,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             for a in detect_input
             if detect_ml_is_rollup_title(str(a.get("title", "") or ""))
         }
-        high_ids = {
+        # 下限保証: ML の採点が取れていればその判定 (high or 日本標的 breach)、無ければ high のみ
+        high_ids = ml_floor or {
             str(a.get("article_id", ""))
             for a in detect_input
             if str(a.get("importance", "") or "") == "high"
@@ -1575,16 +1577,16 @@ async def _score_detect_ml(
     store: SituationStore,
     detect_input: list[dict[str, object]],
     fast_llm: LLMClient,
-) -> tuple[dict[str, float], dict[str, str]]:
-    """detect ML (SYNTHESIS §47) で候補を採点する。モデル無し / 候補無しなら空。"""
+) -> tuple[dict[str, float], dict[str, str], set[str]]:
+    """detect ML (SYNTHESIS §47) で候補を採点する。返り値 = (確率, 種別, 下限保証の id)。"""
     from src.eventnews import event_kind
     from src.synthesis.grounded import detect_ml
 
     if not detect_input:
-        return {}, {}
+        return {}, {}, set()
     model = detect_ml.load_detect_model()
     if model is None:
-        return {}, {}
+        return {}, {}, set()
     repo = store._repo  # noqa: SLF001 — 既存の接続 seam を共有
     triples = [
         (
@@ -1603,7 +1605,11 @@ async def _score_detect_ml(
         repo, triples, _classify, model_label=getattr(fast_llm, "model", "")
     )
     articles = detect_ml.build_detect_articles(repo, [t[0] for t in triples], kinds)
-    return detect_ml.score_articles(model, articles), {a: x.kind for a, x in articles.items()}
+    return (
+        detect_ml.score_articles(model, articles),
+        {a: x.kind for a, x in articles.items()},
+        detect_ml.floor_article_ids(articles),
+    )
 
 
 def _record_detect_ml_shadow(
