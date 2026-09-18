@@ -272,12 +272,17 @@ async def detect_new_claims(
     active_titles: list[str],
     pir_context: list[dict[str, str]],
     period_label: str,
+    template: str = "synthesis/detect_new.j2",
 ) -> DetectResult:
-    """未割当残余から新規追跡を開く価値のある claim を選ぶ (PIR + 使命序列を明示注入)。"""
+    """未割当残余から新規追跡を開く価値のある claim を選ぶ (PIR + 使命序列を明示注入)。
+
+    ``template`` は A/B 実験用の seam (既定は本番 = 層分けされた合成プロンプト)。
+    別ファイルを渡すと合成を経由せずその .j2 をそのまま使う (プロンプト = 可動部)。
+    """
     if not articles:
         return DetectResult(open=(), rejected=(), overflow=0)
     prompt = _render(
-        "synthesis/detect_new.j2",
+        template,
         articles=articles,
         active_titles=active_titles,
         pir_context=pir_context,

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""ML 前段の replay — 同じ日の入力を「全件」と「候補セット」の 2 通りで detect にかけて比べる。
+"""detect の replay — 同じ日を 2 つの腕で走らせて開設される claim を比べる。
+
+``--mode input``  : 入力の広さ (全件 / ML 候補セット) を比べる。ML 前段の移行条件。
+``--mode prompt`` : 判定基準 (現行 / 追跡価値の関門つき detect_new_v2.j2) を比べる。候補セット固定。
 
 移行条件の最後の 1 つ (SYNTHESIS §47 追記 9): 候補を絞った状態で LLM が書く claim の質が、
 全件投入時と同等以上か。これは凍結データの採点では測れない (LLM を両方の入力で走らせる必要がある)
@@ -174,15 +177,26 @@ async def main_async(args: argparse.Namespace) -> int:
         scores = score_articles(model, arts)
         cand = narrow(pool, scores, arts, top_k=prefilter_top_k())
         print(f"  {day}: プール {len(pool)} → 候補 {len(cand)}", flush=True)
-        arms: dict[str, list[dict[str, Any]]] = {"full": pool, "narrow": cand}
+        # 腕: input = 入力の広さ (全件 / 候補セット) / prompt = 判定基準 (現行 / 追跡価値つき)
+        if args.mode == "prompt":
+            arms: dict[str, tuple[list[dict[str, Any]], str]] = {
+                "cur": (cand, "synthesis/detect_new.j2"),
+                "v2": (cand, "synthesis/detect_new_v2.j2"),
+            }
+        else:
+            arms = {
+                "full": (pool, "synthesis/detect_new.j2"),
+                "narrow": (cand, "synthesis/detect_new.j2"),
+            }
         rec: dict[str, Any] = {"day": day, "pool": len(pool), "candidates": len(cand)}
-        for name, articles in arms.items():
+        for name, (articles, template) in arms.items():
             res = await detect_new_claims(
                 llm=llm,
                 articles=articles,
                 active_titles=active_titles,
                 pir_context=pir_context,
                 period_label=f"{day} (replay)",
+                template=template,
             )
             s = score_arm(res, gold)
             rec[name] = {
@@ -191,6 +205,7 @@ async def main_async(args: argparse.Namespace) -> int:
                     {"claim": c.claim, "domain": c.domain, "article_ids": list(c.article_ids)}
                     for c in res.open
                 ],
+                "rejected": [{"article_id": a, "reason": r} for a, r in res.rejected][:12],
             }
             for k, v in s.items():
                 totals[name][k] += v
@@ -202,7 +217,7 @@ async def main_async(args: argparse.Namespace) -> int:
         out.append(rec)
         args.out.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("\n=== 合計 ===")
-    for name in ("full", "narrow"):
+    for name in ("cur", "v2") if args.mode == "prompt" else ("full", "narrow"):
         t = totals[name]
         if not t:
             continue
@@ -221,6 +236,12 @@ def main() -> int:
     ap.add_argument("--since", default="2026-08-16", help="日選定の下限 (審判ラベルのある期間)")
     ap.add_argument("--until", default="2026-09-10", help="日選定の上限")
     ap.add_argument("--min-pool", type=int, default=40, help="この件数未満の日は skip")
+    ap.add_argument(
+        "--mode",
+        choices=("input", "prompt"),
+        default="input",
+        help="input = 全件 vs 候補セット / prompt = 現行 vs 追跡価値つき",
+    )
     ap.add_argument("--out", type=Path, default=Path("data/mlx/replay_detect_prefilter.json"))
     return asyncio.run(main_async(ap.parse_args()))
 
