@@ -28,7 +28,24 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.tools.claude_code_client import ClaudeCodeClient  # noqa: E402
-from src.tools.llm_client import LLMError  # noqa: E402
+from src.tools.llm_client import LLMClient, LLMError, OllamaClient  # noqa: E402
+
+PROVIDERS = ("claude-code", "ollama")
+
+
+def build_judge_client(*, provider: str, model: str, base_url: str) -> LLMClient:
+    """採点者を組み立てる (純粋関数)。
+
+    ⚠ 採点は**本番の経路を再現する必要がない** — 両腕に同じ物差しを当てれば比較は成立する。
+    むしろ生成側と別のモデルであることが独立性になる (2026-09-19: 審判 Sonnet と検証器 s17 が
+    食い違ったため三者目を立てた)。中華系 denylist は ``OllamaClient`` 構築時に効く。
+    """
+    if provider == "claude-code":
+        return ClaudeCodeClient(model=model, bridge_url=base_url, timeout_seconds=180)
+    if provider == "ollama":
+        return OllamaClient(base_url=base_url, model=model, timeout_seconds=600.0)
+    raise ValueError(f"未知の provider: {provider} (有効: {', '.join(PROVIDERS)})")
+
 
 _SYSTEM = (
     "あなたは CTI 記事の要約品質を審査する編集者です。与えられた候補記事 (入力) に対する "
@@ -75,7 +92,7 @@ def _load(spec: str) -> tuple[str, list[dict[str, str]]]:
     return label or Path(path).stem, rows
 
 
-async def _judge_one(client: ClaudeCodeClient, prompt: str, a: str, b: str) -> Verdict:
+async def _judge_one(client: LLMClient, prompt: str, a: str, b: str) -> Verdict:
     last: LLMError | None = None
     for _ in range(3):  # bridge のタイムアウト・一時失敗は 2 回まで再試行
         try:
@@ -97,8 +114,12 @@ async def main_async(args: argparse.Namespace) -> int:
     label_a, rows_a = _load(args.a)
     label_b, rows_b = _load(args.b)
     n = min(len(rows_a), len(rows_b), args.limit or 10**9)
-    client = ClaudeCodeClient(model=args.model, bridge_url=args.bridge_url, timeout_seconds=180)
-    out_path = Path(f"data/mlx/judge_{label_a}_vs_{label_b}.json")
+    client = build_judge_client(
+        provider=args.provider, model=args.model, base_url=args.base_url or args.bridge_url
+    )
+    # ⚠ 採点者ごとに別ファイル。上書きすると「誰が採点したか」が消える
+    tag = "" if args.provider == "claude-code" else f"_{args.model.replace(':', '-')}"
+    out_path = Path(f"data/mlx/judge_{label_a}_vs_{label_b}{tag}.json")
     results: list[dict[str, Any]] = []
     if out_path.exists() and not args.fresh:
         results = json.loads(out_path.read_text())
@@ -156,6 +177,17 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--model", default="sonnet", help="bridge のモデル名 (sonnet / opus / haiku)")
     p.add_argument("--bridge-url", default="http://127.0.0.1:8010")
+    p.add_argument(
+        "--provider",
+        default="claude-code",
+        choices=list(PROVIDERS),
+        help="採点者の種類。ollama なら別マシンでも可 (--base-url で指定)",
+    )
+    p.add_argument(
+        "--base-url",
+        default="",
+        help="採点者の接続先。省略時は --bridge-url",
+    )
     p.add_argument("--fresh", action="store_true", help="既存の結果を捨てて最初から")
     return asyncio.run(main_async(p.parse_args()))
 
