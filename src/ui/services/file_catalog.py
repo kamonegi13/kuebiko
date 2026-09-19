@@ -127,6 +127,20 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "**構造化編集が有効なため本ファイルは rollback 用の据置コピー** "
         "(実際の指示散文はプロンプトタブの骨格 + block 編集、層分け 7〜12 本目 2026-08-20)",
     ),
+    "prompts/synthesis/detect_new_v2.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "新規情勢の検出 (実験: 追跡価値の関門)",
+        "**本番経路では使わない実験用**。判定基準に「続報で見立てが動くか」の関門を足した版で、"
+        "replay ハーネス (scripts/replay_detect_prefilter.py --mode prompt) が明示指定する。"
+        "2026-09-19 の A/B では回収が変わらず不採用 (SYNTHESIS §50)",
+    ),
+    "prompts/synthesis/detect_ml_select.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "新規情勢の検出 (実験: ML が選定主体)",
+        "**本番経路では使わない実験用**。ML が選んだ記事を「開く対象」として渡し、LLM は claim を"
+        "書いてまとめるだけにする版。replay ハーネス (--mode select) が明示指定する "
+        "(SYNTHESIS §50-51)",
+    ),
     "prompts/synthesis/detect_new_skeleton.j2": FileInfo(
         "状況総括 (synthesis)",
         "新規情勢の検出の骨格 (code 所有)",

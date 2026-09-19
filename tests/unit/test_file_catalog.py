@@ -35,7 +35,9 @@ class TestCatalogCompleteness:
         # detect_new_skeleton / adversarial_skeleton / render_skeleton
         # (層分け 7〜12 本目 2026-08-20、grounded ACH 群 6 本)
         # +eventnews/refine.j2 (事象単位ニュース §9、2026-08-23)
-        assert len(actual) == 26
+        # +synthesis/detect_new_v2.j2 / detect_ml_select.j2 (detect の A/B 実験用、2026-09-19)。
+        # **本番経路では使わない** (replay ハーネスが --mode prompt / select で明示指定する)。
+        assert len(actual) == 28
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
