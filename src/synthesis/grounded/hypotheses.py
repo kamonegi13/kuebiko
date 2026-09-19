@@ -369,6 +369,15 @@ _GEO_DOMAINS: frozenset[str] = frozenset(
 )
 
 
+def is_geo_domain(domain: str) -> bool:
+    """domain が地政学・政策側か (_GEO_DOMAINS が SSoT)。
+
+    再評価の予約枠 (2026-09-19) が「サイバー = 追跡の主力 / 地政学 = 判断を支える文脈」を
+    分けるために使う。**除外の判定ではない** — 予約枠は配分であって遮断ではない。
+    """
+    return domain in _GEO_DOMAINS
+
+
 def hypotheses_for_domain(domain: str) -> tuple[Hypothesis, ...]:
     """nominate の domain から ACH に使う仮説セットを選ぶ。
 

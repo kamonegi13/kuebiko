@@ -111,6 +111,14 @@ _MAX_UPDATES_BY_PERIOD: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 
 # 運用弁: backlog の強制排水用に cap を一時上書きする env (通常は未設定 = period 別既定)。
 # 手動 run (docker exec) と併用する。定時 cron に恒常設定しない (timeout 予算を壊す)。
 _REASSESS_CAP_ENV = "SYNTHESIS_REASSESS_CAP"
+#: 地政学の文脈情勢 (domain が _GEO_DOMAINS) の予約枠 (2026-09-19)。
+#: サイバーは「追跡の主力」、地政学は「判断を支える文脈」で、要る鮮度が違う。予約枠を置かないと
+#: 証拠量の多い地政学が優先度順で枠を取り (実測: revision の 45% を 26 件が消費、直近 3 日で
+#: 地政学 19 + 軍事 11)、単一事象の更新が繰り越された。**除外はしない** — サイバーは物理的な
+#: 地政学に影響され、また与えるため (利用者指摘 2026-09-19)。情勢 9 件を 2 件/run なら約 2.5 日で
+#: 一巡し、文脈としての鮮度は保てる。0 で無効 (予約せず従来どおり優先度順に競合)。
+_GEO_RESERVE_ENV = "SYNTHESIS_GEO_RESERVE"
+_DEFAULT_GEO_RESERVE = 2
 # 再評価キューが 1 Situation あたり回収する未読証拠の上限 (実際に本文を読むのは
 # _MAX_NEW_SOURCES_PER_UPDATE 件。超過分は read_at NULL のままキューに残り silent drop
 # しない — 新しい順なので新着が常に優先、静穏期に残余が排水される)。
@@ -199,6 +207,38 @@ def title_follows_claim(row: SituationRow) -> bool:
     しかも posture カードは見出しが国名・本文が仮説ラベルのため UI では劣化が見えなかった。
     """
     return row.kind != STANDING_KIND
+
+
+def geo_reserve() -> int:
+    """地政学の文脈情勢の予約枠 (env ``SYNTHESIS_GEO_RESERVE``、0 で無効)。"""
+    raw = os.environ.get(_GEO_RESERVE_ENV, "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return _DEFAULT_GEO_RESERVE
+
+
+def split_geo_reserved(
+    candidates: dict[str, list[str]],
+    domain_by_sid: dict[str, str],
+    latest_rev_at: dict[str, str],
+    *,
+    reserve: int,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """候補を (サイバー等, 地政学の予約分) に分ける (純粋関数)。
+
+    地政学は**最終判定が古い順**に reserve 件だけ取る (証拠量ではなく鮮度で選ぶ — 文脈に要るのは
+    「古くなっていないこと」で、証拠量で競わせると元の偏りに戻る)。
+    reserve=0 なら分けない (全件が通常の優先度競争に入る = 従来挙動)。
+    """
+    from src.synthesis.grounded.hypotheses import is_geo_domain
+
+    if reserve <= 0:
+        return dict(candidates), {}
+    geo = [sid for sid in candidates if is_geo_domain(domain_by_sid.get(sid, ""))]
+    picked = sorted(geo, key=lambda sid: (latest_rev_at.get(sid, ""), sid))[:reserve]
+    reserved = {sid: candidates[sid] for sid in picked}
+    rest = {sid: v for sid, v in candidates.items() if sid not in reserved and sid not in set(geo)}
+    return rest, reserved
 
 
 def select_reassessments(
@@ -763,11 +803,35 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         cap = reassess_cap  # 毎時の増分再評価 (開設なし・小 cap) 用の明示指定
     # standing 予約枠は cap の内数 (event 側を縮めて総 LLM 呼出を不変に保つ)
     event_cap = max(1, cap - len(standing_batch))
-    selected_sids, deferred_sids = select_reassessments(
+    # 地政学の文脈情勢も予約枠の内数 (2026-09-19)。除外ではなく配分 — 鮮度を保ったまま
+    # 単一事象 (サイバー) の更新枠を空ける
+    rev_at = {sid: r.created_at for sid, r in latest_revs.items()}
+    cyber_candidates, geo_reserved = split_geo_reserved(
         new_by_sid,
-        {sid: r.created_at for sid, r in latest_revs.items()},
-        cap=event_cap,
+        {r.situation_id: r.domain for r in situations},
+        rev_at,
+        reserve=min(geo_reserve(), max(0, event_cap - 1)),
     )
+    if geo_reserved:
+        _log.info(
+            "geo_reserved_reassessments",
+            reserved=sorted(geo_reserved),
+            geo_candidates=sum(
+                1 for sid in new_by_sid if sid not in cyber_candidates and sid not in geo_reserved
+            )
+            + len(geo_reserved),
+        )
+    selected_sids, deferred_sids = select_reassessments(
+        cyber_candidates,
+        rev_at,
+        cap=max(1, event_cap - len(geo_reserved)),
+    )
+    selected_sids = [*selected_sids, *geo_reserved]
+    # 予約から漏れた地政学は繰越 (証拠は下の deferred 経路で bare 保存される)
+    deferred_sids = [
+        *deferred_sids,
+        *(sid for sid in new_by_sid if sid not in cyber_candidates and sid not in geo_reserved),
+    ]
     # 繰越 Situation の pool 由来割当は bare 証拠として先に永続化する (割当は失わない。
     # 評価は次 run が unread_evidence 経由で回収する)。backlog 由来は台帳に既存。
     for sid in deferred_sids:
