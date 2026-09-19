@@ -943,7 +943,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             detected = await _add_ml_union_claims(
                 detected=detected,
                 llm=fast_llm or llm,
-                detect_input=detect_input,
+                # ⚠ 絞り込み **後** の候補から採る — replay (§51) が測ったのはこの経路。
+                #    絞り込み前を渡すと、測った形と出荷した形がずれる
+                detect_input=llm_input,
                 ml_scores=ml_scores,
                 active_titles=active_titles,
                 pir_context=pir_context,
