@@ -80,10 +80,13 @@ from src.synthesis.grounded.estimate import (
 )
 from src.synthesis.grounded.hypotheses import get_hypothesis
 from src.synthesis.grounded.incremental import (
+    _DETECT_OPEN_MAX_TOTAL,
     CARRIED_INDICATORS_MAX,
+    DetectResult,
     PriorJudgmentView,
     detect_new_claims,
     incremental_ground_and_score,
+    merge_union_claims,
 )
 from src.synthesis.grounded.passes import ground_and_score, truncate_body
 from src.tools.llm_client import LLMClient
@@ -932,6 +935,23 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         pir_context=pir_context,
         period_label=label,
     )
+    # 和集合 (SYNTHESIS §51): LLM が選ばなかったもののうち ML の上位を足す。両腕の視点が
+    # 直交しており (replay 5 日で重なり 31 件中 1 件)、回収が 8→17 に増えて精度は落ちない。
+    # 失敗しても本体を落とさない (ML は可用性に影響させない)
+    if ml_scores:
+        try:
+            detected = await _add_ml_union_claims(
+                detected=detected,
+                llm=fast_llm or llm,
+                detect_input=detect_input,
+                ml_scores=ml_scores,
+                active_titles=active_titles,
+                pir_context=pir_context,
+                period_label=label,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("detect_ml_union_failed", error=type(exc).__name__)
+
     # shadow: 閾値以上の上位を記録 (切替判断の差分比較用)。失敗しても本体を落とさない
     try:
         _record_detect_ml_shadow(
@@ -1634,6 +1654,58 @@ def _delta_note(prev: RevisionRow, j: KeyJudgment, delta: DeltaType) -> str:
     if delta == "reopened":
         return "休眠から再活性化"
     return ""
+
+
+async def _add_ml_union_claims(
+    *,
+    detected: DetectResult,
+    llm: LLMClient,
+    detect_input: list[dict[str, object]],
+    ml_scores: dict[str, float],
+    active_titles: list[str],
+    pir_context: list[dict[str, str]],
+    period_label: str,
+) -> DetectResult:
+    """ML の上位を「開く対象」として LLM に claim だけ書かせ、開設に足す (SYNTHESIS §51)。
+
+    LLM は選び直さない — 落としてよいのは「既に追跡中」「評価対象となる主張がない」の 2 つだけ
+    (prompts/synthesis/detect_ml_select.j2)。claim の文は ACH の入力になるため、決定論の仮 claim
+    では質が落ちる。上限は ``_DETECT_OPEN_MAX`` を LLM 側と合算で超えないよう切る。
+    """
+    from src.synthesis.grounded import detect_ml
+
+    top_k = detect_ml.union_top_k()
+    if top_k <= 0:
+        return detected
+    opened = {a for c in detected.open for a in c.article_ids}
+    rollup = {
+        str(a.get("article_id", ""))
+        for a in detect_input
+        if detect_ml.is_rollup_title(str(a.get("title", "") or ""))
+    }
+    picks = set(
+        detect_ml.union_additions(ml_scores, top_k=top_k, already_opened=opened, excluded=rollup)
+    )
+    if not picks:
+        return detected
+    articles = [a for a in detect_input if str(a.get("article_id", "")) in picks]
+    extra = await detect_new_claims(
+        llm=llm,
+        articles=articles,
+        active_titles=active_titles,
+        pir_context=pir_context,
+        period_label=period_label,
+        template="synthesis/detect_ml_select.j2",
+    )
+    merged = merge_union_claims(detected, extra, cap=_DETECT_OPEN_MAX_TOTAL)
+    _log.info(
+        "detect_ml_union",
+        ml_picks=len(picks),
+        llm_claims=len(detected.open),
+        ml_claims=len(extra.open),
+        merged=len(merged.open),
+    )
+    return merged
 
 
 async def _score_detect_ml(

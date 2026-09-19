@@ -37,6 +37,13 @@ _log = structlog.get_logger(__name__)
 DEFAULT_MODEL_PATH = Path("config/models/detect_model.json")
 _SHADOW_ENV = "DETECT_ML_SHADOW"
 _PREFILTER_ENV = "DETECT_ML_PREFILTER"
+_UNION_ENV = "DETECT_ML_UNION"
+#: 和集合で ML 側が開く件数/run の既定 (2026-09-19、SYNTHESIS §51)。replay 5 日の実測:
+#: LLM のみ 3.0 開設/日 (審判=開設 8) / ML のみ 3.4 (10) / **和集合 6.2 (17)** で精度は 53→55%。
+#: 両腕が共通して開いた記事は 31 件中 1 件 = 視点が直交しており、和集合のコストは足し算になる。
+#: 6.2 開設/日 は審判の基準 (≈6/日) と一致し、下流の消化能力 (毎時 6 + 朝夕 12/run) の内側。
+#: 0 で無効 (= LLM の選定のみ、従来)。
+UNION_TOP_K_DEFAULT = 4
 #: detect (LLM) に渡す候補を ML の上位この件数に絞る既定値。**15 → 30** (2026-09-18)。
 #: 凍結データ (時系列分割・評価 10 日) で候補セットの取りこぼしを実測した結果:
 #:   top15 → 審判=開設の 4 記事 / 3 事象が候補外、top20 → 4 / 3、top25 → 3 / 3、**top30 → 1 / 1**。
@@ -139,6 +146,33 @@ def floor_article_ids(articles: Mapping[str, DetectArticle]) -> set[str]:
         if a.importance == "high"
         or (a.kind == "breach" and is_japan_targeted_row(a.victim_country_iso, a.posted_channel))
     }
+
+
+def union_top_k() -> int:
+    """和集合で ML 側が開く件数 (``DETECT_ML_UNION``、既定 4、0 = 無効)。"""
+    raw = os.environ.get(_UNION_ENV, str(UNION_TOP_K_DEFAULT))
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return UNION_TOP_K_DEFAULT
+
+
+def union_additions(
+    scores: dict[str, float],
+    *,
+    top_k: int,
+    already_opened: set[str],
+    excluded: set[str],
+) -> list[str]:
+    """LLM が開かなかったもののうち、ML の確率上位 top_k 件 (純粋関数)。
+
+    **並べ替えてから切る** (09-19 の replay で逆にして腕が無効になった)。LLM が既に開いた記事と
+    勧告 (excluded) は除いてから数えるので、和集合の増分がそのまま top_k 件になる。
+    """
+    if top_k <= 0:
+        return []
+    pool = {a: p for a, p in scores.items() if a not in already_opened and a not in excluded}
+    return prefilter_select(pool, top_k=top_k)
 
 
 def is_rollup_title(title: str) -> bool:

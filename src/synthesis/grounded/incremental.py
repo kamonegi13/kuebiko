@@ -49,6 +49,9 @@ CARRIED_INDICATORS_MAX = 20
 # 1 run の新規開設上限 (超過分は log、翌 run に再浮上して回復可能)。
 # 5→8 (2026-09-17): ML 前段で候補の質が上がった分、上限が効き始めても取りこぼさない
 _DETECT_OPEN_MAX = 8
+#: 和集合 (LLM + ML) の 1 run 合計上限 (2026-09-19)。replay 実測 6.2 開設/日 = 3.1/run なので
+#: 12 は余裕がある。ACH は 1 件 ~32 秒なので 12 件 ≈ 6.4 分 (pipeline timeout 30 分の内側)。
+_DETECT_OPEN_MAX_TOTAL = 12
 
 # claim 改訂の文字化けガード (実測: 31B が改訂 claim に簡体字/拡張漢字を混入し
 # 「最高弔导能ンエ异席」のような破損文を生成・保存した)。CJK 拡張 A/B は日本語文で
@@ -263,6 +266,31 @@ class DetectResult:
     open: tuple[DetectedClaim, ...]
     rejected: tuple[tuple[str, str], ...]  # (article_id, reason)
     overflow: int  # 上限で切った開設候補数 (no-silent-caps: 必ず log される)
+
+
+def merge_union_claims(base: DetectResult, extra: DetectResult, *, cap: int) -> DetectResult:
+    """LLM の開設に ML 側の claim を足す (和集合、SYNTHESIS §51、純粋関数)。
+
+    - **同じ記事を使う claim は足さない** (LLM 側を残す。claim 文の質は LLM 側が上)
+    - 合計が cap を超える分は落とし、``overflow`` に数える (no-silent-caps)
+    - rejected は両者を連結 (監査台帳は落選理由を全部残す)
+    """
+    used = {a for c in base.open for a in c.article_ids}
+    added: list[DetectedClaim] = []
+    dropped = 0
+    for c in extra.open:
+        if any(a in used for a in c.article_ids):
+            continue
+        if len(base.open) + len(added) >= cap:
+            dropped += 1
+            continue
+        added.append(c)
+        used.update(c.article_ids)
+    return DetectResult(
+        open=(*base.open, *added),
+        rejected=(*base.rejected, *extra.rejected),
+        overflow=base.overflow + extra.overflow + dropped,
+    )
 
 
 async def detect_new_claims(
