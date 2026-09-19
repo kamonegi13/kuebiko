@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
+from src.tools.identifier_catalog import ResolveStats
 from src.tools.llm_schema import require_all_properties
 
 # ---------- 群化 (§5) ----------
@@ -271,4 +272,4 @@ class GateResult:
     repaired_ids: int  # {In} → 実値に解決した数
     substituted_ids: int  # 「(原文参照)」に置換 + 創作番号の除去
     verified: bool  # 照合を実施できたか
-    stats: object | None = None  # identifier_catalog.ResolveStats (詳細内訳)
+    stats: ResolveStats | None = None  # 解決の詳細内訳

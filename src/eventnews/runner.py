@@ -176,6 +176,15 @@ def _rewrite_hints(
             "関連しない値 (別件の列挙等) は含めなくてよい。"
             "他の内容の質は保ったまま書き直すこと。"
         )
+    # 取り違え (長い識別子の 1 文字違い) を直したら記録する。⚠ 黙って直すと
+    # 「モデルが識別子を壊している」という事実そのものが観測から消える (2026-09-19)。
+    repaired = gate.stats.literal_repaired if gate.stats else 0
+    if repaired:
+        _log.warning(
+            "eventnews_identifier_repaired",
+            item_id=item_id,
+            repaired=repaired,
+        )
     if verbatim.needs_rewrite(gate.draft.facts, bodies):
         _log.warning(
             "eventnews_verbatim_rewrite",

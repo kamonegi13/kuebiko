@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from src.tools.identifier_match import Identifier, extract_identifiers
@@ -37,6 +37,47 @@ STRICT_KINDS: frozenset[str] = frozenset({"cve", "ip", "domain", "hash", "actor_
 # した (McDonald、TCS、BEC、AI、CEO、PDF、SECURITY… 2026-08-23 実測)。
 # 検出 (直書きの照合・破損の計数) には引き続き使う — 載せないのは提示だけ。
 CATALOG_EXCLUDED_KINDS: frozenset[str] = frozenset({"proper_noun"})
+
+# 取り違え (near-miss) の判定閾値 — **実測から置く** (2026-09-19)。
+# カタログに無い version/cvss は 3 腕 116 件で 58 件あったが、その大半は 7.5 / 9.1 のような
+# 短い値で、一律に置換すると**正しい記述を壊す** (§C の「計数のみ」判断はこれが根拠だった)。
+# 長い値が 1 文字だけ違うときに限れば、同じ標本で発火は実例 1 件のみ
+# (``151.0.79222.138`` ← ``151.0.7922.138`` の 1 桁挿入) で誤検出なし。
+NEAR_MISS_MIN_LEN = 6
+NEAR_MISS_MAX_DISTANCE = 1
+
+
+def _edit_distance(a: str, b: str, *, cap: int) -> int:
+    """挿入/削除/置換の編集距離。``cap`` を超えるものは打ち切って ``cap + 1`` を返す。"""
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def near_miss_value(written: str, known: Iterable[str]) -> str | None:
+    """``written`` が取り違えなら、意図されたカタログ値を返す (純粋関数)。
+
+    取り違えと見なす条件は 3 つすべて:
+    長さが ``NEAR_MISS_MIN_LEN`` 以上 / 編集距離が ``NEAR_MISS_MAX_DISTANCE`` 以内 /
+    **その距離の候補がちょうど 1 つ**。候補が複数あれば意図を決められないので直さない。
+    """
+    if len(written) < NEAR_MISS_MIN_LEN:
+        return None
+    hits = [
+        k
+        for k in known
+        if k
+        and k != written
+        and _edit_distance(written, k, cap=NEAR_MISS_MAX_DISTANCE) <= NEAR_MISS_MAX_DISTANCE
+    ]
+    return hits[0] if len(hits) == 1 else None
+
 
 # 解決できなかった識別子の代替表記 (行は残す — 観測の事実は保持する)
 UNRESOLVED_PLACEHOLDER = "(原文参照)"
@@ -106,6 +147,13 @@ class IdentifierCatalog:
     def normalized_values(self) -> frozenset[str]:
         return frozenset(e.identifier.normalized for e in self.entries)
 
+    def raw_of(self, normalized: str) -> str | None:
+        """正規化値から原文の表記を引く (取り違えを直すとき、原文の見た目で戻す)。"""
+        for e in self.entries:
+            if e.identifier.normalized == normalized:
+                return e.identifier.raw
+        return None
+
     def members_of(self, normalized: str) -> frozenset[int]:
         for e in self.entries:
             if e.identifier.normalized == normalized:
@@ -125,6 +173,7 @@ class ResolveStats:
     script_anomalies: int = 0  # 想定外の字種 (生成破損の兆候。本文は壊さない)
     literal_substituted: int = 0  # 実値で書かれ、厳密型でカタログに無い → 置換した数
     literal_flagged: int = 0  # 実値で書かれ、緩い型でカタログに無い → 計数のみ
+    literal_repaired: int = 0  # 取り違え (長い値の 1 文字違い) をカタログ値へ直した数
 
     def merged(self, other: ResolveStats) -> ResolveStats:
         return ResolveStats(
@@ -134,6 +183,7 @@ class ResolveStats:
             literal_ok=self.literal_ok + other.literal_ok,
             literal_substituted=self.literal_substituted + other.literal_substituted,
             literal_flagged=self.literal_flagged + other.literal_flagged,
+            literal_repaired=self.literal_repaired + other.literal_repaired,
             unwrapped=self.unwrapped + other.unwrapped,
             script_anomalies=self.script_anomalies + other.script_anomalies,
         )
@@ -223,6 +273,7 @@ def resolve_text(
     literal_source = _BRACE_RE.sub(lambda m: m.group(1), stripped)
     known = catalog.normalized_values
     substitutions: list[str] = []
+    repairs: list[tuple[str, str]] = []
     for ident in extract_identifiers(literal_source):
         if ident.normalized in known:
             mis = (
@@ -235,8 +286,15 @@ def resolve_text(
         if ident.kind in STRICT_KINDS:
             substitutions.append(ident.raw)
             stats = stats.merged(ResolveStats(literal_substituted=1))
+            continue
+        # 緩い型 (version/cvss) は原則 計数のみ (§C)。ただし**長い値が 1 文字だけ違う**
+        # ときは取り違えなので、意図された値へ直す (2026-09-19。審判が接地違反として
+        # 挙げた実例 ``151.0.79222.138`` はこの形だった)。
+        intended = near_miss_value(ident.normalized, known)
+        if intended is not None:
+            repairs.append((ident.raw, catalog.raw_of(intended) or intended))
+            stats = stats.merged(ResolveStats(literal_repaired=1))
         else:
-            # version/cvss 等は表記の変種が無限。本文は壊さず計数のみ (§C)
             stats = stats.merged(ResolveStats(literal_flagged=1))
 
     stats = stats.merged(ResolveStats(script_anomalies=count_script_anomalies(text)))
@@ -245,6 +303,8 @@ def resolve_text(
     if leftover:
         out = _BRACE_RE.sub(lambda m: m.group(1), out)
         stats = stats.merged(ResolveStats(unwrapped=leftover))
+    for raw, intended in repairs:
+        out = out.replace(raw, intended)
     for raw in substitutions:
         out = out.replace(raw, UNRESOLVED_PLACEHOLDER)
     return re.sub(r"\s{2,}", " ", out).strip(), stats
