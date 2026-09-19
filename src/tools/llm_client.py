@@ -479,6 +479,10 @@ class OllamaClient(LLMClient):
         prompt_eval = int(_get(response, "prompt_eval_count") or 0)
         eval_count = int(_get(response, "eval_count") or 0)
 
+        # ⭐ 上限に張り付いた生成 = 暴走の signal (2026-09-19)。凍結評価で n17c の暴走率が
+        #    11% (対 n17m30 5%) と分かったが、**本番で何 % 起きているかを測る術が無かった**。
+        #    max_tokens は呼出ごとに違うので、到達を呼出側の値と突き合わせてここで判定する。
+        hit_cap = eval_count >= max_tokens
         _log.info(
             "ollama_response",
             model=self._model,
@@ -487,7 +491,16 @@ class OllamaClient(LLMClient):
             output_tokens=eval_count,
             output_chars=len(text),
             structured=format_schema is not None,
+            max_tokens=max_tokens,
+            hit_token_cap=hit_cap,
         )
+        if hit_cap:
+            _log.warning(
+                "llm_output_hit_token_cap",
+                model=self._model,
+                max_tokens=max_tokens,
+                output_chars=len(text),
+            )
 
         return LLMResponse(
             text=text,
