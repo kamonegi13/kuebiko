@@ -49,6 +49,14 @@ ENTITY_TYPES: tuple[str, ...] = (
 #: 関与国 (involved_country) のうち任務上の主敵 + 日本。entity_counts に ``country:<ISO>`` で渡す
 #: (2026-09-17 バックテストで国家系 (イラン / 北朝鮮) の事象を ML が落としていた対策)
 NATION_FLAGS: tuple[str, ...] = ("CN", "RU", "KP", "IR", "JP")
+#: **アクターの国家帰属** (辞書 actor_aliases.yaml の nation)。
+#: entity_counts に ``actor_nation:<iso>`` で渡す。
+#: 2026-09-19: LLM だけが開設した 14 件は bluenoroff / famous_chollima / mustang_panda など
+#: **名前のついた国家系アクター**を見ていた。既存の n_actor (個数) では「どの国のアクターか」が
+#: 写らず ML は 0.73 前後に置いていた。LLM の視点を決定論で特徴量へ移す (SYNTHESIS §52)
+ACTOR_NATIONS: tuple[str, ...] = ("cn", "ru", "kp", "ir")
+#: 辞書に載っている既知アクターが 1 件でも居るか (無名の犯罪グループと区別する)
+KNOWN_ACTOR_KEY = "actor_known"
 IMPORTANCE_ORD: Mapping[str, float] = {"low": 0.0, "medium": 1.0, "high": 2.0}
 
 #: 続報・進行中を示す語 (タイトル + 要約に対して照合)。追跡価値 = 「続報で見立てが動くか」の代理
@@ -101,6 +109,8 @@ FEATURE_NAMES: tuple[str, ...] = (
     + tuple(f"tier={t}" for t in TIERS)
     + tuple(f"n_{e}" for e in ENTITY_TYPES)
     + tuple(f"country={c}" for c in NATION_FLAGS)
+    + tuple(f"actor_nation={n}" for n in ACTOR_NATIONS)
+    + ("actor_known",)
     + (
         "n_entities",
         "japan_targeted",
@@ -117,6 +127,10 @@ def feature_vector(a: DetectArticle) -> list[float]:
     text = f"{a.title}\n{a.summary}"
     counts = [float(a.entity_counts.get(e, 0)) for e in ENTITY_TYPES]
     nations = [1.0 if a.entity_counts.get(f"country:{c}", 0) else 0.0 for c in NATION_FLAGS]
+    actor_nations = [
+        1.0 if a.entity_counts.get(f"actor_nation:{n}", 0) else 0.0 for n in ACTOR_NATIONS
+    ]
+    known_actor = [1.0 if a.entity_counts.get(KNOWN_ACTOR_KEY, 0) else 0.0]
     vec = (
         [IMPORTANCE_ORD.get(a.importance, 0.0)]
         + _one_hot(a.kind if a.kind in KINDS else "other", KINDS)
@@ -124,8 +138,12 @@ def feature_vector(a: DetectArticle) -> list[float]:
         + _one_hot(a.tier, TIERS)
         + counts
         + nations
+        + actor_nations
+        + known_actor
         + [
-            float(sum(v for k, v in a.entity_counts.items() if ":" not in k)),
+            float(
+                sum(v for k, v in a.entity_counts.items() if ":" not in k and k != KNOWN_ACTOR_KEY)
+            ),
             1.0 if is_japan_targeted_row(a.victim_country_iso, a.posted_channel) else 0.0,
             _count_hits(text, FOLLOWUP_PATTERNS),
             _count_hits(text, IN_PROGRESS_PATTERNS),

@@ -58,3 +58,13 @@ def test_japan_and_entity_counts() -> None:
     assert v["country=KP"] == 1.0 and v["country=CN"] == 0.0
     assert v["n_entities"] == 11.0  # 語彙外の型も総数には数える (country:* の補助 key は除く)
     assert v["importance"] == 1.0
+
+
+def test_actor_nation_flags_and_known_actor() -> None:
+    a = _a(entity_counts={"actor": 2, "actor_nation:kp": 2, "actor_known": 2, "cve": 1})
+    v = dict(zip(FEATURE_NAMES, feature_vector(a), strict=True))
+    assert v["actor_nation=kp"] == 1.0 and v["actor_nation=cn"] == 0.0
+    assert v["actor_known"] == 1.0
+    assert v["n_actor"] == 2.0
+    # 補助 key (actor_nation:* / actor_known) は entity 総数に数えない
+    assert v["n_entities"] == 3.0

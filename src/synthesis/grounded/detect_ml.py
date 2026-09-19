@@ -25,7 +25,12 @@ import structlog
 
 from src.cti.japan_relevance import is_japan_targeted_row
 from src.cti.source_basis import classify_source_tier
-from src.synthesis.grounded.detect_features import FEATURE_NAMES, DetectArticle, feature_vector
+from src.synthesis.grounded.detect_features import (
+    FEATURE_NAMES,
+    KNOWN_ACTOR_KEY,
+    DetectArticle,
+    feature_vector,
+)
 
 _log = structlog.get_logger(__name__)
 
@@ -169,12 +174,24 @@ def shadow_select(
     return ranked[:top_k]
 
 
+def _actor_nation_map() -> dict[str, str]:
+    """アクター id → 国家帰属 (ISO-2 小文字)。辞書が読めなければ空 (fail-open)。"""
+    try:
+        from src.cti.actor_normalizer import load_actor_aliases
+
+        return {a.id: (a.nation or "").lower() for a in load_actor_aliases().actors if a.nation}
+    except Exception as exc:  # noqa: BLE001 — 辞書不在でも採点は続ける
+        _log.warning("detect_ml_actor_dict_unavailable", error=type(exc).__name__)
+        return {}
+
+
 def build_detect_articles(
     repo: Any, article_ids: Sequence[str], kinds: dict[str, str]
 ) -> dict[str, DetectArticle]:
     """DB 行 + entity 件数 + 種別 → DetectArticle (学習ハーネスと本番で同じ組み立て)。"""
     out: dict[str, DetectArticle] = {}
     counts: dict[str, Counter[str]] = defaultdict(Counter)
+    nation_of = _actor_nation_map()
     ids = list(dict.fromkeys(article_ids))
     with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の接続 seam 共有
         for i in range(0, len(ids), _CHUNK):
@@ -189,6 +206,11 @@ def build_detect_articles(
                 counts[aid][etype] += 1
                 if etype == "involved_country":
                     counts[aid][f"country:{str(r['value'] or '').upper()}"] += 1
+                elif etype == "actor":
+                    nation = nation_of.get(str(r["value"] or ""))
+                    if nation:
+                        counts[aid][f"actor_nation:{nation}"] += 1
+                    counts[aid][KNOWN_ACTOR_KEY] += 1
             for r in conn.execute(
                 "SELECT article_id, title, summary, importance, category, feed_title, feed_url, "  # noqa: S608
                 f"victim_country_iso, posted_channel FROM articles WHERE article_id IN ({ph})",
