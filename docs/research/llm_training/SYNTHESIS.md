@@ -2358,6 +2358,30 @@ ML だけが選んだ 91 記事 (事象 ~65) の目視 (`data/mlx/detect_ml_back
 
 - **プロンプトの散文追記で選定基準を変える** (§50 実験 2 で効果なし)。
 - **ML を選定主体に据えて LLM を外す** (視点が直交しており、LLM だけが拾う 8 件を失う)。
+
+### §51 追記: 和集合を本番投入した (2026-09-19 15:40、commit 95dbd43e)
+
+段 2-3 を実装してデプロイした。段 1 (shadow 3 日) は待たない — 直交性は凍結 5 日の審判被覆
+100% で測れており、shadow で新たに分かるのは同じことの再確認だけだから (09-18 の
+「過去データで測れるものを運用で待たない」と同じ判断)。
+
+| 部品 | 場所 | 役割 |
+|---|---|---|
+| `union_additions()` | `src/synthesis/grounded/detect_ml.py` | 既開設と勧告記事を除いた上で ML 確率の上位 n (`DETECT_ML_UNION`、既定 4、0 で無効) |
+| `merge_union_claims()` | `src/synthesis/grounded/incremental.py` | 記事 id が重なる claim を落とし、合算上限 12 (`_DETECT_OPEN_MAX_TOTAL`) 超過を overflow に数える |
+| `_add_ml_union_claims()` | `src/assessment/stateful.py` | 2 回目の LLM 呼出 (`detect_ml_select.j2`)。失敗しても本体を落とさない |
+
+- ⭐ **ML 側の claim も LLM に書かせる**。決定論の仮 claim (タイトル + 種別) にしなかったのは、
+  claim 文がそのまま ACH の入力になるため。プロンプトは「選び直させない」設計で、落としてよいのは
+  「既に追跡中」「評価対象の主張がない」の 2 つだけ。
+- **重複の判定は記事 id**。claim の文面では重複を判定できない (同じ事象に別の言い回しがつく)。
+- 落とした件数は `overflow` に積んで log に出す。上限を黙って効かせない (§47 追記 6 と同じ規律)。
+- 単体試験は `tests/unit/test_detect_union.py` (上位切り出し・記事重複・上限と overflow・
+  rejected の連結・env)。
+
+**次の観測**: 開設が 6 件/日前後に増えるはずで、`detect_ml_union` log (ml_picks / llm_claims /
+ml_claims / merged) と `stateful_reassess_deferred` の繰越を数日追う。繰越が増え続けるなら、
+上限ではなく**下流の更新能力**が律速になっているという別の所見になる。
 - 追跡価値の軸を detect に教える SFT — 和集合で目標水準に届くなら不要。届かない場合の次手。
 
 ## 52. 単一事象の追跡と、積み重ねの追跡は別物 (2026-09-19、利用者の整理)
