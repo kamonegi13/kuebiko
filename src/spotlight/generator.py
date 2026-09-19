@@ -517,6 +517,17 @@ async def generate_spotlight(
     candidate_matches = matches[:candidate_limit]  # [N] 番号の母体
     article_index = {m.article_id: m for m in matches}
     key_events: list[KeyEvent] = []
+    # ⚠ 上限で切ったことを黙らせない (2026-09-19)。切り捨ては読者を守るが、**切ったことが
+    #    記録されないとモデルの暴走を検知できない** — 09-19 に 126 件の事例を凍結評価で
+    #    見つけたが、本番では黙って 10 件に切られていたため log には何も残っていなかった。
+    if len(output.key_events) > _KEY_EVENTS_MAX:
+        _log.warning(
+            "spotlight_key_events_truncated",
+            pir_id=pir.id,
+            period_type=period_type,
+            produced=len(output.key_events),
+            cap=_KEY_EVENTS_MAX,
+        )
     for ev in output.key_events[:_KEY_EVENTS_MAX]:
         m = _resolve_event_match(ev, candidate_matches, article_index)
         if m is None:
