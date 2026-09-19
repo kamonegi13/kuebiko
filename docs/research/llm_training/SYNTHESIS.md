@@ -2666,3 +2666,22 @@ mask_prompt=True) で 3 課題の検証例を測った:
 済むよう、mlx_lm でアダプタを付けたまま凍結 prompt を生成し、**生成長と key_events 数**
 で止まるかどうかだけを見る (Ollama の grammar は使えないので JSON は崩れうるが、
 測るのは「止まるか」なのでそれで足りる)。
+
+### ⚠ 記録の訂正: `data/mlx/` の script は git 追跡外 (2026-09-19)
+
+`.gitignore` の `data/*` は **default-deny** (運用データ・DB・鍵を絶対に載せないための設計)。
+その配下にある MLX 系の script は**すべて追跡されていない**。09-19 のコミット
+362ac2e3 / a7c4588b は件名に `feat(mlx)` / `chore(mlx)` と書いたが、**実際に入ったのは
+docs だけ**。件名が中身を誤って表している (履歴は書き換えず、ここで訂正する)。
+
+今回追加した道具 (いずれも `data/mlx/` 配下、git 追跡外):
+
+| file | 役割 |
+|---|---|
+| `merge_adapters.py` | LoRA アダプタの重み付き線形統合 (rank 連結、近似なし) |
+| `screen_merge_weights.py` | 課題別の検証損失 (学習と同じ `evaluate`) |
+| `screen_runaway.py` | 生成の暴走 (生成長 / key_events 数) を fuse せずに測る |
+| `import_adapter.sh` | fuse → hf remap → Ollama int4 取込 → 孤児 blob 剪定 |
+
+⭐ **`data/` 配下は git のバックアップが効かない**。失うと作り直しになるので、
+再現に要る手順は必ずこの文書 (追跡対象) 側に書き残す。
