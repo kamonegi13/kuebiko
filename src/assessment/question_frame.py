@@ -28,7 +28,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.synthesis.grounded.hypotheses import (
+    ESCALATION_HYPOTHESES,
     POSTURE_HYPOTHESES,
+    PROPAGATION_HYPOTHESES,
     THRESHOLD_HYPOTHESES,
     TREND_HYPOTHESES,
     Hypothesis,
@@ -96,11 +98,40 @@ def _sector_label(value: str) -> str | None:
     return NISC_SECTORS.get(value)
 
 
-#: domain → 表示名の解決器。**すべて既存 SSoT を引く** (ここに辞書を持たない)。
+#: 型 X のスロット語彙 (段階)。語彙 SSoT を持たない新概念なので、ここが定義。
+ESCALATION_STAGES: dict[str, str] = {
+    "military": "直接的な武力行使",
+    "proxy": "代理勢力による実力行使",
+    "cyber_destructive": "破壊的サイバー作戦",
+    "economic": "経済的威圧",
+    "information": "情報・世論工作",
+}
+#: 型 P のスロット語彙 (波及する政策・事象の種別)。
+PROPAGATION_KINDS: dict[str, str] = {
+    "export_control": "輸出管理・規制",
+    "sanction": "制裁",
+    "procurement_ban": "調達排除",
+    "infrastructure_influence": "インフラ支配の拡大",
+    "supply_chain_compromise": "供給網侵害",
+}
+
+
+def _escalation_label(value: str) -> str | None:
+    return ESCALATION_STAGES.get(value)
+
+
+def _propagation_label(value: str) -> str | None:
+    return PROPAGATION_KINDS.get(value)
+
+
+#: domain → 表示名の解決器。既存 SSoT を引くもの (countries/intents/nisc_sectors) と、
+#: 新概念でここが SSoT になるもの (escalation_stages/propagation_kinds) が混在する。
 _LABEL_RESOLVERS = {
     "countries": _country_label,
     "intents": _intent_label,
     "nisc_sectors": _sector_label,
+    "escalation_stages": _escalation_label,
+    "propagation_kinds": _propagation_label,
 }
 
 
@@ -167,7 +198,47 @@ FRAME_THRESHOLD = QuestionFrame(
 )
 
 
-FRAMES: tuple[QuestionFrame, ...] = (FRAME_PRESENCE, FRAME_TREND, FRAME_THRESHOLD)
+# ---- 型 X: エスカレーション軌道 (2026-09-19) ----
+# 決心「次の段階に備えるか」。H (閾値) が線を越えたかを問うのに対し、X は**応酬が次の段階へ
+# 進むか**を問う。積み重ね型の情勢 (米イラン相互攻撃・ロシアの NATO 域内作戦) の受け皿。
+# 集約は供給しない — 段階の進行は件数でも構成比でも測れず、質的な新手段の出現で判断する。
+FRAME_ESCALATION = QuestionFrame(
+    frame_id="escalation",
+    label="エスカレーション軌道",
+    template="{subject}と{counterpart}の対立は{stage}の段階へ進むか",
+    slots=(
+        SlotSpec("subject", "主体 (国)", "countries"),
+        SlotSpec("counterpart", "相手 (国)", "countries"),
+        SlotSpec("stage", "次の段階", "escalation_stages"),
+    ),
+    hypotheses=ESCALATION_HYPOTHESES,
+)
+
+# ---- 型 P: 波及 (2026-09-19) ----
+# 決心「自国の産業・供給網に手当てするか」。他国で始まった政策・規制・侵害が日本へ及ぶかを問う。
+# **証拠条件の直接腕に対象国の事業者・制度への言及を置くこと** — これが無いと event 経路と同じ
+# 「無関係な記事の吸い寄せ」が起きる (s-5c19fbd3fedb は日本言及 0/66 だった)。
+FRAME_PROPAGATION = QuestionFrame(
+    frame_id="propagation",
+    label="波及",
+    template="{origin}の{policy}は{target_country}の{target_scope}へ波及するか",
+    slots=(
+        SlotSpec("origin", "発信元 (国)", "countries"),
+        SlotSpec("policy", "政策・事象の種別", "propagation_kinds"),
+        SlotSpec("target_country", "対象国", "countries"),
+        SlotSpec("target_scope", "対象分野", "nisc_sectors"),
+    ),
+    hypotheses=PROPAGATION_HYPOTHESES,
+)
+
+
+FRAMES: tuple[QuestionFrame, ...] = (
+    FRAME_PRESENCE,
+    FRAME_TREND,
+    FRAME_THRESHOLD,
+    FRAME_ESCALATION,
+    FRAME_PROPAGATION,
+)
 FRAME_BY_ID: dict[str, QuestionFrame] = {f.frame_id: f for f in FRAMES}
 
 

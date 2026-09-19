@@ -245,12 +245,84 @@ SHARED: tuple[Hypothesis, ...] = (
 CYBER_HYPOTHESES: tuple[Hypothesis, ...] = CYBER_CORE + SHARED
 GEO_HYPOTHESES: tuple[Hypothesis, ...] = GEO_CORE + SHARED
 # standing (常設情報要求) 専用: 呼出側が hypotheses_override で明示指定する (domain 選択外)。
+# ---- 型 X: エスカレーション軌道 (2026-09-19) ----
+# 決心「次の段階に備えるか」を支える。閾値 (H) が線を越えたかを問うのに対し、X は
+# **応酬が次の段階へ進むか**を問う。積み重ね型の情勢 (米イラン / ロシア-NATO) 用。
+ESCALATION_CORE: tuple[Hypothesis, ...] = (
+    Hypothesis(
+        "escalation_contained",
+        "現段階に留まる",
+        "応酬は現在の段階 (経済・情報・限定的な実力行使) の内側に留まる (既定の見立て)。",
+        "双方の行為が既存の手段の範囲、対話・仲介の経路が維持、報復が対称的で限定的。",
+        "新しい手段の投入、標的分野の質的拡大、仲介経路の断絶。",
+    ),
+    Hypothesis(
+        "escalation_advancing",
+        "次の段階へ進む",
+        "応酬が質的に新しい段階へ移行しつつある (経済→軍事、代理→直接、限定→全面等)。",
+        "従来用いなかった手段の投入、直接的な実力行使、動員・配備の変化、"
+        "複数の独立観測が同時期に集中。",
+        "変化が単一事案・単一ソースに依存、レトリックのみで実行が伴わない。",
+    ),
+    Hypothesis(
+        "escalation_deescalating",
+        "収束へ向かう",
+        "応酬は収束方向にあり、次の段階へは進まない。",
+        "停戦・交渉の進展、報復の見送り、第三国の仲介の成立。",
+        "交渉と並行した実力行使の継続、合意の不履行。",
+    ),
+    Hypothesis(
+        "escalation_signaling",
+        "示威にとどまる",
+        "観測される動きは実行意図の伴わない示威・抑止の信号である。",
+        "公開の場での誇示、実害を避けた標的選定、事前の予告。",
+        "秘匿された準備、実害の発生、否認の試み。",
+    ),
+)
+
+# ---- 型 P: 波及 (2026-09-19) ----
+# 決心「自国の産業・供給網に手当てするか」を支える。他国で始まった政策・規制・侵害が
+# 日本へ及ぶかを問う。積み重ね型 (MATCH 法 / 中国の海外港湾) 用。
+PROPAGATION_CORE: tuple[Hypothesis, ...] = (
+    Hypothesis(
+        "propagation_not_reached",
+        "未到達",
+        "当該の政策・事象は対象国・対象分野へまだ及んでいない (既定の見立て)。",
+        "対象国の事業者・制度への言及の不在、適用範囲の明示的な限定。",
+        "対象国の事業者名・制度名の出現、適用範囲の拡大の公表。",
+    ),
+    Hypothesis(
+        "propagation_reaching",
+        "波及しつつある",
+        "対象国・対象分野へ及び始めている。",
+        "対象国の事業者・製品・制度への具体的な言及、当局の対応の公表、"
+        "業界団体の反応、複数の独立報道。",
+        "言及が推測・論説にとどまる、当局の否定、適用除外の明示。",
+    ),
+    Hypothesis(
+        "propagation_blocked",
+        "遮断される",
+        "制度的・技術的な理由で対象国へは及ばない。",
+        "適用除外の明示、代替供給の確立、対抗措置の成立。",
+        "除外の撤回、代替の不成立。",
+    ),
+)
+
 POSTURE_HYPOTHESES: tuple[Hypothesis, ...] = POSTURE_CORE + SHARED
 TREND_HYPOTHESES: tuple[Hypothesis, ...] = TREND_CORE + SHARED
 THRESHOLD_HYPOTHESES: tuple[Hypothesis, ...] = THRESHOLD_CORE + SHARED
+ESCALATION_HYPOTHESES: tuple[Hypothesis, ...] = ESCALATION_CORE + SHARED
+PROPAGATION_HYPOTHESES: tuple[Hypothesis, ...] = PROPAGATION_CORE + SHARED
 # 全仮説 (id 解決・is_known 用)。POSTURE は event の domain 選択には出さない (下記 union)。
 HYPOTHESIS_MENU: tuple[Hypothesis, ...] = (
-    CYBER_CORE + GEO_CORE + POSTURE_CORE + TREND_CORE + THRESHOLD_CORE + SHARED
+    CYBER_CORE
+    + GEO_CORE
+    + POSTURE_CORE
+    + TREND_CORE
+    + THRESHOLD_CORE
+    + ESCALATION_CORE
+    + PROPAGATION_CORE
+    + SHARED
 )
 # event 用 domain 不明時の union (POSTURE を含めない — 常設専用フレームの漏出防止)
 _EVENT_UNION: tuple[Hypothesis, ...] = CYBER_CORE + GEO_CORE + SHARED
