@@ -4,6 +4,7 @@
 ``--mode input``  : 入力の広さ (全件 / ML 候補セット) を比べる。ML 前段の移行条件。
 ``--mode prompt`` : 判定基準 (現行 / 追跡価値の関門つき detect_new_v2.j2) を比べる。候補セット固定。
 ``--mode select`` : 選定主体 (現行 = LLM が選ぶ / ml = ML が選び LLM は書くだけ) を比べる。
+``--mode union``  : **出荷した合成そのもの** (LLM の開設 + ML 上位 n)。§51 の回帰確認。
 
 移行条件の最後の 1 つ (SYNTHESIS §47 追記 9): 候補を絞った状態で LLM が書く claim の質が、
 全件投入時と同等以上か。これは凍結データの採点では測れない (LLM を両方の入力で走らせる必要がある)
@@ -35,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.assessment.situation_store import SituationStore  # noqa: E402
 from src.config_loader import load_app_config  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
-from src.synthesis.grounded.detect_ml import (  # noqa: E402
+from src.synthesis.grounded.detect_ml import (  # noqa: E402  # noqa: E402
     build_detect_articles,
     compose_llm_candidates,
     floor_article_ids,
@@ -43,8 +44,15 @@ from src.synthesis.grounded.detect_ml import (  # noqa: E402
     load_detect_model,
     prefilter_top_k,
     score_articles,
+    union_additions,
+    union_top_k,
 )
-from src.synthesis.grounded.incremental import DetectResult, detect_new_claims  # noqa: E402
+from src.synthesis.grounded.incremental import _DETECT_OPEN_MAX_TOTAL as OPEN_CAP  # noqa: E402
+from src.synthesis.grounded.incremental import (  # noqa: E402
+    DetectResult,
+    detect_new_claims,
+    merge_union_claims,
+)
 from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 D = Path("data/mlx")
@@ -190,10 +198,15 @@ async def main_async(args: argparse.Namespace) -> int:
         cand = narrow(pool, scores, arts, top_k=prefilter_top_k())
         print(f"  {day}: プール {len(pool)} → 候補 {len(cand)}", flush=True)
         # 腕: input = 入力の広さ (全件 / 候補セット) / prompt = 判定基準 (現行 / 追跡価値つき)
-        if args.mode == "select":
+        if args.mode == "union":
+            # 出荷と同じ合成: まず現行の LLM 選定、その結果を見てから ML 上位を足す
+            arms: dict[str, tuple[list[dict[str, Any]], str]] = {
+                "cur": (cand, "synthesis/detect_new.j2"),
+            }
+        elif args.mode == "select":
             # ML が選定主体: 確率上位 --select-n 件 (勧告は除外済) を「開く対象」として渡す
             sel = rank_by_score(cand, scores, n=args.select_n)
-            arms: dict[str, tuple[list[dict[str, Any]], str]] = {
+            arms = {
                 "cur": (cand, "synthesis/detect_new.j2"),
                 "mlsel": (sel, "synthesis/detect_ml_select.j2"),
             }
@@ -208,6 +221,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 "narrow": (cand, "synthesis/detect_new.j2"),
             }
         rec: dict[str, Any] = {"day": day, "pool": len(pool), "candidates": len(cand)}
+        results: dict[str, DetectResult] = {}
         for name, (articles, template) in arms.items():
             res = await detect_new_claims(
                 llm=llm,
@@ -217,6 +231,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 period_label=f"{day} (replay)",
                 template=template,
             )
+            results[name] = res
             s = score_arm(res, gold)
             rec[name] = {
                 **s,
@@ -233,11 +248,56 @@ async def main_async(args: argparse.Namespace) -> int:
                 f"開設 {s['open']} 見張り {s['watch']} 見送り {s['drop']} 未審判 {s['unjudged']})",
                 flush=True,
             )
+        if args.mode == "union":
+            base = results["cur"]
+            roll = {a for a in scores if a in arts and is_rollup_title(arts[a].title)}
+            picks = set(
+                union_additions(
+                    {
+                        str(a["article_id"]): scores[str(a["article_id"])]
+                        for a in cand
+                        if str(a["article_id"]) in scores
+                    },
+                    top_k=union_top_k(),
+                    already_opened={a for c in base.open for a in c.article_ids},
+                    excluded=roll,
+                )
+            )
+            add_articles = [a for a in cand if str(a["article_id"]) in picks]
+            extra = (
+                await detect_new_claims(
+                    llm=llm,
+                    articles=add_articles,
+                    active_titles=active_titles,
+                    pir_context=pir_context,
+                    period_label=f"{day} (replay)",
+                    template="synthesis/detect_ml_select.j2",
+                )
+                if add_articles
+                else DetectResult(open=(), rejected=(), overflow=0)
+            )
+            merged = merge_union_claims(base, extra, cap=OPEN_CAP)
+            for name, res in (("ml_add", extra), ("union", merged)):
+                s2 = score_arm(res, gold)
+                rec[name] = {
+                    **s2,
+                    "opened": [
+                        {"claim": c.claim, "domain": c.domain, "article_ids": list(c.article_ids)}
+                        for c in res.open
+                    ],
+                }
+                for k, v in s2.items():
+                    totals[name][k] += v
+                print(
+                    f"    {name:6s} claim {s2['claims']} / 記事 {s2['articles']} (審判 "
+                    f"開設 {s2['open']} 見張り {s2['watch']} 見送り {s2['drop']} "
+                    f"未審判 {s2['unjudged']})",
+                    flush=True,
+                )
         out.append(rec)
         args.out.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("\n=== 合計 ===")
-    for name in ("cur", "v2") if args.mode == "prompt" else ("full", "narrow"):
-        t = totals[name]
+    for name, t in totals.items():  # 腕名は mode で変わる — 決め打ちにしない
         if not t:
             continue
         print(
@@ -257,7 +317,7 @@ def main() -> int:
     ap.add_argument("--min-pool", type=int, default=40, help="この件数未満の日は skip")
     ap.add_argument(
         "--mode",
-        choices=("input", "prompt", "select"),
+        choices=("input", "prompt", "select", "union"),
         default="input",
         help="input = 入力の広さ / prompt = 判定基準 / select = 選定主体 (LLM vs ML)",
     )
