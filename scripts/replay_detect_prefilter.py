@@ -3,6 +3,7 @@
 
 ``--mode input``  : 入力の広さ (全件 / ML 候補セット) を比べる。ML 前段の移行条件。
 ``--mode prompt`` : 判定基準 (現行 / 追跡価値の関門つき detect_new_v2.j2) を比べる。候補セット固定。
+``--mode select`` : 選定主体 (現行 = LLM が選ぶ / ml = ML が選び LLM は書くだけ) を比べる。
 
 移行条件の最後の 1 つ (SYNTHESIS §47 追記 9): 候補を絞った状態で LLM が書く claim の質が、
 全件投入時と同等以上か。これは凍結データの採点では測れない (LLM を両方の入力で走らせる必要がある)
@@ -112,6 +113,17 @@ def narrow(
     return [a for a in pool if str(a["article_id"]) in keep]
 
 
+def rank_by_score(
+    pool: list[dict[str, Any]], scores: dict[str, float], *, n: int
+) -> list[dict[str, Any]]:
+    """確率の高い順に n 件 (純粋関数)。**並べ替えてから切る** — 逆にすると順位を使わない。"""
+    ranked = sorted(
+        (a for a in pool if str(a["article_id"]) in scores),
+        key=lambda a: -scores[str(a["article_id"])],
+    )
+    return ranked[:n]
+
+
 def score_arm(result: DetectResult, gold: dict[str, dict[str, Any]]) -> dict[str, int]:
     """開設された claim を審判ラベルで採点する (記事単位。未審判は別に数える)。"""
     aids = {a for c in result.open for a in c.article_ids}
@@ -178,8 +190,15 @@ async def main_async(args: argparse.Namespace) -> int:
         cand = narrow(pool, scores, arts, top_k=prefilter_top_k())
         print(f"  {day}: プール {len(pool)} → 候補 {len(cand)}", flush=True)
         # 腕: input = 入力の広さ (全件 / 候補セット) / prompt = 判定基準 (現行 / 追跡価値つき)
-        if args.mode == "prompt":
+        if args.mode == "select":
+            # ML が選定主体: 確率上位 --select-n 件 (勧告は除外済) を「開く対象」として渡す
+            sel = rank_by_score(cand, scores, n=args.select_n)
             arms: dict[str, tuple[list[dict[str, Any]], str]] = {
+                "cur": (cand, "synthesis/detect_new.j2"),
+                "mlsel": (sel, "synthesis/detect_ml_select.j2"),
+            }
+        elif args.mode == "prompt":
+            arms = {
                 "cur": (cand, "synthesis/detect_new.j2"),
                 "v2": (cand, "synthesis/detect_new_v2.j2"),
             }
@@ -238,10 +257,11 @@ def main() -> int:
     ap.add_argument("--min-pool", type=int, default=40, help="この件数未満の日は skip")
     ap.add_argument(
         "--mode",
-        choices=("input", "prompt"),
+        choices=("input", "prompt", "select"),
         default="input",
-        help="input = 全件 vs 候補セット / prompt = 現行 vs 追跡価値つき",
+        help="input = 入力の広さ / prompt = 判定基準 / select = 選定主体 (LLM vs ML)",
     )
+    ap.add_argument("--select-n", type=int, default=4, help="select モードで ML が開く件数/日")
     ap.add_argument("--out", type=Path, default=Path("data/mlx/replay_detect_prefilter.json"))
     return asyncio.run(main_async(ap.parse_args()))
 

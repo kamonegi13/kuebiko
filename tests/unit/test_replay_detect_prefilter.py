@@ -61,3 +61,14 @@ def test_score_arm_counts_articles_by_judge_label() -> None:
         "unjudged": 0,
     }
     assert score_arm(result, {})["unjudged"] == 3
+
+
+def test_select_arm_ranks_before_truncating() -> None:
+    """ML 選定腕は「並べ替えてから切る」— 逆だと ML の順位を使っていないことになる。"""
+    from scripts.replay_detect_prefilter import rank_by_score
+
+    pool = [{"article_id": a} for a in ("low", "mid", "high")]
+    scores = {"low": 0.1, "mid": 0.5, "high": 0.9}
+
+    assert [x["article_id"] for x in rank_by_score(pool, scores, n=2)] == ["high", "mid"]
+    assert [x["article_id"] for x in rank_by_score(pool, {"high": 0.9}, n=2)] == ["high"]

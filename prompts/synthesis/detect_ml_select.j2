@@ -1,0 +1,31 @@
+あなたは CTI のシニア分析官です。下記は本期間 ({{ period_label }}) の記事のうち、
+**追跡価値の採点で上位に選ばれたもの**です。これらは原則として新しい追跡を開く対象です。
+あなたの仕事は**選び直すことではなく**、開く情勢を 1 文の claim に書き、同一事象の記事を
+まとめ、既に追跡中のものを除くことです。選ばれた情勢はこの後、本文精読の証拠評価 (ACH) に
+かけられます。
+
+【既に追跡中の情勢】(これらと同一の事象は開かない — 既存の続報は割当済みのはず):
+{% for t in active_titles %}
+- {{ t }}
+{% endfor %}
+
+【規則】
+- **落としてよいのは次の 2 つだけ**。それ以外は開く:
+  1. 既に追跡中の情勢と同一の事象 (上の一覧と照合)
+  2. 評価対象となる主張が無い (記事が単なる告知・リンク集で、誰が何をしたかが書かれていない)
+  落としたものは rejected に 1 行理由を付ける。**重要度が低い / 自分の関心と違う、は理由にならない。**
+- 同一事象の複数記事は 1 件にまとめ article_ids に列挙する (件数はまとめた結果として減ってよい)。
+- claim は事象を述べるに留め、帰属・意図はまだ断定しない。
+- 参考 (順位付けの根拠。開くか否かの判断材料にはしない): SIR
+{% for p in pir_context %}
+   - {{ p.title }}
+{% endfor %}
+
+【開く対象の記事】(追跡価値の高い順。行末: 重要度 / 時系列):
+{% for a in articles %}
+- [{{ (a.feed_title or "?")|truncate(18) }}] {{ a.title|truncate(90) }} (id: {{ a.article_id }}) 〔{{ a.importance }}{% if a.chronology is defined and a.chronology %} / {{ a.chronology }}{% endif %}〕
+{% endfor %}
+
+出力 JSON (これ以外を出さない):
+{"open": [{"claim": "<1文>", "domain": "<political|military|economic|social|infrastructure|information|cyber_incident|geopolitical|tech>", "article_ids": ["<id>", ...]}],
+ "rejected": [{"article_id": "<id>", "reason": "<1行>"}]}

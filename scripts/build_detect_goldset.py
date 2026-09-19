@@ -222,15 +222,39 @@ def _articles(repo: RunHistoryRepository, ids: list[str]) -> dict[str, tuple[str
 
 
 async def main_async(args: argparse.Namespace) -> int:
-    population = select_population(args.random_sample)
     repo = RunHistoryRepository()
+    if args.ids_file:
+        # 明示 id を審判する (replay で両腕が開いた未審判記事の補充。層は "replay")
+        wanted = [
+            x.strip()
+            for x in Path(args.ids_file).read_text(encoding="utf-8").splitlines()
+            if x.strip()
+        ]
+        population = [
+            {"article_id": a, "run_at": "", "decision": "", "label": 0, "stratum": "replay"}
+            for a in dict.fromkeys(wanted)
+        ]
+        print(f"明示 id {len(population)} 件を審判する")
+        texts = _articles(repo, [str(r["article_id"]) for r in population])
+        seen = {
+            json.loads(line)["article_id"]
+            for line in (OUT.read_text(encoding="utf-8").splitlines() if OUT.exists() else [])
+            if line.strip()
+        }
+        todo = [r for r in population if r["article_id"] not in seen and r["article_id"] in texts]
+        print(f"本文あり {len(texts)} / 未判定 {len(todo)}")
+        if not args.apply:
+            print("\n(dry-run — 外部枠を使わない。実行は --model <ref> --apply)")
+            return 0
+        return await _judge_rows(todo, texts, args)
+    population = select_population(args.random_sample)
     if args.targeted > 0:
         held = _held_out()
         all_texts = _articles(repo, [str(r["article_id"]) for r in held])
         population += select_targeted(
             held,
             {a: t for a, (t, _s) in all_texts.items()},
-            exclude={r["article_id"] for r in population},
+            exclude={str(r["article_id"]) for r in population},
             limit=args.targeted,
         )
     seen = {
@@ -251,6 +275,13 @@ async def main_async(args: argparse.Namespace) -> int:
         print("\n(dry-run — 外部枠を使わない。実行は --model <ref> --apply)")
         return 0
 
+    return await _judge_rows(todo, texts, args)
+
+
+async def _judge_rows(
+    todo: list[dict[str, Any]], texts: dict[str, tuple[str, str]], args: argparse.Namespace
+) -> int:
+    """審判本体 (母集団の作り方によらず共通)。"""
     llm = build_llm_for_ref(args.model, Step.SYNTHESIS_DETECT, load_app_config())
     OUT.parent.mkdir(parents=True, exist_ok=True)
     ok = failed = 0
@@ -298,6 +329,9 @@ def main() -> int:
     ap.add_argument("--random-sample", type=int, default=_RANDOM_SAMPLE)
     ap.add_argument(
         "--targeted", type=int, default=0, help="負例パターンの狙い撃ち層の上限 (0 で無効)"
+    )
+    ap.add_argument(
+        "--ids-file", help="審判する article_id を 1 行 1 件で書いたファイル (層=replay)"
     )
     ap.add_argument("--apply", action="store_true", help="外部 LLM を呼ぶ (既定は dry-run)")
     return asyncio.run(main_async(ap.parse_args()))
