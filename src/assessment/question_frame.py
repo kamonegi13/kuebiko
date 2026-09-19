@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.synthesis.grounded.hypotheses import (
+    ALIGNMENT_HYPOTHESES,
     ESCALATION_HYPOTHESES,
     POSTURE_HYPOTHESES,
     PROPAGATION_HYPOTHESES,
@@ -106,6 +107,17 @@ ESCALATION_STAGES: dict[str, str] = {
     "economic": "経済的威圧",
     "information": "情報・世論工作",
 }
+#: 型 S のスロット語彙 (国家間の支援・連携の種別)。
+#: ⚠ **アクターの意図軸 (src/cti/diamond_model.INTENT_LABELS_JA) に足さない** — あちらは
+#: 脅威アクターの意図の分類で、国家間の支援・経済政策は入らない (2026-09-19 利用者指摘)。
+#: 問いの型が使う語彙としてここが SSoT。
+STATE_SUPPORTS: dict[str, str] = {
+    "military_support": "軍事支援",
+    "technology_transfer": "技術移転",
+    "financial_support": "資金支援",
+    "diplomatic_cover": "外交的庇護",
+    "personnel": "要員の派遣",
+}
 #: 型 P のスロット語彙 (波及する政策・事象の種別)。
 PROPAGATION_KINDS: dict[str, str] = {
     "export_control": "輸出管理・規制",
@@ -124,6 +136,10 @@ def _propagation_label(value: str) -> str | None:
     return PROPAGATION_KINDS.get(value)
 
 
+def _support_label(value: str) -> str | None:
+    return STATE_SUPPORTS.get(value)
+
+
 #: domain → 表示名の解決器。既存 SSoT を引くもの (countries/intents/nisc_sectors) と、
 #: 新概念でここが SSoT になるもの (escalation_stages/propagation_kinds) が混在する。
 _LABEL_RESOLVERS = {
@@ -132,6 +148,7 @@ _LABEL_RESOLVERS = {
     "nisc_sectors": _sector_label,
     "escalation_stages": _escalation_label,
     "propagation_kinds": _propagation_label,
+    "state_supports": _support_label,
 }
 
 
@@ -232,12 +249,29 @@ FRAME_PROPAGATION = QuestionFrame(
 )
 
 
+# ---- 型 S: 支援・連携 (2026-09-19) ----
+# 決心「相手国の能力評価を更新するか」。X が対立の段階を問うのに対し、S は連携の有無を問う。
+# 主張が先行する領域なので既定の見立ては「未検証」(fail-closed)。
+FRAME_ALIGNMENT = QuestionFrame(
+    frame_id="alignment",
+    label="支援・連携",
+    template="{subject}は{counterpart}への{support}を行っているか",
+    slots=(
+        SlotSpec("subject", "主体 (国)", "countries"),
+        SlotSpec("counterpart", "相手 (国)", "countries"),
+        SlotSpec("support", "支援の種別", "state_supports"),
+    ),
+    hypotheses=ALIGNMENT_HYPOTHESES,
+)
+
+
 FRAMES: tuple[QuestionFrame, ...] = (
     FRAME_PRESENCE,
     FRAME_TREND,
     FRAME_THRESHOLD,
     FRAME_ESCALATION,
     FRAME_PROPAGATION,
+    FRAME_ALIGNMENT,
 )
 FRAME_BY_ID: dict[str, QuestionFrame] = {f.frame_id: f for f in FRAMES}
 

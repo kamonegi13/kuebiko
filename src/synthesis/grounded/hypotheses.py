@@ -308,11 +308,41 @@ PROPAGATION_CORE: tuple[Hypothesis, ...] = (
     ),
 )
 
+# ---- 型 S: 支援・連携 (2026-09-19) ----
+# 決心「相手国の能力評価を更新するか」を支える。X (エスカレーション) は**対立**の段階を問い、
+# S は**連携**の有無を問う。積み重ね型 (北朝鮮のロシアへの兵器供給) 用。
+# ⚠ 主張が先行し検証が追いつかない領域なので、**未検証**を独立した見立てとして持つ。
+ALIGNMENT_CORE: tuple[Hypothesis, ...] = (
+    Hypothesis(
+        "alignment_claimed_unverified",
+        "主張のみ・未検証",
+        "支援・連携の主張はあるが、独立した検証が確認できていない (既定の見立て)。",
+        "出典が当事国政府・単一機関の発表に留まる、一次情報 (衛星画像・残骸・押収品) の不在、"
+        "推定値の出典が明示されない。",
+        "第三者による一次情報の提示、複数の独立機関の一致、当事国の公式な確認。",
+    ),
+    Hypothesis(
+        "alignment_confirmed",
+        "支援が行われている",
+        "支援・連携が実際に行われていることが独立した証拠で確認できる。",
+        "残骸・押収品の技術鑑定、衛星画像、複数の独立機関の一致、当事国の公式確認。",
+        "証拠が単一ソース、鑑定手法が非公開、当事国の否認が反証されていない。",
+    ),
+    Hypothesis(
+        "alignment_absent",
+        "支援は無い",
+        "主張されている支援・連携は実在しない、または別の説明で足りる。",
+        "第三国産・自国産であることの技術的根拠、時系列の矛盾、当事者の否認と整合する観測。",
+        "否認と矛盾する一次情報、供給経路の特定。",
+    ),
+)
+
 POSTURE_HYPOTHESES: tuple[Hypothesis, ...] = POSTURE_CORE + SHARED
 TREND_HYPOTHESES: tuple[Hypothesis, ...] = TREND_CORE + SHARED
 THRESHOLD_HYPOTHESES: tuple[Hypothesis, ...] = THRESHOLD_CORE + SHARED
 ESCALATION_HYPOTHESES: tuple[Hypothesis, ...] = ESCALATION_CORE + SHARED
 PROPAGATION_HYPOTHESES: tuple[Hypothesis, ...] = PROPAGATION_CORE + SHARED
+ALIGNMENT_HYPOTHESES: tuple[Hypothesis, ...] = ALIGNMENT_CORE + SHARED
 # 全仮説 (id 解決・is_known 用)。POSTURE は event の domain 選択には出さない (下記 union)。
 HYPOTHESIS_MENU: tuple[Hypothesis, ...] = (
     CYBER_CORE
@@ -322,6 +352,7 @@ HYPOTHESIS_MENU: tuple[Hypothesis, ...] = (
     + THRESHOLD_CORE
     + ESCALATION_CORE
     + PROPAGATION_CORE
+    + ALIGNMENT_CORE
     + SHARED
 )
 # event 用 domain 不明時の union (POSTURE を含めない — 常設専用フレームの漏出防止)

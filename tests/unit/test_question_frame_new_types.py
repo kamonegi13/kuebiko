@@ -61,3 +61,24 @@ def test_new_frames_do_not_supply_aggregate_signal() -> None:
 def test_slot_vocabularies_are_defined_here_as_ssot() -> None:
     assert "military" in ESCALATION_STAGES and "economic" in ESCALATION_STAGES
     assert "export_control" in PROPAGATION_KINDS and "sanction" in PROPAGATION_KINDS
+
+
+def test_alignment_frame_asks_about_support_not_conflict() -> None:
+    q = render_question(
+        FRAME_BY_ID["alignment"],
+        {"subject": "kp", "counterpart": "ru", "support": "military_support"},
+    )
+    assert q == "北朝鮮はロシアへの軍事支援を行っているか"
+    ids = [h.id for h in FRAME_BY_ID["alignment"].hypotheses]
+    # 主張が先行する領域なので「未検証」が既定の見立て (fail-closed)
+    assert "alignment_claimed_unverified" in ids and "alignment_confirmed" in ids
+
+
+def test_state_vocabularies_are_not_actor_intents() -> None:
+    """国家間の支援・政策はアクターの意図軸に入れない (2026-09-19 利用者指摘)。"""
+    from src.assessment.question_frame import STATE_SUPPORTS
+    from src.cti.diamond_model import INTENT_LABELS_JA
+
+    assert not (set(STATE_SUPPORTS) & set(INTENT_LABELS_JA))
+    assert not (set(PROPAGATION_KINDS) & set(INTENT_LABELS_JA))
+    assert not (set(ESCALATION_STAGES) & set(INTENT_LABELS_JA))
