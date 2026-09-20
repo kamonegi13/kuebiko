@@ -339,6 +339,11 @@ async def detect_new_claims(
     )
     valid_ids = {str(a.get("article_id", "")) for a in articles}
     opened: list[DetectedClaim] = []
+    # ⚠ **候補に無い article_id を挙げた claim は捨てるしかないが、黙って捨てない**
+    #   (2026-09-20)。replay で「開設 0 かつ棄却 0 なのに 5,000 トークン出力」という
+    #   日が 2 回あり、判断だと読みかけた。実体は全 claim がこの関門で消えていた。
+    #   no-silent-caps は overflow だけに掛かっていて、この経路が漏れていた。
+    dropped_claims = 0
     for c in r.open:
         claim = c.claim.strip()
         ids = tuple(i for i in c.article_ids if i in valid_ids)
@@ -348,10 +353,25 @@ async def detect_new_claims(
                     claim=claim, domain=c.domain.strip() or "unclassified", article_ids=ids
                 )
             )
+        elif claim:
+            dropped_claims += 1
+    if dropped_claims:
+        _log.warning(
+            "grounded_detect_claims_dropped_unknown_article",
+            dropped=dropped_claims,
+            proposed=len(r.open),
+            candidates=len(valid_ids),
+        )
     overflow = max(0, len(opened) - _DETECT_OPEN_MAX)
     if overflow:
         _log.warning("grounded_detect_new_overflow", proposed=len(opened), cap=_DETECT_OPEN_MAX)
     rejected = tuple(
         (x.article_id, x.reason.strip()[:200]) for x in r.rejected if x.article_id in valid_ids
     )
+    if len(rejected) != len(r.rejected):
+        _log.warning(
+            "grounded_detect_rejections_dropped_unknown_article",
+            dropped=len(r.rejected) - len(rejected),
+            proposed=len(r.rejected),
+        )
     return DetectResult(open=tuple(opened[:_DETECT_OPEN_MAX]), rejected=rejected, overflow=overflow)
