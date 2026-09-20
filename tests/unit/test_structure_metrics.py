@@ -82,3 +82,38 @@ def test_detects_contradictions_that_admit_agreement(text: str, expected: bool) 
     got = self_contradicting_discrepancies([_F(text)])
 
     assert (got == 1) is expected
+
+
+# ---------- 書き直しの指示 ----------
+
+
+def test_rewrite_hint_names_the_duplicated_line() -> None:
+    """⚠ 「重複を消せ」だけでは 31B に効かない (08-27: 散文の指示は読まれず構造だけが効く)。
+    **どの行が重複したかを具体的に示す** (08-27 の識別子関門で不足 5 → 0 に埋めた形)。
+    """
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    items = [_F("A 社が公表した。"), _F("A社が公表した"), _F("別の事実。")]
+    hint = duplicate_hint({"facts": items})
+
+    assert hint is not None
+    assert "A 社が公表した。" in hint
+    assert "別の事実" not in hint
+
+
+def test_no_hint_when_there_is_nothing_to_fix() -> None:
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    assert duplicate_hint({"facts": [_F("A"), _F("B")]}) is None
+
+
+def test_hint_covers_every_field_that_has_duplicates() -> None:
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    hint = duplicate_hint(
+        {"facts": [_F("同じ"), _F("同じ")], "discrepancies": [_F("重なり"), _F("重なり")]}
+    )
+
+    assert hint is not None
+    assert "同じ" in hint
+    assert "重なり" in hint

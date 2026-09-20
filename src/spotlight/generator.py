@@ -60,11 +60,16 @@ class _LLMSpotlightOutput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     headline: str = ""
-    key_events: list[_LLMKeyEvent] = Field(default_factory=list)
+    # ⚠ **上限を宣言して文法に閉じを強制させる** (2026-09-20)。宣言が無ければ文法は
+    #    要素をいくらでも許し、1 窓で key_events 126 件 (仕様 5-8) の暴走が実際に出た。
+    #    Ollama は maxItems を文法へコンパイルする (実機確認済)。表示側の
+    #    ``_KEY_EVENTS_MAX`` (10) は事後の切り捨てで、こちらは生成そのものを止める。
+    #    上限は表示側より緩くする — 生成を切るより、出させてから選ぶ方が内容を失わない。
+    key_events: list[_LLMKeyEvent] = Field(default_factory=list, json_schema_extra={"maxItems": 15})
     outlook: str = ""
     # schema 整合 (2026-09-07): 不確実性の明示欄。空を正しく空で返すのも valid。
-    caveats: list[str] = Field(default_factory=list)
-    unknowns: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list, json_schema_extra={"maxItems": 12})
+    unknowns: list[str] = Field(default_factory=list, json_schema_extra={"maxItems": 20})
 
 
 # ----- period 解決 -----

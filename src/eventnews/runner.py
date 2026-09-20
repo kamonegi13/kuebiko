@@ -18,7 +18,15 @@ from datetime import UTC, datetime
 
 import numpy as np
 
-from src.eventnews import coverage, grouping, identifier_gate, quantities, state, verbatim
+from src.eventnews import (
+    coverage,
+    grouping,
+    identifier_gate,
+    quantities,
+    state,
+    structure_metrics,
+    verbatim,
+)
 from src.eventnews import generator as gen
 from src.eventnews.models import (
     UPDATE_DRIVER_TYPES,
@@ -185,6 +193,20 @@ def _rewrite_hints(
             item_id=item_id,
             repaired=repaired,
         )
+    # 重複の書き直し (2026-09-20)。⚠ schema の上限は**暴走を止めるが重複は止めない**
+    # (上限 12 でも同じ行を 12 個出せる)。uniqueItems は文脈自由文法で表現できず原理的に
+    # 不可なので、ここで検出して書き直させる。実測: n17m30 は 38 窓で 0、n17c は 3 窓で発生。
+    dup_hint = structure_metrics.duplicate_hint(
+        {"facts": gate.draft.facts, "discrepancies": gate.draft.discrepancies}
+    )
+    if dup_hint:
+        _log.warning(
+            "eventnews_duplicate_rewrite",
+            item_id=item_id,
+            facts=structure_metrics.duplicate_lines(gate.draft.facts),
+            discrepancies=structure_metrics.duplicate_lines(gate.draft.discrepancies),
+        )
+        hints.append(dup_hint)
     if verbatim.needs_rewrite(gate.draft.facts, bodies):
         _log.warning(
             "eventnews_verbatim_rewrite",

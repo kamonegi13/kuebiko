@@ -202,6 +202,30 @@ class StateDecision:
 _require_all_properties = require_all_properties
 
 
+# 配列の上限 — **文法に閉じを強制させる** (2026-09-20)。
+# 上限が宣言されていなければ、構造化出力の文法は要素をいくらでも許す。要素ごとに
+# 「続ける / 閉じる」の賭けを繰り返すので、確率がわずかに偏るだけで長い連続が出る
+# (反復の自己強化: Fu ら 2021、DITTO)。実例: 1 窓で facts 84 件 (うち 64 件が重複)。
+# Ollama は maxItems を文法へコンパイルするので、モデルが続けたくても閉じる (実機確認済)。
+#
+# ⚠⚠ **上限は暴走を止めるが重複は止めない** (上限 8 でも同じ行を 8 個出せる)。
+# ⚠⚠ **超過を例外にしてはいけない**。文法が守るのは生成時だけで、JSON 修復経路・
+#     外部 LLM・保存済みデータからは超過が届く。pydantic の max_length は検証なので
+#     本番が落ちる (2026-09-20 に既存テスト 2 件がこれで落ちて気付いた) → json_schema_extra
+#     で schema にだけ出す。
+# ⚠ **切り捨ては model でやらない**。`list_dedup.dedup_draft` が重複を畳む**前**に切ると、
+#     後ろの正当な要素が消える (「u1 × 300 + u2」が「u1」だけになる)。畳んだ後に切る。
+# uniqueItems は文脈自由文法で表現できず原理的に不可 — 重複は別の seam で落とす。
+#
+# 値は**重複のない 155 窓の実測**から置く (正当な出力を切らない余裕を取る):
+#   facts 中央 8 / 99% 34 / 最大 49 → 60   相違 99% 4 → 12   unknowns 99% 9 → 20
+KEY_POINTS_MAX = 12
+FACTS_MAX = 60
+DISCREPANCIES_MAX = 12
+CAVEATS_MAX = 12
+UNKNOWNS_MAX = 20
+
+
 class FactItem(BaseModel):
     """[N] 参照つきの 1 行。source_index は候補一覧の 1-based 番号、0 = 未指定。
 
@@ -238,18 +262,24 @@ class EventNewsDraft(BaseModel):
     # 冒頭に置く **要点** (箇条書き 3-4 項目)。BLUF は一覧のプレビュー用に残す
     # (箇条書きは一覧に向かない)。要点は出典番号を持たない — 本文の事実行と違い
     # 「1 文 = 1 事実 = 1 出典」の検証単位ではないため。
-    key_points: list[str] = Field(default_factory=list)
-    facts: list[FactItem] = Field(default_factory=list)
+    key_points: list[str] = Field(
+        default_factory=list, json_schema_extra={"maxItems": KEY_POINTS_MAX}
+    )
+    facts: list[FactItem] = Field(default_factory=list, json_schema_extra={"maxItems": FACTS_MAX})
     # 相違・不在の主張は [N] を要求しない (関門は識別子のみ適用)
-    discrepancies: list[FactItem] = Field(default_factory=list)
+    discrepancies: list[FactItem] = Field(
+        default_factory=list, json_schema_extra={"maxItems": DISCREPANCIES_MAX}
+    )
     # 原文が自ら付けた但し書き。**要約すると最初に落ちる種類の情報**で、落ちると
     # 読み手が数字を誤読する。実測 (2026-08-26、生成済み 196 件): 留保を示す語の
     # 密度は 31B が Sonnet の 55% しかなく、「相違」欄に至っては 0.1 対 0.7 だった。
     # 例: 原文「週 80 件超は公開サンドボックスへの投稿数であり被害組織数とは別の指標」
     # → 生成が「週 80 件超が確認された」だけになると、観測量が被害規模に化ける。
     # 散文の指示では 2 度とも効かなかったため、**構造 (独立した欄) で保持させる**。
-    caveats: list[FactItem] = Field(default_factory=list)
-    unknowns: list[str] = Field(default_factory=list)
+    caveats: list[FactItem] = Field(
+        default_factory=list, json_schema_extra={"maxItems": CAVEATS_MAX}
+    )
+    unknowns: list[str] = Field(default_factory=list, json_schema_extra={"maxItems": UNKNOWNS_MAX})
 
     @classmethod
     def __get_pydantic_json_schema__(
