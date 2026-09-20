@@ -251,6 +251,7 @@ def fetch_for_deep_dive_candidates(
     db_path: Path = DEFAULT_DB_PATH,
     novelty_excluded_dedup_keys: set[str] | None = None,
     safety_max: int = DEEP_DIVE_SAFETY_MAX,
+    pool_max: int = RUBRIC_POOL_MAX,
 ) -> DeepDivePrefilterResult:
     """F1 deep dive の候補を Stage 0 (機械) + Stage 1 (cluster) + Stage 2 (rank) で用意する。
 
@@ -277,6 +278,10 @@ def fetch_for_deep_dive_candidates(
         novelty_excluded_dedup_keys: 過去 N 週で F1 選定済の dedup_key set
             (None なら novelty 除外を適用しない)
         safety_max: 暴走防止の絶対上限 (通常週は効かない)
+        pool_max: rubric へ渡す上限 (既定 RUBRIC_POOL_MAX=60)。
+            ⚠ **本番では変えない**。広げるのは蒸留の教師収穫だけ — 関門を学習するには
+            切り口の外側にも教師が要る (プール 60 は high 記事の 33% しか覆わず、
+            180 で 96%。実測 2026-09-20)
     """
     base = now or datetime.now(UTC)
     since = base - timedelta(hours=lookback_hours)
@@ -329,7 +334,7 @@ def fetch_for_deep_dive_candidates(
             -_deterministic_composite(c, _corroboration(c), signals.get(c.article_id), kev_set)
         ),
     )
-    after_cap = scored[: min(safety_max, RUBRIC_POOL_MAX)]
+    after_cap = scored[: min(safety_max, pool_max)]
     dropped = len(scored) - len(after_cap)
     if dropped > 0:
         _log.info(
@@ -337,7 +342,7 @@ def fetch_for_deep_dive_candidates(
             total=len(scored),
             kept=len(after_cap),
             dropped=dropped,
-            pool_max=RUBRIC_POOL_MAX,
+            pool_max=pool_max,
         )
 
     stage_counts = {

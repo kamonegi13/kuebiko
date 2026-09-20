@@ -65,11 +65,16 @@ def past_f1_keys(repo: RunHistoryRepository, *, until: datetime) -> set[str]:
 
 
 async def harvest_window(
-    *, end: datetime, repo: RunHistoryRepository, llm: LLMClient
+    *, end: datetime, repo: RunHistoryRepository, llm: LLMClient, pool_max: int
 ) -> list[dict[str, Any]]:
     keys = past_f1_keys(repo, until=end)
+    # ⭐ **切り口の外側まで採点する**。関門 A (約 950 → 60) を学習するには、落ちた側の
+    #   目標値が要る。プール 60 は high 記事の 33% しか覆わず、180 で 96% (実測)。
     pref = fetch_for_deep_dive_candidates(
-        lookback_hours=168, now=end, novelty_excluded_dedup_keys=keys or None
+        lookback_hours=168,
+        now=end,
+        novelty_excluded_dedup_keys=keys or None,
+        pool_max=pool_max,
     )
     if not pref.candidates:
         return []
@@ -83,9 +88,14 @@ async def harvest_window(
     by_id = {s.candidate.article_id: s for s in scored}
     # 選抜は本番と同じ規則で再現する (閾値 → 上限)。ML の目標は composite だが、
     # 「選ばれたか」も評価指標として要る (上位 N の一致率で測るため)。
-    picked = [s.candidate.article_id for s in scored if s.composite >= DEFAULT_COMPOSITE_THRESHOLD][
-        :DEFAULT_MAX_SELECT
-    ]
+    # 本番の選抜は**関門 A の内側 (上位 60)** でしか起きない。教師の "selected" も
+    # その規則で再現する (180 全件から選ぶのは本番に無い挙動)。
+    inside = {c.article_id for c in pref.candidates[:60]}
+    picked = [
+        s.candidate.article_id
+        for s in scored
+        if s.composite >= DEFAULT_COMPOSITE_THRESHOLD and s.candidate.article_id in inside
+    ][:DEFAULT_MAX_SELECT]
     out: list[dict[str, Any]] = []
     for c in pref.candidates:
         s = by_id.get(c.article_id)
@@ -101,6 +111,7 @@ async def harvest_window(
                 "timeliness": s.timeliness if s else None,
                 "novelty": s.novelty if s else None,
                 "selected": c.article_id in picked,
+                "in_gate_a": c.article_id in inside,  # 本番なら LLM に届いていたか
                 "pool_size": len(pref.candidates),
             }
         )
@@ -134,7 +145,7 @@ async def main_async(args: argparse.Namespace) -> int:
             continue
         # ⚠ 1 窓の失敗で全体を落とさない
         try:
-            rows = await harvest_window(end=end, repo=repo, llm=llm)
+            rows = await harvest_window(end=end, repo=repo, llm=llm, pool_max=args.pool_max)
         except Exception as exc:  # noqa: BLE001
             print(f"{end.date()}  ⚠ 失敗 {type(exc).__name__}: {exc}", flush=True)
             continue
@@ -162,6 +173,7 @@ def main() -> int:
     p.add_argument("--weeks", type=int, default=30)
     p.add_argument("--step-days", type=int, default=7, help="7 なら窓は重ならない")
     p.add_argument("--model", default="", help="採点モデルの上書き (既定は本番の解決)")
+    p.add_argument("--pool-max", type=int, default=180, help="採点するプール幅 (本番は 60)")
     p.add_argument("--out", default="data/mlx/deep_dive_labels.jsonl")
     p.add_argument("--fresh", action="store_true")
     return asyncio.run(main_async(p.parse_args()))
