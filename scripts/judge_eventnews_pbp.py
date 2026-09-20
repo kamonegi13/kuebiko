@@ -134,12 +134,18 @@ _VERDICT_TEMPLATE = """# 入力 (候補記事)
 どちらが優れているか 1 つ選び (A / B / tie)、理由を 2 文以内で述べてください。"""
 
 
-async def _call(client: LLMClient, prompt: str, system: str, schema: type[BaseModel]) -> Any:
+async def _call(
+    client: LLMClient, prompt: str, system: str, schema: type[BaseModel], *, max_tokens: int
+) -> Any:
     last: LLMError | None = None
     for _ in range(3):
         try:
             return await client.generate_structured(
-                prompt=prompt, schema=schema, system=system, temperature=0.0, max_tokens=1600
+                prompt=prompt,
+                schema=schema,
+                system=system,
+                temperature=0.0,
+                max_tokens=max_tokens,
             )
         except LLMError as e:
             last = e
@@ -174,15 +180,25 @@ async def main_async(args: argparse.Namespace) -> int:
         }
         rec: dict[str, Any] = {"index": i}
         # --- 段 1: 独立採点 (相手を見ない) ---
+        # ⚠ 1 窓の失敗で全体を落とさない (2026-09-20: 7 窓目の JSON 途中切れで全損した)
+        failed = False
         for label, summary in summaries.items():
             if not summary:
                 continue
-            audit = await _call(
-                client,
-                _AUDIT_TEMPLATE.format(prompt=prompt, summary=summary),
-                _AUDIT_SYSTEM,
-                Audit,
-            )
+            try:
+                audit = await _call(
+                    client,
+                    _AUDIT_TEMPLATE.format(prompt=prompt, summary=summary),
+                    _AUDIT_SYSTEM,
+                    Audit,
+                    max_tokens=args.audit_tokens,
+                )
+            except LLMError as exc:  # noqa: PERF203 — 窓ごとに独立して救済する
+                print(
+                    f"{i:3d} ⚠ 採点失敗 {label} {type(exc).__name__} — この窓は飛ばす", flush=True
+                )
+                failed = True
+                break
             kept = verified_violations(list(audit.violations), summary)
             rec[label] = {
                 "claimed": len(audit.violations),
@@ -190,18 +206,22 @@ async def main_async(args: argparse.Namespace) -> int:
                 "dropped_unquoted": len(audit.violations) - len(kept),
                 "items": [{"quote": v.quote[:120], "reason": v.reason[:120]} for v in kept][:8],
             }
+        if failed:
+            continue
         # --- 段 2: 総合判定 (順序を入れ替えて 2 回) ---
         v1 = await _call(
             client,
             _VERDICT_TEMPLATE.format(prompt=prompt, a=summaries[label_a], b=summaries[label_b]),
             _VERDICT_SYSTEM,
             Verdict,
+            max_tokens=512,
         )
         v2 = await _call(
             client,
             _VERDICT_TEMPLATE.format(prompt=prompt, a=summaries[label_b], b=summaries[label_a]),
             _VERDICT_SYSTEM,
             Verdict,
+            max_tokens=512,
         )
         w1 = {"A": label_a, "B": label_b, "tie": "tie"}[v1.winner]
         w2 = {"A": label_b, "B": label_a, "tie": "tie"}[v2.winner]
@@ -254,6 +274,12 @@ def main() -> int:
     p.add_argument("--model", default="gemma3:12b")
     p.add_argument("--base-url", default="http://192.168.1.100:11434")
     p.add_argument("--out", default="data/mlx/judge_pbp.json")
+    p.add_argument(
+        "--audit-tokens",
+        type=int,
+        default=4096,
+        help="独立採点の出力上限。⚠ 違反は実測で 1 腕 10 件超になる — 1600 では途中で切れる",
+    )
     p.add_argument("--fresh", action="store_true")
     return asyncio.run(main_async(p.parse_args()))
 
