@@ -29,7 +29,9 @@ _EVENT_CAPS = {
     "caveats": 12,
     "unknowns": 20,
 }
-_SPOTLIGHT_CAPS = {"key_events": 15, "caveats": 12, "unknowns": 20}
+# ⚠ 文法側は**安全弁**なので表示側 (_KEY_EVENTS_MAX = 15) より緩くする。
+#    同値にすると表示側の切り捨てが一度も発火せず、記録が出なくなる。
+_SPOTLIGHT_CAPS = {"key_events": 20, "caveats": 12, "unknowns": 20}
 
 
 @pytest.mark.parametrize(("field", "cap"), sorted(_EVENT_CAPS.items()))

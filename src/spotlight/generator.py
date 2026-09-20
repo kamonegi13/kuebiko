@@ -36,7 +36,12 @@ _CANDIDATE_LIMIT = 30  # LLM に渡す article 候補数 (prompt サイズ制御
 #: 実測 (2026-08-29、7 日窓): 20 PIR 中 17 件が 5 件以上を確保。届かないのは
 #: apt_leak (2) / apt_attribution (0) / emergency_alerts (2) の 3 件。
 _KEY_EVENTS_MIN = 5
-_KEY_EVENTS_MAX = 10
+# 編集上の上限 (表示に出す件数)。⚠ **文法側の上限 (schema の maxItems=20) とは別物**:
+# 文法は暴走を物理的に止める安全弁、こちらは読み物としての枠で、超えたら切って**記録する**。
+# 同値にすると表示側が一度も発火せず切り捨ての記録が出なくなる (上限は守るだけでなく知らせる)。
+# 2026-09-20 に 10 → 15。実測 (30 窓 × 2 腕) の最大は 11 件で、10 では 2 窓が 1 件ずつ
+# 切られていた。切られていたのは**独立した事象**で、末尾の薄い項目ではなかった (中身を読んで確認)。
+_KEY_EVENTS_MAX = 15
 
 
 class _LLMKeyEvent(BaseModel):
@@ -65,7 +70,7 @@ class _LLMSpotlightOutput(BaseModel):
     #    Ollama は maxItems を文法へコンパイルする (実機確認済)。表示側の
     #    ``_KEY_EVENTS_MAX`` (10) は事後の切り捨てで、こちらは生成そのものを止める。
     #    上限は表示側より緩くする — 生成を切るより、出させてから選ぶ方が内容を失わない。
-    key_events: list[_LLMKeyEvent] = Field(default_factory=list, json_schema_extra={"maxItems": 15})
+    key_events: list[_LLMKeyEvent] = Field(default_factory=list, json_schema_extra={"maxItems": 20})
     outlook: str = ""
     # schema 整合 (2026-09-07): 不確実性の明示欄。空を正しく空で返すのも valid。
     caveats: list[str] = Field(default_factory=list, json_schema_extra={"maxItems": 12})
