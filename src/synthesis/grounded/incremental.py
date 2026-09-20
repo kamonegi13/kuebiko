@@ -235,11 +235,25 @@ async def incremental_ground_and_score(
 # ---------- 新規開設判断 (detect-new) ----------
 
 
+# ⚠ **配列に上限が無いと Gemma 4 は閉じられない** (2026-09-20、事象ニュース・spotlight と
+#   同じ既知の不具合 ollama#15502)。文法が無限に許すため、モデルは同じ要素を吐き続けて
+#   max_tokens で途中切れになり、救済しても 0 件に落ちることがある。
+#   本番実測 (直近 14 日): 出力上限到達が 13 回 (朝刊 6 / 夕刊 4 / 週次総括 3)。
+#   replay では 3 腕すべてが同じ暴走をし、「開設ゼロ」が**判断ではなく途中切れ**だった。
+#   ⭐ Ollama は maxItems を文法へコンパイルするので、続けたくても閉じる。
+#   ⚠ 上限は暴走を止めるが**重複は止めない** (別の対処が要る)。
+_OPEN_MAX_ITEMS = _DETECT_OPEN_MAX * 2  # 下流の overflow 判定を潰さないよう余裕を持たせる
+_REJECTED_MAX_ITEMS = 80  # 候補プールの実測上限 (43-62 件) を覆う
+_ARTICLE_IDS_MAX_ITEMS = 12  # 同一事象の複数報道を束ねる正当な群化 (実測最大 7) を通す
+
+
 class _WireOpenClaim(BaseModel):
     model_config = {"extra": "ignore"}
     claim: str = ""
     domain: str = ""
-    article_ids: list[str] = Field(default_factory=list)
+    article_ids: list[str] = Field(
+        default_factory=list, json_schema_extra={"maxItems": _ARTICLE_IDS_MAX_ITEMS}
+    )
 
 
 class _WireRejected(BaseModel):
@@ -250,8 +264,12 @@ class _WireRejected(BaseModel):
 
 class _WireDetectResult(BaseModel):
     model_config = {"extra": "ignore"}
-    open: list[_WireOpenClaim] = Field(default_factory=list)
-    rejected: list[_WireRejected] = Field(default_factory=list)
+    open: list[_WireOpenClaim] = Field(
+        default_factory=list, json_schema_extra={"maxItems": _OPEN_MAX_ITEMS}
+    )
+    rejected: list[_WireRejected] = Field(
+        default_factory=list, json_schema_extra={"maxItems": _REJECTED_MAX_ITEMS}
+    )
 
 
 @dataclass(frozen=True)

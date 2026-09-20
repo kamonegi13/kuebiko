@@ -73,3 +73,21 @@ def test_union_top_k_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert union_top_k() == 0
     monkeypatch.setenv("DETECT_ML_UNION", "zzz")
     assert union_top_k() == 4
+
+
+def test_detect_schema_caps_every_array_so_the_grammar_can_close() -> None:
+    """配列に上限が無いと Gemma 4 は閉じられない (2026-09-20、ollama#15502)。
+
+    本番実測では直近 14 日で出力上限到達が 13 回あり、replay では 3 腕すべてで
+    「開設ゼロ」が**判断ではなく途中切れ**だった。Ollama は maxItems を文法へ
+    コンパイルするので、上限を宣言しておけばモデルが続けたくても閉じる。
+    """
+    from src.synthesis.grounded.incremental import _DETECT_OPEN_MAX, _WireDetectResult
+
+    schema = _WireDetectResult.model_json_schema()
+    props = schema["properties"]
+
+    assert props["open"]["maxItems"] >= _DETECT_OPEN_MAX  # 下流の overflow 判定を潰さない
+    assert props["rejected"]["maxItems"] > 0
+    claim = schema["$defs"]["_WireOpenClaim"]["properties"]
+    assert claim["article_ids"]["maxItems"] >= 7  # 同一事象の正当な群化 (実測最大 7) を通す
