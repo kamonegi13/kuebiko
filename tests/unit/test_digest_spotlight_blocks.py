@@ -21,7 +21,9 @@ from src.prompts.sample_context import sample_context_for
 
 # prompt_id → skeleton の slot 数 (extract_prompt_blocks.py --apply 実行時の cut-plan と一致)
 _EXPECTED_SLOT_COUNT: dict[str, int] = {
-    "weekly_recap": 7,
+    # 2026-09-20: 記事の列挙 → セクション単位の横断散文へ再設計し、体裁 (罫線・
+    # 記事フォーマット) をコードへ移した分だけ slot が減った (7 → 6)。
+    "weekly_recap": 6,
     "pir_daily_focus": 6,
     "deep_dive_rubric": 7,
     "pir_spotlight": 7,
@@ -30,7 +32,7 @@ _EXPECTED_SLOT_COUNT: dict[str, int] = {
 # 各プロンプトの render 結果に必ず含まれるはずの block 由来テキスト (実証用の目印)。
 # block 本文からの抜粋 — legacy .j2 由来テキストと一致していれば synthesize が効いている証拠。
 _EXPECTED_RENDERED_MARKER: dict[str, str] = {
-    "weekly_recap": "それでは Weekly Recap を出力してください。",
+    "weekly_recap": "それでは週次の読み物を出力してください。",
     "pir_daily_focus": "出力は **要点本文のみ**",
     "deep_dive_rubric": "純粋な JSON のみ出力。",
     "pir_spotlight": "出力は **JSON のみ**",

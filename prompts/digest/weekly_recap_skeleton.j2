@@ -4,18 +4,16 @@
 
 # 入力 ({{ period_label }}、合計 {{ total }} 件)
 {% for item in items -%}
-- title: {{ item.title }}
+- article_id: {{ item.article_id }}
+  - title: {{ item.title }}
   - feed: {{ item.feed }}
   - importance: {{ item.importance }} / category: {{ item.category }}
-  - url: {{ item.url }}
   - summary: {{ item.summary if item.summary else "(summary 未保存、title から推測してください)" }}
 {% endfor %}
 
 {# BLOCK: output_format_overview #}
 
-{# BLOCK: section_separator #}
-
-{# BLOCK: article_format #}
+{# BLOCK: section_body #}
 
 {# BLOCK: constraints_core #}
 {# BLOCK: constraints_style #}

@@ -47,9 +47,12 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 # composite 閾値: これ未満は選定しない (「今週は深掘りなし」配信を許容)。件数の主ゲート。
 DEFAULT_COMPOSITE_THRESHOLD = 2.5
 
-# 選定件数の上限ガード (2026-07-07)。件数は閾値通過数=内容駆動で決まり、これは可読性/
-# runaway 防止の安全弁 (通常は効かない)。digest 出力予算は件数に応じ拡張し厚みを保つ。
-DEFAULT_MAX_SELECT = 12
+# 選定件数の上限 (2026-09-20 に 12 → 20)。
+# ⚠ 「閾値通過数=内容駆動で決まり、これは通常効かない安全弁」という旧コメントは**誤り**
+#   だった。実測では直近 10 週すべてが**ちょうど 12 件** = 毎回この上限が拘束していた。
+#   20 へ引き上げたのは、本文をセクション単位の横断散文へ変えて 1 件あたりの紙幅から
+#   解放されたため (旧構成は 1 記事 300 字の列挙で、件数がそのまま長さになっていた)。
+DEFAULT_MAX_SELECT = 20
 
 # summary 長制限 (token 抑制)
 SUMMARY_TRIM_CHARS = 600
@@ -245,29 +248,22 @@ def _to_scored(
     return out
 
 
-async def select_deep_dive_articles(
+async def score_deep_dive_candidates(
     *,
     llm: LLMClient,
     candidates: list[DigestCandidate],
     recent_briefs: list[str] | None = None,
     past_selected_keys: list[str] | None = None,
     weights: dict[str, float] | None = None,
-    composite_threshold: float = DEFAULT_COMPOSITE_THRESHOLD,
-    max_select: int = DEFAULT_MAX_SELECT,
 ) -> list[ScoredArticle]:
-    """候補から LLM rubric scoring で深掘り対象を選定 (composite 降順)。
+    """候補**全件**を LLM rubric で採点する (閾値も上限もかけない)。
 
-    Args:
-        llm: LLM クライアント (Ollama)
-        candidates: Stage 0+1 通過済 article list
-        recent_briefs: 今週 brief/alert で速報したタイトル (context 注入)
-        past_selected_keys: 過去 4 週 F1 選定済 dedup_key (context 注入)
-        weights: composite 重み (None ならデフォルト)
-        composite_threshold: これ未満は除外 (0 件配信を許容)
-        max_select: 最大選定件数
+    ⭐ 採点と選抜を分ける seam (2026-09-20)。本番は選抜まで行うが、**蒸留の教師収穫**では
+    落選分のスコアも要る (`f1_selections` は選ばれた分しか残さないため、負例の目標値が
+    無かった)。選抜側はここを呼ぶだけにして、収穫スクリプトと同じ経路を通す。
 
     Returns:
-        composite 降順の ScoredArticle (空 list なら「今週は深掘りなし」)。
+        composite 降順の ScoredArticle (全候補)。
     """
     if not candidates:
         return []
@@ -315,8 +311,42 @@ async def select_deep_dive_articles(
         parsed_count=len(parsed),
     )
     candidates_by_id = {c.article_id: c for c in candidates}
-    scored = _to_scored(parsed, candidates_by_id, actual_weights)
+    return _to_scored(parsed, candidates_by_id, actual_weights)
 
+
+async def select_deep_dive_articles(
+    *,
+    llm: LLMClient,
+    candidates: list[DigestCandidate],
+    recent_briefs: list[str] | None = None,
+    past_selected_keys: list[str] | None = None,
+    weights: dict[str, float] | None = None,
+    composite_threshold: float = DEFAULT_COMPOSITE_THRESHOLD,
+    max_select: int = DEFAULT_MAX_SELECT,
+) -> list[ScoredArticle]:
+    """候補から LLM rubric scoring で深掘り対象を選定 (composite 降順)。
+
+    採点そのものは ``score_deep_dive_candidates`` に委譲し、ここは閾値と上限だけを持つ。
+
+    Args:
+        llm: LLM クライアント (Ollama)
+        candidates: Stage 0+1 通過済 article list
+        recent_briefs: 今週 brief/alert で速報したタイトル (context 注入)
+        past_selected_keys: 過去 4 週 F1 選定済 dedup_key (context 注入)
+        weights: composite 重み (None ならデフォルト)
+        composite_threshold: これ未満は除外 (0 件配信を許容)
+        max_select: 最大選定件数
+
+    Returns:
+        composite 降順の ScoredArticle (空 list なら「今週は深掘りなし」)。
+    """
+    scored = await score_deep_dive_candidates(
+        llm=llm,
+        candidates=candidates,
+        recent_briefs=recent_briefs,
+        past_selected_keys=past_selected_keys,
+        weights=weights,
+    )
     above = [s for s in scored if s.composite >= composite_threshold]
     selected = above[:max_select]
     _log.info(
