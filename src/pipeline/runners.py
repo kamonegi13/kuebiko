@@ -40,8 +40,14 @@ async def _run_digest_default(
     """
     from src.digest.runner import run_digest_pipeline
 
-    # Phase 5T-Z fix: F1 weekly-recap deep dive は rubric scoring + 12k max_tokens
-    # narrative で 1 回の LLM call が 5-10 分超になる。fast ティア (26B) + 900s timeout。
+    # F1 weekly-recap deep dive は rubric scoring + 12k max_tokens。
+    # ⚠ **この根拠は失効している** (2026-09-20 に利用者が指摘、実測で確認):
+    #   元の理由は「narrative (当時 31B Dense) で 1 回の呼出が 5-10 分超」だったが、
+    #   いま narrative は n17m30 / n17c でどちらも fast と同じ **26B MoE**。
+    #   実測の最長は fast の gemma4:26b が 554 秒、n17m30 が 305 秒で **fast の方が遅い**。
+    #   ティアは fast のままだが、step 上書きで narrative 系を指している (v28 時点)。
+    #   ⭐ 深掘りの教師データは**存在しない** — 教師は事象ニュース 682 行と spotlight
+    #   459 行の 2 種類だけで、「深掘り 459 行」は spotlight の誤分類だった。
     llm = build_llm_for(Step.DIGEST_DEEP_DIVE, config)
     publishers = _build_publishers(config)
 

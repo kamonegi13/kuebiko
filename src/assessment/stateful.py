@@ -879,8 +879,11 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         _log.warning("stateful_detect_input_capped", total=len(unassigned), cap=_DETECT_INPUT_MAX)
     # dup guard は standing も含む全 active (detect-new が常設問いを event として再開設しない)
     active_titles = [r.title for r in situations if r.status == "active"]
-    # detect (未割当を読んで新規 claim を選ぶ triage) は入力が多いので高速 26B を優先使用。
-    # Dense 31B で 150件を読むと 900s を超えて timeout していた根治 (narrative は llm=31B のまま)。
+    # detect (未割当を読んで新規 claim を選ぶ triage) は入力が多いので fast ティアを使う。
+    # ⚠ 元の理由「Dense 31B で 150 件を読むと 900s 超」は失効 (narrative も今は 26B MoE)。
+    # ⭐ **モデルは gemma4:26b に明示固定** (v28)。fast の既定は s17 だが、detect だけは
+    #   素の base のまま — 2026-09-19 の ML 前段・和集合・replay の検証が**すべてこの腕に
+    #   紐づく**ため。s17 に替えるなら再検証が要る (未実施)。
     # ML 前段 (SYNTHESIS §47): 候補を確率上位 K 件に絞ってから LLM が claim を選ぶ。
     # 失敗時は絞らずに従来どおり (ML は可用性に影響させない)
     ml_scores: dict[str, float] = {}
