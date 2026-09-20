@@ -145,6 +145,7 @@ async def run_digest_pipeline(
     pipeline: PipelineConfig,
     llm: LLMClient,
     publishers: dict[DiscordChannel, DiscordPublisher],
+    select_llm: LLMClient | None = None,
     dry_run: bool = False,
     repo: RunHistoryRepository | None = None,
     run_id: int | None = None,
@@ -154,8 +155,9 @@ async def run_digest_pipeline(
     Args:
         config: AppConfig
         pipeline: source.type が digest_research / digest_weekly_recap
-        llm: LLM クライアント
+        llm: LLM クライアント (本文 narrative)
         publishers: channel 別 DiscordPublisher (brief が必要)
+        select_llm: 深掘り選定 (rubric 採点) 用。None なら llm を流用 (旧挙動)
         dry_run: True なら投稿せずログのみ
         repo: F1 deep dive で novelty 判定 + 履歴記録に使う (Phase 5T-T2)
         run_id: F1 selection 記録用 (None なら DB 記録 skip)
@@ -174,7 +176,7 @@ async def run_digest_pipeline(
 
     # weekly recap (F1): Phase 5T-T2 deep dive selector で 3-5 件選定
     deep_dive_result = await _run_weekly_deep_dive(
-        llm=llm,
+        llm=select_llm or llm,
         repo=repo,
         run_id=run_id,
         lookback_hours=lookback,

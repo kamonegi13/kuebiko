@@ -53,6 +53,7 @@ from src.synthesis.grounded.incremental import (  # noqa: E402
     detect_new_claims,
     merge_union_claims,
 )
+from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
 from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 D = Path("data/mlx")
@@ -179,7 +180,13 @@ async def main_async(args: argparse.Namespace) -> int:
     store = SituationStore(db_path=Path("data/run_history.db"))
     active_titles = [r.title for r in store.load_situations(("active",))]
     cfg = load_app_config()
-    llm = build_llm_for(Step.SYNTHESIS_DETECT, cfg)
+    # ⚠ detect の検証 (2026-09-19 の ML 前段・和集合・replay) は **すべて gemma4:26b**
+    #    に紐づく。s17 と比べるときは --model で明示し、既定は本番の解決に任せる。
+    llm: LLMClient = (
+        OllamaClient(base_url=cfg.ollama_base_url, model=args.model, timeout_seconds=900.0)
+        if args.model
+        else build_llm_for(Step.SYNTHESIS_DETECT, cfg)
+    )
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config
 
@@ -315,6 +322,7 @@ def main() -> int:
     ap.add_argument("--since", default="2026-08-16", help="日選定の下限 (審判ラベルのある期間)")
     ap.add_argument("--until", default="2026-09-10", help="日選定の上限")
     ap.add_argument("--min-pool", type=int, default=40, help="この件数未満の日は skip")
+    ap.add_argument("--model", default="", help="detect に使うモデル (既定は本番の解決)")
     ap.add_argument(
         "--mode",
         choices=("input", "prompt", "select", "union"),

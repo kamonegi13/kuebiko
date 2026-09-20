@@ -130,6 +130,7 @@ class TestBuildLLM:
             (Step.PIR_COMPILE, "gemma4:26b", 180.0),
             # spotlight は reasoning ティア (本番 31b 踏襲) だが timeout は step 固有 600s
             (Step.PIR_SPOTLIGHT, "gemma4:31b", 600.0),
+            (Step.DIGEST_DEEP_DIVE_SELECT, "gemma4:26b", 900.0),
             (Step.DIGEST_DEEP_DIVE, "gemma4:26b", 900.0),
             (Step.SYNTHESIS_NARRATIVE, "gemma4:31b", 900.0),
         ],

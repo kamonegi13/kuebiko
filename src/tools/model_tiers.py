@@ -122,7 +122,13 @@ class Step(StrEnum):
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
     PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
     EVENT_KIND = "event_kind"  # 記事種別分類 (ML pair モデルの特徴量供給 — 供給元を固定する)
-    DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap deep-dive (narrative + rubric)
+    # weekly-recap 深掘りは LLM を 2 回呼ぶ。**課題の種類が違うので step を分ける**
+    # (2026-09-20、借用禁止の衛生。detect で s17 が 3 日中 2 日 0 件開設 =
+    #  判定特化モデルは選定で極端に保守的になると実測された直後に分離した):
+    #   _SELECT = 60 件のプールから 12 件を選ぶ rubric 採点 (**判定**)
+    #   本体     = 選ばれた 12 件から本文を書く (**生成**)
+    DIGEST_DEEP_DIVE_SELECT = "digest_deep_dive_select"  # weekly-recap 選定 (rubric 採点)
+    DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap 本文 (narrative)
     SYNTHESIS_DETECT = "synthesis_detect"  # synthesis 内 detect-new (大量入力 triage)
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
     PIR_LLM_JUDGE = "pir_llm_judge"  # 概念 PIR の主題判定 (夜間バッチ、候補ゲート通過分のみ)
@@ -172,6 +178,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # kind 分類は 1 記事 = 小さな分類呼出。ML pair モデルは base 産の kind を特徴量として
     # 学習しているため、供給元モデルの無断シフト (step 借用による継承) を遮断する。
     Step.EVENT_KIND: StepSpec(Tier.FAST, 120.0),
+    Step.DIGEST_DEEP_DIVE_SELECT: StepSpec(Tier.FAST, 900.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),
     Step.PIR_DAILY_FOCUS: StepSpec(Tier.FAST, 120.0),

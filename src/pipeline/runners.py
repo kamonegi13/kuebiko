@@ -48,7 +48,10 @@ async def _run_digest_default(
     #   ティアは fast のままだが、step 上書きで narrative 系を指している (v28 時点)。
     #   ⭐ 深掘りの教師データは**存在しない** — 教師は事象ニュース 682 行と spotlight
     #   459 行の 2 種類だけで、「深掘り 459 行」は spotlight の誤分類だった。
+    #   ⭐ 選定 (rubric 採点 = 判定) と本文 (narrative = 生成) は **別 step**。
+    #   1 本の client を両方に配ると、本文の腕を替えたときに選定まで黙って替わる。
     llm = build_llm_for(Step.DIGEST_DEEP_DIVE, config)
+    select_llm = build_llm_for(Step.DIGEST_DEEP_DIVE_SELECT, config)
     publishers = _build_publishers(config)
 
     # Phase 5T-T2: F1 deep dive で novelty 判定 + 履歴記録のため共有
@@ -59,6 +62,7 @@ async def _run_digest_default(
         pipeline=pipeline,
         llm=llm,
         publishers=publishers,
+        select_llm=select_llm,
         dry_run=dry_run,
         repo=repo,
         run_id=run_id,
