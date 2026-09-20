@@ -117,3 +117,37 @@ def test_hint_covers_every_field_that_has_duplicates() -> None:
     assert hint is not None
     assert "同じ" in hint
     assert "重なり" in hint
+
+
+# ---------- 欄をまたぐ重複 ----------
+
+
+def test_hint_catches_a_line_repeated_across_fields() -> None:
+    """⚠ 既存の `list_dedup` は**欄の中**だけを畳む。要点が相違と同じ、のような
+    欄をまたぐ重複は素通りする。実測 (39 窓): n17m30 は 1 件、n17c は 11 件 (p=0.021)。
+    Opus が「要点 4 件目が discrepancies の重複」と指摘したのがこれ。
+    """
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    hint = duplicate_hint(
+        {"key_points": [_F("同じ主張である")], "discrepancies": [_F("同じ主張である。")]}
+    )
+
+    assert hint is not None
+    assert "同じ主張である" in hint
+
+
+def test_cross_field_hint_names_both_fields() -> None:
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    hint = duplicate_hint({"key_points": [_F("重なる文")], "unknowns": [_F("重なる文")]})
+
+    assert hint is not None
+    assert "key_points" in hint
+    assert "unknowns" in hint
+
+
+def test_distinct_lines_across_fields_are_not_flagged() -> None:
+    from src.eventnews.structure_metrics import duplicate_hint
+
+    assert duplicate_hint({"key_points": [_F("A")], "caveats": [_F("B")]}) is None

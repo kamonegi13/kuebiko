@@ -87,29 +87,35 @@ def self_contradicting_discrepancies(lines: Sequence[_Line]) -> int:
 def duplicate_hint(fields: Mapping[str, Sequence[_Line]]) -> str | None:
     """重複している行を名指しする書き直し指示 (純粋関数)。``None`` なら直すものが無い。
 
+    **欄の中と欄をまたぐ重複の両方**を見る。⚠ 既存の ``list_dedup`` は欄の中だけを畳むので、
+    「要点が相違と同じ」は素通りする (実測 39 窓: n17m30 は 1 件、n17c は 11 件、p=0.021)。
+
     ⚠ 「重複を消せ」だけでは効かない — 08-27 実測で **31B は散文の指示を読まず構造だけが
     効く**。08-27 の識別子関門は「具体的な番号の指摘」で不足 5 → 0 に埋めた。同じ形にする。
     """
     named: list[str] = []
+    # ⭐ 最初の出現を覚え、2 度目以降を重複として名指しする (出た欄も添える)
+    first: dict[str, tuple[str, str]] = {}  # 正規化キー → (欄, 原文)
+    flagged: set[str] = set()
     for field, lines in fields.items():
-        # ⭐ 示すのは**最初の出現**。2 度目以降の表記揺れを見せても直しにくい
-        first: dict[str, str] = {}
-        dups: list[str] = []
         for line in lines:
             key = _norm(line.text)
             if not key:
                 continue
-            if key in first:
-                if first[key] not in dups:
-                    dups.append(first[key])
-            else:
-                first[key] = line.text
-        named += [f"{field}: 「{t[:80]}」" for t in dups]
+            if key not in first:
+                first[key] = (field, line.text)
+                continue
+            if key in flagged:
+                continue
+            flagged.add(key)
+            src_field, src_text = first[key]
+            where = src_field if src_field == field else f"{src_field} と {field}"
+            named.append(f"{where}: 「{src_text[:80]}」")
     if not named:
         return None
     return (
         "前回の出力には**同じ内容の行が複数**含まれていた: "
         + " / ".join(named[:6])
-        + "。**同じ主張を 2 度書かない**。重複を 1 件にまとめ、"
+        + "。**同じ主張を 2 度書かない** (欄が違っても同じ)。重複を 1 件にまとめ、"
         "他の内容の質は保ったまま書き直すこと。"
     )

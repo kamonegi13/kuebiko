@@ -193,11 +193,27 @@ def _rewrite_hints(
             item_id=item_id,
             repaired=repaired,
         )
+
     # 重複の書き直し (2026-09-20)。⚠ schema の上限は**暴走を止めるが重複は止めない**
     # (上限 12 でも同じ行を 12 個出せる)。uniqueItems は文脈自由文法で表現できず原理的に
     # 不可なので、ここで検出して書き直させる。実測: n17m30 は 38 窓で 0、n17c は 3 窓で発生。
+    # ⚠ **全 5 欄を渡す**。既存の list_dedup は欄の中だけを畳むので、「要点が相違と同じ」
+    #    のような欄をまたぐ重複が素通りする (実測 39 窓: n17m30 は 1 件、n17c は 11 件、p=0.021)。
+    class _Str:  # unknowns / key_points は素の str なので _Line の形に揃える
+        __slots__ = ("section", "text")
+
+        def __init__(self, text: str) -> None:
+            self.text = text
+            self.section = ""
+
     dup_hint = structure_metrics.duplicate_hint(
-        {"facts": gate.draft.facts, "discrepancies": gate.draft.discrepancies}
+        {
+            "key_points": [_Str(t) for t in gate.draft.key_points],
+            "facts": gate.draft.facts,
+            "discrepancies": gate.draft.discrepancies,
+            "caveats": gate.draft.caveats,
+            "unknowns": [_Str(t) for t in gate.draft.unknowns],
+        }
     )
     if dup_hint:
         _log.warning(
@@ -205,6 +221,7 @@ def _rewrite_hints(
             item_id=item_id,
             facts=structure_metrics.duplicate_lines(gate.draft.facts),
             discrepancies=structure_metrics.duplicate_lines(gate.draft.discrepancies),
+            cross_field=True,
         )
         hints.append(dup_hint)
     if verbatim.needs_rewrite(gate.draft.facts, bodies):
