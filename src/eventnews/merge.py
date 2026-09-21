@@ -45,6 +45,14 @@ import numpy as np
 from src.eventnews.grouping import edge_is_allowed
 from src.eventnews.models import MemberArticle
 
+#: 事象どうしを結ぶのに要る辺の本数。**1 本では結ばない**。
+#: ⭐ 一括勧告 (ハブ) は「多数の無関係な事案と CVE を共有する」ため、相手ごとに
+#:   1 本ずつ細い辺を張る。毎時側の `_quorum_blocks` (辺 1 本では参加させない、
+#:   2026-09-03) と同じ思想を統合側へ移植する。
+#: ⚠ 記事の 88% が未分類なので `event_kind` による除外は当てにならない
+#:   (VMware の 38 記事のうち 28 件が未分類)。**構造で見る**。
+MIN_EDGES_BETWEEN_ITEMS = 2
+
 
 @dataclass(frozen=True)
 class MergeGroup:
@@ -96,6 +104,7 @@ def plan_merges(
     vectors: Mapping[str, np.ndarray],
     approved: Sequence[tuple[str, str]] | None = None,
     hub_cap: int = 400,
+    min_edges: int = MIN_EDGES_BETWEEN_ITEMS,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -105,12 +114,13 @@ def plan_merges(
         entities: article_id → 参加判定用 entity
         vectors: article_id → 正規化済み埋込
         approved: ML が承認した記事対。**None なら決定論のみ** (ML 不在時の縮退)
+        min_edges: 2 つの事象を結ぶのに要る辺の本数。1 だとハブが多数を吸い込む
+            (実測: 決定論のみで VMware の一括勧告が 82 事象・277 記事を吸収)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     allow = set(approved) if approved is not None else None
-    parent: dict[str, str] = {}
-    for iid in set(item_of.values()):
-        parent[iid] = iid
+    # ⭐ 事象の組ごとに辺を数える。**1 本では結ばない** (ハブ対策)。
+    edge_count: dict[tuple[str, str], int] = {}
     for a, b in pairs:
         ia, ib = item_of.get(a), item_of.get(b)
         if ia is None or ib is None or ia == ib:
@@ -120,6 +130,15 @@ def plan_merges(
         shared = tuple(sorted(entities[a] & entities[b]))
         cos = float(np.dot(vectors[a], vectors[b]))
         if not edge_is_allowed(entities[a], entities[b], shared, cos):
+            continue
+        key = (ia, ib) if ia < ib else (ib, ia)
+        edge_count[key] = edge_count.get(key, 0) + 1
+
+    parent: dict[str, str] = {}
+    for iid in set(item_of.values()):
+        parent[iid] = iid
+    for (ia, ib), n in edge_count.items():
+        if n < min_edges:
             continue
         ra, rb = _root(parent, ia), _root(parent, ib)
         if ra != rb:

@@ -41,12 +41,14 @@ class TestCandidatePairs:
 
 
 class TestPlanMerges:
-    def test_merges_two_items_whose_members_match(self) -> None:
-        ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
-        vecs = {"a": _v(1, 0), "b": _v(1, 0.05)}  # cos ≈ 0.999
+    def test_merges_two_items_connected_by_two_edges(self) -> None:
+        """⭐ **辺 1 本では結ばない**。一括勧告 (ハブ) は相手ごとに 1 本ずつ細い辺を
+        張るので、1 本で結ぶと多数を吸い込む (実測: VMware が 82 事象・277 記事)。"""
+        ents = {k: frozenset({_E, _F}) for k in ("a1", "a2", "b1", "b2")}
+        vecs = {"a1": _v(1, 0), "a2": _v(1, 0.01), "b1": _v(1, 0.02), "b2": _v(1, 0.03)}
 
         got = plan_merges(
-            item_of={"a": "i1", "b": "i2"},
+            item_of={"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"},
             first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
             entities=ents,
             vectors=vecs,
@@ -55,6 +57,20 @@ class TestPlanMerges:
         assert len(got) == 1
         assert got[0].target == "i1"  # ⭐ 最初に立った事象が統合先 (URL が残る)
         assert got[0].absorbed == ("i2",)
+
+    def test_a_single_edge_does_not_merge(self) -> None:
+        """ハブ対策の本体 — 細い繋がり 1 本では統合しない。"""
+        ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
+        vecs = {"a": _v(1, 0), "b": _v(1, 0.05)}
+
+        got = plan_merges(
+            item_of={"a": "i1", "b": "i2"},
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+        )
+
+        assert got == []
 
     def test_members_of_the_same_item_are_not_merged_with_themselves(self) -> None:
         ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
@@ -74,15 +90,14 @@ class TestPlanMerges:
         どうしを潰す (2026-09-01 の全期間 dry-run で実際に出た)。"""
         ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
         vecs = {"a": _v(1, 0), "b": _v(1, 0.05)}
-        item_of = {"a": "i1", "b": "i2"}
+        ents = {k: frozenset({_E, _F}) for k in ("a1", "a2", "b1", "b2")}
+        vecs = {"a1": _v(1, 0), "a2": _v(1, 0.01), "b1": _v(1, 0.02), "b2": _v(1, 0.03)}
+        item_of = {"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"}
         first = {"i1": "2026-09-01", "i2": "2026-09-10"}
+        ok = [("a1", "b1"), ("a1", "b2"), ("a2", "b1"), ("a2", "b2")]
 
         approved = plan_merges(
-            item_of=item_of,
-            first_seen=first,
-            entities=ents,
-            vectors=vecs,
-            approved=[("a", "b")],
+            item_of=item_of, first_seen=first, entities=ents, vectors=vecs, approved=ok
         )
         vetoed = plan_merges(
             item_of=item_of, first_seen=first, entities=ents, vectors=vecs, approved=[]
@@ -94,11 +109,11 @@ class TestPlanMerges:
     def test_no_time_limit_is_applied(self) -> None:
         """⭐ 実測で無制限でも 30 日と同じ (1,038 対 1,015)。判定自体が十分に厳しく、
         時間の上限は安全弁として機能していない — 恣意的な定数を持たない。"""
-        ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
-        vecs = {"a": _v(1, 0), "b": _v(1, 0.05)}
+        ents = {k: frozenset({_E, _F}) for k in ("a1", "a2", "b1", "b2")}
+        vecs = {"a1": _v(1, 0), "a2": _v(1, 0.01), "b1": _v(1, 0.02), "b2": _v(1, 0.03)}
 
         got = plan_merges(
-            item_of={"a": "i1", "b": "i2"},
+            item_of={"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"},
             first_seen={"i1": "2020-01-01", "i2": "2026-09-10"},  # 6 年差
             entities=ents,
             vectors=vecs,
@@ -107,11 +122,12 @@ class TestPlanMerges:
         assert len(got) == 1
 
     def test_chains_transitively_into_one_group(self) -> None:
-        ents = {k: frozenset({_E, _F}) for k in ("a", "b", "c")}
-        vecs = {"a": _v(1, 0), "b": _v(1, 0.03), "c": _v(1, 0.06)}
+        ks = ("a1", "a2", "b1", "b2", "c1", "c2")
+        ents = {k: frozenset({_E, _F}) for k in ks}
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ks)}
 
         got = plan_merges(
-            item_of={"a": "i1", "b": "i2", "c": "i3"},
+            item_of={"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2", "c1": "i3", "c2": "i3"},
             first_seen={"i1": "2026-09-01", "i2": "2026-09-02", "i3": "2026-09-03"},
             entities=ents,
             vectors=vecs,
