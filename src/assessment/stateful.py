@@ -415,6 +415,44 @@ async def detect_active_titles(
     return kept
 
 
+async def _claim_dup_confirmed(claim: str, situation_title: str) -> bool:
+    """claim と情勢の題名が意味的にも近いか (`claim_dup` の閾値)。
+
+    ⚠ 埋込が作れなければ **True** (従来どおり繋ぐ) — 関門の失敗で挙動を変えない。
+    """
+    from src.assessment.claim_dup import confirm_by_embedding
+
+    try:
+        vecs = await _embed_texts([claim, situation_title])
+    except Exception as e:  # noqa: BLE001 — 確認できなくても台帳の更新は続ける
+        _log.warning("claim_dup_embed_failed", error=str(e)[:160])
+        return True
+    return confirm_by_embedding(claim_vec=vecs[0], situation_vec=vecs[1])
+
+
+async def _embed_texts(texts: Sequence[str]) -> list[Any]:
+    """正規化済み埋込をまとめて作る (空文字は None)。"""
+    import numpy as np
+
+    from src.config_loader import load_app_config
+    from src.tools.embedding_client import OllamaEmbeddingClient
+    from src.tools.model_tiers import resolve_embedding_model
+
+    client = OllamaEmbeddingClient(
+        base_url=load_app_config().ollama_base_url, model=resolve_embedding_model()
+    )
+    out: list[Any] = []
+    for text in texts:
+        body = (text or "").strip()
+        if not body:
+            out.append(None)
+            continue
+        arr = np.asarray((await client.embed(body)).vector, dtype=np.float32)
+        norm = float(np.linalg.norm(arr))
+        out.append(arr / norm if norm else None)
+    return out
+
+
 async def _detect_scope_vectors(
     active: Sequence[SituationRow],
     detect_input: Sequence[Mapping[str, object]],
@@ -1181,6 +1219,15 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             tokens=topic_tokens(c.claim),
         )
         dup = match_claim(art_like, sit_keys)
+        if dup is not None and not await _claim_dup_confirmed(c.claim, dup[0].row.title):
+            # ⚠ キーの重なりだけで繋ぐと **繋いだうち正しいのは 14%** (Opus ラベル 422 件)。
+            #   誤って繋ぐと本来開設すべき追跡が消えるので、意味的にも近いかを確認する。
+            _log.info(
+                "claim_dup_rejected_by_embedding",
+                situation_id=dup[0].row.situation_id,
+                rule=dup[1],
+            )
+            dup = None
         if dup is not None:
             sid = dup[0].row.situation_id
             for aid in c.article_ids:

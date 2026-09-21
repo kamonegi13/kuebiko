@@ -259,7 +259,11 @@ def _apply_judgments(
             nations=nations,
             tokens=topic_tokens(j.claim),
         )
-        # claim 照合は token のみ規則も使う (国/強 entity の無い claim の重複開設を防ぐ)
+        # claim 照合は token のみ規則も使う (国/強 entity の無い claim の重複開設を防ぐ)。
+        # ⚠ **この経路は shadow 専用** (SYNTHESIS_STATE=shadow のときだけ呼ばれる)。本番の
+        #   台帳更新は stateful 側で、そちらには埋込の確認 (`claim_dup`) を課している —
+        #   キーの重なりだけで繋ぐと繋いだうち正しいのは 14% だった (Opus ラベル 422 件)。
+        #   この経路を本番へ戻すなら、同じ確認をここにも入れること (同期関数なので要改修)。
         matched = match_claim(art_like, sit_keys)
         if matched is None:
             row = store.open_situation(
