@@ -44,7 +44,7 @@ def is_enabled() -> bool:
     return os.environ.get(_ENV_FLAG, "0") == "1"
 
 
-def _side(
+def build_side(
     member: MemberArticle,
     vec: np.ndarray,
     summary_vec: np.ndarray | None,
@@ -83,8 +83,8 @@ def select_pairs(
             gap = abs((cand.anchor_ts - member.anchor_ts).total_seconds())
             if gap > WINDOW_HOURS * 3600:
                 continue
-            left = _side(cand, vectors[cand.article_id], None)
-            right = _side(member, vectors[member.article_id], None)
+            left = build_side(cand, vectors[cand.article_id], None)
+            right = build_side(member, vectors[member.article_id], None)
             if not concrete_shared_names(left, right):
                 continue
             out.append((cand, member))
@@ -156,13 +156,13 @@ async def judge_pairs(
     out: list[PairVerdict] = []
     kmap = kinds or {}
     for cand, member in pairs:
-        left = _side(
+        left = build_side(
             cand,
             vectors[cand.article_id],
             svecs.get(cand.article_id),
             kind=kmap.get(cand.article_id, "other"),
         )
-        right = _side(
+        right = build_side(
             member,
             vectors[member.article_id],
             svecs.get(member.article_id),

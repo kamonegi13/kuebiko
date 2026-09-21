@@ -238,6 +238,7 @@ def _register_bespoke_jobs(
     from src.ui.services.cvss_refresh import run_cvss_refresh
     from src.ui.services.embedding_backfill_job import run_embedding_backfill
     from src.ui.services.eventnews_hourly_job import run_eventnews_hourly
+    from src.ui.services.eventnews_merge_job import run_eventnews_merge_hourly
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
     from src.ui.services.ledger_reassess_job import run_ledger_reassess_hourly
     from src.ui.services.maintenance import run_daily_maintenance
@@ -257,6 +258,7 @@ def _register_bespoke_jobs(
         "pir-judge-hourly": _pir_judge_hourly,
         "embedding-backfill": run_embedding_backfill,
         "eventnews-hourly": run_eventnews_hourly,
+        "eventnews-merge": run_eventnews_merge_hourly,
         "ledger-reassess-hourly": run_ledger_reassess_hourly,
         "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,

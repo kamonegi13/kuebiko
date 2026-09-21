@@ -353,14 +353,15 @@ class TestHourlyChains:
     def test_chain_members_are_disabled_standalone(self) -> None:
         by_id = {j.id: j for j in jr.default_jobs()}
         members = [s for cid in ("hourly-collect", "hourly-upkeep") for s in by_id[cid].steps]
-        assert len(members) == 11 and len(set(members)) == 11
+        assert len(members) == 12 and len(set(members)) == 12
         for sid in members:
             assert by_id[sid].enabled is False, f"{sid} は段として実行されるので単独は OFF"
 
     def test_collect_chain_ends_with_narrative_step(self) -> None:
-        # モデル順 (fast → narrative) で切替を 1 回に抑える: 事象ニュースが最後
+        # モデル順 (fast → narrative) で切替を 1 回に抑える: 事象ニュースとその統合が最後
+        # (統合の段は本文の再生成まで行うので narrative ティア、2026-09-21)
         by_id = {j.id: j for j in jr.default_jobs()}
-        assert by_id["hourly-collect"].steps[-1] == "eventnews-hourly"
+        assert by_id["hourly-collect"].steps[-2:] == ("eventnews-hourly", "eventnews-merge")
         assert by_id["hourly-collect"].steps[0] == "direct-rss-fetch"
 
     def test_chains_do_not_overlap_in_offset(self) -> None:

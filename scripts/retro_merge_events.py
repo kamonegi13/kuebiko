@@ -1,223 +1,84 @@
-"""既に割れている事象を、いまの群化規則で統合し直す (遡及)。
+"""既にできた事象どうしを統合し、統合先の本文を作り直す (手動の一括実行)。
 
-毎時の群化は **新しい記事を既存の事象へ入れる**だけで、**既にできた事象どうし**を
-突き合わせない。そのため取り込み順や当時の閾値の都合で割れたものが、そのまま
-残り続ける (実測 2026-08-31: 読者に重複が見えている組が 19、ATF は 4 事象に分裂)。
+毎時の段 ``eventnews-merge`` (``src/ui/services/eventnews_merge_job.py``) と
+**同じ関数** を呼ぶ。判定は ML のみ (LLM は呼ばない)、全事象を対象にする
+(旧版は単独メンバーの事象しか見ず、大群どうしは永久に統合されなかった)。
 
-統合先は **最初に立った事象** — URL がそこに残る。吸収した側は ``merged_into`` を
-立てて全経路から外れる (一覧・詳細・公開面・写しはすべて既に対応済み)。
-
-⚠ 統合先は ``current_version`` を 0 に戻す = **本文が消える**。毎時ジョブは新着が
-入った事象しか生成しないので、統合しただけでは二度と本文が付かない。そのため
-``--apply`` は続けて再生成まで行う (2026-09-02: 統合だけ適用して 45 件を本文なしに
-した実例がある。統合前より悪い状態を作って「実施した」と報告しかけた)。
+⚠ 統合先は ``current_version`` を 0 に戻す = **本文が消える**。``--apply`` は続けて
+再生成まで行う (2026-09-02: 統合だけ適用して 45 件を本文なしにした実例)。
+``--regen-cap`` で 1 回の再生成数を抑えると、残りは毎時の段が新しい事象から順に埋める。
 
 使い方:
-    python scripts/retro_merge_events.py --since 2026-08-17 [--apply] [--no-generate]
-既定は dry-run。``--apply`` を付けたときだけ書き込み、そのまま再生成する。
+    python scripts/retro_merge_events.py            # dry-run (計画を表示)
+    python scripts/retro_merge_events.py --apply [--regen-cap 40] [--sleep 3]
 """
 
 import argparse
 import asyncio
 import sys
-from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+import time
 
 sys.path.insert(0, "/app")
 
-import numpy as np
-
-from src.config_loader import load_app_config
-from src.eventnews import pair_shadow
-from src.eventnews.grouping import build_join_entities, edge_is_allowed
-from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, JOIN_ENTITY_TYPES, WINDOW_HOURS
-from src.eventnews.models import MemberArticle as _MemberArticle  # noqa: F401
-from src.eventnews.runner import _max_importance
-from src.eventnews.state import compute_source_breakdown
 from src.storage.run_history import RunHistoryRepository
-from src.tools.model_tiers import Step, build_llm_for
-from src.ui.services.eventnews_hourly_job import (
-    _embed_summaries,
-    _entity_counts,
-    _load_members,
-    _load_vectors,
-    regenerate_pending_bodies,
-)
+from src.ui.services.eventnews_merge_job import MergePlan, merge_and_regenerate
 
 
-def _find(parent: dict[str, str], x: str) -> str:
-    while parent[x] != x:
-        parent[x] = parent[parent[x]]
-        x = parent[x]
-    return x
-
-
-def _keep_ml_approved(
-    edges: list[tuple[str, str, float]],
-    candidate_pairs: list[tuple[str, str]],
-    members: dict[str, _MemberArticle],
-    vecs: dict[str, np.ndarray],
-) -> list[tuple[str, str, float]]:
-    """毎時の群化と**同じ判定**で辺をふるいにかける。落とした数を表示する。"""
-    config = load_app_config()
-    llm = build_llm_for(Step.TRIAGE, config)
-    pairs = [(members[a], members[b]) for a, b in candidate_pairs]
-    verdicts = asyncio.run(
-        pair_shadow.judge_pairs(
-            pairs,
-            vecs,
-            llm=llm,
-            embed_summary=lambda arts: _embed_summaries(config, arts),
-        )
-    )
-    ok = pair_shadow.decisions_of(verdicts)
-    kept = [
-        e for e, (a, b) in zip(edges, candidate_pairs, strict=True) if ok.get(frozenset((a, b)))
-    ]
+def _print_plan(plan: MergePlan) -> None:
+    if plan.skipped:
+        print(f"⚠ 統合しない: {plan.skipped}", flush=True)
+        return
+    assert plan.inputs is not None
     print(
-        f"ML 判定: 辺 {len(edges)} 本 → {len(kept)} 本 ({len(edges) - len(kept)} 本を却下)",
+        f"事象 {len(plan.inputs.records)} / 採点した対 {plan.pairs_scored} / "
+        f"ML 承認 {plan.pairs_approved} → 統合する群 {len(plan.groups)} / "
+        f"畳む事象 {sum(len(g.absorbed) for g in plan.groups)}",
         flush=True,
     )
-    return kept
+    for g in plan.groups:
+        # 事象の見出しは版 (本文) 側にあるので、先頭メンバー記事の見出しで代用する
+        titles = " / ".join(
+            plan.inputs.members[plan.inputs.records[i].state.member_ids[0]].title[:30]
+            for i in (g.target, *g.absorbed)
+        )
+        print(f"  {g.target} ← {len(g.absorbed)} 件 : {titles}", flush=True)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--since", default="2026-08-17")
-    ap.add_argument("--apply", action="store_true")
-    ap.add_argument(
-        "--no-generate",
-        action="store_true",
-        help="統合だけ行い本文を再生成しない (⚠ 統合した事象は本文なしのまま残る)",
-    )
+    ap.add_argument("--apply", action="store_true", help="書き込み + 本文の再生成")
+    ap.add_argument("--regen-cap", type=int, default=None, help="再生成の上限 (既定 全件)")
     ap.add_argument("--sleep", type=float, default=3.0, help="生成 1 件ごとの待機秒")
     args = ap.parse_args()
 
-    repo = RunHistoryRepository()
-    records = [
-        r
-        for r in repo.list_event_items(origin="live", limit=20000)
-        if not r.merged_into and str(r.state.first_reported_at) >= args.since
-    ]
-    single = [r for r in records if len(r.state.member_ids) == 1]
-    print(f"対象 (単独メンバーの事象): {len(single)} 件", flush=True)
+    last = time.monotonic()
 
-    art_of = {r.state.member_ids[0]: r for r in single}
-    counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
-    members = _load_members(repo, list(art_of), counts)
+    def _progress(i: int, total: int, item_id: str) -> None:
+        nonlocal last
+        now = time.monotonic()
+        print(f"  [{i}/{total}] {item_id} (前件 {now - last:.0f}s)", flush=True)
+        last = now
+        if args.sleep > 0:
+            time.sleep(args.sleep)
 
-    raw: list[tuple[str, str, str]] = []
-    for aid, m in members.items():
-        for et, val in m.entities:
-            if et in JOIN_ENTITY_TYPES:
-                raw.append((aid, et, val))
-    # 埋込は毎時ジョブと同じ loader から取る (取得経路を分けると挙動が一致しない)
-    vecs: dict[str, np.ndarray] = {}
-    for aid, v in _load_vectors(repo, list(members)).items():
-        n = float(np.linalg.norm(v))
-        if n:
-            vecs[aid] = v / n
-    # counts のキーは _entity_counts が既に join_entity_key で作っている
-    # (もう一度通すと victim_org が二重正規化されて lookup が外れる)
-    ents = build_join_entities(raw, counts)
-
-    by_ent: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for aid, es in ents.items():
-        for e in es:
-            by_ent[e].append(aid)
-
-    pairs: set[tuple[str, str]] = set()
-    for aids in by_ent.values():
-        for i in range(len(aids)):
-            for j in range(i + 1, len(aids)):
-                a, b = sorted((aids[i], aids[j]))
-                if a in vecs and b in vecs:
-                    pairs.add((a, b))
-
-    edges: list[tuple[str, str, float]] = []
-    candidate_pairs: list[tuple[str, str]] = []
-    for a, b in pairs:
-        ra, rb = art_of[a], art_of[b]
-        if ra.state.item_id == rb.state.item_id:
-            continue
-        gap = abs((ra.state.last_reported_at - rb.state.last_reported_at).total_seconds())
-        if gap > WINDOW_HOURS * 3600:
-            continue
-        # ⚠ 条件を自前で書かない。参加判定と**同じ関数**を通す
-        #    (2026-08-31 に自前の条件を持っていてガードが片方だけ効かなかった)。
-        shared = tuple(sorted(ents[a] & ents[b]))
-        cos = float(np.dot(vecs[a], vecs[b]))
-        if edge_is_allowed(ents[a], ents[b], shared, cos):
-            edges.append((ra.state.item_id, rb.state.item_id, cos))
-            candidate_pairs.append((a, b))
-
-    # ⭐ 本番の群化が ML を使っているなら、遡及も **同じ判定**を通す。
-    #    決定論だけで遡及すると、ML が抑えているまとめ記事・ニュースレター・
-    #    トレンド記事を潰してしまう (2026-09-01 の全期間 dry-run で実際に出た:
-    #    週刊まとめ同士 / ニュースレター同士 / 別キャンペーン 9 件を 1 事象へ)。
-    if pair_shadow.is_ml_ready():
-        edges = _keep_ml_approved(edges, candidate_pairs, members, vecs)
-    else:
-        print("⚠ ML 判定が使えない (EVENTNEWS_PAIR_ML / モデル) — 決定論のみで統合する", flush=True)
-
-    parent = {r.state.item_id: r.state.item_id for r in single}
-    for x, y, _ in edges:
-        rx, ry = _find(parent, x), _find(parent, y)
-        if rx != ry:
-            parent[rx] = ry
-    groups: dict[str, list[str]] = defaultdict(list)
-    for item_id in parent:
-        groups[_find(parent, item_id)].append(item_id)
-    merges = {k: v for k, v in groups.items() if len(v) > 1}
-    print(f"辺 {len(edges)} 本 → 統合する群 {len(merges)} 個", flush=True)
-
-    rec_of = {r.state.item_id: r for r in single}
-    applied = 0
-    for ids in merges.values():
-        # ⭐ 統合先は **最初に立った事象** — URL がそこに残る
-        ordered = sorted(ids, key=lambda i: rec_of[i].state.first_reported_at)
-        target, absorbed = ordered[0], ordered[1:]
-        all_articles = [a for i in ordered for a in rec_of[i].state.member_ids]
-        titles = " / ".join(members[rec_of[i].state.member_ids[0]].title[:30] for i in ordered)
-        print(f"  {target} ← {len(absorbed)} 件 : {titles}", flush=True)
-        if not args.apply:
-            continue
-        for aid in all_articles:
-            repo.add_event_member(
-                item_id=target,
-                article_id=aid,
-                joined_at=datetime.now(UTC),
-                contributed_new_facts=0,
-                join_signal="retro_merge",
-            )
-        mm = _load_members(repo, all_articles, counts)
-        breakdown = compute_source_breakdown([mm[a] for a in all_articles if a in mm])
-        importance = ""
-        for iid in ordered:
-            importance = _max_importance(importance, rec_of[iid].state.importance)
-        repo.update_event_item(
-            target,
-            {
-                # 版を作り直させる (メンバーが変わったので本文が古い)
-                "current_version": 0,
-                "importance": importance,
-                "best_source_tier": breakdown.best_tier,
-                "independent_sources": breakdown.independent,
-                "state_media_count": breakdown.state_media,
-                "unclassified_sources": breakdown.unclassified,
-                "last_reported_at": max(rec_of[iid].state.last_reported_at for iid in ordered),
-                "updated_at": datetime.now(UTC),
-            },
+    outcome = asyncio.run(
+        merge_and_regenerate(
+            RunHistoryRepository(),
+            apply=args.apply,
+            regen_limit=args.regen_cap,
+            on_regen_progress=_progress,
         )
-        for iid in absorbed:
-            repo.update_event_item(iid, {"merged_into": target, "updated_at": datetime.now(UTC)})
-        applied += 1
-
-    print(f"\n{'適用' if args.apply else 'dry-run'}: {applied}/{len(merges)} 群", flush=True)
-    if args.apply and applied and not args.no_generate:
-        regenerate_pending_bodies(repo, args.sleep)
+    )
+    _print_plan(outcome.plan)
     if not args.apply:
-        print("書き込むには --apply を付ける", flush=True)
+        print("\n書き込むには --apply を付ける", flush=True)
+        return
+    print(
+        f"\n適用: {outcome.applied_groups} 群 / 吸収 {outcome.absorbed_items} 事象 / "
+        f"再生成 {outcome.regenerated} 件 (残り {outcome.regen_pending}) / "
+        f"{outcome.elapsed_seconds:.0f}s",
+        flush=True,
+    )
 
 
 main()

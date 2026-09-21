@@ -23,6 +23,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
     {
         "src/storage/repo_eventnews.py",
         "src/ui/services/eventnews_hourly_job.py",
+        # 2026-09-21: 事象どうしの統合 (毎時の段)。判定は src/eventnews/merge.py、
+        # ここは DB の出入りと本文の再生成のみ。生成物を他層へ渡さない
+        "src/ui/services/eventnews_merge_job.py",
         # 2026-08-24: 読み手向けの出口 (分析者向け)。2026-08-25 に匿名からは外し、
         # 公開面は public_news.py が担うようになった (allowlist は default-deny)。
         "src/ui/api/eventnews.py",

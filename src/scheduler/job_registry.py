@@ -486,6 +486,29 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="eventnews-merge",
+            enabled=False,  # 毎時収集チェーンの段として実行 (単独発火は既定 OFF)
+            kind="bespoke",
+            title="事象ニュース 事象どうしの統合 (毎時)",
+            description=(
+                "既にできた事象どうしを記事 × 記事で突き合わせ、同じ出来事なら最初に立った"
+                "事象へ統合する (毎時の群化は「1 記事 × 1 事象」しか見ないため、長期化する"
+                "事案ほど割れていた)。判定は ML のみ (LLM なし)、辺 2 本以上で結ぶ (一括勧告"
+                "のハブ対策)。統合先の本文は消えるので、直後に上限つき (既定 8 件/時) で"
+                "再生成する。EVENTNEWS_MERGE=0 で停止、EVENTNEWS_MERGE_REGEN_CAP で上限。"
+            ),
+            disable_impact=(
+                "割れた事象が統合されず、続報が別事象として並び続ける。本文なしの事象"
+                "(統合・分割の後始末) も再生成されない。"
+            ),
+            protection="optional",
+            schedule_type="interval",
+            interval_minutes=60,
+            offset_minutes=25,
+            upkeep=True,
+            max_runtime_minutes=15,  # 読込 ≈ 2 分 (全事象 11k) + 再生成 8 件 × ≈ 50 秒
+        ),
+        JobDef(
             id="ledger-reassess-hourly",
             enabled=False,  # 毎時保守チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
@@ -680,16 +703,16 @@ def default_jobs() -> list[JobDef]:
             title="毎時収集チェーン",
             description=(
                 "毎時の収集と派生処理を 1 本で直列実行: RSS → sitemap 監視 → Grok → 埋込 → "
-                "PIR 判定 → 事象ニュース。fast ティアの段を先に、narrative ティアの段を "
-                "最後に置き、Ollama のモデル切替を 1 時間に 1 回へ抑える (旧: 11 ジョブが "
-                "オフセットで並び切替 34 回/日・重なりあり)。"
+                "PIR 判定 → 事象ニュース → 事象どうしの統合。fast ティアの段を先に、"
+                "narrative ティアの段を最後に置き、Ollama のモデル切替を 1 時間に 1 回へ"
+                "抑える (旧: 11 ジョブがオフセットで並び切替 34 回/日・重なりあり)。"
             ),
             disable_impact="毎時の収集・事象ニュースが全て止まる (段の単独ジョブは既定 OFF)。",
             protection="critical",
             schedule_type="interval",
             interval_minutes=60,
             offset_minutes=0,
-            max_runtime_minutes=50,  # 段の合計 (実測 rss 10 + 事象 19 + 他 5) + 余裕
+            max_runtime_minutes=58,  # 段の合計 (実測 rss 10 + 事象 19 + 統合 9 + 他 5) + 余裕
             steps=(
                 "direct-rss-fetch",
                 "web-scraper-watchers",
@@ -697,6 +720,7 @@ def default_jobs() -> list[JobDef]:
                 "embedding-backfill",
                 "pir-judge-hourly",
                 "eventnews-hourly",
+                "eventnews-merge",  # 群化の後、同じ narrative ティアで再生成まで (2026-09-21)
             ),
         ),
         JobDef(

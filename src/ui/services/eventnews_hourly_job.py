@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -29,6 +29,7 @@ from src.eventnews.models import (
     ItemState,
     MemberArticle,
 )
+from src.eventnews.runner import BackfillStats
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
 from src.storage.run_history import RunHistoryRepository
@@ -228,22 +229,39 @@ def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[Memb
     return out
 
 
-def regenerate_pending_bodies(repo: RunHistoryRepository, sleep_seconds: float = 3.0) -> None:
+async def regenerate_pending(
+    repo: RunHistoryRepository,
+    *,
+    limit: int | None,
+    on_progress: Callable[[int, int, str], None] | None = None,
+) -> tuple[BackfillStats, int]:
     """版を失った事象の本文を作り直す (遡及統合・遡及分割の後始末)。
 
     ⚠ 統合/分割と**セット**でなければ意味がない — current_version を 0 に戻す操作は
     これを呼ばない限り「本文が消えた」で終わる (2026-09-02 に実際に 45 件で発生)。
+    戻り値は (生成の統計, 対象の総数)。``limit`` は 1 回に生成する上限 (None で全件)。
     """
-    import asyncio
-    import time as _time
-
     from src.eventnews.runner import generate_pending
 
     pending = pending_items(repo)
-    print(f"\n再生成の対象: {len(pending)} 件", flush=True)
     if not pending:
-        return
+        return BackfillStats(attempted=0, generated=0, skipped=0, failed=0), 0
     config = load_app_config()
+    stats = await generate_pending(
+        repo,
+        pending,
+        lambda: build_llm_for(Step.EVENT_NEWS, config),
+        limit=limit,
+        on_progress=on_progress,
+    )
+    return stats, len(pending)
+
+
+def regenerate_pending_bodies(repo: RunHistoryRepository, sleep_seconds: float = 3.0) -> None:
+    """``regenerate_pending`` の CLI 向け包み (進捗を print、件ごとに待機)。"""
+    import asyncio
+    import time as _time
+
     last = _time.monotonic()
 
     def _progress(i: int, total: int, item_id: str) -> None:
@@ -254,14 +272,8 @@ def regenerate_pending_bodies(repo: RunHistoryRepository, sleep_seconds: float =
         if sleep_seconds > 0:
             _time.sleep(sleep_seconds)
 
-    stats = asyncio.run(
-        generate_pending(
-            repo,
-            pending,
-            lambda: build_llm_for(Step.EVENT_NEWS, config),
-            on_progress=_progress,
-        )
-    )
+    stats, total = asyncio.run(regenerate_pending(repo, limit=None, on_progress=_progress))
+    print(f"\n再生成の対象: {total} 件", flush=True)
     print(
         f"生成 {stats.generated} / 素材不足で skip {stats.skipped} / 失敗 {stats.failed}",
         flush=True,
