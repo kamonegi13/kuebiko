@@ -1,0 +1,149 @@
+"""既にできた事象どうしを突き合わせて統合する (2026-09-21)。
+
+毎時の群化は **新しい記事を既存の事象へ入れる**だけで、**既にできた事象どうし**を
+突き合わせない。実測の参加信号は **seed (新規作成) 4,617 に対し既存への参加 146 (3%)**。
+
+⭐ 比較の**単位**が違う:
+
+| | 比較する単位 |
+|---|---|
+| 毎時の群化 | 1 記事 × 1 事象 |
+| **これ** | **記事 × 記事** (事象の枠を外した総当たり) |
+
+事象 A の 3 本目と事象 B の 2 本目が似ている、という関係に毎時は到達できない。
+長期化する事案ほど割れる = **追跡価値が高いものほど不利**だった (実例: さくら
+インターネット事業者の大規模漏えいの続報が 25-26 日差で別事象、Citrix の「修正」と「悪用確認」が
+18 日差で分断、PaperCut の 48 記事が 19 事象)。
+
+⭐ **時間差の上限は設けない**。実測 (全期間・候補ペア 62,884):
+
+| 時間差の上限 | 畳む事象 |
+|---|---|
+| 7 日 (旧 retro_merge) | 599 |
+| 30 日 | 1,015 |
+| **無制限** | **1,038** |
+
+無制限でも 30 日と実質同じ = 時間が離れた記事はそもそもエッジ判定を通らない。
+**判定自体が十分に厳しく、時間の上限は安全弁として機能していない**ので、恣意的な
+定数を 1 つ減らす。計算は 3 秒 (ML のみ)。
+
+⚠ 旧 `scripts/retro_merge_events.py` は **`len(member_ids)==1` の単独事象しか見ない**
+ため、大群どうし (PaperCut の 11/8/7 件) は永久に統合されなかった。ここでは全事象を見る。
+
+⚠ 一括勧告 (ハブ) の抑止は既存の仕組みに任せる — `edge_is_allowed` と ML の
+`kind_advisory_vs_incident`、そして毎時側の定足数ガード。ここで自前の条件を書かない
+(2026-08-31 に遡及側が自前の条件を持っていてガードが片方だけ効かなかった)。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+import numpy as np
+
+from src.eventnews.grouping import edge_is_allowed
+from src.eventnews.models import MemberArticle
+
+
+@dataclass(frozen=True)
+class MergeGroup:
+    """統合する事象の組。``target`` が統合先 (最初に立った事象)。"""
+
+    target: str
+    absorbed: tuple[str, ...]
+
+
+def candidate_pairs_by_entity(
+    entities: Mapping[str, frozenset[tuple[str, str]]],
+    *,
+    vectors: Mapping[str, np.ndarray],
+    hub_cap: int = 400,
+) -> set[tuple[str, str]]:
+    """共有 entity で索引を張って候補対を作る (純粋関数)。
+
+    ⚠ ``hub_cap`` を超える汎用 entity は飛ばす。「ランサムウェア」のような語は
+    数千記事に付き、総当たりが爆発するうえ意味のある信号にならない。
+    """
+    by_ent: dict[tuple[str, str], list[str]] = {}
+    for aid, es in entities.items():
+        for e in es:
+            by_ent.setdefault(e, []).append(aid)
+    pairs: set[tuple[str, str]] = set()
+    for aids in by_ent.values():
+        if len(aids) > hub_cap:
+            continue
+        for i in range(len(aids)):
+            for j in range(i + 1, len(aids)):
+                a, b = sorted((aids[i], aids[j]))
+                if a in vectors and b in vectors:
+                    pairs.add((a, b))
+    return pairs
+
+
+def _root(parent: dict[str, str], x: str) -> str:
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+
+
+def plan_merges(
+    *,
+    item_of: Mapping[str, str],
+    first_seen: Mapping[str, object],
+    entities: Mapping[str, frozenset[tuple[str, str]]],
+    vectors: Mapping[str, np.ndarray],
+    approved: Sequence[tuple[str, str]] | None = None,
+    hub_cap: int = 400,
+) -> list[MergeGroup]:
+    """統合する群を決める (純粋関数)。
+
+    Args:
+        item_of: article_id → item_id
+        first_seen: item_id → 最初の報道時刻 (統合先の決定に使う)
+        entities: article_id → 参加判定用 entity
+        vectors: article_id → 正規化済み埋込
+        approved: ML が承認した記事対。**None なら決定論のみ** (ML 不在時の縮退)
+    """
+    pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
+    allow = set(approved) if approved is not None else None
+    parent: dict[str, str] = {}
+    for iid in set(item_of.values()):
+        parent[iid] = iid
+    for a, b in pairs:
+        ia, ib = item_of.get(a), item_of.get(b)
+        if ia is None or ib is None or ia == ib:
+            continue
+        if allow is not None and (a, b) not in allow and (b, a) not in allow:
+            continue
+        shared = tuple(sorted(entities[a] & entities[b]))
+        cos = float(np.dot(vectors[a], vectors[b]))
+        if not edge_is_allowed(entities[a], entities[b], shared, cos):
+            continue
+        ra, rb = _root(parent, ia), _root(parent, ib)
+        if ra != rb:
+            parent[ra] = rb
+    groups: dict[str, list[str]] = {}
+    for iid in parent:
+        groups.setdefault(_root(parent, iid), []).append(iid)
+    out: list[MergeGroup] = []
+    for ids in groups.values():
+        if len(ids) < 2:
+            continue
+        # ⭐ 統合先は **最初に立った事象** — URL がそこに残る
+        ordered = sorted(ids, key=lambda i: str(first_seen.get(i, "")))
+        out.append(MergeGroup(target=ordered[0], absorbed=tuple(ordered[1:])))
+    return out
+
+
+def edge_inputs(members: Mapping[str, MemberArticle]) -> list[tuple[str, str, str]]:
+    """``build_join_entities`` へ渡す (article_id, entity_type, value) の並び。"""
+    from src.eventnews.models import JOIN_ENTITY_TYPES
+
+    return [
+        (aid, et, val)
+        for aid, m in members.items()
+        for et, val in m.entities
+        if et in JOIN_ENTITY_TYPES
+    ]

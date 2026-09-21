@@ -53,8 +53,8 @@ from src.synthesis.grounded.incremental import (  # noqa: E402
     detect_new_claims,
     merge_union_claims,
 )
-from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
-from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
+from src.tools.llm_client import LLMClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref  # noqa: E402
 
 D = Path("data/mlx")
 GOLD = D / "detect_goldset.jsonl"
@@ -182,8 +182,10 @@ async def main_async(args: argparse.Namespace) -> int:
     cfg = load_app_config()
     # ⚠ detect の検証 (2026-09-19 の ML 前段・和集合・replay) は **すべて gemma4:26b**
     #    に紐づく。s17 と比べるときは --model で明示し、既定は本番の解決に任せる。
+    # ⚠ prefix (claudecode: / anthropic:) を解釈する factory を通す。OllamaClient を
+    #   直に作ると外部 ref が 404 になる (2026-09-21 に深掘り側と 2 度踏んだ)。
     llm: LLMClient = (
-        OllamaClient(base_url=cfg.ollama_base_url, model=args.model, timeout_seconds=900.0)
+        build_llm_for_ref(args.model, Step.SYNTHESIS_DETECT, cfg, timeout_seconds=900.0)
         if args.model
         else build_llm_for(Step.SYNTHESIS_DETECT, cfg)
     )

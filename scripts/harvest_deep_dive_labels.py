@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -119,6 +120,10 @@ async def harvest_window(
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    # ⚠ **収穫では ML 前段を通さない** (2026-09-21)。本番は top-90 に絞るが、教師と
+    #   腕の比較は**全候補を採点**しないと成立しない。前段を効かせたまま測ると、
+    #   前段デプロイ前に走らせた腕 (180 件) と後の腕 (90 件) で条件が変わる。
+    os.environ.setdefault("DEEPDIVE_ML_PREFILTER", "0")
     cfg = load_app_config()
     repo = RunHistoryRepository()
     # ⚠ prefix (claudecode: / anthropic:) を解釈する factory を通す。

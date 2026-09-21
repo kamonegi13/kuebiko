@@ -57,6 +57,7 @@ from src.storage.repo_llm_usage import LlmUsageMixin
 from src.storage.repo_ops_notices import OpsNoticesMixin
 from src.storage.repo_pir import PirJudgmentsMixin
 from src.storage.repo_runs import RunsMixin
+from src.storage.repo_summary_embeddings import SummaryEmbeddingMixin
 from src.storage.repo_synthesis import SynthesisMixin
 from src.storage.repo_translation import TranslationChunksMixin
 from src.storage.repo_tuning_labels import TuningLabelsMixin
@@ -93,6 +94,7 @@ class RunHistoryRepository(
     OpsNoticesMixin,
     TuningLabelsMixin,
     EventNewsMixin,
+    SummaryEmbeddingMixin,
     RunHistoryRepositoryBase,
 ):
     """SQLite/PostgreSQL ベースの run / article / live_log 履歴リポジトリ (mixin 合成)。"""

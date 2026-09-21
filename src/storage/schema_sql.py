@@ -190,6 +190,23 @@ CREATE TABLE IF NOT EXISTS article_embeddings (
     created_at TEXT    NOT NULL,
     FOREIGN KEY (url_hash) REFERENCES dedup_seen_urls(url_hash) ON DELETE CASCADE
 );
+-- ===== summary_embeddings (群化の 2 本目の埋込、2026-09-21) =====
+-- ⭐ **本文の埋込 (article_embeddings) とは別に持つ**。あちらは意味的重複排除も
+--    使っており、入れ替えると別の機能に影響する。群化には「書式の揃った要約」の
+--    埋込の方が効く (実測 +4pt)。
+-- ⚠ 以前はシャドー観測用にその場で作って捨てていたが、**事象どうしの統合を毎時
+--    回すには永続化が要る** — 全期間で総当たりすると 13,000 件を毎回作り直すことに
+--    なり、ML は一瞬なのに埋込生成で数十分かかっていた (2026-09-21 に実測)。
+-- キーは article_id (本文側は url_hash)。記事の本文が差し替わっても要約は
+-- article_id に紐づくため。
+CREATE TABLE IF NOT EXISTS summary_embeddings (
+    article_id TEXT        NOT NULL PRIMARY KEY,
+    model      TEXT        NOT NULL,
+    dim        INTEGER     NOT NULL,
+    vector     BLOB       NOT NULL,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_summary_embeddings_model ON summary_embeddings(model);
 
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_created ON article_embeddings(created_at);
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_model ON article_embeddings(model);

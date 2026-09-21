@@ -389,21 +389,34 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
 
 
 async def _embed_summaries(
-    config: AppConfig, articles: Sequence[MemberArticle]
+    config: AppConfig,
+    articles: Sequence[MemberArticle],
+    *,
+    repo: RunHistoryRepository | None = None,
 ) -> dict[str, np.ndarray]:
-    """見出し + 要約の埋込をその場で作る (シャドー観測用・永続化しない)。
+    """見出し + 要約の埋込。**保存済みを再利用し、足りない分だけ作る**。
 
     ⭐ 本文の埋込 (article_embeddings) は **触らない** — あれは意味的重複排除も
     使っているので、入れ替えると別の機能に影響する。群化の材料としては
     「書式の揃った要約」の方が効く (実測 +4pt) ので、2 本目として持つ。
+
+    ⚠ 以前は**その場で作って捨てて**いた (シャドー観測用)。事象どうしの統合を毎時
+    回すには永続化が要る — 全期間で総当たりすると 13,000 件を毎回作り直すことになり、
+    ML は一瞬なのに埋込生成で数十分かかっていた (2026-09-21 に実測)。
     """
     from src.tools.embedding_client import OllamaEmbeddingClient
     from src.tools.model_tiers import resolve_embedding_model
 
-    client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=resolve_embedding_model())
+    model = resolve_embedding_model()
+    store = repo or RunHistoryRepository()
+    out: dict[str, np.ndarray] = store.load_summary_embeddings([a.article_id for a in articles])
+    missing = [a for a in articles if a.article_id not in out]
+    if not missing:
+        return out
 
-    out: dict[str, np.ndarray] = {}
-    for art in articles:
+    client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=model)
+    fresh: dict[str, np.ndarray] = {}
+    for art in missing:
         text = f"{art.title}\n\n{art.summary}".strip()
         if not text:
             continue
@@ -412,7 +425,11 @@ async def _embed_summaries(
         except Exception as e:  # noqa: BLE001 — 1 件の失敗で観測を止めない
             _log.warning("summary_embed_failed", article_id=art.article_id, error=str(e)[:120])
             continue
-        out[art.article_id] = np.asarray(res.vector, dtype=np.float32)
+        fresh[art.article_id] = np.asarray(res.vector, dtype=np.float32)
+    if fresh:
+        store.save_summary_embeddings(fresh, model=model)
+        _log.info("summary_embeddings_saved", created=len(fresh), reused=len(out))
+    out.update(fresh)
     return out
 
 
