@@ -494,7 +494,7 @@ def default_jobs() -> list[JobDef]:
                 "既にできた事象どうしを記事 × 記事で突き合わせ、同じ出来事なら最初に立った"
                 "事象へ統合する (毎時の群化は「1 記事 × 1 事象」しか見ないため、長期化する"
                 "事案ほど割れていた)。判定は ML のみ (LLM なし)、辺 2 本以上で結ぶ (一括勧告"
-                "のハブ対策)。統合先の本文は消えるので、直後に上限つき (既定 8 件/時) で"
+                "のハブ対策)。統合先の本文は消えるので、直後に上限つき (既定 5 件/時) で"
                 "再生成する。EVENTNEWS_MERGE=0 で停止、EVENTNEWS_MERGE_REGEN_CAP で上限。"
             ),
             disable_impact=(
@@ -506,7 +506,7 @@ def default_jobs() -> list[JobDef]:
             interval_minutes=60,
             offset_minutes=25,
             upkeep=True,
-            max_runtime_minutes=15,  # 読込 ≈ 2 分 (全事象 11k) + 再生成 8 件 × ≈ 50 秒
+            max_runtime_minutes=20,  # 読込 ≈ 2 分 (全事象 11k) + 再生成 5 件 × 40-600 秒 (中央 120)
         ),
         JobDef(
             id="ledger-reassess-hourly",
@@ -712,7 +712,7 @@ def default_jobs() -> list[JobDef]:
             schedule_type="interval",
             interval_minutes=60,
             offset_minutes=0,
-            max_runtime_minutes=58,  # 段の合計 (実測 rss 10 + 事象 19 + 統合 9 + 他 5) + 余裕
+            max_runtime_minutes=58,  # 段の合計 (実測 rss 12 + 事象 19 + 統合 12 + 他 4) + 余裕
             steps=(
                 "direct-rss-fetch",
                 "web-scraper-watchers",
