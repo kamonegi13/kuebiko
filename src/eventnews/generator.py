@@ -16,7 +16,7 @@ import structlog
 from src.cti.source_basis import classify_source_tier
 from src.eventnews.list_dedup import dedup_draft
 from src.eventnews.models import PROMPT_MEMBER_CAP, EventNewsDraft, MemberArticle
-from src.eventnews.tail_gate import MAX_RESAMPLES, tail_all_empty, tail_score
+from src.eventnews.tail_gate import MAX_RESAMPLES, looks_truncated, tail_all_empty, tail_score
 from src.eventnews.tail_gate import gate_enabled as tail_gate_enabled
 from src.tools.llm_client import LLMClient
 
@@ -184,7 +184,11 @@ async def generate_draft(
         _log.warning("eventnews_list_dedup", removed=removed)
     # 尾部全空関門 (2026-09-13): 相違点・注意点・未解明点が 3 欄とも空なら同一プロンプトで
     # 再サンプルし、尾部が最も充足した候補を採る (教師 0/39・N1 0/39 に対し是正レシピは 3/39)。
-    if tail_gate_enabled() and tail_all_empty(draft):
+    # ⚠ 切り詰めで尾部が空になったものは再サンプルしない — 同じ所で切れるだけで、
+    #   1 事象の所要が 3 倍になる (2026-09-21 実測: 3 回とも上限到達、8 分/件)。
+    if tail_gate_enabled() and tail_all_empty(draft) and looks_truncated(draft):
+        _log.warning("eventnews_tail_empty_truncated", facts=len(draft.facts))
+    elif tail_gate_enabled() and tail_all_empty(draft):
         best = draft
         for attempt in range(MAX_RESAMPLES):
             _log.warning("eventnews_tail_resample", attempt=attempt + 1)

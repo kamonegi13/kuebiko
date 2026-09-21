@@ -30,3 +30,20 @@ def tail_score(draft: EventNewsDraft) -> int:
 
 def tail_all_empty(draft: EventNewsDraft) -> bool:
     return tail_score(draft) == 0
+
+
+#: 切り詰めと見なす facts の総字数。**実測から置く** (2026-09-21、直近 30 日 3,062 版):
+#: 中央 1,108 / p90 2,309 / p99 3,647 / **最大 5,321 字**で、6,000 字以上は 1 件も無い。
+#: 通常の生成は出力上限 6,144 tok に当たらないので、この線を超えるのは
+#: 統合でできた大きな事象が上限に張り付き、尾部 3 欄が書かれる前に切れた場合だけ。
+TRUNCATION_FACTS_CHARS = 6000
+
+
+def looks_truncated(draft: EventNewsDraft) -> bool:
+    """出力上限で切れた可能性が高いか (= 尾部が空なのは「届かなかった」ため)。
+
+    ⚠ 切り詰めを再サンプルしても**同じ所で切れる** (実測: 同一プロンプトで 3 回とも
+    上限到達、1 事象 8 分)。尾部関門は「述べることが無かった」場合のための仕組みで、
+    「そこまで届かなかった」場合には効かない。
+    """
+    return sum(len(f.text) for f in draft.facts) >= TRUNCATION_FACTS_CHARS

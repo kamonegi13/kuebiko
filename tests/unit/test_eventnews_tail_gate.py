@@ -101,3 +101,57 @@ def test_gate_disabled_by_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     llm = _FakeLLM([_draft()])
     _run(llm)
     assert llm.calls == 1
+
+
+class TestTruncatedDraftIsNotResampled:
+    """⚠ **切り詰められた出力を再サンプルしない** (2026-09-21)。
+
+    統合でできた大きな事象は出力上限 6,144 tok に張り付き、尾部 3 欄が書かれる前に
+    切れる。尾部が空なのは「述べることが無かった」のではなく「そこまで届かなかった」
+    ためで、同一プロンプトの再サンプルは同じ所で切れる (実測: 3 回とも上限到達、
+    1 事象 8 分)。実測の裏付け (直近 14 日・248 版): 本文 p90 6,169 字 / 最大 7,678 字で、
+    通常の生成は上限に当たらない (直近 30 日 3,062 版: facts 総字数 最大 5,321 字、
+    6,000 字以上は 0 件)。
+    """
+
+    def test_large_draft_with_empty_tail_is_treated_as_truncated(self) -> None:
+        from src.eventnews.tail_gate import looks_truncated
+
+        big = EventNewsDraft(
+            headline="h",
+            bluf="b",
+            facts=[FactItem(text=f"事実{i}" + "あ" * 300, source_index=1) for i in range(40)],
+        )
+
+        assert tail_all_empty(big) and looks_truncated(big)
+
+    def test_ordinary_draft_with_empty_tail_is_not_truncated(self) -> None:
+        from src.eventnews.tail_gate import looks_truncated
+
+        assert not looks_truncated(_draft())
+
+
+def test_truncated_draft_skips_resampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """配線: 切り詰めと見なした draft は再サンプルせずそのまま通す。"""
+    from src.eventnews import generator
+
+    big = EventNewsDraft(
+        headline="h",
+        bluf="b",
+        facts=[FactItem(text=f"事実{i}" + "あ" * 300, source_index=1) for i in range(40)],
+    )
+    calls = 0
+
+    class _Llm:
+        model = "fake"
+
+        async def generate_structured(self, **kw: Any) -> EventNewsDraft:
+            nonlocal calls
+            calls += 1
+            return big
+
+    monkeypatch.setattr(generator, "build_prompt", lambda *a, **k: "P")
+    out = asyncio.run(generate_draft([], "", cast(LLMClient, _Llm())))
+
+    assert calls == 1  # 再サンプルしない (従来は 1 + MAX_RESAMPLES = 3 回)
+    assert out.headline == "h"
