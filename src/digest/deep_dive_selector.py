@@ -11,13 +11,16 @@ LLM prompt は実出力を見て反復改善する前提 (5T-T design decision)�
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import jinja2
 from pydantic import BaseModel, Field
 
 from src.digest.db_filter import DigestCandidate
+from src.digest.deterministic_axes import timeliness_score
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient
 
@@ -37,11 +40,24 @@ RUBRIC_TEMPERATURE = 0.25
 # rubric score は絶対 0-5 anchor なので、チャンクを跨いでも composite の比較は妥当。
 RUBRIC_CHUNK_SIZE = 25
 
-# Composite weight (5T-T design: pir 0.4 / roi 0.3 / timeliness 0.2 / novelty 0.1)
+# Composite weight。2026-09-21 に **timeliness を廃止**して 0.20 を pir/roi へ再配分した。
+#
+# ⭐ 廃止の根拠は 4 通りを凍結窓 (教師 1,260 行 / 11 窓) で対読した結果:
+#   | 案 | 選抜の一致 | 中身 |
+#   | LLM に聞く (旧) | — | 74% が満点 5・σ0.60 で順位を動かしていない |
+#   | 候補の actor 和集合で代用 | 94% | ✗ actor 名の無い記事 (脆弱性の実悪用・国内侵害) が不利 |
+#   | 今週速報した actor で厳密化 | 79% | ✗ **速報済みを優先** = 速報で扱わなかった
+#     ものを拾うという目的に反する |
+#   | **廃止 (これ)** | **97%** | 国内案件が入る方向。軸を 1 つ減らして挙動がほぼ不変 |
+#
+# ⚠ 母集団は全件が同じ 7 日窓なので、窓内の 3 日前と 5 日前に意味のある差は無い。
+#   時事性はプールに入る時点で既に担保されている。
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "pir": 0.40,
-    "roi": 0.30,
-    "timeliness": 0.20,
+    "pir": 0.50,
+    "roi": 0.40,
+    # timeliness は廃止 (上記)。重み 0 を残すのは、過去データの composite を
+    # 同じ式で再計算できるようにするため。
+    "timeliness": 0.0,
     "novelty": 0.10,
 }
 
@@ -123,10 +139,17 @@ def _render_prompt(
 
 
 class _WireScores(BaseModel):
+    """LLM に聞く軸だけ。
+
+    ⭐ **timeliness は聞かない** (2026-09-21)。教師 1,260 行で 74% が満点 5・σ0.60 と、
+    重み 0.20 を持ちながら順位を動かしていなかった。日付との一致は 6.1%。公開からの
+    日数と actor の重なりで**計算すれば誤差ゼロ**になる (`deterministic_axes`)。
+    実測では計算値に差し替えても選抜は 94% 一致 = 現行は何もしていなかった。
+    """
+
     model_config = {"extra": "ignore"}
     pir: float = 0.0
     roi: float = 0.0
-    timeliness: float = 0.0
     novelty: float = 0.0
 
 
@@ -173,6 +196,8 @@ def _to_scored(
     parsed: list[dict[str, object]],
     candidates_by_id: dict[str, DigestCandidate],
     weights: dict[str, float],
+    *,
+    timeliness_by_id: dict[str, float] | None = None,
 ) -> list[ScoredArticle]:
     """LLM 出力を ScoredArticle 列に変換し composite 降順で返す。
 
@@ -201,7 +226,9 @@ def _to_scored(
             scores = {
                 "pir": _clip_score(float(raw.get("pir", 0))),
                 "roi": _clip_score(float(raw.get("roi", 0))),
-                "timeliness": _clip_score(float(raw.get("timeliness", 0))),
+                # ⭐ timeliness は LLM に聞かずコードで出す。計算できない記事
+                #   (取込時刻が壊れている等) だけ中央値 3.0 に落とす。
+                "timeliness": _clip_score((timeliness_by_id or {}).get(article_id, 3.0)),
                 "novelty": _clip_score(float(raw.get("novelty", 0))),
             }
         except (TypeError, ValueError):
@@ -231,12 +258,20 @@ async def score_deep_dive_candidates(
     recent_briefs: list[str] | None = None,
     past_selected_keys: list[str] | None = None,
     weights: dict[str, float] | None = None,
+    window_end: datetime | None = None,
+    actor_map: dict[str, set[str]] | None = None,
+    briefed_actors: set[str] | None = None,
 ) -> list[ScoredArticle]:
     """候補**全件**を LLM rubric で採点する (閾値も上限もかけない)。
 
     ⭐ 採点と選抜を分ける seam (2026-09-20)。本番は選抜まで行うが、**蒸留の教師収穫**では
     落選分のスコアも要る (`f1_selections` は選ばれた分しか残さないため、負例の目標値が
     無かった)。選抜側はここを呼ぶだけにして、収穫スクリプトと同じ経路を通す。
+
+    Args:
+        window_end: 時事性の基準時刻 (None なら現在)。過去窓の再現で使う
+        actor_map: article_id → actor の集合
+        briefed_actors: 今週 brief/alert に出た記事の actor (anchor 5 の条件)
 
     Returns:
         composite 降順の ScoredArticle (全候補)。
@@ -288,7 +323,6 @@ async def score_deep_dive_candidates(
                 "scores": {
                     "pir": e.scores.pir,
                     "roi": e.scores.roi,
-                    "timeliness": e.scores.timeliness,
                     "novelty": e.scores.novelty,
                 },
                 "rationale": e.rationale,
@@ -302,7 +336,17 @@ async def score_deep_dive_candidates(
         parsed_count=len(parsed),
     )
     candidates_by_id = {c.article_id: c for c in candidates}
-    scored = _to_scored(parsed, candidates_by_id, actual_weights)
+    scored = _to_scored(
+        parsed,
+        candidates_by_id,
+        actual_weights,
+        timeliness_by_id=_timeliness_for(
+            candidates,
+            window_end=window_end,
+            actors=actor_map,
+            briefed=briefed_actors,
+        ),
+    )
     # ⭐ **採点されなかった候補を黙らせない**。2026-09-21 に 60 件中 5 件しか採点されず、
     #   それが本番の空投稿の真因だったが、当時のログは parsed_count を出すだけで警告が
     #   無かった (no-silent-caps がここに掛かっていなかった)。
@@ -361,3 +405,35 @@ async def select_deep_dive_articles(
         max_select=max_select,
     )
     return selected
+
+
+def _timeliness_for(
+    candidates: list[DigestCandidate],
+    *,
+    window_end: datetime | None,
+    actors: dict[str, set[str]] | None,
+    briefed: set[str] | None,
+) -> dict[str, float]:
+    """候補ごとの時事性を計算する。
+
+    ⚠ 材料が無ければ日数だけで決まる (anchor 4/5 には届かない)。**推測で埋めない** —
+    候補全体の actor 和集合のような広い信号を代用にすると、actor 名の付かない記事
+    (脆弱性の実悪用・国内侵害) が構造的に不利になる (2026-09-21 に実測で確認)。
+    """
+    end = window_end or datetime.now(UTC)
+    amap = actors or {}
+    seen: Counter[str] = Counter(c.dedup_key for c in candidates if c.dedup_key)
+    repeated = {k for k, n in seen.items() if n >= 2}
+    out: dict[str, float] = {}
+    for c in candidates:
+        score = timeliness_score(
+            created_at=c.created_at,
+            window_end=end,
+            article_actors=amap.get(c.article_id, set()),
+            briefed_actors=briefed or set(),
+            dedup_key=c.dedup_key,
+            cohort_dedup_keys=repeated,
+        )
+        if score is not None:
+            out[c.article_id] = score
+    return out

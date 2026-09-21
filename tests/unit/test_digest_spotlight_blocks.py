@@ -25,7 +25,8 @@ _EXPECTED_SLOT_COUNT: dict[str, int] = {
     # 記事フォーマット) をコードへ移した分だけ slot が減った (7 → 6)。
     "weekly_recap": 6,
     "pir_daily_focus": 6,
-    "deep_dive_rubric": 7,
+    # 2026-09-21: timeliness は LLM に聞かずコードで計算する (7 → 6)
+    "deep_dive_rubric": 6,
     "pir_spotlight": 7,
 }
 

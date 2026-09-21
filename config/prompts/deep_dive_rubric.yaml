@@ -13,7 +13,7 @@ sections:
   title: 評価ルール概要
   body: '# 評価ルール
 
-    各候補に対し 4 軸を 0-5 で score を付ける。anchor に厳密に従うこと。'
+    各候補に対し 3 軸を 0-5 で score を付ける。anchor に厳密に従うこと。'
   note: ''
 - field_id: axis_pir
   kind: rubric
@@ -49,23 +49,6 @@ sections:
 
     - 0: 読書価値なし'
   note: ''
-- field_id: axis_timeliness
-  kind: rubric
-  title: timeliness 軸アンカー
-  body: '## timeliness (時事性: 今週との関連)
-
-    - 5: 今週の brief/alert で速報した actor/campaign の深い背景
-
-    - 4: 同 sector の同時期事案と関連
-
-    - 3: 今週公開の独立した重要事案
-
-    - 2: 1-2 週前の事案の続報
-
-    - 1: 1 ヶ月超の古い事案
-
-    - 0: 時事性なし'
-  note: ''
 - field_id: axis_novelty
   kind: rubric
   title: novelty 軸アンカー
@@ -81,7 +64,10 @@ sections:
 
     - 1: 既出案件の繰り返し
 
-    - 0: 過去 4 週内で同 dedup cluster を選定済'
+
+    ⚠ 「過去 4 週で選定済」は候補に上がる前に除外されているので、その判定は不要 (実測で 0 件)。
+
+    '
   note: ''
 - field_id: output_rules_and_schema
   kind: rubric
@@ -89,6 +75,8 @@ sections:
   body: '# 出力ルール
 
     - 全 {{ total }} 件に対して必ず score を付ける。skip 不可。
+
+    - 採点する軸は **pir / roi / novelty の 3 つ**。時事性はこちらで公開日から計算するので採点しない。
 
     - **各候補の `no` (番号) で参照する。**記事の URL や id を書かない。
 
