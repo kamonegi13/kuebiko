@@ -1336,14 +1336,31 @@ def _extract_confidence(message: BriefingMessage) -> str:
     return ""
 
 
+def _hard_wrap(line: str, width: int) -> list[str]:
+    """``width`` を超える 1 行を強制的に折る (純粋関数)。
+
+    ⚠ **改行境界だけでは上限を守れない**。1 行が上限より長いと、その行が丸ごと
+    1 チャンクになる。2026-09-21 に状況総括の配信が HTTP 400 で落ちた真因がこれで、
+    max_chars=3,500 を指定して **20,403 字のチャンク**が返っていた
+    (Discord の embed description 上限は 4,096)。
+    """
+    if len(line) <= width:
+        return [line]
+    return [line[i : i + width] for i in range(0, len(line), width)]
+
+
 def _chunk_text(text: str, max_chars: int) -> list[str]:
-    """改行境界を尊重して text を max_chars 以下のチャンクに分ける。"""
+    """改行境界を尊重して text を max_chars 以下のチャンクに分ける。
+
+    長すぎる 1 行は ``_hard_wrap`` で折ってから詰める (上限は必ず守る)。
+    """
     if len(text) <= max_chars:
         return [text]
     chunks: list[str] = []
     current: list[str] = []
     current_len = 0
-    for line in text.split("\n"):
+    lines = [piece for raw in text.split("\n") for piece in _hard_wrap(raw, max_chars - 1)]
+    for line in lines:
         line_len = len(line) + 1
         if current_len + line_len > max_chars and current:
             chunks.append("\n".join(current))

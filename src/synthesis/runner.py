@@ -81,10 +81,37 @@ async def run_status_synthesis(
             try:
                 repo.upsert_status_synthesis(res.record)
                 generated[period_type] = True
-                _log.info("synthesis_persisted", period_type=period_type)
+                # ⚠ **空の節を黙って保存しない** (2026-09-21)。narrative が途中切れして
+                #   1 節に全部が流れ込み、残り 4 節が空のまま保存されたのに
+                #   synthesis_persisted が正常ログを出していた。外形は成功で中身は欠落。
+                empty = _empty_sections(res.record)
+                if empty:
+                    _log.warning(
+                        "synthesis_sections_empty",
+                        period_type=period_type,
+                        empty=empty,
+                        headline_chars=len(res.record.headline or ""),
+                    )
+                else:
+                    _log.info("synthesis_persisted", period_type=period_type)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{period_type} persist: {type(e).__name__}: {e}")
         elif res.error:
             errors.append(f"{period_type} generate: {res.error}")
 
     return SynthesisRunResult(generated=generated, errors=errors)
+
+
+#: 状況総括の本文を構成する節 (欠落検査の対象)。
+_SYNTHESIS_SECTION_COLUMNS: tuple[str, ...] = (
+    "weight_section",
+    "chain_section",
+    "cog_section",
+    "spillover_section",
+    "pir_section",
+)
+
+
+def _empty_sections(record: object) -> list[str]:
+    """本文が空の節の名前 (純粋関数)。1 つでもあれば生成が欠けている。"""
+    return [c for c in _SYNTHESIS_SECTION_COLUMNS if not str(getattr(record, c, "") or "").strip()]

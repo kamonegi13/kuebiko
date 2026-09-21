@@ -1313,3 +1313,43 @@ class TestRetry:
         large_waits = [s for s in sleep_calls if s > 0.5]
         for w in large_waits:
             assert w <= 30.0, f"retry wait {w}s exceeds safety cap"
+
+
+class TestChunkTextRespectsTheLimit:
+    """改行境界だけでは上限を守れない (2026-09-21 に状況総括の配信が HTTP 400 で落ちた)。
+
+    真因は「1 行が上限より長いと、その行が丸ごと 1 チャンクになる」こと。実データで
+    max_chars=3,500 を指定して **20,403 字のチャンク**が返っていた
+    (Discord の embed description 上限は 4,096)。
+    """
+
+    def test_a_single_long_line_is_hard_wrapped(self) -> None:
+        from src.tools.discord_publisher import _chunk_text
+
+        chunks = _chunk_text("あ" * 10_000, max_chars=3_500)
+
+        assert len(chunks) >= 3
+        assert max(len(c) for c in chunks) <= 3_500
+
+    def test_mixed_lines_never_exceed_the_limit(self) -> None:
+        from src.tools.discord_publisher import _chunk_text
+
+        text = "\n".join(["短い行", "い" * 9_000, "短い行", "う" * 120])
+
+        chunks = _chunk_text(text, max_chars=1_000)
+
+        assert max(len(c) for c in chunks) <= 1_000
+
+    def test_short_text_is_returned_whole(self) -> None:
+        from src.tools.discord_publisher import _chunk_text
+
+        assert _chunk_text("みじかい", max_chars=100) == ["みじかい"]
+
+    def test_no_content_is_lost(self) -> None:
+        from src.tools.discord_publisher import _chunk_text
+
+        text = "\n".join(["行 " + str(i) + "x" * 300 for i in range(20)])
+
+        chunks = _chunk_text(text, max_chars=500)
+
+        assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
