@@ -44,8 +44,8 @@ from src.digest.deep_dive_selector import (  # noqa: E402
     score_deep_dive_candidates,
 )
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
-from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
-from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
+from src.tools.llm_client import LLMClient  # noqa: E402
+from src.tools.model_tiers import Step, build_llm_for, build_llm_for_ref  # noqa: E402
 
 _NOVELTY_LOOKBACK_HOURS = 672
 
@@ -121,8 +121,10 @@ async def harvest_window(
 async def main_async(args: argparse.Namespace) -> int:
     cfg = load_app_config()
     repo = RunHistoryRepository()
+    # ⚠ prefix (claudecode: / anthropic:) を解釈する factory を通す。
+    #   OllamaClient を直に作ると外部 ref が 404 になる (2026-09-21 に踏んだ)。
     llm: LLMClient = (
-        OllamaClient(base_url=cfg.ollama_base_url, model=args.model, timeout_seconds=1800.0)
+        build_llm_for_ref(args.model, Step.DIGEST_DEEP_DIVE_SELECT, cfg, timeout_seconds=1800.0)
         if args.model
         else build_llm_for(Step.DIGEST_DEEP_DIVE_SELECT, cfg)
     )
