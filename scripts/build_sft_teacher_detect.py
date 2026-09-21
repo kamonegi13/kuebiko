@@ -16,8 +16,8 @@ Sonnet が事象単位の回収 26 で最多・誤り率 22% (26b と同水準)�
 grep で確認)。統合の本番適用と並行して収穫できる。
 
 ⚠ **凍結評価に使った replay の 5 日は収穫しない** (`EVAL_HOLDOUT_DAYS`)。生徒の合否は
-そこで測る。⚠ `active_titles` (台帳の現在の追跡対象) は収穫時点のもので、過去日の
-as-of ではない (replay と同じ制約)。
+そこで測る。⭐ 追跡中の情勢は **その日時点** を再構成して渡す (`select_active_as_of`) —
+収穫時点の台帳を渡すと、まだ存在しない情勢を「既に追跡中」と告げることになる。
 
 ⚠ **外部が落ちたら黙ってローカルへ倒さない** (`LLM_LOCAL_FALLBACK=0` を既定にする。
 倒れると教師対にローカルの出力が混ざる)。連続 3 失敗で止まり、再実行は処理済みの
@@ -34,6 +34,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
@@ -44,7 +45,6 @@ _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
 from scripts.replay_detect_prefilter import _kinds, narrow, pool_for_day  # noqa: E402
-from src.assessment.situation_store import SituationStore  # noqa: E402
 from src.config_loader import load_app_config  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.synthesis.grounded.detect_ml import (  # noqa: E402
@@ -87,6 +87,51 @@ class RecordingClient:
         return out
 
 
+def select_active_as_of(rows: Sequence[Mapping[str, Any]], *, day: str) -> list[str]:
+    """``day`` の終わりの時点で追跡中だった情勢の題名 (純粋関数)。
+
+    ⚠ 収穫時点の台帳を渡してはいけない。実測 (2026-09-21): 現在 active な 147 件の開設は
+    7 月 82 / 8 月 31 / 9 月 34 で **6 月は 0 件**。収穫時点の一覧を 6 月の日に渡すと、
+    まだ存在しない情勢を「既に追跡中」と告げて「これらと同じ事象は選ぶな」と指示することに
+    なる。このブロックは detect プロンプトの **63%** (18,000 / 28,288 字) を占める。
+
+    ⚠ **as-of は長さの解決ではない** (実測、プロンプトのトークン数):
+
+    | 日 | 追跡中 as-of | 現在 | as-of | 現在 |
+    |---|---|---|---|---|
+    | 06-15 | 0 | 147 | **5,107** | 14,855 |
+    | 07-15 | 93 | 147 | **12,925** | 16,738 |
+    | 08-15 | 167 | 147 | **15,124** | 13,922 |
+    | 09-15 | 217 | 147 | **16,804** | 13,587 |
+
+    8-9 月は当時の方が追跡中が多く (その後 close された)、as-of の方が**長くなる**。
+    情勢一覧の上限は別途、本番側で要る (今の本番も 13.6k tok で壁に接している)。
+
+    ⭐ **現在の status では絞らない** — 今 dormant でも当時は追跡中だった。開設済みかつ
+    その日までに閉じていないものが、その日の「追跡中」。
+    """
+    end = f"{day}T23:59:59+00:00"
+    out: list[str] = []
+    for r in rows:
+        opened = str(r.get("opened_at") or "")
+        closed = str(r.get("closed_at") or "")
+        if not opened or opened > end:
+            continue
+        if closed and closed <= end:
+            continue
+        title = str(r.get("title") or "").strip()
+        if title:
+            out.append(title)
+    return out
+
+
+def load_active_titles_as_of(repo: RunHistoryRepository, day: str) -> list[str]:
+    """その日時点で追跡中だった情勢の題名を DB から引く (収穫専用の as-of 読み)。"""
+    with repo._connect() as conn:  # noqa: SLF001 — 収穫専用の as-of 引き (他 script と同型)
+        rows = conn.execute("SELECT title, opened_at, closed_at FROM situations").fetchall()
+    return select_active_as_of([dict(r) for r in rows], day=day)
+
+
 def plan_days(
     *,
     since: str,
@@ -126,9 +171,10 @@ async def harvest_day(
     rec: RecordingClient,
     model: Any,
     kinds: dict[str, str],
-    active_titles: list[str],
     pir_context: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
+    # ⚠ 追跡中の情勢は **その日時点** のものを渡す (収穫時点の台帳ではない)
+    active_titles = load_active_titles_as_of(repo, day)
     pool = pool_for_day(repo, day)
     if len(pool) < _MIN_POOL:
         return []
@@ -217,8 +263,6 @@ async def main_async(args: argparse.Namespace) -> int:
     if model is None:
         print("⚠ detect ML モデルが無い — 候補は全プール (本番と入力が違う)", flush=True)
     kinds = _kinds()
-    store = SituationStore(db_path=Path("data/run_history.db"))
-    active_titles = [r.title for r in store.load_situations(("active",))]
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config
 
@@ -236,7 +280,6 @@ async def main_async(args: argparse.Namespace) -> int:
                 rec=rec,
                 model=model,
                 kinds=kinds,
-                active_titles=active_titles,
                 pir_context=pir_context,
             )
         except (LLMError, OSError) as exc:

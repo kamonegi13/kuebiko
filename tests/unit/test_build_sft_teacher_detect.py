@@ -14,6 +14,7 @@ from scripts.build_sft_teacher_detect import (
     EVAL_HOLDOUT_DAYS,
     RecordingClient,
     plan_days,
+    select_active_as_of,
     teacher_row,
 )
 
@@ -79,3 +80,48 @@ class TestRecordingClient:
         assert row["key"] == "2026-08-17:cur"
         assert row["prompt"] == "P" and row["n_candidates"] == 5
         assert row["n_open"] == 1 and row["n_rejected"] == 1
+
+
+class TestActiveTitlesAsOf:
+    """⚠ 追跡中の情勢は **その日時点** のものを渡す (2026-09-21)。
+
+    収穫時点の台帳を渡すと、6 月の日に「7 月以降に立った 147 件が既に追跡中」と告げて
+    「これらと同じ事象は選ぶな」と指示することになる (実測: 現在 active な 147 件の
+    開設は 7 月 82 / 8 月 31 / 9 月 34 で、6 月は 0 件)。プロンプトの 63% を占める
+    ブロックでもあり、as-of にすると 6-7 月の対は壁 (14.1k tok) の内側へ入る。
+    """
+
+    def test_situations_opened_after_the_day_are_excluded(self) -> None:
+        rows = [
+            {"title": "古い情勢", "opened_at": "2026-05-01T00:00:00+00:00", "closed_at": None},
+            {"title": "未来の情勢", "opened_at": "2026-07-10T00:00:00+00:00", "closed_at": None},
+        ]
+
+        assert select_active_as_of(rows, day="2026-06-15") == ["古い情勢"]
+
+    def test_situations_closed_before_the_day_are_excluded(self) -> None:
+        rows = [
+            {
+                "title": "閉じた情勢",
+                "opened_at": "2026-05-01T00:00:00+00:00",
+                "closed_at": "2026-06-01T00:00:00+00:00",
+            },
+            {
+                "title": "閉じたのは後",
+                "opened_at": "2026-05-01T00:00:00+00:00",
+                "closed_at": "2026-07-01T00:00:00+00:00",
+            },
+        ]
+
+        assert select_active_as_of(rows, day="2026-06-15") == ["閉じたのは後"]
+
+    def test_dormant_rows_count_because_they_were_active_then(self) -> None:
+        """⭐ 現在の status では絞らない — 今 dormant でも当時は追跡中だった。"""
+        rows = [{"title": "休眠中", "opened_at": "2026-06-01T00:00:00+00:00", "closed_at": None}]
+
+        assert select_active_as_of(rows, day="2026-06-15") == ["休眠中"]
+
+    def test_the_day_itself_is_included_up_to_its_end(self) -> None:
+        rows = [{"title": "当日開設", "opened_at": "2026-06-15T18:00:00+00:00", "closed_at": None}]
+
+        assert select_active_as_of(rows, day="2026-06-15") == ["当日開設"]
