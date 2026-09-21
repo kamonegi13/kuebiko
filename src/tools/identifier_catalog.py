@@ -215,20 +215,43 @@ def build_catalog(member_texts: Sequence[str]) -> IdentifierCatalog:
     return IdentifierCatalog(entries=tuple(entries))
 
 
-def render_catalog(catalog: IdentifierCatalog) -> str:
+#: 提示上限に当たったとき残す優先順 (重要 → 固有 → 一括列挙されがちな IOC)。
+#: 未掲載の型はこの後ろ。⚠ 順位は「本文に入っているべき度合い」で、
+#: ``identifier_gate.IMPORTANT_KINDS`` (cve / version / cvss) が必ず先頭に来る。
+_RENDER_PRIORITY: tuple[str, ...] = ("cve", "version", "cvss", "actor_id", "domain", "ip", "hash")
+
+
+def _render_rank(kind: str) -> int:
+    return _RENDER_PRIORITY.index(kind) if kind in _RENDER_PRIORITY else len(_RENDER_PRIORITY)
+
+
+def render_catalog(catalog: IdentifierCatalog, *, max_entries: int | None = None) -> str:
     """プロンプトへ載せる一覧。実値はここにだけ書かれ、本文には番号で参照させる。
 
     ``CATALOG_EXCLUDED_KINDS`` の型は**提示しない** (照合には使う)。
+
+    ``max_entries`` を超えるときは優先順 (``_RENDER_PRIORITY``) で残し、**番号は振り直さない**
+    — 照合は全件カタログで行うので、提示しなかった番号を LLM が書いても実値に解決できる
+    (振り直すと同じ番号が別の値を指す)。IOC を大量に列挙する記事 (2026-09-21 実測:
+    カタログ 84k 字 → プロンプト 60k tok、1 件 10 分超 + 出力暴走) への上限。
     """
     shown = [e for e in catalog.entries if e.token]
     if not shown:
         return "(この事象に識別子はありません。本文にも識別子を書かないこと)"
+    omitted = 0
+    if max_entries is not None and len(shown) > max_entries:
+        ranked = sorted(shown, key=lambda e: (_render_rank(e.identifier.kind), int(e.token[1:])))
+        kept = {e.token for e in ranked[:max_entries]}
+        omitted = len(shown) - max_entries
+        shown = [e for e in shown if e.token in kept]  # 元の並び (番号順) を保つ
     lines = [
         f"{e.token} = {e.identifier.raw}  ({e.identifier.kind}, 記事 "
         + "".join(f"[{m}]" for m in sorted(e.members))
         + ")"
         for e in shown
     ]
+    if omitted:
+        lines.append(f"(他 {omitted} 件の識別子は省略。本文に識別子を直書きしないこと)")
     return "\n".join(lines)
 
 

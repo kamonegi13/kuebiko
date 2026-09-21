@@ -629,8 +629,13 @@ async def generate_pending(
     *,
     limit: int | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
+    stop_when: Callable[[], bool] | None = None,
 ) -> BackfillStats:
     """まだ版を持たないアイテムに対し、**最終状態で 1 回だけ**生成する。
+
+    ``stop_when`` は **次の件を始める前** に見る打ち切り条件 (時間予算など)。件数の上限
+    (``limit``) だけでは足りない — 1 件が 10 分超になる事象があり、毎時の段が timeout した
+    (2026-09-21)。打ち切った分は ``attempted`` に数えない (翌回に回る)。
 
     過去分の遡及生成 (バックフィル) 用。逐次適用をそのまま再生すると状態遷移ごとに
     生成が走り、読み手には見えない中間版に LLM 時間を費やすことになる。過去の
@@ -640,7 +645,11 @@ async def generate_pending(
     llm = llm_factory()
     targets = list(pending)[: limit if limit is not None else len(pending)]
     generated = skipped = failed = 0
+    attempted = 0
     for i, (snapshot, members) in enumerate(targets, start=1):
+        if stop_when is not None and stop_when():
+            break
+        attempted += 1
         item = _LiveItem(snapshot=snapshot, members=list(members))
         if on_progress:
             on_progress(i, len(targets), snapshot.item_id)
@@ -663,6 +672,4 @@ async def generate_pending(
             snapshot.item_id,
             {"current_version": snapshot.current_version + 1, "updated_at": now},
         )
-    return BackfillStats(
-        attempted=len(targets), generated=generated, skipped=skipped, failed=failed
-    )
+    return BackfillStats(attempted=attempted, generated=generated, skipped=skipped, failed=failed)

@@ -234,6 +234,7 @@ async def regenerate_pending(
     *,
     limit: int | None,
     on_progress: Callable[[int, int, str], None] | None = None,
+    stop_when: Callable[[], bool] | None = None,
 ) -> tuple[BackfillStats, int]:
     """版を失った事象の本文を作り直す (遡及統合・遡及分割の後始末)。
 
@@ -253,6 +254,7 @@ async def regenerate_pending(
         lambda: build_llm_for(Step.EVENT_NEWS, config),
         limit=limit,
         on_progress=on_progress,
+        stop_when=stop_when,
     )
     return stats, len(pending)
 

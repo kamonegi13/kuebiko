@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -170,3 +170,37 @@ class TestRunSkipsWhenMlNotReady:
         assert result.skipped == "ml_not_ready"
         assert result.groups == ()
         assert loaded == []
+
+
+class TestRegenBudget:
+    def test_budget_default_and_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("EVENTNEWS_MERGE_REGEN_BUDGET_SECONDS", raising=False)
+        assert job.regen_budget_seconds() == job.DEFAULT_REGEN_BUDGET_SECONDS
+        monkeypatch.setenv("EVENTNEWS_MERGE_REGEN_BUDGET_SECONDS", "90")
+        assert job.regen_budget_seconds() == 90
+
+    def test_generate_pending_stops_before_next_item_when_budget_is_spent(self) -> None:
+        """⭐ 上限は件数でなく **時間** でも掛かる。2026-09-21 に上限 5 件でも段が 20 分の
+        timeout に当たった (1 件 10 分超)。次の件を始める前に予算を見る。"""
+        import asyncio
+
+        from src.eventnews.runner import generate_pending
+
+        state = _state("i1", ("a1", "a2"), day=1, importance="low")
+        calls: list[str] = []
+
+        class _Llm:
+            model = "fake"
+
+        stats = asyncio.run(
+            generate_pending(
+                cast(RunHistoryRepository, _FakeRepo()),
+                [(state, [_member("a1"), _member("a2")])],
+                lambda: cast(Any, _Llm()),
+                stop_when=lambda: True,
+                on_progress=lambda i, n, iid: calls.append(iid),
+            )
+        )
+
+        assert stats.attempted == 0 and stats.generated == 0
+        assert calls == []

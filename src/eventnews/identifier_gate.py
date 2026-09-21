@@ -51,9 +51,17 @@ def build_member_catalog(members: Sequence[MemberArticle]) -> IdentifierCatalog:
     return build_catalog([member_text(m) for m in members])
 
 
-def render_allowed_identifiers(members: Sequence[MemberArticle]) -> str:
-    """プロンプトへ載せるカタログ文字列 (実値はここにだけ現れる)。"""
-    return render_catalog(build_member_catalog(members))
+#: プロンプトに提示する識別子の上限。IOC 一括列挙の記事で 1,000 件超になり、プロンプトが
+#: 60k tok に膨らんだ (2026-09-21)。1 件 ≈ 60 字なので 120 件で ≈ 7k 字。重要な型
+#: (cve / version / cvss) は優先して残る (``identifier_catalog._RENDER_PRIORITY``)。
+CATALOG_PROMPT_MAX_ENTRIES = 120
+
+
+def render_allowed_identifiers(
+    members: Sequence[MemberArticle], *, max_entries: int | None = CATALOG_PROMPT_MAX_ENTRIES
+) -> str:
+    """プロンプトへ載せるカタログ文字列 (実値はここにだけ現れる)。上限つき。"""
+    return render_catalog(build_member_catalog(members), max_entries=max_entries)
 
 
 #: 「本文に入っているべき」種類の識別子。ドメイン・ハッシュ・IP は一括列挙の

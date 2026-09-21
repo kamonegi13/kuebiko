@@ -19,7 +19,8 @@
 統合の直後に ``pending_items`` を上限つきで再生成する (2026-09-02 に統合だけ適用して
 45 件を本文なしにした実例。統合前より悪い状態を作って「実施した」と報告しかけた)。
 
-停止: ``EVENTNEWS_MERGE=0``。再生成の上限: ``EVENTNEWS_MERGE_REGEN_CAP`` (既定 5)。
+停止: ``EVENTNEWS_MERGE=0``。再生成の上限: ``EVENTNEWS_MERGE_REGEN_CAP`` (既定 5 件) と
+``EVENTNEWS_MERGE_REGEN_BUDGET_SECONDS`` (既定 420 秒、次の件を始める前に見る)。
 ⭐ 上限は「1 時間あたりの生成数」であって統合数ではない — 統合は見つかった分を
 全部書く (書かないと次の時間も同じ対を採点し直すだけ)。残りは翌時間以降に
 新しい事象から順に埋まる。手動の一括は ``scripts/retro_merge_events.py``。
@@ -57,6 +58,11 @@ _log = get_logger(__name__)
 
 _FLAG = "EVENTNEWS_MERGE"
 _CAP_ENV = "EVENTNEWS_MERGE_REGEN_CAP"
+_BUDGET_ENV = "EVENTNEWS_MERGE_REGEN_BUDGET_SECONDS"
+#: 再生成の時間予算 (秒)。**次の件を始める前**に見る。件数の上限だけでは 1 件 10 分超の
+#: 事象 (識別子カタログ 84k 字、2026-09-21) で段の timeout (20 分) に当たった。
+#: 予算 7 分 + 走行中の 1 件 (最長 ≈ 13 分) ≤ 20 分。
+DEFAULT_REGEN_BUDGET_SECONDS = 420
 #: 1 時間あたりの本文再生成の上限。⚠ 統合後の群は大きく、1 件 40〜600 秒 (中央 ≈ 120 秒、
 #: 2026-09-21 初回適用の実測。出力上限 6,144 tok に当たって尾部を再サンプルする)。
 #: 8 件では段の上限 (15 分) に当たったので 5 件 (≈ 10 分 + 読込 2 分) に置く。
@@ -79,6 +85,7 @@ __all__ = [
     "merge_and_regenerate",
     "merge_enabled",
     "plan_for",
+    "regen_budget_seconds",
     "regen_cap",
     "run_eventnews_merge_hourly",
 ]
@@ -91,6 +98,11 @@ def merge_enabled() -> bool:
 def regen_cap() -> int:
     raw = os.environ.get(_CAP_ENV, str(DEFAULT_REGEN_CAP)).strip()
     return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_REGEN_CAP
+
+
+def regen_budget_seconds() -> int:
+    raw = os.environ.get(_BUDGET_ENV, str(DEFAULT_REGEN_BUDGET_SECONDS)).strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_REGEN_BUDGET_SECONDS
 
 
 @dataclass(frozen=True)
@@ -290,6 +302,7 @@ async def merge_and_regenerate(
     *,
     apply: bool,
     regen_limit: int | None,
+    regen_budget_seconds: float | None = None,
     on_regen_progress: Callable[[int, int, str], None] | None = None,
 ) -> MergeOutcome:
     """統合 (apply=True のとき) と本文再生成を **1 回の呼出で** 行う唯一の口。
@@ -311,8 +324,14 @@ async def merge_and_regenerate(
     if applied:
         _log.info("eventnews_merge_applied", groups=applied, absorbed_items=absorbed)
 
+    regen_started = time.monotonic()
+    stop_when = (
+        (lambda: time.monotonic() - regen_started >= regen_budget_seconds)
+        if regen_budget_seconds is not None
+        else None
+    )
     stats, pending_total = await regenerate_pending(
-        repo, limit=regen_limit, on_progress=on_regen_progress
+        repo, limit=regen_limit, on_progress=on_regen_progress, stop_when=stop_when
     )
     return MergeOutcome(
         plan=plan,
@@ -331,7 +350,10 @@ async def run_eventnews_merge_hourly() -> dict[str, object]:
         _log.info("eventnews_merge_disabled")
         return {"skipped": "flag_off"}
     outcome = await merge_and_regenerate(
-        RunHistoryRepository(), apply=True, regen_limit=regen_cap()
+        RunHistoryRepository(),
+        apply=True,
+        regen_limit=regen_cap(),
+        regen_budget_seconds=regen_budget_seconds(),
     )
     # ⚠ 統合数と再生成数を **同じ行に** 出す。桁で食い違っていたら本文なしが溜まっている。
     _log.info("eventnews_merge_summary", **outcome.as_dict())
