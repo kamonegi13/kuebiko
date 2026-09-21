@@ -11,8 +11,6 @@ LLM prompt は実出力を見て反復改善する前提 (5T-T design decision)�
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,8 +96,13 @@ def _render_prompt(
             keep_trailing_newline=True,
         )
         template = env.get_template(RUBRIC_TEMPLATE)
+    # ⭐ **番号参照**。長い article_id (rss:https://... 100 字超) を写させると、
+    #   モデルが綴りを崩して照合に失敗する。実測で 284 件の採点のうち 66 件が
+    #   id 不一致、採点率 51% だった (2026-09-21)。事象ニュースで一度解決した
+    #   のと同型 (08-22 の引用関門で確立した番号参照)。
     rendered_items = [
         {
+            "no": i + 1,
             "id": c.article_id,
             "title": c.title,
             "feed": c.feed_title,
@@ -108,7 +111,7 @@ def _render_prompt(
             "dedup_key": c.dedup_key,
             "summary": (c.summary or "")[:SUMMARY_TRIM_CHARS],
         }
-        for c in items
+        for i, c in enumerate(items)
     ]
     return template.render(
         items=rendered_items,
@@ -129,7 +132,9 @@ class _WireScores(BaseModel):
 
 class _WireScored(BaseModel):
     model_config = {"extra": "ignore"}
-    id: str = ""
+    #: 候補一覧の番号 (1 始まり)。⭐ **長い article_id を写させない** — 実測で
+    #: id 不一致が 66 件、採点率 51% まで落ちた (2026-09-21)。
+    no: int = 0
     scores: _WireScores = Field(default_factory=_WireScores)
     rationale: str = ""
 
@@ -150,84 +155,6 @@ class _WireRubricOutput(BaseModel):
         # した瞬間に文法違反で全損しうる。
         json_schema_extra={"maxItems": RUBRIC_CHUNK_SIZE * 2},
     )
-
-
-def _parse_llm_output(text: str) -> list[dict[str, object]]:
-    """LLM 応答から JSON entries を salvage 方式で抽出 (Phase 5T-T2.1)。
-
-    LLM 出力の脆さに耐える二段階パーサ:
-        1. 全体を JSON として読めるか試行
-        2. 失敗時は正規表現で個別 entry をスキャンし、各 entry を独立 parse
-
-    salvage 方式の利点:
-        - max_tokens 到達で末尾 truncate されても、parse 済 entries は救出
-        - LLM の typo (例: "CRationale", "way: 2}") があっても他 entry は採用
-        - prompt 改善前でも実用最低限の動作を保証
-
-    失敗時は空 list を返す (raise しない、selector 側で 0 件として処理)。
-    """
-    if not text:
-        return []
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        cleaned = "\n".join(lines).strip()
-
-    # Pass 1: 全体 JSON parse を試行 (正常時の高速 path)
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end > start:
-        try:
-            obj = json.loads(cleaned[start : end + 1])
-            arr = obj.get("scored_articles", [])
-            if isinstance(arr, list) and arr:
-                return [e for e in arr if isinstance(e, dict)]
-        except json.JSONDecodeError:
-            pass
-
-    # Pass 2: salvage モード - entry を 1 つずつ正規表現で抽出
-    return _salvage_entries(cleaned)
-
-
-# entry 1 件分のパターン: { "id": "...", "scores": {...}, "rationale": "..." }
-# rationale を含まない不完全 entry も許容、id+scores が取れれば採用。
-_ENTRY_OUTER_RE = re.compile(
-    r'\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"scores"\s*:\s*(\{[^}]*\})'
-    r'(?:\s*,\s*"\w*[Rr]ationale"\s*:\s*"([^"]*)")?',
-)
-# 各 score の key:value (typo 耐性で "way"/"CRationale" 等は無視)
-_SCORE_KV_RE = re.compile(r'"(pir|roi|timeliness|novelty)"\s*:\s*(-?\d+(?:\.\d+)?)')
-
-
-def _salvage_entries(text: str) -> list[dict[str, object]]:
-    """truncate / typo に耐える正規表現ベース salvage 抽出。"""
-    entries: list[dict[str, object]] = []
-    for m in _ENTRY_OUTER_RE.finditer(text):
-        article_id = m.group(1)
-        scores_block = m.group(2)
-        rationale = m.group(3) or ""
-        scores: dict[str, float] = {}
-        for sm in _SCORE_KV_RE.finditer(scores_block):
-            key = sm.group(1)
-            try:
-                scores[key] = float(sm.group(2))
-            except ValueError:
-                continue
-        # 4 軸すべて揃わなくても採用 (欠損は 0 として扱う、selector 側で clip)
-        if not scores:
-            continue
-        entries.append(
-            {
-                "id": article_id,
-                "scores": scores,
-                "rationale": rationale,
-            },
-        )
-    return entries
 
 
 def _compute_composite(
@@ -354,9 +281,10 @@ async def score_deep_dive_candidates(
             max_tokens=RUBRIC_MAX_TOKENS,
             think=False,
         )
+        # 番号 → 実 id に戻す (チャンク内の 1 始まり)。範囲外は捨てる。
         parsed.extend(
             {
-                "id": e.id,
+                "id": chunk[e.no - 1].article_id if 1 <= e.no <= len(chunk) else "",
                 "scores": {
                     "pir": e.scores.pir,
                     "roi": e.scores.roi,

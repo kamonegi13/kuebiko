@@ -20,8 +20,8 @@ from src.digest.db_filter import (
     fetch_recent_brief_titles,
 )
 from src.digest.deep_dive_selector import (
-    _parse_llm_output,
     _render_prompt,
+    score_deep_dive_candidates,
     select_deep_dive_articles,
 )
 from src.storage.run_history import RunHistoryRepository
@@ -88,28 +88,17 @@ async def main() -> None:
         print(f"  rationale: {s.rationale}")
         print()
 
-    # 7. 全 candidate の scoring 結果 dump
-    print("=== 全候補 LLM 出力 (debug 用) ===")
-    response = await llm.generate(
-        prompt=prompt,
-        temperature=0.25,
-        max_tokens=4000,
-        think=False,
+    # 7. 全候補の採点分布 (2026-09-21: 採点は seam 経由に一本化。旧 _parse_llm_output は
+    #    本番経路から外れたので撤去した — 解析経路が 2 つあるとドリフトする)
+    all_scored = await score_deep_dive_candidates(
+        llm=llm,
+        candidates=pref.candidates,
+        recent_briefs=recent_briefs[:50],
+        past_selected_keys=sorted(past_keys),
     )
-    parsed = _parse_llm_output(response.text or "")
-    print(f"\nLLM 応答: {len(response.text or '')} chars, parsed {len(parsed)} entries")
-    print()
-    # 全 score 分布
-    score_dist = {"pir": [], "roi": [], "timeliness": [], "novelty": []}
-    for entry in parsed:
-        sc = entry.get("scores") or {}
-        if isinstance(sc, dict):
-            for k in score_dist:
-                v = sc.get(k)
-                if isinstance(v, (int, float)):
-                    score_dist[k].append(int(v))
-    print("score 分布:")
-    for axis, vals in score_dist.items():
+    print(f"\n=== 全候補の採点 ({len(all_scored)}/{len(pref.candidates)} 件) ===")
+    for axis in ("pir", "roi", "timeliness", "novelty"):
+        vals = [int(getattr(s, axis)) for s in all_scored]
         if vals:
             dist = {i: vals.count(i) for i in range(6)}
             print(f"  {axis:<11}: avg={sum(vals) / len(vals):.2f}  dist={dist}")
@@ -122,8 +111,7 @@ async def main() -> None:
                 "model": llm.model,
                 "candidates_count": len(pref.candidates),
                 "stage_counts": pref.stage_counts,
-                "raw_response": response.text,
-                "parsed": parsed,
+                "scored_count": len(all_scored),
                 "selected_count": len(selected),
                 "selected": [
                     {

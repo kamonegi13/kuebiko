@@ -69,7 +69,7 @@
 # 候補 article (合計 {{ total }} 件)
 {% for item in items %}
 ---
-id: {{ item.id }}
+no: {{ item.no }}
 title: {{ item.title }}
 feed: {{ item.feed }}
 importance: {{ item.importance }}
@@ -80,7 +80,8 @@ summary: {{ item.summary }}
 
 # 出力ルール
 - 全 {{ total }} 件に対して必ず score を付ける。skip 不可。
-- **1 件につき 1 エントリ。同じ id を 2 度書かない。**
+- **各候補の `no` (番号) で参照する。**記事の URL や id を書かない。
+- **1 件につき 1 エントリ。同じ no を 2 度書かない。**
+- 候補一覧に無い番号を作らない (1 から {{ total }} まで)。
 - rationale は anchor のどの基準を満たすかを 1-2 文で明示する。
-- 候補一覧に無い id を作らない。
 

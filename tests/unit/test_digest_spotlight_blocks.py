@@ -36,7 +36,7 @@ _EXPECTED_RENDERED_MARKER: dict[str, str] = {
     "pir_daily_focus": "出力は **要点本文のみ**",
     # 2026-09-21: 採点を構造化出力へ移し、JSON の書式指示をプロンプトから外した
     # (スキーマは _WireRubricOutput が持つ)。残るのは件数と重複の規律。
-    "deep_dive_rubric": "同じ id を 2 度書かない",
+    "deep_dive_rubric": "同じ no を 2 度書かない",
     "pir_spotlight": "出力は **JSON のみ**",
 }
 

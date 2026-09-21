@@ -17,11 +17,10 @@ from src.digest.deep_dive_selector import (
     DEFAULT_WEIGHTS,
     ScoredArticle,
     _compute_composite,
-    _parse_llm_output,
     _render_prompt,
     select_deep_dive_articles,
 )
-from src.tools.llm_client import LLMClient, LLMResponse
+from src.tools.llm_client import LLMClient
 
 
 def _make_candidate(article_id: str, **overrides: object) -> DigestCandidate:
@@ -41,10 +40,6 @@ def _make_candidate(article_id: str, **overrides: object) -> DigestCandidate:
     return DigestCandidate(**base)  # type: ignore[arg-type]
 
 
-def _llm_response(text: str) -> LLMResponse:
-    return LLMResponse(text=text, model="test-model")
-
-
 def _structured(text: str) -> Any:
     """採点は構造化出力になった (2026-09-21)。JSON 文字列から wire モデルを組む。
 
@@ -54,76 +49,6 @@ def _structured(text: str) -> Any:
     from src.digest.deep_dive_selector import _WireRubricOutput
 
     return _WireRubricOutput.model_validate(json.loads(text))
-
-
-class TestParseOutput:
-    def test_plain_json(self) -> None:
-        text = '{"scored_articles": [{"id":"A","scores":{"pir":5,"roi":4,"timeliness":3,"novelty":2},"rationale":"r"}]}'  # noqa: E501
-        parsed = _parse_llm_output(text)
-        assert parsed[0]["id"] == "A"
-
-    def test_with_fenced_block(self) -> None:
-        text = (
-            "前置きテキスト\n"
-            "```json\n"
-            '{"scored_articles": [{"id":"A","scores":{"pir":5,"roi":4,"timeliness":3,"novelty":2},"rationale":"r"}]}\n'  # noqa: E501
-            "```\n"
-            "末尾説明"
-        )
-        parsed = _parse_llm_output(text)
-        assert len(parsed) == 1
-        assert parsed[0]["id"] == "A"
-
-    def test_invalid_json_returns_empty(self) -> None:
-        assert _parse_llm_output("not json at all") == []
-
-    def test_empty_text_returns_empty(self) -> None:
-        assert _parse_llm_output("") == []
-
-    def test_salvage_truncated_output(self) -> None:
-        """Phase 5T-T2.1: 末尾切れの JSON でも先頭 entries を salvage する。"""
-        # 末尾の最後の entry が "..." で途切れている (max_tokens 到達状況の再現)
-        text = (
-            "```json\n"
-            '{"scored_articles": [\n'
-            '{"id":"A","scores":{"pir":5,"roi":4,"timeliness":3,"novelty":2},"rationale":"r1"},\n'
-            '{"id":"B","scores":{"pir":3,"roi":3,"timeliness":3,"novelty":3},"rationale":"r2"},\n'
-            '{"id":"C","scores":{"pir":1,"roi":3,'  # truncated mid-entry
-        )
-        parsed = _parse_llm_output(text)
-        ids = [e["id"] for e in parsed]
-        assert "A" in ids
-        assert "B" in ids
-        # C は scores 不完全だが id+scores の最小条件を満たすかは regex 次第。
-        # 重要なのは A/B が確実に救出されること。
-
-    def test_salvage_typo_in_rationale_key(self) -> None:
-        """Phase 5T-T2.1: 'CRationale' のような typo を含む entry も他は採用。"""
-        text = (
-            '{"scored_articles": [\n'
-            '{"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"CRationale":"typo"},\n'
-            '{"id":"B","scores":{"pir":3,"roi":3,"timeliness":3,"novelty":3},"rationale":"ok"}\n'
-            "]}"
-        )
-        parsed = _parse_llm_output(text)
-        ids = [e["id"] for e in parsed]
-        assert "A" in ids and "B" in ids
-
-    def test_salvage_unknown_score_key_ignored(self) -> None:
-        """Phase 5T-T2.1: scores 内に 'way:2' のような未知 key があっても他 score 採用。"""
-        text = (
-            '{"scored_articles": [\n'
-            '{"id":"A","scores":{"pir":4,"roi":3,"way":2,"novelty":3},"rationale":"r"}\n'
-            "]}"
-        )
-        parsed = _parse_llm_output(text)
-        assert len(parsed) == 1
-        scores = parsed[0]["scores"]
-        assert isinstance(scores, dict)
-        assert scores.get("pir") == 4.0
-        assert scores.get("roi") == 3.0
-        # timeliness は欠損 (way ではなく) → selector 側で 0 として扱われる
-        assert "timeliness" not in scores
 
 
 class TestCompositeWeighting:
@@ -151,9 +76,9 @@ class TestSelectFlow:
             return_value=_structured(
                 """
                 {"scored_articles": [
-                  {"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"top"},
-                  {"id":"B","scores":{"pir":3,"roi":3,"timeliness":3,"novelty":3},"rationale":"mid"},
-                  {"id":"C","scores":{"pir":1,"roi":1,"timeliness":1,"novelty":1},"rationale":"low"}
+                  {"no":1,"scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"top"},
+                  {"no":2,"scores":{"pir":3,"roi":3,"timeliness":3,"novelty":3},"rationale":"mid"},
+                  {"no":3,"scores":{"pir":1,"roi":1,"timeliness":1,"novelty":1},"rationale":"low"}
                 ]}
                 """,
             ),
@@ -173,7 +98,7 @@ class TestSelectFlow:
         llm = AsyncMock(spec=LLMClient)
         llm.generate_structured = AsyncMock(
             return_value=_structured(
-                '{"scored_articles": [{"id":"A","scores":{"pir":1,"roi":1,"timeliness":1,"novelty":1},"rationale":"low"}]}',  # noqa: E501
+                '{"scored_articles": [{"no":1,"scores":{"pir":1,"roi":1,"timeliness":1,"novelty":1},"rationale":"low"}]}',  # noqa: E501
             ),
         )
         result = await select_deep_dive_articles(
@@ -195,8 +120,8 @@ class TestSelectFlow:
             prompt = str(kwargs.get("prompt", ""))
             present = [i for i in ids if i in prompt]
             entries = ",".join(
-                f'{{"id":"{i}","scores":{{"pir":5,"roi":5,"timeliness":5,"novelty":5}},'
-                f'"rationale":"r"}}'
+                f'{{"no":{present.index(i) + 1},'
+                f'"scores":{{"pir":5,"roi":5,"timeliness":5,"novelty":5}},"rationale":"r"}}'
                 for i in present
             )
             return _structured(f'{{"scored_articles":[{entries}]}}')
@@ -216,7 +141,8 @@ class TestSelectFlow:
             '{"scored_articles": ['
             + ",".join(
                 [
-                    f'{{"id":"A{i}","scores":{{"pir":5,"roi":5,"timeliness":5,"novelty":5}},"rationale":"r"}}'
+                    f'{{"no":{i + 1},"scores":'
+                    f'{{"pir":5,"roi":5,"timeliness":5,"novelty":5}},"rationale":"r"}}'
                     for i in range(6)
                 ],
             )
@@ -236,7 +162,7 @@ class TestSelectFlow:
         llm = AsyncMock(spec=LLMClient)
         llm.generate_structured = AsyncMock(
             return_value=_structured(
-                '{"scored_articles": [{"id":"A","scores":{"pir":99,"roi":-5,"timeliness":3,"novelty":3},"rationale":"out"}]}',  # noqa: E501
+                '{"scored_articles": [{"no":1,"scores":{"pir":99,"roi":-5,"timeliness":3,"novelty":3},"rationale":"out"}]}',  # noqa: E501
             ),
         )
         result = await select_deep_dive_articles(llm=llm, candidates=cands)
@@ -245,14 +171,14 @@ class TestSelectFlow:
         assert result[0].pir == 5.0
         assert result[0].roi == 0.0
 
-    async def test_unknown_id_in_llm_response_ignored(self) -> None:
+    async def test_out_of_range_number_ignored(self) -> None:
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
         llm.generate_structured = AsyncMock(
             return_value=_structured(
                 '{"scored_articles": ['
-                '{"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"},'
-                '{"id":"GHOST","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}'
+                '{"no":1,"scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"},'
+                '{"no":99,"scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}'
                 "]}",
             ),
         )
@@ -274,7 +200,7 @@ class TestSelectFlow:
         llm = AsyncMock(spec=LLMClient)
         llm.generate_structured = AsyncMock(
             return_value=_structured(
-                '{"scored_articles": [{"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}]}',  # noqa: E501
+                '{"scored_articles": [{"no":1,"scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}]}',  # noqa: E501
             ),
         )
         await select_deep_dive_articles(llm=llm, candidates=cands)
