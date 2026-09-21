@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,6 +32,7 @@ from src.assessment.assignment import (
     split_anchor_keys,
     topic_tokens,
 )
+from src.assessment.detect_scope import relevant_titles_by_embedding
 from src.assessment.ledger import (
     _judgment_pir_ids,
     _pir_ids_for_articles,
@@ -370,6 +373,93 @@ def _build_source(
         "chronology": chrono.label,
         "historical": "1" if historical else "",
     }
+
+
+_DETECT_SCOPE_FLAG = "DETECT_SCOPE_NARROW"
+
+
+async def detect_active_titles(
+    situations: Sequence[SituationRow],
+    detect_input: Sequence[Mapping[str, object]],
+    repo: RunHistoryRepository,
+) -> list[str]:
+    """detect へ渡す「既に追跡中の情勢」(候補記事と意味的に近いものだけ)。
+
+    判定は **埋込** (情勢の題名 × 記事の要約)。根拠と実測は :mod:`src.assessment.detect_scope`。
+    ``DETECT_SCOPE_NARROW=0`` で従来の「全 active」へ戻せる。
+
+    ⚠ **埋込が作れなければ絞らない** (全 active を返す)。絞りは prompt を縮める最適化で、
+    失敗時は既知の挙動へ倒す — 情勢を落として二重開設を招く方が高くつく。
+    """
+    active = [r for r in situations if r.status == "active"]
+    if os.environ.get(_DETECT_SCOPE_FLAG, "1").strip() in ("0", "false", "False"):
+        return [r.title for r in active]
+    started = time.monotonic()
+    try:
+        sits, cands = await _detect_scope_vectors(active, detect_input, repo)
+    except Exception as e:  # noqa: BLE001 — 絞りの失敗で detect を止めない
+        _log.warning("detect_scope_embed_failed", error=str(e)[:160], active=len(active))
+        return [r.title for r in active]
+    if not sits or not cands:
+        _log.warning("detect_scope_no_vectors", situations=len(sits), candidates=len(cands))
+        return [r.title for r in active]
+    kept = relevant_titles_by_embedding(situations=sits, candidates=cands)
+    _log.info(
+        "detect_scope_narrowed",
+        active=len(active),
+        kept=len(kept),
+        candidates=len(cands),
+        summary_backed=sum(1 for _, _, is_summary in cands if is_summary),
+        elapsed_seconds=round(time.monotonic() - started, 1),
+    )
+    return kept
+
+
+async def _detect_scope_vectors(
+    active: Sequence[SituationRow],
+    detect_input: Sequence[Mapping[str, object]],
+    repo: RunHistoryRepository,
+) -> tuple[list[tuple[str, str, Any]], list[tuple[str, Any, bool]]]:
+    """情勢の題名と候補記事の埋込を揃える (要約が無い記事は見出しで代替)。"""
+    import numpy as np
+
+    from src.config_loader import load_app_config
+    from src.tools.embedding_client import OllamaEmbeddingClient
+    from src.tools.model_tiers import resolve_embedding_model
+
+    config = load_app_config()
+
+    def _unit(vec: Any) -> Any:
+        arr = np.asarray(vec, dtype=np.float32)
+        norm = float(np.linalg.norm(arr))
+        return arr / norm if norm else None
+
+    aids = [str(a.get("article_id", "")) for a in detect_input if a.get("article_id")]
+    stored = repo.load_summary_embeddings(aids)
+    client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=resolve_embedding_model())
+    cands: list[tuple[str, Any, bool]] = []
+    for art in detect_input:
+        aid = str(art.get("article_id", ""))
+        if aid in stored:
+            vec = _unit(stored[aid])
+            if vec is not None:
+                cands.append((aid, vec, True))
+                continue
+        title = str(art.get("title", "")).strip()
+        if not title:
+            continue
+        vec = _unit((await client.embed(title)).vector)
+        if vec is not None:
+            cands.append((aid, vec, False))
+    sits: list[tuple[str, str, Any]] = []
+    for row in active:
+        title = row.title.strip()
+        if not title:
+            continue
+        vec = _unit((await client.embed(title)).vector)
+        if vec is not None:
+            sits.append((row.situation_id, title, vec))
+    return sits, cands
 
 
 def _final_delta(
@@ -877,8 +967,12 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     detect_input = unassigned[:_DETECT_INPUT_MAX]
     if len(unassigned) > _DETECT_INPUT_MAX:
         _log.warning("stateful_detect_input_capped", total=len(unassigned), cap=_DETECT_INPUT_MAX)
-    # dup guard は standing も含む全 active (detect-new が常設問いを event として再開設しない)
-    active_titles = [r.title for r in situations if r.status == "active"]
+    # dup guard は standing も含む全 active (detect-new が常設問いを event として再開設しない)。
+    # ⭐ ただし **候補記事と重なるものだけ** に絞る (2026-09-21): 一覧は追跡中 147 件で
+    #    9,668 tok = detect プロンプトの 63% を占め、台帳が増えるほど無制限に伸びていた
+    #    (本番は既に 13.6k tok で MLX の壁 14.1k に接していた)。詳細は detect_scope。
+    #    ``DETECT_SCOPE_NARROW=0`` で従来 (全 active) に戻す。
+    active_titles = await detect_active_titles(situations, detect_input, repo)
     # detect (未割当を読んで新規 claim を選ぶ triage) は入力が多いので fast ティアを使う。
     # ⚠ 元の理由「Dense 31B で 150 件を読むと 900s 超」は失効 (narrative も今は 26B MoE)。
     # ⭐ **モデルは gemma4:26b に明示固定** (v28)。fast の既定は s17 だが、detect だけは
