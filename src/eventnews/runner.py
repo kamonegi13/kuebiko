@@ -37,6 +37,7 @@ from src.eventnews.models import (
     MemberArticle,
     SourceBreakdown,
 )
+from src.eventnews.tail_gate import looks_truncated, tail_all_empty
 from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventNewsMixin
 from src.tools.identifier_catalog import IdentifierCatalog
@@ -297,6 +298,21 @@ def _drop_unsupported_lines(gate: GateResult, texts: Mapping[int, str], item_id:
     )
 
 
+def rewrite_regressed(*, before: EventNewsDraft, after: EventNewsDraft) -> bool:
+    """書き直しが元より悪いか (= 満ちていた尾部を切り詰めで失ったか)。
+
+    ⚠ 書き直しは長らく**無条件に元を置き換えて**いた。2026-09-21 の実測では、事実 19 件・
+    尾部も満ちた draft が出たあとに識別子の網羅不足で書き直しへ入り、書き直しの 3 回が
+    すべて出力上限 6,144 に張り付いて尾部が空になり、**最初より悪い版が残った**
+    (coverage 0.48 / facts 10)。網羅は望ましいが、但し書き・未解明点を丸ごと失う代償に
+    見合わない (「注意点が丸ごと無い」は「短い」より悪い — tail_gate の設計判断)。
+
+    判定は狭く取る: **元に尾部があり、書き直しが切り詰めで尾部を失った**場合のみ退行。
+    短いまま尾部が空な書き直しはモデルの判断なので採る (切り詰めではない)。
+    """
+    return not tail_all_empty(before) and tail_all_empty(after) and looks_truncated(after)
+
+
 async def _generate_version(
     repo: EventNewsMixin,
     item: _LiveItem,
@@ -341,7 +357,21 @@ async def _generate_version(
         hints = _rewrite_hints(gate, bodies, texts, item.snapshot.item_id, catalog)
         rejected_json = draft.model_dump_json() if hints else None  # DPO の rejected 側
         if hints:
-            draft = await gen.generate_draft(selected, allowed, llm, rewrite_hint="\n".join(hints))
+            rewritten = await gen.generate_draft(
+                selected, allowed, llm, rewrite_hint="\n".join(hints)
+            )
+            if rewrite_regressed(before=draft, after=rewritten):
+                # ⭐ 元を残す。DPO の対も作らない — どちらも「通った版」ではないので、
+                #    選好対にすると関門違反を正例として教えることになる。
+                _log.warning(
+                    "eventnews_rewrite_regressed",
+                    item_id=item.snapshot.item_id,
+                    facts_before=len(draft.facts),
+                    facts_after=len(rewritten.facts),
+                )
+                rejected_json = None
+            else:
+                draft = rewritten
             gate = identifier_gate.verify_draft(draft, selected)
             gate = _drop_transcribed_lines(gate, bodies, item.snapshot.item_id)
             if not gate.draft.facts:
