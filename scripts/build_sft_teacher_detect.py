@@ -16,8 +16,10 @@ Sonnet が事象単位の回収 26 で最多・誤り率 22% (26b と同水準)�
 grep で確認)。統合の本番適用と並行して収穫できる。
 
 ⚠ **凍結評価に使った replay の 5 日は収穫しない** (`EVAL_HOLDOUT_DAYS`)。生徒の合否は
-そこで測る。⭐ 追跡中の情勢は **その日時点** を再構成して渡す (`select_active_as_of`) —
-収穫時点の台帳を渡すと、まだ存在しない情勢を「既に追跡中」と告げることになる。
+そこで測る。⭐ 追跡中の情勢は **その日時点** を再構成し (`select_active_as_of`)、さらに
+**本番と同じ埋込の絞り** (`relevant_titles_by_embedding`、2026-09-22 デプロイ) を掛ける —
+収穫時点の台帳を丸ごと渡すと、まだ存在しない情勢を「既に追跡中」と告げ、かつ生徒が
+本番で見ることのないプロンプトの形を学ばせることになる。
 
 ⚠ **外部が落ちたら黙ってローカルへ倒さない** (`LLM_LOCAL_FALLBACK=0` を既定にする。
 倒れると教師対にローカルの出力が混ざる)。連続 3 失敗で止まり、再実行は処理済みの
@@ -132,6 +134,64 @@ def load_active_titles_as_of(repo: RunHistoryRepository, day: str) -> list[str]:
     return select_active_as_of([dict(r) for r in rows], day=day)
 
 
+_TITLE_VECS: dict[str, Any] = {}
+
+
+async def narrow_titles(
+    titles: Sequence[str],
+    candidates: Sequence[Mapping[str, Any]],
+    repo: RunHistoryRepository,
+) -> list[str]:
+    """本番と **同じ規則** (`relevant_titles_by_embedding`) で一覧を絞る。
+
+    ⚠ 教師のプロンプトは本番と同じ形でなければならない — 生徒が見ない形を学ばせない。
+    題名の埋込は日をまたいで使い回す (同じ題名は同じベクトル)。
+    """
+    import numpy as np
+
+    from src.assessment.detect_scope import relevant_titles_by_embedding
+    from src.tools.embedding_client import OllamaEmbeddingClient
+    from src.tools.model_tiers import resolve_embedding_model
+
+    if not titles or not candidates:
+        return list(titles)
+    client = OllamaEmbeddingClient(
+        base_url=load_app_config().ollama_base_url, model=resolve_embedding_model()
+    )
+
+    def _unit(vec: Any) -> Any:
+        arr = np.asarray(vec, dtype=np.float32)
+        n = float(np.linalg.norm(arr))
+        return arr / n if n else None
+
+    async def _vec(text: str) -> Any:
+        if text not in _TITLE_VECS:
+            _TITLE_VECS[text] = _unit((await client.embed(text)).vector)
+        return _TITLE_VECS[text]
+
+    aids = [str(a.get("article_id", "")) for a in candidates]
+    stored = repo.load_summary_embeddings(aids)
+    cands: list[tuple[str, Any, bool]] = []
+    for art in candidates:
+        aid = str(art.get("article_id", ""))
+        if aid in stored:
+            v = _unit(stored[aid])
+            if v is not None:
+                cands.append((aid, v, True))
+                continue
+        title = str(art.get("title", "")).strip()
+        if title:
+            v = await _vec(title)
+            if v is not None:
+                cands.append((aid, v, False))
+    sits = []
+    for t in titles:
+        v = await _vec(t)
+        if v is not None:
+            sits.append((t, t, v))
+    return relevant_titles_by_embedding(situations=sits, candidates=cands)
+
+
 def plan_days(
     *,
     since: str,
@@ -174,14 +234,17 @@ async def harvest_day(
     pir_context: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
     # ⚠ 追跡中の情勢は **その日時点** のものを渡す (収穫時点の台帳ではない)
-    active_titles = load_active_titles_as_of(repo, day)
+    as_of = load_active_titles_as_of(repo, day)
     pool = pool_for_day(repo, day)
     if len(pool) < _MIN_POOL:
         return []
     arts = build_detect_articles(repo, [str(a["article_id"]) for a in pool], kinds)
     scores = score_articles(model, arts) if model is not None else {}
     cand = narrow(pool, scores, arts, top_k=prefilter_top_k()) if model is not None else pool
+    # ⚠ 本番と同じ絞りを掛ける (2026-09-22 デプロイ)。掛けないと生徒が見ない形を学ぶ
+    active_titles = await narrow_titles(as_of, cand, repo)
     rows: list[dict[str, Any]] = []
+    print(f"    情勢 as-of {len(as_of)} → 絞り後 {len(active_titles)}", flush=True)
     base = await detect_new_claims(
         llm=rec,  # type: ignore[arg-type]
         articles=cand,
