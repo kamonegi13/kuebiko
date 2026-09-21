@@ -232,6 +232,7 @@ async def harvest_day(
     model: Any,
     kinds: dict[str, str],
     pir_context: list[dict[str, str]],
+    with_ml_add: bool = True,
 ) -> list[dict[str, Any]]:
     # ⚠ 追跡中の情勢は **その日時点** のものを渡す (収穫時点の台帳ではない)
     as_of = load_active_titles_as_of(repo, day)
@@ -264,7 +265,7 @@ async def harvest_day(
             n_candidates=len(cand),
         )
     )
-    if not scores:
+    if not scores or not with_ml_add:
         return rows
     roll = {a for a in scores if a in arts and is_rollup_title(arts[a].title)}
     picks = set(
@@ -344,6 +345,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 model=model,
                 kinds=kinds,
                 pir_context=pir_context,
+                with_ml_add=args.with_ml_add,
             )
         except (LLMError, OSError) as exc:
             failures += 1
@@ -379,6 +381,9 @@ def main() -> int:
     p.add_argument("--max-days", type=int, default=0, help="0 = 全日")
     p.add_argument("--newest-first", action="store_true")
     p.add_argument("--fresh", action="store_true")
+    # ⚠ ml_add の腕は既定で採らない — ML が挙げた 4 件を 99 日中 51 日で全件承認しており
+    #   (採択率 中央 100%)、判断を教える材料になっていない (2026-09-21 実測)。
+    p.add_argument("--with-ml-add", action="store_true")
     return asyncio.run(main_async(p.parse_args()))
 
 
