@@ -176,3 +176,27 @@ class TestGenerateDigestCoverage:
         )
 
         assert "既存の節" in prompts[1]  # 直す対象を渡している
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_a_list_when_no_section_survives(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """関門が全節を落としても、空ではなく一覧を出す。"""
+        from src.digest import llm_digest as mod
+        from src.digest.recap_render import RecapOutput, RecapSection
+
+        async def fake(llm: Any, prompt: str, *, max_tokens: int, think: Any) -> RecapOutput:
+            return RecapOutput(sections=[RecapSection(heading="節", body="", article_ids=[])])
+
+        monkeypatch.setattr(mod, "_generate_sections", fake)
+        monkeypatch.setattr(mod, "_render_prompt", lambda *a, **k: "PROMPT")
+
+        md = await mod.generate_digest(
+            llm=cast(Any, object()),
+            candidates=[self._cand("a1")],
+            template_name="digest/weekly_recap.j2",
+            period_label="P",
+        )
+
+        assert "題 a1" in md
+        assert "https://kuebiko.example/a1" in md

@@ -6,6 +6,8 @@ LLMClient は AsyncMock で置換し、ネットワーク I/O は発生させな
 
 from __future__ import annotations
 
+import json
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -41,6 +43,17 @@ def _make_candidate(article_id: str, **overrides: object) -> DigestCandidate:
 
 def _llm_response(text: str) -> LLMResponse:
     return LLMResponse(text=text, model="test-model")
+
+
+def _structured(text: str) -> Any:
+    """採点は構造化出力になった (2026-09-21)。JSON 文字列から wire モデルを組む。
+
+    テストの意図 (どんな採点が返ったとき何が起きるか) は変えず、**呼出の形だけ**
+    本番に合わせる。自由文のままだと本番と違う経路を測ることになる。
+    """
+    from src.digest.deep_dive_selector import _WireRubricOutput
+
+    return _WireRubricOutput.model_validate(json.loads(text))
 
 
 class TestParseOutput:
@@ -134,8 +147,8 @@ class TestSelectFlow:
     async def test_selects_top_by_composite(self) -> None:
         cands = [_make_candidate("A"), _make_candidate("B"), _make_candidate("C")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(
-            return_value=_llm_response(
+        llm.generate_structured = AsyncMock(
+            return_value=_structured(
                 """
                 {"scored_articles": [
                   {"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"top"},
@@ -158,8 +171,8 @@ class TestSelectFlow:
     async def test_zero_articles_when_all_below_threshold(self) -> None:
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(
-            return_value=_llm_response(
+        llm.generate_structured = AsyncMock(
+            return_value=_structured(
                 '{"scored_articles": [{"id":"A","scores":{"pir":1,"roi":1,"timeliness":1,"novelty":1},"rationale":"low"}]}',  # noqa: E501
             ),
         )
@@ -178,7 +191,7 @@ class TestSelectFlow:
         cands = [_make_candidate(f"Z{i}") for i in range(5)]
         ids = [c.article_id for c in cands]
 
-        def _score_chunk(**kwargs: object) -> LLMResponse:
+        def _score_chunk(**kwargs: object) -> Any:
             prompt = str(kwargs.get("prompt", ""))
             present = [i for i in ids if i in prompt]
             entries = ",".join(
@@ -186,14 +199,14 @@ class TestSelectFlow:
                 f'"rationale":"r"}}'
                 for i in present
             )
-            return _llm_response(f'{{"scored_articles":[{entries}]}}')
+            return _structured(f'{{"scored_articles":[{entries}]}}')
 
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(side_effect=_score_chunk)
+        llm.generate_structured = AsyncMock(side_effect=_score_chunk)
         result = await select_deep_dive_articles(
             llm=llm, candidates=cands, composite_threshold=2.5, max_select=12
         )
-        assert llm.generate.await_count == 3  # 3 チャンクに分割して呼ばれる
+        assert llm.generate_structured.await_count == 3  # 3 チャンクに分割して呼ばれる
         scored_ids = {s.candidate.article_id for s in result}
         assert scored_ids == set(ids)  # 全 5 件が採点・統合され閾値通過
 
@@ -210,7 +223,7 @@ class TestSelectFlow:
             + "]}"
         )
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(return_value=_llm_response(scored_json))
+        llm.generate_structured = AsyncMock(return_value=_structured(scored_json))
         result = await select_deep_dive_articles(
             llm=llm,
             candidates=cands,
@@ -221,8 +234,8 @@ class TestSelectFlow:
     async def test_score_out_of_range_clipped(self) -> None:
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(
-            return_value=_llm_response(
+        llm.generate_structured = AsyncMock(
+            return_value=_structured(
                 '{"scored_articles": [{"id":"A","scores":{"pir":99,"roi":-5,"timeliness":3,"novelty":3},"rationale":"out"}]}',  # noqa: E501
             ),
         )
@@ -235,8 +248,8 @@ class TestSelectFlow:
     async def test_unknown_id_in_llm_response_ignored(self) -> None:
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(
-            return_value=_llm_response(
+        llm.generate_structured = AsyncMock(
+            return_value=_structured(
                 '{"scored_articles": ['
                 '{"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"},'
                 '{"id":"GHOST","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}'
@@ -247,10 +260,11 @@ class TestSelectFlow:
         ids = [s.candidate.article_id for s in result]
         assert ids == ["A"]
 
-    async def test_malformed_llm_output_returns_empty(self) -> None:
+    async def test_unusable_llm_output_returns_empty(self) -> None:
+        """採点が 1 件も取れなければ 0 件 (救済に失敗した構造化出力はこの形になる)。"""
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(return_value=_llm_response("garbage"))
+        llm.generate_structured = AsyncMock(return_value=_structured('{"scored_articles": []}'))
         result = await select_deep_dive_articles(llm=llm, candidates=cands)
         assert result == []
 
@@ -258,13 +272,13 @@ class TestSelectFlow:
         """Gemma 4 26B の thinking mode は digest を空応答化するため OFF 固定。"""
         cands = [_make_candidate("A")]
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(
-            return_value=_llm_response(
+        llm.generate_structured = AsyncMock(
+            return_value=_structured(
                 '{"scored_articles": [{"id":"A","scores":{"pir":5,"roi":5,"timeliness":5,"novelty":5},"rationale":"r"}]}',  # noqa: E501
             ),
         )
         await select_deep_dive_articles(llm=llm, candidates=cands)
-        kwargs = llm.generate.await_args.kwargs
+        kwargs = llm.generate_structured.await_args.kwargs
         assert kwargs.get("think") is False
 
 
@@ -325,8 +339,8 @@ class TestPirContextInjection:
 
         invalidate_cache()
         llm = AsyncMock(spec=LLMClient)
-        llm.generate = AsyncMock(return_value=_llm_response('{"scored_articles": []}'))
+        llm.generate_structured = AsyncMock(return_value=_structured('{"scored_articles": []}'))
         await select_deep_dive_articles(llm=llm, candidates=[_make_candidate("a1")])
-        prompt = llm.generate.call_args.kwargs["prompt"]
+        prompt = llm.generate_structured.call_args.kwargs["prompt"]
         assert "現在の SIR" in prompt
         assert "中国系 APT" in prompt  # 実 pir.yaml の代表 title

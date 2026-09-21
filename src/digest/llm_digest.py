@@ -18,6 +18,7 @@ from src.digest.db_filter import DigestCandidate
 from src.digest.recap_render import (
     RecapOutput,
     mismatched_citations,
+    render_fallback,
     render_markdown,
     thin_sections,
     uncited_articles,
@@ -198,6 +199,21 @@ async def generate_digest(
             sections=len(bad),
         )
     digest_text = render_markdown(out, period_label=period_label, sources=sources, drop=bad)
+    if not _has_section(digest_text):
+        # ⚠ 節が 1 つも成立しなかった。空を投稿せず、選定した記事の一覧に落とす
+        #   (2026-09-21 の本番が見出し 1 行 47 字だけになった)。
+        _log.warning(
+            "digest_recap_fallback_to_list",
+            sections=len(out.sections),
+            candidates=len(candidates),
+        )
+        digest_text = render_fallback(
+            period_label=period_label,
+            items=[
+                (c.title, c.summary or "", c.feed_title, _resolve_link_url(c, guild_id))
+                for c in candidates
+            ],
+        )
     _log.info(
         "digest_llm_response",
         template=template_name,
@@ -207,6 +223,11 @@ async def generate_digest(
         selected=len(selected_ids),
     )
     return digest_text
+
+
+def _has_section(md: str) -> bool:
+    """描画結果に節が 1 つでもあるか (見出し 1 行だけの出力を検出する)。"""
+    return "\n## " in md
 
 
 async def _generate_sections(

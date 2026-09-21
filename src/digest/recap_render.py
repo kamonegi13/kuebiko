@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -161,3 +161,27 @@ def mismatched_citations(out: RecapOutput, *, titles: Mapping[str, str]) -> dict
             if sum(1 for t in probe if t in body) < _CITE_MIN_HITS:
                 bad.setdefault(sec.heading or "(見出しなし)", []).append(aid)
     return bad
+
+
+def render_fallback(*, period_label: str, items: Sequence[tuple[str, str, str, str]]) -> str:
+    """節が 1 つも成立しなかったときの最低保証 (純粋関数)。
+
+    ⚠ **空を投稿するくらいなら一覧を出す**。2026-09-21 の本番では、上流の採点が
+    60 件中 5 件しか通らず本文が枯れ、関門が正しく全節を落とした結果、見出し 1 行
+    (47 字) だけが投稿された。関門は設計どおり働いたが、**下流が枯れたときに何も
+    出さない**のは運用として不適切。
+
+    Args:
+        items: (見出し, 要約, feed_title, url) の並び
+    """
+    parts = [f"📰 Weekly Watch Recap ({period_label})", ""]
+    parts.append("⚠ 主題ごとの解説を生成できませんでした。選定した記事を一覧で示します。")
+    parts.append("")
+    for title, summary, feed, url in items:
+        parts.append(f"**{title.strip()}**")
+        body = summary.strip()
+        if body:
+            parts.append(f"- {body[:400]}")
+        parts.append(f"- 出典: {feed} → {url}")
+        parts.append("")
+    return "\n".join(parts).strip() + "\n"

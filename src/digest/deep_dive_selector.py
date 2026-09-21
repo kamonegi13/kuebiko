@@ -17,24 +17,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import jinja2
+from pydantic import BaseModel, Field
 
 from src.digest.db_filter import DigestCandidate
 from src.logging_config import get_logger
-from src.tools.llm_client import LLMClient, LLMResponse
+from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
 
 PROMPTS_DIR = Path("prompts")
 RUBRIC_TEMPLATE = "digest/deep_dive_rubric.j2"
-# 出力は候補数×~40tok。chunk あたり RUBRIC_CHUNK_SIZE 件なので ~5000tok で num_predict
-# 12000 に十分収まる。
+# ⚠ **旧コメントの「候補数×~40tok」は実測の 1/5 だった** (2026-09-21 に本番が失敗して判明)。
+#   実測は **~200 tok/件** で、60 件を 1 回で採点させると 12,000 で途中切れする。
+#   2026-09-21 の本番は 60 件中 **5 件しか採点されず**、下流の本文が枯れて空投稿になった。
+#   「毎週ちょうど 12 件」だったのは上限が拘束していたのではなく、途中切れが 12 件前後で
+#   起きていたためと見る方が観測に合う。
 RUBRIC_MAX_TOKENS = 12_000
 RUBRIC_TEMPERATURE = 0.25
-# 2026-07-20 再設計: 上流 (db_filter Stage 2') が決定論 composite で RUBRIC_POOL_MAX (60) 件に
-# 有界化するため通常は 1 チャンクで完結する。バッチ分割は「上限超の候補を渡された場合でも
-# per-call timeout を起こさない」安全機構として残置 (rubric score は絶対 0-5 anchor なので
-# バッチ跨ぎでも composite 比較は妥当)。
-RUBRIC_CHUNK_SIZE = 120
+# 1 チャンクの件数。**出力予算から逆算する** (200 tok/件 × 25 = 5,000 tok で 12,000 の
+# 半分以下)。2026-09-21 までは 120 で、60 件のプールが 1 回に押し込まれて途中切れしていた。
+# rubric score は絶対 0-5 anchor なので、チャンクを跨いでも composite の比較は妥当。
+RUBRIC_CHUNK_SIZE = 25
 
 # Composite weight (5T-T design: pir 0.4 / roi 0.3 / timeliness 0.2 / novelty 0.1)
 DEFAULT_WEIGHTS: dict[str, float] = {
@@ -113,6 +116,39 @@ def _render_prompt(
         recent_briefs=recent_briefs,
         past_selected_keys=past_selected_keys,
         pir_context=pir_context or [],
+    )
+
+
+class _WireScores(BaseModel):
+    model_config = {"extra": "ignore"}
+    pir: float = 0.0
+    roi: float = 0.0
+    timeliness: float = 0.0
+    novelty: float = 0.0
+
+
+class _WireScored(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str = ""
+    scores: _WireScores = Field(default_factory=_WireScores)
+    rationale: str = ""
+
+
+class _WireRubricOutput(BaseModel):
+    """rubric 採点の構造化出力 (2026-09-21)。
+
+    ⚠ **自由文だと暴走する**。3 チャンクのうち 1 つが 25 件で 12,000 トークンに達し
+    (他は 1,200-2,900)、同じ entry を吐き続けて採点が候補数の 2 倍になった。
+    ⭐ Ollama は maxItems を文法へコンパイルするので、続けたくても閉じる
+    (detect・本文と同じ処置。既知の Gemma 4 不具合 ollama#15502)。
+    """
+
+    model_config = {"extra": "ignore"}
+    scored_articles: list[_WireScored] = Field(
+        default_factory=list,
+        # チャンク 1 つ分 + 余裕。ここを候補数ちょうどにすると、1 件でも多く返そうと
+        # した瞬間に文法違反で全損しうる。
+        json_schema_extra={"maxItems": RUBRIC_CHUNK_SIZE * 2},
     )
 
 
@@ -211,8 +247,15 @@ def _to_scored(
     candidates_by_id: dict[str, DigestCandidate],
     weights: dict[str, float],
 ) -> list[ScoredArticle]:
-    """LLM 出力を ScoredArticle 列に変換し composite 降順で返す。"""
+    """LLM 出力を ScoredArticle 列に変換し composite 降順で返す。
+
+    ⚠ **同じ記事を 2 度採点してくることがある** (2026-09-21、60 候補に対し採点 138 件)。
+    暴走したチャンクが同じ entry を吐き続けるため。重複を残すと**同じ記事が recap に
+    2 回載る** (dry-run の出典で実際に起きた)。最初の 1 件だけを採る。
+    """
     out: list[ScoredArticle] = []
+    seen: set[str] = set()
+    dupes = 0
     for entry in parsed:
         article_id = entry.get("id")
         if not isinstance(article_id, str):
@@ -220,6 +263,10 @@ def _to_scored(
         candidate = candidates_by_id.get(article_id)
         if candidate is None:
             continue
+        if article_id in seen:
+            dupes += 1
+            continue
+        seen.add(article_id)
         raw = entry.get("scores") or {}
         if not isinstance(raw, dict):
             continue
@@ -244,6 +291,8 @@ def _to_scored(
                 rationale=str(entry.get("rationale") or ""),
             ),
         )
+    if dupes:
+        _log.warning("deep_dive_duplicate_scores", dropped=dupes, kept=len(out))
     out.sort(key=lambda s: s.composite, reverse=True)
     return out
 
@@ -297,13 +346,27 @@ async def score_deep_dive_candidates(
             candidate_count=len(chunk),
             prompt_chars=len(prompt),
         )
-        response: LLMResponse = await llm.generate(
+        # think=False: digest 系は thinking で本文が空になる (gemma_4_thinking_breaks_digests)
+        result = await llm.generate_structured(
             prompt=prompt,
+            schema=_WireRubricOutput,
             temperature=RUBRIC_TEMPERATURE,
             max_tokens=RUBRIC_MAX_TOKENS,
-            think=False,  # gemma_4_thinking_breaks_digests: digest 系は think=False 必須
+            think=False,
         )
-        parsed.extend(_parse_llm_output(response.text or ""))
+        parsed.extend(
+            {
+                "id": e.id,
+                "scores": {
+                    "pir": e.scores.pir,
+                    "roi": e.scores.roi,
+                    "timeliness": e.scores.timeliness,
+                    "novelty": e.scores.novelty,
+                },
+                "rationale": e.rationale,
+            }
+            for e in result.scored_articles
+        )
     _log.info(
         "deep_dive_llm_response",
         chunks=len(chunks),
@@ -311,7 +374,19 @@ async def score_deep_dive_candidates(
         parsed_count=len(parsed),
     )
     candidates_by_id = {c.article_id: c for c in candidates}
-    return _to_scored(parsed, candidates_by_id, actual_weights)
+    scored = _to_scored(parsed, candidates_by_id, actual_weights)
+    # ⭐ **採点されなかった候補を黙らせない**。2026-09-21 に 60 件中 5 件しか採点されず、
+    #   それが本番の空投稿の真因だったが、当時のログは parsed_count を出すだけで警告が
+    #   無かった (no-silent-caps がここに掛かっていなかった)。
+    if len(scored) < len(candidates):
+        _log.warning(
+            "deep_dive_scoring_incomplete",
+            candidates=len(candidates),
+            scored=len(scored),
+            parsed=len(parsed),
+            chunks=len(chunks),
+        )
+    return scored
 
 
 async def select_deep_dive_articles(

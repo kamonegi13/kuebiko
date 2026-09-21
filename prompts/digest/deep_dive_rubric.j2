@@ -80,17 +80,7 @@ summary: {{ item.summary }}
 
 # 出力ルール
 - 全 {{ total }} 件に対して必ず score を付ける。skip 不可。
-- rationale は anchor のどの基準を満たすか を 1-2 文で明示。
-- 純粋な JSON のみ出力。前置きや末尾の解説文を付けない。
+- **1 件につき 1 エントリ。同じ id を 2 度書かない。**
+- rationale は anchor のどの基準を満たすかを 1-2 文で明示する。
+- 候補一覧に無い id を作らない。
 
-```json
-{
-  "scored_articles": [
-    {
-      "id": "<候補 id>",
-      "scores": {"pir": 0-5, "roi": 0-5, "timeliness": 0-5, "novelty": 0-5},
-      "rationale": "<anchor 基準を引用した 1-2 文>"
-    }
-  ]
-}
-```

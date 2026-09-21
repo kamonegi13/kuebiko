@@ -13,6 +13,7 @@ from src.digest.recap_render import (
     RecapOutput,
     RecapSection,
     mismatched_citations,
+    render_fallback,
     render_markdown,
     thin_sections,
     uncited_articles,
@@ -131,3 +132,21 @@ class TestCitationGate:
 
         assert "https://kuebiko.example/1" in md
         assert "https://kuebiko.example/2" not in md
+
+
+class TestFallback:
+    """空を投稿するくらいなら一覧を出す (2026-09-21 の本番が見出し 1 行だけになった)。"""
+
+    def test_lists_every_selected_article_with_its_source(self) -> None:
+        md = render_fallback(
+            period_label="P",
+            items=[
+                ("題 1", "要約 1", "Feed A", "https://kuebiko.example/1"),
+                ("題 2", "", "Feed B", "https://kuebiko.example/2"),
+            ],
+        )
+
+        assert "題 1" in md and "題 2" in md
+        assert "要約 1" in md
+        assert "- 出典: Feed B → https://kuebiko.example/2" in md
+        assert "生成できませんでした" in md  # 縮退したことを読者に伝える
