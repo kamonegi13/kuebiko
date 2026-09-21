@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 from src.digest.db_filter import DigestCandidate
 from src.digest.deterministic_axes import timeliness_score
 from src.logging_config import get_logger
+from src.storage.run_history import RunHistoryRepository
+from src.synthesis.grounded.detect_ml import build_detect_articles
 from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
@@ -289,6 +291,12 @@ async def score_deep_dive_candidates(
     except Exception:  # noqa: BLE001 — PIR システム障害で選定を止めない
         pir_context = []
 
+    # ⭐ ML 前段: LLM に渡す候補を絞る (2026-09-21)。**置き換えではない** —
+    #   ML の上位 20 をそのまま採ると LLM の選抜との一致は 37% だが、上位 90 まで
+    #   通せば 90% を覆う。比較対象の LLM 自身が自己一致 70% なので、この絞りによる
+    #   損失は LLM を 2 回走らせたときの揺らぎより小さい。0 で無効。
+    candidates = _ml_prefilter(candidates)
+
     # 上流有界化 (RUBRIC_POOL_MAX=60) 済みのため通常 1 チャンク。超過時のみ分割 (安全機構)。
     chunks = [
         candidates[i : i + RUBRIC_CHUNK_SIZE] for i in range(0, len(candidates), RUBRIC_CHUNK_SIZE)
@@ -436,4 +444,39 @@ def _timeliness_for(
         )
         if score is not None:
             out[c.article_id] = score
+    return out
+
+
+def _ml_prefilter(candidates: list[DigestCandidate]) -> list[DigestCandidate]:
+    """ML の予測順に上位 k 件へ絞る。モデル不在・列ずれ・k=0 なら**素通し**。
+
+    ⚠ 絞れなかったことを黙らせない (no-silent-caps)。ML が効いていないのに
+    「効いている」と思い込むのが一番まずい。
+    """
+    from src.digest import deep_dive_ml
+
+    top_k = deep_dive_ml.prefilter_top_k()
+    if top_k <= 0 or len(candidates) <= top_k:
+        return candidates
+    repo = RunHistoryRepository()
+    ids = [c.article_id for c in candidates]
+    arts = build_detect_articles(repo, ids, {})
+    lens: dict[str, int] = {}
+    with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の接続 seam 共有
+        for i in range(0, len(ids), 400):
+            chunk = ids[i : i + 400]
+            ph = ",".join("?" * len(chunk))
+            for row in conn.execute(
+                "SELECT article_id, length(coalesce(summary,'')) AS n "  # noqa: S608
+                f"FROM articles WHERE article_id IN ({ph})",
+                tuple(chunk),
+            ).fetchall():
+                lens[str(row["article_id"])] = int(row["n"] or 0)
+    scores = deep_dive_ml.score(candidates, summary_len=lens, articles=arts)
+    keep = set(deep_dive_ml.prefilter_select(scores, top_k=top_k))
+    if not keep:
+        _log.warning("deep_dive_ml_prefilter_skipped", candidates=len(candidates), top_k=top_k)
+        return candidates
+    out = [c for c in candidates if c.article_id in keep]
+    _log.info("deep_dive_ml_prefilter", before=len(candidates), after=len(out), top_k=top_k)
     return out
