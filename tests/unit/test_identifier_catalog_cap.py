@@ -40,3 +40,16 @@ class TestRenderCatalogCap:
     def test_cap_not_reached_adds_no_note(self) -> None:
         cat = build_catalog(["CVE-2026-1 と CVE-2026-2"])
         assert "省略" not in render_catalog(cat, max_entries=10)
+
+
+class TestOverflowSummary:
+    def test_overflow_is_summarized_per_kind_with_member_refs(self) -> None:
+        """あふれた分は「型ごとの件数 + 記事番号」で残す (値は本文参照)。
+        どの記事にどの型の IOC が何件あるかは落とさない (利用者の要望、2026-09-21)。"""
+        cat = build_catalog(_texts())
+        text = render_catalog(cat, max_entries=3)
+        shown = [ln for ln in text.splitlines() if " = " in ln]
+        assert len(shown) == 3
+        total = len([e for e in cat.entries if e.token])
+        assert f"他 {total - 3} 件" in text
+        assert "hash " in text and "記事 [1]" in text  # 型ごとの内訳と記事番号

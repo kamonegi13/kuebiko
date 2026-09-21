@@ -239,10 +239,12 @@ def render_catalog(catalog: IdentifierCatalog, *, max_entries: int | None = None
     if not shown:
         return "(この事象に識別子はありません。本文にも識別子を書かないこと)"
     omitted = 0
+    dropped: list[CatalogEntry] = []
     if max_entries is not None and len(shown) > max_entries:
         ranked = sorted(shown, key=lambda e: (_render_rank(e.identifier.kind), int(e.token[1:])))
         kept = {e.token for e in ranked[:max_entries]}
         omitted = len(shown) - max_entries
+        dropped = [e for e in shown if e.token not in kept]
         shown = [e for e in shown if e.token in kept]  # 元の並び (番号順) を保つ
     lines = [
         f"{e.token} = {e.identifier.raw}  ({e.identifier.kind}, 記事 "
@@ -251,7 +253,20 @@ def render_catalog(catalog: IdentifierCatalog, *, max_entries: int | None = None
         for e in shown
     ]
     if omitted:
-        lines.append(f"(他 {omitted} 件の識別子は省略。本文に識別子を直書きしないこと)")
+        # あふれた分は **型ごとの件数 + 記事番号** で残す (値は本文参照)。どの記事にどの型の
+        # IOC が何件あるかという事実は落とさない — 事象ニュースに要るのは個々のハッシュで
+        # なく「○○件のハッシュが公開された」という規模 (2026-09-21、利用者の要望)。
+        by_kind: dict[str, tuple[int, set[int]]] = {}
+        for e in dropped:
+            n, ms = by_kind.get(e.identifier.kind, (0, set()))
+            by_kind[e.identifier.kind] = (n + 1, ms | set(e.members))
+        detail = " / ".join(
+            f"{kind} {n} 件 (記事 " + "".join(f"[{m}]" for m in sorted(ms)) + ")"
+            for kind, (n, ms) in sorted(by_kind.items(), key=lambda kv: -kv[1][0])
+        )
+        lines.append(
+            f"(他 {omitted} 件は省略 — {detail}。値は本文参照。本文に識別子を直書きしないこと)"
+        )
     return "\n".join(lines)
 
 
