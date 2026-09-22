@@ -787,6 +787,8 @@ ALTER TABLE event_item_versions ADD COLUMN IF NOT EXISTS prompt_text TEXT;
 -- 群化シャドーへ ML の判定を併記する (2026-08-31)。既存行は NULL のまま。
 ALTER TABLE event_pair_shadow ADD COLUMN IF NOT EXISTS ml_proba REAL;
 ALTER TABLE event_pair_shadow ADD COLUMN IF NOT EXISTS ml_joined INTEGER;
+-- 情勢どうしの統合 (2026-09-22)。吸収された側が統合先を指す (redirect + 墓標)。
+ALTER TABLE situations ADD COLUMN IF NOT EXISTS merged_into TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_tuning_labels_field_source
     ON tuning_labels(field, source);

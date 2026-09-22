@@ -130,14 +130,72 @@ class SituationStore:
     def load_situations(
         self, statuses: tuple[SituationStatus, ...] = ("active", "dormant")
     ) -> list[SituationRow]:
+        """状態で絞った情勢。**統合で吸収された行は常に除く** (2026-09-22)。
+
+        読み出しは 17 箇所すべてがここを通るので、除外はこの 1 箇所で効く。
+        """
         ph = ",".join("?" for _ in statuses)
         with self._repo._connect() as conn:  # noqa: SLF001 — 接続 seam の意図的共有
             rows = conn.execute(
                 f"SELECT * FROM situations WHERE status IN ({ph})"  # noqa: S608 — ph は ? 固定
+                " AND (merged_into IS NULL OR merged_into = '')"
                 " ORDER BY situation_id",
                 list(statuses),
             ).fetchall()
         return [_row_to_situation(r) for r in rows]
+
+    def merge_situation(self, *, dup_id: str, into_id: str, basis: str, now_iso: str) -> int:
+        """``dup_id`` を ``into_id`` へ統合する (redirect + 墓標)。戻り値は移した証拠数。
+
+        ⭐ 行は消さない — id は不変で、吸収された側は ``merged_into`` を持って全経路から
+        外れる (アクター辞書で確立した規約)。証拠は統合先へ移し、関係も記録する。
+
+        ⚠ ``status='closed'`` にするだけでは足りない。``open_situation`` は同一 title
+        ハッシュの行を status を問わず返すので、同じ題名の claim が来ると吸収された側が
+        復活する (2026-07-05 のゾンビ経路と同型)。
+        """
+        if dup_id == into_id:
+            raise ValueError("統合元と統合先が同じです")
+        moved = 0
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT article_id FROM situation_evidence WHERE situation_id=?", (dup_id,)
+            ).fetchall()
+            for r in rows:
+                cur = conn.execute(
+                    "UPDATE situation_evidence SET situation_id=? WHERE situation_id=?"
+                    " AND article_id=? AND NOT EXISTS (SELECT 1 FROM situation_evidence e2"
+                    " WHERE e2.situation_id=? AND e2.article_id=?)",
+                    (into_id, dup_id, str(r["article_id"]), into_id, str(r["article_id"])),
+                )
+                moved += int(cur.rowcount or 0)
+            conn.execute(
+                "UPDATE situations SET merged_into=?, status='closed', closed_at=?"
+                " WHERE situation_id=?",
+                (into_id, now_iso, dup_id),
+            )
+        self.add_relation(
+            a_id=into_id, b_id=dup_id, rel_type="merged_into", basis=basis, now_iso=now_iso
+        )
+        return moved
+
+    def merge_target_of(self, situation_id: str) -> str:
+        """統合先を辿った最終的な id (墓標を辿る。循環は自身で打ち切る)。"""
+        seen: set[str] = set()
+        current = situation_id
+        for _ in range(8):
+            if current in seen:
+                break
+            seen.add(current)
+            with self._repo._connect() as conn:  # noqa: SLF001
+                row = conn.execute(
+                    "SELECT merged_into FROM situations WHERE situation_id=?", (current,)
+                ).fetchone()
+            nxt = str(row["merged_into"]) if row is not None and row["merged_into"] else ""
+            if not nxt:
+                break
+            current = nxt
+        return current
 
     def get_situation(self, situation_id: str) -> SituationRow | None:
         with self._repo._connect() as conn:  # noqa: SLF001
@@ -163,6 +221,9 @@ class SituationStore:
         title が claim 追従で動きうるため、安定 id を code 側が指定する — 設計 doc §2.1)。
         """
         sid = situation_id or situation_id_for(title)
+        # ⚠ 統合で吸収された行を返さない — 同じ題名の claim が来たら **統合先**へ redirect
+        #   する (2026-09-22)。返すと吸収された側が復活する (ゾンビ経路)。
+        sid = self.merge_target_of(sid)
         existing = self.get_situation(sid)
         if existing is not None:
             return existing

@@ -430,7 +430,11 @@ CREATE TABLE IF NOT EXISTS situations (
     opened_at        TEXT    NOT NULL,
     last_evidence_at TEXT    NOT NULL,
     closed_at        TEXT,
-    kind             TEXT    NOT NULL DEFAULT 'event'  -- event / standing (常設情報要求、段A)
+    kind             TEXT    NOT NULL DEFAULT 'event',  -- event / standing (常設情報要求、段A)
+    -- 統合で吸収された側が指す統合先 (2026-09-22)。⭐ **redirect + 墓標** — 行は消さず
+    -- 全経路から外す。closed にするだけでは open_situation が同一 title ハッシュの行を
+    -- status を問わず返すため、同じ題名の claim で吸収された側が復活する (ゾンビ経路)。
+    merged_into      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_situations_status
     ON situations(status, last_evidence_at DESC);
