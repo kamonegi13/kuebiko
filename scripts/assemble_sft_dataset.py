@@ -50,7 +50,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 _TEACHER = Path("data/mlx/teacher")
 
 
-def _load_pairs(path: Path, task: str) -> list[dict[str, str]]:
+#: 課題名 → 接頭辞。**本番と同じ SSoT** (`src/tools/task_prefix.TASK_MARKERS`) から
+#: 写した値。⚠ mlx venv では src の依存連鎖を辿れないため、ここは写しになる —
+#: 値がずれると「学習した形」と「本番で届く形」が食い違うので、両方を必ず一緒に直す
+#: (2026-09-22、多課題 SFT の負の転移対策)。
+TASK_PREFIXES: dict[str, str] = {
+    "triage": "[task: triage]\n",
+    "article_summary": "[task: summary]\n",
+    "pair_judge": "[task: pair]\n",
+    "event_kind": "[task: kind]\n",
+    "pir_judge": "[task: pir]\n",
+    "detect": "[task: detect]\n",
+    "ach": "[task: ach]\n",
+    "eventnews": "[task: event_news]\n",
+    "spotlight": "[task: spotlight]\n",
+}
+
+
+def _load_pairs(path: Path, task: str, *, with_prefix: bool = True) -> list[dict[str, str]]:
     """1 ファイル = 1 課題としてタグ付きで読む。skip マーカー行は捨てる。"""
     if not path.exists():
         return []
@@ -62,7 +79,13 @@ def _load_pairs(path: Path, task: str) -> list[dict[str, str]]:
         if d.get("skipped"):
             continue
         if d.get("prompt") and d.get("completion"):
-            row = {"prompt": d["prompt"], "completion": d["completion"], "_task": task}
+            # ⭐ 課題の接頭辞は **読み込み時に付ける** — 以後のトークン計測も接頭辞込みに
+            #   なり、学習時の系列長と一致する (2026-09-22)。
+            marker = TASK_PREFIXES.get(task, "") if with_prefix else ""
+            prompt = d["prompt"]
+            if marker and not prompt.startswith(marker):
+                prompt = marker + prompt
+            row = {"prompt": prompt, "completion": d["completion"], "_task": task}
             if d.get("system"):
                 row["system"] = d["system"]
             out.append(row)
@@ -143,25 +166,44 @@ def main() -> int:
     ap.add_argument("--event-kind", type=Path, default=_TEACHER / "event_kind.jsonl")
     ap.add_argument("--pir-judge", type=Path, default=_TEACHER / "pir_judge.jsonl")
     ap.add_argument("--spotlight", type=Path, default=_TEACHER / "spotlight.jsonl")
+    # detect (台帳の開設候補) — 2026-09-22 に教師を収穫 (as-of + 埋込の絞り込み入り)。
+    # ⚠ 教師は cur の腕のみ (ml_add は ML の 4 件を 99 日中 51 日で全件承認していて
+    #   判断を教えていない)。
+    ap.add_argument("--detect", type=Path, default=_TEACHER / "detect.jsonl")
+    ap.add_argument("--ach", type=Path, default=_TEACHER / "ach_opus.jsonl")
     ap.add_argument("--out-dir", type=Path, default=Path("data/mlx/dataset_v2"))
     ap.add_argument("--model", default="mlx-community/gemma-4-26b-a4b-it-8bit")
     ap.add_argument("--valid-size", type=int, default=60)
     ap.add_argument("--seed", type=int, default=13)
+    # ⚠ **学習の --max-seq-length より必ず小さくする** (2026-09-22)。12,500 の学習に対し
+    #   13,000 で組み立てたところ、6 件が上限超過で切り詰められ、うち 1 件
+    #   (全 12,940 tok / prompt 12,110 tok) で **Train loss が NaN** になった。
+    #   切り詰めは学習対象を 830 → 390 tok に削る。学習率にも最適化器にも依存しない
+    #   (数値の発散ではなく切り詰めの問題)。組み立て側で除外するのが正しい。
     ap.add_argument("--max-tokens", type=int, default=12000, help="超過標本は除外 (切り詰めない)")
     ap.add_argument("--cap-triage", type=int, default=0, help="triage の上限 (0 で無制限)")
     ap.add_argument("--cap-summary", type=int, default=0, help="article_summary の上限")
     ap.add_argument("--cap-eventnews", type=int, default=0, help="事象ニュースの上限")
+    # ⚠ 接頭辞は **本番の SFT_TASK_PREFIX と必ず揃える**。片方だけだと生徒が見たことの
+    #   ない形になる (2026-09-22、多課題 SFT の負の転移対策)。
+    ap.add_argument("--no-task-prefix", action="store_true", help="課題の接頭辞を付けない")
     args = ap.parse_args()
 
     pairs: list[dict[str, str]] = []
-    pairs += _load_pairs(args.eventnews / "train.jsonl", "eventnews")
-    pairs += _load_pairs(args.eventnews / "valid.jsonl", "eventnews")
-    pairs += _load_pairs(args.summary, "article_summary")
-    pairs += _load_pairs(args.triage, "triage")
-    pairs += _load_pairs(args.pair_judge, "pair_judge")
-    pairs += _load_pairs(args.event_kind, "event_kind")
-    pairs += _load_pairs(args.pir_judge, "pir_judge")
-    pairs += _load_pairs(args.spotlight, "spotlight")
+    pairs += _load_pairs(
+        args.eventnews / "train.jsonl", "eventnews", with_prefix=not args.no_task_prefix
+    )
+    pairs += _load_pairs(
+        args.eventnews / "valid.jsonl", "eventnews", with_prefix=not args.no_task_prefix
+    )
+    pairs += _load_pairs(args.summary, "article_summary", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.triage, "triage", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.pair_judge, "pair_judge", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.event_kind, "event_kind", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.pir_judge, "pir_judge", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.spotlight, "spotlight", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.detect, "detect", with_prefix=not args.no_task_prefix)
+    pairs += _load_pairs(args.ach, "ach", with_prefix=not args.no_task_prefix)
     if not pairs:
         print("入力が空", file=sys.stderr)
         return 1

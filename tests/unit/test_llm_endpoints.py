@@ -21,6 +21,18 @@ from src.tools.llm_endpoints import (
 from src.tools.openai_compat_client import OpenAICompatClient
 
 
+def _unwrap(client: Any) -> Any:
+    """課題の接頭辞 wrapper を剥がす (2026-09-22)。
+
+    ⭐ `build_llm_for` は SFT 済み step のプロンプトへ課題の印を付けるため
+    `TaskPrefixClient` で包む (src/tools/task_prefix.py)。**どの client が組まれたか**を
+    見るテストは、その 1 枚を剥がしてから判定する。
+    """
+    from src.tools.task_prefix import TaskPrefixClient
+
+    return client._inner if isinstance(client, TaskPrefixClient) else client  # noqa: SLF001
+
+
 def _register(monkeypatch: pytest.MonkeyPatch, *endpoints: LlmEndpoint) -> None:
     """テスト用: レジストリの process キャッシュへ直接注入 (実 DB 非依存)。"""
     monkeypatch.setattr(ep_mod, "_CACHE", {"None": list(endpoints)})
@@ -94,7 +106,7 @@ class TestDispatch:
             anthropic_api_key = ""
 
         client = build_llm_for(Step.ASSISTANT_CHAT, cast(AppConfig, _Cfg()), db_path=db)
-        assert isinstance(client, FallbackLLMClient)
+        assert isinstance(_unwrap(client), FallbackLLMClient)
         assert client.model == "lmstudio:gpt-oss-20b"
         assert is_external_model("lmstudio:gpt-oss-20b") is True
         assert is_external_model("gemma4:26b") is False

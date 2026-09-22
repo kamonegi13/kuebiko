@@ -31,6 +31,18 @@ from src.tools.model_tiers import (
 )
 
 
+def _unwrap(client: Any) -> Any:
+    """課題の接頭辞 wrapper を剥がす (2026-09-22)。
+
+    ⭐ `build_llm_for` は SFT 済み step のプロンプトへ課題の印を付けるため
+    `TaskPrefixClient` で包む (src/tools/task_prefix.py)。**どの client が組まれたか**を
+    見るテストは、その 1 枚を剥がしてから判定する。
+    """
+    from src.tools.task_prefix import TaskPrefixClient
+
+    return client._inner if isinstance(client, TaskPrefixClient) else client  # noqa: SLF001
+
+
 def _cfg(base_url: str = "http://localhost:11434") -> Any:
     """build_llm_for が使う base_url のみ持つ簡易 config スタンドイン。
 
@@ -141,7 +153,7 @@ class TestBuildLLM:
         # 空 DB → BUILTIN。BUILTIN は本番実効モデルと一致するため behavior-preserving。
         client = build_llm_for(step, _cfg(), db_path=db_path)
         assert client.model == expected_model
-        assert cast(OllamaClient, client)._timeout_seconds == expected_timeout  # noqa: SLF001
+        assert cast(OllamaClient, _unwrap(client))._timeout_seconds == expected_timeout  # noqa: SLF001
 
     def test_embedding_step_raises(self, db_path: Path) -> None:
         with pytest.raises(ValueError, match="埋込"):
@@ -264,15 +276,15 @@ class TestAnthropicDispatch:
         invalidate_model_tiers_cache()
         client = build_llm_for(Step.TRIAGE, self._cfg_with_key(), db_path=db_path)
         # 外部 ref はローカル fallback 付き wrapper で返る
-        assert isinstance(client, FallbackLLMClient)
-        assert isinstance(client._primary, AnthropicClient)  # noqa: SLF001
+        assert isinstance(_unwrap(client), FallbackLLMClient)
+        assert isinstance(_unwrap(client)._primary, AnthropicClient)  # noqa: SLF001
         assert client.model == "anthropic:claude-haiku-4-5"
         assert (
-            client._primary._timeout_seconds  # noqa: SLF001
+            _unwrap(client)._primary._timeout_seconds  # noqa: SLF001
             == STEP_REGISTRY[Step.TRIAGE].timeout_seconds
         )
         # fallback はティアのローカル既定
-        assert client._fallback.model == BUILTIN_MODEL_TIERS["fast"]  # noqa: SLF001
+        assert _unwrap(client)._fallback.model == BUILTIN_MODEL_TIERS["fast"]  # noqa: SLF001
 
     def test_anthropic_ref_without_key_falls_back_to_local(self, db_path: Path) -> None:
         from src.tools.llm_client import OllamaClient
@@ -285,7 +297,7 @@ class TestAnthropicDispatch:
         invalidate_model_tiers_cache()
         # 構築失敗 (キー未設定) は fallback ON (既定) ならローカルで継続
         client = build_llm_for(Step.TRIAGE, self._cfg_with_key(api_key=""), db_path=db_path)
-        assert isinstance(client, OllamaClient)
+        assert isinstance(_unwrap(client), OllamaClient)
         assert client.model == BUILTIN_MODEL_TIERS["fast"]
 
     def test_anthropic_ref_without_key_raises_when_fallback_off(
@@ -307,7 +319,7 @@ class TestAnthropicDispatch:
         from src.tools.llm_client import OllamaClient
 
         client = build_llm_for(Step.TRIAGE, self._cfg_with_key(), db_path=db_path)
-        assert isinstance(client, OllamaClient)
+        assert isinstance(_unwrap(client), OllamaClient)
 
     def test_validate_accepts_anthropic_on_fast(self) -> None:
         errs = validate_model_tiers(
@@ -391,8 +403,8 @@ class TestClaudeCodeDispatch:
         client = build_llm_for(Step.ASSISTANT_CHAT, cast(AppConfig, _Cfg()), db_path=db_path)
         from src.tools.llm_fallback import FallbackLLMClient
 
-        assert isinstance(client, FallbackLLMClient)
-        assert isinstance(client._primary, ClaudeCodeClient)  # noqa: SLF001
+        assert isinstance(_unwrap(client), FallbackLLMClient)
+        assert isinstance(_unwrap(client)._primary, ClaudeCodeClient)  # noqa: SLF001
         assert client.model == "claudecode:haiku"
 
     def test_validate_rejects_claudecode_on_embedding(self) -> None:
@@ -435,10 +447,10 @@ class TestBuildForRef:
         from src.tools.model_tiers import build_llm_for_ref
 
         client = build_llm_for_ref("llama3.1:8b", Step.ASSISTANT_CHAT, self._cfg())
-        assert isinstance(client, OllamaClient)
+        assert isinstance(_unwrap(client), OllamaClient)
         assert client.model == "llama3.1:8b"
         assert (
-            client._timeout_seconds  # noqa: SLF001
+            _unwrap(client)._timeout_seconds  # noqa: SLF001
             == STEP_REGISTRY[Step.ASSISTANT_CHAT].timeout_seconds
         )
 
@@ -447,7 +459,7 @@ class TestBuildForRef:
         from src.tools.model_tiers import build_llm_for_ref
 
         client = build_llm_for_ref("claudecode:sonnet", Step.ASSISTANT_CHAT, self._cfg())
-        assert isinstance(client, FallbackLLMClient)
+        assert isinstance(_unwrap(client), FallbackLLMClient)
         assert client.model == "claudecode:sonnet"
 
     def test_forbidden_ref_rejected(self) -> None:
@@ -519,7 +531,7 @@ class TestNarrativeThink:
         save_config(MODEL_TIERS_CONFIG_KEY, {"narrative": "claudecode:sonnet"}, db_path=db_path)
         invalidate_model_tiers_cache()
         client = build_llm_for(Step.PIR_SPOTLIGHT, _cfg(), db_path=db_path)
-        assert isinstance(client, ThinkOnClient)
+        assert isinstance(_unwrap(client), ThinkOnClient)
         assert client.model == "claudecode:sonnet"
 
         # narrative_think=off → 包装なし

@@ -33,6 +33,13 @@ from src.tools.model_tiers import (
 )
 
 
+def _unwrap(client: Any) -> Any:
+    """課題の接頭辞 wrapper を剥がす (2026-09-22)。どの client が組まれたかを見るため。"""
+    from src.tools.task_prefix import TaskPrefixClient
+
+    return client._inner if isinstance(client, TaskPrefixClient) else client  # noqa: SLF001
+
+
 def _cfg() -> Any:
     class _Cfg:
         ollama_base_url = "http://localhost:11434"
@@ -101,7 +108,7 @@ class TestBuildLlmForUsesOverride:
         save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": "kuebiko-sft:s1"}, db_path=db_path)
         invalidate_model_tiers_cache()
         llm = build_llm_for(Step.TRIAGE, _cfg(), db_path=db_path)
-        assert isinstance(llm, OllamaClient)
+        assert isinstance(_unwrap(llm), OllamaClient)
         assert llm.model == "kuebiko-sft:s1"
         # 同ティアの他 step は巻き込まれない
         other = build_llm_for(Step.ARTICLE_SUMMARY, _cfg(), db_path=db_path)
@@ -192,8 +199,8 @@ class TestLocalFallbackOverride:
         )
         invalidate_model_tiers_cache()
         llm = build_llm_for(Step.EVENT_NEWS, _cfg(), db_path=db_path)
-        assert isinstance(llm, FallbackLLMClient)
-        assert llm._fallback.model == "kuebiko-sft:26b"  # noqa: SLF001
+        assert isinstance(_unwrap(llm), FallbackLLMClient)
+        assert _unwrap(llm)._fallback.model == "kuebiko-sft:26b"  # noqa: SLF001
 
     def test_validation_rejects_external_fallback(self) -> None:
         # fallback は外部障害時の受け皿なので外部プロバイダは不可

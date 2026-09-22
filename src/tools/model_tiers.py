@@ -424,6 +424,12 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
         from src.tools.llm_fallback import ThinkOnClient  # 遅延 import (循環回避)
 
         client = ThinkOnClient(client)
+    # ⭐ 課題の接頭辞は **ここで一度だけ**付ける (2026-09-22)。call site を 1 つずつ直すと
+    #    漏れた経路だけ学習時と形が違ってしまう。詳細は src/tools/task_prefix.py。
+    from src.tools.task_prefix import TaskPrefixClient, prefix_for  # 遅延 import (循環回避)
+
+    if prefix_for(step):
+        client = TaskPrefixClient(client, step)
     return client
 
 
@@ -453,9 +459,14 @@ def build_llm_for_ref(
         bare = bare.removeprefix(prefix)
     validate_model_name(bare)
     validate_model_name(model_ref)
-    return _build_client_for_ref(
+    from src.tools.task_prefix import TaskPrefixClient, prefix_for  # 遅延 import (循環回避)
+
+    built = _build_client_for_ref(
         model_ref, spec, config, local_fallback=resolve_local_fallback_model(spec.tier)
     )
+    # ⭐ 明示 ref の経路 (評価・教師収穫) も本番と同じ形にする — でないと測った形と
+    #    動かす形が食い違う (2026-09-22)。
+    return TaskPrefixClient(built, step) if prefix_for(step) else built
 
 
 def _usage_recorder(provider: str, model: str) -> UsageRecorder:
