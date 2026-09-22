@@ -542,6 +542,40 @@ def build_duplicate_body_lines(warns: list[tuple[str, int, int]]) -> list[str]:
     return lines
 
 
+def _scan_duplicate_situations() -> list[Any]:
+    """情勢の題名を埋め込み、重複の疑いがある組を返す (週次監査用)。
+
+    ⚠ 埋込は 220 件前後なので数十秒。失敗は呼び手が握る (監査全体は落とさない)。
+    """
+    import asyncio
+
+    import numpy as np
+
+    from src.assessment.situation_dup_scan import find_duplicate_pairs
+    from src.assessment.situation_store import SituationStore
+    from src.config_loader import load_app_config
+    from src.tools.embedding_client import OllamaEmbeddingClient
+    from src.tools.model_tiers import resolve_embedding_model
+
+    rows = SituationStore(db_path=Path("data/run_history.db")).load_situations(
+        ("active", "dormant")
+    )
+
+    async def _vectors() -> list[tuple[str, str, str, Any]]:
+        client = OllamaEmbeddingClient(
+            base_url=load_app_config().ollama_base_url, model=resolve_embedding_model()
+        )
+        out = []
+        for row in rows:
+            arr = np.asarray((await client.embed(row.title)).vector, dtype=np.float32)
+            norm = float(np.linalg.norm(arr))
+            if norm:
+                out.append((row.situation_id, row.title, row.kind, arr / norm))
+        return out
+
+    return find_duplicate_pairs(asyncio.run(_vectors()))
+
+
 async def run_weekly_fill_rate_audit() -> None:
     """週次 fill-rate 監査: 前週の被覆急落 + routing ルール発火を判定し ops へ必ず 1 通投稿する。
 
@@ -618,6 +652,19 @@ async def run_weekly_fill_rate_audit() -> None:
                     rule_warn_count += 1
         except Exception as e:  # noqa: BLE001
             _log.warning("evidence_citation_audit_failed", error=str(e))
+        # 重複して開設された情勢 (2026-09-22)。規則 (match_claim) は誤って繋ぐ一方で
+        # **本当の重複を取りこぼす** — 実測で 10 組が二重に追跡されていた
+        # (Claude/OpenAI のリポジトリアクセスが余弦 0.997 で 2 件 等)。
+        # ⚠ 自動統合はしない (誤統合は追跡を消す)。検知して人の確認へ回す。
+        try:
+            from src.assessment.situation_dup_scan import audit_line
+
+            dup_pairs = _scan_duplicate_situations()
+            rule_lines.append(audit_line(dup_pairs))
+            if dup_pairs:
+                rule_warn_count += 1
+        except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
+            _log.warning("situation_dup_scan_failed", error=str(e)[:160])
         # 概念 PIR の LLM 主題判定 backlog (規約 3 点セット: 消費者なき沈黙を常設検知)。
         # backlog が積み上がる = 夜間 judge バッチの沈黙 → 該当 PIR の照合が空白化する。
         try:
