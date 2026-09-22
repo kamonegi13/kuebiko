@@ -68,3 +68,53 @@ class TestWithTaskPrefix:
 
         assert task_prefix_enabled() is True
         assert with_task_prefix("本文", Step.TRIAGE).startswith("[task: triage]")
+
+
+class TestPlacementAtSequenceHead:
+    """⭐ 印は **系列の先頭** に置く (system があれば system の先頭)。
+
+    system の後ろに置くと、課題を定義する長い文を読んだ後に印が来るため、切替の
+    合図として働きにくい。学習データ側 (assemble_sft_dataset) も同じ置き方にする。
+    """
+
+    def test_system_gets_the_marker_when_present(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import asyncio
+
+        monkeypatch.setenv("SFT_TASK_PREFIX", "1")
+        seen: dict[str, object] = {}
+
+        class _Inner:
+            model = "fake"
+
+            async def generate(self, prompt: str, **kw: object) -> object:
+                seen["prompt"] = prompt
+                seen["system"] = kw.get("system")
+                return object()
+
+        from src.tools.task_prefix import TaskPrefixClient
+
+        c = TaskPrefixClient(_Inner(), Step.PAIR_JUDGE)  # type: ignore[arg-type]
+        asyncio.run(c.generate("本文", system="役割の定義"))
+
+        assert str(seen["system"]).startswith("[task: pair]")
+        assert seen["prompt"] == "本文"
+
+    def test_prompt_gets_the_marker_when_there_is_no_system(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import asyncio
+
+        monkeypatch.setenv("SFT_TASK_PREFIX", "1")
+        seen: dict[str, object] = {}
+
+        class _Inner:
+            model = "fake"
+
+            async def generate(self, prompt: str, **kw: object) -> object:
+                seen["prompt"] = prompt
+                return object()
+
+        from src.tools.task_prefix import TaskPrefixClient
+
+        c = TaskPrefixClient(_Inner(), Step.TRIAGE)  # type: ignore[arg-type]
+        asyncio.run(c.generate("本文", system=None))
+
+        assert str(seen["prompt"]).startswith("[task: triage]")

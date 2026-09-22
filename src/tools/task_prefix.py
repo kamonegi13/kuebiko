@@ -16,6 +16,8 @@
 負の転移が減る (task-specific instruction prefixes / Task Compass, arXiv 2210.06277)。
 
 ⭐ **学習と本番の両方に入れる**。片方だけだと生徒が見たことのない形になる。
+⭐ **系列の先頭に置く** (system があれば system の先頭)。system の後ろに置くと、課題を
+  定義する長い文を読んだ後に印が来るため、切替の合図として働きにくい。
 ⭐ 印を付けるのは **SFT で学習している step だけ**。学習していない step に付けると、
   本番のプロンプトだけが変わって挙動が読めなくなる。
 """
@@ -98,6 +100,12 @@ class TaskPrefixClient(LLMClient):
     def model(self) -> str:
         return self._inner.model
 
+    def _placed(self, prompt: str, system: str | None) -> tuple[str, str | None]:
+        """印を **系列の先頭**へ置く (system があれば system 側)。"""
+        if system:
+            return prompt, with_task_prefix(system, self._step)
+        return with_task_prefix(prompt, self._step), system
+
     async def generate(
         self,
         prompt: str,
@@ -106,12 +114,9 @@ class TaskPrefixClient(LLMClient):
         max_tokens: int = DEFAULT_MAX_TOKENS,
         think: bool | None = None,
     ) -> LLMResponse:
+        p, sys_ = self._placed(prompt, system)
         return await self._inner.generate(
-            with_task_prefix(prompt, self._step),
-            system=system,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            think=think,
+            p, system=sys_, temperature=temperature, max_tokens=max_tokens, think=think
         )
 
     async def generate_structured(
@@ -124,10 +129,11 @@ class TaskPrefixClient(LLMClient):
         think: bool | None = None,
         max_attempts: int = MAX_STRUCTURED_ATTEMPTS,
     ) -> _T:
+        p, sys_ = self._placed(prompt, system)
         return await self._inner.generate_structured(
-            with_task_prefix(prompt, self._step),
+            p,
             schema,
-            system=system,
+            system=sys_,
             temperature=temperature,
             max_tokens=max_tokens,
             think=think,

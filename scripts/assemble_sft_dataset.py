@@ -81,13 +81,18 @@ def _load_pairs(path: Path, task: str, *, with_prefix: bool = True) -> list[dict
         if d.get("prompt") and d.get("completion"):
             # ⭐ 課題の接頭辞は **読み込み時に付ける** — 以後のトークン計測も接頭辞込みに
             #   なり、学習時の系列長と一致する (2026-09-22)。
+            # ⭐ 置くのは **系列の先頭** (system があれば system の先頭)。system の後ろに
+            #   置くと、課題を定義する長い文の後に印が来て切替の合図として働きにくい。
             marker = TASK_PREFIXES.get(task, "") if with_prefix else ""
-            prompt = d["prompt"]
-            if marker and not prompt.startswith(marker):
-                prompt = marker + prompt
+            prompt, system = d["prompt"], d.get("system") or ""
+            if marker:
+                if system and not system.startswith(marker):
+                    system = marker + system
+                elif not system and not prompt.startswith(marker):
+                    prompt = marker + prompt
             row = {"prompt": prompt, "completion": d["completion"], "_task": task}
-            if d.get("system"):
-                row["system"] = d["system"]
+            if system:
+                row["system"] = system
             out.append(row)
     return out
 
