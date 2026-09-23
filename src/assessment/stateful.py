@@ -1026,7 +1026,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         detect_input = []
     try:
         ml_scores, ml_kinds, ml_floor = await _score_detect_ml(
-            store=store, detect_input=detect_input, fast_llm=fast_llm or llm
+            store=store, detect_input=detect_input
         )
     except Exception as exc:  # noqa: BLE001
         _log.warning("detect_ml_score_failed", error=type(exc).__name__)
@@ -1858,11 +1858,18 @@ async def _score_detect_ml(
     *,
     store: SituationStore,
     detect_input: list[dict[str, object]],
-    fast_llm: LLMClient,
 ) -> tuple[dict[str, float], dict[str, str], set[str]]:
-    """detect ML (SYNTHESIS §47) で候補を採点する。返り値 = (確率, 種別, 下限保証の id)。"""
+    """detect ML (SYNTHESIS §47) で候補を採点する。返り値 = (確率, 種別, 下限保証の id)。
+
+    ⚠ 種別は **Step.EVENT_KIND のモデル**で判定する (2026-09-23)。以前は detect の LLM を
+      借りていたため、detect に割り当てた n17c (種別を学習していない) が朝夕のブリーフごとに
+      種別キャッシュへ書き込み、67% が other に倒れていた。キャッシュは群化 (pair の特徴量) と
+      detect ML の特徴量が共有する — step の借用は割当の変更を黙って波及させる。
+    """
+    from src import config_loader
     from src.eventnews import event_kind
     from src.synthesis.grounded import detect_ml
+    from src.tools import model_tiers
 
     if not detect_input:
         return {}, {}, set()
@@ -1880,11 +1887,15 @@ async def _score_detect_ml(
         if a.get("article_id")
     ]
 
+    kind_llm = model_tiers.build_llm_for(
+        model_tiers.Step.EVENT_KIND, config_loader.load_app_config()
+    )
+
     async def _classify(title: str, summary: str) -> str:
-        return await event_kind.classify(fast_llm, title, summary)
+        return await event_kind.classify(kind_llm, title, summary)
 
     kinds = await detect_ml.ensure_kinds(
-        repo, triples, _classify, model_label=getattr(fast_llm, "model", "")
+        repo, triples, _classify, model_label=getattr(kind_llm, "model", "")
     )
     articles = detect_ml.build_detect_articles(repo, [t[0] for t in triples], kinds)
     return (

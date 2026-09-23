@@ -197,3 +197,64 @@ def test_floor_includes_high_importance_and_japan_breach() -> None:
         "other": a(article_id="other"),
     }
     assert floor_article_ids(arts) == {"hi", "jp"}
+
+
+def test_score_detect_ml_classifies_kinds_with_event_kind_step_not_detect_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """種別は Step.EVENT_KIND のモデルで判定する — detect の LLM を借りない (2026-09-23)。
+
+    detect の LLM を借りていたため、detect に割り当てた n17c (種別を学習していない) が
+    朝夕のブリーフごとに種別キャッシュへ書き込み、67% が other に倒れていた。
+    キャッシュは群化と detect ML の特徴量が共有する。
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    from src.assessment import stateful
+    from src.eventnews import event_kind
+    from src.synthesis.grounded import detect_ml
+    from src.tools import model_tiers
+    from src.tools.model_tiers import Step
+
+    built: list[Step] = []
+    kind_llm = SimpleNamespace(model="kind-model")
+
+    def fake_build(step: Step, config: object) -> object:
+        built.append(step)
+        return kind_llm
+
+    used: list[object] = []
+
+    async def fake_classify(llm: object, title: str, summary: str) -> str:
+        used.append(llm)
+        return "breach"
+
+    captured: dict[str, str] = {}
+
+    async def fake_ensure(
+        repo: object, triples: object, classify: object, **kw: str
+    ) -> dict[str, str]:
+        captured["label"] = kw["model_label"]
+        await classify("t", "s")  # type: ignore[operator]
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(model_tiers, "build_llm_for", fake_build)
+    monkeypatch.setattr(event_kind, "classify", fake_classify)
+    monkeypatch.setattr(detect_ml, "load_detect_model", lambda: _model())
+    monkeypatch.setattr(detect_ml, "ensure_kinds", fake_ensure)
+    from src import config_loader
+
+    monkeypatch.setattr(config_loader, "load_app_config", lambda: object())
+
+    with pytest.raises(RuntimeError, match="stop"):
+        asyncio.run(
+            stateful._score_detect_ml(  # noqa: SLF001
+                store=SimpleNamespace(_repo=object()),  # type: ignore[arg-type]
+                detect_input=[{"article_id": "a", "title": "t", "summary": "s"}],
+            )
+        )
+
+    assert built == [Step.EVENT_KIND]
+    assert used == [kind_llm]
+    assert captured["label"] == "kind-model"
