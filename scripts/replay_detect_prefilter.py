@@ -179,8 +179,10 @@ async def main_async(args: argparse.Namespace) -> int:
     print(f"対象日 {days} (top_k={prefilter_top_k()})")
     import os
 
-    # 接頭辞の有無は腕ごとに明示する (環境の既定値に任せると、どちらを測ったか残らない)
-    os.environ["SFT_TASK_PREFIX"] = "1" if args.task_prefix else "0"
+    # 接頭辞の有無は腕ごとに明示する。印の判定はモデル単位 (task_prefix.PREFIX_TRAINED_MODELS)
+    # なので、評価中の新モデルは環境変数で足し、登録済みモデルの「印なし」腕は包みを外す
+    if args.task_prefix and args.model:
+        os.environ["SFT_TASK_PREFIX_MODELS"] = args.model
     store = SituationStore(db_path=Path("data/run_history.db"))
     current_titles = [r.title for r in store.load_situations(("active",))]
     cfg = load_app_config()
@@ -193,12 +195,12 @@ async def main_async(args: argparse.Namespace) -> int:
         if args.model
         else build_llm_for(Step.SYNTHESIS_DETECT, cfg)
     )
-    if args.task_prefix:
-        from src.tools.task_prefix import TaskPrefixClient
+    from src.tools.task_prefix import TaskPrefixClient
 
-        # factory が包んでいない版 (配備前のコンテナ等) でも、接頭辞の腕は必ず接頭辞つきにする
-        if not isinstance(llm, TaskPrefixClient):
-            llm = TaskPrefixClient(llm, Step.SYNTHESIS_DETECT)
+    if args.task_prefix and not isinstance(llm, TaskPrefixClient):
+        llm = TaskPrefixClient(llm, Step.SYNTHESIS_DETECT)
+    if not args.task_prefix and isinstance(llm, TaskPrefixClient):
+        llm = llm._inner  # noqa: SLF001 — 登録済みモデルでも「印なし」の腕を測るため
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config
 

@@ -40,7 +40,13 @@ from src.tools.model_tiers import Step
 
 _T = TypeVar("_T", bound=BaseModel)
 
-_FLAG = "SFT_TASK_PREFIX"
+_EXTRA_MODELS_ENV = "SFT_TASK_PREFIX_MODELS"
+
+#: 接頭辞つきで学習したモデル。**「印で学習したか」はモデル固有の性質**なので、ここに
+#: 名前を足した時点で、UI でそのモデルを割り当てるだけで印が付く (環境変数の設定漏れで
+#: 黙って外れる事故を構造で消す — s19 から印を外すと event_kind が 277 → 257 に落ちた)。
+#: 評価中の新モデルは環境変数 ``SFT_TASK_PREFIX_MODELS`` (カンマ区切り) で一時的に足す。
+PREFIX_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:s19"})
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
@@ -60,14 +66,15 @@ TASK_MARKERS: dict[Step, str] = {
 }
 
 
-def task_prefix_enabled() -> bool:
-    """接頭辞を付けるか。**既定 OFF** (``SFT_TASK_PREFIX=1`` で有効化)。
+def task_prefix_enabled(model: str) -> bool:
+    """このモデルに接頭辞を付けるか (= 接頭辞つきで学習したモデルか)。
 
-    ⚠⚠ 既定を ON にしてはいけない。常駐モデル (s17 / n17m30 / n17c) は **接頭辞なしで
-    学習されている**ため、コードを入れた瞬間に「見たことのない形」のプロンプトが届く。
-    接頭辞つきで学習したモデルを配備したときに、同じ版で旗を立てる。
+    ⚠⚠ 2026-09-24 まではプロセス全体の旗 ``SFT_TASK_PREFIX`` だった。立てると接頭辞なしで
+    学習した常駐モデル (n17c / n17m30 等) にも印が付き、見たことのない形が届く。
+    旧旗は読まない (一度も本番で立てていない)。
     """
-    return os.environ.get(_FLAG, "0").strip() in ("1", "true", "True")
+    extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
+    return model.strip() in PREFIX_TRAINED_MODELS | extra
 
 
 def prefix_for(step: Step) -> str:
@@ -75,9 +82,9 @@ def prefix_for(step: Step) -> str:
     return TASK_MARKERS.get(step, "")
 
 
-def with_task_prefix(prompt: str, step: Step) -> str:
+def with_task_prefix(prompt: str, step: Step, model: str) -> str:
     """プロンプトの先頭へ課題の印を付ける (二重付与はしない)。"""
-    if not task_prefix_enabled():
+    if not task_prefix_enabled(model):
         return prompt
     marker = prefix_for(step)
     if not marker or prompt.startswith(marker):
@@ -102,9 +109,10 @@ class TaskPrefixClient(LLMClient):
 
     def _placed(self, prompt: str, system: str | None) -> tuple[str, str | None]:
         """印を **系列の先頭**へ置く (system があれば system 側)。"""
+        model = self._inner.model
         if system:
-            return prompt, with_task_prefix(system, self._step)
-        return with_task_prefix(prompt, self._step), system
+            return prompt, with_task_prefix(system, self._step, model)
+        return with_task_prefix(prompt, self._step, model), system
 
     async def generate(
         self,
