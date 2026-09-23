@@ -192,6 +192,12 @@ def main() -> int:
     # ⚠ 接頭辞は **本番の SFT_TASK_PREFIX と必ず揃える**。片方だけだと生徒が見たことの
     #   ない形になる (2026-09-22、多課題 SFT の負の転移対策)。
     ap.add_argument("--no-task-prefix", action="store_true", help="課題の接頭辞を付けない")
+    ap.add_argument(
+        "--repeat-detect",
+        type=int,
+        default=1,
+        help="学習側の detect を N 回繰り返す (比率を上げる。valid は繰り返さない)",
+    )
     args = ap.parse_args()
 
     pairs: list[dict[str, str]] = []
@@ -271,6 +277,14 @@ def main() -> int:
 
     random.Random(args.seed).shuffle(kept)
     valid, train = kept[: args.valid_size], kept[args.valid_size :]
+    if args.repeat_detect > 1:
+        # ⭐ 学習側だけを繰り返す — valid に同じ例が入ると検証損失が学習の記憶を測ってしまう。
+        #   detect は教師 122 日分しかなく全体の 2% 前後に埋もれ、s19 は教師 (1 日 5.5 件) より
+        #   はるかに少なく開いた (2.4 件、開設 0 の日 3/5) — 量でなく露出の不足と読んで比率を上げる
+        extra = [r for r in train if r["_task"] == "detect"] * (args.repeat_detect - 1)
+        train = train + extra
+        random.Random(args.seed + 1).shuffle(train)
+        print(f"detect を {args.repeat_detect} 回に繰り返す: 学習側 +{len(extra)} 件")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, rows in (("train", train), ("valid", valid)):
         path = args.out_dir / f"{name}.jsonl"
