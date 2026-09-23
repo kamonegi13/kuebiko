@@ -177,8 +177,12 @@ async def main_async(args: argparse.Namespace) -> int:
             ).fetchall()
         days = [str(r["d"]) for r in rows]
     print(f"対象日 {days} (top_k={prefilter_top_k()})")
+    import os
+
+    # 接頭辞の有無は腕ごとに明示する (環境の既定値に任せると、どちらを測ったか残らない)
+    os.environ["SFT_TASK_PREFIX"] = "1" if args.task_prefix else "0"
     store = SituationStore(db_path=Path("data/run_history.db"))
-    active_titles = [r.title for r in store.load_situations(("active",))]
+    current_titles = [r.title for r in store.load_situations(("active",))]
     cfg = load_app_config()
     # ⚠ detect の検証 (2026-09-19 の ML 前段・和集合・replay) は **すべて gemma4:26b**
     #    に紐づく。s17 と比べるときは --model で明示し、既定は本番の解決に任せる。
@@ -189,6 +193,12 @@ async def main_async(args: argparse.Namespace) -> int:
         if args.model
         else build_llm_for(Step.SYNTHESIS_DETECT, cfg)
     )
+    if args.task_prefix:
+        from src.tools.task_prefix import TaskPrefixClient
+
+        # factory が包んでいない版 (配備前のコンテナ等) でも、接頭辞の腕は必ず接頭辞つきにする
+        if not isinstance(llm, TaskPrefixClient):
+            llm = TaskPrefixClient(llm, Step.SYNTHESIS_DETECT)
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config
 
@@ -205,7 +215,20 @@ async def main_async(args: argparse.Namespace) -> int:
         arts = build_detect_articles(repo, [str(a["article_id"]) for a in pool], kinds)
         scores = score_articles(model, arts)
         cand = narrow(pool, scores, arts, top_k=prefilter_top_k())
-        print(f"  {day}: プール {len(pool)} → 候補 {len(cand)}", flush=True)
+        # ⚠ 既定は「今の」追跡中一覧 (09-19〜20 の replay と同じ)。--as-of-scope は
+        #   教師の収穫 (build_sft_teacher_detect) と同じ形 = その日時点の一覧を本番の規則で
+        #   絞ったもの。s19 以降はこの形で学習しているので、生徒の評価はこちらで行う。
+        if args.as_of_scope:
+            # 遅延 import: 教師側が本 module の関数を import しているため (循環回避)
+            from scripts.build_sft_teacher_detect import load_active_titles_as_of, narrow_titles
+
+            active_titles = await narrow_titles(load_active_titles_as_of(repo, day), cand, repo)
+        else:
+            active_titles = current_titles
+        print(
+            f"  {day}: プール {len(pool)} → 候補 {len(cand)} / 情勢一覧 {len(active_titles)}",
+            flush=True,
+        )
         # 腕: input = 入力の広さ (全件 / 候補セット) / prompt = 判定基準 (現行 / 追跡価値つき)
         if args.mode == "union":
             # 出荷と同じ合成: まず現行の LLM 選定、その結果を見てから ML 上位を足す
@@ -333,6 +356,12 @@ def main() -> int:
     )
     ap.add_argument("--select-n", type=int, default=4, help="select モードで ML が開く件数/日")
     ap.add_argument("--out", type=Path, default=Path("data/mlx/replay_detect_prefilter.json"))
+    ap.add_argument(
+        "--as-of-scope",
+        action="store_true",
+        help="情勢一覧をその日時点のもの + 本番の絞り込みにする (教師と同じ形、s19 以降の評価用)",
+    )
+    ap.add_argument("--task-prefix", action="store_true", help="課題の接頭辞を付ける (s19 以降)")
     return asyncio.run(main_async(ap.parse_args()))
 
 
