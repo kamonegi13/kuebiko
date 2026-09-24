@@ -345,6 +345,23 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             ).fetchall()
         return {str(r["article_id"]) for r in rows}
 
+    def event_item_ids_by_article(self, article_ids: Sequence[str]) -> dict[str, set[str]]:
+        """記事 → 属する事象 ID の集合 (事象に入っていない記事は欠ける)。"""
+        ids = list(dict.fromkeys(article_ids))
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT article_id AS article_id, item_id AS item_id FROM event_item_members"  # noqa: S608
+                f" WHERE article_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        out: dict[str, set[str]] = {}
+        for r in rows:
+            out.setdefault(str(r["article_id"]), set()).add(str(r["item_id"]))
+        return out
+
     def list_event_items(
         self,
         *,

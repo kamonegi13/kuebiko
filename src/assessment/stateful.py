@@ -1340,6 +1340,21 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     except Exception as exc:  # noqa: BLE001 — shadow は本体の可用性に影響させない
         _log.warning("detect_ml_shadow_failed", error=type(exc).__name__)
 
+    # 束ねの関門: 別々の事案を 1 claim にまとめたら開設せず、塊ごとに書き直させる (2026-09-24)
+    try:
+        detected = await _unbundle_detected(
+            detected,
+            repo=repo,
+            entities_by_id=entities_by_id,
+            detect_input=detect_input,
+            llm=fast_llm or llm,
+            active_titles=active_titles,
+            pir_context=pir_context,
+            period_label=label,
+        )
+    except Exception as exc:  # noqa: BLE001 — 関門の失敗で開設を止めない
+        _log.warning("detect_bundle_gate_failed", error=type(exc).__name__)
+
     period_start = now_dt - timedelta(hours=lookback)
     context_start = now_dt - timedelta(hours=_CONTEXT_WINDOW_HOURS.get(period_type, 90 * 24))
 
@@ -2039,6 +2054,47 @@ def _delta_note(prev: RevisionRow, j: KeyJudgment, delta: DeltaType) -> str:
     if delta == "reopened":
         return "休眠から再活性化"
     return ""
+
+
+async def _unbundle_detected(
+    detected: DetectResult,
+    *,
+    repo: RunHistoryRepository,
+    entities_by_id: Mapping[str, set[str]],
+    detect_input: Sequence[Mapping[str, object]],
+    llm: LLMClient,
+    active_titles: list[str],
+    pir_context: list[dict[str, str]],
+    period_label: str,
+) -> DetectResult:
+    """束ねた claim を塊ごとに書き直す (`claim_bundle`)。書き直しは ML 和集合と同じ経路
+    (detect_ml_select.j2 = 選び直さず claim を書く) を塊ごとに呼ぶ。"""
+    from src.assessment.claim_bundle import unbundle_claims
+
+    ids = sorted({a for c in detected.open for a in c.article_ids})
+    if not ids:
+        return detected
+    by_id = {str(a.get("article_id", "")): a for a in detect_input}
+
+    async def rewrite(cluster: list[str]) -> DetectResult:
+        return await detect_new_claims(
+            llm=llm,
+            articles=[dict(by_id[a]) for a in cluster if a in by_id],
+            active_titles=active_titles,
+            pir_context=pir_context,
+            period_label=period_label,
+            template="synthesis/detect_ml_select.j2",
+        )
+
+    return await unbundle_claims(
+        detected,
+        strong_by_aid={
+            a: split_anchor_keys(frozenset(entities_by_id.get(a, set())))[0] for a in ids
+        },
+        items_by_aid=repo.event_item_ids_by_article(ids),
+        rewrite=rewrite,
+        vec_by_aid=_unit_vectors(repo.load_summary_embeddings(ids)),
+    )
 
 
 async def _add_ml_union_claims(

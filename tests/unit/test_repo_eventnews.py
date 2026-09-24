@@ -794,3 +794,27 @@ class TestDraftRejects:
         assert len(got) == 1
         assert got[0]["item_id"] == "ev-a" and got[0]["version"] == 2
         assert got[0]["hints"] == "逐語"
+
+
+def test_event_item_ids_by_article_maps_members_to_their_items(repo: RunHistoryRepository) -> None:
+    """記事 → 属する事象 (detect の束ねの判定に使う、2026-09-24)。"""
+    for item_id, aids in (("e1", ["a1", "a2"]), ("e2", ["a2", "a3"])):
+        repo.create_event_item(
+            item_id=item_id,
+            origin="live",
+            first_reported_at=_NOW,
+            last_reported_at=_NOW,
+            importance="high",
+        )
+        for aid in aids:
+            repo.add_event_member(
+                item_id=item_id,
+                article_id=aid,
+                joined_at=_NOW,
+                contributed_new_facts=0,
+                join_signal="seed",
+            )
+
+    got = repo.event_item_ids_by_article(["a1", "a2", "a3", "none"])
+
+    assert got == {"a1": {"e1"}, "a2": {"e1", "e2"}, "a3": {"e2"}}
