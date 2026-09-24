@@ -118,7 +118,7 @@ def shadow_enabled() -> bool:
 
 
 def prefilter_top_k() -> int:
-    """LLM detect の前段で候補を絞る件数 (``DETECT_ML_PREFILTER``、既定 15、0 = 絞らない)。"""
+    """LLM detect の前段で候補を絞る件数 (``DETECT_ML_PREFILTER``、既定 30、0 = 絞らない)。"""
     raw = os.environ.get(_PREFILTER_ENV, str(PREFILTER_TOP_K_DEFAULT))
     try:
         return max(0, int(raw))

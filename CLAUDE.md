@@ -427,9 +427,9 @@ kuebiko/
   (+ `CLOUDFLARE_TUNNEL_HOSTNAME`) を設定して named tunnel 化 (再起動で URL 不変)。手順は
   [docs/mobile-access.md](docs/mobile-access.md)
 - **detect ML と毎時の台帳再評価 (2026-09-17)**: 新規追跡の候補は ML (`config/models/detect_model.json`、
-  審判ラベルで学習) が上位 15 件に絞り、claim の選定は LLM に残す (`DETECT_ML_PREFILTER`、0 で従来)。
+  審判ラベルで学習) が上位 30 件に絞り (09-18 に 15 → 30)、claim の選定は LLM に残す (`DETECT_ML_PREFILTER`、0 で従来)。
   更新すべき台帳が繰り越されないよう、毎時保守チェーンに増分再評価の段 (6 件/時、開設なし、
-  `LEDGER_REASSESS_HOURLY`) を置く。**候補数 (15) / 開設上限 (8/run) / 更新上限 (12/run + 毎時 6) /
+  `LEDGER_REASSESS_HOURLY`) を置く。**候補数 (30) / 開設上限 (8/run、ML 和集合込みで 12) / 更新上限 (12/run + 毎時 6) /
   報告の幅 (render 側) は別物**で、混同しない。設計と実測は
   [docs/research/llm_training/SYNTHESIS.md](docs/research/llm_training/SYNTHESIS.md) §47-48
 - **モデル変更は CLAUDE.md / `.env.example` を同時更新**
