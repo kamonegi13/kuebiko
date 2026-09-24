@@ -87,11 +87,14 @@ class TestApplyGateInLedger:
             return [vecs.get(t.split("\n")[0]) for t in texts]
 
         monkeypatch.setattr(stateful, "_embed_texts", fake_embed)
-        repo = SimpleNamespace(load_summary_embeddings=lambda ids: {})
-        pool_by_id = {
-            "a1": {"article_id": "a1", "title": "近い記事", "summary": ""},
-            "a2": {"article_id": "a2", "title": "遠い記事", "summary": ""},
-        }
+        texts = {"a1": "近い記事", "a2": "遠い記事"}
+        saved: dict[str, object] = {}
+        repo = SimpleNamespace(
+            load_summary_embeddings=lambda ids: {},
+            summary_embedding_inputs=lambda ids: {a: texts[a] for a in ids if a in texts},
+            save_summary_embeddings=lambda vecs, model: saved.update(vecs) or len(vecs),
+        )
+        pool_by_id = {"a1": {"article_id": "a1"}, "a2": {"article_id": "a2"}}
         titles = {"s1": "情勢の題名"}
         return asyncio.run(
             stateful._apply_assign_gate(  # noqa: SLF001

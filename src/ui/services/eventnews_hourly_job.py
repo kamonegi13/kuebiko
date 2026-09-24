@@ -32,6 +32,7 @@ from src.eventnews.models import (
 from src.eventnews.runner import BackfillStats
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
+from src.storage.repo_summary_embeddings import summary_embedding_text
 from src.storage.run_history import RunHistoryRepository
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step, build_llm_for
@@ -431,7 +432,7 @@ async def _embed_summaries(
     client = OllamaEmbeddingClient(base_url=config.ollama_base_url, model=model)
     fresh: dict[str, np.ndarray] = {}
     for art in missing:
-        text = f"{art.title}\n\n{art.summary}".strip()
+        text = summary_embedding_text(art.title, art.summary)
         if not text:
             continue
         try:

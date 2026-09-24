@@ -61,3 +61,32 @@ def test_dimension_mismatch_is_dropped_not_returned_wrong(repo: RunHistoryReposi
         conn.commit()
 
     assert repo.load_summary_embeddings(["a1"]) == {}
+
+
+def test_embedding_text_is_title_blank_line_summary() -> None:
+    """要約埋込の入力の形は 1 か所で決める (群化・補完・割当の関門で食い違った、2026-09-24)。"""
+    from src.storage.repo_summary_embeddings import summary_embedding_text
+
+    assert summary_embedding_text("見出し", "要約") == "見出し\n\n要約"
+    assert summary_embedding_text("見出し", None) == "見出し"
+    assert summary_embedding_text("", "") == ""
+
+
+def test_summary_embedding_inputs_reads_title_and_summary(repo: RunHistoryRepository) -> None:
+    from src.storage.repo_summary_embeddings import summary_embedding_text
+
+    with repo._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "INSERT INTO runs (started_at, pipeline, dry_run, status)"
+            " VALUES ('2026-09-24T00:00:00+00:00', 't', 0, 'done')"
+        )
+        rid = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+        conn.execute(
+            "INSERT INTO articles (run_id, article_id, title, summary, url, status, created_at)"
+            " VALUES (?, 'a1', '見出し', '要約', 'https://kuebiko.example/1', 'posted',"
+            " '2026-09-24T00:00:00+00:00')",
+            (rid,),
+        )
+    got = repo.summary_embedding_inputs(["a1", "missing"])
+
+    assert got == {"a1": summary_embedding_text("見出し", "要約")}

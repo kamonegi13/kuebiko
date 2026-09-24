@@ -462,9 +462,14 @@ async def _apply_assign_gate(
         sit_vecs = dict(zip(sids, await _embed_texts(titles), strict=True))
         aids = sorted({a for v in kept.values() for a in v})
         art_vecs = _unit_vectors(repo.load_summary_embeddings(aids))
-        missing = [a for a in aids if a not in art_vecs]
-        texts = [_title_and_summary(pool_by_id.get(a, {})) for a in missing]
-        art_vecs.update(zip(missing, await _embed_texts(texts), strict=True))
+        # 要約埋込の無い記事は群化と同じ入力文 (見出し + 空行 + 要約) をその場で埋め込み、保存する
+        # ⚠ プールの記事には要約が無いので DB から引く (見出しだけで作ると保存済みと形が食い違う)
+        inputs = repo.summary_embedding_inputs([a for a in aids if a not in art_vecs])
+        fresh_ids = sorted(inputs)
+        fresh_vecs = await _embed_texts([inputs[a] for a in fresh_ids])
+        fresh = dict(zip(fresh_ids, fresh_vecs, strict=True))
+        art_vecs.update({a: v for a, v in fresh.items() if v is not None})
+        _save_fresh_summary_embeddings(repo, fresh)
     except Exception as e:  # noqa: BLE001 — 確認できなくても台帳の割当は続ける
         _log.warning("assign_gate_embed_failed", error=str(e)[:160], mode=mode)
         return kept, by, rest
@@ -504,9 +509,18 @@ async def _apply_assign_gate(
     return kept, by, rest
 
 
-def _title_and_summary(article: Mapping[str, object]) -> str:
-    """要約埋込の入力。**群化が保存する要約埋込と同じ形** (見出し + 空行 + 要約) にする。"""
-    return f"{article.get('title', '')}\n\n{article.get('summary', '')}".strip()
+def _save_fresh_summary_embeddings(repo: RunHistoryRepository, vecs: Mapping[str, Any]) -> None:
+    """その場で作った要約埋込を保存する (次の run で作り直さない)。失敗しても割当は続ける。"""
+    if not vecs:
+        return
+    try:
+        from src.tools.model_tiers import resolve_embedding_model
+
+        repo.save_summary_embeddings(
+            {a: v for a, v in vecs.items() if v is not None}, model=resolve_embedding_model()
+        )
+    except Exception as e:  # noqa: BLE001
+        _log.warning("assign_gate_save_embeddings_failed", error=str(e)[:160])
 
 
 def _unit_vectors(vecs: Mapping[str, Any]) -> dict[str, Any]:

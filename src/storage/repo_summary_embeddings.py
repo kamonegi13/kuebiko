@@ -19,6 +19,16 @@ import numpy as np
 _CHUNK = 400
 
 
+def summary_embedding_text(title: str | None, summary: str | None) -> str:
+    """要約埋込の入力 (見出し + 空行 + 要約)。**形の SSoT**。
+
+    群化・補完・台帳の割当の関門が共有する。
+
+    ⚠ 2026-09-24 に割当の関門が「見出し + 改行 1 つ」で作っていて、保存済みの埋込と形が食い違った。
+    """
+    return f"{title or ''}\n\n{summary or ''}".strip()
+
+
 class _Conn(Protocol):
     def _connect(self) -> Any: ...
 
@@ -45,6 +55,26 @@ class SummaryEmbeddingMixin:
                     vec = np.frombuffer(bytes(raw), dtype=np.float32)
                     if vec.size == int(row["dim"]):
                         out[str(row["article_id"])] = vec
+        return out
+
+    def summary_embedding_inputs(self: Any, article_ids: Sequence[str]) -> dict[str, str]:
+        """要約埋込を作るための入力文 (``summary_embedding_text``)。記事が無ければ欠ける。"""
+        out: dict[str, str] = {}
+        ids = list(dict.fromkeys(article_ids))
+        if not ids:
+            return out
+        with self._connect() as conn:
+            for i in range(0, len(ids), _CHUNK):
+                chunk = ids[i : i + _CHUNK]
+                ph = ",".join("?" * len(chunk))
+                for row in conn.execute(
+                    f"SELECT article_id, title, summary FROM articles WHERE article_id IN ({ph})",  # noqa: S608
+                    tuple(chunk),
+                ).fetchall():
+                    aid = str(row["article_id"])
+                    text = summary_embedding_text(row["title"], row["summary"])
+                    if text and aid not in out:  # articles は同じ id が複数行ありうる
+                        out[aid] = text
         return out
 
     def save_summary_embeddings(self: Any, vectors: Mapping[str, np.ndarray], *, model: str) -> int:
