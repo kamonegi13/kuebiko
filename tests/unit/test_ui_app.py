@@ -1128,8 +1128,11 @@ class TestReadOnlyAllowlist:
 
     def test_assistant_chat_not_blocked(self, ro_client: TestClient) -> None:
         # allowlist で middleware は通過する (LLM 不在の test 環境では 200 は返らないが
-        # 403 でないこと = write 遮断の例外が効いていることを検証)
-        resp = ro_client.post("/api/v1/assistant/chat", json={"message": "hi"})
+        # 403 でないこと = write 遮断の例外が効いていることを検証)。
+        # ⚠ LLM 不在で endpoint は例外になる — 例外を 500 として受け取り、middleware の
+        #   判定だけを見る (以前は本物の Ollama に繋いで通っていた、tests/unit/conftest.py)
+        client = TestClient(ro_client.app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/assistant/chat", json={"message": "hi"})
         assert resp.status_code != 403
 
     def test_article_translate_not_blocked(self, ro_client: TestClient) -> None:
