@@ -315,9 +315,10 @@ async def main_async(args: argparse.Namespace) -> int:
     rec = RecordingClient(teacher)
     print(f"教師モデル: {rec.model}", flush=True)
     done: frozenset[str] = frozenset()
-    if OUT.exists() and not args.fresh:
+    out: Path = args.out
+    if out.exists() and not args.fresh:
         done = frozenset(
-            json.loads(x)["key"] for x in OUT.read_text(encoding="utf-8").splitlines() if x.strip()
+            json.loads(x)["key"] for x in out.read_text(encoding="utf-8").splitlines() if x.strip()
         )
         print(f"既存 {len(done)} 対を読み飛ばす", flush=True)
     days = plan_days(since=args.since, until=args.until, done=done, newest_first=args.newest_first)
@@ -334,7 +335,7 @@ async def main_async(args: argparse.Namespace) -> int:
     except Exception:  # noqa: BLE001 — PIR 不在でも収穫は成立する
         pir_context = []
     print(f"対象 {len(days)} 日 ({days[0] if days else '-'} .. {days[-1] if days else '-'})")
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     total = failures = 0
     for day in days:
         try:
@@ -358,7 +359,7 @@ async def main_async(args: argparse.Namespace) -> int:
         if not rows:
             print(f"{day}  プール不足 — 飛ばす", flush=True)
             continue
-        with OUT.open("a", encoding="utf-8") as f:
+        with out.open("a", encoding="utf-8") as f:
             for r in rows:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         total += len(rows)
@@ -369,7 +370,7 @@ async def main_async(args: argparse.Namespace) -> int:
             f"{'  +ml_add ' + str(rows[1]['n_open']) if len(rows) > 1 else ''}  (累計 {total})",
             flush=True,
         )
-    print(f"書込: {OUT} (+{total} 対)", flush=True)
+    print(f"書込: {out} (+{total} 対)", flush=True)
     return 0 if total else 1
 
 
@@ -384,6 +385,8 @@ def main() -> int:
     # ⚠ ml_add の腕は既定で採らない — ML が挙げた 4 件を 99 日中 51 日で全件承認しており
     #   (採択率 中央 100%)、判断を教える材料になっていない (2026-09-21 実測)。
     p.add_argument("--with-ml-add", action="store_true")
+    # 判定基準を改めたときは別ファイルへ取り直す (旧基準の教師対と混ぜない)
+    p.add_argument("--out", type=Path, default=OUT, help="教師対の書き出し先 (jsonl)")
     return asyncio.run(main_async(p.parse_args()))
 
 
