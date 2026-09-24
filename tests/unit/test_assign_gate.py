@@ -133,3 +133,71 @@ class TestApplyGateInLedger:
         new_by_sid, _, _ = self._run(monkeypatch, "off", fail=True)
 
         assert new_by_sid == {"s1": ["a1", "a2"]}
+
+
+class TestMlPath:
+    """``ASSIGN_ML=1`` でモデルがあれば ML で判定し、無ければ埋込の関門に退避する。"""
+
+    @staticmethod
+    def _run(monkeypatch: pytest.MonkeyPatch, *, model: object | None):  # type: ignore[no-untyped-def]
+        import asyncio
+        from types import SimpleNamespace
+
+        from src.assessment import assign_model, stateful
+        from tests.unit.test_assign_model import _keys
+
+        monkeypatch.setenv("ASSIGN_EMBED_GATE", "on")
+        monkeypatch.setenv("ASSIGN_ML", "1")
+        monkeypatch.setattr(assign_model, "load_assign_model", lambda path=None: model)
+        vecs = {"近い記事": _v(1, 0.1), "遠い記事": _v(0, 1), "情勢の題名": _v(1, 0)}
+
+        async def fake_embed(texts):  # type: ignore[no-untyped-def]
+            return [vecs.get(t) for t in texts]
+
+        monkeypatch.setattr(stateful, "_embed_texts", fake_embed)
+        texts = {"a1": "近い記事", "a2": "遠い記事"}
+        repo = SimpleNamespace(
+            load_summary_embeddings=lambda ids: {},
+            summary_embedding_inputs=lambda ids: {a: texts[a] for a in ids if a in texts},
+            save_summary_embeddings=lambda vecs, model: len(vecs),
+            get_articles_by_ids=lambda ids: {
+                a: SimpleNamespace(created_at="2026-09-03T00:00:00+00:00") for a in ids
+            },
+        )
+        store = SimpleNamespace(evidence_ids_by_situation=lambda sids, assigned_by=None: {})
+        art, sit = _keys()
+        return asyncio.run(
+            stateful._apply_assign_gate(  # noqa: SLF001
+                new_by_sid={"s1": ["a1", "a2"]},
+                assigned_by_aid={"a1": "token", "a2": "token"},
+                unassigned=[],
+                pool_by_id={"a1": {"article_id": "a1"}, "a2": {"article_id": "a2"}},
+                situation_titles={"s1": "情勢の題名"},
+                repo=repo,  # type: ignore[arg-type]
+                art_keys={"a1": art, "a2": art},
+                sit_keys={"s1": sit},
+                store=store,  # type: ignore[arg-type]
+            )
+        )
+
+    def test_ml_decides_when_model_is_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ML が「遠い記事」を通せば、埋込の関門なら落ちる組でも残る。"""
+
+        class _AlwaysYes:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.9
+
+        new_by_sid, _, unassigned = self._run(monkeypatch, model=_AlwaysYes())
+
+        assert new_by_sid == {"s1": ["a1", "a2"]}
+        assert unassigned == []
+
+    def test_falls_back_to_embedding_gate_without_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        new_by_sid, _, unassigned = self._run(monkeypatch, model=None)
+
+        assert new_by_sid == {"s1": ["a1"]}
+        assert [a["article_id"] for a in unassigned] == ["a2"]

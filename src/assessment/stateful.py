@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -442,13 +442,17 @@ async def _apply_assign_gate(
     pool_by_id: Mapping[str, Mapping[str, object]],
     situation_titles: Mapping[str, str],
     repo: RunHistoryRepository,
+    art_keys: Mapping[str, ArticleKeys] | None = None,
+    sit_keys: Mapping[str, SituationKeys] | None = None,
+    store: SituationStore | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, str], list[dict[str, object]]]:
-    """規則による割当に埋込の確認を課す (`assign_gate`)。**入力は書き換えず新しい組を返す**。
+    """規則による割当に確認を課す (`assign_gate`)。**入力は書き換えず新しい組を返す**。
 
+    判定は ``ASSIGN_ML=1`` かつモデルがあれば ML (`assign_model`)、なければ埋込の類似度 0.6。
     shadow: 落ちるはずの割当を記録するだけ / on: 落ちた記事を未割当へ戻す (detect の候補になる)。
     ⚠ 埋込が作れなければ割当を残す — 関門の失敗で台帳の挙動を変えない。
     """
-    from src.assessment.assign_gate import evaluate_gate, gate_mode
+    from src.assessment.assign_gate import gate_mode
 
     mode = gate_mode()
     kept = {sid: list(aids) for sid, aids in new_by_sid.items()}
@@ -457,56 +461,172 @@ async def _apply_assign_gate(
     if mode == "off" or not kept:
         return kept, by, rest
     try:
-        sids = sorted(kept)
-        titles = [situation_titles.get(s, "") for s in sids]
-        sit_vecs = dict(zip(sids, await _embed_texts(titles), strict=True))
-        aids = sorted({a for v in kept.values() for a in v})
-        art_vecs = _unit_vectors(repo.load_summary_embeddings(aids))
-        # 要約埋込の無い記事は群化と同じ入力文 (見出し + 空行 + 要約) をその場で埋め込み、保存する
-        # ⚠ プールの記事には要約が無いので DB から引く (見出しだけで作ると保存済みと形が食い違う)
-        inputs = repo.summary_embedding_inputs([a for a in aids if a not in art_vecs])
-        fresh_ids = sorted(inputs)
-        fresh_vecs = await _embed_texts([inputs[a] for a in fresh_ids])
-        fresh = dict(zip(fresh_ids, fresh_vecs, strict=True))
-        art_vecs.update({a: v for a, v in fresh.items() if v is not None})
-        _save_fresh_summary_embeddings(repo, fresh)
+        sit_vecs, art_vecs = await _gate_vectors(kept, situation_titles, repo)
+        decide, judge = _gate_decider(
+            kept, sit_vecs, art_vecs, repo=repo, art_keys=art_keys, sit_keys=sit_keys, store=store
+        )
     except Exception as e:  # noqa: BLE001 — 確認できなくても台帳の割当は続ける
         _log.warning("assign_gate_embed_failed", error=str(e)[:160], mode=mode)
         return kept, by, rest
+    dropped = [
+        (sid, aid, score)
+        for sid in sorted(kept)
+        for aid in kept[sid]
+        for passed, score in [decide(sid, aid)]
+        if not passed
+    ]
+    _log_gate(mode, judge, kept, by, dropped, art_vecs)
+    if mode != "on" or not dropped:
+        return kept, by, rest
+    return _drop_assignments(kept, by, rest, dropped, pool_by_id)
 
-    dropped: list[tuple[str, str, float | None]] = []
-    for sid in sorted(kept):
-        for aid in kept[sid]:
-            r = evaluate_gate(article_vec=art_vecs.get(aid), situation_vec=sit_vecs.get(sid))
-            if not r.passed:
-                dropped.append((sid, aid, r.cos))
-    for sid, aid, cos in dropped[:_ASSIGN_GATE_LOG_MAX]:
+
+async def _gate_vectors(
+    kept: Mapping[str, list[str]], situation_titles: Mapping[str, str], repo: RunHistoryRepository
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """情勢の題名と記事の要約埋込 (無い記事はその場で作って保存)。"""
+    sids = sorted(kept)
+    titles = [situation_titles.get(s, "") for s in sids]
+    sit_vecs = dict(zip(sids, await _embed_texts(titles), strict=True))
+    aids = sorted({a for v in kept.values() for a in v})
+    art_vecs = _unit_vectors(repo.load_summary_embeddings(aids))
+    # ⚠ プールの記事には要約が無いので DB から引く (見出しだけで作ると保存済みと形が食い違う)
+    inputs = repo.summary_embedding_inputs([a for a in aids if a not in art_vecs])
+    fresh_ids = sorted(inputs)
+    fresh_vecs = await _embed_texts([inputs[a] for a in fresh_ids])
+    fresh = dict(zip(fresh_ids, fresh_vecs, strict=True))
+    art_vecs.update({a: v for a, v in fresh.items() if v is not None})
+    _save_fresh_summary_embeddings(repo, fresh)
+    return sit_vecs, art_vecs
+
+
+def _gate_decider(
+    kept: Mapping[str, list[str]],
+    sit_vecs: Mapping[str, Any],
+    art_vecs: Mapping[str, Any],
+    *,
+    repo: RunHistoryRepository,
+    art_keys: Mapping[str, ArticleKeys] | None,
+    sit_keys: Mapping[str, SituationKeys] | None,
+    store: SituationStore | None,
+) -> tuple[Callable[[str, str], tuple[bool, float | None]], str]:
+    """(情勢, 記事) → (通すか, 点数) の判定器と、その名前 ('ml' / 'embed')。"""
+    from src.assessment.assign_gate import evaluate_gate
+    from src.assessment.assign_model import assign_ml_enabled, load_assign_model
+
+    def by_embed(sid: str, aid: str) -> tuple[bool, float | None]:
+        r = evaluate_gate(article_vec=art_vecs.get(aid), situation_vec=sit_vecs.get(sid))
+        return r.passed, r.cos
+
+    model = load_assign_model() if assign_ml_enabled() else None
+    if model is None or art_keys is None or sit_keys is None or store is None:
+        return by_embed, "embed"
+    seed_c = _seed_centroids(sorted(kept), art_vecs, repo=repo, store=store)
+    created = {a: r.created_at for a, r in repo.get_articles_by_ids(sorted(art_vecs)).items()}
+
+    def by_ml(sid: str, aid: str) -> tuple[bool, float | None]:
+        av, sv = art_vecs.get(aid), sit_vecs.get(sid)
+        if av is None or sv is None or aid not in art_keys or sid not in sit_keys:
+            return by_embed(sid, aid)  # 材料が揃わなければ埋込の関門で判定する
+        from src.assessment.assign_features import assign_feature_vector
+
+        sk = sit_keys[sid]
+        seed = seed_c.get(sid)
+        x = assign_feature_vector(
+            art_keys[aid],
+            sk,
+            cos_title=float(av @ sv),
+            cos_seed=None if seed is None else float(av @ seed),
+            age_days=_days_between(sk.row.opened_at, created.get(aid)),
+        )
+        p = model.probability(x)
+        return p >= model.threshold, p
+
+    return by_ml, "ml"
+
+
+def _seed_centroids(
+    sids: Sequence[str],
+    art_vecs: Mapping[str, Any],
+    *,
+    repo: RunHistoryRepository,
+    store: SituationStore,
+) -> dict[str, Any]:
+    """情勢ごとの開設時の記事 (seed) の埋込の平均 (正規化)。"""
+    import numpy as np
+
+    seeds = store.evidence_ids_by_situation(list(sids), assigned_by="seed")
+    seed_ids = sorted({a for v in seeds.values() for a in v})
+    vecs = _unit_vectors(repo.load_summary_embeddings(seed_ids))
+    out: dict[str, Any] = {}
+    for sid, aids in seeds.items():
+        got = [vecs[a] for a in aids if a in vecs]
+        if got:
+            mean = np.mean(got, axis=0)
+            norm = float(np.linalg.norm(mean))
+            if norm:
+                out[sid] = mean / norm
+    return out
+
+
+def _days_between(opened_at: str, created_at: object) -> float:
+    try:
+        a = datetime.fromisoformat(str(opened_at).replace("Z", "+00:00"))
+        b = (
+            created_at
+            if isinstance(created_at, datetime)
+            else datetime.fromisoformat(str(created_at))
+        )
+        return (b - a).total_seconds() / 86400
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _log_gate(
+    mode: str,
+    judge: str,
+    kept: Mapping[str, list[str]],
+    by: Mapping[str, str],
+    dropped: Sequence[tuple[str, str, float | None]],
+    art_vecs: Mapping[str, Any],
+) -> None:
+    for sid, aid, score in dropped[:_ASSIGN_GATE_LOG_MAX]:
         _log.info(
             "assign_gate_drop",
             mode=mode,
+            judge=judge,
             situation_id=sid,
             article_id=aid,
             rule=by.get(aid, ""),
-            cos=None if cos is None else round(cos, 3),
+            score=None if score is None else round(score, 3),
         )
     _log.info(
         "assign_gate",
         mode=mode,
+        judge=judge,
         checked=sum(len(v) for v in kept.values()),
         dropped=len(dropped),
         no_vector=sum(1 for v in kept.values() for a in v if art_vecs.get(a) is None),
     )
-    if mode != "on" or not dropped:
-        return kept, by, rest
+
+
+def _drop_assignments(
+    kept: Mapping[str, list[str]],
+    by: Mapping[str, str],
+    rest: Sequence[dict[str, object]],
+    dropped: Sequence[tuple[str, str, float | None]],
+    pool_by_id: Mapping[str, Mapping[str, object]],
+) -> tuple[dict[str, list[str]], dict[str, str], list[dict[str, object]]]:
+    """落ちた割当を外し、どの情勢にも残らない記事を未割当へ戻す (新しい組を返す)。"""
     drop_set = {(s, a) for s, a, _ in dropped}
-    kept = {s: [a for a in v if (s, a) not in drop_set] for s, v in kept.items()}
-    kept = {s: v for s, v in kept.items() if v}
-    still = {a for v in kept.values() for a in v}
-    for _, aid, _ in dropped:
-        if aid not in still and aid in by:
-            by.pop(aid)
-            rest.append(dict(pool_by_id.get(aid, {"article_id": aid})))
-    return kept, by, rest
+    new_kept = {s: [a for a in v if (s, a) not in drop_set] for s, v in kept.items()}
+    new_kept = {s: v for s, v in new_kept.items() if v}
+    still = {a for v in new_kept.values() for a in v}
+    gone = [a for _, a, _ in dropped if a not in still]
+    new_by = {a: r for a, r in by.items() if a not in gone}
+    back = [dict(pool_by_id.get(a, {"article_id": a})) for a in dict.fromkeys(gone) if a in by]
+    new_rest = [*rest, *back]
+    return new_kept, new_by, new_rest
 
 
 def _save_fresh_summary_embeddings(repo: RunHistoryRepository, vecs: Mapping[str, Any]) -> None:
@@ -968,6 +1088,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     new_by_sid: dict[str, list[str]] = {}
     assigned_by_aid: dict[str, str] = {}
     unassigned: list[dict[str, object]] = []
+    art_keys_by_id: dict[str, ArticleKeys] = {}
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -977,6 +1098,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             title=title_by_id.get(aid, ""),
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
+        art_keys_by_id[aid] = art
         matched = match_situation(art, sit_keys)
         if matched is None:
             unassigned.append(a)
@@ -992,6 +1114,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         pool_by_id={str(a.get("article_id", "")): a for a in pool},
         situation_titles={r.situation_id: r.title for r in situations},
         repo=repo,
+        art_keys=art_keys_by_id,
+        sit_keys={k.row.situation_id: k for k in sit_keys},
+        store=store,
     )
 
     # ---- 1a. standing (常設情報要求) の開設 + 専用収穫 (段A: 評価には回さない) ----

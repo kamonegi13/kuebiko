@@ -661,17 +661,26 @@ class SituationStore:
             ).fetchall()
         return [str(r["article_id"]) for r in rows]
 
-    def evidence_ids_by_situation(self, situation_ids: list[str]) -> dict[str, set[str]]:
-        """複数 Situation の証拠 article_id を一括取得 ({situation_id: {article_id}})。"""
+    def evidence_ids_by_situation(
+        self, situation_ids: list[str], *, assigned_by: str | None = None
+    ) -> dict[str, set[str]]:
+        """複数 Situation の証拠 article_id を一括取得 ({situation_id: {article_id}})。
+
+        ``assigned_by`` を渡すとその割当方法の証拠だけ (例: 'seed' = 開設時の記事)。
+        """
         if not situation_ids:
             return {}
         ph = ",".join("?" for _ in situation_ids)
+        sql = (
+            "SELECT situation_id, article_id FROM situation_evidence"
+            f" WHERE situation_id IN ({ph})"  # noqa: S608 — ph は ? 固定
+        )
+        params: list[str] = list(situation_ids)
+        if assigned_by is not None:
+            sql += " AND assigned_by = ?"
+            params.append(assigned_by)
         with self._repo._connect() as conn:  # noqa: SLF001
-            rows = conn.execute(
-                "SELECT situation_id, article_id FROM situation_evidence"
-                f" WHERE situation_id IN ({ph})",  # noqa: S608 — ph は ? 固定
-                list(situation_ids),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         out: dict[str, set[str]] = {}
         for r in rows:
             out.setdefault(str(r["situation_id"]), set()).add(str(r["article_id"]))
