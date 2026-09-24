@@ -41,6 +41,7 @@ import random
 import re
 import sys
 from collections import Counter
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,8 +68,30 @@ TASK_PREFIXES: dict[str, str] = {
 }
 
 
-def _load_pairs(path: Path, task: str, *, with_prefix: bool = True) -> list[dict[str, str]]:
-    """1 ファイル = 1 課題としてタグ付きで読む。skip マーカー行は捨てる。"""
+#: detect の評価窓 (両端含む)。detect_threshold_eval の 2 期間 = 09-10..09-16 と 09-17..09-23
+DETECT_EVAL_WINDOW = "2026-09-10:2026-09-23"
+
+
+def _day_range(spec: str) -> frozenset[str]:
+    """``"YYYY-MM-DD:YYYY-MM-DD"`` (両端含む) を日付の集合にする。``"none"``/空は空集合。"""
+    if not spec or spec == "none":
+        return frozenset()
+    lo, hi = (date.fromisoformat(x) for x in spec.split(":", 1))
+    return frozenset((lo + timedelta(days=i)).isoformat() for i in range((hi - lo).days + 1))
+
+
+def _row_day(d: dict[str, Any]) -> str:
+    """教師行の日付 (``day`` 欄、無ければ ``key`` の ``YYYY-MM-DD:`` 接頭)。"""
+    return str(d.get("day") or str(d.get("key") or "").split(":", 1)[0])
+
+
+def _load_pairs(
+    path: Path, task: str, *, with_prefix: bool = True, skip_days: frozenset[str] = frozenset()
+) -> list[dict[str, str]]:
+    """1 ファイル = 1 課題としてタグ付きで読む。
+
+    skip マーカー行と ``skip_days`` の日の行は捨てる。
+    """
     if not path.exists():
         return []
     out = []
@@ -76,7 +99,7 @@ def _load_pairs(path: Path, task: str, *, with_prefix: bool = True) -> list[dict
         if not line.strip():
             continue
         d = json.loads(line)
-        if d.get("skipped"):
+        if d.get("skipped") or (skip_days and _row_day(d) in skip_days):
             continue
         if d.get("prompt") and d.get("completion"):
             # ⭐ 課題の接頭辞は **読み込み時に付ける** — 以後のトークン計測も接頭辞込みに
@@ -175,6 +198,9 @@ def main() -> int:
     # ⚠ 教師は cur の腕のみ (ml_add は ML の 4 件を 99 日中 51 日で全件承認していて
     #   判断を教えていない)。
     ap.add_argument("--detect", type=Path, default=_TEACHER / "detect.jsonl")
+    # ⚠ detect の評価窓 (判定基準の比較と生徒の合否に使う審判済み 2 期間) は学習させない
+    #   (2026-09-24)。含めると学習後の評価が学習済みの日で測ることになる。"none" で無効。
+    ap.add_argument("--detect-exclude-days", default=DETECT_EVAL_WINDOW)
     ap.add_argument("--ach", type=Path, default=_TEACHER / "ach_opus.jsonl")
     ap.add_argument("--out-dir", type=Path, default=Path("data/mlx/dataset_v2"))
     ap.add_argument("--model", default="mlx-community/gemma-4-26b-a4b-it-8bit")
@@ -213,7 +239,10 @@ def main() -> int:
     pairs += _load_pairs(args.event_kind, "event_kind", with_prefix=not args.no_task_prefix)
     pairs += _load_pairs(args.pir_judge, "pir_judge", with_prefix=not args.no_task_prefix)
     pairs += _load_pairs(args.spotlight, "spotlight", with_prefix=not args.no_task_prefix)
-    pairs += _load_pairs(args.detect, "detect", with_prefix=not args.no_task_prefix)
+    skip = _day_range(args.detect_exclude_days)
+    pairs += _load_pairs(args.detect, "detect", with_prefix=not args.no_task_prefix, skip_days=skip)
+    if skip:
+        print(f"detect: 評価窓 {args.detect_exclude_days} の {len(skip)} 日を教師から除外")
     pairs += _load_pairs(args.ach, "ach", with_prefix=not args.no_task_prefix)
     if not pairs:
         print("入力が空", file=sys.stderr)
