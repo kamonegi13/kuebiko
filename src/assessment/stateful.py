@@ -505,7 +505,8 @@ async def _apply_assign_gate(
 
 
 def _title_and_summary(article: Mapping[str, object]) -> str:
-    return f"{article.get('title', '')}\n{article.get('summary', '')}".strip()
+    """要約埋込の入力。**群化が保存する要約埋込と同じ形** (見出し + 空行 + 要約) にする。"""
+    return f"{article.get('title', '')}\n\n{article.get('summary', '')}".strip()
 
 
 def _unit_vectors(vecs: Mapping[str, Any]) -> dict[str, Any]:
