@@ -130,6 +130,10 @@ services:
       # 決定論 67% → 83%、誤結合 33 → 14。LLM が落ちても 85% を保つ
       # (欠測を「不明」として学習済み)。0 で決定論へ戻る。
       EVENTNEWS_PAIR_ML: ${EVENTNEWS_PAIR_ML:-0}
+      # 台帳の割当に埋込の確認を課す (2026-09-24)。規則の「同じ情勢」率は anchor 31% /
+      # token 4% (Opus 盲検 362 組) で、類似度 0.6 の確認で精度 28% → 67%・同じ情勢の 86% を残す。
+      # off / shadow (落ちるはずの割当をログに出すだけ) / on (落ちた記事を未割当へ戻す)。
+      ASSIGN_EMBED_GATE: ${ASSIGN_EMBED_GATE:-shadow}
       # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
       DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
