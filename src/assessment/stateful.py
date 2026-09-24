@@ -430,6 +430,96 @@ async def _claim_dup_confirmed(claim: str, situation_title: str) -> bool:
     return confirm_by_embedding(claim_vec=vecs[0], situation_vec=vecs[1])
 
 
+#: 関門で落ちた割当をログに出す上限 (1 run あたり。全件の数は集計ログに出す)
+_ASSIGN_GATE_LOG_MAX = 40
+
+
+async def _apply_assign_gate(
+    *,
+    new_by_sid: Mapping[str, list[str]],
+    assigned_by_aid: Mapping[str, str],
+    unassigned: Sequence[dict[str, object]],
+    pool_by_id: Mapping[str, Mapping[str, object]],
+    situation_titles: Mapping[str, str],
+    repo: RunHistoryRepository,
+) -> tuple[dict[str, list[str]], dict[str, str], list[dict[str, object]]]:
+    """規則による割当に埋込の確認を課す (`assign_gate`)。**入力は書き換えず新しい組を返す**。
+
+    shadow: 落ちるはずの割当を記録するだけ / on: 落ちた記事を未割当へ戻す (detect の候補になる)。
+    ⚠ 埋込が作れなければ割当を残す — 関門の失敗で台帳の挙動を変えない。
+    """
+    from src.assessment.assign_gate import evaluate_gate, gate_mode
+
+    mode = gate_mode()
+    kept = {sid: list(aids) for sid, aids in new_by_sid.items()}
+    by = dict(assigned_by_aid)
+    rest = list(unassigned)
+    if mode == "off" or not kept:
+        return kept, by, rest
+    try:
+        sids = sorted(kept)
+        titles = [situation_titles.get(s, "") for s in sids]
+        sit_vecs = dict(zip(sids, await _embed_texts(titles), strict=True))
+        aids = sorted({a for v in kept.values() for a in v})
+        art_vecs = _unit_vectors(repo.load_summary_embeddings(aids))
+        missing = [a for a in aids if a not in art_vecs]
+        texts = [_title_and_summary(pool_by_id.get(a, {})) for a in missing]
+        art_vecs.update(zip(missing, await _embed_texts(texts), strict=True))
+    except Exception as e:  # noqa: BLE001 — 確認できなくても台帳の割当は続ける
+        _log.warning("assign_gate_embed_failed", error=str(e)[:160], mode=mode)
+        return kept, by, rest
+
+    dropped: list[tuple[str, str, float | None]] = []
+    for sid in sorted(kept):
+        for aid in kept[sid]:
+            r = evaluate_gate(article_vec=art_vecs.get(aid), situation_vec=sit_vecs.get(sid))
+            if not r.passed:
+                dropped.append((sid, aid, r.cos))
+    for sid, aid, cos in dropped[:_ASSIGN_GATE_LOG_MAX]:
+        _log.info(
+            "assign_gate_drop",
+            mode=mode,
+            situation_id=sid,
+            article_id=aid,
+            rule=by.get(aid, ""),
+            cos=None if cos is None else round(cos, 3),
+        )
+    _log.info(
+        "assign_gate",
+        mode=mode,
+        checked=sum(len(v) for v in kept.values()),
+        dropped=len(dropped),
+        no_vector=sum(1 for v in kept.values() for a in v if art_vecs.get(a) is None),
+    )
+    if mode != "on" or not dropped:
+        return kept, by, rest
+    drop_set = {(s, a) for s, a, _ in dropped}
+    kept = {s: [a for a in v if (s, a) not in drop_set] for s, v in kept.items()}
+    kept = {s: v for s, v in kept.items() if v}
+    still = {a for v in kept.values() for a in v}
+    for _, aid, _ in dropped:
+        if aid not in still and aid in by:
+            by.pop(aid)
+            rest.append(dict(pool_by_id.get(aid, {"article_id": aid})))
+    return kept, by, rest
+
+
+def _title_and_summary(article: Mapping[str, object]) -> str:
+    return f"{article.get('title', '')}\n{article.get('summary', '')}".strip()
+
+
+def _unit_vectors(vecs: Mapping[str, Any]) -> dict[str, Any]:
+    import numpy as np
+
+    out: dict[str, Any] = {}
+    for key, v in vecs.items():
+        arr = np.asarray(v, dtype=np.float32)
+        norm = float(np.linalg.norm(arr))
+        if norm:
+            out[key] = arr / norm
+    return out
+
+
 async def _embed_texts(texts: Sequence[str]) -> list[Any]:
     """正規化済み埋込をまとめて作る (空文字は None)。"""
     import numpy as np
@@ -879,6 +969,15 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             sit, by = matched
             new_by_sid.setdefault(sit.row.situation_id, []).append(aid)
             assigned_by_aid[aid] = by
+    # 規則の割当に埋込の確認を課す (規則は候補を出す役。同じ情勢率は anchor 31% / token 4%)
+    new_by_sid, assigned_by_aid, unassigned = await _apply_assign_gate(
+        new_by_sid=new_by_sid,
+        assigned_by_aid=assigned_by_aid,
+        unassigned=unassigned,
+        pool_by_id={str(a.get("article_id", "")): a for a in pool},
+        situation_titles={r.situation_id: r.title for r in situations},
+        repo=repo,
+    )
 
     # ---- 1a. standing (常設情報要求) の開設 + 専用収穫 (段A: 評価には回さない) ----
     if standing_enabled():
