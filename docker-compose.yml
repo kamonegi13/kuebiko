@@ -137,6 +137,9 @@ services:
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。
       ASSIGN_ML: ${ASSIGN_ML:-0}
+      # 状況総括の CoT 欄 (analysis_notes)。n17c は CoT ありで学習・評価して採用したので 1 で動かす
+      # (2026-09-26: 未設定のまま CoT なしで動いていた = 評価した形と本番の形が食い違っていた)
+      SYNTHESIS_COT_NOTES: ${SYNTHESIS_COT_NOTES:-0}
       # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
       DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
