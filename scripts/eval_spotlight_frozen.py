@@ -21,6 +21,7 @@ import argparse
 import ast
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,9 @@ sys.path.insert(0, str(_ROOT))
 
 from src.config_loader import load_app_config  # noqa: E402
 from src.spotlight.generator import _LLMSpotlightOutput  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step  # noqa: E402
+from src.tools.task_prefix import TaskPrefixClient  # noqa: E402
 
 D = Path("/app/data/mlx") if Path("/app/data/mlx").exists() else _ROOT / "data" / "mlx"
 TEACHER = D / "teacher" / "spotlight3_ok.jsonl"
@@ -78,7 +81,13 @@ async def main_async(args: argparse.Namespace) -> int:
     )
 
     cfg = load_app_config()
-    llm = OllamaClient(base_url=cfg.ollama_base_url, model=args.model, timeout_seconds=900.0)
+    llm: LLMClient = OllamaClient(
+        base_url=cfg.ollama_base_url, model=args.model, timeout_seconds=900.0
+    )
+    if args.task_prefix:
+        # 接頭辞つきで学習したモデルは本番と同じ形 (印つき) で測る (2026-09-25、n18 から)
+        os.environ["SFT_TASK_PREFIX_MODELS"] = args.model
+        llm = TaskPrefixClient(llm, Step.PIR_SPOTLIGHT)
     out_path = D / args.out
     out: list[dict[str, Any]] = []
     if out_path.exists() and not args.fresh:
@@ -115,6 +124,7 @@ def main() -> int:
     p.add_argument("--n", type=int, default=30)
     p.add_argument("--out", default="")
     p.add_argument("--fresh", action="store_true")
+    p.add_argument("--task-prefix", action="store_true", help="課題の接頭辞を付ける (n18 以降)")
     a = p.parse_args()
     if not a.out:
         a.out = f"eval_spotlight_{a.model.split(':')[-1]}.json"

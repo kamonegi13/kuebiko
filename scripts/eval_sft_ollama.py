@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import statistics
 import sys
 import time
@@ -29,7 +30,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.eventnews.models import EventNewsDraft  # noqa: E402
-from src.tools.llm_client import OllamaClient  # noqa: E402
+from src.tools.llm_client import LLMClient, OllamaClient  # noqa: E402
+from src.tools.model_tiers import Step  # noqa: E402
+from src.tools.task_prefix import TaskPrefixClient  # noqa: E402
 
 # 本番 generate_draft と同じ (src/eventnews/generator.py)。
 _TEMPERATURE = 0.2
@@ -52,7 +55,7 @@ def _parse(raw: str | None) -> dict[str, Any] | None:
     return loaded if isinstance(loaded, dict) else None
 
 
-async def _run_one(client: OllamaClient, prompt: str) -> tuple[str | None, str | None]:
+async def _run_one(client: LLMClient, prompt: str) -> tuple[str | None, str | None]:
     """(生成 JSON, エラー) を返す。例外は握って比較を続ける。"""
     try:
         draft = await client.generate_structured(
@@ -82,7 +85,11 @@ async def main_async(args: argparse.Namespace) -> int:
     if args.limit:
         records = records[: args.limit]
 
-    client = OllamaClient(model=args.model, timeout_seconds=_TIMEOUT_SECONDS)
+    client: LLMClient = OllamaClient(model=args.model, timeout_seconds=_TIMEOUT_SECONDS)
+    if args.task_prefix:
+        # 接頭辞つきで学習したモデルは本番と同じ形 (印つき) で測る (2026-09-25、n18 から)
+        os.environ["SFT_TASK_PREFIX_MODELS"] = args.model
+        client = TaskPrefixClient(client, Step.EVENT_NEWS)
     results: list[dict[str, Any]] = []
     started = time.monotonic()
 
@@ -116,6 +123,9 @@ def main() -> int:
     parser.add_argument("--src", type=Path, default=Path("data/mlx/eval_sft.json"))
     parser.add_argument("--out", type=Path, default=Path("data/mlx/eval_ollama_sft.json"))
     parser.add_argument("--limit", type=int, default=0, help="先頭 N 件だけ流す (0 = 全件)")
+    parser.add_argument(
+        "--task-prefix", action="store_true", help="課題の接頭辞を付ける (n18 以降)"
+    )
     return asyncio.run(main_async(parser.parse_args()))
 
 
