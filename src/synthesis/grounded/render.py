@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
 
-from pydantic import BaseModel, Field, GetJsonSchemaHandler
+from pydantic import BaseModel, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
@@ -137,11 +137,13 @@ def project_tradecraft(est: Estimate, forecast_ctx: dict[str, Any] | None = None
     }
 
 
-#: 1 節の文字数上限 (schema にだけ載せる。pydantic の検証には使わない)。
-#: ⚠ **配列が無いので maxItems は使えない**。Gemma 4 の暴走は文字列でも起きる —
-#:   2026-09-21 に weight_section が 17,460 字に膨れ、残り 4 節が空のまま保存された。
-#: 実データの正常値は weekly の最大が 3,554 字 (daily 1,087 / 重心 507)。6,000 なら
-#: 正常な出力を一切切らずに暴走だけを止められる。
+#: 1 節の文字数上限 — **生成後に決定論で切る** (``_collapse_runaway``)。schema には載せない。
+#: ⚠⚠ 2026-09-21 に schema の ``maxLength`` (制約デコードの文法) として入れたところ、
+#:   **暴走の引き金になった**: 以後 daily の「比重」節が 6 回中 5 回 6,000 字の上限まで暴走し
+#:   (英語・仏語への逸脱 / 段落の反復 / プロンプトの項目名の転写)、後ろの節が空になった。
+#:   同じ入力・同じ n17c で 上限あり 2/2 暴走・上限なし 0/2 (590 字で正常に閉じる) を実測
+#:   (2026-09-26、data/mlx/render_runaway_ab.py)。文法の上限は「閉じる」確率を下げる。
+#: 実データの正常値は weekly の最大が 3,554 字 (daily 1,087 / 重心 507)。
 _SECTION_MAX_CHARS = 6_000
 _HEADLINE_MAX_CHARS = 600  # 実測最大 370
 
@@ -155,12 +157,12 @@ class _WireSections(BaseModel):
     """
 
     model_config = {"extra": "ignore"}
-    headline: str = Field(default="", json_schema_extra={"maxLength": _HEADLINE_MAX_CHARS})
-    weight_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    chain_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    cog_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    spillover_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    pir_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
+    headline: str = ""
+    weight_section: str = ""
+    chain_section: str = ""
+    cog_section: str = ""
+    spillover_section: str = ""
+    pir_section: str = ""
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -183,12 +185,12 @@ class _WireSectionsCoT(BaseModel):
 
     model_config = {"extra": "ignore"}
     analysis_notes: str = ""
-    headline: str = Field(default="", json_schema_extra={"maxLength": _HEADLINE_MAX_CHARS})
-    weight_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    chain_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    cog_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    spillover_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
-    pir_section: str = Field(default="", json_schema_extra={"maxLength": _SECTION_MAX_CHARS})
+    headline: str = ""
+    weight_section: str = ""
+    chain_section: str = ""
+    cog_section: str = ""
+    spillover_section: str = ""
+    pir_section: str = ""
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -632,6 +634,18 @@ def _collapse_runaway(sections: _WireSections, *, period_label: str) -> _WireSec
     for name in _SECTION_FIELDS:
         text = str(getattr(sections, name, "") or "")
         fixed, runs = collapse_repetition(text)
+        cap = _HEADLINE_MAX_CHARS if name == "headline" else _SECTION_MAX_CHARS
+        if len(fixed) > cap:
+            # 反復でない暴走 (言語の逸脱など) は畳めない — 配信を守るため上限で切って記録する
+            _log.warning(
+                "synthesis_section_truncated",
+                section=name,
+                chars=len(fixed),
+                cap=cap,
+                period=period_label,
+            )
+            fixed = fixed[:cap]
+            runs = runs or 1
         if runs:
             update[name] = fixed
             _log.warning(

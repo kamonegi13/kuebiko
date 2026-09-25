@@ -36,3 +36,31 @@ def test_long_normal_text_is_fast() -> None:
     fixed, runs = collapse_repetition(text)
     assert runs == 0 and fixed == text
     assert time.monotonic() - t0 < 1.0
+
+
+def test_two_phrase_alternation_is_collapsed() -> None:
+    # 2026-09-26 朝の「比重」節: 2 つの句が交互に続いた (1 周 ~150 字、単位 80 字では漏れた)
+    a = "detect-new: s-a09441d804b5 (組織的国家作戦、低確度) / "
+    b = "detect-new: s-7c84f1fb61f8 (ばらまき型、低確度) / "
+    fixed, runs = collapse_repetition("本文。 " + (a + b) * 40)
+    assert runs == 1
+    assert fixed.count("s-a09441d804b5") == 1
+
+
+def test_render_schema_has_no_string_max_length() -> None:
+    """⚠ 文字列の maxLength を制約デコードの文法に載せると暴走を招く (2026-09-26 実測:
+    同じ入力で 上限あり 2/2 暴走・なし 0/2)。上限は生成後に決定論で切る。"""
+    import json
+
+    from src.synthesis.grounded.render import _WireSections, _WireSectionsCoT
+
+    for model in (_WireSections, _WireSectionsCoT):
+        assert "maxLength" not in json.dumps(model.model_json_schema())
+
+
+def test_runaway_without_repetition_is_truncated() -> None:
+    from src.synthesis.grounded.render import _SECTION_MAX_CHARS, _collapse_runaway, _WireSections
+
+    drift = "".join(f"phrase number {i} drifting into another language. " for i in range(400))
+    out = _collapse_runaway(_WireSections(weight_section=drift), period_label="t")
+    assert len(out.weight_section) == _SECTION_MAX_CHARS
