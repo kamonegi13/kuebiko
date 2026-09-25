@@ -613,6 +613,38 @@ def build_render_plan(
     )
 
 
+_SECTION_FIELDS: tuple[str, ...] = (
+    "headline",
+    "weight_section",
+    "chain_section",
+    "cog_section",
+    "spillover_section",
+    "pir_section",
+)
+
+
+def _collapse_runaway(sections: _WireSections, *, period_label: str) -> _WireSections:
+    """各節の反復暴走を畳む (2026-09-25、``text_guard``)。畳んだら記録する — 黙って直すと
+    モデルの暴走率が見えなくなる (09-19 の spotlight 126 件と同じ理由)。"""
+    from src.synthesis.text_guard import collapse_repetition
+
+    update: dict[str, str] = {}
+    for name in _SECTION_FIELDS:
+        text = str(getattr(sections, name, "") or "")
+        fixed, runs = collapse_repetition(text)
+        if runs:
+            update[name] = fixed
+            _log.warning(
+                "synthesis_section_repetition_collapsed",
+                section=name,
+                runs=runs,
+                chars_before=len(text),
+                chars_after=len(fixed),
+                period=period_label,
+            )
+    return sections.model_copy(update=update) if update else sections
+
+
 async def render_sections(
     *,
     llm: LLMClient,
@@ -649,6 +681,7 @@ async def render_sections(
         sections = _WireSections.model_validate(raw.model_dump())
     else:
         sections = raw
+    sections = _collapse_runaway(sections, period_label=period_label)
     sections = _guard_headline(sections, head, mode)
     # 反復抑制 (2026-08-07): daily の quiet 日に前日と同一の standing 判定が headline へ
     # 再掲される場合、決定論の「前日から継続 + 次いで注視」合成に置き換える。
