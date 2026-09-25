@@ -244,6 +244,7 @@ def _register_bespoke_jobs(
     from src.ui.services.maintenance import run_daily_maintenance
     from src.ui.services.prompt_governance import run_weekly_prompt_governance
     from src.ui.services.public_reachability import run_public_reachability_check
+    from src.ui.services.severity_axes_job import run_severity_axes_hourly
     from src.ui.services.source_health import run_daily_heartbeat
     from src.ui.services.ua_health import run_ua_health_check
 
@@ -260,6 +261,7 @@ def _register_bespoke_jobs(
         "eventnews-hourly": run_eventnews_hourly,
         "eventnews-merge": run_eventnews_merge_hourly,
         "ledger-reassess-hourly": run_ledger_reassess_hourly,
+        "severity-axes-hourly": run_severity_axes_hourly,
         "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,
         "body-refetch-backlog": run_body_refetch_backlog,

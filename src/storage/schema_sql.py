@@ -726,6 +726,21 @@ CREATE TABLE IF NOT EXISTS article_kinds (
     created_at  TEXT NOT NULL
 );
 
+-- 深刻度の軸 (2026-09-25、src/cti/severity_axes.py)。detect ML の特徴量。記事ごとに 1 回付ける
+-- model = 付けたモデル (ML は軸を付けたモデルの癖ごと学習するので、照合のために残す)
+CREATE TABLE IF NOT EXISTS article_severity_axes (
+    article_id    TEXT PRIMARY KEY,
+    scope         TEXT NOT NULL,
+    impact        TEXT NOT NULL,
+    confirmation  TEXT NOT NULL,
+    magnitude     TEXT NOT NULL,
+    exploitation  TEXT NOT NULL,
+    actor         TEXT NOT NULL,
+    target        TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
 -- detect ML の shadow 記録 (2026-09-17、SYNTHESIS §47)。ML が「開設する」と判定した候補を
 -- 記録するだけで開設は現行 (LLM detect) のまま。切替判断の差分比較に使う。
 CREATE TABLE IF NOT EXISTS detect_ml_shadow (

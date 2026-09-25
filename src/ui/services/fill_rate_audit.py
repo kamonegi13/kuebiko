@@ -76,6 +76,14 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
+        # 深刻度の軸 (2026-09-25)。detect ML の特徴量。配信済み high/medium にだけ毎時付ける
+        # (low は対象外) ので posted 全件の母集団では high/medium の割合が上限 — 見るのは急落だけ
+        "severity_axes",
+        "深刻度の軸",
+        "EXISTS (SELECT 1 FROM article_severity_axes s WHERE s.article_id = a.article_id)",
+        None,
+    ),
+    FillMetric(
         "intent",
         "intent",
         "a.socio_political_intent IS NOT NULL AND a.socio_political_intent NOT IN ('', 'unknown')",

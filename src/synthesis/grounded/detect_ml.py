@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -63,6 +64,10 @@ ROLLUP_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 #: 1 run で種別を新たに分類する上限 (fast ティア ~1s/件、synthesis の timeout 内に収める)
 _KIND_CLASSIFY_MAX = 200
+#: 1 run で深刻度の軸を新たに付ける上限。軸は毎時保守チェーンが先に付けておくので、ここは
+#: 取りこぼしの穴埋め (~3 秒/件 × 並列 2 → 40 件 ≈ 1 分)。超過分は軸なし (one-hot 全 0)
+_AXES_CLASSIFY_MAX = 40
+_AXES_CONCURRENCY = 2
 _CHUNK = 200
 
 
@@ -76,6 +81,9 @@ class DetectModel:
     coef: tuple[float, ...]
     intercept: float
     threshold: float
+    #: 学習に使った軸を付けたモデル (``Step.SEVERITY_AXES``)。本番の割当と食い違えば警告する
+    #: — ML は軸を付けたモデルの癖ごと学習している (2026-09-25)。空 = 記録なし
+    axes_model: str = ""
 
     def probability(self, features: Sequence[float]) -> float:
         if len(features) != len(self.feature_names):
@@ -106,6 +114,7 @@ def load_detect_model(path: Path | None = None) -> DetectModel | None:
             coef=tuple(float(v) for v in raw["coef"]),
             intercept=float(raw["intercept"]),
             threshold=float(raw["threshold"]),
+            axes_model=str(raw.get("axes_model", "")),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         _log.warning("detect_ml_model_invalid", path=str(target), error=type(exc).__name__)
@@ -222,11 +231,17 @@ def _actor_nation_map() -> dict[str, str]:
 def build_detect_articles(
     repo: Any, article_ids: Sequence[str], kinds: dict[str, str]
 ) -> dict[str, DetectArticle]:
-    """DB 行 + entity 件数 + 種別 → DetectArticle (学習ハーネスと本番で同じ組み立て)。"""
+    """DB 行 + entity 件数 + 種別 + 深刻度の軸 → DetectArticle (学習ハーネスと本番で同じ組み立て)。
+
+    軸は DB (``article_severity_axes``) から読む。無い記事は軸なし (one-hot が全 0)。
+    """
     out: dict[str, DetectArticle] = {}
     counts: dict[str, Counter[str]] = defaultdict(Counter)
     nation_of = _actor_nation_map()
     ids = list(dict.fromkeys(article_ids))
+    axes_of: Mapping[str, Mapping[str, str]] = (
+        repo.get_severity_axes(ids) if hasattr(repo, "get_severity_axes") else {}
+    )
     with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の接続 seam 共有
         for i in range(0, len(ids), _CHUNK):
             chunk = ids[i : i + _CHUNK]
@@ -262,6 +277,7 @@ def build_detect_articles(
                     victim_country_iso=r["victim_country_iso"],
                     posted_channel=r["posted_channel"],
                     entity_counts=dict(counts.get(aid, {})),
+                    axes=axes_of.get(aid),
                 )
     return out
 
@@ -285,6 +301,38 @@ async def ensure_kinds(
     if missing:
         _log.info("detect_ml_kinds_classified", articles=len(missing))
     return kinds
+
+
+async def ensure_axes(
+    repo: Any,
+    articles: Sequence[tuple[str, str, str]],
+    classify: Callable[[str, str], Awaitable[Mapping[str, str] | None]],
+    *,
+    model_label: str,
+    limit: int = _AXES_CLASSIFY_MAX,
+    concurrency: int = _AXES_CONCURRENCY,
+) -> int:
+    """軸が無い記事を classify して保存する (上限あり)。新たに付けた件数を返す。
+
+    失敗 (None) は保存しない — 次の run でまた試す (欠測を「被害なし」等に化けさせない)。
+    """
+    have = repo.get_severity_axes([a[0] for a in articles])
+    missing = [a for a in articles if a[0] not in have][:limit]
+    if not missing:
+        return 0
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _one(aid: str, title: str, summary: str) -> bool:
+        async with sem:
+            axes = await classify(title, summary)
+        if axes is None:
+            return False
+        repo.set_severity_axes(aid, axes, model_label)
+        return True
+
+    done = sum(await asyncio.gather(*(_one(*a) for a in missing)))
+    _log.info("severity_axes_classified", requested=len(missing), saved=done)
+    return done
 
 
 def score_articles(model: DetectModel, articles: dict[str, DetectArticle]) -> dict[str, float]:

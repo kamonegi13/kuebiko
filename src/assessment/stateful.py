@@ -2192,12 +2192,41 @@ async def _score_detect_ml(
     kinds = await detect_ml.ensure_kinds(
         repo, triples, _classify, model_label=getattr(kind_llm, "model", "")
     )
+    await _ensure_severity_axes(repo, triples, expected_model=model.axes_model)
     articles = detect_ml.build_detect_articles(repo, [t[0] for t in triples], kinds)
     return (
         detect_ml.score_articles(model, articles),
         {a: x.kind for a, x in articles.items()},
         detect_ml.floor_article_ids(articles),
     )
+
+
+async def _ensure_severity_axes(
+    repo: Any, triples: list[tuple[str, str, str]], *, expected_model: str
+) -> None:
+    """detect 候補の深刻度の軸を穴埋めする (毎時の段が先に付けているので通常は少数)。
+
+    ⚠ 軸は **Step.SEVERITY_AXES のモデル**で付ける (種別と同じく step を借用しない)。detect ML は
+      軸を付けたモデルの癖ごと学習しているため、割当が学習時と違えば警告する (止めはしない —
+      ML を外すと候補の絞り込みごと消え、LLM に全候補が流れる方が被害が大きい)。
+    """
+    from src import config_loader
+    from src.cti import severity_axes
+    from src.synthesis.grounded import detect_ml
+    from src.tools import model_tiers
+
+    axes_llm = model_tiers.build_llm_for(
+        model_tiers.Step.SEVERITY_AXES, config_loader.load_app_config()
+    )
+    label = str(getattr(axes_llm, "model", ""))
+    if expected_model and label and label != expected_model:
+        _log.warning("detect_ml_axes_model_mismatch", trained_on=expected_model, assigned=label)
+
+    async def _classify(title: str, summary: str) -> dict[str, str] | None:
+        axes = await severity_axes.classify_axes(axes_llm, title, summary)
+        return axes.model_dump() if axes is not None else None
+
+    await detect_ml.ensure_axes(repo, triples, _classify, model_label=label)
 
 
 def _record_detect_ml_shadow(

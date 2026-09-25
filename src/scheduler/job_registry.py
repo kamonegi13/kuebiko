@@ -509,6 +509,29 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=20,  # 読込 ≈ 2 分 (全事象 11k) + 再生成 5 件 × 40-600 秒 (中央 120)
         ),
         JobDef(
+            id="severity-axes-hourly",
+            enabled=False,  # 毎時保守チェーンの段として実行 (単独発火は既定 OFF)
+            kind="bespoke",
+            title="深刻度の軸 (毎時)",
+            description=(
+                "配信済み high/medium の記事に深刻度の軸 (被害の広がり・被害の性質・実害の確認・"
+                "悪用状況・行為者・標的) を 40 件/時まで付ける。detect ML の特徴量で、日本の"
+                "小さな事案と追うべき事案を分ける (2026-09-25)。朝夕の detect にも穴埋めはあるが、"
+                "まとめて付けると数分かかるため毎時に分散させる。"
+                "SEVERITY_AXES_HOURLY=0 で停止、SEVERITY_AXES_HOURLY_CAP で件数。"
+            ),
+            disable_impact=(
+                "軸が朝夕の detect の穴埋め (40 件/run) だけになり、超過分は軸なしで採点される"
+                " (日本の小さな事案を開きやすくなる)。"
+            ),
+            protection="important",
+            schedule_type="interval",
+            interval_minutes=60,
+            offset_minutes=40,
+            max_runtime_minutes=5,
+            upkeep=True,
+        ),
+        JobDef(
             id="ledger-reassess-hourly",
             enabled=False,  # 毎時保守チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
@@ -728,7 +751,8 @@ def default_jobs() -> list[JobDef]:
             kind="chain",
             title="毎時保守チェーン",
             description=(
-                "本文の翻訳バックログ → 本文の再取得 → 台帳の増分再評価 (6 件/時) → NVD CVSS 補充 "
+                "本文の翻訳バックログ → 本文の再取得 → 深刻度の軸 (40 件/時) → 台帳の増分再評価 "
+                "(6 件/時) → NVD CVSS 補充 "
                 "→ "
                 "公開 URL の到達性を 1 本で直列実行 (fast ティアと I/O のみ)。収集チェーンの後半 "
                 "(:30) に置く。"
@@ -743,6 +767,7 @@ def default_jobs() -> list[JobDef]:
             steps=(
                 "body-translate-backlog",
                 "body-refetch-backlog",
+                "severity-axes-hourly",
                 "ledger-reassess-hourly",
                 "nvd-cvss-refresh",
                 "public-reachability",

@@ -122,6 +122,9 @@ class Step(StrEnum):
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
     PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
     EVENT_KIND = "event_kind"  # 記事種別分類 (ML pair モデルの特徴量供給 — 供給元を固定する)
+    # 深刻度の軸 (広がり・被害の性質・実害の確認・悪用状況・行為者・標的、2026-09-25)。
+    # detect ML の特徴量供給。**ML は軸を付けたモデルの癖ごと学習する**ので供給元を固定する
+    SEVERITY_AXES = "severity_axes"
     # weekly-recap 深掘りは LLM を 2 回呼ぶ。**課題の種類が違うので step を分ける**
     # (2026-09-20、借用禁止の衛生。detect で s17 が 3 日中 2 日 0 件開設 =
     #  判定特化モデルは選定で極端に保守的になると実測された直後に分離した):
@@ -178,6 +181,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # kind 分類は 1 記事 = 小さな分類呼出。ML pair モデルは base 産の kind を特徴量として
     # 学習しているため、供給元モデルの無断シフト (step 借用による継承) を遮断する。
     Step.EVENT_KIND: StepSpec(Tier.FAST, 120.0),
+    # 軸は 1 記事 = 7 欄の選択 (max_tokens 400)。実測 ~3 秒/件 (s17)。
+    Step.SEVERITY_AXES: StepSpec(Tier.FAST, 120.0),
     Step.DIGEST_DEEP_DIVE_SELECT: StepSpec(Tier.FAST, 900.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),

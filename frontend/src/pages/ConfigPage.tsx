@@ -549,6 +549,7 @@ const STEP_LABELS: Record<string, string> = {
   article_translate: "本文翻訳",
   pair_judge: "事象ペア同一性判定",
   event_kind: "記事種別分類",
+  severity_axes: "深刻度の軸",
   pir_llm_judge: "SIR 主題判定",
   pir_daily_focus: "SIR 日次要点",
   actor_sync: "アクター名同期",

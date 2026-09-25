@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -55,8 +56,9 @@ def choose_threshold(probs: np.ndarray, *, days: int, target_per_day: float) -> 
     return float(np.sort(probs)[::-1][want - 1])
 
 
-def export(scaler: Any, clf: Any, threshold: float) -> dict[str, Any]:
+def export(scaler: Any, clf: Any, threshold: float, axes_model: str = "") -> dict[str, Any]:
     return {
+        "axes_model": axes_model,
         "feature_names": list(FEATURE_NAMES),
         "mean": [float(v) for v in scaler.mean_],
         "scale": [float(v) for v in scaler.scale_],
@@ -85,6 +87,10 @@ def main() -> int:
     if not ids:
         print("⚠ 記事 0 件 — DATABASE_URL 無し (空 SQLite) を疑う", file=sys.stderr)
         return 1
+    # 深刻度の軸 (2026-09-25): ML は軸を付けたモデルの癖ごと学習する → どのモデルの軸かを記録する
+    axes_models = Counter(m["model"] for m in repo.get_severity_axes(ids).values())
+    axes_model = axes_models.most_common(1)[0][0] if axes_models else ""
+    print(f"軸あり {sum(axes_models.values())}/{len(ids)} 件 / 付けたモデル {dict(axes_models)}")
     x = np.array([feature_vector(arts[a]) for a in ids], dtype=float)
     y = np.array([int(bool(gold[a]["gold_open"])) for a in ids])
     scaler = StandardScaler().fit(x)
@@ -114,7 +120,7 @@ def main() -> int:
         return 0
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
-        json.dumps(export(scaler, clf, threshold), ensure_ascii=False, indent=1) + "\n",
+        json.dumps(export(scaler, clf, threshold, axes_model), ensure_ascii=False, indent=1) + "\n",
         encoding="utf-8",
     )
     print(f"書込: {args.out}")

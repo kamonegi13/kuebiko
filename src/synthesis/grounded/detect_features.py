@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from src.cti.japan_relevance import is_japan_targeted_row
+from src.cti.severity_axes import AXIS_FEATURE_NAMES, axis_feature_vector
 from src.eventnews.event_kind import KINDS
 
 CATEGORIES: tuple[str, ...] = (
@@ -92,6 +93,8 @@ class DetectArticle:
     victim_country_iso: str | None = None
     posted_channel: str | None = None
     entity_counts: Mapping[str, int] = field(default_factory=dict)
+    #: 深刻度の軸 (欄名 → 選択肢)。未分類は None (one-hot が全 0)。2026-09-25
+    axes: Mapping[str, str] | None = None
 
 
 def _count_hits(text: str, patterns: tuple[re.Pattern[str], ...]) -> float:
@@ -102,7 +105,10 @@ def _one_hot(value: str, vocab: tuple[str, ...]) -> list[float]:
     return [1.0 if value == v else 0.0 for v in vocab]
 
 
-FEATURE_NAMES: tuple[str, ...] = (
+#: 軸を足す前の列 (2026-09-25 までの detect の契約)。**深掘り選定 (deep_dive_features) が再利用**
+#: しており、その同梱モデルはこの列で学習済み — 軸を足した FEATURE_NAMES を渡すと列ずれで
+#: 深掘り ML が黙って外れる。深掘りを軸つきで作り直すまではこちらを使わせる。
+BASE_FEATURE_NAMES: tuple[str, ...] = (
     ("importance",)
     + tuple(f"kind={k}" for k in KINDS)
     + tuple(f"category={c}" for c in CATEGORIES)
@@ -120,10 +126,21 @@ FEATURE_NAMES: tuple[str, ...] = (
         "title_len",
     )
 )
+#: detect の列 = 基本 + 深刻度の軸 (2026-09-25、src/cti/severity_axes.py)。日本の小さな事案と
+#: 追うべき事案を分ける — 評価 731 件で精度 54→62%・回収 65→75%・日本の小事案の誤開設 45→27
+FEATURE_NAMES: tuple[str, ...] = BASE_FEATURE_NAMES + AXIS_FEATURE_NAMES
 
 
 def feature_vector(a: DetectArticle) -> list[float]:
     """記事 1 件 → 特徴量ベクトル。順序は FEATURE_NAMES と 1:1 (テストが固定する)。"""
+    vec = base_feature_vector(a) + axis_feature_vector(a.axes, f"{a.title}\n{a.summary}")
+    if len(vec) != len(FEATURE_NAMES):  # pragma: no cover — 構造の不変条件
+        raise RuntimeError(f"feature length {len(vec)} != names {len(FEATURE_NAMES)}")
+    return vec
+
+
+def base_feature_vector(a: DetectArticle) -> list[float]:
+    """軸を除いた列 (``BASE_FEATURE_NAMES`` と 1:1)。深掘り選定が再利用する。"""
     text = f"{a.title}\n{a.summary}"
     counts = [float(a.entity_counts.get(e, 0)) for e in ENTITY_TYPES]
     nations = [1.0 if a.entity_counts.get(f"country:{c}", 0) else 0.0 for c in NATION_FLAGS]
@@ -151,6 +168,6 @@ def feature_vector(a: DetectArticle) -> list[float]:
             float(len(a.title)),
         ]
     )
-    if len(vec) != len(FEATURE_NAMES):  # pragma: no cover — 構造の不変条件
-        raise RuntimeError(f"feature length {len(vec)} != names {len(FEATURE_NAMES)}")
+    if len(vec) != len(BASE_FEATURE_NAMES):  # pragma: no cover — 構造の不変条件
+        raise RuntimeError(f"feature length {len(vec)} != names {len(BASE_FEATURE_NAMES)}")
     return vec

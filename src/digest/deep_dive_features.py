@@ -13,12 +13,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# ⚠ 軸を足す前の列 (BASE) を使う (2026-09-25)。同梱モデルはこの列で学習済み — detect の
+#   FEATURE_NAMES (軸つき) に追従させると列ずれで深掘り ML が黙って外れる
 from src.synthesis.grounded.detect_features import (
-    FEATURE_NAMES as _DETECT_FEATURE_NAMES,
+    BASE_FEATURE_NAMES as _DETECT_FEATURE_NAMES,
 )
 from src.synthesis.grounded.detect_features import (
     DetectArticle,
-    feature_vector,
+)
+from src.synthesis.grounded.detect_features import (
+    base_feature_vector as feature_vector,
 )
 
 #: 深掘り固有の列。
