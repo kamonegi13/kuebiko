@@ -51,7 +51,7 @@ ArticleStatus = Literal[
 LogStream = Literal["stdout", "stderr", "system"]
 # パイプライン実行のきっかけ (表示 vocab `trigger` の canonical)。reactive/recovery は
 # 表示上の追加種別で RunRecord には現れないため vocab 側で別途扱う (docs §2.7)。
-TriggerSource = Literal["scheduler", "manual", "cli"]
+TriggerSource = Literal["scheduler", "manual", "cli", "recovery"]
 
 
 class RunRecord(BaseModel):

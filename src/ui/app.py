@@ -35,6 +35,7 @@ from starlette.types import Receive, Scope, Send
 from src.config_loader import load_app_config, load_pipelines
 from src.logging_config import get_logger
 from src.scheduler.scheduler import BriefingScheduler, ScheduledPipeline
+from src.storage.records import TriggerSource
 from src.storage.run_history import RunHistoryRepository
 from src.ui.read_only_policy import build_read_only_middleware, request_auth_state
 from src.ui.routers import config as config_router
@@ -501,11 +502,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:  # noqa: BLE001
             _log.warning("operational_config_seed_at_startup_failed", error=str(e))
 
-    async def run_named_pipeline(pipeline_name: str, *, manual: bool = False) -> int | None:
+    async def run_named_pipeline(
+        pipeline_name: str, *, manual: bool = False, trigger: TriggerSource = "manual"
+    ) -> int | None:
         """APScheduler から呼ばれるコールバック。返り値 = run_id (抑止 / 起動失敗は None)。
 
         ``manual=True`` は手動実行 (ジョブ画面の「今すぐ実行」・自動復旧)。重い処理帯の
-        収集抑止を受けず、run の起動元を manual として残す。
+        収集抑止を受けず、run の起動元を ``trigger`` (manual / recovery) として残す。
 
         Phase 5A fix: 即時実行 UI と同じ subprocess 経路 (``start_subprocess_run``)
         を使う。これにより stdout が ``run_logs`` に逐次永続化され、ダッシュボード
@@ -523,7 +526,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return None
         try:
             return await runner.start_subprocess_run(
-                triggered_by="manual" if manual else "scheduler",
+                triggered_by=trigger if manual else "scheduler",
                 dry_run=False,
                 pipeline_name=pipeline_name,
             )
@@ -540,8 +543,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if scheduled:
             # 実行枠を run の完了まで持つ (起動だけで戻ると、手動実行と毎時チェーンが同じ
             # pipeline を続けて 2 本走らせ、チェーン側が timeout になった — 2026-09-26 レビュー)
-            async def run_pipeline_to_end(pipeline_name: str, *, manual: bool = False) -> None:
-                run_id = await run_named_pipeline(pipeline_name, manual=manual)
+            async def run_pipeline_to_end(
+                pipeline_name: str, *, manual: bool = False, trigger: TriggerSource = "manual"
+            ) -> None:
+                run_id = await run_named_pipeline(pipeline_name, manual=manual, trigger=trigger)
                 if run_id is not None:
                     await wait_for_run(repo, run_id)
 

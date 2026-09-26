@@ -24,6 +24,7 @@ from typing import Literal
 
 from src.logging_config import get_logger
 from src.main import PipelineRunResult, run_default
+from src.storage.records import TriggerSource  # SSoT (2026-09-27 に recovery を追加)
 from src.storage.run_history import RunHistoryRepository, RunRecord, RunStatus
 from src.ui.services.run_registry import LogEvent, RunRegistry
 from src.ui.ws.realtime import broadcast as ws_broadcast
@@ -82,8 +83,6 @@ def _resolve_pipeline_timeout(pipeline_name: str) -> float:
 
 
 _log = get_logger(__name__)
-
-TriggerSource = Literal["scheduler", "manual", "cli"]
 
 # subprocess 経路で子プロセスが書き出す PipelineRunResult JSON のディレクトリ。
 # src/main.py の RUN_RESULTS_DIR と一致させること。

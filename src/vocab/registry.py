@@ -182,7 +182,8 @@ _REGISTRY: dict[str, Vocabulary] = {
         },
         canonical=frozenset(get_args(ArticleStatus)),
     ),
-    # trigger: RunRecord は scheduler/manual/cli のみ。reactive/recovery は表示上の追加種別。
+    # trigger: RunRecord は scheduler/manual/cli/recovery (自動復旧、2026-09-27)。
+    # reactive は表示上の追加種別。
     "trigger": _vocab(
         "trigger",
         {
@@ -192,7 +193,7 @@ _REGISTRY: dict[str, Vocabulary] = {
             "reactive": "連動実行",
             "recovery": "自動リカバリ",
         },
-        canonical=frozenset(get_args(TriggerSource)) | {"reactive", "recovery"},
+        canonical=frozenset(get_args(TriggerSource)) | {"reactive"},
     ),
     # health: CheckStatus は ok/warning/error。unknown は未チェック時の表示 sentinel。
     "health_status": _vocab(

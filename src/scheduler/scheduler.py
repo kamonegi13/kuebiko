@@ -339,9 +339,17 @@ class BriefingScheduler:
                 dom_label = f"[day={sp.day}] " if sp.day else ""
                 schedule_label = f"cron:{dom_label}{dow_label}{sp.hour:02d}:{sp.minute:02d}"
 
-            async def _run(name: str = sp.name, *, manual: bool = False) -> None:
-                # 手動のときだけ manual を渡す (受けない runner との後方互換)
-                await (runner(name, manual=True) if manual else runner(name))
+            async def _run(
+                name: str = sp.name, *, manual: bool = False, trigger: str = "manual"
+            ) -> None:
+                # 手動のときだけ manual を渡す (受けない runner との後方互換)。
+                # 自動復旧は trigger="recovery" で区別する (2026-09-27)
+                if not manual:
+                    await runner(name)
+                elif trigger == "manual":
+                    await runner(name, manual=True)
+                else:
+                    await runner(name, manual=True, trigger=trigger)
 
             self._pipeline_job_ids.add(sp.name)
             self._scheduler.add_job(
@@ -503,13 +511,15 @@ class BriefingScheduler:
         self._scheduler.resume_job(job_id)
         _log.info("scheduler_job_resumed", job_id=job_id)
 
-    def trigger_now(self, job_id: str = DAILY_JOB_ID) -> datetime:
+    def trigger_now(self, job_id: str = DAILY_JOB_ID, *, source: str = "manual") -> datetime:
         """今すぐ 1 回だけ実行する。定時の予定 (一時停止中を含む) には触れない。
 
         旧実装は次回時刻を今に書き換えていた (2026-09-26 まで)。これには 2 つの欠陥があった:
         実行中に押すと APScheduler の同時実行上限で **黙って捨てられる** / 一時停止中の
         ジョブ (チェーンの段) に押すと **停止が解ける** (以後チェーンと別に単独で毎時走る)。
         今は同じ関数 (実行枠つき) を単発ジョブとして追加する。
+
+        ``source`` は記録上の起動元 (``"manual"`` = ジョブ画面 / ``"recovery"`` = 自動復旧)。
 
         Raises:
             JobBusyError: 同じジョブが実行中、または手動実行が既に待機中
@@ -525,7 +535,15 @@ class BriefingScheduler:
             self._scheduler.add_job(
                 job.func,
                 trigger=DateTrigger(run_date=run_at, timezone=self._timezone),
-                kwargs={"manual": True} if job_id in self._pipeline_job_ids else None,
+                kwargs=(
+                    (
+                        {"manual": True}
+                        if source == "manual"
+                        else {"manual": True, "trigger": source}
+                    )
+                    if job_id in self._pipeline_job_ids
+                    else None
+                ),
                 id=f"{MANUAL_JOB_PREFIX}{job_id}",
                 name=f"{job.name} (手動)",
                 misfire_grace_time=self._misfire_grace_time,
@@ -533,7 +551,7 @@ class BriefingScheduler:
             )
         except ConflictingIdError as e:
             raise JobBusyError(f"{job_id} の手動実行は既に待機中です") from e
-        _log.info("scheduler_job_triggered_manually", job_id=job_id)
+        _log.info("scheduler_job_triggered_manually", job_id=job_id, source=source)
         return run_at
 
     def update_cron(

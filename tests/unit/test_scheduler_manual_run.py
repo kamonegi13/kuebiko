@@ -113,3 +113,32 @@ async def test_pipeline_job_holds_slot_until_run_completes_and_manual_flag_passe
     finally:
         release.set()
         sched.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_recovery_trigger_is_distinguished_from_manual() -> None:
+    """自動復旧 (watchdog) の起動は手動と区別して runner に届く (2026-09-27)。
+
+    従来は watchdog も手動も triggered_by='manual' (その前は 'scheduler') で記録され、
+    実行履歴から復旧が働いたかを追えなかった。
+    """
+    from src.scheduler.scheduler import ScheduledPipeline
+
+    seen: list[tuple[bool, str]] = []
+
+    async def runner(name: str, *, manual: bool = False, trigger: str = "manual") -> None:
+        seen.append((manual, trigger))
+
+    sched = BriefingScheduler.from_pipelines(
+        runner, [ScheduledPipeline(name="rss-r", hour=6, minute=0)]
+    )
+    sched.start()
+    try:
+        sched.trigger_now("rss-r", source="recovery")
+        for _ in range(50):
+            if seen:
+                break
+            await asyncio.sleep(0.02)
+        assert seen == [(True, "recovery")]
+    finally:
+        sched.shutdown()

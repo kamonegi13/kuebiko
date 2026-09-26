@@ -238,7 +238,7 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
 
         if d.action == "retry":
             try:
-                scheduler.trigger_now(job.id)
+                scheduler.trigger_now(job.id, source="recovery")
             except Exception as e:  # noqa: BLE001 — 1 job の trigger 失敗で watchdog を止めない
                 _log.warning("job_recovery_trigger_failed", job_id=job.id, error=str(e))
                 continue
