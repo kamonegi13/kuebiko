@@ -381,6 +381,53 @@ def _identity_cues_enabled() -> bool:
     return os.environ.get("ACTOR_IDENTITY_CUES", "1") != "0"
 
 
+# OS 標準のコマンド (MITRE の software に入るが、どのアクターの同一性の証拠にもならない)
+_OS_BUILTIN_SOFTWARE: frozenset[str] = frozenset(
+    {
+        "at",
+        "net",
+        "ping",
+        "reg",
+        "cmd",
+        "arp",
+        "sc",
+        "tasklist",
+        "ipconfig",
+        "systeminfo",
+        "netstat",
+        "whoami",
+        "schtasks",
+        "powershell",
+        "wmic",
+        "certutil",
+        "rundll32",
+        "bitsadmin",
+        "nltest",
+        "route",
+        "ftp",
+        "tar",
+        "curl",
+        "wevtutil",
+        "vssadmin",
+        "esentutl",
+    }
+)
+
+
+def _is_shared_software(name: str) -> bool:
+    """多くのアクターが使うツール・OS 標準コマンドか (同一性の証拠にしない)。"""
+    if name.strip().lower() in _OS_BUILTIN_SOFTWARE:
+        return True
+    try:
+        from src.cti.malware_normalizer import load_malware_normalizer
+
+        return load_malware_normalizer().normalize_tool(name)[1] == "tool" and (
+            load_malware_normalizer().knows_name(name)
+        )
+    except Exception:  # noqa: BLE001 — 語彙欠落で照合自体は止めない
+        return False
+
+
 def has_identity_evidence(actor: ActorAlias, matched_name: str, text: str) -> bool:
     """text に「このアクターの話である」同一性証拠が 1 つ以上あるか (E0-E7)。
 
@@ -399,8 +446,16 @@ def has_identity_evidence(actor: ActorAlias, matched_name: str, text: str) -> bo
             return True
     # E2: 関連マルウェア名の共起 (マッチ名と同名の malware は自己証明になるため除外 —
     # Akira のように actor 名 = malware 名のエントリで裸名が常時素通りする穴の防止、2026-08-01)
+    # ⚠ 共有ツール (Mimikatz 等) と OS 標準コマンド (at / net / ping) は証拠にしない (2026-09-27):
+    #    MITRE のソフトウェア一覧由来で、英語本文の前置詞 at に一致し、
+    #    曖昧指定の関門をほぼ常に通していた
     for mal in actor.associated_malware:
-        if mal and mal.lower() != name_lower and _name_in_text(mal, text):
+        if (
+            mal
+            and mal.lower() != name_lower
+            and not _is_shared_software(mal)
+            and _name_in_text(mal, text)
+        ):
             return True
     # E3: MITRE Group ID の共起 (G0060 等)
     if actor.mitre_group and actor.mitre_group.lower() in text_lower:

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable
-from datetime import date
+from datetime import datetime
 
 from src.cti.actor_normalizer import ActorAliasRegistry, load_actor_aliases
 from src.logging_config import get_logger
@@ -29,7 +29,9 @@ def still_matches(registry: ActorAliasRegistry, actor_id: str, texts: Iterable[s
 def _run(actors: list[str], apply: bool, repo: RunHistoryRepository | None = None) -> None:
     repo = repo if repo is not None else RunHistoryRepository()
     registry = load_actor_aliases()
-    suffix = date.today().strftime("%Y%m%d")
+    # 時刻つき — 日付だけだと同じ日の再実行で前回の退避表を DROP で上書きしていた
+    # (2026-09-27 に実際に発生)
+    suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
     with repo._connect() as con:  # noqa: SLF001 — 修復スクリプト
         ph = ",".join("?" for _ in actors)
         mentions = con.execute(

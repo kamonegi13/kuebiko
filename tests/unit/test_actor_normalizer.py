@@ -645,3 +645,23 @@ def test_no_generic_alias_on_non_ambiguous_actor() -> None:
         if is_generic_alias(n)
     ]
     assert bad == []
+
+
+def test_identity_evidence_ignores_shared_tools_and_os_commands() -> None:
+    """E2 (関連マルウェアの共起) に共有ツール・OS 標準コマンドを数えない (2026-09-27)。
+
+    MITRE のソフトウェア一覧には Windows の at / net / ping や Mimikatz が入る。英語の本文では
+    前置詞の at に一致し、曖昧指定のアクター (gallium 等 24 件中 6 件) の関門がほぼ常に通っていた
+    (実例: レアアースの記事 15 件に gallium が付いていた)。
+    """
+    from src.cti.actor_normalizer import ActorAlias, has_identity_evidence
+
+    actor = ActorAlias(
+        id="gallium",
+        canonical="GALLIUM",
+        ambiguous=True,
+        associated_malware=("at", "Net", "Mimikatz", "PsExec", "PingPull"),
+    )
+    geo = "Supply of GALLIUM is at risk as export controls tighten; Mimikatz is not mentioned."
+    assert not has_identity_evidence(actor, "GALLIUM", geo)
+    assert has_identity_evidence(actor, "GALLIUM", "GALLIUM deployed PingPull against telcos")
