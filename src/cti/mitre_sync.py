@@ -259,7 +259,17 @@ async def fetch_mitre_groups(url: str = MITRE_ENTERPRISE_URL) -> list[MitreGroup
     async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-    groups = parse_mitre_bundle(resp.json().get("objects", []))
+    objects = resp.json().get("objects", [])
+    groups = parse_mitre_bundle(objects)
+    # 同じ bundle から技術の辞書 (名前・戦術・親技術) も作る (2026-09-27)。失敗しても同期は続ける
+    try:
+        from src.cti.attack_techniques import parse_technique_catalog, save_technique_catalog
+
+        catalog = parse_technique_catalog(objects)
+        save_technique_catalog(catalog)
+        _log.info("attack_technique_catalog_saved", techniques=len(catalog))
+    except Exception as e:  # noqa: BLE001
+        _log.warning("attack_technique_catalog_failed", error=str(e)[:160])
     _log.info("mitre_sync_fetch_done", groups=len(groups))
     return groups
 

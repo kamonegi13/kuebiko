@@ -95,7 +95,9 @@ def test_bundle_unknown_intent_omits_motivation() -> None:
     assert "primary_motivation" not in ta
 
 
-def test_attack_pattern_for_technique() -> None:
+def test_attack_pattern_for_technique(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # 技術の辞書 (data/cti) の有無に依存しない
+    monkeypatch.setattr("src.cti.attack_techniques.load_technique_catalog", lambda *a, **k: {})
     obj = attack_pattern_for_technique("T1059.003")
     assert obj["type"] == "attack-pattern"
     assert obj["name"] == "MITRE ATT&CK T1059.003"
@@ -226,3 +228,26 @@ def test_threat_actor_types_from_taxonomy() -> None:
     assert threat_actor_for(ransom)["threat_actor_types"] == ["crime-syndicate"]
     assert threat_actor_for(apt)["threat_actor_types"] == ["nation-state"]
     assert threat_actor_for(unknown)["threat_actor_types"] == ["unknown"]
+
+
+def test_attack_pattern_uses_technique_catalog(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """技術の辞書があれば名前と kill chain を埋める (無ければ従来どおり ID だけ)。"""
+    from src.cti import stix_exporter
+    from src.cti.attack_techniques import TechniqueInfo
+
+    monkeypatch.setattr(
+        "src.cti.attack_techniques.load_technique_catalog",
+        lambda *a, **k: {
+            "T1566.001": TechniqueInfo(
+                "T1566.001", "Spearphishing Attachment", ("initial-access",), "T1566"
+            )
+        },
+    )
+    obj = stix_exporter.attack_pattern_for_technique("t1566.001")
+    assert obj["name"] == "Spearphishing Attachment"
+    assert obj["kill_chain_phases"] == [
+        {"kill_chain_name": "mitre-attack", "phase_name": "initial-access"}
+    ]
+    bare = stix_exporter.attack_pattern_for_technique("T1003")
+    assert bare["name"] == "MITRE ATT&CK T1003"
+    assert "kill_chain_phases" not in bare

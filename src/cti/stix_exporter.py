@@ -232,15 +232,19 @@ def attributed_to_for(group: ActorAlias) -> dict[str, Any] | None:
 
 def attack_pattern_for_technique(technique: str) -> dict[str, Any]:
     """MITRE ATT&CK Technique を STIX attack-pattern に変換。"""
+    from src.cti import attack_techniques
+
     norm = technique.upper().strip()
-    return {
+    # 技術の辞書 (MITRE 同期が data/ に置く) があれば名前と戦術を埋める (2026-09-27)
+    info = attack_techniques.load_technique_catalog().get(norm)
+    obj: dict[str, Any] = {
         "type": "attack-pattern",
         "spec_version": _STIX_VERSION,
         "id": _stix_id("attack-pattern", norm),
         "created": _now_isoformat(),
         "modified": _now_isoformat(),
         "created_by_ref": _producer_identity_id(),
-        "name": f"MITRE ATT&CK {norm}",
+        "name": info.name if info and info.name else f"MITRE ATT&CK {norm}",
         "external_references": [
             {
                 "source_name": "mitre-attack",
@@ -249,6 +253,11 @@ def attack_pattern_for_technique(technique: str) -> dict[str, Any]:
             },
         ],
     }
+    if info and info.tactics:
+        obj["kill_chain_phases"] = [
+            {"kill_chain_name": "mitre-attack", "phase_name": t} for t in info.tactics
+        ]
+    return obj
 
 
 def to_bundle(

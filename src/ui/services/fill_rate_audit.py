@@ -213,6 +213,9 @@ METRICS: tuple[FillMetric, ...] = (
     FillMetric("ent_malware_family", "malware_family", _entity_cond("malware_family"), _CYBER),
     FillMetric("ent_affected_vendor", "affected_vendor", _entity_cond("affected_vendor"), _VULN),
     FillMetric("ent_victim_org", "victim_org", _entity_cond("victim_org"), _CYBER),
+    # 2026-09-27 監査: tool / 影響製品は書くだけで沈黙の見張りが無かった
+    FillMetric("ent_tool", "tool", _entity_cond("tool"), _CYBER),
+    FillMetric("ent_affected_product", "affected_product", _entity_cond("affected_product"), _VULN),
     # 国は当事国 (involved_country、LLM) ∪ 言及国 (mentioned_country、当事国に無い分の補完) で見る。
     # 補完側だけを見ると、LLM が当事国をよく拾うほど減って「急落」に見える (2026-09-27: 42%→14% の
     # 警告の実態は当事国 13%→58% への移動で、国の網羅は 50%→61% に上がっていた)
