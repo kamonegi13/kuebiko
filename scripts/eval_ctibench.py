@@ -48,7 +48,7 @@ def extract_ids(text: str) -> set[str]:
 def extract_letter(text: str) -> str | None:
     lines = [ln for ln in text.strip().splitlines() if ln.strip()]
     for ln in reversed(lines):
-        found = _LETTER_RE.findall(ln)
+        found: list[str] = _LETTER_RE.findall(ln)
         if found:
             return found[-1]
     return None
