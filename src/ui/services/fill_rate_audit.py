@@ -238,14 +238,17 @@ METRICS: tuple[FillMetric, ...] = (
     # remediation に本文末尾の閉じタグ列が 61 件混入していた実害を受けて常設監視化する。
     # runtime 側 (briefing.py の metadata_html_residue_detected) が取込時に検知し、
     # 本指標は **取込経路を通らない書込 (backfill / 直接更新)** も含めた保存後の網。
+    # ⚠ LIKE の % は %% と書く: PG (psycopg) はパラメータ付き実行で生の % を placeholder と
+    #    解釈して落ちる。SQLite の LIKE では %% も同じワイルドカード (2026-09-27)
     FillMetric(
         "text_clean",
         "表示テキスト清浄率",
-        "(a.summary IS NULL OR (a.summary NOT LIKE '%</%' AND a.summary NOT LIKE '%<p>%'))"
-        " AND (a.remediation IS NULL OR (a.remediation NOT LIKE '%</%'"
-        " AND a.remediation NOT LIKE '%<p>%'))"
-        " AND (a.technical_axis_summary IS NULL OR a.technical_axis_summary NOT LIKE '%</%')"
-        " AND (a.socio_political_rationale IS NULL OR a.socio_political_rationale NOT LIKE '%</%')",
+        "(a.summary IS NULL OR (a.summary NOT LIKE '%%</%%' AND a.summary NOT LIKE '%%<p>%%'))"
+        " AND (a.remediation IS NULL OR (a.remediation NOT LIKE '%%</%%'"
+        " AND a.remediation NOT LIKE '%%<p>%%'))"
+        " AND (a.technical_axis_summary IS NULL OR a.technical_axis_summary NOT LIKE '%%</%%')"
+        " AND (a.socio_political_rationale IS NULL"
+        " OR a.socio_political_rationale NOT LIKE '%%</%%')",
         None,
     ),
 )
@@ -293,8 +296,10 @@ def fetch_daily_rows(con: Any, metric: FillMetric, since_iso: str) -> list[tuple
         cat_clause = f" AND a.category IN ({placeholders})"
         params.extend(metric.categories)
     sql = (
-        "SELECT substr(a.created_at, 1, 10) AS day, COUNT(*),"
-        f" COUNT(CASE WHEN {metric.condition} THEN 1 END)"
+        # ⚠ 集計列には必ず別名を付ける — PG は名前の無い COUNT を両方 count にし、
+        #    dict 行で列が潰れて r[2] が範囲外になる (2026-09-27 まで PG で毎回失敗していた)
+        "SELECT substr(a.created_at, 1, 10) AS day, COUNT(*) AS n,"
+        f" COUNT(CASE WHEN {metric.condition} THEN 1 END) AS filled"
         " FROM articles a"
         " WHERE a.status = 'posted' AND a.created_at >= ?"
         f"{cat_clause}"
@@ -550,13 +555,13 @@ def build_duplicate_body_lines(warns: list[tuple[str, int, int]]) -> list[str]:
     return lines
 
 
-def _scan_duplicate_situations() -> list[Any]:
+async def _scan_duplicate_situations() -> list[Any]:
     """情勢の題名を埋め込み、重複の疑いがある組を返す (週次監査用)。
 
     ⚠ 埋込は 220 件前後なので数十秒。失敗は呼び手が握る (監査全体は落とさない)。
+    ⚠ async で定義する: 監査本体は event loop 上で動くため、内部で asyncio.run を呼ぶと
+       毎回「running event loop」で失敗していた (2026-09-27 まで検査が一度も動いていない)。
     """
-    import asyncio
-
     import numpy as np
 
     from src.assessment.situation_dup_scan import find_duplicate_pairs
@@ -581,7 +586,7 @@ def _scan_duplicate_situations() -> list[Any]:
                 out.append((row.situation_id, row.title, row.kind, arr / norm))
         return out
 
-    return find_duplicate_pairs(asyncio.run(_vectors()))
+    return find_duplicate_pairs(await _vectors())
 
 
 def _eventnews_fidelity_line(now: datetime) -> tuple[str, bool]:
@@ -682,7 +687,7 @@ async def run_weekly_fill_rate_audit() -> None:
         try:
             from src.assessment.situation_dup_scan import audit_line
 
-            dup_pairs = _scan_duplicate_situations()
+            dup_pairs = await _scan_duplicate_situations()
             rule_lines.append(audit_line(dup_pairs))
             if dup_pairs:
                 rule_warn_count += 1

@@ -239,6 +239,24 @@ def translate_sql(sql: str) -> str:
 # ===== PG 互換 Row class =====
 
 
+def duplicate_column_names(description: Any) -> list[str]:
+    """結果列の名前の重複 (PG は名前の無い集計列を ``count`` 等の同名にする)。
+
+    dict 行では重複した列が 1 つに潰れ、index access がずれる・範囲外になる
+    (2026-09-27: fill_rate_audit が PG で毎回 IndexError)。見張りとして警告に使う。
+    """
+    if not description:
+        return []
+    seen: set[str] = set()
+    dups: list[str] = []
+    for col in description:
+        name = str(getattr(col, "name", col))
+        if name in seen and name not in dups:
+            dups.append(name)
+        seen.add(name)
+    return dups
+
+
 class _PgRow:
     """sqlite3.Row 互換: index / column name どちらでも access 可能。"""
 
@@ -284,6 +302,9 @@ class _PgCursor:
         else:
             # tuple / list
             self._cur.execute(translated, params)
+        dups = duplicate_column_names(getattr(self._cur, "description", None))
+        if dups:
+            _log.warning("pg_duplicate_column_names", columns=dups, sql=translated[:120])
         return self
 
     def executemany(self, sql: str, params_seq: Any) -> _PgCursor:

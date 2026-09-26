@@ -496,3 +496,12 @@ class TestDuplicateBodyAudit:
 
         # Act / Assert
         assert self._rows(repo) == []
+
+
+def test_duplicate_situation_scan_is_awaitable() -> None:
+    """重複情勢の検査は async (監査本体の event loop 内で asyncio.run を呼ぶと失敗していた)。"""
+    import inspect
+
+    from src.ui.services.fill_rate_audit import _scan_duplicate_situations
+
+    assert inspect.iscoroutinefunction(_scan_duplicate_situations)

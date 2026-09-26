@@ -143,3 +143,46 @@ class TestConnectSqliteFallback:
         row = conn.execute("SELECT b FROM t WHERE a = 1").fetchone()
         assert row[0] == "hello"
         conn.close()
+
+
+class TestDuplicateColumnGuard:
+    """PG は名前の無い集計列を同じ名前 (count 等) にし、dict 行で列が 1 つに潰れる (2026-09-27)。
+
+    fill_rate_audit.fetch_daily_rows が PG で毎回 IndexError になり、heartbeat の抽出率の行と
+    週次の fill-rate 監査が出ていなかった。重複名は警告で見えるようにする。
+    """
+
+    def test_duplicate_column_names_are_reported(self) -> None:
+        from types import SimpleNamespace
+
+        from src.storage.db_backend import duplicate_column_names
+
+        desc = [
+            SimpleNamespace(name="day"),
+            SimpleNamespace(name="count"),
+            SimpleNamespace(name="count"),
+        ]
+        assert duplicate_column_names(desc) == ["count"]
+        assert duplicate_column_names([SimpleNamespace(name="a"), SimpleNamespace(name="b")]) == []
+        assert duplicate_column_names(None) == []
+
+
+def test_fill_rate_daily_rows_alias_every_column() -> None:
+    """fetch_daily_rows の集計列に別名があること (PG で列が潰れない)。"""
+    import inspect
+
+    from src.ui.services import fill_rate_audit
+
+    src = inspect.getsource(fill_rate_audit.fetch_daily_rows)
+    assert "COUNT(*) AS n" in src
+    assert "END) AS filled" in src
+
+
+def test_fill_rate_conditions_escape_percent_for_pg() -> None:
+    """指標の条件に生の % を書かない (PG はパラメータ付き実行で placeholder と解釈して落ちる)。"""
+    import re
+
+    from src.ui.services.fill_rate_audit import METRICS
+
+    for m in METRICS:
+        assert not re.search(r"(?<!%)%(?!%)", m.condition), m.key
