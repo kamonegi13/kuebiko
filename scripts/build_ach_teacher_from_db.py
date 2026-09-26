@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-for _p in ("/app", "/path/to/kuebiko"):
+for _p in ("/app", str(Path(__file__).resolve().parents[1])):
     if Path(_p, "src").is_dir():
         sys.path.insert(0, _p)
         break
