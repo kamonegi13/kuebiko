@@ -107,6 +107,9 @@ def _summarize(
 async def main_async(args: argparse.Namespace) -> int:
     sheets_raw = json.loads(Path(args.sheets).read_text(encoding="utf-8"))
     sheets = {int(s["index"]): s["facts"] for s in sheets_raw if s["facts"]}
+    if args.windows:  # 審判の検証など、一部の窓だけを照合する
+        keep = {int(w) for w in args.windows.split(",")}
+        sheets = {w: f for w, f in sheets.items() if w in keep}
     client = build_judge_client(provider=args.provider, model=args.model, base_url=args.base_url)
     out_path = Path(args.out)
     results: dict[str, list[dict[str, Any]]] = (
@@ -164,6 +167,7 @@ def main() -> int:
     p.add_argument("--sheets", default="data/mlx/keyfact_sheets.json")
     p.add_argument("--arm", action="append", required=True, help="eval json:ラベル[:欄名] (複数可)")
     p.add_argument("--out", default="data/mlx/keyfact_coverage.json")
+    p.add_argument("--windows", default="", help="照合する窓番号 (カンマ区切り、空 = 全部)")
     p.add_argument("--provider", default="claude-code", choices=list(PROVIDERS))
     p.add_argument("--model", default="sonnet")
     p.add_argument("--base-url", default="http://127.0.0.1:8010")
