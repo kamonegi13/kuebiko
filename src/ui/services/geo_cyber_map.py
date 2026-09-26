@@ -428,7 +428,10 @@ def build_cyber_map(
     sector_labels = _yaml_display_map(str(_SECTORS_YAML))
     registry = load_actor_aliases()
     # actor id → nation (小文字 ISO)。overview と同じ辞書。
-    nation_map = {a.id: a.nation for a in registry.actors if a.nation}
+    # 国家系だけを国に結ぶ (国籍だけのランサム等は除く、2026-09-27)
+    from src.cti.threat_actor_doctrine import state_nation_map
+
+    nation_map = state_nation_map(registry.actors)
     # actor id → 表示名 (canonical)。actor 中心ビュー用。
     actor_label = {a.id: a.canonical for a in registry.actors}
 

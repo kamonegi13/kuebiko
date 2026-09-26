@@ -69,13 +69,16 @@ def _connect(db_path: Path) -> Any:
 
 
 def _nation_actors() -> dict[str, list[str]]:
-    """nation(ISO 小文字) → その国の actor canonical id 群 (registry 由来)。"""
+    """nation(ISO 小文字) → その国の**国家系** actor canonical id 群 (registry 由来)。
+
+    国籍だけのランサム・ハクティビストは含めない (state_nation_map、2026-09-27)。
+    """
     from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.threat_actor_doctrine import state_nation_map
 
     out: dict[str, list[str]] = defaultdict(list)
-    for a in load_actor_aliases().actors:
-        if a.nation:
-            out[a.nation.lower()].append(a.id)
+    for actor_id, nation in state_nation_map(load_actor_aliases().actors).items():
+        out[nation].append(actor_id)
     return out
 
 

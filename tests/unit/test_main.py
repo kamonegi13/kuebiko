@@ -2888,3 +2888,12 @@ class TestRunPipelineTimeBudget:
 
         assert result.summarized == 1
         assert result.errors == []
+
+
+def test_classify_ioc_type_rejects_filenames() -> None:
+    """ファイル名をドメインに分類しない (2026-09-27、LLM 経由で 361 件混入していた)。"""
+    from src.pipeline.persistence import _classify_ioc_type
+
+    assert _classify_ioc_type("Math_Symbol.js") is None
+    assert _classify_ioc_type("MpExtMs.exe") is None
+    assert _classify_ioc_type("evil-c2.top") == "ioc_domain"

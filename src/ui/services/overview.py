@@ -411,7 +411,10 @@ def build_overview(*, window_days: int = 7, db_path: Path = DEFAULT_DB_PATH) -> 
     cur_since = now - timedelta(days=window_days)
     prior_since = now - timedelta(days=window_days * 2)
 
-    nation_map = {a.id: a.nation for a in load_actor_aliases().actors if a.nation}
+    # 国家系だけを国に結ぶ (国籍だけのランサム等は除く、2026-09-27)
+    from src.cti.threat_actor_doctrine import state_nation_map
+
+    nation_map = state_nation_map(load_actor_aliases().actors)
 
     con = _connect(db_path)
     try:

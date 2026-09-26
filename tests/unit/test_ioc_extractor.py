@@ -561,3 +561,53 @@ class TestPhase5tnLlmVerifier:
         out = await verify_iocs_with_llm(extracted, "no iocs here", llm=llm)
         llm.generate_structured.assert_not_called()
         assert out == extracted
+
+
+class TestFilterLlmIocs:
+    """LLM 出力の IOC にだけ掛ける関門 (2026-09-27)。
+
+    本文 regex 経路は TLD の許可表・公開 DNS の文脈判定を通るが、LLM 出力は通っていなかった
+    (実測: ioc_domain 3,631 件中 361 件がファイル名、ioc_ip に 8.8.8.8 / 1.1.1.1)。
+    """
+
+    def test_drops_filenames_public_dns_and_private_ips(self) -> None:
+        from src.cti.ioc_extractor import filter_llm_iocs
+
+        got = filter_llm_iocs(
+            [
+                "Math_Symbol.js",
+                "setup.mjs",
+                "Alinubx.sys",
+                "FortiEndpoint_Patch.exe",
+                "8.8.8.8",
+                "1.1.1.1",
+                "192.168.1.10",
+                "evil-c2.top",
+                "update.example.shop",
+                "45.77.10.20",
+                "CVE-2026-12345",
+                "d41d8cd98f00b204e9800998ecf8427e",
+            ]
+        )
+        assert got == [
+            "evil-c2.top",
+            "update.example.shop",
+            "45.77.10.20",
+            "CVE-2026-12345",
+            "d41d8cd98f00b204e9800998ecf8427e",
+        ]
+
+    def test_looks_like_filename(self) -> None:
+        from src.cti.ioc_extractor import looks_like_filename
+
+        assert looks_like_filename("payload.DLL")
+        assert looks_like_filename("run.ps1")
+        assert not looks_like_filename("evil.com")
+        assert not looks_like_filename("c2.example.top")
+
+
+def test_dot_one_domains_are_not_filenames() -> None:
+    """.one は OneNote の拡張子でもあるが、実データでは 3 件とも本物のドメインだった。"""
+    from src.cti.ioc_extractor import looks_like_filename
+
+    assert not looks_like_filename("openai-backup.one")

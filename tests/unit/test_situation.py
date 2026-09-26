@@ -203,3 +203,12 @@ def test_list_nations_includes_cyber_and_geopol(tmp_path) -> None:  # type: igno
     # 役割グループ: 中露は敵対 (セレクタの最前面グループ)
     assert by_iso["CN"]["role"] == "adversary"
     assert by_iso["RU"]["role"] == "adversary"
+
+
+def test_nation_actors_excludes_ransom_groups_with_nationality() -> None:
+    """国籍 ru のランサムを「ロシアのサイバー面 (APT)」に数えない (2026-09-27)。"""
+    from src.ui.services.situation import _nation_actors
+
+    ru = set(_nation_actors().get("ru", []))
+    assert not ru & {"qilin", "lockbit", "cl0p", "alphv"}
+    assert "apt28" in ru

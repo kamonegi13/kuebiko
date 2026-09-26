@@ -177,3 +177,43 @@ class TestDominantIntent:
     def test_all_intents_are_strategic(self) -> None:
         assert "financial" not in STRATEGIC_INTENTS
         assert "prepositioning" in STRATEGIC_INTENTS
+
+
+class TestStateNationMap:
+    """国籍 (nation) と国家の関与は別物 — 国家レンズの画面は国家系だけを国に結ぶ (2026-09-27)。
+
+    国別情勢・概況・地図が帰属国をそのまま使い、ランサム 4 件 (nation=ru) を
+    「ロシアのサイバー面 (APT)」に数えていた。
+    """
+
+    def test_excludes_non_state_families_but_keeps_any_nation(self) -> None:
+        from dataclasses import dataclass
+
+        from src.cti.threat_actor_doctrine import state_nation_map
+
+        @dataclass(frozen=True)
+        class _A:
+            id: str
+            nation: str | None
+            family: str | None
+
+        got = state_nation_map(
+            [
+                _A("qilin", "ru", "ransom_group"),
+                _A("noname", "ru", "hacktivist"),
+                _A("apt28", "ru", "bear"),
+                _A("volt", "cn", ""),
+                _A("us_group", "us", None),  # 同盟国の国家系も国に結ぶ (敵性に限らない)
+                _A("unknown", None, "panda"),
+            ]
+        )
+        assert got == {"apt28": "ru", "volt": "cn", "us_group": "us"}
+
+    def test_real_registry_ransom_groups_not_mapped(self) -> None:
+        from src.cti.actor_normalizer import load_actor_aliases
+        from src.cti.threat_actor_doctrine import state_nation_map
+
+        got = state_nation_map(load_actor_aliases().actors)
+        for rid in ("qilin", "lockbit", "cl0p", "alphv"):
+            assert rid not in got
+        assert got.get("apt28") == "ru"

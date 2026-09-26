@@ -647,9 +647,7 @@ class TestPostureCoversPromotedQuestions:
     UI に 1 件も出なかった。§6e「問いはデータ」に読み取り側が追従していなかった。
     """
 
-    def test_all_standing_situations_are_returned_by_default(
-        self, store: SituationStore
-    ) -> None:
+    def test_all_standing_situations_are_returned_by_default(self, store: SituationStore) -> None:
         from src.ui.services.standing_posture import build_standing_posture
 
         ensure_standing_situations(store=store, now_iso=_NOW_ISO)

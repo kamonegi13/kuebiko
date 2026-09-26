@@ -805,6 +805,115 @@ def filter_benign(iocs: Iterable[str]) -> list[str]:
     return out
 
 
+# ドメインの形をしたファイル名の拡張子。LLM が設置ファイル名をドメインとして返す
+# (2026-09-27 実測 361 件)。
+# ⚠ 実在 TLD と重なるもの (.zip / .sh / .py 等) も含む — IOC ではファイル名の方が圧倒的に多い。
+# .one は含めない: 実データの 3 件がすべて本物のドメイン (偽情報サイト・RAT 配布) だった
+_FILE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        "exe",
+        "dll",
+        "sys",
+        "js",
+        "mjs",
+        "cjs",
+        "vbs",
+        "vbe",
+        "ps1",
+        "psm1",
+        "bat",
+        "cmd",
+        "lnk",
+        "hta",
+        "jar",
+        "msi",
+        "scr",
+        "cpl",
+        "ocx",
+        "txt",
+        "log",
+        "dat",
+        "tmp",
+        "bin",
+        "py",
+        "sh",
+        "doc",
+        "docx",
+        "docm",
+        "xls",
+        "xlsx",
+        "xlsm",
+        "ppt",
+        "pptx",
+        "pdf",
+        "rtf",
+        "zip",
+        "rar",
+        "7z",
+        "gz",
+        "tar",
+        "iso",
+        "img",
+        "vhd",
+        "vhdx",
+        "dmg",
+        "apk",
+        "ipa",
+        "json",
+        "xml",
+        "ini",
+        "cfg",
+        "conf",
+        "yaml",
+        "yml",
+        "php",
+        "asp",
+        "aspx",
+        "jsp",
+        "elf",
+        "so",
+        "dylib",
+        "db",
+        "sqlite",
+        "lua",
+        "wsf",
+        "reg",
+        "chm",
+    }
+)
+
+
+def looks_like_filename(value: str) -> bool:
+    """``name.ext`` 形式でドット 1 つ・拡張子が既知のファイル拡張子か。"""
+    text = value.strip()
+    if text.count(".") != 1 or "/" in text or ":" in text:
+        return False
+    return text.rsplit(".", 1)[1].lower() in _FILE_EXTENSIONS
+
+
+def filter_llm_iocs(iocs: Iterable[str]) -> list[str]:
+    """LLM 出力の IOC にだけ掛ける関門 — 本文 regex 経路の防御と揃える (2026-09-27)。
+
+    - ファイル名 (``setup.mjs`` 等) はドメインではない
+    - 公開 DNS (8.8.8.8 等) とプライベート IP は、本文経路では攻撃の文脈があるときだけ残す。
+      LLM 出力には文脈が無いので落とす (本文に文脈があれば本文経路が拾う)
+    """
+    out: list[str] = []
+    for raw in iocs:
+        text = refang(raw or "").strip()
+        if not text:
+            continue
+        if looks_like_filename(text):
+            continue
+        if _IPV4_RE_FULL.match(text) and (text in _BENIGN_PUBLIC_DNS or _is_benign_ipv4(text)):
+            continue
+        out.append(text)
+    return out
+
+
+_IPV4_RE_FULL = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
 def merge_techniques(
     llm_techniques: Iterable[str],
     extracted: ExtractedIocs,

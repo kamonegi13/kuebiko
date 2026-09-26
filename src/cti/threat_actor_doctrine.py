@@ -16,6 +16,7 @@ board の行動中心レーンの scaffold。国家アクターは被害者を�
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Protocol
 
 # 敵性国家 (この tool の CTI mission = 中朝露イランを主敵とする)。同盟国は本レンズ対象外。
 STATE_NATIONS: frozenset[str] = frozenset({"cn", "ru", "kp", "ir"})
@@ -175,6 +176,30 @@ def is_state_actor(nation: str | None, family: str | None) -> bool:
     False — 国籍帰属はあっても国家指揮系のアクターではない。
     """
     return is_state_nation(nation) and (family or "") not in NON_STATE_FAMILIES
+
+
+class _NationedActor(Protocol):
+    @property
+    def id(self) -> str: ...
+    @property
+    def nation(self) -> str | None: ...
+    @property
+    def family(self) -> str | None: ...
+
+
+def state_nation_map(actors: Iterable[_NationedActor]) -> dict[str, str]:
+    """actor id → nation (小文字 ISO)。**国家系アクターだけ** (非国家系 family を除く)。
+
+    辞書の ``nation`` は国籍 (帰属国) で、国家の関与ではない。国別情勢・概況・地図のように
+    「国家のサイバー活動」として国に結ぶ画面はこれを使う (2026-09-27: ランサム 4 件が
+    nation=ru のまま「ロシアの APT」に数えられていた)。敵性国家に限る :func:`is_state_actor`
+    と違い、同盟国の国家系も含む。
+    """
+    return {
+        a.id: a.nation.lower()
+        for a in actors
+        if a.nation and (a.family or "") not in NON_STATE_FAMILIES
+    }
 
 
 def _doctrine_grounds(names: Iterable[str], doctrine: dict[str, str]) -> tuple[str, ...]:

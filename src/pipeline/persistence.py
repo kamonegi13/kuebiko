@@ -690,7 +690,12 @@ def _classify_ioc_type(value: str) -> str | None:
         return "ioc_md5"
     if _IOC_RE_URL.match(value):
         return "ioc_url"
-    # domain (簡易: ドット含み英数 / 大文字小文字、tld 2 字以上)
+    # domain (簡易: ドット含み英数 / 大文字小文字、tld 2 字以上)。
+    # ⚠ ファイル名 (setup.mjs 等) はドメインにしない (2026-09-27、LLM 経由で 361 件混入)
+    from src.cti.ioc_extractor import looks_like_filename
+
+    if looks_like_filename(value):
+        return None
     if re.match(r"^[a-zA-Z0-9.\-_]+\.[a-zA-Z]{2,}$", value):
         return "ioc_domain"
     return None

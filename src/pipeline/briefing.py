@@ -251,6 +251,7 @@ async def _summarize_and_build(
     from src.cti.ioc_extractor import (
         extract_iocs,
         filter_benign,
+        filter_llm_iocs,
         merge_iocs,
         merge_techniques,
     )
@@ -270,7 +271,8 @@ async def _summarize_and_build(
     # Phase 5F: LLM 出力の IOC 配列に出典 URL が混入した場合の二重防御
     # Phase 5J-2: article.url 自身も除外 (LLM が記事 URL を IOC として返す誘発要因の構造的遮断)
     merged_iocs = _drop_self_url(
-        filter_benign(merge_iocs(summary.iocs, extracted)),
+        # LLM 出力には本文経路の関門 (ファイル名・公開 DNS・プライベート IP) を先に掛ける
+        filter_benign(merge_iocs(filter_llm_iocs(summary.iocs), extracted)),
         article.url,
     )
     # R-B 強化 (2026-06-16): LLM が出す URL は出典/引用 (cve.org/vendor advisory/archive/
