@@ -505,3 +505,31 @@ def test_duplicate_situation_scan_is_awaitable() -> None:
     from src.ui.services.fill_rate_audit import _scan_duplicate_situations
 
     assert inspect.iscoroutinefunction(_scan_duplicate_situations)
+
+
+def test_country_metric_counts_involved_or_mentioned() -> None:
+    """国の監視は当事国 ∪ 言及国 (補完側だけだと LLM の改善が急落に見える、2026-09-27)。"""
+    from src.ui.services.fill_rate_audit import METRICS
+
+    m = next(x for x in METRICS if x.key == "ent_country")
+    assert "'involved_country'" in m.condition and "'mentioned_country'" in m.condition
+    assert not any(x.key == "ent_mentioned_country" for x in METRICS)
+
+
+def test_account_class_population_is_x_articles_only(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """発信者種別の分母は X 由来の記事だけ (全記事だと X の割合を測ってしまう)。"""
+    import sqlite3
+
+    from src.ui.services.fill_rate_audit import METRICS, fetch_daily_rows
+
+    con = sqlite3.connect(tmp_path / "t.db")
+    con.execute(
+        "CREATE TABLE articles (article_id TEXT, status TEXT, created_at TEXT,"
+        " category TEXT, account_class TEXT)"
+    )
+    con.executemany(
+        "INSERT INTO articles VALUES (?, 'posted', '2026-09-20T00:00:00', 'x', ?)",
+        [("grok:1", "researcher"), ("grok:2", ""), ("rss:1", None), ("rss:2", None)],
+    )
+    m = next(x for x in METRICS if x.key == "account_class")
+    assert fetch_daily_rows(con, m, "2026-09-01") == [("2026-09-20", 2, 1)]

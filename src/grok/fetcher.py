@@ -76,6 +76,9 @@ LOGIN_REDIRECT_MARKERS: tuple[str, ...] = (
     "/oauth/authorize",
     "/sign-in",
     "/auth",
+    # 規約の再同意画面 (2026-09-27): 09-10〜09-22 に全レポートがここへ転送され、本文 79 字の
+    # まま「成功」扱い → 重複として捨てられ既読化 = 13 日分の Grok が消えた。復旧は再ログインと同じ
+    "/tos-gate",
 )
 
 
@@ -240,7 +243,8 @@ class GrokFetcher:
                 await page.wait_for_timeout(self._post_load_wait_ms)
 
             final_url = page.url
-            if _looks_like_login_redirect(final_url):
+            if _looks_like_login_redirect(final_url) or _redirected_off_report(url, final_url):
+                _log.warning("grok_redirected_off_report", url=url, final_url=final_url)
                 return GrokFetchResult(
                     url=url,
                     final_url=final_url,
@@ -347,6 +351,17 @@ class GrokFetcher:
 
 
 # ---------- helpers ----------
+
+
+def _redirected_off_report(requested: str, final: str) -> bool:
+    """チャット (/chat/) を要求したのに別のページへ転送されたか。
+
+    規約の同意画面のような未知の中間画面も拾う (既知のマーカーに頼らない、2026-09-27)。
+    """
+    from urllib.parse import urlparse
+
+    req_path = urlparse(requested).path
+    return req_path.startswith("/chat/") and not urlparse(final).path.startswith("/chat/")
 
 
 def _looks_like_login_redirect(url: str) -> bool:

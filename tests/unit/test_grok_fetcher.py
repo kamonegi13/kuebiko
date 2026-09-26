@@ -370,3 +370,23 @@ class TestGrokFetcher:
         call_kwargs = browser.new_context.call_args.kwargs
         assert "storage_state" in call_kwargs
         assert str(sp) == call_kwargs["storage_state"]
+
+
+def test_tos_gate_is_treated_as_session_problem() -> None:
+    """規約の再同意画面 (grok.com/tos-gate) は取得失敗 (2026-09-27)。
+
+    09-10〜09-22 の 13 日間、全レポートが tos-gate へ転送され本文 79 字のまま「成功」扱い →
+    同一 URL で重複として捨てられ、通知メールは既読化され、Grok 由来の記事が 0 件だった。
+    """
+    assert _looks_like_login_redirect("https://grok.com/tos-gate")
+    assert _looks_like_login_redirect("https://grok.com/tos-gate?next=/chat/abc")
+    assert not _looks_like_login_redirect("https://grok.com/chat/7e64ae16")
+
+
+def test_redirect_off_report_page_is_detected() -> None:
+    """チャット URL を要求して別のページへ転送されたら、未知の中間画面でも失敗扱い。"""
+    from src.grok.fetcher import _redirected_off_report
+
+    assert _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/some-new-gate")
+    assert not _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/chat/abc")
+    assert not _redirected_off_report("https://grok.com/share/x", "https://grok.com/share/x")

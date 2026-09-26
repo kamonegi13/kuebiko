@@ -55,12 +55,23 @@ class FillMetric:
     label: str
     condition: str  # articles alias `a` に対する SQL boolean 式
     categories: tuple[str, ...] | None  # None = posted 全件
+    # 母集団の追加条件 (a に対する SQL boolean 式)。例: X 由来の記事だけ (2026-09-27)。
+    # ⚠ LIKE の % は %% と書く (PG のパラメータ付き実行)
+    population: str | None = None
 
 
 def _entity_cond(entity_type: str) -> str:
     return (
         "EXISTS (SELECT 1 FROM article_entities e"
         f" WHERE e.article_id = a.article_id AND e.entity_type = '{entity_type}')"
+    )
+
+
+def _entity_cond_any(*entity_types: str) -> str:
+    types = ", ".join(f"'{t}'" for t in entity_types)
+    return (
+        "EXISTS (SELECT 1 FROM article_entities e"
+        f" WHERE e.article_id = a.article_id AND e.entity_type IN ({types}))"
     )
 
 
@@ -93,11 +104,13 @@ METRICS: tuple[FillMetric, ...] = (
     # 「著名研究者 / アグリゲータ」表示と tier 判定がこの列に依存する。空のまま
     # 増えていくと X は一律 social に戻り、専門家の一次情報が埋もれる。
     # 母集団は X 由来の記事のみ (非 X は定義上 NULL なので全件で測ると常に低く出る)。
+    # ⚠ 2026-09-27 まで母集団の条件が無く、実際は「全記事に占める X の割合」を測っていた
     FillMetric(
         "account_class",
         "発信者種別(X)",
         "a.account_class IS NOT NULL AND a.account_class <> ''",
         None,
+        population="a.article_id LIKE 'grok:%%'",
     ),
     # 主題アクター層 (2026-07-17): 取込時判定の実施率 (NULL = 判定が走っていない)。
     # 'none' (評価済み・主題なし) は正常値として被覆に数える — 監視対象は層の死活。
@@ -200,8 +213,14 @@ METRICS: tuple[FillMetric, ...] = (
     FillMetric("ent_malware_family", "malware_family", _entity_cond("malware_family"), _CYBER),
     FillMetric("ent_affected_vendor", "affected_vendor", _entity_cond("affected_vendor"), _VULN),
     FillMetric("ent_victim_org", "victim_org", _entity_cond("victim_org"), _CYBER),
+    # 国は当事国 (involved_country、LLM) ∪ 言及国 (mentioned_country、当事国に無い分の補完) で見る。
+    # 補完側だけを見ると、LLM が当事国をよく拾うほど減って「急落」に見える (2026-09-27: 42%→14% の
+    # 警告の実態は当事国 13%→58% への移動で、国の網羅は 50%→61% に上がっていた)
     FillMetric(
-        "ent_mentioned_country", "mentioned_country", _entity_cond("mentioned_country"), None
+        "ent_country",
+        "国 (当事国∪言及)",
+        _entity_cond_any("involved_country", "mentioned_country"),
+        None,
     ),
     FillMetric("ent_campaign", "campaign", _entity_cond("campaign"), _CYBER),
     # PMESII 7 軸 (監査 2026-07-16: T/I-infra が 6 週間沈黙しても検知できなかった盲点の
@@ -295,6 +314,8 @@ def fetch_daily_rows(con: Any, metric: FillMetric, since_iso: str) -> list[tuple
         placeholders = ", ".join("?" for _ in metric.categories)
         cat_clause = f" AND a.category IN ({placeholders})"
         params.extend(metric.categories)
+    if metric.population:
+        cat_clause += f" AND ({metric.population})"
     sql = (
         # ⚠ 集計列には必ず別名を付ける — PG は名前の無い COUNT を両方 count にし、
         #    dict 行で列が潰れて r[2] が範囲外になる (2026-09-27 まで PG で毎回失敗していた)

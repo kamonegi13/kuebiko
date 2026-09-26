@@ -186,3 +186,4 @@ def test_fill_rate_conditions_escape_percent_for_pg() -> None:
 
     for m in METRICS:
         assert not re.search(r"(?<!%)%(?!%)", m.condition), m.key
+        assert not re.search(r"(?<!%)%(?!%)", m.population or ""), m.key
