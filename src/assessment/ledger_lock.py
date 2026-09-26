@@ -16,6 +16,7 @@ SQLite (dev/tests) では排他しない (単一プロセス前提)。
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -71,8 +72,8 @@ async def ledger_write_lock(*, wait_seconds: float = 0.0, holder: str) -> AsyncI
         _log.info("ledger_lock", holder=holder, acquired=acquired, waited_max=wait_seconds)
         yield acquired
     finally:
-        try:
-            if acquired:
+        # 解放に失敗しても接続は必ず閉じる (閉じれば session lock も外れる)
+        if acquired:
+            with contextlib.suppress(Exception):
                 conn.execute("SELECT pg_advisory_unlock(%s)", (LEDGER_LOCK_KEY,))
-        finally:
-            conn.close()
+        conn.close()
