@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 _CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
 _VERSION_RE = re.compile(r"\b\d+(?:\.\d+){2,}\b")
@@ -145,3 +148,115 @@ def entity_coverage(sources: str, summary: str) -> Coverage:
     ]
     total = len(src_terms) + len(src_nums)
     return Coverage(hit=total - len(missing), total=total, missing=tuple(missing))
+
+
+# ---------- 生成物・プロンプトからの取り出し (本番 API と評価スクリプトで共有) ----------
+
+
+def source_text(prompt: str) -> str:
+    """事象ニュースのプロンプトから記事本文の部分だけを切り出す (無ければ全体)。"""
+    start = prompt.find("## 対象記事")
+    end = prompt.find("## 識別子カタログ", start + 1)
+    if start < 0:
+        return prompt
+    return prompt[start : end if end > start else len(prompt)]
+
+
+def draft_text(body: Mapping[str, Any], headline: str = "") -> str:
+    """生成物 (EventNewsDraft の dict) を照合用の本文へ。読者に見える欄だけを並べる。"""
+    lines = [f"見出し: {headline or body.get('headline', '')}", f"BLUF: {body.get('bluf', '')}"]
+    for label, key in (("要点", "key_points"), ("不明点", "unknowns")):
+        lines += [f"{label}: {x}" for x in body.get(key) or [] if isinstance(x, str)]
+    for label, key in (("事実", "facts"), ("相違", "discrepancies"), ("但し書き", "caveats")):
+        lines += [
+            f"{label}: {x.get('text', '')}" for x in body.get(key) or [] if isinstance(x, dict)
+        ]
+    return "\n".join(lines)
+
+
+def version_coverage(prompt_text: str, body_json: str, headline: str = "") -> Coverage | None:
+    """1 版の網羅率。プロンプトが保存されていない版 (2026-08-26 以前) は None。"""
+    if not prompt_text or not body_json:
+        return None
+    try:
+        body = json.loads(body_json)
+    except json.JSONDecodeError:
+        return None
+    cov = entity_coverage(source_text(prompt_text), draft_text(body, headline))
+    return cov if cov.total else None
+
+
+# ---------- 1 本ごとの表示: 抽出済み entity のうち要約に無いもの ----------
+
+# 本文からの推測 (salient_terms) は 1 本の表示には雑音が多い (ドイツ語の名詞・日付・訳される地名)。
+# 表示は抽出層が記事ごとに整えた entity を基準にする。国・TTP・PIR は訳語・分類なので対象外
+GAP_ENTITY_TYPES = (
+    "cve",
+    "actor",
+    "malware_family",
+    "victim_org",
+    "affected_product",
+    "affected_vendor",
+)
+_MIN_HEAD_TOKEN = 3
+_SEPARATORS_RE = re.compile(r"[\s\-_.・]")
+
+
+def _compact(s: str) -> str:
+    """空白・ハイフン等を除いて照合する (「checkpoint」と「Check Point」)。"""
+    return _SEPARATORS_RE.sub("", s)
+
+
+def entity_gaps(
+    entities: Mapping[str, Iterable[str]], summary: str
+) -> tuple[int, list[tuple[str, str]]]:
+    """(照合した件数, 要約に無い (種類, 値))。大文字小文字・全半角は無視する。
+
+    複数語の名前は先頭の語が出ていれば含むとみなす
+    (「big-ip access policy manager」→ 要約「BIG-IP APM」)。
+    """
+    hay = _nfkc(summary).lower()
+    hay_compact = _compact(hay)
+    seen: set[str] = set()
+    checked = 0
+    missing: list[tuple[str, str]] = []
+    for etype in GAP_ENTITY_TYPES:
+        for value in entities.get(etype, ()):
+            key = _nfkc(value).lower().strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            checked += 1
+            head = key.split()[0]
+            head_hit = len(head) >= _MIN_HEAD_TOKEN and head in hay
+            if key in hay or head_hit or _compact(key) in hay_compact:
+                continue
+            missing.append((etype, value))
+    return checked, missing
+
+
+# ---------- 週次の見張り (多数の版の平均で見る。1 本の点数としては使わない) ----------
+
+# 前週より平均がこれ以上下がったら警告。較正 (2026-09-26) で n17m30 → n17c の劣化が約 5pt
+WEEKLY_DROP_WARN = 0.05
+_MIN_VERSIONS = 10
+
+
+def weekly_line(this_week: Sequence[Coverage], last_week: Sequence[Coverage]) -> tuple[str, bool]:
+    """週次監査の 1 行と、警告するか。平均は版ごとの網羅率の平均 (記事の多い版に引きずられない)。"""
+
+    def _mean(xs: Sequence[Coverage]) -> float | None:
+        vals = [c.ratio for c in xs if c.ratio is not None]
+        return sum(vals) / len(vals) if len(vals) >= _MIN_VERSIONS else None
+
+    cur, prev = _mean(this_week), _mean(last_week)
+    if cur is None:
+        return f"事象ニュース 固有情報の網羅率: 版が少ない ({len(this_week)} 版)", False
+    line = f"事象ニュース 固有情報の網羅率: {cur:.0%} ({len(this_week)} 版)"
+    if prev is None:
+        return line, False
+    warn = prev - cur >= WEEKLY_DROP_WARN
+    return (
+        f"{line} / 前週 {prev:.0%}{' ⚠️ 低下 — モデル・プロンプトの変更を確認' if warn else ''}",
+        warn,
+    )

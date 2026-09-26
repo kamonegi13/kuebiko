@@ -21,6 +21,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Request
 
 from src.cti.source_basis import classify_source_tier
+from src.eventnews.fidelity import draft_text, entity_gaps
 from src.storage.run_history import RunHistoryRepository
 from src.ui.api.articles_feed import RELATED_ENTITY_TYPE_ORDER
 
@@ -59,10 +60,37 @@ def _version_payload(repo: RunHistoryRepository, item_id: str) -> dict[str, Any]
         "unknowns": body.get("unknowns", []),
         # 関門が黙って落とした量を読み手にも見せる (落下率の常設監視、§9)
         "dropped_lines": latest.dropped_lines,
+        # 元記事の固有情報 (CVE・版・数値・ラテン文字の固有名) のうち要約に無いもの (2026-09-26)。
+        # 点数ではなく **欠けたものの一覧** を見せる — 1 本の網羅率は分母で揺れるため
+        "fidelity": _fidelity_payload(repo, item_id, latest),
         "resolved_ids": latest.repaired_ids,
         "history": [
             {"version": v.version, "generated_at": v.generated_at.isoformat()} for v in versions
         ],
+    }
+
+
+def _fidelity_payload(
+    repo: RunHistoryRepository, item_id: str, latest: Any
+) -> dict[str, Any] | None:
+    """構成記事から抽出済みの固有情報 (CVE・アクター・マルウェア・被害組織・製品・ベンダ) のうち、
+    要約に書かれていないもの。点数でなく **欠けたものの一覧** を返す (2026-09-26)。
+    """
+    try:
+        ids = [str(m.article_id) for m in repo.list_event_members(item_id)]
+        raw = repo.count_entities_for_articles(ids) if ids else {}
+        body = json.loads(latest.body_json) if latest.body_json else {}
+        checked, missing = entity_gaps(
+            {t: list(v) for t, v in raw.items()}, draft_text(body, latest.headline or "")
+        )
+    except Exception as e:  # noqa: BLE001 — 補助情報の失敗で詳細を落とさない
+        _log.warning("eventnews_fidelity_failed", item_id=item_id, error=str(e)[:160])
+        return None
+    if not checked:
+        return None
+    return {
+        "checked": checked,
+        "missing": [{"type": t, "value": v} for t, v in missing],
     }
 
 

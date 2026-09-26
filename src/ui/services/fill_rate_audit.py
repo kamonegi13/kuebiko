@@ -584,6 +584,21 @@ def _scan_duplicate_situations() -> list[Any]:
     return find_duplicate_pairs(asyncio.run(_vectors()))
 
 
+def _eventnews_fidelity_line(now: datetime) -> tuple[str, bool]:
+    """直近 7 日と前の 7 日の版で、固有情報の網羅率の平均を比べる。"""
+    from src.eventnews.fidelity import version_coverage, weekly_line
+    from src.storage.run_history import RunHistoryRepository
+
+    repo = RunHistoryRepository()
+    edges = [(now - timedelta(days=d)).isoformat() for d in (14, 7, 0)]
+
+    def _covs(since: str, until: str) -> list[Any]:
+        rows = repo.event_version_texts_between(since, until)
+        return [c for p, b, h in rows if (c := version_coverage(p, b, h)) is not None]
+
+    return weekly_line(_covs(edges[1], edges[2]), _covs(edges[0], edges[1]))
+
+
 async def run_weekly_fill_rate_audit() -> None:
     """週次 fill-rate 監査: 前週の被覆急落 + routing ルール発火を判定し ops へ必ず 1 通投稿する。
 
@@ -737,6 +752,14 @@ async def run_weekly_fill_rate_audit() -> None:
                 rule_warn_count += len(dup_warns)
         except Exception as e:  # noqa: BLE001
             _log.warning("duplicate_body_audit_failed", error=str(e))
+        # 事象ニュースの固有情報の網羅率 (2026-09-26)。モデル・プロンプトの入れ替えで要約が
+        # 痩せたら週平均で気づく (較正: n17m30 → n17c の劣化が約 5pt)。LLM を使わない決定論
+        try:
+            line, fid_warn = _eventnews_fidelity_line(now)
+            rule_lines.append(line)
+            rule_warn_count += int(fid_warn)
+        except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
+            _log.warning("eventnews_fidelity_audit_failed", error=str(e)[:160])
         labels = {m.key: m.label for m in METRICS}
         warns = [
             w

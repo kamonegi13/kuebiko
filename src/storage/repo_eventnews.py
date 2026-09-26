@@ -826,6 +826,16 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             ).fetchall()
         return [_row_to_event_version(r) for r in rows]
 
+    def event_version_texts_between(self, since: str, until: str) -> list[tuple[str, str, str]]:
+        """期間に生成された版の (prompt_text, body_json, headline)。網羅率の週次の見張り用。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT prompt_text, body_json, headline FROM event_item_versions"
+                " WHERE generated_at >= ? AND generated_at < ? AND prompt_text IS NOT NULL",
+                (since, until),
+            ).fetchall()
+        return [(str(r[0] or ""), str(r[1] or ""), str(r[2] or "")) for r in rows]
+
     def latest_event_versions(self, item_ids: Sequence[str]) -> dict[str, EventVersionRecord]:
         """複数アイテムの **最新版のみ** を 1 クエリで返す (一覧の N+1 回避)。
 

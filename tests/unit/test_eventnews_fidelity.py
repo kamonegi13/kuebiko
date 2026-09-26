@@ -31,3 +31,33 @@ def test_missing_identifiers_are_listed() -> None:
 
 def test_no_salient_terms_gives_no_ratio() -> None:
     assert entity_coverage("ただの日本語の文。", "要約").ratio is None
+
+
+def test_entity_gaps_lists_only_missing_and_tolerates_spacing_and_abbreviation() -> None:
+    from src.eventnews.fidelity import entity_gaps
+
+    entities = {
+        "cve": ["CVE-2026-1", "CVE-2026-2"],
+        "affected_vendor": ["checkpoint"],
+        "affected_product": ["big-ip access policy manager"],
+        "mentioned_country": ["US"],  # 訳語になる種類は照合しない
+    }
+    summary = "Check Point と F5 BIG-IP APM の CVE-2026-1 について"
+    checked, missing = entity_gaps(entities, summary)
+    assert checked == 4
+    assert missing == [("cve", "CVE-2026-2")]
+
+
+def test_weekly_line_warns_on_drop_and_needs_enough_versions() -> None:
+    from src.eventnews.fidelity import Coverage, weekly_line
+
+    def covs(ratio: float, n: int) -> list[Coverage]:
+        return [Coverage(hit=int(ratio * 100), total=100, missing=()) for _ in range(n)]
+
+    line, warn = weekly_line(covs(0.40, 20), covs(0.50, 20))
+    assert warn and "40%" in line and "前週 50%" in line
+    assert weekly_line(covs(0.49, 20), covs(0.50, 20))[1] is False
+    assert weekly_line(covs(0.40, 3), covs(0.50, 20)) == (
+        "事象ニュース 固有情報の網羅率: 版が少ない (3 版)",
+        False,
+    )

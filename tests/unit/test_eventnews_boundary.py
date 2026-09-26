@@ -39,6 +39,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 事象ニュース固有の判断ではない。
         "src/synthesis/grounded/detect_features.py",
         "src/assessment/stateful.py",
+        # 2026-09-26: 週次監査の 1 行 (固有情報の網羅率の週平均、src/eventnews/fidelity.py)。
+        # 版の本文とプロンプトから率を数えて ops へ 1 行出すだけで、生成物の中身を他層へ渡さない
+        "src/ui/services/fill_rate_audit.py",
     }
 )
 

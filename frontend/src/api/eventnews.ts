@@ -102,6 +102,9 @@ export interface EventNewsDetail {
     unknowns: string[];
     dropped_lines: number;
     resolved_ids: number;
+    /** 構成記事から抽出済みの固有情報 (CVE・アクター・マルウェア・被害組織・製品・ベンダ) のうち
+     *  要約に書かれていないもの。機械的な文字列照合 (LLM なし)。照合対象が無ければ null。 */
+    fidelity?: { checked: number; missing: { type: string; value: string }[] } | null;
     history: { version: number; generated_at: string }[];
   } | null;
   members: EventNewsMember[];

@@ -358,6 +358,42 @@ function SingleArticleBody({ d }: { d: EventNewsDetail }) {
   );
 }
 
+// 要約の正しさの簡易な目安 (2026-09-26)。点数ではなく **欠けたものの一覧** を出す — 1 本の
+// 網羅率は記事の長さ・種類で揺れるため (要点照合で較正済み、scripts/calibrate_fidelity.py)。
+export function FidelityNote({ fidelity }: { fidelity: NonNullable<NonNullable<EventNewsDetail["news"]>["fidelity"]> }) {
+  const { checked, missing } = fidelity;
+  return (
+    <div className={READ_PANEL}>
+      <div className={`${READ_LABEL} mb-1.5`}>構成記事の固有情報との照合</div>
+      {missing.length === 0 ? (
+        <p className="m-0 text-sm text-fg-muted">
+          構成記事から抽出した固有情報 {checked} 件は、すべて要約に含まれている。
+        </p>
+      ) : (
+        <>
+          <p className="m-0 mb-1.5 text-sm text-fg-muted">
+            構成記事から抽出した固有情報 {checked} 件のうち、要約に無いもの {missing.length} 件:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {missing.map((m) => (
+              <span
+                key={`${m.type}:${m.value}`}
+                className="text-xs px-1.5 py-0.5 rounded bg-surface-2 border border-border-subtle text-fg-muted"
+                title={vocabLabel("entity_type", m.type) || m.type}
+              >
+                {m.value}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+      <p className="m-0 mt-2 text-xs text-fg-subtle">
+        機械的な文字列照合（CVE・アクター・マルウェア・被害組織・製品・ベンダ）。訳語や言い換えは拾えない。
+      </p>
+    </div>
+  );
+}
+
 export function EventNewsDetailBody({
   id,
   onOpenItem,
@@ -480,6 +516,8 @@ export function EventNewsDetailBody({
               </ul>
             </div>
           )}
+
+          {d.news.fidelity && <FidelityNote fidelity={d.news.fidelity} />}
         </>
       ) : (
         /* 複数記事だが生成がまだ (または失敗した) 状態。空振りで終わらせない。 */

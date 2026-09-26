@@ -28,6 +28,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.eventnews.fidelity import draft_text, source_text
+
 Category = Literal["前提条件", "攻撃", "脆弱性", "被害", "発覚", "調査", "対策"]
 Slot = Literal[
     "誰が",
@@ -84,12 +86,8 @@ def norm(s: str) -> str:
 
 
 def source_block(prompt: str) -> str:
-    """事象ニュースの prompt から記事本文の部分だけを切り出す (無ければ全体)。"""
-    start = prompt.find("## 対象記事")
-    end = prompt.find("## 識別子カタログ", start + 1)
-    if start < 0:
-        return prompt
-    return prompt[start : end if end > start else len(prompt)]
+    """事象ニュースの prompt から記事本文の部分だけ (本番と共有: fidelity.source_text)。"""
+    return source_text(prompt)
 
 
 def verified_facts(facts: list[KeyFact], sources: str) -> tuple[list[KeyFact], int]:
@@ -100,19 +98,14 @@ def verified_facts(facts: list[KeyFact], sources: str) -> tuple[list[KeyFact], i
 
 
 def render_draft(raw: str | None) -> str:
-    """生成 JSON (EventNewsDraft) を審判に見せる本文へ。読者に見える欄だけを並べる。"""
+    """生成 JSON を審判に見せる本文へ (本番と共有: fidelity.draft_text)。"""
     if not raw:
         return ""
     try:
         d = json.loads(raw)
     except json.JSONDecodeError:
         return raw
-    lines = [f"見出し: {d.get('headline', '')}", f"BLUF: {d.get('bluf', '')}"]
-    for label, key in (("要点", "key_points"), ("不明点", "unknowns")):
-        lines += [f"{label}: {x}" for x in d.get(key) or [] if isinstance(x, str)]
-    for label, key in (("事実", "facts"), ("相違", "discrepancies"), ("但し書き", "caveats")):
-        lines += [f"{label}: {x.get('text', '')}" for x in d.get(key) or [] if isinstance(x, dict)]
-    return "\n".join(lines)
+    return draft_text(d)
 
 
 def settle(judgments: list[Judgment], n_facts: int, summary: str) -> list[dict[str, Any]]:
