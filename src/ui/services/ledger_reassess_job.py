@@ -39,6 +39,7 @@ async def run_ledger_reassess_hourly() -> dict[str, Any]:
         _log.info("ledger_reassess_hourly_disabled")
         return {"skipped": "flag_off"}
     from src.assessment.ledger import ledger_mode
+    from src.assessment.ledger_lock import ledger_write_lock
 
     if ledger_mode() != "on":
         return {"skipped": "ledger_off"}
@@ -51,16 +52,21 @@ async def run_ledger_reassess_hourly() -> dict[str, Any]:
     cfg = load_app_config()
     cap = hourly_reassess_cap()
     db_path = Path("data/run_history.db")
-    est = await build_estimate_stateful(
-        llm=build_llm_for(Step.SYNTHESIS_ANALYSIS, cfg),
-        fast_llm=build_llm_for(Step.SYNTHESIS_DETECT, cfg),
-        period_type="daily",
-        repo=RunHistoryRepository(),
-        store=SituationStore(db_path=db_path),
-        db_path=db_path,
-        reassess_cap=cap,
-        open_new=False,
-    )
+    # 定時 run が台帳を更新中なら今回は飛ばす (並行すると古い証拠の判定が最新になる)
+    async with ledger_write_lock(holder="ledger-reassess-hourly") as acquired:
+        if not acquired:
+            _log.info("ledger_reassess_hourly_skipped_busy")
+            return {"skipped": "ledger_busy"}
+        est = await build_estimate_stateful(
+            llm=build_llm_for(Step.SYNTHESIS_ANALYSIS, cfg),
+            fast_llm=build_llm_for(Step.SYNTHESIS_DETECT, cfg),
+            period_type="daily",
+            repo=RunHistoryRepository(),
+            store=SituationStore(db_path=db_path),
+            db_path=db_path,
+            reassess_cap=cap,
+            open_new=False,
+        )
     moved = sum(1 for j in est.judgments if j.delta_type not in ("", "no_change"))
     _log.info("ledger_reassess_hourly_done", cap=cap, judgments=len(est.judgments), moved=moved)
     return {"cap": cap, "judgments": len(est.judgments), "moved": moved}

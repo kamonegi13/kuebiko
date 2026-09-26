@@ -46,6 +46,9 @@ _CONTEXT_WINDOW_HOURS: dict[str, int] = {
 _MAX_HISTORICAL_PER_CLAIM = 3  # 過去文脈ソースの上限/claim (現在の事象を主に、過去は補助)
 _HISTORICAL_BODY_CHARS = 1500  # 過去ソースは短く切る (パターン signal で十分)
 _GROUNDED_ENV = "SYNTHESIS_GROUNDED"
+# 毎時の台帳再評価が終わるのを待つ上限。実測 6-270 秒 (2026-09-25〜26、cap 6)。
+# 待ち切れなくても定時の更新は止めない (ブリーフ全体の timeout を圧迫しない長さに抑える)
+_LEDGER_LOCK_WAIT_SECONDS = 420.0
 
 
 def _render_uses_narrative() -> bool:
@@ -270,20 +273,28 @@ async def generate_grounded_synthesis(
         )
     elif mode == "on":
         # 段B: 台帳駆動 (割当→増分ACH→detect-new→adversarial)。Estimate は台帳の射影。
+        from src.assessment.ledger_lock import ledger_write_lock
         from src.assessment.situation_store import SituationStore
         from src.assessment.stateful import build_estimate_stateful
 
         projection_store = SituationStore(db_path=db_path)
-        est = await build_estimate_stateful(
-            llm=ach_llm,
-            fast_llm=fast_llm,
-            period_type=period_type,
-            repo=repo,
-            store=projection_store,
-            now=now,
-            db_path=db_path,
-            kev_set=kev_set,
-        )
+        # 毎時の増分再評価が走っていれば終わるまで待つ (数分)。待ち切れなくても定時の
+        # 更新は止めない — 台帳を読む前に lock を取るので、待てた場合は相手の結果の上に積む
+        async with ledger_write_lock(
+            wait_seconds=_LEDGER_LOCK_WAIT_SECONDS, holder=f"synthesis-{period_type}"
+        ) as acquired:
+            if not acquired:
+                _log.warning("ledger_lock_not_acquired_proceeding", period_type=period_type)
+            est = await build_estimate_stateful(
+                llm=ach_llm,
+                fast_llm=fast_llm,
+                period_type=period_type,
+                repo=repo,
+                store=projection_store,
+                now=now,
+                db_path=db_path,
+                kev_set=kev_set,
+            )
     else:
         est = await build_estimate(
             llm=ach_llm,
