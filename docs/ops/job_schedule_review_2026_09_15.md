@@ -152,7 +152,13 @@ in-process (job_run_log に所要なし、docker logs の summary から):
   1 件のみ、PIR を落とす窓も 1 件のみだった。実需が無いので入れない (YAGNI)。
 - **weekly/monthly の幅の cap**: ここで一律に切ると報告が壊れる。別途設計する (下記)。
 
-## 6. 次の課題: weekly / monthly の幅 (未着手)
+## 6. 次の課題: weekly / monthly の幅 (**同日中に実装済** — 2026-09-26 追記)
+
+> 追記 (09-26 監査): この節の執筆後、同じ 09-15 のうちに render を 3 層化した
+> (`src/synthesis/grounded/render.py` の `_MOVED_SECTION_MAX` / `_LIST_MAX` / `_PIR_GUARANTEE_MAX`、
+> 本文に載せる判定・1 行一覧・SIR の保証枠)。09-20 の週次総括の実測で narrative 入力は
+> 約 22.4k tok (執筆時の中央 40.2k から約半減)。コード内コメントの目標 14k には未達で、
+> 残りの課題は「22k → 14k の追加圧縮」。以下の本文は執筆時の記録として残す。
 
 | 期間 | 判定数 (中央) | render プロンプト (中央 / 最大) | 出力上限 |
 |---|---|---|---|

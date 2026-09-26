@@ -48,7 +48,7 @@
 >   し、pipelines.yaml には宣言的 yaml で表現できない bespoke scraper (nicter / 38north 等の
 >   Playwright/特殊系) のみ列挙する (pipelines.yaml は移行対象外、bespoke 宣言として git 管理のまま)。
 > - 全体設計の見直し記録: [docs/source_pipeline_architecture_review.md](docs/source_pipeline_architecture_review.md)
->   (P0/P1/P5 実施済、P2/P3+merge/P6/P4 は順次)。§5 のディレクトリ表に未記載の package:
+>   (P0/P1/P5・P2-lite・P3 の stagger は実施済。ingest の merge・P4・P6 は見送り — 同文書 §8-9)。§5 のディレクトリ表に未記載の package:
 >   `src/watchers/ src/digest/ src/taxonomy/ src/synthesis/ src/pir/ src/spotlight/`。
 > - §6 のフェーズ表は歴史的記録 (Phase 2.6a「現在地」は古い)。現在は上記の統合再設計フェーズ。
 
