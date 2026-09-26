@@ -136,3 +136,57 @@ class TestPlanMerges:
         assert len(got) == 1
         assert got[0].target == "i1"
         assert set(got[0].absorbed) == {"i2", "i3"}
+
+
+class TestSingletonRescue:
+    """記事 1 件の事象の救済 (2026-09-27)。
+
+    相手が 1 件の事象なら辺は構造上 1 本しか張れず、「2 本以上」の規則では永久に統合されない。
+    相関クラスタリングの盲検で、取り残された単独記事を群に入れる方向は 47/50 が正しく、
+    まとめ系の特徴が立つ辺を除くと 40/41 だった。誤りはすべて日次ダイジェスト・複数被害のまとめ。
+    """
+
+    def _plan(self, single_edge_ok: set[tuple[str, str]], item_of: dict[str, str]):  # type: ignore[no-untyped-def]
+        ents = {k: frozenset({_E, _F}) for k in item_of}
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(item_of)}
+        return plan_merges(
+            item_of=item_of,
+            first_seen={
+                i: f"2026-09-{n + 1:02d}" for n, i in enumerate(sorted(set(item_of.values())))
+            },
+            entities=ents,
+            vectors=vecs,
+            approved=sorted(single_edge_ok),
+            single_edge_ok=single_edge_ok,
+        )
+
+    def test_singleton_joins_on_one_strong_edge(self) -> None:
+        got = self._plan({("a", "b")}, {"a": "i1", "b": "i2"})
+        assert [(g.target, g.absorbed) for g in got] == [("i1", ("i2",))]
+
+    def test_singleton_joins_a_larger_item(self) -> None:
+        got = self._plan({("a1", "s")}, {"a1": "i1", "a2": "i1", "s": "i2"})
+        assert [(g.target, g.absorbed) for g in got] == [("i1", ("i2",))]
+
+    def test_singleton_bridging_two_items_is_not_rescued(self) -> None:
+        """単独記事が 2 つの事象へ辺を持つときは救わない (2 群を橋渡しして連鎖させない)。"""
+        got = self._plan(
+            {("a1", "s"), ("b1", "s")},
+            {"a1": "i1", "a2": "i1", "b1": "i3", "b2": "i3", "s": "i2"},
+        )
+        assert got == []
+
+    def test_non_singleton_pairs_still_need_two_edges(self) -> None:
+        got = self._plan({("a1", "b1")}, {"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"})
+        assert got == []
+
+    def test_without_single_edge_ok_behaviour_is_unchanged(self) -> None:
+        ents = {"a": frozenset({_E, _F}), "b": frozenset({_E, _F})}
+        got = plan_merges(
+            item_of={"a": "i1", "b": "i2"},
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities=ents,
+            vectors={"a": _v(1, 0), "b": _v(1, 0.05)},
+            approved=[("a", "b")],
+        )
+        assert got == []

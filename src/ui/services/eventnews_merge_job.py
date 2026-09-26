@@ -88,6 +88,7 @@ __all__ = [
     "regen_budget_seconds",
     "regen_cap",
     "run_eventnews_merge_hourly",
+    "singleton_rescue_enabled",
 ]
 
 
@@ -200,8 +201,13 @@ def approve_pairs(
     model: PairModel,
     *,
     on_pair: Callable[[tuple[str, str]], None] | None = None,
+    single_edge_ok: set[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
-    """別事象どうしの候補対を ML だけで採点し、承認した対を返す (LLM は呼ばない)。"""
+    """別事象どうしの候補対を ML だけで採点し、承認した対を返す (LLM は呼ばない)。
+
+    ``single_edge_ok`` を渡すと、承認した対のうち **まとめ系の特徴が立たない** ものを集める
+    (記事 1 件の事象の救済に使う。盲検の誤り 3/3 がまとめ・日次ダイジェストだった、2026-09-27)。
+    """
     pairs = sorted(candidate_pairs_by_entity(inputs.entities, vectors=inputs.vectors))
     approved: list[tuple[str, str]] = []
     for a, b in pairs:
@@ -217,10 +223,37 @@ def approve_pairs(
             inputs.members[b], inputs.vectors[b], inputs.summary_vectors.get(b)
         )
         # LLM 判定なし → (llm_same=0, llm_known=0) で埋め、llm_off 側の閾値で判定する
-        features = pair_features(left, right) + [0.0, 0.0]
+        base = pair_features(left, right)
+        features = base + [0.0, 0.0]
         if model.joins(features, llm_available=False):
             approved.append((a, b))
+            if single_edge_ok is not None and not _is_roundup_pair(base):
+                single_edge_ok.add((a, b))
     return approved
+
+
+# まとめ系の特徴 (pair_features の名前)。1 本での救済からは外す
+_ROUNDUP_FEATURES: tuple[str, ...] = (
+    "roundup_one",
+    "roundup_both",
+    "count_one",
+    "count_both",
+    "kind_roundup_one",
+)
+
+
+def _is_roundup_pair(features: list[float]) -> bool:
+    from src.eventnews.pair_features import FEATURE_NAMES
+
+    return any(features[FEATURE_NAMES.index(n)] for n in _ROUNDUP_FEATURES if n in FEATURE_NAMES)
+
+
+def singleton_rescue_enabled() -> bool:
+    """記事 1 件の事象の救済 (既定 ON)。
+
+    EVENTNEWS_SINGLETON_RESCUE=0 で従来の本数の規則だけに戻す。
+    """
+    return os.environ.get("EVENTNEWS_SINGLETON_RESCUE", "1") != "0"
 
 
 def plan_for(repo: RunHistoryRepository) -> MergePlan:
@@ -236,13 +269,15 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
         nonlocal scored
         scored += 1
 
-    approved = approve_pairs(inputs, model, on_pair=_count)
+    strong: set[tuple[str, str]] | None = set() if singleton_rescue_enabled() else None
+    approved = approve_pairs(inputs, model, on_pair=_count, single_edge_ok=strong)
     groups = plan_merges(
         item_of=inputs.item_of,
         first_seen=inputs.first_seen,
         entities=inputs.entities,
         vectors=inputs.vectors,
         approved=approved,
+        single_edge_ok=strong,
     )
     return MergePlan(
         groups=tuple(groups),

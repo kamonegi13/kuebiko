@@ -204,3 +204,34 @@ class TestRegenBudget:
 
         assert stats.attempted == 0 and stats.generated == 0
         assert calls == []
+
+
+class TestSingletonRescueWiring:
+    def test_roundup_pairs_are_not_single_edge_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """まとめ系の特徴が立つ承認対は、1 本での救済に使わない (誤り 3/3 がまとめ系)。"""
+        from src.eventnews.pair_features import FEATURE_NAMES
+
+        inputs = _inputs()
+        idx = FEATURE_NAMES.index("roundup_one")
+
+        def fake_features(left: object, right: object) -> list[float]:
+            f = [0.0] * len(FEATURE_NAMES)
+            # a2-b1 だけまとめ系
+            if {getattr(left, "article_id", ""), getattr(right, "article_id", "")} == {"a2", "b1"}:
+                f[idx] = 1.0
+            return f
+
+        monkeypatch.setattr(job, "pair_features", fake_features)
+
+        class _M:
+            def joins(self, features: list[float], *, llm_available: bool) -> bool:
+                return True
+
+        strong: set[tuple[str, str]] = set()
+        job.approve_pairs(inputs, cast(job.PairModel, _M()), single_edge_ok=strong)
+        assert strong == {("a1", "b1")}
+
+    def test_rescue_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert job.singleton_rescue_enabled() is True
+        monkeypatch.setenv("EVENTNEWS_SINGLETON_RESCUE", "0")
+        assert job.singleton_rescue_enabled() is False

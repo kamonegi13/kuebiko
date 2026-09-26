@@ -105,6 +105,7 @@ def plan_merges(
     approved: Sequence[tuple[str, str]] | None = None,
     hub_cap: int = 400,
     min_edges: int = MIN_EDGES_BETWEEN_ITEMS,
+    single_edge_ok: set[tuple[str, str]] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -116,11 +117,17 @@ def plan_merges(
         approved: ML が承認した記事対。**None なら決定論のみ** (ML 不在時の縮退)
         min_edges: 2 つの事象を結ぶのに要る辺の本数。1 だとハブが多数を吸い込む
             (実測: 決定論のみで VMware の一括勧告が 82 事象・277 記事を吸収)
+        single_edge_ok: 1 本でも結んでよい記事対 (ML 承認かつまとめ系の特徴が立たない)。
+            **記事 1 件の事象** がちょうど 1 つの事象へ辺を持つときだけ使う (2026-09-27)。
+            相手が 1 件の事象なら辺は構造上 1 本しか張れず、本数の規則では永久に取り残される
+            (盲検: まとめ系を除くと 40/41 正しい)。2 つ以上の事象へ辺を持つ単独記事は救わない
+            (2 群を橋渡しして連鎖させない)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     allow = set(approved) if approved is not None else None
     # ⭐ 事象の組ごとに辺を数える。**1 本では結ばない** (ハブ対策)。
     edge_count: dict[tuple[str, str], int] = {}
+    edge_articles: dict[tuple[str, str], list[tuple[str, str]]] = {}
     for a, b in pairs:
         ia, ib = item_of.get(a), item_of.get(b)
         if ia is None or ib is None or ia == ib:
@@ -133,12 +140,14 @@ def plan_merges(
             continue
         key = (ia, ib) if ia < ib else (ib, ia)
         edge_count[key] = edge_count.get(key, 0) + 1
+        edge_articles.setdefault(key, []).append((a, b))
 
+    rescued = _singleton_rescues(item_of, edge_articles, single_edge_ok or set())
     parent: dict[str, str] = {}
     for iid in set(item_of.values()):
         parent[iid] = iid
     for (ia, ib), n in edge_count.items():
-        if n < min_edges:
+        if n < min_edges and (ia, ib) not in rescued:
             continue
         ra, rb = _root(parent, ia), _root(parent, ib)
         if ra != rb:
@@ -153,6 +162,35 @@ def plan_merges(
         # ⭐ 統合先は **最初に立った事象** — URL がそこに残る
         ordered = sorted(ids, key=lambda i: str(first_seen.get(i, "")))
         out.append(MergeGroup(target=ordered[0], absorbed=tuple(ordered[1:])))
+    return out
+
+
+def _singleton_rescues(
+    item_of: Mapping[str, str],
+    edge_articles: Mapping[tuple[str, str], list[tuple[str, str]]],
+    single_edge_ok: set[tuple[str, str]],
+) -> set[tuple[str, str]]:
+    """本数が足りなくても結ぶ事象の組 (記事 1 件の事象の救済、pure)。"""
+    if not single_edge_ok:
+        return set()
+    size: dict[str, int] = {}
+    for iid in item_of.values():
+        size[iid] = size.get(iid, 0) + 1
+    ok = {tuple(sorted(p)) for p in single_edge_ok}
+    # 単独事象ごとに、強い辺で繋がる相手の事象を集める
+    partners: dict[str, set[str]] = {}
+    for (ia, ib), arts in edge_articles.items():
+        if not any(tuple(sorted(p)) in ok for p in arts):
+            continue
+        for single, other in ((ia, ib), (ib, ia)):
+            if size.get(single) == 1:
+                partners.setdefault(single, set()).add(other)
+    out: set[tuple[str, str]] = set()
+    for single, others in partners.items():
+        if len(others) != 1:
+            continue  # 2 つ以上へ繋がる単独記事は橋渡しになるので救わない
+        other = next(iter(others))
+        out.add((single, other) if single < other else (other, single))
     return out
 
 
