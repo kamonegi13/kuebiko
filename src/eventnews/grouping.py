@@ -22,7 +22,6 @@ from src.eventnews.models import (
     FOCAL_CVE_MAX,
     FREQ_CAP_EXEMPT_TYPES,
     JOIN_ENTITY_TYPES,
-    MEMBER_CAP,
     SHARED_NAMES_COS,
     SHARED_NAMES_MIN,
     WINDOW_HOURS,
@@ -352,7 +351,7 @@ def assign_article(
     """1 記事をどのアイテムに参加させるか判定する (§5)。
 
     2 信号 (cos ≥ COS_THRESHOLD かつ entity 共有 ≥ 1) を満たすエッジを持つ
-    アイテムのうち、MEMBER_CAP とアイテム不変条件を満たすものの中から
+    アイテムのうち、アイテム不変条件を満たすものの中から
     最高 cos (同点は first_reported_at の古い方) を選ぶ。どこにも入らなければ
     ``target_item_id=None`` (呼出側が新アイテムを起こす)。
 
@@ -380,9 +379,6 @@ def assign_article(
             rejected.append(outcome)
             continue
 
-        if len(members) >= MEMBER_CAP:
-            rejected.append("member_cap")
-            continue
         if not _invariant_holds(candidate, members):
             rejected.append("invariant")
             continue

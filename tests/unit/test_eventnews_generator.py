@@ -90,6 +90,28 @@ class TestSelectMembers:
         # 同格 tier なので anchor_ts 昇順で最も古い PROMPT_MEMBER_CAP 件が残る
         assert [m.article_id for m in selected] == [f"a{i}" for i in range(PROMPT_MEMBER_CAP)]
 
+    def test_recent_selection_keeps_first_reports_and_newest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """EVENTNEWS_SELECT_RECENT=1: 第一報 2 件 + 最新の続報で埋める (2026-09-26)。"""
+        monkeypatch.setenv("EVENTNEWS_SELECT_RECENT", "1")
+        n = PROMPT_MEMBER_CAP + 5
+        members = [_member(f"a{i}", anchor_offset_hours=i) for i in range(n)]
+
+        selected, omitted = select_members(members)
+
+        newest = [f"a{i}" for i in range(n - (PROMPT_MEMBER_CAP - 2), n)]
+        assert [m.article_id for m in selected] == ["a0", "a1", *newest]
+        assert omitted == 5
+
+    def test_recent_selection_is_noop_under_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVENTNEWS_SELECT_RECENT", "1")
+        members = [_member(f"a{i}", anchor_offset_hours=i) for i in range(4)]
+
+        selected, _ = select_members(members)
+
+        assert [m.article_id for m in selected] == ["a0", "a1", "a2", "a3"]
+
 
 class TestBuildPrompt:
     def test_prompt_contains_numbered_members_and_allowed_identifiers(self) -> None:

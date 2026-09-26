@@ -1,7 +1,7 @@
 """事象単位ニュースの群化規則 (src/eventnews/grouping.py) のテスト。
 
 2 信号要求 (cos だけ・entity だけでは結合しない) / entity 乗り換え連鎖の
-不変条件による停止 / MEMBER_CAP / 複数マッチの tiebreak / dormant 厳条件 /
+不変条件による停止 / 大きな事象への参加 (上限廃止) / 複数マッチの tiebreak / dormant 厳条件 /
 頻出ガード、を固定する (docs/event_news_design.md §5)。
 """
 
@@ -14,7 +14,7 @@ import pytest
 
 from src.assessment.evidence_verify import normalize_for_match
 from src.eventnews.grouping import assign_article, build_join_entities
-from src.eventnews.models import ENTITY_FREQ_CAP, MEMBER_CAP, ItemState, MemberArticle
+from src.eventnews.models import ENTITY_FREQ_CAP, ItemState, MemberArticle
 
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
 
@@ -174,12 +174,14 @@ def test_entity_chain_without_drift_joins() -> None:
     assert assignment.target_item_id == "item-1"
 
 
-# ---------- MEMBER_CAP ----------
+# ---------- メンバー上限は廃止 (2026-09-26) ----------
 
 
-def test_member_cap_rejects_join() -> None:
+def test_large_item_still_accepts_matching_article() -> None:
+    """上限 (旧 12) を超える大きな事象にも参加できる。統合が上限を見ないため、毎時だけが弾くと
+    「リンクの無い新アイテム → 次の統合で吸収」を空回りさせていた。"""
     common = ("cve", "cve-2024-9999")
-    members = tuple(_member(f"m{i}", frozenset({common})) for i in range(MEMBER_CAP))
+    members = tuple(_member(f"m{i}", frozenset({common})) for i in range(30))
     item = _item("item-1")
     candidate = _member("newcomer", frozenset({common}))
     member_vecs = {m.article_id: _vec(0.95) for m in members}
@@ -193,13 +195,13 @@ def test_member_cap_rejects_join() -> None:
         now=_NOW,
     )
 
-    assert assignment.target_item_id is None
-    assert "member_cap" in assignment.rejected
+    assert assignment.target_item_id == "item-1"
+    assert "member_cap" not in assignment.rejected
 
 
-def test_member_cap_not_reached_still_joins() -> None:
+def test_small_item_joins() -> None:
     common = ("cve", "cve-2024-9999")
-    members = tuple(_member(f"m{i}", frozenset({common})) for i in range(MEMBER_CAP - 1))
+    members = tuple(_member(f"m{i}", frozenset({common})) for i in range(11))
     item = _item("item-1")
     candidate = _member("newcomer", frozenset({common}))
     member_vecs = {m.article_id: _vec(0.95) for m in members}

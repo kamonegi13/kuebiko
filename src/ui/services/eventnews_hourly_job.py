@@ -390,6 +390,8 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         ml_approved_pairs=sum(pair_decision.values()),
         ml_approved_articles=approved_articles,
         joined=result.stats.reinforced + result.stats.updated,
+        created=result.stats.created,
+        rejected=dict(result.stats.rejected_counts),
     )
     return {
         "candidates": result.candidates,

@@ -105,6 +105,9 @@ class ProcessStats:
     # first_corroboration を除いた母集団) とそのうちの reinforced 数
     later_joins: int = 0
     later_reinforced: int = 0
+    # 参加を退けた理由の内訳 (ml_quorum / invariant / dormant_strict)。候補アイテムがあったのに
+    # 入れなかった回数 — 新アイテムが増えすぎたら、どの歯止めが効いているかをここで見る
+    rejected_counts: tuple[tuple[str, int], ...] = ()
 
 
 def _item_id_for(article_id: str) -> str:
@@ -502,6 +505,7 @@ async def process_candidates(
     )
     llm = llm_factory() if (generate and llm_factory) else None
     reason_counter: dict[str, int] = {}
+    rejected_counter: dict[str, int] = {}
     later_joins = later_reinforced = 0
 
     for cand in candidates:
@@ -514,6 +518,8 @@ async def process_candidates(
         assignment: Assignment = grouping.assign_article(
             cand, vec, snapshot_list, member_map, vectors, now, pair_decision, pair_proba
         )
+        for reason in assignment.rejected:
+            rejected_counter[reason] = rejected_counter.get(reason, 0) + 1
 
         if assignment.target_item_id is None:
             item_id = _item_id_for(cand.article_id)
@@ -639,6 +645,7 @@ async def process_candidates(
     return ProcessStats(
         **stats,
         reason_counts=tuple(sorted(reason_counter.items())),
+        rejected_counts=tuple(sorted(rejected_counter.items())),
         later_joins=later_joins,
         later_reinforced=later_reinforced,
     )

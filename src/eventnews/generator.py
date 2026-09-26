@@ -7,6 +7,7 @@ runner が ``generate_draft`` の戻り値に対して関門を適用し ``GateR
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -82,6 +83,12 @@ def _strip_boilerplate(text: str) -> str:
 # state_media/unknown) はすべて同格の「その他」— tier 内での序列は anchor_ts のみで決める。
 _SELECT_TIER_RANK: dict[str, int] = {"official": 0, "research": 1}
 _SELECT_TIER_OTHER = 2
+# 続報を入れる選抜 (2026-09-26、既定 OFF)。旧来の「tier → 古い順」は上限を超える事象で
+# **最新の続報を生成に渡さない** (統合で 12 件超の事象が 24 件・最大 51 記事)。
+# ON のとき、先頭 (tier 順の第一報) を _SELECT_FIRST 件残し、残り枠を新しい順で埋める。
+# 生成の入力が変わるので、凍結窓で比べてから ON にする (CLAUDE.md の運用規約)
+_SELECT_RECENT_ENV = "EVENTNEWS_SELECT_RECENT"
+_SELECT_FIRST = 2
 
 
 def select_members(
@@ -105,7 +112,13 @@ def select_members(
 
     textual = [m for m in members if (m.body or m.summary).strip()]
     ordered = sorted(textual, key=_sort_key)
-    selected = ordered[:PROMPT_MEMBER_CAP]
+    if os.environ.get(_SELECT_RECENT_ENV, "0") == "1" and len(ordered) > PROMPT_MEMBER_CAP:
+        head = ordered[:_SELECT_FIRST]
+        rest = sorted(ordered[_SELECT_FIRST:], key=lambda m: m.anchor_ts, reverse=True)
+        chosen = {m.article_id for m in head + rest[: PROMPT_MEMBER_CAP - _SELECT_FIRST]}
+        selected = [m for m in ordered if m.article_id in chosen]  # 提示順は従来どおり
+    else:
+        selected = ordered[:PROMPT_MEMBER_CAP]
     omitted = len(members) - len(selected)
     return selected, omitted
 
