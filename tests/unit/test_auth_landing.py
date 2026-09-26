@@ -3,7 +3,7 @@
 認証は edge (Cloudflare Access) が行い、origin はその後の受け皿を用意するだけ。
 **着地点を 1 つに決め打ちしない** — Access は認証後にアプリケーションのパス
 (``/auth/``) へ戻すことがあり、そこにルートが無いと **認証は成功しているのに
-404 が出る**。2026-08-26 のドメイン移行 (kuebiko.example → ops.kuebiko.example) で顕在化した。
+404 が出る**。2026-08-26 のドメイン移行 (apex → ops サブドメイン) で顕在化した。
 """
 
 from __future__ import annotations
@@ -75,11 +75,16 @@ class TestLogoutDestination:
         assert auth._logout_destination() == "/app/"
 
     def test_no_real_domain_in_code(self) -> None:
+        # 実ホストは PUBLIC_SITE_URL (.env) からだけ来る。コードに書けるのは例示ドメインのみ
         import inspect
+        import re
 
         from src.ui.routers import auth
 
-        assert "kuebiko.example" not in inspect.getsource(auth)
+        # スキームの有無を問わず、公開 TLD で終わるホスト名が 1 つも無いこと
+        host_re = r"\b[\w-]+(?:\.[\w-]+)*\.(?:io|com|net|org|jp|dev|app)\b"
+        hosts = re.findall(host_re, inspect.getsource(auth))
+        assert hosts == []
 
 
 class TestStandaloneLoginLanding:

@@ -31,8 +31,9 @@ else
 fi
 
 # 2) 公開面だけのビルド
-# 運用画面は静的配信側に無いので、ログインリンクは tunnel 側のホストを指す
-OPERATOR_ORIGIN="${OPERATOR_ORIGIN:-https://ops.kuebiko.example}"
+# 運用画面は静的配信側に無いので、ログインリンクは tunnel 側のホストを指す。
+# 実ホストは運用者固有なので .env の OPERATOR_ORIGIN に置く (deploy_public_site.sh が読み込む)
+: "${OPERATOR_ORIGIN:?OPERATOR_ORIGIN (運用画面のオリジン、例 https://ops.kuebiko.example) を .env に設定してください}"
 ( cd "$ROOT/frontend" && VITE_PUBLIC_STATIC=1 VITE_PUBLIC_BASE="$BASE" VITE_PUBLIC_DATA="/data" \
     VITE_OPERATOR_ORIGIN="$OPERATOR_ORIGIN" npx vite build )
 
