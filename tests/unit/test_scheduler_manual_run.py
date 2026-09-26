@@ -75,3 +75,41 @@ async def test_scheduled_fire_skips_when_same_job_runs() -> None:
         assert calls == []
     finally:
         sched.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_job_holds_slot_until_run_completes_and_manual_flag_passes() -> None:
+    """pipeline は完了まで実行枠を持つ (起動だけで戻るとチェーンと続けて 2 本走った)。
+    手動実行では manual=True が runner に届く (重い帯の収集抑止を受けない)。"""
+    from src.scheduler.scheduler import ScheduledPipeline
+
+    release = asyncio.Event()
+    seen: list[bool] = []
+
+    async def runner(name: str, *, manual: bool = False) -> None:
+        seen.append(manual)
+        await release.wait()
+
+    sched = BriefingScheduler.from_pipelines(
+        runner, [ScheduledPipeline(name="rss-x", hour=6, minute=0)]
+    )
+    sched.start()
+    try:
+        sched.trigger_now("rss-x")
+        for _ in range(50):
+            if seen:
+                break
+            await asyncio.sleep(0.02)
+        assert seen == [True]
+        assert job_running.is_running("rss-x")  # run が終わるまで枠を持つ
+        with pytest.raises(JobBusyError):
+            sched.trigger_now("rss-x")
+        release.set()
+        for _ in range(50):
+            if not job_running.is_running("rss-x"):
+                break
+            await asyncio.sleep(0.02)
+        assert not job_running.is_running("rss-x")
+    finally:
+        release.set()
+        sched.shutdown()

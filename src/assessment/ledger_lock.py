@@ -32,17 +32,31 @@ _log = structlog.get_logger(__name__)
 LEDGER_LOCK_KEY = 0x6B75_6562_6C65_6467  # "kuebledg"
 #: 待つ側の再試行間隔
 POLL_SECONDS = 5.0
+#: 接続の上限秒。PG に届かないときに待ち続けない
+CONNECT_TIMEOUT_SECONDS = 10
 
 
 def _connect() -> Any:
     import psycopg  # PG モードでだけ使う (SQLite-only 環境に依存させない)
 
-    return psycopg.connect(db_backend.get_database_url(), autocommit=True)
+    # keepalive: 定時 run は lock を持ったまま最大 30 分クエリを出さない。途中で接続が
+    # 切れると lock が黙って外れるため、TCP keepalive で idle でも生存を保つ
+    return psycopg.connect(
+        db_backend.get_database_url(),
+        autocommit=True,
+        connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        keepalives=1,
+        keepalives_idle=60,
+    )
 
 
 def _try_lock(conn: Any) -> bool:
     row = conn.execute("SELECT pg_try_advisory_lock(%s)", (LEDGER_LOCK_KEY,)).fetchone()
     return bool(row and row[0])
+
+
+def _unlock(conn: Any) -> None:
+    conn.execute("SELECT pg_advisory_unlock(%s)", (LEDGER_LOCK_KEY,))
 
 
 @asynccontextmanager
@@ -57,7 +71,9 @@ async def ledger_write_lock(*, wait_seconds: float = 0.0, holder: str) -> AsyncI
         yield True
         return
     try:
-        conn = _connect()
+        # 同期の psycopg 呼び出しはスレッドへ逃がす (イベントループを止めない — SSE・他の
+        # ジョブが同じループにいる。2026-09-26 レビュー)
+        conn = await asyncio.to_thread(_connect)
     except Exception as exc:  # noqa: BLE001 — 接続できないなら排他できない。判断は呼出側
         _log.warning("ledger_lock_connect_failed", holder=holder, error=type(exc).__name__)
         yield False
@@ -65,15 +81,15 @@ async def ledger_write_lock(*, wait_seconds: float = 0.0, holder: str) -> AsyncI
     acquired = False
     try:
         deadline = time.monotonic() + wait_seconds
-        acquired = _try_lock(conn)
+        acquired = await asyncio.to_thread(_try_lock, conn)
         while not acquired and time.monotonic() < deadline:
             await asyncio.sleep(POLL_SECONDS)
-            acquired = _try_lock(conn)
+            acquired = await asyncio.to_thread(_try_lock, conn)
         _log.info("ledger_lock", holder=holder, acquired=acquired, waited_max=wait_seconds)
         yield acquired
     finally:
         # 解放に失敗しても接続は必ず閉じる (閉じれば session lock も外れる)
         if acquired:
             with contextlib.suppress(Exception):
-                conn.execute("SELECT pg_advisory_unlock(%s)", (LEDGER_LOCK_KEY,))
-        conn.close()
+                await asyncio.to_thread(_unlock, conn)
+        await asyncio.to_thread(conn.close)

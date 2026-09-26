@@ -163,6 +163,41 @@ def _collect_scheduled_pipelines() -> list[ScheduledPipeline]:
     return out
 
 
+def _collection_suppressed_now(pipeline_name: str) -> bool:
+    """いまの発火が重い処理の run 区間に被る収集ジョブか (判定の障害時は抑止しない)。"""
+    try:
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        from src.scheduler.job_registry import is_collection_suppressed
+
+        now = _dt.now(ZoneInfo("Asia/Tokyo"))
+        dow = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[now.weekday()]
+        return is_collection_suppressed(
+            pipeline_name,
+            now_minute_jst=now.hour * 60 + now.minute,
+            weekday=dow,
+            day_of_month=now.day,
+        )
+    except Exception as e:  # noqa: BLE001 — guard 障害で収集自体は止めない
+        _log.warning("collection_guard_failed", pipeline=pipeline_name, error=str(e))
+        return False
+
+
+_RUN_POLL_SECONDS = 5
+
+
+async def wait_for_run(repo: RunHistoryRepository, run_id: int) -> str | None:
+    """subprocess run が終わるまで待ち、最終 status を返す (記録が消えていれば None)。"""
+    while True:
+        await asyncio.sleep(_RUN_POLL_SECONDS)
+        rec = repo.get_run(run_id)
+        if rec is None:
+            return None
+        if rec.status != "running":
+            return str(rec.status)
+
+
 def _register_bespoke_jobs(
     scheduler: BriefingScheduler,
     repo: RunHistoryRepository,
@@ -291,13 +326,9 @@ def _register_bespoke_jobs(
         run_id = await run_pipeline(name)
         if run_id is None:
             return  # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ
-        while True:
-            await asyncio.sleep(5)
-            rec = repo.get_run(run_id)
-            if rec is None or rec.status != "running":
-                if rec is not None and rec.status != "succeeded":
-                    raise RuntimeError(f"pipeline {name} run {run_id} {rec.status}")
-                return
+        status = await wait_for_run(repo, run_id)
+        if status not in (None, "succeeded"):
+            raise RuntimeError(f"pipeline {name} run {run_id} {status}")
 
     def _pipeline_step(name: str) -> Callable[[], Awaitable[None]]:
         async def _step() -> None:
@@ -470,8 +501,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:  # noqa: BLE001
             _log.warning("operational_config_seed_at_startup_failed", error=str(e))
 
-    async def run_named_pipeline(pipeline_name: str) -> int | None:
+    async def run_named_pipeline(pipeline_name: str, *, manual: bool = False) -> int | None:
         """APScheduler から呼ばれるコールバック。返り値 = run_id (抑止 / 起動失敗は None)。
+
+        ``manual=True`` は手動実行 (ジョブ画面の「今すぐ実行」・自動復旧)。重い処理帯の
+        収集抑止を受けず、run の起動元を manual として残す。
 
         Phase 5A fix: 即時実行 UI と同じ subprocess 経路 (``start_subprocess_run``)
         を使う。これにより stdout が ``run_logs`` に逐次永続化され、ダッシュボード
@@ -482,28 +516,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 動的収集抑止 guard (2026-07-07): 収集ジョブ (rss/web-scraper) の発火が active な
         # heavy ジョブの run 区間に被る時だけ、その発火を止める。固定の夜間解析帯を廃し、
         # 実 heavy スケジュール + 想定処理時間から精密に判定 (隙間では収集は走る)。
-        # 手動実行 (trigger-now) は本経路を通らないので影響しない。
-        try:
-            from datetime import datetime as _dt
-            from zoneinfo import ZoneInfo
-
-            from src.scheduler.job_registry import is_collection_suppressed
-
-            _now = _dt.now(ZoneInfo("Asia/Tokyo"))
-            _dow = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[_now.weekday()]
-            if is_collection_suppressed(
-                pipeline_name,
-                now_minute_jst=_now.hour * 60 + _now.minute,
-                weekday=_dow,
-                day_of_month=_now.day,
-            ):
-                _log.info("collection_suppressed_heavy_overlap", pipeline=pipeline_name)
-                return None
-        except Exception as e:  # noqa: BLE001 — guard 障害で収集自体は止めない
-            _log.warning("collection_guard_failed", pipeline=pipeline_name, error=str(e))
+        # 手動実行は抑止しない (2026-09-26: 従来は手動も同じ関数を通り、重い帯では黙って何も
+        # 起きなかった — 「今すぐ実行が効かない」の一因)。
+        if not manual and _collection_suppressed_now(pipeline_name):
+            _log.info("collection_suppressed_heavy_overlap", pipeline=pipeline_name)
+            return None
         try:
             return await runner.start_subprocess_run(
-                triggered_by="scheduler",
+                triggered_by="manual" if manual else "scheduler",
                 dry_run=False,
                 pipeline_name=pipeline_name,
             )
@@ -518,7 +538,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not READ_ONLY_FLAG:
         scheduled = _collect_scheduled_pipelines()
         if scheduled:
-            scheduler = BriefingScheduler.from_pipelines(run_named_pipeline, scheduled)
+            # 実行枠を run の完了まで持つ (起動だけで戻ると、手動実行と毎時チェーンが同じ
+            # pipeline を続けて 2 本走らせ、チェーン側が timeout になった — 2026-09-26 レビュー)
+            async def run_pipeline_to_end(pipeline_name: str, *, manual: bool = False) -> None:
+                run_id = await run_named_pipeline(pipeline_name, manual=manual)
+                if run_id is not None:
+                    await wait_for_run(repo, run_id)
+
+            scheduler = BriefingScheduler.from_pipelines(run_pipeline_to_end, scheduled)
         else:
             # 後方互換: schedule 設定が無ければ daily-briefing のみ既定で起動
             async def legacy_run() -> None:

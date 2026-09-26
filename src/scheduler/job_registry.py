@@ -268,7 +268,7 @@ def default_jobs() -> list[JobDef]:
             description=(
                 "PIR 縦断の narrative を毎日 04:30 に直近 7 日窓で更新 (Intel Graph の Spotlight)。"
             ),
-            disable_impact="PIR 別の週次追跡 narrative が更新されない。",
+            disable_impact="PIR 別の追跡 narrative (直近 7 日窓) が更新されない。",
             protection="optional",
             schedule_type="cron",
             hour=4,

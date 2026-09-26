@@ -17,6 +17,7 @@ Ollama のモデル切替が 1 日 34 回発生していた (docs/ops/job_schedu
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -73,7 +74,14 @@ async def run_chain(
                     mark_start(step.job_id)
                 except Exception as e:  # noqa: BLE001 — 表示用の記録で段を止めない
                     _log.warning("job_chain_mark_start_failed", step=step.job_id, error=str(e))
-            status, detail, elapsed = await _run_step(step)
+            try:
+                status, detail, elapsed = await _run_step(step)
+            except BaseException:
+                # 中断 (シャットダウン等) でも記録を書く。書かないと mark_start の running が
+                # 次の起動まで残り、画面が「実行中」のままになる (2026-09-26 レビュー)
+                with contextlib.suppress(Exception):
+                    record(step.job_id, "failed", f"chain={chain_id} 中断")
+                raise
             if status == "failed":
                 failed.append(step.job_id)
                 _log.warning(

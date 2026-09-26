@@ -54,15 +54,18 @@ WATCHER_JOB_PREFIX = "watcher:"
 MANUAL_JOB_PREFIX = "manual:"
 
 
-def _guarded(job_id: str, func: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[None]]:
-    """同じ job_id が実行中なら今回の起動を飛ばす (定時・チェーン・手動の二重起動防止)。"""
+def _guarded(job_id: str, func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[None]]:
+    """同じ job_id が実行中なら今回の起動を飛ばす (定時・チェーン・手動の二重起動防止)。
 
-    async def _run() -> None:
+    キーワード引数はそのまま渡す (手動実行の ``manual=True`` を pipeline へ届けるため)。
+    """
+
+    async def _run(**kwargs: Any) -> None:
         async with running_slot(job_id) as acquired:
             if not acquired:
                 _log.warning("scheduler_job_skipped_running", job_id=job_id)
                 return
-            await func()
+            await func(**kwargs)
 
     return _run
 
@@ -73,7 +76,8 @@ def watcher_job_id(watcher_name: str) -> str:
 
 
 # 各 pipeline 用 callback の型: pipeline_name を受け取り 1 回実行する
-PipelineRunCallback = Callable[[str], Awaitable[Any]]
+# (pipeline 名) → 完了まで。手動実行では ``manual=True`` をキーワードで受ける
+PipelineRunCallback = Callable[..., Awaitable[Any]]
 
 # Phase 5Q-2: watcher 用 callback。watcher_name を受け取り 1 回実行する。
 # pipeline と分けるのは、watcher が subprocess 経由ではなく直接 async 関数を
@@ -161,6 +165,8 @@ class BriefingScheduler:
 
         # Phase 2.7 新 API: pipeline_name → (callback, schedule) のマップ
         self._pipeline_runner: PipelineRunCallback | None = None
+        # pipeline として登録した job id (手動実行で manual=True を渡す対象)
+        self._pipeline_job_ids: set[str] = set()
         self._scheduled_pipelines: tuple[ScheduledPipeline, ...] = ()
 
         # Phase 5Q-2: watcher 用 (pipeline と独立管理)
@@ -333,9 +339,11 @@ class BriefingScheduler:
                 dom_label = f"[day={sp.day}] " if sp.day else ""
                 schedule_label = f"cron:{dom_label}{dow_label}{sp.hour:02d}:{sp.minute:02d}"
 
-            async def _run(name: str = sp.name) -> None:
-                await runner(name)
+            async def _run(name: str = sp.name, *, manual: bool = False) -> None:
+                # 手動のときだけ manual を渡す (受けない runner との後方互換)
+                await (runner(name, manual=True) if manual else runner(name))
 
+            self._pipeline_job_ids.add(sp.name)
             self._scheduler.add_job(
                 _guarded(sp.name, _run),
                 trigger=trigger,
@@ -517,6 +525,7 @@ class BriefingScheduler:
             self._scheduler.add_job(
                 job.func,
                 trigger=DateTrigger(run_date=run_at, timezone=self._timezone),
+                kwargs={"manual": True} if job_id in self._pipeline_job_ids else None,
                 id=f"{MANUAL_JOB_PREFIX}{job_id}",
                 name=f"{job.name} (手動)",
                 misfire_grace_time=self._misfire_grace_time,

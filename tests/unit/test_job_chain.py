@@ -132,3 +132,21 @@ async def test_step_start_is_marked_and_slot_released() -> None:
     assert started == ["a"]
     assert seen == [("run", True)]
     assert not job_running.is_running("a")
+
+
+@pytest.mark.asyncio
+async def test_cancelled_step_still_records_so_running_does_not_stick() -> None:
+    """中断された段も記録を書く (書かないと mark_start の running が残る — 2026-09-26 レビュー)。"""
+
+    async def hang() -> None:
+        await asyncio.sleep(3600)
+
+    rec = _Recorder()
+    task = asyncio.create_task(
+        run_chain("chain-x", [ChainStep("a", hang, 60)], record=rec, mark_start=lambda _: None)
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert rec.rows and rec.rows[0][0:2] == ("a", "failed")
