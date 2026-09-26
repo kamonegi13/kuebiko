@@ -15,15 +15,17 @@ from src.ui.services.fill_rate_audit import (
     bucket_weekly,
     build_audit_report,
     build_drift_lines,
-    build_duplicate_body_lines,
     build_feed_body_health_lines,
     build_heartbeat_fill_line,
     collect_weekly_cells,
-    detect_duplicate_body_warns,
     detect_feed_body_health_collapses,
     detect_fill_collapse,
     detect_fill_drift,
     fetch_daily_rows,
+)
+from src.ui.services.fill_rate_sections import (
+    build_duplicate_body_lines,
+    detect_duplicate_body_warns,
     fetch_duplicate_body_rows,
 )
 
@@ -502,7 +504,7 @@ def test_duplicate_situation_scan_is_awaitable() -> None:
     """重複情勢の検査は async (監査本体の event loop 内で asyncio.run を呼ぶと失敗していた)。"""
     import inspect
 
-    from src.ui.services.fill_rate_audit import _scan_duplicate_situations
+    from src.ui.services.fill_rate_sections import _scan_duplicate_situations
 
     assert inspect.iscoroutinefunction(_scan_duplicate_situations)
 
