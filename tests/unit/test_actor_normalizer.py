@@ -611,3 +611,20 @@ class TestAssertedSubjectLayer:
         )
         assert s.ids == ()
         assert s.source == SOURCE_NONE
+
+
+def test_generic_aliases_removed_after_subject_audit() -> None:
+    """主題判定の盲検 (2026-09-27) で出た別名の衝突を辞書から外した。
+
+    米空軍の無人機「MQ-9A Reaper」の記事に APT37 (別名 Reaper)、ランサムグループ karma の記事に
+    Void Manticore (偽装ペルソナ Karma) が主題として付いていた。MITRE 同期が書き戻さないよう
+    一般語の SSoT にも登録する。
+    """
+    reg = load_actor_aliases(Path("config/cti/actor_aliases.yaml"))
+    found = reg.find("米空軍、MQ-9A Reaper の後継機開発に向けた概念を年内に洗練")
+    assert found is None or found.id != "apt37"
+    found = reg.find("Ransomware グループ karma が法律事務所を被害に掲載")
+    assert found is None or found.id != "void_manticore"
+    assert is_generic_alias("Reaper") and is_generic_alias("Karma")
+    # 固有の別名では引き続き引ける
+    assert (reg.find("TEMP.Reaper による攻撃") or reg.find("APT37")).id == "apt37"  # type: ignore[union-attr]

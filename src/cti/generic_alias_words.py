@@ -56,6 +56,10 @@ _COMMON_WORDS: frozenset[str] = frozenset(
         "panda",
         "spider",
         "tick",
+        # 2026-09-27 主題判定の盲検で誤帰属: MQ-9A Reaper (無人機) → APT37、
+        # ランサムグループ karma → Void Manticore (偽装ペルソナ Karma)。辞書の別名からも外した
+        "reaper",
+        "karma",
     }
 )
 
