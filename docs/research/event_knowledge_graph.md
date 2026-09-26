@@ -458,3 +458,31 @@ CVE → 製品 → ベンダ、マルウェア → ファミリー → 使用ア
 3. **線の役割**: CVE → 製品の対応を CVE 単位で保持・被害組織ごとの業種と国・種別を全記事に・TTP → 戦術
 4. **キャンペーンの定義を 1 つに**: 台帳を 2 型に分け、campaign 指標は「敵の作戦名」に限る (法執行・軍事を分ける)
 5. その後に §13 の段 1 (導出する関係の盲検)
+
+## 18. キャンペーンと台帳の定義 (設計、2026-09-27)
+
+### 現状 (§17.3)
+キャンペーンが 4 系統に分散: 台帳 (situations、kind = event 262 / standing 9) と situation_relations の same_campaign (2 件)・
+campaign 指標 (「Operation ○○」の正規表現、302 件)・辞書の notable_campaigns (6 件)・本文書の指標から導く定義。
+
+### 定義 (STIX 2.1 / ATT&CK に合わせる)
+| kuebiko | 標準 | 定義 |
+|---|---|---|
+| 辞書のアクター (kind=group) | STIX Intrusion Set / ATT&CK Group | 単一の組織が主導する持続的な活動のまとまり |
+| 辞書の機関 (kind=organization / contractor) | STIX Identity | 部隊の上位組織 (sponsor_org で結ぶ) |
+| 台帳のうち「アクターを追うもの」 | Intrusion Set の追跡 | 主題アクターが軸。期間の終わりが無い |
+| 台帳のうち「出来事の流れを追うもの」 | STIX Campaign / ATT&CK Campaign | 期間と標的で区切られた活動。**帰属は任意** (主題アクター無しで開ける) |
+| 台帳 kind=standing | (常設の情報要求) | 変更なし |
+| campaign 指標 | Campaign の **名前** (敵の作戦名) | 法執行の摘発作戦・軍事作戦は Campaign ではない |
+| 事象どうしの「同一キャンペーン」 | Campaign への所属の候補 | §16 の多次元の近さ (Diamond の活動群の手順) で導く。台帳への所属の候補として使う |
+
+### 実装の順 (s20 の後、台帳の割当を触るときに一緒に)
+1. 台帳に型の区別を足す (event を actor 追跡 / campaign 追跡に分ける)。detect の開設で、主題アクターが無くても
+   campaign 追跡を開けるようにする
+2. campaign 指標の値に種類 (敵の作戦 / 法執行 / 軍事) を持たせる。既知の法執行作戦 (Endgame 等) の一覧から始める
+3. notable_campaigns は辞書の自由記述のまま残し、グラフでは使わない (6 件で網羅が無い)
+4. situation_relations の same_campaign / shared_nation は、§16 の導出に置き換えられるか比べてから整理する
+
+### 実施済み (2026-09-27)
+- campaign 指標の日本語の誤抽出 (「Operation センター」等) を除外 (一般語の除外表が英語の小文字でしか照合していなかった)
+- related_to のスキーマのコメントを実態 (遡及分割の子 → 分割元) に

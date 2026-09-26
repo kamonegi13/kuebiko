@@ -50,6 +50,34 @@ _OP_GENERIC_WORDS: frozenset[str] = frozenset(
 )
 
 
+# 日本語の一般語 (カタカナ)。英語の除外表は小文字照合なのでカタカナに効かなかった (2026-09-27)
+_OP_GENERIC_WORDS_JA: frozenset[str] = frozenset(
+    {
+        "センター",
+        "オフィサー",
+        "ソリューション",
+        "ソリューションズ",
+        "システム",
+        "チーム",
+        "マネージャー",
+        "マネジャー",
+        "マネジメント",
+        "テクノロジー",
+        "サポート",
+        "ルーム",
+        "モード",
+        "ガイド",
+        "サービス",
+        "リサーチ",
+    }
+)
+
+
+def _is_generic_jp_op(name: str) -> bool:
+    """カタカナの作戦名候補が一般語か国名か (国名は gazetteer が SSoT)。"""
+    return name in _OP_GENERIC_WORDS_JA or bool(nations_in_text(name))
+
+
 def campaigns_in_text(text: str) -> frozenset[str]:
     """命名された作戦 (campaign) を "Operation <Name>" 正規形の集合で返す (決定論)。"""
     if not text:
@@ -67,8 +95,9 @@ def campaigns_in_text(text: str) -> frozenset[str]:
         found.add(f"Operation {name}")
     for m in _OP_JP_RE.finditer(text):
         name = m.group(1).strip()
-        if name.lower() not in _OP_GENERIC_WORDS:
-            found.add(f"Operation {name}")
+        if name.lower() in _OP_GENERIC_WORDS or _is_generic_jp_op(name):
+            continue
+        found.add(f"Operation {name}")
     return frozenset(found)
 
 

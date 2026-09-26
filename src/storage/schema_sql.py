@@ -689,7 +689,7 @@ CREATE TABLE IF NOT EXISTS event_items (
     -- 0 = 未生成 (生成失敗含む)。version=0 は状態に関わらず無条件に再生成対象 (§7)
     current_version       INTEGER NOT NULL DEFAULT 0,
     merged_into           TEXT,                             -- v1 は未使用 (将来の手動併合)
-    related_to            TEXT,                             -- メンバー上限超過時の弱リンク (§5)
+    related_to            TEXT,                             -- 遡及分割の子→分割元
     importance            TEXT    NOT NULL DEFAULT '',      -- 構成記事の最大値 (集約のみ、§10)
     best_source_tier      TEXT    NOT NULL DEFAULT '',
     independent_sources   INTEGER NOT NULL DEFAULT 0,

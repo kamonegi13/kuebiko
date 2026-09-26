@@ -70,3 +70,22 @@ class TestDeriveMentionEntities:
             involved_isos=set(),
         )
         assert got == []
+
+
+def test_japanese_generic_words_and_countries_are_not_campaigns() -> None:
+    """日本語の一般語・国名を作戦名にしない (2026-09-27: 「Operation センター」4 件等)。
+
+    一般語の除外表が英語の小文字でしか照合していなかった。
+    """
+    from src.cti.mention_tagger import campaigns_in_text
+
+    for text in (
+        "セキュリティ・オペレーション・センターが検知",
+        "オペレーション・オフィサーが対応",
+        "オペレーション・ソリューションを提供",
+        "オペレーション・ロシアの動向",
+    ):
+        assert campaigns_in_text(text) == frozenset(), text
+    assert campaigns_in_text("オペレーション・ドリームジョブ") == frozenset(
+        {"Operation ドリームジョブ"}
+    )
