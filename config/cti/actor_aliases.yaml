@@ -1176,7 +1176,6 @@ actors:
   canonical: Andariel
   aliases:
   - Onyx Sleet
-  - PLUTONIUM
   - Stonefly
   - Silent Chollima
   - APT45
@@ -1919,11 +1918,9 @@ actors:
   canonical: Gamaredon Group
   aliases:
   - Primitive Bear
-  - ACTINIUM
   - Aqua Blizzard
   - Trident Ursa
   - IRON TILDEN
-  - Armageddon
   - Shuckworm
   - DEV-0157
   - NastyShrew
@@ -5604,7 +5601,6 @@ actors:
 - id: apt33
   canonical: APT33
   aliases:
-  - HOLMIUM
   - Elfin
   - Peach Sandstorm
   mitre_group: G0064
@@ -5999,6 +5995,7 @@ actors:
   description: フランス DGSE に帰属するとされる攻撃グループ
   kind: group
 - id: sidewinder
+  ambiguous: true
   canonical: SideWinder
   aliases:
   - Rattlesnake

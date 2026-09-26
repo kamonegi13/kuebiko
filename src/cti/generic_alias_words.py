@@ -19,6 +19,10 @@ from __future__ import annotations
 # 旧 Microsoft actor naming の元素名。単独出現は元素・一般名詞である可能性が高い。
 _ELEMENT_NAMES: frozenset[str] = frozenset(
     {
+        # 2026-09-27 横断調査で地政学・エネルギー記事への誤帰属を確認した旧元素名系の別名
+        "actinium",
+        "holmium",
+        "plutonium",
         "americium",
         "barium",
         "cerium",
@@ -60,6 +64,8 @@ _COMMON_WORDS: frozenset[str] = frozenset(
         # ランサムグループ karma → Void Manticore (偽装ペルソナ Karma)。辞書の別名からも外した
         "reaper",
         "karma",
+        # 同日の横断調査: 別名「Armageddon」で地政学記事に誤帰属 (gamaredon)
+        "armageddon",
     }
 )
 
@@ -89,6 +95,8 @@ _CYBERCRIME_GROUP_WORDS: frozenset[str] = frozenset(
         # 2026-08-01 リコール層承認分: termite=シロアリ、akira=アニメ/人名 (いずれも ambiguous 済)
         "termite",
         "akira",
+        # 2026-09-27: 正式名が兵器名と衝突し地政学記事に誤帰属 (ambiguous で同一性の証拠を要求)
+        "sidewinder",
     }
 )
 

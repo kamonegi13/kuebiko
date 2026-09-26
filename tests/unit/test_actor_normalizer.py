@@ -628,3 +628,20 @@ def test_generic_aliases_removed_after_subject_audit() -> None:
     assert is_generic_alias("Reaper") and is_generic_alias("Karma")
     # 固有の別名では引き続き引ける
     assert (reg.find("TEMP.Reaper による攻撃") or reg.find("APT37")).id == "apt37"  # type: ignore[union-attr]
+
+
+def test_no_generic_alias_on_non_ambiguous_actor() -> None:
+    """一般語 (SSoT) を曖昧指定の無いアクターの **別名** に持たせない (2026-09-27)。
+
+    既存の検査は id / canonical しか見ておらず、別名の衝突 (無人機名・元素名・一般名詞) で
+    地政学・国防の記事にアクターが大量に誤帰属していた。
+    """
+    reg = load_actor_aliases(Path("config/cti/actor_aliases.yaml"))
+    bad = [
+        (a.id, n)
+        for a in reg.actors
+        if not a.ambiguous and not a.is_merged
+        for n in a.all_names
+        if is_generic_alias(n)
+    ]
+    assert bad == []
