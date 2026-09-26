@@ -397,3 +397,64 @@ CVE → 製品 → ベンダ、マルウェア → ファミリー → 使用ア
   重みは Opus が盲検で「同じキャンペーンか」を判定した組で学ぶ (§8 と同じ手順)
 - 候補は埋込で広く拾い (§15: 関係の有無は AUC 0.88)、次元の一致で種類と根拠を決める
 - **TTP の精度が未測定**。手法の次元に頼る前に、CTIBench の ATT&CK 抽出 (s20 評価で予定) と、kuebiko 自身の TTP の抜き取り検査が要る
+
+## 17. グラフの土台の監査 — 抽出・属性・定義・標準 (2026-09-27)
+
+4 観点で監査した (抽出 / 属性と階層 / 定義と本文書の事実確認 / CTI 標準)。主要な指摘は DB とコードで再確認済み。
+本文書の数値は再現できたものが全て一致した。
+
+### 17.1 既存画面の不具合 (グラフ以前に直すもの)
+- **国別の情勢画面がランサムを国家の APT に数える**: `situation.py:_nation_actors` は帰属国が付いた全アクターを集めるため、
+  ランサム 4 件 (lockbit / alphv / cl0p / qilin、辞書で nation=ru、根拠の出典なし) が「ロシアのサイバー面 (APT)」に入る。
+  国家系の判定 `threat_actor_doctrine.is_state_actor` (非国家系の family を除外) は国家情勢ボードと脅威評価でしか使われていない。
+  地図 (`geo_cyber_map.py`) もアクターの国を帰属国そのままで出す
+- **LLM 経由の IOC が本文正規表現側の防御を通らない**: ioc_domain 3,631 件中 361 件がファイル名 (.js / .sys / .exe 等)、
+  ioc_ip に 8.8.8.8 / 1.1.1.1。`persistence._classify_ioc_type` の緩い正規表現と、`filter_benign` が IP を見ないため
+
+### 17.2 抽出の層 (事象 → 指標の線)
+| 重大度 | 問題 | 根拠 |
+|---|---|---|
+| 高 | 被害組織に正規化が無い (大文字小文字だけの違いで別値 104 組、8,620 種 / 12,906 行) | fairlife / Fairlife 等 |
+| 高 | 同じ実体が malware_family と tool に割れる (XMRig・AsyncRAT・XWorm・Amadey・Remcos 等、辞書に未収録) | §6 C2 と同じ |
+| 高 | 手法名 (ClickFix) の受け皿が無く、暫定アクター・tool・malware_family の 3 種に混入 | 暫定アクター 14 / malware 14 / tool 2 |
+| 高 | CVE → 製品・ベンダが記事単位で平坦化され、どの CVE の製品か失われる (CVE を含む記事の 56% が複数 CVE)。CVE を含む記事の 71% は製品・ベンダが 0 件 | `persistence.py:538-551` |
+| 高 | 単独事象 10,774 件 (事象の 92%) のうち 5,383 件は群化の指標 (CVE・被害組織・アクター・マルウェア・ツール) を 1 つも持たない = 指標の線を張れない | §8 の「取り残し」は閾値の問題と抽出の欠落の 2 種がある (§8 は前者だけを書いていた) |
+| 中 | 被害国が 2 系統 (記事列 victim_country_iso と entity の involved_country) で 66% 食い違う | 記事列を併せて読む必要 |
+| 中 | TTP は ID だけ・親技術と副技術の関係なし・戦術 (kill chain) への対応なし。MITRE 同期は戦術を取得しながら捨てている | `mitre_sync.py` |
+| 中 | campaign (302 件) は「Operation ○○」の正規表現。敵の作戦 (Dream Job)・法執行の摘発 (Endgame)・軍事作戦と見られるもの (Epic Fury 等) と誤抽出 (Operation センター) が混在 | `mention_tagger.py` |
+| 中 | 種別 (event_kind) は群化の候補組・detect 候補に現れた記事にしか付かない (網羅 32%)。全記事を分類する段が無い | `eventnews_hourly_job.py` |
+| 中 | 役割 (主題 / 言及) を持つのはアクターだけ。CVE・マルウェア・被害組織に役割が無い | |
+| 低 | malware_type は書くだけで誰も読まない。fill-rate 監査が tool・IOC・製品・暫定アクター・involved_country を見ていない | `fill_rate_audit.py` |
+| 低 | pir が指標と同じ表にある (運用の分類であって指標でない)。グラフ化時に除外が要る | |
+
+### 17.3 属性と階層 (指標 → 指標の線)
+| 重大度 | 問題 | 根拠 |
+|---|---|---|
+| 高 | 帰属国 (国籍) と国家指揮の混同 (17.1)。辞書の nation は国籍で、国家系かは family との組合せでしか分からない | |
+| 高 | アクター辞書の associated_malware 853 件の 80% が記事側のマルウェア辞書と一致しない (2 つの語彙が分断) | |
+| 高 | 被害組織の業種・国は記事単位の 1 値。複数の被害組織を持つ記事では組織ごとの業種・国が分からない。記事列の網羅は 28% | |
+| 高 | キャンペーンが 4 系統に分散: 台帳 (situation_relations の same_campaign 2 件)・campaign 指標・辞書の notable_campaigns (6 件)・本文書の指標から導く定義。結合する鍵が無い | |
+| 中 | family 欄に命名系統 (typhoon / panda / bear…) と活動の種類 (ransom_group / state_organ / hacktivist) が混在。空文字 138・欠落 62 | |
+| 中 | 部隊 → 上位組織 (sponsor_org) は型があるが 16/275 のみ (Volt Typhoon 等も未リンク) | |
+| 中 | 動機: 辞書の motivation (23 件、自由文) と記事の intent (12 値) が別語彙 | |
+| 中 | 主題アクター判定の精度を測った記録が無い。本文書は「高精度の層」と繰り返したが設計意図からの外挿だった | |
+| 低 | related_to を書くのは遡及分割の一回限りのスクリプトだけ (毎時は作らない)。スキーマのコメントは廃止済みの MEMBER_CAP の説明のまま | |
+
+### 17.4 標準との対応 (一次資料で確認)
+| 標準の定義 | kuebiko の今 | 推奨 |
+|---|---|---|
+| STIX **Intrusion Set** = 単一組織が主導する行動・資源のまとまり | 辞書の kind=group を threat-actor として書き出している | group は Intrusion Set。主体が特定できたときだけ Threat Actor + attributed-to |
+| STIX **Campaign** = ある期間に特定の標的に対して行われた活動のまとまり / ATT&CK Campaign = 期間内の共通の標的と目的をもつ侵入活動 (帰属は任意) | 台帳が Intrusion Set 的なものと Campaign 的なものを区別せず 1 型 | 台帳を「持続的な活動主体を追うもの」と「期間と標的で区切られた活動を追うもの」に分ける。後者は主題アクター無しで開ける |
+| STIX **Threat Actor** = 実際の個人・集団・組織 | kind=organization / contractor は Identity に出力済み (正しい) | 変更不要 |
+| threat-actor-type-ov (nation-state / crime-syndicate / criminal / activist / hacker…)・attack-motivation-ov・attack-resource-level-ov | family の混在欄・motivation 自由文 | 種類は threat-actor-type-ov、動機は attack-motivation-ov と intent の対応表で持つ。命名系統は別欄へ |
+| industry-sector-ov (government・infrastructure に下位) | 独自の業種 21 | 対応表を 1 枚足す (体系の置き換えは不要) |
+| MISP threat-actor: country と cfr-suspected-state-sponsor を **別の欄** で持つ | nation 1 欄 | 国籍と国家の関与を分ける (17.1 の不具合の根本対策) |
+| Diamond Model の活動群 = 特徴ベクトル + 類似度関数 + まとめる手順 | §16 で同じものを提案 | 原典の手順に沿う (再発明しない) |
+| RaaS の運営者とアフィリエイト | STIX・MISP とも構造化された型なし (MISP は説明文のみ) | 必要なら独自の関係として足す |
+
+### 17.5 直す順
+1. **既存の不具合** (17.1): 国別情勢のランサム混入、IOC のファイル名・公開 DNS — グラフと無関係に今の画面が誤っている
+2. **語彙の土台**: アクターの種類 (threat-actor-type-ov)・国籍と国家関与の分離・部隊 → 上位組織の充填・マルウェア辞書の統合 (アクター辞書側と記事側)・被害組織の正規化
+3. **線の役割**: CVE → 製品の対応を CVE 単位で保持・被害組織ごとの業種と国・種別を全記事に・TTP → 戦術
+4. **キャンペーンの定義を 1 つに**: 台帳を 2 型に分け、campaign 指標は「敵の作戦名」に限る (法執行・軍事を分ける)
+5. その後に §13 の段 1 (導出する関係の盲検)
