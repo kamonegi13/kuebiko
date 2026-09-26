@@ -14,7 +14,7 @@ from src.pipeline.result import PipelineRunResult
 from src.spotlight.models import SpotlightPeriod
 from src.storage.run_history import RunHistoryRepository
 from src.tools.channel_registry import push_map
-from src.tools.discord_publisher import BriefingMessage, Source
+from src.tools.discord_publisher import BriefingMessage, Source, post_patiently
 from src.tools.model_tiers import Step, build_llm_for
 from src.tools.product_routing import product_channel
 
@@ -455,7 +455,9 @@ async def _run_daily_brief_default(
             errors=[f"publisher_missing:{channel}"],
         )
     try:
-        await publisher.post(message.model_copy(update={"summary": compact_summary}))
+        # 一時的な障害 (5xx / 429) は数分おきに試し直す — 本文は生成・保存済みで、捨てると
+        # 手動の再実行 (生成からやり直し) しか無かった (2026-09-26 朝の Discord 500)
+        await post_patiently(publisher, message.model_copy(update={"summary": compact_summary}))
     except Exception as e:  # noqa: BLE001
         _log.error("daily_brief_post_failed", slot=slot, error=str(e))
         return PipelineRunResult(

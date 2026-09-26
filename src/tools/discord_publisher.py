@@ -22,6 +22,7 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
@@ -238,7 +239,40 @@ class DiscordPostMeta(BaseModel):
 
 
 class DiscordPostError(RuntimeError):
-    """Discord Webhook 投稿が 4xx/5xx で失敗。"""
+    """Discord Webhook 投稿が 4xx/5xx で失敗。``status`` = 最後の HTTP 状態 (不明なら None)。"""
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+# 送信処理の即時リトライ (合計 ~7 秒) で通らなかった障害を、数分の間隔で試し直す待ち時間 (秒)。
+# 2026-09-26 の朝ブリーフは Discord の 500 で失敗し、21 分後の手動再実行で通った — 数分で戻る
+# 障害に、生成済みの本文を捨てていた。合計 7 分はブリーフの制限時間 (30 分) の内に収まる長さ。
+PATIENT_RETRY_WAITS_SECONDS: tuple[float, ...] = (60.0, 120.0, 240.0)
+
+
+async def post_patiently(
+    publisher: Any,
+    message: Any,
+    *,
+    waits: Sequence[float] = PATIENT_RETRY_WAITS_SECONDS,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> Any:
+    """一時的な障害 (5xx / 429) で失敗した投稿を、間隔を空けて試し直す。
+
+    4xx (webhook の失効・権限) は待っても直らないので即座に上げる。
+    """
+    for i, wait in enumerate([*waits, None]):
+        try:
+            return await publisher.post(message)
+        except DiscordPostError as e:
+            transient = e.status == 429 or e.status in RETRYABLE_5XX_STATUS
+            if not transient or wait is None:
+                raise
+            _log.warning("discord_post_patient_retry", attempt=i + 1, status=e.status, wait=wait)
+            await sleep(wait)
+    raise AssertionError("unreachable")
 
 
 def _extract_post_meta(response: object) -> DiscordPostMeta:
@@ -410,6 +444,7 @@ class DiscordPublisher:
             if wait is None or attempt > MAX_RETRY_ATTEMPTS:
                 raise DiscordPostError(
                     f"webhook 投稿失敗 ({attempt} attempts): HTTP {last_status}: {last_body[:200]}",
+                    status=last_status,
                 )
             _log.warning(
                 "discord_post_retry",
