@@ -388,6 +388,35 @@ class RunsMixin(RunHistoryRepositoryBase):
                 (job_id, ts, status, detail[:500]),
             )
 
+    def mark_job_running(self, job_id: str, *, when: datetime | None = None) -> None:
+        """bespoke/チェーンのジョブが走り始めたことを job_last_run に書く (表示用)。
+
+        完了時の ``record_job_run`` が同じ行を上書きする。履歴 (job_run_log) には書かない
+        — 履歴は完了した実行だけを並べる。
+        """
+        ts = _to_iso(when or datetime.now(UTC))
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO job_last_run (job_id, last_run_at, status, detail)
+                VALUES (?, ?, 'running', '')
+                ON CONFLICT(job_id) DO UPDATE SET
+                  last_run_at = excluded.last_run_at,
+                  status = 'running',
+                  detail = ''
+                """,
+                (job_id, ts),
+            )
+
+    def fail_dangling_job_runs(self) -> int:
+        """起動時: running のまま残った job_last_run (前プロセスの途中終了) を failed に倒す。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE job_last_run SET status = 'failed', detail = ? WHERE status = 'running'",
+                ("中断 (アプリの再起動)",),
+            )
+            return int(cur.rowcount or 0)
+
     def runs_for_job(self, job_id: str, *, limit: int = 20) -> list[dict[str, object]]:
         """ジョブの実行履歴を新しい順に返す (詳細パネル用)。
 

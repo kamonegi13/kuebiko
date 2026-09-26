@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { Clock, Repeat, Zap } from "lucide-react";
-import { categoryForId, markerColorForId, shortLabelForId } from "./categories";
+import { categoryForId, markerColorForId, shortLabelForId, jobStatus } from "./categories";
 import {
   DOW_KEYS, DOW_LABEL, MINUTES_PER_DAY, minutesToHhmm, minutesToRatio, type DowKey,
 } from "./timeUtils";
@@ -221,7 +221,7 @@ export function IntervalLaneLabel({ marker, isSelected, onSelectJob }: {
         <span className="font-semibold truncate">{short}</span>
         <span className="text-fg-subtle shrink-0">·</span>
         <span className="shrink-0">{baseLabel}</span>
-        <RunStatusDot status={job.last_run?.status} positionClass="relative flex ml-0.5 shrink-0" />
+        <RunStatusDot status={jobStatus(job)} positionClass="relative flex ml-0.5 shrink-0" />
       </button>
     </div>
   );
@@ -283,7 +283,7 @@ export function ReactiveZone({ markers, selectedJobId, onSelectJob }: {
           >
             <span className="truncate max-w-[180px]">{job.title}</span>
             {dh != null && <span className="text-fg-faint shrink-0">連続実行の抑制 {dh}時間</span>}
-            <RunStatusDot status={job.last_run?.status} positionClass="relative flex" />
+            <RunStatusDot status={jobStatus(job)} positionClass="relative flex" />
           </button>
         );
       })}

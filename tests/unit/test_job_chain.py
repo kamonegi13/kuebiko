@@ -86,3 +86,49 @@ async def test_elapsed_is_recorded_in_detail() -> None:
     rec = _Recorder()
     await run_chain("chain-x", [ChainStep("a", ok, 60)], record=rec)
     assert "elapsed=" in rec.rows[0][2] and "chain=chain-x" in rec.rows[0][2]
+
+
+@pytest.mark.asyncio
+async def test_step_already_running_is_skipped_without_overwriting_its_record() -> None:
+    """手動で同じ段が走っていれば、チェーンはその段を飛ばし記録も上書きしない (2026-09-26)。"""
+    from datetime import UTC, datetime
+
+    from src.scheduler import job_running
+
+    order: list[str] = []
+
+    async def make(name: str) -> None:
+        order.append(name)
+
+    job_running._RUNNING["a"] = datetime.now(UTC)
+    try:
+        rec = _Recorder()
+        result = await run_chain(
+            "chain-x",
+            [ChainStep("a", lambda: make("a"), 60), ChainStep("b", lambda: make("b"), 60)],
+            record=rec,
+        )
+    finally:
+        job_running._RUNNING.pop("a", None)
+    assert order == ["b"]
+    assert [r[0] for r in rec.rows] == ["b"]
+    assert result.skipped == ("a",) and result.ok
+
+
+@pytest.mark.asyncio
+async def test_step_start_is_marked_and_slot_released() -> None:
+    """段の開始を mark_start で知らせ、終われば実行枠を返す。"""
+    from src.scheduler import job_running
+
+    seen: list[tuple[str, bool]] = []
+
+    async def step() -> None:
+        seen.append(("run", job_running.is_running("a")))
+
+    started: list[str] = []
+    await run_chain(
+        "chain-x", [ChainStep("a", step, 60)], record=_Recorder(), mark_start=started.append
+    )
+    assert started == ["a"]
+    assert seen == [("run", True)]
+    assert not job_running.is_running("a")

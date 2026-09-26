@@ -184,6 +184,9 @@ def _register_bespoke_jobs(
             # bespoke daily job の失敗が完全に不可視だった)。cancellation は伝播させる。
             status = "succeeded"
             detail = ""
+            # 走り始めを記録 (画面の「実行中」表示。完了時に下の record_job_run が上書き)
+            with contextlib.suppress(Exception):
+                repo.mark_job_running(job_id)
             try:
                 await fn()
             except BaseException as e:  # noqa: BLE001 — cancellation 含め記録してから伝播
@@ -319,6 +322,7 @@ def _register_bespoke_jobs(
                 record=lambda jid, status, detail: repo.record_job_run(
                     jid, status=status, detail=detail
                 ),
+                mark_start=repo.mark_job_running,
             )
 
         return _run
@@ -355,10 +359,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     project_root = _resolve_project_root()
     repo = RunHistoryRepository(db_path=project_root / "data" / "run_history.db")
 
-    # Phase 1.5b: 起動時に異常終了 run を failed に倒し、古いログを purge する
-    recovered = repo.fail_dangling_runs()
-    if recovered > 0:
-        _log.warning("recovered_dangling_runs", count=recovered)
+    # Phase 1.5b: 起動時に異常終了 run を failed に倒し、古いログを purge する。
+    # ⚠ run を走らせるのは full instance だけ。readonly が単独で再起動したときに full の
+    # 実行中 run を failed に倒さないよう、full でだけ行う (2026-09-26)
+    if not READ_ONLY_FLAG:
+        recovered = repo.fail_dangling_runs()
+        if recovered > 0:
+            _log.warning("recovered_dangling_runs", count=recovered)
+        dangling_jobs = repo.fail_dangling_job_runs()
+        if dangling_jobs > 0:
+            _log.warning("recovered_dangling_job_runs", count=dangling_jobs)
     purged = repo.purge_old_logs()
     if purged > 0:
         _log.info("purged_old_logs", count=purged)

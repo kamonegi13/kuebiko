@@ -11,6 +11,7 @@ import {
   type JobProtection, type JobRunRecord, type JobView, type SchedulePatch,
 } from "../../api/jobs";
 import { categoryForId, runHealth, runHealthColor } from "./categories";
+import { ChainStepNotice, ChainSteps } from "./ChainSteps";
 import { vocabLabel } from "../../hooks/useVocab";
 
 // ラベルは backend vocab ("job_kind" / "job_protection", vocabLabel) を SSoT に解決する。
@@ -34,6 +35,9 @@ const DOW_OPTIONS: { value: string; label: string }[] = [
 
 export interface JobDetailPanelProps {
   job: JobView | null;
+  // チェーンの段の一覧と、段 ↔ チェーンの行き来に使う
+  allJobs: JobView[];
+  onSelectJob: (id: string) => void;
   readOnly: boolean;
   // 即時実行の可否。公開 instance でも認証済み (Tier1) なら full instance へ proxy されて
   // 実行できるため、readOnly (write 全般の可否) とは別軸で受け取る。
@@ -45,7 +49,7 @@ export interface JobDetailPanelProps {
 }
 
 export function JobDetailPanel({
-  job, readOnly, canRun, runAvailable, togglePending, onToggle, onChanged,
+  job, allJobs, onSelectJob, readOnly, canRun, runAvailable, togglePending, onToggle, onChanged,
 }: JobDetailPanelProps) {
   if (!job) {
     return (
@@ -59,6 +63,8 @@ export function JobDetailPanel({
     <PanelBody
       key={job.id}
       job={job}
+      allJobs={allJobs}
+      onSelectJob={onSelectJob}
       readOnly={readOnly}
       canRun={canRun}
       runAvailable={runAvailable}
@@ -69,8 +75,12 @@ export function JobDetailPanel({
   );
 }
 
-function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggle, onChanged }: {
+function PanelBody({
+  job, allJobs, onSelectJob, readOnly, canRun, runAvailable, togglePending, onToggle, onChanged,
+}: {
   job: JobView;
+  allJobs: JobView[];
+  onSelectJob: (id: string) => void;
   readOnly: boolean;
   canRun: boolean;
   runAvailable: boolean;
@@ -81,13 +91,16 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
   const [flash, setFlash] = useState<string | null>(null);
   const showFlash = (m: string) => { setFlash(m); setTimeout(() => setFlash(null), 2500); };
   const isReactive = job.kind === "reactive";
+  // 毎時チェーンの段: 時刻と ON/OFF はチェーンが持つ (API も 409 で断る)。手動実行だけ可
+  const isChainStep = !!job.chain_id;
   const Icon = categoryForId(job.id).icon;
   const protCls = PROTECTION_CLS[job.protection];
 
   const runMut = useMutation({
     mutationFn: () => runJobNow(job.id),
     onSuccess: () => { onChanged(); showFlash("即時実行を開始しました"); },
-    onError: (e: unknown) => showFlash(e instanceof Error ? `失敗: ${e.message}` : "実行に失敗"),
+    // 409 (実行中・チェーン実行中) は理由をそのまま出す。黙って捨てない
+    onError: (e: unknown) => showFlash(e instanceof Error ? `実行できません: ${e.message}` : "実行に失敗"),
   });
 
   const nextRun = job.next_run_at
@@ -111,6 +124,12 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
                 <AlertTriangle className="h-3 w-3" aria-hidden /> 重処理 {job.max_runtime_minutes}分
               </span>
             )}
+            {job.running_since && (
+              <span className="text-[12px] px-1.5 py-0.5 rounded bg-accent-subtle text-accent border border-accent/40 inline-flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> 実行中
+                {job.running_step && ` (${allJobs.find((j) => j.id === job.running_step)?.title ?? job.running_step})`}
+              </span>
+            )}
             {job.respects_analysis_window && (
               <span className="text-[12px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted border border-border-subtle">
                 重処理中は自動停止 (終了後に再開)
@@ -119,7 +138,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
           </div>
           <p className="m-0 text-[11.5px] text-fg-muted leading-snug">{job.description}</p>
         </div>
-        {!readOnly && <Toggle enabled={job.enabled} pending={togglePending} onChange={onToggle} />}
+        {!readOnly && !isChainStep && <Toggle enabled={job.enabled} pending={togglePending} onChange={onToggle} />}
       </div>
 
       {/* 左=実行履歴 (サイド) / 右=設定 (一続き)。履歴を設定の間に挟ませない。
@@ -138,6 +157,9 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
               {isReactive ? <span className="text-fg-subtle">状況に応じて自動実行</span> : <span className="font-mono text-fg">{nextRun}</span>}
             </Meta>
           </div>
+
+          <ChainStepNotice job={job} onSelectJob={onSelectJob} />
+          {job.kind === "chain" && <ChainSteps chain={job} allJobs={allJobs} onSelectJob={onSelectJob} />}
 
           {job.danger_note && (
             <div className="bg-warning-soft border border-warning/50 rounded px-2.5 py-1.5 text-[13px] text-warning flex items-start gap-1.5">
@@ -165,7 +187,7 @@ function PanelBody({ job, readOnly, canRun, runAvailable, togglePending, onToggl
           )}
 
           {/* 常時表示のスケジュール編集フォーム (折りたたみ廃止) */}
-          {!readOnly && (
+          {!readOnly && !isChainStep && (
             <ScheduleEditor job={job} onSaved={(msg) => { onChanged(); showFlash(msg); }} />
           )}
         </div>

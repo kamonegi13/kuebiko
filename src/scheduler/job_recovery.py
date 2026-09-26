@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from src.logging_config import get_logger
 from src.scheduler.job_registry import JobDef, _heavy_active_on, load_jobs
+from src.scheduler.job_running import is_running
 
 _log = get_logger(__name__)
 
@@ -228,7 +229,8 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
             has_ever_run=has_run,
             last_attempt_at=effective_last_attempt,
             attempts_in_window=len(own),
-            busy=busy,
+            # 全体の実行中 run に加え、このジョブ自身が走っていれば延期 (bespoke は runs に出ない)
+            busy=busy or is_running(job.id),
             next_fire_at=next_fire,
             heavy_conflict=heavy_window_conflict(job, jobs, now_jst),
         )

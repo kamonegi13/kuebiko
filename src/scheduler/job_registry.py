@@ -162,7 +162,8 @@ def default_jobs() -> list[JobDef]:
             description=(
                 "毎朝の日次総括を生成し brief チャンネルへ配信。"
                 "台帳の増分再評価 (cap 12、毎時段の残余) と "
-                "新規開設 (ML 前段で候補を上位 15 件に絞り LLM が選ぶ、上限 8) はここで走る。"
+                "新規開設 (ML 前段で候補を上位 30 件に絞り LLM が選ぶ、上限 8・ML との和集合で 12) "
+                "はここで走る。"
                 "standing 常設情報要求の収穫 (R1-R3) + 予約枠再評価 (staleness 7日) も同じ run。"
             ),
             disable_impact="朝の通読ブリーフが出なくなる。",
@@ -181,7 +182,8 @@ def default_jobs() -> list[JobDef]:
             description=(
                 "夕方の日次状況更新を生成し brief チャンネルへ配信。"
                 "台帳の増分再評価 (cap 12、毎時段の残余) と "
-                "新規開設 (ML 前段で候補を上位 15 件に絞り LLM が選ぶ、上限 8) はここで走る。"
+                "新規開設 (ML 前段で候補を上位 30 件に絞り LLM が選ぶ、上限 8・ML との和集合で 12) "
+                "はここで走る。"
                 "standing 常設情報要求の収穫 (R1-R3) + 予約枠再評価 (staleness 7日) も同じ run。"
             ),
             disable_impact="夕方の状況更新が出なくなる。",
@@ -222,8 +224,8 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="mon",
-            hour=2,
-            minute=0,
+            hour=0,
+            minute=55,
         ),
         JobDef(
             id="weekly-status-synthesis",
@@ -240,8 +242,8 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="mon",
-            hour=2,
-            minute=45,
+            hour=1,
+            minute=10,
         ),
         JobDef(
             id="monthly-status-synthesis",
@@ -254,8 +256,8 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day="1",
-            hour=3,
-            minute=0,
+            hour=1,
+            minute=40,
         ),
         JobDef(
             id="pir-spotlight",
@@ -269,8 +271,7 @@ def default_jobs() -> list[JobDef]:
             disable_impact="PIR 別の週次追跡 narrative が更新されない。",
             protection="optional",
             schedule_type="cron",
-            day_of_week="mon",
-            hour=3,
+            hour=4,
             minute=30,
         ),
         # ----- K1: 学習・辞書 -----
@@ -284,9 +285,9 @@ def default_jobs() -> list[JobDef]:
             disable_impact="分類辞書の改善提案が溜まらない。",
             protection="important",
             schedule_type="cron",
-            day_of_week="mon",
-            hour=4,
-            minute=30,
+            day_of_week="sun",
+            hour=1,
+            minute=10,
         ),
         JobDef(
             id="mitre-actor-sync",
@@ -299,8 +300,8 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="tue",
-            hour=3,
-            minute=0,
+            hour=1,
+            minute=10,
         ),
         JobDef(
             id="weekly-goldset-eval",
@@ -339,8 +340,8 @@ def default_jobs() -> list[JobDef]:
             disable_impact="PIR タグの過去分整合が取れなくなる (新規は inline で付く)。",
             protection="important",
             schedule_type="cron",
-            hour=3,
-            minute=5,
+            hour=0,
+            minute=25,
         ),
         JobDef(
             id="pir-judge-hourly",
@@ -359,7 +360,7 @@ def default_jobs() -> list[JobDef]:
             protection="optional",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :45 — 朝夕ブリーフ (06:30/19:30) と深夜バッチ帯の主要 fire 時刻を避ける
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
             offset_minutes=45,
             upkeep=True,
         ),
@@ -382,7 +383,7 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :50 — 収集(:00)/事象ニュース(:20)/scraper(:30) の谷間
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
             offset_minutes=50,
             upkeep=True,
         ),
@@ -397,7 +398,7 @@ def default_jobs() -> list[JobDef]:
                 "持たない。**Grok (x.com) は 906 記事すべてが該当** し、事象ニュースの群化に"
                 "一度も参加できていなかった (既読化が親レポート URL で行われ、ツイート URL が"
                 "dedup_seen_urls に入らないため、既存 backfill script も構造的に拾えない)。"
-                "事象ニュース生成 (:20) の前に走らせる。"
+                "毎時収集チェーンで事象ニュース生成の前の段に置く。"
             ),
             disable_impact=(
                 "Grok の投稿と、投稿経路を通らない記事が事象ニュースに合流できなくなる "
@@ -406,7 +407,6 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :10 — 収集 (:00) の後、事象ニュース (:20) の前
             offset_minutes=10,
             upkeep=True,
         ),
@@ -430,8 +430,7 @@ def default_jobs() -> list[JobDef]:
             protection="optional",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :20 — 収集 (:00 direct-rss-fetch) の後、翻訳バックログ (:15) と
-            # scraper (:30) の間の空き。安全なデプロイ帯 (:16-:29) とも整合する。
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
             offset_minutes=20,
             upkeep=True,
         ),
@@ -444,7 +443,7 @@ def default_jobs() -> list[JobDef]:
                 "未訳記事 (body あり・body_ja なし) を新しい順に 40 件/時までローカル LLM "
                 "(fast ティア) で全訳し body_ja へキャッシュする常設ジョブ。本務は新規流入 "
                 "(~470 件/日) の当日中の自動翻訳で、過去分バックログは残余キャパで漸進消化 "
-                "(消化後も新規向けに恒久稼働)。時間予算 12 分で :30 の scraper 前に終わる。"
+                "(消化後も新規向けに恒久稼働)。時間予算 12 分 (毎時保守チェーンの先頭の段)。"
                 "無効化すると記事詳細の「日本語訳」ボタンによる on-demand 専用に戻る。"
             ),
             disable_impact=(
@@ -454,7 +453,7 @@ def default_jobs() -> list[JobDef]:
             protection="optional",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :15 — RSS 収集 (:00 台、実測 5-12 分) の後、scraper (:30) の前の隙間。
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
             offset_minutes=15,
             respects_analysis_window=True,  # 夜間解析帯は Ollama を奪い合わない
             max_runtime_minutes=15,  # 時間予算 12 分 + 余裕
@@ -479,7 +478,7 @@ def default_jobs() -> list[JobDef]:
             protection="optional",
             schedule_type="interval",
             interval_minutes=60,
-            # 毎時 :40 — RSS 収集 (:00 台) / 翻訳 (:15) / scraper (:30) の後の隙間。
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
             offset_minutes=40,
             respects_analysis_window=True,  # 夜間解析帯は Ollama を奪い合わない
             max_runtime_minutes=15,
@@ -571,8 +570,8 @@ def default_jobs() -> list[JobDef]:
             schedule_type="cron",
             # 週次 (月曜 02:40 JST)。深夜バッチ帯だが外部 GET 数件のみで軽量。
             day_of_week="mon",
-            hour=2,
-            minute=40,
+            hour=1,
+            minute=35,
         ),
         JobDef(
             id="nvd-cvss-refresh",
@@ -606,8 +605,8 @@ def default_jobs() -> list[JobDef]:
             disable_impact="DB が無限成長する (retention 停止)。",
             protection="critical",
             schedule_type="cron",
-            hour=3,
-            minute=17,
+            hour=0,
+            minute=10,
         ),
         JobDef(
             id="daily-heartbeat",
@@ -659,8 +658,8 @@ def default_jobs() -> list[JobDef]:
             schedule_type="cron",
             day_of_week="sun",
             # 深夜帯の空白 (土 04:45 の goldset 評価と重ねない)。LLM heavy。
-            hour=4,
-            minute=40,
+            hour=5,
+            minute=0,
         ),
         JobDef(
             id="weekly-fill-rate-audit",
@@ -713,8 +712,8 @@ def default_jobs() -> list[JobDef]:
             protection="important",
             schedule_type="cron",
             day_of_week="mon",
-            hour=4,
-            minute=20,  # 深夜バッチ帯の末尾 — 朝ブリーフ (06:30) と重ねない
+            hour=1,
+            minute=45,
             max_runtime_minutes=5,
         ),
         # ---------- 毎時チェーン (2026-09-15 ジョブ見直し B) ----------
@@ -812,6 +811,20 @@ def load_jobs(*, db_path: Path | None = None) -> list[JobDef]:
         except Exception as e:  # noqa: BLE001 — 破損 override は canonical に degrade
             _log.warning("job_override_invalid", job_id=jid, error=str(e))
             out.append(dj)
+    return out
+
+
+def chain_membership(jobs: list[JobDef]) -> dict[str, JobDef]:
+    """段の job id → それを含むチェーン。チェーンに属さないジョブは含まない。
+
+    段の単独ジョブは registry に残っているが (rollback 用)、チェーンが有効な間は
+    時刻も ON/OFF もチェーンが持つ。画面・API・watchdog はこの対応で段を判定する。
+    """
+    out: dict[str, JobDef] = {}
+    for j in jobs:
+        if j.kind == "chain":
+            for sid in j.steps:
+                out.setdefault(sid, j)
     return out
 
 
@@ -1004,20 +1017,6 @@ def danger_windows(jobs: list[JobDef]) -> list[dict[str, Any]]:
 # ---------- スケジューラへの反映 (起動時 / 編集時) ----------
 
 
-def _schedule_changed(j: JobDef, d: JobDef) -> bool:
-    # offset_minutes も比較する (2026-09-15: 従来は offset の UI 変更が起動時に反映されなかった)
-    keys = (
-        "schedule_type",
-        "hour",
-        "minute",
-        "day_of_week",
-        "day",
-        "interval_minutes",
-        "offset_minutes",
-    )
-    return any(getattr(j, k) != getattr(d, k) for k in keys)
-
-
 def apply_schedule_to_scheduler(scheduler: Any, j: JobDef) -> None:
     """1 ジョブの schedule を稼働中スケジューラに reschedule する (cron/interval)。"""
     if j.schedule_type == "interval" and j.interval_minutes:
@@ -1037,15 +1036,15 @@ def apply_job_registry(scheduler: Any, jobs: list[JobDef]) -> None:
     schedule override 反映 + 全 scheduler job の enabled 反映 (無効=pause) を行う。
     reactive は scheduler job でないため trigger 側が enabled を見る (対象外)。
     """
-    defaults = {j.id: j for j in default_jobs()}
     for j in jobs:
         if j.kind == "reactive":
             continue
         try:
+            # pipeline は config/pipelines.yaml の schedule で登録されるため、registry の時刻を
+            # **常に** 上書きする (2026-09-26)。旧実装は「既定値と違うときだけ」上書きしていて、
+            # 既定値を実時刻に揃えると yaml の古い時刻が残る罠があった (registry が SSoT)。
             if j.kind in ("pipeline", "chain"):
-                d = defaults.get(j.id)
-                if d is not None and _schedule_changed(j, d):
-                    apply_schedule_to_scheduler(scheduler, j)
+                apply_schedule_to_scheduler(scheduler, j)
             if not j.enabled:
                 scheduler.pause(job_id=j.id)
         except Exception as e:  # noqa: BLE001 — 1 job の失敗で全体を止めない

@@ -42,7 +42,7 @@ class TestDefaults:
         by_id = {j.id: j for j in jr.default_jobs()}
         assert "分ごと" in by_id["direct-rss-fetch"].schedule_label()
         assert "reactive" in by_id["auto-trigger-synthesis"].schedule_label()
-        assert "03:05" in by_id["pir-entity-rebuild"].schedule_label()
+        assert "00:25" in by_id["pir-entity-rebuild"].schedule_label()
 
 
 class TestSeedAndOverride:
@@ -101,7 +101,7 @@ class TestValidation:
         note = jr.danger_window_note(near, jobs)
         assert note is not None and "夕ブリーフィング" in note
         # 誰とも重ならない時刻 → None
-        safe = morning.model_copy(update={"hour": 5, "minute": 0})
+        safe = morning.model_copy(update={"hour": 11, "minute": 0})
         assert jr.danger_window_note(safe, jobs) is None
 
     def test_danger_windows_dynamic_follow_reschedule(self) -> None:
@@ -186,22 +186,22 @@ class TestDynamicCollectionSuppression:
 
     def test_weekly_heavy_only_suppresses_on_its_day(self, db: Path) -> None:
         jr.seed_jobs_if_absent(db_path=db)
-        # weekly-recap は月曜 02:00 開始 → 月曜 02:00 の rss は抑止
+        # weekly-recap は月曜 00:55 開始 → 月曜 01:00 の rss は抑止
         assert (
             jr.is_collection_suppressed(
                 "direct-rss-fetch",
-                now_minute_jst=2 * 60,
+                now_minute_jst=60,
                 weekday="mon",
                 day_of_month=15,
                 db_path=db,
             )
             is True
         )
-        # 水曜 02:00 は weekly 群が非 active・daily heavy も無い → 抑止しない
+        # 水曜 01:00 は weekly 群が非 active・daily heavy も無い → 抑止しない
         assert (
             jr.is_collection_suppressed(
                 "direct-rss-fetch",
-                now_minute_jst=2 * 60,
+                now_minute_jst=60,
                 weekday="wed",
                 day_of_month=15,
                 db_path=db,

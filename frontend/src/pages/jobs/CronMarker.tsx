@@ -10,7 +10,7 @@
 import { AlertTriangle, Check, X } from "lucide-react";
 import type { JobView } from "../../api/jobs";
 import { formatJst, relativeFromNow } from "../../utils/date";
-import { categoryForId, markerColorForId, shortLabelForId, type MarkerColor } from "./categories";
+import { categoryForId, markerColorForId, shortLabelForId, type MarkerColor, jobStatus } from "./categories";
 import { DOW_LABEL, minutesToHhmm, minutesToRatio, parseDowField } from "./timeUtils";
 import type { PendingDrag, PointMarker } from "./timelineModel";
 import { RunStatusDot } from "./RunStatusDot";
@@ -97,7 +97,7 @@ export function CronMarker(props: CronMarkerProps) {
         {dayBadge && <span className="px-1 rounded bg-surface-3 text-fg-muted">{dayBadge}</span>}
         {/* 直近状態 (failed/running のみ表示)。ピル右上角に絶対配置 (flip 時は左上)。 */}
         <RunStatusDot
-          status={job.last_run?.status}
+          status={jobStatus(job)}
           positionClass={`absolute -top-1 z-30 flex ${flip ? "-left-1" : "-right-1"}`}
         />
       </button>
@@ -138,6 +138,7 @@ export function CronMarker(props: CronMarkerProps) {
 // tooltip: title / 時刻 / 次回 / 最終結果 / 想定処理時間(heavy) / 収集抑止対象 / danger_note。
 export function buildMarkerTitle(job: JobView, displayMin: number): string {
   const parts = [job.title, `時刻 ${minutesToHhmm(displayMin)} JST`];
+  if (job.running_since) parts.push(`実行中 (${relativeFromNow(job.running_since)}に開始)`);
   if (job.next_run_at) parts.push(`次回 ${formatJst(job.next_run_at)}`);
   if (job.last_run) parts.push(`前回 ${vocabLabel("run_status", job.last_run.status)} (${relativeFromNow(job.last_run.last_run_at)})`);
   if (job.heavy) parts.push(`想定処理時間 ${job.max_runtime_minutes}分 (この間は収集停止)`);

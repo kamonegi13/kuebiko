@@ -47,6 +47,16 @@ export interface JobView {
   upkeep?: boolean;
   // 想定処理時間 (分)。timeline の Gantt バー幅に使う (monthly=45 が最長、非heavy=5)。
   max_runtime_minutes: number;
+  // chain の段 (宣言順)。chain 以外は空。
+  steps?: string[];
+  // 実行中なら開始時刻 (ISO)。null = 実行していない。
+  running_since: string | null;
+  // 毎時チェーンの段なら、そのチェーンの id。段は時刻・ON/OFF をチェーンから受ける
+  // (単独では ON/OFF・時刻変更できない。手動実行はできる)。
+  chain_id: string | null;
+  chain_title?: string;
+  // chain のとき、いま走っている段の id。
+  running_step: string | null;
 }
 
 // 「重い処理を避けたい時刻帯」(JST)。timeline に shaded band として描画する。

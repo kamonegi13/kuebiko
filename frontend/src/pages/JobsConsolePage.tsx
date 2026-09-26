@@ -21,7 +21,7 @@ import {
   listJobs, rescheduleJob, toggleJob,
   type JobView,
 } from "../api/jobs";
-import { runHealth } from "./jobs/categories";
+import { jobHealth } from "./jobs/categories";
 import { JobTimeline } from "./jobs/JobTimeline";
 import { JobDetailPanel } from "./jobs/JobDetailPanel";
 import { HostWatchdogBanner } from "../components/HostWatchdogCard";
@@ -93,7 +93,8 @@ function soonestCronId(jobs: JobView[]): string | null {
 }
 
 // 艦隊ヘルス集計: 停止 (P=!enabled) を最優先分類し、有効な中で running/failed/ok を数える。
-// 軸に出ない reactive や off-axis も含め全 jobs を走査する。
+// 軸に出ない reactive や off-axis も含め全 jobs を走査する。毎時チェーンの段は数えない
+// (チェーン 1 本として数える。段を数えると同じ処理が二重に数えられる)。
 interface FleetHealth {
   ok: number;
   failed: number;
@@ -106,8 +107,9 @@ function computeFleetHealth(jobs: JobView[]): FleetHealth {
   let ok = 0, failed = 0, running = 0, stopped = 0;
   const failedJobs: JobView[] = [];
   for (const j of jobs) {
+    if (j.chain_id) continue;
     if (!j.enabled) { stopped++; continue; }
-    const h = runHealth(j.last_run?.status);
+    const h = jobHealth(j);
     if (h === "failed") { failed++; failedJobs.push(j); }
     else if (h === "running") running++;
     else ok++; // ok / none (未実行含む) は「正常側」として数える
@@ -160,6 +162,8 @@ export function JobsConsolePage() {
   }, [data]);
 
   const fleetHealth = useMemo(() => (data ? computeFleetHealth(data.jobs) : null), [data]);
+  // タイムラインには段を出さない (時刻を持つのはチェーン)。段はチェーンの詳細パネルから選ぶ
+  const timelineJobs = useMemo(() => (data ? data.jobs.filter((j) => !j.chain_id) : []), [data]);
 
   // 選択の解決: 明示選択 → 既定 (soonest cron)。選択 id が消えても既定に戻す。
   const resolvedSelectedId = useMemo(() => {
@@ -268,10 +272,10 @@ export function JobsConsolePage() {
       {/* 上: 24h タイムライン (master) */}
       {data && (
         <JobTimeline
-          jobs={data.jobs}
+          jobs={timelineJobs}
           readOnly={read_only}
           schedulerAvailable={data.scheduler_available}
-          selectedJobId={resolvedSelectedId}
+          selectedJobId={selectedJob?.chain_id ?? resolvedSelectedId}
           onSelectJob={setSelectedJobId}
           onApplyReschedule={(job, hour, minute) => rescheduleMut.mutate({ id: job.id, hour, minute })}
         />
@@ -282,6 +286,8 @@ export function JobsConsolePage() {
       {data && (
         <JobDetailPanel
           job={selectedJob}
+          allJobs={data.jobs}
+          onSelectJob={setSelectedJobId}
           readOnly={read_only}
           canRun={canRun}
           runAvailable={read_only ? flags.authenticated : data.scheduler_available}

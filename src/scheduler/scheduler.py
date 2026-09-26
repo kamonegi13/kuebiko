@@ -24,11 +24,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from apscheduler.jobstores.base import ConflictingIdError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from src.logging_config import get_logger
+from src.scheduler.job_running import JobBusyError, is_running, running_slot
 
 _log = get_logger(__name__)
 
@@ -45,6 +48,23 @@ DAILY_JOB_ID = "daily-briefing"
 # Phase 5Q-2: watcher の job_id 名前空間プレフィクス。
 # Pipeline と watcher を混在管理する際に区別するために使う。
 WATCHER_JOB_PREFIX = "watcher:"
+
+
+#: 手動実行の単発ジョブの id 接頭辞 (定時ジョブの予定には触れない)
+MANUAL_JOB_PREFIX = "manual:"
+
+
+def _guarded(job_id: str, func: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[None]]:
+    """同じ job_id が実行中なら今回の起動を飛ばす (定時・チェーン・手動の二重起動防止)。"""
+
+    async def _run() -> None:
+        async with running_slot(job_id) as acquired:
+            if not acquired:
+                _log.warning("scheduler_job_skipped_running", job_id=job_id)
+                return
+            await func()
+
+    return _run
 
 
 def watcher_job_id(watcher_name: str) -> str:
@@ -317,7 +337,7 @@ class BriefingScheduler:
                 await runner(name)
 
             self._scheduler.add_job(
-                _run,
+                _guarded(sp.name, _run),
                 trigger=trigger,
                 id=sp.name,
                 name=sp.display_name or f"{sp.name} pipeline",
@@ -354,7 +374,7 @@ class BriefingScheduler:
 
             job_id = watcher_job_id(sw.name)
             self._scheduler.add_job(
-                _run,
+                _guarded(job_id, _run),
                 trigger=trigger,
                 id=job_id,
                 name=sw.display_name or f"{sw.name} watcher",
@@ -380,11 +400,8 @@ class BriefingScheduler:
                 timezone=self._timezone,
             )
 
-            async def _run(f: Callable[[], Awaitable[Any]] = func) -> None:
-                await f()
-
             self._scheduler.add_job(
-                _run,
+                _guarded(job_id, func),
                 trigger=trigger,
                 id=job_id,
                 name=job_id,
@@ -408,11 +425,8 @@ class BriefingScheduler:
                 timezone=self._timezone,
             )
 
-            async def _run(f: Callable[[], Awaitable[Any]] = func) -> None:
-                await f()
-
             self._scheduler.add_job(
-                _run,
+                _guarded(job_id, func),
                 trigger=trigger,
                 id=job_id,
                 name=job_id,
@@ -436,7 +450,7 @@ class BriefingScheduler:
             timezone=self._timezone,
         )
         self._scheduler.add_job(
-            self._legacy_job_func,
+            _guarded(DAILY_JOB_ID, self._legacy_job_func),
             trigger=trigger,
             id=DAILY_JOB_ID,
             name="Daily CTI briefing pipeline",
@@ -482,9 +496,34 @@ class BriefingScheduler:
         _log.info("scheduler_job_resumed", job_id=job_id)
 
     def trigger_now(self, job_id: str = DAILY_JOB_ID) -> datetime:
-        """次回実行を「今すぐ」に書き換えて手動 trigger する。"""
+        """今すぐ 1 回だけ実行する。定時の予定 (一時停止中を含む) には触れない。
+
+        旧実装は次回時刻を今に書き換えていた (2026-09-26 まで)。これには 2 つの欠陥があった:
+        実行中に押すと APScheduler の同時実行上限で **黙って捨てられる** / 一時停止中の
+        ジョブ (チェーンの段) に押すと **停止が解ける** (以後チェーンと別に単独で毎時走る)。
+        今は同じ関数 (実行枠つき) を単発ジョブとして追加する。
+
+        Raises:
+            JobBusyError: 同じジョブが実行中、または手動実行が既に待機中
+            KeyError: スケジューラに登録されていないジョブ
+        """
+        if is_running(job_id):
+            raise JobBusyError(f"{job_id} は実行中です")
+        job = self._scheduler.get_job(job_id)
+        if job is None:
+            raise KeyError(f"スケジューラに登録されていないジョブ: {job_id}")
         run_at = datetime.now(UTC)
-        self._scheduler.modify_job(job_id, next_run_time=run_at)
+        try:
+            self._scheduler.add_job(
+                job.func,
+                trigger=DateTrigger(run_date=run_at, timezone=self._timezone),
+                id=f"{MANUAL_JOB_PREFIX}{job_id}",
+                name=f"{job.name} (手動)",
+                misfire_grace_time=self._misfire_grace_time,
+                replace_existing=False,
+            )
+        except ConflictingIdError as e:
+            raise JobBusyError(f"{job_id} の手動実行は既に待機中です") from e
         _log.info("scheduler_job_triggered_manually", job_id=job_id)
         return run_at
 

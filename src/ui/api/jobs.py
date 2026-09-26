@@ -10,6 +10,7 @@ protection=critical の無効化はサーバ側でも confirm を要求する (�
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,6 +20,7 @@ from src.logging_config import get_logger
 from src.scheduler.job_registry import (
     JobDef,
     apply_schedule_to_scheduler,
+    chain_membership,
     danger_window_note,
     danger_windows,
     get_job,
@@ -27,6 +29,7 @@ from src.scheduler.job_registry import (
     update_job_schedule,
     validate_schedule,
 )
+from src.scheduler.job_running import JobBusyError, running_jobs
 
 _log = get_logger(__name__)
 
@@ -49,33 +52,103 @@ class ScheduleRequest(BaseModel):
     debounce_hours: float | None = None
 
 
-def _job_view(
-    j: JobDef,
-    *,
-    scheduler: Any,
-    last_bespoke: dict[str, dict[str, str]],
-    last_pipeline: dict[str, dict[str, str]],
-    all_jobs: list[JobDef],
-) -> dict[str, Any]:
-    """JobDef + ライブ状態 (next_run / paused / last_run) を 1 dict にまとめる。"""
-    next_run = None
-    is_paused = None
-    if scheduler is not None and j.kind != "reactive":
-        try:
-            nr = scheduler.next_run_at(j.id)
-            next_run = nr.isoformat() if nr else None
-            is_paused = scheduler.is_paused(j.id)
-        except Exception:  # noqa: BLE001 — job 未登録等は None
-            pass
-    last = last_bespoke.get(j.id) or last_pipeline.get(j.id)
-    return {
+def _ts(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _latest(*records: dict[str, str] | None) -> dict[str, str] | None:
+    """最終実行の記録のうち新しい方 (job_last_run と runs の両方に出るジョブがある)。
+
+    従来は job_last_run を常に優先していたため、チェーンの段になった pipeline は
+    runs 側の running が見えなかった (2026-09-26)。
+    """
+    present = [r for r in records if r]
+    if not present:
+        return None
+    return max(present, key=lambda r: _ts(r.get("last_run_at")) or datetime.min.astimezone())
+
+
+def _live_state(scheduler: Any, job_id: str) -> tuple[str | None, bool | None]:
+    """(次回実行 ISO, 一時停止中か)。scheduler が無い/未登録なら (None, None)。"""
+    if scheduler is None:
+        return None, None
+    try:
+        nr = scheduler.next_run_at(job_id)
+        return (nr.isoformat() if nr else None), scheduler.is_paused(job_id)
+    except Exception:  # noqa: BLE001 — job 未登録等は None
+        return None, None
+
+
+def _active_chains(jobs: list[JobDef]) -> dict[str, JobDef]:
+    """段 → 有効なチェーン。無効なチェーンの段は単独ジョブとして振る舞う (rollback 経路)。"""
+    return {sid: c for sid, c in chain_membership(jobs).items() if c.enabled}
+
+
+class _Ctx:
+    """一覧 1 回分の共有状態 (記録・チェーン所属・実行中の台帳)。"""
+
+    def __init__(
+        self,
+        *,
+        scheduler: Any,
+        last_bespoke: dict[str, dict[str, str]],
+        last_pipeline: dict[str, dict[str, str]],
+        jobs: list[JobDef],
+    ) -> None:
+        self.scheduler = scheduler
+        self.jobs = jobs
+        self.chain_of = _active_chains(jobs)
+        self.memory = running_jobs()
+        self.last = {j.id: _latest(last_bespoke.get(j.id), last_pipeline.get(j.id)) for j in jobs}
+
+    def running_since(self, job_id: str) -> str | None:
+        if job_id in self.memory:
+            return self.memory[job_id].isoformat()
+        rec = self.last.get(job_id)
+        if rec and rec.get("status") == "running":
+            return rec.get("last_run_at")
+        return None
+
+
+def _job_view(j: JobDef, ctx: _Ctx) -> dict[str, Any]:
+    """JobDef + ライブ状態 (次回・停止・最終実行・実行中・チェーン所属) を 1 dict にまとめる。"""
+    chain = ctx.chain_of.get(j.id)
+    live_id = chain.id if chain is not None else j.id
+    next_run, is_paused = (
+        (None, None) if j.kind == "reactive" else _live_state(ctx.scheduler, live_id)
+    )
+    view: dict[str, Any] = {
         **j.model_dump(mode="json"),
         "schedule_label": j.schedule_label(),
         "next_run_at": next_run,
         "is_paused": is_paused,
-        "last_run": last,
-        "danger_note": danger_window_note(j, all_jobs),
+        "last_run": ctx.last.get(j.id),
+        "danger_note": danger_window_note(j, ctx.jobs),
+        "running_since": ctx.running_since(j.id),
+        "chain_id": None,
+        "running_step": None,
     }
+    if chain is not None:
+        # 段: 時刻も ON/OFF もチェーンが持つ。単独ジョブとしての enabled=False は
+        # 「単独発火しない」の意味で、停止ではない (停止中の重要ジョブに数えない)
+        idx = chain.steps.index(j.id) + 1
+        view.update(
+            chain_id=chain.id,
+            chain_title=chain.title,
+            enabled=chain.enabled,
+            schedule_label=f"{chain.title}の {idx}/{len(chain.steps)} 段目",
+            danger_note=None,
+        )
+    if j.kind == "chain":
+        view["running_step"] = next(
+            (sid for sid in j.steps if ctx.running_since(sid) is not None), None
+        )
+    return view
 
 
 @jobs_api.get("")
@@ -94,18 +167,16 @@ def list_jobs_endpoint(request: Request) -> dict[str, Any]:
         _log.warning("latest_runs_by_pipeline_failed", error=str(e))
         last_pipeline = {}
     jobs = load_jobs()
-    view = [
-        _job_view(
-            j,
-            scheduler=scheduler,
-            last_bespoke=last_bespoke,
-            last_pipeline=last_pipeline,
-            all_jobs=jobs,
-        )
-        for j in jobs
-    ]
+    ctx = _Ctx(
+        scheduler=scheduler, last_bespoke=last_bespoke, last_pipeline=last_pipeline, jobs=jobs
+    )
+    view = [_job_view(j, ctx) for j in jobs]
     disabled_important = [
-        j.id for j in jobs if not j.enabled and j.protection in ("critical", "important")
+        j.id
+        for j in jobs
+        if not j.enabled
+        and j.protection in ("critical", "important")
+        and j.id not in ctx.chain_of  # 有効なチェーンの段は停止ではない
     ]
     return {
         "jobs": view,
@@ -139,6 +210,7 @@ def toggle_job(job_id: str, req: ToggleRequest, request: Request) -> dict[str, A
     job = get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
+    _reject_chain_step(job_id, "ON/OFF")
     if not req.enabled and job.protection == "critical" and not req.confirm:
         raise HTTPException(
             status_code=409,
@@ -170,6 +242,7 @@ def reschedule_job(job_id: str, req: ScheduleRequest, request: Request) -> dict[
     current = get_job(job_id)
     if current is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
+    _reject_chain_step(job_id, "時刻")
     patch = {k: v for k, v in req.model_dump().items() if v is not None}
     candidate = current.model_copy(update=patch)
     err = validate_schedule(candidate)
@@ -193,9 +266,38 @@ def reschedule_job(job_id: str, req: ScheduleRequest, request: Request) -> dict[
     }
 
 
+def _reject_chain_step(job_id: str, what: str) -> None:
+    """有効なチェーンの段は単独で ON/OFF・時刻変更できない (二重実行・無効な設定になる)。"""
+    chain = _active_chains(load_jobs()).get(job_id)
+    if chain is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"この処理は「{chain.title}」の段として実行されています。{what}は"
+                f"「{chain.title}」で設定してください。"
+            ),
+        )
+
+
+def _run_conflict(job: JobDef) -> str | None:
+    """手動実行がチェーンと重なるなら理由を返す (同じジョブ自身の実行中は trigger_now が判定)。"""
+    jobs = load_jobs()
+    running = running_jobs()
+    chain = _active_chains(jobs).get(job.id)
+    if chain is not None and chain.id in running:
+        return f"「{chain.title}」が実行中です。この段はチェーンの中で順番に実行されます。"
+    if job.kind == "chain":
+        busy = [sid for sid in job.steps if sid in running]
+        if busy:
+            titles = {j.id: j.title for j in jobs}
+            step = titles.get(busy[0], busy[0])
+            return f"段「{step}」が単独で実行中です。終わってから実行してください。"
+    return None
+
+
 @jobs_api.post("/{job_id}/run")
 def run_job_now(job_id: str, request: Request) -> dict[str, Any]:
-    """ジョブを今すぐ手動実行する (scheduler job のみ、reactive は不可)。"""
+    """ジョブを今すぐ 1 回実行する (定時の予定は変えない。reactive は不可)。"""
     job = get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
@@ -207,8 +309,17 @@ def run_job_now(job_id: str, request: Request) -> dict[str, Any]:
     scheduler = getattr(request.app.state, "scheduler", None)
     if scheduler is None:
         raise HTTPException(status_code=503, detail="閲覧専用のため実行できません")
+    conflict = _run_conflict(job)
+    if conflict is not None:
+        raise HTTPException(status_code=409, detail=conflict)
     try:
         run_at = scheduler.trigger_now(job_id)
+    except JobBusyError as e:
+        raise HTTPException(status_code=409, detail=f"「{job.title}」は実行中です。") from e
+    except KeyError as e:
+        raise HTTPException(
+            status_code=409, detail=f"「{job.title}」はスケジューラに登録されていません。"
+        ) from e
     except Exception as e:  # noqa: BLE001
         _log.warning("job_trigger_failed", job_id=job_id, error=str(e))
         raise HTTPException(status_code=500, detail="実行の開始に失敗しました") from e

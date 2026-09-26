@@ -26,7 +26,10 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
   {
     key: "collect",
     title: "収集",
-    ids: ["direct-rss-fetch", "web-scraper-watchers", "grok-briefing", "ransomware-live-ingest"],
+    ids: [
+      "hourly-collect", "direct-rss-fetch", "web-scraper-watchers", "grok-briefing",
+      "embedding-backfill", "eventnews-hourly", "eventnews-merge", "ransomware-live-ingest",
+    ],
     icon: Radio,
     accentText: "text-accent",
     accentBar: "bg-accent",
@@ -50,7 +53,7 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
   {
     key: "learn",
     title: "学習・辞書",
-    ids: ["weekly-taxonomy-review", "mitre-actor-sync", "actor-history-distill"],
+    ids: ["weekly-taxonomy-review", "mitre-actor-sync", "actor-history-distill", "weekly-goldset-eval", "weekly-triage-drift"],
     icon: GraduationCap,
     accentText: "text-warning",
     accentBar: "bg-warning",
@@ -58,7 +61,10 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
   {
     key: "maintain",
     title: "保守",
-    ids: ["pir-entity-rebuild", "daily-maintenance", "daily-heartbeat"],
+    ids: [
+      "pir-entity-rebuild", "daily-maintenance", "daily-heartbeat", "ua-health-check",
+      "weekly-fill-rate-audit", "weekly-prompt-governance",
+    ],
     icon: Wrench,
     accentText: "text-fg-muted",
     accentBar: "bg-fg-muted",
@@ -69,7 +75,11 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
     // 定常キュー処理 (時刻に運用上の意味がない補助ジョブ)。タイムラインでの集約は
     // backend JobDef.upkeep フラグが SSoT — この ids はカード配色/アイコン用の鏡で、
     // 新しい upkeep ジョブを足す時はここにも 1 行追加する (漏れても「その他」に落ちるだけ)。
-    ids: ["pir-judge-hourly", "body-translate-backlog", "job-recovery-watchdog"],
+    ids: [
+      "hourly-upkeep", "pir-judge-hourly", "body-translate-backlog", "body-refetch-backlog",
+      "severity-axes-hourly", "ledger-reassess-hourly", "nvd-cvss-refresh", "public-reachability",
+      "job-recovery-watchdog",
+    ],
     icon: ListChecks,
     accentText: "text-fg-subtle",
     accentBar: "bg-fg-subtle",
@@ -117,6 +127,8 @@ export function markerColorForId(id: string): MarkerColor {
 
 // timeline ピルの短い日本語略称 (一覧性のため)。無い id は title 先頭2字 fallback。
 export const SHORT_LABELS: Record<string, string> = {
+  "hourly-collect": "毎時収集",
+  "hourly-upkeep": "毎時保守",
   "morning-brief": "朝ブ",
   "evening-brief": "夕ブ",
   "weekly-recap": "深掘",
@@ -161,6 +173,17 @@ export function runHealth(status?: string | null): RunHealth {
   if (s === "failed" || s === "error") return "failed";
   if (s === "running") return "running";
   return "none";
+}
+
+// ジョブの現在の状態 (実行中を最優先)。last_run は完了した実行の記録なので、
+// 走っている最中は running_since を見ないと「実行中」にならない (2026-09-26)。
+export function jobStatus(job: JobView): string | undefined {
+  if (job.running_since) return "running";
+  return job.last_run?.status;
+}
+
+export function jobHealth(job: JobView): RunHealth {
+  return runHealth(jobStatus(job));
 }
 
 // RunHealth → token 配色 (ok=success, failed=critical, running=accent)。

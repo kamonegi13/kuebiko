@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -1010,12 +1011,12 @@ def test_api_jobs_toggle_critical_requires_confirm(client: TestClient) -> None:
 def test_api_jobs_schedule_validation(client: TestClient) -> None:
     """不正な interval は 400、正常は 200 で schedule_label を返す。"""
     bad = client.post(
-        "/api/v1/jobs/direct-rss-fetch/schedule",
+        "/api/v1/jobs/ransomware-live-ingest/schedule",
         json={"schedule_type": "interval", "interval_minutes": 1},
     )
     assert bad.status_code == 400
     ok = client.post(
-        "/api/v1/jobs/direct-rss-fetch/schedule",
+        "/api/v1/jobs/ransomware-live-ingest/schedule",
         json={"schedule_type": "interval", "interval_minutes": 120},
     )
     assert ok.status_code == 200
@@ -1157,3 +1158,60 @@ class TestReadOnlyAllowlist:
     def test_mobile_tunnel_named_config_clear_blocked(self, ro_client: TestClient) -> None:
         resp = ro_client.post("/api/v1/mobile-tunnel/named-config/clear")
         assert resp.status_code == 403
+
+
+# ---------- 毎時チェーンの段と実行中表示 (2026-09-26) ----------
+
+
+def test_api_jobs_chain_steps_follow_their_chain(client: TestClient) -> None:
+    """段は時刻・次回・ON/OFF をチェーンから受け、停止中の重要ジョブに数えない。"""
+    data = client.get("/api/v1/jobs").json()
+    jobs = {j["id"]: j for j in data["jobs"]}
+    step = jobs["direct-rss-fetch"]
+    assert step["chain_id"] == "hourly-collect"
+    assert step["enabled"] is True  # 単独発火しないだけで、止まってはいない
+    assert "毎時収集チェーン" in step["schedule_label"]
+    assert step["next_run_at"] == jobs["hourly-collect"]["next_run_at"]
+    assert "direct-rss-fetch" not in data["disabled_important"]
+    assert jobs["ransomware-live-ingest"]["chain_id"] is None
+
+
+def test_api_jobs_chain_step_cannot_be_toggled_or_rescheduled(client: TestClient) -> None:
+    """段を単独で有効化すると二重実行、時刻変更は効かない — どちらも理由つきで断る。"""
+    toggle = client.post("/api/v1/jobs/grok-briefing/toggle", json={"enabled": True})
+    assert toggle.status_code == 409
+    assert "毎時収集チェーン" in toggle.json()["detail"]
+    sched = client.post(
+        "/api/v1/jobs/grok-briefing/schedule",
+        json={"schedule_type": "interval", "interval_minutes": 120},
+    )
+    assert sched.status_code == 409
+
+
+def test_api_jobs_run_step_refused_while_chain_runs(client: TestClient) -> None:
+    """チェーン実行中にその段を手動実行しない (同じ段が並行して走る)。"""
+    from src.scheduler import job_running
+
+    job_running._RUNNING["hourly-collect"] = datetime.now(UTC)
+    try:
+        resp = client.post("/api/v1/jobs/eventnews-hourly/run")
+        assert resp.status_code == 409
+        assert "毎時収集チェーン" in resp.json()["detail"]
+        # 実行中表示: チェーンは running_since を持つ
+        jobs = {j["id"]: j for j in client.get("/api/v1/jobs").json()["jobs"]}
+        assert jobs["hourly-collect"]["running_since"] is not None
+    finally:
+        job_running._RUNNING.pop("hourly-collect", None)
+
+
+def test_api_jobs_run_refused_while_same_job_runs(client: TestClient) -> None:
+    """同じジョブの実行中に押した手動実行は、黙って捨てずに 409 で知らせる。"""
+    from src.scheduler import job_running
+
+    job_running._RUNNING["daily-heartbeat"] = datetime.now(UTC)
+    try:
+        resp = client.post("/api/v1/jobs/daily-heartbeat/run")
+        assert resp.status_code == 409
+        assert "実行中" in resp.json()["detail"]
+    finally:
+        job_running._RUNNING.pop("daily-heartbeat", None)

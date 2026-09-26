@@ -729,10 +729,10 @@ PIR_DRIVEN_TRIAGE=0
 ### PIR Spotlight (Phase Diamond verify-spotlight)
 
 global synthesis (P+M+E+S+I+T 横断) と棲み分ける **PIR 縦断 narrative**。
-config/delivery/pir.yaml の `spotlight.enabled=true` な PIR each に対して週次で
+config/delivery/pir.yaml の `spotlight.enabled=true` な PIR each に対して毎日 (直近 7 日窓で)
 narrative を生成し、Intel Graph の Synthesis tab "Spotlight" sub-tab に表示。
 
-- **pipeline**: `pir-spotlight` (月曜 03:30 JST cron)
+- **pipeline**: `pir-spotlight` (毎日、直近 7 日窓。2026-08-29 に週次から変更。時刻は job_registry が SSoT)
 - **LLM**: narrative ティア (`Step.PIR_SPOTLIGHT`)。26B/31B 両対応
 - **構造**: headline (150-280 字、actor+TTP+標的) + key_events (5-8 件) + outlook (600-1000 字、4観点 a/b/c/d)
 - **DB**: `pir_spotlight` table (pir_id × period_type × period_start で UPSERT)
