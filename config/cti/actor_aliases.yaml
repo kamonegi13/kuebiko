@@ -5967,6 +5967,7 @@ actors:
   mitre_group: G0020
   nation: us
   sponsor: NSA-linked
+  sponsor_org: us_nsa
   description: NSA に帰属するとされる高度な攻撃グループ。Stuxnet/Flame に関与とされる
   kind: group
   references:
@@ -5986,6 +5987,7 @@ actors:
   - Lamberts
   nation: us
   sponsor: CIA-linked
+  sponsor_org: us_cia
   description: CIA に帰属するとされる攻撃グループ。Vault 7 リーク関連
   kind: group
 - id: animal_farm
@@ -5995,6 +5997,7 @@ actors:
   - NBOT
   nation: fr
   sponsor: DGSE-linked
+  sponsor_org: france_dgse
   description: フランス DGSE に帰属するとされる攻撃グループ
   kind: group
 - id: sidewinder
@@ -7037,6 +7040,7 @@ actors:
   family: ''
   nation: ir
   sponsor: IRGC-affiliated
+  sponsor_org: iran_irgc
   description: 水道・OT を標的とする IRGC 系ハクティビスト
 - id: apt42
   canonical: APT42

@@ -183,6 +183,12 @@ def threat_actor_for(
         "created_by_ref": _producer_identity_id(),
         "name": actor.canonical,
     }
+    # 種類は STIX threat-actor-type-ov (2026-09-27、family の混在欄から actor_taxonomy が導く)
+    from src.cti.actor_taxonomy import threat_actor_type
+
+    actor_type = threat_actor_type(actor)
+    if actor_type:
+        obj["threat_actor_types"] = [actor_type]
     if actor.aliases:
         obj["aliases"] = list(actor.aliases)
     if actor.description:

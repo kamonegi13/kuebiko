@@ -216,3 +216,13 @@ def test_bundle_no_attributed_to_when_org_absent() -> None:
     actors = [ActorAlias(id="apt28", canonical="APT28", kind="group", sponsor_org="russia_gru")]
     bundle = to_bundle(iocs, actors)
     assert [o for o in bundle["objects"] if o["type"] == "relationship"] == []
+
+
+def test_threat_actor_types_from_taxonomy() -> None:
+    """STIX の threat_actor_types を種類の導出 (actor_taxonomy) から埋める (2026-09-27)。"""
+    ransom = ActorAlias(id="qilin", canonical="Qilin", family="ransom_group", nation="ru")
+    apt = ActorAlias(id="apt29", canonical="APT29", nation="ru")
+    unknown = ActorAlias(id="x", canonical="X")
+    assert threat_actor_for(ransom)["threat_actor_types"] == ["crime-syndicate"]
+    assert threat_actor_for(apt)["threat_actor_types"] == ["nation-state"]
+    assert threat_actor_for(unknown)["threat_actor_types"] == ["unknown"]
