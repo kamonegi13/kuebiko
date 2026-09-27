@@ -9,7 +9,7 @@ GPU の課金を学習の間だけに絞る:
     runpod_ctl.py upload <run_id> --data data/mlx/dataset_s20
     runpod_ctl.py launch <run_id> --gpu "NVIDIA H200" --max-hours 4 --train-args "--max-updates 30"
     runpod_ctl.py watch  <run_id>          # 完了まで待ち、サーバを確実に消し、結果を取り出す
-    runpod_ctl.py status <run_id> / fetch <run_id> / pods / stop-all
+    runpod_ctl.py status <run_id> / fetch <run_id> / volumes / pods / stop-all
 
 .env に置く値 (値は表示しない): RUNPOD_API_KEY, RUNPOD_S3_ACCESS_KEY (user_…),
 RUNPOD_S3_SECRET (rps_…), RUNPOD_VOLUME_ID, RUNPOD_DATACENTER (例 EU-RO-1)。
@@ -40,13 +40,13 @@ _KEYS = (
 )
 
 
-def env() -> dict[str, str]:
+def env(required: tuple[str, ...] = _KEYS) -> dict[str, str]:
     vals: dict[str, str] = {}
     for line in (REPO / ".env").read_text(encoding="utf-8").splitlines():
         k, sep, v = line.partition("=")
         if sep and k.strip() in _KEYS:
             vals[k.strip()] = v.strip().strip('"').strip("'")
-    missing = [k for k in _KEYS if not vals.get(k)]
+    missing = [k for k in required if not vals.get(k)]
     if missing:
         raise SystemExit(f".env に未設定: {', '.join(missing)}")
     return vals
@@ -202,6 +202,13 @@ def cmd_watch(a: argparse.Namespace) -> None:
         time.sleep(a.interval)
 
 
+def cmd_volumes(_: argparse.Namespace) -> None:
+    """保存領域の一覧 (ID・データセンター・容量)。.env には RUNPOD_API_KEY だけあればよい。"""
+    for v in api(env(("RUNPOD_API_KEY",)), "GET", "/networkvolumes") or []:
+        dc, size = v.get("dataCenterId"), v.get("size")
+        print(f"ID={v.get('id')}  データセンター={dc}  {size}GB  {v.get('name')}")
+
+
 def cmd_pods(_: argparse.Namespace) -> None:
     for p in api(env(), "GET", "/pods") or []:
         print(p.get("id"), p.get("name"), p.get("desiredStatus"), p.get("costPerHr"))
@@ -234,6 +241,7 @@ def main() -> int:
         p = sub.add_parser(name)
         p.add_argument("run_id")
         p.add_argument("--interval", type=int, default=120)
+    sub.add_parser("volumes")
     sub.add_parser("pods")
     sub.add_parser("stop-all")
     a = ap.parse_args()
@@ -243,6 +251,7 @@ def main() -> int:
         "status": cmd_status,
         "fetch": cmd_fetch,
         "watch": cmd_watch,
+        "volumes": cmd_volumes,
         "pods": cmd_pods,
         "stop-all": cmd_stop_all,
     }[a.cmd](a)
