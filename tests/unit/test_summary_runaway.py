@@ -29,7 +29,38 @@ def test_normal_summary_has_no_reasons() -> None:
 def test_repeated_sentence_is_a_runaway() -> None:
     got = runaway_reasons(_summary(summary=_S * 5))
 
-    assert got == ["summary:sentence_repeat"]
+    assert got == ["summary:text_repeat"]
+
+
+def test_character_loop_is_a_runaway() -> None:
+    """文の単位では拾えない「-n-n-n…」型 (s20 評価で実例)。"""
+    broken = _summary(summary="脆弱性の説明です。`memcpy()` に渡され" + "-n" * 300)
+
+    assert runaway_reasons(broken) == ["summary:text_repeat"]
+    assert repair(broken).summary == "脆弱性の説明です。`memcpy()` に渡され-n"
+
+
+def test_enumeration_loop_without_periods_is_a_runaway() -> None:
+    """句点の無い列挙の反復 (本番 s17 で社名の列挙を 12,499 字まで繰り返した)。"""
+    names = "OpenAI、Anthropic、Google、Microsoft、Cisco、Fortinet、IBM、"
+    broken = _summary(summary="共同声明に参加した企業は " + names * 30)
+
+    assert runaway_reasons(broken) == ["summary:text_repeat"]
+    fixed = repair(broken).summary
+    assert fixed.count("Fortinet") == 1
+    assert fixed.startswith("共同声明に参加した企業は OpenAI")
+
+
+def test_ordinary_text_with_short_repeats_is_not_a_runaway() -> None:
+    # 本番 30 日の誤検出の実例: Solana のアドレスの「1」の連続・転載本文の空白の連続
+    text = (
+        "ウォレット So11111111111111111111111111111111111 へ移動。"
+        + "real estate company"
+        + " " * 40
+        + "headquartered in Barcelona."
+    )
+
+    assert runaway_reasons(_summary(summary=text)) == []
 
 
 def test_repeated_list_items_are_a_runaway() -> None:
