@@ -24,8 +24,6 @@ from fastapi.responses import Response
 from src.config_loader import load_app_config
 from src.cti.actor_normalizer import ActorAlias, load_actor_aliases
 from src.cti.body_translator import is_probably_japanese, translate_body_resumable
-from src.cti.ioc_extractor import extract_iocs
-from src.cti.stix_exporter import to_bundle
 from src.cti.stix_from_briefing import make_attachment_filename
 from src.cti.subject_gate import passes_subject_gate
 from src.logging_config import get_logger
@@ -119,35 +117,18 @@ def article_stix(request: Request, article_id: str) -> Response:
     if not aid:
         raise HTTPException(status_code=400, detail="article_id は必須")
 
+    # 2026-09-27: report 中心の STIX 2.1 (src/cti/stix/、設計 docs/stix_export.md)。
+    # 主題アクターにだけ関係を張り、言及は report に載せるだけ (誤帰属を外に出さない)
+    from src.cti.stix.article import build_article_bundle
+    from src.cti.stix.facts import facts_from_db
+
     repo = request.app.state.repo
-    a = repo.get_article(aid)
-    if a is None:
+    facts = facts_from_db(repo, aid)
+    if facts is None:
         raise HTTPException(status_code=404, detail=f"article が見つかりません: {aid}")
-
-    body = repo.get_article_body(aid) or ""
-    ent_raw: dict[str, dict[str, int]] = repo.count_entities_for_articles([aid])
-
-    # IoC 抽出コーパス: title + body + 保存済み entity 値 (flat 文字列)。
-    # extract_iocs が refang + 種別判定を 1 パスで行うため、単純連結で合流できる。
-    entity_values = [v for values in ent_raw.values() for v in values]
-    corpus = "\n".join([a.title or "", body, *entity_values])
-    extracted = extract_iocs(corpus)
-
-    actors = _resolve_article_actors(
-        ent_raw,
-        corpus,
-        subject_ids_csv=a.subject_actor_ids,
-        subject_source=a.subject_actor_source,
-    )
-    description = f"{a.title} ({a.url})" if a.url else (a.title or aid)
-    bundle = to_bundle(
-        extracted,
-        actors,
-        description=description,
-        socio_political_intent=a.socio_political_intent,
-    )
+    bundle = build_article_bundle(facts, load_actor_aliases())
     payload = json.dumps(bundle, ensure_ascii=False, indent=2)
-    filename = make_attachment_filename(importance=a.importance or "na", article_id=aid)
+    filename = make_attachment_filename(importance=facts.importance or "na", article_id=aid)
     return Response(
         content=payload,
         media_type="application/json",

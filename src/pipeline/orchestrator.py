@@ -1018,6 +1018,7 @@ async def run_pipeline(
                 msg,
                 registry=_stix_actor_registry,
                 policy=stix_attach,
+                article_id=art_id,
             )
             if stix_bytes is not None:
                 filename = make_attachment_filename(

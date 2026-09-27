@@ -104,7 +104,7 @@ src/
 │   ├── actor_editor.py      # actor_aliases.yaml の構造化編集 (alias 衝突検証が核心)
 │   ├── mitre_sync.py        # MITRE ATT&CK 週次逐次同期 (追加系=自動適用+LLM和訳 / 新規actor・alias衝突=レビュー提案)
 │   ├── diamond_model.py     # Diamond Model 2 meta-feature 軸 (socio-political intent / technical, Phase Diamond-Axes)
-│   └── stix_exporter.py     # STIX 2.1 Bundle 生成 (intent→primary_motivation 写像込み)
+│   └── stix/                # STIX 2.1 書き出し (report 中心・主題にだけ関係・kuebiko 拡張、docs/stix_export.md)
 ├── storage/                 # SQLite (run_history + APScheduler jobstore)
 ├── scheduler/               # APScheduler ラッパ (interval / cron)
 └── ui/                      # FastAPI + HTMX + Jinja2 (Phase 1.5)

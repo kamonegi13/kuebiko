@@ -4,8 +4,9 @@
 (ransom_group / spider = 犯罪、hacktivist、state_organ) が同じ欄に混在している。種類は既存の欄
 (kind・family・nation・sponsor・sponsor_org) からここ 1 か所で導く — 275 件に欄を書き足さない。
 
-- 国家機関・請負 (kind=organization / contractor) は脅威アクターではなく STIX の identity
-  (stix_exporter の扱いと同じ) → None
+- 国家機関・請負 (kind=organization / contractor) → None。STIX 書き出し (src/cti/stix) では
+  group を intrusion-set、機関・請負を threat-actor (nation-state) として出し、
+  group → 機関を attributed-to で結ぶ (STIX 2.1 で intrusion-set が帰属できる先は threat-actor)
 - 語彙: https://docs.oasis-open.org/cti/stix/v2.1/ の threat-actor-type-ov
 """
 

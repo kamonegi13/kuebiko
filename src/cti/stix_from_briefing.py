@@ -19,11 +19,11 @@ Discord 投稿に STIX bundle を **添付** するための薄いラッパ。
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from src.cti.actor_normalizer import ActorAlias, ActorAliasRegistry
 from src.cti.ioc_extractor import ExtractedIocs, extract_iocs
-from src.cti.stix_exporter import to_bundle
 from src.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -44,6 +44,7 @@ def briefing_to_stix_bytes(
     registry: ActorAliasRegistry | None = None,
     description: str | None = None,
     policy: object | None = None,  # StixAttachPolicy (循環 import 回避で untyped)
+    article_id: str = "",
 ) -> bytes | None:
     """``BriefingMessage`` から STIX 2.1 Bundle JSON を bytes で返す。
 
@@ -96,18 +97,24 @@ def briefing_to_stix_bytes(
         if not has_concrete and not has_actor_and_technique:
             return None
 
-    desc = description or _default_description(msg)
-    # Phase Diamond-Axes: socio-political intent を STIX primary_motivation へ伝播。
-    intent_raw = msg.metadata.get("socio_political_intent")
-    intent = intent_raw if isinstance(intent_raw, str) else None
-    sector_raw = msg.metadata.get("victim_sector_canonical")
-    bundle = to_bundle(
+    # 2026-09-27: 記事 API と同じ組み立て (report 中心・主題にだけ関係・kuebiko 拡張、
+    # src/cti/stix/)。description は report の説明が無いときの代わりに使う
+    from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.stix.article import build_article_bundle
+    from src.cti.stix.facts import facts_from_briefing
+
+    reg = registry or load_actor_aliases()
+    facts = facts_from_briefing(
+        msg,
         extracted,
-        actors,
-        description=desc,
-        socio_political_intent=intent,
-        victim_sector=sector_raw if isinstance(sector_raw, str) else None,
+        article_id=article_id or msg.title,
+        registry=reg,
+        # 言及は metadata の検出 + 本文走査の予備 (Grok 経路)。主題は保存時と同じ判定点で求める
+        mentioned_actor_ids=tuple(a.id for a in _mentioned_actors(msg, reg)),
     )
+    if not facts.summary:
+        facts = replace(facts, summary=description or _default_description(msg))
+    bundle = build_article_bundle(facts, reg)
     # ensure_ascii=False で日本語を可読に保持。コンパクト出力で添付サイズを抑える
     payload = json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     # Phase 5P: Discord 上限 (8MB) を超える前にハード上限 6MB で打ち切る。
@@ -208,6 +215,23 @@ def _resolve_actors(
         parts.append(inc.body)
         if inc.related_actor:
             parts.append(inc.related_actor)
+    return registry.find_all("\n".join(p for p in parts if p))
+
+
+def _mentioned_actors(msg: BriefingMessage, registry: ActorAliasRegistry) -> list[ActorAlias]:
+    """言及されたアクター (metadata の検出。無ければ本文走査 — Grok 経路)。
+
+    主題の絞り込みはしない — STIX では言及も report に載せ、関係は主題にだけ張る
+    (src/cti/stix/article.py)。
+    """
+    raw = msg.metadata.get("detected_actor_ids")
+    if isinstance(raw, list) and raw:
+        found = [a for x in raw if isinstance(x, str) and (a := registry.by_id(x)) is not None]
+        if found:
+            return found
+    parts: list[str] = [msg.title, msg.bluf, msg.summary]
+    for inc in msg.incidents:
+        parts.extend([inc.heading, inc.body, inc.related_actor or ""])
     return registry.find_all("\n".join(p for p in parts if p))
 
 

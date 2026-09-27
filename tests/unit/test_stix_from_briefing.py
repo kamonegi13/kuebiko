@@ -108,7 +108,8 @@ class TestBriefingToStixBytes:
         out = briefing_to_stix_bytes(msg, registry=registry, policy=_LENIENT)
         assert out is not None
         bundle = json.loads(out.decode("utf-8"))
-        actors = [o for o in bundle["objects"] if o.get("type") == "threat-actor"]
+        # 2026-09-27: 辞書の group は STIX の intrusion-set
+        actors = [o for o in bundle["objects"] if o.get("type") == "intrusion-set"]
         assert len(actors) == 1
         assert actors[0]["name"] == "Volt Typhoon"
 
@@ -136,8 +137,13 @@ class TestBriefingToStixBytes:
         out = briefing_to_stix_bytes(msg, registry=registry, policy=_LENIENT)
         assert out is not None
         bundle = json.loads(out.decode("utf-8"))
-        actors = [o for o in bundle["objects"] if o.get("type") == "threat-actor"]
-        assert {a["name"] for a in actors} == {"Volt Typhoon"}
+        # 2026-09-27: 言及 (lazarus) も report には載るが、関係は主題 (volt) からだけ張る
+        sets = {o["name"]: o["id"] for o in bundle["objects"] if o.get("type") == "intrusion-set"}
+        assert set(sets) == {"Volt Typhoon", "Lazarus Group"}
+        rel_sources = {
+            o["source_ref"] for o in bundle["objects"] if o.get("type") == "relationship"
+        }
+        assert sets["Lazarus Group"] not in rel_sources
 
     def test_emits_bundle_with_actor_via_text_fallback(self) -> None:
         """metadata に actor_ids が無い場合、msg のテキストから検出する (Grok 経路)。"""
@@ -150,7 +156,7 @@ class TestBriefingToStixBytes:
         out = briefing_to_stix_bytes(msg, registry=registry, policy=_LENIENT)
         assert out is not None
         bundle = json.loads(out.decode("utf-8"))
-        actors = [o for o in bundle["objects"] if o.get("type") == "threat-actor"]
+        actors = [o for o in bundle["objects"] if o.get("type") == "intrusion-set"]
         assert len(actors) == 1
         assert actors[0]["name"] == "Volt Typhoon"
 
@@ -243,9 +249,9 @@ class TestBriefingToStixBytes:
         out = briefing_to_stix_bytes(msg)
         assert out is not None
         bundle = json.loads(out.decode("utf-8"))
-        notes = [o for o in bundle["objects"] if o.get("type") == "note"]
-        assert len(notes) == 1
-        assert "https://news.example.com/x" in notes[0]["content"]
+        # 2026-09-27: 出典は report の external_references に入る
+        report = next(o for o in bundle["objects"] if o.get("type") == "report")
+        assert report["external_references"][0]["url"] == "https://news.example.com/x"
 
     # ---- Phase 5P: Discord 添付サイズ上限チェック ----
 
@@ -504,3 +510,19 @@ class TestPipelineAttachesStix:
         call_kwargs = publisher.post.call_args.kwargs
         # attachments=None で post される (添付スキップ)
         assert call_kwargs.get("attachments") is None
+
+
+def test_briefing_attachment_is_valid_stix_21() -> None:
+    """Discord 添付の bundle も STIX 2.1 に準拠する (OASIS 検証器 strict、2026-09-27)。"""
+    from tests.unit.stix_validation import assert_valid_stix
+
+    msg = _make_msg(
+        title="Volt Typhoon が日本のインフラを標的化",
+        metadata={"detected_actor_ids": ["volt-typhoon"]},
+        iocs=["CVE-2024-99999", "45.55.66.77"],
+        mitre_techniques=["T1566.001"],
+    )
+    out = briefing_to_stix_bytes(msg, registry=_make_registry(), policy=_LENIENT)
+
+    assert out is not None
+    assert_valid_stix(json.loads(out.decode("utf-8")))

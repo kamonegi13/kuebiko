@@ -60,6 +60,7 @@ dev = [
     "mypy>=1.10,<2.0",
     "types-PyYAML>=6.0",
     "lxml-stubs>=0.5.1",
+    "stix2-validator>=3.3.1",
 ]
 
 [tool.uv]
@@ -84,7 +85,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["discord_webhook", "apscheduler.*", "playwright.*", "transformers", "mlx_lm.*"]
+module = ["discord_webhook", "apscheduler.*", "playwright.*", "transformers", "mlx_lm.*", "stix2validator", "stix2validator.*", "jsonschema"]
 ignore_missing_imports = true
 
 

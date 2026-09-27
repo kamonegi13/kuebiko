@@ -160,6 +160,15 @@ function SituationDetailPane({ id }: { id: string }) {
   if (!data) return null;
   return (
     <div className="px-3.5 pb-3.5 space-y-3 border-t border-border-subtle pt-3">
+      <div className="flex justify-end">
+        <a
+          href={`/api/v1/situations/${encodeURIComponent(id)}/stix`}
+          className="text-[12px] px-2 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg"
+          title="この情勢を STIX 2.1 bundle でダウンロード (campaign / intrusion-set・証拠の記事・ACH の判断)"
+        >
+          STIX
+        </a>
+      </div>
       <RevisionTimeline revisions={data.revisions} />
       <RelationsList detail={data} />
       <EvidenceList detail={data} />

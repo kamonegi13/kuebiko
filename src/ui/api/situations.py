@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from src.assessment.salience import salience
 from src.assessment.situation_store import RevisionRow, SituationStore
@@ -73,6 +73,31 @@ def list_situations(status: str = "active,dormant") -> dict[str, Any]:
         )
     items.sort(key=lambda x: (-x["salience"], x["situation_id"]))
     return {"situations": items, "total": len(items)}
+
+
+@situations_api.get("/{situation_id}/stix")
+def situation_stix(situation_id: str) -> Response:
+    """1 情勢の STIX 2.1 bundle をダウンロード形式で返す (2026-09-27、docs/stix_export.md)。
+
+    campaign の台帳は campaign、actor の台帳は intrusion-set を中心に、証拠の記事 (report) を
+    grouping で束ね、ACH の判断を note にする。⚠ 同期 def (記事ごとに DB を読むため)。
+    """
+    from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.stix.situation import build_situation_bundle
+    from src.storage.run_history import RunHistoryRepository
+
+    store = SituationStore()
+    b = build_situation_bundle(store, RunHistoryRepository(), load_actor_aliases(), situation_id)
+    if b is None:
+        raise HTTPException(status_code=404, detail=f"situation が見つかりません: {situation_id}")
+    safe = "".join(c for c in situation_id if c.isalnum() or c in "-_")[:40]
+    return Response(
+        content=json.dumps(b, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="kuebiko_situation_{safe}.stix.json"'
+        },
+    )
 
 
 @situations_api.get("/{situation_id}")
