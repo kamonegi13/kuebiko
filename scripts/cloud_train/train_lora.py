@@ -121,6 +121,11 @@ def main() -> int:
     ap.add_argument(
         "--max-updates", type=int, default=0, help=">0 なら試験走行 (速度とメモリの実測)"
     )
+    ap.add_argument(
+        "--longest-first",
+        action="store_true",
+        help="試験走行用: 長い例から流す (メモリの上限の確認)",
+    )
     ap.add_argument("--save-every", type=int, default=250)
     ap.add_argument("--eval-every", type=int, default=250)
     ap.add_argument("--seed", type=int, default=0)
@@ -174,6 +179,9 @@ def main() -> int:
         random.Random(args.seed + ep).shuffle(idx)
         order += idx
     order = order[: int(len(train) * args.epochs)]
+    if args.longest_first:
+        # 試験走行用: 最も長い例から流し、メモリ不足を最初の数分で見つける
+        order = sorted(range(len(train)), key=lambda i: -len(train[i][0]))
     total_updates = len(order) // args.accum
     if args.max_updates:
         total_updates = min(total_updates, args.max_updates)

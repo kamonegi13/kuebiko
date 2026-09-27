@@ -75,6 +75,8 @@ def api(e: dict[str, str], method: str, path: str, body: dict[str, Any] | None =
         headers={
             "Authorization": f"Bearer {e['RUNPOD_API_KEY']}",
             "Content-Type": "application/json",
+            # Cloudflare が Python-urllib の既定の名乗りを 403 (error 1010) で弾く (2026-09-27 実測)
+            "User-Agent": "kuebiko-runpod-ctl/1.0",
         },
     )
     with urllib.request.urlopen(req, timeout=60) as r:
