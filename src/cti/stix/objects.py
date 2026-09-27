@@ -118,8 +118,41 @@ def sector_stix(sector_canonical: str) -> tuple[str, str] | None:
     return _sector_table().get(sector_canonical)
 
 
+#: kuebiko のマルウェア種別 (malware_aliases.yaml の type 列) → STIX malware-type-ov (2026-09-27)。
+#: infostealer は STIX に語彙が無く、最も近い spyware に写す
+_MALWARE_TYPE_TO_STIX = {
+    "ransomware": "ransomware",
+    "rat": "remote-access-trojan",
+    "infostealer": "spyware",
+    "backdoor": "backdoor",
+    "botnet": "bot",
+    "loader": "downloader",
+    "worm": "worm",
+    "keylogger": "keylogger",
+    "spyware": "spyware",
+    "wiper": "wiper",
+    "unknown": "unknown",
+}
+
+
+def malware_types_of(name: str) -> list[str] | None:
+    """マルウェア辞書の種別を STIX の語彙で (辞書に無い・種別未宣言は None)。"""
+    from src.cti.malware_normalizer import load_malware_normalizer
+
+    kind = load_malware_normalizer().type_of(name.strip())
+    stix = _MALWARE_TYPE_TO_STIX.get(kind or "")
+    return [stix] if stix else None
+
+
 def malware_object(name: str) -> dict[str, Any]:
-    return sdo("malware", name.strip().lower(), _ts=REFERENCE_TS, name=name.strip(), is_family=True)
+    return sdo(
+        "malware",
+        name.strip().lower(),
+        _ts=REFERENCE_TS,
+        name=name.strip(),
+        is_family=True,
+        malware_types=malware_types_of(name),
+    )
 
 
 def tool_object(name: str) -> dict[str, Any]:

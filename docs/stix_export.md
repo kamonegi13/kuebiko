@@ -19,7 +19,7 @@ kuebiko の分析結果を STIX 2.1 (OASIS) に準拠した bundle で書き出�
 | 記事 | `report` | `published` = 公開時刻、`external_references` = 出典 URL、`object_refs` = 記事から作った全オブジェクト |
 | 辞書のアクター (group) | `intrusion-set` | 別名・ATT&CK の G 番号・`primary_motivation` (記事の intent を attack-motivation-ov へ) |
 | 辞書の機関・請負 | `threat-actor` (`nation-state`) | group → 機関は `attributed-to` (STIX で intrusion-set が帰属できる先は threat-actor) |
-| マルウェア / ツール | `malware` (is_family) / `tool` | |
+| マルウェア / ツール | `malware` (is_family) / `tool` | `malware_types` = 辞書の種別 (malware_aliases.yaml の type) を malware-type-ov へ (rat→remote-access-trojan・botnet→bot・loader→downloader・infostealer→spyware) |
 | TTP | `attack-pattern` | ATT&CK の `external_id` + `kill_chain_phases` (技術の辞書 data/cti/attack_techniques.json) |
 | CVE | `vulnerability` | NVD への参照 |
 | 被害組織 / 業種 / 国 | `identity` (organization) / `identity` (class) / `location` | 業種の STIX 語彙は `config/cti/victim_sectors.yaml` の `stix` が SSoT |

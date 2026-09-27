@@ -221,6 +221,8 @@ METRICS: tuple[FillMetric, ...] = (
     # ⚠ 2026-09-27 に TTP の関門 (本文の裏付け) を入れた。この週から被覆は下がる (意図した低下)
     FillMetric("ent_ttp", "ttp", _entity_cond("ttp"), _CYBER),
     FillMetric("ent_malware_family", "malware_family", _entity_cond("malware_family"), _CYBER),
+    # malware_type は STIX 書き出し (malware_types) が読む (2026-09-27 に書くだけの状態を解消)
+    FillMetric("ent_malware_type", "malware_type", _entity_cond("malware_type"), _CYBER),
     FillMetric("ent_affected_vendor", "affected_vendor", _entity_cond("affected_vendor"), _VULN),
     FillMetric("ent_victim_org", "victim_org", _entity_cond("victim_org"), _CYBER),
     # 2026-09-27 監査: tool / 影響製品は書くだけで沈黙の見張りが無かった

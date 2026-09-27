@@ -103,3 +103,10 @@ def test_victim_org_id_folds_spelling_variants() -> None:
 
     assert a["id"] == b["id"]
     assert a["name"] == "Example  Corp"  # 表示名は原文のまま
+
+
+def test_malware_types_come_from_the_malware_dictionary() -> None:
+    """辞書の種別を STIX malware-type-ov で出す (malware_type の消費者、2026-09-27)。"""
+    assert o.malware_object("LockBit")["malware_types"] == ["ransomware"]
+    assert "malware_types" not in o.malware_object("辞書に無いマルウェア")
+    assert o.malware_types_of("") is None
