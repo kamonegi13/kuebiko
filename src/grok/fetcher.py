@@ -361,7 +361,12 @@ def _redirected_off_report(requested: str, final: str) -> bool:
     from urllib.parse import urlparse
 
     req_path = urlparse(requested).path
-    return req_path.startswith("/chat/") and not urlparse(final).path.startswith("/chat/")
+    if not req_path.startswith("/chat/"):
+        return False
+    # Grok は /chat/<id> を /c/<id>?rid=... へ正常に転送する。同じ会話 id なら報告のまま
+    chat_id = req_path.removeprefix("/chat/").strip("/")
+    final_path = urlparse(final).path.rstrip("/")
+    return final_path not in (f"/chat/{chat_id}", f"/c/{chat_id}")
 
 
 def _looks_like_login_redirect(url: str) -> bool:

@@ -390,3 +390,6 @@ def test_redirect_off_report_page_is_detected() -> None:
     assert _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/some-new-gate")
     assert not _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/chat/abc")
     assert not _redirected_off_report("https://grok.com/share/x", "https://grok.com/share/x")
+    # 正常な転送: /chat/<id> は /c/<id>?rid=... へ飛ぶ (09-27 のデプロイで全件失敗扱いにしていた)
+    assert not _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/c/abc?rid=r1")
+    assert _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/c/other")
