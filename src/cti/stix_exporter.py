@@ -23,7 +23,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from src.cti.actor_normalizer import ActorAlias
 from src.cti.diamond_model import intent_to_stix_motivation
@@ -230,6 +234,65 @@ def attributed_to_for(group: ActorAlias) -> dict[str, Any] | None:
     }
 
 
+_SECTORS_YAML = "config/cti/victim_sectors.yaml"
+
+
+@lru_cache(maxsize=1)
+def _sector_table() -> dict[str, tuple[str, str]]:
+    """業種 canonical → (表示名, STIX industry-sector-ov)。SSoT は victim_sectors.yaml。"""
+    path = Path(_SECTORS_YAML)
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out: dict[str, tuple[str, str]] = {}
+    for key, spec in (raw.get("canonical") or {}).items():
+        if isinstance(spec, dict) and spec.get("stix"):
+            out[str(key)] = (str(spec.get("display") or key), str(spec["stix"]))
+    return out
+
+
+def victim_sector_objects(sector_canonical: str, actors: list[ActorAlias]) -> list[dict[str, Any]]:
+    """被害の業種を identity (identity_class=class) にし、脅威アクターから targets で結ぶ。
+
+    STIX の語彙 (industry-sector-ov) に対応が無い業種は出さない (2026-09-27)。
+    """
+    entry = _sector_table().get(sector_canonical)
+    if entry is None:
+        return []
+    display, stix_sector = entry
+    identity_id = _stix_id("identity", f"sector|{stix_sector}")
+    objs: list[dict[str, Any]] = [
+        {
+            "type": "identity",
+            "spec_version": _STIX_VERSION,
+            "id": identity_id,
+            "created": _now_isoformat(),
+            "modified": _now_isoformat(),
+            "created_by_ref": _producer_identity_id(),
+            "name": display,
+            "identity_class": "class",
+            "sectors": [stix_sector],
+        }
+    ]
+    for actor in actors:
+        if actor.kind != "group":
+            continue
+        objs.append(
+            {
+                "type": "relationship",
+                "spec_version": _STIX_VERSION,
+                "id": _stix_id("relationship", f"targets|{actor.id}->{stix_sector}"),
+                "created": _now_isoformat(),
+                "modified": _now_isoformat(),
+                "created_by_ref": _producer_identity_id(),
+                "relationship_type": "targets",
+                "source_ref": _stix_actor_ref(actor.id, is_org=False),
+                "target_ref": identity_id,
+            }
+        )
+    return objs
+
+
 def attack_pattern_for_technique(technique: str) -> dict[str, Any]:
     """MITRE ATT&CK Technique を STIX attack-pattern に変換。"""
     from src.cti import attack_techniques
@@ -266,6 +329,7 @@ def to_bundle(
     *,
     description: str = "",
     socio_political_intent: str | None = None,
+    victim_sector: str | None = None,
 ) -> dict[str, Any]:
     """IOC + アクターから STIX 2.1 Bundle を組み立てる。
 
@@ -276,6 +340,8 @@ def to_bundle(
         socio_political_intent: Diamond Model socio-political 軸の canonical intent。
             STIX ``attack-motivation-ov`` に写像して threat-actor.primary_motivation
             に付与する (該当なし / unknown は無視)。
+        victim_sector: 被害の業種 (victim_sectors.yaml の canonical)。STIX の業種語彙に
+            対応があれば identity + targets 関係を足す
 
     Returns:
         STIX 2.1 Bundle JSON 互換 dict
@@ -319,6 +385,8 @@ def to_bundle(
         rel = attributed_to_for(actor)
         if rel is not None and actor.sponsor_org in present_ids:
             objects.append(rel)
+    if victim_sector:
+        objects.extend(victim_sector_objects(victim_sector, actor_list))
 
     # 全体に description note を 1 つ
     if description:

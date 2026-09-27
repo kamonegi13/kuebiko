@@ -100,7 +100,14 @@ def briefing_to_stix_bytes(
     # Phase Diamond-Axes: socio-political intent を STIX primary_motivation へ伝播。
     intent_raw = msg.metadata.get("socio_political_intent")
     intent = intent_raw if isinstance(intent_raw, str) else None
-    bundle = to_bundle(extracted, actors, description=desc, socio_political_intent=intent)
+    sector_raw = msg.metadata.get("victim_sector_canonical")
+    bundle = to_bundle(
+        extracted,
+        actors,
+        description=desc,
+        socio_political_intent=intent,
+        victim_sector=sector_raw if isinstance(sector_raw, str) else None,
+    )
     # ensure_ascii=False で日本語を可読に保持。コンパクト出力で添付サイズを抑える
     payload = json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     # Phase 5P: Discord 上限 (8MB) を超える前にハード上限 6MB で打ち切る。

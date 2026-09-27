@@ -251,3 +251,27 @@ def test_attack_pattern_uses_technique_catalog(monkeypatch) -> None:  # type: ig
     bare = stix_exporter.attack_pattern_for_technique("T1003")
     assert bare["name"] == "MITRE ATT&CK T1003"
     assert "kill_chain_phases" not in bare
+
+
+def test_victim_sector_becomes_identity_targeted_by_group() -> None:
+    """被害の業種を STIX の identity (class) にし、group から targets で結ぶ (2026-09-27)。"""
+    from src.cti.actor_normalizer import ActorAlias
+    from src.cti.ioc_extractor import ExtractedIocs
+    from src.cti.stix_exporter import to_bundle
+
+    actor = ActorAlias(id="apt28", canonical="APT28", nation="ru")
+    bundle = to_bundle(ExtractedIocs(), [actor], victim_sector="financial")
+
+    identities = [o for o in bundle["objects"] if o.get("identity_class") == "class"]
+    assert identities and identities[0]["sectors"] == ["financial-services"]
+    rels = [o for o in bundle["objects"] if o.get("relationship_type") == "targets"]
+    assert len(rels) == 1 and rels[0]["target_ref"] == identities[0]["id"]
+
+
+def test_sector_without_stix_vocabulary_is_not_exported() -> None:
+    from src.cti.ioc_extractor import ExtractedIocs
+    from src.cti.stix_exporter import to_bundle
+
+    bundle = to_bundle(ExtractedIocs(), [], victim_sector="multi_sector")
+
+    assert not [o for o in bundle["objects"] if o.get("identity_class") == "class"]

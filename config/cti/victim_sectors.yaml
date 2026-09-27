@@ -5,9 +5,12 @@
 # weekly-taxonomy-review pipeline (月曜 10:00 JST) で LLM 提案 → user 承認で
 # alias 追加 or 新カテゴリ作成 (Web UI /intel-graph/taxonomy-review)。
 
+# stix: STIX 2.1 industry-sector-ov の値 (2026-09-27)。STIX 書き出しの被害 identity の sectors に使う。
+# 対応する語彙が無いもの (メディア・研究機関・企業全般・複数・その他) は持たない (書き出さない)。
 canonical:
   financial:
     display: 金融
+    stix: financial-services
     aliases:
       - 金融
       - finance
@@ -22,6 +25,7 @@ canonical:
 
   healthcare:
     display: 医療
+    stix: healthcare
     aliases:
       - 医療
       - healthcare
@@ -33,6 +37,7 @@ canonical:
 
   energy:
     display: エネルギー
+    stix: energy
     aliases:
       - エネルギー
       - energy
@@ -45,6 +50,7 @@ canonical:
 
   manufacturing:
     display: 製造
+    stix: manufacturing
     aliases:
       - 製造
       - 製造業
@@ -66,6 +72,7 @@ canonical:
 
   government:
     display: 政府
+    stix: government
     aliases:
       - 政府
       - government
@@ -81,6 +88,7 @@ canonical:
 
   defense:
     display: 防衛
+    stix: defense
     aliases:
       - 防衛
       - military
@@ -91,6 +99,7 @@ canonical:
 
   telecom:
     display: 通信
+    stix: telecommunications
     aliases:
       - 通信
       - telecom
@@ -105,6 +114,7 @@ canonical:
 
   critical_infra:
     display: 重要インフラ
+    stix: infrastructure
     aliases:
       - "水道インフラ"
       - 重要インフラ
@@ -146,6 +156,7 @@ canonical:
 
   retail:
     display: 小売
+    stix: retail
     aliases:
       - 小売
       - retail
@@ -154,6 +165,7 @@ canonical:
 
   food_agriculture:
     display: 食品・農業
+    stix: agriculture
     aliases:
       - 食品
       - 農業
@@ -172,6 +184,7 @@ canonical:
 
   technology:
     display: IT
+    stix: technology
     aliases:
       - "managed service providers"
       - "IoT infrastructure"
@@ -204,6 +217,7 @@ canonical:
 
   education:
     display: 教育
+    stix: education
     aliases:
       - 教育
       - education
@@ -228,6 +242,7 @@ canonical:
 
   ngo:
     display: NGO
+    stix: non-profit
     aliases:
       - NGO
       - civil_society
@@ -238,6 +253,7 @@ canonical:
 
   space:
     display: 宇宙
+    stix: aerospace
     aliases:
       - space
       - space industry
@@ -259,6 +275,7 @@ canonical:
 
   national_security:
     display: 国家安全保障
+    stix: government-national
     aliases:
       - national security
       - 国家安全保障
@@ -268,6 +285,7 @@ canonical:
 
   professional_services:
     display: 専門サービス
+    stix: commercial
     aliases:
       - professional services
       - professional services firm
