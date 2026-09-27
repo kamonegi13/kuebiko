@@ -184,7 +184,7 @@ async def _summarize_and_build(
     # 片方だけ変えると契約が崩れるため。無いものは「無い」と伝え、何をすべきかも同じ
     # 文字列で渡す。
     prompt = template.render(article=_prompt_article(article), body=llm_body)
-    summary = await llm.generate_structured(prompt, schema=SummaryOutput, think=think)
+    summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
     # b2. 統合判断分類器 (2026-07-26 抜本策): 過負荷 summarizer で枯死する判断系
     # (editorial_stance / intent / diamond / event_date / i_infra / article_type /
     # subject_actor) を **1 つの focused 呼び出し**に集約して上書きする。個別 focused 分類器
@@ -514,6 +514,32 @@ def _final_pmesii_axes(
     if "I-infra" not in axes and nisc_sector_for(sector_canonical, title, summary_text):
         axes.append("I-infra")
     return axes
+
+
+async def _summarize_without_runaway(
+    llm: LLMClient, prompt: str, *, think: bool, url: str
+) -> SummaryOutput:
+    """要約を作り、暴走 (同じ文・同じ要素の繰り返し) なら 1 回だけ作り直す (2026-09-27)。
+
+    作り直しても暴走したら繰り返しを畳んで使う。検出と修復は src/pipeline/summary_runaway.py。
+    """
+    from src.pipeline.summary_runaway import repair, runaway_reasons
+
+    summary: SummaryOutput = await llm.generate_structured(
+        prompt, schema=SummaryOutput, think=think
+    )
+    reasons = runaway_reasons(summary)
+    if not reasons:
+        return summary
+    _log.warning("summary_runaway_retry", url=url, reasons=reasons, model=getattr(llm, "model", ""))
+    retried: SummaryOutput = await llm.generate_structured(
+        prompt, schema=SummaryOutput, think=think
+    )
+    still = runaway_reasons(retried)
+    if not still:
+        return retried
+    _log.warning("summary_runaway_repaired", url=url, reasons=still)
+    return repair(retried)
 
 
 def _build_briefing(

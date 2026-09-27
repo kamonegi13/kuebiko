@@ -11,6 +11,7 @@ from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
+from pydantic.config import JsonDict
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
@@ -167,6 +168,28 @@ _LLM_REQUIRED_FIELDS = frozenset(
 )
 
 
+# 一覧の欄の件数の上限 (2026-09-27)。**schema にだけ出す** (json_schema_extra) — Ollama は
+# maxItems を文法へコンパイルするので、同じ要素を数百回並べる暴走が構造上止まる
+# (SYNTHESIS §59。s20 評価で MITRE 541 件 → 後ろの欄が全部空)。検証 (max_length) にすると
+# JSON 修復・外部 LLM・保存済みデータの超過で本番が落ちるので使わない。
+# 値は本番 60 日の重複を除いた分布 (99.9% 点 / 最大) より十分上に置く。
+# IOC は本文の正規表現抽出と和集合を取る (merge_iocs) ので、上限で本文の IOC は失われない。
+# ⚠ 文字列の maxLength は入れない (09-26: 状況総括で暴走を誘発した)。
+_LIST_MAX_ITEMS: dict[str, int] = {
+    "iocs": 200,
+    "mitre_techniques": 30,  # 本番 99.9% 20 / 最大 23
+    "malware_families": 30,  # 25 / 26
+    "tools": 30,  # 19 / 25
+    "victim_orgs": 60,  # 21 / 46 (リークサイトの一覧)
+    "involved_countries": 25,  # 17 / 20
+    "pmesii_axes": 8,
+}
+
+
+def _max_items(field: str) -> JsonDict:
+    return {"maxItems": _LIST_MAX_ITEMS[field]}
+
+
 class SummaryOutput(BaseModel):
     """``prompts/briefing/summarizer.j2`` で LLM に生成させる JSON 構造。"""
 
@@ -190,11 +213,15 @@ class SummaryOutput(BaseModel):
     importance: Importance
     category: str = Field(min_length=1)
     summary: str = Field(min_length=1)
-    iocs: list[str] = Field(default_factory=list)
-    mitre_techniques: list[str] = Field(default_factory=list)
+    iocs: list[str] = Field(default_factory=list, json_schema_extra=_max_items("iocs"))
+    mitre_techniques: list[str] = Field(
+        default_factory=list, json_schema_extra=_max_items("mitre_techniques")
+    )
     # Phase Diamond: Capability 軸の構造化フィールド。本文に明示された固有名詞のみ。
-    malware_families: list[str] = Field(default_factory=list)
-    tools: list[str] = Field(default_factory=list)
+    malware_families: list[str] = Field(
+        default_factory=list, json_schema_extra=_max_items("malware_families")
+    )
+    tools: list[str] = Field(default_factory=list, json_schema_extra=_max_items("tools"))
     analyst_note: str | None = None
     # Phase 5K: 記事タイプ (recap / tutorial 等を routing で識別するため)。
     # required にすることで LLM に確実に生成させる。判定不能なら "breaking" を返す指示。
@@ -208,7 +235,9 @@ class SummaryOutput(BaseModel):
     routing_flags: dict[str, object] = Field(default_factory=dict)
     # Phase H: PMESII-PT 軸 (multi-label)。LLM 欠落時は normalizer が
     # feed/category default で union 補完する。
-    pmesii_axes: list[str] = Field(default_factory=list)
+    pmesii_axes: list[str] = Field(
+        default_factory=list, json_schema_extra=_max_items("pmesii_axes")
+    )
     # Phase H: Diamond Model victim vertex (raw text、normalizer で canonical 化)。
     # 未知値は articles.victim_*_canonical='uncategorized' + raw を保存して
     # weekly-taxonomy-review で LLM 提案 → user 承認で yaml 拡充。
@@ -221,13 +250,17 @@ class SummaryOutput(BaseModel):
     # victim_country (被害国・サイバー用) と別に、地政学事象の当事国 (中×台 → ["China","Taiwan"])
     # を持つ。entity_type='involved_country' に ISO 正規化して永続化し、actor.nation を介した
     # サイバー↔地政学の相関 (情勢把握) の join key にする。サイバー事案では空配列。
-    involved_countries: list[str] = Field(default_factory=list)
+    involved_countries: list[str] = Field(
+        default_factory=list, json_schema_extra=_max_items("involved_countries")
+    )
     # Phase 2 (geo-map): 地図プロット用の **被害組織名**。「実際に攻撃を受け侵害された
     # 組織/企業/団体」のみ (原文ママの固有名詞)。ベンダ/ソフトメーカー (脆弱性提供元)・
     # 悪用された製品・攻撃者・研究者/報告者は **含めない**。攻撃された組織が記事に明記
     # されない場合は空 list (ベンダ等で代替しない=偽の点を出さない)。複数被害 (リーク
     # サイト列挙等) に対応するため list。
-    victim_orgs: list[str] = Field(default_factory=list)
+    victim_orgs: list[str] = Field(
+        default_factory=list, json_schema_extra=_max_items("victim_orgs")
+    )
     # Phase Diamond-Axes: Diamond Model の 2 meta-feature 軸 (socio_political / technical)。
     # 2026-07-13 から summarizer は出力しない (過負荷で末尾フィールドが枯死したため
     # prompt から除去)。analysis_axes_classifier (focused) が model_copy で上書きする。
