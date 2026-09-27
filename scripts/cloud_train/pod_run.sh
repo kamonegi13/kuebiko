@@ -6,7 +6,7 @@
 #   - 上限時間 (MAX_HOURS) を超えたら強制終了して削除する
 #   - 結果と完了の印 (DONE.json / FAILED.txt) を保存領域 (/workspace) に書く → 手元から S3 API で確認
 #
-# 環境変数 (runpod_ctl.py が渡す): RUN_ID, TRAIN_ARGS, MAX_HOURS, HF_TOKEN,
+# 環境変数 (runpod_ctl.py が渡す): RUN_ID, TRAIN_ARGS, MAX_HOURS (HF_TOKEN は任意),
 #   RUNPOD_POD_ID / RUNPOD_API_KEY (RunPod が注入)
 set -uo pipefail
 RUN_DIR=/workspace/runs/$RUN_ID
@@ -41,8 +41,11 @@ export HF_HOME=/root/hf
 python -c "import torch; assert torch.cuda.is_available()" || fail "CUDA が使えない"
 
 say "元のモデルを取得"
+# Gemma 4 は Apache 2.0・アクセス制限なし (2026-09-27 確認) → トークン不要。設定されていれば使う
+TOKEN_ARGS=()
+if [ -n "${HF_TOKEN:-}" ] && [[ "$HF_TOKEN" != *RUNPOD_SECRET* ]]; then TOKEN_ARGS=(--token "$HF_TOKEN"); fi
 huggingface-cli download google/gemma-4-26B-A4B-it --quiet --exclude "*.gguf" \
-  --token "$HF_TOKEN" >/dev/null || fail "元のモデルの取得 (Hugging Face で利用規約への同意とトークンを確認)"
+  "${TOKEN_ARGS[@]}" >/dev/null || fail "元のモデルの取得"
 
 say "学習"
 # shellcheck disable=SC2086

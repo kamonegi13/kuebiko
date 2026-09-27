@@ -15,15 +15,14 @@
 
 ## 初回の準備 (利用者)
 
-1. **Hugging Face**: https://huggingface.co/google/gemma-4-26B-A4B-it で利用規約に同意し、
-   Settings → Access Tokens で **read** のトークンを作る
+1. **Hugging Face**: 不要 (Gemma 4 は Apache 2.0・アクセス制限なし。2026-09-27 に未ログインで重みの
+   取得を確認)
 2. **RunPod** (Settings / Storage):
    - **Network Volume** を作る (20GB で十分。**S3 API 対応のデータセンター** を選ぶ:
      EU-CZ-1 / EU-RO-1 / EUR-IS-1 / EUR-NO-1 / US-CA-2 / US-GA-2 / US-IL-1 / US-KS-2 / US-MD-1 /
      US-MO-1 / US-MO-2 / US-NC-1 / US-NC-2 / US-NE-1 / US-WA-1。**H200 の在庫があるところ**)
    - **API Key** を作る (Settings → API Keys。権限は Read/Write)
    - **S3 API Key** を作る (Settings → S3 API Keys。`user_…` と `rps_…` は一度しか表示されない)
-   - **Secrets** に `hf_token` の名前で Hugging Face のトークンを登録する (API には値を渡さない)
 3. **.env** (git 対象外) に追記する — 値はここにだけ置く:
    ```
    RUNPOD_API_KEY=...

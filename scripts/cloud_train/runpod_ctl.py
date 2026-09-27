@@ -13,8 +13,7 @@ GPU の課金を学習の間だけに絞る:
 
 .env に置く値 (値は表示しない): RUNPOD_API_KEY, RUNPOD_S3_ACCESS_KEY (user_…),
 RUNPOD_S3_SECRET (rps_…), RUNPOD_VOLUME_ID, RUNPOD_DATACENTER (例 EU-RO-1)。
-Hugging Face のトークンは RunPod の Secrets に ``hf_token`` の名前で登録する
-(API には値を渡さない)。
+Gemma 4 は Apache 2.0・アクセス制限なしなので Hugging Face のトークンは不要。
 """
 
 from __future__ import annotations
@@ -121,7 +120,6 @@ def cmd_launch(a: argparse.Namespace) -> None:
             "RUN_ID": a.run_id,
             "TRAIN_ARGS": a.train_args,
             "MAX_HOURS": str(a.max_hours),
-            "HF_TOKEN": "{{ RUNPOD_SECRET_hf_token }}",
         },
         "dockerStartCmd": ["bash", "-c", f"bash /workspace/runs/{a.run_id}/code/pod_run.sh"],
     }
