@@ -85,7 +85,19 @@ export interface SituationDetail {
   relations: SituationRelation[];
 }
 
+export interface ArticleSituation {
+  situation_id: string;
+  title: string;
+  status: string;
+  track: string;
+  polarity: string; // 評価済みのときだけ (supports / contradicts / neutral)。未評価は空
+}
+
 export const situationsApi = {
+  byArticle: (articleId: string) =>
+    getJson<{ situations: ArticleSituation[] }>(
+      `/api/v1/situations/by-article/${encodeURIComponent(articleId)}`,
+    ),
   list: (status = "active,dormant") =>
     getJson<{ situations: SituationSummary[]; total: number }>(
       `/api/v1/situations?status=${encodeURIComponent(status)}`,

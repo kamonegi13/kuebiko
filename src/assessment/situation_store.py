@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from src.assessment.evidence_verify import excerpt_is_supported
+from src.assessment.situation_store_marks import NOT_WEAK as _NOT_WEAK
+from src.assessment.situation_store_marks import SituationMarksMixin
 from src.logging_config import get_logger
 from src.storage.run_history import DEFAULT_DB_PATH, RunHistoryRepository
 
@@ -42,9 +44,6 @@ _MAX_ANCHORS = 24
 _MAX_PIR_IDS = 8
 # add_revision の UNIQUE(situation_id, rev) 衝突 retry 上限 (並行採番の微小窓のみ想定)
 _ADD_REVISION_MAX_ATTEMPTS = 3
-#: 評価 (ACH・総括・深掘り) の読み取りから弱い証拠を外す条件 (2026-09-27、`mark_weak`)。
-#: 割当済みの判定 (assigned_article_ids) と重複統合 (merge_situation) には効かせない
-_NOT_WEAK = "weak_at IS NULL"
 
 
 def _is_unique_violation(e: Exception) -> bool:
@@ -125,7 +124,7 @@ def _row_to_situation(r: Any) -> SituationRow:
     )
 
 
-class SituationStore:
+class SituationStore(SituationMarksMixin):
     """状況台帳 CRUD。RunHistoryRepository の接続 seam (PG/SQLite 透過) を再利用する。"""
 
     def __init__(self, db_path: Path | str = DEFAULT_DB_PATH) -> None:
@@ -657,66 +656,6 @@ class SituationStore:
                 f" WHERE situation_id=? AND article_id IN ({ph})",
                 [read_at, situation_id, *article_ids],
             )
-
-    def unmarked_evidence_by_rule(
-        self, situation_ids: list[str], *, rules: Sequence[str]
-    ) -> dict[str, list[str]]:
-        """規則 (assigned_by) で入った未印の証拠 ({situation_id: [article_id]})。弱い印の採点用。"""
-        if not situation_ids or not rules:
-            return {}
-        ph = ",".join("?" for _ in situation_ids)
-        rph = ",".join("?" for _ in rules)
-        with self._repo._connect() as conn:  # noqa: SLF001
-            rows = conn.execute(
-                "SELECT situation_id, article_id FROM situation_evidence"  # noqa: S608 — ph は ? 固定
-                f" WHERE situation_id IN ({ph}) AND assigned_by IN ({rph}) AND {_NOT_WEAK}"
-                " ORDER BY situation_id, article_id",
-                [*situation_ids, *rules],
-            ).fetchall()
-        out: dict[str, list[str]] = {}
-        for r in rows:
-            out.setdefault(str(r["situation_id"]), []).append(str(r["article_id"]))
-        return out
-
-    def set_track(self, situation_id: str, track: str) -> None:
-        """台帳の型を記録する ('actor' / 'campaign')。"""
-        with self._repo._connect() as conn:  # noqa: SLF001
-            conn.execute(
-                "UPDATE situations SET track=? WHERE situation_id=?", (track, situation_id)
-            )
-
-    def subjects_for_articles(self, article_ids: list[str]) -> dict[str, tuple[str, str, str]]:
-        """記事ごとの主題 (subject_actor_ids, source, confidence)。台帳の型の判定用。"""
-        if not article_ids:
-            return {}
-        ph = ",".join("?" for _ in article_ids)
-        with self._repo._connect() as conn:  # noqa: SLF001
-            rows = conn.execute(
-                "SELECT article_id, subject_actor_ids, subject_actor_source,"  # noqa: S608
-                f" subject_actor_confidence FROM articles WHERE article_id IN ({ph})",
-                list(article_ids),
-            ).fetchall()
-        return {
-            str(r["article_id"]): (
-                str(r["subject_actor_ids"] or ""),
-                str(r["subject_actor_source"] or ""),
-                str(r["subject_actor_confidence"] or ""),
-            )
-            for r in rows
-        }
-
-    def mark_weak(self, pairs: list[tuple[str, str]], *, weak_at: str) -> int:
-        """(situation_id, article_id) の証拠に弱い印を刻む (未印の行のみ・冪等)。件数を返す。"""
-        n = 0
-        with self._repo._connect() as conn:  # noqa: SLF001
-            for sid, aid in pairs:
-                cur = conn.execute(
-                    "UPDATE situation_evidence SET weak_at=?"
-                    " WHERE situation_id=? AND article_id=? AND weak_at IS NULL",
-                    (weak_at, sid, aid),
-                )
-                n += max(0, int(cur.rowcount or 0))
-        return n
 
     def evidence_ids_added_since(self, situation_id: str, *, since_iso: str) -> list[str]:
         """added_at >= since の証拠 article_id (新しい順)。夜間 deep-review の当日窓抽出用。"""

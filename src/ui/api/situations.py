@@ -75,6 +75,12 @@ def list_situations(status: str = "active,dormant") -> dict[str, Any]:
     return {"situations": items, "total": len(items)}
 
 
+@situations_api.get("/by-article/{article_id:path}")
+def situations_by_article(article_id: str) -> dict[str, Any]:
+    """この記事を証拠にしている情勢 (記事画面から台帳への導線、2026-09-27)。"""
+    return {"situations": SituationStore().situations_for_article(article_id)}
+
+
 @situations_api.get("/{situation_id}/stix")
 def situation_stix(situation_id: str) -> Response:
     """1 情勢の STIX 2.1 bundle をダウンロード形式で返す (2026-09-27、docs/stix_export.md)。

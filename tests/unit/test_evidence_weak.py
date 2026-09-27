@@ -105,3 +105,13 @@ async def test_scan_uses_production_gate_and_keeps_unscorable(
     assert scan.checked == 3
     assert scan.weak == ((sid, "a3"),)
     assert scan.judge == "ml"
+
+
+def test_situations_for_article_skips_weak_evidence(store: SituationStore) -> None:
+    """記事から台帳への導線 (2026-09-27) — 弱い証拠の台帳は出さない。"""
+    sid = _open_with_evidence(store)
+    store.mark_weak([(sid, "a3")], weak_at=_NOW)
+
+    assert [s["situation_id"] for s in store.situations_for_article("a2")] == [sid]
+    assert store.situations_for_article("a3") == []
+    assert store.situations_for_article("a2")[0]["polarity"] == ""  # 未評価は向きを出さない

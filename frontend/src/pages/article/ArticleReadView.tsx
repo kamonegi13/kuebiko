@@ -19,6 +19,7 @@ import {
 } from "../../api/article";
 import { JudgementCard, type Judgement } from "../../components/analysis/JudgementCard";
 import { EntitySection } from "../../components/analysis/EntitySection";
+import { ArticleSituations } from "../../components/analysis/ArticleSituations";
 
 export const IMPORTANCE_TONE: Record<string, string> = {
   high: "text-critical",
@@ -365,6 +366,7 @@ export function ArticleReadView({
           stixArticleId={a.article_id}
         />
       </div>
+      <ArticleSituations articleId={a.article_id} />
     </div>
   );
 }
