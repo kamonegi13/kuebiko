@@ -189,10 +189,10 @@ flowchart TB
 | 2 | URL dedup | `pipeline/filters` + `dedup_seen_urls` | URL 正規化 SHA-256 のバルク照合。重複は終端 |
 | 3 | 意味的 dedup | `filters` + `article_embeddings` | hard (0.92/168h) → cluster (0.82/48h) → batch 内。embedding 未設定時は graceful 無効 |
 | 4 | triage | `tools/article_triage` (fast LLM) | PIR 定義を動的注入して high/medium/low。keep 対象外は既読化=終端。**LLM 失敗は medium fail-open (Recall 優先)** |
-| 5 | 記事処理 | `pipeline/briefing` | 本文抽出 → 要約・翻訳 (`SummaryOutput`) → 論調・分析軸・IOC (regex+LLM 検証)・actor 辞書照合 → `BriefingMessage` |
+| 5 | 記事処理 | `pipeline/briefing` | 本文抽出 → 要約・翻訳 (`SummaryOutput`) → 論調・分析軸・IOC (regex+LLM 検証、LLM 経由の IOC にも本文経路の関門)・**TTP は本文で裏付けられるものだけ** (`cti/ttp_evidence`、`TTP_EVIDENCE_GATE`)・actor 辞書照合 → `BriefingMessage` |
 | 6 | routing | `cti/routing_signals` → `cti/router` | `RoutingSignals` → `RoutingDecision` (channel + rule_id + 理由)。優先層 (japan/KEV/APT) → 衛生層 → importance 層 |
-| 7 | 投稿 | `pipeline/publish` + `discord_publisher` | 投稿前 dedup ゲート (dedup_key / CVE / content) → **channel の `push=false` なら Discord せず DB のみ (web-only)** → STIX 添付・続報アノテート |
-| 8 | 永続化 | `pipeline/persistence` | 永続化直前に**主題アクター判定** (title 決定論 + summarizer 既存 primary_actor の辞書解決、言及≠主題) を一元実行 → `articles` (importance/routing 判定/分析軸/victim/subject_actor…) + `article_entities` (actor/cve/ioc/malware/pir/mention…) + 本文 |
+| 7 | 投稿 | `pipeline/publish` + `discord_publisher` | 投稿前 dedup ゲート (dedup_key / CVE / content) → **channel の `push=false` なら Discord せず DB のみ (web-only)**。過去分の取り直しは `PIPELINE_WEB_ONLY=1` で全 channel を web-only に → STIX 2.1 添付 (`cti/stix`)・続報アノテート |
+| 8 | 永続化 | `pipeline/persistence` | 永続化直前に**主題アクター判定** (title 決定論 + summarizer 既存 primary_actor の辞書解決、言及≠主題。LLM 経路では機関を主題にしない) を一元実行 → `articles` (importance/routing 判定/分析軸/victim/subject_actor…) + `article_entities` (actor/cve/ioc/malware/pir/mention…) + 本文 |
 | 9 | 後処理 | `synthesis/auto_trigger` | 投稿ありなら daily 総括を near-realtime 更新 (debounce 6h) |
 
 > **entity の詳細処理 (収集→抽出→分析→消費の内部・entity_type 全目録・mention/subject ゲート
@@ -223,6 +223,11 @@ flowchart LR
 **割当 (観測・未読)** → **読了 (prompt に供給・引用なし)** → **評価済み (ACH 引用・polarity/抜粋が有意)**。
 UI は評価済みを「接地証拠 (支持/反証/中立)」、それ以外を「未評価の割当」として区別表示する。
 
+- **割当の関門** (2026-09-25): 規則 (anchor / nation / token) の割当に ML / 埋込の確認を課す。関門より前の
+  規則割当で落ちるものは **弱い証拠** (`situation_evidence.weak_at`) として評価の読み取りから外す (行は残す)
+- **台帳の 2 つの型** (2026-09-27、`assessment/situation_track`): `actor` = 主題アクターを追う持続的な台帳
+  (STIX Intrusion Set、自動では閉じない) / `campaign` = 期間と標的で区切られた活動 (STIX Campaign)
+
 ### ⑤⑥ 配信の決定 (Discord push / web-only)
 
 ```mermaid
@@ -238,6 +243,8 @@ flowchart LR
 ```
 
 - **Discord = 警告 + 日次ブリーフ (push)** / **Web = 状況認識の全量 (pull)** という通知モデル。
+- **STIX 2.1 書き出し** (記事・事象・台帳・アクター): [docs/stix_export.md](docs/stix_export.md)。
+  関係は主題アクターにだけ張り、kuebiko 独自の属性は正式な拡張 (property-extension) に入れる
 - 分類 (importance) と配信 (channel/push) の断絶は高脅威安全網が保証する
   (high は必ず日次通読に載る)。
 
@@ -383,6 +390,7 @@ uv run python scripts/grok_extract_cookies.py
 |---|---|
 | ダッシュボード | 実行成否・投稿件数・LLM 応答時間・PIR カバレッジ等の KPI 概観 |
 | ニュース / 検索 | 記事の閲覧と entity facet 検索 (CVE / actor / PIR / vendor 等) |
+| 週次深掘り | 速報で扱わなかったが知っておくべき記事を週ごとに主題で束ねた解説 + 選んだ記事と得点 (`/app/deep-dive`) |
 | Intel Graph | 状況総括 (synthesis) / 地図 / タイムライン / アクターグラフ |
 | PIR 管理 | Priority Intelligence Requirements の CRUD + KPI + LLM 支援 compile |
 | ソース管理 | RSS / sitemap / HTML スクレイパの追加・有効化 (ビジュアルセレクタ付き) |

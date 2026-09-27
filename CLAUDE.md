@@ -432,6 +432,21 @@ kuebiko/
   `LEDGER_REASSESS_HOURLY`) を置く。**候補数 (30) / 開設上限 (8/run、ML 和集合込みで 12) / 更新上限 (12/run + 毎時 6) /
   報告の幅 (render 側) は別物**で、混同しない。設計と実測は
   [docs/research/llm_training/SYNTHESIS.md](docs/research/llm_training/SYNTHESIS.md) §47-48
+- **2026-09-27 に入れた挙動の変更と戻し方** (実測の根拠は各 docs / コミット):
+  | 変更 | 戻し方 |
+  |---|---|
+  | LLM の TTP は本文で裏付けられるものだけ (`cti/ttp_evidence`、Opus 盲検で精度 0.31→0.70) | `TTP_EVIDENCE_GATE=shadow` / `off` |
+  | 関門より前の規則割当の弱い証拠を評価から外す (`weak_at`) | `UPDATE situation_evidence SET weak_at=NULL` |
+  | 国家・地図・概況の集計から LLM medium の主題を外す (精度 61%)・LLM 経路で機関を主題にしない | `subject_gate.trusted_subject_clause` / `subject_actor.py` |
+  | 台帳の 2 つの型 (actor は自動で閉じない) | `situations.track` を NULL に |
+  | 軍事・政策・法執行の作戦名を campaign から外す | `config/cti/non_adversary_operations.yaml` |
+  | 深掘りの選定 20→40 (要約の総量は固定) | `deep_dive_selector.DEFAULT_MAX_SELECT` |
+  | チェーンの段の timeout で subprocess も止める | (戻さない — 並走の防止) |
+  STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
+- **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
+  後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す
+  (`data/mlx/eval_s20.sh` の型)。Ollama の並列スロット (`OLLAMA_NUM_PARALLEL`) は本番では 1 のまま
+  (大記事で利得ゼロ・timeout 悪化、2026-08-17)
 - **モデル変更は CLAUDE.md / `.env.example` を同時更新**
 - **Phase 1 の LLM 暫定運用**: Gemma 4 31B Dense が Ollama に未公開の間は `gemma3:27b` で代替可
 - **依存追加は最小化**: 標準ライブラリで足りるものを安易にライブラリ化しない (YAGNI)
