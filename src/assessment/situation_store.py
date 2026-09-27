@@ -42,6 +42,9 @@ _MAX_ANCHORS = 24
 _MAX_PIR_IDS = 8
 # add_revision の UNIQUE(situation_id, rev) 衝突 retry 上限 (並行採番の微小窓のみ想定)
 _ADD_REVISION_MAX_ATTEMPTS = 3
+#: 評価 (ACH・総括・深掘り) の読み取りから弱い証拠を外す条件 (2026-09-27、`mark_weak`)。
+#: 割当済みの判定 (assigned_article_ids) と重複統合 (merge_situation) には効かせない
+_NOT_WEAK = "weak_at IS NULL"
 
 
 def _is_unique_violation(e: Exception) -> bool:
@@ -308,7 +311,7 @@ class SituationStore:
         with self._repo._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
                 "SELECT article_id FROM situation_evidence WHERE situation_id=?"
-                " ORDER BY added_at DESC LIMIT ?",
+                f" AND {_NOT_WEAK} ORDER BY added_at DESC LIMIT ?",  # noqa: S608 — 定数
                 (situation_id, int(limit)),
             ).fetchall()
         return [str(r[0]) for r in rows]
@@ -332,7 +335,7 @@ class SituationStore:
             rows = conn.execute(
                 "SELECT e.situation_id, e.article_id FROM situation_evidence e "
                 "JOIN situations s ON s.situation_id = e.situation_id "
-                f"WHERE s.status IN ({ph}) AND e.read_at IS NULL "  # noqa: S608 — ph は ? 固定
+                f"WHERE s.status IN ({ph}) AND e.read_at IS NULL AND e.{_NOT_WEAK} "  # noqa: S608
                 "ORDER BY e.situation_id, e.added_at DESC",
                 list(statuses),
             ).fetchall()
@@ -651,12 +654,45 @@ class SituationStore:
                 [read_at, situation_id, *article_ids],
             )
 
+    def unmarked_evidence_by_rule(
+        self, situation_ids: list[str], *, rules: Sequence[str]
+    ) -> dict[str, list[str]]:
+        """規則 (assigned_by) で入った未印の証拠 ({situation_id: [article_id]})。弱い印の採点用。"""
+        if not situation_ids or not rules:
+            return {}
+        ph = ",".join("?" for _ in situation_ids)
+        rph = ",".join("?" for _ in rules)
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT situation_id, article_id FROM situation_evidence"  # noqa: S608 — ph は ? 固定
+                f" WHERE situation_id IN ({ph}) AND assigned_by IN ({rph}) AND {_NOT_WEAK}"
+                " ORDER BY situation_id, article_id",
+                [*situation_ids, *rules],
+            ).fetchall()
+        out: dict[str, list[str]] = {}
+        for r in rows:
+            out.setdefault(str(r["situation_id"]), []).append(str(r["article_id"]))
+        return out
+
+    def mark_weak(self, pairs: list[tuple[str, str]], *, weak_at: str) -> int:
+        """(situation_id, article_id) の証拠に弱い印を刻む (未印の行のみ・冪等)。件数を返す。"""
+        n = 0
+        with self._repo._connect() as conn:  # noqa: SLF001
+            for sid, aid in pairs:
+                cur = conn.execute(
+                    "UPDATE situation_evidence SET weak_at=?"
+                    " WHERE situation_id=? AND article_id=? AND weak_at IS NULL",
+                    (weak_at, sid, aid),
+                )
+                n += max(0, int(cur.rowcount or 0))
+        return n
+
     def evidence_ids_added_since(self, situation_id: str, *, since_iso: str) -> list[str]:
         """added_at >= since の証拠 article_id (新しい順)。夜間 deep-review の当日窓抽出用。"""
         with self._repo._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
-                "SELECT article_id FROM situation_evidence"
-                " WHERE situation_id=? AND added_at >= ? ORDER BY added_at DESC",
+                "SELECT article_id FROM situation_evidence"  # noqa: S608 — 定数
+                f" WHERE situation_id=? AND added_at >= ? AND {_NOT_WEAK} ORDER BY added_at DESC",
                 (situation_id, since_iso),
             ).fetchall()
         return [str(r["article_id"]) for r in rows]
@@ -673,7 +709,7 @@ class SituationStore:
         ph = ",".join("?" for _ in situation_ids)
         sql = (
             "SELECT situation_id, article_id FROM situation_evidence"
-            f" WHERE situation_id IN ({ph})"  # noqa: S608 — ph は ? 固定
+            f" WHERE situation_id IN ({ph}) AND {_NOT_WEAK}"  # noqa: S608 — ph は ? 固定
         )
         params: list[str] = list(situation_ids)
         if assigned_by is not None:
@@ -696,7 +732,7 @@ class SituationStore:
             rows = conn.execute(
                 "SELECT article_id, polarity, attribution_basis, excerpt, source_tier"
                 " FROM situation_evidence WHERE situation_id=? AND assessed_at IS NOT NULL"
-                " ORDER BY assessed_at DESC LIMIT ?",
+                f" AND {_NOT_WEAK} ORDER BY assessed_at DESC LIMIT ?",  # noqa: S608 — 定数
                 (situation_id, limit),
             ).fetchall()
         return [
@@ -724,7 +760,7 @@ class SituationStore:
                 " COUNT(*) AS total,"
                 " SUM(CASE WHEN assessed_at IS NOT NULL THEN 1 ELSE 0 END) AS assessed,"
                 " SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) AS unread"
-                f" FROM situation_evidence WHERE situation_id IN ({ph})"  # noqa: S608
+                f" FROM situation_evidence WHERE situation_id IN ({ph}) AND {_NOT_WEAK}"  # noqa: S608
                 " GROUP BY situation_id",
                 list(situation_ids),
             ).fetchall()
@@ -777,8 +813,9 @@ class SituationStore:
         """
         with self._repo._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
-                "SELECT polarity, excerpt FROM situation_evidence"
+                "SELECT polarity, excerpt FROM situation_evidence"  # noqa: S608 — 定数
                 " WHERE situation_id=? AND assessed_at IS NOT NULL AND excerpt <> ''"
+                f" AND {_NOT_WEAK}"
                 " ORDER BY CASE polarity WHEN 'supports' THEN 0 WHEN 'contradicts' THEN 0"
                 " ELSE 1 END, assessed_at DESC LIMIT ?",
                 (situation_id, limit),

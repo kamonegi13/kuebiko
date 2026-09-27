@@ -92,7 +92,8 @@ def situation_detail(situation_id: str) -> dict[str, Any]:
         ev_rows = conn.execute(
             "SELECT article_id, polarity, attribution_basis, excerpt, source_tier,"
             " added_at, assigned_by, read_at, assessed_at"
-            " FROM situation_evidence WHERE situation_id=?"
+            # 弱い証拠 (割当の関門で落ちる旧割当、2026-09-27) は評価に使わないので出さない
+            " FROM situation_evidence WHERE situation_id=? AND weak_at IS NULL"
             " ORDER BY CASE WHEN assessed_at IS NULL THEN 1 ELSE 0 END,"
             " COALESCE(assessed_at, added_at) DESC LIMIT 100",
             (situation_id,),

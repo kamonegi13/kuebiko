@@ -660,6 +660,9 @@ ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS assessed_at TEXT;
 -- 評価済みに刻む。新規行は record_assessment が常に assessed_at を書くため再 match しない。
 UPDATE situation_evidence SET assessed_at = added_at, read_at = added_at
  WHERE assessed_at IS NULL AND excerpt <> '';
+-- 弱い証拠の印 (2026-09-27): 割当の関門 (assign_gate) が入る前に規則で入った証拠を同じ関門で
+-- 採点し直し、落ちるものに刻む。行は消さない (戻せるように)。評価 (ACH・総括) の読み取りから外す。
+ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS weak_at TEXT;
 
 -- 概念 PIR の LLM 主題判定 verdict (2026-07-23、docs/pir_concept_llm_judge_design.md)。
 -- 負の verdict も保存 (再判定防止)。pir_rev = PIR description+question ハッシュ (編集で stale)。

@@ -350,6 +350,9 @@ class RunHistoryRepositoryBase:
             conn.execute("ALTER TABLE situation_evidence ADD COLUMN read_at TEXT")
         if "assessed_at" not in existing_ev:
             conn.execute("ALTER TABLE situation_evidence ADD COLUMN assessed_at TEXT")
+        # 弱い証拠の印 (2026-09-27): 関門で落ちる旧割当。評価の読み取りから外す (行は残す)。
+        if "weak_at" not in existing_ev:
+            conn.execute("ALTER TABLE situation_evidence ADD COLUMN weak_at TEXT")
         # 旧 rich 行 (excerpt あり = ACH 引用済) を評価済みに刻む (冪等: 新規行は
         # record_assessment が常に assessed_at を書くため再 match しない)。
         conn.execute(
