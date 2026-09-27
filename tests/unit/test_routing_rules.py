@@ -358,7 +358,9 @@ class TestEarlyWarningRules:
         d = evaluate_routing_rules(sig, sq, {}, rules=self._rules())
         return d.channel if d else "なし"
 
-    def test_breaking_critical_with_japan_goes_alert(self) -> None:
+    def test_breaking_critical_flag_alone_no_longer_alerts(self) -> None:
+        # R2e は 2026-09-27 に削除 (llm_breaking_critical は要約器が一度も返さず発火ゼロ)。
+        # 日本関連の一般記事は R3 の japan_watch に落ちる
         sig = _sig(
             importance="high",
             llm_is_breaking_critical=True,
@@ -366,7 +368,7 @@ class TestEarlyWarningRules:
             mentions_japan=True,
             category="incident",
         )
-        assert self._decide(sig) == "alert"
+        assert self._decide(sig) == "japan_watch"
 
     def test_early_warning_keyword_with_japan_goes_alert(self) -> None:
         # 初期アクセス売買・作戦予告など「起きる前」の兆候

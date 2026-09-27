@@ -65,16 +65,8 @@ rules:
       all:
         - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
         - {property: keyword_list, op: in, value: [emergency_directives]}
-  - id: R2e.alert_breaking_japan
-    label: "日本関連の速報級 (LLM 判定)"
-    channel: alert
-    when:
-      all:
-        - {property: article_type, op: not_in, value: [recap, tutorial, opinion, press]}
-        - {property: llm_breaking_critical, op: is_true}
-        - any:
-            - {property: japan_relevant, op: is_true}
-            - {property: japan_critical, op: is_true}
+  # R2e (日本関連の速報級、LLM 判定) は 2026-09-27 に削除: 条件の llm_breaking_critical を
+  # 要約器が一度も返さず発火ゼロ。日本の重要インフラは R2d、日本関連は R3 が拾う
   - id: R2f.alert_early_warning
     label: "早期警戒: 予告・アクセス売買・悪用切迫"
     channel: alert
