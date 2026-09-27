@@ -515,9 +515,12 @@ def _persist_article_entities(
             seen_cap.add(ck)
             entities.append((etype, value))
 
+    from src.cti.malware_normalizer import is_state_actor_name
+
     for fam in msg.metadata.get("malware_families", []) or []:
         disp, kind = mnorm.normalize(str(fam))
-        if kind != "drop" and disp:
+        # 国家系アクターの名前はマルウェアにしない (LLM の取り違え、2026-09-27)
+        if kind != "drop" and disp and not is_state_actor_name(disp):
             _add_cap(kind, disp)  # kind = 'malware_family' or (誤分類なら) 'tool'
             # P2 (tagging survey): family → malware type の辞書導出 (決定論)。
             # is_ransomware boolean の一般化 — wiper/infostealer/ransomware は状況認識上
