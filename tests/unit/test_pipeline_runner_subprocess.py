@@ -563,3 +563,39 @@ def test_monthly_synthesis_timeout_headroom(monkeypatch: pytest.MonkeyPatch) -> 
     """monthly は最重のため per-pipeline timeout で 3600s の headroom を持つ。"""
     monkeypatch.delenv("PIPELINE_TIMEOUT_SECONDS", raising=False)
     assert pipeline_runner._resolve_pipeline_timeout("monthly-status-synthesis") == 3600.0
+
+
+class TestCancelRun:
+    """チェーンの段の timeout で subprocess も止める (2026-09-27)。"""
+
+    @pytest.mark.asyncio
+    async def test_cancel_run_terminates_subprocess_and_records_reason(
+        self,
+        repo: RunHistoryRepository,
+    ) -> None:
+        runner = PipelineRunner(repo=repo)
+        run_id = await runner.start_subprocess_run(
+            argv_override=[sys.executable, "-c", "import time; time.sleep(30)"]
+        )
+        await asyncio.sleep(0.2)
+
+        stopped = await runner.cancel_run(run_id, reason="chain step timeout")
+
+        assert stopped is True
+        assert not runner.is_busy
+        loaded = repo.get_run(run_id)
+        assert loaded is not None
+        assert loaded.status == "failed"
+        assert loaded.note is not None
+        assert "chain step timeout" in loaded.note
+
+    @pytest.mark.asyncio
+    async def test_cancel_run_on_finished_run_is_noop(
+        self,
+        repo: RunHistoryRepository,
+    ) -> None:
+        runner = PipelineRunner(repo=repo)
+        run_id = await runner.start_subprocess_run(argv_override=_echo_argv("done"))
+        await runner.shutdown()  # 自然完了まで待つ (猶予内に終わる)
+
+        assert await runner.cancel_run(run_id, reason="x") is False

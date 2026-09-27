@@ -204,6 +204,7 @@ def _register_bespoke_jobs(
     repo: RunHistoryRepository,
     *,
     run_pipeline: Callable[[str], Awaitable[int | None]] | None = None,
+    cancel_run: Callable[[int], Awaitable[object]] | None = None,
 ) -> None:
     """job_registry の bespoke / chain ジョブを callable に結び付け registry schedule で登録する。
 
@@ -327,7 +328,13 @@ def _register_bespoke_jobs(
         run_id = await run_pipeline(name)
         if run_id is None:
             return  # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ
-        status = await wait_for_run(repo, run_id)
+        try:
+            status = await wait_for_run(repo, run_id)
+        except asyncio.CancelledError:
+            # 段の timeout: 待つのをやめるだけでは subprocess が残り次の段と並走する
+            if cancel_run is not None:
+                await cancel_run(run_id)
+            raise
         if status not in (None, "succeeded"):
             raise RuntimeError(f"pipeline {name} run {run_id} {status}")
 
@@ -566,7 +573,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # schedule のみ registry (UI 編集可・再起動維持)。[[operational_config_db]] と同型。
         from src.scheduler.job_registry import apply_job_registry, load_jobs
 
-        _register_bespoke_jobs(scheduler, repo, run_pipeline=run_named_pipeline)
+        _register_bespoke_jobs(
+            scheduler,
+            repo,
+            run_pipeline=run_named_pipeline,
+            cancel_run=lambda rid: runner.cancel_run(rid, reason="chain step timeout"),
+        )
 
         scheduler.start()
 

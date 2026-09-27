@@ -129,6 +129,9 @@ class PipelineRunner:
         self._lock = asyncio.Lock()
         # 進行中の subprocess タスク (キャンセル / shutdown 用)
         self._tasks: set[asyncio.Task[None]] = set()
+        # run 単位の取り消し (チェーンの段の timeout 用、2026-09-27) と、その理由
+        self._task_by_run: dict[int, asyncio.Task[None]] = {}
+        self._cancel_reasons: dict[int, str] = {}
 
     @property
     def registry(self) -> RunRegistry:
@@ -277,7 +280,24 @@ class PipelineRunner:
         )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        self._task_by_run[run_id] = task
+        task.add_done_callback(lambda _t: self._task_by_run.pop(run_id, None))
         return run_id
+
+    async def cancel_run(self, run_id: int, *, reason: str) -> bool:
+        """実行中の run の subprocess を終了させる (SIGTERM → 猶予 → SIGKILL)。止めたら True。
+
+        チェーンの段が timeout したとき、待つのをやめるだけでは subprocess が残り、
+        次の段と並走する (2026-09-27、Grok 取込で実際に起きた)。待つ側が取り消されたら
+        subprocess も止める。
+        """
+        task = self._task_by_run.get(run_id)
+        if task is None or task.done():
+            return False
+        self._cancel_reasons[run_id] = reason
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return True
 
     async def _subprocess_lifecycle(
         self,
@@ -405,7 +425,9 @@ class PipelineRunner:
                     proc.kill()
                     await proc.wait()
                 # shutdown は運用者起点のため ops 通知しない (cancel 済み task 内の await も不可)
-                self._record_failure(run_id, "cancelled by shutdown")
+                self._record_failure(
+                    run_id, self._cancel_reasons.pop(run_id, "cancelled by shutdown")
+                )
                 await self._registry.complete(run_id, "failed")
                 await ws_broadcast(
                     "pipeline_complete",
