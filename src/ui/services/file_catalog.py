@@ -305,6 +305,16 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "被害セクタ語彙",
         "被害組織セクタの正規化語彙 (sector ラベルの SSoT)",
     ),
+    "config/cti/ttp_evidence.yaml": FileInfo(
+        "CTI 辞書・語彙",
+        "TTP の裏付け語",
+        "LLM の ATT&CK 技術を本文で裏付ける言い回し (日英)。無い技術は取込で落とす",
+    ),
+    "config/cti/non_adversary_operations.yaml": FileInfo(
+        "CTI 辞書・語彙",
+        "敵の作戦ではない作戦名",
+        "軍事・政策・法執行の作戦名。campaign 指標から外す",
+    ),
     "config/cti/pmesii_default_mapping.yaml": FileInfo(
         "CTI 辞書・語彙",
         "PMESII 既定マッピング",

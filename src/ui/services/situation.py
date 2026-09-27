@@ -124,13 +124,17 @@ def _attacker_face_rows(con: Any, actor_ids: list[str], since: datetime | None) 
     ids = [a for a in actor_ids if a]
     if not ids:
         return []
-    from src.cti.subject_gate import subject_membership_clause
+    from src.cti.subject_gate import subject_membership_clause, trusted_subject_clause
 
     cats_ph = ",".join("?" for _ in _CYBER_CATS)
     membership = subject_membership_clause("subject_actor_ids", len(ids))
+    trusted = trusted_subject_clause(
+        source_col="subject_actor_source", confidence_col="subject_actor_confidence"
+    )
     sql = (
         f"SELECT {_article_cols()}, subject_actor_ids FROM articles "  # noqa: S608 — 列/分岐は内部固定
         f"WHERE status='posted' AND LOWER(category) IN ({cats_ph}) AND {membership}"
+        f" AND {trusted}"
     )
     params: list[Any] = [*(c.lower() for c in _CYBER_CATS), *ids]
     if since is not None:

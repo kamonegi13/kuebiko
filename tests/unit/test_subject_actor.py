@@ -113,6 +113,16 @@ class TestLlmTier:
         assert got.source == SOURCE_LLM
         assert got.confidence == "high"
 
+    def test_llm_tier_does_not_make_an_organization_the_subject(self) -> None:
+        # 国家としか書いていない記事で LLM が機関を主題にする誤り (2026-09-27 盲検)
+        got = _determine(
+            titles=("ロシアの情報機関が関与か",),
+            detected_actor_ids=("russia_gru",),
+            llm_primary_actor_id="russia_gru",
+            llm_confidence="high",
+        )
+        assert got.ids == ()
+
     def test_slug_with_hyphen_resolves(self) -> None:
         got = _determine(
             detected_actor_ids=("salt_typhoon",),

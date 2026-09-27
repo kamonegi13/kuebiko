@@ -29,9 +29,14 @@ from src.cti.category_scopes import CYBER_ATTACK_EVENTS
 from src.cti.diamond_model import NATION_LABELS_JA
 from src.cti.geocoder import Geocoder
 from src.cti.routing_signals import looks_accidental_leak
+from src.cti.subject_gate import trusted_subject_clause
 from src.logging_config import get_logger
 
 _log = get_logger(__name__)
+
+_TRUSTED_SUBJECT = trusted_subject_clause(
+    source_col="a.subject_actor_source", confidence_col="a.subject_actor_confidence"
+)
 
 DEFAULT_DB_PATH = Path("data/run_history.db")
 
@@ -343,6 +348,8 @@ def _flow_rows(
         "FROM articles a "
         f"WHERE {status_clause} "
         "AND a.victim_country_iso IS NOT NULL AND a.victim_country_iso != '' "
+        # LLM medium の主題は国の件数に入れない (精度 61%、subject_gate.trusted_subject_clause)
+        f"AND {_TRUSTED_SUBJECT} "
         f"AND {_cyber_category_clause('a.category')}"
         + _class_clause(threat_class, "a.is_ransomware")
         + _importance_clause(min_importance, "a.importance")

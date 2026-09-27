@@ -186,3 +186,28 @@ def test_subject_membership_clause_exact_match_via_sqlite(tmp_path: Path) -> Non
             ("akira", "inc_ransom"),
         ).fetchall()
     assert [r["article_id"] for r in rows] == ["a1"]  # akira は部分一致せず落ちる
+
+
+def test_trusted_subject_clause_drops_only_llm_medium() -> None:
+    """国家・地図・概況の集計から LLM medium の主題だけを外す (精度 61%、2026-09-27)。"""
+    import sqlite3
+
+    from src.cti.subject_gate import trusted_subject_clause
+
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE a (id TEXT, src TEXT, conf TEXT)")
+    con.executemany(
+        "INSERT INTO a VALUES (?,?,?)",
+        [
+            ("title", "title", None),
+            ("llm_high", "llm", "high"),
+            ("llm_medium", "llm", "medium"),
+            ("legacy", None, None),
+            ("feed", "feed", None),
+        ],
+    )
+    clause = trusted_subject_clause(source_col="src", confidence_col="conf")
+
+    got = {r[0] for r in con.execute(f"SELECT id FROM a WHERE {clause}")}  # noqa: S608
+
+    assert got == {"title", "llm_high", "legacy", "feed"}

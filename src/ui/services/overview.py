@@ -200,12 +200,16 @@ def _actor_nation_counts(
     落ちる (mention への fallback は意図的に廃止)。
     """
     from src.cti.actor_roles import reporter_org_actor_ids
-    from src.cti.subject_gate import split_subject_ids
+    from src.cti.subject_gate import split_subject_ids, trusted_subject_clause
 
     reporter_ids = reporter_org_actor_ids()
+    # LLM medium の主題は国籍別件数に入れない (精度 61%)
+    trusted = trusted_subject_clause(
+        source_col="subject_actor_source", confidence_col="subject_actor_confidence"
+    )
     sql = (
-        "SELECT subject_actor_ids FROM articles "
-        "WHERE status='posted' "
+        "SELECT subject_actor_ids FROM articles "  # noqa: S608 — 条件は内部固定
+        f"WHERE status='posted' AND {trusted} "
         "AND datetime(created_at) >= datetime(?) AND datetime(created_at) < datetime(?)"
     )
     rows = con.execute(sql, (since.isoformat(), until.isoformat())).fetchall()

@@ -176,9 +176,13 @@ def determine_subject_actors(
         resolved = resolve_actor_by_name(
             pid.replace("-", " ").replace("_", " "), registry
         ) or registry.by_id(pid)
-        if resolved is not None and resolved.id in detected:
+        if resolved is not None and resolved.kind != "group":
+            # 国家としか書いていない記事で LLM が機関 (FSB / RGB / IRGC 等) を主題にする誤りが
+            # LLM 経路の誤りの型の 1 つ (2026-09-27 盲検)。機関の主題は見出しの別名でだけ認める
+            _log.info("subject_actor_llm_org_rejected", resolved_id=resolved.id)
+        elif resolved is not None and resolved.id in detected:
             return SubjectActors(ids=(resolved.id,), source=SOURCE_LLM, confidence=llm_confidence)
-        if resolved is not None:
+        elif resolved is not None:
             # 辞書解決はできたが記事の言及集合に無い = 帰属の捏造リスク → 不採用 (観測ログのみ)
             _log.info(
                 "subject_actor_llm_not_in_mentions",

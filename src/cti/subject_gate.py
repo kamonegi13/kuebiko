@@ -38,6 +38,16 @@ def subject_gate_clause(*, mention_col: str, subject_ids_col: str, subject_sourc
     return f"({subject_source_col} IS NULL OR {membership})"
 
 
+def trusted_subject_clause(*, source_col: str, confidence_col: str) -> str:
+    """国家・地図・概況の集計に使える主題か (SQL boolean、パラメータなし)。
+
+    LLM 経路の confidence=medium は主題の精度が 61% しかない (Opus 盲検 60 件、2026-09-27。
+    見出しの別名 99% / フィード 100% / LLM high 89%)。国家単位の集計はアクター 1 件の誤りが
+    国の件数に直結するので、medium だけを外す。行は残す (記事の表示・PIR には使う)。
+    """
+    return f"NOT (COALESCE({source_col},'') = 'llm' AND COALESCE({confidence_col},'') = 'medium')"
+
+
 def subject_membership_clause(subject_ids_col: str, param_count: int) -> str:
     """OR 連結の literal-id membership SQL 断片を返す (INSTR position ベース、両端カンマ挟み)。
 
