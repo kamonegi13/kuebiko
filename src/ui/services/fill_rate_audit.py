@@ -218,6 +218,7 @@ METRICS: tuple[FillMetric, ...] = (
     ),
     FillMetric("ent_actor", "actor", _entity_cond("actor"), _CYBER),
     FillMetric("ent_cve", "cve", _entity_cond("cve"), _VULN),
+    # ⚠ 2026-09-27 に TTP の関門 (本文の裏付け) を入れた。この週から被覆は下がる (意図した低下)
     FillMetric("ent_ttp", "ttp", _entity_cond("ttp"), _CYBER),
     FillMetric("ent_malware_family", "malware_family", _entity_cond("malware_family"), _CYBER),
     FillMetric("ent_affected_vendor", "affected_vendor", _entity_cond("affected_vendor"), _VULN),
@@ -235,6 +236,16 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric("ent_campaign", "campaign", _entity_cond("campaign"), _CYBER),
+    # 2026-09-27 監査の続き: IOC・暫定アクター・当事国 (単独) も書くだけで見張りが無かった。
+    # 当事国は上の和集合では言及国の補完に隠れる — LLM の抽出が落ちても和集合は落ちない
+    FillMetric(
+        "ent_ioc",
+        "IOC (いずれか)",
+        _entity_cond_any("ioc_ip", "ioc_domain", "ioc_url", "ioc_sha256", "ioc_sha1", "ioc_md5"),
+        _CYBER,
+    ),
+    FillMetric("ent_actor_provisional", "暫定アクター", _entity_cond("actor_provisional"), _CYBER),
+    FillMetric("ent_involved_country", "当事国 (LLM)", _entity_cond("involved_country"), None),
     # PMESII 7 軸 (監査 2026-07-16: T/I-infra が 6 週間沈黙しても検知できなかった盲点の
     # 閉鎖。T 軸は廃止済みのため登録しない)。boolean 軸の「付与 share」を fill として監視。
     FillMetric("pmesii_p", "PMESII P", "a.pmesii_p = 1", None),
