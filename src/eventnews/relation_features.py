@@ -87,7 +87,7 @@ def load_event_features(
     from src.assessment.evidence_verify import normalize_for_match
     from src.assessment.situation_track import registry_is_group
     from src.eventnews.pair_features import _ROUNDUP
-    from src.synthesis.grounded.detect_ml import is_rollup_title
+    from src.tools.rollup_title import is_rollup_title
 
     since = (now or datetime.now(UTC)) - timedelta(days=days)
     members, ents, arts = _load(repo, since)
@@ -120,8 +120,10 @@ def load_event_features(
                 "kinds": set(),
                 "roundup": False,
                 "titles": [],
+                "members": [],
             },
         )
+        e["members"].append(aid)
         ent = per_article.get(aid, {})
         # アクターの名前・別名は能力に数えない (「Kimsuky」「LockBit 5.0」がマルウェアとしても入り、
         # 同じ攻撃者というだけの事象を「珍しい道具の共有」で結んでいた — 盲検 2026-09-27)
@@ -182,6 +184,7 @@ def load_event_features(
                 )
             },
             roundup=bool(v["roundup"]),
+            member_ids=tuple(dict.fromkeys(v["members"])),
         )
         for iid, v in acc.items()
     ]

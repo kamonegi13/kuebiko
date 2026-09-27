@@ -15,7 +15,6 @@ import asyncio
 import json
 import math
 import os
-import re
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -32,6 +31,12 @@ from src.synthesis.grounded.detect_features import (
     DetectArticle,
     feature_vector,
 )
+
+# 月例更新・カタログ追加・注意喚起の類 = 勧告であって追跡単位でない (2026-09-15「勧告は見張り」)。
+# ML は importance と kind で拾ってしまうため、候補から決定論で外す (バックテスト 09-17)。
+# 判定は事象ニュース層と共有するので tools へ移した (2026-09-27)。この名前で参照する呼び元がある
+from src.tools.rollup_title import ROLLUP_PATTERNS as ROLLUP_PATTERNS  # noqa: E402
+from src.tools.rollup_title import is_rollup_title as is_rollup_title  # noqa: E402
 
 _log = structlog.get_logger(__name__)
 
@@ -54,14 +59,6 @@ UNION_TOP_K_DEFAULT = 4
 PREFILTER_TOP_K_DEFAULT = 30
 #: shadow で記録する上限 (下流の消化能力 ≈6 開設/日 に合わせる)
 SHADOW_TOP_K = 6
-#: 月例更新・カタログ追加・注意喚起の類 = 勧告であって追跡単位でない (2026-09-15「勧告は見張り」)。
-#: ML は importance と kind で拾ってしまうため、候補から決定論で外す (バックテスト 09-17)
-ROLLUP_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"月例|定例|セキュリティ情報公開|セキュリティ更新プログラム"),
-    re.compile(r"Patch Tuesday|Security Update Guide", re.IGNORECASE),
-    re.compile(r"KEV カタログに追加|KEV に追加|Known Exploited Vulnerabilities"),
-    re.compile(r"注意喚起を発信|注意喚起を公開|advisory roundup", re.IGNORECASE),
-)
 #: 1 run で種別を新たに分類する上限 (fast ティア ~1s/件、synthesis の timeout 内に収める)
 _KIND_CLASSIFY_MAX = 200
 #: 1 run で深刻度の軸を新たに付ける上限。軸は毎時保守チェーンが先に付けておくので、ここは
@@ -182,11 +179,6 @@ def union_additions(
         return []
     pool = {a: p for a, p in scores.items() if a not in already_opened and a not in excluded}
     return prefilter_select(pool, top_k=top_k)
-
-
-def is_rollup_title(title: str) -> bool:
-    """月例・カタログ追加・注意喚起の記事か (追跡単位にしない、決定論)。"""
-    return any(p.search(title) for p in ROLLUP_PATTERNS)
 
 
 def compose_llm_candidates(
