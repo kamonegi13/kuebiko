@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from src.cti.source_basis import classify_source_tier
 from src.eventnews.fidelity import draft_text, entity_gaps
@@ -651,6 +651,28 @@ def related_payload(
         "parent": entry(parent_rec) if parent_rec else None,
         "children": [entry(c) for c in children],
     }
+
+
+@eventnews_api.get("/{item_id}/stix")
+def event_news_stix(item_id: str) -> Response:
+    """1 事象の STIX 2.1 bundle (2026-09-27、docs/stix_export.md)。
+
+    事象 = kuebiko が書いた report (見出し・BLUF・要点、事実は出典の記事 id つきで拡張へ) が
+    構成記事の report を指す。⚠ 同期 def (記事ごとに DB を読むため)。
+    """
+    from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.stix.event import build_event_bundle
+
+    b = build_event_bundle(_repo(), load_actor_aliases(), item_id)
+    if b is None:
+        raise HTTPException(status_code=404, detail="not found")
+    safe = "".join(c for c in item_id if c.isalnum() or c in "-_")[:40]
+    filename = f"kuebiko_event_{safe}.stix.json"
+    return Response(
+        content=json.dumps(b, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @eventnews_api.get("/{item_id}")

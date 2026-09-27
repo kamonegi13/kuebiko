@@ -8,6 +8,7 @@ kuebiko の分析結果を STIX 2.1 (OASIS) に準拠した bundle で書き出�
 | 面 | 入口 | 中心 |
 |---|---|---|
 | 記事 1 件 | `GET /api/v1/articles/{id}/stix`・Discord 投稿の添付 | `report` |
+| 事象 1 件 | `GET /api/v1/eventnews/{id}/stix` (事象ニュースの「STIX」) | kuebiko が書いた `report` (見出し・BLUF・要点、事実は出典の記事 id つきで拡張へ) → 構成記事の `report` |
 | 台帳 1 件 | `GET /api/v1/situations/{id}/stix` (台帳画面の「STIX」) | `campaign` または `intrusion-set` + `grouping` + `note` |
 | アクター 1 件 | `GET /api/v1/actors/{id}/stix` (アクター辞書の「STIX」) | `intrusion-set` / `threat-actor` + 主題の記事 (直近 180 日・最大 50 件) の `report` を `grouping` で束ねる |
 

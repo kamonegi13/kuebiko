@@ -769,7 +769,7 @@ def create_app() -> FastAPI:
     app.include_router(geo_api)
     app.include_router(spotlight_api)
     app.include_router(situations_api)
-    # 週次深掘りの閲覧 (Tier0 = 匿名で閲覧可。配信済みの要約から作った本文のみ)
+    # 週次深掘りの閲覧 (GET のみ。匿名の公開面には出さない = read_only_policy の許可リスト外)
     app.include_router(deep_dives_api)
     app.include_router(actor_history_api)
     # 事象単位ニュース (Tier0 = 匿名で閲覧可)。GET のみで readonly でもそのまま動く。

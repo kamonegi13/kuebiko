@@ -5,57 +5,294 @@
   "description": "kuebiko が STIX オブジェクトに付ける分析の属性。STIX の標準語彙に無いものだけ。設計は docs/stix_export.md。",
   "type": "object",
   "properties": {
-    "extension_type": {"const": "property-extension"},
-    "article_id": {"type": "string", "description": "kuebiko の記事 id (report)"},
-    "importance": {"enum": ["high", "medium", "low"], "description": "kuebiko の重要度 (report)"},
-    "category": {"type": "string", "description": "kuebiko のカテゴリ (report)"},
-    "pir_ids": {"type": "array", "items": {"type": "string"}, "description": "該当した情報要求 (SIR) の id (report / grouping)"},
-    "subject_actor_ids": {"type": "array", "items": {"type": "string"}, "description": "記事の主題アクター (関係はこれにだけ張る)"},
-    "subject_source": {"enum": ["feed", "feed_match", "title", "llm", "none"], "description": "主題の判定経路"},
-    "subject_confidence": {"type": "string", "description": "LLM 経路の主題の確度 (high / medium)"},
-    "mentioned_actor_ids": {"type": "array", "items": {"type": "string"}, "description": "言及されたアクター (主題でないものは関係を張らない)"},
-    "intent": {"type": "string", "description": "Diamond Model の社会政治的な意図 (kuebiko の 12 値)"},
-    "intent_confidence": {"type": "string"},
-    "actor_id": {"type": "string", "description": "アクター辞書の id (intrusion-set / threat-actor)"},
-    "actor_kind": {"enum": ["group", "organization", "contractor"]},
-    "threat_actor_type": {"type": "string", "description": "STIX threat-actor-type-ov の値 (intrusion-set には標準の欄が無いため)"},
-    "nation": {"type": "string", "description": "アクターの国籍 (ISO 3166-1 alpha-2)"},
-    "situation_id": {"type": "string", "description": "台帳の id (grouping / note)"},
-    "track": {"enum": ["actor", "campaign", null], "description": "台帳の型"},
-    "kind": {"enum": ["event", "standing"], "description": "台帳の種別 (standing = 常設の情報要求)"},
-    "domain": {"type": "string"},
-    "status": {"enum": ["active", "dormant", "closed"]},
+    "extension_type": {
+      "const": "property-extension"
+    },
+    "article_id": {
+      "type": "string",
+      "description": "kuebiko の記事 id (report)"
+    },
+    "importance": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "kuebiko の重要度 (report)"
+    },
+    "category": {
+      "type": "string",
+      "description": "kuebiko のカテゴリ (report)"
+    },
+    "pir_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "該当した情報要求 (SIR) の id (report / grouping)"
+    },
+    "subject_actor_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "記事の主題アクター (関係はこれにだけ張る)"
+    },
+    "subject_source": {
+      "enum": [
+        "feed",
+        "feed_match",
+        "title",
+        "llm",
+        "none"
+      ],
+      "description": "主題の判定経路"
+    },
+    "subject_confidence": {
+      "type": "string",
+      "description": "LLM 経路の主題の確度 (high / medium)"
+    },
+    "mentioned_actor_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "言及されたアクター (主題でないものは関係を張らない)"
+    },
+    "intent": {
+      "type": "string",
+      "description": "Diamond Model の社会政治的な意図 (kuebiko の 12 値)"
+    },
+    "intent_confidence": {
+      "type": "string"
+    },
+    "actor_id": {
+      "type": "string",
+      "description": "アクター辞書の id (intrusion-set / threat-actor)"
+    },
+    "actor_kind": {
+      "enum": [
+        "group",
+        "organization",
+        "contractor"
+      ]
+    },
+    "threat_actor_type": {
+      "type": "string",
+      "description": "STIX threat-actor-type-ov の値 (intrusion-set には標準の欄が無いため)"
+    },
+    "nation": {
+      "type": "string",
+      "description": "アクターの国籍 (ISO 3166-1 alpha-2)"
+    },
+    "situation_id": {
+      "type": "string",
+      "description": "台帳の id (grouping / note)"
+    },
+    "track": {
+      "enum": [
+        "actor",
+        "campaign",
+        null
+      ],
+      "description": "台帳の型"
+    },
+    "kind": {
+      "enum": [
+        "event",
+        "standing"
+      ],
+      "description": "台帳の種別 (standing = 常設の情報要求)"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "active",
+        "dormant",
+        "closed"
+      ]
+    },
     "evidence": {
       "type": "array",
       "items": {
         "type": "object",
-        "properties": {"article_id": {"type": "string"}, "polarity": {"enum": ["supports", "contradicts", "neutral"]}},
-        "required": ["article_id"]
+        "properties": {
+          "article_id": {
+            "type": "string"
+          },
+          "polarity": {
+            "enum": [
+              "supports",
+              "contradicts",
+              "neutral"
+            ]
+          }
+        },
+        "required": [
+          "article_id"
+        ]
       },
       "description": "台帳の証拠 (ACH が引用した記事と、その向き)"
     },
-    "revision": {"type": "integer", "description": "台帳の判断の版 (note)"},
-    "claim_type": {"type": "string"},
-    "leading_hypothesis": {"type": "string"},
-    "confidence_level": {"type": "string", "description": "判断の確度 (high / moderate / low)。STIX の confidence にも写像する"},
-    "confidence_basis": {"type": "string"},
+    "revision": {
+      "type": "integer",
+      "description": "台帳の判断の版 (note)"
+    },
+    "claim_type": {
+      "type": "string"
+    },
+    "leading_hypothesis": {
+      "type": "string"
+    },
+    "confidence_level": {
+      "type": "string",
+      "description": "判断の確度 (high / moderate / low)。STIX の confidence にも写像する"
+    },
+    "confidence_basis": {
+      "type": "string"
+    },
     "hypotheses": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "hypothesis": {"type": "string"},
-          "consistent": {"type": "integer"},
-          "inconsistent": {"type": "integer"},
-          "verdict": {"type": "string"}
+          "hypothesis": {
+            "type": "string"
+          },
+          "consistent": {
+            "type": "integer"
+          },
+          "inconsistent": {
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
         }
       },
       "description": "ACH の仮説ごとの整合・不整合"
     },
-    "assumptions": {"type": "array", "items": {"type": "string"}},
-    "missing_evidence": {"type": "array", "items": {"type": "string"}},
-    "indicators": {"type": "array", "items": {"type": "string"}}
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "indicators": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "event_id": {
+      "type": "string",
+      "description": "事象ニュースの id (事象の report)"
+    },
+    "event_status": {
+      "enum": [
+        "new",
+        "updated",
+        "reinforced",
+        "dormant"
+      ],
+      "description": "事象の状態"
+    },
+    "change_kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "直近の変化の種別"
+    },
+    "independent_sources": {
+      "type": "integer",
+      "description": "独立した媒体の数"
+    },
+    "version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "事象の本文の版"
+    },
+    "key_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "article_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "description": "事実 (出典の記事 id つき)"
+    },
+    "discrepancies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "article_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "description": "媒体間の食い違い"
+    },
+    "caveats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "article_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "description": "原文の但し書き"
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "未解明の点"
+    }
   },
-  "required": ["extension_type"],
+  "required": [
+    "extension_type"
+  ],
   "additionalProperties": false
 }

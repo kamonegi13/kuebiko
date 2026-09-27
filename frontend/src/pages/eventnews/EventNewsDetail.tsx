@@ -543,6 +543,7 @@ export function EventNewsDetailBody({
           subjectActorSource={d.metadata.subject_actors.length > 0 ? "aggregate" : null}
           groups={d.metadata.entities}
           note="構成記事の抽出結果を集計（数字 = 言及した記事数）"
+          stixHref={`/api/v1/eventnews/${encodeURIComponent(d.id)}/stix`}
         />
       </div>
 

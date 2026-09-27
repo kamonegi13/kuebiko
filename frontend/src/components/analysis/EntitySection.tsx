@@ -70,9 +70,11 @@ const BTN =
 function EntityActions({
   groups,
   stixArticleId,
+  stixHref,
 }: {
   groups: EntityGroupView[];
   stixArticleId?: string | null;
+  stixHref?: string | null;
 }) {
   const [copied, setCopied] = useState<"plain" | "defang" | "error" | null>(null);
   const hasIoc = groups.some((g) => isCopyableIocType(g.type) && g.values.length > 0);
@@ -104,12 +106,12 @@ function EntityActions({
           </button>
         </>
       )}
-      {/* STIX は 1 記事単位の出力。事象 (複数記事) では出さない。 */}
-      {stixArticleId && (
+      {/* STIX 2.1 bundle (記事 1 件 / 事象 1 件、2026-09-27 に事象も対応) */}
+      {(stixHref || stixArticleId) && (
         <a
-          href={`/api/v1/articles/${encodeURIComponent(stixArticleId)}/stix`}
+          href={stixHref ?? `/api/v1/articles/${encodeURIComponent(stixArticleId ?? "")}/stix`}
           className={BTN}
-          title="この記事の STIX 2.1 bundle をダウンロード"
+          title="STIX 2.1 bundle をダウンロード"
         >
           STIX
         </a>
@@ -130,6 +132,7 @@ export function EntitySection({
   subjectActorRationale,
   groups,
   stixArticleId,
+  stixHref,
   note,
 }: {
   subjectActors: SubjectActorView[];
@@ -138,6 +141,7 @@ export function EntitySection({
   subjectActorRationale?: string | null;
   groups: EntityGroupView[];
   stixArticleId?: string | null;
+  stixHref?: string | null;
   /** 呼び手固有の注記 (事象では「構成記事の抽出結果を集計」)。 */
   note?: string;
 }) {
@@ -158,7 +162,7 @@ export function EntitySection({
     <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-fg-muted text-xs uppercase">エンティティ (クリックで逆引き)</div>
-        <EntityActions groups={groups} stixArticleId={stixArticleId} />
+        <EntityActions groups={groups} stixArticleId={stixArticleId} stixHref={stixHref} />
       </div>
       {note && <div className="text-fg-subtle text-[13px] -mt-1">{note}</div>}
 
