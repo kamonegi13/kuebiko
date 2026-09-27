@@ -140,3 +140,6 @@ prompts/_persona_local.j2*
 # wrangler の作業ディレクトリ (ローカルの一時状態)
 /.wrangler/
 data/mirror_dist/
+
+# 本番の実データを使うテスト用の写し (実インシデントの詳細を含むため公開リポに入れない、2026-09-27)
+frontend/src/**/__fixtures__/*.local.json
