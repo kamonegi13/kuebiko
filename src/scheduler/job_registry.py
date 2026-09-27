@@ -138,7 +138,9 @@ def default_jobs() -> list[JobDef]:
             # 既定 5 分では実態と合わない (実測 2-6.2 分で既に超過)。2026-08-16 に
             # 収集元タスクを「窓 90 分 × 多数」→「窓 12 時間 × 少数」へ再設計したため
             # 1 通あたりの処理量が増える見込み。夕ブリーフ直前の回が食い込まないよう余裕を取る。
-            max_runtime_minutes=12,
+            # 2026-09-27: 15 件の回は実測 13-15 分。12 分では段が timeout=failed と記録され、
+            # subprocess は止まらないまま次の段と並走していた → 20 分へ。
+            max_runtime_minutes=20,
         ),
         JobDef(
             id="ransomware-live-ingest",
