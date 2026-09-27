@@ -1,6 +1,6 @@
 """detect の束ね (別々の事案を 1 つの claim にまとめる) を見つける関門 (2026-09-24)。
 
-⚠ **発端**: 5 日の replay で 4 モデルすべてが「日本国内の 銀行 C・小売 B 社・中古販売 D 社…
+⚠ **発端**: 5 日の replay で 4 モデルすべてが「日本国内の銀行 C・小売 B 社・中古販売 D 社…
 で不正アクセスが相次いだ」のように、被害組織も事象も別の記事を 1 claim に束ねた (教師の Sonnet は
 同じ出来事の複数報道しか束ねない)。台帳の割当を厳しくすると未割当が増え、この欠陥が表に出やすい。
 記事どうしを「同じ事象 (群化) に入っている or 強い鍵を共有」で繋ぎ、塊が 2 つ以上なら束ね。
@@ -30,9 +30,9 @@ def test_different_victims_in_different_events_are_a_bundle() -> None:
     clusters = split_clusters(
         ["a1", "a2", "a3"],
         strong_by_aid={
-            "a1": {"victim_org:銀行 C"},
-            "a2": {"victim_org:小売 B 社"},
-            "a3": {"victim_org:中古販売 D 社"},
+            "a1": {"victim_org:bank-c"},
+            "a2": {"victim_org:retailer-b"},
+            "a3": {"victim_org:shop-d"},
         },
         items_by_aid={"a1": {"e1"}, "a2": {"e2"}, "a3": {"e3"}},
     )
@@ -81,8 +81,8 @@ class TestUnbundle:
         from src.assessment.claim_bundle import unbundle_claims
 
         strong = {
-            "a1": {"victim_org:銀行 C"},
-            "a2": {"victim_org:小売 B 社"},
+            "a1": {"victim_org:bank-c"},
+            "a2": {"victim_org:retailer-b"},
             "b1": {"cve:CVE-1"},
             "b2": {"cve:CVE-1"},
         }

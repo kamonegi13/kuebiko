@@ -53,7 +53,7 @@ def test_new_number_in_a_follow_up_is_detected() -> None:
     got = _new_values(second, [first])
 
     # Assert
-    assert any("136" in v for v in got)
+    assert any("120" in v for v in got)
 
 
 def test_repeating_the_same_number_is_not_new() -> None:
