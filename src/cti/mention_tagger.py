@@ -19,6 +19,10 @@ LLM プロンプトには手を入れない (26B の field 脱落前科 — 過�
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
 
 from src.cti.nation_gazetteer import nations_in_text
 
@@ -78,6 +82,22 @@ def _is_generic_jp_op(name: str) -> bool:
     return name in _OP_GENERIC_WORDS_JA or bool(nations_in_text(name))
 
 
+#: 敵の作戦ではない作戦名 (軍事・政策・法執行) の SSoT (2026-09-27)
+NON_ADVERSARY_OPERATIONS_PATH = Path("config/cti/non_adversary_operations.yaml")
+
+
+@lru_cache(maxsize=2)
+def non_adversary_operations(path: str = str(NON_ADVERSARY_OPERATIONS_PATH)) -> frozenset[str]:
+    """campaign から外す作戦名 (「Operation」を除いた小文字)。ファイルが無ければ空。"""
+    p = Path(path)
+    if not p.exists():
+        return frozenset()
+    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: 種類 → 作戦名の一覧の形ではない")
+    return frozenset(str(n).strip().lower() for names in raw.values() for n in (names or []))
+
+
 def campaigns_in_text(text: str) -> frozenset[str]:
     """命名された作戦 (campaign) を "Operation <Name>" 正規形の集合で返す (決定論)。"""
     if not text:
@@ -92,10 +112,14 @@ def campaigns_in_text(text: str) -> frozenset[str]:
         words = name.split()
         if len(words) == 2 and words[1].lower() in _OP_GENERIC_WORDS:
             name = words[0]
+        if name.lower() in non_adversary_operations():
+            continue  # 軍事・政策・法執行の作戦は STIX の Campaign ではない
         found.add(f"Operation {name}")
     for m in _OP_JP_RE.finditer(text):
         name = m.group(1).strip()
         if name.lower() in _OP_GENERIC_WORDS or _is_generic_jp_op(name):
+            continue
+        if name.lower() in non_adversary_operations():
             continue
         found.add(f"Operation {name}")
     return frozenset(found)

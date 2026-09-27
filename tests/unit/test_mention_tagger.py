@@ -7,8 +7,15 @@ from src.cti.mention_tagger import campaigns_in_text, derive_mention_entities
 
 class TestCampaignsInText:
     def test_extracts_english_operation_name(self) -> None:
-        got = campaigns_in_text("Europol announces Operation Endgame takedown results")
-        assert got == frozenset({"Operation Endgame"})
+        got = campaigns_in_text("Lazarus returns with Operation Dream Job lures")
+        assert got == frozenset({"Operation Dream Job"})
+
+    def test_law_enforcement_and_military_operations_are_not_campaigns(self) -> None:
+        # STIX の Campaign は攻撃者の作戦 (2026-09-27)。摘発・軍事作戦は台帳の強い鍵にしない
+        assert (
+            campaigns_in_text("Europol announces Operation Endgame takedown results") == frozenset()
+        )
+        assert campaigns_in_text("US strikes under Operation Midnight Hammer") == frozenset()
 
     def test_extracts_two_word_operation_name(self) -> None:
         got = campaigns_in_text("Operation Midnight Eclipse targeted PAN-OS devices")
@@ -57,11 +64,11 @@ class TestDeriveMentionEntities:
 
     def test_campaign_included(self) -> None:
         got = derive_mention_entities(
-            title="Operation Endgame: 大規模ボットネット解体",
+            title="Operation Dream Job: 偽の求人で開発者を狙う",
             summary="",
             involved_isos=set(),
         )
-        assert ("campaign", "Operation Endgame") in got
+        assert ("campaign", "Operation Dream Job") in got
 
     def test_no_mentions_returns_empty(self) -> None:
         got = derive_mention_entities(
