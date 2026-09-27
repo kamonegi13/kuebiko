@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from src.eventnews.relations import EventFeatures, derive_relations
 
 _T0 = datetime(2026, 9, 1, tzinfo=UTC)
@@ -61,7 +63,11 @@ def test_same_actor_without_shared_capability_is_not_related() -> None:
     assert got == {}
 
 
-def test_different_actors_of_one_nation_sharing_a_tool_is_a_supplier() -> None:
+def test_different_actors_of_one_nation_sharing_a_tool_is_a_supplier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 既定 off (盲検 0/4)。規則そのものは残してテストで固定する
+    monkeypatch.setattr("src.eventnews.relations.SUPPLIER_ENABLED", True)
     got = _derive(
         _e("a", 0, subjects={"apt_a"}, malware={"kit"}),
         _e("b", 30, subjects={"apt_b"}, malware={"kit"}),

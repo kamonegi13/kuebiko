@@ -119,6 +119,7 @@ def load_event_features(
                 "countries": set(),
                 "kinds": set(),
                 "roundup": False,
+                "titles": [],
             },
         )
         ent = per_article.get(aid, {})
@@ -144,6 +145,7 @@ def load_event_features(
             if art.get("victim_country_iso"):
                 e["countries"].add(str(art["victim_country_iso"]).upper())
             title = str(art.get("title") or "")
+            e["titles"].append(title)
             if _ROUNDUP.search(title) or is_rollup_title(title):
                 e["roundup"] = True
         if kinds.get(aid) and kinds[aid] != "other":
@@ -153,6 +155,14 @@ def load_event_features(
     for iid, v in headlines.items():
         if _ROUNDUP.search(v.headline) or is_rollup_title(v.headline):
             acc[iid]["roundup"] = True
+    # 役割の近似: 被害組織と CVE は **事象の見出しに出ているもの** だけを線にする (盲検 2026-09-27。
+    # 抽出された被害組織は言及を含み、eBay / Telegram 等の言及だけで「続報」を作っていた)。
+    # 見出しの無い事象 (本文未生成) は構成記事の見出しで代える
+    for iid, e in acc.items():
+        ver = headlines.get(iid)
+        text = normalize_for_match(ver.headline if ver is not None else " ".join(e["titles"]))
+        e["victims"] = {x for x in e["victims"] if x and x in text}
+        e["cves"] = {c for c in e["cves"] if c.lower() in text.lower()}
     return [
         EventFeatures(
             item_id=iid,

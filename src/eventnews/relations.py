@@ -35,6 +35,9 @@ FOLLOW_UP_GAP = timedelta(days=7)
 CAMPAIGN_WINDOW = timedelta(days=60)
 UNATTRIBUTED_WINDOW = timedelta(days=14)
 
+#: 共通の供給元を導くか (盲検の初回 0/4 のため既定 off)
+SUPPLIER_ENABLED = False
+
 RELATION_TYPES: tuple[str, ...] = ("follow_up", "side", "campaign", "supplier", "contains")
 RELATION_LABELS: dict[str, str] = {
     "follow_up": "続報",
@@ -174,7 +177,8 @@ def classify_pair(
     malware_tools = stats.rare("malware", a.malware & b.malware) | stats.rare(
         "tools", a.tools & b.tools
     )
-    if conflict and malware_tools:
+    # 共通の供給元は盲検の初回で 4 組すべて無関係 (2026-09-27) — 指標の質が上がるまで導かない
+    if SUPPLIER_ENABLED and conflict and malware_tools:
         pairs = [
             (x, y)
             for x in a.subjects
