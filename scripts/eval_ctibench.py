@@ -80,22 +80,59 @@ async def _ask(client: OllamaClient, prompt: str, max_tokens: int) -> str:
         return f"__error__ {type(e).__name__}"
 
 
+#: 同時に投げる問題数 (2026-09-27)。直列だと 1 モデル約 40 分 (MCQ は答えの前に説明を
+#: 書くため中央値 253 tok / 3.8 秒)。⚠ 出力の形は変えない (構造化で即答させると推論の
+#: 過程が消え、JSON 即答を学習した SFT モデルだけが得をして前後比較がゆがむ)
+DEFAULT_CONCURRENCY = 4
+_PROGRESS_EVERY = 50
+
+
+async def _ask_all(
+    client: OllamaClient,
+    prompts: list[str],
+    max_tokens: int,
+    *,
+    concurrency: int,
+    label: str,
+) -> list[str]:
+    """``prompts`` を最大 ``concurrency`` 並列で投げ、入力と同じ順で応答を返す。"""
+    sem = asyncio.Semaphore(max(1, concurrency))
+    done = 0
+
+    async def one(prompt: str) -> str:
+        nonlocal done
+        async with sem:
+            out = await _ask(client, prompt, max_tokens)
+        done += 1
+        if done % _PROGRESS_EVERY == 0 or done == len(prompts):
+            print(f"{label} {done}/{len(prompts)}", flush=True)
+        return out
+
+    return list(await asyncio.gather(*(one(p) for p in prompts)))
+
+
 async def run_model(
-    model: str, ate: list[dict[str, str]], mcq: list[dict[str, str]]
+    model: str,
+    ate: list[dict[str, str]],
+    mcq: list[dict[str, str]],
+    *,
+    concurrency: int = DEFAULT_CONCURRENCY,
 ) -> dict[str, Any]:
     client = OllamaClient(model=model, timeout_seconds=600.0)
-    pairs: list[tuple[set[str], set[str]]] = []
-    for i, row in enumerate(ate, 1):
-        out = await _ask(client, row["Prompt"], 2000)
-        gold = set(_TECH_RE.findall(row["GT"]))
-        pairs.append((extract_ids(out), gold))
-        print(f"{model} ATE {i}/{len(ate)}", flush=True)
-    correct = 0
-    for i, row in enumerate(mcq, 1):
-        out = await _ask(client, row["Prompt"], 800)
-        correct += extract_letter(out) == row["GT"].strip()
-        if i % 50 == 0:
-            print(f"{model} MCQ {i}/{len(mcq)} 正答 {correct}", flush=True)
+    ate_out = await _ask_all(
+        client, [r["Prompt"] for r in ate], 2000, concurrency=concurrency, label=f"{model} ATE"
+    )
+    pairs = [
+        (extract_ids(out), set(_TECH_RE.findall(row["GT"])))
+        for row, out in zip(ate, ate_out, strict=True)
+    ]
+    mcq_out = await _ask_all(
+        client, [r["Prompt"] for r in mcq], 800, concurrency=concurrency, label=f"{model} MCQ"
+    )
+    correct = sum(
+        extract_letter(out) == row["GT"].strip() for row, out in zip(mcq, mcq_out, strict=True)
+    )
+    print(f"{model} MCQ 正答 {correct}/{len(mcq)}", flush=True)
     return {
         "model": model,
         "ate": micro_f1(pairs),
@@ -116,7 +153,7 @@ async def main_async(args: argparse.Namespace) -> int:
     for model in args.model:
         if model in results:
             continue
-        results[model] = await run_model(model, ate, mcq)
+        results[model] = await run_model(model, ate, mcq, concurrency=args.concurrency)
         out_path.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     print("\n=== CTIBench ===")
     for m, r in results.items():
@@ -134,6 +171,9 @@ def main() -> int:
     p.add_argument("--data", default="data/mlx/ctibench")
     p.add_argument("--mcq-n", type=int, default=500)
     p.add_argument("--out", default="data/mlx/ctibench_results.json")
+    p.add_argument(
+        "--concurrency", type=int, default=DEFAULT_CONCURRENCY, help="同時に投げる問題数"
+    )
     return asyncio.run(main_async(p.parse_args()))
 
 
