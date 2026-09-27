@@ -39,6 +39,7 @@ import {
   type EventNewsFact,
   type EventNewsFacet,
   type EventNewsListItem,
+  fetchEventRelations,
 } from "../../api/eventnews";
 
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
@@ -265,6 +266,55 @@ function RelatedCard({
       <ul className="space-y-1.5 m-0 p-0 list-none">
         {rel.parent && row(rel.parent, "本体")}
         {rel.children.map((c) => row(c, "関連"))}
+      </ul>
+    </div>
+  );
+}
+
+/** 事象から導いた関係 (2026-09-27)。指標の線 (被害組織・CVE・主題アクター・珍しい道具) から計算し、
+ *  盲検で精度の出た種類だけを backend が返す。根拠の指標を必ず並べる (なぜ繋がったかを読めるように)。 */
+function DerivedRelationsCard({
+  itemId,
+  onOpenItem,
+}: {
+  itemId: string;
+  onOpenItem?: (id: string) => void;
+}) {
+  const { data } = useQuery({
+    queryKey: ["eventRelations", itemId],
+    queryFn: () => fetchEventRelations(itemId),
+    staleTime: 10 * 60 * 1000,
+  });
+  const rels = data?.relations ?? [];
+  if (rels.length === 0) return null;
+  return (
+    <div className={CARD}>
+      <p className={CARD_LABEL}>つながる事象（指標から導出）</p>
+      <p className="text-xs text-fg-subtle mt-1 mb-2 m-0">
+        共有する被害組織・CVE・攻撃者・珍しい道具から計算した関係。根拠の指標を併記
+      </p>
+      <ul className="space-y-1.5 m-0 p-0 list-none">
+        {rels.map((r) => (
+          <li key={`${r.rel_type}-${r.item_id}`} className="flex items-start gap-2">
+            <span className="text-[11px] text-fg-subtle border border-border-subtle rounded px-1.5 py-0.5 shrink-0 mt-0.5">
+              {r.label}
+            </span>
+            <div className="min-w-0">
+              {onOpenItem ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenItem(r.item_id)}
+                  className="text-left text-fg hover:text-accent underline decoration-border-default underline-offset-2"
+                >
+                  {r.headline || r.item_id}
+                </button>
+              ) : (
+                <span>{r.headline || r.item_id}</span>
+              )}
+              <div className="text-[11px] text-fg-subtle">{r.basis.join(" / ")}</div>
+            </div>
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -549,6 +599,7 @@ export function EventNewsDetailBody({
 
       <MembersCard d={d} />
       <RelatedCard d={d} onOpenItem={onOpenItem} />
+      <DerivedRelationsCard itemId={d.id} onOpenItem={onOpenItem} />
       <EventNoteEditor itemId={d.id} />
 
       {d.news && <p className="text-xs text-fg-subtle m-0">{d.note}</p>}

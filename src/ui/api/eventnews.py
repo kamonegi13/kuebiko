@@ -653,6 +653,36 @@ def related_payload(
     }
 
 
+@eventnews_api.get("/{item_id}/relations")
+def event_news_relations(item_id: str) -> dict[str, Any]:
+    """事象から導いた関係 (続報・側面・同一キャンペーン・共通の供給元・包含、2026-09-27)。
+
+    関係は表に持たず、事象 → 指標の線から計算する (src/eventnews/relations.py)。盲検で精度の出た
+    種類 (``ENABLED_TYPES``) だけを返す。⚠ 同期 def (初回は全事象を読む、以後 30 分キャッシュ)。
+    """
+    from src.eventnews.relations import RELATION_LABELS, relations_by_event
+
+    repo = _repo()
+    rels = relations_by_event(repo).get(item_id, [])
+    others = [r.b if r.a == item_id else r.a for r in rels]
+    versions = repo.latest_event_versions(others) if others else {}
+    items = []
+    for r, other in zip(rels, others, strict=True):
+        v = versions.get(other)
+        items.append(
+            {
+                "item_id": other,
+                "headline": v.headline if v is not None else "",
+                "rel_type": r.rel_type,
+                "label": RELATION_LABELS.get(r.rel_type, r.rel_type),
+                # 向き: この事象が先 (a) か後 (b) か。包含は a = まとめの側
+                "role": "a" if r.a == item_id else "b",
+                "basis": list(r.basis),
+            }
+        )
+    return {"relations": items}
+
+
 @eventnews_api.get("/{item_id}/stix")
 def event_news_stix(item_id: str) -> Response:
     """1 事象の STIX 2.1 bundle (2026-09-27、docs/stix_export.md)。

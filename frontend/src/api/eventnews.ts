@@ -198,6 +198,22 @@ export interface EventNote {
   updated_at?: string | null;
 }
 
+/** 事象から導いた関係 (2026-09-27、指標の線から計算。盲検で精度の出た種類だけ) */
+export interface DerivedEventRelation {
+  item_id: string;
+  headline: string;
+  rel_type: string;
+  label: string;
+  role: "a" | "b"; // この事象が先 (a) か後 (b) か。包含は a = まとめの側
+  basis: string[];
+}
+
+export function fetchEventRelations(itemId: string) {
+  return get<{ relations: DerivedEventRelation[] }>(
+    `/api/v1/eventnews/${encodeURIComponent(itemId)}/relations`,
+  );
+}
+
 export function fetchEventNote(itemId: string) {
   return get<EventNote>(`/api/v1/event-notes/${encodeURIComponent(itemId)}`);
 }
