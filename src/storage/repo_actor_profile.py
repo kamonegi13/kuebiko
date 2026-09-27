@@ -105,7 +105,8 @@ class ActorProfileMixin(RunHistoryRepositoryBase):
         """
         sql = (
             "SELECT article_id, created_at, subject_actor_ids, victim_sector_canonical, "
-            "victim_country_iso, posted_channel, feed_url, title, url, feed_title, importance "
+            "victim_country_iso, posted_channel, feed_url, title, url, feed_title, importance, "
+            "subject_actor_source, subject_actor_confidence "
             "FROM articles "
             "WHERE subject_actor_ids IS NOT NULL AND subject_actor_ids != '' "
             "AND created_at >= ? AND created_at < ?"
@@ -125,6 +126,8 @@ class ActorProfileMixin(RunHistoryRepositoryBase):
                 "url": str(r["url"] or ""),
                 "feed_title": r["feed_title"],
                 "importance": r["importance"],
+                "subject_actor_source": r["subject_actor_source"],
+                "subject_actor_confidence": r["subject_actor_confidence"],
             }
             for r in rows
         ]

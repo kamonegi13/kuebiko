@@ -171,9 +171,13 @@ def vulnerability_object(cve: str) -> dict[str, Any]:
 
 
 def victim_org_object(name: str, *, sectors: list[str] | None = None) -> dict[str, Any]:
+    """被害組織 → identity。ID の鍵は事象の群化と同じ正規化 (表記揺れを畳む) — 同じ組織を
+    記事ごとに別の identity に割らない (join_entity_key と同じ normalize_for_match)。"""
+    from src.assessment.evidence_verify import normalize_for_match
+
     return sdo(
         "identity",
-        f"victim|{name.strip().lower()}",
+        f"victim|{normalize_for_match(name)}",
         _ts=REFERENCE_TS,
         name=name.strip(),
         identity_class="organization",

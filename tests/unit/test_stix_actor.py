@@ -47,3 +47,32 @@ def test_actor_bundle_is_valid_and_skips_llm_medium(tmp_path: Path) -> None:
 
 def test_unknown_actor_is_none(tmp_path: Path) -> None:
     assert build_actor_bundle(_repo(tmp_path), _registry(), "nobody") is None
+
+
+def test_untrusted_subjects_are_dropped_before_the_limit(tmp_path: Path) -> None:
+    """上限で切り詰める前に LLM medium を外す (新しい medium が信頼できる記事を押し出さない)。"""
+    from datetime import timedelta
+
+    repo = RunHistoryRepository(db_path=tmp_path / "t.db")
+    rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=False))
+    now = datetime.now(UTC)
+    rows = [("old-title", "title", None, 10)] + [(f"new-{i}", "llm", "medium", i) for i in range(3)]
+    for aid, source, conf, days_ago in rows:
+        repo.add_article(
+            ArticleRecord(
+                run_id=rid,
+                article_id=aid,
+                title=f"APT28 {aid}",
+                url=f"https://kuebiko.example/{aid}",
+                status="posted",
+                subject_actor_ids="apt28",
+                subject_actor_source=source,
+                subject_actor_confidence=conf,
+                created_at=now - timedelta(days=days_ago),
+            )
+        )
+
+    b = build_actor_bundle(repo, _registry(), "apt28", max_articles=2)
+
+    assert b is not None
+    assert [x["name"] for x in b["objects"] if x["type"] == "report"] == ["APT28 old-title"]

@@ -95,3 +95,11 @@ def test_confidence_scale_and_timestamps() -> None:
     assert confidence_value(None) is None
     assert to_ts("2026-09-27T01:02:03.456789+00:00") == "2026-09-27T01:02:03.456Z"
     assert to_ts("not a date") is None
+
+
+def test_victim_org_id_folds_spelling_variants() -> None:
+    a = o.victim_org_object("Example  Corp")
+    b = o.victim_org_object("example corp")
+
+    assert a["id"] == b["id"]
+    assert a["name"] == "Example  Corp"  # 表示名は原文のまま

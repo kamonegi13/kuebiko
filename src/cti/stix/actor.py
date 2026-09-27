@@ -38,6 +38,10 @@ def _subject_article_ids(
     rows = repo.list_subject_article_rows(now - timedelta(days=days), now + timedelta(minutes=1))
     hits: dict[str, str] = {}
     for r in rows:
+        # ⚠ 上限で切り詰める **前に** 信頼できない主題を外す (後から外すと、LLM medium が
+        #   直近に多いアクターで信頼できる記事が上限の外へ押し出される)
+        if r.get("subject_actor_source") == "llm" and r.get("subject_actor_confidence") != "high":
+            continue
         subjects = {s.strip() for s in str(r["subject_actor_ids"]).split(",")}
         if ids & subjects:
             hits[str(r["article_id"])] = max(hits.get(str(r["article_id"]), ""), r["created_at"])
@@ -62,7 +66,7 @@ def build_actor_bundle(
     report_ids: list[str] = []
     for aid in _subject_article_ids(repo, ids, days=days, limit=max_articles):
         facts = facts_from_db(repo, aid)
-        if facts is None or (facts.subject_source == "llm" and facts.subject_confidence != "high"):
+        if facts is None:
             continue
         for x in build_article_bundle(facts, registry)["objects"]:
             if x["type"] in _HEADER_TYPES or x["id"] == PRODUCER_ID:
