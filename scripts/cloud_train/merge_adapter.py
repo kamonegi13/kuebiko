@@ -3,7 +3,7 @@
 
 クラウドで学習したアダプタ (約 4GB) だけを持ち帰り、統合は手元で行う
 (GPU の課金を持ち帰りに使わない)。統合後は既存の経路と同じく
-``ollama create --quantize int4`` で取り込む (scripts/cloud_train/README.md)。
+``ollama create --quantize int8`` で取り込む (int4 は学習の効果が消える — README)。
 
 ⚠ PEFT の ``merge_and_unload`` は使わない。差分を bf16 に落としてから bf16 の重みへ足すため、
 重みの刻み (相対 0.2-0.4%) の半分より小さい差分が **丸めで系統的に消える** (元の重みは bf16 の
@@ -164,6 +164,9 @@ def _check_examples(base_dir: Path, valid: Path) -> list[tuple[torch.Tensor, int
     for r in rows[:CHECK_EXAMPLES]:
         msgs = r["messages"]
         prompt = tok.apply_chat_template(msgs[:-1], tokenize=False, add_generation_prompt=True)
+        prompt = prompt.removesuffix(
+            "<|channel>thought\n<channel|>"
+        )  # 本番と同じ形 (train_lora.encode)
         p_ids = tok(prompt, add_special_tokens=False).input_ids
         a_ids = tok(msgs[-1]["content"] + "<turn|>", add_special_tokens=False).input_ids
         out.append((torch.tensor([p_ids + a_ids]), len(p_ids)))

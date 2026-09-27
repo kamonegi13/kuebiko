@@ -10,7 +10,7 @@
                                           DONE.json を書いて **自分で削除** (課金停止)
  watch   完了の印を見たら確実に削除し、 ←─ 保存領域から S3 API で取り出す (サーバ不要)
          アダプタ (約 5GB) を取得
- merge   手元で元のモデルと統合 → ollama create --quantize int4
+ merge   手元で元のモデルと統合 → ollama create --quantize int8 (⚠ int4 は不可、下記)
 ```
 
 ## 初回の準備 (利用者)
@@ -53,7 +53,10 @@ $PY scripts/cloud_train/merge_adapter.py --base data/cloud-base-hf \
     --adapter data/cloud-runs/$RUN/out/adapter --out data/cloud-merged/$RUN --check
 printf 'FROM %s/data/cloud-merged/%s\nPARAMETER temperature 1\nPARAMETER top_k 64\nPARAMETER top_p 0.95\n' \
     "$PWD" "$RUN" >| data/cloud-merged/Modelfile.$RUN
-ollama create kuebiko-sft:$RUN -f data/cloud-merged/Modelfile.$RUN --quantize int4
+# ⚠ int4 にしない: bf16 の元モデルで学習した LoRA は Ollama の int4 で効果が消え、元のモデルと
+#   同じ出力 (「```json」の囲み・長い生成の反復) に戻る (2026-09-28 実測。bf16 / int8 取込では残る)。
+#   MLX 版が int4 で効くのは 4bit 元モデルの上で学習している (QLoRA) ため
+ollama create kuebiko-sft:$RUN -f data/cloud-merged/Modelfile.$RUN --quantize int8
 rm -rf data/cloud-merged/$RUN; data/mlx/venv/bin/python data/mlx/prune_ollama_orphans.py
 ```
 

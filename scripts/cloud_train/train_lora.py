@@ -33,17 +33,24 @@ def load_examples(path: Path) -> list[dict[str, Any]]:
     return [json.loads(x) for x in path.open() if x.strip()]
 
 
+#: transformers の Gemma 4 テンプレートが生成開始に付ける空の思考欄 (本番の Ollama は付けない)
+_EMPTY_THOUGHT = "<|channel>thought\n<channel|>"
+
+
 def encode(tok: Any, messages: list[dict[str, str]], max_seq: int) -> tuple[list[int], int] | None:
     """(token 列, 教師出力が始まる位置)。上限超え・形が合わない例は None (除外)。
 
-    ⭐ 本番 (Ollama、think=False) と同じ形で組み立てる: 思考の印なし・生成開始に空の思考欄
-    (``<|turn>model\n<|channel>thought\n<channel|>``)。2026-09-27 に Ollama の prompt_eval_count
-    で実測 (think=False は 23 tok = この形。MLX の学習は思考の印つき 26 tok の形でずれていた)。
-    transformers の既定 (enable_thinking なし) の生成プロンプトがこの形なので、教師出力は
-    その後ろに、テンプレートが付ける会話の終わり (``<turn|>\n``) と一緒につなぐ。
+    ⭐ 本番 (Ollama、think=False) と同じ形で組み立てる: 思考の印なし・**空の思考欄なし**
+    (生成開始は ``<|turn>model\n``)。transformers の既定の生成プロンプトは末尾に空の思考欄
+    (``<|channel>thought\n<channel|>``、4 tok) を付けるので外す。2026-09-28 に全 7 課題の実例で
+    Ollama の prompt_eval_count が「transformers の文字列 − 4 tok」に一致 (raw で空の思考欄を
+    付けない形を渡すと、モデル自身がまず空の思考欄を出す)。⚠ 09-27 に短い例の数合わせで
+    「付いている」と誤判定し、1 晩の学習を空の思考欄つきで行った。教師出力はその後ろに、
+    テンプレートが付ける会話の終わり (``<turn|>\n``) と一緒につなぐ。
     """
     content = messages[-1]["content"]
     prompt_txt = tok.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
+    prompt_txt = prompt_txt.removesuffix(_EMPTY_THOUGHT)
     rendered = tok.apply_chat_template(messages, tokenize=False)
     if not rendered.endswith(content) and content not in rendered:
         return None
