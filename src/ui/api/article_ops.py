@@ -5,7 +5,7 @@
   許可 (app.py の READ_ONLY allowlist — モバイル閲覧が翻訳の主用途のため。
   write は body_ja 1 列の upsert のみで他の write 遮断は維持)。
 - GET /api/v1/articles/{id}/stix — 単記事の STIX 2.1 bundle export。
-  IoC は body への extract_iocs 再実行 + article_entities の両方から合流する
+  report 中心の STIX 2.1 (src/cti/stix/、docs/stix_export.md)
   (entities には email/IPv6 等が落ちない取りこぼしがあり、body は 90 日
   retention で消えるため、双方を補完し合う)。GET なので readonly でも使える。
 
@@ -22,10 +22,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from src.config_loader import load_app_config
-from src.cti.actor_normalizer import ActorAlias, load_actor_aliases
+from src.cti.actor_normalizer import load_actor_aliases
 from src.cti.body_translator import is_probably_japanese, translate_body_resumable
 from src.cti.stix_from_briefing import make_attachment_filename
-from src.cti.subject_gate import passes_subject_gate
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMError, LLMForbiddenModelError
 from src.tools.model_tiers import Step, build_llm_for
@@ -134,36 +133,3 @@ def article_stix(request: Request, article_id: str) -> Response:
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-def _resolve_article_actors(
-    ent_raw: dict[str, dict[str, int]],
-    corpus: str,
-    *,
-    subject_ids_csv: str | None = None,
-    subject_source: str | None = None,
-) -> list[ActorAlias]:
-    """entity の actor id を辞書解決する (STIX threat-actor 化)。
-
-    subject-gate (2026-07-29): STIX は外部連携 (TIP 等) に流れるため誤帰属流出が最も
-    高コスト。評価済み記事は主題 actor のみ、legacy 記事は mention をそのまま出す。
-    評価済みで主題なしの記事は空 (本文走査 fallback もしない — 誤帰属を外に出さない)。
-    """
-    registry = load_actor_aliases()
-    out: list[ActorAlias] = []
-    seen: set[str] = set()
-    for actor_id in ent_raw.get("actor", {}):
-        if not passes_subject_gate(
-            mention_id=actor_id, subject_ids_csv=subject_ids_csv, subject_source=subject_source
-        ):
-            continue
-        actor = registry.by_id(actor_id)
-        if actor is not None and actor.id not in seen:
-            seen.add(actor.id)
-            out.append(actor)
-    if out:
-        return out
-    # entity が空/全て gate 落ち。legacy 行のみ本文走査 fallback (評価済みは空を維持)。
-    if not subject_source:
-        return registry.find_all(corpus)
-    return out
