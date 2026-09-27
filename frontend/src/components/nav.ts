@@ -2,7 +2,7 @@
 // IA: 概観 / インテリジェンス / コンテンツ / 運用 / 設定 の 5 グループ。
 // Intel Graph の 4 タブ (synthesis/pmesii/threats/operations) は第一級項目へ昇格。
 
-import { BookOpen, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText, Flag, HelpCircle, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert, TrendingUp, Users, Workflow } from "lucide-react";
+import { BookOpen, BookOpenText, Bookmark, CalendarClock, ClipboardCheck, Crosshair, FileText, Flag, HelpCircle, History, LayoutDashboard, Map, MessageSquareText, Newspaper, Rss, Scale, Settings, ShieldAlert, TrendingUp, Users, Workflow } from "lucide-react";
 
 // lucide の LucideIcon 型は公開 export されていないため icon 値から型を取り出す
 // (全 icon が同一の ForwardRefExoticComponent 型)。
@@ -68,6 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
       { href: "/app/daily-brief", mirror: true, label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
+      { href: "/app/deep-dive", label: "週次深掘り", Icon: BookOpenText, prefixes: ["/app/deep-dive"] },
       // 収集した個々の記事を探す画面。生成物ではないので コンテンツ に残す
       // (事象ニュースは生成物なので インテリジェンス へ移動した)。
       { href: "/app/news", mirror: true, label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },

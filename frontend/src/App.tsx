@@ -13,6 +13,7 @@ import { ArticleDetailPage } from "./pages/ArticleDetailPage";
 import { EventNewsPage } from "./pages/EventNewsPage";
 import { NotesPage } from "./pages/NotesPage";
 import { DailyBriefPage } from "./pages/DailyBriefPage";
+import { DeepDivePage } from "./pages/DeepDivePage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { SubscriptionsPage } from "./pages/SubscriptionsPage";
 import { ActorsPage } from "./pages/ActorsPage";
@@ -44,6 +45,7 @@ type Route =
   | { kind: "article"; articleId: string }
   | { kind: "notes" }
   | { kind: "daily-brief" }
+  | { kind: "deep-dive" }
   | { kind: "eventnews" }
   | { kind: "assistant" }
   | { kind: "subscriptions" }
@@ -109,6 +111,7 @@ function parseRoute(): Route {
     return { kind: "daily-brief" };
   }
   if (p === "/app/daily-brief") return { kind: "daily-brief" };
+  if (p === "/app/deep-dive") return { kind: "deep-dive" };
   if (p === "/app/eventnews") return { kind: "eventnews" };
   if (p === "/app/assistant") return { kind: "assistant" };
   const articleMatch = p.match(/^\/app\/article\/(.+)$/);
@@ -213,6 +216,7 @@ export default function App() {
       {effectiveRoute.kind === "eventnews" && <EventNewsPage />}
       {effectiveRoute.kind === "notes" && <NotesPage />}
       {effectiveRoute.kind === "daily-brief" && <DailyBriefPage />}
+      {effectiveRoute.kind === "deep-dive" && <DeepDivePage />}
       {effectiveRoute.kind === "assistant" && <AssistantPage />}
       {effectiveRoute.kind === "subscriptions" && <SubscriptionsPage />}
       {effectiveRoute.kind === "actors" && <ActorsPage />}

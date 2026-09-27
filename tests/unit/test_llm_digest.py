@@ -200,3 +200,13 @@ class TestGenerateDigestCoverage:
 
         assert "題 a1" in md
         assert "https://kuebiko.example/a1" in md
+
+
+def test_summary_budget_is_fixed_across_selection_count() -> None:
+    """選定を 20 → 40 件にしても要約の総量 (= 入力) を増やさない (2026-09-27)。"""
+    from src.digest.llm_digest import _summary_chars_per_item
+
+    assert _summary_chars_per_item(20) == 600
+    assert _summary_chars_per_item(40) == 300
+    assert _summary_chars_per_item(5) == 600  # 少ないときは 1 件の上限で頭打ち
+    assert _summary_chars_per_item(100) == 200  # 多すぎても下限は守る

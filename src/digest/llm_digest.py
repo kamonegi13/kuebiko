@@ -40,6 +40,21 @@ _DIGEST_TOKENS_PER_ITEM = 800
 _DIGEST_MAX_TOKENS_CEILING = 12_000
 
 
+#: 要約に回す字数の総量と 1 件あたりの上限・下限 (2026-09-27)。選定を 20 → 40 件に増やしても
+#: 入力を増やさない (20 件 × 600 字 = 今の総量)。週次のプロンプトは既に 22.4k tok で
+#: 目標 14k を超えている
+_SUMMARY_BUDGET_CHARS = 12_000
+_SUMMARY_MAX_CHARS = 600
+_SUMMARY_MIN_CHARS = 200
+
+
+def _summary_chars_per_item(item_count: int) -> int:
+    """1 件あたりの要約の字数 (総量 ÷ 件数を上限・下限で挟む)。"""
+    if item_count <= 0:
+        return _SUMMARY_MAX_CHARS
+    return max(_SUMMARY_MIN_CHARS, min(_SUMMARY_MAX_CHARS, _SUMMARY_BUDGET_CHARS // item_count))
+
+
 def _digest_max_tokens(item_count: int) -> int:
     """選定件数に応じた digest 出力予算 (各記事の深掘りの厚みを保つ)。"""
     scaled = min(_DIGEST_MAX_TOKENS_CEILING, item_count * _DIGEST_TOKENS_PER_ITEM)
@@ -96,6 +111,7 @@ def _render_prompt(
     if template is None:
         env = _build_jinja_env()
         template = env.get_template(template_name)
+    per_item = _summary_chars_per_item(len(candidates))
     items = [
         {
             # ⭐ article_id を渡す。本文がセクション横断散文になったので、どの記事を
@@ -108,7 +124,7 @@ def _render_prompt(
             "category": c.category or "",
             # Phase 5T-P: summary を渡して digest に厚みを持たせる
             # (旧レコードで NULL の場合は空文字、プロンプト側で fallback)
-            "summary": (c.summary or "")[:600],  # 過大 token 抑制
+            "summary": (c.summary or "")[:per_item],  # 総量を固定して件数で配分
         }
         for c in candidates
     ]
