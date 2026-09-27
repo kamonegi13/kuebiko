@@ -286,7 +286,16 @@ async def _summarize_and_build(
         for ioc in merged_iocs
         if not ioc.lower().startswith(("http://", "https://")) or ioc in _body_urls
     ]
-    merged_techs = merge_techniques(summary.mitre_techniques, extracted)
+    # LLM の技術は本文で裏付けられるものだけ採る (当て推量の定番技術を落とす、2026-09-27)。
+    # 本文の T 番号 (extracted) は明示なのでそのまま合流する
+    from src.cti.ttp_evidence import filter_llm_techniques
+
+    merged_techs = merge_techniques(
+        filter_llm_techniques(
+            list(summary.mitre_techniques), f"{article.title}\n{body}", article_id=article.id
+        ),
+        extracted,
+    )
     # 本文に登場する既知アクターを検出 (後段で metadata に保持)
     actor_registry = load_actor_aliases()
     matched_actors = actor_registry.find_all(body)

@@ -1,0 +1,162 @@
+# TTP 抽出の裏付け語 (2026-09-27) — LLM が付けた ATT&CK 技術を、本文にその手口の記述があるときだけ採る。
+#
+# 背景: LLM の TTP は本文で裏付けられるのが 3-4 割 (Opus 盲検、docs/research/event_knowledge_graph.md §19)。
+# 定番の技術 (添付ファイルのスピアフィッシング・RDP・C2 経由の持ち出し) を当て推量で付ける。
+# 照合は src/cti/ttp_evidence.py。T 番号と ATT&CK の技術名 (英語) は辞書 (data/cti/attack_techniques.json)
+# から自動で照合するので、ここには **それ以外の言い回し** (日本語・同義の手口) だけを書く。
+#
+# 書き方: 技術 ID → 正規表現の一覧 (大文字小文字は無視)。
+# ⚠ 「悪用される可能性」のような **可能性の記述** に当たる語を入れない (勧告の一般論で通ってしまう)。
+# ⚠ 副技術は親の語では通さない (T1566.001 に「phishing」は入れない)。
+T1190:  # 公開アプリの脆弱性の悪用 (実際の悪用)
+  - '\b(actively|being|been|were|was|are|is)\s+(actively\s+)?exploit(ed|ing)'
+  - 'exploit(ed|ation)?\s+in\s+the\s+wild'
+  - 'in[- ]the[- ]wild'
+  - '(attackers?|hackers?|threat actors?|adversar(y|ies)|operators?)\s+(are\s+|have\s+|had\s+)?(actively\s+|now\s+)?exploit'
+  - 'exploitation\s+(attempts?|activity)'
+  - '\bKEV\b'
+  - '悪用(が確認|を確認|された|されて|している|していた|した|を観測)'
+  - '攻撃(を|が)(観測|確認)'
+  - '攻擊'
+T1078:  # 正規アカウント
+  # ⚠ valid / legitimate は入れない (「without valid credentials」= 認証回避の脆弱性に当たる)
+  - '(stolen|compromised|leaked|harvested|exposed)\s+(credentials?|accounts?|passwords?|logins?)'
+  - '(logged|log|signed|sign)\s+in\s+(using|with)'
+  - 'credentials?\s+(stuffing|theft|were\s+stolen)'
+  - '認証情報(を|が)?(窃取|悪用|使用|盗|使)'
+  - '正規(の)?(アカウント|認証情報)'
+  - '不正ログイン'
+T1041:  # C2 経由の持ち出し
+  - 'exfiltrat\w*\s+(\w+\s+){0,4}(over|via|through|to)\s+(the\s+|its\s+)?(c2|command)'
+  - '(send|sends|sent|upload\w*)\s+(the\s+)?(stolen|collected|harvested|exfiltrated)\s+(data|information|files)\s+(back\s+)?to\s+(its|the|a)\s+(c2|server|command)'
+  - 'C2\s*(サーバ|サーバー)?(へ|に)(送信|アップロード|持ち出)'
+T1566:
+  - 'phish'
+  - 'フィッシング'
+T1566.001:  # 添付ファイル
+  - '(malicious|weaponi[sz]ed|booby-trapped)\s+(attachment|document|file)s?'
+  - '(e-?mail|mail)\s+attachments?'
+  - 'attached\s+(file|document|archive|zip)'
+  - '添付(ファイル|された)'
+T1566.002:  # リンク
+  - '(malicious|phishing)\s+(link|url)s?'
+  - 'links?\s+in\s+(the|an|their)\s+(e-?mails?|messages?)'
+  - '(メール|SMS|メッセージ)[^。]{0,20}(リンク|URL)'
+T1566.003:  # サービス経由
+  - '(linkedin|whatsapp|telegram|signal|facebook|social\s+media|messaging\s+app)[^.]{0,60}(messag|contact|lure|approach)'
+  - '(SNS|メッセージアプリ|LINE)[^。]{0,20}(接触|メッセージ|誘導)'
+T1027:
+  - 'obfuscat'
+  - '\bpack(ed|er)\b'
+  - 'base64[- ]encoded'
+  - 'encrypted\s+(payload|shellcode|strings?|config)'
+  - '難読化'
+  - 'パッカー|パッキング'
+T1071.001:
+  - '(c2|command[- ]and[- ]control)[^.]{0,60}\b(https?|web)\b'
+  - '\bhttps?\b[^.]{0,40}(c2|command[- ]and[- ]control|beacon)'
+  - 'C2[^。]{0,30}(HTTP|HTTPS)'
+  - '(via|over)\s+https?\b'
+  - '(actor|attacker|adversary)[- ]controlled\s+(server|infrastructure|domain)'
+T1068:
+  - 'privilege\s+escalation'
+  - 'elevat\w*\s+(its\s+|their\s+)?privileges'
+  - '(gain|obtain|achiev)\w*\s+(system|root|admin\w*|kernel)[- ](level\s+)?(privileges|access)'
+  - '権限昇格'
+  - '(SYSTEM|root|管理者)\s*権限(を|で|が)'
+T1059:
+  - '(execut|run)\w*\s+(arbitrary\s+|malicious\s+|remote\s+)?(commands?|scripts?|code)'
+  - '(python|javascript|bash|shell|php|vbs)\s+(script|code)'
+  - 'コマンド(を|が)実行'
+  - 'スクリプト'
+T1059.001:
+  - 'power\s?shell'
+T1059.003:
+  - '\bcmd(\.exe)?\b'
+  - 'batch\s+(file|script)s?'
+  - '\.bat\b'
+  - 'コマンドプロンプト'
+T1059.004:
+  - '\bbash\b'
+  - '/bin/(ba)?sh'
+  - 'shell\s+script'
+T1003:
+  - 'lsass'
+  - 'mimikatz'
+  - 'credential[- ]dump'
+  - 'dump\w*\s+(\w+\s+)?(credentials|hashes|passwords)'
+  - 'ntds\.dit'
+  - 'dcsync'
+  - '/etc/shadow'
+  - '資格情報[^。]{0,10}(ダンプ|取得)'
+T1204.002:
+  - '(open|opened|opening|execut\w*|run|ran|double-click\w*|launch\w*)\s+(a\s+|the\s+)?(malicious\s+|fake\s+|trojani[sz]ed\s+)?(file|attachment|document|lnk|installer|archive)'
+  - '(ファイル|添付|インストーラ)[^。]{0,6}(を)?(開|実行|インストール)'
+T1021.001:
+  - '\brdp\b'
+  - 'remote\s+desktop'
+  - 'リモートデスクトップ'
+T1486:
+  - 'ransomware'
+  - 'encrypt\w*\s+(the\s+|its\s+|their\s+)?(files|systems|data|servers|networks?)'
+  - 'ランサム'
+  - '暗号化(され|し)'
+T1053.005:
+  - 'scheduled\s+tasks?'
+  - 'schtasks'
+  - 'タスクスケジューラ|スケジュールされたタスク'
+T1557:
+  - '(adversary|man|attacker)[- ]in[- ]the[- ]middle'
+  - '\b(aitm|mitm)\b'
+  - '中間者'
+T1499:
+  - 'denial[- ]of[- ]service'
+  - '\bd?dos\b'
+  - 'サービス(妨害|拒否|不能)'
+T1505.003:
+  - 'web\s?shells?'
+  - '(ウェブ|Web)シェル'
+T1548:
+  - 'uac\s+bypass'
+  - 'bypass\w*\s+(the\s+)?uac'
+  - '\bsudo\b'
+  - '\bsetuid\b'
+T1195.002:
+  - 'supply[- ]chain'
+  - '(compromised|trojani[sz]ed|malicious)\s+(update|package|dependency|installer|library|extension)s?'
+  - 'サプライチェーン'
+T1083:
+  - '(enumerat|list|search|scan)\w*\s+(\w+\s+)?(files|directories|folders|drives)'
+  - 'file[- ]system\s+(discovery|access|enumeration)'
+T1210:
+  - 'lateral\s+movement[^.]{0,80}exploit'
+  - 'exploit[^.]{0,80}lateral'
+  - '横展開[^。]{0,30}脆弱性'
+T1056.001:
+  - 'keylog'
+  - 'keystrokes?'
+  - 'キーロガー|キー入力'
+T1562.001:
+  - '(disabl|kill|tamper|bypass|terminat|blind)\w*\s+(the\s+)?(antivirus|anti-virus|edr|av|defender|security\s+(software|tools?|products?|agents?))'
+  - 'exclusions?'
+  - 'セキュリティ(ソフト|製品|機能)[^。]{0,10}(無効|停止)'
+T1082:
+  - 'fingerprint'
+  - 'system\s+information'
+  - '(os|operating\s+system)\s+version'
+  - 'システム情報'
+T1046:
+  - 'port\s+scan'
+  - '\bscan(s|ning|ned)?\s+(for|the|internal|networks?|hosts?|ports?)'
+  - 'スキャン'
+T1110:
+  - 'brute[- ]forc'
+  - 'password\s+spray'
+  - 'credential\s+stuffing'
+  - '総当たり|パスワードスプレー|リスト型攻撃'
+T1136:
+  - 'creat\w*\s+(a\s+|new\s+)?(\w+\s+)?(admin\w*\s+|rogue\s+|backdoor\s+|local\s+)?accounts?'
+  - 'アカウント(を)?(新規)?作成'
+T1098:
+  - '(add|modif|reset|chang)\w*\s+(the\s+|their\s+)?(password|permissions|roles?|privileges)'
+  - 'パスワード(を)?(変更|書き換)'
