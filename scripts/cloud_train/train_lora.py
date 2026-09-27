@@ -33,20 +33,22 @@ def load_examples(path: Path) -> list[dict[str, Any]]:
     return [json.loads(x) for x in path.open() if x.strip()]
 
 
-#: transformers の Gemma 4 テンプレートは、思考なしの生成開始に空の思考欄を付ける。本番 (Ollama の
-#: RENDERER gemma4 = emptyBlockOnNothink 無効) と MLX の学習はこれを付けないので、外して揃える
-#: (2026-09-27 に Ollama のソースと MLX の境界で確認。揃えないと学習と本番の入力がずれる)
-_EMPTY_THOUGHT = "<|channel>thought\n<channel|>"
-
-
 def encode(tok: Any, messages: list[dict[str, str]], max_seq: int) -> tuple[list[int], int] | None:
-    """(token 列, 教師出力が始まる位置)。上限超え・プロンプトが前方一致しない例は None (除外)。"""
-    full_txt = tok.apply_chat_template(messages, tokenize=False)
+    """(token 列, 教師出力が始まる位置)。上限超え・形が合わない例は None (除外)。
+
+    ⭐ 本番 (Ollama、think=False) と同じ形で組み立てる: 思考の印なし・生成開始に空の思考欄
+    (``<|turn>model\n<|channel>thought\n<channel|>``)。2026-09-27 に Ollama の prompt_eval_count
+    で実測 (think=False は 23 tok = この形。MLX の学習は思考の印つき 26 tok の形でずれていた)。
+    transformers の既定 (enable_thinking なし) の生成プロンプトがこの形なので、教師出力は
+    その後ろに、テンプレートが付ける会話の終わり (``<turn|>\n``) と一緒につなぐ。
+    """
+    content = messages[-1]["content"]
     prompt_txt = tok.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
-    if prompt_txt.endswith(_EMPTY_THOUGHT) and not full_txt.startswith(prompt_txt):
-        prompt_txt = prompt_txt[: -len(_EMPTY_THOUGHT)]
-    if not full_txt.startswith(prompt_txt):
+    rendered = tok.apply_chat_template(messages, tokenize=False)
+    if not rendered.endswith(content) and content not in rendered:
         return None
+    ending = rendered[rendered.rindex(content) + len(content) :]  # 例: "<turn|>\n"
+    full_txt = prompt_txt + content + ending
     full = tok(full_txt, add_special_tokens=False)["input_ids"]
     prompt = tok(prompt_txt, add_special_tokens=False)["input_ids"]
     if len(full) > max_seq or full[: len(prompt)] != prompt or len(prompt) >= len(full):
