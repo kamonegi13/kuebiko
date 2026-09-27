@@ -442,6 +442,7 @@ kuebiko/
   | 軍事・政策・法執行の作戦名を campaign から外す | `config/cti/non_adversary_operations.yaml` |
   | 深掘りの選定 20→40 (要約の総量は固定) | `deep_dive_selector.DEFAULT_MAX_SELECT` |
   | チェーンの段の timeout で subprocess も止める | (戻さない — 並走の防止) |
+  | 事象どうしの関係を画面に出す: 同じ出来事の関連 = 分類器 (`config/models/relation_model.json`、盲検で推定精度 0.85)・同じアクター = 信頼できる主題の共有 (精度 0.88、1 事象 5 件まで)。同一キャンペーン・共通の供給元は出さない | `relations.ENABLED_TYPES` を空に / モデルを消すと同じアクターだけ |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

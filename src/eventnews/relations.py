@@ -24,6 +24,16 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from src.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from src.eventnews.relation_model import RelationModel
+
+_log = get_logger(__name__)
 
 #: 珍しい指標の上限 (これ以下の事象にしか現れない)。盲検の結果で調整する
 RARE_DF = 8
@@ -64,6 +74,7 @@ class EventFeatures:
     countries: frozenset[str] = frozenset()
     kinds: frozenset[str] = frozenset()  # 事象の種別 (記事の種別の和集合、分からなければ空)
     roundup: bool = False
+    member_ids: tuple[str, ...] = ()  # 構成記事 (要約埋込の重心に使う)
 
 
 @dataclass(frozen=True)
@@ -95,6 +106,13 @@ class _Stats:
 
 
 _INDEXED = ("subjects", "malware", "tools", "cves", "victims")
+#: 1 つの指標から総当たりで組を作る上限 (これを超える指標は組を作りすぎる)
+_INDEX_CAP = 200
+#: 上限を超えた主題アクターで、時期の近い何件と組にするか
+_HUB_NEIGHBORS = 10
+#: 関係を導く窓 (日)。⚠ 珍しさ (df) の母集団なので **学習と本番で同じ値**
+#: (train_relation_model が参照し、モデルにも記録する)
+WINDOW_DAYS = 60
 
 
 def _candidate_pairs(events: list[EventFeatures], stats: _Stats) -> set[tuple[int, int]]:
@@ -107,14 +125,20 @@ def _candidate_pairs(events: list[EventFeatures], stats: _Stats) -> set[tuple[in
             for v in vals:
                 index[(attr, v)].append(i)
     pairs: set[tuple[int, int]] = set()
-    for members in index.values():
-        if (
-            len(members) > 200
-        ):  # 頻出の主題アクター等は組を作りすぎる — 珍しさで絞れないものは使わない
-            continue
-        for x in range(len(members)):
-            for y in range(x + 1, len(members)):
-                pairs.add((members[x], members[y]))
+    for (attr, _), members in index.items():
+        if len(members) <= _INDEX_CAP:
+            for x in range(len(members)):
+                for y in range(x + 1, len(members)):
+                    pairs.add((members[x], members[y]))
+        elif attr == "subjects":
+            # 多産なアクター (60 日で数百の事象) は総当たりにせず、
+            # 時期の近い事象どうしだけを組にする
+            # (飛ばすと同じアクターの候補が丸ごと消える — レビュー 2026-09-27)
+            ordered = sorted(members, key=lambda i: events[i].first)
+            for x in range(len(ordered)):
+                for y in range(x + 1, min(x + 1 + _HUB_NEIGHBORS, len(ordered))):
+                    pairs.add((min(ordered[x], ordered[y]), max(ordered[x], ordered[y])))
+        # それ以外の頻出の指標は珍しさで絞れないので使わない
     return pairs
 
 
@@ -214,33 +238,133 @@ def derive_relations(
     return out
 
 
-#: 画面・総括に出す種類 (盲検の精度が出たものだけ、2026-09-27)。空なら何も出さない
-ENABLED_TYPES: frozenset[str] = frozenset()
+#: 同じ出来事の系統 (続報・側面・包含)。
+#: 分類器が「系統」と判定した組にだけ、規則の種類を補足として付ける
+INCIDENT_TYPES: frozenset[str] = frozenset({"follow_up", "side", "contains"})
+RELATION_LABELS.update({"incident": "同じ出来事の関連", "same_actor": "同じアクター"})
+#: 画面に出す種類 (2026-09-27、定義 v3 の盲検 411 組で決定)。
+#: - 同じ出来事の系統 = 分類器 (relation_model) の閾値以上。
+#:   種類は規則の補足 (境界は Opus でも揺れる)
+#: - 同じアクター = 信頼できる経路の主題アクターの共有 (決定論、盲検で精度 0.88 / 再現 0.91)
+#: 同一キャンペーン・共通の供給元は出さない (規則の精度が低く、ラベルも少ない)
+ENABLED_TYPES: frozenset[str] = INCIDENT_TYPES | {"incident", "same_actor"}
+#: 1 事象あたりの「同じアクター」の上限 (多産なアクターは数百の事象を持つ)。近い順に残す
+SAME_ACTOR_CAP = 5
+#: 1 事象あたりの「同じ出来事の関連」の上限。確率の高い順に残す
+INCIDENT_CAP = 10
 #: 導いた関係のキャッシュの寿命 (秒)。事象は毎時更新されるので、それより短く
 _CACHE_TTL_SECONDS = 1800.0
 _cache: dict[int, tuple[float, dict[str, list[DerivedRelation]]]] = {}
 
 
-def relations_by_event(repo: object, *, days: int = 60) -> dict[str, list[DerivedRelation]]:
-    """事象 id → その事象が関わる関係 (キャッシュつき)。``ENABLED_TYPES`` の種類だけ。"""
+def _shared_basis(a: EventFeatures, b: EventFeatures) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {f"victim:{v}" for v in a.victims & b.victims}
+            | {f"cve:{c}" for c in a.cves & b.cves}
+            | {f"cap:{c}" for c in (a.malware & b.malware) | (a.tools & b.tools)}
+            | {f"actor:{s}" for s in a.subjects & b.subjects}
+        )
+    )
+
+
+def derive_with_model(
+    events: list[EventFeatures],
+    *,
+    model: RelationModel | None,
+    centroids: Mapping[str, np.ndarray],
+    nation_of: Callable[[str], str | None],
+    related_actors: Callable[[str, str], bool],
+) -> list[DerivedRelation]:
+    """分類器 (同じ出来事の系統) + 主題アクターの共有 (同じアクター) で関係を導く。
+
+    ``model`` が None (モデル無し・壊れている) なら同じアクターだけを出す。
+    """
+    from src.eventnews.relation_pair_features import centroid_cos, relation_feature_vector
+
+    stats = _Stats({attr: _df(events, attr) for attr in _INDEXED})
+    pairs = sorted(_candidate_pairs(events, stats))
+    if not pairs:
+        return []
+    cos = [centroid_cos(centroids, events[i].item_id, events[j].item_id) for i, j in pairs]
+    probs = np.zeros(len(pairs))
+    threshold = 1.0
+    if model is not None:
+        x = np.array(
+            [
+                relation_feature_vector(events[i], events[j], stats.df, c)
+                for (i, j), c in zip(pairs, cos, strict=True)
+            ]
+        )
+        probs = model.probabilities(x)
+        threshold = model.threshold
+    out: list[DerivedRelation] = []
+    for (i, j), c, p in zip(pairs, cos, probs, strict=True):
+        a, b = _ordered(events[i], events[j])
+        extra = {"p": f"{p:.2f}", "cos": f"{c:.3f}"}
+        if p >= threshold:
+            rule = classify_pair(a, b, stats, nation_of=nation_of, related_actors=related_actors)
+            if rule is not None and rule.rel_type in INCIDENT_TYPES:
+                out.append(DerivedRelation(rule.a, rule.b, rule.rel_type, rule.basis, extra))
+            else:
+                out.append(
+                    DerivedRelation(a.item_id, b.item_id, "incident", _shared_basis(a, b), extra)
+                )
+        elif a.subjects & b.subjects:
+            basis = tuple(f"actor:{s}" for s in sorted(a.subjects & b.subjects))
+            out.append(DerivedRelation(a.item_id, b.item_id, "same_actor", basis, extra))
+    return out
+
+
+def index_relations(rels: list[DerivedRelation]) -> dict[str, list[DerivedRelation]]:
+    """事象 id → 関係 (``ENABLED_TYPES`` のみ)。
+
+    同じアクターは近い順に ``SAME_ACTOR_CAP`` 件まで。
+    """
+    index: dict[str, list[DerivedRelation]] = defaultdict(list)
+    for r in rels:
+        if r.rel_type in ENABLED_TYPES:
+            index[r.a].append(r)
+            index[r.b].append(r)
+    out: dict[str, list[DerivedRelation]] = {}
+    for iid, rs in index.items():
+        incident = [r for r in rs if r.rel_type != "same_actor"]
+        actor = sorted(
+            (r for r in rs if r.rel_type == "same_actor"),
+            key=lambda r: -float(r.extra.get("cos", "0")),
+        )[:SAME_ACTOR_CAP]
+        incident = sorted(incident, key=lambda r: -float(r.extra.get("p", "0")))[:INCIDENT_CAP]
+        out[iid] = incident + actor
+    return out
+
+
+def relations_by_event(
+    repo: object, *, days: int = WINDOW_DAYS
+) -> dict[str, list[DerivedRelation]]:
+    """事象 id → その事象が関わる関係 (キャッシュつき)。"""
     import time
 
     from src.eventnews.relation_features import actor_helpers, load_event_features
+    from src.eventnews.relation_model import load_relation_model
+    from src.eventnews.relation_pair_features import load_centroids
 
     now = time.monotonic()
     hit = _cache.get(days)
     if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
         return hit[1]
     nation_of, related = actor_helpers()
-    rels = derive_relations(
-        load_event_features(repo, days=days),  # type: ignore[arg-type]
+    events = load_event_features(repo, days=days)  # type: ignore[arg-type]
+    centroids = load_centroids(repo, events)  # type: ignore[arg-type]
+    missing = sum(1 for e in events if e.item_id not in centroids)
+    if missing:
+        # 要約埋込が未生成の事象は重心の cos が 0 = 同じ出来事の関連に乗らない (新着ほど起きる)
+        _log.info("relations_centroid_missing", events=len(events), missing=missing)
+    rels = derive_with_model(
+        events,
+        model=load_relation_model(),
+        centroids=centroids,
         nation_of=nation_of,
         related_actors=related,
     )
-    index: dict[str, list[DerivedRelation]] = defaultdict(list)
-    for r in rels:
-        if r.rel_type in ENABLED_TYPES:
-            index[r.a].append(r)
-            index[r.b].append(r)
-    _cache[days] = (now, dict(index))
+    _cache[days] = (now, index_relations(rels))
     return _cache[days][1]

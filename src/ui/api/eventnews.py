@@ -653,12 +653,37 @@ def related_payload(
     }
 
 
+_BASIS_PREFIX = {"victim": "被害組織", "cve": "CVE", "cap": "道具", "actor": "攻撃者"}
+
+
+def _basis_label(basis: str) -> str:
+    """根拠の内部表記 (``victim:acme``) を画面の文言へ (生の enum を出さない)。"""
+    kind, _, value = basis.partition(":")
+    label = _BASIS_PREFIX.get(kind)
+    if label is None:
+        return basis
+    if kind == "actor":  # 主題アクターは辞書の id — 正式名で出す
+        from src.cti.actor_normalizer import load_actor_aliases
+
+        actor = load_actor_aliases().by_id(value)
+        value = actor.canonical if actor is not None else value
+    return f"{label}: {value}"
+
+
+def _first_member_title(repo: Any, item_id: str) -> str:
+    """本文 (版) が未生成の事象の見出しの代わり = 構成記事の先頭の見出し。"""
+    members = [m.article_id for m in repo.list_event_members(item_id)[:1]]
+    arts = repo.get_articles_by_ids(members) if members else {}
+    return next((str(a.title or "") for a in arts.values()), "")
+
+
 @eventnews_api.get("/{item_id}/relations")
 def event_news_relations(item_id: str) -> dict[str, Any]:
-    """事象から導いた関係 (続報・側面・同一キャンペーン・共通の供給元・包含、2026-09-27)。
+    """事象から導いた関係 (同じ出来事の関連 / 同じアクター、2026-09-27)。
 
-    関係は表に持たず、事象 → 指標の線から計算する (src/eventnews/relations.py)。盲検で精度の出た
-    種類 (``ENABLED_TYPES``) だけを返す。⚠ 同期 def (初回は全事象を読む、以後 30 分キャッシュ)。
+    関係は表に持たず、その都度計算する (src/eventnews/relations.py)。同じ出来事の系統は分類器
+    (relation_model)、同じアクターは信頼できる主題アクターの共有。⚠ 同期 def (初回は全事象を読む、
+    以後 30 分キャッシュ)。
     """
     from src.eventnews.relations import RELATION_LABELS, relations_by_event
 
@@ -672,12 +697,14 @@ def event_news_relations(item_id: str) -> dict[str, Any]:
         items.append(
             {
                 "item_id": other,
-                "headline": v.headline if v is not None else "",
+                "headline": v.headline if v is not None else _first_member_title(repo, other),
                 "rel_type": r.rel_type,
                 "label": RELATION_LABELS.get(r.rel_type, r.rel_type),
                 # 向き: この事象が先 (a) か後 (b) か。包含は a = まとめの側
                 "role": "a" if r.a == item_id else "b",
-                "basis": list(r.basis),
+                "basis": [_basis_label(b) for b in r.basis],
+                # 同じ出来事の系統の確率 (分類器)。同じアクターは決定論なので出さない
+                "confidence": float(r.extra["p"]) if r.rel_type != "same_actor" else None,
             }
         )
     return {"relations": items}

@@ -40,6 +40,7 @@ import {
   type EventNewsFacet,
   type EventNewsListItem,
   fetchEventRelations,
+  type DerivedEventRelation,
 } from "../../api/eventnews";
 
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
@@ -287,18 +288,54 @@ function DerivedRelationsCard({
   });
   const rels = data?.relations ?? [];
   if (rels.length === 0) return null;
+  const incident = rels.filter((r) => r.rel_type !== "same_actor");
+  const sameActor = rels.filter((r) => r.rel_type === "same_actor");
   return (
     <div className={CARD}>
-      <p className={CARD_LABEL}>つながる事象（指標から導出）</p>
-      <p className="text-xs text-fg-subtle mt-1 mb-2 m-0">
-        共有する被害組織・CVE・攻撃者・珍しい道具から計算した関係。根拠の指標を併記
-      </p>
+      <p className={CARD_LABEL}>つながる事象</p>
+      {incident.length > 0 && (
+        <RelationGroup
+          title="同じ出来事の関連"
+          note="続報・別の側面・まとめ記事。記事の内容と共有する指標から判定 (確率の高いものだけ)"
+          rels={incident}
+          onOpenItem={onOpenItem}
+        />
+      )}
+      {sameActor.length > 0 && (
+        <RelationGroup
+          title="同じアクター"
+          note="主題の攻撃者が同じ別の事象 (同じ作戦とは限らない)。内容の近い順に最大 5 件"
+          rels={sameActor}
+          onOpenItem={onOpenItem}
+        />
+      )}
+    </div>
+  );
+}
+
+function RelationGroup({
+  title,
+  note,
+  rels,
+  onOpenItem,
+}: {
+  title: string;
+  note: string;
+  rels: DerivedEventRelation[];
+  onOpenItem?: (id: string) => void;
+}) {
+  return (
+    <div className="mt-2">
+      <p className="text-sm font-medium text-fg m-0">{title}</p>
+      <p className="text-xs text-fg-subtle mt-0.5 mb-2 m-0">{note}</p>
       <ul className="space-y-1.5 m-0 p-0 list-none">
         {rels.map((r) => (
           <li key={`${r.rel_type}-${r.item_id}`} className="flex items-start gap-2">
-            <span className="text-[11px] text-fg-subtle border border-border-subtle rounded px-1.5 py-0.5 shrink-0 mt-0.5">
-              {r.label}
-            </span>
+            {r.rel_type !== "same_actor" && (
+              <span className="text-[11px] text-fg-subtle border border-border-subtle rounded px-1.5 py-0.5 shrink-0 mt-0.5">
+                {r.label}
+              </span>
+            )}
             <div className="min-w-0">
               {onOpenItem ? (
                 <button
@@ -311,7 +348,9 @@ function DerivedRelationsCard({
               ) : (
                 <span>{r.headline || r.item_id}</span>
               )}
-              <div className="text-[11px] text-fg-subtle">{r.basis.join(" / ")}</div>
+              {r.basis.length > 0 && (
+                <div className="text-[11px] text-fg-subtle">{r.basis.join(" / ")}</div>
+              )}
             </div>
           </li>
         ))}

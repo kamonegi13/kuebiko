@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.ui.api.eventnews import GENERATED_NOTE
 from src.ui.read_only_policy import is_public_get
 
@@ -224,3 +226,51 @@ class TestSemanticSearch:
 
         assert not inspect.iscoroutinefunction(list_event_news)
         assert "asyncio.run" in inspect.getsource(_semantic_article_ids)
+
+
+class TestDerivedRelations:
+    """事象の関係 (2026-09-27): 根拠は画面の文言で返し、生の内部表記を出さない。"""
+
+    def test_basis_is_labelled_and_actor_uses_canonical_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.ui.api import eventnews as api
+
+        mp = monkeypatch
+        registry = SimpleNamespace(
+            by_id=lambda i: SimpleNamespace(canonical="APT29") if i == "apt29" else None
+        )
+        mp.setattr("src.cti.actor_normalizer.load_actor_aliases", lambda: registry)
+
+        assert api._basis_label("victim:acme") == "被害組織: acme"
+        assert api._basis_label("cve:CVE-2026-1") == "CVE: CVE-2026-1"
+        assert api._basis_label("actor:apt29") == "攻撃者: APT29"
+        assert api._basis_label("actor:unknown") == "攻撃者: unknown"
+        assert api._basis_label("other") == "other"
+
+    def test_relations_fall_back_to_member_title_and_hide_actor_confidence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.eventnews.relations import DerivedRelation
+        from src.ui.api import eventnews as api
+
+        mp = monkeypatch
+        rels = [
+            DerivedRelation("ev-1", "ev-2", "incident", ("victim:acme",), {"p": "0.91"}),
+            DerivedRelation("ev-0", "ev-1", "same_actor", ("actor:x",), {"cos": "0.6"}),
+        ]
+        repo = SimpleNamespace(
+            latest_event_versions=lambda ids: {},
+            list_event_members=lambda iid: [SimpleNamespace(article_id=f"a-{iid}")],
+            get_articles_by_ids=lambda ids: {i: SimpleNamespace(title=f"題 {i}") for i in ids},
+        )
+        mp.setattr(api, "_repo", lambda: repo)
+        mp.setattr("src.eventnews.relations.relations_by_event", lambda r: {"ev-1": rels})
+
+        got = api.event_news_relations("ev-1")["relations"]
+
+        assert [g["item_id"] for g in got] == ["ev-2", "ev-0"]
+        assert got[0]["headline"] == "題 a-ev-2"
+        assert got[0]["confidence"] == 0.91
+        assert got[1]["confidence"] is None
+        assert got[1]["label"] == "同じアクター"

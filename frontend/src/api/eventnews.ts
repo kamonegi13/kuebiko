@@ -198,14 +198,15 @@ export interface EventNote {
   updated_at?: string | null;
 }
 
-/** 事象から導いた関係 (2026-09-27、指標の線から計算。盲検で精度の出た種類だけ) */
+/** 事象から導いた関係 (2026-09-27)。同じ出来事の関連 = 分類器 / 同じアクター = 主題アクターの共有 */
 export interface DerivedEventRelation {
   item_id: string;
   headline: string;
   rel_type: string;
   label: string;
   role: "a" | "b"; // この事象が先 (a) か後 (b) か。包含は a = まとめの側
-  basis: string[];
+  basis: string[]; // 画面用の文言 (「被害組織: …」「攻撃者: …」)
+  confidence: number | null; // 同じ出来事の関連の確率 (同じアクターは決定論なので null)
 }
 
 export function fetchEventRelations(itemId: string) {
