@@ -513,3 +513,21 @@ async def test_headline_contract_prohibits_process_and_audit_language() -> None:
     assert "ソース品質" in llm.last_prompt
     # 旧例示句 (プロセス言語) が contract から排除されていること
     assert "新たに追跡を開始した" not in llm.last_prompt
+
+
+def test_anchor_relations_are_not_fed_to_the_prompt_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """共有 anchor 由来の関係は既定で総括に渡さない (雑音、2026-09-27)。env で従来どおり。"""
+    from dataclasses import replace
+
+    from src.synthesis.grounded.render import build_render_plan
+
+    a, b = _j(id="s-a", claim="情勢 A の判断"), _j(id="s-b", claim="情勢 B の判断")
+    est = replace(_daily(a, b), relations=(("s-a", "s-b", "shared_nation", "CN+US"),))
+
+    monkeypatch.delenv("SYNTHESIS_ANCHOR_RELATIONS", raising=False)
+    assert "国家の共有" not in build_render_plan(est=est, period_label="L").prompt
+
+    monkeypatch.setenv("SYNTHESIS_ANCHOR_RELATIONS", "1")
+    assert "国家の共有" in build_render_plan(est=est, period_label="L").prompt

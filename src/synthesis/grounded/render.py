@@ -448,6 +448,13 @@ class RenderPlan:
     omitted_count: int = 0
 
 
+def _anchor_relations_enabled() -> bool:
+    """共有 anchor 由来の関係を総括に渡すか (既定 off、2026-09-27)。"""
+    import os
+
+    return os.environ.get("SYNTHESIS_ANCHOR_RELATIONS", "0") == "1"
+
+
 @lru_cache(maxsize=1)
 def _standing_seed_ids() -> frozenset[str]:
     """常設情報要求 (``kind='standing'``) の situation id (``STANDING_SEEDS`` が SSoT)。
@@ -569,7 +576,11 @@ def build_render_plan(
             standing=len(standing),
             standing_omitted=standing_omitted,
         )
-    # 段D: 関係エッジ (決定論・共有 anchor 由来) を chain セクションの事実供給にする
+    # 段D: 関係エッジ (決定論・共有 anchor 由来) を chain セクションの事実供給にする。
+    # ⚠ 2026-09-27 から既定で渡さない: shared_nation 379 件は「国 2 つの共有」だけ (232 件に US)、
+    #   same_actor 38 件は脇役 anchor の共有で正しいのは 3-4 割 — 雑音を「事実」として渡していた。
+    #   事象から多次元に導く関係 (event_knowledge_graph.md §11/§16) に置き換えるまでの停止。
+    #   SYNTHESIS_ANCHOR_RELATIONS=1 で従来どおり渡す
     claim_by_id = {j.id: j.claim for j in est.judgments}
     rel_ja = {
         "same_actor": "同一アクター",
@@ -579,7 +590,7 @@ def build_render_plan(
     relation_lines = [
         f"「{claim_by_id[a][:40]}」↔「{claim_by_id[b][:40]}」: {rel_ja.get(t, t)} ({basis})"
         for a, b, t, basis in est.relations
-        if a in claim_by_id and b in claim_by_id
+        if a in claim_by_id and b in claim_by_id and _anchor_relations_enabled()
     ][:8]
     mode = _headline_mode(head)
     prompt = _render(
