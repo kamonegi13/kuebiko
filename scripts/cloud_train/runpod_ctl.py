@@ -22,6 +22,7 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -79,8 +80,13 @@ def api(e: dict[str, str], method: str, path: str, body: dict[str, Any] | None =
             "User-Agent": "kuebiko-runpod-ctl/1.0",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        raw = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            raw = r.read()
+    except urllib.error.HTTPError as exc:
+        # 400 の理由 (どの項目が不正か) は本文にしか無い。キーは本文に含まれない
+        detail = exc.read().decode(errors="replace")[:800]
+        raise SystemExit(f"RunPod API {method} {path} → {exc.code}: {detail}") from exc
     return json.loads(raw) if raw else {}
 
 
@@ -115,7 +121,8 @@ def cmd_launch(a: argparse.Namespace) -> None:
         "gpuCount": a.gpu_count,
         "cloudType": "SECURE",
         "networkVolumeId": e["RUNPOD_VOLUME_ID"],
-        "dataCenterIds": [e["RUNPOD_DATACENTER"]],
+        # dataCenterIds は指定しない: 保存領域のデータセンターに作られる。API の仕様書の列挙が古く、
+        # US-NE-1 等を 400 で弾く (2026-09-27 実測)
         "volumeMountPath": "/workspace",
         "containerDiskInGb": a.disk_gb,
         "env": {

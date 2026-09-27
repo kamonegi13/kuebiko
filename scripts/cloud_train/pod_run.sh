@@ -38,14 +38,21 @@ say "開始 run=$RUN_ID 上限 ${MAX_HOURS} 時間"
 nvidia-smi --query-gpu=name,memory.total --format=csv || true
 pip install -q "transformers==5.17.0" "peft==0.21.0" "accelerate" "safetensors" || fail "pip install"
 export HF_HOME=/root/hf
+# 確保済みで未使用の断片を減らす (試験走行で 5.6GB が断片化していた)
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 python -c "import torch; assert torch.cuda.is_available()" || fail "CUDA が使えない"
 
 say "元のモデルを取得"
 # Gemma 4 は Apache 2.0・アクセス制限なし (2026-09-27 確認) → トークン不要。設定されていれば使う
-TOKEN_ARGS=()
-if [ -n "${HF_TOKEN:-}" ] && [[ "$HF_TOKEN" != *RUNPOD_SECRET* ]]; then TOKEN_ARGS=(--token "$HF_TOKEN"); fi
-huggingface-cli download google/gemma-4-26B-A4B-it --quiet --exclude "*.gguf" \
-  "${TOKEN_ARGS[@]}" >/dev/null || fail "元のモデルの取得"
+# CLI (huggingface-cli → hf) は名前が変わるので、Python の関数で取得する (2026-09-27 に 1 回目が失敗)
+python - <<'PY' || fail "元のモデルの取得"
+import os
+from huggingface_hub import snapshot_download
+tok = os.environ.get("HF_TOKEN") or None
+if tok and "RUNPOD_SECRET" in tok:
+    tok = None
+snapshot_download("google/gemma-4-26B-A4B-it", ignore_patterns=["*.gguf"], token=tok)
+PY
 
 say "学習"
 # shellcheck disable=SC2086

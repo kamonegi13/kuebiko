@@ -86,16 +86,41 @@ def build_peft(model: Any, args: argparse.Namespace) -> Any:
     return get_peft_model(model, cfg)
 
 
+#: 損失を小分けに計算する幅 (教師出力のトークン数)。語彙 26 万の logits を一度に作ると
+#: 3,300 tok × 262,144 × 4 byte ≈ 3.5GB で、H100 80GB で OOM した (2026-09-27 試験走行)
+LOSS_CHUNK = 512
+
+
+def _chunk_ce(cg: Any, hidden: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """1 区切りの CE の合計 (Gemma4ForConditionalGeneration.forward の logits と同じ計算)。"""
+    logits = cg.lm_head(hidden).float()
+    cap = cg.config.get_text_config().final_logit_softcapping
+    if cap is not None:
+        logits = torch.tanh(logits / cap) * cap
+    return functional.cross_entropy(logits, targets, reduction="sum")
+
+
 def example_loss(model: Any, ids: list[int], start: int, device: str) -> torch.Tensor:
-    """1 例の損失 = 教師出力トークンの CE の平均 (例ごとの平均)。"""
+    """1 例の損失 = 教師出力トークンの CE の平均 (例ごとの平均)。
+
+    最後の隠れ状態から、教師出力を予測する位置だけ logits を作る。区切りごとに逆伝播で
+    計算し直す (checkpoint) ので、語彙 26 万の logits をメモリに残さない。
+    """
+    from torch.utils.checkpoint import checkpoint
+
+    cg = model.get_base_model() if hasattr(model, "get_base_model") else model
     input_ids = torch.tensor([ids], device=device)
-    # 位置 p の logits が token p+1 を予測する。
+    hidden = cg.model(input_ids=input_ids, use_cache=False, return_dict=True).last_hidden_state
+    # 位置 p の隠れ状態が token p+1 を予測する。
     # 教師出力 [start, len) を予測する位置は [start-1, len-1)
-    keep = torch.arange(start - 1, len(ids) - 1, device=device)
-    out = model(input_ids=input_ids, logits_to_keep=keep, use_cache=False)
-    logits = out.logits[0].float()
+    h = hidden[0, start - 1 : len(ids) - 1]
     targets = input_ids[0, start:]
-    return functional.cross_entropy(logits, targets)
+    total = h.new_zeros((), dtype=torch.float32)
+    for i in range(0, len(targets), LOSS_CHUNK):
+        total = total + checkpoint(
+            _chunk_ce, cg, h[i : i + LOSS_CHUNK], targets[i : i + LOSS_CHUNK], use_reentrant=False
+        )
+    return total / len(targets)
 
 
 def main() -> int:
