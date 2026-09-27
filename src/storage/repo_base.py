@@ -342,6 +342,9 @@ class RunHistoryRepositoryBase:
         existing_sit = {row["name"] for row in conn.execute("PRAGMA table_info(situations)")}
         if "kind" not in existing_sit:
             conn.execute("ALTER TABLE situations ADD COLUMN kind TEXT NOT NULL DEFAULT 'event'")
+        # 台帳の型 (2026-09-27): 'actor' / 'campaign' (event のみ、standing は NULL)
+        if "track" not in existing_sit:
+            conn.execute("ALTER TABLE situations ADD COLUMN track TEXT")
 
         # 証拠台帳の状態分離 (2026-07-16): 割当 (観測) と ACH 評価 (判断) を別状態にする。
         # read_at=接地 prompt 供給の最終時刻 / assessed_at=ACH 引用の最終時刻 (NULL=未)。

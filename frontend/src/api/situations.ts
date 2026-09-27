@@ -29,6 +29,8 @@ export interface SituationRevision {
 
 export interface SituationSummary {
   kind?: string; // event / standing (常設情報要求)
+  // 台帳の型 (2026-09-27): actor = 主題アクターを追う (自動では閉じない) / campaign = 期間と標的で区切られた活動
+  track?: string | null;
   situation_id: string;
   title: string;
   domain: string;

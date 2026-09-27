@@ -1631,6 +1631,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 now_iso=now_iso,
             )
             sid = row.situation_id
+            _record_track(store, row.situation_id, row.anchors, [e.article_id for e in j.evidence])
             store.log_detection(
                 run_at=now_iso,
                 article_id=j.evidence[0].article_id if j.evidence else "",
@@ -2028,6 +2029,24 @@ async def build_projection_estimate(
         considered_count=considered,
         relations=relations,
     )
+
+
+def _record_track(
+    store: SituationStore, situation_id: str, anchors: frozenset[str], article_ids: list[str]
+) -> None:
+    """開設した台帳の型 (actor / campaign) を記録する。失敗しても開設は続ける。"""
+    from src.assessment.situation_track import decide_track_for, registry_is_group
+
+    try:
+        track = decide_track_for(
+            anchors,
+            article_ids,
+            store.subjects_for_articles(article_ids),
+            is_group=registry_is_group(),
+        )
+        store.set_track(situation_id, track)
+    except Exception as e:  # noqa: BLE001 — 型が付けられなくても台帳は開く (campaign 扱い)
+        _log.warning("situation_track_failed", situation_id=situation_id, error=str(e)[:160])
 
 
 def _open_anchors(j: KeyJudgment, entities_by_id: dict[str, set[str]]) -> frozenset[str]:

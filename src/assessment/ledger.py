@@ -37,6 +37,7 @@ from src.assessment.situation_store import (
     SituationRow,
     SituationStore,
 )
+from src.assessment.situation_track import TRACK_ACTOR
 from src.cti.nation_gazetteer import nations_in_text
 from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
@@ -411,7 +412,12 @@ def _sweep_lifecycle(*, store: SituationStore, now: datetime) -> tuple[int, int]
         if row.status == "active" and idle_days >= dormant_after:
             store.set_status(row.situation_id, "dormant")
             dormant += 1
-        elif row.status == "dormant" and idle_days >= dormant_after + _CLOSE_AFTER_DORMANT_DAYS:
+        elif (
+            row.status == "dormant"
+            and idle_days >= dormant_after + _CLOSE_AFTER_DORMANT_DAYS
+            # アクターを追う台帳は持続的な主体 (STIX Intrusion Set) — 静かでも閉じない
+            and row.track != TRACK_ACTOR
+        ):
             store.set_status(row.situation_id, "closed", closed_at=now.isoformat())
             # 収束判定自体を revision として残す (§2.3、朝刊「収束」の供給源)
             _add_closing_revision(

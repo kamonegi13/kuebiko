@@ -61,6 +61,7 @@ def list_situations(status: str = "active,dormant") -> dict[str, Any]:
                 "domain": r.domain,
                 "status": r.status,
                 "kind": r.kind,
+                "track": r.track,
                 "pir_ids": list(r.pir_ids),
                 "opened_at": r.opened_at,
                 "last_evidence_at": r.last_evidence_at,

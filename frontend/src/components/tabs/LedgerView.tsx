@@ -10,6 +10,13 @@ import {
 } from "../../api/situations";
 import { vocabLabel } from "../../hooks/useVocab";
 
+// 台帳の型 (2026-09-27、docs/research/event_knowledge_graph.md §18)
+const TRACK_LABELS: Record<string, string> = { actor: "アクター追跡", campaign: "キャンペーン" };
+const TRACK_HINTS: Record<string, string> = {
+  actor: "主題アクターを追う持続的な台帳。静かになっても自動では閉じない",
+  campaign: "期間と標的で区切られた活動。一定期間静かなら休眠・終了する",
+};
+
 // 確度ラベルは backend 配信 vocab "confidence" (vocabLabel) を SSoT に。ここは色 (tone) のみ保持。
 const CONF_TONE: Record<string, string> = {
   high: "text-ok",
@@ -103,6 +110,14 @@ function SituationCard({
             {s.kind === "standing" && (
               <span className="text-[12px] px-1.5 py-0.5 rounded border border-accent/30 bg-accent-subtle text-accent shrink-0">
                 常設
+              </span>
+            )}
+            {s.track && TRACK_LABELS[s.track] && (
+              <span
+                className="text-[12px] px-1.5 py-0.5 rounded border border-border-default text-fg-muted shrink-0"
+                title={TRACK_HINTS[s.track]}
+              >
+                {TRACK_LABELS[s.track]}
               </span>
             )}
             <span className="text-[13px] font-medium">{s.title}</span>

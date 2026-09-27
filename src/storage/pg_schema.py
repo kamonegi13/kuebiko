@@ -663,6 +663,10 @@ UPDATE situation_evidence SET assessed_at = added_at, read_at = added_at
 -- 弱い証拠の印 (2026-09-27): 割当の関門 (assign_gate) が入る前に規則で入った証拠を同じ関門で
 -- 採点し直し、落ちるものに刻む。行は消さない (戻せるように)。評価 (ACH・総括) の読み取りから外す。
 ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS weak_at TEXT;
+-- 台帳の型 (2026-09-27、docs/research/event_knowledge_graph.md §18): event の台帳を
+-- 'actor' (主題アクターを追う持続的な主体 = STIX Intrusion Set) / 'campaign' (期間と標的で
+-- 区切られた活動 = STIX Campaign) に分ける。standing は NULL。
+ALTER TABLE situations ADD COLUMN IF NOT EXISTS track TEXT;
 
 -- 概念 PIR の LLM 主題判定 verdict (2026-07-23、docs/pir_concept_llm_judge_design.md)。
 -- 負の verdict も保存 (再判定防止)。pir_rev = PIR description+question ハッシュ (編集で stale)。

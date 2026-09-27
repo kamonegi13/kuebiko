@@ -76,6 +76,9 @@ class SituationRow:
     # 段A (prepositioning posture): 'event'=従来 / 'standing'=常設情報要求
     # (dormant/close 対象外・汎用 matcher 非対象・評価は段B まで除外)
     kind: str = "event"
+    # 台帳の型 (2026-09-27): 'actor' = 主題アクターを追う (自動では閉じない) /
+    # 'campaign' = 期間と標的で区切られた活動 / None = 未判定・standing
+    track: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +121,7 @@ def _row_to_situation(r: Any) -> SituationRow:
         last_evidence_at=str(r["last_evidence_at"]),
         closed_at=str(r["closed_at"]) if r["closed_at"] else None,
         kind=str(r["kind"] or "event"),
+        track=str(r["track"]) if r["track"] else None,
     )
 
 
@@ -673,6 +677,33 @@ class SituationStore:
         for r in rows:
             out.setdefault(str(r["situation_id"]), []).append(str(r["article_id"]))
         return out
+
+    def set_track(self, situation_id: str, track: str) -> None:
+        """台帳の型を記録する ('actor' / 'campaign')。"""
+        with self._repo._connect() as conn:  # noqa: SLF001
+            conn.execute(
+                "UPDATE situations SET track=? WHERE situation_id=?", (track, situation_id)
+            )
+
+    def subjects_for_articles(self, article_ids: list[str]) -> dict[str, tuple[str, str, str]]:
+        """記事ごとの主題 (subject_actor_ids, source, confidence)。台帳の型の判定用。"""
+        if not article_ids:
+            return {}
+        ph = ",".join("?" for _ in article_ids)
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT article_id, subject_actor_ids, subject_actor_source,"  # noqa: S608
+                f" subject_actor_confidence FROM articles WHERE article_id IN ({ph})",
+                list(article_ids),
+            ).fetchall()
+        return {
+            str(r["article_id"]): (
+                str(r["subject_actor_ids"] or ""),
+                str(r["subject_actor_source"] or ""),
+                str(r["subject_actor_confidence"] or ""),
+            )
+            for r in rows
+        }
 
     def mark_weak(self, pairs: list[tuple[str, str]], *, weak_at: str) -> int:
         """(situation_id, article_id) の証拠に弱い印を刻む (未印の行のみ・冪等)。件数を返す。"""
