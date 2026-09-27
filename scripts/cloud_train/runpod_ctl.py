@@ -68,6 +68,10 @@ def s3(e: dict[str, str]) -> Any:
     )
 
 
+class RunPodApiError(RuntimeError):
+    """RunPod の REST API がエラーを返した (本文に理由がある)。"""
+
+
 def api(e: dict[str, str], method: str, path: str, body: dict[str, Any] | None = None) -> Any:
     req = urllib.request.Request(
         f"{API}{path}",
@@ -86,7 +90,7 @@ def api(e: dict[str, str], method: str, path: str, body: dict[str, Any] | None =
     except urllib.error.HTTPError as exc:
         # 400 の理由 (どの項目が不正か) は本文にしか無い。キーは本文に含まれない
         detail = exc.read().decode(errors="replace")[:800]
-        raise SystemExit(f"RunPod API {method} {path} → {exc.code}: {detail}") from exc
+        raise RunPodApiError(f"RunPod API {method} {path} → {exc.code}: {detail}") from exc
     return json.loads(raw) if raw else {}
 
 
