@@ -8,8 +8,9 @@
 ⚠ 常設情報要求 (standing) は設計上 別物なので対象外 (中国 / ロシア / イラン / 北朝鮮の
   事前配置は余弦 0.86 前後で近いが、統合してはいけない)。
 
-判定の入力は ``data/mlx/situation_dup_labels.json`` (Opus 盲検) と
-``data/mlx/situation_dup_index.json``。既定は dry-run。
+判定の入力は ``data/mlx/situation_dup_labels[_<tag>].json`` (Opus 盲検) と
+``data/mlx/situation_dup_index[_<tag>].json``。2 回目以降の判定は
+``data/mlx/judge_situation_dups.py`` が作る (週次監査と同じ検出)。既定は dry-run。
 
     docker exec kuebiko python scripts/merge_duplicate_situations.py [--apply]
 """
@@ -34,10 +35,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--db", default="data/run_history.db")
+    ap.add_argument(
+        "--tag",
+        default="",
+        help="判定の回 (例 0927 → situation_dup_labels_0927.json)。空なら初回 (09-22) の判定",
+    )
     args = ap.parse_args()
 
-    labels = {int(k): v for k, v in json.loads(LABELS.read_text(encoding="utf-8")).items()}
-    index = {r["id"]: r for r in json.loads(INDEX.read_text(encoding="utf-8"))}
+    suffix = f"_{args.tag}" if args.tag else ""
+    labels_path = LABELS.with_name(f"{LABELS.stem}{suffix}.json")
+    index_path = INDEX.with_name(f"{INDEX.stem}{suffix}.json")
+    labels = {int(k): v for k, v in json.loads(labels_path.read_text(encoding="utf-8")).items()}
+    index = {r["id"]: r for r in json.loads(index_path.read_text(encoding="utf-8"))}
     store = SituationStore(db_path=Path(args.db))
     rows = {r.situation_id: r for r in store.load_situations(("active", "dormant"))}
 
