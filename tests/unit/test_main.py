@@ -2445,6 +2445,43 @@ class TestWebOnlyDisposition:
         assert result.posted == 1
         assert _post_mock(publishers["watch"]).call_count == 1
 
+    @pytest.mark.asyncio
+    async def test_web_only_env_suppresses_every_channel(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        template: jinja2.Template,
+        pipeline_cfg: PipelineConfig,
+        app_cfg: Any,
+    ) -> None:
+        # 過去分の取り直し (2026-09-27): PIPELINE_WEB_ONLY=1 なら push=True の channel も投稿しない
+        pm = {"alert": True, "brief": True, "watch": True, "japan_watch": True, "ops": True}
+        monkeypatch.setattr("src.pipeline.orchestrator.push_map", lambda **_: pm)
+        monkeypatch.setenv("PIPELINE_WEB_ONLY", "1")
+        articles = [_article(article_id="a-high", url="https://x.com/h")]
+        source = _build_source(articles)
+        extractor = _build_extractor_with_results([_extraction_success()])
+        llm = _build_llm_with_outputs([_summary_output(importance="high")])
+        publishers = _build_publishers()
+
+        result = await run_pipeline(
+            config=app_cfg,
+            pipeline=pipeline_cfg,
+            source=source,
+            extractor=extractor,
+            llm=llm,
+            publishers=publishers,
+            template=template,
+            dry_run=False,
+        )
+
+        content_calls = (
+            _post_mock(publishers["alert"]).call_count
+            + _post_mock(publishers["brief"]).call_count
+            + _post_mock(publishers["watch"]).call_count
+        )
+        assert content_calls == 0
+        assert result.summarized == 1
+
 
 class TestCapVulnImportanceAuditP1:
     """監査 2026-07-05 P1: cap regex の誤発火/素通しと KEV カタログ非参照の修正。"""

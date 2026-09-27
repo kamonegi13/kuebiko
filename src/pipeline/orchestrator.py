@@ -73,6 +73,9 @@ from src.tools.url_normalizer import url_hash
 
 _log = get_logger(__name__)
 
+#: 1 なら全チャンネルを web-only (Discord に投稿しない) として扱う。過去分の取り直し用
+WEB_ONLY_ENV = "PIPELINE_WEB_ONLY"
+
 # 時間予算 (soft deadline、2026-08-01)。親 (PipelineRunner) の wallclock timeout で
 # kill されると「投稿 0・既読化 0・成果全損 → 次 run が同じ記事を再処理」の全損ループに
 # なる (run 3520: backlog + LLM 低速化で 1800s kill)。子は予算から投稿/永続化/通知に
@@ -902,6 +905,11 @@ async def run_pipeline(
     # 通知再設計: web-only disposition は channel レジストリの push 属性で決める (情報フロー編集)。
     # push=False の tier は Discord push せず DB 保存のみ (run 中は固定)。
     channel_push = push_map()
+    # 過去分の取り直し (欠落した日の再取込) は Discord に流さない — 記事は posted で保存し
+    # 事象ニュース・台帳・検索には乗せる (2026-09-27、Grok の 13 日欠落の取り直し用)
+    web_only_all = os.environ.get(WEB_ONLY_ENV) == "1"
+    if web_only_all:
+        _log.info("pipeline_web_only_all", env=WEB_ONLY_ENV)
 
     def _register_seen(art_id: str) -> None:
         """投稿/web-only 確定後に URL seen + embedding を登録する (再 surface 防止)。
@@ -987,7 +995,7 @@ async def run_pipeline(
         # 通知再設計: web-only disposition。channel レジストリで push=False の tier (情報フローで
         # 設定。既定は全 tier push=True) は Discord push をスキップし DB 保存のみ (status='posted'
         # 維持で web/分析サーフェスには出る)。dedup 後・STIX/post 前に判定。
-        if not channel_push.get(channel, True):
+        if web_only_all or not channel_push.get(channel, True):
             if outcome is not None:
                 outcome["status"] = "posted"
                 outcome["posted_channel"] = channel
