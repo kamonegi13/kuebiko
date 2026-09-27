@@ -83,7 +83,10 @@ async def _ask(client: OllamaClient, prompt: str, max_tokens: int) -> str:
 #: 同時に投げる問題数 (2026-09-27)。直列だと 1 モデル約 40 分 (MCQ は答えの前に説明を
 #: 書くため中央値 253 tok / 3.8 秒)。⚠ 出力の形は変えない (構造化で即答させると推論の
 #: 過程が消え、JSON 即答を学習した SFT モデルだけが得をして前後比較がゆがむ)
-DEFAULT_CONCURRENCY = 4
+#: ⚠ 既定は 1。Ollama の既定 (OLLAMA_NUM_PARALLEL 未設定 = 1 スロット) では同時に投げても
+#:   直列に処理される (実測 1.02x、2026-08-17)。スロットを 4 にしたときだけ --concurrency 4
+#:   (decode 主体の MCQ で 1.85x 見込み。本番は大記事で利得ゼロ・timeout 悪化のため 1 のまま)
+DEFAULT_CONCURRENCY = 1
 _PROGRESS_EVERY = 50
 
 
