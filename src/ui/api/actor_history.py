@@ -14,7 +14,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from src.cti.actor_normalizer import load_actor_aliases
 from src.cti.actor_observed_history import (
@@ -84,6 +84,29 @@ def actors_observed_summary() -> dict[str, Any]:
             "matched_names": sorted(usage_names.get(actor_id, [])),
         }
     return {"summaries": summaries}
+
+
+@actor_history_api.get("/{actor_id}/stix")
+def actor_stix(actor_id: str) -> Response:
+    """アクターの観測 (主題の記事、直近 180 日) を STIX 2.1 bundle で返す (2026-09-27)。
+
+    intrusion-set / threat-actor を中心に、主題の記事の report と記事ごとの関係を grouping で
+    束ねる (docs/stix_export.md)。⚠ 同期 def (記事ごとに DB を読むため)。
+    """
+    import json
+
+    from src.cti.stix.actor import build_actor_bundle
+
+    b = build_actor_bundle(RunHistoryRepository(), load_actor_aliases(), actor_id)
+    if b is None:
+        raise HTTPException(status_code=404, detail=f"アクターが見つかりません: {actor_id}")
+    safe = "".join(c for c in actor_id if c.isalnum() or c in "-_")[:40]
+    filename = f"kuebiko_actor_{safe}.stix.json"
+    return Response(
+        content=json.dumps(b, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @actor_history_api.get("/{actor_id}/history")

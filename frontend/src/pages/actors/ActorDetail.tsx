@@ -437,6 +437,13 @@ function ActorCard({ actor, readOnly }: { actor: ActorRecord; readOnly: boolean 
           </a>
         )}
         <span className="text-fg-subtle ml-auto">id: <code>{actor.id}</code></span>
+        <a
+          href={`/api/v1/actors/${encodeURIComponent(actor.id)}/stix`}
+          className="px-1.5 py-0.5 rounded border border-border-default text-fg-muted hover:text-fg"
+          title="このアクターが主題の記事 (直近 180 日) を STIX 2.1 bundle でダウンロード"
+        >
+          STIX
+        </a>
       </div>
 
       {/* 1. 概要 (公知プロファイル) — 「何者か」を最初に答える */}

@@ -9,6 +9,7 @@ kuebiko の分析結果を STIX 2.1 (OASIS) に準拠した bundle で書き出�
 |---|---|---|
 | 記事 1 件 | `GET /api/v1/articles/{id}/stix`・Discord 投稿の添付 | `report` |
 | 台帳 1 件 | `GET /api/v1/situations/{id}/stix` (台帳画面の「STIX」) | `campaign` または `intrusion-set` + `grouping` + `note` |
+| アクター 1 件 | `GET /api/v1/actors/{id}/stix` (アクター辞書の「STIX」) | `intrusion-set` / `threat-actor` + 主題の記事 (直近 180 日・最大 50 件) の `report` を `grouping` で束ねる |
 
 ## kuebiko → STIX の対応
 
@@ -40,6 +41,8 @@ kuebiko の分析結果を STIX 2.1 (OASIS) に準拠した bundle で書き出�
   スキーマ `docs/stix/kuebiko-extension.schema.json`)。`x_` 始まりの独自プロパティ (2.0 流) は使わない。
 - **TLP:WHITE** (仕様の定義済みマーキング)。書き出すのは公開情報の要約。
 - 証拠は評価済み (ACH が引用した) ものだけ。弱い証拠 (weak_at) は外れる。
+- アクターの書き出しは LLM medium の主題を外す (精度 61%、国家の集計と同じ)。件数を確度に読み替えない —
+  関係は記事ごとのまま (収集量は重要性でも確かさでもない)。
 
 ## 検証
 
