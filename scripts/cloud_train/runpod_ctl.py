@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -47,6 +48,11 @@ def env(required: tuple[str, ...] = _KEYS) -> dict[str, str]:
         k, sep, v = line.partition("=")
         if sep and k.strip() in _KEYS:
             vals[k.strip()] = v.strip().strip('"').strip("'")
+    # 保存領域とデータセンターは実行時の環境変数で上書きできる (GPU の在庫があるデータセンターの
+    # 保存領域へ切り替える — 2026-09-28、US-NE-1 に H200/B200 の在庫が無かった)
+    for k in ("RUNPOD_VOLUME_ID", "RUNPOD_DATACENTER"):
+        if os.environ.get(k):
+            vals[k] = os.environ[k]
     missing = [k for k in required if not vals.get(k)]
     if missing:
         raise SystemExit(f".env に未設定: {', '.join(missing)}")
