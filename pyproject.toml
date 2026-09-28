@@ -98,6 +98,7 @@ module = [
     "audit_triage_calibration",
     "backfill_intent",
     "backfill_axes",
+    "build_public_downloads",
     "build_sft_teacher_synthesis",
     "claude_code_bridge",
     "eval_goldset",

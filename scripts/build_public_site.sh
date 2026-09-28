@@ -54,6 +54,15 @@ cat >| "$OUT/_redirects" <<'REDIRECTS'
 /news/*   /index.html   200
 /news     /index.html   200
 REDIRECTS
+# 5) 配布物 (PDF)。URL で直接ダウンロードさせる (画面からの導線は無い)。
+#    置き場はリポジトリ外 (data/ は git 管理外)。置き場が無ければ何もしない
+python3 "$ROOT/scripts/build_public_downloads.py" \
+  --src "${PUBLIC_DOWNLOADS_DIR:-$ROOT/data/public_downloads}" --out "$OUT"
+cat >| "$OUT/_headers" <<'HEADERS'
+/downloads/*
+  Content-Disposition: attachment
+  X-Robots-Tag: noindex
+HEADERS
 cat >| "$OUT/robots.txt" <<'ROBOTS'
 # 広く公開する意図はない (組織内の限られた読者に URL を渡す運用)。
 User-agent: *
