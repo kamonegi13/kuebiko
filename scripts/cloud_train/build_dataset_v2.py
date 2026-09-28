@@ -9,6 +9,9 @@ s20 のデータ (data/mlx/dataset_s20) に次をまとめて適用する (1 本
 - (v2c) 要約の ATT&CK 技術を、本文と照らした判定 (data/mlx/judge_teacher_ttp.py、Opus・原文引用つき)
   で掃除する: 「明記」「文面から明らか」だけ残し「推測」を落とす (教師は 1 記事 5.3 個・本文で
   裏付けられるのは約 6 割。生徒は当て推量の技術まで写し、s20 は 8.2 個・裏付け 5% に増幅した)
+- (s22) triage の教師を判定基準に照らして付け直す (data/mlx/build_triage_relabel.py、Opus 判定 +
+  利用者決定: サイバーの要素がない軍事・宇宙は high にしない)。
+  教師の 2 割が基準とずれ、high の 4 割が過大だった
 - MITRE ATT&CK の知識 QA を 200 例 (技術 120 / グループ 50 / 緩和策 30) 足す。CTIBench (評価) に
   ID・名前・別名が出る項目と、答えが 8 語以上一致する項目は除く (汚染の防止)
 
@@ -100,10 +103,19 @@ def clean_techniques(
     return kept
 
 
+def load_triage_relabel(path: Path | None) -> dict[str, dict[str, str]]:
+    """例の鍵 → {"importance", "reason"}。鍵は _example_key と同じ。"""
+    if path is None or not path.exists():
+        return {}
+    data: dict[str, dict[str, str]] = json.loads(path.read_text(encoding="utf-8"))
+    return data
+
+
 def fix_example(
     r: dict[str, Any],
     stats: Counter[str],
     ttp: dict[str, dict[str, dict[str, Any]]] | None = None,
+    triage: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     """1 例を直した新しい例 (除外なら None)。元は変更しない。"""
     t = task(r)
@@ -117,6 +129,11 @@ def fix_example(
             if m["role"] != "assistant" and TEACHER_PERIOD.search(m["content"]):
                 m["content"] = TEACHER_PERIOD.sub(r"\1 00:00 〜 \1 23:59 JST", m["content"])
                 stats["detect の期間表記を直した"] += 1
+    if t == "triage" and triage and (fix := triage.get(_example_key(r))):
+        target = json.loads(msgs[-1]["content"])
+        stats[f"triage 付け直し {target.get('importance')}→{fix['importance']}"] += 1
+        target = {**target, "importance": fix["importance"], "reason": fix["reason"]}
+        msgs[-1]["content"] = json.dumps(target, ensure_ascii=False)
     if t == "summary":
         target = json.loads(msgs[-1]["content"])
         dropped = [k for k in SUPPRESSED if k in target]
@@ -212,14 +229,21 @@ def knowledge_examples(knowledge: Path, stats: Counter[str]) -> list[dict[str, A
     return out
 
 
-def build(src: Path, knowledge: Path, out: Path, ttp_judged: Path | None = None) -> Counter[str]:
+def build(
+    src: Path,
+    knowledge: Path,
+    out: Path,
+    ttp_judged: Path | None = None,
+    triage_relabel: Path | None = None,
+) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
     ttp = load_ttp_verdicts(ttp_judged)
+    triage = load_triage_relabel(triage_relabel)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
-        fixed = [e for e in (fix_example(r, stats, ttp) for r in rows) if e is not None]
+        fixed = [e for e in (fix_example(r, stats, ttp, triage) for r in rows) if e is not None]
         if split == "train":
             pairs = [e for e in fixed if task(e) == "pair"]
             others = [e for e in fixed if task(e) != "pair"]
@@ -240,8 +264,10 @@ def main() -> int:
     ap.add_argument("--knowledge", type=Path, default=Path("data/mlx/knowledge"))
     ap.add_argument("--out", type=Path, default=Path("data/mlx/dataset_v2a"))
     ap.add_argument("--ttp-judged", type=Path, help="judge_teacher_ttp.py の出力 (技術の掃除)")
+    ap.add_argument("--triage-relabel", type=Path, help="build_triage_relabel.py の出力")
     args = ap.parse_args()
-    for k, v in sorted(build(args.src, args.knowledge, args.out, args.ttp_judged).items()):
+    built = build(args.src, args.knowledge, args.out, args.ttp_judged, args.triage_relabel)
+    for k, v in sorted(built.items()):
         print(f"{k}: {v}")
     return 0
 
