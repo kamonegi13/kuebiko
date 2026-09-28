@@ -74,6 +74,16 @@ def s3(e: dict[str, str]) -> Any:
     )
 
 
+def _transfer_config() -> Any:
+    from boto3.s3.transfer import TransferConfig
+
+    # 遠いデータセンター (US-CA-2 → 日本) は 1 本の転送が遅い (実測 0.8MB/s) → 分割して並行で取る
+    return TransferConfig(max_concurrency=32, multipart_chunksize=32 * 1024 * 1024)
+
+
+_TRANSFER: Any = None
+
+
 class RunPodApiError(RuntimeError):
     """RunPod の REST API がエラーを返した (本文に理由がある)。"""
 
@@ -188,6 +198,8 @@ def cmd_status(a: argparse.Namespace) -> str:
 
 
 def cmd_fetch(a: argparse.Namespace) -> None:
+    global _TRANSFER
+    _TRANSFER = _TRANSFER or _transfer_config()
     e = env()
     c = s3(e)
     b = e["RUNPOD_VOLUME_ID"]
@@ -205,7 +217,7 @@ def cmd_fetch(a: argparse.Namespace) -> None:
             continue  # 取得済み (途中で切れたら、残りだけを取り直す)
         local.parent.mkdir(parents=True, exist_ok=True)
         print(f"取得 {rel} ({size / 1e6:.0f}MB)", flush=True)
-        c.download_file(b, key, str(local))
+        c.download_file(b, key, str(local), Config=_TRANSFER)
     print(f"取り出し完了 → {dest}")
 
 
