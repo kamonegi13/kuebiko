@@ -443,6 +443,7 @@ kuebiko/
   | 深掘りの選定 20→40 (要約の総量は固定) | `deep_dive_selector.DEFAULT_MAX_SELECT` |
   | チェーンの段の timeout で subprocess も止める | (戻さない — 並走の防止) |
   | 事象どうしの関係を画面に出す: 同じ出来事の関連 = 分類器 (`config/models/relation_model.json`、盲検で推定精度 0.85)・同じアクター = 信頼できる主題の共有 (精度 0.88、1 事象 5 件まで)。同一キャンペーン・共通の供給元は出さない | `relations.ENABLED_TYPES` を空に / モデルを消すと同じアクターだけ |
+  | (09-29) fast ティア・ACH・深刻度の軸を s17 → **s21** (クラウド学習、int8 配備 27GB。要約の盲検 64:21・PIR の誤該当 48→19)。detect ML も s21 の軸で学習し直した版へ | UI「設定 → モデル」で前の版に戻す + `config/models/detect_model.json` を `.bak_s17` から戻す |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

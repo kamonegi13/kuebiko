@@ -46,7 +46,7 @@ _EXTRA_MODELS_ENV = "SFT_TASK_PREFIX_MODELS"
 #: 名前を足した時点で、UI でそのモデルを割り当てるだけで印が付く (環境変数の設定漏れで
 #: 黙って外れる事故を構造で消す — s19 から印を外すと event_kind が 277 → 257 に落ちた)。
 #: 評価中の新モデルは環境変数 ``SFT_TASK_PREFIX_MODELS`` (カンマ区切り) で一時的に足す。
-PREFIX_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:s19"})
+PREFIX_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:s19", "kuebiko-sft:s21"})
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
