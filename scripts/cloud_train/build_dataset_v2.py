@@ -6,6 +6,9 @@ s20 のデータ (data/mlx/dataset_s20) に次をまとめて適用する (1 本
 - 全課題: 入力の本文がナビの残骸の例を除く (教師が見出しや自身の知識から推測を書いていた)
 - detect: プロンプトの期間表記「YYYY-MM-DD (teacher)」を本番の形 (JST の範囲) に直す
 - pair: 同一/別の比率を保って 300 例に減らす (SFT で回答が変わらない課題に勾配の 3 割を使っていた)
+- (v2c) 要約の ATT&CK 技術を、本文と照らした判定 (data/mlx/judge_teacher_ttp.py、Opus・原文引用つき)
+  で掃除する: 「明記」「文面から明らか」だけ残し「推測」を落とす (教師は 1 記事 5.3 個・本文で
+  裏付けられるのは約 6 割。生徒は当て推量の技術まで写し、s20 は 8.2 個・裏付け 5% に増幅した)
 - MITRE ATT&CK の知識 QA を 200 例 (技術 120 / グループ 50 / 緩和策 30) 足す。CTIBench (評価) に
   ID・名前・別名が出る項目と、答えが 8 語以上一致する項目は除く (汚染の防止)
 
@@ -17,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import random
 import re
@@ -56,7 +60,51 @@ def task(r: dict[str, Any]) -> str:
     return m.group(1) if m else "none"
 
 
-def fix_example(r: dict[str, Any], stats: Counter[str]) -> dict[str, Any] | None:
+#: 技術の判定で残すもの。引用が本文に無かったもの ("推測(引用不一致)") と「推測」は落とす
+KEEP_VERDICTS = ("明記", "文面から明らか")
+
+
+def load_ttp_verdicts(path: Path | None) -> dict[str, dict[str, dict[str, Any]]]:
+    """例の鍵 → {技術 ID: 判定}。鍵は judge_teacher_ttp.py と同じ (教師出力より前の sha256)。"""
+    if path is None or not path.exists():
+        return {}
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for line in path.open(encoding="utf-8"):
+        row = json.loads(line)
+        out[row["key"]] = {t["technique"].upper(): t for t in row["techniques"]}
+    return out
+
+
+def _example_key(r: dict[str, Any]) -> str:
+    user = "\n".join(m["content"] for m in r["messages"][:-1])
+    return hashlib.sha256(user.encode()).hexdigest()[:16]
+
+
+def clean_techniques(
+    techs: list[Any], verdicts: dict[str, dict[str, Any]], stats: Counter[str]
+) -> list[str]:
+    """判定に基づいて技術を残す。判定の無い技術は、決定論の関門を通ったものだけ残す。"""
+    kept = []
+    for t in techs:
+        if not isinstance(t, str):
+            continue
+        v = verdicts.get(t.upper())
+        if v is None or v["final"] == "未判定":
+            keep = bool(v and v.get("gate"))
+            stats["技術 判定なし→" + ("関門通過で残す" if keep else "落とす")] += 1
+        else:
+            keep = v["final"] in KEEP_VERDICTS
+            stats[f"技術 {v['final']}"] += 1
+        if keep:
+            kept.append(t)
+    return kept
+
+
+def fix_example(
+    r: dict[str, Any],
+    stats: Counter[str],
+    ttp: dict[str, dict[str, dict[str, Any]]] | None = None,
+) -> dict[str, Any] | None:
     """1 例を直した新しい例 (除外なら None)。元は変更しない。"""
     t = task(r)
     user = "\n".join(m["content"] for m in r["messages"] if m["role"] != "assistant")
@@ -73,6 +121,10 @@ def fix_example(r: dict[str, Any], stats: Counter[str]) -> dict[str, Any] | None
         target = json.loads(msgs[-1]["content"])
         dropped = [k for k in SUPPRESSED if k in target]
         target = {k: v for k, v in target.items() if k not in SUPPRESSED}
+        if ttp and target.get("mitre_techniques"):
+            target["mitre_techniques"] = clean_techniques(
+                target["mitre_techniques"], ttp.get(_example_key(r), {}), stats
+            )
         msgs[-1]["content"] = json.dumps(target, ensure_ascii=False)
         stats["要約の出させない欄を消した"] += bool(dropped)
     return {"messages": msgs}
@@ -160,13 +212,14 @@ def knowledge_examples(knowledge: Path, stats: Counter[str]) -> list[dict[str, A
     return out
 
 
-def build(src: Path, knowledge: Path, out: Path) -> Counter[str]:
+def build(src: Path, knowledge: Path, out: Path, ttp_judged: Path | None = None) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
+    ttp = load_ttp_verdicts(ttp_judged)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
-        fixed = [e for e in (fix_example(r, stats) for r in rows) if e is not None]
+        fixed = [e for e in (fix_example(r, stats, ttp) for r in rows) if e is not None]
         if split == "train":
             pairs = [e for e in fixed if task(e) == "pair"]
             others = [e for e in fixed if task(e) != "pair"]
@@ -186,8 +239,9 @@ def main() -> int:
     ap.add_argument("--src", type=Path, default=Path("data/mlx/dataset_s20"))
     ap.add_argument("--knowledge", type=Path, default=Path("data/mlx/knowledge"))
     ap.add_argument("--out", type=Path, default=Path("data/mlx/dataset_v2a"))
+    ap.add_argument("--ttp-judged", type=Path, help="judge_teacher_ttp.py の出力 (技術の掃除)")
     args = ap.parse_args()
-    for k, v in sorted(build(args.src, args.knowledge, args.out).items()):
+    for k, v in sorted(build(args.src, args.knowledge, args.out, args.ttp_judged).items()):
         print(f"{k}: {v}")
     return 0
 

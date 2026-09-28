@@ -31,6 +31,7 @@ kuebiko のローカル LLM を SFT する過程で直面した具体的な問�
 | `preference_optimization.md` | SFT 後段の選好最適化 (DPO 系) |
 | `evaluation_methodology.md` | 静かな劣化をどう検出するか |
 | `training_recipe_v2.md` | **s 系の学習要領 v2 の設計** — 損失の配分・データ監査・契約・忘却・規模の交絡と、E0-E4 の実験計画 (2026-09-27) |
+| `n_series_plan_v3.md` | **n 系 (長文生成) の計画 v3** — クラウド学習の教訓 (入力の形・int4・教師の当て推量) を反映した N0-N5 (2026-09-28) |
 | `sft_transfer_failure_diagnosis.md` | 継続学習の不動・seed 分散・尾部欄の欠落 — 学習経路 (lr・容量・露出) の診断と是正順序 (2026-09-11) |
 
 ## 関連する repo 内の資産
