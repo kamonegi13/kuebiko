@@ -128,3 +128,54 @@ def filter_llm_techniques(techniques: list[str], text: str, *, article_id: str =
             kept=len(kept),
         )
     return kept if mode == "on" else list(techniques)
+
+
+def _norm_quote(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def filter_by_quotes(
+    techniques: list[str],
+    evidence: list[tuple[str, str]],
+    text: str,
+    *,
+    article_id: str = "",
+) -> list[str]:
+    """技術ごとの原文の引用が本文に実在するものだけを返す (新しい一覧、2026-09-29)。
+
+    言い回しの照合 (``filter_llm_techniques``) は Opus 判定に対し精度 61%・再現率 28% だった。
+    引用つきで学習したモデルは技術ごとに本文の一節を書くので、その一節が本文に在るかで採否を
+    決める。引用の無い技術・引用が本文に無い技術は落とす。T 番号でない値はそのまま通す。
+    ``evidence`` は (技術 ID, 引用) の組。
+    """
+    mode = gate_mode()
+    if mode == "off" or not text.strip():
+        return list(techniques)
+    body = _norm_quote(text)
+    quoted = {
+        tid.strip().upper()
+        for tid, quote in evidence
+        if len(_norm_quote(quote)) >= _MIN_QUOTE_CHARS and _norm_quote(quote) in body
+    }
+    kept: list[str] = []
+    dropped: list[str] = []
+    for t in techniques:
+        norm = str(t).strip().upper()
+        is_technique = norm.startswith("T") and norm[1:2].isdigit()
+        if not is_technique or norm in quoted:
+            kept.append(t)
+        else:
+            dropped.append(norm)
+    if dropped:
+        _log.info(
+            "ttp_quote_gate_drop",
+            mode=mode,
+            article_id=article_id,
+            dropped=dropped[:10],
+            kept=len(kept),
+        )
+    return kept if mode == "on" else list(techniques)
+
+
+#: 引用がこれより短いと一般語に当たりすぎる (例 "RDP" の 1 語で裏付けにしない)
+_MIN_QUOTE_CHARS = 12

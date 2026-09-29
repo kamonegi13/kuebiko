@@ -288,14 +288,23 @@ async def _summarize_and_build(
     ]
     # LLM の技術は本文で裏付けられるものだけ採る (当て推量の定番技術を落とす、2026-09-27)。
     # 本文の T 番号 (extracted) は明示なのでそのまま合流する
-    from src.cti.ttp_evidence import filter_llm_techniques
+    from src.cti.ttp_evidence import filter_by_quotes, filter_llm_techniques
+    from src.pipeline.summary import SummaryEvidenceOutput
 
-    merged_techs = merge_techniques(
-        filter_llm_techniques(
-            list(summary.mitre_techniques), f"{article.title}\n{body}", article_id=article.id
-        ),
-        extracted,
-    )
+    gate_text = f"{article.title}\n{body}"
+    if isinstance(summary, SummaryEvidenceOutput):
+        # 引用つきで学習したモデル: 技術ごとの原文の引用が本文に在るものだけ採る (2026-09-29)
+        kept_llm = filter_by_quotes(
+            list(summary.mitre_techniques),
+            [(e.technique, e.quote) for e in summary.mitre_evidence],
+            gate_text,
+            article_id=article.id,
+        )
+    else:
+        kept_llm = filter_llm_techniques(
+            list(summary.mitre_techniques), gate_text, article_id=article.id
+        )
+    merged_techs = merge_techniques(kept_llm, extracted)
     # 本文に登場する既知アクターを検出 (後段で metadata に保持)
     actor_registry = load_actor_aliases()
     matched_actors = actor_registry.find_all(body)
@@ -523,18 +532,16 @@ async def _summarize_without_runaway(
 
     作り直しても暴走したら繰り返しを畳んで使う。検出と修復は src/pipeline/summary_runaway.py。
     """
+    from src.pipeline.summary import summary_schema_for
     from src.pipeline.summary_runaway import repair, runaway_reasons
 
-    summary: SummaryOutput = await llm.generate_structured(
-        prompt, schema=SummaryOutput, think=think
-    )
+    schema = summary_schema_for(getattr(llm, "model", ""))
+    summary: SummaryOutput = await llm.generate_structured(prompt, schema=schema, think=think)
     reasons = runaway_reasons(summary)
     if not reasons:
         return summary
     _log.warning("summary_runaway_retry", url=url, reasons=reasons, model=getattr(llm, "model", ""))
-    retried: SummaryOutput = await llm.generate_structured(
-        prompt, schema=SummaryOutput, think=think
-    )
+    retried: SummaryOutput = await llm.generate_structured(prompt, schema=schema, think=think)
     still = runaway_reasons(retried)
     if not still:
         return retried

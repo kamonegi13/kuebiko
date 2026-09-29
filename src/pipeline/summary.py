@@ -280,6 +280,46 @@ class SummaryOutput(BaseModel):
     remediation: str | None = None
 
 
+class MitreEvidence(BaseModel):
+    """ATT&CK 技術 1 つと、その根拠となる本文の一節 (原文のまま)。"""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    technique: str
+    quote: str
+
+
+#: 技術ごとに本文の引用を出すよう学習したモデル (``mitre_evidence`` 欄を出させる)。学習して
+#: いないモデルに欄を足すと、見たことのない出力の形を求めることになる (接頭辞と同じ考え方、
+#: 2026-09-29)
+EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset()
+
+
+class SummaryEvidenceOutput(SummaryOutput):
+    """``SummaryOutput`` + 技術ごとの原文の引用 (引用つきで学習したモデル用)。
+
+    採否は引用が本文に在るかで決める (``ttp_evidence.filter_by_quotes``)。欄は末尾に置く
+    (学習データの教師出力も末尾に置く)。
+    """
+
+    mitre_evidence: list[MitreEvidence] = Field(
+        default_factory=list, json_schema_extra=_max_items("mitre_techniques")
+    )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        schema = super().__get_pydantic_json_schema__(core_schema, handler)
+        schema["required"] = sorted({*schema.get("required", ()), "mitre_evidence"})
+        return schema
+
+
+def summary_schema_for(model: str) -> type[SummaryOutput]:
+    """モデルに出させる要約の形。引用つきで学習したモデルだけ ``SummaryEvidenceOutput``。"""
+    return SummaryEvidenceOutput if model.strip() in EVIDENCE_TRAINED_MODELS else SummaryOutput
+
+
 # ---------- importance 決定的ガード (Phase B-cal2, 2026-06-04) ----------
 
 # vulnerability/advisory の importance は LLM (高速 26B) が一律 high に過大評価する

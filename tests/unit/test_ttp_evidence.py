@@ -75,3 +75,59 @@ def test_shipped_patterns_compile_and_are_keyed_by_technique_id() -> None:
 
     assert pats, "config/cti/ttp_evidence.yaml が読めない"
     assert all(re.fullmatch(r"T\d{4}(\.\d{3})?", k) for k in pats)
+
+
+class TestFilterByQuotes:
+    """技術ごとの原文の引用が本文に在るものだけを採る (2026-09-29)。"""
+
+    BODY = (
+        "The attackers sent spear-phishing emails with a malicious Word attachment. "
+        "Later they deployed a cron job for persistence on the server."
+    )
+
+    def test_keeps_technique_whose_quote_is_in_body(self) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        ev = [("T1566.001", "spear-phishing emails with a malicious Word attachment")]
+        assert filter_by_quotes(["T1566.001"], ev, self.BODY) == ["T1566.001"]
+
+    def test_drops_technique_without_quote_or_with_absent_quote(self) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        ev = [("T1041", "exfiltrated the data over the C2 channel")]  # 本文に無い
+        assert filter_by_quotes(["T1041", "T1190"], ev, self.BODY) == []
+
+    def test_quote_match_ignores_whitespace_and_case(self) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        ev = [("T1053.003", "Deployed  a CRON job\nfor persistence")]
+        assert filter_by_quotes(["t1053.003"], ev, self.BODY) == ["t1053.003"]
+
+    def test_too_short_quote_is_not_evidence(self) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        assert filter_by_quotes(["T1053.003"], [("T1053.003", "cron job")], self.BODY) == []
+
+    def test_non_technique_values_pass_through(self) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        assert filter_by_quotes(["CVE-2026-0001"], [], self.BODY) == ["CVE-2026-0001"]
+
+    def test_shadow_mode_keeps_everything(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.cti.ttp_evidence import filter_by_quotes
+
+        monkeypatch.setenv("TTP_EVIDENCE_GATE", "shadow")
+        assert filter_by_quotes(["T1041"], [], self.BODY) == ["T1041"]
+
+
+def test_summary_schema_for_uses_evidence_form_only_for_trained_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.pipeline import summary as mod
+
+    monkeypatch.setattr(mod, "EVIDENCE_TRAINED_MODELS", frozenset({"kuebiko-sft:s22"}))
+    assert mod.summary_schema_for("kuebiko-sft:s22") is mod.SummaryEvidenceOutput
+    assert mod.summary_schema_for("kuebiko-sft:s21") is mod.SummaryOutput
+    schema = mod.SummaryEvidenceOutput.model_json_schema()
+    assert "mitre_evidence" in schema["required"]
+    assert list(schema["properties"])[-1] == "mitre_evidence"
