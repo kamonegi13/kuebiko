@@ -16,6 +16,7 @@ SIR (状況総括・事象ニュース) は「窓の中で何が届いたか」=
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -96,6 +97,24 @@ def _parse_ts(raw: object) -> datetime | None:
     return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
 
 
+_ID_TOKEN = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+
+
+def _labelize(text: str) -> str:
+    """理由の文にある仮説の内部 id (``trend_worsening`` 等) を日本語の表示名へ。
+
+    台帳は delta_note に「見立て trend_worsening→trend_flat」と id のまま書く。生の enum を
+    読み手に見せない (UI 文言規約)。辞書に無い語はそのまま残す。
+    """
+    from src.synthesis.grounded.hypotheses import get_hypothesis
+
+    def one(m: re.Match[str]) -> str:
+        hyp = get_hypothesis(m.group(0))
+        return hyp.label if hyp else m.group(0)
+
+    return _ID_TOKEN.sub(one, text)
+
+
 def _moves_in_window(card: dict[str, Any], since: datetime) -> tuple[Move, ...]:
     moves: list[Move] = []
     for rev in card.get("trajectory") or []:
@@ -103,7 +122,7 @@ def _moves_in_window(card: dict[str, Any], since: datetime) -> tuple[Move, ...]:
         at = _parse_ts(rev.get("at"))
         if delta not in MOVED_DELTAS or at is None or at < since:
             continue
-        reason = str(rev.get("reason") or rev.get("note") or "").strip()
+        reason = _labelize(str(rev.get("reason") or rev.get("note") or "").strip())
         moves.append(Move(at=str(rev.get("at")), delta_type=delta, reason=reason))
     # 新しい順 (読み手は最新の動きから読む)。同じ種類・同じ理由は最新の 1 件にまとめる
     merged: dict[tuple[str, str], Move] = {}

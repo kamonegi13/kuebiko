@@ -224,3 +224,28 @@ class TestTrajectoryWindow:
         revs = [(1, "", "", "low", "no_change", "2026-07-01T00:00:00+00:00")]
 
         assert _within_trajectory_window(revs, now=NOW) == revs
+
+
+def test_hypothesis_ids_in_reason_are_shown_as_labels() -> None:
+    """台帳の delta_note は仮説を内部 id で書く。読み手には表示名で見せる。"""
+    from src.synthesis.grounded.hypotheses import get_hypothesis
+
+    label = get_hypothesis("trend_flat")
+    assert label is not None
+    cards = [
+        _card(
+            "a",
+            trajectory=[
+                _rev(
+                    "2026-09-28T21:00:00+00:00",
+                    "hypothesis_flip",
+                    "見立て trend_worsening→trend_flat",
+                )
+            ],
+        )
+    ]
+
+    reason = build_pir_brief(cards, now=NOW).moved[0].moves[0].reason
+
+    assert "trend_flat" not in reason
+    assert label.label in reason

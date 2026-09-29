@@ -32,6 +32,13 @@ _EVIDENCE_WINDOW_DAYS = 30
 _INDICATOR_LIMIT = 8
 
 
+def _labelize(text: str) -> str:
+    """仮説の内部 id を表示名へ (PIR ブリーフと同じ変換)。"""
+    from src.digest.pir_brief import _labelize as labelize
+
+    return labelize(text)
+
+
 def _split_delta_note(raw: object) -> tuple[str, list[str]]:
     """delta_note を「なぜ動いたか」と「発火した指標」に分ける。
 
@@ -183,7 +190,7 @@ def build_standing_posture(
                 "delta_type": str(latest[4]) if latest else "",
                 # 前回の答えから**なぜ**動いたか。問いを主語に読むとき、確度の数字より
                 # 「何が変わったのでこうなったか」が要る (docs/pir_brief_design.md §3)。
-                "delta_note": _split_delta_note(latest[6])[0] if latest else "",
+                "delta_note": _labelize(_split_delta_note(latest[6])[0]) if latest else "",
                 # 発火した指標 = 観測された事実。変化の理由とは別の欄に置く。
                 "fired_indicators": _split_delta_note(latest[6])[1] if latest else [],
                 # 何が分かっていないか (答えの限界を答えと同じ面に置く = honesty doctrine)。
@@ -212,7 +219,7 @@ def build_standing_posture(
                         "delta_type": str(r[4]),
                         "note": str(r[6] or "")[:100],
                         # 変化の理由だけ (発火指標の接頭辞以降を除く)。PIR ブリーフが引用する
-                        "reason": _split_delta_note(r[6])[0][:200],
+                        "reason": _labelize(_split_delta_note(r[6])[0])[:200],
                     }
                     for r in revs
                 ],
