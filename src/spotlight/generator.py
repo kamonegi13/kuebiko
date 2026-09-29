@@ -413,6 +413,24 @@ async def generate_spotlight(
         ledger_situations=ledger_situations,
     )
 
+    # GraphRAG (2026-09-29): 候補の事象から線をたどった候補外の関連事象を足す。既定 off。
+    # 失敗は節なし (従来の入力) で続ける — 線は補助で、無くても Spotlight は成立する。
+    from src.spotlight.graph_context import (
+        build_graph_context,
+        graph_context_enabled,
+        insert_after_candidates,
+    )
+
+    if graph_context_enabled():
+        try:
+            block = build_graph_context(
+                RunHistoryRepository(), [c["article_id"] for c in candidate_articles], end
+            )
+            prompt = insert_after_candidates(prompt, block)
+            _log.info("spotlight_graph_context", pir_id=pir.id, lines=block.count("\n- "))
+        except Exception as e:  # noqa: BLE001
+            _log.warning("spotlight_graph_context_failed", pir_id=pir.id, error=str(e))
+
     _log.info(
         "spotlight_llm_call_start",
         pir_id=pir.id,

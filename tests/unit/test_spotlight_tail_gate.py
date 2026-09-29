@@ -149,3 +149,59 @@ async def test_gate_disabled_by_flag(_patched: None, monkeypatch: pytest.MonkeyP
     assert record is not None
     assert len(llm.prompts) == 1  # rollback: 従来挙動
     assert record.caveats == []
+
+
+# ---------- GraphRAG の節の配線 (2026-09-29) ----------
+
+
+@pytest.mark.asyncio
+async def test_graph_context_is_inserted_when_enabled(
+    _patched: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.spotlight.graph_context as gc
+
+    seen: list[list[str]] = []
+
+    def fake_build(_repo: Any, ids: list[str], _end: Any) -> str:
+        seen.append(list(ids))
+        return "## 線でたどった関連事象 (1 本 / 全 1 本)\n- 線\n\n"
+
+    monkeypatch.setattr(gc, "build_graph_context", fake_build)
+    monkeypatch.setenv("SPOTLIGHT_GRAPH_CONTEXT", "1")
+    llm = _FakeLLM([(["c1", "c2"], ["u1", "u2"])])
+
+    await _run(llm)
+
+    assert seen == [[f"a{i}" for i in range(6)]]
+    assert "線でたどった関連事象" in llm.prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_graph_context_failure_keeps_the_original_prompt(
+    _patched: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import src.spotlight.graph_context as gc
+
+    def boom(*_a: Any) -> str:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(gc, "build_graph_context", boom)
+    monkeypatch.setenv("SPOTLIGHT_GRAPH_CONTEXT", "1")
+    llm = _FakeLLM([(["c1", "c2"], ["u1", "u2"])])
+
+    record = await _run(llm)
+
+    assert record is not None
+    assert llm.prompts[0] == "PROMPT"
+
+
+@pytest.mark.asyncio
+async def test_graph_context_off_by_default(
+    _patched: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SPOTLIGHT_GRAPH_CONTEXT", raising=False)
+    llm = _FakeLLM([(["c1", "c2"], ["u1", "u2"])])
+
+    await _run(llm)
+
+    assert llm.prompts[0] == "PROMPT"
