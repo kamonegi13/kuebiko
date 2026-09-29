@@ -275,11 +275,13 @@ class Verdict(BaseModel):
 
 
 async def judge(args: argparse.Namespace) -> int:
-    rows = [json.loads(x) for x in OUT.open(encoding="utf-8")]
-    done = {json.loads(x)["key"] for x in JUDGE_OUT.open()} if JUDGE_OUT.exists() else set()
+    src = args.src or OUT
+    judge_out = args.judge_out or JUDGE_OUT
+    rows = [json.loads(x) for x in src.open(encoding="utf-8")]
+    done = {json.loads(x)["key"] for x in judge_out.open()} if judge_out.exists() else set()
     llm: LLMClient = build_llm_for_ref(args.judge_model, Step.PAIR_JUDGE, load_app_config())
     rng = random.Random(_SEED)
-    with JUDGE_OUT.open("a", encoding="utf-8") as fh:
+    with judge_out.open("a", encoding="utf-8") as fh:
         for r in rows:
             flip = rng.random() < 0.5
             if r["key"] in done:
@@ -323,6 +325,8 @@ def main() -> int:
     p.add_argument("--pool", type=int, default=60, help="線の有無を調べる窓の数")
     p.add_argument("--min-lines", type=int, default=3, help="線がこれ未満の窓は比べない")
     p.add_argument("--judge", action="store_true")
+    p.add_argument("--src", type=Path, help="対読する生成 (既定は Opus の生成)")
+    p.add_argument("--judge-out", type=Path, help="対読の出力先")
     a = p.parse_args()
     return asyncio.run(judge(a) if a.judge else generate(a))
 
