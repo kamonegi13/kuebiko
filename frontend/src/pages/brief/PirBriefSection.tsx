@@ -42,6 +42,7 @@ function MovedQuestion({ q }: { q: PirBriefQuestion }) {
           <li key={`${i}-${m.at}`} className="text-[13px] text-fg-muted">
             <span className="text-warning font-semibold">{m.label}</span>
             {m.reason && <span> — {m.reason}</span>}
+            {m.count > 1 && <span className="text-fg-subtle"> (24 時間で {m.count} 回)</span>}
           </li>
         ))}
       </ul>

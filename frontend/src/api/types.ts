@@ -517,6 +517,8 @@ export interface PirBriefMove {
   delta_type: string;
   label: string;
   reason: string;
+  /** 24 時間に同じ種類・同じ理由の改訂が重なった回数 */
+  count: number;
 }
 
 export interface PirBriefQuestion {

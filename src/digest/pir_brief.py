@@ -16,7 +16,7 @@ SIR (状況総括・事象ニュース) は「窓の中で何が届いたか」=
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,6 +49,9 @@ class Move:
     at: str
     delta_type: str
     reason: str
+    #: 窓の中で同じ種類・同じ理由の改訂が重なった回数 (毎時の再評価が同じ理由で
+    #: 改訂を重ねる — 3 行並べても情報は増えない)
+    count: int = 1
 
     @property
     def label(self) -> str:
@@ -102,8 +105,13 @@ def _moves_in_window(card: dict[str, Any], since: datetime) -> tuple[Move, ...]:
             continue
         reason = str(rev.get("reason") or rev.get("note") or "").strip()
         moves.append(Move(at=str(rev.get("at")), delta_type=delta, reason=reason))
-    # 新しい順 (読み手は最新の動きから読む)
-    return tuple(reversed(moves))
+    # 新しい順 (読み手は最新の動きから読む)。同じ種類・同じ理由は最新の 1 件にまとめる
+    merged: dict[tuple[str, str], Move] = {}
+    for m in reversed(moves):
+        key = (m.delta_type, m.reason)
+        prev = merged.get(key)
+        merged[key] = replace(prev, count=prev.count + 1) if prev else m
+    return tuple(merged.values())
 
 
 def _status(card: dict[str, Any], since: datetime, now: datetime) -> QuestionStatus:
@@ -166,7 +174,8 @@ def _clip(text: str, limit: int) -> str:
 def _format_moved(s: QuestionStatus) -> list[str]:
     lines = [f"▶ {s.question}", f"  答え ({s.confidence_label}): {s.claim}"]
     for m in s.moves:
-        lines.append(f"  {m.label}: {m.reason}" if m.reason else f"  {m.label}")
+        times = f" (24 時間で {m.count} 回)" if m.count > 1 else ""
+        lines.append(f"  {m.label}: {m.reason}{times}" if m.reason else f"  {m.label}{times}")
     if s.fired_indicators:
         lines.append(f"  観測された指標: {' / '.join(s.fired_indicators)}")
     if s.missing_evidence:
@@ -214,7 +223,13 @@ def _status_payload(s: QuestionStatus) -> dict[str, Any]:
         "claim": s.claim,
         "confidence": s.confidence,
         "moves": [
-            {"at": m.at, "delta_type": m.delta_type, "label": m.label, "reason": m.reason}
+            {
+                "at": m.at,
+                "delta_type": m.delta_type,
+                "label": m.label,
+                "reason": m.reason,
+                "count": m.count,
+            }
             for m in s.moves
         ],
         "fired_indicators": list(s.fired_indicators),

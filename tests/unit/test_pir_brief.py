@@ -93,6 +93,24 @@ class TestBuild:
         assert brief.moved[0].moves[0].delta_type == "escalated"
         assert brief.moved[0].moves[0].reason == "被害・標的の拡大を観測"
 
+    def test_identical_moves_are_merged_with_count(self) -> None:
+        """毎時の再評価が同じ理由で改訂を重ねても、1 行にまとめて回数を添える。"""
+        cards = [
+            _card(
+                "a",
+                trajectory=[
+                    _rev("2026-09-28T07:00:00+00:00", "escalated", "被害・標的の拡大を観測"),
+                    _rev("2026-09-28T12:00:00+00:00", "strengthened", "確度 low→moderate"),
+                    _rev("2026-09-28T20:00:00+00:00", "escalated", "被害・標的の拡大を観測"),
+                ],
+            )
+        ]
+
+        moves = build_pir_brief(cards, now=NOW).moved[0].moves
+
+        assert [(m.delta_type, m.count) for m in moves] == [("escalated", 2), ("strengthened", 1)]
+        assert moves[0].at == "2026-09-28T20:00:00+00:00"
+
     def test_unassessed_is_counted_separately(self) -> None:
         brief = build_pir_brief([_card("a", assessed=False)], now=NOW)
 
