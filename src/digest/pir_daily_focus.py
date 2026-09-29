@@ -19,7 +19,10 @@ import jinja2
 from src.config_loader import AppConfig, DiscordChannel, PipelineConfig
 from src.logging_config import get_logger
 from src.pir.evaluator import PirMatch, evaluate_pir_matches
-from src.pir.loader import load_pir_config
+
+# PIR 定義は DB が正本 (yaml は初回の種)。2026-09-29 まで yaml を読んでいて、DB で削除した
+# PIR と古い説明文で朝ブリーフの PIR 別の要点を書いていた
+from src.pir.integration import load_current_pir_config
 from src.pir.models import Pir
 from src.tools.discord_publisher import (
     BriefingMessage,
@@ -209,7 +212,7 @@ async def collect_pir_focus_sections(
     Returns:
         match が >=1 件の PIR のみを含む list (空 PIR は除外)
     """
-    cfg = load_pir_config()
+    cfg = load_current_pir_config()
     sections: list[PirFocusSection] = []
 
     enabled = [p for p in cfg.priorities if p.enabled]

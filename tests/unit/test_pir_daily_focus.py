@@ -183,7 +183,7 @@ async def test_collect_pir_focus_sections_skips_pirs_with_no_meaningful_matches(
     )
 
     with (
-        patch("src.digest.pir_daily_focus.load_pir_config", return_value=pir_config),
+        patch("src.digest.pir_daily_focus.load_current_pir_config", return_value=pir_config),
         patch(
             "src.digest.pir_daily_focus.evaluate_pir_matches",
             side_effect=fake_evaluate,
@@ -206,7 +206,7 @@ async def test_collect_pir_focus_sections_llm_failure_keeps_section() -> None:
     llm_mock.generate = AsyncMock(side_effect=RuntimeError("ollama down"))
 
     with (
-        patch("src.digest.pir_daily_focus.load_pir_config", return_value=pir_config),
+        patch("src.digest.pir_daily_focus.load_current_pir_config", return_value=pir_config),
         patch(
             "src.digest.pir_daily_focus.evaluate_pir_matches",
             return_value=[_make_match(article_id="a1", importance="high")],
@@ -268,3 +268,14 @@ class TestFormatCompactDigest:
         from src.digest.pir_daily_focus import format_compact_digest
 
         assert format_compact_digest([], "2026-07-12") == ""
+
+
+def test_reads_pir_definitions_from_db_not_seed_yaml() -> None:
+    """PIR 定義の正本は DB。yaml (初回の種) を読むと、削除した PIR と古い説明文で書く (09-29)。"""
+    import inspect
+
+    import src.digest.pir_daily_focus as mod
+
+    source = inspect.getsource(mod)
+    assert "load_current_pir_config()" in source
+    assert "from src.pir.loader import load_pir_config" not in source
