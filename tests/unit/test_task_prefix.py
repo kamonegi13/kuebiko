@@ -176,3 +176,13 @@ class TestWrapperFollowsTheInnerModel:
         monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
 
         assert self._sent("kuebiko-sft:s19") == "[task: kind]\n本文"
+
+
+def test_untrained_step_gets_no_marker_even_for_prefix_trained_model() -> None:
+    from src.tools.task_prefix import with_task_prefix
+
+    # n19 は事象ニュースを接頭辞つきで学習したが、深掘りは学習していない
+    got = with_task_prefix("本文", Step.EVENT_NEWS, "kuebiko-sft:n19")
+    assert got.startswith("[task: event_news]")
+    assert with_task_prefix("本文", Step.DIGEST_DEEP_DIVE, "kuebiko-sft:n19") == "本文"
+    assert with_task_prefix("本文", Step.DIGEST_DEEP_DIVE_SELECT, "kuebiko-sft:n19") == "本文"

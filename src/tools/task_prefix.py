@@ -46,7 +46,9 @@ _EXTRA_MODELS_ENV = "SFT_TASK_PREFIX_MODELS"
 #: 名前を足した時点で、UI でそのモデルを割り当てるだけで印が付く (環境変数の設定漏れで
 #: 黙って外れる事故を構造で消す — s19 から印を外すと event_kind が 277 → 257 に落ちた)。
 #: 評価中の新モデルは環境変数 ``SFT_TASK_PREFIX_MODELS`` (カンマ区切り) で一時的に足す。
-PREFIX_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:s19", "kuebiko-sft:s21"})
+PREFIX_TRAINED_MODELS: frozenset[str] = frozenset(
+    {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19"}
+)
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
@@ -63,6 +65,14 @@ TASK_MARKERS: dict[Step, str] = {
     Step.SYNTHESIS_NARRATIVE: "[task: synthesis]\n",
     Step.DIGEST_DEEP_DIVE_SELECT: "[task: deep_dive_select]\n",
     Step.DIGEST_DEEP_DIVE: "[task: deep_dive]\n",
+}
+
+
+#: 接頭辞つきで学習したモデルのうち、**その step は学習していない**もの。印を付けると、
+#: 学習していない step に見たことのない印が届く
+#: (n19 は深掘りの教師データが無いまま投入 — 2026-09-29)。
+UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
+    "kuebiko-sft:n19": frozenset({Step.DIGEST_DEEP_DIVE, Step.DIGEST_DEEP_DIVE_SELECT}),
 }
 
 
@@ -84,7 +94,7 @@ def prefix_for(step: Step) -> str:
 
 def with_task_prefix(prompt: str, step: Step, model: str) -> str:
     """プロンプトの先頭へ課題の印を付ける (二重付与はしない)。"""
-    if not task_prefix_enabled(model):
+    if not task_prefix_enabled(model) or step in UNTRAINED_STEPS.get(model.strip(), frozenset()):
         return prompt
     marker = prefix_for(step)
     if not marker or prompt.startswith(marker):
