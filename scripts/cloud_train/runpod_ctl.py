@@ -149,6 +149,12 @@ def cmd_launch(a: argparse.Namespace) -> None:
             "RUN_ID": a.run_id,
             "TRAIN_ARGS": a.train_args,
             "MAX_HOURS": str(a.max_hours),
+            # 学習の結果をサーバ自身が S3 の窓口経由で書き出すため (pod_run.sh)。値は RunPod の
+            # 管理画面からのみ見える
+            "S3_KEY": e["RUNPOD_S3_ACCESS_KEY"],
+            "S3_SECRET": e["RUNPOD_S3_SECRET"],
+            "VOLUME_ID": e["RUNPOD_VOLUME_ID"],
+            "DATACENTER": e["RUNPOD_DATACENTER"],
         },
         "dockerStartCmd": ["bash", "-c", f"bash /workspace/runs/{a.run_id}/code/pod_run.sh"],
     }
