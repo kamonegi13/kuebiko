@@ -67,6 +67,7 @@ TASK_MARKERS: dict[Step, str] = {
     Step.DIGEST_DEEP_DIVE: "[task: deep_dive]\n",
     # s22 から学習 (2026-09-29)。s21 / n19 は学習していない (UNTRAINED_STEPS)
     Step.PIR_DAILY_FOCUS: "[task: pir_focus]\n",
+    Step.SEVERITY_AXES: "[task: axes]\n",
 }
 
 
@@ -75,10 +76,15 @@ TASK_MARKERS: dict[Step, str] = {
 #: (n19 は深掘りの教師データが無いまま投入 — 2026-09-29)。
 UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
     "kuebiko-sft:n19": frozenset(
-        {Step.DIGEST_DEEP_DIVE, Step.DIGEST_DEEP_DIVE_SELECT, Step.PIR_DAILY_FOCUS}
+        {
+            Step.DIGEST_DEEP_DIVE,
+            Step.DIGEST_DEEP_DIVE_SELECT,
+            Step.PIR_DAILY_FOCUS,
+            Step.SEVERITY_AXES,
+        }
     ),
-    "kuebiko-sft:s21": frozenset({Step.PIR_DAILY_FOCUS}),
-    "kuebiko-sft:s19": frozenset({Step.PIR_DAILY_FOCUS}),
+    "kuebiko-sft:s21": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
+    "kuebiko-sft:s19": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
 }
 
 

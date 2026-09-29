@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.cloud_train.build_dataset_v2 import (
+    AXES_MARKER,
     PIR_FOCUS_MARKER,
     _with_completion,
     fix_example,
@@ -129,6 +130,7 @@ class TestPirFocus:
         from src.tools.task_prefix import TASK_MARKERS
 
         assert TASK_MARKERS[Step.PIR_DAILY_FOCUS] == PIR_FOCUS_MARKER
+        assert TASK_MARKERS[Step.SEVERITY_AXES] == AXES_MARKER
 
 
 def test_flagged_rows_are_those_with_issues(tmp_path: Path) -> None:

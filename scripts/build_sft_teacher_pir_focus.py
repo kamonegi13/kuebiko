@@ -47,6 +47,18 @@ from src.tools.llm_client import LLMClient, LLMError  # noqa: E402
 from src.tools.model_tiers import Step, build_llm_for_ref  # noqa: E402
 
 OUT = Path("data/mlx/teacher/pir_daily_focus.jsonl")
+#: 教師にだけ渡す注意書き (学習データの prompt には入れない)。初回の抜き取り監査 (30 件) で
+#: 帰属の留保 (「とされる」「推定」) を落とす格上げが 1 件あたり 0.47 あった (2026-09-29)。
+#: 80-160 字の制約に押されて留保を削っていた
+TEACHER_NOTE = """
+
+## 書き手への注意 (厳守)
+- 記事が「とされる」「推定」「可能性」「疑い」「主張」と留保した内容は、字数が苦しくても留保を残す。
+  帰属 (国家・アクター) の確度を記事より強めない
+- 記事に書かれていない共通性・因果・傾向 (「〜が共通する」「〜が拡大」) を作らない。共通点は記事に
+  明示された範囲だけで書き、無ければ書かない
+- 数字・範囲・対象の限定 (特定版のみ・潜在的な標的・年) を落とさない
+"""
 _JST = ZoneInfo("Asia/Tokyo")
 #: 1 PIR あたりの上限 (照合の多い PIR が教師を占めないように)
 _PER_PIR_MAX = 25
@@ -93,13 +105,18 @@ def sample(items: list[tuple[str, Any, list[PirMatch]]], total: int) -> list[Any
     return picked[:total]
 
 
-async def _one(llm: LLMClient, sem: asyncio.Semaphore, item: Any) -> dict[str, Any] | None:
+async def _one(
+    llm: LLMClient, sem: asyncio.Semaphore, item: Any, note: str
+) -> dict[str, Any] | None:
     key, pir, top = item
     prompt = _build_prompt(pir, top)
     async with sem:
         try:
             res = await llm.generate(
-                prompt=prompt, temperature=0.0, max_tokens=_TEACHER_MAX_TOKENS, think=False
+                prompt=prompt + note,
+                temperature=0.0,
+                max_tokens=_TEACHER_MAX_TOKENS,
+                think=False,
             )
         except LLMError as exc:
             print(f"{key} 失敗 {type(exc).__name__}", flush=True)
@@ -117,6 +134,9 @@ async def _one(llm: LLMClient, sem: asyncio.Semaphore, item: Any) -> dict[str, A
 
 
 async def main_async(args: argparse.Namespace) -> int:
+    global OUT
+    OUT = args.out
+    note = TEACHER_NOTE if args.teacher_note else ""
     llm = build_llm_for_ref(args.model, Step.PIR_DAILY_FOCUS, load_app_config())
     print(f"教師モデル: {llm.model}", flush=True)
     done = (
@@ -131,7 +151,7 @@ async def main_async(args: argparse.Namespace) -> int:
     sem = asyncio.Semaphore(_CONCURRENCY)
     n = 0
     with OUT.open("a", encoding="utf-8") as fh:
-        for fut in asyncio.as_completed([_one(llm, sem, it) for it in picked]):
+        for fut in asyncio.as_completed([_one(llm, sem, it, note) for it in picked]):
             row = await fut
             if row:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -148,6 +168,12 @@ def main() -> int:
     p.add_argument("--model", default="claudecode:opus")
     p.add_argument("--days", type=int, default=60)
     p.add_argument("--max", type=int, default=300)
+    p.add_argument("--out", type=Path, default=OUT)
+    p.add_argument(
+        "--teacher-note",
+        action="store_true",
+        help="教師にだけ留保の注意書きを渡す (prompt には残さない)",
+    )
     return asyncio.run(main_async(p.parse_args()))
 
 

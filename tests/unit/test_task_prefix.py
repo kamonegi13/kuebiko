@@ -197,3 +197,13 @@ def test_pir_focus_marker_only_for_models_trained_on_it(monkeypatch) -> None:  #
     monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s22")
     got = with_task_prefix("本文", Step.PIR_DAILY_FOCUS, "kuebiko-sft:s22")
     assert got == "[task: pir_focus]\n本文"
+
+
+def test_axes_marker_only_for_models_trained_on_it(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """深刻度の軸は s22 から学習。s21 / n19 には印を付けない (2026-09-29)。"""
+    from src.tools.task_prefix import with_task_prefix
+
+    assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:s21") == "本文"
+    assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:n19") == "本文"
+    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s22")
+    assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:s22") == "[task: axes]\n本文"

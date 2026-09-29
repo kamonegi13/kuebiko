@@ -139,14 +139,22 @@ def load_summary_corrected(path: Path | None) -> dict[int, str]:
     }
 
 
-#: PIR 別の要点の接頭辞 (src/tools/task_prefix.py の TASK_MARKERS と同じ)
+#: 接頭辞 (src/tools/task_prefix.py の TASK_MARKERS と同じ)
 PIR_FOCUS_MARKER = "[task: pir_focus]\n"
+AXES_MARKER = "[task: axes]\n"
 #: 検証に回す割合 (学習と重ならない)
 PIR_FOCUS_VALID_EVERY = 20
 
 
 def pir_focus_examples(path: Path | None, stats: Counter[str]) -> tuple[list[Any], list[Any]]:
-    """PIR 別の要点の教師対 (build_sft_teacher_pir_focus.py) → (train, valid) の例。
+    """PIR 別の要点の教師対 (build_sft_teacher_pir_focus.py) → (train, valid) の例。"""
+    return teacher_examples(path, PIR_FOCUS_MARKER, "PIR 別の要点", stats)
+
+
+def teacher_examples(
+    path: Path | None, marker: str, label: str, stats: Counter[str]
+) -> tuple[list[Any], list[Any]]:
+    """{key, prompt, completion} の教師対 → (train, valid) の例。
 
     本番は system なしで prompt を渡すので、接頭辞は user の先頭に付ける。
     """
@@ -161,13 +169,13 @@ def pir_focus_examples(path: Path | None, stats: Counter[str]) -> tuple[list[Any
             continue
         ex = {
             "messages": [
-                {"role": "user", "content": PIR_FOCUS_MARKER + row["prompt"]},
+                {"role": "user", "content": marker + row["prompt"]},
                 {"role": "assistant", "content": text},
             ]
         }
         (valid if i % PIR_FOCUS_VALID_EVERY == 0 else train).append(ex)
-    stats["PIR 別の要点 train"] = len(train)
-    stats["PIR 別の要点 valid"] = len(valid)
+    stats[f"{label} train"] = len(train)
+    stats[f"{label} valid"] = len(valid)
     return train, valid
 
 
@@ -329,6 +337,7 @@ def build(
     *,
     with_evidence: bool = False,
     pir_focus: Path | None = None,
+    axes_teacher: Path | None = None,
 ) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
@@ -337,6 +346,8 @@ def build(
     corrected = load_summary_corrected(summary_corrected)
     flagged = load_flagged(summary_flagged)
     focus_train, focus_valid = pir_focus_examples(pir_focus, stats)
+    axes_train, axes_valid = teacher_examples(axes_teacher, AXES_MARKER, "深刻度の軸", stats)
+    focus_train, focus_valid = focus_train + axes_train, focus_valid + axes_valid
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
@@ -391,6 +402,7 @@ def main() -> int:
     ap.add_argument(
         "--pir-focus", type=Path, help="build_sft_teacher_pir_focus.py の出力 (s22 以降)"
     )
+    ap.add_argument("--axes-teacher", type=Path, help="build_sft_teacher_axes.py の出力 (s22 以降)")
     args = ap.parse_args()
     if args.mitre_evidence and args.ttp_judged is None:
         ap.error("--mitre-evidence には --ttp-judged が要る")
@@ -404,6 +416,7 @@ def main() -> int:
         args.summary_flagged,
         with_evidence=args.mitre_evidence,
         pir_focus=args.pir_focus,
+        axes_teacher=args.axes_teacher,
     )
     for k, v in sorted(built.items()):
         print(f"{k}: {v}")
