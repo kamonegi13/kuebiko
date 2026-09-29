@@ -129,6 +129,37 @@ def load_flagged(path: Path | None) -> set[int]:
     return {int(r["i"]) for r in rows if r.get("issues")}
 
 
+def load_rules_fix(path: Path | None) -> dict[str, str | None]:
+    """例の鍵 → 本番の指示に照らして直した最終形 (違反なしは含めない。直せなかったら None)。
+
+    fix_summary_rules.py の出力。鍵は _example_key と同じ。
+    """
+    if path is None or not path.exists():
+        return {}
+    out: dict[str, str | None] = {}
+    for row in (json.loads(x) for x in path.open(encoding="utf-8") if x.strip()):
+        if row.get("issues"):
+            out[str(row["key"])] = row.get("corrected") or None
+    return out
+
+
+def apply_rules_fix(
+    examples: list[Any], fixes: dict[str, str | None], stats: Counter[str]
+) -> list[Any]:
+    """違反を直した例は置き換え、直せなかった例は外す (新しいリストを返す)。"""
+    out = []
+    for e in examples:
+        fix = fixes.get(_example_key(e), "") if task(e) == "summary" else ""
+        if fix == "":
+            out.append(e)
+        elif fix is None:
+            stats["要約 指示違反を直せず外した"] += 1
+        else:
+            stats["要約 指示違反を直した"] += 1
+            out.append({"messages": [*e["messages"][:-1], {"role": "assistant", "content": fix}]})
+    return out
+
+
 def load_summary_corrected(path: Path | None) -> dict[int, str]:
     """train の行番号 → 書き直した要約 (correct_summary_teacher.py の出力)。"""
     if path is None or not path.exists():
@@ -338,6 +369,7 @@ def build(
     with_evidence: bool = False,
     pir_focus: Path | None = None,
     axes_teacher: Path | None = None,
+    rules_fix: Path | None = None,
 ) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
@@ -345,6 +377,7 @@ def build(
     triage = load_triage_relabel(triage_relabel)
     corrected = load_summary_corrected(summary_corrected)
     flagged = load_flagged(summary_flagged)
+    fixes = load_rules_fix(rules_fix)
     focus_train, focus_valid = pir_focus_examples(pir_focus, stats)
     axes_train, axes_valid = teacher_examples(axes_teacher, AXES_MARKER, "深刻度の軸", stats)
     focus_train, focus_valid = focus_train + axes_train, focus_valid + axes_valid
@@ -363,6 +396,8 @@ def build(
             for e in (fix_example(r, stats, ttp, triage, with_evidence=with_evidence) for r in rows)
             if e is not None
         ]
+        if fixes:
+            fixed = apply_rules_fix(fixed, fixes, stats)
         if split == "train":
             pairs = [e for e in fixed if task(e) == "pair"]
             others = [e for e in fixed if task(e) != "pair"]
@@ -403,6 +438,11 @@ def main() -> int:
         "--pir-focus", type=Path, help="build_sft_teacher_pir_focus.py の出力 (s22 以降)"
     )
     ap.add_argument("--axes-teacher", type=Path, help="build_sft_teacher_axes.py の出力 (s22 以降)")
+    ap.add_argument(
+        "--summary-rules-fix",
+        type=Path,
+        help="fix_summary_rules.py の出力 (本番の指示に照らした修正)",
+    )
     args = ap.parse_args()
     if args.mitre_evidence and args.ttp_judged is None:
         ap.error("--mitre-evidence には --ttp-judged が要る")
@@ -417,6 +457,7 @@ def main() -> int:
         with_evidence=args.mitre_evidence,
         pir_focus=args.pir_focus,
         axes_teacher=args.axes_teacher,
+        rules_fix=args.summary_rules_fix,
     )
     for k, v in sorted(built.items()):
         print(f"{k}: {v}")

@@ -12,6 +12,7 @@ from scripts.cloud_train.build_dataset_v2 import (
     AXES_MARKER,
     PIR_FOCUS_MARKER,
     _with_completion,
+    apply_rules_fix,
     fix_example,
     load_flagged,
     load_summary_corrected,
@@ -143,3 +144,27 @@ def test_flagged_rows_are_those_with_issues(tmp_path: Path) -> None:
     )
 
     assert load_flagged(path) == {3}
+
+
+class TestRulesFix:
+    def test_fixed_replaces_unfixable_is_dropped_clean_is_kept(self) -> None:
+        clean = _example({"summary": "問題なし"})
+        other_user = "[task: summary]\n別の記事"
+        broken = {
+            "messages": [
+                {"role": "user", "content": other_user},
+                {"role": "assistant", "content": json.dumps({"summary": "違反"})},
+            ]
+        }
+        import hashlib as _h
+
+        broken_key = _h.sha256(other_user.encode()).hexdigest()[:16]
+        stats: Counter[str] = Counter()
+
+        fixed = apply_rules_fix(
+            [clean, broken], {broken_key: json.dumps({"summary": "直した"})}, stats
+        )
+        dropped = apply_rules_fix([clean, broken], {broken_key: None}, Counter())
+
+        assert [_target(e)["summary"] for e in fixed] == ["問題なし", "直した"]
+        assert [_target(e)["summary"] for e in dropped] == ["問題なし"]
