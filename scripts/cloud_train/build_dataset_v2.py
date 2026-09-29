@@ -103,6 +103,34 @@ def clean_techniques(
     return kept
 
 
+def evidence_for(
+    techs: list[str], verdicts: dict[str, dict[str, Any]], stats: Counter[str]
+) -> list[dict[str, str]]:
+    """残した技術ごとの原文の引用 (s22 の ``mitre_evidence`` 欄、2026-09-29)。
+
+    引用が本文と照合できなかった技術は、欄に入れず技術からも落とす側で扱う
+    (呼び出し側が ``techs`` を引用ありに絞る)。
+    """
+    out = []
+    for t in techs:
+        v = verdicts.get(t.upper())
+        if v and v.get("quote_ok") and v.get("quote"):
+            out.append({"technique": t, "quote": v["quote"]})
+        else:
+            stats["引用なし"] += 1
+    return out
+
+
+def load_summary_corrected(path: Path | None) -> dict[int, str]:
+    """train の行番号 → 書き直した要約 (correct_summary_teacher.py の出力)。"""
+    if path is None or not path.exists():
+        return {}
+    return {
+        int(row["i"]): str(row["completion"])
+        for row in (json.loads(x) for x in path.open(encoding="utf-8") if x.strip())
+    }
+
+
 def load_triage_relabel(path: Path | None) -> dict[str, dict[str, str]]:
     """例の鍵 → {"importance", "reason"}。鍵は _example_key と同じ。"""
     if path is None or not path.exists():
@@ -116,6 +144,8 @@ def fix_example(
     stats: Counter[str],
     ttp: dict[str, dict[str, dict[str, Any]]] | None = None,
     triage: dict[str, dict[str, str]] | None = None,
+    *,
+    with_evidence: bool = False,
 ) -> dict[str, Any] | None:
     """1 例を直した新しい例 (除外なら None)。元は変更しない。"""
     t = task(r)
@@ -138,10 +168,18 @@ def fix_example(
         target = json.loads(msgs[-1]["content"])
         dropped = [k for k in SUPPRESSED if k in target]
         target = {k: v for k, v in target.items() if k not in SUPPRESSED}
+        verdicts = ttp.get(_example_key(r), {}) if ttp else {}
         if ttp and target.get("mitre_techniques"):
             target["mitre_techniques"] = clean_techniques(
-                target["mitre_techniques"], ttp.get(_example_key(r), {}), stats
+                target["mitre_techniques"], verdicts, stats
             )
+        if with_evidence:
+            # 欄は最後 (本番のスキーマで最後の property)。技術は引用のあるものに絞り、
+            # 技術と引用の組を 1 対 1 に保つ
+            evidence = evidence_for(target.get("mitre_techniques") or [], verdicts, stats)
+            target["mitre_techniques"] = [e["technique"] for e in evidence]
+            target["mitre_evidence"] = evidence
+            stats["引用欄つきの要約"] += 1
         msgs[-1]["content"] = json.dumps(target, ensure_ascii=False)
         stats["要約の出させない欄を消した"] += bool(dropped)
     return {"messages": msgs}
@@ -186,7 +224,7 @@ def knowledge_examples(knowledge: Path, stats: Counter[str]) -> list[dict[str, A
         for o in objs:
             if o.get("type") != kind or o.get("revoked") or o.get("x_mitre_deprecated"):
                 continue
-            ext = next(
+            ext: dict[str, Any] = next(
                 (
                     r
                     for r in o.get("external_references", [])
@@ -229,21 +267,42 @@ def knowledge_examples(knowledge: Path, stats: Counter[str]) -> list[dict[str, A
     return out
 
 
+def _with_completion(
+    r: dict[str, Any], completion: str | None, stats: Counter[str]
+) -> dict[str, Any]:
+    """書き直した教師の出力に差し替えた新しい例 (無ければそのまま)。"""
+    if completion is None:
+        return r
+    stats["要約の教師を書き直し版に差し替え"] += 1
+    msgs = [*r["messages"][:-1], {"role": "assistant", "content": completion}]
+    return {**r, "messages": msgs}
+
+
 def build(
     src: Path,
     knowledge: Path,
     out: Path,
     ttp_judged: Path | None = None,
     triage_relabel: Path | None = None,
+    summary_corrected: Path | None = None,
+    *,
+    with_evidence: bool = False,
 ) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
     ttp = load_ttp_verdicts(ttp_judged)
     triage = load_triage_relabel(triage_relabel)
+    corrected = load_summary_corrected(summary_corrected)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
-        fixed = [e for e in (fix_example(r, stats, ttp, triage) for r in rows) if e is not None]
+        if split == "train" and corrected:
+            rows = [_with_completion(r, corrected.get(i), stats) for i, r in enumerate(rows)]
+        fixed = [
+            e
+            for e in (fix_example(r, stats, ttp, triage, with_evidence=with_evidence) for r in rows)
+            if e is not None
+        ]
         if split == "train":
             pairs = [e for e in fixed if task(e) == "pair"]
             others = [e for e in fixed if task(e) != "pair"]
@@ -265,8 +324,26 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path("data/mlx/dataset_v2a"))
     ap.add_argument("--ttp-judged", type=Path, help="judge_teacher_ttp.py の出力 (技術の掃除)")
     ap.add_argument("--triage-relabel", type=Path, help="build_triage_relabel.py の出力")
+    ap.add_argument(
+        "--summary-corrected", type=Path, help="correct_summary_teacher.py の出力 (train の行番号)"
+    )
+    ap.add_argument(
+        "--mitre-evidence",
+        action="store_true",
+        help="要約に技術ごとの原文の引用の欄を足す (s22 以降、--ttp-judged 必須)",
+    )
     args = ap.parse_args()
-    built = build(args.src, args.knowledge, args.out, args.ttp_judged, args.triage_relabel)
+    if args.mitre_evidence and args.ttp_judged is None:
+        ap.error("--mitre-evidence には --ttp-judged が要る")
+    built = build(
+        args.src,
+        args.knowledge,
+        args.out,
+        args.ttp_judged,
+        args.triage_relabel,
+        args.summary_corrected,
+        with_evidence=args.mitre_evidence,
+    )
     for k, v in sorted(built.items()):
         print(f"{k}: {v}")
     return 0
