@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from scripts.cloud_train.build_dataset_v2 import (
+    PIR_FOCUS_MARKER,
     _with_completion,
     fix_example,
     load_summary_corrected,
+    pir_focus_examples,
 )
 
 USER = "[task: summary]\n記事本文"
@@ -100,3 +102,29 @@ class TestCorrectedSummary:
 
     def test_missing_file_means_no_corrections(self, tmp_path: Path) -> None:
         assert load_summary_corrected(tmp_path / "none.jsonl") == {}
+
+
+class TestPirFocus:
+    def test_examples_carry_the_production_marker_and_split_off_valid(self, tmp_path: Path) -> None:
+        path = tmp_path / "focus.jsonl"
+        rows = [
+            {"key": f"pir_a:2026-09-{i:02d}", "prompt": "プロンプト", "completion": "要点。"}
+            for i in range(1, 22)
+        ] + [{"key": "pir_b:2026-09-01", "prompt": "p", "completion": "  "}]
+        path.write_text(
+            "\n".join(json.dumps(r, ensure_ascii=False) for r in rows), encoding="utf-8"
+        )
+
+        train, valid = pir_focus_examples(path, Counter())
+
+        assert len(train) + len(valid) == 21  # 空の出力は落とす
+        assert len(valid) == 2
+        user = train[0]["messages"][0]["content"]
+        assert user == PIR_FOCUS_MARKER + "プロンプト"
+        assert train[0]["messages"][1] == {"role": "assistant", "content": "要点。"}
+
+    def test_marker_matches_production(self) -> None:
+        from src.tools.model_tiers import Step
+        from src.tools.task_prefix import TASK_MARKERS
+
+        assert TASK_MARKERS[Step.PIR_DAILY_FOCUS] == PIR_FOCUS_MARKER

@@ -186,3 +186,14 @@ def test_untrained_step_gets_no_marker_even_for_prefix_trained_model() -> None:
     assert got.startswith("[task: event_news]")
     assert with_task_prefix("本文", Step.DIGEST_DEEP_DIVE, "kuebiko-sft:n19") == "本文"
     assert with_task_prefix("本文", Step.DIGEST_DEEP_DIVE_SELECT, "kuebiko-sft:n19") == "本文"
+
+
+def test_pir_focus_marker_only_for_models_trained_on_it(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """PIR 別の要点は s22 から学習。s21 / n19 には印を付けない (2026-09-29)。"""
+    from src.tools.task_prefix import with_task_prefix
+
+    assert with_task_prefix("本文", Step.PIR_DAILY_FOCUS, "kuebiko-sft:s21") == "本文"
+    assert with_task_prefix("本文", Step.PIR_DAILY_FOCUS, "kuebiko-sft:n19") == "本文"
+    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s22")
+    got = with_task_prefix("本文", Step.PIR_DAILY_FOCUS, "kuebiko-sft:s22")
+    assert got == "[task: pir_focus]\n本文"

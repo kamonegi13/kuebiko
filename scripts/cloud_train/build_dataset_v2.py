@@ -131,6 +131,38 @@ def load_summary_corrected(path: Path | None) -> dict[int, str]:
     }
 
 
+#: PIR 別の要点の接頭辞 (src/tools/task_prefix.py の TASK_MARKERS と同じ)
+PIR_FOCUS_MARKER = "[task: pir_focus]\n"
+#: 検証に回す割合 (学習と重ならない)
+PIR_FOCUS_VALID_EVERY = 20
+
+
+def pir_focus_examples(path: Path | None, stats: Counter[str]) -> tuple[list[Any], list[Any]]:
+    """PIR 別の要点の教師対 (build_sft_teacher_pir_focus.py) → (train, valid) の例。
+
+    本番は system なしで prompt を渡すので、接頭辞は user の先頭に付ける。
+    """
+    if path is None or not path.exists():
+        return [], []
+    train: list[Any] = []
+    valid: list[Any] = []
+    rows = [json.loads(x) for x in path.open(encoding="utf-8") if x.strip()]
+    for i, row in enumerate(sorted(rows, key=lambda r: r["key"])):
+        text = str(row["completion"]).strip()
+        if not text:
+            continue
+        ex = {
+            "messages": [
+                {"role": "user", "content": PIR_FOCUS_MARKER + row["prompt"]},
+                {"role": "assistant", "content": text},
+            ]
+        }
+        (valid if i % PIR_FOCUS_VALID_EVERY == 0 else train).append(ex)
+    stats["PIR 別の要点 train"] = len(train)
+    stats["PIR 別の要点 valid"] = len(valid)
+    return train, valid
+
+
 def load_triage_relabel(path: Path | None) -> dict[str, dict[str, str]]:
     """例の鍵 → {"importance", "reason"}。鍵は _example_key と同じ。"""
     if path is None or not path.exists():
@@ -287,12 +319,14 @@ def build(
     summary_corrected: Path | None = None,
     *,
     with_evidence: bool = False,
+    pir_focus: Path | None = None,
 ) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
     ttp = load_ttp_verdicts(ttp_judged)
     triage = load_triage_relabel(triage_relabel)
     corrected = load_summary_corrected(summary_corrected)
+    focus_train, focus_valid = pir_focus_examples(pir_focus, stats)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
@@ -308,8 +342,10 @@ def build(
             others = [e for e in fixed if task(e) != "pair"]
             keep = rng.sample(pairs, min(PAIR_KEEP, len(pairs)))
             stats["pair を減らした"] = len(pairs) - len(keep)
-            fixed = others + keep + knowledge_examples(knowledge, stats)
+            fixed = others + keep + knowledge_examples(knowledge, stats) + focus_train
             rng.shuffle(fixed)
+        else:
+            fixed = fixed + focus_valid
         with (out / f"{split}.jsonl").open("w", encoding="utf-8") as fh:
             for e in fixed:
                 fh.write(json.dumps({"messages": e["messages"]}, ensure_ascii=False) + "\n")
@@ -332,6 +368,9 @@ def main() -> int:
         action="store_true",
         help="要約に技術ごとの原文の引用の欄を足す (s22 以降、--ttp-judged 必須)",
     )
+    ap.add_argument(
+        "--pir-focus", type=Path, help="build_sft_teacher_pir_focus.py の出力 (s22 以降)"
+    )
     args = ap.parse_args()
     if args.mitre_evidence and args.ttp_judged is None:
         ap.error("--mitre-evidence には --ttp-judged が要る")
@@ -343,6 +382,7 @@ def main() -> int:
         args.triage_relabel,
         args.summary_corrected,
         with_evidence=args.mitre_evidence,
+        pir_focus=args.pir_focus,
     )
     for k, v in sorted(built.items()):
         print(f"{k}: {v}")
