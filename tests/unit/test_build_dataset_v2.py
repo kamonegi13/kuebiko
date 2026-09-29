@@ -79,6 +79,26 @@ class TestEvidence:
         assert "mitre_evidence" not in _target(fixed)
 
 
+class TestEventDateCoherence:
+    def test_basis_is_cleared_when_date_is_missing(self) -> None:
+        example = _example({"summary": "s", "event_date": None, "event_date_basis": "記事公開日"})
+
+        fixed = fix_example(example, Counter(), None, None)
+
+        assert fixed is not None
+        assert _target(fixed)["event_date_basis"] is None
+
+    def test_basis_is_kept_when_date_is_present(self) -> None:
+        example = _example(
+            {"summary": "s", "event_date": "2026-09-01", "event_date_basis": "本文に明記"}
+        )
+
+        fixed = fix_example(example, Counter(), None, None)
+
+        assert fixed is not None
+        assert _target(fixed)["event_date_basis"] == "本文に明記"
+
+
 class TestCorrectedSummary:
     def test_row_is_replaced_by_corrected_completion(self, tmp_path: Path) -> None:
         corrected = tmp_path / "corrected.jsonl"

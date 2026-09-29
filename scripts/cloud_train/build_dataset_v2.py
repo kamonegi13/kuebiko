@@ -200,6 +200,11 @@ def fix_example(
         target = json.loads(msgs[-1]["content"])
         dropped = [k for k in SUPPRESSED if k in target]
         target = {k: v for k, v in target.items() if k not in SUPPRESSED}
+        if target.get("event_date") is None and target.get("event_date_basis") is not None:
+            # 書き直しで日付だけ消え根拠の欄が残った例 (教師は入力に無い収穫日を
+            # 「記事公開日」と書いていた)。日付が無いのに根拠がある形を学ばせない
+            target["event_date_basis"] = None
+            stats["日付なしの根拠の欄を空にした"] += 1
         verdicts = ttp.get(_example_key(r), {}) if ttp else {}
         if ttp and target.get("mitre_techniques"):
             target["mitre_techniques"] = clean_techniques(
