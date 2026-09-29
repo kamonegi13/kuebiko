@@ -129,18 +129,33 @@ def load_flagged(path: Path | None) -> set[int]:
     return {int(r["i"]) for r in rows if r.get("issues")}
 
 
-def load_rules_fix(path: Path | None) -> dict[str, str | None]:
+def load_rules_fix(paths: Path | list[Path] | None) -> dict[str, str | None]:
     """例の鍵 → 本番の指示に照らして直した最終形 (違反なしは含めない。直せなかったら None)。
 
-    fix_summary_rules.py の出力。鍵は _example_key と同じ。
+    fix_summary_rules.py / shorten_summaries.py の出力。鍵は _example_key と同じで、
+    **入力の改訂 (PROMPT_REWRITES) の前**の文字列から計算する。後のファイルが前を上書きする。
     """
-    if path is None or not path.exists():
-        return {}
     out: dict[str, str | None] = {}
-    for row in (json.loads(x) for x in path.open(encoding="utf-8") if x.strip()):
-        if row.get("issues"):
-            out[str(row["key"])] = row.get("corrected") or None
+    for path in [paths] if isinstance(paths, Path) else paths or []:
+        if not path.exists():
+            continue
+        for row in (json.loads(x) for x in path.open(encoding="utf-8") if x.strip()):
+            if row.get("issues"):
+                out[str(row["key"])] = row.get("corrected") or None
     return out
+
+
+def _pre_rewrite_key(e: dict[str, Any]) -> str:
+    """指示の改訂 (PROMPT_REWRITES) を戻した入力から鍵を作る (修正結果は改訂前に作ったため)。"""
+    t = task(e)
+    msgs = []
+    for m in e["messages"]:
+        content = m["content"]
+        if m["role"] != "assistant":
+            for old, new in PROMPT_REWRITES.get(t, ()):
+                content = content.replace(new, old)
+        msgs.append({**m, "content": content})
+    return _example_key({"messages": msgs})
 
 
 def apply_rules_fix(
@@ -149,7 +164,7 @@ def apply_rules_fix(
     """違反を直した例は置き換え、直せなかった例は外す (新しいリストを返す)。"""
     out = []
     for e in examples:
-        fix = fixes.get(_example_key(e), "") if task(e) == "summary" else ""
+        fix = fixes.get(_pre_rewrite_key(e), "") if task(e) == "summary" else ""
         if fix == "":
             out.append(e)
         elif fix is None:
@@ -210,6 +225,22 @@ def teacher_examples(
     return train, valid
 
 
+#: 本番の指示の改訂に学習データの入力を揃える (学習と本番の入力の形を一致させる)。
+#: (旧, 新) の組。要約の長さは 2026-09-30 に利用者判断で 250〜500 → 300〜700 字
+PROMPT_REWRITES: dict[str, tuple[tuple[str, str], ...]] = {
+    "summary": (("全体で 250〜500 字に収める", "全体で 300〜700 字に収める"),),
+}
+
+
+def rewrite_prompt(content: str, task_name: str, stats: Counter[str]) -> str:
+    """本番の指示の改訂を学習データの入力へ反映した新しい文字列。"""
+    for old, new in PROMPT_REWRITES.get(task_name, ()):
+        if old in content:
+            content = content.replace(old, new)
+            stats[f"指示の改訂を反映 {task_name}"] += 1
+    return content
+
+
 def load_triage_relabel(path: Path | None) -> dict[str, dict[str, str]]:
     """例の鍵 → {"importance", "reason"}。鍵は _example_key と同じ。"""
     if path is None or not path.exists():
@@ -232,7 +263,12 @@ def fix_example(
     if NAV.search(user):
         stats[f"除外 ナビの残骸 {t}"] += 1
         return None
-    msgs = [dict(m) for m in r["messages"]]
+    msgs = [
+        {**m, "content": rewrite_prompt(m["content"], t, stats)}
+        if m["role"] != "assistant"
+        else dict(m)
+        for m in r["messages"]
+    ]
     if t == "detect":
         for m in msgs:
             if m["role"] != "assistant" and TEACHER_PERIOD.search(m["content"]):
@@ -369,7 +405,7 @@ def build(
     with_evidence: bool = False,
     pir_focus: Path | None = None,
     axes_teacher: Path | None = None,
-    rules_fix: Path | None = None,
+    rules_fix: Path | list[Path] | None = None,
 ) -> Counter[str]:
     stats: Counter[str] = Counter()
     rng = random.Random(SEED)
@@ -441,7 +477,8 @@ def main() -> int:
     ap.add_argument(
         "--summary-rules-fix",
         type=Path,
-        help="fix_summary_rules.py の出力 (本番の指示に照らした修正)",
+        action="append",
+        help="fix_summary_rules.py / shorten_summaries.py の出力 (複数可、後が優先)",
     )
     args = ap.parse_args()
     if args.mitre_evidence and args.ttp_judged is None:

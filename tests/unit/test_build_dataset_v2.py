@@ -168,3 +168,38 @@ class TestRulesFix:
 
         assert [_target(e)["summary"] for e in fixed] == ["問題なし", "直した"]
         assert [_target(e)["summary"] for e in dropped] == ["問題なし"]
+
+
+class TestPromptRewrite:
+    def test_summary_length_rule_is_updated_in_training_input(self) -> None:
+        user = "[task: summary]\n- summary: 全体で 250〜500 字に収める"
+        example = {
+            "messages": [
+                {"role": "user", "content": user},
+                {"role": "assistant", "content": json.dumps({"summary": "s"})},
+            ]
+        }
+
+        fixed = fix_example(example, Counter(), None, None)
+
+        assert fixed is not None
+        assert "全体で 300〜700 字に収める" in fixed["messages"][0]["content"]
+
+    def test_rules_fix_still_matches_after_rewrite(self) -> None:
+        """修正結果の鍵は改訂前の入力で作ってある。改訂後も対応が外れない。"""
+        import hashlib as _h
+
+        user = "[task: summary]\n- summary: 全体で 250〜500 字に収める"
+        key = _h.sha256(user.encode()).hexdigest()[:16]
+        example = {
+            "messages": [
+                {"role": "user", "content": user},
+                {"role": "assistant", "content": json.dumps({"summary": "元"})},
+            ]
+        }
+        fixed = fix_example(example, Counter(), None, None)
+        assert fixed is not None
+
+        out = apply_rules_fix([fixed], {key: json.dumps({"summary": "直した"})}, Counter())
+
+        assert _target(out[0])["summary"] == "直した"
