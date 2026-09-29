@@ -189,7 +189,7 @@ pipelines:
   # 「完結した前月」を総括 (period_start=前月1日)。_load_previous_synthesis(monthly) が前々月の
   # forecasts を採点 → 月次の予測 track record (過去参照×将来予測の戦略高度版)。
   schedule:
-    enabled: true
+    enabled: false  # 2026-09-29 廃止: 長期の軌跡は PIR (問いの面) の 30 日推移で読む
     hour: 3
     minute: 0
     day: "1"

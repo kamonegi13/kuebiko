@@ -219,14 +219,22 @@ def _compose_daily_brief(
     period_label: str,
     section_count: int,
     burst_body: str = "",
+    pir_brief_body: str = "",
 ) -> BriefingMessage | None:
     """朝刊/夕刊: daily synthesis ナラティブ (+ morning は PIR focus) を 1 BriefingMessage に合成。
 
     slot='morning' → 「朝ブリーフィング」(synthesis + PIR focus)、'evening' → 「夕ブリーフィング」
     (synthesis のみ = 夕方の状況更新)。朝刊/夕刊のように同じ「ブリーフィング」で中身が異なる。
     両方空なら None (投稿しない)。純粋関数 (LLM/DB/IO なし) でテスト容易。
+
+    pir_brief_body = PIR ブリーフ (常設の問いへの答え = 状態、段D 2026-09-29) を先頭に置く。
+    状態 (問いの答え) を読んでから流れ (SIR = 状況総括・PIR 別の要点) を読む順。
     """
-    parts = [p for p in (narrative.strip(), burst_body.strip(), pir_body.strip()) if p]
+    parts = [
+        p
+        for p in (pir_brief_body.strip(), narrative.strip(), burst_body.strip(), pir_body.strip())
+        if p
+    ]
     if not parts:
         return None
     combined = "\n\n━━━━━━━━━━\n\n".join(parts)
@@ -265,6 +273,7 @@ def _compose_compact_summary(
     pir_body: str,
     high_threats: str = "",
     burst: str = "",
+    pir_brief: str = "",
     base_url: str | None,
 ) -> str:
     """Discord 用の要点射影を合成する (純粋関数)。
@@ -275,10 +284,18 @@ def _compose_compact_summary(
 
     high_threats = 高脅威 Recall 安全網 (2026-07-16)。high 判定 web-only 脅威を必ず
     日次通読に載せる (分類と配信の断絶の解消)。synthesis/PIR より前に置く = 「act now」
-    の tier を先頭に。
+    の tier を先頭に。pir_brief (常設の問いの答え) はその次 = SIR (状況総括) より前。
     """
     parts = [
-        p for p in (high_threats.strip(), burst.strip(), narrative.strip(), pir_body.strip()) if p
+        p
+        for p in (
+            high_threats.strip(),
+            pir_brief.strip(),
+            burst.strip(),
+            narrative.strip(),
+            pir_body.strip(),
+        )
+        if p
     ]
     if base_url:
         parts.append(f"📎 全文 (根拠・記事一覧): {base_url}{_DAILY_BRIEF_WEB_PATH}")
@@ -368,6 +385,23 @@ async def _run_daily_brief_default(
         except Exception as e:  # noqa: BLE001 — I&W 節の失敗で朝刊を止めない
             _log.error("daily_brief_burst_failed", error=str(e))
 
+    # 段D: PIR ブリーフ (常設の問いへの答え)。朝のみ・決定論・LLM 追加呼出なし。
+    # ① の synthesis が台帳を更新した後に読む (その日の評価を反映する)。
+    pir_brief = None
+    if is_morning:
+        try:
+            from src.digest.pir_brief import collect_pir_brief
+
+            pir_brief = collect_pir_brief()
+        except Exception as e:  # noqa: BLE001 — PIR 節の失敗で朝刊を止めない
+            _log.error("daily_brief_pir_brief_failed", error=str(e))
+    pir_brief_full = pir_brief_compact = ""
+    if pir_brief is not None:
+        from src.digest.pir_brief import format_pir_brief_compact, format_pir_brief_full
+
+        pir_brief_full = format_pir_brief_full(pir_brief)
+        pir_brief_compact = format_pir_brief_compact(pir_brief)
+
     message = _compose_daily_brief(
         slot=slot,
         narrative=narrative,
@@ -376,6 +410,7 @@ async def _run_daily_brief_default(
         period_label=period_label,
         section_count=len(sections),
         burst_body=burst_section,
+        pir_brief_body=pir_brief_full,
     )
     if message is None:
         _log.info("daily_brief_empty", slot=slot, pipeline=pipeline.name)
@@ -405,6 +440,7 @@ async def _run_daily_brief_default(
         pir_body=pir_compact,
         high_threats=high_threat_compact,
         burst=burst_section,
+        pir_brief=pir_brief_compact,
         base_url=resolve_public_base_url(),
     )
 
@@ -432,7 +468,9 @@ async def _run_daily_brief_default(
                 title=message.title,
                 bluf=message.bluf,
                 summary=message.summary,
-                payload=build_brief_payload(syn_record=syn_record, sections=sections),
+                payload=build_brief_payload(
+                    syn_record=syn_record, sections=sections, pir_brief=pir_brief
+                ),
                 section_count=len(sections),
                 sources=[{"title": s.title, "url": s.url} for s in message.sources],
             )

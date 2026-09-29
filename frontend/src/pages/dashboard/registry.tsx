@@ -50,7 +50,6 @@ const PERIOD_OPTION: ConfigOption = {
     { value: "auto", label: "全体の期間に合わせる (既定)" },
     { value: "daily", label: "日次 固定" },
     { value: "weekly", label: "週次 固定" },
-    { value: "monthly", label: "月次 固定" },
   ],
 };
 const IMPORTANCE_OPTION: ConfigOption = {

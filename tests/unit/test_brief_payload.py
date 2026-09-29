@@ -113,3 +113,23 @@ class TestPirPayload:
     def test_payload_is_json_serializable(self) -> None:
         payload = build_brief_payload(syn_record=_synthesis(), sections=[_pir_section()])
         assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
+
+
+class TestPirBriefPayload:
+    def test_absent_pir_brief_is_null(self) -> None:
+        assert build_brief_payload(syn_record=None, sections=[])["pir_brief"] is None
+
+    def test_pir_brief_is_embedded(self) -> None:
+        from datetime import UTC, datetime
+
+        from src.digest.pir_brief import build_pir_brief
+
+        brief = build_pir_brief(
+            [{"situation_id": "a", "assessed": True, "question": "問い", "trajectory": []}],
+            now=datetime(2026, 9, 29, tzinfo=UTC),
+        )
+
+        payload = build_brief_payload(syn_record=None, sections=[], pir_brief=brief)
+
+        assert payload["pir_brief"]["headline"] == "本日、1 問中 0 問の答えが動いた"
+        json.dumps(payload, ensure_ascii=False)

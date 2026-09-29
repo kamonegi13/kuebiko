@@ -511,7 +511,39 @@ export interface BriefPirSection {
 }
 
 // 構造化 payload (2026-07-12): Web はテキストでなく構造から描画する。旧行は null。
+/** 段D: 常設の問いへの答え (朝ブリーフ、src/digest/pir_brief.py)。 */
+export interface PirBriefMove {
+  at: string;
+  delta_type: string;
+  label: string;
+  reason: string;
+}
+
+export interface PirBriefQuestion {
+  situation_id: string;
+  question: string;
+  claim: string;
+  confidence: string;
+  moves: PirBriefMove[];
+  fired_indicators: string[];
+  missing_evidence: string[];
+  days_since_evidence: number | null;
+  open_indicators: number;
+}
+
+export interface PirBriefPayload {
+  headline: string;
+  total: number;
+  moved_count: number;
+  unassessed: number;
+  window_hours: number;
+  moved: PirBriefQuestion[];
+  still: PirBriefQuestion[];
+}
+
 export interface DailyBriefPayload {
+  /** 旧行 (段D 以前) と夕刊には無い */
+  pir_brief?: PirBriefPayload | null;
   synthesis: BriefSynthesisPayload | null;
   pir: BriefPirSection[];
 }

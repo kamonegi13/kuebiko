@@ -86,7 +86,8 @@ def build_synthesis_message(record: StatusSynthesisRecord) -> BriefingMessage:
     summary = "\n\n".join(parts)
 
     return BriefingMessage(
-        title=f"📊 状況総括 ({label})",
+        # SIR = 窓の中で何が届いたか (流れ)。常設の問いの答え (状態) は PIR ブリーフ (段D)
+        title=f"📊 SIR {label}状況総括",
         importance="medium",
         category="status_synthesis",  # 専用カテゴリ (chrome 最小化)
         summary=summary,

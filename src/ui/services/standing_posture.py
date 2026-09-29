@@ -23,7 +23,10 @@ from src.synthesis.grounded.hypotheses import get_hypothesis
 # 増やさない — 新規コピーでなく既存定義を参照する)。
 from src.ui.services.overview import _NATION_LABELS
 
-_TRAJECTORY_LIMIT = 12
+#: 推移に載せる改訂の上限と期間。月次の状況総括を畳み、長期の軌跡はここで読む (段D、
+#: 2026-09-29)。1 問あたりの改訂は実測で 1 日 1 回前後なので 30 日 ≒ 30-40 版。
+_TRAJECTORY_LIMIT = 60
+_TRAJECTORY_DAYS = 30
 _EVIDENCE_WINDOW_DAYS = 30
 #: 「何が見えれば答えが変わるか」に載せる指標の上限 (新しい順)。
 _INDICATOR_LIMIT = 8
@@ -44,6 +47,23 @@ def _split_delta_note(raw: object) -> tuple[str, list[str]]:
     head, _, tail = note.partition(FIRED_INDICATOR_MARKER)
     fired = [x.strip() for x in tail.split(";") if x.strip()]
     return head.rstrip(" /").strip(), fired
+
+
+def _within_trajectory_window(revs: list[Any], *, now: datetime | None) -> list[Any]:
+    """古い順の改訂 → 直近 ``_TRAJECTORY_DAYS`` 日の分 (最新の 1 版は必ず残す)。"""
+    if not revs:
+        return revs
+    since = (now or datetime.now(UTC)) - timedelta(days=_TRAJECTORY_DAYS)
+    kept = [r for r in revs if _parse_created(r[5]) >= since]
+    return kept or revs[-1:]
+
+
+def _parse_created(raw: object) -> datetime:
+    try:
+        ts = datetime.fromisoformat(str(raw).replace(" ", "T"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
 
 
 def _json_list(raw: object) -> list[str]:
@@ -142,7 +162,7 @@ def build_standing_posture(
                 " WHERE e.situation_id = ? AND datetime(a.created_at) >= datetime(?)",
                 (sid, since),
             ).fetchone()
-        revs = list(reversed(rev_rows))
+        revs = _within_trajectory_window(list(reversed(rev_rows)), now=now)
         latest = revs[-1] if revs else None
         leading = str(latest[2]) if latest else ""
         hyp = get_hypothesis(leading) if leading else None
@@ -191,6 +211,8 @@ def build_standing_posture(
                         "confidence": str(r[3]),
                         "delta_type": str(r[4]),
                         "note": str(r[6] or "")[:100],
+                        # 変化の理由だけ (発火指標の接頭辞以降を除く)。PIR ブリーフが引用する
+                        "reason": _split_delta_note(r[6])[0][:200],
                     }
                     for r in revs
                 ],

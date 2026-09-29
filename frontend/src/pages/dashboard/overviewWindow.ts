@@ -59,8 +59,8 @@ export type SynthesisPeriod = "daily" | "weekly" | "monthly";
 
 export function synthesisPeriodForWindow(days: number): SynthesisPeriod {
   if (days <= 1) return "daily";
-  if (days <= 7) return "weekly";
-  return "monthly";
+  // 月次の状況総括は 2026-09-29 に廃止。30 日以上の窓も最新の週次を出す
+  return "weekly";
 }
 
 // ── widget 個別の期間 (連動/固定) ──

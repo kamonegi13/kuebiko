@@ -85,7 +85,7 @@ def _spotlight(pir_id: str = "pir_china_apt") -> SpotlightRecord:
 class TestBuildMessages:
     def test_synthesis_message_includes_headline_and_sections(self) -> None:
         msg = build_synthesis_message(_synthesis("weekly"))
-        assert "状況総括 (週次)" in msg.title
+        assert "SIR 週次状況総括" in msg.title
         assert msg.importance == "medium"
         assert msg.category == "status_synthesis"
         assert "今週は中国APT" in msg.summary

@@ -2293,6 +2293,22 @@ class TestComposeDailyBrief:
         assert msg.summary.index("状況総括") < msg.summary.index("急増検知")
         assert msg.summary.index("急増検知") < msg.summary.index("PIR Daily Focus")
 
+    def test_pir_brief_comes_before_synthesis(self) -> None:
+        """状態 (常設の問いの答え) を読んでから流れ (状況総括) を読む順 (段D)。"""
+        from src.main import _compose_daily_brief
+
+        msg = _compose_daily_brief(
+            slot="morning",
+            narrative="**状況総括**",
+            pir_body="📍 PIR Daily Focus",
+            sources=[],
+            period_label="2026-09-29",
+            section_count=1,
+            pir_brief_body="■ PIR ブリーフ\n本日、9 問中 2 問の答えが動いた",
+        )
+        assert msg is not None
+        assert msg.summary.index("PIR ブリーフ") < msg.summary.index("状況総括")
+
 
 class TestComposeCompactSummary:
     """Discord 要点射影 (2026-07-12): 全文 push をやめ 要点 + Web 誘導の 1 通にする。"""
@@ -2308,6 +2324,18 @@ class TestComposeCompactSummary:
         assert "**headline**" in text
         assert "中国 APT" in text
         assert "https://ten-goal-but-extend.trycloudflare.com/app/daily-brief" in text
+
+    def test_pir_brief_after_high_threats_before_synthesis(self) -> None:
+        from src.pipeline.runners import _compose_compact_summary
+
+        text = _compose_compact_summary(
+            narrative="**headline**",
+            pir_body="",
+            high_threats="🚨 高脅威",
+            pir_brief="**PIR** 本日、9 問中 0 問の答えが動いた",
+            base_url=None,
+        )
+        assert text.index("高脅威") < text.index("**PIR**") < text.index("**headline**")
 
     def test_falls_back_to_text_without_base_url(self) -> None:
         from src.pipeline.runners import _compose_compact_summary

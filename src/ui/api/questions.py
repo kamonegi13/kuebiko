@@ -15,42 +15,35 @@ GET /api/v1/questions  問いごとの「いまの答え」+ 変化 + 指標 + �
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
+
+from src.digest.pir_brief import build_pir_brief
 
 questions_api = APIRouter(prefix="/api/v1/questions", tags=["questions"])
 
 _TTL_SECONDS = 60.0
 _cache: tuple[float, dict[str, Any]] | None = None
 
-#: 「答えが動いた」と見なす delta (継続・未追跡は動いていない)。
-_MOVED_DELTAS = frozenset(
-    {
-        "opened",
-        "hypothesis_flip",
-        "strengthened",
-        "weakened",
-        "escalated",
-        "reopened",
-        "claim_revised",
-    }
-)
 
-
-def _summarize(questions: list[dict[str, Any]]) -> dict[str, Any]:
-    """冒頭の 1 行 — 何問中いくつの答えが動いたか。
+def _summarize(questions: list[dict[str, Any]], *, now: datetime | None = None) -> dict[str, Any]:
+    """冒頭の 1 行 — 何問中いくつの答えが**直近 24 時間に**動いたか。
 
     静穏日に「動いていない」と明示できることが PIR ブリーフの要件
     (「静か≠安全」— 古いことでなく、古いと分からないことが危険)。
+    判定は朝ブリーフの PIR 節と同じ関数 (``build_pir_brief``) — 面ごとに数え方を変えない。
+    最新の改訂の delta だけで数えると、6 日前の更新が「動いた」に残り続けた (09-29 実測)。
     """
-    assessed = [q for q in questions if q.get("assessed")]
-    moved = [q for q in assessed if str(q.get("delta_type") or "") in _MOVED_DELTAS]
+    brief = build_pir_brief(questions, now=now)
     return {
-        "total": len(questions),
-        "assessed": len(assessed),
-        "moved": len(moved),
-        "unassessed": len(questions) - len(assessed),
+        "total": brief.total,
+        "assessed": brief.total - brief.unassessed,
+        "moved": len(brief.moved),
+        "unassessed": brief.unassessed,
+        "window_hours": brief.window_hours,
+        "moved_ids": [q.situation_id for q in brief.moved],
     }
 
 

@@ -61,8 +61,11 @@ function parseHash(): Partial<FilterState> {
   const out: Partial<FilterState> = {};
   // tab は pathname (/app/intel/<tab>) が SSoT。hash には載せない (二重符号化の解消)。
   const period = p.get("period_type");
-  if (period && ["daily", "weekly", "monthly"].includes(period)) {
+  if (period && ["daily", "weekly"].includes(period)) {
     out.period_type = period as PeriodType;
+  } else if (period === "monthly") {
+    // 月次は廃止 (2026-09-29)。古いリンクは週次へ
+    out.period_type = "weekly";
   }
   const op = p.get("op");
   if (op && ["taxonomy", "editorial"].includes(op)) {

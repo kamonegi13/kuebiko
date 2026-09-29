@@ -129,6 +129,8 @@ export interface PostureTrajectoryPoint {
   confidence: string; // high / moderate / low
   delta_type: string;
   note: string;
+  /** 変化の理由だけ (発火指標を除く) */
+  reason?: string;
 }
 
 /** 問いの指標 (I&W): 何が見えれば答えが変わるか。 */
@@ -168,7 +170,15 @@ export interface PostureCard {
 
 export interface QuestionsResponse {
   questions: PostureCard[];
-  summary: { total: number; assessed: number; moved: number; unassessed: number };
+  summary: {
+    total: number;
+    assessed: number;
+    /** 直近 window_hours に答えが動いた問いの数 (朝ブリーフの PIR 節と同じ判定) */
+    moved: number;
+    unassessed: number;
+    window_hours: number;
+    moved_ids: string[];
+  };
 }
 
 export interface JpCiBoardResponse {

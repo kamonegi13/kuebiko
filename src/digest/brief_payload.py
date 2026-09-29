@@ -8,6 +8,8 @@ daily_briefs.summary は Discord 向けに合成した 1 本のテキストで�
 
 payload 形:
 {
+  "pir_brief": {"headline", "total", "moved_count", "unassessed", "window_hours",
+                "moved": [...], "still": [...]} | null,   # 段D、朝のみ (src/digest/pir_brief.py)
   "synthesis": {
     "headline": str,
     "sections": [{"key", "label", "text"}],          # 空節は除外
@@ -27,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 from src.synthesis.discord import _SECTION_HEADERS
 
 if TYPE_CHECKING:
+    from src.digest.pir_brief import PirBrief
     from src.digest.pir_daily_focus import PirFocusSection
     from src.storage.run_history import StatusSynthesisRecord
 
@@ -38,9 +41,13 @@ def build_brief_payload(
     *,
     syn_record: StatusSynthesisRecord | None,
     sections: list[PirFocusSection],
+    pir_brief: PirBrief | None = None,
 ) -> dict[str, Any]:
     """daily brief の構造化 payload を組み立てる (純粋関数)。"""
+    from src.digest.pir_brief import pir_brief_payload
+
     return {
+        "pir_brief": pir_brief_payload(pir_brief) if pir_brief is not None else None,
         "synthesis": _synthesis_payload(syn_record),
         "pir": [_pir_section_payload(s) for s in sections],
     }

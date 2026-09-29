@@ -15,6 +15,7 @@ import { vocabLabel } from "../hooks/useVocab";
 import { SUBHEAD } from "../components/headings";
 import { SectionHeading } from "../components/SectionHeading";
 import { WeeklyRetrospectView } from "./brief/WeeklyRetrospectView";
+import { PirBriefSection } from "./brief/PirBriefSection";
 import type {
   BriefContextResponse,
   BriefPirSection,
@@ -192,8 +193,15 @@ function StructuredBrief({ payload }: { payload: DailyBriefPayload }) {
   const syn = payload.synthesis;
   return (
     <div className="space-y-4">
+      {/* 状態 (常設の問いの答え) → 流れ (SIR = 状況総括・PIR 別の要点) の順 (段D) */}
+      {payload.pir_brief && <PirBriefSection brief={payload.pir_brief} />}
       {syn && (
         <div className="space-y-3">
+          {payload.pir_brief && (
+            <h4 className={`${SUBHEAD} border-t border-border-subtle pt-3 m-0`}>
+              SIR — 状況総括 (24 時間の流れ)
+            </h4>
+          )}
           {syn.headline && (
             <p className="text-base font-semibold text-fg leading-relaxed m-0">{syn.headline}</p>
           )}
@@ -262,7 +270,9 @@ export function DailyBriefPage() {
   });
   const hasPayload =
     !!selected?.payload &&
-    (!!selected.payload.synthesis || selected.payload.pir.length > 0);
+    (!!selected.payload.synthesis ||
+      selected.payload.pir.length > 0 ||
+      !!selected.payload.pir_brief);
 
   return (
     <div className={`${pageContainer("wide")} space-y-5`}>

@@ -17,7 +17,12 @@ import { pageContainer } from "../components/Page";
 import { SectionHeading } from "../components/SectionHeading";
 import { SynthesisProse } from "../components/SynthesisProse";
 import { vocabLabel } from "../hooks/useVocab";
-import { questionsApi, type PostureCard, type QuestionIndicator } from "../api/jpci";
+import {
+  questionsApi,
+  type PostureCard,
+  type PostureTrajectoryPoint,
+  type QuestionIndicator,
+} from "../api/jpci";
 import { POSTURE_CONF_TONE } from "../components/jpci/Badges";
 
 /** 指標の状態 → 表示 (open=まだ見えていない / hit=見えた / expired=期限切れ)。 */
@@ -41,8 +46,20 @@ function daysSince(iso: string): number | null {
   return Math.floor((Date.now() - t) / 86_400_000);
 }
 
-function isMoved(q: PostureCard): boolean {
-  return q.delta_type !== "no_change" && q.delta_type !== "";
+/** 動いた問いの最新の動き (継続でない改訂)。判定そのものはサーバの moved_ids が正。 */
+function latestMove(q: PostureCard): PostureTrajectoryPoint | undefined {
+  return [...q.trajectory].reverse().find((t) => t.delta_type !== "no_change" && t.delta_type !== "");
+}
+
+/** 推移の要約: 30 日の確度の始点→終点と、動いた回数。月次の状況総括の代わりに読む長期の軌跡。 */
+function trajectorySummary(q: PostureCard): string {
+  const t = q.trajectory;
+  if (t.length === 0) return "";
+  const first = vocabLabel("confidence", t[0].confidence);
+  const last = vocabLabel("confidence", t[t.length - 1].confidence);
+  const moves = t.filter((x) => x.delta_type !== "no_change" && x.delta_type !== "").length;
+  const span = first === last ? `確度は ${last} のまま` : `確度 ${first} → ${last}`;
+  return `${t[0].at.slice(5, 10)} 以降 ${t.length} 回評価・${span}・動き ${moves} 回`;
 }
 
 /** 節見出し + 本文。現況と同じく枠でなく区切り線で切る。 */
@@ -77,13 +94,13 @@ function Indicators({ items }: { items: QuestionIndicator[] }) {
   );
 }
 
-function QuestionCard({ q }: { q: PostureCard }) {
+function QuestionCard({ q, moved }: { q: PostureCard; moved: boolean }) {
   // 既定は「答え + 前回から」まで。根拠・指標・推移は畳む — 4 問が一望できることを優先し、
   // 深掘りは開いた 1 問に絞る (全部開いていると、どの問いが動いたかが埋もれる)。
   const [detail, setDetail] = useState(false);
   const [history, setHistory] = useState(false);
   const idle = daysSince(q.last_evidence_at);
-  const moved = isMoved(q);
+  const move = moved ? latestMove(q) : undefined;
 
   return (
     <article className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3">
@@ -100,7 +117,7 @@ function QuestionCard({ q }: { q: PostureCard }) {
             {vocabLabel("confidence", q.confidence)}
           </span>
           <span className={moved ? "text-warning font-semibold" : ""}>
-            {moved ? vocabLabel("delta_type", q.delta_type) : "答えは動いていない"}
+            {move ? `${vocabLabel("delta_type", move.delta_type)} (24 時間以内)` : "24 時間は動いていない"}
           </span>
           {idle !== null && (
             <span className={idle >= STALE_DAYS ? "text-warning" : ""}>
@@ -188,7 +205,7 @@ function QuestionCard({ q }: { q: PostureCard }) {
                   ) : (
                     <ChevronRight className="size-3.5" />
                   )}
-                  {q.trajectory.length} 版
+                  {trajectorySummary(q)}
                 </button>
                 {history && (
                   <ol className="m-0 mt-2 p-0 list-none space-y-1 border-l border-border-subtle pl-3">
@@ -196,7 +213,10 @@ function QuestionCard({ q }: { q: PostureCard }) {
                       <li key={t.rev} className="text-[12px] text-fg-subtle leading-relaxed">
                         <span className="text-fg-muted">{t.at.slice(0, 10)}</span>{" "}
                         {vocabLabel("confidence", t.confidence)}
-                        {t.note ? ` — ${t.note}` : ""}
+                        {t.delta_type !== "no_change" && t.delta_type !== "" && (
+                          <span className="text-warning"> {vocabLabel("delta_type", t.delta_type)}</span>
+                        )}
+                        {(t.reason ?? t.note) ? ` — ${t.reason ?? t.note}` : ""}
                       </li>
                     ))}
                   </ol>
@@ -227,8 +247,9 @@ export function QuestionsPage() {
   // 読者が「今日どこを読むべきか」を最初の一瞥で決められるようにするため。
   const ordered = [...questions].sort((a, b) => a.situation_id.localeCompare(b.situation_id));
 
-  const moved = ordered.filter(isMoved);
-  const quiet = ordered.filter((q) => !isMoved(q));
+  const movedIds = new Set(summary.moved_ids ?? []);
+  const moved = ordered.filter((q) => movedIds.has(q.situation_id));
+  const quiet = ordered.filter((q) => !movedIds.has(q.situation_id));
 
   return (
     <div className={pageContainer("wide")}>
@@ -236,10 +257,11 @@ export function QuestionsPage() {
           全般 (ページ全体の要約) を箱にすると、下の個別カードと同じ重さに見えてしまう。 */}
       <div className="mb-5">
         <p className="m-0 text-[19px] leading-[1.75] font-bold text-fg">
-          {summary.total} 問中 {summary.moved} 問の答えが前回の評価から動いた
+          本日、{summary.total} 問中 {summary.moved} 問の答えが動いた
         </p>
         <div className="mt-2 text-[12px] text-fg-subtle flex flex-wrap gap-x-3 gap-y-1">
           <span>PIR (優先情報要求) = 継続して追う問い</span>
+          <span>「動いた」= 直近 {summary.window_hours ?? 24} 時間に答え・確度・見立てが変わった</span>
           <span>期間で区切らない — これまでに知り得たすべてから導いた現在の推定</span>
           {summary.unassessed > 0 && <span>未評価 {summary.unassessed} 問</span>}
         </div>
@@ -251,11 +273,11 @@ export function QuestionsPage() {
               「動いていない問い」なのかが分からなくなる (2026-08-29 と同じ理由)。 */}
           <SectionHeading title="動いた PIR" note={`${moved.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
-            前回の評価から答え・確度・見立てのいずれかが変わったもの。何がそれを動かしたかを併記する。
+            直近 24 時間に答え・確度・見立てのいずれかが変わったもの。何がそれを動かしたかを併記する。
           </p>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {moved.map((q) => (
-              <QuestionCard key={q.situation_id} q={q} />
+              <QuestionCard key={q.situation_id} q={q} moved={movedIds.has(q.situation_id)} />
             ))}
           </div>
         </section>
@@ -265,12 +287,12 @@ export function QuestionsPage() {
         <section>
           <SectionHeading title="動いていない PIR" note={`${quiet.length} 問`} sticky />
           <p className="mt-0 mb-4 text-[13px] text-fg-subtle">
-            答えは前回から変わっていない。静かであることは安全を意味しない —
+            24 時間、答えは変わっていない。静かであることは安全を意味しない —
             鮮度と、何が見えれば答えが変わるかを併せて見る。
           </p>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {quiet.map((q) => (
-              <QuestionCard key={q.situation_id} q={q} />
+              <QuestionCard key={q.situation_id} q={q} moved={movedIds.has(q.situation_id)} />
             ))}
           </div>
         </section>

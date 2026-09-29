@@ -27,7 +27,7 @@ export const TIMES: { v: string; label: string }[] = [
 const PERIODS: { v: PeriodType; label: string }[] = [
   { v: "daily", label: "日次" },
   { v: "weekly", label: "週次" },
-  { v: "monthly", label: "月次" },
+  // 月次は 2026-09-29 に廃止 (長期の軌跡は PIR の問いの面の 30 日推移で読む)。
 ];
 const VIEWS: { v: SynthesisView; label: string }[] = [
   { v: "read", label: "読む" },

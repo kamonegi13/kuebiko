@@ -15,6 +15,7 @@ import type {
 } from "../../api/types";
 import { canEditOperationalConfig, useRuntimeFlags } from "../../hooks/useRuntimeFlags";
 import { ConfidenceBadge } from "../ConfidenceBadge";
+import { KeyEventList } from "../spotlight/KeyEventList";
 import { SectionHeading } from "../SectionHeading";
 import { Seg } from "../Shell";
 import { useHorizontalSwipe } from "../../hooks/useHorizontalSwipe";
@@ -48,7 +49,7 @@ function ReadView() {
 const PERIODS: { v: PeriodType; label: string }[] = [
   { v: "daily", label: "日次" },
   { v: "weekly", label: "週次" },
-  { v: "monthly", label: "月次" },
+  // 月次は 2026-09-29 に廃止 (長期の軌跡は PIR の問いの面の 30 日推移で読む)。
 ];
 
 function GlobalSynthesisView() {
@@ -88,7 +89,7 @@ function GlobalSynthesisView() {
       {/* 期間の切替は **この節の中** に置く。変わるのは全体総括だけで、
           SIR 別の動向は常に直近 7 日 — 画面上部に置くと全部が切り替わると読める。 */}
       <SectionHeading
-        title={`${periodLabel}総括`}
+        title={`SIR ${periodLabel}総括`}
         note={
           data?.latest
             ? `${formatJstDate(data.latest.period_start)} 〜 ${formatJstDate(data.latest.period_end)}`
@@ -737,29 +738,8 @@ function SpotlightCard({
       {open && (
         <>
 
-      {/* Key events */}
-      {s.key_events.length > 0 && (
-        <div className="mb-3">
-          <div className="text-[12px] text-fg-subtle uppercase tracking-wider font-semibold mb-1.5">主要イベント ({s.key_events.length})</div>
-          <ul className="m-0 p-0 list-none space-y-1">
-            {s.key_events.map((ke) => (
-              <li key={ke.article_id} className="flex items-baseline gap-2 text-sm">
-                <span className={`text-[12px] px-1.5 py-0.5 rounded font-mono ${
-                  ke.importance === "high" ? "bg-critical-soft text-critical" :
-                  ke.importance === "medium" ? "bg-warning-soft text-warning" :
-                  "bg-surface-3 text-fg-subtle"
-                }`}>{ke.importance === "high" ? "高" : ke.importance === "medium" ? "中" : "低"}</span>
-                <a href={ke.url} target="_blank" rel="noreferrer" className="text-fg hover:text-accent-hover flex-1 min-w-0 truncate">
-                  {ke.title}
-                </a>
-                {/* S1: 出典基盤の確度バッジ (source メタから決定的に算出、reason は hover) */}
-                <ConfidenceBadge sb={ke.source_basis} />
-                <span className="text-[12px] text-fg-subtle">{ke.feed_title}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* Key events — 直近 24 時間を先に (窓 7 日 × 毎日の生成のずれを表示で吸収) */}
+      <KeyEventList events={s.key_events} />
 
       {/* Outlook — (a)〜(d) 構造の長文。読了幅 + 再段落化 + 折りたたみで表示 */}
       <div>
