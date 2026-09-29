@@ -12,6 +12,7 @@ from scripts.cloud_train.build_dataset_v2 import (
     PIR_FOCUS_MARKER,
     _with_completion,
     fix_example,
+    load_flagged,
     load_summary_corrected,
     pir_focus_examples,
 )
@@ -128,3 +129,15 @@ class TestPirFocus:
         from src.tools.task_prefix import TASK_MARKERS
 
         assert TASK_MARKERS[Step.PIR_DAILY_FOCUS] == PIR_FOCUS_MARKER
+
+
+def test_flagged_rows_are_those_with_issues(tmp_path: Path) -> None:
+    path = tmp_path / "g.jsonl"
+    path.write_text(
+        json.dumps({"i": 3, "issues": [{"kind": "格上げ"}]})
+        + "\n"
+        + json.dumps({"i": 4, "issues": []}),
+        encoding="utf-8",
+    )
+
+    assert load_flagged(path) == {3}

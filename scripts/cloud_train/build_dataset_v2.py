@@ -121,6 +121,14 @@ def evidence_for(
     return out
 
 
+def load_flagged(path: Path | None) -> set[int]:
+    """根拠監査で問題を指摘された train の行番号 (judge_n_teacher_grounding.py の出力)。"""
+    if path is None or not path.exists():
+        return set()
+    rows = (json.loads(x) for x in path.open(encoding="utf-8") if x.strip())
+    return {int(r["i"]) for r in rows if r.get("issues")}
+
+
 def load_summary_corrected(path: Path | None) -> dict[int, str]:
     """train の行番号 → 書き直した要約 (correct_summary_teacher.py の出力)。"""
     if path is None or not path.exists():
@@ -317,6 +325,7 @@ def build(
     ttp_judged: Path | None = None,
     triage_relabel: Path | None = None,
     summary_corrected: Path | None = None,
+    summary_flagged: Path | None = None,
     *,
     with_evidence: bool = False,
     pir_focus: Path | None = None,
@@ -326,12 +335,18 @@ def build(
     ttp = load_ttp_verdicts(ttp_judged)
     triage = load_triage_relabel(triage_relabel)
     corrected = load_summary_corrected(summary_corrected)
+    flagged = load_flagged(summary_flagged)
     focus_train, focus_valid = pir_focus_examples(pir_focus, stats)
     out.mkdir(parents=True, exist_ok=True)
     for split in ("train", "valid"):
         rows = [json.loads(x) for x in (src / f"{split}.jsonl").open() if x.strip()]
         if split == "train" and corrected:
             rows = [_with_completion(r, corrected.get(i), stats) for i, r in enumerate(rows)]
+        if split == "train" and flagged:
+            # 問題を指摘されたが書き直せなかった例は外す (量より質)
+            kept = [r for i, r in enumerate(rows) if i not in flagged or i in corrected]
+            stats["指摘されたが未修正で外した"] = len(rows) - len(kept)
+            rows = kept
         fixed = [
             e
             for e in (fix_example(r, stats, ttp, triage, with_evidence=with_evidence) for r in rows)
@@ -364,6 +379,11 @@ def main() -> int:
         "--summary-corrected", type=Path, help="correct_summary_teacher.py の出力 (train の行番号)"
     )
     ap.add_argument(
+        "--summary-flagged",
+        type=Path,
+        help="要約の根拠監査の出力。指摘されたが書き直せなかった例を外す",
+    )
+    ap.add_argument(
         "--mitre-evidence",
         action="store_true",
         help="要約に技術ごとの原文の引用の欄を足す (s22 以降、--ttp-judged 必須)",
@@ -381,6 +401,7 @@ def main() -> int:
         args.ttp_judged,
         args.triage_relabel,
         args.summary_corrected,
+        args.summary_flagged,
         with_evidence=args.mitre_evidence,
         pir_focus=args.pir_focus,
     )
