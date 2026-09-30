@@ -17,6 +17,7 @@ import contextlib
 import json
 import os
 import sys
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -83,6 +84,26 @@ def _resolve_pipeline_timeout(pipeline_name: str) -> float:
 
 
 _log = get_logger(__name__)
+
+#: 呼び手の締め切り (チェーンの段の上限) から持ち時間を出すときの余白と下限
+_DEADLINE_MARGIN_SECONDS = 15.0
+_MIN_BUDGET_SECONDS = 60.0
+
+
+def effective_timeout(base: float, deadline: float | None, now: float) -> float:
+    """子の持ち時間 = パイプラインの上限と呼び手の締め切りの残りの短い方 (純粋関数)。
+
+    ⚠ 2026-09-30: 毎時チェーンの段は 720 秒で打ち切るのに、子には全体の上限 (1800 秒) を
+    持ち時間として渡していた。子の soft deadline (持ち時間 − 300 秒) に届く前に段が子を
+    止めるため、たまった記事を 12 分超かけて要約すると**成果が全部捨てられ**、次の回も同じ
+    記事からやり直す (端末停止明けの RSS 取得で発生)。締め切りの残りを渡せば、子は時間内に
+    着手を止めて処理済み分を保存できる。
+    """
+    if deadline is None:
+        return base
+    remaining = deadline - now - _DEADLINE_MARGIN_SECONDS
+    return max(_MIN_BUDGET_SECONDS, min(base, remaining))
+
 
 # subprocess 経路で子プロセスが書き出す PipelineRunResult JSON のディレクトリ。
 # src/main.py の RUN_RESULTS_DIR と一致させること。
@@ -234,6 +255,7 @@ class PipelineRunner:
         triggered_by: TriggerSource = "manual",
         skip_dedup: bool = False,
         argv_override: list[str] | None = None,
+        deadline: float | None = None,
     ) -> int:
         """``python -m src.main`` をサブプロセスで起動し、run_id を即返す。
 
@@ -276,6 +298,7 @@ class PipelineRunner:
                 pipeline_name=pipeline_name,
                 skip_dedup=skip_dedup,
                 argv_override=argv_override,
+                deadline=deadline,
             ),
         )
         self._tasks.add(task)
@@ -308,8 +331,13 @@ class PipelineRunner:
         pipeline_name: str,
         skip_dedup: bool,
         argv_override: list[str] | None,
+        deadline: float | None = None,
     ) -> None:
-        """subprocess を起動し stdout を repo + registry に流す。"""
+        """subprocess を起動し stdout を repo + registry に流す。
+
+        ``deadline`` = 呼び手 (チェーンの段) の締め切り (``time.monotonic()`` 基準)。
+        鍵の待ち時間も差し引いた残りを子の持ち時間にする。
+        """
         # Lock は task 開始時に取得し、タスク完了まで保持する
         await self._lock.acquire()
         try:
@@ -340,7 +368,9 @@ class PipelineRunner:
                 {"run_id": run_id, "pipeline": pipeline_name},
             )
 
-            timeout_seconds = _resolve_pipeline_timeout(pipeline_name)
+            timeout_seconds = effective_timeout(
+                _resolve_pipeline_timeout(pipeline_name), deadline, time.monotonic()
+            )
 
             try:
                 proc = await asyncio.create_subprocess_exec(

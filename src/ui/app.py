@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import os
 import threading
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -203,7 +204,7 @@ def _register_bespoke_jobs(
     scheduler: BriefingScheduler,
     repo: RunHistoryRepository,
     *,
-    run_pipeline: Callable[[str], Awaitable[int | None]] | None = None,
+    run_pipeline: Callable[..., Awaitable[int | None]] | None = None,
     cancel_run: Callable[[int], Awaitable[object]] | None = None,
 ) -> None:
     """job_registry の bespoke / chain ジョブを callable に結び付け registry schedule で登録する。
@@ -322,10 +323,11 @@ def _register_bespoke_jobs(
     # pipeline 段は subprocess run を起動して完了を待つ。段の timeout は段自身の max_runtime。
     from src.scheduler.job_chain import ChainStep, run_chain
 
-    async def _await_pipeline(name: str) -> None:
+    async def _await_pipeline(name: str, deadline: float) -> None:
         if run_pipeline is None:
             raise RuntimeError("pipeline 段の runner が未配線")
-        run_id = await run_pipeline(name)
+        # 段の締め切りを子へ渡す (子が時間内に着手を止めて処理済み分を保存できるように)
+        run_id = await run_pipeline(name, deadline=deadline)
         if run_id is None:
             return  # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ
         try:
@@ -338,9 +340,9 @@ def _register_bespoke_jobs(
         if status not in (None, "succeeded"):
             raise RuntimeError(f"pipeline {name} run {run_id} {status}")
 
-    def _pipeline_step(name: str) -> Callable[[], Awaitable[None]]:
+    def _pipeline_step(name: str, timeout: float) -> Callable[[], Awaitable[None]]:
         async def _step() -> None:
-            await _await_pipeline(name)
+            await _await_pipeline(name, time.monotonic() + timeout)
 
         return _step
 
@@ -352,7 +354,7 @@ def _register_bespoke_jobs(
             if sid in callables:
                 steps.append(ChainStep(sid, callables[sid], timeout))
             else:
-                steps.append(ChainStep(sid, _pipeline_step(sid), timeout))
+                steps.append(ChainStep(sid, _pipeline_step(sid, timeout), timeout))
 
         async def _run() -> None:
             await run_chain(
@@ -510,7 +512,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _log.warning("operational_config_seed_at_startup_failed", error=str(e))
 
     async def run_named_pipeline(
-        pipeline_name: str, *, manual: bool = False, trigger: TriggerSource = "manual"
+        pipeline_name: str,
+        *,
+        manual: bool = False,
+        trigger: TriggerSource = "manual",
+        deadline: float | None = None,
     ) -> int | None:
         """APScheduler から呼ばれるコールバック。返り値 = run_id (抑止 / 起動失敗は None)。
 
@@ -536,6 +542,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 triggered_by=trigger if manual else "scheduler",
                 dry_run=False,
                 pipeline_name=pipeline_name,
+                deadline=deadline,
             )
         except Exception as e:  # noqa: BLE001
             _log.error("scheduled_run_failed", pipeline=pipeline_name, error=str(e))
