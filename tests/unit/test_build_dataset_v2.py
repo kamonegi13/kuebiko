@@ -172,7 +172,10 @@ class TestRulesFix:
 
 class TestPromptRewrite:
     def test_summary_length_rule_is_updated_in_training_input(self) -> None:
-        user = "[task: summary]\n- summary: 全体で 250〜500 字に収める"
+        user = (
+            "[task: summary]\n- summary: **2〜3 段落の日本語要約。全体で 250〜500 字に収める**。"
+            "\n  技術的詳細を含めつつ、冗長な記述は避ける。"
+        )
         example = {
             "messages": [
                 {"role": "user", "content": user},
@@ -183,13 +186,17 @@ class TestPromptRewrite:
         fixed = fix_example(example, Counter(), None, None)
 
         assert fixed is not None
-        assert "全体で 300〜700 字に収める" in fixed["messages"][0]["content"]
+        assert "長さは字数でなく内容で決める" in fixed["messages"][0]["content"]
+        assert "250〜500" not in fixed["messages"][0]["content"]
 
     def test_rules_fix_still_matches_after_rewrite(self) -> None:
         """修正結果の鍵は改訂前の入力で作ってある。改訂後も対応が外れない。"""
         import hashlib as _h
 
-        user = "[task: summary]\n- summary: 全体で 250〜500 字に収める"
+        user = (
+            "[task: summary]\n- summary: **2〜3 段落の日本語要約。全体で 250〜500 字に収める**。"
+            "\n  技術的詳細を含めつつ、冗長な記述は避ける。"
+        )
         key = _h.sha256(user.encode()).hexdigest()[:16]
         example = {
             "messages": [
