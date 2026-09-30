@@ -161,16 +161,21 @@ def _pre_rewrite_key(e: dict[str, Any]) -> str:
 def apply_rules_fix(
     examples: list[Any], fixes: dict[str, str | None], stats: Counter[str]
 ) -> list[Any]:
-    """違反を直した例は置き換え、直せなかった例は外す (新しいリストを返す)。"""
+    """違反を直した例は置き換え、直せなかった例は外す (新しいリストを返す)。全課題に当てる。
+
+    鍵は、指示の改訂の前の入力で作ったもの (初回の監査) と後の入力で作ったもの
+    (組み立て済みのデータの監査) の両方がありうるので、どちらでも引く。
+    """
     out = []
     for e in examples:
-        fix = fixes.get(_pre_rewrite_key(e), "") if task(e) == "summary" else ""
+        key = _example_key(e)
+        fix = fixes.get(key, fixes.get(_pre_rewrite_key(e), ""))
         if fix == "":
             out.append(e)
         elif fix is None:
-            stats["要約 指示違反を直せず外した"] += 1
+            stats[f"{task(e)} 指示違反を直せず外した"] += 1
         else:
-            stats["要約 指示違反を直した"] += 1
+            stats[f"{task(e)} 指示違反を直した"] += 1
             out.append({"messages": [*e["messages"][:-1], {"role": "assistant", "content": fix}]})
     return out
 
@@ -445,8 +450,6 @@ def build(
             for e in (fix_example(r, stats, ttp, triage, with_evidence=with_evidence) for r in rows)
             if e is not None
         ]
-        if fixes:
-            fixed = apply_rules_fix(fixed, fixes, stats)
         if split == "train":
             pairs = [e for e in fixed if task(e) == "pair"]
             others = [e for e in fixed if task(e) != "pair"]
@@ -456,6 +459,9 @@ def build(
             rng.shuffle(fixed)
         else:
             fixed = fixed + focus_valid
+        if fixes:
+            # 教師ファイルから足した課題 (PIR 別の要点・軸) も含めて最後に当てる
+            fixed = apply_rules_fix(fixed, fixes, stats)
         with (out / f"{split}.jsonl").open("w", encoding="utf-8") as fh:
             for e in fixed:
                 fh.write(json.dumps({"messages": e["messages"]}, ensure_ascii=False) + "\n")

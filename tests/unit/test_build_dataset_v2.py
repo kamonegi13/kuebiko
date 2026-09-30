@@ -210,3 +210,21 @@ class TestPromptRewrite:
         out = apply_rules_fix([fixed], {key: json.dumps({"summary": "直した"})}, Counter())
 
         assert _target(out[0])["summary"] == "直した"
+
+
+def test_rules_fix_applies_to_any_task_with_marker_in_system() -> None:
+    """pair・種別は印が system 側にある。要約以外の課題にも修正を当てる。"""
+    import hashlib as _h
+
+    msgs = [
+        {"role": "system", "content": "[task: pair]\n判定せよ"},
+        {"role": "user", "content": "記事 A / 記事 B"},
+        {"role": "assistant", "content": json.dumps({"same": True})},
+    ]
+    key = _h.sha256("\n".join(m["content"] for m in msgs[:-1]).encode()).hexdigest()[:16]
+    stats: Counter[str] = Counter()
+
+    out = apply_rules_fix([{"messages": msgs}], {key: json.dumps({"same": False})}, stats)
+
+    assert json.loads(out[0]["messages"][-1]["content"]) == {"same": False}
+    assert stats["pair 指示違反を直した"] == 1
