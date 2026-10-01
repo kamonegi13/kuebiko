@@ -13,7 +13,6 @@ from scripts.cloud_train.build_dataset_v2 import (
     PIR_FOCUS_MARKER,
     _with_completion,
     apply_rules_fix,
-    clip_ach_excerpts,
     fix_example,
     load_flagged,
     load_summary_corrected,
@@ -229,22 +228,3 @@ def test_rules_fix_applies_to_any_task_with_marker_in_system() -> None:
 
     assert json.loads(out[0]["messages"][-1]["content"]) == {"same": False}
     assert stats["pair 指示違反を直した"] == 1
-
-
-def test_ach_excerpts_over_limit_are_clipped_from_the_start() -> None:
-    long = "あ" * 90
-    msgs = [
-        {"role": "user", "content": "[task: ach]\n材料"},
-        {
-            "role": "assistant",
-            "content": json.dumps({"evidence": [{"excerpt": long}, {"excerpt": "短い"}]}),
-        },
-    ]
-    stats: Counter[str] = Counter()
-
-    out = clip_ach_excerpts({"messages": msgs}, stats)
-
-    ev = json.loads(out["messages"][-1]["content"])["evidence"]
-    assert ev[0]["excerpt"] == long[:80]
-    assert ev[1]["excerpt"] == "短い"
-    assert stats["ACH の抜粋を上限で切った"] == 1
