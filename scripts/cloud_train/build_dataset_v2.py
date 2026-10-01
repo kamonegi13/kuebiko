@@ -158,6 +158,37 @@ def _pre_rewrite_key(e: dict[str, Any]) -> str:
     return _example_key({"messages": msgs})
 
 
+#: ACH の証拠の抜粋の上限 (本番の ground_incremental と同じ)。本文の連続した一部を先頭から切るので
+#: 逐語照合 (本文に実在するか) は保たれる
+ACH_EXCERPT_MAX = 80
+
+
+def clip_ach_excerpts(e: dict[str, Any], stats: Counter[str]) -> dict[str, Any]:
+    """ACH の抜粋が上限を超えていれば先頭から切った新しい例 (超えていなければそのまま)。"""
+    if task(e) != "ach":
+        return e
+    try:
+        target = json.loads(e["messages"][-1]["content"])
+    except json.JSONDecodeError:
+        return e
+    ev = target.get("evidence")
+    if not isinstance(ev, list):
+        return e
+    clipped = 0
+    new_ev = []
+    for item in ev:
+        x = item.get("excerpt") if isinstance(item, dict) else None
+        if isinstance(x, str) and len(x) > ACH_EXCERPT_MAX:
+            item = {**item, "excerpt": x[:ACH_EXCERPT_MAX]}
+            clipped += 1
+        new_ev.append(item)
+    if not clipped:
+        return e
+    stats["ACH の抜粋を上限で切った"] += clipped
+    content = json.dumps({**target, "evidence": new_ev}, ensure_ascii=False)
+    return {"messages": [*e["messages"][:-1], {"role": "assistant", "content": content}]}
+
+
 def apply_rules_fix(
     examples: list[Any], fixes: dict[str, str | None], stats: Counter[str]
 ) -> list[Any]:
@@ -468,6 +499,7 @@ def build(
         if fixes:
             # 教師ファイルから足した課題 (PIR 別の要点・軸) も含めて最後に当てる
             fixed = apply_rules_fix(fixed, fixes, stats)
+        fixed = [clip_ach_excerpts(e, stats) for e in fixed]
         with (out / f"{split}.jsonl").open("w", encoding="utf-8") as fh:
             for e in fixed:
                 fh.write(json.dumps({"messages": e["messages"]}, ensure_ascii=False) + "\n")
