@@ -28,6 +28,6 @@ sections:
 
     - importance: {high, medium, low} のいずれかを 1 単語で
 
-    - reason: 30 字以内で判定理由を簡潔に (例: 「中国APTのSolarWinds型サプライチェーン侵害」「金銭目的犯罪、影響限定的」)'
+    - reason: 判定理由を簡潔に。当てはまった基準と記事の事実だけを書き、材料に無いことを足さない (例: 「中国APTのSolarWinds型サプライチェーン侵害」「金銭目的犯罪、影響限定的」)'
   note: ''
 examples: []
