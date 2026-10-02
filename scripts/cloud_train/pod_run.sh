@@ -58,11 +58,33 @@ if tok and "RUNPOD_SECRET" in tok:
 snapshot_download("google/gemma-4-26B-A4B-it", ignore_patterns=["*.gguf"], token=tok)
 PY
 
+# 途中経過を S3 の窓口経由で 10 分ごとに書き出す (2026-10-02)。保存領域へ直接追記したログは
+# 外から最新が読めず、学習が動いているのか分からなかった (s22 の 1 回目)
+pip install -q boto3 || true
+progress() {
+  while true; do
+    sleep 600
+    python - <<'PY' 2>/dev/null || true
+import os, boto3
+dc = os.environ["DATACENTER"]
+c = boto3.client("s3", endpoint_url=f"https://s3api-{dc.lower()}.runpod.io/", region_name=dc,
+    aws_access_key_id=os.environ["S3_KEY"], aws_secret_access_key=os.environ["S3_SECRET"])
+run = os.environ["RUN_ID"]
+for src, key in ((f"/workspace/runs/{run}/pod.log", "pod.log"), ("/root/out/metrics.jsonl", "metrics.jsonl")):
+    if os.path.exists(src):
+        c.upload_file(src, os.environ["VOLUME_ID"], f"runs/{run}/progress/{key}")
+PY
+  done
+}
+progress &
+PROGRESS_PID=$!
+
 say "学習"
 # shellcheck disable=SC2086
 timeout "${MAX_HOURS}h" python "$RUN_DIR/code/train_lora.py" \
   --model google/gemma-4-26B-A4B-it --data "$RUN_DIR/data" --out "$OUT" $TRAIN_ARGS
 rc=$?
+kill "$PROGRESS_PID" 2>/dev/null || true
 if [ $rc -eq 124 ]; then fail "上限時間 ${MAX_HOURS} 時間を超えた"; fi
 if [ $rc -ne 0 ]; then fail "学習が異常終了 (終了コード $rc)"; fi
 say "学習 完了 → S3 の窓口経由で書き出し"

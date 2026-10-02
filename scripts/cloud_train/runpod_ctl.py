@@ -191,16 +191,49 @@ def cmd_status(a: argparse.Namespace) -> str:
         else ("failed" if _exists(c, b, f"runs/{a.run_id}/FAILED.txt") else "running")
     )
     print(f"run={a.run_id} 状態={state}")
-    try:
-        log = (
-            c.get_object(Bucket=b, Key=f"runs/{a.run_id}/pod.log")["Body"]
-            .read()
-            .decode(errors="replace")
-        )
+    # 途中経過 (progress/) を優先して読む。保存領域へ直接追記したログは外から最新が見えない (10-02)
+    for key in (f"runs/{a.run_id}/progress/pod.log", f"runs/{a.run_id}/pod.log"):
+        try:
+            log = c.get_object(Bucket=b, Key=key)["Body"].read().decode(errors="replace")
+        except Exception:  # noqa: BLE001
+            continue
         print("\n".join(log.splitlines()[-8:]))
-    except Exception:  # noqa: BLE001
+        break
+    else:
         print("(ログはまだ無い)")
     return state
+
+
+def pod_runtime_seconds(e: dict[str, str], pod_id: str) -> int | None:
+    """コンテナが動いていれば稼働秒数、立ち上がっていなければ None (GraphQL の runtime)。
+
+    ⚠ 2026-10-02: 割り当てられたマシンでコンテナが立ち上がらず、7 時間半「起動中」の扱いで
+    止まっていた (desiredStatus=RUNNING・runtime=null)。起動側がこれで見張る。
+    """
+    import urllib.request
+
+    q = {
+        "query": f'query {{ pod(input:{{podId:"{pod_id}"}}) {{ runtime {{ uptimeInSeconds }} }} }}'
+    }
+    req = urllib.request.Request(
+        "https://api.runpod.io/graphql",
+        data=json.dumps(q).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {e['RUNPOD_API_KEY']}",
+            "User-Agent": "kuebiko-runpod-ctl/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        pod = json.load(r)["data"]["pod"] or {}
+    rt = pod.get("runtime")
+    return int(rt["uptimeInSeconds"]) if rt else None
+
+
+def cmd_runtime(a: argparse.Namespace) -> None:
+    pid = _pod_id(a.run_id)
+    secs = pod_runtime_seconds(env(), pid) if pid else None
+    print("none" if secs is None else secs)
 
 
 def cmd_fetch(a: argparse.Namespace) -> None:
@@ -274,7 +307,7 @@ def main() -> int:
     p.add_argument("--disk-gb", type=int, default=150)
     p.add_argument("--image", default=DEFAULT_IMAGE)
     p.add_argument("--train-args", default="")
-    for name in ("status", "fetch", "watch"):
+    for name in ("status", "fetch", "watch", "runtime"):
         p = sub.add_parser(name)
         p.add_argument("run_id")
         p.add_argument("--interval", type=int, default=120)
@@ -288,6 +321,7 @@ def main() -> int:
         "status": cmd_status,
         "fetch": cmd_fetch,
         "watch": cmd_watch,
+        "runtime": cmd_runtime,
         "volumes": cmd_volumes,
         "pods": cmd_pods,
         "stop-all": cmd_stop_all,
