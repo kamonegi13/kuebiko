@@ -2692,6 +2692,26 @@ class TestDegenerateBodyGate:
         assert _degenerate_body_reason("Description:\nLeak Screenshot:") is not None
         assert _degenerate_body_reason("") is not None
 
+    def test_feed_boilerplate_only_body_detected(self) -> None:
+        """WordPress の配信が付ける定型文だけの本文 (2026-10-02、FDD で手口を創作した例)。"""
+        from src.main import _degenerate_body_reason
+
+        en = (
+            "The post State-linked actor targets US AI policy experts in credential "
+            "phishing campaigns appeared first on FDD ."
+        )
+        ja = "投稿 某社が不正アクセス被害を公表 は 例示ニュース に最初に表示されました。"
+        assert _degenerate_body_reason(en) == "feed_boilerplate"
+        assert _degenerate_body_reason(ja) == "feed_boilerplate"
+
+    def test_real_body_with_trailing_boilerplate_is_kept(self) -> None:
+        from src.main import _degenerate_body_reason
+
+        body = "Researchers observed a new campaign targeting energy firms. " * 4 + (
+            "The post New campaign appeared first on Example News."
+        )
+        assert _degenerate_body_reason(body) is None
+
     def test_healthy_body_passes(self) -> None:
         from src.main import _degenerate_body_reason
 

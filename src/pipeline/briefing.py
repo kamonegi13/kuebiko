@@ -395,6 +395,13 @@ _BLOCK_PAGE_RE = re.compile(
     re.IGNORECASE,
 )
 _BLOCK_PAGE_SCAN_CHARS = 600
+# WordPress の配信が抜粋の代わりに付ける定型文 (2026-10-02)。全文取得に失敗して feed の抜粋に
+# 落ちると、本文がこの 1 文だけになる。題しか無いのに LLM は手口まで書いた (FDD の実例)
+_FEED_BOILERPLATE_RE = re.compile(
+    r"The post .{1,400}? appeared first on .{1,160}?$"
+    r"|投稿 .{1,400}? は .{1,160}? に最初に表示されました。?$",
+    re.IGNORECASE | re.DOTALL,
+)
 # ブロック画面は短い。長い本文中に語句が出ても記事本文 (例: Cloudflare についての記事) とみなす
 _BLOCK_PAGE_MAX_LEN = 2000
 
@@ -416,6 +423,9 @@ class DegenerateBodyError(Exception):
 def _degenerate_body_reason(body: str) -> str | None:
     """本文が「読めていない」なら理由文字列、健全なら None (決定論)。"""
     text = (body or "").strip()
+    match = _FEED_BOILERPLATE_RE.search(text)
+    if match and len(text[: match.start()].strip()) < _DEGENERATE_BODY_MIN_CHARS:
+        return "feed_boilerplate"
     if len(text) < _DEGENERATE_BODY_MIN_CHARS:
         return f"body_too_short:{len(text)}"
     if len(text) <= _BLOCK_PAGE_MAX_LEN and _BLOCK_PAGE_RE.search(text[:_BLOCK_PAGE_SCAN_CHARS]):
