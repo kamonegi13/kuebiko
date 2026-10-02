@@ -543,9 +543,25 @@ export interface PirBriefPayload {
   still: PirBriefQuestion[];
 }
 
+/** 高脅威の安全網 (2026-10-02): alert に流れなかった high の脅威。旧行には無い。 */
+export interface HighThreatItem {
+  article_id: string;
+  title: string;
+  category: string;
+  category_label: string;
+  url: string;
+  is_japan: boolean;
+}
+
+export interface HighThreatsPayload {
+  total: number;
+  items: HighThreatItem[];
+}
+
 export interface DailyBriefPayload {
   /** 旧行 (段D 以前) と夕刊には無い */
   pir_brief?: PirBriefPayload | null;
+  high_threats?: HighThreatsPayload | null;
   synthesis: BriefSynthesisPayload | null;
   pir: BriefPirSection[];
 }

@@ -133,3 +133,36 @@ class TestPirBriefPayload:
 
         assert payload["pir_brief"]["headline"] == "本日、1 問中 0 問の答えが動いた"
         json.dumps(payload, ensure_ascii=False)
+
+
+class TestHighThreatsPayload:
+    """高脅威の安全網を Web のブリーフにも載せる (2026-10-02)。
+
+    従来は Discord の要点にだけ出て、保存したブリーフ (Web) には入らなかった。
+    alert に流れなかった high の脅威 (JadePuffer/Storm-3168 の 7 本など) が Web のどこにも
+    出ていなかった。
+    """
+
+    def test_items_and_total_are_carried(self) -> None:
+        from src.digest.high_threat_digest import HighThreatItem, high_threats_payload
+
+        items = [
+            HighThreatItem("jp", "日本の電力会社が標的", "incident", "https://x/jp", is_japan=True),
+            HighThreatItem("a1", "APT41 が製造業に侵入", "apt", "https://x/1", is_japan=False),
+        ]
+
+        payload = build_brief_payload(
+            syn_record=None, sections=[], high_threats=high_threats_payload(items, total=5)
+        )
+
+        ht = payload["high_threats"]
+        assert ht["total"] == 5
+        assert [i["article_id"] for i in ht["items"]] == ["jp", "a1"]
+        assert ht["items"][0]["category_label"] == "インシデント"
+        assert ht["items"][0]["is_japan"] is True
+        json.dumps(payload)  # JSON-safe
+
+    def test_absent_high_threats_is_null(self) -> None:
+        payload = build_brief_payload(syn_record=None, sections=[])
+
+        assert payload["high_threats"] is None

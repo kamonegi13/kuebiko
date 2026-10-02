@@ -38,7 +38,10 @@ _ACTIONABLE_CATEGORIES: tuple[str, ...] = (
     "breach",
 )
 # Discord 1 通に載せる上限 (超過は "+N 件 → web")。日 ~10 件なので通常は全件載る。
-_MAX_ITEMS = 12
+DISCORD_MAX_ITEMS = 12
+_MAX_ITEMS = DISCORD_MAX_ITEMS
+#: Web の日次ブリーフに載せる上限 (2026-10-02)。Discord の "+N 件 → web" の先
+WEB_MAX_ITEMS = 50
 _TITLE_MAX = 90
 
 
@@ -126,6 +129,28 @@ _CATEGORY_JA: dict[str, str] = {
     "vulnerability": "脆弱性",
     "breach": "漏洩",
 }
+
+
+def high_threats_payload(items: list[HighThreatItem], *, total: int) -> dict[str, Any]:
+    """Web の日次ブリーフに載せる形 (daily_briefs.payload["high_threats"]、2026-10-02)。
+
+    従来は Discord の要点にだけ出ていた。alert に流れなかった high の脅威は、ここが
+    唯一の通読面なので Web にも残す。
+    """
+    return {
+        "total": total,
+        "items": [
+            {
+                "article_id": it.article_id,
+                "title": it.title,
+                "category": it.category,
+                "category_label": _CATEGORY_JA.get(it.category, it.category),
+                "url": it.url,
+                "is_japan": it.is_japan,
+            }
+            for it in items
+        ],
+    }
 
 
 def format_high_threat_compact(

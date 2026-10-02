@@ -420,17 +420,25 @@ async def _run_daily_brief_default(
     # 載せる。lookback は slot 分担で重複回避 (朝=24h / 夕=morning 以降 ~13h)。決定論・
     # LLM 追加呼出なし。dry_run でも算出 (repo 不要、DB read のみ)。
     high_threat_compact = ""
+    high_threats_web: dict[str, Any] | None = None
     try:
         from src.digest.high_threat_digest import (
+            DISCORD_MAX_ITEMS,
+            WEB_MAX_ITEMS,
             collect_high_threats,
             format_high_threat_compact,
+            high_threats_payload,
         )
 
         _ht_lookback = 24 if is_morning else 13
-        _ht_items, _ht_total = collect_high_threats(lookback_hours=_ht_lookback)
-        high_threat_compact = format_high_threat_compact(
-            _ht_items, total=_ht_total, base_url=resolve_public_base_url()
+        _ht_items, _ht_total = collect_high_threats(
+            lookback_hours=_ht_lookback, limit=WEB_MAX_ITEMS
         )
+        # Discord は 1 通に収まる件数、Web (保存するブリーフ) は全件 (2026-10-02)
+        high_threat_compact = format_high_threat_compact(
+            _ht_items[:DISCORD_MAX_ITEMS], total=_ht_total, base_url=resolve_public_base_url()
+        )
+        high_threats_web = high_threats_payload(_ht_items, total=_ht_total)
     except Exception as e:  # noqa: BLE001 — 安全網の失敗で brief 全体を止めない
         _log.error("daily_brief_high_threat_failed", slot=slot, error=str(e))
 
@@ -469,7 +477,10 @@ async def _run_daily_brief_default(
                 bluf=message.bluf,
                 summary=message.summary,
                 payload=build_brief_payload(
-                    syn_record=syn_record, sections=sections, pir_brief=pir_brief
+                    syn_record=syn_record,
+                    sections=sections,
+                    pir_brief=pir_brief,
+                    high_threats=high_threats_web,
                 ),
                 section_count=len(sections),
                 sources=[{"title": s.title, "url": s.url} for s in message.sources],
