@@ -73,7 +73,8 @@ def _seed_article(
     category: str = "breach",
     hours_ago: float = 1.0,
     status: str = "posted",
-    posted_channel: str = "brief",
+    posted_channel: str | None = "brief",
+    duplicate_of: str | None = None,
 ) -> None:
     run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="x", dry_run=False))
     repo.add_article(
@@ -86,6 +87,7 @@ def _seed_article(
             category=category,
             posted_channel=posted_channel,
             dedup_key=dedup_key,
+            duplicate_of=duplicate_of,
             created_at=_now() - timedelta(hours=hours_ago),
         ),
     )
@@ -136,6 +138,7 @@ class TestCheckDedupKeyDuplicate:
         # Assert
         assert isinstance(result, DedupGateResult)
         assert "prior post 48h" in result.failure_reason
+        assert result.prior_article_id == "prev"
 
     def test_prior_post_outside_48h_is_not_skipped_and_key_is_recorded(
         self, repo: RunHistoryRepository
@@ -196,6 +199,7 @@ class TestCheckCveDuplicate:
         # Assert
         assert isinstance(result, DedupGateResult)
         assert "prior post 48h" in result.failure_reason
+        assert result.prior_article_id == "prev"
 
     def test_no_cve_in_title_or_key_passes_through(self, repo: RunHistoryRepository) -> None:
         msg = _msg(title="Generic threat intel report")
@@ -251,6 +255,7 @@ class TestCheckContentDuplicate:
         assert isinstance(result, DedupGateResult)
         assert "Other Feed" in result.failure_reason
         assert "some-key" in result.failure_reason
+        assert result.prior_article_id == "prior-art"
 
     def test_no_match_passes_through(
         self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
@@ -306,6 +311,26 @@ class TestCheckVictimOrgDuplicate:
         assert isinstance(result, DedupGateResult)
         assert "Acme Corp" in result.failure_reason
         assert "prev" in result.failure_reason
+        assert result.prior_article_id == "prev"
+
+    def test_prior_that_is_itself_a_duplicate_points_to_root(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """一致先が重複として残った記事なら、その重複元 (根) を指す — 連鎖を 1 段にたたむ。"""
+        _seed_article(
+            repo,
+            article_id="dup",
+            victim_org="Acme Corp",
+            hours_ago=1,
+            posted_channel=None,
+            duplicate_of="root",
+        )
+        msg = _msg(category="breach", metadata={"victim_orgs": ["Acme Corp"]})
+
+        result = check_victim_org_duplicate(msg=msg, art_id="new", channel="brief", dedup_repo=repo)
+
+        assert result is not None
+        assert result.prior_article_id == "root"
 
     def test_match_outside_24h_is_not_skipped(self, repo: RunHistoryRepository) -> None:
         """24h 超の続報は正当な情報として通す。"""

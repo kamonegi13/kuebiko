@@ -219,6 +219,9 @@ def _persist_article_outcomes(
                     posted_channel=(
                         str(outcome["posted_channel"]) if outcome.get("posted_channel") else None
                     ),
+                    duplicate_of=(
+                        str(outcome["duplicate_of"]) if outcome.get("duplicate_of") else None
+                    ),
                     dedup_key=dedup_key_val,
                     discord_message_id=(
                         str(outcome["discord_message_id"])

@@ -41,9 +41,20 @@ _VICTIM_ORG_DEDUP_WITHIN_HOURS = 24
 
 @dataclass(frozen=True)
 class DedupGateResult:
-    """gate が skip を判定したときの結果 (失敗理由のみ、ログは各層内で完結)。"""
+    """gate が重複を判定したときの結果 (ログは各層内で完結)。
+
+    ``prior_article_id`` は一致先の記事 id (同一 run 内の一致など特定できなければ None)。
+    一致先自体が重複なら、その重複元 (根) を指す — 重複の連鎖を 1 段にたたむ。
+    """
 
     failure_reason: str
+    prior_article_id: str | None = None
+
+
+def _root_id(prior: object) -> str | None:
+    """一致先レコードから重複元の根の id を取る (一致先が重複なら、その duplicate_of)。"""
+    root = getattr(prior, "duplicate_of", None) or getattr(prior, "article_id", None)
+    return str(root) if root else None
 
 
 def check_dedup_key_duplicate(
@@ -83,7 +94,10 @@ def check_dedup_key_duplicate(
                 reason="prior_post_within_48h",
                 prior_channel=prior.posted_channel,
             )
-            return DedupGateResult(f"cross-ch dedup: prior post 48h ({prior.posted_channel})")
+            return DedupGateResult(
+                f"cross-ch dedup: prior post 48h ({prior.posted_channel})",
+                prior_article_id=_root_id(prior),
+            )
     cross_channel_seen_keys.add(msg_dedup_key)
     return None
 
@@ -131,7 +145,9 @@ def check_cve_duplicate(
                 prior_dedup_key=prior_cve.dedup_key,
             )
             return DedupGateResult(
-                f"cve dedup: prior post 48h ({prior_cve.posted_channel}, key={prior_cve.dedup_key})"
+                f"cve dedup: prior post 48h "
+                f"({prior_cve.posted_channel}, key={prior_cve.dedup_key})",
+                prior_article_id=_root_id(prior_cve),
             )
         cross_channel_seen_cves.add(cve_id)
     return None
@@ -181,7 +197,8 @@ def check_content_duplicate(
     )
     return DedupGateResult(
         f"content_dedup: cross-source match "
-        f"(prior={content_dup.feed_title}, key={content_dup.dedup_key})"
+        f"(prior={content_dup.feed_title}, key={content_dup.dedup_key})",
+        prior_article_id=_root_id(content_dup),
     )
 
 
@@ -240,7 +257,8 @@ def check_victim_org_duplicate(
     )
     return DedupGateResult(
         f"victim_org dedup: prior post {_VICTIM_ORG_DEDUP_WITHIN_HOURS}h "
-        f"(org={matched_org}, article={prior.article_id})"
+        f"(org={matched_org}, article={prior.article_id})",
+        prior_article_id=_root_id(prior),
     )
 
 

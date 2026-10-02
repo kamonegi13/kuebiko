@@ -492,6 +492,9 @@ def _load_posted_rows(
                    category, socio_political_intent, is_ransomware
               FROM articles
              WHERE status='posted'
+               -- 重複判定に当たり分析に残した記事 (2026-10-02) は数えない: PIR の
+               -- 該当は件数・上位 3 件・KPI に効くため、同じ出来事を二重に数える
+               AND duplicate_of IS NULL
                AND datetime(created_at) >= datetime(?)
              ORDER BY datetime(created_at) DESC
              LIMIT ?

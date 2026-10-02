@@ -36,6 +36,7 @@ def _article(
     published: datetime | None = None,
     sector: str | None = None,
     country: str | None = None,
+    duplicate_of: str | None = None,
 ) -> None:
     rid = repo.start_run(RunRecord(started_at=created, pipeline="x", dry_run=False))
     repo.add_article(
@@ -50,6 +51,7 @@ def _article(
             published_at=published,
             victim_sector_canonical=sector,
             victim_country_iso=country,
+            duplicate_of=duplicate_of,
         )
     )
 
@@ -152,6 +154,23 @@ class TestVictimStreamAnchor:
 
         # Assert
         assert len(times["finance"]) == 1
+
+    def test_kept_duplicates_are_not_counted(self, repo: RunHistoryRepository) -> None:
+        """重複として分析に残した記事 (2026-10-02) は二重計上になるので数えない。"""
+        # Arrange
+        t = _NOW - timedelta(days=1)
+        _article(repo, "orig", created=t, published=t, sector="energy", country="US")
+        _article(
+            repo, "dup", created=t, published=t, sector="energy", country="US", duplicate_of="orig"
+        )
+
+        # Act
+        sectors = repo.victim_sector_event_times(since=_NOW - timedelta(days=30))
+        countries = repo.victim_country_event_times(since=_NOW - timedelta(days=30))
+
+        # Assert
+        assert len(sectors["energy"]) == 1
+        assert len(countries["US"]) == 1
 
 
 class TestBurstCloseOutWindow:

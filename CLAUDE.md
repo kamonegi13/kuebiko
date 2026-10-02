@@ -445,6 +445,9 @@ kuebiko/
   | 事象どうしの関係を画面に出す: 同じ出来事の関連 = 分類器 (`config/models/relation_model.json`、盲検で推定精度 0.85)・同じアクター = 信頼できる主題の共有 (精度 0.88、1 事象 5 件まで)。同一キャンペーン・共通の供給元は出さない | `relations.ENABLED_TYPES` を空に / モデルを消すと同じアクターだけ |
   | (09-29) fast ティア・ACH・深刻度の軸を s17 → **s21** (クラウド学習、int8 配備 27GB。要約の盲検 64:21・PIR の誤該当 48→19)。detect ML も s21 の軸で学習し直した版へ | UI「設定 → モデル」で前の版に戻す + `config/models/detect_model.json` を `.bak_s17` から戻す |
   | (09-29) narrative ティア・事象ニュース・Spotlight・状況総括・深掘りを n17m30 / n17c → **n19** (n 系統合、クラウド学習 int8。事象 16:2・Spotlight 22:0・状況総括 14:0)、detect の LLM 段を n17c → s21 (開設すべき 9→18)。常駐 2 本 (s21 + n19)。深掘りは未学習のため n19 に接頭辞を付けない (`task_prefix.UNTRAINED_STEPS`) | UI「設定 → モデル」で前の版に戻す (n17m30 / n17c はディスクに保全) |
+  | (10-02) 翻訳 (`article_translate`) と MITRE 同期の和訳 (`actor_sync`) を s21 → **素の 26B** (`kuebiko-sft:26b`)。s21/n19 は未学習の自由文で JSON 形に崩れる (翻訳 637 件・PIR 別の要点が全件崩れていた)。壊れた訳は `body_translator.broken_translation_reason` が保存させない | UI「設定 → モデル」の step 上書きを外す |
+  | (10-02) 投稿直前の重複判定に当たった記事を**分析に残す** (status='posted' / posted_channel=NULL / `duplicate_of`=一致先の根)。Discord へは流さない。規則の重複判定は新事実を見ず、続報が台帳・PIR・総括から消えていた | `DEDUP_KEEP_FOR_ANALYSIS=0` |
+  | (10-02) triage の落選を理由つきで `triage_rejections` に記録 (180 日)。購読ソースの媒体詳細で件数と一覧 | (記録のみ — 戻す必要なし) |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 from src.ui.services.subscription_analytics import fetch_all_feed_stats
 
@@ -77,3 +78,45 @@ class TestFeedUrlGrouping:
         stats = fetch_all_feed_stats(db_path=repo._db_path)
         assert "Legacy Feed" in stats  # feed_url NULL → feed_title key に fallback
         assert stats["Legacy Feed"].posted_count == 1
+
+
+class TestTriageRejectedCount:
+    """triage の落選件数 (2026-10-02)。
+
+    落選は articles に行を作らないため、全部落ちた媒体は統計に現れず「記事なし」に
+    見えていた (取得は成功しているのに壊れたように見える)。落選件数を同じ結合キーで足す。
+    """
+
+    @staticmethod
+    def _rej(aid: str, feed_url: str) -> TriageRejectionRow:
+        return TriageRejectionRow(
+            article_id=aid,
+            url=f"https://e/{aid}",
+            title="t",
+            feed_title="F",
+            feed_url=feed_url,
+            importance="low",
+            reason="r",
+        )
+
+    def test_rejections_are_counted_on_existing_feed(self, repo: RunHistoryRepository) -> None:
+        run_id = repo.start_run(
+            RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False)
+        )
+        _add(repo, run_id, "a1", feed_title="F", feed_url="https://e/feed")
+        repo.record_triage_rejections([self._rej("r1", "https://e/feed")])
+
+        stats = fetch_all_feed_stats(db_path=repo._db_path)
+
+        assert stats["https://e/feed"].posted_count == 1
+        assert stats["https://e/feed"].triage_rejected == 1
+
+    def test_feed_with_only_rejections_still_appears(self, repo: RunHistoryRepository) -> None:
+        repo.record_triage_rejections(
+            [self._rej("r1", "https://quiet/feed"), self._rej("r2", "https://quiet/feed")]
+        )
+
+        stats = fetch_all_feed_stats(db_path=repo._db_path)
+
+        assert stats["https://quiet/feed"].posted_count == 0
+        assert stats["https://quiet/feed"].triage_rejected == 2

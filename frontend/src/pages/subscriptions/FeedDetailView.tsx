@@ -9,6 +9,7 @@ import { useChannelMeta } from "../../components/channel";
 import { vocabLabel } from "../../hooks/useVocab";
 import { formatJstDate } from "../../utils/date";
 import { SourceEditForm } from "./SourceEditForm";
+import { TriageRejectionsSection } from "./TriageRejectionsSection";
 import { LOW_CONTRIB_LABELS, QualityBadge, type EnrichedFeed } from "./shared";
 
 export function FeedDetailView({
@@ -185,7 +186,8 @@ export function FeedDetailView({
           <div className="overflow-x-auto"><table className="w-full text-xs">
             <tbody className="[&>tr>th]:text-left [&>tr>th]:text-fg-muted [&>tr>th]:font-normal [&>tr>th]:py-0.5 [&>tr>th]:pr-3 [&>tr>th]:w-32 [&>tr>td]:py-0.5 [&>tr>td]:text-fg [&>tr>td]:tnum">
               <tr><th>投稿数</th><td>{st.posted_count}</td></tr>
-              <tr><th>重複でスキップ</th><td>{st.dup_skipped}</td></tr>
+              <tr><th>重複 (配信せず)</th><td>{st.dup_skipped}</td></tr>
+              <tr><th>triage で不採用</th><td>{st.triage_rejected ?? 0}</td></tr>
               {(st.extract_failed_count ?? 0) > 0 && (
                 <tr><th>本文抽出 失敗</th><td className="text-critical font-semibold">{st.extract_failed_count} 件 (feed は取得成功・本文が取れず記事化されない)</td></tr>
               )}
@@ -202,6 +204,8 @@ export function FeedDetailView({
       ) : (
         <div className="text-fg-subtle text-sm italic">この feed の運用統計データはまだありません (新規購読 / 記事なし)。</div>
       )}
+
+      {st && <TriageRejectionsSection feedKey={st.feed_title} count={st.triage_rejected ?? 0} />}
 
       <LivePreviewSection feedId={f.feed_id} />
 

@@ -152,13 +152,17 @@ def _repo() -> RunHistoryRepository:
 def _is_duplicate_only(articles: dict[str, Any], member_ids: tuple[str, ...]) -> bool:
     """全メンバーが dedup で重複と判定されたか (契約 4)。
 
-    ``skipped_duplicate`` は「既に収集済みの記事と同じ事案」という自前の判定。
+    ``skipped_duplicate`` / ``duplicate_of`` は「既に収集済みの記事と同じ事案」という自前の
+    判定 (2026-10-02 以降、重複に当たった記事は status='posted' + duplicate_of で残る)。
     生成本文があるなら複数媒体をまとめた読み物になっているので公開してよい。
     """
     known = [articles[a] for a in member_ids if a in articles]
     if not known:
         return True
-    return all(getattr(a, "status", "") == "skipped_duplicate" for a in known)
+    return all(
+        getattr(a, "status", "") == "skipped_duplicate" or getattr(a, "duplicate_of", None)
+        for a in known
+    )
 
 
 def _citations(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]:

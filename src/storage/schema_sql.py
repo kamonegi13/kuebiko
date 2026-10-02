@@ -626,6 +626,22 @@ CREATE TABLE IF NOT EXISTS ops_notices (
 
 CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
 
+-- triage の落選記録 (2026-10-02、PG _SCHEMA と対)。落選した記事は articles に行を作らず
+-- URL 既読化だけされ、理由は 30 日で消える run_logs にしか無かった = 誤った落選を後から
+-- 確かめられない。理由つきで残し、購読ソース画面で媒体ごとに読む。retention 180 日。
+CREATE TABLE IF NOT EXISTS triage_rejections (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id  TEXT    NOT NULL,
+    url         TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    feed_title  TEXT    NOT NULL,
+    feed_url    TEXT    NOT NULL,
+    importance  TEXT    NOT NULL,
+    reason      TEXT    NOT NULL,
+    ts          TEXT    NOT NULL                -- ISO8601 UTC
+);
+CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

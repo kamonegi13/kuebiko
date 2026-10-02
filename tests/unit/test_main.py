@@ -929,19 +929,25 @@ class TestDedup:
 class TestCrossChannelDedupSkipPersistAndMarkRead:
     """Phase 5L-8 回帰テスト:
 
-    - cross-channel dedup で skip された article が articles テーブルに
-      ``status='skipped_duplicate'`` で永続化される (Bug 1)
-    - skip された article が dedup 既読化の対象に含まれる (Bug 2)
+    - cross-channel dedup に当たった article が articles テーブルに永続化される (Bug 1)
+    - 当たった article の URL が既読化される (Bug 2)
+    - 2026-10-02: 既定では Discord へ流さず status='posted' / posted_channel=None で
+      分析に残し、一致先を duplicate_of に記録する。``DEDUP_KEEP_FOR_ANALYSIS=0`` で
+      従来の skipped_duplicate (分析から外れる) に戻る
     """
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("keep", [True, False])
     async def test_cross_ch_dedup_skip_persists_and_marks_read(
         self,
         template: jinja2.Template,
         pipeline_cfg: PipelineConfig,
         app_cfg: Any,
         tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+        keep: bool,
     ) -> None:
+        monkeypatch.setenv("DEDUP_KEEP_FOR_ANALYSIS", "1" if keep else "0")
         from src.storage.run_history import ArticleRecord, RunHistoryRepository
 
         repo = RunHistoryRepository(db_path=tmp_path / "ph5l8_dedup.db")
@@ -1023,15 +1029,27 @@ class TestCrossChannelDedupSkipPersistAndMarkRead:
             dedup_repo=repo,
             run_id=target_run_id,
         )
-        # 投稿は 0 件 (cross-channel dedup で skip)
+        # Discord への投稿は 0 件 (重複は二度流さない)
         assert result.posted == 0
+        for ch in ("alert", "brief", "watch"):  # ops は run の稼働通知なので対象外
+            _post_mock(publishers[ch]).assert_not_awaited()
 
-        # Bug 1 修正検証: articles テーブルに status='skipped_duplicate' で永続化
+        # Bug 1 修正検証: articles テーブルに永続化
         rows = repo.list_articles(run_id=target_run_id)
         skipped_recs = [r for r in rows if r.article_id == "new-art"]
         assert len(skipped_recs) == 1
-        assert skipped_recs[0].status == "skipped_duplicate"
         assert skipped_recs[0].dedup_key == "cve-2026-9999"
+        if keep:
+            # 分析に残す (台帳・PIR は status='posted' で絞る)。配信はしていないので channel は無し
+            assert skipped_recs[0].status == "posted"
+            assert skipped_recs[0].posted_channel is None
+            assert skipped_recs[0].duplicate_of == "prev-art"
+        else:
+            assert skipped_recs[0].status == "skipped_duplicate"
+        # Bug 2 修正検証: URL は既読化され、次の run で再評価されない
+        from src.tools.url_normalizer import url_hash
+
+        assert repo.is_url_seen(url_hash(new_url)) is True
         # 投稿直前の重複判定は要約の後に走る。作った要約は捨てずに残す
         # (重複行も事象ニュース・記事一覧に出るため、要約が空だと本文しか読めない)
         assert "本文の概要記述" in (skipped_recs[0].summary or "")
@@ -2965,3 +2983,52 @@ def test_classify_ioc_type_rejects_filenames() -> None:
     assert _classify_ioc_type("Math_Symbol.js") is None
     assert _classify_ioc_type("MpExtMs.exe") is None
     assert _classify_ioc_type("evil-c2.top") == "ioc_domain"
+
+
+# ---------- triage の落選記録 (2026-10-02) ----------
+
+
+class TestTriageRejectionsRecorded:
+    """落選は既読化で二度と評価されない。理由つきの記録が誤った落選を確かめる唯一の手段。"""
+
+    @pytest.mark.asyncio
+    async def test_rejected_article_is_recorded_with_reason(
+        self,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+    ) -> None:
+        from src.storage.run_history import RunHistoryRepository
+        from src.tools.article_triage import TriageDecision
+
+        # Arrange: triage を有効にし、LLM は low と答える
+        repo = RunHistoryRepository(db_path=tmp_path / "triage_rej.db")
+        cfg = PipelineConfig(
+            name="daily-briefing",
+            source=SourceConfig(type="rss", max_articles=10),
+            processor=ProcessorConfig(triage_enabled=True, thin_feed_triage_enabled=False),
+        )
+        articles = [_article(article_id="rej-1", url="https://example.com/rej-1")]
+        llm = AsyncMock()
+        llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="low", reason="学術論文で実害なし")
+        )
+
+        # Act
+        await run_pipeline(
+            config=app_cfg,
+            pipeline=cfg,
+            source=_build_source(articles),
+            extractor=_build_extractor_with_results([]),
+            llm=llm,
+            publishers=_build_publishers(),
+            template=template,
+            dry_run=False,
+            dedup_repo=repo,
+        )
+
+        # Assert
+        rows = repo.list_triage_rejections(days=1)
+        assert [r.article_id for r in rows] == ["rej-1"]
+        assert rows[0].reason == "学術論文で実害なし"
+        assert rows[0].importance == "low"

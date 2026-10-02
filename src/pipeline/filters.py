@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from src.config_loader import AppConfig
 from src.logging_config import get_logger
 from src.pipeline.grok_convert import _is_grok_article
+from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, check_extracted_identity
@@ -139,7 +140,7 @@ async def _filter_by_triage(
     keep_importance: set[str],
     max_keep: int,
     think: bool = False,
-) -> tuple[list[Article], int, list[str], int, list[Article]]:
+) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
     Grok 経路の記事は triage 対象外 (元から重要度を内包しているため)。
@@ -155,6 +156,7 @@ async def _filter_by_triage(
             (呼び出し側で dedup 既読化に使う)
         triage_error_count: LLM 失敗で medium fail-open した件数 (Phase 5P)
         rejected: **評価の結果 importance 不足で不採用**とした記事 (skipped の部分集合)。
+            判定の重要度と理由つき (呼び出し側が triage_rejections に記録する、2026-10-02)。
             呼び出し側が URL 既読化する = 判断済みの終端状態 (2026-07-12)。
             max_keep の枠あふれ (評価は通ったが予算切り) は含めない —
             未採用でなく未処理であり、次 run のリトライ権を保持する。
@@ -178,7 +180,7 @@ async def _filter_by_triage(
     # 並列 triage (既定 5 — Ollama サーバへの負荷バランス)
     sem = asyncio.Semaphore(_triage_concurrency())
 
-    async def _one(article: Article) -> tuple[Article, str, bool]:
+    async def _one(article: Article) -> tuple[Article, str, bool, str]:
         async with sem:
             decision = await triage.triage(article)
             _log.info(
@@ -188,24 +190,34 @@ async def _filter_by_triage(
                 importance=decision.importance,
                 reason=decision.reason[:80],
             )
-            return article, decision.importance, decision.error
+            return article, decision.importance, decision.error, decision.reason
 
-    decisions: list[tuple[Article, str, bool]] = await asyncio.gather(
+    decisions: list[tuple[Article, str, bool, str]] = await asyncio.gather(
         *[_one(a) for a in triage_targets],
     )
 
     # Phase 5P: LLM 失敗 (fail-open) の件数を集計
-    triage_error_count = sum(1 for _, _, err in decisions if err)
+    triage_error_count = sum(1 for _, _, err, _ in decisions if err)
 
     # importance ランクで並び替え
     importance_rank = {"high": 0, "medium": 1, "low": 2}
     decisions.sort(key=lambda x: importance_rank.get(x[1], 3))
 
     kept: list[Article] = []
-    rejected: list[Article] = []  # importance 不足 = 評価済み・不採用 (既読化対象)
-    for article, importance, _err in decisions:
+    rejected: list[TriageRejectionRow] = []  # importance 不足 = 評価済み・不採用 (既読化対象)
+    for article, importance, _err, reason in decisions:
         if importance not in keep_importance:
-            rejected.append(article)
+            rejected.append(
+                TriageRejectionRow(
+                    article_id=article.id,
+                    url=article.url,
+                    title=article.title or "",
+                    feed_title=article.feed_title or "",
+                    feed_url=article.feed_url or "",
+                    importance=importance,
+                    reason=reason,
+                )
+            )
         elif len(kept) < max_keep:
             kept.append(article)
         # else: 枠あふれ (評価は keep 水準) — skipped には数えるが rejected ではない

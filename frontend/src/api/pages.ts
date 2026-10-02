@@ -56,6 +56,11 @@ export const pagesApi = {
   healthStatus: () => getJson<HealthResponse>("/api/v1/health-status"),
   // subscriptions
   subscriptions: () => getJson<SubscriptionsResponse>("/api/v1/subscriptions"),
+  // triage で落とした記事 (2026-10-02)。feedKey = 統計と同じ結合キー (feed_url / feed_title)
+  triageRejections: (feedKey: string, days = 30) =>
+    getJson<TriageRejectionsResponse>(
+      `/api/v1/subscriptions/triage-rejections?feed_key=${encodeURIComponent(feedKey)}&days=${days}`,
+    ),
   // prompts
   promptsList: () => getJson<{ files: string[]; groups: FileGroup[] }>("/api/v1/prompts"),
   promptsFile: (path: string) => getJson<PromptFile>(`/api/v1/prompts/file?path=${encodeURIComponent(path)}`),
@@ -640,6 +645,24 @@ export interface FeedStats {
   // 層別健全性 (2026-08-01): feed は取れるが本文抽出で失敗した記事数 (30日)。
   // 「本文取得エラー」グループの分類根拠 (壊れた層を名指しする)
   extract_failed_count?: number;
+  // triage で落とした記事数 (2026-10-02)。落選は記事行を作らないため、全部落ちた媒体が
+  // 「記事なし」に見えていた — 取得の成立と内容の不採用を分ける
+  triage_rejected?: number;
+}
+
+export interface TriageRejection {
+  article_id: string;
+  url: string;
+  title: string;
+  feed_title: string;
+  importance: string;
+  reason: string;
+  ts: string;
+}
+
+export interface TriageRejectionsResponse {
+  days: number;
+  items: TriageRejection[];
 }
 
 export interface SubscriptionsResponse {

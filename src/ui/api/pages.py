@@ -552,6 +552,42 @@ def subscriptions_list() -> dict[str, Any]:
     }
 
 
+#: 落選一覧の上限 (画面で読む量)。日数は購読統計 (30 日) と揃える
+_TRIAGE_REJECTIONS_MAX_LIMIT = 200
+_TRIAGE_REJECTIONS_MAX_DAYS = 180
+
+
+@pages_api.get("/subscriptions/triage-rejections")
+def subscriptions_triage_rejections(
+    request: Request, feed_key: str = "", days: int = 30, limit: int = 50
+) -> dict[str, Any]:
+    """triage で落とした記事を新しい順に返す (2026-10-02)。
+
+    落選は既読化で二度と評価されないため、落とし方が正しいかを確かめる手段はこの一覧だけ。
+    ``feed_key`` は購読統計と同じ結合キー (feed_url、無ければ feed_title)。
+    公開 instance では匿名から読めない (PUBLIC_GET_ALLOWLIST に無い = 既定で拒否)。
+    """
+    days = max(1, min(int(days), _TRIAGE_REJECTIONS_MAX_DAYS))
+    limit = max(1, min(int(limit), _TRIAGE_REJECTIONS_MAX_LIMIT))
+    repo: RunHistoryRepository = request.app.state.repo
+    rows = repo.list_triage_rejections(days=days, feed_key=feed_key.strip() or None, limit=limit)
+    return {
+        "days": days,
+        "items": [
+            {
+                "article_id": r.article_id,
+                "url": r.url,
+                "title": r.title,
+                "feed_title": r.feed_title,
+                "importance": r.importance,
+                "reason": r.reason,
+                "ts": r.ts,
+            }
+            for r in rows
+        ],
+    }
+
+
 @pages_api.post("/subscriptions/reliability")
 def subscriptions_set_reliability(
     request: Request,

@@ -8,7 +8,7 @@ dedup skip 率) を出して低貢献 feed を見える化する。
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -51,6 +51,9 @@ class FeedStats:
     # 例: Indo-Pacific Defense Forum — feed 200 / 記事レコードあり / extract_failed 15 件
     # が「要対処 (記事なし)」に潰れて、壊れた層 (本文取得) が読めなかった。
     extract_failed_count: int = 0
+    # triage の落選件数 (2026-10-02)。落選は articles に行を作らないため、全部落ちた媒体が
+    # 「記事なし」(= 壊れている) に見えていた。取得の成立と内容の不採用を区別する観測点。
+    triage_rejected: int = 0
     # Phase 5T-R: 当ツール articles 表での初回観測時刻 (ISO 8601 string、未観測なら None)
     first_seen_at: str | None = None
 
@@ -191,19 +194,26 @@ def fetch_all_feed_stats(
         WITH recent AS (
             SELECT
                 {_skey} AS feed_title,
-                SUM(CASE WHEN status = 'posted' THEN 1 ELSE 0 END) AS posted_count,
-                SUM(CASE WHEN status = 'skipped_duplicate' THEN 1 ELSE 0 END) AS dup_skipped,
+                -- 重複判定に当たり分析に残した記事 (duplicate_of あり、2026-10-02) は
+                -- 「新規に届けた」には数えず重複に数える (媒体の独自性の指標を変えない)
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL THEN 1 ELSE 0 END)
+                    AS posted_count,
+                SUM(CASE WHEN status = 'skipped_duplicate' OR duplicate_of IS NOT NULL
+                    THEN 1 ELSE 0 END) AS dup_skipped,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'alert' THEN 1 ELSE 0 END)
                     AS alert_count,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'brief' THEN 1 ELSE 0 END)
                     AS brief_count,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'watch' THEN 1 ELSE 0 END)
                     AS watch_count,
-                SUM(CASE WHEN status = 'posted' AND importance = 'high' THEN 1 ELSE 0 END)
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'high'
+                    THEN 1 ELSE 0 END)
                     AS high_count,
-                SUM(CASE WHEN status = 'posted' AND importance = 'medium' THEN 1 ELSE 0 END)
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'medium'
+                    THEN 1 ELSE 0 END)
                     AS medium_count,
-                SUM(CASE WHEN status = 'posted' AND importance = 'low' THEN 1 ELSE 0 END)
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'low'
+                    THEN 1 ELSE 0 END)
                     AS low_count,
                 SUM(CASE WHEN body_source IN
                     ('full_extract','playwright_extract','prefetch','scraper')
@@ -268,6 +278,40 @@ def fetch_all_feed_stats(
             extract_failed_count=int(r["extract_failed_count"] or 0),
             first_seen_at=r["first_seen_at"] if "first_seen_at" in r.keys() else None,  # noqa: SIM118
         )
+    return _with_triage_rejections(out, lookback_days=lookback_days, db_path=db_path)
+
+
+def _with_triage_rejections(
+    stats: dict[str, FeedStats], *, lookback_days: int, db_path: Path
+) -> dict[str, FeedStats]:
+    """落選件数を同じ結合キー (feed_url、無ければ feed_title) で足す。
+
+    落選しか無い媒体も 0 件の統計として載せる (載せないと「記事なし」と区別できない)。
+    失敗しても記事側の統計は返す。
+    """
+    try:
+        from src.storage.run_history import RunHistoryRepository
+
+        counts = RunHistoryRepository(db_path=db_path).count_triage_rejections_by_feed(
+            days=lookback_days
+        )
+    except Exception as e:  # noqa: BLE001 — 補助の集計。失敗しても一覧は返す
+        _log.warning("subscription_triage_rejections_failed", error=str(e))
+        return stats
+    out = dict(stats)
+    for key, n in counts.items():
+        base = out.get(key) or FeedStats(
+            feed_title=key,
+            posted_count=0,
+            dup_skipped=0,
+            alert_count=0,
+            brief_count=0,
+            watch_count=0,
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+        )
+        out[key] = replace(base, triage_rejected=n)
     return out
 
 

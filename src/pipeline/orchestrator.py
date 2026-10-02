@@ -21,7 +21,7 @@ from src.config_loader import (
     PipelineConfig,
     StixAttachPolicy,
 )
-from src.cti.identity_dedup import check_pre_post_dedup
+from src.cti.identity_dedup import DedupGateResult, check_pre_post_dedup
 from src.logging_config import get_logger
 from src.pipeline.briefing import (
     DegenerateBodyError,
@@ -75,6 +75,9 @@ _log = get_logger(__name__)
 
 #: 1 なら全チャンネルを web-only (Discord に投稿しない) として扱う。過去分の取り直し用
 WEB_ONLY_ENV = "PIPELINE_WEB_ONLY"
+#: 投稿直前の重複判定に当たった記事を分析に残すか (2026-10-02、既定 ON)。
+#: "0" で従来の挙動 (status='skipped_duplicate' = 台帳・PIR・総括・地図から外れる) に戻る。
+KEEP_DUPLICATES_ENV = "DEDUP_KEEP_FOR_ANALYSIS"
 
 # 時間予算 (soft deadline、2026-08-01)。親 (PipelineRunner) の wallclock timeout で
 # kill されると「投稿 0・既読化 0・成果全損 → 次 run が同じ記事を再処理」の全損ループに
@@ -322,6 +325,25 @@ def _persist_semantic_dedup_skips(
 # ---------- 公開 API ----------
 
 
+def _record_duplicate_outcome(
+    outcome: dict[str, object], msg: BriefingMessage, gate: DedupGateResult, *, keep: bool
+) -> None:
+    """投稿直前の重複判定に当たった記事の結果を書く (2026-10-02)。
+
+    重複判定の役目は「Discord に同じ話を二度流さない」こと。分析から外す理由にはならない —
+    規則の重複判定は新しい事実を見ないため、続報 (追加の被害・帰属・悪用の確認) が
+    台帳・PIR・総括から消えていた。既定では status='posted' / posted_channel=None
+    (どのチャンネルにも配信していない) で残し、一致先を duplicate_of に記録する。
+    この関門は要約の後に走るので、作った要約も残す。
+    """
+    outcome["status"] = "posted" if keep else "skipped_duplicate"
+    outcome["failure_reason"] = gate.failure_reason
+    if gate.prior_article_id:
+        outcome["duplicate_of"] = gate.prior_article_id
+    if msg.summary:
+        outcome["summary"] = msg.summary
+
+
 async def run_pipeline(
     *,
     config: AppConfig,
@@ -554,11 +576,19 @@ async def run_pipeline(
                     dedup_repo.mark_url_seen(
                         url_hash=url_hash(rej.url),
                         url=rej.url,
-                        article_id=rej.id,
+                        article_id=rej.article_id,
                         title=rej.title,
                     )
                 except Exception as e:  # noqa: BLE001 — 既読化失敗は次 run 再評価で自癒
-                    _log.debug("triage_reject_seen_mark_failed", article_id=rej.id, error=str(e))
+                    _log.debug(
+                        "triage_reject_seen_mark_failed", article_id=rej.article_id, error=str(e)
+                    )
+            # 落選を理由つきで残す (2026-10-02)。既読化で二度と評価されないため、誤った落選を
+            # 後から確かめる手段はこの記録だけ。記録の失敗で取り込みは止めない
+            try:
+                dedup_repo.record_triage_rejections(rejected_triage)
+            except Exception as e:  # noqa: BLE001
+                _log.warning("triage_rejections_record_failed", error=str(e)[:200])
             _log.info(
                 "triage_rejected_marked_seen",
                 count=len(rejected_triage),
@@ -886,6 +916,9 @@ async def run_pipeline(
 
     posted_ids: list[str] = []
     web_only_ids: list[str] = []  # R1: push 抑止し DB 保存のみにした記事 (status='posted')
+    # 重複判定に当たったが分析に残した記事 (Discord へは流さない)
+    kept_duplicate_ids: list[str] = []
+    keep_duplicates = os.environ.get(KEEP_DUPLICATES_ENV, "1") != "0"
     # Phase 5J-1: briefings は _sort_briefings_for_posting で並び替えされるため、
     # 元順の article_outcomes の idx で引くと別の briefing の record に書き込まれる
     # (run 85〜95 で 15 件の posted_channel 不整合を観測)。
@@ -987,13 +1020,13 @@ async def run_pipeline(
         )
         if gate_result is not None:
             if outcome is not None:
-                outcome["status"] = "skipped_duplicate"
-                outcome["failure_reason"] = gate_result.failure_reason
-                # この関門は要約の後に走る。重複行も事象ニュース・記事一覧に出るので、
-                # 作った要約を捨てない (捨てると本文しか読めない記事が並ぶ、2026-10-02)
-                if msg.summary:
-                    outcome["summary"] = msg.summary
-            skipped_for_mark_read.append(art_id)
+                _record_duplicate_outcome(outcome, msg, gate_result, keep=keep_duplicates)
+            if keep_duplicates and outcome is not None:
+                # 分析に残す記事は既読化と埋込を posted と同じ経路で行う (群化が cos を使う)
+                _register_seen(art_id)
+                kept_duplicate_ids.append(art_id)
+            else:
+                skipped_for_mark_read.append(art_id)
             continue
 
         # 通知再設計: web-only disposition。channel レジストリで push=False の tier (情報フローで
@@ -1140,6 +1173,7 @@ async def run_pipeline(
         summarized=result.summarized,
         posted=result.posted,
         web_only=len(web_only_ids),  # R1: push 抑止し DB 保存のみにした件数
+        kept_duplicates=len(kept_duplicate_ids),
         marked_read=result.marked_read,
         errors=len(result.errors),
         deferred=result.deferred_count,

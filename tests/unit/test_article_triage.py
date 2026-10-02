@@ -183,7 +183,11 @@ class TestFilterByTriageRejectedSplit:
         assert [a.id for a in survivors] == ["a-high"]
         assert skipped == 1
         assert skipped_ids == ["a-low"]
-        assert [a.id for a in rejected] == ["a-low"]
+        assert [r.article_id for r in rejected] == ["a-low"]
+        # 落選は理由つきで返す (呼び出し側が triage_rejections に記録する、2026-10-02)
+        assert rejected[0].importance == "low"
+        assert rejected[0].reason == "x"
+        assert rejected[0].feed_url == "https://example.com/feed"
 
     @pytest.mark.asyncio
     async def test_max_keep_overflow_is_skipped_but_not_rejected(self) -> None:

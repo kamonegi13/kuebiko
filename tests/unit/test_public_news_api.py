@@ -180,6 +180,13 @@ class TestDedupIsRespected:
         assert public_news._is_duplicate_only({"a": dup, "b": posted}, ("a", "b")) is False
         assert public_news._is_duplicate_only({"a": dup}, ("a",)) is True
 
+    def test_kept_duplicate_counts_as_duplicate(self) -> None:
+        """2026-10-02 以降、重複は status='posted' + duplicate_of で残る。公開の判定は変えない。"""
+        kept = SimpleNamespace(status="posted", duplicate_of="prior-art")
+        posted = SimpleNamespace(status="posted", duplicate_of=None)
+        assert public_news._is_duplicate_only({"a": kept}, ("a",)) is True
+        assert public_news._is_duplicate_only({"a": kept, "b": posted}, ("a", "b")) is False
+
 
 class TestCategoryPages:
     """カテゴリ別ページ (公開サイトの導線)。"""

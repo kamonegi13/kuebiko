@@ -742,6 +742,10 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS account_class TEXT;
 -- 主題判定の根拠文 (2026-08-13 可視化): 特に「主題なし」の理由を記事詳細に表示する。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS subject_actor_rationale TEXT;
 
+-- 重複元の記事 id (2026-10-02): 投稿直前の重複判定に当たった記事は Discord へ流さず
+-- status='posted' (posted_channel=NULL) で分析に残し、一致先をここに記録する。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS duplicate_of TEXT;
+
 -- 本文日本語訳のチャンク単位キャッシュ (2026-08-06 resumable 翻訳)。
 -- 詳細コメントは schema_sql.py の同表を参照 (SQLite と対)。
 CREATE TABLE IF NOT EXISTS body_ja_chunks (
@@ -768,6 +772,20 @@ CREATE TABLE IF NOT EXISTS ops_notices (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ops_notices_created_at ON ops_notices(created_at);
+
+-- triage の落選記録 (2026-10-02、SQLite _SCHEMA と対)。詳細は schema_sql.py の同表。
+CREATE TABLE IF NOT EXISTS triage_rejections (
+    id          BIGSERIAL PRIMARY KEY,
+    article_id  TEXT      NOT NULL,
+    url         TEXT      NOT NULL,
+    title       TEXT      NOT NULL,
+    feed_title  TEXT      NOT NULL,
+    feed_url    TEXT      NOT NULL,
+    importance  TEXT      NOT NULL,
+    reason      TEXT      NOT NULL,
+    ts          TEXT      NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
 
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。

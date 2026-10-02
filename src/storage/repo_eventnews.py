@@ -477,7 +477,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 "(current_version > 0 OR EXISTS ("
                 " SELECT 1 FROM event_item_members dm"
                 " JOIN articles da ON da.article_id = dm.article_id"
-                " WHERE dm.item_id = event_items.id AND da.status <> 'skipped_duplicate'))"
+                " WHERE dm.item_id = event_items.id AND da.status <> 'skipped_duplicate'"
+                " AND da.duplicate_of IS NULL))"
             )
         if member_article_ids is not None:
             # 記事側の絞り込み (pivot / category / 検索 等) を事象へ持ち上げる。

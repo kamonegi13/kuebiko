@@ -153,6 +153,10 @@ class ArticleRecord(BaseModel):
     # 主題判定の根拠文 (2026-08-13 可視化)。特に subject_actor_source='none' の理由
     # (候補アクターは背景言及、等) を記事詳細 UI に表示する。
     subject_actor_rationale: str | None = None
+    # 重複元の記事 id (2026-10-02)。投稿直前の重複判定に当たった記事は、Discord へは流さず
+    # status='posted' (posted_channel=None) で分析に残し、ここに一致先を記録する。
+    # None = 重複でない (または重複元を特定できない同一 run 内の一致)。
+    duplicate_of: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None
     # アナリスト所見 (2026-08-18 に永続化)。Discord 投稿だけに出て DB に残らず、

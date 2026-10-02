@@ -271,6 +271,8 @@ class RunHistoryRepositoryBase:
             "llm_primary_actor_raw",
             "llm_primary_confidence",
             "subject_actor_rationale",
+            # 重複元の記事 id (2026-10-02)。重複に当たった記事も分析に残すための印
+            "duplicate_of",
         ):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
