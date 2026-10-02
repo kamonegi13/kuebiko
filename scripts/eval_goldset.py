@@ -129,10 +129,13 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 async def _run_one(llm: Any, template: Any, art: GoldArticle) -> dict[str, Any]:
-    from src.pipeline.summary import SummaryOutput
+    from src.pipeline.summary import summary_schema_for
 
     prompt = template.render(article=art, body=art.body)
-    out = await llm.generate_structured(prompt, schema=SummaryOutput, think=False)
+    # 本番 (briefing.py) と同じく、モデルに応じた形で呼ぶ (引用つきで学習したモデルは
+    # mitre_evidence 欄つき。評価中のモデルは SFT_EVIDENCE_MODELS で足す)
+    schema = summary_schema_for(getattr(llm, "model", ""))
+    out = await llm.generate_structured(prompt, schema=schema, think=False)
     return {"article_id": art.article_id, **out.model_dump()}
 
 
