@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -116,6 +117,27 @@ def _build_prompt(pir: Pir, matches: list[PirMatch]) -> str:
     return template.render(pir=pir, matches=matches)
 
 
+def unwrap_json_text(text: str) -> str:
+    """出力が ``{"summary": "…"}`` のような 1 つの文字列だけを包んだ JSON なら中身を返す。
+
+    ⚠ 2026-10-02: 09-29 に担当を s21 (JSON で答える課題を学習) にしてから、要点が JSON に
+    包まれたまま朝ブリーフに出ていた (毎日全件)。中身の文は正しいので、包みだけを外す
+    (文は 1 字も変えない)。包みでなければそのまま返す。
+    """
+    stripped = text.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return text
+    try:
+        obj = json.loads(stripped)
+    except json.JSONDecodeError:
+        return text
+    if isinstance(obj, dict) and len(obj) == 1:
+        (value,) = obj.values()
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return text
+
+
 async def _generate_llm_summary(
     llm: LLMClient,
     pir: Pir,
@@ -130,7 +152,7 @@ async def _generate_llm_summary(
             max_tokens=_LLM_MAX_TOKENS,
             think=False,
         )
-        return response.text.strip()
+        return unwrap_json_text(response.text.strip())
     except Exception as e:  # noqa: BLE001
         _log.warning("daily_focus_llm_failed", pir_id=pir.id, error=str(e))
         return ""

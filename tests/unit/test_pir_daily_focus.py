@@ -279,3 +279,18 @@ def test_reads_pir_definitions_from_db_not_seed_yaml() -> None:
     source = inspect.getsource(mod)
     assert "load_current_pir_config()" in source
     assert "from src.pir.loader import load_pir_config" not in source
+
+
+def test_json_wrapped_summary_is_unwrapped_without_changing_text() -> None:
+    from src.digest.pir_daily_focus import unwrap_json_text
+
+    assert unwrap_json_text('{"summary": "警察庁が摘発した。"}') == "警察庁が摘発した。"
+    assert unwrap_json_text('{"point": "要点。"}') == "要点。"
+
+
+def test_plain_or_multi_key_text_is_left_as_is() -> None:
+    from src.digest.pir_daily_focus import unwrap_json_text
+
+    assert unwrap_json_text("ただの要点。") == "ただの要点。"
+    multi = '{"a": "x", "b": "y"}'
+    assert unwrap_json_text(multi) == multi
