@@ -131,3 +131,15 @@ def test_summary_schema_for_uses_evidence_form_only_for_trained_models(
     schema = mod.SummaryEvidenceOutput.model_json_schema()
     assert "mitre_evidence" in schema["required"]
     assert list(schema["properties"])[-1] == "mitre_evidence"
+
+
+def test_evidence_models_can_be_added_by_env_for_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """評価中の新モデルは SFT_EVIDENCE_MODELS で一時的に引用つきの形にできる。"""
+    from src.pipeline import summary as mod
+
+    monkeypatch.setenv("SFT_EVIDENCE_MODELS", "kuebiko-sft:s99, other")
+
+    assert mod.summary_schema_for("kuebiko-sft:s99") is mod.SummaryEvidenceOutput
+    assert mod.summary_schema_for("kuebiko-sft:s21") is mod.SummaryOutput

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import date
 from typing import Literal
@@ -315,9 +316,18 @@ class SummaryEvidenceOutput(SummaryOutput):
         return schema
 
 
+#: 評価中の新モデルを一時的に足す環境変数 (カンマ区切り、接頭辞の SFT_TASK_PREFIX_MODELS と同型)
+_EVIDENCE_EXTRA_ENV = "SFT_EVIDENCE_MODELS"
+
+
 def summary_schema_for(model: str) -> type[SummaryOutput]:
-    """モデルに出させる要約の形。引用つきで学習したモデルだけ ``SummaryEvidenceOutput``。"""
-    return SummaryEvidenceOutput if model.strip() in EVIDENCE_TRAINED_MODELS else SummaryOutput
+    """モデルに出させる要約の形。引用つきで学習したモデルだけ ``SummaryEvidenceOutput``。
+
+    評価中の新モデルは ``SFT_EVIDENCE_MODELS`` で一時的に足す (本番投入時は定数へ)。
+    """
+    extra = {m.strip() for m in os.environ.get(_EVIDENCE_EXTRA_ENV, "").split(",") if m.strip()}
+    trained = EVIDENCE_TRAINED_MODELS | extra
+    return SummaryEvidenceOutput if model.strip() in trained else SummaryOutput
 
 
 # ---------- importance 決定的ガード (Phase B-cal2, 2026-06-04) ----------
