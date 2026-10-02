@@ -235,3 +235,12 @@ class TestSingletonRescueWiring:
         assert job.singleton_rescue_enabled() is True
         monkeypatch.setenv("EVENTNEWS_SINGLETON_RESCUE", "0")
         assert job.singleton_rescue_enabled() is False
+
+
+def test_frequent_entity_edges_can_be_switched_off(monkeypatch: Any) -> None:
+    """EVENTNEWS_MERGE_FREQUENT=0 で頻出の名前の共有を候補にしない (DB も ML も触らない)。"""
+    from src.ui.services import eventnews_merge_job as job
+
+    monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT", "0")
+
+    assert job._frequent_entity_edges(cast(Any, None), cast(Any, None), cast(Any, None)) == []

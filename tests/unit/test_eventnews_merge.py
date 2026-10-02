@@ -190,3 +190,60 @@ class TestSingletonRescue:
             approved=[("a", "b")],
         )
         assert got == []
+
+
+class TestFrequentEntityEdges:
+    """頻出の名前を共有する組 (2026-10-02)。
+
+    FBI のように窓内で頻出する名前は結合信号から外す (ハブ対策) が、大きく報じられた
+    出来事ほどその名前でしか繋がらず、事象が割れていた (大手の暗号資産取引所 の侵害だけで 10 事象超)。
+    本文が十分似ていて ML が承認した組は、本数の規則とは別の辺として数える。
+    測定 (14 日・本番の ML): 新たに承認 34 組、目視 30 組で誤り 0。
+    """
+
+    def test_extra_edge_merges_without_shared_capped_entity(self) -> None:
+        got = plan_merges(
+            item_of={"a": "i1", "b": "i2"},
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities={"a": frozenset(), "b": frozenset()},  # 頻出ガード後は共有なし
+            vectors={"a": _v(1, 0), "b": _v(1, 0.05)},
+            approved=[],
+            extra_edges=[("a", "b")],
+        )
+
+        assert [(g.target, g.absorbed) for g in got] == [("i1", ("i2",))]
+
+    def test_extra_edge_between_two_multi_member_items_still_needs_two(self) -> None:
+        item_of = {"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"}
+        got = plan_merges(
+            item_of=item_of,
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities={k: frozenset() for k in item_of},
+            vectors={k: _v(1, 0.01 * n) for n, k in enumerate(item_of)},
+            approved=[],
+            extra_edges=[("a1", "b1")],
+        )
+
+        assert got == []
+
+
+def test_frequent_entity_pairs_requires_cos_cross_item_and_no_roundup() -> None:
+    from src.eventnews.merge import frequent_entity_pairs
+
+    fbi = ("victim_org", "fbi")
+    got = frequent_entity_pairs(
+        uncapped={"a": {fbi}, "b": {fbi}, "c": {fbi}, "d": {fbi}, "r": {fbi}},
+        capped={"a": frozenset(), "b": frozenset(), "c": frozenset(), "d": frozenset()},
+        item_of={"a": "i1", "b": "i2", "c": "i3", "d": "i1", "r": "i4"},
+        vectors={
+            "a": _v(1, 0),
+            "b": _v(1, 0.1),  # cos 高い・別事象 → 候補
+            "c": _v(0, 1),  # cos 低い → 外す
+            "d": _v(1, 0.05),  # a と同じ事象 (a-d は外す / b-d は別事象なので候補)
+            "r": _v(1, 0.02),
+        },
+        roundups={"r"},
+        threshold=0.80,
+    )
+
+    assert got == {("a", "b"), ("b", "d")}

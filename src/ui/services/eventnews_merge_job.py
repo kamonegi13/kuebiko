@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -38,7 +38,13 @@ import numpy as np
 
 from src.eventnews import pair_model, pair_shadow
 from src.eventnews.grouping import build_join_entities
-from src.eventnews.merge import MergeGroup, candidate_pairs_by_entity, edge_inputs, plan_merges
+from src.eventnews.merge import (
+    MergeGroup,
+    candidate_pairs_by_entity,
+    edge_inputs,
+    frequent_entity_pairs,
+    plan_merges,
+)
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
 from src.eventnews.pair_features import pair_features
 from src.eventnews.pair_model import PairModel
@@ -49,6 +55,7 @@ from src.storage.repo_eventnews import EventItemRecord
 from src.storage.run_history import RunHistoryRepository
 from src.ui.services.eventnews_hourly_job import (
     _entity_counts,
+    _join_entities_for,
     _load_members,
     _load_vectors,
     regenerate_pending,
@@ -208,13 +215,15 @@ def approve_pairs(
     *,
     on_pair: Callable[[tuple[str, str]], None] | None = None,
     single_edge_ok: set[tuple[str, str]] | None = None,
+    pairs: Sequence[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
     """別事象どうしの候補対を ML だけで採点し、承認した対を返す (LLM は呼ばない)。
 
     ``single_edge_ok`` を渡すと、承認した対のうち **まとめ系の特徴が立たない** ものを集める
     (記事 1 件の事象の救済に使う。盲検の誤り 3/3 がまとめ・日次ダイジェストだった、2026-09-27)。
     """
-    pairs = sorted(candidate_pairs_by_entity(inputs.entities, vectors=inputs.vectors))
+    if pairs is None:
+        pairs = sorted(candidate_pairs_by_entity(inputs.entities, vectors=inputs.vectors))
     approved: list[tuple[str, str]] = []
     for a, b in pairs:
         ia, ib = inputs.item_of.get(a), inputs.item_of.get(b)
@@ -262,6 +271,45 @@ def singleton_rescue_enabled() -> bool:
     return os.environ.get("EVENTNEWS_SINGLETON_RESCUE", "1") != "0"
 
 
+#: 頻出の名前の共有を候補にする本文の近さの下限 (2026-10-02 の測定: 0.80 で 14 日 34 組承認・
+#: 目視 30 組で誤り 0。0.85 は誤りが変わらず候補が 1/3 になるだけ)
+FREQUENT_ENTITY_MIN_COS = 0.80
+
+
+def frequent_merge_enabled() -> bool:
+    """頻出の名前の共有を統合の候補にする (既定 ON)。EVENTNEWS_MERGE_FREQUENT=0 で止める。"""
+    return os.environ.get("EVENTNEWS_MERGE_FREQUENT", "1") != "0"
+
+
+def _frequent_entity_edges(
+    repo: RunHistoryRepository,
+    inputs: MergeInputs,
+    model: PairModel,
+    *,
+    on_pair: Callable[[tuple[str, str]], None] | None = None,
+) -> list[tuple[str, str]]:
+    """頻出ガードで外した名前を共有する別事象の組を、ML で採点して承認分を返す (2026-10-02)。
+
+    大きく報じられた出来事ほど、その名前 (FBI・大手の暗号資産取引所 等) が窓内で頻出して結合信号から外れ、
+    事象が割れていた。本文が十分近い組だけを候補にし、判定は通常の組と同じ ML に委ねる。
+    """
+    if not frequent_merge_enabled():
+        return []
+    uncapped = _join_entities_for(repo, list(inputs.members), {})
+    pairs = frequent_entity_pairs(
+        uncapped=uncapped,
+        capped=inputs.entities,
+        item_of=inputs.item_of,
+        vectors=inputs.vectors,
+        roundups={aid for aid, m in inputs.members.items() if m.is_roundup},
+        threshold=FREQUENT_ENTITY_MIN_COS,
+    )
+    approved = approve_pairs(inputs, model, on_pair=on_pair, pairs=sorted(pairs))
+    if pairs:
+        _log.info("eventnews_merge_frequent", candidates=len(pairs), approved=len(approved))
+    return approved
+
+
 def plan_for(repo: RunHistoryRepository) -> MergePlan:
     """統合の計画を立てる (書き込みなし)。ML が使えなければ空の計画を返す。"""
     model = pair_model.load_model() if pair_shadow.is_ml_ready() else None
@@ -277,6 +325,7 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
 
     strong: set[tuple[str, str]] | None = set() if singleton_rescue_enabled() else None
     approved = approve_pairs(inputs, model, on_pair=_count, single_edge_ok=strong)
+    extra = _frequent_entity_edges(repo, inputs, model, on_pair=_count)
     groups = plan_merges(
         item_of=inputs.item_of,
         first_seen=inputs.first_seen,
@@ -284,6 +333,7 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
         vectors=inputs.vectors,
         approved=approved,
         single_edge_ok=strong,
+        extra_edges=extra,
     )
     return MergePlan(
         groups=tuple(groups),

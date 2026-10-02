@@ -42,8 +42,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from src.eventnews.grouping import edge_is_allowed
-from src.eventnews.models import MemberArticle
+from src.eventnews.grouping import blocked_by_different_victims, edge_is_allowed
+from src.eventnews.models import FREQ_CAP_EXEMPT_TYPES, MemberArticle
 
 #: 事象どうしを結ぶのに要る辺の本数。**1 本では結ばない**。
 #: ⭐ 一括勧告 (ハブ) は「多数の無関係な事案と CVE を共有する」ため、相手ごとに
@@ -89,6 +89,49 @@ def candidate_pairs_by_entity(
     return pairs
 
 
+def frequent_entity_pairs(
+    *,
+    uncapped: Mapping[str, set[tuple[str, str]] | frozenset[tuple[str, str]]],
+    capped: Mapping[str, frozenset[tuple[str, str]]],
+    item_of: Mapping[str, str],
+    vectors: Mapping[str, np.ndarray],
+    roundups: set[str],
+    threshold: float,
+    hub_cap: int = 400,
+) -> set[tuple[str, str]]:
+    """頻出ガードで外した名前を共有する、別々の事象の記事対 (純粋関数、2026-10-02)。
+
+    本文の埋込 cos が ``threshold`` 以上の組だけ (頻出の名前は単独では弱い信号なので、
+    本文の近さと組にする)。まとめ記事・被害組織が食い違う組は除く。判定は呼び手が ML に回す。
+    """
+    by_key: dict[tuple[str, str], list[str]] = {}
+    for aid, keys in uncapped.items():
+        if aid in roundups or aid not in item_of or aid not in vectors:
+            continue
+        kept = capped.get(aid, frozenset())
+        for k in keys:
+            if k in kept or k[0] in FREQ_CAP_EXEMPT_TYPES:
+                continue
+            by_key.setdefault(k, []).append(aid)
+    pairs: set[tuple[str, str]] = set()
+    for aids in by_key.values():
+        if len(aids) > hub_cap:
+            continue
+        for i in range(len(aids)):
+            for j in range(i + 1, len(aids)):
+                a, b = sorted((aids[i], aids[j]))
+                if item_of[a] == item_of[b]:
+                    continue
+                if float(np.dot(vectors[a], vectors[b])) < threshold:
+                    continue
+                if blocked_by_different_victims(
+                    capped.get(a, frozenset()), capped.get(b, frozenset())
+                ):
+                    continue
+                pairs.add((a, b))
+    return pairs
+
+
 def _root(parent: dict[str, str], x: str) -> str:
     while parent[x] != x:
         parent[x] = parent[parent[x]]
@@ -106,6 +149,7 @@ def plan_merges(
     hub_cap: int = 400,
     min_edges: int = MIN_EDGES_BETWEEN_ITEMS,
     single_edge_ok: set[tuple[str, str]] | None = None,
+    extra_edges: Sequence[tuple[str, str]] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -122,6 +166,10 @@ def plan_merges(
             相手が 1 件の事象なら辺は構造上 1 本しか張れず、本数の規則では永久に取り残される
             (盲検: まとめ系を除くと 40/41 正しい)。2 つ以上の事象へ辺を持つ単独記事は救わない
             (2 群を橋渡しして連鎖させない)
+        extra_edges: 頻出の名前の共有で ML が承認した記事対
+            (2026-10-02、``frequent_entity_pairs``)。
+            頻出ガード後の entity では共有が無いため ``edge_is_allowed`` を通らない。承認済みの
+            辺として本数に数え、単独事象の救済にも使う (本数の規則そのものは変えない)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     allow = set(approved) if approved is not None else None
@@ -142,7 +190,18 @@ def plan_merges(
         edge_count[key] = edge_count.get(key, 0) + 1
         edge_articles.setdefault(key, []).append((a, b))
 
-    rescued = _singleton_rescues(item_of, edge_articles, single_edge_ok or set())
+    counted = {tuple(sorted(p)) for arts in edge_articles.values() for p in arts}
+    for a, b in extra_edges or ():
+        ia, ib = item_of.get(a), item_of.get(b)
+        if ia is None or ib is None or ia == ib or tuple(sorted((a, b))) in counted:
+            continue
+        key = (ia, ib) if ia < ib else (ib, ia)
+        edge_count[key] = edge_count.get(key, 0) + 1
+        edge_articles.setdefault(key, []).append((a, b))
+        counted.add(tuple(sorted((a, b))))
+
+    rescue_ok = (single_edge_ok or set()) | {tuple(sorted(p)) for p in extra_edges or ()}
+    rescued = _singleton_rescues(item_of, edge_articles, rescue_ok)  # type: ignore[arg-type]
     parent: dict[str, str] = {}
     for iid in set(item_of.values()):
         parent[iid] = iid
