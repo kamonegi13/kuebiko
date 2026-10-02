@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.assessment.assignment import (
     ArticleKeys,
@@ -74,6 +75,7 @@ from src.synthesis.grounded.detect_ml import (
 )
 from src.synthesis.grounded.estimate import (
     _CONF_RANK,
+    STRONG_ATTRIBUTION,
     Confidence,
     Estimate,
     EvidenceItem,
@@ -1652,6 +1654,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             if prev is None:
                 delta, note = "opened", "初回判定"
             else:
+                j, hold_note = _hold_unconfirmed_flip(j, prev, was_dormant=bool(p["was_dormant"]))
                 delta = _final_delta(
                     prev=prev,
                     was_dormant=bool(p["was_dormant"]),
@@ -1661,6 +1664,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                     scope_expanded=bool(p["scope_expanded"]),
                 )
                 note = _delta_note(prev, j, delta)
+                if hold_note:
+                    note = f"{note} / {hold_note}" if note else hold_note
             store.touch_situation(sid, last_evidence_at=now_iso, status="active")
             # 同一性追従 (P2): 評価済み claim が title と乖離したら title を進める。
             # 単発事象で開いた Situation が続報で scope 拡大しても「〜が実施された」の
@@ -2061,9 +2066,51 @@ def _open_anchors(j: KeyJudgment, entities_by_id: dict[str, set[str]]) -> frozen
     return frozenset(keys)
 
 
+#: 低確度の反転を保留したときの印 (次の改訂で同じ見立てが首位なら確定する)
+PENDING_FLIP_MARKER = "見立ての候補: "
+_PENDING_FLIP_RE = re.compile(re.escape(PENDING_FLIP_MARKER) + r"([a-z0-9_]+)")
+
+
+def _hold_unconfirmed_flip(
+    j: KeyJudgment, prev: RevisionRow, *, was_dormant: bool
+) -> tuple[KeyJudgment, str]:
+    """低確度の見立ての反転は 1 回では確定させない (2026-10-02)。戻り値は (記録する判定, 注記)。
+
+    直近 30 日の反転のうち、低確度のものは 31% が次の改訂で元に戻った (中 20%・高 13%)。
+    1 回目は見立て・確度・結論文を前回のまま記録し、候補を注記に残す。次の再評価でも同じ
+    見立てが首位なら確定する。仮説の採点はそのまま残す (首位に合わせた判定は書込の seam で
+    導き直される)。``LEDGER_FLIP_HYSTERESIS=0`` で従来どおり即確定。
+
+    ⚠ 確かな出所 (政府・ベンダー・研究者・被害組織) の反証が根拠の反転は保留しない —
+    前回の判断に引きずられない (アンカリングしない) 対称原則 (TestAnchoringGolden) が優先。
+    揺れるのは、そうした根拠のない低確度の反転。
+    """
+    if os.environ.get("LEDGER_FLIP_HYSTERESIS", "1") == "0":
+        return j, ""
+    if was_dormant or j.leading_hypothesis == prev.leading_hypothesis or j.confidence != "low":
+        return j, ""
+    if any(
+        e.polarity == "contradicts" and e.attribution_basis in STRONG_ATTRIBUTION
+        for e in j.evidence
+    ):
+        return j, ""
+    pending = _PENDING_FLIP_RE.search(prev.delta_note or "")
+    if pending and pending.group(1) == j.leading_hypothesis:
+        return j, "低確度の見立ての変化を 2 回続けて確認"
+    prev_conf = prev.confidence if prev.confidence in ("high", "moderate", "low") else "low"
+    held = replace(
+        j,
+        leading_hypothesis=prev.leading_hypothesis,
+        confidence=cast(Confidence, prev_conf),
+        claim=prev.claim,
+    )
+    return held, f"{PENDING_FLIP_MARKER}{j.leading_hypothesis} (低確度・次の評価で確認)"
+
+
 def _delta_note(prev: RevisionRow, j: KeyJudgment, delta: DeltaType) -> str:
     if delta == "hypothesis_flip":
-        return f"見立て {prev.leading_hypothesis}→{j.leading_hypothesis}"
+        unrevised = " (結論文は未改訂)" if j.claim.strip() == prev.claim.strip() else ""
+        return f"見立て {prev.leading_hypothesis}→{j.leading_hypothesis}{unrevised}"
     if delta in ("strengthened", "weakened"):
         return f"確度 {prev.confidence}→{j.confidence}"
     if delta == "claim_revised":
