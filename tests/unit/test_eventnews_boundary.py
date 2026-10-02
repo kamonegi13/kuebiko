@@ -47,6 +47,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 事象どうしの線 (src/eventnews/relations.relations_by_event) のみで、事象ニュースの
         # 生成物 (版の本文) は読まない。線は候補外の関連事象を取ってくる手がかりに使う
         "src/spotlight/graph_context.py",
+        # 2026-10-02: まとめ記事を投稿直前の重複判定から外す。参照するのは記事種別の
+        # 分類器 (event_kind.classify) と ROUNDUP_KIND のみで、事象の生成物は読まない
+        "src/pipeline/roundup_guard.py",
     }
 )
 

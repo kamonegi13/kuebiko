@@ -3032,3 +3032,86 @@ class TestTriageRejectionsRecorded:
         assert [r.article_id for r in rows] == ["rej-1"]
         assert rows[0].reason == "学術論文で実害なし"
         assert rows[0].importance == "low"
+
+
+class TestRoundupExemptFromPrePostDedup:
+    """まとめ記事は投稿直前の重複判定の対象にしない (2026-10-02)。"""
+
+    @pytest.mark.asyncio
+    async def test_roundup_hit_is_processed_as_normal_article(
+        self,
+        template: jinja2.Template,
+        pipeline_cfg: PipelineConfig,
+        app_cfg: Any,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
+
+        # Arrange: 同じ CVE の先行記事があり、当該記事は分類器が roundup と答える
+        repo = RunHistoryRepository(db_path=tmp_path / "roundup.db")
+        prior_run = repo.start_run(
+            RunRecord(
+                started_at=datetime.now(UTC),
+                pipeline="p",
+                triggered_by="manual",
+                dry_run=False,
+                status="succeeded",
+            )
+        )
+        repo.add_article(
+            ArticleRecord(
+                run_id=prior_run,
+                article_id="prev-art",
+                title="prev",
+                url="https://example.com/prev",
+                status="posted",
+                posted_channel="brief",
+                dedup_key="cve-2026-9999",
+            )
+        )
+
+        async def always_roundup(_t: str, _s: str) -> str:
+            return "roundup"
+
+        monkeypatch.setattr(
+            "src.pipeline.orchestrator.kind_classifier", lambda _cfg: always_roundup
+        )
+        articles = [
+            _article(
+                article_id="weekly",
+                url="https://example.com/weekly",
+                title="Weekly: CVE-2026-9999 and 12 more",
+            )
+        ]
+        run_id = repo.start_run(
+            RunRecord(
+                started_at=datetime.now(UTC),
+                pipeline="daily-briefing",
+                triggered_by="manual",
+                dry_run=False,
+                status="running",
+            )
+        )
+
+        # Act
+        await run_pipeline(
+            config=app_cfg,
+            pipeline=pipeline_cfg,
+            source=_build_source(articles),
+            extractor=_build_extractor_with_results([_extraction_success()]),
+            llm=_build_llm_with_outputs([_summary_output(title_ja="週次: CVE-2026-9999 ほか")]),
+            publishers=_build_publishers(),
+            template=template,
+            dry_run=False,
+            dedup_repo=repo,
+            run_id=run_id,
+        )
+
+        # Assert: 重複として扱われていない
+        rec = [r for r in repo.list_articles(run_id=run_id) if r.article_id == "weekly"][0]
+        assert rec.duplicate_of is None
+        assert rec.status == "posted"
+        assert rec.posted_channel is not None

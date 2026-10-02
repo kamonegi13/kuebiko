@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -179,20 +180,30 @@ async def run_eventnews_hourly() -> dict[str, object]:
     return await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
 
 
+#: 毎時の群化で新たに種別を分類する上限 (1 件 1-2 秒。段の上限 25 分の大半は記事の生成)
+_KIND_CLASSIFY_PER_RUN = 120
+
+
 async def _resolve_kinds(
     repo: RunHistoryRepository,
     config: AppConfig,
     articles: Sequence[MemberArticle],
+    *,
+    limit: int | None = None,
 ) -> dict[str, str]:
     """判定に使う記事の種別 (event_kind) を、キャッシュ優先で解決する。
 
-    分類は記事ごとに 1 回 (26B・fast ティア)。失敗は "other" (学習時の退避先と同じ)。
+    分類は記事ごとに 1 回 (fast ティア)。失敗は "other" (学習時の退避先と同じ)。
+    ``limit`` を渡すと新たに分類するのはその件数まで — 残りは戻り値に含まれない
+    (呼び手が次の run へ持ち越す)。
     """
     from src.eventnews import event_kind
 
     ids = [a.article_id for a in articles]
     kinds = repo.get_article_kinds(ids)
     missing = [a for a in articles if a.article_id not in kinds]
+    if limit is not None:
+        missing = missing[:limit]
     if missing:
         # Step.TRIAGE 借用は triage の S 族上書きを継承してしまう (2026-09-08 分離)
         llm = build_llm_for(Step.EVENT_KIND, config)
@@ -319,6 +330,20 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         vectors.update(_load_vectors(repo, [m.article_id for m in members]))
 
     config = load_app_config()
+    # ⭐ 候補は **全件** 種別を付ける (2026-10-02)。まとめ記事は群化に参加させないため、
+    #    判定する組に関わる記事だけ分類していた従来 (付与率 63%) では取りこぼす。
+    #    キャッシュ済みは呼ばない。失敗は "other" (= まとめ記事とは扱わない)
+    #    1 回に分類する件数には上限を置き、分類できなかった候補は **次の run へ持ち越す**
+    #    (未分類のまま群化すると、まとめ記事が事象に入り込みうる)
+    cand_kinds = await _resolve_kinds(repo, config, candidates, limit=_KIND_CLASSIFY_PER_RUN)
+    deferred = sum(1 for c in candidates if c.article_id not in cand_kinds)
+    candidates = [
+        replace(c, kind=cand_kinds[c.article_id]) for c in candidates if c.article_id in cand_kinds
+    ]
+    if deferred:
+        _log.info("eventnews_kind_deferred", deferred=deferred)
+    if not candidates:
+        return {"candidates": 0, "deferred": deferred}
 
     def _llm() -> LLMClient:
         return build_llm_for(Step.EVENT_NEWS, config)
@@ -497,8 +522,12 @@ def _load_members(
             f" WHERE a.article_id IN ({placeholders})",
             article_ids,
         ).fetchall()
+    kinds = repo.get_article_kinds(article_ids)
     return {
-        str(r["article_id"]): _to_member(r, join_ents.get(str(r["article_id"]), frozenset()))
+        str(r["article_id"]): replace(
+            _to_member(r, join_ents.get(str(r["article_id"]), frozenset())),
+            kind=kinds.get(str(r["article_id"]), ""),
+        )
         for r in rows
     }
 

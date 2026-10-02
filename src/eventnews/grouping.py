@@ -254,6 +254,8 @@ def _member_edges(
     """各メンバーとの (cos, 共有 entity, 要求 cos) を、共有 entity があるものだけ集める。"""
     edges: list[tuple[float, tuple[tuple[str, str], ...], float]] = []
     for member in members:
+        if member.is_roundup:
+            continue  # まとめ記事は辺の相手にしない (まとめ記事経由の混入を防ぐ)
         shared = tuple(sorted(cand_entities & member.entities))
         vec = member_vecs.get(member.article_id)
         if vec is None:
@@ -359,6 +361,15 @@ def assign_article(
     渡さなければ従来どおり ``edge_is_allowed`` (決定論) が決める。**どのアイテムを
     選ぶかは常に最高 cos** — 判定を差し替えても選び方は変えない。
     """
+    if candidate.is_roundup:
+        # まとめ記事は既存の事象に入らない (単独の事象として立つ、2026-10-02)
+        return Assignment(
+            article_id=candidate.article_id,
+            target_item_id=None,
+            max_cos=0.0,
+            shared_entities=(),
+            rejected=("roundup",),
+        )
     cand_unit = _unit_vector(cand_vec)
     rejected: list[str] = []
     best_item: ItemState | None = None

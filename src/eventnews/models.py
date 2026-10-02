@@ -125,6 +125,12 @@ VERSION_CAP = 20
 UPDATE_DRIVER_TYPES: tuple[str, ...] = ("cve", "victim_org", "actor")
 
 
+#: まとめ記事の種別 (event_kind.KINDS の 1 つ、2026-10-02)。複数の出来事を並べる記事は
+#: 事象の構成記事にしない — 1 つの事象に入れると別の出来事が混ざり、まとめ記事を経由して
+#: 無関係な記事が入り込む (09-26 の検証で混入の主因)。
+ROUNDUP_KIND = "roundup"
+
+
 @dataclass(frozen=True)
 class MemberArticle:
     """群化・生成の入力となる記事 (畳み込み済み・錨時刻確定済み)。
@@ -149,6 +155,13 @@ class MemberArticle:
     entities: frozenset[tuple[str, str]]
     # 発信者種別 (Grok/X の account_class)。tier 判定に使う (空 = 未分類 / 非 X)
     account_class: str = ""
+    # 記事の種別 (event_kind、article_kinds のキャッシュ。空 = 未分類)。2026-10-02 から
+    # まとめ記事を群化に参加させない判定に使う
+    kind: str = ""
+
+    @property
+    def is_roundup(self) -> bool:
+        return self.kind == ROUNDUP_KIND
 
 
 @dataclass(frozen=True)

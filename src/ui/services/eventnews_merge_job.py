@@ -179,7 +179,13 @@ def load_merge_inputs(repo: RunHistoryRepository) -> MergeInputs:
             item_of[aid] = r.state.item_id
     counts = _entity_counts(repo, datetime.now(UTC) - timedelta(hours=ENTITY_FREQ_WINDOW_HOURS))
     members = _load_members(repo, list(item_of), counts)
-    entities = build_join_entities(edge_inputs(members), counts)
+    # まとめ記事は統合の候補の組を作らない (2026-10-02)。まとめ記事を橋に別の事象どうしが
+    # 統合されるのを防ぐ (群化側では辺の相手にしない、と同じ規則)
+    entities = {
+        aid: ents
+        for aid, ents in build_join_entities(edge_inputs(members), counts).items()
+        if not (aid in members and members[aid].is_roundup)
+    }
     vectors: dict[str, np.ndarray] = {}
     for aid, v in _load_vectors(repo, list(members)).items():
         n = float(np.linalg.norm(v))

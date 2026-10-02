@@ -24,6 +24,7 @@ def _member(
     entities: frozenset[tuple[str, str]],
     *,
     anchor_ts: datetime = _NOW,
+    kind: str = "",
 ) -> MemberArticle:
     return MemberArticle(
         article_id=article_id,
@@ -39,6 +40,7 @@ def _member(
         summary="summary",
         body="body",
         entities=entities,
+        kind=kind,
     )
 
 
@@ -572,3 +574,51 @@ def test_single_judged_pair_does_not_trigger_the_quorum() -> None:
 
     # Assert
     assert assignment.target_item_id == "item-1"
+
+
+# ---------- まとめ記事 (2026-10-02) ----------
+# まとめ記事は複数の出来事を並べる。1 つの事象に入れると別の出来事が混ざり、まとめ記事を
+# 経由して無関係な記事が入り込む (09-26 の検証で混入の主因)。群化に参加させない。
+
+
+def test_roundup_candidate_does_not_join_even_with_strong_edge() -> None:
+    shared = ("cve", "cve-2024-1111")
+    member = _member("m1", frozenset({shared}))
+    candidate = _member("cand", frozenset({shared}), kind="roundup")
+
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(_item("item-1"),),
+        item_members={"item-1": (member,)},
+        member_vecs={"m1": _vec(0.95)},
+        now=_NOW,
+    )
+
+    assert assignment.target_item_id is None
+    assert assignment.rejected == ("roundup",)
+
+
+def test_roundup_member_gives_no_edge() -> None:
+    """事象の中のまとめ記事は辺の相手にならない (まとめ記事経由の混入を防ぐ)。"""
+    shared = ("cve", "cve-2024-1111")
+    roundup = _member("r1", frozenset({shared}), kind="roundup")
+    candidate = _member("cand", frozenset({shared}))
+
+    assignment = assign_article(
+        candidate,
+        _BASE_VEC,
+        items=(_item("item-1"),),
+        item_members={"item-1": (roundup,)},
+        member_vecs={"r1": _vec(0.95)},
+        now=_NOW,
+    )
+
+    assert assignment.target_item_id is None
+
+
+def test_roundup_kind_constant_matches_classifier_vocabulary() -> None:
+    from src.eventnews.event_kind import KINDS
+    from src.eventnews.models import ROUNDUP_KIND
+
+    assert ROUNDUP_KIND in KINDS

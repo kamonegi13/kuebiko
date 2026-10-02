@@ -52,6 +52,7 @@ from src.pipeline.postprocess import (
 )
 from src.pipeline.publish import _print_dry_run, _resolve_channel
 from src.pipeline.result import PipelineRunResult
+from src.pipeline.roundup_guard import involves_roundup, kind_classifier
 from src.pipeline.summary import DiscordChannel
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
@@ -919,6 +920,8 @@ async def run_pipeline(
     # 重複判定に当たったが分析に残した記事 (Discord へは流さない)
     kept_duplicate_ids: list[str] = []
     keep_duplicates = os.environ.get(KEEP_DUPLICATES_ENV, "1") != "0"
+    # まとめ記事の判定 (重複に当たった記事にだけ使う。LLM は初回使用時に作る)
+    kind_classify = kind_classifier(config)
     # Phase 5J-1: briefings は _sort_briefings_for_posting で並び替えされるため、
     # 元順の article_outcomes の idx で引くと別の briefing の record に書き込まれる
     # (run 85〜95 で 15 件の posted_channel 不整合を観測)。
@@ -1018,6 +1021,26 @@ async def run_pipeline(
             cross_channel_seen_keys=cross_channel_seen_keys,
             cross_channel_seen_cves=cross_channel_seen_cves,
         )
+        if (
+            gate_result is not None
+            and dedup_repo is not None
+            and await involves_roundup(
+                dedup_repo,
+                kind_classify,
+                article_id=art_id,
+                title=msg.title or "",
+                summary=msg.summary or "",
+                prior_article_id=gate_result.prior_article_id,
+            )
+        ):
+            # まとめ記事は中の 1 話題の記事と同じ内容ではない (どちらの向きも、2026-10-02)
+            _log.info(
+                "dedup_roundup_exempt",
+                article_id=art_id,
+                prior_article_id=gate_result.prior_article_id,
+                reason=gate_result.failure_reason[:120],
+            )
+            gate_result = None
         if gate_result is not None:
             if outcome is not None:
                 _record_duplicate_outcome(outcome, msg, gate_result, keep=keep_duplicates)
