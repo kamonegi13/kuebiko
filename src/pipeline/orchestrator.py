@@ -989,6 +989,10 @@ async def run_pipeline(
             if outcome is not None:
                 outcome["status"] = "skipped_duplicate"
                 outcome["failure_reason"] = gate_result.failure_reason
+                # この関門は要約の後に走る。重複行も事象ニュース・記事一覧に出るので、
+                # 作った要約を捨てない (捨てると本文しか読めない記事が並ぶ、2026-10-02)
+                if msg.summary:
+                    outcome["summary"] = msg.summary
             skipped_for_mark_read.append(art_id)
             continue
 

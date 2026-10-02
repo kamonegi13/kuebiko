@@ -1032,6 +1032,9 @@ class TestCrossChannelDedupSkipPersistAndMarkRead:
         assert len(skipped_recs) == 1
         assert skipped_recs[0].status == "skipped_duplicate"
         assert skipped_recs[0].dedup_key == "cve-2026-9999"
+        # 投稿直前の重複判定は要約の後に走る。作った要約は捨てずに残す
+        # (重複行も事象ニュース・記事一覧に出るため、要約が空だと本文しか読めない)
+        assert "本文の概要記述" in (skipped_recs[0].summary or "")
 
 
 # ---------- Phase 3b: semantic dedup ----------
