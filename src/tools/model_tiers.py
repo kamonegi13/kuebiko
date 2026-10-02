@@ -120,6 +120,10 @@ class Step(StrEnum):
     # 「ここを割り当てれば Grok の抽出モデルが変わる」という誤認を生む (config/agents.yaml
     # を撤去したのと同じ理由)。復活させるならスケルトンから書き直すこと。
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
+    # 地政学の救済 (2026-10-02): triage が地政学・軍事・外交を理由に落とした記事だけを
+    # 同じ基準で判定し直す。**triage と別のモデルを割り当てるための step** — triage の
+    # SFT モデルは「一般地政学 = low」を学習しており、同じモデルでは救えない (素の 26B を割当)
+    TRIAGE_GEO_RESCUE = "triage_geo_rescue"
     PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
     EVENT_KIND = "event_kind"  # 記事種別分類 (ML pair モデルの特徴量供給 — 供給元を固定する)
     # 深刻度の軸 (広がり・被害の性質・実害の確認・悪用状況・行為者・標的、2026-09-25)。
@@ -173,6 +177,7 @@ class StepSpec:
 STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
+    Step.TRIAGE_GEO_RESCUE: StepSpec(Tier.FAST, 300.0),
     # pair 判定は 1 呼出 = 小さな関係判定 (max_tokens 300)。専用 step の理由: 以前は
     # Step.TRIAGE を借用しており、triage の step 上書きを黙って継承していた (借用禁止の衛生)。
     # 実測では pair 判定は SFT に不変 (base/s1/s15/s16/N1 の 5 腕が held-out 149 で全問一致、

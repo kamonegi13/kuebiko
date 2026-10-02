@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 from src.config_loader import AppConfig
@@ -20,6 +21,9 @@ from src.tools.embedding_client import EmbeddingClient, EmbeddingError
 from src.tools.llm_client import LLMClient
 from src.tools.text_utils import strip_html as _strip_html
 from src.tools.url_normalizer import url_hash
+
+if TYPE_CHECKING:
+    from src.tools.article_triage import TriageDecision
 
 _log = get_logger(__name__)
 
@@ -140,6 +144,7 @@ async def _filter_by_triage(
     keep_importance: set[str],
     max_keep: int,
     think: bool = False,
+    rescue_llm: LLMClient | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -199,9 +204,15 @@ async def _filter_by_triage(
     # Phase 5P: LLM 失敗 (fail-open) の件数を集計
     triage_error_count = sum(1 for _, _, err, _ in decisions if err)
 
-    # importance ランクで並び替え
+    rescued: set[str] = set()
+    if rescue_llm is not None:
+        decisions, rescued = await _rescue_geopolitical(
+            decisions, rescue_llm, keep_importance=keep_importance, think=think
+        )
+
+    # importance ランクで並び替え。救済した記事は同じ重要度の中で後ろ (枠あふれで先に押し出す)
     importance_rank = {"high": 0, "medium": 1, "low": 2}
-    decisions.sort(key=lambda x: importance_rank.get(x[1], 3))
+    decisions.sort(key=lambda x: (importance_rank.get(x[1], 3), x[0].id in rescued))
 
     kept: list[Article] = []
     rejected: list[TriageRejectionRow] = []  # importance 不足 = 評価済み・不採用 (既読化対象)
@@ -226,6 +237,54 @@ async def _filter_by_triage(
     skipped_ids = [a.id for a in triage_targets if a.id not in kept_ids]
     survivors = grok_articles + kept
     return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected
+
+
+#: 救済の対象 = triage が地政学・軍事・外交を理由に落とした記事 (理由の欄で判定する)
+_GEO_REASON = re.compile(r"(地政学|軍事|外交|安全保障|海軍|演習|ミサイル|防衛|国防|核)")
+_RESCUE_MARK = "[地政学の救済] "
+
+
+async def _rescue_geopolitical(
+    decisions: list[tuple[Article, str, bool, str]],
+    rescue_llm: LLMClient,
+    *,
+    keep_importance: set[str],
+    think: bool,
+) -> tuple[list[tuple[Article, str, bool, str]], set[str]]:
+    """地政学を理由に落ちた記事を、救済用のモデルで同じ基準のまま判定し直す (2026-10-02)。
+
+    triage の SFT モデル (s21) は「一般地政学 = low」を学習しており、地政学の SIR
+    (サイバー以外) を足しても癖が判定基準より強く効く。実測: 落ちた注視国の地政学 60 件で
+    medium 以上は s21 21 件 / 素の 26B 42 件、範囲外 30 件の誤取込は 1 / 3 件。
+    救った記事は **medium に抑える** (サイバー要素のない軍事は high にしない、09-29 の
+    利用者決定)。救済の判定に失敗したら元の判定 (low) のまま。
+    """
+    from src.tools.article_triage import ArticleTriage  # 遅延インポート (循環回避)
+
+    targets = [
+        i
+        for i, (_a, imp, err, reason) in enumerate(decisions)
+        if imp == "low" and not err and _GEO_REASON.search(reason or "")
+    ]
+    if not targets:
+        return decisions, set()
+    triage = ArticleTriage(rescue_llm, think=think)
+    sem = asyncio.Semaphore(_triage_concurrency())
+
+    async def _one(i: int) -> tuple[int, TriageDecision]:
+        async with sem:
+            return i, await triage.triage(decisions[i][0])
+
+    out = list(decisions)
+    rescued: set[str] = set()
+    for i, d in await asyncio.gather(*(_one(i) for i in targets)):
+        if d.error or d.importance not in keep_importance:
+            continue
+        article = out[i][0]
+        out[i] = (article, "medium", False, _RESCUE_MARK + d.reason)
+        rescued.add(article.id)
+    _log.info("triage_geo_rescue", candidates=len(targets), rescued=len(rescued))
+    return out, rescued
 
 
 async def _prefetch_thin_bodies(

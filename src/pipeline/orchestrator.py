@@ -360,6 +360,7 @@ async def run_pipeline(
     embedder: EmbeddingClient | None = None,
     skip_dedup: bool = False,
     triage_llm: LLMClient | None = None,
+    triage_rescue_llm: LLMClient | None = None,
     run_id: int | None = None,
     channel_routing: ChannelRouting | None = None,
     enrichment: object | None = None,  # LlmEnrichment (Phase 5D)
@@ -563,6 +564,7 @@ async def run_pipeline(
             keep_importance=set(pipeline.processor.triage_keep_importance),
             max_keep=pipeline.processor.triage_max_keep,
             think=pipeline.processor.think_enabled,
+            rescue_llm=triage_rescue_llm,
         )
         skipped_for_mark_read.extend(skipped_triage_ids)
         # 評価済み・不採用 (importance 不足) は URL 既読化する — 「既読」の状態機械に

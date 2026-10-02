@@ -545,6 +545,7 @@ const TIER_ORDER = ["narrative", "reasoning", "dialog", "fast", "embedding"] as 
 // 処理別上書きの日本語ラベル (UI 文言規約: 生 enum を直接表示しない)
 const STEP_LABELS: Record<string, string> = {
   triage: "重要度判定 (triage)",
+  triage_geo_rescue: "重要度判定 — 地政学の救済",
   article_summary: "記事要約・翻訳",
   article_translate: "本文翻訳",
   pair_judge: "事象ペア同一性判定",

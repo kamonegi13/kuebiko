@@ -205,3 +205,98 @@ class TestFilterByTriageRejectedSplit:
         assert skipped == 1  # 枠あふれは skip には数える (既読化はしない)
         assert len(skipped_ids) == 1
         assert rejected == []  # 評価は keep 水準 → リトライ権を保持
+
+
+class TestGeoRescue:
+    """地政学の救済 (2026-10-02)。
+
+    s21 は教師データで「一般地政学 = low」を学習しており、地政学の SIR を足しても
+    「サイバー要素なし → low」の癖が判定基準より強く効く (落ちた注視国の地政学 60 件中
+    medium に上がったのは 21 件、素の 26B は 42 件)。理由が地政学・軍事・外交の落選だけを
+    救済用のモデルで判定し直す。high にはしない (09-29 の利用者決定)。
+    """
+
+    @staticmethod
+    def _a(aid: str, title: str) -> Article:
+        return TestFilterByTriageRejectedSplit._a(aid, title)
+
+    @staticmethod
+    def _llm(decide: dict[str, TriageDecision]) -> AsyncMock:
+        llm = AsyncMock()
+
+        async def _gen(prompt: str, *a: object, **k: object) -> TriageDecision:
+            for t, d in decide.items():
+                if t in prompt:
+                    return d
+            return TriageDecision(importance="low", reason="?")
+
+        llm.generate_structured = AsyncMock(side_effect=_gen)
+        return llm
+
+    @pytest.mark.asyncio
+    async def test_geo_low_is_rejudged_and_capped_to_medium(self) -> None:
+        from src.pipeline.filters import _filter_by_triage
+
+        arts = [
+            self._a("geo", "PLA drills around Huangyan Dao"),
+            self._a("noise", "Museum visit"),
+            self._a("cyber", "Ransomware hits hospital"),
+        ]
+        primary = self._llm(
+            {
+                "PLA drills": TriageDecision(importance="low", reason="一般軍事報道"),
+                "Museum": TriageDecision(importance="low", reason="文化行事"),
+                "Ransomware": TriageDecision(importance="medium", reason="x"),
+            }
+        )
+        rescue = self._llm(
+            {
+                "PLA drills": TriageDecision(importance="high", reason="中国軍の行動"),
+                "Museum": TriageDecision(importance="medium", reason="?"),
+            }
+        )
+
+        survivors, _skipped, _ids, _err, rejected = await _filter_by_triage(
+            arts, primary, keep_importance={"high", "medium"}, max_keep=10, rescue_llm=rescue
+        )
+
+        # 地政学を理由に落ちた記事だけ判定し直す (文化行事は対象外 = 救済のモデルを呼ばない)
+        assert [a.id for a in survivors] == ["cyber", "geo"]
+        assert [r.article_id for r in rejected] == ["noise"]
+        prompts = [c.args[0] for c in rescue.generate_structured.await_args_list]
+        assert len(prompts) == 1 and "PLA drills" in prompts[0]
+
+    @pytest.mark.asyncio
+    async def test_rescued_articles_rank_after_original_keeps(self) -> None:
+        """枠あふれで押し出されるのは救済した記事の方。"""
+        from src.pipeline.filters import _filter_by_triage
+
+        arts = [self._a("geo", "Russian Navy near Japan"), self._a("cyber", "APT hits JP")]
+        primary = self._llm(
+            {
+                "Russian Navy": TriageDecision(importance="low", reason="軍事・地政学"),
+                "APT": TriageDecision(importance="medium", reason="x"),
+            }
+        )
+        rescue = self._llm({"Russian Navy": TriageDecision(importance="medium", reason="露軍")})
+
+        survivors, _s, _i, _e, rejected = await _filter_by_triage(
+            arts, primary, keep_importance={"high", "medium"}, max_keep=1, rescue_llm=rescue
+        )
+
+        assert [a.id for a in survivors] == ["cyber"]
+        assert rejected == []  # 救済で keep 水準になった = 枠あふれ (次 run で再評価)
+
+    @pytest.mark.asyncio
+    async def test_without_rescue_llm_behaviour_is_unchanged(self) -> None:
+        from src.pipeline.filters import _filter_by_triage
+
+        arts = [self._a("geo", "PLA drills")]
+        primary = self._llm({"PLA drills": TriageDecision(importance="low", reason="軍事")})
+
+        survivors, _s, _i, _e, rejected = await _filter_by_triage(
+            arts, primary, keep_importance={"high", "medium"}, max_keep=10
+        )
+
+        assert survivors == []
+        assert [r.article_id for r in rejected] == ["geo"]

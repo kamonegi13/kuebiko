@@ -154,6 +154,12 @@ async def run_default(
         # 本番と別の client を測る、という乖離が起きる。現状は両者とも fast ティアの
         # ため解決結果は同一で、挙動は変わらない。
         triage_llm: LLMClient | None = build_llm_for(Step.TRIAGE, config)
+        # 地政学の救済 (2026-10-02)。TRIAGE_GEO_RESCUE=0 で止める
+        triage_rescue_llm: LLMClient | None = (
+            build_llm_for(Step.TRIAGE_GEO_RESCUE, config)
+            if os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0"
+            else None
+        )
 
         # Phase 2: Grok email source の場合のみ IMAP / Playwright を立ち上げる
         imap_client: ImapClient | None = None
@@ -197,6 +203,7 @@ async def run_default(
             embedder=embedder,
             skip_dedup=skip_dedup,
             triage_llm=triage_llm,
+            triage_rescue_llm=triage_rescue_llm,
             run_id=run_id,
             channel_routing=channel_routing,
             enrichment=enrichment,
