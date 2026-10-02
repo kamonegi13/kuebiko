@@ -157,6 +157,29 @@ def body_hash_for_translation(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+#: 出力が JSON の対応表 ({"原文": "訳文"}) になっている (JSON で答える課題を学習したモデルの崩れ)
+_JSON_MAPPING_RE = re.compile(r'\{\s*"[^"\n]{1,400}"\s*:\s*"')
+#: 原文がそのまま写っているとみなす長さ (英字の連続した一節)
+_ECHO_MIN_CHARS = 80
+
+
+def broken_translation_reason(source: str, output: str) -> str | None:
+    """訳文が壊れていれば理由、問題なければ None (純粋関数)。
+
+    ⚠ 2026-10-02: 翻訳の担当を s21 (JSON で答える課題を学習) にした 09-29 から、訳文に
+    ``{"原文": "訳文"}`` の形と英語の原文の写しが混ざり、ほぼ全件が壊れていた。関門で弾いて
+    保存させない (壊れた訳がキャッシュされ続けるのを防ぐ)。
+    """
+    if _JSON_MAPPING_RE.search(output):
+        return "JSON の形が混ざっている"
+    for para in (p.strip() for p in source.split("\n") if p.strip()):
+        head = para[:_ECHO_MIN_CHARS]
+        letters = sum(c.isascii() and c.isalpha() for c in head)
+        if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
+            return "原文がそのまま写っている"
+    return None
+
+
 async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -> str:
     """チャンク 1 つを翻訳する。空応答は ``LLMError``。"""
     resp = await llm.generate(
@@ -169,6 +192,11 @@ async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -
     out = resp.text.strip()
     if not out:
         raise LLMError(f"翻訳結果が空です (chunk {index + 1}/{total})")
+    why = broken_translation_reason(chunk, out)
+    if why:
+        raise LLMError(
+            f"翻訳結果が壊れている: {why} (chunk {index + 1}/{total}, model={llm.model})"
+        )
     return out
 
 

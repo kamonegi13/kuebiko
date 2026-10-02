@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from src.cti.body_translator import (
     _CHUNK_MAX_CHARS,
     body_hash_for_translation,
+    broken_translation_reason,
     is_probably_japanese,
     split_for_translation,
     translate_body,
@@ -284,3 +285,32 @@ async def test_resumable_partial_text_is_contiguous_prefix_only() -> None:
     assert not progress.is_complete
     assert progress.done_chunks == 1
     assert progress.partial_text == ""
+
+
+# ---------- 壊れた訳の関門 (2026-10-02) ----------
+
+_SRC = (
+    "South Africa's Air Traffic and Navigation Services (ATNS) operator suffered a severe "
+    "cyberattack targeting operational technology environments."
+)
+
+
+def test_json_mapping_output_is_broken() -> None:
+    out = '{"Start your day with intelligence.": "一日をインテリジェンスとともに。"}\n\n訳文'
+    assert broken_translation_reason(_SRC, out) == "JSON の形が混ざっている"
+
+
+def test_source_echo_is_broken() -> None:
+    out = _SRC + "\n\n南アフリカの ATNS が深刻なサイバー攻撃を受けた。"
+    assert broken_translation_reason(_SRC, out) == "原文がそのまま写っている"
+
+
+def test_proper_translation_passes() -> None:
+    out = "南アフリカの Air Traffic and Navigation Services (ATNS) が深刻なサイバー攻撃を受けた。"
+    assert broken_translation_reason(_SRC, out) is None
+
+
+async def test_broken_output_raises_instead_of_caching() -> None:
+    llm = FakeLLM(responses=['{"a": "b"}'])
+    with pytest.raises(LLMError):
+        await translate_body(llm, _SRC)
