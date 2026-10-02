@@ -36,7 +36,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -273,6 +273,8 @@ class GenerateRequest(BaseModel):
     # CLI 既定は thinking ON で、複雑タスクでは思考が 6-8k tok/call = 時間の ~8 割を
     # 占める (実測 71s→8s、2026-07-19)。None/True は CLI 既定に委譲。
     think: bool | None = None
+    # CLI の --effort (2026-10-02)。評価・監査の判定役だけが指定する。None は CLI 既定
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
 
 
 app = FastAPI(title="claude-code-bridge")
@@ -411,6 +413,8 @@ async def generate(req: GenerateRequest) -> dict[str, Any]:
     ]
     if req.system:
         args += ["--append-system-prompt", req.system]
+    if req.effort:
+        args += ["--effort", req.effort]
 
     env = dict(os.environ)
     if req.think is False:

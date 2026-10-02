@@ -237,3 +237,43 @@ class TestUsageSummary:
 
         await _client(handler).generate("p")
         assert "think" not in seen["body"]
+
+    @pytest.mark.asyncio
+    async def test_effort_from_env_is_passed_to_bridge(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """評価・監査の判定役だけエフォートを下げる (2026-10-02、週の枠の節約)。本番は未設定。"""
+        seen: dict[str, Any] = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(req.content)
+            return httpx.Response(200, json=_bridge_ok("x"))
+
+        monkeypatch.setenv("CLAUDECODE_EFFORT", "low")
+        await _client(handler).generate("p")
+        assert seen["body"]["effort"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_effort_unset_or_invalid_is_omitted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: dict[str, Any] = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen["body"] = json.loads(req.content)
+            return httpx.Response(200, json=_bridge_ok("x"))
+
+        monkeypatch.setenv("CLAUDECODE_EFFORT", "turbo")
+        await _client(handler).generate("p")
+        assert "effort" not in seen["body"]
+
+
+def test_bridge_accepts_only_known_effort_levels() -> None:
+    """CLI の --effort に渡す値は既知の段階だけ (任意の文字列を CLI 引数に流さない)。"""
+    from claude_code_bridge import GenerateRequest
+    from pydantic import ValidationError
+
+    assert GenerateRequest(prompt="p", effort="low").effort == "low"
+    assert GenerateRequest(prompt="p").effort is None
+    with pytest.raises(ValidationError):
+        GenerateRequest(prompt="p", effort="--dangerous")

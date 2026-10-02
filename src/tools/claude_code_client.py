@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, TypeVar
 
@@ -53,6 +54,12 @@ _T = TypeVar("_T", bound=BaseModel)
 
 #: bridge が返す CLI 出力に含まれる拒否の印 (空白除去して照合する)。
 _REFUSAL_MARKER = '"stop_reason":"refusal"'
+
+
+#: 判定役のエフォート (CLI の --effort)。評価・監査のスクリプトだけが設定する (2026-10-02、
+#: 週の枠の節約)。未設定なら送らない = CLI の既定 (本番の呼び出しは変わらない)
+_EFFORT_ENV = "CLAUDECODE_EFFORT"
+_EFFORT_LEVELS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 
 class ClaudeCodeClient(LLMClient):
@@ -171,6 +178,9 @@ class ClaudeCodeClient(LLMClient):
             body["system"] = system
         if think is not None:
             body["think"] = think
+        effort = os.environ.get(_EFFORT_ENV, "").strip()
+        if effort in _EFFORT_LEVELS:
+            body["effort"] = effort
         try:
             resp = await self._client.post(f"{self._bridge_url}/v1/generate", json=body)
         except httpx.TimeoutException as e:
