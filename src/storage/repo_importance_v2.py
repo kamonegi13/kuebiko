@@ -11,7 +11,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from src.cti.importance_v2 import ImportanceInputs, ImportanceV2, stated_cvss, stated_loss_usd
+from src.cti.importance_v2 import (
+    ImportanceInputs,
+    ImportanceV2,
+    stated_cvss,
+    stated_loss_usd,
+    subject_kev,
+)
 
 _CHUNK = 400
 _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
@@ -60,7 +66,7 @@ class ImportanceV2Mixin:
                 category=str(r["category"] or ""),
                 article_type=str(r["article_type"] or ""),
                 axes=axes.get(aid, {}),
-                on_kev=any(c in kev for c in cves),
+                on_kev=subject_kev(cves, kev, datetime.now(UTC).year),
                 max_cvss=max(max_cvss(cves), stated_cvss(text)),
                 victim_country=str(r["victim_country_iso"] or "").upper(),
                 involved_countries=frozenset(e.get("involved_country", set())),

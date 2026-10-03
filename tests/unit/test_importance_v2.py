@@ -22,6 +22,7 @@ from src.cti.importance_v2 import (
     derive_severity,
     stated_cvss,
     stated_loss_usd,
+    subject_kev,
 )
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 from src.ui.services.importance_v2_job import record_importance_v2
@@ -230,6 +231,17 @@ class TestStatedLoss:
 
     def test_loss_without_harm_does_not_raise(self) -> None:
         assert derive_severity(_inp(loss_usd=4e8))[0] == "S1"
+
+
+class TestSubjectKev:
+    def test_old_cve_on_kev_mentioned_in_passing_does_not_count(self) -> None:
+        kev = frozenset({"CVE-2024-38475", "CVE-2026-1111"})
+
+        assert not subject_kev(["CVE-2024-38475", "CVE-2026-2222"], kev, 2026)
+        assert subject_kev(["CVE-2026-1111"], kev, 2026)
+
+    def test_previous_year_cve_still_counts(self) -> None:
+        assert subject_kev(["cve-2025-9999"], frozenset({"CVE-2025-9999"}), 2026)
 
 
 class TestRelevance:

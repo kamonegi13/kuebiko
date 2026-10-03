@@ -25,7 +25,8 @@ from typing import Literal
 #: 本文に書かれた CVSS も見る・マルウェアの解析は S2 / .3 複数組織への不正アクセスだけは S2
 #: / .4 流出「可能性」の侵害は S2・掲載だけ (暗号化と読まれても) は S1
 #: / .5 公的な枠組みとの照合: PoC の公開は CVSS によらず S2 (SSVC)・被害額 1 億ドル以上は S3
-RULE_VERSION = "2026-10-03.5"
+#: / .6 記事が触れるだけの古い CVE の KEV 掲載は S3 の根拠にしない (``subject_kev``)
+RULE_VERSION = "2026-10-03.6"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -280,3 +281,22 @@ def stated_loss_usd(text: str) -> float:
         v = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
         best = max(best, v / JPY_PER_USD if m.group(3) == "円" else v)
     return best
+
+
+#: 記事の主題の CVE とみなす年の幅 (今年と前年)。過去の修正済み CVE への言及を KEV の根拠にしない
+SUBJECT_CVE_YEARS = 2
+_CVE_YEAR = re.compile(r"^CVE-(\d{4})-", re.IGNORECASE)
+
+
+def subject_kev(cves: Iterable[str], kev: frozenset[str], year: int) -> bool:
+    """記事の主題とみなせる新しい CVE が KEV に載っているか。
+
+    正解集 (版 .6) の定め: 記事が触れるだけの古い CVE (既に修正済み) が KEV に載っていても
+    S3 にしない。
+    記事の主題の CVE を決定論では特定できないので、今年と前年の CVE に限ることで近似する。
+    """
+    for c in cves:
+        m = _CVE_YEAR.match(c)
+        if m and int(m.group(1)) > year - SUBJECT_CVE_YEARS and c.upper() in kev:
+            return True
+    return False
