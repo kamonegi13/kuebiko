@@ -22,8 +22,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 #: 版の履歴: .1 初版 / .2 正解集 (Opus 裁定 204 件) で直した — 攻撃者の主張だけは S1・
-#: 本文に書かれた CVSS も見る・マルウェアの解析は S2
-RULE_VERSION = "2026-10-03.2"
+#: 本文に書かれた CVSS も見る・マルウェアの解析は S2 / .3 複数組織への不正アクセスだけは S2
+RULE_VERSION = "2026-10-03.3"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -149,7 +149,16 @@ def _incident_severity(ax: Mapping[str, str]) -> tuple[Severity, str]:
     scope, impact, conf = ax.get("scope"), ax.get("impact"), ax.get("confirmation")
     actor, target = ax.get("actor"), ax.get("target")
     confirmed = conf == "confirmed"
-    if confirmed and scope in _WIDE and impact in _HARMED:
+    # 複数組織への不正アクセスだけ (フィッシング・キャンペーンの解析など) は S2 — 正解集では
+    # 情報の漏えい・停止・破壊を伴うか、業界・国規模に及ぶものだけが S3
+    if (
+        confirmed
+        and impact in _HARMED
+        and (
+            scope in {"sector_wide", "national"}
+            or (scope in _WIDE and impact != "unauthorized_access")
+        )
+    ):
         return "S3", "confirmed_wide_harm"
     if actor == "state" and target in _CRITICAL_TARGETS:
         return "S3", "state_on_critical"
