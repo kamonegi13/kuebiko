@@ -450,7 +450,7 @@ kuebiko/
   | (10-02) triage の落選を理由つきで `triage_rejections` に記録 (180 日)。購読ソースの媒体詳細で件数と一覧 | (記録のみ — 戻す必要なし) |
   | (10-02) まとめ記事 (event_kind=roundup) を群化・統合・投稿直前の重複判定に参加させない。毎時の群化は候補の全件に種別を付ける (1 回 120 件まで、残りは持ち越し) | `models.ROUNDUP_KIND` の判定を外す (コード) |
   | (10-02) 地政学の SIR 4 本 (pir_geo_*、medium) を追加。triage が地政学・軍事・外交を理由に落とした記事を素の 26B で判定し直す救済の段 (`triage_geo_rescue`、high にはしない) | `TRIAGE_GEO_RESCUE=0` / SIR は UI で無効化 |
-  | (10-02) 統合の段で、頻出の名前 (FBI・大手の暗号資産取引所 等) を共有し本文 cos 0.80 以上の別事象の組も ML で採点して統合する | `EVENTNEWS_MERGE_FREQUENT=0` |
+  | (10-02) 統合の段で、頻出の名前 (当局・大手取引所の名前等) を共有し本文 cos 0.80 以上の別事象の組も ML で採点して統合する | `EVENTNEWS_MERGE_FREQUENT=0` |
   | (10-02) 台帳: 低確度の見立ての反転は 1 回では確定させない (確かな出所の反証が根拠なら即確定) | `LEDGER_FLIP_HYSTERESIS=0` |
   | (10-02) 配信の定型文 (「The post … appeared first on …」) だけの本文は要約しない / 高脅威の安全網を Web の日次ブリーフにも載せる | (コード) |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
