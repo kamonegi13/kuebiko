@@ -290,6 +290,9 @@ RunPod は教師づくりに使わない (利用者判断: 学習データの作
 - 深刻さ・軸: 正解集 v4 (Opus 5.5、204 件、`data/eval/severity_gold_v4.jsonl`) — 調整に使ったので、
   **別の記事で測定用を作る** (S3 を 150 件以上、上限が戻ってから)
 - triage・PIR 判定: 10-03 の正解集は Opus 4.8 の裁定 → **Opus 5.5 で付け直す**
+  - 済 (10-04): v3 = Opus 5.5 で 150 件。境界 82 件を境界の型 A〜I の定め (10-03 決定) を足して付け直し → **v4**
+    (`data/eval/triage_gold_v4.jsonl`)。境界 82 → 41 件。82 件中 28 件で重要度が変わり、多くは下げる向き
+    (high → medium 10・medium → low 10・low → medium 6)。s23 の triage の教師も同じ定めで付ける
 - 要約: 盲検 (Opus) + 抜けと誤りの中身を人 (Claude) が読んで確かめる (今回のように 20 件)
 - 目標値: S3 の見逃し ≤ 2% など (`docs/accuracy_targets.md`)
 
