@@ -14,8 +14,10 @@ from typing import Any
 from src.cti.importance_v2 import (
     ImportanceInputs,
     ImportanceV2,
+    corrected_axes,
     stated_cvss,
     stated_loss_usd,
+    stated_victim_count,
     subject_kev,
 )
 
@@ -65,7 +67,7 @@ class ImportanceV2Mixin:
             out[aid] = ImportanceInputs(
                 category=str(r["category"] or ""),
                 article_type=str(r["article_type"] or ""),
-                axes=axes.get(aid, {}),
+                axes=corrected_axes(axes.get(aid, {}), stated_victim_count(text)),
                 on_kev=subject_kev(cves, kev, datetime.now(UTC).year),
                 max_cvss=max(max_cvss(cves), stated_cvss(text)),
                 victim_country=str(r["victim_country_iso"] or "").upper(),

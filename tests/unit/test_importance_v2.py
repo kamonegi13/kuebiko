@@ -18,10 +18,12 @@ import pytest
 from src.cti.importance_v2 import (
     RULE_VERSION,
     ImportanceInputs,
+    corrected_axes,
     derive,
     derive_severity,
     stated_cvss,
     stated_loss_usd,
+    stated_victim_count,
     subject_kev,
 )
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
@@ -218,6 +220,10 @@ class TestStatedLoss:
             ("被害額は 3.88 億ドル", 3.88e8),
             ("損害は 150 億円", 1e8),
             ("no money mentioned", 0.0),
+            # 売上・販売価格・身代金の要求額は被害額ではない
+            ("売上50億ドルの医療機関への初期アクセス権が販売されている", 0.0),
+            ("Access to the firm was listed on a forum for $1,500.", 0.0),
+            ("The gang demanded a $50 million ransom.", 0.0),
         ],
     )
     def test_reads_largest_amount(self, text: str, expected: float) -> None:
@@ -231,6 +237,80 @@ class TestStatedLoss:
 
     def test_loss_without_harm_does_not_raise(self) -> None:
         assert derive_severity(_inp(loss_usd=4e8))[0] == "S1"
+
+
+class TestStatedVictimCount:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("約31万2000件の個人情報が流出した可能性がある", 312_000),
+            ("約 1850 万件のユーザー記録が流出したことを確認した", 18_500_000),
+            ("利用者1万2345人の個人情報を含むファイルが公開された", 12_345),
+            ("250名の当選結果が不正アクセスにより改ざんされた", 250),
+            ("The breach exposed 3.2 million customer records.", 3_200_000),
+            ("Data of 150,000 patients was stolen in the attack.", 150_000),
+            ("続報では 20 万件超の報告書が複製されたことが明らかになった", 200_000),
+        ],
+    )
+    def test_reads_victim_count_in_harm_sentence(self, text: str, expected: int) -> None:
+        assert stated_victim_count(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # 被害者の数でない数字 (利用規模・送金・送信・ファイル・試行) は規模に数えない
+            "週間約20万ダウンロードの正規パッケージが侵害された",
+            "攻撃者のウォレットから 2,655 件の送金が確認された",
+            "侵害されたアカウントから約1,500件のフィッシングメールを送信した",
+            "約100GB・12万3,456ファイルが窃取されたと主張",
+            "同社のサービスには 500 万人の利用者がいる",
+            "メールサーバーが不正利用され、約60万件の不審メール送信に悪用された",
+            # 攻撃者の主張する件数では重くしない (基準の文 §4)
+            "ShinyHunters が 3 億件の患者データを窃取したと主張している",
+            "4,000 万件のアカウントが流出し、フォーラムで販売されている",
+            # 要約の打ち消しの注記
+            "今回の事案を「顧客情報60万件が流出した」と表現することはできません",
+            "「45万人分の個人情報が漏えいした」",
+            "約60万件という送信数から大規模な侵害を連想する可能性がある",
+            "10万件の個人情報の流出は確認されていません",
+            "no numbers here",
+        ],
+    )
+    def test_ignores_counts_that_are_not_victims(self, text: str) -> None:
+        assert stated_victim_count(text) == 0
+
+
+class TestCorrectedAxes:
+    def test_body_count_raises_magnitude_to_s3(self) -> None:
+        # 要約から付けた軸が規模を落とした例 (本文には 31 万件と書かれている)
+        ax = corrected_axes(_axes(impact="data_exposure", confirmation="possible"), 312_000)
+
+        assert ax["magnitude"] == "100k_1m"
+        assert derive_severity(_inp(axes=ax)) == ("S3", "large_magnitude")
+
+    def test_body_count_lowers_overestimated_magnitude(self) -> None:
+        ax = corrected_axes(
+            _axes(impact="data_exposure", confirmation="confirmed", magnitude="100k_1m"), 133
+        )
+
+        assert ax["magnitude"] == "lt_1k"
+        assert derive_severity(_inp(axes=ax))[0] == "S2"
+
+    def test_large_magnitude_without_body_count_is_unknown(self) -> None:
+        ax = corrected_axes(_axes(impact="data_exposure", magnitude="ge_1m"), 0)
+
+        assert ax["magnitude"] == "unknown"
+
+    def test_small_magnitude_without_body_count_is_kept(self) -> None:
+        assert corrected_axes(_axes(magnitude="1k_100k"), 0)["magnitude"] == "1k_100k"
+
+    def test_claimed_only_never_gets_large_magnitude(self) -> None:
+        ax = corrected_axes(_axes(impact="data_exposure", confirmation="claimed_only"), 300_000)
+
+        assert ax["magnitude"] == "unknown"
+
+    def test_missing_axes_stay_missing(self) -> None:
+        assert corrected_axes({}, 500_000) == {}
 
 
 class TestSubjectKev:
@@ -315,6 +395,35 @@ class TestRecording:
         cells = repo.importance_v2_crosstab(since="2000-01-01")
         by = {(c["severity"], c["strategic_weight"], c["relevant"]): c["count"] for c in cells}
         assert by == {("S3", None, True): 1, (None, "heavy", True): 1}
+
+    def test_victim_count_in_summary_reaches_the_record(self, repo: RunHistoryRepository) -> None:
+        # Arrange: 軸は規模を落としているが、要約に 31 万件の流出が書かれている
+        rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))
+        repo.add_article(
+            ArticleRecord(
+                run_id=rid,
+                article_id="leak",
+                title="t",
+                url="https://kuebiko.example/leak",
+                status="posted",
+                importance="high",
+                category="breach",
+                article_type="breaking",
+                summary="約31万2000件の個人情報が流出した可能性がある。",
+                created_at=datetime.now(UTC),
+            )
+        )
+        repo.set_severity_axes("leak", _axes(impact="data_exposure", confirmation="possible"), "m")
+
+        # Act
+        record_importance_v2(repo)
+
+        # Assert
+        by = {
+            (c["severity"], c["relevant"]): c["count"]
+            for c in repo.importance_v2_crosstab(since="2000-01-01")
+        }
+        assert by[("S3", False)] == 1
 
     def test_second_run_records_nothing_new(self, repo: RunHistoryRepository) -> None:
         record_importance_v2(repo)

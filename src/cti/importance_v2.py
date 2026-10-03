@@ -26,7 +26,9 @@ from typing import Literal
 #: / .4 流出「可能性」の侵害は S2・掲載だけ (暗号化と読まれても) は S1
 #: / .5 公的な枠組みとの照合: PoC の公開は CVSS によらず S2 (SSVC)・被害額 1 億ドル以上は S3
 #: / .6 記事が触れるだけの古い CVE の KEV 掲載は S3 の根拠にしない (``subject_kev``)
-RULE_VERSION = "2026-10-03.6"
+#: / .7 規模を本文の被害の件数で直す (``corrected_axes``)・被害額は被害の文の金額だけ (売上・
+#: 販売価格・主張を除く)
+RULE_VERSION = "2026-10-03.7"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -70,6 +72,10 @@ MAX_CVSS = 10.0
 #: S3 にする被害額 (米ドル)。NIS2 の「重大なインシデント」の金額基準 (50 万ユーロ) は組織単位の
 #: 報告義務の線で、ニュースの「重大」はそれより桁が大きい事案に絞る
 LARGE_LOSS_USD = 100_000_000.0
+#: 規模の区切り (深刻度の軸の magnitude の値と同じ)
+MAGNITUDE_1K = 1_000
+MAGNITUDE_100K = 100_000
+MAGNITUDE_1M = 1_000_000
 #: 円 → 米ドルの換算 (被害額の桁を見るだけなので固定の概算でよい)
 JPY_PER_USD = 150.0
 
@@ -272,15 +278,132 @@ def _num(raw: str) -> float:
         return 0.0
 
 
+_SENTENCE = re.compile(r"[。\n]|(?<=[a-z0-9])\.\s")
+#: 攻撃者の主張・販売・企業の規模・送信数の文 (§4: 主張された件数・規模では重くしない。売上は
+#: 被害額でなく、送信したメールの数は被害者の数でない)
+_CLAIM_OR_SIZE_WORDS = re.compile(
+    r"主張|販売|売上|売り上げ|収益|身代金|要求|ダークウェブ|フォーラム|送信|"
+    r"claim|for sale|sold|selling|revenue|forum|advertis|ransom|demand",
+    re.IGNORECASE,
+)
+#: 金額を被害額と読む文の語
+_LOSS_WORDS = re.compile(
+    r"盗|窃取|被害|損害|流出|詐取|不正送金|stole|steal|drain|theft|loss|lost|heist|launder",
+    re.IGNORECASE,
+)
+
+
+#: 件数・金額を打ち消す文 (要約が「70 万件は送信数で、流出ではありません」と注記する等)
+_NEGATION_WORDS = re.compile(
+    r"ではありません|ではない|できません|とは言えない|否定|確認されていな|確認されていません|"
+    r"not the|no evidence|did not|does not",
+    re.IGNORECASE,
+)
+#: 言い方の引用だけの文 (「『45万人分が漏えいした』とは言えない」の引用部分)
+_QUOTE_ONLY = re.compile(r"^\s*[-・]?\s*「[^」]*」\s*$")
+
+
+def _sentences(text: str, must: re.Pattern[str]) -> list[str]:
+    """``must`` の語を含み、主張・販売・企業規模・打ち消しの語を含まない文。"""
+    return [
+        s
+        for s in _SENTENCE.split(text)
+        if must.search(s)
+        and not _CLAIM_OR_SIZE_WORDS.search(s)
+        and not _NEGATION_WORDS.search(s)
+        and not _QUOTE_ONLY.match(s)
+    ]
+
+
 def stated_loss_usd(text: str) -> float:
-    """本文に書かれた金額の最大値 (米ドル換算)。被害額かどうかは呼び手が被害の軸で絞る。"""
+    """本文に書かれた被害額の最大値 (米ドル換算)。
+
+    被害の語のある文の金額だけを読む。売上・販売価格・身代金の要求額・攻撃者の主張は数えない
+    (正解集で被害額を根拠にした S3 の誤り 4 件中 3 件が売上・アクセス権の販売価格だった)。
+    """
     best = 0.0
-    for m in _USD_AMOUNT.finditer(text):
-        best = max(best, _num(m.group(1)) * _EN_SCALE.get((m.group(2) or "").lower(), 1.0))
-    for m in _JA_AMOUNT.finditer(text):
-        v = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
-        best = max(best, v / JPY_PER_USD if m.group(3) == "円" else v)
+    for sent in _sentences(text, _LOSS_WORDS):
+        for m in _USD_AMOUNT.finditer(sent):
+            best = max(best, _num(m.group(1)) * _EN_SCALE.get((m.group(2) or "").lower(), 1.0))
+        for m in _JA_AMOUNT.finditer(sent):
+            v = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
+            best = max(best, v / JPY_PER_USD if m.group(3) == "円" else v)
     return best
+
+
+#: 被害の件数 (人・記録・アカウント)。「31万2000件」「1万2345人」のように万の後ろの端数も読む
+_JA_COUNT = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(億|万)?(\d[\d,]*)?\s*(件|人分|人|名|アカウント|レコード)"
+)
+_EN_COUNT = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(million|billion|bn|k)?\s+(?:[a-z-]+\s+){0,2}?"
+    r"(records|users|customers|accounts|people|individuals|patients|members|subscribers|employees)",
+    re.IGNORECASE,
+)
+_EN_COUNT_SCALE = {"million": 1e6, "billion": 1e9, "bn": 1e9, "k": 1e3}
+#: 件数を被害の数と読む文の語 (同じ文に無ければ数えない — 利用者数・市場規模を拾わない)
+_HARM_WORDS = re.compile(
+    r"流出|漏えい|漏洩|窃取|盗まれ|盗難|閲覧され|不正アクセス|改ざん|侵害|暴露|公開され|複製|"
+    r"leak|breach|expos|stolen|steal|compromis|exfiltrat|accessed|copied",
+    re.IGNORECASE,
+)
+#: 件数の直後がこれなら被害者の数ではない (送信したメール・試行・ファイル・脆弱性)
+_NOT_VICTIM_AFTER = re.compile(
+    r"^\s*(?:超|以上|程度)?\s*の?\s*(?:不審な?|迷惑|スパム)?\s*"
+    r"(メール|フィッシング|攻撃|試行|脆弱性|ファイル|送金|ダウンロード|通知)"
+)
+
+
+def stated_victim_count(text: str) -> int:
+    """本文に書かれた被害の件数の最大値 (書かれていなければ 0)。
+
+    深刻度の軸の「規模」は要約から付けるため、本文の件数が抜ける (正解集の無作為抽出で S3 の
+    見逃し 2 件) 一方、件数の無い記事に大きな規模を付ける (規模を根拠の S3 は 20 件中 14 件が誤り)。
+    被害の語のある文の、人・記録・アカウントの数だけを数える。ダウンロード数・送金数・送信数・
+    ファイル数・攻撃者が主張する件数は被害者の数ではない (基準の文 §4)。
+    """
+    best = 0
+    for sent in _sentences(text, _HARM_WORDS):
+        for m in _JA_COUNT.finditer(sent):
+            if _NOT_VICTIM_AFTER.match(sent[m.end() :]):
+                continue
+            head = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
+            best = max(best, int(head + (_num(m.group(3)) if m.group(3) else 0)))
+        for m in _EN_COUNT.finditer(sent):
+            scale = _EN_COUNT_SCALE.get((m.group(2) or "").lower(), 1.0)
+            best = max(best, int(_num(m.group(1)) * scale))
+    return best
+
+
+def corrected_axes(axes: Mapping[str, str], victim_count: int) -> dict[str, str]:
+    """深刻度の軸の「規模」を本文の件数で直す (版 .7)。
+
+    - 本文に被害の件数があれば、それで規模を決める (上げも下げもする)
+    - 件数が本文に無いのに 10 万件以上の規模が付いていれば「不明」に戻す (要約からの過大な推定)
+    - 攻撃者の主張だけの事案は、件数があっても大きな規模にしない (基準の文 §4)
+
+    正解集 (Opus 5.5) の測定用 250 件で、S3 の適合率 71% → 77%・深刻さの正解率 85% → 89%
+    (s21 の軸)。無作為 200 件の見逃し 7 件中 2 件を拾い、新たな誤った S3 は 0 件。
+    """
+    out = dict(axes)
+    if not out:
+        return out
+    if victim_count:
+        out["magnitude"] = magnitude_of(victim_count)
+    if out.get("magnitude") in _LARGE_MAGNITUDE and (
+        not victim_count or out.get("confirmation") == "claimed_only"
+    ):
+        out["magnitude"] = "unknown"
+    return out
+
+
+def magnitude_of(count: int) -> str:
+    """件数 → 深刻度の軸の「規模」の値。"""
+    if count >= MAGNITUDE_1M:
+        return "ge_1m"
+    if count >= MAGNITUDE_100K:
+        return "100k_1m"
+    return "1k_100k" if count >= MAGNITUDE_1K else "lt_1k"
 
 
 #: 記事の主題の CVE とみなす年の幅 (今年と前年)。過去の修正済み CVE への言及を KEV の根拠にしない
