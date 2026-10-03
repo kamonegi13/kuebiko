@@ -87,12 +87,21 @@ def main() -> None:
                     importance=m.importance,
                     related_to=r.state.item_id,
                 )
-            repo.move_event_member(
-                article_id=aid,
-                from_item=r.state.item_id,
-                to_item=target,
-                join_signal="roundup_detach",
-            )
+            if any(m.article_id == aid for m in repo.list_event_members(target)):
+                # 吸収された元の事象に、吸収前の構成記事の行が残っている (統合は元の行を消さない)。
+                # 蘇生する事象側の行を生かし、吸収先の行だけを消す
+                with repo._connect() as conn:  # noqa: SLF001 — 一度きりの移行スクリプト
+                    conn.execute(
+                        "DELETE FROM event_item_members WHERE item_id = ? AND article_id = ?",
+                        (r.state.item_id, aid),
+                    )
+            else:
+                repo.move_event_member(
+                    article_id=aid,
+                    from_item=r.state.item_id,
+                    to_item=target,
+                    join_signal="roundup_detach",
+                )
             _refresh_item_state(repo, target, [members[aid]])
         _refresh_item_state(repo, r.state.item_id, [members[a] for a in rest])
 
