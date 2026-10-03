@@ -147,6 +147,35 @@ class TestSeverity:
         disruption = replace(claim, axes=_axes(impact="disruption", confirmation="claimed_only"))
         assert derive_severity(disruption) == ("S2", "claimed_disruption")
 
+    def test_confirmed_breach_with_possible_leak_is_s2(self) -> None:
+        inp = _inp(axes=_axes(impact="data_exposure", confirmation="possible"))
+
+        assert derive_severity(inp) == ("S2", "harm")
+
+    def test_ransomware_listing_read_as_destructive_stays_s1(self) -> None:
+        # 掲載だけの記事は「暗号化 (destructive)」と読まれやすいが、停止の報道が無ければ S1
+        inp = _inp(axes=_axes(impact="destructive", confirmation="claimed_only"))
+
+        assert derive_severity(inp)[0] == "S1"
+
+    def test_malware_category_leak_listing_is_not_treated_as_analysis(self) -> None:
+        inp = _inp(
+            category="malware", axes=_axes(impact="data_exposure", confirmation="claimed_only")
+        )
+
+        assert derive_severity(inp)[0] == "S1"
+
+    def test_multi_org_unauthorized_access_only_is_s2(self) -> None:
+        inp = _inp(
+            axes=_axes(
+                scope="multi_org_or_provider",
+                impact="unauthorized_access",
+                confirmation="confirmed",
+            )
+        )
+
+        assert derive_severity(inp) == ("S2", "harm")
+
     def test_large_magnitude_harm_is_s3_even_if_unconfirmed(self) -> None:
         inp = _inp(axes=_axes(impact="data_exposure", confirmation="possible", magnitude="ge_1m"))
 

@@ -23,7 +23,8 @@ from typing import Literal
 
 #: 版の履歴: .1 初版 / .2 正解集 (Opus 裁定 204 件) で直した — 攻撃者の主張だけは S1・
 #: 本文に書かれた CVSS も見る・マルウェアの解析は S2 / .3 複数組織への不正アクセスだけは S2
-RULE_VERSION = "2026-10-03.3"
+#: / .4 流出「可能性」の侵害は S2・掲載だけ (暗号化と読まれても) は S1
+RULE_VERSION = "2026-10-03.4"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -122,7 +123,8 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
     if inp.category in _VULN:
         return _vuln_severity(inp)
     ax = inp.axes
-    if inp.category == "malware":
+    # 暴露サイトへの掲載 (攻撃者の主張だけ) は、カテゴリがマルウェアでも事案として扱う
+    if inp.category == "malware" and ax.get("confirmation") != "claimed_only":
         if ax.get("scope") in _WIDE and ax.get("actor") == "state":
             return "S3", "malware_state_wide"
         # 新しいマルウェア・キャンペーンの解析は「新しい手口を含む脅威の分析」(正解集で S2)
@@ -168,10 +170,12 @@ def _incident_severity(ax: Mapping[str, str]) -> tuple[Severity, str]:
         return "S3", "exploited_product"
     if impact in _HARMED and ax.get("magnitude") in _LARGE_MAGNITUDE:
         return "S3", "large_magnitude"
-    if impact in _HARMED and conf == "confirmed":
+    # 侵害そのものは確認され、流出が「可能性」の段階のものも単一組織の侵害として S2
+    if impact in _HARMED and conf in {"confirmed", "possible"}:
         return "S2", "harm"
-    # 攻撃者の主張だけ (暴露サイトへの掲載など) は、業務停止の報道がなければ参考扱い
-    if impact in {"disruption", "destructive"} and conf == "claimed_only":
+    # 攻撃者の主張だけ (暴露サイトへの掲載など) は、業務停止の報道がなければ参考扱い。
+    # ランサムウェアの掲載は暗号化 (destructive) と読まれやすいので、停止の報道だけを S2 にする
+    if impact == "disruption" and conf == "claimed_only":
         return "S2", "claimed_disruption"
     if ax.get("exploitation") in {"poc", "exploited_in_wild"} or actor == "state":
         return "S2", "poc_or_state"
