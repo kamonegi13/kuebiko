@@ -24,7 +24,8 @@ from typing import Literal
 #: 版の履歴: .1 初版 / .2 正解集 (Opus 裁定 204 件) で直した — 攻撃者の主張だけは S1・
 #: 本文に書かれた CVSS も見る・マルウェアの解析は S2 / .3 複数組織への不正アクセスだけは S2
 #: / .4 流出「可能性」の侵害は S2・掲載だけ (暗号化と読まれても) は S1
-RULE_VERSION = "2026-10-03.4"
+#: / .5 公的な枠組みとの照合: PoC の公開は CVSS によらず S2 (SSVC)・被害額 1 億ドル以上は S3
+RULE_VERSION = "2026-10-03.5"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -65,6 +66,11 @@ _LARGE_MAGNITUDE = frozenset({"100k_1m", "ge_1m"})
 CVSS_CRITICAL = 9.0
 CVSS_HIGH = 7.0
 MAX_CVSS = 10.0
+#: S3 にする被害額 (米ドル)。NIS2 の「重大なインシデント」の金額基準 (50 万ユーロ) は組織単位の
+#: 報告義務の線で、ニュースの「重大」はそれより桁が大きい事案に絞る
+LARGE_LOSS_USD = 100_000_000.0
+#: 円 → 米ドルの換算 (被害額の桁を見るだけなので固定の概算でよい)
+JPY_PER_USD = 150.0
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,8 @@ class ImportanceInputs:
     involved_countries: frozenset[str]
     mentioned_countries: frozenset[str]
     sir_ids: frozenset[str]
+    #: 本文に書かれた被害額 (米ドル換算の最大値、``stated_loss_usd``)。書かれていなければ 0
+    loss_usd: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -133,7 +141,7 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
         if ax.get("actor") == "state" or ax.get("scope") in _WIDE:
             return "S2", "research_state_or_wide"
         return "S1", "research"
-    return _incident_severity(ax)
+    return _incident_severity(ax, inp.loss_usd)
 
 
 def _vuln_severity(inp: ImportanceInputs) -> tuple[Severity, str]:
@@ -142,12 +150,14 @@ def _vuln_severity(inp: ImportanceInputs) -> tuple[Severity, str]:
         return "S3", "exploited"
     if inp.max_cvss >= CVSS_CRITICAL:
         return "S2", "cvss_critical"
-    if inp.max_cvss >= CVSS_HIGH and exploitation == "poc":
-        return "S2", "cvss_high_poc"
+    # SSVC (CISA/SEI) の悪用状況 none / public PoC / active に合わせ、PoC の公開は CVSS に
+    # よらず S2 (新しい脆弱性は公表時点で点数が付いていないことが多い)
+    if exploitation == "poc":
+        return "S2", "poc"
     return "S1", "vuln"
 
 
-def _incident_severity(ax: Mapping[str, str]) -> tuple[Severity, str]:
+def _incident_severity(ax: Mapping[str, str], loss_usd: float = 0.0) -> tuple[Severity, str]:
     scope, impact, conf = ax.get("scope"), ax.get("impact"), ax.get("confirmation")
     actor, target = ax.get("actor"), ax.get("target")
     confirmed = conf == "confirmed"
@@ -170,6 +180,9 @@ def _incident_severity(ax: Mapping[str, str]) -> tuple[Severity, str]:
         return "S3", "exploited_product"
     if impact in _HARMED and ax.get("magnitude") in _LARGE_MAGNITUDE:
         return "S3", "large_magnitude"
+    # 件数でなく金額で表される被害 (暗号資産の窃取・詐欺など)。重要インフラの定義は広げず規模で拾う
+    if impact in _HARMED and loss_usd >= LARGE_LOSS_USD:
+        return "S3", "large_loss"
     # 侵害そのものは確認され、流出が「可能性」の段階のものも単一組織の侵害として S2
     if impact in _HARMED and conf in {"confirmed", "possible"}:
         return "S2", "harm"
@@ -240,4 +253,30 @@ def stated_cvss(text: str) -> float:
             best = max(best, float(m.group(1)))
     if best == 0.0 and _CVSS_CRITICAL.search(text):
         return CVSS_CRITICAL
+    return best
+
+
+_USD_AMOUNT = re.compile(
+    r"(?:US)?\$\s?(\d[\d,]*(?:\.\d+)?)\s*(billion|million|bn|b|m)?(?![a-z])", re.IGNORECASE
+)
+_JA_AMOUNT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(兆|億|万)?\s*(米ドル|ドル|円)")
+_EN_SCALE = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "m": 1e6}
+_JA_SCALE = {"兆": 1e12, "億": 1e8, "万": 1e4}
+
+
+def _num(raw: str) -> float:
+    try:
+        return float(raw.replace(",", ""))
+    except ValueError:
+        return 0.0
+
+
+def stated_loss_usd(text: str) -> float:
+    """本文に書かれた金額の最大値 (米ドル換算)。被害額かどうかは呼び手が被害の軸で絞る。"""
+    best = 0.0
+    for m in _USD_AMOUNT.finditer(text):
+        best = max(best, _num(m.group(1)) * _EN_SCALE.get((m.group(2) or "").lower(), 1.0))
+    for m in _JA_AMOUNT.finditer(text):
+        v = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
+        best = max(best, v / JPY_PER_USD if m.group(3) == "円" else v)
     return best

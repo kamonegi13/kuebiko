@@ -21,6 +21,7 @@ from src.cti.importance_v2 import (
     derive,
     derive_severity,
     stated_cvss,
+    stated_loss_usd,
 )
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 from src.ui.services.importance_v2_job import record_importance_v2
@@ -114,6 +115,7 @@ class TestSeverity:
             (5.0, "exploited_in_wild", "S3"),
             (9.8, "disclosed_only", "S2"),
             (7.5, "poc", "S2"),
+            (0.0, "poc", "S2"),
             (7.5, "disclosed_only", "S1"),
             (0.0, "not_applicable", "S1"),
         ],
@@ -204,6 +206,30 @@ class TestStatedCvss:
     )
     def test_reads_cvss_written_in_text(self, text: str, expected: float) -> None:
         assert stated_cvss(text) == expected
+
+
+class TestStatedLoss:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("attackers stole $388 million in crypto", 388e6),
+            ("US$1.5 billion was drained", 1.5e9),
+            ("被害額は 3.88 億ドル", 3.88e8),
+            ("損害は 150 億円", 1e8),
+            ("no money mentioned", 0.0),
+        ],
+    )
+    def test_reads_largest_amount(self, text: str, expected: float) -> None:
+        assert stated_loss_usd(text) == pytest.approx(expected)
+
+    def test_large_theft_is_s3_without_critical_infra(self) -> None:
+        # 暗号資産取引所は重要インフラに含めず、金額の規模で拾う
+        inp = _inp(axes=_axes(impact="unauthorized_access", confirmation="confirmed"), loss_usd=4e8)
+
+        assert derive_severity(inp) == ("S3", "large_loss")
+
+    def test_loss_without_harm_does_not_raise(self) -> None:
+        assert derive_severity(_inp(loss_usd=4e8))[0] == "S1"
 
 
 class TestRelevance:
