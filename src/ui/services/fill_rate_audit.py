@@ -104,6 +104,14 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
+        # 重要度の再設計の記録 (2026-10-03、記録のみ)。深刻度の軸が付いた記事にだけ毎時付く
+        # ので上限は severity_axes の充足率。軸より大きく下回れば記録の段が止まっている
+        "importance_v2",
+        "新しい重要度",
+        "EXISTS (SELECT 1 FROM article_importance_v2 v WHERE v.article_id = a.article_id)",
+        None,
+    ),
+    FillMetric(
         "intent",
         "intent",
         "a.socio_political_intent IS NOT NULL AND a.socio_political_intent NOT IN ('', 'unknown')",

@@ -4,7 +4,9 @@ detect (朝夕) の時点で軸が揃っているよう、配信済み high/medi
 detect 側にも穴埋め (上限 40) はあるが、朝夕の run でまとめて付けると数分かかるため
 毎時に分散させる。1 件 ~3 秒 (s17) × 上限 40 ≈ 1 分 (並列 2)。
 
-停止: ``SEVERITY_AXES_HOURLY=0``。上限: ``SEVERITY_AXES_HOURLY_CAP`` (既定 40)。
+停止: ``SEVERITY_AXES_HOURLY=0``。軸の後に重要度の再設計の記録も付ける
+(``importance_v2_job``、停止は ``IMPORTANCE_V2_RECORD=0``)。
+上限: ``SEVERITY_AXES_HOURLY_CAP`` (既定 40)。
 """
 
 from __future__ import annotations
@@ -72,7 +74,7 @@ async def run_severity_axes_hourly() -> dict[str, Any]:
     cap = hourly_axes_cap()
     todo = pending_articles(repo, cap=cap)
     if not todo:
-        return {"pending": 0, "saved": 0}
+        return {"pending": 0, "saved": 0, "importance_v2": _record_v2(repo)}
     llm = build_llm_for(Step.SEVERITY_AXES, load_app_config())
 
     async def _classify(title: str, summary: str) -> dict[str, str] | None:
@@ -83,4 +85,15 @@ async def run_severity_axes_hourly() -> dict[str, Any]:
         repo, todo, _classify, model_label=str(getattr(llm, "model", "")), limit=cap
     )
     _log.info("severity_axes_hourly_done", pending=len(todo), saved=saved)
-    return {"pending": len(todo), "saved": saved}
+    return {"pending": len(todo), "saved": saved, "importance_v2": _record_v2(repo)}
+
+
+def _record_v2(repo: Any) -> dict[str, Any]:
+    """軸が付いた記事に、重要度の再設計の記録を付ける (失敗しても軸の段は成功のまま)。"""
+    from src.ui.services.importance_v2_job import record_importance_v2
+
+    try:
+        return record_importance_v2(repo)
+    except Exception as e:  # noqa: BLE001 — 記録のみの段。本処理を止めない
+        _log.warning("importance_v2_record_failed", error=type(e).__name__, detail=str(e)[:200])
+        return {"error": type(e).__name__}

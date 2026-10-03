@@ -897,6 +897,24 @@ CREATE TABLE IF NOT EXISTS article_severity_axes (
     created_at    TEXT NOT NULL
 );
 
+-- 重要度の再設計 (2026-10-03、src/cti/importance_v2.py)。深刻さ (事象) と
+-- 関連性 (日本・注視国・SIR) を分けて記録するだけの段 (M1・M2)。いまの
+-- articles.importance は置き換えない。rule_version が古い行は毎時の段が付け直す。
+-- nations / sir_ids はカンマ区切り
+CREATE TABLE IF NOT EXISTS article_importance_v2 (
+    article_id        TEXT PRIMARY KEY,
+    severity          TEXT,
+    severity_basis    TEXT NOT NULL,
+    strategic_weight  TEXT,
+    jp                TEXT NOT NULL,
+    nations           TEXT NOT NULL,
+    sir_ids           TEXT NOT NULL,
+    relevant          INTEGER NOT NULL,
+    rule_version      TEXT NOT NULL,
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_article_importance_v2_version ON article_importance_v2(rule_version);
+
 -- detect ML の shadow 記録 (2026-09-17、SYNTHESIS §47)。ML が「開設する」と判定した候補を
 -- 記録するだけで開設は現行 (LLM detect) のまま。切替判断の差分比較に使う。
 CREATE TABLE IF NOT EXISTS detect_ml_shadow (

@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BellOff, Pencil, Plus, Trash2 } from "lucide-react";
+import { ImportanceV2Section } from "./flow/ImportanceV2Section";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { pageContainer } from "../components/Page";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
@@ -960,6 +961,7 @@ export function FlowPage() {
           </div>
         )}
       </Drawer>
+      <ImportanceV2Section />
     </div>
   );
 }

@@ -75,3 +75,20 @@ def get_flow(days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
             for ch in channels
         ],
     }
+
+
+@flow_api.get("/importance-v2")
+def get_importance_v2(days: int = Query(30, ge=1, le=35)) -> dict[str, Any]:
+    """重要度の再設計の記録 (2026-10-03、記録のみ) と、いまの重要度の件数の対応表。
+
+    下流はまだ旧値で動く。この表で「いまの high が新しい値でどこに入るか」を読み、決まりごとを
+    直してから下流を移す (docs/importance_relevance_redesign.md の M1・M2)。
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from src.cti.importance_v2 import RULE_VERSION
+    from src.storage.run_history import RunHistoryRepository
+
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+    cells = RunHistoryRepository().importance_v2_crosstab(since=since)
+    return {"period_days": days, "rule_version": RULE_VERSION, "cells": cells}
