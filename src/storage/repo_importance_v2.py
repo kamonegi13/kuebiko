@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from src.cti.importance_v2 import ImportanceInputs, ImportanceV2
+from src.cti.importance_v2 import ImportanceInputs, ImportanceV2, stated_cvss
 
 _CHUNK = 400
 _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
@@ -19,8 +19,8 @@ _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
 #: 記録の対象 = 深刻度の軸が付いた記事のうち、未記録か古い版の記録のもの。
 #: articles は同じ article_id が複数行ありうるので最新の 1 行に絞る (ROW_NUMBER が両 DB で可搬)
 _PENDING_SQL = """
-SELECT article_id, category, article_type, victim_country_iso FROM (
-    SELECT a.article_id, a.category, a.article_type, a.victim_country_iso,
+SELECT article_id, category, article_type, victim_country_iso, summary, body FROM (
+    SELECT a.article_id, a.category, a.article_type, a.victim_country_iso, a.summary, a.body,
            ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
     FROM articles a
     JOIN article_severity_axes s ON s.article_id = a.article_id
@@ -60,7 +60,9 @@ class ImportanceV2Mixin:
                 article_type=str(r["article_type"] or ""),
                 axes=axes.get(aid, {}),
                 on_kev=any(c in kev for c in cves),
-                max_cvss=max_cvss(cves),
+                max_cvss=max(
+                    max_cvss(cves), stated_cvss(f"{r['summary'] or ''}\n{r['body'] or ''}")
+                ),
                 victim_country=str(r["victim_country_iso"] or "").upper(),
                 involved_countries=frozenset(e.get("involved_country", set())),
                 mentioned_countries=frozenset(e.get("mentioned_country", set())),

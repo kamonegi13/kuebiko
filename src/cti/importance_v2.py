@@ -16,11 +16,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-RULE_VERSION = "2026-10-03.1"
+#: 版の履歴: .1 初版 / .2 正解集 (Opus 裁定 204 件) で直した — 攻撃者の主張だけは S1・
+#: 本文に書かれた CVSS も見る・マルウェアの解析は S2
+RULE_VERSION = "2026-10-03.2"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -60,6 +63,7 @@ _LARGE_MAGNITUDE = frozenset({"100k_1m", "ge_1m"})
 
 CVSS_CRITICAL = 9.0
 CVSS_HIGH = 7.0
+MAX_CVSS = 10.0
 
 
 @dataclass(frozen=True)
@@ -118,15 +122,11 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
     if inp.category in _VULN:
         return _vuln_severity(inp)
     ax = inp.axes
-    if inp.category == "malware" and ax.get("scope") in _WIDE:
-        return (
-            ("S3", "malware_state_wide")
-            if ax.get("actor") == "state"
-            else (
-                "S2",
-                "malware_wide",
-            )
-        )
+    if inp.category == "malware":
+        if ax.get("scope") in _WIDE and ax.get("actor") == "state":
+            return "S3", "malware_state_wide"
+        # 新しいマルウェア・キャンペーンの解析は「新しい手口を含む脅威の分析」(正解集で S2)
+        return "S2", "malware"
     if inp.category == "research":
         if ax.get("actor") == "state" or ax.get("scope") in _WIDE:
             return "S2", "research_state_or_wide"
@@ -159,8 +159,11 @@ def _incident_severity(ax: Mapping[str, str]) -> tuple[Severity, str]:
         return "S3", "exploited_product"
     if impact in _HARMED and ax.get("magnitude") in _LARGE_MAGNITUDE:
         return "S3", "large_magnitude"
-    if impact in _HARMED and conf in {"confirmed", "claimed_only"}:
+    if impact in _HARMED and conf == "confirmed":
         return "S2", "harm"
+    # 攻撃者の主張だけ (暴露サイトへの掲載など) は、業務停止の報道がなければ参考扱い
+    if impact in {"disruption", "destructive"} and conf == "claimed_only":
+        return "S2", "claimed_disruption"
     if ax.get("exploitation") in {"poc", "exploited_in_wild"} or actor == "state":
         return "S2", "poc_or_state"
     return "S1", "incident"
@@ -196,3 +199,32 @@ def is_relevant(jp: JapanRelation, nations: Iterable[str], sir_ids: Iterable[str
     if tuple(nations):
         return True
     return bool(RELEVANCE_CORE_SIRS & set(sir_ids))
+
+
+#: 本文に書かれた CVSS の値 (「CVSS 9.8」「CVSSv3.1: 9.8」「CVSS スコア 9.8」等)。
+#: CVSS の直後の版 (v3.1 / 4.0) は値ではないので先に読み飛ばす
+_CVSS_HEAD = re.compile(r"CVSS(?:\s*(?:v|version)?\s*[234]\.[01x])?", re.IGNORECASE)
+_SCORE = re.compile(r"(?<![\d.])(\d{1,2}\.\d)(?![\d.])")
+_CVSS_WINDOW = 30
+#: 値は無いが「critical / クリティカル / 緊急」と CVSS の区分だけ書かれている場合 (= 9.0 以上)
+_CVSS_CRITICAL = re.compile(
+    r"CVSS[^\n]{0,40}?(critical|クリティカル|緊急)|(critical|クリティカル|緊急)[^\n]{0,20}?CVSS",
+    re.IGNORECASE,
+)
+
+
+def stated_cvss(text: str) -> float:
+    """本文に書かれた CVSS の最大値 (書かれていなければ 0)。
+
+    手元の NVD の記録は新しい CVE をまだ採点していないことが多い
+    (正解集の CVE 記事 47 件中 11 件で欠落)。
+    """
+    best = 0.0
+    for head in _CVSS_HEAD.finditer(text):
+        window = text[head.end() : head.end() + _CVSS_WINDOW].split("\n", 1)[0]
+        m = _SCORE.search(window)
+        if m and float(m.group(1)) <= MAX_CVSS:
+            best = max(best, float(m.group(1)))
+    if best == 0.0 and _CVSS_CRITICAL.search(text):
+        return CVSS_CRITICAL
+    return best

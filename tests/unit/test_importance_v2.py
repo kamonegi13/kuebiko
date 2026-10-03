@@ -20,6 +20,7 @@ from src.cti.importance_v2 import (
     ImportanceInputs,
     derive,
     derive_severity,
+    stated_cvss,
 )
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 from src.ui.services.importance_v2_job import record_importance_v2
@@ -130,12 +131,21 @@ class TestSeverity:
 
         assert derive_severity(inp)[0] == "S2"
 
-    def test_wide_malware_campaign_is_at_least_s2(self) -> None:
-        wide = _inp(category="malware", axes=_axes(scope="multi_org_or_provider"))
+    def test_malware_analysis_is_s2_and_state_wide_campaign_s3(self) -> None:
+        # 正解集: 新しいマルウェアの解析は「新しい手口を含む脅威の分析」で S2
+        single = _inp(category="malware", article_type="research")
 
-        assert derive_severity(wide) == ("S2", "malware_wide")
-        state = replace(wide, axes=_axes(scope="sector_wide", actor="state"))
+        assert derive_severity(single) == ("S2", "malware")
+        state = replace(single, axes=_axes(scope="sector_wide", actor="state"))
         assert derive_severity(state)[0] == "S3"
+
+    def test_leak_site_claim_alone_is_s1(self) -> None:
+        # 正解集: ランサムウェアの暴露サイトへの掲載のみ (業務停止の記述なし) は S1
+        claim = _inp(axes=_axes(impact="data_exposure", confirmation="claimed_only"))
+
+        assert derive_severity(claim)[0] == "S1"
+        disruption = replace(claim, axes=_axes(impact="disruption", confirmation="claimed_only"))
+        assert derive_severity(disruption) == ("S2", "claimed_disruption")
 
     def test_large_magnitude_harm_is_s3_even_if_unconfirmed(self) -> None:
         inp = _inp(axes=_axes(impact="data_exposure", confirmation="possible", magnitude="ge_1m"))
@@ -149,6 +159,22 @@ class TestSeverity:
 
     def test_no_harm_incident_is_s1(self) -> None:
         assert derive_severity(_inp(category="incident")) == ("S1", "incident")
+
+
+class TestStatedCvss:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("CVSS v3.1 のスコアは 9.8 です", 9.8),
+            ("CVSSv4.0: 9.3 と 7.5 の 2 件", 9.3),
+            ("CVSS 4.0 で critical に分類", 9.0),
+            ("深刻度は「緊急」、CVSS は未公表", 9.0),
+            ("バージョン 10.2 で修正", 0.0),
+            ("CVSS 99.9 は誤記", 0.0),
+        ],
+    )
+    def test_reads_cvss_written_in_text(self, text: str, expected: float) -> None:
+        assert stated_cvss(text) == expected
 
 
 class TestRelevance:
