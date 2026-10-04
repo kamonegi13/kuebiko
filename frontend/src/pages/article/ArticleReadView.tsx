@@ -21,6 +21,12 @@ import { JudgementCard, type Judgement } from "../../components/analysis/Judgeme
 import { EntitySection } from "../../components/analysis/EntitySection";
 import { ArticleSituations } from "../../components/analysis/ArticleSituations";
 
+// 関数として評価する (module 定数にすると import 時点の env に固定され、テストで
+// VITE_MIRROR を切り替えても反映されない)。
+function isMirror(): boolean {
+  return import.meta.env.VITE_MIRROR === "1";
+}
+
 export const IMPORTANCE_TONE: Record<string, string> = {
   high: "text-critical",
   medium: "text-warning",
@@ -93,15 +99,15 @@ function BodySection({
   if (!body && !bodyJa) {
     // 写しは原文を持たない (収集した記事は再配布しない方針)。**黙って欄ごと消さない** —
     // 取得に失敗したのか、そもそも写していないのかを読み手が区別できなくなる。
-    if (import.meta.env.VITE_MIRROR === "1") {
+    if (isMirror()) {
       return (
         <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3 text-sm text-fg-muted">
-          本文は写しに含まれません。
+          本文は写しに含まれません。本文は出典でお読みください。
           {sourceUrl && (
             <>
               {" "}
               <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-accent underline">
-                元記事を開く
+                出典を開く ↗
               </a>
             </>
           )}
@@ -110,6 +116,9 @@ function BodySection({
     }
     return null;
   }
+  // 写しは本文を持たないので通常ここに来ないが、念のため翻訳 UI (LLM 呼出) 自体を
+  // 写しでは描かない (「anything that calls write/LLM APIs は出さない」の防御線)。
+  if (isMirror()) return null;
   // 翻訳進行中は訳せた先頭部分を先に読めるようにする (完訳で bodyJa に置き換わる)
   const text = showJa && bodyJa ? bodyJa : (partialText ?? body ?? bodyJa ?? "");
   // body_ja='' は「処理済・訳不要 (原文が日本語)」の番兵 — 翻訳 UI 自体を出さない。

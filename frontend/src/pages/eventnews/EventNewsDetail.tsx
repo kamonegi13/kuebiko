@@ -43,6 +43,8 @@ import {
   type DerivedEventRelation,
 } from "../../api/eventnews";
 
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
+
 const CARD = "bg-surface-1 border border-border-subtle rounded-lg p-4";
 const CARD_LABEL = "text-fg-muted text-xs uppercase";
 
@@ -399,6 +401,13 @@ function MembersCard({ d }: { d: EventNewsDetail }) {
                   元記事 ↗
                 </a>
               </div>
+              {/* 写しは記事ドロワー側の本文を持たないため、媒体・見出し・要約・リンクを
+                  この行で完結させる (docs: 本文は出典でお読みください)。 */}
+              {MIRROR && m.summary && (
+                <p className="text-sm text-fg-muted leading-relaxed whitespace-pre-wrap mt-1.5 mb-0">
+                  {m.summary}
+                </p>
+              )}
             </div>
           </li>
         ))}
@@ -639,7 +648,8 @@ export function EventNewsDetailBody({
       <MembersCard d={d} />
       <RelatedCard d={d} onOpenItem={onOpenItem} />
       <DerivedRelationsCard itemId={d.id} onOpenItem={onOpenItem} />
-      <EventNoteEditor itemId={d.id} />
+      {/* 写しは write API を持たないため出さない (保存不可の入力欄を見せない)。 */}
+      {!MIRROR && <EventNoteEditor itemId={d.id} />}
 
       {d.news && <p className="text-xs text-fg-subtle m-0">{d.note}</p>}
     </div>

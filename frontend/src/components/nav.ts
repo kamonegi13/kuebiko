@@ -35,7 +35,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "概観",
     items: [
-      { href: "/app", label: "ダッシュボード", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
+      { href: "/app", mirror: true, label: "ダッシュボード", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
     ],
   },
   {
@@ -68,12 +68,14 @@ export const NAV_GROUPS: NavGroup[] = [
       // 日次ブリーフ = 完成した配信物 (朝刊/夕刊) を読むページ。分析サーフェスではなく
       // コンテンツ (2026-07-12 ユーザー指摘で インテリジェンス → コンテンツ へ移動)。
       { href: "/app/daily-brief", mirror: true, label: "ブリーフ・振り返り", Icon: BookOpen, prefixes: ["/app/daily-brief", "/app/retrospect"] },
-      { href: "/app/deep-dive", label: "週次深掘り", Icon: BookOpenText, prefixes: ["/app/deep-dive"] },
+      { href: "/app/deep-dive", mirror: true, label: "週次深掘り", Icon: BookOpenText, prefixes: ["/app/deep-dive"] },
       // 収集した個々の記事を探す画面。生成物ではないので コンテンツ に残す
       // (事象ニュースは生成物なので インテリジェンス へ移動した)。
       { href: "/app/news", mirror: true, label: "ニュース検索", Icon: Newspaper, prefixes: ["/app/news", "/app/search", "/app/pivot"] },
-      { href: "/app/notes", mirror: true, label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
-      { href: "/app/subscriptions", mirror: true, label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
+      // ブックマーク・メモ / 購読ソース / Grok 関連は写しでは書き出さない
+      // (個人の読書メモ・運用者の購読設定・取込経路は匿名公開の対象外)。
+      { href: "/app/notes", label: "ブックマーク・メモ", Icon: Bookmark, prefixes: ["/app/notes"] },
+      { href: "/app/subscriptions", label: "購読ソース", Icon: Rss, prefixes: ["/app/subscriptions"] },
       { href: "/app/actors", mirror: true, label: "アクター辞書", Icon: Users, prefixes: ["/app/actors"] },
     ],
   },
@@ -132,8 +134,8 @@ export function isOutsideMirror(pathname: string): boolean {
   return !NAV_FLAT.some((it) => it.mirror && isActive(it, pathname));
 }
 
-/** 写しの着地先。ダッシュボードは写しに無いので、写した画面へ着地させる。 */
-export const MIRROR_HOME = "/app/eventnews";
+/** 写しの着地先。ダッシュボードは写しに含める (ライブ widget を除いた固定レイアウト)。 */
+export const MIRROR_HOME = "/app";
 
 export function visibleNavFlat(hideFullOnly: boolean): NavLink[] {
   if (MIRROR) return mirrorNavGroups().flatMap((g) => g.items);
@@ -150,7 +152,7 @@ export function isFullOnlyPath(pathname: string): boolean {
 // モバイル ボトムタブバー: 高頻度の 4 項目 + 「メニュー」(全 nav を drawer で開く)。
 // 「メニュー」は href なし (onOpenMenu コールバックで sidebar drawer を開く)。
 export const BOTTOM_NAV: NavLink[] = [
-  { href: "/app", label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
+  { href: "/app", mirror: true, label: "ホーム", Icon: LayoutDashboard, exact: ["/app", "/app/"], prefixes: ["/app/dashboard"] },
   // モバイルの主導線も事象ニュース (読む画面)。記事一覧はメニューから辿る。
   { href: "/app/eventnews", mirror: true, label: "事象ニュース", Icon: Newspaper, prefixes: ["/app/eventnews"] },
   { href: "/app/intel/pmesii", mirror: true, label: "情勢", Icon: Scale, prefixes: ["/app/intel"] },

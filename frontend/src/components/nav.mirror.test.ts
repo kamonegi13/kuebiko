@@ -20,4 +20,20 @@ describe("写しのナビ", () => {
     expect(unmarked.length).toBeGreaterThan(0);
     for (const it of unmarked) expect(isOutsideMirror(it.href)).toBe(true);
   });
+
+  // ダッシュボードと週次深掘りは写しにデータを持つ (ダッシュボードは固定レイアウト、
+  // 深掘りは /api/v1/deep-dives) ので、ナビに含めて到達可能にする。
+  test("ダッシュボードと週次深掘りは写しに含まれる", () => {
+    const hrefs = mirrorNavGroups().flatMap((g) => g.items.map((it) => it.href));
+    expect(hrefs).toContain("/app");
+    expect(hrefs).toContain("/app/deep-dive");
+  });
+
+  // 購読ソース・メモ/ブックマーク・Grok 関連は運用者固有の設定/私的記録なので、
+  // 写し (匿名公開) には出さない。
+  test("購読ソース・メモ・ブックマークは写しから外れている", () => {
+    const hrefs = mirrorNavGroups().flatMap((g) => g.items.map((it) => it.href));
+    expect(hrefs).not.toContain("/app/subscriptions");
+    expect(hrefs).not.toContain("/app/notes");
+  });
 });

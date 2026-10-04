@@ -196,7 +196,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   notable_actors: { title: "今動いているアクター", Component: NotableActorsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "sparkline", blurb: "急増・新規アクターを実際の名前で表示", configOptions: [WINDOW_OPTION] },
   vulnerabilities_kev: { title: "重要脆弱性 (KEV)", Component: VulnerabilitiesWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", blurb: "KEV(実悪用) / 高CVSS の脆弱性を優先表示", configOptions: [WINDOW_OPTION] },
   jp_ci_threat: { title: "重要インフラ脅威", Component: JpCiThreatWidget, defaultSpan: 2, defaultHeight: 480, thumb: "grid", blurb: "重要インフラ脅威の要約 (3つの視点): 事前配置の常設評価 + 横断キャンペーン + 16分野の状況 (日本の観測段階×世界の国家アクター行動)", configOptions: [JPCI_DAYS_OPTION], defaultConfig: { days: "auto" } },
-  status_strip: { title: "システム状態", Component: StatusStripWidget, defaultSpan: 4, defaultHeight: 48, thumb: "status", blurb: "pipeline 稼働 + 失敗 + 次回実行" },
+  status_strip: { title: "システム状態", Component: StatusStripWidget, defaultSpan: 4, defaultHeight: 48, thumb: "status", blurb: "pipeline 稼働 + 失敗 + 次回実行", liveState: true },
   standing_assessment: { title: "現況評価 (synthesis)", Component: StandingAssessmentWidget, defaultSpan: 4, defaultHeight: 140, thumb: "text", blurb: "全体期間に連動した状況総括の見出し (24h=日次/7日=週次/30・90日=月次)", configOptions: [WINDOW_OPTION] },
   synthesis_section: { title: "Synthesis セクション", Component: SynthesisSectionWidget, defaultSpan: 2, defaultHeight: 340, thumb: "text", multi: true, blurb: "重心/波及/連鎖/比重/SIR を選択表示", configOptions: [SECTION_OPTION, PERIOD_OPTION] },
   // ── 過去参照 ──
@@ -215,8 +215,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   pir_spotlight: { title: "SIR Spotlight (週次)", Component: PirSpotlightWidget, defaultSpan: 2, defaultHeight: 360, thumb: "text", blurb: "SIR ごとの週次まとめ" },
   // ── 蓄積 / 運用 ──
   holdings: { title: "Intelligence Holdings", Component: HoldingsWidget, defaultSpan: 2, defaultHeight: 260, thumb: "grid", blurb: "蓄積件数 (記事/アクター/IOC 等)" },
-  source_contribution: { title: "ソース貢献度", Component: SourceContributionWidget, defaultSpan: 2, defaultHeight: 320, thumb: "bars", blurb: "投稿数 top feed", configOptions: [PER_OPTION] },
+  source_contribution: { title: "ソース貢献度", Component: SourceContributionWidget, defaultSpan: 2, defaultHeight: 320, thumb: "bars", blurb: "投稿数 top feed", configOptions: [PER_OPTION], mirrorExcluded: true },
   daily_posts_trend: { title: "日次投稿推移", Component: DailyPostsTrendWidget, defaultSpan: 2, defaultHeight: 260, thumb: "trend", blurb: "投稿数の時系列バー", configOptions: [DAYS_OPTION] },
-  health: { title: "死活監視", Component: HealthWidget, defaultSpan: 2, defaultHeight: 180, thumb: "status", blurb: "Ollama/Discord/IMAP 疎通" },
-  recent_runs: { title: "直近の実行", Component: RecentRunsWidget, defaultSpan: 2, defaultHeight: 320, thumb: "list", blurb: "最近の run と結果", configOptions: [PER_OPTION] },
+  health: { title: "死活監視", Component: HealthWidget, defaultSpan: 2, defaultHeight: 180, thumb: "status", blurb: "Ollama/Discord/IMAP 疎通", liveState: true },
+  recent_runs: { title: "直近の実行", Component: RecentRunsWidget, defaultSpan: 2, defaultHeight: 320, thumb: "list", blurb: "最近の run と結果", configOptions: [PER_OPTION], liveState: true },
 };

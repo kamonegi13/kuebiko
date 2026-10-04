@@ -65,6 +65,13 @@ export interface WidgetDef {
   // preset の初期 config。同一 Component を別 preset として登録するのに使う
   // (例: 記事フィードを 脆弱性 / ニュースサマリー 等に固定)。w.config が優先。
   defaultConfig?: Record<string, unknown>;
+  // true = 「今」の実行状態 (死活/job run/キュー等) を映す widget。収集・生成した
+  // コンテンツからの導出ではないため、写し (Cloudflare Pages の静止画) には出さない
+  // (DashboardPage の mirror 固定レイアウトが参照する)。
+  liveState?: boolean;
+  // true = 写しに含めないデータ (購読ソースの一覧など、匿名の写しから外したもの) に依存する widget。
+  // liveState と同じく写しの固定レイアウトから除く (2026-10-04)。
+  mirrorExcluded?: boolean;
 }
 
 // タイトル中の CVE-YYYY-NNNN... を抽出 (脆弱性 widget の強調用)。

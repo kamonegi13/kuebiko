@@ -1,14 +1,27 @@
-"""運用画面 (Tier1) の読み取り面を静的ファイルへ書き出す。
+"""運用画面の写し (旧 Tier1、2026-10-04 に匿名公開へ移行) を静的ファイルへ書き出す。
 
 目的は **Mac に到達できないときの継続**。ライブの代わりではなく、
 「その時点の写し」を別経路で読めるようにする (2026-08-29 利用者提案)。
 
-⚠ **書き出すのは Tier2 が生成した情報だけ**。操作のための状態は書き出さない:
-    - ジョブ計画 / 実行履歴 — 「いま」を知る情報。古い時刻は誤読しか生まない
-    - レビューキュー — 古い状態で承認判断はできない
+⭐ **2026-10-04 利用者決定: 写しは常時匿名公開**。Cloudflare Access の認証を外し、
+誰でも読める面にする。これにより書き出せるものの線引きが変わった — 旧 Tier1
+(限られた要員のみ認証済みで読む) では記事本文を含めていたが、匿名公開ではもう
+その前提が成り立たない。以下は **無条件** に書き出さない:
+    - 記事・事象ニュースの本文 (body / body_ja)。再配布の禁止は Tier0 (匿名公開サイト)
+      だけの話ではなくなった。事象ニュース詳細は構成記事を入れ子で持つため、
+      再帰的に剥がす (`_strip_forbidden`)
+    - メモ・ブックマーク (`/api/v1/notes`) — 個人の作業メモ
+    - 購読ソース一覧 (`/api/v1/subscriptions`) — フィード URL の列挙
+    - Grok 関連 (`/api/v1/grok/tasks` `/api/v1/grok/session` `/api/v1/grok-mail/health`)
+    - アクター別名などの承認待ち提案 (`/api/v1/actors/sync`) — レビューキュー
+    - チャンネル設定 (`/api/v1/channels`) / `/api/v1/runtime-flags` — webhook の
+      環境変数名・認証状態等の運用情報。画面の起動関門には要るので**同形の
+      空スタブ**を書く (稼働中の値は取得しない)
+    - ジョブ計画 / 実行履歴 (`dashboard/summary` の `recent_runs` / `next_run_at`
+      のような「いま」を知る情報)・レビューキュー・モデルティア・鍵 — §12 の
+      ままローカル専用
     - 設定 / プロンプト — DB が SSoT。古い写しは編集判断を誤らせる
     - 分析チャット / 翻訳 — LLM 依存 (外へ出せない)
-    - モデルティア / 鍵 — 秘密
 
 ⭐ **稼働中の API を HTTP で叩いて写す**。同じ関数を import する方式だと、
 書き出し側の環境が違ったときに静かに別物を出す (2026-08-26 に公開サイトで、
@@ -17,11 +30,12 @@ DATABASE_URL の無いホストで実行して空の SQLite にフォールバ�
 環境差がそもそも生まれない。アプリが落ちていれば失敗する = 静かに壊れない。
 
 出力:
-    meta.json            生成時刻・件数 (画面が「○○時点の写し」を出すのに使う)
-    articles.json        記事一覧 (直近 N 日)
-    articles/<id>.json   記事の詳細
+    meta.json            生成時刻・件数・with_bodies=false 固定 (画面が写しの注記を出すのに使う)
+    articles.json        記事一覧 (直近 N 日、本文なし)
+    articles/<id>.json   記事の詳細 (本文なし)
     eventnews.json       事象ニュース一覧
-    eventnews/<id>.json  事象ニュースの詳細
+    eventnews/<id>.json  事象ニュースの詳細 (構成記事も本文なし)
+    api/<hash>.json      その他の画面 API (ダッシュボード・週次深掘り含む)
 """
 
 from __future__ import annotations
@@ -59,12 +73,12 @@ DEFAULT_MIN_EVENTS = 50
 #: 「関門を外して先へ進む」は解にならない。
 #:
 #: いずれも数十 KB 以下で、絞り込み条件を持たない全体一覧。
-#: 記事本文を写しに含めるか の既定。
 #:
-#: ⭐ **再配布の禁止は匿名の公開サイト (Tier0) の話** (2026-08-29 利用者が線引きを明確化)。
-#: 写し (Tier1) は Cloudflare Access で限られた要員だけが読む面なので、本文を含める。
-#: 本文が無いと単独媒体の事象は要約しか読めず、「Mac に到達できないときに続きを読む」
-#: という写しの目的を果たせない。
+#: ⚠ **記事本文は常に書き出さない** (2026-10-04、写しの匿名公開化に合わせて確定)。
+#: 旧 Tier1 (限られた要員のみ認証済みで読む) では「本文が無いと単独媒体の事象は
+#: 要約しか読めない」を理由に本文を含めていたが、匿名公開では再配布の禁止が
+#: 公開サイト (旧 Tier0) と同じ扱いになる。本文除去は `_strip_forbidden` が
+#: 再帰的に行う (事象ニュース詳細の入れ子な構成記事も含む)。
 #: 公開サイト側の禁止は export_public_site.py の _FORBIDDEN_KEYS が別に守っている
 #: (こちらを緩めても向こうは緩まない — 関門は面ごとに独立している)。
 #: 記事一覧の絞り込み。**列挙できる facet だけ** を、既定の組み合わせ 1 段で写す。
@@ -95,6 +109,19 @@ _ARTICLE_IMPORTANCE = ("high", "medium", "low")
 #: 期間の選択肢 (frontend/src/state/filters.ts の FilterState と対)。
 _TIMES = ("7", "30", "90", "365")
 
+#: ダッシュボードの対象期間 (frontend/src/pages/dashboard/overviewWindow.ts の
+#: WINDOW_CHOICES と対)。14 は日次投稿推移 widget の既定 (DAYS_OPTION、7/14/30)。
+_DASHBOARD_DAYS = ("1", "7", "14", "30", "90")
+
+#: ダッシュボードの国家情勢・脅威マップ widget は共有窓 (1/7/30/90) に連動するが、
+#: メインの News/脅威マップ画面は "1" (24h) を選択肢に持たない (frontend/src/state/
+#: filters.ts)。_TIMES を汚さずダッシュボード側だけ "1" を足す。
+_DASHBOARD_TIMES = ("1", *_TIMES)
+
+#: 週次深掘りの取得本数。DeepDivePage の初期表示 (8) + 「さらに前の週を表示」
+#: (8 刻み) + backend 上限 (deep_dives_api._MAX_WEEKS=52)。
+_DEEPDIVE_WEEKS = ("8", "16", "26", "52")
+
 #: 画面ごとの取得。**稼働中の運用画面を実際に開いて記録した** ものに基づく
 #: (推測で並べると、足りない 1 本が「読み込み中で固まる」形で表に出る)。
 #:
@@ -107,23 +134,24 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     *(f"/api/v1/intel-graph/snapshot?time={t}" for t in _TIMES),
     # 脅威アクター
     *(f"/api/v1/intel-graph/threats?time={t}" for t in _TIMES),
-    # 国家情勢
+    # 国家情勢 (国家情勢タブは _TIMES、ダッシュボード widget は共有窓の "1" も要る)
     *(f"/api/v1/intel-graph/situation?time={t}" for t in _TIMES),
-    *(f"/api/v1/intel-graph/situation/nations?time={t}" for t in _TIMES),
+    *(f"/api/v1/intel-graph/situation/nations?time={t}" for t in _DASHBOARD_TIMES),
     # 将来予測
     *(f"/api/v1/intel-graph/forecast?weeks={w}" for w in ("4", "8", "12")),
-    # 重要インフラ脅威
-    *(f"/api/v1/jp-ci-board?days={d}" for d in _TIMES),
-    # 脅威マップ (facet は既定のみ)
+    # 重要インフラ脅威 ("0"=JPCI_DAYS_OPTION の全期間、"1"=共有窓の 24h 固定)
+    *(f"/api/v1/jp-ci-board?days={d}" for d in (*_DASHBOARD_TIMES, "0")),
+    # 脅威マップ (facet は既定のみ。ダッシュボードの mini_map/geo_ranking widget が
+    # 共有窓の "1" も叩くため _DASHBOARD_TIMES を使う)
     *(
         f"/api/v1/geo/cyber-map?days={d}&threat_class=all&source_status=all"
         "&min_importance=medium_up&pmesii=all&time_basis=report"
-        for d in _TIMES
+        for d in _DASHBOARD_TIMES
     ),
     *(
         f"/api/v1/geo/sub-country-points?days={d}&threat_class=all&source_status=all"
         "&min_importance=medium_up&time_basis=report"
-        for d in _TIMES
+        for d in _DASHBOARD_TIMES
     ),
     *(
         f"/api/v1/geo/trend?days={d}&threat_class=all&group_by=country&domain=cyber"
@@ -132,14 +160,11 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     ),
     # 重要インフラ (事業者一覧)
     "/api/v1/jp-ci-operators",
-    # コンテンツ: ブックマーク・メモ / 購読ソース / アクター辞書
-    "/api/v1/notes",
-    "/api/v1/subscriptions",
-    "/api/v1/grok/tasks",
-    "/api/v1/grok/session",
-    "/api/v1/grok-mail/health",
+    # コンテンツ: アクター辞書
+    # ⚠ ブックマーク・メモ (/notes) / 購読ソース一覧 (/subscriptions) / Grok 関連
+    # (/grok/tasks, /grok/session, /grok-mail/health) / アクター承認待ち提案
+    # (/actors/sync、レビューキュー) は匿名公開のため書き出さない (2026-10-04)。
     "/api/v1/actors",
-    "/api/v1/actors/sync",
     "/api/v1/actors/observed-summary",
     # ニュース検索 (既定 + 列挙できる facet 1 段)
     "/api/v1/articles?status=posted&limit=30",
@@ -151,20 +176,66 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     # ブリーフ・振り返り (一覧。本体は最新から数本を別途たどる)
     "/api/v1/intel-graph/daily-briefs?limit=60&meta_only=1",
     "/api/v1/intel-graph/brief-context",
+    # ダッシュボード (概観 + KPI)。dashboard/summary の recent_runs / next_run_at
+    # はジョブ実行という「いま」の状態なので書き出し時に落とす (main() 側で処理)。
+    *(f"/api/v1/dashboard/overview?days={d}" for d in _DASHBOARD_DAYS),
+    *(f"/api/v1/dashboard/summary?days={d}" for d in _DASHBOARD_DAYS),
+    "/api/v1/intel-graph/pmesii?time=30",
+    "/api/v1/pir/dashboard/overview",
+    # 週次深掘り (読み取り専用。本文を伴わない記事選定の根拠 + narrative)
+    *(f"/api/v1/deep-dives?weeks={w}" for w in _DEEPDIVE_WEEKS),
 )
 
 #: 日次ブリーフの本体を何本たどるか。1 本 ~77KB。
 BRIEF_DETAILS = 30
 
+#: ⚠ `/api/v1/runtime-flags` と `/api/v1/channels` はここから外している。
+#: どちらも画面の起動関門が引くが、稼働中の値 (webhook env key・認証状態) を
+#: そのまま写すと運用情報が匿名公開に乗る。main() が同形の空スタブを別途書く。
 REFERENCE_ENDPOINTS = (
     "/api/v1/vocabularies",
-    "/api/v1/runtime-flags",
-    "/api/v1/channels",
     "/api/v1/feed-options",
     "/api/v1/actor-options",
     "/api/v1/affected-vendors",
     "/api/v1/pir/options",
 )
+
+#: runtime-flags の空スタブ。匿名公開では認証状態そのものが無意味 (常時未認証)
+#: なので、画面の ANONYMOUS 既定 (frontend/src/hooks/useRuntimeFlags.ts) と同じ形を
+#: 固定値で書く。稼働中の値を取得しない。
+_RUNTIME_FLAGS_STUB: dict[str, Any] = {
+    "read_only": False,
+    "authenticated": False,
+    "auth_available": False,
+    "remote_write": False,
+}
+
+#: channels の空スタブ。webhook 設定・ルーティング既定は運用情報なので持たない。
+#: 画面は label 解決に失敗すると id をそのまま出す (frontend/src/components/channel.tsx
+#: の useChannelMeta フォールバック) ので、空でも描画は壊れない。
+_CHANNELS_STUB: dict[str, Any] = {
+    "channels": [],
+    "builtin_ids": [],
+    "rule_refs": {},
+    "webhook_set": {},
+    "webhook_masked": {},
+}
+
+#: 匿名公開では書き出さないエンドポイント (レビューキュー・個人メモ・購読ソース・
+#: Grok 関連)。最終関門 (`_final_gate`) がファイルとして存在しないことを確認する。
+_EXCLUDED_ENDPOINTS = (
+    "/api/v1/notes",
+    "/api/v1/subscriptions",
+    "/api/v1/grok/tasks",
+    "/api/v1/grok/session",
+    "/api/v1/grok-mail/health",
+    "/api/v1/actors/sync",
+)
+
+#: 値に関わらず弾く **項目名**。本文 (body/body_ja) は再配布禁止、notes は個人の
+#: 作業メモ。credential 判定 (`_CREDENTIAL_KEY`) とは別の関門として持つ
+#: (本文判定は値の形で判定できないため、項目名で守るしかない)。
+_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes")
 
 
 #: 資格情報らしい **フィールド名**。語を含むだけでは弾かない — アクター名に
@@ -222,6 +293,40 @@ def _assert_no_credentials(payload: Any, where: str) -> None:
             _assert_no_credentials(value, f"{where}[{i}]")
 
 
+def _strip_forbidden(payload: Any) -> Any:
+    """`_FORBIDDEN_BODY_KEYS` を**再帰的に**取り除いた新しい構造を返す (immutable)。
+
+    事象ニュースの詳細は構成記事を `members` に入れ子で持つため、トップレベルの
+    記事 1 件分だけ処理しても足りない。どれだけ深く入れ子になっていても辿って落とす。
+    """
+    if isinstance(payload, dict):
+        return {
+            key: _strip_forbidden(value)
+            for key, value in payload.items()
+            if key not in _FORBIDDEN_BODY_KEYS
+        }
+    if isinstance(payload, list):
+        return [_strip_forbidden(value) for value in payload]
+    return payload
+
+
+def _assert_no_forbidden_keys(payload: Any, where: str) -> None:
+    """`_FORBIDDEN_BODY_KEYS` が残っていたら**書き出しを止める**。
+
+    `_write` は先に `_strip_forbidden` で取り除いているので、ここで引っかかるのは
+    本来起きない取り残し (呼び出し忘れ・新しい書き出し経路の追加漏れ) を捕まえる
+    ための安全網。黙って通さない。
+    """
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in _FORBIDDEN_BODY_KEYS:
+                raise SystemExit(f"書き出してはならない項目が残っていた: {where}.{key}")
+            _assert_no_forbidden_keys(value, f"{where}.{key}")
+    elif isinstance(payload, list):
+        for i, value in enumerate(payload):
+            _assert_no_forbidden_keys(value, f"{where}[{i}]")
+
+
 def _get(client: httpx.Client, path: str, **params: Any) -> Any:
     r = client.get(path, params=params or None)
     r.raise_for_status()
@@ -229,11 +334,31 @@ def _get(client: httpx.Client, path: str, **params: Any) -> Any:
 
 
 def _write(path: Path, payload: Any) -> int:
+    payload = _strip_forbidden(payload)
     _assert_no_credentials(payload, path.name)
+    _assert_no_forbidden_keys(payload, path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     path.write_bytes(body)
     return len(body)
+
+
+def _final_gate(out: Path) -> None:
+    """全ファイルを最後に見直す **fail-closed な関門**。
+
+    `_write` 側の関門を個別に抜けてしまう経路 (将来の書き出し追加漏れ等) があっても、
+    ここで必ず捕まえる。除外対象のエンドポイントがファイルとして存在しないことも
+    ここで確認する — 居なくなったことを信じるのではなく、居ないことを確かめる。
+    """
+    for ep in _EXCLUDED_ENDPOINTS:
+        excluded_path = out / "api" / f"{_safe_name(ep)}.json"
+        if excluded_path.exists():
+            raise SystemExit(f"除外対象のエンドポイントが書き出されている: {ep}")
+    for path in sorted(out.rglob("*.json")):
+        payload = json.loads(path.read_bytes())
+        where = str(path.relative_to(out))
+        _assert_no_credentials(payload, where)
+        _assert_no_forbidden_keys(payload, where)
 
 
 def _safe_name(article_id: str) -> str:
@@ -275,19 +400,12 @@ def _fetch_articles(client: httpx.Client, days: int, cap: int) -> list[dict[str,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8001")
-    ap.set_defaults(with_bodies=True)
     ap.add_argument("--out", required=True, help="書き出し先ディレクトリ")
     ap.add_argument("--days", type=int, default=DEFAULT_DAYS)
     ap.add_argument("--max-articles", type=int, default=MAX_ARTICLES)
     ap.add_argument("--max-events", type=int, default=MAX_EVENTS)
     ap.add_argument("--min-articles", type=int, default=DEFAULT_MIN_ARTICLES)
     ap.add_argument("--min-events", type=int, default=DEFAULT_MIN_EVENTS)
-    ap.add_argument(
-        "--no-bodies",
-        dest="with_bodies",
-        action="store_false",
-        help="記事本文を書き出さない (既定は書き出す)",
-    )
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -302,6 +420,15 @@ def main() -> int:
             payload = _get(client, ep)
             total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
 
+        # runtime-flags / channels は稼働中の値を取らず、同形の空スタブを書く
+        # (webhook env key・認証状態は運用情報なので匿名公開には乗せない)。
+        total_bytes += _write(
+            out / "api" / f"{_safe_name('/api/v1/runtime-flags')}.json", _RUNTIME_FLAGS_STUB
+        )
+        total_bytes += _write(
+            out / "api" / f"{_safe_name('/api/v1/channels')}.json", _CHANNELS_STUB
+        )
+
         # --- 画面ごとの取得 ---
         # 1 本の失敗で写し全体を止めない。落ちた画面は 501 になり、
         # 「写しに含まれていません」と出る (黙って固まるよりよい)。
@@ -312,6 +439,12 @@ def main() -> int:
             except httpx.HTTPError as exc:
                 missing.append(f"{ep} ({type(exc).__name__})")
                 continue
+            if ep.startswith("/api/v1/dashboard/summary") and isinstance(payload, dict):
+                # recent_runs / next_run_at はジョブ実行という「いま」の状態。
+                # KPI 本体 (summary/db_stats) は構成要素として残す。
+                payload = {
+                    k: v for k, v in payload.items() if k not in ("recent_runs", "next_run_at")
+                }
             total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
 
         # --- 掘り下げ (アクター / 国) ---
@@ -404,14 +537,7 @@ def main() -> int:
                 detail = _get(client, f"/api/v1/articles/{enc}")
             except httpx.HTTPStatusError:
                 continue  # 1 件の欠落で写し全体を止めない
-            if not args.with_bodies:
-                art = detail.get("article")
-                if isinstance(art, dict):
-                    # **キーごと消す**のではなく空にする — 画面が「取得できなかった」と
-                    # 「写していない」を区別できるように、meta.json の with_bodies と
-                    # 合わせて読ませる。
-                    art["body"] = ""
-                    art["body_ja"] = ""
+            # 本文 (body/body_ja) は _write → _strip_forbidden が再帰的に落とす。
             total_bytes += _write(out / "articles" / f"{_safe_name(aid)}.json", detail)
 
         # --- 事象ニュース (こちらも offset で全件辿る) ---
@@ -451,19 +577,24 @@ def main() -> int:
 
     # --- 写しであることの宣言 ---
     # 画面はこれを読んで「○○時点の写し」を常時出す。無いとライブと見分けが付かない。
+    # with_bodies は匿名公開のため常に false (frontend の MirrorBanner が本文なしの
+    # 注記を出すのに読む。2026-10-04 以前は選べたが、いまは無条件)。
     meta = {
         "generated_at": generated_at.isoformat(),
         "kind": "ops-mirror",
         "window_days": args.days,
-        "with_bodies": bool(args.with_bodies),
+        "with_bodies": False,
         "counts": {"articles": len(articles), "eventnews": len(events)},
     }
     _write(out / "meta.json", meta)
 
+    # --- 最終関門 ---
+    # ここまでの書き出しがすべて関門を抜けているはずだが、**信じずに確かめる**。
+    _final_gate(out)
+
     print(
         f"書き出し完了: 記事 {len(articles)} 件 / 事象 {len(events)} 件 "
-        f"/ {total_bytes / 1024 / 1024:.1f} MB / 本文 "
-        f"{'あり' if args.with_bodies else 'なし'}"
+        f"/ {total_bytes / 1024 / 1024:.1f} MB / 匿名公開 (本文なし)"
     )
     return 0
 

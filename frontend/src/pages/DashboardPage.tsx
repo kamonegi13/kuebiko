@@ -59,20 +59,55 @@ function defaultH(def: WidgetDef): number {
   return pxToUnits(def.defaultHeight ?? DEFAULT_TILE_PX);
 }
 
+// 写し (Cloudflare Pages) 用の固定レイアウト。
+//
+// 写しは静止画で、layout API (server 保存のカスタマイズ) も編集も意味を持たない。
+// また「今」の実行状態を映す widget (liveState) は収集・生成したコンテンツからの
+// 導出ではないため書き出し対象にしていない (CLAUDE.md §2 の写しの方針と同じ線引き)。
+// registry から liveState を除いた全 widget を既定 1 個ずつ、単純な bin-packing で
+// 並べる (customize 不可なので uid は widget id をそのまま使う = 安定・決定論的)。
+function buildMirrorLayout(): WidgetPlacement[] {
+  const out: WidgetPlacement[] = [];
+  let x = 0;
+  let y = 0;
+  let rowMaxH = 0;
+  for (const [id, def] of Object.entries(WIDGET_REGISTRY)) {
+    if (def.liveState || def.mirrorExcluded) continue;
+    const w = defaultW(def);
+    const h = defaultH(def);
+    if (x + w > COLS) {
+      x = 0;
+      y += rowMaxH;
+      rowMaxH = 0;
+    }
+    out.push({ id, uid: id, x, y, w, h, config: { ...(def.defaultConfig ?? {}) } });
+    x += w;
+    rowMaxH = Math.max(rowMaxH, h);
+  }
+  return out;
+}
+
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
+// モジュール読込時に一度だけ組む (純粋な導出で毎 render 再計算する必要が無い)。
+const MIRROR_LAYOUT: DashboardLayout = { widgets: buildMirrorLayout() };
+
 export function DashboardPage() {
   const qc = useQueryClient();
   const isMobile = useIsMobile();
   const { data: serverLayout } = useQuery({
     queryKey: ["dashboard-layout"],
     queryFn: () => dashboardLayoutApi.get(),
+    // 写しには layout API が無い (customize 不可の固定レイアウトを使う)。
+    enabled: !MIRROR,
   });
   // モバイル専用レイアウト (localStorage)。PC (server) とは独立に保存・編集できる。
   // 初回 (localStorage 未設定) は server レイアウトを起点にする。
-  const [mobileLayout, setMobileLayout] = useState(() => loadMobileLayout());
-  const [pcLayout, setPcLayout] = useState(() => loadPcLayout());
+  const [mobileLayout, setMobileLayout] = useState(() => (MIRROR ? null : loadMobileLayout()));
+  const [pcLayout, setPcLayout] = useState(() => (MIRROR ? null : loadPcLayout()));
   // 実効レイアウト: localStorage(この端末) > server(共有 default)。モバイル/PC 別キーで
   // 端末ごとに保持できる。旧 widget rename + v1(span)→v2(座標) の移行も load 時に適用。
-  const rawLayout = isMobile ? (mobileLayout ?? serverLayout) : (pcLayout ?? serverLayout);
+  // 写しは常に固定レイアウト (server/localStorage を一切参照しない)。
+  const rawLayout = MIRROR ? MIRROR_LAYOUT : isMobile ? (mobileLayout ?? serverLayout) : (pcLayout ?? serverLayout);
   const layout = useMemo(() => migrateLayout(rawLayout), [rawLayout]);
   useWebSocket((ev) => {
     if (ev.type === "article_posted" || ev.type === "pipeline_complete" || ev.type === "pipeline_running") {
@@ -248,7 +283,9 @@ export function DashboardPage() {
   const visible = (editing ? draft : (isMobile ? sortByPos(layout.widgets) : layout.widgets))
     .filter((w) => WIDGET_REGISTRY[w.id]);
   // multi-instance: 同一 widget を設定違いで複数配置できるよう、toolbox は全 widget を常に提示。
-  const available = Object.keys(WIDGET_REGISTRY);
+  // 写しは liveState widget を候補にも出さない (固定レイアウトに戻ってしまうため実質無効だが、
+  // カスタマイズ入口自体を隠しているので到達しない防御線)。
+  const available = Object.keys(WIDGET_REGISTRY).filter((id) => !MIRROR || !(WIDGET_REGISTRY[id].liveState || WIDGET_REGISTRY[id].mirrorExcluded));
 
   const rglLayout: Layout = visible.map((w) => ({
     i: w.uid ?? w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: MIN_W_UNITS, minH: MIN_H_UNITS,
@@ -334,10 +371,13 @@ export function DashboardPage() {
               </>
             )
           ) : (
-            <button onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1 border border-border-subtle text-fg hover:bg-surface-2 px-3 py-1 rounded text-xs font-semibold">
-              <Settings className="h-3.5 w-3.5" /> カスタマイズ
-            </button>
+            // 写しは固定レイアウト (customize 不可) — 編集に入れても保存先が無い。
+            !MIRROR && (
+              <button onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1 border border-border-subtle text-fg hover:bg-surface-2 px-3 py-1 rounded text-xs font-semibold">
+                <Settings className="h-3.5 w-3.5" /> カスタマイズ
+              </button>
+            )
           )}
         </div>
       </div>

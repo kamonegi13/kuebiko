@@ -108,8 +108,9 @@ export function ArticleDetailPage({ articleId }: ArticleDetailPageProps) {
   return (
     <div className={`${pageContainer("wide")} space-y-5`}>
       <ArticleReadView data={data} />
-      {/* メモ・ブックマーク — 読了後に記録する流れなので最下部 (2026-07-25 順序是正) */}
-      <NoteEditor articleId={articleId} initial={data.note} />
+      {/* メモ・ブックマーク — 読了後に記録する流れなので最下部 (2026-07-25 順序是正)。
+          写しは write API を持たないため出さない (保存不可の入力欄を見せない)。 */}
+      {import.meta.env.VITE_MIRROR !== "1" && <NoteEditor articleId={articleId} initial={data.note} />}
     </div>
   );
 }
