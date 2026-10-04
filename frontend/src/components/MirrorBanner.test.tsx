@@ -1,13 +1,13 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MirrorBanner } from "./MirrorBanner";
+import { MirrorSwitchBar } from "./MirrorBanner";
 
 function renderBanner() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MirrorBanner />
+      <MirrorSwitchBar />
     </QueryClientProvider>,
   );
 }
@@ -40,8 +40,8 @@ describe("写しの帯", () => {
     }));
     renderBanner();
     // 読み手が要るのは「写しである」ことではなく **いつの情報か**。
-    expect(await screen.findByText(/現在の情報/)).toBeTruthy();
-    expect(screen.getByText(/記事本文は含まれません/)).toBeTruthy();
+    expect(await screen.findByText(/\d+\/\d+ \d{2}:\d{2} 現在/)).toBeTruthy();
+    expect(screen.getByText("サイバー脅威ニュース")).toBeTruthy();
   });
 
   it("素性が読めなくても黙らない", async () => {
@@ -50,7 +50,7 @@ describe("写しの帯", () => {
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 404, statusText: "Not Found" }));
     renderBanner();
     await waitFor(() =>
-      expect(screen.getByText(/いつ時点の情報かを取得できませんでした/)).toBeTruthy(),
+      expect(screen.getByText("時点不明")).toBeTruthy(),
     );
   });
 });
