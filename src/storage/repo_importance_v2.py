@@ -24,14 +24,15 @@ from src.cti.importance_v2 import (
 _CHUNK = 400
 _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
 
-#: 記録の対象 = 深刻度の軸が付いた記事のうち、未記録か古い版の記録のもの。
+#: 記録の対象 = 投稿済みの記事のうち、未記録か古い版の記録のもの (深刻度の軸は無くてもよい —
+#: 軸が無い記事は ``ImportanceInputs.axes={}`` で ``derive()`` に渡り、日本との関係・関連性は
+#: 軸と無関係に計算される。軸が付いている記事の深刻さの導出結果はこの変更で変わらない)。
 #: articles は同じ article_id が複数行ありうるので最新の 1 行に絞る (ROW_NUMBER が両 DB で可搬)
 _PENDING_SQL = """
 SELECT article_id, category, article_type, victim_country_iso, summary, body FROM (
     SELECT a.article_id, a.category, a.article_type, a.victim_country_iso, a.summary, a.body,
            ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
     FROM articles a
-    JOIN article_severity_axes s ON s.article_id = a.article_id
     LEFT JOIN article_importance_v2 v ON v.article_id = a.article_id
     WHERE a.status = 'posted' AND a.created_at >= ?
       AND (v.article_id IS NULL OR v.rule_version <> ?)
@@ -123,6 +124,42 @@ class ImportanceV2Mixin:
                 " created_at=excluded.created_at",
                 values,
             )
+
+    def jp_relation_article_ids(self: Any, jp_filter: str) -> set[str]:
+        """「日本との関係」facet の値を満たす記事 id の全集合 (検索の post-filter 用)。
+
+        ``jp_filter``: "targeted_affected"=標的・被害のみ / "mentioned"=言及以上。
+        """
+        if jp_filter == "targeted_affected":
+            sql = "SELECT article_id FROM article_importance_v2 WHERE jp IN ('targeted','affected')"
+        elif jp_filter == "mentioned":
+            sql = "SELECT article_id FROM article_importance_v2 WHERE jp <> 'none'"
+        else:
+            return set()
+        with self._connect() as conn:
+            rows = conn.execute(sql).fetchall()
+        return {str(r["article_id"]) for r in rows}
+
+    def jp_relation_by_article(self: Any, article_ids: Sequence[str]) -> dict[str, str]:
+        """記事 id → 日本との関係 (``article_importance_v2.jp``)。無い記事は含めない。
+
+        News / 事象ニュースの一覧 API が「日本との関係」表示・ミラー書き出し用に使う。
+        """
+        ids = list(dict.fromkeys(article_ids))
+        if not ids:
+            return {}
+        out: dict[str, str] = {}
+        with self._connect() as conn:
+            for i in range(0, len(ids), _CHUNK):
+                chunk = ids[i : i + _CHUNK]
+                ph = ",".join("?" * len(chunk))
+                for r in conn.execute(
+                    "SELECT article_id, jp FROM article_importance_v2 "  # noqa: S608
+                    f"WHERE article_id IN ({ph})",
+                    tuple(chunk),
+                ).fetchall():
+                    out[str(r["article_id"])] = str(r["jp"])
+        return out
 
     def importance_v2_crosstab(self: Any, *, since: str) -> list[dict[str, Any]]:
         """いまの重要度 × 新しい値の件数 (比較の画面用)。"""

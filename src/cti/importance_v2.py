@@ -28,7 +28,9 @@ from typing import Literal
 #: / .6 記事が触れるだけの古い CVE の KEV 掲載は S3 の根拠にしない (``subject_kev``)
 #: / .7 規模を本文の被害の件数で直す (``corrected_axes``)・被害額は被害の文の金額だけ (売上・
 #: 販売価格・主張を除く)
-RULE_VERSION = "2026-10-03.7"
+#: / .8 軸の無い記事 (事案・マルウェア・研究) は深刻さを付けない (``no_axes``)。日本との関係のため
+#: 全記事を記録するようにした (2026-10-04)
+RULE_VERSION = "2026-10-04.8"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -110,6 +112,26 @@ class ImportanceV2:
     relevant: bool
     rule_version: str = RULE_VERSION
 
+    @property
+    def level(self) -> int | None:
+        """重要度の 6 段階 (1 が最上位)。``importance_level`` を参照。"""
+        return importance_level(self.severity, self.relevant)
+
+
+#: 6 段階の並び = 深刻さを先に見る (案 A、2026-10-04 利用者決定)。関連性ありは記事の約 39% と広く、
+#: S3 は絞った判定なので、関連性を先に置くと日本に関わるだけの注意級が悪用中の脆弱性より上に来る
+_SEVERITY_RANK: dict[str, int] = {"S3": 0, "S2": 1, "S1": 2}
+
+
+def importance_level(severity: Severity | None, relevant: bool) -> int | None:
+    """深刻さ × 関連性 → 1 (S3・関連あり) 〜 6 (S1・関連なし)。深刻さが無ければ None。
+
+    政策・地政学・派生記事・軸なしは 6 段階に入れない (戦略上の重み・元の事象で扱う)。
+    """
+    if severity is None:
+        return None
+    return _SEVERITY_RANK[severity] * 2 + (1 if relevant else 2)
+
 
 def derive(inp: ImportanceInputs) -> ImportanceV2:
     """深刻さ・戦略上の重み・関連性を導く (副作用なし)。"""
@@ -138,6 +160,10 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
     if inp.category in _VULN:
         return _vuln_severity(inp)
     ax = inp.axes
+    # 軸がまだ付いていない記事 (日本との関係のために全記事を記録する — 2026-10-04) は判断しない。
+    # 空の軸で導くと事案は S1・マルウェアは S2 になり、「未判断」が「参考」に化ける
+    if not ax:
+        return None, "no_axes"
     # 暴露サイトへの掲載 (攻撃者の主張だけ) は、カテゴリがマルウェアでも事案として扱う
     if inp.category == "malware" and ax.get("confirmation") != "claimed_only":
         if ax.get("scope") in _WIDE and ax.get("actor") == "state":

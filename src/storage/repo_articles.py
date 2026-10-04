@@ -1106,6 +1106,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         socio_political_intent: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
+        jp: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ArticleRecord]:
@@ -1184,6 +1185,17 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         if until is not None:
             clauses.append("created_at < ?")
             params.append(_to_iso(until))
+        # 日本との関係 (2026-10-04): article_importance_v2.jp による絞り込み。
+        # "targeted_affected"=標的・被害のみ / "mentioned"=言及以上 (jp <> 'none')。
+        if jp == "targeted_affected":
+            clauses.append(
+                "article_id IN (SELECT article_id FROM article_importance_v2"
+                " WHERE jp IN ('targeted','affected'))"
+            )
+        elif jp == "mentioned":
+            clauses.append(
+                "article_id IN (SELECT article_id FROM article_importance_v2 WHERE jp <> 'none')"
+            )
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = (
             f"SELECT * FROM articles {where} "  # noqa: S608 (clauses are param placeholders)

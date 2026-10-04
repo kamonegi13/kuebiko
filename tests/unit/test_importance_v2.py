@@ -21,6 +21,7 @@ from src.cti.importance_v2 import (
     corrected_axes,
     derive,
     derive_severity,
+    importance_level,
     stated_cvss,
     stated_loss_usd,
     stated_victim_count,
@@ -280,6 +281,48 @@ class TestStatedVictimCount:
         assert stated_victim_count(text) == 0
 
 
+class TestImportanceLevel:
+    @pytest.mark.parametrize(
+        ("severity", "relevant", "expected"),
+        [
+            ("S3", True, 1),
+            ("S3", False, 2),
+            ("S2", True, 3),
+            ("S2", False, 4),
+            ("S1", True, 5),
+            ("S1", False, 6),
+        ],
+    )
+    def test_severity_comes_before_relevance(
+        self, severity: str, relevant: bool, expected: int
+    ) -> None:
+        assert importance_level(severity, relevant) == expected  # type: ignore[arg-type]  # Literal の列挙
+
+    def test_no_severity_has_no_level(self) -> None:
+        assert importance_level(None, True) is None
+
+    def test_record_exposes_level(self) -> None:
+        rec = derive(
+            _inp(axes=_axes(impact="data_exposure", confirmation="confirmed"), victim_country="JP")
+        )
+
+        assert (rec.severity, rec.relevant, rec.level) == ("S2", True, 3)
+
+
+class TestNoAxes:
+    @pytest.mark.parametrize("category", ["breach", "incident", "malware", "research"])
+    def test_articles_without_axes_get_no_severity(self, category: str) -> None:
+        assert derive_severity(_inp(category=category, axes={})) == (None, "no_axes")
+
+    def test_vulnerability_without_axes_still_uses_cvss(self) -> None:
+        assert derive_severity(_inp(category="vulnerability", axes={}, max_cvss=9.8))[0] == "S2"
+
+    def test_japan_relation_is_recorded_without_axes(self) -> None:
+        rec = derive(_inp(axes={}, victim_country="JP"))
+
+        assert (rec.severity, rec.jp, rec.level) == (None, "affected", None)
+
+
 class TestCorrectedAxes:
     def test_body_count_raises_magnitude_to_s3(self) -> None:
         # 要約から付けた軸が規模を落とした例 (本文には 31 万件と書かれている)
@@ -390,11 +433,28 @@ class TestRecording:
         # Act
         summary = record_importance_v2(repo)
 
-        # Assert
-        assert summary == {"recorded": 2, "rule_version": RULE_VERSION}
+        # Assert: 軸が無い "no_axes" も記録される (§1 — 投稿済みは全件記録対象)
+        assert summary == {"recorded": 3, "rule_version": RULE_VERSION}
         cells = repo.importance_v2_crosstab(since="2000-01-01")
         by = {(c["severity"], c["strategic_weight"], c["relevant"]): c["count"] for c in cells}
-        assert by == {("S3", None, True): 1, (None, "heavy", True): 1}
+        assert by == {
+            ("S3", None, True): 1,
+            (None, "heavy", True): 1,
+            (None, None, False): 1,  # 軸なしの事案は深刻さを付けない (版 .8、no_axes)
+        }
+
+    def test_article_without_axes_still_gets_jp_and_relevance(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """軸が無い記事も記録の対象になる (深刻さは付けず ``no_axes``)。
+        日本との関係・関連性は軸に関係なく計算される。"""
+        record_importance_v2(repo)
+
+        rows = repo.pending_importance_inputs(
+            since="2000-01-01", rule_version="unused-check", limit=10
+        )
+        assert "no_axes" in rows
+        assert rows["no_axes"].axes == {}
 
     def test_victim_count_in_summary_reaches_the_record(self, repo: RunHistoryRepository) -> None:
         # Arrange: 軸は規模を落としているが、要約に 31 万件の流出が書かれている
@@ -436,7 +496,7 @@ class TestRecording:
         record_importance_v2(repo)
         monkeypatch.setattr("src.ui.services.importance_v2_job.RULE_VERSION", "next")
 
-        assert record_importance_v2(repo)["recorded"] == 2
+        assert record_importance_v2(repo)["recorded"] == 3
 
     def test_flag_off_skips(
         self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch

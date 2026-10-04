@@ -152,6 +152,18 @@ const CHANNEL_OPTION: ConfigOption = {
   loadChoices: () =>
     channelsApi.get().then((r) => r.channels.map((c) => ({ value: c.id, label: c.label }))),
 };
+// 日本との関係 (2026-10-04)。ニュース検索・事象ニュースと共有する語彙
+// (frontend/src/components/news/facets.tsx の JP_OPTS)。
+const JP_OPTION: ConfigOption = {
+  key: "jp", label: "日本との関係",
+  choices: [
+    { value: "", label: "すべて" },
+    { value: "targeted_affected", label: "日本が標的・被害" },
+    { value: "mentioned", label: "日本に触れるもの" },
+  ],
+};
+// 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
 const MODE_OPTION: ConfigOption = {
   key: "mode", label: "表示",
   choices: [
@@ -179,8 +191,12 @@ const FEED_OPTION: ConfigOption = {
   },
 };
 // 記事フィード共通の全 config option (preset は defaultConfig で初期値を固定)。
+// 「日本との関係」をチャンネルより前に置く (CLAUDE.md §13 設計原則と揃え、ニュース検索・
+// 事象ニュースの並びとも一致させる)。チャンネルは写しでは出さない。
 const ARTICLE_FEED_OPTIONS: ConfigOption[] = [
-  CATEGORY_OPTION, FEED_OPTION, CHANNEL_OPTION, IMPORTANCE_OPTION, MODE_OPTION, SINCE_OPTION, PER_OPTION,
+  CATEGORY_OPTION, FEED_OPTION, JP_OPTION,
+  ...(MIRROR ? [] : [CHANNEL_OPTION]),
+  IMPORTANCE_OPTION, MODE_OPTION, SINCE_OPTION, PER_OPTION,
 ];
 
 // span は 4 カラムグリッド基準 (4=全幅 / 2=半分 / 1=¼ / 3=¾)

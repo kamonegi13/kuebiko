@@ -441,6 +441,19 @@ def _semantic_article_ids(request: Request, term: str, since_hours: int) -> list
     return [a.article_id for _, url, _ in hits if (a := by_url.get(url)) is not None]
 
 
+#: 日本との関係の強さの順 (代表値の選定用、src/cti/importance_v2.py:JapanRelation と同じ順)
+_JP_RANK: dict[str | None, int] = {"targeted": 3, "affected": 2, "mentioned": 1, "none": 0}
+
+
+def _strongest_jp(values: Any) -> str | None:
+    """構成記事の ``jp`` のうち最も強いもの。未記録の記事しかなければ None。"""
+    best: str | None = None
+    for v in values:
+        if v is not None and _JP_RANK.get(v, -1) > _JP_RANK.get(best, -1):
+            best = v
+    return best
+
+
 def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
     """記事側フィルタに該当する article_id。フィルタ無指定なら None (絞らない)。
 
@@ -487,6 +500,7 @@ def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
         #  literal として渡ってしまい 0 件になる)
         status=None,
         body=None,
+        jp=active.get("jp"),
     )
     articles = repo.list_articles(
         **facets.to_query_kwargs(), search=search, limit=_ARTICLE_SCAN_CAP
@@ -513,6 +527,7 @@ def list_event_news(  # noqa: PLR0913
     affected_vendor: str | None = None,
     entity_type: str | None = None,
     entity_value: str | None = None,
+    jp: str | None = None,
     since_hours: int = 0,
     min_independent_sources: int = 0,
     has_news: bool | None = None,
@@ -560,6 +575,7 @@ def list_event_news(  # noqa: PLR0913
         affected_vendor=affected_vendor,
         entity_type=entity_type,
         entity_value=entity_value,
+        jp=jp,
         since_hours=since_hours,
     )
     # 絞り込みは **LIMIT より前** に効かせる。取得後に filter すると「新着 N 件のうち
@@ -579,6 +595,9 @@ def list_event_news(  # noqa: PLR0913
         offset=max(0, offset),
     )
     resolved = _headlines_and_previews(repo, shown)
+    # 日本との関係 (2026-10-04): 構成記事のうち最も強い関係 (targeted > affected > mentioned
+    # > none) を事象の代表値として返す (ミラーの事象タグ・一覧表示用、batch fetch で N+1 回避)。
+    jp_by_article = repo.jp_relation_by_article([aid for r in shown for aid in r.state.member_ids])
     items = []
     for r in shown:
         headline, preview = resolved[r.state.item_id]
@@ -590,6 +609,7 @@ def list_event_news(  # noqa: PLR0913
                 "status": r.state.status,
                 "change_kind": r.change_kind,
                 "importance": r.state.importance,
+                "jp": _strongest_jp(jp_by_article.get(aid) for aid in r.state.member_ids),
                 "member_count": len(r.state.member_ids),
                 # 裏取りは 3 値で返す。member_count を裏取りとして使わせない
                 "independent_sources": r.independent_sources,

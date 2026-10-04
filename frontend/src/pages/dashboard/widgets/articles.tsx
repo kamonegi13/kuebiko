@@ -24,15 +24,17 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const mode = cfgStr(config, "mode", "headline"); // headline | summary
   const per = cfgNum(config, "per", 8);
   const sinceHours = cfgNum(config, "since_hours", 0);
+  const jp = cfgStr(config, "jp", "") as "" | "targeted_affected" | "mentioned";
   const wantSummary = mode === "summary";
 
   const { data, isError } = useQuery({
-    queryKey: ["article-feed", category, feed, channel, importance, wantSummary, per, sinceHours],
+    queryKey: ["article-feed", category, feed, channel, importance, jp, wantSummary, per, sinceHours],
     queryFn: () => articlesApi.list({
       category: category || undefined,
       feed: feed || undefined,
       channel: channel || undefined,
       importance: importance || undefined,
+      jp: jp || undefined,
       status: "posted",
       since_hours: sinceHours || undefined,
       limit: per,
@@ -46,7 +48,7 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const channelLabel = channel ? chMeta(channel).label : "";
   const title = buildTitle({ category, feed, channelLabel, importance, categoryLabelMap });
   // widget の絞り込みをそのまま引き継いで News ページへ deep-link
-  const href = buildNewsHref({ category, feed, channel, importance, sinceHours });
+  const href = buildNewsHref({ category, feed, channel, importance, sinceHours, jp });
 
   return (
     <WidgetCard title={title} href={href} linkLabel="記事一覧 →">
@@ -93,14 +95,15 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   );
 }
 
-function buildNewsHref({ category, feed, channel, importance, sinceHours }: {
-  category: string; feed: string; channel: string; importance: string; sinceHours: number;
+function buildNewsHref({ category, feed, channel, importance, sinceHours, jp }: {
+  category: string; feed: string; channel: string; importance: string; sinceHours: number; jp: string;
 }): string {
   const q = new URLSearchParams();
   if (category) q.set("category", category);
   if (feed) q.set("feed", feed);
   if (channel) q.set("channel", channel);
   if (importance) q.set("importance", importance);
+  if (jp) q.set("jp", jp);
   if (sinceHours) q.set("since", String(sinceHours));
   const qs = q.toString();
   return qs ? `/app/news?${qs}` : "/app/news";

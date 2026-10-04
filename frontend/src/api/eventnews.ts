@@ -16,6 +16,8 @@ export interface EventNewsListItem {
   last_reported_at: string;
   current_version: number;
   has_news: boolean;
+  /** 構成記事のうち最も強い日本との関係 (targeted > affected > mentioned)。未記録のみなら null。 */
+  jp?: "targeted" | "affected" | "mentioned" | "none" | null;
 }
 
 export interface EventNewsFact {
@@ -147,6 +149,9 @@ export interface EventNewsQuery {
   affected_vendor?: string;
   entity_type?: string;
   entity_value?: string;
+  /** 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。構成記事のいずれか
+   *  1 件でも満たせばその事象を返す (事象 = 構成記事の OR)。 */
+  jp?: "targeted_affected" | "mentioned";
   since_hours?: number;
   /** 事象固有: 独立媒体数の下限 (2 = 複数媒体が報じた事象のみ)。0 = 絞らない。 */
   min_independent_sources?: number;
@@ -176,7 +181,7 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
   if (q.semantic) p.set("semantic", "true");
   for (const k of [
     "importance", "search", "category", "channel", "feed", "actor", "cve",
-    "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status",
+    "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status", "jp",
   ] as const) {
     const v = q[k];
     if (v) p.set(k, String(v));

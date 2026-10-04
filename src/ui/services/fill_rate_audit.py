@@ -104,8 +104,10 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
-        # 重要度の再設計の記録 (2026-10-03、記録のみ)。深刻度の軸が付いた記事にだけ毎時付く
-        # ので上限は severity_axes の充足率。軸より大きく下回れば記録の段が止まっている
+        # 重要度の再設計の記録 (2026-10-03、記録のみ)。2026-10-04 に深刻度の軸の有無を
+        # 問わず投稿済み全件を対象化 (「日本との関係」フィルタの母数)。軸は無くても
+        # jp/relevant は計算できるため上限は posted 全件 (= severity_axes の充足率に
+        # 縛られない)。低いままなら毎時の段 (PER_RUN_LIMIT) が未記録分を消化しきれていない
         "importance_v2",
         "新しい重要度",
         "EXISTS (SELECT 1 FROM article_importance_v2 v WHERE v.article_id = a.article_id)",

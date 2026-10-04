@@ -33,6 +33,10 @@ class SearchFacets(BaseModel):
     # 本文の由来による絞り込み (2026-07-27): "stump"=フィード抜粋のみ(全文未取得) /
     # "full"=全文取得済。切り株記事を一覧するための facet。
     body_source: str | None = None
+    # 日本との関係 (2026-10-04、article_importance_v2.jp 由来):
+    # "targeted_affected"=日本が標的・被害 (targeted/affected) / "mentioned"=日本に触れる
+    # もの (targeted/affected/mentioned、= jp <> 'none')。None=絞り込み無し ("すべて")。
+    jp: str | None = None
 
     def is_empty(self) -> bool:
         """status 以外の絞り込みが 1 つも無ければ True (status は baseline 扱い)。"""
@@ -47,6 +51,7 @@ class SearchFacets(BaseModel):
             or self.entity_filters
             or self.since is not None
             or self.body_source
+            or self.jp
         )
 
     def to_query_kwargs(self) -> dict[str, object]:
@@ -78,6 +83,8 @@ class SearchFacets(BaseModel):
             kw["status"] = self.status
         if self.body_source:
             kw["body_source"] = self.body_source
+        if self.jp:
+            kw["jp"] = self.jp
         return kw
 
 

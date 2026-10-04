@@ -166,6 +166,38 @@ describe("一覧の全件ファイル", () => {
     });
   });
 
+  // 日本との関係 (2026-10-04)。
+  describe("jp (日本との関係) で絞り込む", () => {
+    beforeEach(() => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 3, jp: "targeted" }),
+          fixtureArticle({ id: 2, jp: "mentioned" }),
+          fixtureArticle({ id: 1, jp: "none" }),
+        ],
+        count: 3,
+      };
+    });
+
+    test("targeted_affected は標的・被害のみ", async () => {
+      const r = await fetch("/api/v1/articles?jp=targeted_affected&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([3]);
+    });
+
+    test("mentioned は言及以上 (jp <> none)", async () => {
+      const r = await fetch("/api/v1/articles?jp=mentioned&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([3, 2]);
+    });
+
+    test("未指定は絞り込まない", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([3, 2, 1]);
+    });
+  });
+
   // ⚠ 写していない絞り込み (search/malware/cve/pir/actor 等) に全件を返すと、画面は
   //    黙って違うものを出す (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
   test("ブラウザ側で再現できない絞り込みは全件を返さず 501 にする", async () => {

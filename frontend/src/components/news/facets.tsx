@@ -40,6 +40,15 @@ export const BODY_OPTS: Opt[] = [
   { value: "stump", label: "切り株のみ" },
 ];
 
+/** 日本との関係 (2026-10-04、article_importance_v2.jp 由来)。チャンネルより上位の絞り込みとして
+ *  ニュース検索・事象ニュース・ダッシュボード「最新ニュース」の 3 画面が共有する。
+ *  生の enum (targeted/affected/mentioned/none) は画面に出さない (CLAUDE.md §UI文言規約)。 */
+export const JP_OPTS: Opt[] = [
+  { value: "", label: "日本との関係: すべて" },
+  { value: "targeted_affected", label: "日本が標的・被害" },
+  { value: "mentioned", label: "日本に触れるもの" },
+];
+
 export interface FacetOptions {
   category: Opt[];
   channel: Opt[];

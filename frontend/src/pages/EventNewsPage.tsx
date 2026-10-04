@@ -15,7 +15,7 @@ import { pageContainer } from "../components/Page";
 import { Drawer } from "../components/Drawer";
 import { formatJstCompact } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
-import { Sel, SINCE_OPTS, useFacetOptions, VendorInput } from "../components/news/facets";
+import { JP_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput } from "../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
 import { PAGE_TITLE } from "../components/headings";
@@ -57,6 +57,7 @@ function readQuery(): EventNewsQuery & { importance: string } {
     intent: p.get("intent") ?? undefined,
     pir: p.get("pir") ?? undefined,
     affected_vendor: p.get("affected_vendor") ?? undefined,
+    jp: (p.get("jp") as "targeted_affected" | "mentioned" | null) ?? undefined,
     // エンティティ chip からの逆引き (ニュース検索と同じクエリ名)
     entity_type: p.get("pivot_type") ?? undefined,
     entity_value: p.get("pivot_value") ?? undefined,
@@ -77,7 +78,7 @@ function writeQuery(q: EventNewsQuery & { importance: string }): void {
   if (q.min_independent_sources) p.set("min_sources", String(q.min_independent_sources));
   if (q.has_news) p.set("has_news", "1");
   if (q.semantic) p.set("semantic", "1");
-  for (const k of ["category", "channel", "feed", "actor", "cve", "malware", "intent", "pir", "affected_vendor", "status"] as const) {
+  for (const k of ["category", "channel", "feed", "actor", "cve", "malware", "intent", "pir", "affected_vendor", "status", "jp"] as const) {
     if (q[k]) p.set(k, String(q[k]));
   }
   if (q.entity_type && q.entity_value) {
@@ -129,7 +130,7 @@ export function EventNewsPage() {
   const activeFilters = useMemo(() => {
     const keys = [
       "search", "category", "channel", "feed", "actor", "cve",
-      "malware", "intent", "pir", "affected_vendor",
+      "malware", "intent", "pir", "affected_vendor", "jp",
     ] as const;
     const out: { key: string; value: string }[] = [];
     for (const k of keys) {
@@ -189,7 +190,15 @@ export function EventNewsPage() {
         )}
         <Sel value={q.category ?? ""} onChange={(v) => set({ category: v || undefined })} opts={facetOpts.category} />
         <Sel value={q.feed ?? ""} onChange={(v) => set({ feed: v || undefined })} opts={facetOpts.feed} />
-        <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
+        <Sel
+          value={q.jp ?? ""}
+          onChange={(v) => set({ jp: (v as "targeted_affected" | "mentioned" | "") || undefined })}
+          opts={JP_OPTS}
+        />
+        {/* 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。 */}
+        {!MIRROR && (
+          <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
+        )}
         <Sel value={q.importance} onChange={(v) => set({ importance: v })} opts={IMPORTANCE_OPTS} />
         <Sel value={q.intent ?? ""} onChange={(v) => set({ intent: v || undefined })} opts={facetOpts.intent} />
         <Sel value={q.pir ?? ""} onChange={(v) => set({ pir: v || undefined })} opts={facetOpts.pir} />

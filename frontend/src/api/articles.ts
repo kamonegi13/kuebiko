@@ -17,6 +17,8 @@ export interface ArticleFeedItem {
   intent_confidence?: string | null; // null=旧レジーム確定 / low=仮説 (H3 配線)
   technical_axis_summary: string | null; // Capability⇄Infrastructure の技術的結線
   malware_families: string[];
+  // 日本との関係 (2026-10-04、article_importance_v2.jp)。記録前の記事は null。
+  jp?: "targeted" | "affected" | "mentioned" | "none" | null;
   summary: string | null;
   published_at: string | null;
   created_at: string | null;
@@ -40,6 +42,8 @@ export interface ArticleFeedParams {
   actor?: string;
   affected_vendor?: string;
   body?: string; // "stump"=切り株(全文未取得) / "full"=全文取得済
+  // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。未指定=絞らない。
+  jp?: "targeted_affected" | "mentioned";
   status?: string;
   since_hours?: number;
   since?: string; // W2: 「前回確認以降」カーソル (ISO 絶対時刻)。あれば since_hours より優先。
@@ -62,6 +66,7 @@ export const articlesApi = {
     if (params.actor) q.set("actor", params.actor);
     if (params.affected_vendor) q.set("affected_vendor", params.affected_vendor);
     if (params.body) q.set("body", params.body);
+    if (params.jp) q.set("jp", params.jp);
     if (params.status) q.set("status", params.status);
     if (params.since_hours) q.set("since_hours", String(params.since_hours));
     if (params.since) q.set("since", params.since);

@@ -117,6 +117,7 @@ def _build_facets(  # noqa: PLR0913
     affected_vendor: str | None = None,
     since_iso: str | None = None,
     body: str | None = None,
+    jp: str | None = None,
 ) -> SearchFacets:
     """UI facet (生の query param) を正規化して ``SearchFacets`` にまとめる。
 
@@ -166,6 +167,8 @@ def _build_facets(  # noqa: PLR0913
     intent_filter = intent if intent in SOCIO_POLITICAL_INTENTS and intent != "unknown" else None
     # 本文由来の facet: "stump"(切り株=全文未取得) / "full"(全文取得済) のみ許可 (不正値は無視)。
     body_filter = body if body in ("stump", "full") else None
+    # 日本との関係 (2026-10-04): 不正値は無視 (フィルタ無効化)。
+    jp_filter = jp if jp in ("targeted_affected", "mentioned") else None
     # W2: 絶対 since (「前回確認」カーソル) があれば優先。無ければ since_hours の相対窓。
     since = _parse_since_iso(since_iso)
     if since is None and since_hours > 0:
@@ -183,6 +186,7 @@ def _build_facets(  # noqa: PLR0913
         since=since,
         status=status or None,
         body_source=body_filter,
+        jp=jp_filter,
     )
 
 
@@ -201,6 +205,7 @@ def list_articles_feed(  # noqa: PLR0913
     actor: str | None = Query(default=None),
     affected_vendor: str | None = Query(default=None),
     body: str | None = Query(default=None),
+    jp: str | None = Query(default=None),
     status: str = Query(default="posted"),
     since_hours: int = Query(default=0, ge=0, le=24 * 90),
     since: str | None = Query(default=None),
@@ -237,6 +242,7 @@ def list_articles_feed(  # noqa: PLR0913
         since_iso=since,
         status=status,
         body=body,
+        jp=jp,
     )
     term = search.strip() if search and search.strip() else None
 
@@ -249,6 +255,8 @@ def list_articles_feed(  # noqa: PLR0913
 
     # malware チップ表示用に entity を batch fetch (N+1 回避)
     malware_map = repo.entity_values_by_article([a.article_id for a in articles], "malware_family")
+    # 日本との関係 (2026-10-04): ミラー書き出し・News カード表示用に batch fetch
+    jp_map = repo.jp_relation_by_article([a.article_id for a in articles])
 
     return {
         "articles": [
@@ -267,6 +275,7 @@ def list_articles_feed(  # noqa: PLR0913
                 "intent_confidence": a.intent_confidence,
                 "technical_axis_summary": a.technical_axis_summary,
                 "malware_families": malware_map.get(a.article_id, []),
+                "jp": jp_map.get(a.article_id),
                 "summary": (a.summary or "")[:_MAX_SUMMARY_CHARS] if include_summary else None,
                 "published_at": a.published_at.isoformat() if a.published_at else None,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
@@ -735,6 +744,7 @@ async def unified_search(  # noqa: PLR0913
     pir: str | None = Query(default=None),
     actor: str | None = Query(default=None),
     affected_vendor: str | None = Query(default=None),
+    jp: str | None = Query(default=None),
     since_hours: int = Query(default=0, ge=0, le=24 * 365),
 ) -> dict[str, Any]:
     """統合検索 (hybrid retrieval + LLM rerank/planning)。
@@ -768,6 +778,7 @@ async def unified_search(  # noqa: PLR0913
         affected_vendor=affected_vendor,
         since_hours=since_hours,
         status="posted",
+        jp=jp,
     )
     # facet 未選択 (status 以外が空) なら None を渡し、従来の挙動 (post-filter 無し) を維持。
     active_facets = None if facets.is_empty() else facets

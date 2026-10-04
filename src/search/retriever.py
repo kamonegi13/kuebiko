@@ -127,6 +127,14 @@ async def retrieve_candidates(
             # facet lookup 失敗時は entity 絞り込みを諦めて degrade (silent drop は警告で記録)。
             _log.warning("retriever_entity_facet_failed", error=str(e))
             allowed_ids = None
+    # 日本との関係 (2026-10-04): entity filter と同じ AND 合成 (article_importance_v2 由来、
+    # 別テーブルなので ArticleRecord に列が無い → allowed_ids の交差で post-filter する)。
+    if facets is not None and facets.jp:
+        try:
+            jp_ids = repo.jp_relation_article_ids(facets.jp)
+            allowed_ids = jp_ids if allowed_ids is None else allowed_ids & jp_ids
+        except Exception as e:  # noqa: BLE001
+            _log.warning("retriever_jp_facet_failed", error=str(e))
 
     def _ingest(arts: list[ArticleRecord], via: str) -> list[str]:
         ids: list[str] = []

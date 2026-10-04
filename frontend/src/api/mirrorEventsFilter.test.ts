@@ -164,4 +164,29 @@ describe("filterMirrorEvents", () => {
     expect(out).toHaveProperty("items");
     expect(out).toHaveProperty("note");
   });
+
+  describe("jp (日本との関係)", () => {
+    const items = [
+      item({ id: "t", jp: "targeted" }),
+      item({ id: "a", jp: "affected" }),
+      item({ id: "m", jp: "mentioned" }),
+      item({ id: "n", jp: "none" }),
+      item({ id: "u", jp: undefined }),
+    ];
+
+    it("targeted_affected は標的・被害のみ", () => {
+      const { items: out } = filterMirrorEvents(items, { jp: "targeted_affected" });
+      expect(out.map((i) => i.id).sort()).toEqual(["a", "t"]);
+    });
+
+    it("mentioned は言及以上 (none/未記録を除く)", () => {
+      const { items: out } = filterMirrorEvents(items, { jp: "mentioned" });
+      expect(out.map((i) => i.id).sort()).toEqual(["a", "m", "t"]);
+    });
+
+    it("未指定は絞らない", () => {
+      const { items: out } = filterMirrorEvents(items, {});
+      expect(out.length).toBe(5);
+    });
+  });
 });

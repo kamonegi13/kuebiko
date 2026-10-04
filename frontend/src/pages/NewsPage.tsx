@@ -14,7 +14,7 @@ import { articlesApi } from "../api/articles";
 import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
-  BODY_OPTS, IMPORTANCE_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput,
+  BODY_OPTS, IMPORTANCE_OPTS, JP_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput,
 } from "../components/news/facets";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
@@ -27,6 +27,10 @@ import { vocabLabel } from "../hooks/useVocab";
 import { sectorLabel } from "../components/geo/sectorColors";
 import { countryLabel } from "../utils/countryLabels";
 import { PAGE_TITLE } from "../components/headings";
+
+// 写し (Cloudflare Pages) は購読チャンネルの区別を持たない運用面の軸なので、
+// 一般公開に近い写しの画面からは外す (ops では「日本との関係」の後ろに残す)。
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
 
 // 構造化エンティティ (CVE/IP/ドメイン/ハッシュ) を検出 → 逆引きへ自動ルート。
 function detectEntity(raw: string): { type: string; value: string } | null {
@@ -47,6 +51,7 @@ interface NewsState {
   category: string; channel: string; importance: string; feed: string; since: string;
   search: string; malware: string; cve: string; intent: string; pir: string; actor: string; vendor: string;
   body: string; // "" / "stump"(切り株) / "full"(全文取得済)
+  jp: string; // "" / "targeted_affected" / "mentioned" (日本との関係)
   mode: "headline" | "summary"; precise: boolean; pivot: Pivot | null;
 }
 
@@ -68,6 +73,7 @@ function readState(): NewsState {
     actor: p.get("actor") ?? "",
     vendor: p.get("affected_vendor") ?? "",
     body: p.get("body") ?? "",
+    jp: p.get("jp") ?? "",
     mode: p.get("mode") === "summary" ? "summary" : "headline",
     precise: p.get("precise") === "1",
     pivot: pt && pv ? { type: pt, value: pv } : null,
@@ -90,6 +96,7 @@ function writeState(s: NewsState): void {
   if (s.actor) q.set("actor", s.actor);
   if (s.vendor) q.set("affected_vendor", s.vendor);
   if (s.body) q.set("body", s.body);
+  if (s.jp) q.set("jp", s.jp);
   if (s.mode === "summary") q.set("mode", "summary");
   if (s.precise) q.set("precise", "1");
   if (s.pivot) { q.set("pivot_type", s.pivot.type); q.set("pivot_value", s.pivot.value); }
@@ -125,6 +132,7 @@ export function NewsPage() {
   const [pir, setPir] = useState(init.pir);
   const [actor, setActor] = useState(init.actor);
   const [body, setBody] = useState(init.body);
+  const [jp, setJp] = useState(init.jp);
   const [vendorRaw, setVendorRaw] = useState(init.vendor);
   const [vendor, setVendor] = useState(init.vendor);
   const [precise, setPrecise] = useState(init.precise);
@@ -145,10 +153,10 @@ export function NewsPage() {
     const t = setTimeout(() => setVendor(vendorRaw.trim()), 300);
     return () => clearTimeout(t);
   }, [vendorRaw]);
-  useEffect(() => { setLimit(30); }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, newOnly, lastSeen]);
+  useEffect(() => { setLimit(30); }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, newOnly, lastSeen]);
   useEffect(() => {
-    writeState({ category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, mode, precise, pivot });
-  }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, mode, precise, pivot]);
+    writeState({ category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, mode, precise, pivot });
+  }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, mode, precise, pivot]);
 
   // facet (閲覧・検索で共有する AND 条件)。空値は undefined にして送らない。
   const facets: SearchFacets = useMemo(() => ({
@@ -163,8 +171,9 @@ export function NewsPage() {
     actor: actor || undefined,
     affected_vendor: vendor || undefined,
     body: body || undefined,
+    jp: (jp as SearchFacets["jp"]) || undefined,
     since_hours: Number(since) || undefined,
-  }), [importance, category, feed, channel, cve, malware, intent, pir, actor, vendor, body, since]);
+  }), [importance, category, feed, channel, cve, malware, intent, pir, actor, vendor, body, jp, since]);
 
   // ビュー判定: 明示 pivot > box の構造化エンティティ自動逆引き > テキスト検索 > 閲覧。
   const autoPivot = useMemo(() => (pivot == null && search ? detectEntity(search) : null), [pivot, search]);
@@ -254,7 +263,9 @@ export function NewsPage() {
         />
         <Sel value={category} onChange={setCategory} opts={facetOpts.category} />
         <Sel value={feed} onChange={setFeed} opts={facetOpts.feed} />
-        <Sel value={channel} onChange={setChannel} opts={facetOpts.channel} />
+        <Sel value={jp} onChange={setJp} opts={JP_OPTS} />
+        {/* 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。 */}
+        {!MIRROR && <Sel value={channel} onChange={setChannel} opts={facetOpts.channel} />}
         <Sel value={importance} onChange={setImportance} opts={IMPORTANCE_OPTS} />
         <Sel value={body} onChange={setBody} opts={BODY_OPTS} />
         <Sel value={intent} onChange={setIntent} opts={facetOpts.intent} />

@@ -42,7 +42,7 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 // actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
 // 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
-  "status", "category", "channel", "importance", "feed",
+  "status", "category", "channel", "importance", "feed", "jp",
   "since_hours", "since", "limit", "offset", "include_summary",
 ]);
 
@@ -55,6 +55,14 @@ function matchesImportance(a: ArticleFeedItem, importance: string): boolean {
 function matchesCategory(a: ArticleFeedItem, category: string): boolean {
   const group = ARTICLES_CATEGORY_GROUPS[category];
   return group ? group.includes(a.category ?? "") : a.category === category;
+}
+
+// 日本との関係 (2026-10-04)。backend と同じ意味論: "mentioned" は言及以上
+// (targeted/affected/mentioned、= jp <> "none")。
+function matchesJp(a: ArticleFeedItem, jp: string): boolean {
+  if (jp === "targeted_affected") return a.jp === "targeted" || a.jp === "affected";
+  if (jp === "mentioned") return Boolean(a.jp) && a.jp !== "none";
+  return true;
 }
 
 function withinSinceHours(a: ArticleFeedItem, sinceHours: number): boolean {
@@ -104,6 +112,9 @@ async function fallbackArticles(
 
   const feed = params.get("feed");
   if (feed) items = items.filter((a) => a.feed_title === feed);
+
+  const jp = params.get("jp");
+  if (jp) items = items.filter((a) => matchesJp(a, jp));
 
   const sinceHours = Number(params.get("since_hours") || "0");
   if (sinceHours > 0) items = items.filter((a) => withinSinceHours(a, sinceHours));

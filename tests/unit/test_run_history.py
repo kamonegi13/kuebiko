@@ -471,6 +471,47 @@ class TestArticleRecording:
         emap = repo.entity_values_by_article(["a1", "a2"], "malware_family")
         assert emap.get("a1") == ["LockBit"] and "a2" not in emap
 
+    def test_list_articles_jp_relation_filter(self, repo: RunHistoryRepository) -> None:
+        """「日本との関係」facet — article_importance_v2.jp の IN サブクエリ (2026-10-04)。"""
+        run_id = repo.start_run(
+            RunRecord(started_at=_now(), pipeline="daily", dry_run=False),
+        )
+        jp_values = (("jp_target", "targeted"), ("jp_mention", "mentioned"), ("jp_none", "none"))
+        for aid, _jp in jp_values:
+            repo.add_article(
+                ArticleRecord(
+                    run_id=run_id,
+                    article_id=aid,
+                    title="t",
+                    url=f"https://example.com/{aid}",
+                    status="posted",
+                    created_at=_now(),
+                ),
+            )
+        from src.cti.importance_v2 import ImportanceV2
+
+        for aid, jp in jp_values:
+            repo.save_importance_v2(
+                aid,
+                ImportanceV2(
+                    severity=None,
+                    severity_basis="x",
+                    strategic_weight=None,
+                    jp=jp,  # type: ignore[arg-type]
+                    nations=(),
+                    sir_ids=(),
+                    relevant=jp != "none",
+                ),
+            )
+
+        targeted = repo.list_articles(jp="targeted_affected")
+        assert {a.article_id for a in targeted} == {"jp_target"}
+
+        mentioned = repo.list_articles(jp="mentioned")
+        assert {a.article_id for a in mentioned} == {"jp_target", "jp_mention"}
+
+        assert len(repo.list_articles()) == 3  # jp 未指定は絞り込まない
+
     def test_importance_breakdown_cyber_only(self, repo: RunHistoryRepository) -> None:
         """cyber_only=True は geopolitical 等の非サイバーを重要度分布から除外。"""
         run_id = repo.start_run(

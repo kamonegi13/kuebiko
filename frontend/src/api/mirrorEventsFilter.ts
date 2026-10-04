@@ -88,6 +88,10 @@ function matchesEvent(item: MirrorEventNewsItem, q: EventNewsQuery): boolean {
   if (q.entity_type && q.entity_value) {
     if (!includesCi(item.entities?.[q.entity_type], q.entity_value)) return false;
   }
+  if (q.jp === "targeted_affected" && item.jp !== "targeted" && item.jp !== "affected") {
+    return false;
+  }
+  if (q.jp === "mentioned" && (!item.jp || item.jp === "none")) return false;
   return true;
 }
 
