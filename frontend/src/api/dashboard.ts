@@ -48,11 +48,14 @@ async function getJson<T>(path: string): Promise<T> {
 // モバイル専用レイアウトは localStorage に保存する。
 // 理由: モバイルは readonly instance 経由でアクセスされ server write が 403。
 // localStorage なら write 不要で保存でき、PC (server 保存) とも独立に持てる。
+// 写し (mirror=true) は server そのものが無いので常に `:mirror` 接尾辞の別キーを使い、
+// 運用環境 (ops) のキーと混在しない (同じ端末で両方開いても互いを汚染しない)。
 const MOBILE_LAYOUT_KEY = "cti.dashboard.layout.mobile";
+const MOBILE_LAYOUT_KEY_MIRROR = `${MOBILE_LAYOUT_KEY}:mirror`;
 
-export function loadMobileLayout(): StoredDashboardLayout | null {
+export function loadMobileLayout(mirror = false): StoredDashboardLayout | null {
   try {
-    const raw = localStorage.getItem(MOBILE_LAYOUT_KEY);
+    const raw = localStorage.getItem(mirror ? MOBILE_LAYOUT_KEY_MIRROR : MOBILE_LAYOUT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredDashboardLayout;
     return Array.isArray(parsed.widgets) ? parsed : null;
@@ -61,9 +64,9 @@ export function loadMobileLayout(): StoredDashboardLayout | null {
   }
 }
 
-export function saveMobileLayout(layout: DashboardLayout): void {
+export function saveMobileLayout(layout: DashboardLayout, mirror = false): void {
   try {
-    localStorage.setItem(MOBILE_LAYOUT_KEY, JSON.stringify(layout));
+    localStorage.setItem(mirror ? MOBILE_LAYOUT_KEY_MIRROR : MOBILE_LAYOUT_KEY, JSON.stringify(layout));
   } catch {
     /* localStorage 不可環境は黙って無視 */
   }
@@ -73,11 +76,14 @@ export function saveMobileLayout(layout: DashboardLayout): void {
 // その場合この端末の localStorage に fallback 保存する (= 端末ごとにレイアウトを持てる)。
 // load 時は localStorage override > server (共有 default)。書込可能 PC は server 保存成功時に
 // override を消し、server (共有) に追従させる。
+// 写し (mirror=true) は server write が一切存在しないので常に localStorage の `:mirror` キー
+// のみに保存する (既定は buildMirrorLayout の固定レイアウト)。
 const PC_LAYOUT_KEY = "cti.dashboard.layout.pc";
+const PC_LAYOUT_KEY_MIRROR = `${PC_LAYOUT_KEY}:mirror`;
 
-export function loadPcLayout(): StoredDashboardLayout | null {
+export function loadPcLayout(mirror = false): StoredDashboardLayout | null {
   try {
-    const raw = localStorage.getItem(PC_LAYOUT_KEY);
+    const raw = localStorage.getItem(mirror ? PC_LAYOUT_KEY_MIRROR : PC_LAYOUT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredDashboardLayout;
     return Array.isArray(parsed.widgets) ? parsed : null;
@@ -86,17 +92,17 @@ export function loadPcLayout(): StoredDashboardLayout | null {
   }
 }
 
-export function savePcLayout(layout: DashboardLayout): void {
+export function savePcLayout(layout: DashboardLayout, mirror = false): void {
   try {
-    localStorage.setItem(PC_LAYOUT_KEY, JSON.stringify(layout));
+    localStorage.setItem(mirror ? PC_LAYOUT_KEY_MIRROR : PC_LAYOUT_KEY, JSON.stringify(layout));
   } catch {
     /* ignore */
   }
 }
 
-export function clearPcLayout(): void {
+export function clearPcLayout(mirror = false): void {
   try {
-    localStorage.removeItem(PC_LAYOUT_KEY);
+    localStorage.removeItem(mirror ? PC_LAYOUT_KEY_MIRROR : PC_LAYOUT_KEY);
   } catch {
     /* ignore */
   }

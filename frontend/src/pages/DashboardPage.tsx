@@ -59,13 +59,15 @@ function defaultH(def: WidgetDef): number {
   return pxToUnits(def.defaultHeight ?? DEFAULT_TILE_PX);
 }
 
-// 写し (Cloudflare Pages) 用の固定レイアウト。
+// 写し (Cloudflare Pages) 用の既定レイアウト。
 //
-// 写しは静止画で、layout API (server 保存のカスタマイズ) も編集も意味を持たない。
-// また「今」の実行状態を映す widget (liveState) は収集・生成したコンテンツからの
-// 導出ではないため書き出し対象にしていない (CLAUDE.md §2 の写しの方針と同じ線引き)。
-// registry から liveState を除いた全 widget を既定 1 個ずつ、単純な bin-packing で
-// 並べる (customize 不可なので uid は widget id をそのまま使う = 安定・決定論的)。
+// 写しは静止画で layout API (server 保存) は無いが、カスタマイズ自体は localStorage のみで
+// 完結させて提供する (2026-10-04)。また「今」の実行状態を映す widget (liveState) は
+// 収集・生成したコンテンツからの導出ではないため書き出し対象にしていない
+// (CLAUDE.md §2 の写しの方針と同じ線引き)。
+// registry から liveState / mirrorExcluded を除いた全 widget を既定 1 個ずつ、単純な
+// bin-packing で並べる (uid は widget id をそのまま使う = 安定・決定論的。「既定に戻す」の
+// 復元先もこの固定レイアウト)。
 function buildMirrorLayout(): WidgetPlacement[] {
   const out: WidgetPlacement[] = [];
   let x = 0;
@@ -87,27 +89,50 @@ function buildMirrorLayout(): WidgetPlacement[] {
   return out;
 }
 
-const MIRROR = import.meta.env.VITE_MIRROR === "1";
+// registry def の liveState/mirrorExcluded 印、または registry に無い id を持つ widget を
+// 落とす防御的フィルタ。写しの localStorage に残った古い保存値 (registry 変更前に保存された
+// もの) から liveState widget 等が復元されてしまわないようにする。
+function sanitizeMirrorStored(stored: StoredDashboardLayout | null): StoredDashboardLayout | null {
+  if (!stored) return null;
+  const widgets = stored.widgets.filter((w) => {
+    const def = WIDGET_REGISTRY[w.id] as WidgetDef | undefined;
+    return !!def && !def.liveState && !def.mirrorExcluded;
+  });
+  // 全滅したら (古い保存値が丸ごと無効化された等) 既定レイアウトへ fallback させる
+  // (rawLayout 側の `?? MIRROR_LAYOUT` を効かせるため null を返す)。
+  return widgets.length > 0 ? { widgets } : null;
+}
+
 // モジュール読込時に一度だけ組む (純粋な導出で毎 render 再計算する必要が無い)。
 const MIRROR_LAYOUT: DashboardLayout = { widgets: buildMirrorLayout() };
 
 export function DashboardPage() {
+  // 関数内で毎 render 評価する (module 定数にすると import 時点の env に固定され、テストで
+  // VITE_MIRROR を切り替えても反映されない。src/pages/article/ArticleReadView.tsx と同じ理由)。
+  const MIRROR = import.meta.env.VITE_MIRROR === "1";
   const qc = useQueryClient();
   const isMobile = useIsMobile();
   const { data: serverLayout } = useQuery({
     queryKey: ["dashboard-layout"],
     queryFn: () => dashboardLayoutApi.get(),
-    // 写しには layout API が無い (customize 不可の固定レイアウトを使う)。
+    // 写しには layout API が無い (GET もしない。保存も localStorage のみ)。
     enabled: !MIRROR,
   });
   // モバイル専用レイアウト (localStorage)。PC (server) とは独立に保存・編集できる。
   // 初回 (localStorage 未設定) は server レイアウトを起点にする。
-  const [mobileLayout, setMobileLayout] = useState(() => (MIRROR ? null : loadMobileLayout()));
-  const [pcLayout, setPcLayout] = useState(() => (MIRROR ? null : loadPcLayout()));
+  // 写しは server が無いので起点は MIRROR_LAYOUT (rawLayout 側で ?? する)。保存済みの写し
+  // レイアウトは `:mirror` 接尾辞キー (loadMobileLayout/loadPcLayout の mirror 引数) に別置きし、
+  // 読込時に liveState/mirrorExcluded/廃止 widget を sanitizeMirrorStored で落とす。
+  const [mobileLayout, setMobileLayout] = useState(() =>
+    MIRROR ? sanitizeMirrorStored(loadMobileLayout(true)) : loadMobileLayout());
+  const [pcLayout, setPcLayout] = useState(() =>
+    MIRROR ? sanitizeMirrorStored(loadPcLayout(true)) : loadPcLayout());
   // 実効レイアウト: localStorage(この端末) > server(共有 default)。モバイル/PC 別キーで
   // 端末ごとに保持できる。旧 widget rename + v1(span)→v2(座標) の移行も load 時に適用。
-  // 写しは常に固定レイアウト (server/localStorage を一切参照しない)。
-  const rawLayout = MIRROR ? MIRROR_LAYOUT : isMobile ? (mobileLayout ?? serverLayout) : (pcLayout ?? serverLayout);
+  // 写しは localStorage(この端末・:mirror キー) > MIRROR_LAYOUT(既定)。
+  const rawLayout = MIRROR
+    ? (isMobile ? (mobileLayout ?? MIRROR_LAYOUT) : (pcLayout ?? MIRROR_LAYOUT))
+    : isMobile ? (mobileLayout ?? serverLayout) : (pcLayout ?? serverLayout);
   const layout = useMemo(() => migrateLayout(rawLayout), [rawLayout]);
   useWebSocket((ev) => {
     if (ev.type === "article_posted" || ev.type === "pipeline_complete" || ev.type === "pipeline_running") {
@@ -189,13 +214,21 @@ export function DashboardPage() {
   // 保存先: モバイル=この端末の localStorage。PC=まず server を試し、失敗 (外部 readonly の
   // 403 等) なら**この端末の localStorage に fallback**保存 (= 端末ごとにレイアウトを持てる)。
   // 書込可能 PC (ローカル) は server 保存成功時に端末 override を消し共有 default に追従。
+  // 写しは server そのものが無いので、mobile/PC いずれも layout API には一切触らず常に
+  // localStorage (`:mirror` キー) にのみ保存する。
   async function handleSave(widgets: WidgetPlacement[]) {
     if (isMobile) {
       // モバイルは並び順のみが意味を持つ → y を連番へ正規化 (x/w/h は PC 用の値を温存しない
       // — mobile レイアウトは独立キーなので PC 座標を壊さない)。
       const normalized = widgets.map((w, i) => ({ ...w, x: 0, y: i }));
-      saveMobileLayout({ widgets: normalized });
+      saveMobileLayout({ widgets: normalized }, MIRROR);
       setMobileLayout({ widgets: normalized });
+      setEditing(false);
+      return;
+    }
+    if (MIRROR) {
+      savePcLayout({ widgets }, true);
+      setPcLayout({ widgets });
       setEditing(false);
       return;
     }
@@ -283,8 +316,9 @@ export function DashboardPage() {
   const visible = (editing ? draft : (isMobile ? sortByPos(layout.widgets) : layout.widgets))
     .filter((w) => WIDGET_REGISTRY[w.id]);
   // multi-instance: 同一 widget を設定違いで複数配置できるよう、toolbox は全 widget を常に提示。
-  // 写しは liveState widget を候補にも出さない (固定レイアウトに戻ってしまうため実質無効だが、
-  // カスタマイズ入口自体を隠しているので到達しない防御線)。
+  // 写しは liveState/mirrorExcluded widget を追加候補にも出さない (本文・運用状態を書き出して
+  // いない widget を写しのカスタマイズで足せてしまわないための関門。sanitizeMirrorStored が
+  // 読込側、ここが追加側を塞ぐ)。
   const available = Object.keys(WIDGET_REGISTRY).filter((id) => !MIRROR || !(WIDGET_REGISTRY[id].liveState || WIDGET_REGISTRY[id].mirrorExcluded));
 
   const rglLayout: Layout = visible.map((w) => ({
@@ -347,14 +381,16 @@ export function DashboardPage() {
           {!isMobile && pcLayout && !editing && (
             <span
               className="inline-flex items-center gap-1.5 text-[12px] bg-warning-soft text-warning px-1.5 py-0.5 rounded"
-              title="サーバへ保存できなかったため、この端末内に保存されたレイアウトを表示しています。共有版 (サーバ) の更新は反映されません"
+              title={MIRROR
+                ? "この端末にカスタマイズ済みのレイアウトが保存されています (localStorage のみ・この端末限定)。既定の並びに戻せます"
+                : "サーバへ保存できなかったため、この端末内に保存されたレイアウトを表示しています。共有版 (サーバ) の更新は反映されません"}
             >
-              この端末専用レイアウト
+              {MIRROR ? "カスタマイズ済み" : "この端末専用レイアウト"}
               <button
-                onClick={() => { clearPcLayout(); setPcLayout(null); }}
+                onClick={() => { clearPcLayout(MIRROR); setPcLayout(null); }}
                 className="underline hover:no-underline"
               >
-                共有版に戻す
+                {MIRROR ? "既定に戻す" : "共有版に戻す"}
               </button>
             </span>
           )}
@@ -371,13 +407,11 @@ export function DashboardPage() {
               </>
             )
           ) : (
-            // 写しは固定レイアウト (customize 不可) — 編集に入れても保存先が無い。
-            !MIRROR && (
-              <button onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1 border border-border-subtle text-fg hover:bg-surface-2 px-3 py-1 rounded text-xs font-semibold">
-                <Settings className="h-3.5 w-3.5" /> カスタマイズ
-              </button>
-            )
+            // 写しもカスタマイズ可能 (保存先は localStorage のみ、server へは書かない)。
+            <button onClick={() => setEditing(true)}
+              className="inline-flex items-center gap-1 border border-border-subtle text-fg hover:bg-surface-2 px-3 py-1 rounded text-xs font-semibold">
+              <Settings className="h-3.5 w-3.5" /> カスタマイズ
+            </button>
           )}
         </div>
       </div>
