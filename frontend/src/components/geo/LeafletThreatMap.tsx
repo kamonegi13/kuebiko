@@ -41,6 +41,32 @@ const PIE_REST = "#586273";
 // index.html をキャッシュしたブラウザが旧ハッシュへ 404 するケース等で再現する)。
 const BASEMAP_RETRY_DELAY_MS = 1200;
 
+// 「全体を表示」が戻す既定の世界ビュー。saved view が無いときの初期値と同じ値を使う
+// (ズーム操作ボタンの下に置く control の目的は「mount 時と同じ全体表示に戻す」こと)。
+const WORLD_CENTER: L.LatLngExpression = [28, 12];
+const WORLD_ZOOM = 2;
+
+// ズームボタンの直下に積む「全体を表示」ボタン (Leaflet は同じ position の control を
+// 追加順に縦積みするので、zoomControl (既定 topleft) の後に追加すればその下に出る)。
+const ResetViewControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd(map: L.Map): HTMLElement {
+    const container = L.DomUtil.create("div", "leaflet-bar leaflet-control-reset-view");
+    const link = L.DomUtil.create("a", "", container) as HTMLAnchorElement;
+    link.href = "#";
+    link.title = "全体を表示";
+    link.setAttribute("role", "button");
+    link.setAttribute("aria-label", "全体を表示");
+    link.textContent = "全体を表示";
+    L.DomEvent.on(link, "click", (e: Event) => {
+      L.DomEvent.preventDefault(e);
+      map.setView(WORLD_CENTER, WORLD_ZOOM);
+    });
+    L.DomEvent.disableClickPropagation(container);
+    return container;
+  },
+});
+
 interface LeafletThreatMapProps {
   data: CyberMapResponse;
   selectedSector: string | null;
@@ -247,8 +273,8 @@ export function LeafletThreatMap({
     const saved = persistViewKey ? readSavedView(persistViewKey) : null;
     let stopThemeWatch: (() => void) | undefined;
     const map = L.map(divRef.current, {
-      center: saved?.center ?? [28, 12],
-      zoom: saved?.zoom ?? 2,
+      center: saved?.center ?? WORLD_CENTER,
+      zoom: saved?.zoom ?? WORLD_ZOOM,
       minZoom: 1, // 世界全体まで縮小可 (旧 2 では小コンテナで世界が出せなかった)
       maxZoom: 9,
       worldCopyJump: true,
@@ -257,6 +283,7 @@ export function LeafletThreatMap({
       zoomControl: true,
     });
     mapRef.current = map;
+    new ResetViewControl().addTo(map);
     // zoom/pan を localStorage に保存し、画面更新で復元 (full / mini それぞれ別キー)。
     if (persistViewKey) {
       map.on("moveend zoomend", () => saveMapView(persistViewKey, map.getCenter(), map.getZoom()));

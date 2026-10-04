@@ -34,8 +34,11 @@ fi
 # 運用画面は静的配信側に無いので、ログインリンクは tunnel 側のホストを指す。
 # 実ホストは運用者固有なので .env の OPERATOR_ORIGIN に置く (deploy_public_site.sh が読み込む)
 : "${OPERATOR_ORIGIN:?OPERATOR_ORIGIN (運用画面のオリジン、例 https://ops.kuebiko.example) を .env に設定してください}"
+# 標準⇄アドバンスドの切替導線が使う写しのオリジン。未設定でも導線が無効表示になるだけ
+# なので必須にしない (deploy_public_site.sh が .env から読み込む。空なら無効表示)。
+MIRROR_ORIGIN="${MIRROR_ORIGIN:-}"
 ( cd "$ROOT/frontend" && VITE_PUBLIC_STATIC=1 VITE_PUBLIC_BASE="$BASE" VITE_PUBLIC_DATA="/data" \
-    VITE_OPERATOR_ORIGIN="$OPERATOR_ORIGIN" npx vite build )
+    VITE_OPERATOR_ORIGIN="$OPERATOR_ORIGIN" VITE_MIRROR_ORIGIN="$MIRROR_ORIGIN" npx vite build )
 
 # 3) 配信物へまとめる
 rm -rf "$OUT"

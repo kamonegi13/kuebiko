@@ -160,14 +160,14 @@ describe("公開ニュースサイト", () => {
     expect(screen.getByText(/原記事そのものではありません/)).toBeTruthy();
   });
 
-  it("運用者向けの導線は控えめなログインリンクだけ", async () => {
+  it("運用者向けの導線は出さない (2026-10-04、標準/アドバンスド切替に置き換え)", async () => {
     renderSite();
     await screen.findByText(ITEM.headline);
     const links = Array.from(document.querySelectorAll("a")).map((a) =>
       a.getAttribute("href"),
     );
-    // 着地点は /auth/login。/auth/ はアプリにルートが無く、認証通過後に 404 になる
-    expect(links).toContain("/auth/login");
+    // 旧「運用画面 (最新)」リンク (着地点 /auth/login) は撤去済み
+    expect(links).not.toContain("/auth/login");
     // 分析画面への導線を出さない
     for (const analyst of [
       "/app/dashboard",
@@ -899,25 +899,23 @@ describe("可読性の下限", () => {
   });
 });
 
-describe("運用者ログインの導線", () => {
-  it("着地点は /auth/login (/auth/ は認証後に 404 になる)", () => {
-    // Cloudflare Access は /auth/* を保護するが、アプリに /auth/ のルートは無い。
-    // 認証を通過した直後に 404 が出る (2026-08-26 実測)。
-    expect(siteSource).toContain("/auth/login");
-    expect(siteSource).not.toContain('href="/auth/"');
+describe("標準 / アドバンスド切替 (2026-10-04)", () => {
+  it("ヘッダに切替 (SiteSwitch) を置き、現在面は standard", () => {
+    // 旧フッターの「運用画面 (最新)」「保存された写し」リンクは撤去済み
+    // (利用者決定)。切替はヘッダに置く。
+    expect(siteSource).toContain("<SiteSwitch current=\"standard\"");
+    expect(siteSource).not.toContain("保存された写し");
+    expect(siteSource).not.toContain("運用画面 (最新)");
   });
 
-  it("Mac が落ちていても写しへ辿り着ける導線がある", () => {
-    // 公開サイトは Pages 配信で Mac の状態に依存しないため、ここが
-    // 「落ちているときでも必ず開ける集合場所」になる。運用画面への導線しか
-    // 無いと、落ちているときに写しへ辿り着けない (2026-08-29)。
+  it("写しのオリジンをビルド時に差し込める", () => {
+    // 静的配信 (Pages) には写しのビルド時オリジンが埋め込まれていないので、
+    // VITE_MIRROR_ORIGIN で注入する (未設定なら SiteSwitch 側で無効表示)。
     expect(siteSource).toContain("VITE_MIRROR_ORIGIN");
-    expect(siteSource).toContain("保存された写し");
-    expect(siteSource).toContain("運用画面 (最新)");
   });
 
-  it("運用画面のオリジンをビルド時に差し込める", () => {
-    // 静的配信 (Pages) には運用画面が無いので、tunnel 側のホストを指す必要がある
-    expect(siteSource).toContain("VITE_OPERATOR_ORIGIN");
+  it("運用画面への導線はフッターに残さない", () => {
+    expect(siteSource).not.toContain("/auth/login");
+    expect(siteSource).not.toContain("VITE_OPERATOR_ORIGIN");
   });
 });

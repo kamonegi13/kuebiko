@@ -21,10 +21,10 @@ import {
 } from "../api/publicNews";
 import { formatJstDate, relativeFromNow } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
-import { loginUrl } from "../hooks/useRuntimeFlags";
 import { staticCategoryLabels } from "../api/publicNewsStatic";
 import { PublicErrorBoundary } from "./PublicErrorBoundary";
 import { Drawer } from "../components/Drawer";
+import { SiteSwitch } from "../components/SiteSwitch";
 import { PublicMapSection } from "./PublicMapSection";
 import { categoryColor } from "./categoryColors";
 import { buildSections } from "./sections";
@@ -46,16 +46,7 @@ const PORTAL_CATEGORY_COUNT = 4;
  * 配信先を変えたときに一部のリンクだけ壊れる。 */
 const HOME_PATH = import.meta.env.VITE_PUBLIC_BASE || "/app/news";
 
-/** 運用者ログインの着地点。
- *
- * 静的配信 (Cloudflare Pages) の公開サイトには運用画面が無いので、tunnel 側の
- * ホストを指す。同一オリジンで配信しているとき (運用者の PC) は相対のままでよい。 */
-function operatorLoginUrl(): string {
-  return loginUrl(import.meta.env.VITE_OPERATOR_ORIGIN || "");
-}
-
-/** 写し (Cloudflare Pages) の入口。未設定なら導線を出さない。
- *  運用画面と **別のアカウントで入る**面なので、URL も別ホストになる。 */
+/** 写し (アドバンスド、匿名公開) の入口。未設定なら導線を無効表示にする。 */
 const MIRROR_URL: string = import.meta.env.VITE_MIRROR_ORIGIN || "";
 
 /** カテゴリの表示名。どの category を束ねるかの定義も表示名も backend が持つ。
@@ -247,6 +238,9 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
             kuebiko
           </button>
           <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
+          <div className="ml-auto">
+            <SiteSwitch current="standard" otherOrigin={MIRROR_URL} />
+          </div>
         </div>
       </header>
       {/* 追従するのは **ナビだけ**。地図の Leaflet が z-index 400+ を使うので z-20 を保つ */}
@@ -315,28 +309,6 @@ function SiteFooter() {
         <p>
           掲載しているのは kuebiko が公開報道から生成した要約です。原記事そのものではありません。
           各記事の出典をご確認ください。
-        </p>
-        <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {/* ⚠ 着地点は `/auth/login`。`/auth/` は Access の保護対象ではあるが
-              アプリにルートが無く、**認証を通過した直後に 404 になる**
-              (2026-08-26 実測)。運用画面は別ホスト (tunnel 経由) にあるので
-              絶対 URL で指す — 静的配信の公開サイトには運用画面が無い。
-
-              ⭐ **導線を 2 つ出す理由**: 運用画面は Mac に届かないと開けない。
-              公開サイトは Pages 配信で Mac の状態に依存しないため、ここが
-              「Mac が落ちているときでも必ず開ける集合場所」になる。片方しか
-              置かないと、落ちているときに写しへ辿り着けない (2026-08-29)。 */}
-          <a
-            href={operatorLoginUrl()}
-            className="hover:text-accent underline underline-offset-2"
-          >
-            運用画面 (最新)
-          </a>
-          {MIRROR_URL && (
-            <a href={MIRROR_URL} className="hover:text-accent underline underline-offset-2">
-              保存された写し
-            </a>
-          )}
         </p>
       </div>
     </footer>

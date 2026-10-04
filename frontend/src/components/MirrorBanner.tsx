@@ -2,6 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Archive } from "lucide-react";
 import { fetchMirrorMeta } from "../api/mirrorStatic";
 import { formatJstDate, relativeFromNow } from "../utils/date";
+import { SiteSwitch } from "./SiteSwitch";
+
+/** 公開サイト (標準) の入口。写しビルド (VITE_MIRROR=1) 時に build_mirror.sh が
+ *  .env の PUBLIC_SITE_ORIGIN から注入する。未設定なら導線を無効表示にする。 */
+const PUBLIC_URL: string = import.meta.env.VITE_PUBLIC_ORIGIN || "";
 
 /** 「これは写しである」を常時出す帯。
  *
@@ -29,6 +34,9 @@ export function MirrorBanner() {
       <div className="flex items-center gap-2 px-4 py-2 text-[13px] bg-warning-soft border-b border-warning/40 text-fg">
         <Archive size={15} className="shrink-0 text-warning" />
         <span>いつ時点の情報かを取得できませんでした</span>
+        <div className="ml-auto">
+          <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
+        </div>
       </div>
     );
   }
@@ -49,6 +57,9 @@ export function MirrorBanner() {
         // 壊れていると思って調べに行くことになる。
         <span className="text-fg-muted">記事本文は含まれません</span>
       )}
+      <div className="ml-auto">
+        <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
+      </div>
     </div>
   );
 }

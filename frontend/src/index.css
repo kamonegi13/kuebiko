@@ -138,6 +138,15 @@
   outline: none !important;
 }
 
+/* 脅威マップ: ズームボタン直下の「全体を表示」。leaflet-bar 既定の 26x26 正方形では
+   文字が入らないので幅だけ広げる (セレクタを leaflet-bar と併記して詳細度で上書き)。 */
+.leaflet-bar.leaflet-control-reset-view a {
+  width: auto;
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* 脅威マップ: 都市名ラベル (Leaflet divIcon) */
 .geo-city-label {
   pointer-events: none;
