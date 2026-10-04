@@ -170,9 +170,17 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     "/api/v1/articles?status=posted&limit=30",
     *(f"/api/v1/articles?category={c}&status=posted&limit=30" for c in _ARTICLE_CATEGORIES),
     *(f"/api/v1/articles?importance={i}&status=posted&limit=30" for i in _ARTICLE_IMPORTANCE),
+    # ダッシュボードの「記事フィード」widget (news_feed) の既定設定 (defaultConfig:
+    # {mode: "summary", per: 5}、絞り込みは未指定) が実際に送る query。他の facet
+    # 組み合わせとは limit/include_summary だけが違うため別行で持つ
+    # (frontend/src/pages/dashboard/widgets/articles.tsx の articlesApi.list 呼び出しと
+    # 一字一句同じ順序・値でなければハッシュが合わない)。
+    "/api/v1/articles?status=posted&limit=5&include_summary=1",
     # PIR / Spotlight
     "/api/v1/pir",
-    "/api/v1/spotlight",
+    # frontend/src/api/spotlight.ts の spotlightApi.list() 既定 (period_type=rolling7)。
+    # bare "/api/v1/spotlight" は実際には送られないクエリなので別に持つ。
+    "/api/v1/spotlight?period_type=rolling7",
     # ブリーフ・振り返り (一覧。本体は最新から数本を別途たどる)
     "/api/v1/intel-graph/daily-briefs?limit=60&meta_only=1",
     "/api/v1/intel-graph/brief-context",
@@ -493,6 +501,38 @@ def main() -> int:
                         continue
         except httpx.HTTPError as exc:
             missing.append(f"国別 ({type(exc).__name__})")
+
+        # SIR (PIR) 個別 (詳細画面用)。一覧 (`/api/v1/pir`) は既に SCREEN_ENDPOINTS で
+        # 書き出し済みだが、詳細画面 (PirDetailPage) は個別の get/kpi を別経路で叩くため
+        # ここで ID ごとに辿る必要がある (旧実装は一覧のみでここが丸ごと欠けていた→
+        # 詳細画面が常に「SIR が見つかりません」になっていた)。
+        try:
+            pir_list = _get(client, "/api/v1/pir")
+            pir_items = pir_list.get("priorities", []) if isinstance(pir_list, dict) else []
+            for item in pir_items:
+                pid = str(item.get("id") or "")
+                if not pid:
+                    continue
+                enc = urllib.parse.quote(pid, safe="")
+                for ep in (f"/api/v1/pir/{enc}", f"/api/v1/pir/{enc}/kpi"):
+                    try:
+                        total_bytes += _write(
+                            out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                        )
+                    except httpx.HTTPError:
+                        continue
+                # Spotlight はまだ生成されていない SIR もある (404 を通常として扱う)。
+                # PirDetailPage は spotlightApi.get() の既定どおり period_type=rolling7 固定。
+                if item.get("spotlight_enabled"):
+                    ep = f"/api/v1/spotlight/{enc}?period_type=rolling7"
+                    try:
+                        total_bytes += _write(
+                            out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                        )
+                    except httpx.HTTPError:
+                        continue
+        except httpx.HTTPError as exc:
+            missing.append(f"SIR 個別 ({type(exc).__name__})")
 
         # 日次ブリーフの本体。一覧の新しい方から数本たどる。
         try:

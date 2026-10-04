@@ -207,3 +207,63 @@ class TestStubs:
         }
         assert stub["channels"] == []
         _assert_no_forbidden_keys(stub, "channels-stub")
+
+
+class TestFrontendQueryStringParity:
+    """SCREEN_ENDPOINTS の query 文字列は frontend が実際に送る形と**一字一句**一致して
+    いなければならない。mirrorFetch (frontend/src/api/mirrorFetch.ts) は path+search の
+    SHA-256 ハッシュでファイルを引くため、1 文字ずれただけで 501 になる
+    (2026-10-04 に news_feed widget と SIR Spotlight 一覧がこの不一致で壊れていた)。
+    """
+
+    def test_news_feed_widget_default_query_is_exported(self) -> None:
+        # Arrange — frontend/src/pages/dashboard/widgets/articles.tsx の
+        # ArticleFeedWidget は status="posted" 固定、config 未指定時は defaultConfig
+        # ({mode: "summary", per: 5}) により limit=5 + include_summary=1 を送る。
+        from export_mirror import SCREEN_ENDPOINTS
+
+        # Act / Assert
+        assert "/api/v1/articles?status=posted&limit=5&include_summary=1" in SCREEN_ENDPOINTS
+
+    def test_spotlight_list_default_query_is_exported(self) -> None:
+        # Arrange — frontend/src/api/spotlight.ts の spotlightApi.list() 既定は
+        # period_type=rolling7 を明示的にクエリへ付けるため、bare "/api/v1/spotlight"
+        # では一致しない。
+        from export_mirror import SCREEN_ENDPOINTS
+
+        # Act / Assert
+        assert "/api/v1/spotlight?period_type=rolling7" in SCREEN_ENDPOINTS
+        assert "/api/v1/spotlight" not in SCREEN_ENDPOINTS
+
+
+class TestSafeNameMatchesFrontendHashInputs:
+    """_safe_name の入力文字列が frontend の fileName() へ渡る path+search と
+    同じ組み立てになっていることを、SIR 詳細画面の実パターンで確認する。"""
+
+    def test_pir_detail_and_kpi_paths_hash_deterministically(self) -> None:
+        # Arrange — PirDetailPage (frontend/src/pages/PirDetailPage.tsx) が叩く
+        # pirApi.get(id) / pirApi.kpi(id) のパス。
+        pir_id = "pir_china_apt"
+
+        # Act
+        detail_hash = _safe_name(f"/api/v1/pir/{pir_id}")
+        kpi_hash = _safe_name(f"/api/v1/pir/{pir_id}/kpi")
+
+        # Assert — 32 文字 hex、かつ互いに異なる (別エンドポイントが同じファイルに
+        # 衝突しない)
+        assert len(detail_hash) == 32
+        assert len(kpi_hash) == 32
+        assert detail_hash != kpi_hash
+
+    def test_spotlight_detail_path_includes_default_period_type(self) -> None:
+        # Arrange — spotlightApi.get(id) の既定呼び出し (frontend/src/api/spotlight.ts)
+        # は period_type=rolling7 を常に送る。
+        pir_id = "pir_china_apt"
+
+        # Act
+        with_period = _safe_name(f"/api/v1/spotlight/{pir_id}?period_type=rolling7")
+        bare = _safe_name(f"/api/v1/spotlight/{pir_id}")
+
+        # Assert — クエリの有無でハッシュが変わる (= bare を書いても詳細画面には
+        # 届かない) ことを明示する
+        assert with_period != bare
