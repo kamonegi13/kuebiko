@@ -400,3 +400,35 @@ class TestSafeNameMatchesFrontendHashInputs:
         # Assert — クエリの有無でハッシュが変わる (= bare を書いても詳細画面には
         # 届かない) ことを明示する
         assert with_period != bare
+
+
+class TestPublicChannels:
+    def test_keeps_only_label_fields_and_drops_webhook_info(self) -> None:
+        # Arrange
+        from scripts.export_mirror import _public_channels
+
+        payload = {
+            "channels": [
+                {
+                    "id": "japan_watch",
+                    "label": "日本関連",
+                    "webhook_env_key": "X",
+                    "enabled": True,
+                    "order": 2,
+                }
+            ],
+            "builtin_ids": ["alert"],
+            "webhook_set": {"japan_watch": True},
+            "webhook_masked": {"japan_watch": "http***"},
+            "rule_refs": {"japan_watch": ["r1"]},
+        }
+
+        # Act
+        out = _public_channels(payload)
+
+        # Assert
+        assert out["channels"] == [
+            {"id": "japan_watch", "label": "日本関連", "enabled": True, "order": 2}
+        ]
+        assert out["webhook_set"] == {} and out["webhook_masked"] == {} and out["rule_refs"] == {}
+        assert out["builtin_ids"] == ["alert"]

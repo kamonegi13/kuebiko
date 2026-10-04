@@ -231,6 +231,26 @@ _CHANNELS_STUB: dict[str, Any] = {
     "webhook_masked": {},
 }
 
+#: チャンネルを匿名の写しに出すときに残す項目 (2026-10-04)。絞り込み (「日本関連」等) の
+#: 選択肢と表示名にだけ使う。webhook の環境変数名・設定状態・ルーティングの参照は
+#: 運用情報なので落とす
+_CHANNEL_PUBLIC_KEYS = ("id", "label", "enabled", "routable", "order")
+
+
+def _public_channels(payload: Any) -> dict[str, Any]:
+    """`/api/v1/channels` の応答から、表示名と並びだけを残した新しい構造を返す。"""
+    channels = payload.get("channels", []) if isinstance(payload, dict) else []
+    return {
+        **_CHANNELS_STUB,
+        "channels": [
+            {k: c[k] for k in _CHANNEL_PUBLIC_KEYS if k in c}
+            for c in channels
+            if isinstance(c, dict)
+        ],
+        "builtin_ids": list(payload.get("builtin_ids", [])) if isinstance(payload, dict) else [],
+    }
+
+
 #: 匿名公開では書き出さないエンドポイント (レビューキュー・個人メモ・購読ソース・
 #: Grok 関連)。最終関門 (`_final_gate`) がファイルとして存在しないことを確認する。
 _EXCLUDED_ENDPOINTS = (
@@ -483,13 +503,14 @@ def main() -> int:
             payload = _get(client, ep)
             total_bytes += _write(out / "api" / f"{_safe_name(ep)}.json", payload)
 
-        # runtime-flags / channels は稼働中の値を取らず、同形の空スタブを書く
-        # (webhook env key・認証状態は運用情報なので匿名公開には乗せない)。
+        # runtime-flags は稼働中の値を取らず同形の空スタブを書く (認証状態は運用情報)。
+        # channels は表示名と並びだけ残す (webhook の環境変数名・設定状態は落とす)。
         total_bytes += _write(
             out / "api" / f"{_safe_name('/api/v1/runtime-flags')}.json", _RUNTIME_FLAGS_STUB
         )
         total_bytes += _write(
-            out / "api" / f"{_safe_name('/api/v1/channels')}.json", _CHANNELS_STUB
+            out / "api" / f"{_safe_name('/api/v1/channels')}.json",
+            _public_channels(_get(client, "/api/v1/channels")),
         )
 
         # --- 画面ごとの取得 ---
