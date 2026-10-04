@@ -14,10 +14,12 @@ import { articlesApi } from "../api/articles";
 import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
-  BODY_OPTS, EMPTY_SEVERITY_FACET, JP_OPTS, LevelBadge, readSeverityFacet, Sel,
-  SeverityFacetControls, severityFacetQueryParams, SINCE_OPTS, SORT_OPTS, useFacetOptions,
-  VendorInput, writeSeverityFacet, type SeverityFacetState,
+  EMPTY_SEVERITY_FACET, LevelBadge, readSeverityFacet, useFacetOptions,
+  severityFacetQueryParams, writeSeverityFacet, type SeverityFacetState,
 } from "../components/news/facets";
+import { applyRelation, FilterBar, relationFromState } from "../components/news/FilterBar";
+import { NewsViewTabs } from "../components/news/NewsViewTabs";
+import { EMPTY_FILTERS, type NewsFilters } from "../components/news/views";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
 import { extractCves } from "./dashboard/shared";
@@ -190,8 +192,6 @@ export function NewsPage() {
   const activePivot = pivot ?? autoPivot;
   const view: "browse" | "search" | "pivot" = activePivot ? "pivot" : search ? "search" : "browse";
 
-  const { pirLabel, actorLabel } = facetOpts;
-
   // W2: 新着モードの時間絞り込み。cursor あり→絶対 since(=「前回確認以降」)、cursor 未設定→
   // 直近 24h を暫定表示 (『ここまで既読』で基準を作るまでの足場)。新着 off→従来の since_hours。
   const browseSince = newOnly ? (lastSeen ?? undefined) : undefined;
@@ -255,7 +255,37 @@ export function NewsPage() {
   // W2: 「ここまで既読」= 新着カーソルを現在時刻へ進める (= ここまでレビュー済)。
   function markCaughtUp(): void { setLastSeen(new Date().toISOString()); }
 
-  const hasActiveTag = Boolean(malware || cve || intent || pir || actor || vendor);
+  const hasActiveTag = Boolean(malware || cve);
+  // ビュー保存・一致判定用の中間表現 (docs/news_filter_ux.md §3)。
+  const currentFilters: NewsFilters = useMemo(() => ({
+    ...EMPTY_FILTERS,
+    search: "", // 検索語はビューに含めない (絞り込みの組とは別物として扱う)
+    minSeverity: severity.minSeverity,
+    relevantOnly: severity.relevantOnly,
+    includeStrategic: severity.includeStrategic,
+    jp: jp as NewsFilters["jp"],
+    since,
+    sort: sort as NewsFilters["sort"],
+    category, feed, intent, pir, actor,
+    affectedVendor: vendor,
+    body, channel,
+  }), [severity, jp, since, sort, category, feed, intent, pir, actor, vendor, body, channel]);
+  function applyView(f: Partial<NewsFilters>): void {
+    const next = { ...EMPTY_FILTERS, ...f };
+    setSeverity({ minSeverity: next.minSeverity, relevantOnly: next.relevantOnly, includeStrategic: next.includeStrategic });
+    setJp(next.jp);
+    setSince(next.since);
+    setSort(next.sort);
+    setCategory(next.category);
+    setFeed(next.feed);
+    setIntent(next.intent);
+    setPir(next.pir);
+    setActor(next.actor);
+    setVendorRaw(next.affectedVendor);
+    setVendor(next.affectedVendor);
+    setBody(next.body);
+    if (!MIRROR) setChannel(next.channel);
+  }
   const headerCount =
     view === "browse" ? arts.length : view === "search" ? (searchData?.count ?? 0) : (pivotQ.data?.article_count ?? 0);
   const busy = view === "browse" ? browseQ.isFetching : view === "search" ? quickQ.isFetching : pivotQ.isFetching;
@@ -267,57 +297,66 @@ export function NewsPage() {
         <span className="text-xs text-fg-subtle">{headerCount} 件{busy ? " · 更新中…" : ""}</span>
       </div>
 
-      <div className="md:sticky md:top-12 z-20 bg-bg/95 backdrop-blur-md border-b border-border-subtle -mx-4 px-4 md:mx-0 md:px-0 py-2 flex flex-wrap items-center gap-2">
-        <input
-          value={searchRaw}
-          onChange={(e) => onSearchInput(e.target.value)}
-          placeholder="検索 (CVE/IP/ドメインは逆引き)…"
-          className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
-        />
-        <Sel value={category} onChange={setCategory} opts={facetOpts.category} />
-        <Sel value={feed} onChange={setFeed} opts={facetOpts.feed} />
-        <Sel value={jp} onChange={setJp} opts={JP_OPTS} />
-        {/* 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。 */}
-        {!MIRROR && <Sel value={channel} onChange={setChannel} opts={facetOpts.channel} />}
-        <SeverityFacetControls state={severity} onChange={setSeverity} />
-        <Sel value={body} onChange={setBody} opts={BODY_OPTS} />
-        <Sel value={intent} onChange={setIntent} opts={facetOpts.intent} />
-        <Sel value={pir} onChange={setPir} opts={facetOpts.pir} />
-        <Sel value={actor} onChange={setActor} opts={facetOpts.actor} />
-        <VendorInput
-          raw={vendorRaw}
-          onChange={setVendorRaw}
-          applied={vendor}
-          options={facetOpts.vendor}
-          listId="news-vendor-list"
-        />
-        <Sel value={since} onChange={setSince} opts={SINCE_OPTS} />
-        {/* 並び順は閲覧のみ (検索は融合スコア順が前提)。 */}
-        {view === "browse" && <Sel value={sort} onChange={setSort} opts={SORT_OPTS} />}
-        {view === "search" ? (
-          <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center" title="精密 = LLM で関連度を並べ直す (~25-35s)">
-            {([["quick", "クイック"], ["precise", "精密 (LLM)"]] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setPrecise(k === "precise")}
-                className={`px-2.5 h-7 rounded-sm text-xs font-medium transition-all ${
-                  (precise ? "precise" : "quick") === k ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg"
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center">
-            {(["headline", "summary"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
-                className={`px-2.5 h-7 rounded-sm text-xs font-medium transition-all ${
-                  mode === m ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg"
-                }`}>
-                {m === "headline" ? "見出し" : "要約"}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <NewsViewTabs currentFilters={currentFilters} onApply={applyView} />
+
+      <FilterBar
+        facetOpts={facetOpts}
+        searchValue={searchRaw}
+        onSearchChange={onSearchInput}
+        searchPlaceholder="検索 (CVE/IP/ドメインは逆引き)…"
+        severity={severity}
+        onSeverity={setSeverity}
+        relation={relationFromState(jp, severity.relevantOnly)}
+        onRelation={(v) => {
+          const next = applyRelation(v);
+          setJp(next.jp);
+          setSeverity((s) => ({ ...s, relevantOnly: next.relevantOnly }));
+        }}
+        since={since}
+        onSince={setSince}
+        sort={view === "browse" ? sort : undefined}
+        onSort={view === "browse" ? setSort : undefined}
+        category={category}
+        onCategory={setCategory}
+        feed={feed}
+        onFeed={setFeed}
+        intent={intent}
+        onIntent={setIntent}
+        pir={pir}
+        onPir={setPir}
+        actor={actor}
+        onActor={setActor}
+        vendorRaw={vendorRaw}
+        onVendorRaw={setVendorRaw}
+        vendorApplied={vendor}
+        body={{ value: body, onChange: setBody }}
+        channel={MIRROR ? undefined : { value: channel, onChange: setChannel }}
+        trailing={
+          view === "search" ? (
+            <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center" title="精密 = LLM で関連度を並べ直す (~25-35s)">
+              {([["quick", "クイック"], ["precise", "精密 (LLM)"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setPrecise(k === "precise")}
+                  className={`px-2.5 h-7 rounded-sm text-xs font-medium transition-all ${
+                    (precise ? "precise" : "quick") === k ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg"
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center">
+              {(["headline", "summary"] as const).map((m) => (
+                <button key={m} onClick={() => setMode(m)}
+                  className={`px-2.5 h-7 rounded-sm text-xs font-medium transition-all ${
+                    mode === m ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg"
+                  }`}>
+                  {m === "headline" ? "見出し" : "要約"}
+                </button>
+              ))}
+            </div>
+          )
+        }
+      />
 
       {/* 逆引き中バナー (明示 pivot / 自動逆引き) */}
       {view === "pivot" && activePivot && (
@@ -333,7 +372,9 @@ export function NewsPage() {
         </div>
       )}
 
-      {/* タグ絞り込みチップ (閲覧・検索の双方に効く) */}
+      {/* malware/cve はインライン chip 専用 (記事一覧の個別タグ click で付く絞り込み)。
+          category/feed/intent/pir/actor/vendor/body/channel/severity の絞り込みチップは
+          FilterBar が描く (詳細な絞り込みに畳んでいる条件も含めて一元化)。 */}
       {hasActiveTag && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-fg-subtle">タグ絞り込み:</span>
@@ -347,34 +388,6 @@ export function NewsPage() {
             <button onClick={() => setCve("")}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-critical-soft text-critical border border-critical/40 hover:bg-critical/20 font-mono">
               {cve} <span className="text-fg-subtle">×</span>
-            </button>
-          )}
-          {intent && (
-            <button onClick={() => setIntent("")}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-2 text-accent border border-accent/40 hover:bg-accent/20"
-              title="攻撃者の意図で絞り込み中">
-              {intentLabel(intent)} <span className="text-fg-subtle">×</span>
-            </button>
-          )}
-          {pir && (
-            <button onClick={() => setPir("")}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-soft text-accent-hover border border-accent/40 hover:bg-accent/20"
-              title="SIR (収集要求) で絞り込み中">
-              SIR: {pirLabel.get(pir) ?? pir} <span className="text-fg-subtle">×</span>
-            </button>
-          )}
-          {actor && (
-            <button onClick={() => setActor("")}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-soft text-accent-hover border border-accent/40 hover:bg-accent/20"
-              title="脅威アクターで絞り込み中">
-              {actorLabel.get(actor) ?? actor} <span className="text-fg-subtle">×</span>
-            </button>
-          )}
-          {vendor && (
-            <button onClick={() => { setVendorRaw(""); setVendor(""); }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-warning-soft text-warning border border-warning/40 hover:bg-warning/20"
-              title="影響ベンダで絞り込み中">
-              影響: {vendor} <span className="text-fg-subtle">×</span>
             </button>
           )}
         </div>

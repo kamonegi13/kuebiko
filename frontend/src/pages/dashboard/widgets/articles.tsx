@@ -12,6 +12,9 @@ import {
   EMPTY_SEVERITY_FACET, LevelBadge, severityFacetFromConfigStrings, severityFacetQueryParams,
   type SeverityFacetState,
 } from "../../../components/news/facets";
+import { useNewsViews } from "../../../components/news/useNewsViews";
+import { resolveWidgetViewFilters } from "../../../components/news/widgetViewResolution";
+import { toNewsPageHref } from "../../../components/news/views";
 import {
   WidgetCard, Loading, Empty, WidgetError, ImportanceDot, extractCves, cfgStr, cfgNum, type WidgetProps,
 } from "../shared";
@@ -21,12 +24,13 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   // カテゴリ表示は backend 配信 vocab を SSoT に。個別カテゴリ + 合成カテゴリ (vuln/threat/
   // incident_breach) を 1 つの写像として合成し、未知キーは原値 fallback。
   const categoryLabelMap: Record<string, string> = { ...useVocabMap("category"), ...useVocabMap("category_group") };
-  const category = cfgStr(config, "category", "");
-  const feed = cfgStr(config, "feed", "");
-  const channel = cfgStr(config, "channel", "");
-  // 深刻さ・関連性・戦略上の重み (2026-10-04)。保存済み widget 設定の新 3 facet が
-  // 無ければ旧 level_filter / 更に古い importance (high/medium/low) を移行する。
-  const severity = severityFacetFromConfigStrings(
+
+  // ビュー選択 (2026-10-04、docs/news_filter_ux.md §4)。view が選ばれていればその絞り込みを
+  // 使う。未選択 (旧保存設定も含む) は従来どおり個別項目を読む — これが「ad-hoc view」
+  // そのものなので、既存の保存設定は変更なしで動き続ける (移行用の別処理は不要)。
+  const { userViews } = useNewsViews();
+  const viewId = cfgStr(config, "view", "");
+  const legacySeverity = severityFacetFromConfigStrings(
     cfgStr(config, "min_severity", ""),
     cfgStr(config, "relevant_only", ""),
     cfgStr(config, "include_strategic", ""),
@@ -34,10 +38,23 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
     cfgStr(config, "importance", ""),
     EMPTY_SEVERITY_FACET,
   );
+  const { view, filters } = resolveWidgetViewFilters(viewId, userViews, {
+    category: cfgStr(config, "category", ""),
+    feed: cfgStr(config, "feed", ""),
+    channel: cfgStr(config, "channel", ""),
+    jp: cfgStr(config, "jp", "") as "" | "targeted_affected" | "mentioned",
+    minSeverity: legacySeverity.minSeverity,
+    relevantOnly: legacySeverity.relevantOnly,
+    includeStrategic: legacySeverity.includeStrategic,
+    since: String(cfgNum(config, "since_hours", 0)),
+  });
+  const { category, feed, channel, jp } = filters;
+  const severity: SeverityFacetState = {
+    minSeverity: filters.minSeverity, relevantOnly: filters.relevantOnly, includeStrategic: filters.includeStrategic,
+  };
+  const sinceHours = Number(filters.since) || 0;
   const mode = cfgStr(config, "mode", "headline"); // headline | summary
   const per = cfgNum(config, "per", 8);
-  const sinceHours = cfgNum(config, "since_hours", 0);
-  const jp = cfgStr(config, "jp", "") as "" | "targeted_affected" | "mentioned";
   const wantSummary = mode === "summary";
 
   const { data, isError } = useQuery({
@@ -59,9 +76,10 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const arts = data?.articles ?? [];
   // チャンネル名は useChannelMeta (SSoT) で解決 (未登録 id は原値 fallback)。
   const channelLabel = channel ? chMeta(channel).label : "";
-  const title = buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap });
+  // Title = ビュー名 (選ばれていれば)。ad-hoc (旧設定・未選択) は従来どおり絞り込みから組む。
+  const title = view ? view.label : buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap });
   // widget の絞り込みをそのまま引き継いで News ページへ deep-link
-  const href = buildNewsHref({ category, feed, channel, severity, sinceHours, jp });
+  const href = toNewsPageHref(filters);
 
   return (
     <WidgetCard title={title} href={href} linkLabel="記事一覧 →">
@@ -107,22 +125,6 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
       )}
     </WidgetCard>
   );
-}
-
-function buildNewsHref({ category, feed, channel, severity, sinceHours, jp }: {
-  category: string; feed: string; channel: string; severity: SeverityFacetState; sinceHours: number; jp: string;
-}): string {
-  const q = new URLSearchParams();
-  if (category) q.set("category", category);
-  if (feed) q.set("feed", feed);
-  if (channel) q.set("channel", channel);
-  if (severity.minSeverity) q.set("min_severity", severity.minSeverity);
-  if (severity.relevantOnly) q.set("relevant_only", "1");
-  if (severity.minSeverity && severity.includeStrategic) q.set("include_strategic", "1");
-  if (jp) q.set("jp", jp);
-  if (sinceHours) q.set("since", String(sinceHours));
-  const qs = q.toString();
-  return qs ? `/app/news?${qs}` : "/app/news";
 }
 
 function buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap }: {

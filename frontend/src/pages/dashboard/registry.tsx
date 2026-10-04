@@ -2,8 +2,8 @@
 // config の動的選択肢 (アクター/国) は loadChoices で snapshot から取得する。
 
 import { api } from "../../api/client";
-import { pagesApi } from "../../api/pages";
-import { channelsApi } from "../../api/channels";
+import { newsViewsApi } from "../../api/newsViews";
+import { BUILTIN_VIEWS } from "../../components/news/views";
 import { COUNT_CHOICES, type ConfigOption, type WidgetDef } from "./shared";
 import { StatusStripWidget, StandingAssessmentWidget, SynthesisSectionWidget } from "./widgets/situational";
 import { LatestHeadlinesWidget } from "./widgets/headlines";
@@ -19,36 +19,6 @@ import { JpCiThreatWidget } from "./widgets/jpci";
 
 // ── 共通 config option 定義 ──
 const PER_OPTION: ConfigOption = { key: "per", label: "件数", choices: COUNT_CHOICES };
-// 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。news_feed / eventnews widget が
-// 共有する。旧 "level_filter" (1 本化 facet) / さらに古い "importance" (high/medium/low) の
-// 保存済み widget 設定は ``severityFacetFromConfigStrings``
-// (frontend/src/components/news/facets.tsx) で読む。
-const MIN_SEVERITY_OPTION: ConfigOption = {
-  key: "min_severity", label: "深刻さ",
-  choices: [
-    { value: "", label: "すべて" },
-    { value: "S3", label: "重大のみ" },
-    { value: "S2", label: "注意以上" },
-    { value: "S1", label: "参考以上" },
-  ],
-};
-const RELEVANT_ONLY_OPTION: ConfigOption = {
-  key: "relevant_only", label: "関連性",
-  choices: [
-    { value: "", label: "すべて" },
-    { value: "1", label: "関連性ありのみ" },
-  ],
-};
-const INCLUDE_STRATEGIC_OPTION: ConfigOption = {
-  key: "include_strategic", label: "政策・地政学 (深刻さ絞り込み時)",
-  choices: [
-    { value: "", label: "含めない" },
-    { value: "1", label: "含める" },
-  ],
-};
-const SEVERITY_FACET_OPTIONS: ConfigOption[] = [
-  MIN_SEVERITY_OPTION, RELEVANT_ONLY_OPTION, INCLUDE_STRATEGIC_OPTION,
-];
 const HEADLINE_AXES: ConfigOption = {
   key: "axis", label: "分類軸",
   choices: [
@@ -142,41 +112,8 @@ const GEO_TREND_MODE: ConfigOption = {
 };
 
 // ── 記事フィード widget 用 config ──
-const CATEGORY_OPTION: ConfigOption = {
-  key: "category", label: "カテゴリ",
-  choices: [
-    { value: "", label: "全カテゴリ" },
-    { value: "vuln", label: "脆弱性・アドバイザリ" },
-    { value: "threat", label: "マルウェア・APT 等" },
-    { value: "incident_breach", label: "侵害/インシデント" },
-    { value: "vulnerability", label: "脆弱性" },
-    { value: "breach", label: "侵害" },
-    { value: "malware", label: "マルウェア" },
-    { value: "apt", label: "APT" },
-    { value: "geopolitical", label: "地政" },
-    { value: "policy", label: "サイバー政策" },
-    { value: "research", label: "研究" },
-    { value: "advisory", label: "アドバイザリ" },
-  ],
-};
-// チャンネルは live registry から動的に取得 (custom / ops も含む、固定マップは stale 化する)。
-const CHANNEL_OPTION: ConfigOption = {
-  key: "channel", label: "チャンネル",
-  placeholder: { value: "", label: "全ch" },
-  loadChoices: () =>
-    channelsApi.get().then((r) => r.channels.map((c) => ({ value: c.id, label: c.label }))),
-};
-// 日本との関係 (2026-10-04)。ニュース検索・事象ニュースと共有する語彙
-// (frontend/src/components/news/facets.tsx の JP_OPTS)。
-const JP_OPTION: ConfigOption = {
-  key: "jp", label: "日本との関係",
-  choices: [
-    { value: "", label: "すべて" },
-    { value: "targeted_affected", label: "日本が標的・被害" },
-    { value: "mentioned", label: "日本に触れるもの" },
-  ],
-};
-// 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。
+// 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。VIEW_OPTION の
+// loadChoices でも使う (写しは localStorage、ops は news-views API)。
 const MIRROR = import.meta.env.VITE_MIRROR === "1";
 const MODE_OPTION: ConfigOption = {
   key: "mode", label: "表示",
@@ -185,33 +122,31 @@ const MODE_OPTION: ConfigOption = {
     { value: "summary", label: "要約付き" },
   ],
 };
-const SINCE_OPTION: ConfigOption = {
-  key: "since_hours", label: "期間",
-  choices: [
-    { value: "0", label: "全期間" },
-    { value: "24", label: "24時間" },
-    { value: "72", label: "3日" },
-    { value: "168", label: "7日" },
-  ],
-};
-const FEED_OPTION: ConfigOption = {
-  key: "feed", label: "サイト",
-  placeholder: { value: "", label: "全サイト" },
+// ビュー選択 (2026-10-04、docs/news_filter_ux.md §4)。既定ビュー + 利用者保存ビュー
+// (ops = DB / 写し = localStorage)。widget の設定は「ビュー + 件数 + 表示の形」のみ —
+// カテゴリ/サイト/日本との関係/深刻さ等は view 側で選ぶ (§4 の方針)。
+// 空選択 (placeholder) は旧保存設定 (field-by-field、view キー無し) をそのまま読む
+// 「ad-hoc view」— 既存の widget 設定を壊さないための後方互換。
+const VIEW_OPTION: ConfigOption = {
+  key: "view", label: "ビュー",
+  placeholder: { value: "", label: "個別設定 (旧保存設定)" },
   loadChoices: async () => {
-    const subs = await pagesApi.subscriptions();
-    return subs.subscriptions
-      .map((s) => ({ value: s.title, label: s.title }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+    const builtins = BUILTIN_VIEWS.map((v) => ({ value: v.id, label: v.label }));
+    let userViews: { id: string; label: string }[] = [];
+    try {
+      userViews = MIRROR
+        ? JSON.parse(localStorage.getItem("news-views:user") ?? "[]")
+        : await newsViewsApi.list();
+    } catch {
+      userViews = [];
+    }
+    return [...builtins, ...userViews.map((v) => ({ value: v.id, label: v.label }))];
   },
 };
-// 記事フィード共通の全 config option (preset は defaultConfig で初期値を固定)。
-// 「日本との関係」をチャンネルより前に置く (CLAUDE.md §13 設計原則と揃え、ニュース検索・
-// 事象ニュースの並びとも一致させる)。チャンネルは写しでは出さない。
-const ARTICLE_FEED_OPTIONS: ConfigOption[] = [
-  CATEGORY_OPTION, FEED_OPTION, JP_OPTION,
-  ...(MIRROR ? [] : [CHANNEL_OPTION]),
-  ...SEVERITY_FACET_OPTIONS, MODE_OPTION, SINCE_OPTION, PER_OPTION,
-];
+// 記事フィード・事象ニュース widget 共通の config option = ビュー + 表示の形 + 件数。
+// 旧 field-by-field option (カテゴリ/サイト/チャンネル/日本との関係/深刻さ/期間) は
+// UI から外した — view が無い旧保存設定はそのまま widget 側の legacy fallback が読む。
+const ARTICLE_FEED_OPTIONS: ConfigOption[] = [VIEW_OPTION, MODE_OPTION, PER_OPTION];
 
 // span は 4 カラムグリッド基準 (4=全幅 / 2=半分 / 1=¼ / 3=¾)
 export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
@@ -233,9 +168,9 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / SIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
   // ── 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。裏取りは
   //    「独立媒体数」で示し記事数では示さない。単独報は「1 媒体のみ」と明示する ──
-  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)。カテゴリ/CH/サイトで絞り込み可 (記事フィードと同じ設定項目)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { min_severity: "S2", per: 6 } },
+  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)。ビューで絞り込み可 (記事フィードと同じ設定項目)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { view: "builtin:notable", per: 6 } },
   // ── 記事フィード (汎用・設定可・複数配置可。カテゴリ/CH/重要度/サイトで絞る) ──
-  news_feed: { title: "記事フィード", Component: ArticleFeedWidget, defaultSpan: 2, defaultHeight: 420, thumb: "list", multi: true, blurb: "カテゴリ/CH/重要度/サイトで絞った記事。設定を変えて複数配置 (脆弱性/脅威/地政/緊急 等)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { mode: "summary", per: 5 } },
+  news_feed: { title: "記事フィード", Component: ArticleFeedWidget, defaultSpan: 2, defaultHeight: 420, thumb: "list", multi: true, blurb: "ビューで絞った記事。設定を変えて複数配置 (脆弱性/脅威/地政/緊急 等)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { view: "builtin:all", mode: "summary", per: 5 } },
   // ── 発見支援 / 脅威 ──
   top_actors: { title: "主要アクター", Component: TopActorsWidget, defaultSpan: 2, defaultHeight: 340, thumb: "sparkline", multi: true, blurb: "追跡量 top (国フィルタ可)", configOptions: [NATION_OPTION, PER_OPTION] },
   actor_dossier: { title: "アクター・ドシエ", Component: ActorDossierWidget, defaultSpan: 2, defaultHeight: 380, thumb: "text", multi: true, blurb: "指定アクターの TTP/CVE/IOC", configOptions: [ACTOR_OPTION] },

@@ -43,6 +43,7 @@ _KNOWN_KEYS: dict[str, str] = {
     "grok_tasks": "Grok タスク定義 (外部 Grok 側設定の写し)",
     "summarizer_rubric": "記事要約プロンプトの判定基準",
     "standing_questions": "常設情報要求 (昇格した問い)",
+    "news_views": "ニュースの絞り込みビュー (利用者保存)",
     # 層分けの一般化 (2026-08-20): block 方式のプロンプトは registry から自動登録する
     # (プロンプト追加のたびにここへ 1 行足す手作業と、その漏れを無くす)。
 }

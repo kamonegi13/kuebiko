@@ -732,6 +732,7 @@ def create_app() -> FastAPI:
     from src.ui.api.jp_ci_operators import jp_ci_operators_api
     from src.ui.api.match_lists import match_lists_api
     from src.ui.api.model_tiers import model_tiers_api
+    from src.ui.api.news_views import news_views_api
     from src.ui.api.notes import notes_api
     from src.ui.api.pages import pages_api
     from src.ui.api.pir import pir_api
@@ -772,6 +773,7 @@ def create_app() -> FastAPI:
     app.include_router(jp_ci_operators_api)
     app.include_router(config_history_api)
     app.include_router(match_lists_api)
+    app.include_router(news_views_api)
     app.include_router(flow_api)
     app.include_router(geo_api)
     app.include_router(spotlight_api)

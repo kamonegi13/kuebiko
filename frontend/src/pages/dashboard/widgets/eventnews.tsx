@@ -20,6 +20,9 @@ import {
   LevelBadge, buildFacetedTitle, severityFacetFromConfigStrings, severityFacetQueryParams,
   writeSeverityFacet, type SeverityFacetState,
 } from "../../../components/news/facets";
+import { useNewsViews } from "../../../components/news/useNewsViews";
+import { resolveWidgetViewFilters } from "../../../components/news/widgetViewResolution";
+import { toEventNewsPageHref } from "../../../components/news/views";
 import { EventNewsDetailBody, SourceChip } from "../../eventnews/EventNewsDetail";
 import { WidgetCard, Loading, Empty, WidgetError, cfgNum, cfgStr, type WidgetProps } from "../shared";
 
@@ -86,7 +89,30 @@ export function EventNewsWidget({ config, mobile }: WidgetProps) {
   // カテゴリ表示は backend 配信 vocab を SSoT に (記事フィード widget と同じ合成)。
   const categoryLabelMap: Record<string, string> = { ...useVocabMap("category"), ...useVocabMap("category_group") };
   const chMeta = useChannelMeta();
-  const { category, feed, channel, jp, per, sinceHours, wantSummary, severity } = resolveEventNewsFilters(config);
+
+  // ビュー選択 (2026-10-04、docs/news_filter_ux.md §4)。view が選ばれていればその絞り込みを
+  // 使う。未選択 (旧保存設定も含む) は resolveEventNewsFilters の従来どおりの個別項目
+  // (= ad-hoc view) を使うため、既存の保存設定は変更なしで動き続ける。
+  const legacy = resolveEventNewsFilters(config);
+  const { userViews } = useNewsViews();
+  const viewId = cfgStr(config, "view", "");
+  const { view, filters } = resolveWidgetViewFilters(viewId, userViews, {
+    category: legacy.category,
+    feed: legacy.feed,
+    channel: legacy.channel,
+    jp: legacy.jp,
+    minSeverity: legacy.severity.minSeverity,
+    relevantOnly: legacy.severity.relevantOnly,
+    includeStrategic: legacy.severity.includeStrategic,
+    since: String(legacy.sinceHours),
+  });
+  const { category, feed, channel, jp } = filters;
+  const severity: SeverityFacetState = {
+    minSeverity: filters.minSeverity, relevantOnly: filters.relevantOnly, includeStrategic: filters.includeStrategic,
+  };
+  const sinceHours = Number(filters.since) || 0;
+  const { per, wantSummary } = legacy;
+
   const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
     queryKey: ["dash-eventnews", category, feed, channel, jp, severity, sinceHours, per],
@@ -95,8 +121,9 @@ export function EventNewsWidget({ config, mobile }: WidgetProps) {
   });
   const items = (data?.items ?? []).slice(0, per);
   const channelLabel = channel ? chMeta(channel).label : "";
-  const title = buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "事象ニュース" });
-  const href = buildEventNewsHref({ category, feed, channel, severity, jp, sinceHours });
+  // Title = ビュー名 (選ばれていれば)。ad-hoc (旧設定・未選択) は従来どおり絞り込みから組む。
+  const title = view ? view.label : buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "事象ニュース" });
+  const href = toEventNewsPageHref(filters);
 
   return (
     <WidgetCard title={title} href={href} linkLabel="すべて →">

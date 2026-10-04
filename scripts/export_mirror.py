@@ -172,6 +172,8 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     ),
     # 重要インフラ (事業者一覧)
     "/api/v1/jp-ci-operators",
+    # ニュースの絞り込みビュー (利用者保存。既定ビューは frontend の定数で持つ)
+    "/api/v1/news-views",
     # コンテンツ: アクター辞書
     # ⚠ ブックマーク・メモ (/notes) / 購読ソース一覧 (/subscriptions) / Grok 関連
     # (/grok/tasks, /grok/session, /grok-mail/health) / アクター承認待ち提案

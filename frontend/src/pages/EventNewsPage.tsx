@@ -16,10 +16,12 @@ import { Drawer } from "../components/Drawer";
 import { formatJstCompact } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 import {
-  JP_OPTS, LevelBadge, readSeverityFacet, Sel, SeverityFacetControls, severityFacetQueryParams,
-  SINCE_OPTS, SORT_OPTS, useFacetOptions, VendorInput, writeSeverityFacet,
+  LevelBadge, readSeverityFacet, severityFacetQueryParams, useFacetOptions, writeSeverityFacet,
   type SeverityFacetState,
 } from "../components/news/facets";
+import { applyRelation, FilterBar, relationFromState } from "../components/news/FilterBar";
+import { NewsViewTabs } from "../components/news/NewsViewTabs";
+import { EMPTY_FILTERS, type NewsFilters } from "../components/news/views";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
 import { PAGE_TITLE } from "../components/headings";
@@ -150,17 +152,55 @@ export function EventNewsPage() {
   const items = data?.items ?? [];
   const set = (patch: Partial<typeof q>) => setQ((prev) => ({ ...prev, ...patch }));
 
-  // 記事側の絞り込みが 1 つでも効いているか (解除ボタンの出し分け)
+  // ビュー保存・一致判定用の中間表現 (docs/news_filter_ux.md §3)。検索語・pivot・
+  // 意味検索の on/off はビューに含めない (絞り込みの組とは別物として扱う)。
+  const currentFilters: NewsFilters = useMemo(() => ({
+    ...EMPTY_FILTERS,
+    minSeverity: q.severity.minSeverity,
+    relevantOnly: q.severity.relevantOnly,
+    includeStrategic: q.severity.includeStrategic,
+    jp: (q.jp as NewsFilters["jp"]) ?? "",
+    since: String(q.since_hours ?? 0),
+    sort: (q.sort as NewsFilters["sort"]) ?? "",
+    category: q.category ?? "",
+    feed: q.feed ?? "",
+    intent: q.intent ?? "",
+    pir: q.pir ?? "",
+    actor: q.actor ?? "",
+    affectedVendor: q.affected_vendor ?? "",
+    channel: q.channel ?? "",
+    minIndependentSources: (q.min_independent_sources ?? 0) >= 2,
+    hasNews: q.has_news === true,
+    newFactsOnly: q.status === NEW_FACTS_STATUS,
+  }), [q]);
+  function applyView(f: Partial<NewsFilters>): void {
+    const next = { ...EMPTY_FILTERS, ...f };
+    setQ((prev) => ({
+      ...prev,
+      severity: { minSeverity: next.minSeverity, relevantOnly: next.relevantOnly, includeStrategic: next.includeStrategic },
+      jp: next.jp || undefined,
+      since_hours: Number(next.since) || 0,
+      sort: next.sort || undefined,
+      category: next.category || undefined,
+      feed: next.feed || undefined,
+      intent: next.intent || undefined,
+      pir: next.pir || undefined,
+      actor: next.actor || undefined,
+      affected_vendor: next.affectedVendor || undefined,
+      channel: MIRROR ? prev.channel : next.channel || undefined,
+      min_independent_sources: next.minIndependentSources ? 2 : 0,
+      has_news: next.hasNews ? true : undefined,
+      status: next.newFactsOnly ? NEW_FACTS_STATUS : undefined,
+    }));
+    setVendorRaw(next.affectedVendor);
+  }
+
+  // 記事側の絞り込みが 1 つでも効いているか (deep-link の pivot だけ、ここで残して示す。
+  // 他の軸は FilterBar がチップで示す)。
   const activeFilters = useMemo(() => {
-    const keys = [
-      "search", "category", "channel", "feed", "actor", "cve",
-      "malware", "intent", "pir", "affected_vendor", "jp",
-    ] as const;
     const out: { key: string; value: string }[] = [];
-    for (const k of keys) {
-      const v = q[k];
-      if (v) out.push({ key: k, value: String(v) });
-    }
+    if (q.cve) out.push({ key: "cve", value: q.cve });
+    if (q.malware) out.push({ key: "malware", value: q.malware });
     if (q.entity_type && q.entity_value) {
       out.push({ key: q.entity_type, value: q.entity_value });
     }
@@ -179,104 +219,79 @@ export function EventNewsPage() {
         </p>
       </div>
 
+      <NewsViewTabs currentFilters={currentFilters} onApply={applyView} />
+
       {/* 絞り込みバー。選択肢はニュース検索と共有 (components/news/facets.tsx)。
           検索だけは Enter 確定 — 打鍵ごとに走らせると記事を最大 2,000 件走査する。 */}
-      <div className="md:sticky md:top-12 z-20 bg-bg/95 backdrop-blur-md border-b border-border-subtle -mx-4 px-4 md:mx-0 md:px-0 py-2 flex flex-wrap items-center gap-2">
-        <input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") set({ search: term.trim() || undefined });
-          }}
-          placeholder={
-            MIRROR
-              ? "事象を検索 (Enter) — 見出し・要点のみ (写しは本文を持たない)"
-              : "事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
-          }
-          className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
-        />
-        {/* 意味検索。語句検索と OR で足す (言い換え・多言語を拾う)。
-            実測: 語句 0 件のクエリでも 20 件出ることがある。
-            写し (静的配信) は embedding 計算ができないため表示しない。 */}
-        {!MIRROR && (
-          <button
-            onClick={() => set({ semantic: q.semantic ? undefined : true })}
-            aria-pressed={q.semantic === true}
-            title="言い換えや多言語の記事も拾う (embedding で類似検索)"
-            className={`h-8 px-3 rounded-md border text-sm transition-colors ${
-              q.semantic
-                ? "border-accent text-accent bg-accent/10"
-                : "border-border-subtle text-fg-muted hover:text-fg"
-            }`}
-          >
-            意味検索
-          </button>
-        )}
-        <Sel value={q.category ?? ""} onChange={(v) => set({ category: v || undefined })} opts={facetOpts.category} />
-        <Sel value={q.feed ?? ""} onChange={(v) => set({ feed: v || undefined })} opts={facetOpts.feed} />
-        <Sel
-          value={q.jp ?? ""}
-          onChange={(v) => set({ jp: (v as "targeted_affected" | "mentioned" | "") || undefined })}
-          opts={JP_OPTS}
-        />
-        {/* 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。 */}
-        {!MIRROR && (
-          <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
-        )}
-        <SeverityFacetControls state={q.severity} onChange={(v) => set({ severity: v })} />
-        <Sel value={q.intent ?? ""} onChange={(v) => set({ intent: v || undefined })} opts={facetOpts.intent} />
-        <Sel value={q.pir ?? ""} onChange={(v) => set({ pir: v || undefined })} opts={facetOpts.pir} />
-        <Sel value={q.actor ?? ""} onChange={(v) => set({ actor: v || undefined })} opts={facetOpts.actor} />
-        <VendorInput
-          raw={vendorRaw}
-          onChange={setVendorRaw}
-          applied={q.affected_vendor ?? ""}
-          options={facetOpts.vendor}
-          listId="eventnews-vendor-list"
-        />
-        <Sel
-          value={String(q.since_hours ?? 0)}
-          onChange={(v) => set({ since_hours: Number(v) || 0 })}
-          opts={SINCE_OPTS}
-        />
-        <Sel
-          value={q.sort ?? ""}
-          onChange={(v) => set({ sort: v === "level" ? "level" : undefined })}
-          opts={SORT_OPTS}
-        />
-      </div>
-
-      {/* 事象固有の軸。記事側には存在しないので facet バーとは分けて置く。
-          単独報が 9 割を占めるため、この 3 つが母集団を最も大きく動かす。 */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs text-fg-subtle mr-0.5">事象:</span>
-        <Toggle
-          on={(q.min_independent_sources ?? 0) >= 2}
-          onClick={() => set({ min_independent_sources: (q.min_independent_sources ?? 0) >= 2 ? 0 : 2 })}
-          title="独立した 2 媒体以上が報じた事象だけを表示する (同一媒体の連投は数えない)"
-        >
-          複数媒体
-        </Toggle>
-        <Toggle
-          on={q.has_news === true}
-          onClick={() => set({ has_news: q.has_news ? undefined : true })}
-          title="kuebiko が複数記事から生成した統合本文を持つ事象だけを表示する"
-        >
-          統合済み
-        </Toggle>
-        <Toggle
-          on={q.status === NEW_FACTS_STATUS}
-          onClick={() => set({ status: q.status === NEW_FACTS_STATUS ? undefined : NEW_FACTS_STATUS })}
-          title="初報のあと新しい事実 (新 CVE / 媒体増 / tier 上昇 / 重要度上昇) が加わった事象。裏取りが増えただけのものは含まない"
-        >
-          新事実あり
-        </Toggle>
-        {data && (
-          <span className="ml-auto self-center text-xs text-fg-subtle">
-            {page > 0 ? `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + items.length} 件目` : `${items.length} 件`}
-          </span>
-        )}
-      </div>
+      <FilterBar
+        facetOpts={facetOpts}
+        searchValue={term}
+        onSearchChange={setTerm}
+        searchPlaceholder={
+          MIRROR
+            ? "事象を検索 (Enter) — 見出し・要点のみ (写しは本文を持たない)"
+            : "事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
+        }
+        onSearchKeyDown={(e) => {
+          if (e.key === "Enter") set({ search: term.trim() || undefined });
+        }}
+        searchExtra={
+          !MIRROR ? (
+            <button
+              onClick={() => set({ semantic: q.semantic ? undefined : true })}
+              aria-pressed={q.semantic === true}
+              title="言い換えや多言語の記事も拾う (embedding で類似検索)"
+              className={`h-8 px-3 rounded-md border text-sm transition-colors ${
+                q.semantic
+                  ? "border-accent text-accent bg-accent/10"
+                  : "border-border-subtle text-fg-muted hover:text-fg"
+              }`}
+            >
+              意味検索
+            </button>
+          ) : undefined
+        }
+        severity={q.severity}
+        onSeverity={(v) => set({ severity: v })}
+        relation={relationFromState(q.jp ?? "", q.severity.relevantOnly)}
+        onRelation={(v) => {
+          const next = applyRelation(v);
+          set({ jp: next.jp || undefined, severity: { ...q.severity, relevantOnly: next.relevantOnly } });
+        }}
+        since={String(q.since_hours ?? 0)}
+        onSince={(v) => set({ since_hours: Number(v) || 0 })}
+        sort={q.sort ?? ""}
+        onSort={(v) => set({ sort: v === "level" ? "level" : undefined })}
+        category={q.category ?? ""}
+        onCategory={(v) => set({ category: v || undefined })}
+        feed={q.feed ?? ""}
+        onFeed={(v) => set({ feed: v || undefined })}
+        intent={q.intent ?? ""}
+        onIntent={(v) => set({ intent: v || undefined })}
+        pir={q.pir ?? ""}
+        onPir={(v) => set({ pir: v || undefined })}
+        actor={q.actor ?? ""}
+        onActor={(v) => set({ actor: v || undefined })}
+        vendorRaw={vendorRaw}
+        onVendorRaw={setVendorRaw}
+        vendorApplied={q.affected_vendor ?? ""}
+        channel={MIRROR ? undefined : { value: q.channel ?? "", onChange: (v) => set({ channel: v || undefined }) }}
+        eventOnly={{
+          minSources: (q.min_independent_sources ?? 0) >= 2,
+          onMinSources: (v) => set({ min_independent_sources: v ? 2 : 0 }),
+          hasNews: q.has_news === true,
+          onHasNews: (v) => set({ has_news: v ? true : undefined }),
+          newFacts: q.status === NEW_FACTS_STATUS,
+          onNewFacts: (v) => set({ status: v ? NEW_FACTS_STATUS : undefined }),
+        }}
+        trailing={
+          data && (
+            <span className="text-xs text-fg-subtle">
+              {page > 0 ? `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + items.length} 件目` : `${items.length} 件`}
+            </span>
+          )
+        }
+      />
 
       {/* 効いている絞り込みを明示し、1 クリックで外せるようにする */}
       {activeFilters.length > 0 && (
@@ -403,33 +418,5 @@ export function EventNewsPage() {
         {openId && <EventNewsDetailBody id={openId} onOpenItem={setOpenId} />}
       </Drawer>
     </div>
-  );
-}
-
-/** 事象固有の軸の on/off。select と違い「効いている状態」が一目で分かる必要がある。 */
-function Toggle({
-  on,
-  onClick,
-  title,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      aria-pressed={on}
-      className={`text-xs px-3 py-1.5 rounded border transition-colors ${
-        on
-          ? "border-accent text-accent bg-accent/10"
-          : "border-border-default text-fg-muted hover:text-fg"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
