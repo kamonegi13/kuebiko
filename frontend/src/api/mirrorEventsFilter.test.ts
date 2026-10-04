@@ -208,4 +208,35 @@ describe("filterMirrorEvents", () => {
       expect(out.map((i) => i.id)).toEqual(["unrecorded", "worst", "mid", "best"]);
     });
   });
+
+  // 重要度 6 段階による絞り込み (2026-10-04)。事象は構成記事のうち最良 (最小) の level で判定。
+  describe("level_filter", () => {
+    const items = [
+      item({ id: "top", level: 1 }),
+      item({ id: "notable", level: 4 }),
+      item({ id: "relevant_only", level: 5 }),
+      item({ id: "heavy_no_level", level: null, strategic_weight_heavy_no_level: true }),
+      item({ id: "none", level: 6 }),
+    ];
+
+    it("top は level 1-2 (深刻さ S3) のみ", () => {
+      const { items: out } = filterMirrorEvents(items, { level_filter: "top" });
+      expect(out.map((i) => i.id)).toEqual(["top"]);
+    });
+
+    it("notable は level 1-4、または軸なしで heavy の構成記事を含む", () => {
+      const { items: out } = filterMirrorEvents(items, { level_filter: "notable" });
+      expect(out.map((i) => i.id).sort()).toEqual(["heavy_no_level", "notable", "top"]);
+    });
+
+    it("relevant は level 1,3,5 (関連性あり)", () => {
+      const { items: out } = filterMirrorEvents(items, { level_filter: "relevant" });
+      expect(out.map((i) => i.id).sort()).toEqual(["relevant_only", "top"]);
+    });
+
+    it("未指定は絞らない", () => {
+      const { items: out } = filterMirrorEvents(items, {});
+      expect(out.length).toBe(5);
+    });
+  });
 });

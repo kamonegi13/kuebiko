@@ -370,6 +370,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         statuses: Sequence[str] | None = None,
         importances: Sequence[str] | None = None,
         importance_rules: Mapping[str, ImportanceRule] | None = None,
+        level_filter: str | None = None,
         exclude_merged: bool = False,
         min_independent_sources: int = 0,
         has_news: bool | None = None,
@@ -413,6 +414,13 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         どれよりも母集団を大きく動かす。既定はどちらも「絞らない」— 単独記事を
         既定で落とすと読む場所が 2 つに戻る (§14b 案 A)。
 
+        ``level_filter`` は重要度 6 段階 (2026-10-04) による絞り込み。事象の代表値は
+        構成記事のうち最良 (最小) の level (``_event_level`` と同じ定義)。
+        "top"=level 1-2 (深刻さ S3) / "notable"=level 1-4 (S3・S2) または軸なしで
+        ``strategic_weight='heavy'`` の構成記事を含む / "relevant"=level 1,3,5
+        (関連性あり)。旧 ``importances`` (high/medium/low) とは併用できるが、
+        UI は ``level_filter`` だけを使う。
+
         ⚠ **絞り込みは LIMIT より前に効かせること**。呼び手が取得後に filter すると
         「新着 N 件のうち該当するもの」しか出ず、「該当するものの新着 N 件」に
         ならない (遡及構築でアイテムが 2,000 件規模になり顕在化した)。
@@ -445,6 +453,20 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                     sub.append("current_version > 0")
                 parts.append("(" + " AND ".join(sub) + ")")
             clauses.append("(" + " OR ".join(parts) + ")")
+        if level_filter in ("top", "notable", "relevant"):
+            lv = min_level_subquery_for_event("event_items.id")
+            if level_filter == "top":
+                clauses.append(f"{lv} IN (1,2)")
+            elif level_filter == "relevant":
+                clauses.append(f"{lv} IN (1,3,5)")
+            else:  # notable
+                clauses.append(
+                    f"({lv} IN (1,2,3,4) OR EXISTS ("
+                    "SELECT 1 FROM event_item_members lm"
+                    " JOIN article_importance_v2 liv ON liv.article_id = lm.article_id"
+                    " WHERE lm.item_id = event_items.id AND liv.severity IS NULL"
+                    " AND liv.strategic_weight = 'heavy'))"
+                )
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
         if since is not None:

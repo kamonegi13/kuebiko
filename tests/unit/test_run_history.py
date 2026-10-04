@@ -512,6 +512,66 @@ class TestArticleRecording:
 
         assert len(repo.list_articles()) == 3  # jp 未指定は絞り込まない
 
+    def test_list_articles_level_filter(self, repo: RunHistoryRepository) -> None:
+        """``level_filter`` — 重要度 6 段階による絞り込み (2026-10-04)。
+
+        "top"=深刻さ S3 のみ / "notable"=S3・S2、または軸なしで strategic_weight='heavy' /
+        "relevant"=関連性あり (severity 記録済みのみ)。
+        """
+        run_id = repo.start_run(
+            RunRecord(started_at=_now(), pipeline="daily", dry_run=False),
+        )
+        aids = ["top", "notable", "relevant_only", "heavy_no_level", "none"]
+        for aid in aids:
+            repo.add_article(
+                ArticleRecord(
+                    run_id=run_id,
+                    article_id=aid,
+                    title=aid,
+                    url=f"https://example.com/{aid}",
+                    status="posted",
+                    created_at=_now(),
+                ),
+            )
+        from src.cti.importance_v2 import ImportanceV2
+
+        def _save(
+            aid: str,
+            severity: str | None,
+            relevant: bool,
+            strategic_weight: str | None = None,
+        ) -> None:
+            repo.save_importance_v2(
+                aid,
+                ImportanceV2(
+                    severity=severity,  # type: ignore[arg-type]
+                    severity_basis="x",
+                    strategic_weight=strategic_weight,  # type: ignore[arg-type]
+                    jp="none",
+                    nations=(),
+                    sir_ids=(),
+                    relevant=relevant,
+                ),
+            )
+
+        _save("top", "S3", relevant=True)  # level 1
+        _save("notable", "S2", relevant=False)  # level 4
+        _save("relevant_only", "S1", relevant=True)  # level 5 (relevant だが S3/S2 でない)
+        _save("heavy_no_level", None, relevant=False, strategic_weight="heavy")  # 軸なし+heavy
+        _save("none", "S1", relevant=False)  # level 6 (どれにも当たらない)
+
+        assert {a.article_id for a in repo.list_articles(level_filter="top")} == {"top"}
+        assert {a.article_id for a in repo.list_articles(level_filter="notable")} == {
+            "top",
+            "notable",
+            "heavy_no_level",
+        }
+        assert {a.article_id for a in repo.list_articles(level_filter="relevant")} == {
+            "top",
+            "relevant_only",
+        }
+        assert len(repo.list_articles()) == 5  # 未指定は絞り込まない
+
     def test_list_articles_sort_level(self, repo: RunHistoryRepository) -> None:
         """``sort="level"`` — 重要度 6 段階 (importance_level) の高い順。
 

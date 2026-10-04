@@ -16,19 +16,15 @@ import { Drawer } from "../components/Drawer";
 import { formatJstCompact } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 import {
-  JP_OPTS, LevelBadge, Sel, SINCE_OPTS, SORT_OPTS, useFacetOptions, VendorInput,
+  JP_OPTS, LEVEL_FILTER_OPTS, LevelBadge, migrateImportanceToLevelFilter, Sel, SINCE_OPTS,
+  SORT_OPTS, useFacetOptions, VendorInput,
 } from "../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
 import { PAGE_TITLE } from "../components/headings";
 
-// 事象の重要度は複数指定 (カンマ区切り) を使うため、記事側の IMPORTANCE_OPTS とは別定義。
-// 既定は high+medium — low まで出すと単独報の低重要度が一覧を埋める。
-const IMPORTANCE_OPTS: { value: string; label: string }[] = [
-  { value: "high", label: "high のみ" },
-  { value: "high,medium", label: "high + medium" },
-  { value: "", label: "全重要度" },
-];
+// 重要度 6 段階 (2026-10-04)。既定は「注意以上」(旧既定 high+medium を引き継ぐ) —
+// 「すべて」まで出すと単独報の参考級が一覧を埋める。
 
 // 「新事実あり」= status 'updated' のみ。裏取りが増えただけの 'reinforced' は除く。
 //
@@ -43,12 +39,17 @@ const PAGE_SIZE = 60;
 // ボタン自体を隠す (押せても何も変わらない UI を出さない)。
 const MIRROR = import.meta.env.VITE_MIRROR === "1";
 
-/** URL クエリ ⇄ 絞り込み状態。deep-link と戻る操作を壊さない。 */
-function readQuery(): EventNewsQuery & { importance: string } {
+/** URL クエリ ⇄ 絞り込み状態。deep-link と戻る操作を壊さない。
+ *  重要度 6 段階 (2026-10-04): 旧 "importance" クエリ (high/medium/low の deep-link) は
+ *  level_filter が無いときだけ移行する (migrateImportanceToLevelFilter)。 */
+function readQuery(): EventNewsQuery & { levelFilter: string } {
   const p = new URLSearchParams(window.location.search);
   const num = (k: string) => Number(p.get(k) || 0) || 0;
+  const levelFilterRaw = p.get("level_filter") ?? "";
+  const legacyImportance = p.get("importance") ?? "";
+  const levelFilter = levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance) || "notable";
   return {
-    importance: p.get("importance") ?? "high,medium",
+    levelFilter,
     search: p.get("search") ?? undefined,
     category: p.get("category") ?? undefined,
     channel: p.get("channel") ?? undefined,
@@ -73,9 +74,9 @@ function readQuery(): EventNewsQuery & { importance: string } {
   };
 }
 
-function writeQuery(q: EventNewsQuery & { importance: string }): void {
+function writeQuery(q: EventNewsQuery & { levelFilter: string }): void {
   const p = new URLSearchParams();
-  if (q.importance !== "high,medium") p.set("importance", q.importance);
+  if (q.levelFilter !== "notable") p.set("level_filter", q.levelFilter);
   if (q.search) p.set("search", q.search);
   if (q.since_hours) p.set("since_hours", String(q.since_hours));
   if (q.min_independent_sources) p.set("min_sources", String(q.min_independent_sources));
@@ -119,8 +120,15 @@ export function EventNewsPage() {
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews-list", q, page],
-    queryFn: () =>
-      fetchEventNews({ ...q, limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
+    queryFn: () => {
+      const { levelFilter, ...rest } = q;
+      return fetchEventNews({
+        ...rest,
+        level_filter: (levelFilter || undefined) as EventNewsQuery["level_filter"],
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      });
+    },
     refetchInterval: 5 * 60 * 1000,
     // ページ送りで一覧が消えないように前ページを保持する
     placeholderData: keepPreviousData,
@@ -202,7 +210,7 @@ export function EventNewsPage() {
         {!MIRROR && (
           <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
         )}
-        <Sel value={q.importance} onChange={(v) => set({ importance: v })} opts={IMPORTANCE_OPTS} />
+        <Sel value={q.levelFilter} onChange={(v) => set({ levelFilter: v })} opts={LEVEL_FILTER_OPTS} />
         <Sel value={q.intent ?? ""} onChange={(v) => set({ intent: v || undefined })} opts={facetOpts.intent} />
         <Sel value={q.pir ?? ""} onChange={(v) => set({ pir: v || undefined })} opts={facetOpts.pir} />
         <Sel value={q.actor ?? ""} onChange={(v) => set({ actor: v || undefined })} opts={facetOpts.actor} />
@@ -274,7 +282,7 @@ export function EventNewsPage() {
               setTerm("");
               setVendorRaw("");
               setQ({
-                importance: q.importance,
+                levelFilter: q.levelFilter,
                 since_hours: q.since_hours,
                 // 事象固有の軸は別行の操作なので巻き添えで消さない
                 min_independent_sources: q.min_independent_sources,

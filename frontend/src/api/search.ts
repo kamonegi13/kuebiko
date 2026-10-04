@@ -43,6 +43,8 @@ export interface SearchFacets {
   body?: string; // "stump"(切り株) / "full"(全文取得済)
   // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。
   jp?: "targeted_affected" | "mentioned";
+  // 重要度 6 段階 (2026-10-04): "top"=重大のみ / "notable"=注意以上 / "relevant"=関連性ありのみ。
+  level_filter?: "top" | "notable" | "relevant";
   since_hours?: number;
 }
 
@@ -64,6 +66,7 @@ export async function fetchSearch(
   if (facets.actor) qs.set("actor", facets.actor);
   if (facets.affected_vendor) qs.set("affected_vendor", facets.affected_vendor);
   if (facets.jp) qs.set("jp", facets.jp);
+  if (facets.level_filter) qs.set("level_filter", facets.level_filter);
   if (facets.since_hours) qs.set("since_hours", String(facets.since_hours));
   const r = await fetch(`/api/v1/search?${qs.toString()}`, { credentials: "same-origin" });
   if (!r.ok) throw new Error(`search failed: ${r.status}`);

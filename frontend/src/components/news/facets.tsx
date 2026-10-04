@@ -33,6 +33,28 @@ export const IMPORTANCE_OPTS: Opt[] = [
   { value: "medium", label: "Medium" },
 ];
 
+/** 重要度 6 段階による絞り込み (2026-10-04)。ニュース検索・事象ニュース・ダッシュボードの
+ *  重要度 facet はこれだけを使う (旧 IMPORTANCE_OPTS の high/medium/low は使わない)。
+ *  値は API の ``level_filter`` パラメータと一致 ("" はフィルタ無し)。生の enum
+ *  (top/notable/relevant) は画面に出さない (CLAUDE.md §UI 文言規約)。 */
+export const LEVEL_FILTER_OPTS: Opt[] = [
+  { value: "", label: "重要度: すべて" },
+  { value: "top", label: "重要度: 重大のみ" },
+  { value: "notable", label: "重要度: 注意以上" },
+  { value: "relevant", label: "重要度: 関連性ありのみ" },
+];
+
+/** 旧 widget 設定 (``importance``: high/medium/low) → 新 ``level_filter`` への移行
+ *  (2026-10-04)。保存済みダッシュボード widget 設定・URL state を壊さないための写像。
+ *  high→top (重大のみ) / medium or "high,medium"→notable (注意以上) / 不明な値→"" (すべて)。*/
+export function migrateImportanceToLevelFilter(old: string | null | undefined): string {
+  if (!old) return "";
+  const v = old.trim();
+  if (v === "high") return "top";
+  if (v === "medium" || v === "high,medium" || v === "medium,high") return "notable";
+  return "";
+}
+
 /** 本文由来フィルタ: 全文取得できた記事 / 切り株 (フィード抜粋のみ)。記事画面専用。 */
 export const BODY_OPTS: Opt[] = [
   { value: "", label: "本文: 全て" },

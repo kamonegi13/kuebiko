@@ -104,7 +104,10 @@ _ARTICLE_CATEGORIES = (
     "research",
     "advisory",
 )
-_ARTICLE_IMPORTANCE = ("high", "medium", "low")
+#: 重要度 6 段階による絞り込み (2026-10-04)。旧 _ARTICLE_IMPORTANCE (high/medium/low) は
+#: 画面側がもう送らないため置き換えた (level_filter の SSoT は
+#: frontend/src/components/news/facets.tsx の LEVEL_FILTER_OPTS)。
+_ARTICLE_LEVEL_FILTERS = ("top", "notable", "relevant")
 
 #: 期間の選択肢 (frontend/src/state/filters.ts の FilterState と対)。
 _TIMES = ("7", "30", "90", "365")
@@ -169,13 +172,20 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     # ニュース検索 (既定 + 列挙できる facet 1 段)
     "/api/v1/articles?status=posted&limit=30",
     *(f"/api/v1/articles?category={c}&status=posted&limit=30" for c in _ARTICLE_CATEGORIES),
-    *(f"/api/v1/articles?importance={i}&status=posted&limit=30" for i in _ARTICLE_IMPORTANCE),
+    *(
+        f"/api/v1/articles?level_filter={lf}&status=posted&limit=30"
+        for lf in _ARTICLE_LEVEL_FILTERS
+    ),
     # ダッシュボードの「記事フィード」widget (news_feed) の既定設定 (defaultConfig:
     # {mode: "summary", per: 5}、絞り込みは未指定) が実際に送る query。他の facet
     # 組み合わせとは limit/include_summary だけが違うため別行で持つ
     # (frontend/src/pages/dashboard/widgets/articles.tsx の articlesApi.list 呼び出しと
     # 一字一句同じ順序・値でなければハッシュが合わない)。
     "/api/v1/articles?status=posted&limit=5&include_summary=1",
+    # ⚠ 事象ニュース (/api/v1/eventnews) は exact-query キャッシュを持たない。
+    # 写しでは fetchEventNews() が MIRROR 時に fetchEventNewsStatic() (eventnews.json
+    # 全件 + filterMirrorEvents のブラウザ内絞り込み) へ直接分岐し、この一覧 API を
+    # 経由しない (frontend/src/api/eventnews.ts)。
     # PIR (常設の問い) — 画面「PIR (問い)」が読む一覧 (2026-10-04、写しに無く読み込みに失敗していた)
     "/api/v1/questions",
     # PIR / Spotlight

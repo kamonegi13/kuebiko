@@ -135,6 +135,13 @@ async def retrieve_candidates(
             allowed_ids = jp_ids if allowed_ids is None else allowed_ids & jp_ids
         except Exception as e:  # noqa: BLE001
             _log.warning("retriever_jp_facet_failed", error=str(e))
+    # 重要度 6 段階の絞り込み (2026-10-04): jp と同じ AND 合成 (別テーブル由来)。
+    if facets is not None and facets.level_filter:
+        try:
+            level_ids = repo.level_filter_article_ids(facets.level_filter)
+            allowed_ids = level_ids if allowed_ids is None else allowed_ids & level_ids
+        except Exception as e:  # noqa: BLE001
+            _log.warning("retriever_level_filter_failed", error=str(e))
 
     def _ingest(arts: list[ArticleRecord], via: str) -> list[str]:
         ids: list[str] = []

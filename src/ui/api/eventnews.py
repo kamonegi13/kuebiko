@@ -457,22 +457,27 @@ def _strongest_jp(values: Any) -> str | None:
 
 def _event_level(
     member_ids: Sequence[str], iv2_by_article: Mapping[str, dict[str, Any]]
-) -> tuple[str | None, int | None]:
+) -> tuple[str | None, int | None, bool]:
     """事象の重要度 = 構成記事のうち最良 (最小) の level。severity はその記事のもの。
 
     構成記事のうち 1 件でも重要度 v2 を記録していなければ (severity, level) = (None, None)。
+    3 つ目の戻り値は「軸なし (severity=None) で strategic_weight='heavy' の構成記事を
+    1 件でも含むか」(level_filter="notable" の client 側再現用、2026-10-04)。
     """
     best_level: int | None = None
     best_severity: str | None = None
+    heavy_no_level = False
     for aid in member_ids:
         info = iv2_by_article.get(aid)
         if info is None:
             continue
+        if info["severity"] is None and info.get("strategic_weight") == "heavy":
+            heavy_no_level = True
         level = importance_level(info["severity"], info["relevant"])
         if level is not None and (best_level is None or level < best_level):
             best_level = level
             best_severity = info["severity"]
-    return best_severity, best_level
+    return best_severity, best_level, heavy_no_level
 
 
 def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
@@ -549,6 +554,7 @@ def list_event_news(  # noqa: PLR0913
     entity_type: str | None = None,
     entity_value: str | None = None,
     jp: str | None = None,
+    level_filter: str | None = None,
     sort: str | None = None,
     since_hours: int = 0,
     min_independent_sources: int = 0,
@@ -567,11 +573,18 @@ def list_event_news(  # noqa: PLR0913
 
     ``sort="level"`` で重要度 6 段階 (構成記事のうち最良 [最小] の level) の高い順に
     並べる (未記録は最後)。未指定・不正値は既定 (新着順) のまま (2026-10-04)。
+
+    ``level_filter`` も重要度 6 段階による絞り込み (2026-10-04)。事象は構成記事のうち
+    最良 (最小) の level が条件を満たせば該当する ("top"=level 1-2 / "notable"=level
+    1-4、または軸なしで strategic_weight='heavy' の構成記事を含む / "relevant"=level
+    1,3,5)。旧 ``importance`` (high/medium/low) とは独立に併用できるが、UI は
+    level_filter のみ使う。
     """
     repo = _repo()
     order_by = "level" if sort == "level" else "recency"
     statuses = [s.strip() for s in status.split(",")] if status else None
     wanted = [i.strip() for i in importance.split(",")] if importance else None
+    level_filter_norm = level_filter if level_filter in ("top", "notable", "relevant") else None
     # 記事側の絞り込みは **既存のニュース検索と同じ経路** で解決する
     # (意味論を二重化しない — 2026-08-24 の「評価と本番で取得が分かれると挙動が
     # 一致しない」の教訓)。該当記事を含む事象だけを返す。
@@ -611,6 +624,7 @@ def list_event_news(  # noqa: PLR0913
         origin="live",
         statuses=statuses,
         importances=wanted,
+        level_filter=level_filter_norm,
         exclude_merged=True,
         min_independent_sources=max(0, min_independent_sources),
         has_news=has_news,
@@ -631,7 +645,7 @@ def list_event_news(  # noqa: PLR0913
     items = []
     for r in shown:
         headline, preview = resolved[r.state.item_id]
-        severity, level = _event_level(r.state.member_ids, iv2_by_article)
+        severity, level, heavy_no_level = _event_level(r.state.member_ids, iv2_by_article)
         items.append(
             {
                 "id": r.state.item_id,
@@ -643,6 +657,7 @@ def list_event_news(  # noqa: PLR0913
                 "jp": _strongest_jp(jp_by_article.get(aid) for aid in r.state.member_ids),
                 "level": level,
                 "severity": severity,
+                "strategic_weight_heavy_no_level": heavy_no_level,
                 "member_count": len(r.state.member_ids),
                 # 裏取りは 3 値で返す。member_count を裏取りとして使わせない
                 "independent_sources": r.independent_sources,

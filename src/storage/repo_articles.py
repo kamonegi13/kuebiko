@@ -1108,6 +1108,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         since: datetime | None = None,
         until: datetime | None = None,
         jp: str | None = None,
+        level_filter: str | None = None,
         sort: str | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -1197,6 +1198,24 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         elif jp == "mentioned":
             clauses.append(
                 "article_id IN (SELECT article_id FROM article_importance_v2 WHERE jp <> 'none')"
+            )
+        # 重要度 6 段階による絞り込み (2026-10-04): "top"=深刻さ S3 (level 1-2) /
+        # "notable"=S3・S2 (level 1-4)、または軸なしで strategic_weight='heavy' /
+        # "relevant"=関連性あり (level 1,3,5)。SSoT は importance_level() (§cti/importance_v2)。
+        if level_filter == "top":
+            clauses.append(
+                "article_id IN (SELECT article_id FROM article_importance_v2 WHERE severity = 'S3')"
+            )
+        elif level_filter == "notable":
+            clauses.append(
+                "article_id IN (SELECT article_id FROM article_importance_v2"
+                " WHERE severity IN ('S3','S2')"
+                " OR (severity IS NULL AND strategic_weight = 'heavy'))"
+            )
+        elif level_filter == "relevant":
+            clauses.append(
+                "article_id IN (SELECT article_id FROM article_importance_v2"
+                " WHERE relevant = 1 AND severity IS NOT NULL)"
             )
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         # 並びは既定 **事象時刻** (公開時刻・取得で上限) の新しい順。表示している時刻と

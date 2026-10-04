@@ -37,6 +37,11 @@ class SearchFacets(BaseModel):
     # "targeted_affected"=日本が標的・被害 (targeted/affected) / "mentioned"=日本に触れる
     # もの (targeted/affected/mentioned、= jp <> 'none')。None=絞り込み無し ("すべて")。
     jp: str | None = None
+    # 重要度 6 段階による絞り込み (2026-10-04、article_importance_v2 由来):
+    # "top"=深刻さ S3 のみ / "notable"=S3・S2、または軸なしで strategic_weight='heavy' /
+    # "relevant"=関連性あり。None=絞り込み無し ("すべて")。旧 importance (high/medium/low)
+    # とは独立 (UI は level_filter のみ使う。旧パラメータは配信など他の呼び手が使い続ける)。
+    level_filter: str | None = None
 
     def is_empty(self) -> bool:
         """status 以外の絞り込みが 1 つも無ければ True (status は baseline 扱い)。"""
@@ -52,6 +57,7 @@ class SearchFacets(BaseModel):
             or self.since is not None
             or self.body_source
             or self.jp
+            or self.level_filter
         )
 
     def to_query_kwargs(self) -> dict[str, object]:
@@ -85,6 +91,8 @@ class SearchFacets(BaseModel):
             kw["body_source"] = self.body_source
         if self.jp:
             kw["jp"] = self.jp
+        if self.level_filter:
+            kw["level_filter"] = self.level_filter
         return kw
 
 

@@ -42,7 +42,7 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 // actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
 // 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
-  "status", "category", "channel", "importance", "feed", "jp", "sort",
+  "status", "category", "channel", "importance", "feed", "jp", "level_filter", "sort",
   "since_hours", "since", "limit", "offset", "include_summary",
 ]);
 
@@ -67,6 +67,22 @@ function matchesCategory(a: ArticleFeedItem, category: string): boolean {
 function matchesJp(a: ArticleFeedItem, jp: string): boolean {
   if (jp === "targeted_affected") return a.jp === "targeted" || a.jp === "affected";
   if (jp === "mentioned") return Boolean(a.jp) && a.jp !== "none";
+  return true;
+}
+
+// 重要度 6 段階による絞り込み (2026-10-04)。backend
+// (src/storage/repo_articles.py:list_articles) と同じ意味論を severity/relevant/
+// strategic_weight から再現する。
+function matchesLevelFilter(a: ArticleFeedItem, levelFilter: string): boolean {
+  if (levelFilter === "top") return a.severity === "S3";
+  if (levelFilter === "notable") {
+    return (
+      a.severity === "S3" ||
+      a.severity === "S2" ||
+      (a.severity == null && a.strategic_weight === "heavy")
+    );
+  }
+  if (levelFilter === "relevant") return a.level === 1 || a.level === 3 || a.level === 5;
   return true;
 }
 
@@ -120,6 +136,9 @@ async function fallbackArticles(
 
   const jp = params.get("jp");
   if (jp) items = items.filter((a) => matchesJp(a, jp));
+
+  const levelFilter = params.get("level_filter");
+  if (levelFilter) items = items.filter((a) => matchesLevelFilter(a, levelFilter));
 
   const sinceHours = Number(params.get("since_hours") || "0");
   if (sinceHours > 0) items = items.filter((a) => withinSinceHours(a, sinceHours));

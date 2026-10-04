@@ -140,6 +140,31 @@ class ImportanceV2Mixin:
             rows = conn.execute(sql).fetchall()
         return {str(r["article_id"]) for r in rows}
 
+    def level_filter_article_ids(self: Any, level_filter: str) -> set[str]:
+        """重要度 6 段階 ``level_filter`` の値を満たす記事 id の全集合 (検索の post-filter 用)。
+
+        ``level_filter``: "top"=深刻さ S3 / "notable"=S3・S2、または軸なしで
+        strategic_weight='heavy' / "relevant"=関連性あり。SSoT は
+        ``src/storage/repo_articles.py:list_articles`` の SQL 条件と対照 (同じ意味論)。
+        """
+        if level_filter == "top":
+            sql = "SELECT article_id FROM article_importance_v2 WHERE severity = 'S3'"
+        elif level_filter == "notable":
+            sql = (
+                "SELECT article_id FROM article_importance_v2 WHERE severity IN ('S3','S2')"
+                " OR (severity IS NULL AND strategic_weight = 'heavy')"
+            )
+        elif level_filter == "relevant":
+            sql = (
+                "SELECT article_id FROM article_importance_v2"
+                " WHERE relevant = 1 AND severity IS NOT NULL"
+            )
+        else:
+            return set()
+        with self._connect() as conn:
+            rows = conn.execute(sql).fetchall()
+        return {str(r["article_id"]) for r in rows}
+
     def jp_relation_by_article(self: Any, article_ids: Sequence[str]) -> dict[str, str]:
         """記事 id → 日本との関係 (``article_importance_v2.jp``)。無い記事は含めない。
 
@@ -164,10 +189,11 @@ class ImportanceV2Mixin:
     def importance_v2_by_article(
         self: Any, article_ids: Sequence[str]
     ) -> dict[str, dict[str, Any]]:
-        """記事 id → {"severity": str|None, "relevant": bool}。無い記事は含めない。
+        """記事 id → {"severity": str|None, "relevant": bool, "strategic_weight": str|None}。
 
-        重要度 6 段階 (``importance_level()``) を一覧 API が表示するための材料。
-        レベルそのものはここでは出さない — Python 側 (``importance_level()``) を
+        無い記事は含めない。重要度 6 段階 (``importance_level()``) と ``level_filter``
+        ("notable" の軸なし heavy 救済) を一覧 API が表示・クライアント側で再現するための
+        材料。レベルそのものはここでは出さない — Python 側 (``importance_level()``) を
         呼ぶのは呼び手の責務 (SSoT を 1 箇所に保つ)。
         """
         ids = list(dict.fromkeys(article_ids))
@@ -179,13 +205,14 @@ class ImportanceV2Mixin:
                 chunk = ids[i : i + _CHUNK]
                 ph = ",".join("?" * len(chunk))
                 for r in conn.execute(
-                    "SELECT article_id, severity, relevant FROM article_importance_v2 "  # noqa: S608
-                    f"WHERE article_id IN ({ph})",
+                    "SELECT article_id, severity, relevant, strategic_weight "  # noqa: S608
+                    f"FROM article_importance_v2 WHERE article_id IN ({ph})",
                     tuple(chunk),
                 ).fetchall():
                     out[str(r["article_id"])] = {
                         "severity": r["severity"],
                         "relevant": bool(r["relevant"]),
+                        "strategic_weight": r["strategic_weight"],
                     }
         return out
 

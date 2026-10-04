@@ -22,6 +22,9 @@ export interface ArticleFeedItem {
   // 重要度 6 段階 (1 が最上位) と深刻さ (S3/S2/S1)。記録前の記事は null (2026-10-04)。
   level?: number | null;
   severity?: "S3" | "S2" | "S1" | null;
+  // 軸なし (severity=null) 記事の戦略上の重み。level_filter="notable" の client 側
+  // 再現 (ミラー) 用 (2026-10-04)。
+  strategic_weight?: "heavy" | "moderate" | "light" | null;
   summary: string | null;
   published_at: string | null;
   created_at: string | null;
@@ -47,6 +50,9 @@ export interface ArticleFeedParams {
   body?: string; // "stump"=切り株(全文未取得) / "full"=全文取得済
   // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。未指定=絞らない。
   jp?: "targeted_affected" | "mentioned";
+  // 重要度 6 段階による絞り込み (2026-10-04)。"top"=重大のみ / "notable"=注意以上 /
+  // "relevant"=関連性ありのみ。未指定=絞らない。
+  level_filter?: "top" | "notable" | "relevant";
   // 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新しい順 (既定)。
   sort?: "level";
   status?: string;
@@ -72,6 +78,7 @@ export const articlesApi = {
     if (params.affected_vendor) q.set("affected_vendor", params.affected_vendor);
     if (params.body) q.set("body", params.body);
     if (params.jp) q.set("jp", params.jp);
+    if (params.level_filter) q.set("level_filter", params.level_filter);
     if (params.sort) q.set("sort", params.sort);
     if (params.status) q.set("status", params.status);
     if (params.since_hours) q.set("since_hours", String(params.since_hours));

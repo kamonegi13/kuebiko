@@ -299,6 +299,73 @@ class TestEventItemCRUD:
         by_level = repo.list_event_items(order_by="level")
         assert [i.state.item_id for i in by_level] == ["best-old", "worst-new", "unrecorded"]
 
+    def test_list_event_items_level_filter(self, repo: RunHistoryRepository) -> None:
+        """``level_filter`` — 事象は構成記事のうち最良 (最小) の level で判定 (2026-10-04)。
+
+        "top"=level 1-2 (S3) / "notable"=level 1-4 (S3・S2) または軸なしで
+        strategic_weight='heavy' を含む / "relevant"=level 1,3,5。
+        """
+        from src.cti.importance_v2 import ImportanceV2
+
+        def _save(
+            article_id: str,
+            severity: str | None,
+            relevant: bool,
+            strategic_weight: str | None = None,
+        ) -> None:
+            repo.save_importance_v2(
+                article_id,
+                ImportanceV2(
+                    severity=severity,  # type: ignore[arg-type]
+                    severity_basis="x",
+                    strategic_weight=strategic_weight,  # type: ignore[arg-type]
+                    jp="none",
+                    nations=(),
+                    sir_ids=(),
+                    relevant=relevant,
+                ),
+            )
+
+        for item_id in (
+            "top-event",
+            "notable-event",
+            "relevant-event",
+            "heavy-event",
+            "none-event",
+        ):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="high",
+            )
+            repo.add_event_member(
+                item_id=item_id,
+                article_id=f"art-{item_id}",
+                joined_at=_NOW,
+                contributed_new_facts=0,
+                join_signal="seed",
+            )
+
+        _save("art-top-event", "S3", relevant=True)  # level 1
+        _save("art-notable-event", "S2", relevant=False)  # level 4
+        _save("art-relevant-event", "S1", relevant=True)  # level 5
+        _save("art-heavy-event", None, relevant=False, strategic_weight="heavy")  # no level
+        _save("art-none-event", "S1", relevant=False)  # level 6
+        # "none-event" の member は記録無しに近いが level 6 なので top/notable/relevant 全て外れる
+
+        top = {i.state.item_id for i in repo.list_event_items(level_filter="top")}
+        assert top == {"top-event"}
+
+        notable = {i.state.item_id for i in repo.list_event_items(level_filter="notable")}
+        assert notable == {"top-event", "notable-event", "heavy-event"}
+
+        relevant = {i.state.item_id for i in repo.list_event_items(level_filter="relevant")}
+        assert relevant == {"top-event", "relevant-event"}
+
+        assert len(repo.list_event_items()) == 5  # 未指定は絞り込まない
+
     def test_list_event_items_filters_by_since(self, repo: RunHistoryRepository) -> None:
         """事象そのものの新しさで絞れる (記事側の since_hours とは別物)。"""
         for item_id, ts in (("recent", _NOW), ("stale", _NOW - timedelta(days=5))):

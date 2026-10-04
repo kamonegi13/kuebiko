@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchEventNews } from "../../../api/eventnews";
 import { Drawer } from "../../../components/Drawer";
 import { vocabLabel } from "../../../hooks/useVocab";
+import { LevelBadge, migrateImportanceToLevelFilter } from "../../../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "../../eventnews/EventNewsDetail";
 import { WidgetCard, Loading, Empty, WidgetError, cfgNum, cfgStr, type WidgetProps } from "../shared";
 
@@ -21,12 +22,17 @@ const TONE: Record<string, string> = {
 
 export function EventNewsWidget({ config }: WidgetProps) {
   const per = cfgNum(config, "per", 6);
-  const importance = cfgStr(config, "importance", "high,medium");
+  // 重要度 6 段階 (2026-10-04)。保存済み widget 設定の旧 "importance"
+  // ("high,medium" 既定) は level_filter が未設定のときだけ移行する。
+  const levelFilterRaw = cfgStr(config, "level_filter", "");
+  const legacyImportance = cfgStr(config, "importance", "");
+  const levelFilter = (levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance) || "notable") as
+    "" | "top" | "notable" | "relevant";
   const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
-    queryKey: ["dash-eventnews", importance, per],
+    queryKey: ["dash-eventnews", levelFilter, per],
     queryFn: () =>
-      fetchEventNews({ limit: Math.max(per * 2, 20), importance: importance || undefined }),
+      fetchEventNews({ limit: Math.max(per * 2, 20), level_filter: levelFilter || undefined }),
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);
@@ -50,6 +56,7 @@ export function EventNewsWidget({ config }: WidgetProps) {
                 <span className={TONE[it.importance] ?? "text-fg-subtle"}>
                   {vocabLabel("importance", it.importance)}
                 </span>
+                <LevelBadge level={it.level} />
                 <SourceChip item={it} />
                 {it.status === "updated" && (
                   <span className="px-1 rounded bg-accent/15 text-accent">更新</span>

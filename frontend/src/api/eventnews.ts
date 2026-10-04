@@ -22,6 +22,9 @@ export interface EventNewsListItem {
   level?: number | null;
   /** 上記 level に対応する深刻さ (S3/S2/S1)。level が null なら null。 */
   severity?: "S3" | "S2" | "S1" | null;
+  /** 構成記事に軸なし (severity=null) で strategic_weight='heavy' のものを 1 件でも
+   *  含むか。level_filter="notable" の client 側再現 (ミラー) 用 (2026-10-04)。 */
+  strategic_weight_heavy_no_level?: boolean;
 }
 
 export interface EventNewsFact {
@@ -156,6 +159,9 @@ export interface EventNewsQuery {
   /** 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。構成記事のいずれか
    *  1 件でも満たせばその事象を返す (事象 = 構成記事の OR)。 */
   jp?: "targeted_affected" | "mentioned";
+  /** 重要度 6 段階による絞り込み (2026-10-04)。事象は構成記事のうち最良 (最小) の
+   *  level で判定。"top"=重大のみ / "notable"=注意以上 / "relevant"=関連性ありのみ。 */
+  level_filter?: "top" | "notable" | "relevant";
   /** 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新着順 (既定)。 */
   sort?: "level";
   since_hours?: number;
@@ -188,7 +194,7 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
   for (const k of [
     "importance", "search", "category", "channel", "feed", "actor", "cve",
     "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status", "jp",
-    "sort",
+    "level_filter", "sort",
   ] as const) {
     const v = q[k];
     if (v) p.set(k, String(v));
