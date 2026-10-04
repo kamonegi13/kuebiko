@@ -37,6 +37,10 @@ const NEW_FACTS_STATUS = "updated";
 
 const PAGE_SIZE = 60;
 
+// 意味検索は embedding 計算 (ライブの Ollama) が要るため、静的な写しでは動かない。
+// ボタン自体を隠す (押せても何も変わらない UI を出さない)。
+const MIRROR = import.meta.env.VITE_MIRROR === "1";
+
 /** URL クエリ ⇄ 絞り込み状態。deep-link と戻る操作を壊さない。 */
 function readQuery(): EventNewsQuery & { importance: string } {
   const p = new URLSearchParams(window.location.search);
@@ -159,23 +163,30 @@ export function EventNewsPage() {
           onKeyDown={(e) => {
             if (e.key === "Enter") set({ search: term.trim() || undefined });
           }}
-          placeholder="事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
+          placeholder={
+            MIRROR
+              ? "事象を検索 (Enter) — 見出し・要点のみ (写しは本文を持たない)"
+              : "事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
+          }
           className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
         />
         {/* 意味検索。語句検索と OR で足す (言い換え・多言語を拾う)。
-            実測: 語句 0 件のクエリでも 20 件出ることがある。 */}
-        <button
-          onClick={() => set({ semantic: q.semantic ? undefined : true })}
-          aria-pressed={q.semantic === true}
-          title="言い換えや多言語の記事も拾う (embedding で類似検索)"
-          className={`h-8 px-3 rounded-md border text-sm transition-colors ${
-            q.semantic
-              ? "border-accent text-accent bg-accent/10"
-              : "border-border-subtle text-fg-muted hover:text-fg"
-          }`}
-        >
-          意味検索
-        </button>
+            実測: 語句 0 件のクエリでも 20 件出ることがある。
+            写し (静的配信) は embedding 計算ができないため表示しない。 */}
+        {!MIRROR && (
+          <button
+            onClick={() => set({ semantic: q.semantic ? undefined : true })}
+            aria-pressed={q.semantic === true}
+            title="言い換えや多言語の記事も拾う (embedding で類似検索)"
+            className={`h-8 px-3 rounded-md border text-sm transition-colors ${
+              q.semantic
+                ? "border-accent text-accent bg-accent/10"
+                : "border-border-subtle text-fg-muted hover:text-fg"
+            }`}
+          >
+            意味検索
+          </button>
+        )}
         <Sel value={q.category ?? ""} onChange={(v) => set({ category: v || undefined })} opts={facetOpts.category} />
         <Sel value={q.feed ?? ""} onChange={(v) => set({ feed: v || undefined })} opts={facetOpts.feed} />
         <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />

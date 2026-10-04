@@ -377,6 +377,59 @@ def _safe_name(article_id: str) -> str:
     return hashlib.sha256(article_id.encode()).hexdigest()[:32]
 
 
+#: 事象ニュース一覧の絞り込み語彙 (frontend/src/pages/EventNewsPage.tsx の
+#: IMPORTANCE_OPTS / facets.tsx の選択肢) のうち、backend が値として保持する範囲を
+#: 一覧アイテムへ持ち上げる。**これを足す理由**: 写しの一覧 (eventnews.json) は
+#: 絞り込み前の全量を返すだけで、画面側 (mirrorStatic.ts) が先頭 N 件を切るだけだと
+#: low importance の事象が high/medium の間に混ざって出る (2026-10-04 発見)。
+#: 一覧 API 自体は category / channel / actor / cve 等の記事側条件を記事単位で
+#: 評価してから事象へ持ち上げるため、一覧アイテムの時点ではこれらの値を持たない。
+#: 詳細 (``/api/v1/eventnews/{id}``) は構成記事から集計した facet を既に持っている
+#: ので、**詳細を書き出す際に同じ値を一覧アイテムへ複製**する (新しい API を
+#: 増やさず、既存のレスポンスから拾う)。
+def _eventnews_filter_tags(detail: dict[str, Any]) -> dict[str, Any]:
+    """事象詳細から一覧の絞り込みに要る値を拾う (immutable: 新しい dict を返す)。
+
+    ``entities`` は型 → 値一覧 (actor は canonical id、cve は大文字、pir は SIR id)。
+    記事単位の AND 条件 (同じ記事が複数条件を同時に満たす) までは再現できない —
+    事象単位の OR (いずれかの構成記事が持つ値) に近似する。単一条件での絞り込みは
+    忠実、複数条件の組み合わせは近似であることをフロント側のコメントにも明記する。
+    """
+    metadata = detail.get("metadata") or {}
+    judgement = metadata.get("judgement") or {}
+
+    def _facet_values(key: str) -> list[str]:
+        facet = judgement.get(key)
+        if not facet:
+            return []
+        return [str(v.get("value")) for v in facet.get("values", []) if v.get("value")]
+
+    entities: dict[str, list[str]] = {}
+    vendors: set[str] = set()
+    for group in metadata.get("entities") or []:
+        etype = str(group.get("type") or "")
+        values = [str(v.get("value")) for v in group.get("values", []) if v.get("value")]
+        if etype and values:
+            entities[etype] = values
+        if etype == "cve":
+            for info in (group.get("affected") or {}).values():
+                vendors.update(str(v) for v in info.get("vendors", []))
+                vendors.update(str(v) for v in info.get("products", []))
+
+    feeds = sorted(
+        {str(m.get("feed_title")) for m in detail.get("members", []) if m.get("feed_title")}
+    )
+
+    return {
+        "categories": _facet_values("category"),
+        "channels": _facet_values("channel"),
+        "intents": _facet_values("intent"),
+        "feeds": feeds,
+        "entities": entities,
+        "vendors": sorted(vendors),
+    }
+
+
 def _fetch_articles(client: httpx.Client, days: int, cap: int) -> list[dict[str, Any]]:
     """記事一覧を窓のぶん全件集める (offset で辿る)。
 
@@ -605,17 +658,25 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        total_bytes += _write(out / "eventnews.json", {"items": events})
 
+        # 詳細を先に辿って絞り込み用の値を一覧へ複製する (_eventnews_filter_tags)。
+        # 一覧の書き出しは詳細取得の **後** に行う (immutable: 元の events は変えず
+        # enriched という新しいリストを組み立てる)。
+        enriched: list[dict[str, Any]] = []
         for e in events:
             eid = str(e.get("id") or "")
             if not eid:
+                enriched.append(e)
                 continue
             try:
                 detail = _get(client, f"/api/v1/eventnews/{urllib.parse.quote(eid, safe='')}")
             except httpx.HTTPStatusError:
+                enriched.append(e)
                 continue
             total_bytes += _write(out / "eventnews" / f"{_safe_name(eid)}.json", detail)
+            enriched.append({**e, **_eventnews_filter_tags(detail)})
+
+        total_bytes += _write(out / "eventnews.json", {"items": enriched})
 
     # --- 写しであることの宣言 ---
     # 画面はこれを読んで「○○時点の写し」を常時出す。無いとライブと見分けが付かない。

@@ -163,7 +163,10 @@ export interface EventNewsQuery {
 const MIRROR = import.meta.env.VITE_MIRROR === "1";
 
 export function fetchEventNews(q: EventNewsQuery = {}) {
-  if (MIRROR) return fetchEventNewsStatic(q.limit ?? 50);
+  // 写しはライブと同じ絞り込み・並び順・ページングをブラウザ側で適用する
+  // (mirrorEventsFilter.ts)。意味検索 (semantic) は embedding 計算が要るため
+  // 写しでは効かない — EventNewsPage.tsx がボタンを隠す。
+  if (MIRROR) return fetchEventNewsStatic({ ...q, limit: q.limit ?? 50 });
   const p = new URLSearchParams({ limit: String(q.limit ?? 50) });
   if (q.offset) p.set("offset", String(q.offset));
   if (q.since_hours) p.set("since_hours", String(q.since_hours));

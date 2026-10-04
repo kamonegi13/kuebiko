@@ -26,6 +26,7 @@ from export_mirror import (  # noqa: E402
     _FORBIDDEN_BODY_KEYS,
     _RUNTIME_FLAGS_STUB,
     _assert_no_forbidden_keys,
+    _eventnews_filter_tags,
     _final_gate,
     _safe_name,
     _strip_forbidden,
@@ -234,6 +235,138 @@ class TestFrontendQueryStringParity:
         # Act / Assert
         assert "/api/v1/spotlight?period_type=rolling7" in SCREEN_ENDPOINTS
         assert "/api/v1/spotlight" not in SCREEN_ENDPOINTS
+
+
+class TestEventNewsFilterTagsExtraction:
+    """`_eventnews_filter_tags` — 事象一覧の絞り込みに要る値を詳細から複製する。
+
+    frontend の写しは 1 事象ごとに表示順の分だけを取るので、一覧 (eventnews.json)
+    自体が絞り込み済みでないと low importance の事象が high/medium に混ざって出る
+    (2026-10-04 発見)。この関数は詳細 API のレスポンス形から値を拾うだけで、
+    新しい API を増やさない。
+    """
+
+    def test_extracts_category_channel_intent_from_judgement_facets(self) -> None:
+        # Arrange — src/ui/api/eventnews.py:_metadata_payload の judgement 形
+        detail = {
+            "metadata": {
+                "judgement": {
+                    "category": {"values": [{"value": "vulnerability", "articles": 2}]},
+                    "channel": {"values": [{"value": "alert", "articles": 1}]},
+                    "intent": {"values": [{"value": "espionage", "articles": 1}]},
+                },
+                "entities": [],
+            },
+            "members": [],
+        }
+
+        # Act
+        tags = _eventnews_filter_tags(detail)
+
+        # Assert
+        assert tags["categories"] == ["vulnerability"]
+        assert tags["channels"] == ["alert"]
+        assert tags["intents"] == ["espionage"]
+
+    def test_extracts_entities_by_type(self) -> None:
+        # Arrange — _metadata_payload の entities 形 (type ごとの values)
+        detail = {
+            "metadata": {
+                "judgement": {},
+                "entities": [
+                    {"type": "actor", "values": [{"value": "apt29", "articles": 1}]},
+                    {"type": "cve", "values": [{"value": "CVE-2026-1", "articles": 1}]},
+                    {"type": "pir", "values": [{"value": "pir_jp_targeted", "articles": 1}]},
+                ],
+            },
+            "members": [],
+        }
+
+        # Act
+        tags = _eventnews_filter_tags(detail)
+
+        # Assert
+        assert tags["entities"]["actor"] == ["apt29"]
+        assert tags["entities"]["cve"] == ["CVE-2026-1"]
+        assert tags["entities"]["pir"] == ["pir_jp_targeted"]
+
+    def test_flattens_cve_affected_vendors_and_products(self) -> None:
+        # Arrange — cve entity group は affected: {cve: {vendors, products}} を持つ
+        detail = {
+            "metadata": {
+                "judgement": {},
+                "entities": [
+                    {
+                        "type": "cve",
+                        "values": [{"value": "CVE-2026-1", "articles": 1}],
+                        "affected": {
+                            "CVE-2026-1": {"vendors": ["Fortinet"], "products": ["FortiOS"]}
+                        },
+                    }
+                ],
+            },
+            "members": [],
+        }
+
+        # Act
+        tags = _eventnews_filter_tags(detail)
+
+        # Assert
+        assert sorted(tags["vendors"]) == ["FortiOS", "Fortinet"]
+
+    def test_collects_unique_member_feed_titles(self) -> None:
+        # Arrange
+        detail = {
+            "metadata": {"judgement": {}, "entities": []},
+            "members": [
+                {"feed_title": "JPCERT/CC"},
+                {"feed_title": "ITmedia"},
+                {"feed_title": "JPCERT/CC"},
+                {"feed_title": ""},
+            ],
+        }
+
+        # Act
+        tags = _eventnews_filter_tags(detail)
+
+        # Assert
+        assert tags["feeds"] == ["ITmedia", "JPCERT/CC"]
+
+    def test_empty_metadata_yields_empty_tags_not_an_error(self) -> None:
+        # Arrange — 構成記事から何も抽出できない事象 (単独報で entity 未抽出 等)
+        detail = {"metadata": {"judgement": {}, "entities": []}, "members": []}
+
+        # Act
+        tags = _eventnews_filter_tags(detail)
+
+        # Assert
+        assert tags == {
+            "categories": [],
+            "channels": [],
+            "intents": [],
+            "feeds": [],
+            "entities": {},
+            "vendors": [],
+        }
+
+    def test_does_not_mutate_input_detail(self) -> None:
+        # Arrange — immutable であること (呼び手の detail を書き換えない)
+        detail = {
+            "metadata": {
+                "judgement": {"category": {"values": [{"value": "breach", "articles": 1}]}},
+                "entities": [],
+            },
+            "members": [{"feed_title": "ITmedia"}],
+        }
+        import copy
+
+        original = copy.deepcopy(detail)
+
+        # Act
+        _eventnews_filter_tags(detail)
+
+        # Assert
+        assert detail == original
 
 
 class TestSafeNameMatchesFrontendHashInputs:

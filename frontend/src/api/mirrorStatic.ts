@@ -6,7 +6,8 @@
 // ⚠ 呼び手は経路を知らない。分岐は各 api/*.ts の入口 1 箇所に置き、画面側に
 //    if を撒かない (片方の経路だけ壊れても気付けなくなる)。
 import type { ArticleFeedResponse } from "./articles";
-import type { EventNewsDetail, EventNewsListItem } from "./eventnews";
+import type { EventNewsDetail, EventNewsListItem, EventNewsQuery } from "./eventnews";
+import { filterMirrorEvents, type MirrorEventNewsItem } from "./mirrorEventsFilter";
 
 /** 書き出したデータの置き場 (ページの基底に対する相対)。 */
 import { STATIC_TTL_MS, ttlCached } from "./ttlCache";
@@ -53,7 +54,7 @@ const loadArticles = ttlCached(
   STATIC_TTL_MS,
 );
 const loadEvents = ttlCached(
-  () => getJson<{ items: EventNewsListItem[] }>("/eventnews.json"),
+  () => getJson<{ items: MirrorEventNewsItem[] }>("/eventnews.json"),
   STATIC_TTL_MS,
 );
 
@@ -77,12 +78,14 @@ export async function fetchArticleDetailStatic(articleId: string): Promise<unkno
 
 
 
+/** 絞り込み・並び順・ページングはブラウザ側で行う (mirrorEventsFilter.ts)。
+ *  writeQuery/readQuery (EventNewsPage.tsx) が作る query をそのまま渡せる。
+ *  scan_capped は「走査を打ち切った」ことを示すライブ側の事情。写しには無い。 */
 export async function fetchEventNewsStatic(
-  limit = 50,
+  q: EventNewsQuery = {},
 ): Promise<{ items: EventNewsListItem[]; note: string; scan_capped?: boolean }> {
   const all = await loadEvents();
-  // scan_capped は「走査を打ち切った」ことを示すライブ側の事情。写しには無い。
-  return { items: all.items.slice(0, limit), note: "" };
+  return filterMirrorEvents(all.items, q);
 }
 
 export async function fetchEventNewsDetailStatic(id: string): Promise<EventNewsDetail> {
