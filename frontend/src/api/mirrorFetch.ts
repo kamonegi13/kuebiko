@@ -42,7 +42,8 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 // actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
 // 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
-  "status", "category", "channel", "importance", "feed", "jp", "level_filter", "sort",
+  "status", "category", "channel", "importance", "feed", "jp", "level_filter",
+  "min_severity", "relevant_only", "include_strategic", "sort",
   "since_hours", "since", "limit", "offset", "include_summary",
 ]);
 
@@ -70,20 +71,46 @@ function matchesJp(a: ArticleFeedItem, jp: string): boolean {
   return true;
 }
 
-// 重要度 6 段階による絞り込み (2026-10-04)。backend
-// (src/storage/repo_articles.py:list_articles) と同じ意味論を severity/relevant/
-// strategic_weight から再現する。
-function matchesLevelFilter(a: ArticleFeedItem, levelFilter: string): boolean {
-  if (levelFilter === "top") return a.severity === "S3";
-  if (levelFilter === "notable") {
-    return (
-      a.severity === "S3" ||
-      a.severity === "S2" ||
-      (a.severity == null && a.strategic_weight === "heavy")
-    );
+// 深刻さ facet の許容値 → severity の許容集合 (常に上位からの prefix)。
+// SSoT: src/storage/importance_level_sql.py:SEVERITY_ALLOWED。
+const SEVERITY_ALLOWED: Record<string, ("S3" | "S2" | "S1")[]> = {
+  S3: ["S3"],
+  S2: ["S3", "S2"],
+  S1: ["S3", "S2", "S1"],
+};
+
+/** 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。backend
+ *  (src/storage/importance_level_sql.py:severity_relevance_sql) と同じ意味論を
+ *  severity/relevant/strategic_weight から再現する。旧 1 本化 ``level_filter``
+ *  (top/notable/relevant) も後方互換で受け付け、3 facet が無指定のときだけ写像する。 */
+function matchesSeverityFacet(
+  a: ArticleFeedItem,
+  params: URLSearchParams,
+): boolean {
+  let minSeverity = params.get("min_severity") ?? "";
+  let relevantOnly = params.get("relevant_only") === "1";
+  let includeStrategic = params.get("include_strategic") === "1";
+  const levelFilter = params.get("level_filter");
+  if (!minSeverity && !relevantOnly && !includeStrategic && levelFilter) {
+    if (levelFilter === "top") {
+      minSeverity = "S3";
+    } else if (levelFilter === "notable") {
+      minSeverity = "S2";
+      includeStrategic = true;
+    } else if (levelFilter === "relevant") {
+      minSeverity = "S1";
+      relevantOnly = true;
+    }
   }
-  if (levelFilter === "relevant") return a.level === 1 || a.level === 3 || a.level === 5;
-  return true;
+  if (!minSeverity && !relevantOnly) return true;
+  if (!minSeverity) return a.relevant === true;
+  const allowed = SEVERITY_ALLOWED[minSeverity] ?? [];
+  let core = a.severity != null && allowed.includes(a.severity);
+  if (includeStrategic) {
+    core = core || (a.severity == null && a.strategic_weight === "heavy");
+  }
+  if (relevantOnly) core = core && a.relevant === true;
+  return core;
 }
 
 function withinSinceHours(a: ArticleFeedItem, sinceHours: number): boolean {
@@ -137,8 +164,14 @@ async function fallbackArticles(
   const jp = params.get("jp");
   if (jp) items = items.filter((a) => matchesJp(a, jp));
 
-  const levelFilter = params.get("level_filter");
-  if (levelFilter) items = items.filter((a) => matchesLevelFilter(a, levelFilter));
+  if (
+    params.has("level_filter") ||
+    params.has("min_severity") ||
+    params.has("relevant_only") ||
+    params.has("include_strategic")
+  ) {
+    items = items.filter((a) => matchesSeverityFacet(a, params));
+  }
 
   const sinceHours = Number(params.get("since_hours") || "0");
   if (sinceHours > 0) items = items.filter((a) => withinSinceHours(a, sinceHours));

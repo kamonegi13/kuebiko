@@ -22,9 +22,12 @@ export interface ArticleFeedItem {
   // 重要度 6 段階 (1 が最上位) と深刻さ (S3/S2/S1)。記録前の記事は null (2026-10-04)。
   level?: number | null;
   severity?: "S3" | "S2" | "S1" | null;
-  // 軸なし (severity=null) 記事の戦略上の重み。level_filter="notable" の client 側
-  // 再現 (ミラー) 用 (2026-10-04)。
+  // 軸なし (severity=null) 記事の戦略上の重み。旧 level_filter="notable" /
+  // include_strategic の client 側再現 (ミラー) 用 (2026-10-04)。
   strategic_weight?: "heavy" | "moderate" | "light" | null;
+  // 関連性あり (日本・注視国・SIR)。severity が無い記事でも立つので、level の奇偶だけ
+  // では再現できない (relevant_only の client 側再現用、2026-10-04)。
+  relevant?: boolean | null;
   summary: string | null;
   published_at: string | null;
   created_at: string | null;
@@ -50,9 +53,18 @@ export interface ArticleFeedParams {
   body?: string; // "stump"=切り株(全文未取得) / "full"=全文取得済
   // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。未指定=絞らない。
   jp?: "targeted_affected" | "mentioned";
-  // 重要度 6 段階による絞り込み (2026-10-04)。"top"=重大のみ / "notable"=注意以上 /
-  // "relevant"=関連性ありのみ。未指定=絞らない。
+  // 重要度 6 段階による絞り込み (旧 1 本化 facet、後方互換のみ)。"top"=重大のみ /
+  // "notable"=注意以上 / "relevant"=関連性ありのみ。未指定=絞らない。
+  // **非推奨** — 新規コードは下の 3 独立 facet (min_severity/relevant_only/
+  // include_strategic) を使う (「関連性ありの重大」のように level_filter では
+  // 表せない組み合わせがあるため、2026-10-04 に置き換えた)。
   level_filter?: "top" | "notable" | "relevant";
+  // 深刻さ: ""(すべて) / "S3"(重大のみ) / "S2"(注意以上) / "S1"(参考以上)。
+  min_severity?: "" | "S3" | "S2" | "S1";
+  // 関連性ありのみ (深刻さの設定と独立)。
+  relevant_only?: boolean;
+  // 政策・地政学を含める (min_severity 指定時のみ意味を持つ)。
+  include_strategic?: boolean;
   // 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新しい順 (既定)。
   sort?: "level";
   status?: string;
@@ -79,6 +91,9 @@ export const articlesApi = {
     if (params.body) q.set("body", params.body);
     if (params.jp) q.set("jp", params.jp);
     if (params.level_filter) q.set("level_filter", params.level_filter);
+    if (params.min_severity) q.set("min_severity", params.min_severity);
+    if (params.relevant_only) q.set("relevant_only", "1");
+    if (params.include_strategic) q.set("include_strategic", "1");
     if (params.sort) q.set("sort", params.sort);
     if (params.status) q.set("status", params.status);
     if (params.since_hours) q.set("since_hours", String(params.since_hours));

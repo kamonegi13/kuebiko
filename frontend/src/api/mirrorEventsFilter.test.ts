@@ -209,27 +209,34 @@ describe("filterMirrorEvents", () => {
     });
   });
 
-  // 重要度 6 段階による絞り込み (2026-10-04)。事象は構成記事のうち最良 (最小) の level で判定。
-  describe("level_filter", () => {
+  // 重要度 6 段階による絞り込み (旧 1 本化 level_filter、後方互換のみ。2026-10-04)。
+  // 事象は構成記事のうち最良 (最小) の level/severity で判定。
+  describe("level_filter (後方互換)", () => {
     const items = [
-      item({ id: "top", level: 1 }),
-      item({ id: "notable", level: 4 }),
-      item({ id: "relevant_only", level: 5 }),
-      item({ id: "heavy_no_level", level: null, strategic_weight_heavy_no_level: true }),
-      item({ id: "none", level: 6 }),
+      item({ id: "top", level: 1, severity: "S3", relevant: true }),
+      item({ id: "notable", level: 4, severity: "S2", relevant: false }),
+      item({ id: "relevant_only", level: 5, severity: "S1", relevant: true }),
+      item({
+        id: "heavy_no_level",
+        level: null,
+        severity: null,
+        relevant: false,
+        strategic_weight_heavy_no_level: true,
+      }),
+      item({ id: "none", level: 6, severity: "S1", relevant: false }),
     ];
 
-    it("top は level 1-2 (深刻さ S3) のみ", () => {
+    it("top は深刻さ S3 のみ", () => {
       const { items: out } = filterMirrorEvents(items, { level_filter: "top" });
       expect(out.map((i) => i.id)).toEqual(["top"]);
     });
 
-    it("notable は level 1-4、または軸なしで heavy の構成記事を含む", () => {
+    it("notable は S3・S2、または軸なしで heavy の構成記事を含む", () => {
       const { items: out } = filterMirrorEvents(items, { level_filter: "notable" });
       expect(out.map((i) => i.id).sort()).toEqual(["heavy_no_level", "notable", "top"]);
     });
 
-    it("relevant は level 1,3,5 (関連性あり)", () => {
+    it("relevant は参考以上で関連性あり (level 1,3,5 相当)", () => {
       const { items: out } = filterMirrorEvents(items, { level_filter: "relevant" });
       expect(out.map((i) => i.id).sort()).toEqual(["relevant_only", "top"]);
     });
@@ -237,6 +244,65 @@ describe("filterMirrorEvents", () => {
     it("未指定は絞らない", () => {
       const { items: out } = filterMirrorEvents(items, {});
       expect(out.length).toBe(5);
+    });
+  });
+
+  // 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04、利用者決定)。
+  // 事象の判定は「最良メンバーの深刻さ」「いずれかのメンバーが関連性あり」
+  // 「いずれかのメンバーが深刻さ無しで heavy」(src/ui/api/eventnews.py:_event_level)。
+  describe("min_severity / relevant_only / include_strategic", () => {
+    const items = [
+      item({ id: "s3_relevant", severity: "S3", relevant: true }),
+      item({ id: "s3_not", severity: "S3", relevant: false }),
+      item({ id: "s2_relevant", severity: "S2", relevant: true }),
+      item({ id: "s2_not", severity: "S2", relevant: false }),
+      item({ id: "s1_relevant", severity: "S1", relevant: true }),
+      item({ id: "heavy_relevant", severity: null, relevant: true, strategic_weight_heavy_no_level: true }),
+      item({ id: "heavy_not", severity: null, relevant: false, strategic_weight_heavy_no_level: true }),
+      item({ id: "light_not", severity: null, relevant: false, strategic_weight_heavy_no_level: false }),
+    ];
+
+    it("深刻さ=すべて・関連性=すべて は絞らない", () => {
+      const { items: out } = filterMirrorEvents(items, {});
+      expect(out.length).toBe(8);
+    });
+
+    it("関連性ありのみ (深刻さ無しでも立つ)", () => {
+      const { items: out } = filterMirrorEvents(items, { relevant_only: true });
+      expect(out.map((i) => i.id).sort()).toEqual(["heavy_relevant", "s1_relevant", "s2_relevant", "s3_relevant"].sort());
+    });
+
+    it("重大のみ + 関連性ありのみ → 「関連性ありの重大」", () => {
+      const { items: out } = filterMirrorEvents(items, { min_severity: "S3", relevant_only: true });
+      expect(out.map((i) => i.id)).toEqual(["s3_relevant"]);
+    });
+
+    it("注意以上 + 関連性ありのみ", () => {
+      const { items: out } = filterMirrorEvents(items, { min_severity: "S2", relevant_only: true });
+      expect(out.map((i) => i.id).sort()).toEqual(["s2_relevant", "s3_relevant"]);
+    });
+
+    it("注意以上・政策・地政学を含める (toggle)", () => {
+      const { items: out } = filterMirrorEvents(items, { min_severity: "S2", include_strategic: true });
+      expect(out.map((i) => i.id).sort()).toEqual(
+        ["heavy_not", "heavy_relevant", "s2_not", "s2_relevant", "s3_not", "s3_relevant"].sort(),
+      );
+    });
+
+    it("注意以上・政策・地政学を含める + 関連性ありのみ", () => {
+      const { items: out } = filterMirrorEvents(items, {
+        min_severity: "S2",
+        include_strategic: true,
+        relevant_only: true,
+      });
+      expect(out.map((i) => i.id).sort()).toEqual(["heavy_relevant", "s2_relevant", "s3_relevant"].sort());
+    });
+
+    it("参考以上 (severity が付いている全部)", () => {
+      const { items: out } = filterMirrorEvents(items, { min_severity: "S1" });
+      expect(out.map((i) => i.id).sort()).toEqual(
+        ["s1_relevant", "s2_not", "s2_relevant", "s3_not", "s3_relevant"].sort(),
+      );
     });
   });
 });

@@ -37,11 +37,17 @@ class SearchFacets(BaseModel):
     # "targeted_affected"=日本が標的・被害 (targeted/affected) / "mentioned"=日本に触れる
     # もの (targeted/affected/mentioned、= jp <> 'none')。None=絞り込み無し ("すべて")。
     jp: str | None = None
-    # 重要度 6 段階による絞り込み (2026-10-04、article_importance_v2 由来):
+    # 重要度 6 段階による絞り込み (2026-10-04、article_importance_v2 由来、旧 1 本化 facet)。
     # "top"=深刻さ S3 のみ / "notable"=S3・S2、または軸なしで strategic_weight='heavy' /
     # "relevant"=関連性あり。None=絞り込み無し ("すべて")。旧 importance (high/medium/low)
-    # とは独立 (UI は level_filter のみ使う。旧パラメータは配信など他の呼び手が使い続ける)。
+    # とは独立。**非推奨** — 新規コードは下の 3 独立 facet を使う (後方互換のため残す)。
     level_filter: str | None = None
+    # 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04、利用者決定)。「関連性ありの
+    # 重大」のように旧 level_filter では表せない組み合わせを選べるようにした。
+    # min_severity: "" (すべて) / "S3" (重大のみ) / "S2" (注意以上) / "S1" (参考以上)。
+    min_severity: str | None = None
+    relevant_only: bool = False
+    include_strategic: bool = False
 
     def is_empty(self) -> bool:
         """status 以外の絞り込みが 1 つも無ければ True (status は baseline 扱い)。"""
@@ -58,6 +64,9 @@ class SearchFacets(BaseModel):
             or self.body_source
             or self.jp
             or self.level_filter
+            or self.min_severity
+            or self.relevant_only
+            or self.include_strategic
         )
 
     def to_query_kwargs(self) -> dict[str, object]:
@@ -93,6 +102,12 @@ class SearchFacets(BaseModel):
             kw["jp"] = self.jp
         if self.level_filter:
             kw["level_filter"] = self.level_filter
+        if self.min_severity:
+            kw["min_severity"] = self.min_severity
+        if self.relevant_only:
+            kw["relevant_only"] = self.relevant_only
+        if self.include_strategic:
+            kw["include_strategic"] = self.include_strategic
         return kw
 
 

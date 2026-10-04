@@ -14,8 +14,9 @@ import { articlesApi } from "../api/articles";
 import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
-  BODY_OPTS, JP_OPTS, LEVEL_FILTER_OPTS, LevelBadge, migrateImportanceToLevelFilter, Sel,
-  SINCE_OPTS, SORT_OPTS, useFacetOptions, VendorInput,
+  BODY_OPTS, EMPTY_SEVERITY_FACET, JP_OPTS, LevelBadge, readSeverityFacet, Sel,
+  SeverityFacetControls, severityFacetQueryParams, SINCE_OPTS, SORT_OPTS, useFacetOptions,
+  VendorInput, writeSeverityFacet, type SeverityFacetState,
 } from "../components/news/facets";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
@@ -49,7 +50,7 @@ function detectEntity(raw: string): { type: string; value: string } | null {
 interface Pivot { type: string; value: string }
 
 interface NewsState {
-  category: string; channel: string; levelFilter: string; feed: string; since: string;
+  category: string; channel: string; severity: SeverityFacetState; feed: string; since: string;
   search: string; malware: string; cve: string; intent: string; pir: string; actor: string; vendor: string;
   body: string; // "" / "stump"(切り株) / "full"(全文取得済)
   jp: string; // "" / "targeted_affected" / "mentioned" (日本との関係)
@@ -61,15 +62,14 @@ function readState(): NewsState {
   const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const pt = p.get("pivot_type");
   const pv = p.get("pivot_value");
-  // 重要度 6 段階 (2026-10-04)。旧 "importance" クエリ (high/medium/low) の deep-link は
-  // level_filter が無いときだけ移行する (migrateImportanceToLevelFilter)。
-  const levelFilterRaw = p.get("level_filter") ?? "";
-  const legacyImportance = p.get("importance") ?? "";
-  const levelFilter = levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance);
+  // 深刻さ・関連性・戦略上の重み (2026-10-04)。既定は「すべて」— ニュース検索は絞らない
+  // ところから探索を始める (事象ニュースの既定「注意以上」とは違う)。旧 level_filter /
+  // importance (high/medium/low) の deep-link は新 facet が無いときだけ移行する。
+  const severity = readSeverityFacet(p, EMPTY_SEVERITY_FACET);
   return {
     category: p.get("category") ?? "",
     channel: p.get("channel") ?? "",
-    levelFilter,
+    severity,
     feed: p.get("feed") ?? "",
     since: p.get("since") ?? "0",
     search: p.get("search") ?? "",
@@ -93,7 +93,7 @@ function writeState(s: NewsState): void {
   const q = new URLSearchParams();
   if (s.category) q.set("category", s.category);
   if (s.channel) q.set("channel", s.channel);
-  if (s.levelFilter) q.set("level_filter", s.levelFilter);
+  writeSeverityFacet(q, s.severity);
   if (s.feed) q.set("feed", s.feed);
   if (s.since && s.since !== "0") q.set("since", s.since);
   if (s.search) q.set("search", s.search);
@@ -131,7 +131,7 @@ export function NewsPage() {
   const init = readState();
   const [category, setCategory] = useState(init.category);
   const [channel, setChannel] = useState(init.channel);
-  const [levelFilter, setLevelFilter] = useState(init.levelFilter);
+  const [severity, setSeverity] = useState<SeverityFacetState>(init.severity);
   const [feed, setFeed] = useState(init.feed);
   const [since, setSince] = useState(init.since);
   const [mode, setMode] = useState<"headline" | "summary">(init.mode);
@@ -163,14 +163,14 @@ export function NewsPage() {
     const t = setTimeout(() => setVendor(vendorRaw.trim()), 300);
     return () => clearTimeout(t);
   }, [vendorRaw]);
-  useEffect(() => { setLimit(30); }, [category, channel, levelFilter, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, newOnly, lastSeen]);
+  useEffect(() => { setLimit(30); }, [category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, newOnly, lastSeen]);
   useEffect(() => {
-    writeState({ category, channel, levelFilter, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot });
-  }, [category, channel, levelFilter, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot]);
+    writeState({ category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot });
+  }, [category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot]);
 
   // facet (閲覧・検索で共有する AND 条件)。空値は undefined にして送らない。
   const facets: SearchFacets = useMemo(() => ({
-    level_filter: (levelFilter as SearchFacets["level_filter"]) || undefined,
+    ...severityFacetQueryParams(severity),
     category: category || undefined,
     feed: feed || undefined,
     channel: channel || undefined,
@@ -183,7 +183,7 @@ export function NewsPage() {
     body: body || undefined,
     jp: (jp as SearchFacets["jp"]) || undefined,
     since_hours: Number(since) || undefined,
-  }), [levelFilter, category, feed, channel, cve, malware, intent, pir, actor, vendor, body, jp, since]);
+  }), [severity, category, feed, channel, cve, malware, intent, pir, actor, vendor, body, jp, since]);
 
   // ビュー判定: 明示 pivot > box の構造化エンティティ自動逆引き > テキスト検索 > 閲覧。
   const autoPivot = useMemo(() => (pivot == null && search ? detectEntity(search) : null), [pivot, search]);
@@ -279,7 +279,7 @@ export function NewsPage() {
         <Sel value={jp} onChange={setJp} opts={JP_OPTS} />
         {/* 購読チャンネルは運用面の軸なので写しには出さない (ops では残す)。 */}
         {!MIRROR && <Sel value={channel} onChange={setChannel} opts={facetOpts.channel} />}
-        <Sel value={levelFilter} onChange={setLevelFilter} opts={LEVEL_FILTER_OPTS} />
+        <SeverityFacetControls state={severity} onChange={setSeverity} />
         <Sel value={body} onChange={setBody} opts={BODY_OPTS} />
         <Sel value={intent} onChange={setIntent} opts={facetOpts.intent} />
         <Sel value={pir} onChange={setPir} opts={facetOpts.pir} />

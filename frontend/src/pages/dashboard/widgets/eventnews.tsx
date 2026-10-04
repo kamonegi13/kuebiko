@@ -10,7 +10,9 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchEventNews } from "../../../api/eventnews";
 import { Drawer } from "../../../components/Drawer";
 import { vocabLabel } from "../../../hooks/useVocab";
-import { LevelBadge, migrateImportanceToLevelFilter } from "../../../components/news/facets";
+import {
+  LevelBadge, severityFacetFromConfigStrings, severityFacetQueryParams,
+} from "../../../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "../../eventnews/EventNewsDetail";
 import { WidgetCard, Loading, Empty, WidgetError, cfgNum, cfgStr, type WidgetProps } from "../shared";
 
@@ -20,19 +22,27 @@ const TONE: Record<string, string> = {
   low: "text-fg-subtle",
 };
 
+// widget 単体の既定 (registry の defaultConfig が付かない古い保存設定向けの最終 fallback)。
+// 旧既定 level_filter="notable" と同じ「注意以上 + 政策・地政学を含める」。
+const WIDGET_DEFAULT_SEVERITY = { minSeverity: "S2" as const, relevantOnly: false, includeStrategic: true };
+
 export function EventNewsWidget({ config }: WidgetProps) {
   const per = cfgNum(config, "per", 6);
-  // 重要度 6 段階 (2026-10-04)。保存済み widget 設定の旧 "importance"
-  // ("high,medium" 既定) は level_filter が未設定のときだけ移行する。
-  const levelFilterRaw = cfgStr(config, "level_filter", "");
-  const legacyImportance = cfgStr(config, "importance", "");
-  const levelFilter = (levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance) || "notable") as
-    "" | "top" | "notable" | "relevant";
+  // 深刻さ・関連性・戦略上の重み (2026-10-04)。新 3 facet が無ければ旧 level_filter /
+  // 更に古い importance ("high,medium" 既定) を移行する。
+  const severity = severityFacetFromConfigStrings(
+    cfgStr(config, "min_severity", ""),
+    cfgStr(config, "relevant_only", ""),
+    cfgStr(config, "include_strategic", ""),
+    cfgStr(config, "level_filter", ""),
+    cfgStr(config, "importance", ""),
+    WIDGET_DEFAULT_SEVERITY,
+  );
   const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
-    queryKey: ["dash-eventnews", levelFilter, per],
+    queryKey: ["dash-eventnews", severity, per],
     queryFn: () =>
-      fetchEventNews({ limit: Math.max(per * 2, 20), level_filter: levelFilter || undefined }),
+      fetchEventNews({ limit: Math.max(per * 2, 20), ...severityFacetQueryParams(severity) }),
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);

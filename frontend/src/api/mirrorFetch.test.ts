@@ -198,16 +198,16 @@ describe("一覧の全件ファイル", () => {
     });
   });
 
-  // 重要度 6 段階による絞り込み (2026-10-04)。
-  describe("level_filter で絞り込む", () => {
+  // 重要度 6 段階による絞り込み (旧 1 本化 level_filter、後方互換のみ。2026-10-04)。
+  describe("level_filter で絞り込む (後方互換)", () => {
     beforeEach(() => {
       served["/data/articles.json"] = {
         articles: [
-          fixtureArticle({ id: 1, severity: "S3", level: 1, strategic_weight: null }),
-          fixtureArticle({ id: 2, severity: "S2", level: 4, strategic_weight: null }),
-          fixtureArticle({ id: 3, severity: "S1", level: 5, strategic_weight: null }),
-          fixtureArticle({ id: 4, severity: null, level: null, strategic_weight: "heavy" }),
-          fixtureArticle({ id: 5, severity: "S1", level: 6, strategic_weight: null }),
+          fixtureArticle({ id: 1, severity: "S3", level: 1, relevant: true, strategic_weight: null }),
+          fixtureArticle({ id: 2, severity: "S2", level: 4, relevant: false, strategic_weight: null }),
+          fixtureArticle({ id: 3, severity: "S1", level: 5, relevant: true, strategic_weight: null }),
+          fixtureArticle({ id: 4, severity: null, level: null, relevant: false, strategic_weight: "heavy" }),
+          fixtureArticle({ id: 5, severity: "S1", level: 6, relevant: false, strategic_weight: null }),
         ],
         count: 5,
       };
@@ -225,7 +225,7 @@ describe("一覧の全件ファイル", () => {
       expect(body.articles.map((a) => a.id)).toEqual([1, 2, 4]);
     });
 
-    test("relevant は level 1,3,5 (関連性あり)", async () => {
+    test("relevant は参考以上で関連性あり (level 1,3,5 相当)", async () => {
       const r = await fetch("/api/v1/articles?level_filter=relevant&status=posted&limit=30");
       const body = (await r.json()) as { articles: Array<{ id: number }> };
       expect(body.articles.map((a) => a.id)).toEqual([1, 3]);
@@ -233,6 +233,69 @@ describe("一覧の全件ファイル", () => {
 
     test("未指定は絞り込まない", async () => {
       const r = await fetch("/api/v1/articles?status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3, 4, 5]);
+    });
+  });
+
+  // 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04、利用者決定)。
+  describe("min_severity / relevant_only / include_strategic で絞り込む", () => {
+    beforeEach(() => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 1, severity: "S3", relevant: true, strategic_weight: null }),
+          fixtureArticle({ id: 2, severity: "S3", relevant: false, strategic_weight: null }),
+          fixtureArticle({ id: 3, severity: "S2", relevant: true, strategic_weight: null }),
+          fixtureArticle({ id: 4, severity: "S2", relevant: false, strategic_weight: null }),
+          fixtureArticle({ id: 5, severity: "S1", relevant: true, strategic_weight: null }),
+          fixtureArticle({ id: 6, severity: null, relevant: true, strategic_weight: "heavy" }),
+          fixtureArticle({ id: 7, severity: null, relevant: false, strategic_weight: "heavy" }),
+          fixtureArticle({ id: 8, severity: null, relevant: false, strategic_weight: "light" }),
+        ],
+        count: 8,
+      };
+    });
+
+    test("深刻さ=すべて・関連性=すべて は絞り込まない", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    });
+
+    test("関連性ありのみ (深刻さ無しでも立つ)", async () => {
+      const r = await fetch("/api/v1/articles?relevant_only=1&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 3, 5, 6]);
+    });
+
+    test("重大のみ + 関連性ありのみ → 「関連性ありの重大」(level 1 相当のみ)", async () => {
+      const r = await fetch("/api/v1/articles?min_severity=S3&relevant_only=1&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1]);
+    });
+
+    test("注意以上 + 関連性ありのみ → level 1,3 相当", async () => {
+      const r = await fetch("/api/v1/articles?min_severity=S2&relevant_only=1&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 3]);
+    });
+
+    test("注意以上・政策・地政学を含める (toggle)", async () => {
+      const r = await fetch("/api/v1/articles?min_severity=S2&include_strategic=1&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3, 4, 6, 7]);
+    });
+
+    test("注意以上・政策・地政学を含める + 関連性ありのみ", async () => {
+      const r = await fetch(
+        "/api/v1/articles?min_severity=S2&include_strategic=1&relevant_only=1&status=posted&limit=30",
+      );
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 3, 6]);
+    });
+
+    test("参考以上 (severity が付いている全記事)", async () => {
+      const r = await fetch("/api/v1/articles?min_severity=S1&status=posted&limit=30");
       const body = (await r.json()) as { articles: Array<{ id: number }> };
       expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3, 4, 5]);
     });

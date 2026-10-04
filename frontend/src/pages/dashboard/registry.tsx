@@ -19,18 +19,36 @@ import { JpCiThreatWidget } from "./widgets/jpci";
 
 // ── 共通 config option 定義 ──
 const PER_OPTION: ConfigOption = { key: "per", label: "件数", choices: COUNT_CHOICES };
-// 重要度 6 段階による絞り込み (2026-10-04)。news_feed / eventnews widget が共有する。
-// 旧 "importance" (high/medium/low) の保存済み widget 設定は
-// ``migrateImportanceToLevelFilter`` (frontend/src/components/news/facets.tsx) で読む。
-const LEVEL_FILTER_OPTION: ConfigOption = {
-  key: "level_filter", label: "重要度",
+// 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。news_feed / eventnews widget が
+// 共有する。旧 "level_filter" (1 本化 facet) / さらに古い "importance" (high/medium/low) の
+// 保存済み widget 設定は ``severityFacetFromConfigStrings``
+// (frontend/src/components/news/facets.tsx) で読む。
+const MIN_SEVERITY_OPTION: ConfigOption = {
+  key: "min_severity", label: "深刻さ",
   choices: [
     { value: "", label: "すべて" },
-    { value: "top", label: "重大のみ" },
-    { value: "notable", label: "注意以上" },
-    { value: "relevant", label: "関連性ありのみ" },
+    { value: "S3", label: "重大のみ" },
+    { value: "S2", label: "注意以上" },
+    { value: "S1", label: "参考以上" },
   ],
 };
+const RELEVANT_ONLY_OPTION: ConfigOption = {
+  key: "relevant_only", label: "関連性",
+  choices: [
+    { value: "", label: "すべて" },
+    { value: "1", label: "関連性ありのみ" },
+  ],
+};
+const INCLUDE_STRATEGIC_OPTION: ConfigOption = {
+  key: "include_strategic", label: "政策・地政学 (深刻さ絞り込み時)",
+  choices: [
+    { value: "", label: "含めない" },
+    { value: "1", label: "含める" },
+  ],
+};
+const SEVERITY_FACET_OPTIONS: ConfigOption[] = [
+  MIN_SEVERITY_OPTION, RELEVANT_ONLY_OPTION, INCLUDE_STRATEGIC_OPTION,
+];
 const HEADLINE_AXES: ConfigOption = {
   key: "axis", label: "分類軸",
   choices: [
@@ -192,7 +210,7 @@ const FEED_OPTION: ConfigOption = {
 const ARTICLE_FEED_OPTIONS: ConfigOption[] = [
   CATEGORY_OPTION, FEED_OPTION, JP_OPTION,
   ...(MIRROR ? [] : [CHANNEL_OPTION]),
-  LEVEL_FILTER_OPTION, MODE_OPTION, SINCE_OPTION, PER_OPTION,
+  ...SEVERITY_FACET_OPTIONS, MODE_OPTION, SINCE_OPTION, PER_OPTION,
 ];
 
 // span は 4 カラムグリッド基準 (4=全幅 / 2=半分 / 1=¼ / 3=¾)
@@ -215,7 +233,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / SIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
   // ── 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。裏取りは
   //    「独立媒体数」で示し記事数では示さない。単独報は「1 媒体のみ」と明示する ──
-  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)", configOptions: [LEVEL_FILTER_OPTION, PER_OPTION], defaultConfig: { level_filter: "notable", per: 6 } },
+  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)", configOptions: [...SEVERITY_FACET_OPTIONS, PER_OPTION], defaultConfig: { min_severity: "S2", per: 6 } },
   // ── 記事フィード (汎用・設定可・複数配置可。カテゴリ/CH/重要度/サイトで絞る) ──
   news_feed: { title: "記事フィード", Component: ArticleFeedWidget, defaultSpan: 2, defaultHeight: 420, thumb: "list", multi: true, blurb: "カテゴリ/CH/重要度/サイトで絞った記事。設定を変えて複数配置 (脆弱性/脅威/地政/緊急 等)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { mode: "summary", per: 5 } },
   // ── 発見支援 / 脅威 ──

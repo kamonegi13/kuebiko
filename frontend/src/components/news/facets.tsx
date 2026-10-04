@@ -4,7 +4,7 @@
 // 複製しない (CLAUDE.md §7: ラベルは SSoT を参照)。選択肢はすべて backend 配信の
 // 語彙 / live registry / 実データ由来で、ここは組み立てるだけ。
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pirApi } from "../../api/pir";
 import { fetchActorOptions, fetchAffectedVendors, fetchFeedOptions } from "../../api/search";
@@ -33,26 +33,146 @@ export const IMPORTANCE_OPTS: Opt[] = [
   { value: "medium", label: "Medium" },
 ];
 
-/** 重要度 6 段階による絞り込み (2026-10-04)。ニュース検索・事象ニュース・ダッシュボードの
- *  重要度 facet はこれだけを使う (旧 IMPORTANCE_OPTS の high/medium/low は使わない)。
- *  値は API の ``level_filter`` パラメータと一致 ("" はフィルタ無し)。生の enum
- *  (top/notable/relevant) は画面に出さない (CLAUDE.md §UI 文言規約)。 */
-export const LEVEL_FILTER_OPTS: Opt[] = [
-  { value: "", label: "重要度: すべて" },
-  { value: "top", label: "重要度: 重大のみ" },
-  { value: "notable", label: "重要度: 注意以上" },
-  { value: "relevant", label: "重要度: 関連性ありのみ" },
+/** 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04、利用者決定)。
+ *
+ *  旧 1 本化 facet (``level_filter``: top/notable/relevant 単一選択) は「関連性ありの
+ *  重大」のように表せない組み合わせがあったため、3 つの独立コントロールに置き換えた。
+ *  値は API の ``min_severity`` / ``relevant_only`` / ``include_strategic`` パラメータと
+ *  一致。生の enum (S3/S2/S1) は画面に出さない (CLAUDE.md §UI 文言規約)。
+ */
+export interface SeverityFacetState {
+  /** ""=すべて / "S3"=重大のみ / "S2"=注意以上 / "S1"=参考以上 (severity 記録済み全部)。 */
+  minSeverity: "" | "S3" | "S2" | "S1";
+  /** 関連性 (日本・注視国・SIR) ありの記事だけ。深刻さの設定と独立に効く。 */
+  relevantOnly: boolean;
+  /** ``minSeverity`` 指定時のみ意味を持つ: 深刻さ無し (政策・地政学) で
+   *  strategic_weight='heavy' の記事も合わせて含める。 */
+  includeStrategic: boolean;
+}
+
+export const EMPTY_SEVERITY_FACET: SeverityFacetState = {
+  minSeverity: "",
+  relevantOnly: false,
+  includeStrategic: false,
+};
+
+/** 深刻さ facet の選択肢 (単一 select、関連性・戦略上の重みは別コントロール)。 */
+export const MIN_SEVERITY_OPTS: Opt[] = [
+  { value: "", label: "深刻さ: すべて" },
+  { value: "S3", label: "深刻さ: 重大のみ" },
+  { value: "S2", label: "深刻さ: 注意以上" },
+  { value: "S1", label: "深刻さ: 参考以上" },
 ];
 
-/** 旧 widget 設定 (``importance``: high/medium/low) → 新 ``level_filter`` への移行
- *  (2026-10-04)。保存済みダッシュボード widget 設定・URL state を壊さないための写像。
- *  high→top (重大のみ) / medium or "high,medium"→notable (注意以上) / 不明な値→"" (すべて)。*/
+/** 旧 1 本化 ``level_filter`` (top/notable/relevant) → 新 3 facet への写像 (後方互換)。
+ *  SSoT は ``src/cti/importance_v2.py:legacy_level_filter_to_severity`` と対照
+ *  (同じ意味論。食い違えば API と UI の挙動がずれる)。
+ *  "notable" は旧仕様で軸なし heavy も含んでいたため includeStrategic=true に写す。
+ *  "relevant" は旧仕様が severity 記録済みのみを対象にしていたため
+ *  minSeverity="S1" (参考以上) + relevantOnly=true に写す。 */
+export function legacyLevelFilterToSeverityFacet(
+  levelFilter: string | null | undefined,
+): SeverityFacetState {
+  if (levelFilter === "top") return { minSeverity: "S3", relevantOnly: false, includeStrategic: false };
+  if (levelFilter === "notable") return { minSeverity: "S2", relevantOnly: false, includeStrategic: true };
+  if (levelFilter === "relevant") return { minSeverity: "S1", relevantOnly: true, includeStrategic: false };
+  return EMPTY_SEVERITY_FACET;
+}
+
+/** 旧 widget 設定 (``importance``: high/medium/low) → 旧 ``level_filter`` への移行
+ *  (2026-10-04 より前の保存済み設定用)。high→top (重大のみ) /
+ *  medium or "high,medium"→notable (注意以上) / 不明な値→"" (すべて)。 */
 export function migrateImportanceToLevelFilter(old: string | null | undefined): string {
   if (!old) return "";
   const v = old.trim();
   if (v === "high") return "top";
   if (v === "medium" || v === "high,medium" || v === "medium,high") return "notable";
   return "";
+}
+
+/** 旧設定 (``level_filter`` または更に古い ``importance``) → 新 3 facet への移行。
+ *  新 facet の値が 1 つでも明示されていればそれを使う (呼び手が判定する)。 */
+export function migrateLegacyToSeverityFacet(
+  levelFilter: string | null | undefined,
+  legacyImportance?: string | null,
+): SeverityFacetState {
+  const lf = levelFilter || migrateImportanceToLevelFilter(legacyImportance);
+  return legacyLevelFilterToSeverityFacet(lf);
+}
+
+/** widget 保存設定 (すべて文字列) から ``SeverityFacetState`` を読む。``URLSearchParams``
+ *  が無い文脈 (dashboard widget の ``config: Record<string, unknown>``) 用。新 3 facet の
+ *  いずれかが明示されていればそれを優先し、無ければ旧 ``level_filter``/``importance`` を
+ *  移行する。呼び手は ``cfgStr(config, key, "")`` で素の文字列を渡す。 */
+export function severityFacetFromConfigStrings(
+  minSeverityRaw: string,
+  relevantOnlyRaw: string,
+  includeStrategicRaw: string,
+  levelFilterRaw: string,
+  legacyImportanceRaw: string,
+  fallback: SeverityFacetState,
+): SeverityFacetState {
+  if (minSeverityRaw || relevantOnlyRaw || includeStrategicRaw) {
+    const minSeverity =
+      minSeverityRaw === "S3" || minSeverityRaw === "S2" || minSeverityRaw === "S1"
+        ? minSeverityRaw
+        : "";
+    return {
+      minSeverity,
+      relevantOnly: relevantOnlyRaw === "1",
+      includeStrategic: includeStrategicRaw === "1",
+    };
+  }
+  if (levelFilterRaw || legacyImportanceRaw) {
+    return migrateLegacyToSeverityFacet(levelFilterRaw, legacyImportanceRaw);
+  }
+  return fallback;
+}
+
+/** URLSearchParams から ``SeverityFacetState`` を読む。新 3 facet のいずれかが
+ *  明示されていればそれを優先し、無ければ旧 ``level_filter``/``importance`` を移行する。
+ *  いずれも無ければ ``fallback`` (画面ごとの既定: ニュース検索はすべて、事象ニュースは
+ *  注意以上)。 */
+export function readSeverityFacet(
+  p: URLSearchParams,
+  fallback: SeverityFacetState = EMPTY_SEVERITY_FACET,
+): SeverityFacetState {
+  if (p.has("min_severity") || p.has("relevant_only") || p.has("include_strategic")) {
+    const raw = p.get("min_severity") ?? "";
+    const minSeverity = raw === "S3" || raw === "S2" || raw === "S1" ? raw : "";
+    return {
+      minSeverity,
+      relevantOnly: p.get("relevant_only") === "1",
+      includeStrategic: p.get("include_strategic") === "1",
+    };
+  }
+  const levelFilterRaw = p.get("level_filter");
+  const legacyImportance = p.get("importance");
+  if (levelFilterRaw || legacyImportance) {
+    return migrateLegacyToSeverityFacet(levelFilterRaw, legacyImportance);
+  }
+  return fallback;
+}
+
+/** ``SeverityFacetState`` を URLSearchParams へ書く (読み戻しと対で保つ)。 */
+export function writeSeverityFacet(q: URLSearchParams, s: SeverityFacetState): void {
+  if (s.minSeverity) q.set("min_severity", s.minSeverity);
+  if (s.relevantOnly) q.set("relevant_only", "1");
+  if (s.minSeverity && s.includeStrategic) q.set("include_strategic", "1");
+}
+
+/** API 呼び出し用の query パラメータへ変換 (``ArticleFeedParams`` / ``EventNewsQuery``
+ *  共通のフィールド名)。すべて未設定なら空オブジェクト (絞り込み無しのまま送らない)。 */
+export function severityFacetQueryParams(s: SeverityFacetState): {
+  min_severity?: "" | "S3" | "S2" | "S1";
+  relevant_only?: boolean;
+  include_strategic?: boolean;
+} {
+  return {
+    min_severity: s.minSeverity || undefined,
+    relevant_only: s.relevantOnly || undefined,
+    include_strategic: s.minSeverity && s.includeStrategic ? true : undefined,
+  };
 }
 
 /** 本文由来フィルタ: 全文取得できた記事 / 切り株 (フィード抜粋のみ)。記事画面専用。 */
@@ -235,6 +355,76 @@ export function Sel({
     >
       {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
+  );
+}
+
+/** on/off トグル。select と違い「効いている状態」が一目で分かる (事象ニュースの
+ *  複数媒体/統合済み/新事実あり と同じ見た目)。``disabled`` は深刻さ無指定時に
+ *  「政策・地政学を含める」を無効化するために使う。 */
+export function FacetToggle({
+  on,
+  onClick,
+  title,
+  disabled,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-pressed={on}
+      disabled={disabled}
+      className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+        disabled
+          ? "border-border-subtle text-fg-subtle opacity-50 cursor-not-allowed"
+          : on
+            ? "border-accent text-accent bg-accent/10"
+            : "border-border-default text-fg-muted hover:text-fg"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** 深刻さ・関連性・戦略上の重みの 3 独立コントロール。ニュース検索・事象ニュースが
+ *  共有する (2026-10-04)。select + 2 トグルの並びを両画面で揃える。 */
+export function SeverityFacetControls({
+  state,
+  onChange,
+}: {
+  state: SeverityFacetState;
+  onChange: (next: SeverityFacetState) => void;
+}) {
+  return (
+    <>
+      <Sel
+        value={state.minSeverity}
+        onChange={(v) => onChange({ ...state, minSeverity: v as SeverityFacetState["minSeverity"] })}
+        opts={MIN_SEVERITY_OPTS}
+      />
+      <FacetToggle
+        on={state.relevantOnly}
+        onClick={() => onChange({ ...state, relevantOnly: !state.relevantOnly })}
+        title="日本 (標的・被害)・注視国 (中国・ロシア・北朝鮮・イラン)・SIR の該当がある記事だけ"
+      >
+        関連性ありのみ
+      </FacetToggle>
+      <FacetToggle
+        on={state.includeStrategic}
+        disabled={!state.minSeverity}
+        onClick={() => onChange({ ...state, includeStrategic: !state.includeStrategic })}
+        title="深刻さを絞り込み中、政策・地政学 (注視国が主体) の記事も合わせて含める"
+      >
+        政策・地政学を含める
+      </FacetToggle>
+    </>
   );
 }
 

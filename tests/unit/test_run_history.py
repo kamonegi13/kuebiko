@@ -572,6 +572,118 @@ class TestArticleRecording:
         }
         assert len(repo.list_articles()) == 5  # 未指定は絞り込まない
 
+    def test_list_articles_min_severity_relevant_strategic(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。
+
+        旧 1 本化 ``level_filter`` では「関連性ありの重大」のように表せない組み合わせを
+        選べるようにした (利用者決定)。
+        """
+        run_id = repo.start_run(
+            RunRecord(started_at=_now(), pipeline="daily", dry_run=False),
+        )
+        aids = [
+            "s3_relevant",
+            "s3_not",
+            "s2_relevant",
+            "s2_not",
+            "s1_relevant",
+            "heavy_relevant",
+            "heavy_not",
+            "light_not",
+        ]
+        for aid in aids:
+            repo.add_article(
+                ArticleRecord(
+                    run_id=run_id,
+                    article_id=aid,
+                    title=aid,
+                    url=f"https://example.com/{aid}",
+                    status="posted",
+                    created_at=_now(),
+                ),
+            )
+        from src.cti.importance_v2 import ImportanceV2
+
+        def _save(
+            aid: str,
+            severity: str | None,
+            relevant: bool,
+            strategic_weight: str | None = None,
+        ) -> None:
+            repo.save_importance_v2(
+                aid,
+                ImportanceV2(
+                    severity=severity,  # type: ignore[arg-type]
+                    severity_basis="x",
+                    strategic_weight=strategic_weight,  # type: ignore[arg-type]
+                    jp="none",
+                    nations=(),
+                    sir_ids=(),
+                    relevant=relevant,
+                ),
+            )
+
+        _save("s3_relevant", "S3", relevant=True)
+        _save("s3_not", "S3", relevant=False)
+        _save("s2_relevant", "S2", relevant=True)
+        _save("s2_not", "S2", relevant=False)
+        _save("s1_relevant", "S1", relevant=True)
+        _save("heavy_relevant", None, relevant=True, strategic_weight="heavy")
+        _save("heavy_not", None, relevant=False, strategic_weight="heavy")
+        _save("light_not", None, relevant=False, strategic_weight="light")
+
+        def ids(**kw: object) -> set[str]:
+            return {a.article_id for a in repo.list_articles(**kw)}  # type: ignore[arg-type]
+
+        # 深刻さ=すべて・関連性=すべて → 絞り込み無し
+        assert len(repo.list_articles()) == 8
+
+        # 深刻さ=すべて・関連性ありのみ → severity の有無に関わらず relevant=1 の全記事
+        assert ids(relevant_only=True) == {
+            "s3_relevant",
+            "s2_relevant",
+            "s1_relevant",
+            "heavy_relevant",
+        }
+
+        # 重大のみ (S3)
+        assert ids(min_severity="S3") == {"s3_relevant", "s3_not"}
+        # 重大のみ + 関連性ありのみ → 「関連性ありの重大」 (旧 level_filter では表せなかった)
+        assert ids(min_severity="S3", relevant_only=True) == {"s3_relevant"}
+
+        # 注意以上 (S3,S2) + 関連性ありのみ → S3・S2 の関連性ありのみ (1,3 相当)
+        assert ids(min_severity="S2", relevant_only=True) == {"s3_relevant", "s2_relevant"}
+
+        # 注意以上、政策・地政学を含める (toggle on) → heavy も入るが light は入らない
+        assert ids(min_severity="S2", include_strategic=True) == {
+            "s3_relevant",
+            "s3_not",
+            "s2_relevant",
+            "s2_not",
+            "heavy_relevant",
+            "heavy_not",
+        }
+        # 同上 + 関連性ありのみ → heavy は関連性ありのものだけ
+        assert ids(min_severity="S2", include_strategic=True, relevant_only=True) == {
+            "s3_relevant",
+            "s2_relevant",
+            "heavy_relevant",
+        }
+
+        # 参考以上 (severity が付いている全記事)
+        assert ids(min_severity="S1") == {
+            "s3_relevant",
+            "s3_not",
+            "s2_relevant",
+            "s2_not",
+            "s1_relevant",
+        }
+
+        # 深刻さ=すべてのとき include_strategic は効果が無い (toggle 無効、絞り込み無し)
+        assert len(ids(include_strategic=True)) == 8
+
     def test_list_articles_sort_level(self, repo: RunHistoryRepository) -> None:
         """``sort="level"`` — 重要度 6 段階 (importance_level) の高い順。
 

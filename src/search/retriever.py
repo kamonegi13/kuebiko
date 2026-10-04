@@ -135,8 +135,19 @@ async def retrieve_candidates(
             allowed_ids = jp_ids if allowed_ids is None else allowed_ids & jp_ids
         except Exception as e:  # noqa: BLE001
             _log.warning("retriever_jp_facet_failed", error=str(e))
-    # 重要度 6 段階の絞り込み (2026-10-04): jp と同じ AND 合成 (別テーブル由来)。
-    if facets is not None and facets.level_filter:
+    # 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04): jp と同じ AND 合成
+    # (別テーブル由来)。新 facet を優先し、無ければ旧 level_filter を後方互換で使う。
+    if facets is not None and (
+        facets.min_severity or facets.relevant_only or facets.include_strategic
+    ):
+        try:
+            sev_ids = repo.severity_filter_article_ids(
+                facets.min_severity or "", facets.relevant_only, facets.include_strategic
+            )
+            allowed_ids = sev_ids if allowed_ids is None else allowed_ids & sev_ids
+        except Exception as e:  # noqa: BLE001
+            _log.warning("retriever_severity_filter_failed", error=str(e))
+    elif facets is not None and facets.level_filter:
         try:
             level_ids = repo.level_filter_article_ids(facets.level_filter)
             allowed_ids = level_ids if allowed_ids is None else allowed_ids & level_ids

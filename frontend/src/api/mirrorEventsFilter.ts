@@ -92,24 +92,48 @@ function matchesEvent(item: MirrorEventNewsItem, q: EventNewsQuery): boolean {
     return false;
   }
   if (q.jp === "mentioned" && (!item.jp || item.jp === "none")) return false;
-  if (q.level_filter && !matchesLevelFilter(item, q.level_filter)) return false;
+  if (!matchesSeverityFacet(item, q)) return false;
   return true;
 }
 
-/** 重要度 6 段階による絞り込み (2026-10-04)。ライブ (src/storage/repo_eventnews.py
- *  の level_filter SQL) と同じ意味論を、事象の代表 level/strategic_weight から再現する。
- *  "top"=level 1-2 / "notable"=level 1-4、または軸なしで heavy の構成記事を含む /
- *  "relevant"=level 1,3,5。 */
-function matchesLevelFilter(
-  item: MirrorEventNewsItem,
-  levelFilter: "top" | "notable" | "relevant",
-): boolean {
-  const level = item.level;
-  if (levelFilter === "top") return level === 1 || level === 2;
-  if (levelFilter === "relevant") return level === 1 || level === 3 || level === 5;
-  // notable
-  if (level !== null && level !== undefined && level >= 1 && level <= 4) return true;
-  return item.strategic_weight_heavy_no_level === true;
+// 深刻さ facet の許容値 → severity の許容集合 (常に上位からの prefix)。
+// SSoT: src/storage/importance_level_sql.py:SEVERITY_ALLOWED。
+const SEVERITY_ALLOWED: Record<string, ("S3" | "S2" | "S1")[]> = {
+  S3: ["S3"],
+  S2: ["S3", "S2"],
+  S1: ["S3", "S2", "S1"],
+};
+
+/** 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。ライブ
+ *  (src/storage/importance_level_sql.py:severity_relevance_exists_for_event) と同じ
+ *  意味論を、事象の代表値 (severity=最良メンバー / relevant=いずれかのメンバー /
+ *  strategic_weight_heavy_no_level=いずれかのメンバー) から再現する。旧 1 本化
+ *  ``level_filter`` (top/notable/relevant) も後方互換で受け付け、新 3 facet が
+ *  無指定のときだけ写像する。 */
+function matchesSeverityFacet(item: MirrorEventNewsItem, q: EventNewsQuery): boolean {
+  let minSeverity = q.min_severity ?? "";
+  let relevantOnly = Boolean(q.relevant_only);
+  let includeStrategic = Boolean(q.include_strategic);
+  if (!minSeverity && !relevantOnly && !includeStrategic && q.level_filter) {
+    if (q.level_filter === "top") {
+      minSeverity = "S3";
+    } else if (q.level_filter === "notable") {
+      minSeverity = "S2";
+      includeStrategic = true;
+    } else if (q.level_filter === "relevant") {
+      minSeverity = "S1";
+      relevantOnly = true;
+    }
+  }
+  if (!minSeverity && !relevantOnly) return true;
+  if (!minSeverity) return item.relevant === true;
+  const allowed = SEVERITY_ALLOWED[minSeverity] ?? [];
+  let core = item.severity != null && allowed.includes(item.severity);
+  if (includeStrategic) {
+    core = core || (item.severity == null && item.strategic_weight_heavy_no_level === true);
+  }
+  if (relevantOnly) core = core && item.relevant === true;
+  return core;
 }
 
 // 重要度 6 段階 (1 が最上位・未記録は null)。null は常に最後に回す。

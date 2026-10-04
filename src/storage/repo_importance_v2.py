@@ -15,11 +15,13 @@ from src.cti.importance_v2 import (
     ImportanceInputs,
     ImportanceV2,
     corrected_axes,
+    legacy_level_filter_to_severity,
     stated_cvss,
     stated_loss_usd,
     stated_victim_count,
     subject_kev,
 )
+from src.storage.importance_level_sql import severity_relevance_sql
 
 _CHUNK = 400
 _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
@@ -140,30 +142,34 @@ class ImportanceV2Mixin:
             rows = conn.execute(sql).fetchall()
         return {str(r["article_id"]) for r in rows}
 
-    def level_filter_article_ids(self: Any, level_filter: str) -> set[str]:
-        """重要度 6 段階 ``level_filter`` の値を満たす記事 id の全集合 (検索の post-filter 用)。
+    def severity_filter_article_ids(
+        self: Any, min_severity: str, relevant_only: bool, include_strategic: bool
+    ) -> set[str]:
+        """深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04) を満たす記事 id の全集合
 
-        ``level_filter``: "top"=深刻さ S3 / "notable"=S3・S2、または軸なしで
-        strategic_weight='heavy' / "relevant"=関連性あり。SSoT は
-        ``src/storage/repo_articles.py:list_articles`` の SQL 条件と対照 (同じ意味論)。
+        (検索の post-filter 用)。意味論の SSoT は
+        ``src/storage/importance_level_sql.py:severity_relevance_sql``。
         """
-        if level_filter == "top":
-            sql = "SELECT article_id FROM article_importance_v2 WHERE severity = 'S3'"
-        elif level_filter == "notable":
-            sql = (
-                "SELECT article_id FROM article_importance_v2 WHERE severity IN ('S3','S2')"
-                " OR (severity IS NULL AND strategic_weight = 'heavy')"
-            )
-        elif level_filter == "relevant":
-            sql = (
-                "SELECT article_id FROM article_importance_v2"
-                " WHERE relevant = 1 AND severity IS NOT NULL"
-            )
-        else:
+        cond = severity_relevance_sql(min_severity, relevant_only, include_strategic)
+        if cond is None:
             return set()
+        sql = f"SELECT article_id FROM article_importance_v2 WHERE {cond}"  # noqa: S608
         with self._connect() as conn:
             rows = conn.execute(sql).fetchall()
         return {str(r["article_id"]) for r in rows}
+
+    def level_filter_article_ids(self: Any, level_filter: str) -> set[str]:
+        """旧 1 本化 facet ``level_filter`` (top/notable/relevant) 版。後方互換のみ (非推奨)。
+
+        新規コードは ``severity_filter_article_ids`` を直接使うこと。
+        """
+        min_severity, relevant_only, include_strategic = legacy_level_filter_to_severity(
+            level_filter
+        )
+        ids: set[str] = self.severity_filter_article_ids(
+            min_severity, relevant_only, include_strategic
+        )
+        return ids
 
     def jp_relation_by_article(self: Any, article_ids: Sequence[str]) -> dict[str, str]:
         """記事 id → 日本との関係 (``article_importance_v2.jp``)。無い記事は含めない。

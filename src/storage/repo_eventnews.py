@@ -17,8 +17,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from src.cti.importance_v2 import legacy_level_filter_to_severity
 from src.eventnews.models import VERSION_CAP, ItemState
-from src.storage.importance_level_sql import min_level_subquery_for_event
+from src.storage.importance_level_sql import (
+    min_level_subquery_for_event,
+    severity_relevance_exists_for_event,
+)
 from src.storage.records import EventNoteRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _from_iso, _to_iso
@@ -371,6 +375,9 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         importances: Sequence[str] | None = None,
         importance_rules: Mapping[str, ImportanceRule] | None = None,
         level_filter: str | None = None,
+        min_severity: str | None = None,
+        relevant_only: bool = False,
+        include_strategic: bool = False,
         exclude_merged: bool = False,
         min_independent_sources: int = 0,
         has_news: bool | None = None,
@@ -414,12 +421,13 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         どれよりも母集団を大きく動かす。既定はどちらも「絞らない」— 単独記事を
         既定で落とすと読む場所が 2 つに戻る (§14b 案 A)。
 
-        ``level_filter`` は重要度 6 段階 (2026-10-04) による絞り込み。事象の代表値は
-        構成記事のうち最良 (最小) の level (``_event_level`` と同じ定義)。
-        "top"=level 1-2 (深刻さ S3) / "notable"=level 1-4 (S3・S2) または軸なしで
-        ``strategic_weight='heavy'`` の構成記事を含む / "relevant"=level 1,3,5
-        (関連性あり)。旧 ``importances`` (high/medium/low) とは併用できるが、
-        UI は ``level_filter`` だけを使う。
+        ``min_severity`` / ``relevant_only`` / ``include_strategic`` は深刻さ・関連性・
+        戦略上の重みの 3 独立 facet (2026-10-04)。事象側は「構成記事のうち最良 (最小) の
+        severity」「いずれかのメンバーが関連性あり」「いずれかのメンバーが深刻さ無しで
+        heavy」で判定する (``severity_relevance_exists_for_event`` 参照)。旧 1 本化
+        ``level_filter`` (top/notable/relevant) も後方互換で受け付け、指定されていれば
+        新 3 facet へ写像する (新 facet が指定されていれば新 facet を優先)。旧
+        ``importances`` (high/medium/low) とは併用できるが、UI は新 3 facet だけを使う。
 
         ⚠ **絞り込みは LIMIT より前に効かせること**。呼び手が取得後に filter すると
         「新着 N 件のうち該当するもの」しか出ず、「該当するものの新着 N 件」に
@@ -453,20 +461,17 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                     sub.append("current_version > 0")
                 parts.append("(" + " AND ".join(sub) + ")")
             clauses.append("(" + " OR ".join(parts) + ")")
-        if level_filter in ("top", "notable", "relevant"):
-            lv = min_level_subquery_for_event("event_items.id")
-            if level_filter == "top":
-                clauses.append(f"{lv} IN (1,2)")
-            elif level_filter == "relevant":
-                clauses.append(f"{lv} IN (1,3,5)")
-            else:  # notable
-                clauses.append(
-                    f"({lv} IN (1,2,3,4) OR EXISTS ("
-                    "SELECT 1 FROM event_item_members lm"
-                    " JOIN article_importance_v2 liv ON liv.article_id = lm.article_id"
-                    " WHERE lm.item_id = event_items.id AND liv.severity IS NULL"
-                    " AND liv.strategic_weight = 'heavy'))"
-                )
+        if min_severity or relevant_only or include_strategic:
+            sev_cond = severity_relevance_exists_for_event(
+                "event_items.id", min_severity or "", relevant_only, include_strategic
+            )
+        elif level_filter in ("top", "notable", "relevant"):
+            legacy = legacy_level_filter_to_severity(level_filter)
+            sev_cond = severity_relevance_exists_for_event("event_items.id", *legacy)
+        else:
+            sev_cond = None
+        if sev_cond is not None:
+            clauses.append(sev_cond)
         if exclude_merged:
             clauses.append("(merged_into IS NULL OR merged_into = '')")
         if since is not None:

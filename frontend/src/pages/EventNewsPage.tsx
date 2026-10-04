@@ -16,15 +16,30 @@ import { Drawer } from "../components/Drawer";
 import { formatJstCompact } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
 import {
-  JP_OPTS, LEVEL_FILTER_OPTS, LevelBadge, migrateImportanceToLevelFilter, Sel, SINCE_OPTS,
-  SORT_OPTS, useFacetOptions, VendorInput,
+  JP_OPTS, LevelBadge, readSeverityFacet, Sel, SeverityFacetControls, severityFacetQueryParams,
+  SINCE_OPTS, SORT_OPTS, useFacetOptions, VendorInput, writeSeverityFacet,
+  type SeverityFacetState,
 } from "../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
 import { PAGE_TITLE } from "../components/headings";
 
-// 重要度 6 段階 (2026-10-04)。既定は「注意以上」(旧既定 high+medium を引き継ぐ) —
+// 深刻さ・関連性・戦略上の重み (2026-10-04)。既定は「注意以上 + 政策・地政学を含める」
+// (旧既定 level_filter="notable"、さらにその前の high+medium を引き継ぐ) —
 // 「すべて」まで出すと単独報の参考級が一覧を埋める。
+const DEFAULT_EVENT_SEVERITY: SeverityFacetState = {
+  minSeverity: "S2",
+  relevantOnly: false,
+  includeStrategic: false, // 既定は「注意以上 = サイバーの事象だけ」(利用者承認 2026-10-04)。地政学は切り替えで
+};
+
+function isDefaultSeverity(s: SeverityFacetState): boolean {
+  return (
+    s.minSeverity === DEFAULT_EVENT_SEVERITY.minSeverity &&
+    s.relevantOnly === DEFAULT_EVENT_SEVERITY.relevantOnly &&
+    s.includeStrategic === DEFAULT_EVENT_SEVERITY.includeStrategic
+  );
+}
 
 // 「新事実あり」= status 'updated' のみ。裏取りが増えただけの 'reinforced' は除く。
 //
@@ -40,16 +55,14 @@ const PAGE_SIZE = 60;
 const MIRROR = import.meta.env.VITE_MIRROR === "1";
 
 /** URL クエリ ⇄ 絞り込み状態。deep-link と戻る操作を壊さない。
- *  重要度 6 段階 (2026-10-04): 旧 "importance" クエリ (high/medium/low の deep-link) は
- *  level_filter が無いときだけ移行する (migrateImportanceToLevelFilter)。 */
-function readQuery(): EventNewsQuery & { levelFilter: string } {
+ *  深刻さ・関連性・戦略上の重み (2026-10-04): 新 3 facet が無ければ旧 "level_filter" /
+ *  更に古い "importance" クエリ (high/medium/low) を移行する (readSeverityFacet)。 */
+function readQuery(): EventNewsQuery & { severity: SeverityFacetState } {
   const p = new URLSearchParams(window.location.search);
   const num = (k: string) => Number(p.get(k) || 0) || 0;
-  const levelFilterRaw = p.get("level_filter") ?? "";
-  const legacyImportance = p.get("importance") ?? "";
-  const levelFilter = levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance) || "notable";
+  const severity = readSeverityFacet(p, DEFAULT_EVENT_SEVERITY);
   return {
-    levelFilter,
+    severity,
     search: p.get("search") ?? undefined,
     category: p.get("category") ?? undefined,
     channel: p.get("channel") ?? undefined,
@@ -74,9 +87,9 @@ function readQuery(): EventNewsQuery & { levelFilter: string } {
   };
 }
 
-function writeQuery(q: EventNewsQuery & { levelFilter: string }): void {
+function writeQuery(q: EventNewsQuery & { severity: SeverityFacetState }): void {
   const p = new URLSearchParams();
-  if (q.levelFilter !== "notable") p.set("level_filter", q.levelFilter);
+  if (!isDefaultSeverity(q.severity)) writeSeverityFacet(p, q.severity);
   if (q.search) p.set("search", q.search);
   if (q.since_hours) p.set("since_hours", String(q.since_hours));
   if (q.min_independent_sources) p.set("min_sources", String(q.min_independent_sources));
@@ -121,10 +134,10 @@ export function EventNewsPage() {
   const { data, isFetching, error } = useQuery({
     queryKey: ["eventnews-list", q, page],
     queryFn: () => {
-      const { levelFilter, ...rest } = q;
+      const { severity, ...rest } = q;
       return fetchEventNews({
         ...rest,
-        level_filter: (levelFilter || undefined) as EventNewsQuery["level_filter"],
+        ...severityFacetQueryParams(severity),
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       });
@@ -210,7 +223,7 @@ export function EventNewsPage() {
         {!MIRROR && (
           <Sel value={q.channel ?? ""} onChange={(v) => set({ channel: v || undefined })} opts={facetOpts.channel} />
         )}
-        <Sel value={q.levelFilter} onChange={(v) => set({ levelFilter: v })} opts={LEVEL_FILTER_OPTS} />
+        <SeverityFacetControls state={q.severity} onChange={(v) => set({ severity: v })} />
         <Sel value={q.intent ?? ""} onChange={(v) => set({ intent: v || undefined })} opts={facetOpts.intent} />
         <Sel value={q.pir ?? ""} onChange={(v) => set({ pir: v || undefined })} opts={facetOpts.pir} />
         <Sel value={q.actor ?? ""} onChange={(v) => set({ actor: v || undefined })} opts={facetOpts.actor} />
@@ -282,7 +295,7 @@ export function EventNewsPage() {
               setTerm("");
               setVendorRaw("");
               setQ({
-                levelFilter: q.levelFilter,
+                severity: q.severity,
                 since_hours: q.since_hours,
                 // 事象固有の軸は別行の操作なので巻き添えで消さない
                 min_independent_sources: q.min_independent_sources,

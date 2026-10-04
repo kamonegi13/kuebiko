@@ -8,7 +8,10 @@ import { formatJstCompact } from "../../../utils/date";
 import { useChannelMeta } from "../../../components/channel";
 import { label } from "../../../utils/labels";
 import { useVocabMap } from "../../../hooks/useVocab";
-import { LevelBadge, migrateImportanceToLevelFilter } from "../../../components/news/facets";
+import {
+  EMPTY_SEVERITY_FACET, LevelBadge, severityFacetFromConfigStrings, severityFacetQueryParams,
+  type SeverityFacetState,
+} from "../../../components/news/facets";
 import {
   WidgetCard, Loading, Empty, WidgetError, ImportanceDot, extractCves, cfgStr, cfgNum, type WidgetProps,
 } from "../shared";
@@ -21,13 +24,16 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const category = cfgStr(config, "category", "");
   const feed = cfgStr(config, "feed", "");
   const channel = cfgStr(config, "channel", "");
-  // 重要度 6 段階 (2026-10-04)。保存済み widget 設定の旧 "importance" (high/medium/low)
-  // は level_filter が未設定のときだけ移行する (level_filter が明示的に保存されていれば
-  // そちらを優先)。
-  const levelFilterRaw = cfgStr(config, "level_filter", "");
-  const legacyImportance = cfgStr(config, "importance", "");
-  const levelFilter = (levelFilterRaw || migrateImportanceToLevelFilter(legacyImportance)) as
-    "" | "top" | "notable" | "relevant";
+  // 深刻さ・関連性・戦略上の重み (2026-10-04)。保存済み widget 設定の新 3 facet が
+  // 無ければ旧 level_filter / 更に古い importance (high/medium/low) を移行する。
+  const severity = severityFacetFromConfigStrings(
+    cfgStr(config, "min_severity", ""),
+    cfgStr(config, "relevant_only", ""),
+    cfgStr(config, "include_strategic", ""),
+    cfgStr(config, "level_filter", ""),
+    cfgStr(config, "importance", ""),
+    EMPTY_SEVERITY_FACET,
+  );
   const mode = cfgStr(config, "mode", "headline"); // headline | summary
   const per = cfgNum(config, "per", 8);
   const sinceHours = cfgNum(config, "since_hours", 0);
@@ -35,12 +41,12 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const wantSummary = mode === "summary";
 
   const { data, isError } = useQuery({
-    queryKey: ["article-feed", category, feed, channel, levelFilter, jp, wantSummary, per, sinceHours],
+    queryKey: ["article-feed", category, feed, channel, severity, jp, wantSummary, per, sinceHours],
     queryFn: () => articlesApi.list({
       category: category || undefined,
       feed: feed || undefined,
       channel: channel || undefined,
-      level_filter: levelFilter || undefined,
+      ...severityFacetQueryParams(severity),
       jp: jp || undefined,
       status: "posted",
       since_hours: sinceHours || undefined,
@@ -53,9 +59,9 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const arts = data?.articles ?? [];
   // チャンネル名は useChannelMeta (SSoT) で解決 (未登録 id は原値 fallback)。
   const channelLabel = channel ? chMeta(channel).label : "";
-  const title = buildTitle({ category, feed, channelLabel, levelFilter, categoryLabelMap });
+  const title = buildTitle({ category, feed, channelLabel, severity, categoryLabelMap });
   // widget の絞り込みをそのまま引き継いで News ページへ deep-link
-  const href = buildNewsHref({ category, feed, channel, levelFilter, sinceHours, jp });
+  const href = buildNewsHref({ category, feed, channel, severity, sinceHours, jp });
 
   return (
     <WidgetCard title={title} href={href} linkLabel="記事一覧 →">
@@ -103,22 +109,24 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   );
 }
 
-function buildNewsHref({ category, feed, channel, levelFilter, sinceHours, jp }: {
-  category: string; feed: string; channel: string; levelFilter: string; sinceHours: number; jp: string;
+function buildNewsHref({ category, feed, channel, severity, sinceHours, jp }: {
+  category: string; feed: string; channel: string; severity: SeverityFacetState; sinceHours: number; jp: string;
 }): string {
   const q = new URLSearchParams();
   if (category) q.set("category", category);
   if (feed) q.set("feed", feed);
   if (channel) q.set("channel", channel);
-  if (levelFilter) q.set("level_filter", levelFilter);
+  if (severity.minSeverity) q.set("min_severity", severity.minSeverity);
+  if (severity.relevantOnly) q.set("relevant_only", "1");
+  if (severity.minSeverity && severity.includeStrategic) q.set("include_strategic", "1");
   if (jp) q.set("jp", jp);
   if (sinceHours) q.set("since", String(sinceHours));
   const qs = q.toString();
   return qs ? `/app/news?${qs}` : "/app/news";
 }
 
-function buildTitle({ category, feed, channelLabel, levelFilter, categoryLabelMap }: {
-  category: string; feed: string; channelLabel: string; levelFilter: string; categoryLabelMap: Record<string, string>;
+function buildTitle({ category, feed, channelLabel, severity, categoryLabelMap }: {
+  category: string; feed: string; channelLabel: string; severity: SeverityFacetState; categoryLabelMap: Record<string, string>;
 }): string {
   if (feed) return feed;
   const cat = label(categoryLabelMap, category) || category;
@@ -130,9 +138,10 @@ function buildTitle({ category, feed, channelLabel, levelFilter, categoryLabelMa
     : category ? cat
     : "最新ニュース";
   const tags: string[] = [];
-  if (levelFilter === "top") tags.push("重大");
-  else if (levelFilter === "notable") tags.push("注意以上");
-  else if (levelFilter === "relevant") tags.push("関連性あり");
+  if (severity.minSeverity === "S3") tags.push("重大");
+  else if (severity.minSeverity === "S2") tags.push("注意以上");
+  else if (severity.minSeverity === "S1") tags.push("参考以上");
+  if (severity.relevantOnly) tags.push("関連性あり");
   if (channelLabel) tags.push(channelLabel);
   return tags.length > 0 ? `${base} (${tags.join(" · ")})` : base;
 }

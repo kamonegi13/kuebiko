@@ -251,6 +251,24 @@ def japan_relation(inp: ImportanceInputs) -> JapanRelation:
     return "none"
 
 
+#: 旧 1 本化 facet ``level_filter`` (top/notable/relevant) → 新 3 独立 facet
+#: (``min_severity``, ``relevant_only``, ``include_strategic``) への写像 (2026-10-04)。
+#: 「関連性ありの重大」のように旧 facet では表せない組み合わせが選べないという利用者指摘を
+#: 受けて 3 独立 facet に置き換えたが、旧パラメータ (API 後方互換・保存済み widget 設定の
+#: 移行前) を引き続き解釈できるよう、この写像を SSoT として両方から参照する。
+#: "top"=重大のみ / "notable"=注意以上 (旧仕様で軸なし heavy も含んでいた → toggle on) /
+#: "relevant"=関連性あり (旧仕様は深刻さ無し記事を除いていた → 参考以上 + 関連性のみ)。
+def legacy_level_filter_to_severity(level_filter: str | None) -> tuple[str, bool, bool]:
+    """``(min_severity, relevant_only, include_strategic)`` を返す。不明な値は絞り込み無し。"""
+    if level_filter == "top":
+        return "S3", False, False
+    if level_filter == "notable":
+        return "S2", False, True
+    if level_filter == "relevant":
+        return "S1", True, False
+    return "", False, False
+
+
 def is_relevant(jp: JapanRelation, nations: Iterable[str], sir_ids: Iterable[str]) -> bool:
     """関連性あり = 日本が標的・被害 / 注視国が関与 / 関連性の核の SIR に該当。"""
     if jp in {"targeted", "affected"}:

@@ -104,10 +104,19 @@ _ARTICLE_CATEGORIES = (
     "research",
     "advisory",
 )
-#: 重要度 6 段階による絞り込み (2026-10-04)。旧 _ARTICLE_IMPORTANCE (high/medium/low) は
-#: 画面側がもう送らないため置き換えた (level_filter の SSoT は
-#: frontend/src/components/news/facets.tsx の LEVEL_FILTER_OPTS)。
-_ARTICLE_LEVEL_FILTERS = ("top", "notable", "relevant")
+#: 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。旧 _ARTICLE_LEVEL_FILTERS
+#: (level_filter=top/notable/relevant の 1 本化 facet) は画面側がもう送らないため
+#: 置き換えた (SSoT は frontend/src/components/news/facets.tsx の MIN_SEVERITY_OPTS /
+#: SeverityFacetControls)。単独選択の組み合わせだけを写す (爆発を避ける):
+#: 深刻さ単独 (S3/S2/S1) / 関連性ありのみ単独 / 旧 notable・relevant 相当の 2 facet 組み合わせ。
+_ARTICLE_SEVERITY_QUERIES = (
+    "min_severity=S3",
+    "min_severity=S2",
+    "min_severity=S1",
+    "relevant_only=1",
+    "min_severity=S2&include_strategic=1",  # 旧 level_filter=notable 相当
+    "min_severity=S1&relevant_only=1",  # 旧 level_filter=relevant 相当
+)
 
 #: 期間の選択肢 (frontend/src/state/filters.ts の FilterState と対)。
 _TIMES = ("7", "30", "90", "365")
@@ -172,10 +181,7 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     # ニュース検索 (既定 + 列挙できる facet 1 段)
     "/api/v1/articles?status=posted&limit=30",
     *(f"/api/v1/articles?category={c}&status=posted&limit=30" for c in _ARTICLE_CATEGORIES),
-    *(
-        f"/api/v1/articles?level_filter={lf}&status=posted&limit=30"
-        for lf in _ARTICLE_LEVEL_FILTERS
-    ),
+    *(f"/api/v1/articles?{qs}&status=posted&limit=30" for qs in _ARTICLE_SEVERITY_QUERIES),
     # ダッシュボードの「記事フィード」widget (news_feed) の既定設定 (defaultConfig:
     # {mode: "summary", per: 5}、絞り込みは未指定) が実際に送る query。他の facet
     # 組み合わせとは limit/include_summary だけが違うため別行で持つ

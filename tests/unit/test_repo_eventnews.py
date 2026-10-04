@@ -366,6 +366,104 @@ class TestEventItemCRUD:
 
         assert len(repo.list_event_items()) == 5  # 未指定は絞り込まない
 
+    def test_list_event_items_min_severity_relevant_strategic(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """深刻さ・関連性・戦略上の重みの 3 独立 facet を事象側で (2026-10-04)。
+
+        事象の判定は「最良メンバーの深刻さ」「いずれかのメンバーが関連性あり」
+        「いずれかのメンバーが深刻さ無しで heavy」を集約して行う。
+        """
+        from src.cti.importance_v2 import ImportanceV2
+
+        def _save(
+            article_id: str,
+            severity: str | None,
+            relevant: bool,
+            strategic_weight: str | None = None,
+        ) -> None:
+            repo.save_importance_v2(
+                article_id,
+                ImportanceV2(
+                    severity=severity,  # type: ignore[arg-type]
+                    severity_basis="x",
+                    strategic_weight=strategic_weight,  # type: ignore[arg-type]
+                    jp="none",
+                    nations=(),
+                    sir_ids=(),
+                    relevant=relevant,
+                ),
+            )
+
+        # s3-mixed-event: S3 の非関連メンバーと S1 の関連メンバーを両方持つ (別メンバーが
+        # severity/relevant をそれぞれ満たすケース)。
+        for item_id in ("s3-relevant-event", "s3-mixed-event", "heavy-relevant-event"):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="high",
+            )
+        repo.add_event_member(
+            item_id="s3-relevant-event",
+            article_id="art-s3-relevant",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.add_event_member(
+            item_id="s3-mixed-event",
+            article_id="art-s3-not",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.add_event_member(
+            item_id="s3-mixed-event",
+            article_id="art-s1-relevant",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.add_event_member(
+            item_id="heavy-relevant-event",
+            article_id="art-heavy-relevant",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+
+        _save("art-s3-relevant", "S3", relevant=True)
+        _save("art-s3-not", "S3", relevant=False)
+        _save("art-s1-relevant", "S1", relevant=True)
+        _save("art-heavy-relevant", None, relevant=True, strategic_weight="heavy")
+
+        def ids(**kw: object) -> set[str]:
+            return {i.state.item_id for i in repo.list_event_items(**kw)}  # type: ignore[arg-type]
+
+        assert len(repo.list_event_items()) == 3  # 未指定は絞り込まない
+
+        # 重大のみ + 関連性ありのみ → s3-mixed-event は S3 メンバーが非関連でも、別メンバーが
+        # 関連性ありなので該当する (「いずれかのメンバーが関連性あり」の集約)。
+        assert ids(min_severity="S3", relevant_only=True) == {
+            "s3-relevant-event",
+            "s3-mixed-event",
+        }
+
+        # 政策・地政学を含める (toggle) + 関連性ありのみ → heavy かつ関連性ありの事象も入る
+        assert ids(min_severity="S3", include_strategic=True, relevant_only=True) == {
+            "s3-relevant-event",
+            "s3-mixed-event",
+            "heavy-relevant-event",
+        }
+
+        # toggle 無しなら heavy-relevant-event (severity 無し) は入らない
+        assert ids(min_severity="S3", relevant_only=True) == {
+            "s3-relevant-event",
+            "s3-mixed-event",
+        }
+
     def test_list_event_items_filters_by_since(self, repo: RunHistoryRepository) -> None:
         """事象そのものの新しさで絞れる (記事側の since_hours とは別物)。"""
         for item_id, ts in (("recent", _NOW), ("stale", _NOW - timedelta(days=5))):

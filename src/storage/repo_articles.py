@@ -6,8 +6,13 @@ from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.cti.importance_v2 import legacy_level_filter_to_severity
 from src.storage.event_time import EVENT_TS_EXPR
-from src.storage.importance_level_sql import level_scalar_subquery, order_by_level_then_recency
+from src.storage.importance_level_sql import (
+    level_scalar_subquery,
+    order_by_level_then_recency,
+    severity_relevance_sql,
+)
 from src.storage.records import ArticleRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _row_to_article, _to_iso
@@ -1109,6 +1114,9 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         until: datetime | None = None,
         jp: str | None = None,
         level_filter: str | None = None,
+        min_severity: str | None = None,
+        relevant_only: bool = False,
+        include_strategic: bool = False,
         sort: str | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -1199,23 +1207,25 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             clauses.append(
                 "article_id IN (SELECT article_id FROM article_importance_v2 WHERE jp <> 'none')"
             )
-        # 重要度 6 段階による絞り込み (2026-10-04): "top"=深刻さ S3 (level 1-2) /
-        # "notable"=S3・S2 (level 1-4)、または軸なしで strategic_weight='heavy' /
-        # "relevant"=関連性あり (level 1,3,5)。SSoT は importance_level() (§cti/importance_v2)。
-        if level_filter == "top":
-            clauses.append(
-                "article_id IN (SELECT article_id FROM article_importance_v2 WHERE severity = 'S3')"
+        # 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04、利用者決定: 「関連性ありの
+        # 重大」のように旧 1 本化 level_filter では表せない組み合わせを選べるようにした)。
+        # min_severity/relevant_only/include_strategic が指定されていれば優先し、無ければ
+        # 旧 level_filter (top/notable/relevant) を後方互換で写像する。SSoT は
+        # importance_level_sql.severity_relevance_sql。
+        severity_cond: str | None
+        if min_severity or relevant_only or include_strategic:
+            severity_cond = severity_relevance_sql(
+                min_severity or "", relevant_only, include_strategic
             )
-        elif level_filter == "notable":
+        elif level_filter in ("top", "notable", "relevant"):
+            legacy = legacy_level_filter_to_severity(level_filter)
+            severity_cond = severity_relevance_sql(*legacy)
+        else:
+            severity_cond = None
+        if severity_cond is not None:
             clauses.append(
-                "article_id IN (SELECT article_id FROM article_importance_v2"
-                " WHERE severity IN ('S3','S2')"
-                " OR (severity IS NULL AND strategic_weight = 'heavy'))"
-            )
-        elif level_filter == "relevant":
-            clauses.append(
-                "article_id IN (SELECT article_id FROM article_importance_v2"
-                " WHERE relevant = 1 AND severity IS NOT NULL)"
+                "article_id IN (SELECT article_id FROM article_importance_v2"  # noqa: S608
+                f" WHERE {severity_cond})"
             )
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         # 並びは既定 **事象時刻** (公開時刻・取得で上限) の新しい順。表示している時刻と

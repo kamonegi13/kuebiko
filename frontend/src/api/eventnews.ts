@@ -23,8 +23,11 @@ export interface EventNewsListItem {
   /** 上記 level に対応する深刻さ (S3/S2/S1)。level が null なら null。 */
   severity?: "S3" | "S2" | "S1" | null;
   /** 構成記事に軸なし (severity=null) で strategic_weight='heavy' のものを 1 件でも
-   *  含むか。level_filter="notable" の client 側再現 (ミラー) 用 (2026-10-04)。 */
+   *  含むか。旧 level_filter="notable" / include_strategic の client 側再現用 (2026-10-04)。 */
   strategic_weight_heavy_no_level?: boolean;
+  /** 構成記事に関連性ありのものを 1 件でも含むか。relevant_only の client 側再現用
+   *  (level の奇偶だけでは severity 無しのメンバーの関連性を再現できないため、2026-10-04)。 */
+  relevant?: boolean;
 }
 
 export interface EventNewsFact {
@@ -159,9 +162,16 @@ export interface EventNewsQuery {
   /** 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。構成記事のいずれか
    *  1 件でも満たせばその事象を返す (事象 = 構成記事の OR)。 */
   jp?: "targeted_affected" | "mentioned";
-  /** 重要度 6 段階による絞り込み (2026-10-04)。事象は構成記事のうち最良 (最小) の
-   *  level で判定。"top"=重大のみ / "notable"=注意以上 / "relevant"=関連性ありのみ。 */
+  /** 重要度 6 段階による絞り込み (旧 1 本化 facet、後方互換のみ)。事象は構成記事のうち
+   *  最良 (最小) の level で判定。"top"=重大のみ / "notable"=注意以上 /
+   *  "relevant"=関連性ありのみ。**非推奨** — 新規コードは下の 3 独立 facet を使う。 */
   level_filter?: "top" | "notable" | "relevant";
+  /** 深刻さ: ""(すべて) / "S3"(重大のみ) / "S2"(注意以上) / "S1"(参考以上)。 */
+  min_severity?: "" | "S3" | "S2" | "S1";
+  /** 関連性ありのみ (いずれかの構成記事が該当、深刻さの設定と独立)。 */
+  relevant_only?: boolean;
+  /** 政策・地政学を含める (min_severity 指定時のみ意味を持つ)。 */
+  include_strategic?: boolean;
   /** 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新着順 (既定)。 */
   sort?: "level";
   since_hours?: number;
@@ -191,10 +201,12 @@ export function fetchEventNews(q: EventNewsQuery = {}) {
   // false も意味を持つ (未生成のみ) ため undefined とだけ区別する
   if (q.has_news !== undefined) p.set("has_news", String(q.has_news));
   if (q.semantic) p.set("semantic", "true");
+  if (q.relevant_only) p.set("relevant_only", "1");
+  if (q.include_strategic) p.set("include_strategic", "1");
   for (const k of [
     "importance", "search", "category", "channel", "feed", "actor", "cve",
     "malware", "intent", "pir", "affected_vendor", "entity_type", "entity_value", "status", "jp",
-    "level_filter", "sort",
+    "level_filter", "min_severity", "sort",
   ] as const) {
     const v = q[k];
     if (v) p.set(k, String(v));

@@ -43,8 +43,13 @@ export interface SearchFacets {
   body?: string; // "stump"(切り株) / "full"(全文取得済)
   // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。
   jp?: "targeted_affected" | "mentioned";
-  // 重要度 6 段階 (2026-10-04): "top"=重大のみ / "notable"=注意以上 / "relevant"=関連性ありのみ。
+  // 重要度 6 段階 (旧 1 本化 facet、後方互換のみ): "top"=重大のみ / "notable"=注意以上 /
+  // "relevant"=関連性ありのみ。**非推奨** — 新規コードは下の 3 独立 facet を使う。
   level_filter?: "top" | "notable" | "relevant";
+  // 深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。
+  min_severity?: "" | "S3" | "S2" | "S1";
+  relevant_only?: boolean;
+  include_strategic?: boolean;
   since_hours?: number;
 }
 
@@ -67,6 +72,9 @@ export async function fetchSearch(
   if (facets.affected_vendor) qs.set("affected_vendor", facets.affected_vendor);
   if (facets.jp) qs.set("jp", facets.jp);
   if (facets.level_filter) qs.set("level_filter", facets.level_filter);
+  if (facets.min_severity) qs.set("min_severity", facets.min_severity);
+  if (facets.relevant_only) qs.set("relevant_only", "1");
+  if (facets.include_strategic) qs.set("include_strategic", "1");
   if (facets.since_hours) qs.set("since_hours", String(facets.since_hours));
   const r = await fetch(`/api/v1/search?${qs.toString()}`, { credentials: "same-origin" });
   if (!r.ok) throw new Error(`search failed: ${r.status}`);
