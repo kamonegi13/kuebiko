@@ -60,4 +60,30 @@ describe("DashboardSelection (国選択の共有 state)", () => {
     fireEvent.click(screen.getByText("select-jp"));
     expect(screen.getByTestId("selected").textContent).toBe("none");
   });
+
+  it("hasMap を省略すると既定で false (地図 widget 無しの配置と同じ扱い)", () => {
+    function HasMapProbe() {
+      const { hasMap } = useDashboardSelection();
+      return <span data-testid="has-map">{String(hasMap)}</span>;
+    }
+    render(
+      <DashboardSelectionProvider>
+        <HasMapProbe />
+      </DashboardSelectionProvider>,
+    );
+    expect(screen.getByTestId("has-map").textContent).toBe("false");
+  });
+
+  it("hasMap を渡すと Provider 配下の消費者に反映される (DashboardPage がレイアウトから算出して渡す)", () => {
+    function HasMapProbe() {
+      const { hasMap } = useDashboardSelection();
+      return <span data-testid="has-map">{String(hasMap)}</span>;
+    }
+    render(
+      <DashboardSelectionProvider hasMap={true}>
+        <HasMapProbe />
+      </DashboardSelectionProvider>,
+    );
+    expect(screen.getByTestId("has-map").textContent).toBe("true");
+  });
 });

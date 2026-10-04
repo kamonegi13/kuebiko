@@ -141,13 +141,15 @@ export function MiniMapWidget({ config }: WidgetProps = {}) {
 
 // ── 被害国ランキング (脅威マップページの右パネルと同じ行部品) ──
 // セクター構成ミニバー + カバレッジ信頼度ドット + 台帳のみタグ。行クリックで dashboard 共有
-// 選択 (DashboardSelection) を切替える: 選択中は一覧をその国の記事一覧 (CountryNewsPanel) に
-// 差し替える — 脅威マップページの RightPanel (idle→country) と同じ振る舞い。mini_map widget が
-// 同じ dashboard にあれば地図側のハイライトも連動する。
+// 選択 (DashboardSelection) を切替える。配置ルール (2026-10-04): 同じ dashboard に mini_map
+// widget も置かれている場合 (hasMap)、記事一覧は地図側にのみ出す — ランキングは選択行を
+// ハイライトするだけに留める (同じ記事一覧が 2 箇所に出て画面が重複しないように)。mini_map が
+// 無い単独配置時は、脅威マップページの RightPanel (idle→country) と同じく一覧を記事一覧に
+// 差し替える。
 export function GeoRankingWidget({ config }: WidgetProps = {}) {
   const days = useWidgetWindow(config); // 窓のみ共有窓連動 (⚙ で固定可)、他はページ設定を鏡写し
   const k = useMapKnobs();
-  const { selectedIso, selectIso } = useDashboardSelection();
+  const { selectedIso, selectIso, hasMap } = useDashboardSelection();
   const { data, isError } = useQuery({
     queryKey: ["dash-geo-map", days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis],
     queryFn: () => fetchCyberMap(days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis),
@@ -155,6 +157,8 @@ export function GeoRankingWidget({ config }: WidgetProps = {}) {
   });
   const nodes = data ? [...data.nodes].sort((a, b) => b.count - a.count) : [];
   const selectedNode = selectedIso ? data?.nodes.find((n) => n.iso === selectedIso) : undefined;
+  // 地図が同じ dashboard にあるときは、記事一覧は地図側にのみ出す (ここでは出さない)。
+  const showNewsPanel = selectedIso != null && !hasMap;
   return (
     <WidgetCard title={k.minImportance === "all" ? "被害国ランキング" : "重要被害国ランキング"}
       href={`${MAP}?days=${days}`} linkLabel="脅威マップ →">
@@ -162,9 +166,9 @@ export function GeoRankingWidget({ config }: WidgetProps = {}) {
         <WidgetError />
       ) : !data ? (
         <Loading />
-      ) : selectedIso ? (
+      ) : showNewsPanel ? (
         <CountryNewsPanel
-          iso={selectedIso}
+          iso={selectedIso as string}
           domain="cyber"
           days={days}
           threatClass={k.threatClass}
@@ -182,7 +186,9 @@ export function GeoRankingWidget({ config }: WidgetProps = {}) {
             <li key={n.iso}>
               <button
                 onClick={() => selectIso(n.iso)}
-                className="flex w-full items-center gap-2 py-1.5 text-left text-sm hover:bg-surface-2"
+                className={`flex w-full items-center gap-2 py-1.5 text-left text-sm hover:bg-surface-2 ${
+                  n.iso === selectedIso ? "bg-accent-subtle" : ""
+                }`}
               >
                 <SectorMiniBar sectors={n.sectors} total={n.count} />
                 <ConfidenceDot

@@ -4,7 +4,7 @@
 // データ/絞り込み (window/layer/sector/flow/actor) は MapPage から props で受け、
 // 動的レイヤーを props 変化時に作り直す。Leaflet は lat/lon を Mercator 投影する。
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { readMapColors, onThemeChange } from "./mapTheme";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -33,6 +33,13 @@ const MIN_R = 5;
 const MAX_R = 20;
 // 比率パイの「上位3外 + 未判定」を束ねる中立スライス色 (構成を誤魔化さず残余として明示)。
 const PIE_REST = "#586273";
+
+// 基図 (国境 geojson) 取得の再試行までの待ち時間 (ms)。1 回だけ再試行し、それでも
+// 失敗したら利用者に見える形で知らせる (2026-10-04: 失敗を黙殺すると「ズームは
+// 動くのに陸地も国境も出ない灰色の地図」のまま復旧手段が無くなる不具合があった —
+// Cloudflare Pages 再配信で asset のハッシュ付きファイル名が変わった後、古い
+// index.html をキャッシュしたブラウザが旧ハッシュへ 404 するケース等で再現する)。
+const BASEMAP_RETRY_DELAY_MS = 1200;
 
 interface LeafletThreatMapProps {
   data: CyberMapResponse;
@@ -229,6 +236,10 @@ export function LeafletThreatMap({
   const dynRef = useRef<L.LayerGroup | null>(null);
   const clickRef = useRef(onCountryClick);
   clickRef.current = onCountryClick;
+  // 基図 (国境 geojson) の取得に失敗したままか (再試行後も失敗)。失敗を黙殺せず、
+  // 地図の上に再読み込みを促す帯を出す (ズーム操作はできるのに陸地が出ない灰色の
+  // 地図のまま固まる不具合の再発防止)。
+  const [basemapError, setBasemapError] = useState(false);
 
   // mount: 地図 + 高精細基図 (Natural Earth 50m、同一オリジン asset を fetch) + 都市ラベル。
   useEffect(() => {
@@ -253,30 +264,47 @@ export function LeafletThreatMap({
     dynRef.current = L.layerGroup().addTo(map);
 
     // 基図 (国境線つき detailed countries)。外部でなく自サーバの static asset を fetch。
-    fetch(countriesUrl)
-      .then((r) => r.json())
-      .then((geo) => {
-        if (!mapRef.current) return;
-        const layer = L.geoJSON(geo, {
-          style: {
-            // 色はテーマから読む。ライトで海だけ明るく陸が黒い、が起きないように
-            // 陸・境界・海の 3 つをまとめて切り替える (2026-08-28 利用者指摘)。
-            fillColor: readMapColors().land,
-            fillOpacity: 1,
-            color: readMapColors().border,
-            weight: 0.5,
-          },
-          interactive: false,
-        }).addTo(map);
-        layer.bringToBack();
-        // テーマが変わったら塗り直す。Leaflet は色を JS の値で持つので
-        // CSS だけでは追従しない (ライトにしても陸だけ黒いまま、が起きる)。
-        stopThemeWatch = onThemeChange(() => {
-          const c = readMapColors();
-          layer.setStyle({ fillColor: c.land, color: c.border });
+    // 失敗を黙殺しない: 1 回だけ再試行し (一時的なネットワーク不調を吸収)、それでも
+    // 失敗したら basemapError を立てて利用者に再読み込みを促す (下の overlay 参照)。
+    let cancelled = false;
+    const loadBasemap = (attempt: number): void => {
+      fetch(countriesUrl)
+        .then((r) => {
+          if (!r.ok) throw new Error(`basemap fetch failed: ${r.status}`);
+          return r.json();
+        })
+        .then((geo) => {
+          if (!mapRef.current || cancelled) return;
+          setBasemapError(false);
+          const layer = L.geoJSON(geo, {
+            style: {
+              // 色はテーマから読む。ライトで海だけ明るく陸が黒い、が起きないように
+              // 陸・境界・海の 3 つをまとめて切り替える (2026-08-28 利用者指摘)。
+              fillColor: readMapColors().land,
+              fillOpacity: 1,
+              color: readMapColors().border,
+              weight: 0.5,
+            },
+            interactive: false,
+          }).addTo(map);
+          layer.bringToBack();
+          // テーマが変わったら塗り直す。Leaflet は色を JS の値で持つので
+          // CSS だけでは追従しない (ライトにしても陸だけ黒いまま、が起きる)。
+          stopThemeWatch = onThemeChange(() => {
+            const c = readMapColors();
+            layer.setStyle({ fillColor: c.land, color: c.border });
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 1) {
+            setTimeout(() => loadBasemap(attempt + 1), BASEMAP_RETRY_DELAY_MS);
+          } else {
+            setBasemapError(true);
+          }
         });
-      })
-      .catch(() => {});
+    };
+    loadBasemap(0);
 
     // 都市ラベル: ズーム/表示域でゲート (大都市から、ズームで増やす、画面内のみ)。
     const labelLayer = L.layerGroup().addTo(map);
@@ -301,6 +329,7 @@ export function LeafletThreatMap({
     setTimeout(() => map.invalidateSize(), 60);
 
     return () => {
+      cancelled = true;
       stopThemeWatch?.();
       ro.disconnect();
       map.remove();
@@ -482,5 +511,16 @@ export function LeafletThreatMap({
     }
   }, [region]);
 
-  return <div ref={divRef} className="h-full w-full" style={{ background: "rgb(var(--map-sea-rgb, 10 14 22))" }} />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={divRef} className="h-full w-full" style={{ background: "rgb(var(--map-sea-rgb, 10 14 22))" }} />
+      {/* 基図 (国境 geojson) の取得に失敗したままのとき。ズーム操作や被害バブルは
+          動くので「地図が丸ごと死んでいる」とは見えず気付きにくい — 明示的に知らせる。 */}
+      {basemapError && (
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] rounded-md border border-warning/40 bg-surface-1/95 px-2.5 py-1.5 text-xs text-warning shadow">
+          地図の国境データを読み込めませんでした。ページを再読み込みしてください。
+        </div>
+      )}
+    </div>
+  );
 }

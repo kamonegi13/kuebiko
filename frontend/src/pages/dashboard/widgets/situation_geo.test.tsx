@@ -58,11 +58,11 @@ const COUNTRY_DATA = {
   ],
 };
 
-function renderWithProviders(children: React.ReactNode) {
+function renderWithProviders(children: React.ReactNode, hasMap = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <DashboardSelectionProvider>{children}</DashboardSelectionProvider>
+      <DashboardSelectionProvider hasMap={hasMap}>{children}</DashboardSelectionProvider>
     </QueryClientProvider>,
   );
 }
@@ -79,22 +79,43 @@ describe("mini_map / geo_ranking widget の国選択連動", () => {
     localStorage.clear();
   });
 
-  it("地図で国を選ぶと、同じ dashboard のランキング widget が記事一覧に切り替わる", async () => {
+  it("地図とランキングが両方あるとき、地図で国を選ぶと記事一覧は地図側にのみ出る (ランキングは行ハイライトのみ)", async () => {
     renderWithProviders(
       <>
         <MiniMapWidget />
         <GeoRankingWidget />
       </>,
+      true, // hasMap=true: 両方同一 dashboard にある配置
     );
     await waitFor(() => expect(screen.getByTestId("map-stub")).toBeTruthy());
 
     fireEvent.click(screen.getByTestId("map-stub"));
 
-    // mini_map (自身のオーバーレイ) と geo_ranking (一覧の差し替え) の両方に記事が出るため
-    // getAllByText で複数件を許容する。
-    await waitFor(() => expect(screen.getAllByText("日本を標的とした事例").length).toBeGreaterThan(0));
+    // 記事一覧は地図側 (オーバーレイ) にのみ出る — ランキング側には一覧への差し替えが起きない。
+    await waitFor(() => expect(screen.getAllByText("日本を標的とした事例").length).toBe(1));
+    // ランキング側は一覧表示のまま (国名の行ボタンがそのまま残る)
+    const rankingRow = screen.getAllByText("日本").find((el) => el.closest("button"))?.closest("button");
+    expect(rankingRow).toBeTruthy();
     // 地図側も選択を受け取っている (highlightIso が反映)
     expect(screen.getByTestId("map-stub").textContent).toContain("highlight=JP");
+  });
+
+  it("地図とランキングが両方あるとき、地図で選んだ国はランキングの行がハイライトされる", async () => {
+    renderWithProviders(
+      <>
+        <MiniMapWidget />
+        <GeoRankingWidget />
+      </>,
+      true,
+    );
+    await waitFor(() => expect(screen.getByTestId("map-stub")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("map-stub"));
+
+    await waitFor(() => {
+      const row = screen.getAllByText("日本").find((el) => el.closest("button"))?.closest("button");
+      expect(row?.className).toContain("bg-accent-subtle");
+    });
   });
 
   it("ランキングで国を選んでも同じ記事一覧が出て、閉じる (×) で一覧に戻る", async () => {

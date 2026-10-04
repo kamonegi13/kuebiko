@@ -369,8 +369,9 @@ export function DashboardPage() {
     // DashboardSelectionProvider: mini_map / geo_ranking widget 間で「選択中の国」を共有する
     // (脅威マップページの地図↔ランキング連動と同じ体験を widget を跨いで再現する)。
     // widget 単体だけでも provider の外に出ないので no-op にはならない — 1 個だけ配置時も
-    // 自分の選択で自分のドリルダウンが開く。
-    <DashboardSelectionProvider>
+    // 自分の選択で自分のドリルダウンが開く。hasMap=現在のレイアウトに mini_map が存在するか
+    // (配置ルール: 両方あれば記事一覧は地図側にのみ出す — situation_geo.tsx 参照)。
+    <DashboardSelectionProvider hasMap={visible.some((w) => w.id === "mini_map")}>
     {/* ⚠ カスタマイズ中の印を root に置き、枠線は CSS で拾う (shared.tsx の
         TILE_CHROME)。widget 全部に prop を配ると 20 箇所の付け忘れが起きる。 */}
     <div className={`${pageContainer("wide")} space-y-4`} {...(editing ? { "data-dash-editing": "" } : {})}>
