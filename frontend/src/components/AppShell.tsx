@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ArrowDown, RefreshCw } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
-import { MirrorBanner } from "./MirrorBanner";
+import { MirrorBanner, MirrorSwitchBar } from "./MirrorBanner";
 import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { useChannelMeta } from "./channel";
@@ -152,17 +152,20 @@ export function AppShell({ pathname, children }: AppShellProps) {
         ref={pullRef}
         className={`min-w-0 overflow-x-clip transition-[margin] duration-200 ease-out ${collapsed ? "md:ml-14" : "md:ml-60"}`}
       >
-        {/* 写しビルドでだけ出る帯。ライブでは何も描かない。
-            ⚠ TopBar の **上** に置く — 下に置くと本文と紛れて、いつの情報を
-            見ているか判断できないまま読み進めることになる。 */}
-        <MirrorBanner />
+        {/* 写しビルドでだけ出る。上部は標準 / アドバンスドの切り替えだけ。
+            いつ時点の情報か (MirrorBanner) は画面の一番下 (2026-10-04 利用者指示。
+            以前は「いつの情報か分からないまま読む」のを避けて最上部に置いていた)。 */}
+        <MirrorSwitchBar />
         <TopBar
           pathname={pathname}
           onOpenPalette={() => setPaletteOpen(true)}
         />
         {/* 下部 padding: モバイルの BottomTabBar (h-14=56px) + safe-area ぶんを確保し
             コンテンツが隠れないようにする。md+ は bar 非表示なので 0。 */}
-        <main className="md:pb-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))]">{children}</main>
+        <main className="md:pb-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))]">
+          {children}
+          <MirrorBanner />
+        </main>
       </div>
       <BottomTabBar pathname={pathname} onOpenMenu={() => setMobileOpen(true)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

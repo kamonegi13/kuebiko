@@ -31,18 +31,15 @@ export function MirrorBanner() {
   // 素性が読めないときも黙らない。**写しなのに写しと言えない**状態が一番危ない。
   if (isError || !data) {
     return (
-      <div className="flex items-center gap-2 px-4 py-2 text-[13px] bg-warning-soft border-b border-warning/40 text-fg">
+      <div className="flex items-center gap-2 px-4 py-2 text-[13px] bg-warning-soft border-t border-warning/40 text-fg">
         <Archive size={15} className="shrink-0 text-warning" />
         <span>いつ時点の情報かを取得できませんでした</span>
-        <div className="ml-auto">
-          <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px] bg-warning-soft border-b border-warning/40 text-fg">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[13px] bg-warning-soft border-t border-warning/40 text-fg">
       <Archive size={15} className="shrink-0 text-warning" />
       {/* 読み手が要るのは「写しである」ことではなく **いつの情報か**
           (2026-08-29 利用者指摘)。仕組みではなく中身を先に言う。 */}
@@ -57,9 +54,17 @@ export function MirrorBanner() {
         // 壊れていると思って調べに行くことになる。
         <span className="text-fg-muted">記事本文は含まれません</span>
       )}
-      <div className="ml-auto">
-        <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
-      </div>
+    </div>
+  );
+}
+
+/** 写しの上部に出す、標準 (公開サイト) / アドバンスド (写し) の切り替えだけの細い帯。
+ *  いつ時点の情報か (MirrorBanner) は 2026-10-04 の利用者指示で画面の一番下へ移した。 */
+export function MirrorSwitchBar() {
+  if (import.meta.env.VITE_MIRROR !== "1") return null;
+  return (
+    <div className="flex items-center justify-end px-4 py-1.5 border-b border-border">
+      <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
     </div>
   );
 }
