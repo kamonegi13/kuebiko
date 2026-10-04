@@ -10,6 +10,7 @@
  *  再試行を繰り返す。黙って待たせるより、失敗として扱う方が画面は正しく振る舞う。
  */
 import { fileName } from "./mirrorStatic";
+import type { ArticleFeedItem, ArticleFeedResponse } from "./articles";
 
 const DATA_BASE = import.meta.env.VITE_MIRROR_DATA || "/data";
 
@@ -18,6 +19,107 @@ function notMirrored(path: string): Response {
     status: 501,
     headers: { "content-type": "application/json" },
   });
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+}
+
+/** 静止画でも読めるよう JSON content-type を見る。中身が壊れていれば使わない。 */
+async function isJsonResponse(r: Response): Promise<boolean> {
+  return r.ok && (r.headers.get("content-type") || "").includes("json");
+}
+
+// backend src/ui/api/articles_feed.py `_CATEGORY_GROUPS` と同じ合成カテゴリ。
+// ここがずれると widget の絞り込みと写しの絞り込みが別物になる。
+const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
+  vuln: ["vulnerability", "advisory"],
+  threat: ["malware", "apt", "apt_leak", "phishing"],
+  incident_breach: ["incident", "breach"],
+};
+
+// この集合 **だけ** をブラウザ側で絞り込む。ここに無いキー (malware/cve/intent/pir/
+// actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
+// 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
+const ARTICLES_FALLBACK_SUPPORTED = new Set([
+  "status", "category", "channel", "importance", "feed",
+  "since_hours", "since", "limit", "offset", "include_summary",
+]);
+
+function matchesImportance(a: ArticleFeedItem, importance: string): boolean {
+  // backend と同じ意味論: "medium" は medium 以上 (medium+high) を含む。
+  if (importance === "medium") return a.importance === "medium" || a.importance === "high";
+  return a.importance === importance;
+}
+
+function matchesCategory(a: ArticleFeedItem, category: string): boolean {
+  const group = ARTICLES_CATEGORY_GROUPS[category];
+  return group ? group.includes(a.category ?? "") : a.category === category;
+}
+
+function withinSinceHours(a: ArticleFeedItem, sinceHours: number): boolean {
+  const at = a.published_at ?? a.created_at;
+  if (!at) return false;
+  return new Date(at).getTime() >= Date.now() - sinceHours * 60 * 60 * 1000;
+}
+
+function withinSinceIso(a: ArticleFeedItem, sinceIso: string): boolean {
+  const at = a.created_at;
+  if (!at) return false;
+  const since = Date.parse(sinceIso);
+  return !Number.isNaN(since) && new Date(at).getTime() >= since;
+}
+
+/** `/api/v1/articles` の絞り込み付き取得を、全件写し (articles.json) から
+ *  ブラウザ側で再現する。exact query 用のファイルを写していない組み合わせ
+ *  (widget の config 次第で limit/category/importance 等が自由に変わる) を
+ *  救うための経路。対応していない絞り込みが混ざっていたら null を返し、
+ *  呼び出し元が 501 にする (誤ったデータを黙って返さない)。
+ *  `loadArticles` は呼び出し元 (`installMirrorFetch`) ごとに 1 つ持つ全件写しの
+ *  取得・保持を注入する (install 単位でキャッシュを分けないとテスト間で汚染する)。 */
+async function fallbackArticles(
+  search: string,
+  loadArticles: () => Promise<ArticleFeedResponse>,
+): Promise<Response | null> {
+  const params = new URLSearchParams(search);
+  for (const key of params.keys()) {
+    if (!ARTICLES_FALLBACK_SUPPORTED.has(key)) return null;
+  }
+
+  // 写し自体が status=posted (backend 既定) で書き出されているため、他の status は救えない。
+  const status = params.get("status") ?? "posted";
+  if (status !== "posted") return null;
+
+  const { articles } = await loadArticles();
+  let items = articles;
+
+  const category = params.get("category");
+  if (category) items = items.filter((a) => matchesCategory(a, category));
+
+  const channel = params.get("channel");
+  if (channel) items = items.filter((a) => a.posted_channel === channel);
+
+  const importance = params.get("importance");
+  if (importance) items = items.filter((a) => matchesImportance(a, importance));
+
+  const feed = params.get("feed");
+  if (feed) items = items.filter((a) => a.feed_title === feed);
+
+  const sinceHours = Number(params.get("since_hours") || "0");
+  if (sinceHours > 0) items = items.filter((a) => withinSinceHours(a, sinceHours));
+
+  const since = params.get("since");
+  if (since) items = items.filter((a) => withinSinceIso(a, since));
+
+  // 並び順は書き出し元 (created_at DESC) のまま保つ。絞り込みは順序を変えない。
+  const offset = Number(params.get("offset") || "0");
+  const limit = Number(params.get("limit") || "20");
+  const page = items.slice(offset, offset + limit);
+
+  const includeSummary = params.get("include_summary") === "1" || params.get("include_summary") === "true";
+  const resultArticles = includeSummary ? page : page.map((a) => ({ ...a, summary: null }));
+
+  return jsonResponse({ articles: resultArticles, count: resultArticles.length });
 }
 
 /** API の path → 写しのファイル。
@@ -32,9 +134,10 @@ async function locate(pathname: string, search: string): Promise<string | null> 
     const id = decodeURIComponent(detail[2]);
     return `${DATA_BASE}/${detail[1]}/${await fileName(id)}.json`;
   }
-  // ⚠ 一覧の**全件ファイル**は、絞り込みが無いときだけ使う。絞り込み付きの
-  //    取得に全件を返すと、画面は黙って違うものを出す (実測: 30 件のはずが
-  //    6,443 件出ていた)。写していない絞り込みは 501 にして表に出す。
+  // ⚠ 一覧の**全件ファイル**を絞り込みごとに別経路として無条件に使い回すと、
+  //    画面は黙って違うものを出す (実測: 30 件のはずが 6,443 件出ていた)。
+  //    絞り込み付きの記事一覧は `fallbackArticles` が対応範囲を判定してから
+  //    全件写しを絞り込む。対応外の組み合わせはそこで 501 相当に落ちる。
   if (!search) {
     if (pathname === "/api/v1/articles") return `${DATA_BASE}/articles.json`;
     if (pathname === "/api/v1/eventnews") return `${DATA_BASE}/eventnews.json`;
@@ -44,6 +147,23 @@ async function locate(pathname: string, search: string): Promise<string | null> 
 
 export function installMirrorFetch(): void {
   const original = window.fetch.bind(window);
+
+  // install 単位で握る (TTL なし、SPA の 1 読み込みの中で何度も絞り込みが変わるだけ
+  // なので握りっぱなしで十分。長時間開いたタブで古くなる懸念は articles.json 自体の
+  // 書き出し間隔 (3 時間) と同じ程度で、他の静的データとも揃っている)。
+  let articlesJsonCache: Promise<ArticleFeedResponse> | null = null;
+  function loadArticlesJson(): Promise<ArticleFeedResponse> {
+    if (!articlesJsonCache) {
+      articlesJsonCache = original(`${DATA_BASE}/articles.json`).then(
+        (r) => r.json() as Promise<ArticleFeedResponse>,
+      );
+      articlesJsonCache.catch(() => {
+        articlesJsonCache = null;
+      });
+    }
+    return articlesJsonCache;
+  }
+
   window.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     // 絶対 URL でも問い合わせ文字列を落とさない (落とすと絞り込みの写しに当たらない)。
@@ -68,7 +188,15 @@ export function installMirrorFetch(): void {
     for (const file of candidates) {
       const r = await original(file);
       // 静的配信の取りこぼしは 200 + HTML で返ってくる。中身で判定する。
-      if (r.ok && (r.headers.get("content-type") || "").includes("json")) return r;
+      if (await isJsonResponse(r)) return r;
+    }
+
+    // 絞り込み付きの記事一覧は、専用ファイルが無くても全件写しから引き直せる
+    // (dashboard widget の config は per/mode/category/importance 等で自由に変わり、
+    // 組み合わせを全部書き出すのは組み合わせ爆発になる)。
+    if (pathname === "/api/v1/articles" && search) {
+      const fallback = await fallbackArticles(search, loadArticlesJson);
+      if (fallback) return fallback;
     }
     return notMirrored(path);
   };

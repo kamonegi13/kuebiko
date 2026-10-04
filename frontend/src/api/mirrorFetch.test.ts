@@ -62,6 +62,31 @@ describe("写しの fetch 差し替え", () => {
   });
 });
 
+// dashboard widget (記事フィード) が実際に投げる絵姿に合わせた fixture。
+// id が大きいほど新しい = created_at DESC で書き出し済みという前提を模す。
+function fixtureArticle(overrides: Record<string, unknown>) {
+  return {
+    id: 1,
+    article_id: "rss:https://example.com/1",
+    title: "t",
+    url: "https://example.com/1",
+    feed_title: "Example Feed",
+    importance: "low",
+    category: "other",
+    posted_channel: "watch",
+    victim_sector: null,
+    victim_country: null,
+    socio_political_intent: null,
+    intent_confidence: null,
+    technical_axis_summary: null,
+    malware_families: [],
+    summary: "本文の要約",
+    published_at: "2026-10-01T00:00:00+00:00",
+    created_at: "2026-10-01T00:00:05+00:00",
+    ...overrides,
+  };
+}
+
 describe("一覧の全件ファイル", () => {
   let served: Record<string, unknown>;
   let original: typeof window.fetch;
@@ -85,11 +110,82 @@ describe("一覧の全件ファイル", () => {
     expect(await (await fetch("/api/v1/articles")).json()).toEqual({ articles: [1, 2, 3], count: 3 });
   });
 
-  // ⚠ 写していない絞り込みに全件を返すと、画面は黙って違うものを出す
-  //    (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
-  test("写していない絞り込みに全件を返さない", async () => {
-    served["/data/articles.json"] = { articles: [1, 2, 3], count: 3 };
-    const r = await fetch("/api/v1/articles?category=apt&status=posted&limit=30");
+  test("書き出し済みの exact query ファイルがあればそれを使う (ブラウザ側絞り込みより優先)", async () => {
+    const exact = "/api/v1/articles?category=vuln&status=posted&limit=5";
+    served[`/data/api/${await hashOf(exact)}.json`] = { articles: [{ id: 99 }], count: 1 };
+    served["/data/articles.json"] = { articles: [fixtureArticle({ id: 1, category: "vulnerability" })], count: 1 };
+    const r = await fetch(exact);
+    expect(await r.json()).toEqual({ articles: [{ id: 99 }], count: 1 });
+  });
+
+  // dashboard widget (ArticleFeedWidget) は per/mode/category/importance/channel 等を
+  // 自由に組み合わせるため、組み合わせごとのファイルを全部書き出さず、専用ファイルが
+  // 無ければ全件写し (articles.json) をブラウザ側で絞り込んで救う。
+  describe("専用ファイルが無い絞り込みは全件写しから引き直す", () => {
+    beforeEach(() => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 3, category: "vulnerability", importance: "high", posted_channel: "alert" }),
+          fixtureArticle({ id: 2, category: "malware", importance: "medium", posted_channel: "watch" }),
+          fixtureArticle({ id: 1, category: "geopolitical", importance: "low", posted_channel: "watch" }),
+        ],
+        count: 3,
+      };
+    });
+
+    test("category (合成カテゴリ vuln を含む) で絞り込む", async () => {
+      const r = await fetch("/api/v1/articles?category=vuln&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }>; count: number };
+      expect(body.articles.map((a) => a.id)).toEqual([3]);
+      expect(body.count).toBe(1);
+    });
+
+    test("importance=medium は medium 以上 (medium+high) を含む", async () => {
+      const r = await fetch("/api/v1/articles?importance=medium&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }>; count: number };
+      expect(body.articles.map((a) => a.id)).toEqual([3, 2]);
+    });
+
+    test("limit/offset でページングする (順序は書き出し元のまま)", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=1&offset=1");
+      const body = (await r.json()) as { articles: Array<{ id: number }>; count: number };
+      expect(body.articles.map((a) => a.id)).toEqual([2]);
+      expect(body.count).toBe(1);
+    });
+
+    test("include_summary が無ければ summary を null にする (本物の API と同じ形)", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ summary: unknown }> };
+      expect(body.articles.every((a) => a.summary === null)).toBe(true);
+    });
+
+    test("include_summary=1 なら summary を含める", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=1&include_summary=1");
+      const body = (await r.json()) as { articles: Array<{ summary: unknown }> };
+      expect(body.articles[0].summary).toBe("本文の要約");
+    });
+  });
+
+  // ⚠ 写していない絞り込み (search/malware/cve/pir/actor 等) に全件を返すと、画面は
+  //    黙って違うものを出す (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
+  test("ブラウザ側で再現できない絞り込みは全件を返さず 501 にする", async () => {
+    served["/data/articles.json"] = { articles: [fixtureArticle({})], count: 1 };
+    const r = await fetch("/api/v1/articles?search=ransomware&status=posted&limit=30");
+    expect(r.status).toBe(501);
+  });
+
+  // status=posted 以外は写し (= status=posted のみ書き出し済み) では救えない。
+  test("status=posted 以外は 501 にする", async () => {
+    served["/data/articles.json"] = { articles: [fixtureArticle({})], count: 1 };
+    const r = await fetch("/api/v1/articles?status=draft&limit=30");
     expect(r.status).toBe(501);
   });
 });
+
+async function hashOf(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}

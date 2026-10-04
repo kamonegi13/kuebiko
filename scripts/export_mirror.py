@@ -176,6 +176,8 @@ SCREEN_ENDPOINTS: tuple[str, ...] = (
     # (frontend/src/pages/dashboard/widgets/articles.tsx の articlesApi.list 呼び出しと
     # 一字一句同じ順序・値でなければハッシュが合わない)。
     "/api/v1/articles?status=posted&limit=5&include_summary=1",
+    # PIR (常設の問い) — 画面「PIR (問い)」が読む一覧 (2026-10-04、写しに無く読み込みに失敗していた)
+    "/api/v1/questions",
     # PIR / Spotlight
     "/api/v1/pir",
     # frontend/src/api/spotlight.ts の spotlightApi.list() 既定 (period_type=rolling7)。
