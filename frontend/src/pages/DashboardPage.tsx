@@ -26,6 +26,7 @@ import {
 } from "../api/dashboard";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { MIRROR_PC_DEFAULT_LAYOUT } from "./dashboard/mirrorDefaultLayout";
 import { WIDGET_REGISTRY } from "./dashboard/registry";
 import { WidgetThumbnail } from "./dashboard/WidgetThumbnail";
 import { GlobalWindowSelector } from "./dashboard/GlobalWindow";
@@ -106,6 +107,9 @@ function sanitizeMirrorStored(stored: StoredDashboardLayout | null): StoredDashb
 
 // モジュール読込時に一度だけ組む (純粋な導出で毎 render 再計算する必要が無い)。
 const MIRROR_LAYOUT: DashboardLayout = { widgets: buildMirrorLayout() };
+// PC の既定は利用者が組んだ並び (mirrorDefaultLayout.ts)。全滅したら自動の並びへ。
+const MIRROR_PC_LAYOUT: DashboardLayout =
+  (sanitizeMirrorStored(MIRROR_PC_DEFAULT_LAYOUT) as DashboardLayout | null) ?? MIRROR_LAYOUT;
 
 export function DashboardPage() {
   // 関数内で毎 render 評価する (module 定数にすると import 時点の env に固定され、テストで
@@ -132,7 +136,7 @@ export function DashboardPage() {
   // 端末ごとに保持できる。旧 widget rename + v1(span)→v2(座標) の移行も load 時に適用。
   // 写しは localStorage(この端末・:mirror キー) > MIRROR_LAYOUT(既定)。
   const rawLayout = MIRROR
-    ? (isMobile ? (mobileLayout ?? MIRROR_LAYOUT) : (pcLayout ?? MIRROR_LAYOUT))
+    ? (isMobile ? (mobileLayout ?? MIRROR_LAYOUT) : (pcLayout ?? MIRROR_PC_LAYOUT))
     : isMobile ? (mobileLayout ?? serverLayout) : (pcLayout ?? serverLayout);
   const layout = useMemo(() => migrateLayout(rawLayout), [rawLayout]);
   useWebSocket((ev) => {
