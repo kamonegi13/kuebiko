@@ -4,15 +4,21 @@
 //
 // 見出しの click は **その場でドロワーを開く** (一覧ページへ飛ばさない)。
 // widget から読み始めて、必要なら原記事ドロワーへ進む、が読み手の動線。
+//
+// config options は 記事フィード widget (widgets/articles.tsx) と共有
+// (category/feed/jp/channel/深刻さ・関連性・政策地政学/表示/期間/件数、
+// registry.tsx の ARTICLE_FEED_OPTIONS)。絞り込みの意味論・見出しの組み立ても
+// 共有する (components/news/facets.tsx の buildFacetedTitle)。
 
-import { severityTitleTags } from "../../../components/news/facets";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchEventNews } from "../../../api/eventnews";
+import { fetchEventNews, type EventNewsQuery } from "../../../api/eventnews";
 import { Drawer } from "../../../components/Drawer";
-import { vocabLabel } from "../../../hooks/useVocab";
+import { useChannelMeta } from "../../../components/channel";
+import { vocabLabel, useVocabMap } from "../../../hooks/useVocab";
 import {
-  LevelBadge, severityFacetFromConfigStrings, severityFacetQueryParams,
+  LevelBadge, buildFacetedTitle, severityFacetFromConfigStrings, severityFacetQueryParams,
+  writeSeverityFacet, type SeverityFacetState,
 } from "../../../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "../../eventnews/EventNewsDetail";
 import { WidgetCard, Loading, Empty, WidgetError, cfgNum, cfgStr, type WidgetProps } from "../shared";
@@ -27,34 +33,73 @@ const TONE: Record<string, string> = {
 // 旧既定 level_filter="notable" と同じ「注意以上 + 政策・地政学を含める」。
 const WIDGET_DEFAULT_SEVERITY = { minSeverity: "S2" as const, relevantOnly: false, includeStrategic: true };
 
-function eventTitle(severity: Parameters<typeof severityTitleTags>[0]): string {
-  const tags = severityTitleTags(severity);
-  return tags.length > 0 ? `事象ニュース (${tags.join(" · ")})` : "事象ニュース";
+interface EventNewsFilters {
+  category: string;
+  feed: string;
+  channel: string;
+  jp: "" | "targeted_affected" | "mentioned";
+  per: number;
+  sinceHours: number;
+  wantSummary: boolean;
+  severity: SeverityFacetState;
 }
 
-export function EventNewsWidget({ config }: WidgetProps) {
-  const per = cfgNum(config, "per", 6);
-  // 深刻さ・関連性・戦略上の重み (2026-10-04)。新 3 facet が無ければ旧 level_filter /
-  // 更に古い importance ("high,medium" 既定) を移行する。
-  const severity = severityFacetFromConfigStrings(
-    cfgStr(config, "min_severity", ""),
-    cfgStr(config, "relevant_only", ""),
-    cfgStr(config, "include_strategic", ""),
-    cfgStr(config, "level_filter", ""),
-    cfgStr(config, "importance", ""),
-    WIDGET_DEFAULT_SEVERITY,
-  );
+/** widget 保存設定 → 絞り込み値 (記事フィード widget と同じ config key)。
+ *  コンポーネントの外に出して、render せずにテストできるようにする。 */
+export function resolveEventNewsFilters(config: Record<string, unknown> | undefined): EventNewsFilters {
+  const mode = cfgStr(config, "mode", "headline"); // headline | summary
+  return {
+    category: cfgStr(config, "category", ""),
+    feed: cfgStr(config, "feed", ""),
+    channel: cfgStr(config, "channel", ""),
+    jp: cfgStr(config, "jp", "") as "" | "targeted_affected" | "mentioned",
+    per: cfgNum(config, "per", 6),
+    sinceHours: cfgNum(config, "since_hours", 0),
+    wantSummary: mode === "summary",
+    // 深刻さ・関連性・戦略上の重み (2026-10-04)。新 3 facet が無ければ旧 level_filter /
+    // 更に古い importance ("high,medium" 既定) を移行する。
+    severity: severityFacetFromConfigStrings(
+      cfgStr(config, "min_severity", ""),
+      cfgStr(config, "relevant_only", ""),
+      cfgStr(config, "include_strategic", ""),
+      cfgStr(config, "level_filter", ""),
+      cfgStr(config, "importance", ""),
+      WIDGET_DEFAULT_SEVERITY,
+    ),
+  };
+}
+
+/** fetchEventNews へ渡すクエリ ({@link resolveEventNewsFilters} の結果から、limit 抜きで)。 */
+export function eventNewsQueryFromFilters(f: EventNewsFilters): EventNewsQuery {
+  return {
+    limit: Math.max(f.per * 2, 20),
+    category: f.category || undefined,
+    feed: f.feed || undefined,
+    channel: f.channel || undefined,
+    jp: f.jp || undefined,
+    since_hours: f.sinceHours || undefined,
+    ...severityFacetQueryParams(f.severity),
+  };
+}
+
+export function EventNewsWidget({ config, mobile }: WidgetProps) {
+  // カテゴリ表示は backend 配信 vocab を SSoT に (記事フィード widget と同じ合成)。
+  const categoryLabelMap: Record<string, string> = { ...useVocabMap("category"), ...useVocabMap("category_group") };
+  const chMeta = useChannelMeta();
+  const { category, feed, channel, jp, per, sinceHours, wantSummary, severity } = resolveEventNewsFilters(config);
   const [openId, setOpenId] = useState<string | null>(null);
   const { data, isError } = useQuery({
-    queryKey: ["dash-eventnews", severity, per],
-    queryFn: () =>
-      fetchEventNews({ limit: Math.max(per * 2, 20), ...severityFacetQueryParams(severity) }),
+    queryKey: ["dash-eventnews", category, feed, channel, jp, severity, sinceHours, per],
+    queryFn: () => fetchEventNews(eventNewsQueryFromFilters({ category, feed, channel, jp, per, sinceHours, wantSummary, severity })),
     refetchInterval: 5 * 60_000,
   });
   const items = (data?.items ?? []).slice(0, per);
+  const channelLabel = channel ? chMeta(channel).label : "";
+  const title = buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "事象ニュース" });
+  const href = buildEventNewsHref({ category, feed, channel, severity, jp, sinceHours });
 
   return (
-    <WidgetCard title={eventTitle(severity)} href="/app/eventnews" linkLabel="すべて →">
+    <WidgetCard title={title} href={href} linkLabel="すべて →">
       {isError ? <WidgetError /> : !data ? <Loading /> : items.length === 0 ? (
         <Empty>まだ事象がありません。</Empty>
       ) : (
@@ -68,6 +113,9 @@ export function EventNewsWidget({ config }: WidgetProps) {
               >
                 {it.headline}
               </button>
+              {wantSummary && it.preview && (
+                <p className={`text-[12.5px] text-fg-muted leading-[1.7] mt-0.5 ${mobile ? "line-clamp-1" : "line-clamp-2"}`}>{it.preview}</p>
+              )}
               <div className="flex flex-wrap items-center gap-2 text-[12px] mt-0.5">
                 <span className={TONE[it.importance] ?? "text-fg-subtle"}>
                   {vocabLabel("importance", it.importance)}
@@ -96,4 +144,19 @@ export function EventNewsWidget({ config }: WidgetProps) {
       </Drawer>
     </WidgetCard>
   );
+}
+
+export function buildEventNewsHref({ category, feed, channel, severity, jp, sinceHours }: {
+  category: string; feed: string; channel: string; severity: SeverityFacetState; jp: string; sinceHours: number;
+}): string {
+  const q = new URLSearchParams();
+  if (category) q.set("category", category);
+  if (feed) q.set("feed", feed);
+  if (channel) q.set("channel", channel);
+  writeSeverityFacet(q, severity);
+  if (jp) q.set("jp", jp);
+  // EventNewsPage の URL クエリ名は "since_hours" (News ページの "since" とは異なる)。
+  if (sinceHours) q.set("since_hours", String(sinceHours));
+  const qs = q.toString();
+  return qs ? `/app/eventnews?${qs}` : "/app/eventnews";
 }

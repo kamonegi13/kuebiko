@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  jpTitleTag, severityTitleTags,
+  jpTitleTag, severityTitleTags, buildFacetedTitle,
   EMPTY_SEVERITY_FACET, legacyLevelFilterToSeverityFacet, levelLabel,
   migrateImportanceToLevelFilter, migrateLegacyToSeverityFacet, readSeverityFacet,
   severityFacetFromConfigStrings, severityFacetQueryParams, writeSeverityFacet,
@@ -176,5 +176,57 @@ describe("ダッシュボードのタイトルに添える印", () => {
       "重大", "関連性あり", "政策・地政学を含む",
     ]);
     expect(severityTitleTags({ minSeverity: "", relevantOnly: false, includeStrategic: true })).toEqual([]);
+  });
+});
+
+describe("buildFacetedTitle (記事フィード・事象ニュース widget 共有の見出し組み立て)", () => {
+  it("feed 指定時はそのサイト名を見出しにする (他の絞り込みより優先)", () => {
+    const title = buildFacetedTitle({
+      category: "vuln", feed: "JPCERT/CC", channelLabel: "アラート", jp: "mentioned",
+      severity: { minSeverity: "S3", relevantOnly: false, includeStrategic: false },
+      categoryLabelMap: {}, defaultBase: "事象ニュース",
+    });
+    expect(title).toBe("JPCERT/CC");
+  });
+
+  it("合成カテゴリ (vuln/threat/incident_breach) は専用の言い方になる", () => {
+    const base = (category: string) => buildFacetedTitle({
+      category, feed: "", channelLabel: "", jp: "", categoryLabelMap: {},
+      severity: { minSeverity: "", relevantOnly: false, includeStrategic: false }, defaultBase: "事象ニュース",
+    });
+    expect(base("vuln")).toBe("脆弱性情報");
+    expect(base("threat")).toBe("脅威情報");
+    expect(base("incident_breach")).toBe("侵害・インシデント");
+  });
+
+  it("個別カテゴリは categoryLabelMap のラベル、未登録は原値 fallback", () => {
+    const title = buildFacetedTitle({
+      category: "malware", feed: "", channelLabel: "", jp: "", categoryLabelMap: { malware: "マルウェア" },
+      severity: { minSeverity: "", relevantOnly: false, includeStrategic: false }, defaultBase: "事象ニュース",
+    });
+    expect(title).toBe("マルウェア");
+    const fallback = buildFacetedTitle({
+      category: "未知区分", feed: "", channelLabel: "", jp: "", categoryLabelMap: {},
+      severity: { minSeverity: "", relevantOnly: false, includeStrategic: false }, defaultBase: "事象ニュース",
+    });
+    expect(fallback).toBe("未知区分");
+  });
+
+  it("category 未指定は defaultBase になり、深刻さ・日本との関係・チャンネル名が括弧で付く", () => {
+    const title = buildFacetedTitle({
+      category: "", feed: "", channelLabel: "アラート", jp: "targeted_affected",
+      severity: { minSeverity: "S2", relevantOnly: false, includeStrategic: true },
+      categoryLabelMap: {}, defaultBase: "事象ニュース",
+    });
+    expect(title).toBe("事象ニュース (注意以上 · 政策・地政学を含む · 日本が標的・被害 · アラート)");
+  });
+
+  it("絞り込みが無ければ defaultBase のまま (括弧を付けない)", () => {
+    const title = buildFacetedTitle({
+      category: "", feed: "", channelLabel: "", jp: "",
+      severity: { minSeverity: "", relevantOnly: false, includeStrategic: false },
+      categoryLabelMap: {}, defaultBase: "最新ニュース",
+    });
+    expect(title).toBe("最新ニュース");
   });
 });

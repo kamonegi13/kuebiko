@@ -2,12 +2,11 @@
 // 切り替え、脆弱性 / 特定サイト / ニュースサマリー / ヘッドライン 等の preset に化ける。
 // backend: /api/v1/articles (src/ui/api/articles_feed.py)。
 
-import { jpTitleTag, severityTitleTags } from "../../../components/news/facets";
+import { buildFacetedTitle } from "../../../components/news/facets";
 import { useQuery } from "@tanstack/react-query";
 import { articlesApi } from "../../../api/articles";
 import { formatJstCompact } from "../../../utils/date";
 import { useChannelMeta } from "../../../components/channel";
-import { label } from "../../../utils/labels";
 import { useVocabMap } from "../../../hooks/useVocab";
 import {
   EMPTY_SEVERITY_FACET, LevelBadge, severityFacetFromConfigStrings, severityFacetQueryParams,
@@ -129,19 +128,5 @@ function buildNewsHref({ category, feed, channel, severity, sinceHours, jp }: {
 function buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap }: {
   category: string; feed: string; channelLabel: string; severity: SeverityFacetState; jp: string; categoryLabelMap: Record<string, string>;
 }): string {
-  if (feed) return feed;
-  const cat = label(categoryLabelMap, category) || category;
-  const base = category === "vuln" ? "脆弱性情報"
-    : category === "threat" ? "脅威情報"
-    : category === "incident_breach" ? "侵害・インシデント"
-    : category === "geopolitical" ? "地政情勢"
-    : category === "research" ? "研究ウォッチ"
-    : category ? cat
-    : "最新ニュース";
-  const tags: string[] = [];
-  tags.push(...severityTitleTags(severity));
-  const jpTag = jpTitleTag(jp);
-  if (jpTag) tags.push(jpTag);
-  if (channelLabel) tags.push(channelLabel);
-  return tags.length > 0 ? `${base} (${tags.join(" · ")})` : base;
+  return buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "最新ニュース" });
 }

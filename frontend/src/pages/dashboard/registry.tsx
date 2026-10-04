@@ -233,7 +233,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   latest_headlines: { title: "最新ヘッドライン (カテゴリ別)", Component: LatestHeadlinesWidget, defaultSpan: 4, defaultHeight: 460, thumb: "list", multi: true, blurb: "PMESII軸 / SIR別の最新記事", configOptions: [HEADLINE_AXES, PER_OPTION] },
   // ── 事象ニュース (2026-08-24): 同一事象の複数報道を束ねた読み物。裏取りは
   //    「独立媒体数」で示し記事数では示さない。単独報は「1 媒体のみ」と明示する ──
-  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)", configOptions: [...SEVERITY_FACET_OPTIONS, PER_OPTION], defaultConfig: { min_severity: "S2", per: 6 } },
+  eventnews: { title: "事象ニュース", Component: EventNewsWidget, defaultSpan: 2, defaultHeight: 360, thumb: "list", multi: true, blurb: "同一事象の複数報道を束ねた読み物。独立媒体数つき (単独報は未裏取りと明示)。カテゴリ/CH/サイトで絞り込み可 (記事フィードと同じ設定項目)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { min_severity: "S2", per: 6 } },
   // ── 記事フィード (汎用・設定可・複数配置可。カテゴリ/CH/重要度/サイトで絞る) ──
   news_feed: { title: "記事フィード", Component: ArticleFeedWidget, defaultSpan: 2, defaultHeight: 420, thumb: "list", multi: true, blurb: "カテゴリ/CH/重要度/サイトで絞った記事。設定を変えて複数配置 (脆弱性/脅威/地政/緊急 等)", configOptions: ARTICLE_FEED_OPTIONS, defaultConfig: { mode: "summary", per: 5 } },
   // ── 発見支援 / 脅威 ──

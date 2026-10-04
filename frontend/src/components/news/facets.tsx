@@ -10,6 +10,7 @@ import { pirApi } from "../../api/pir";
 import { fetchActorOptions, fetchAffectedVendors, fetchFeedOptions } from "../../api/search";
 import { useChannels } from "../channel";
 import { useVocabOptions, vocabLabel } from "../../hooks/useVocab";
+import { label } from "../../utils/labels";
 
 export interface Opt {
   value: string;
@@ -478,4 +479,40 @@ export function jpTitleTag(jp: string): string {
   if (jp === "targeted_affected") return "日本が標的・被害";
   if (jp === "mentioned") return "日本に触れるもの";
   return "";
+}
+
+/** カテゴリの絞り込みをタイトルの見出し語に変換する (記事フィード・事象ニュース共有)。
+ *  合成カテゴリ (vuln/threat/incident_breach) は専用の言い方、個別カテゴリは
+ *  backend 配信 vocab (categoryLabelMap) のラベル、未指定は呼び手が渡す既定語。 */
+export function categoryTitleBase(
+  category: string,
+  categoryLabelMap: Record<string, string>,
+  defaultBase: string,
+): string {
+  if (!category) return defaultBase;
+  if (category === "vuln") return "脆弱性情報";
+  if (category === "threat") return "脅威情報";
+  if (category === "incident_breach") return "侵害・インシデント";
+  if (category === "geopolitical") return "地政情勢";
+  if (category === "research") return "研究ウォッチ";
+  return label(categoryLabelMap, category) || category;
+}
+
+/** ダッシュボード widget の見出しを組み立てる (記事フィード・事象ニュース共有)。
+ *  feed 指定時はそのサイト名を見出しとして返し (他の絞り込みより優先)、それ以外は
+ *  category から導いた見出し語に 深刻さ/関連性/政策地政学・日本との関係・チャンネル名を
+ *  括弧書きで添える。 */
+export function buildFacetedTitle({
+  category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase,
+}: {
+  category: string; feed: string; channelLabel: string; severity: SeverityFacetState; jp: string;
+  categoryLabelMap: Record<string, string>; defaultBase: string;
+}): string {
+  if (feed) return feed;
+  const base = categoryTitleBase(category, categoryLabelMap, defaultBase);
+  const tags: string[] = [...severityTitleTags(severity)];
+  const jpTag = jpTitleTag(jp);
+  if (jpTag) tags.push(jpTag);
+  if (channelLabel) tags.push(channelLabel);
+  return tags.length > 0 ? `${base} (${tags.join(" · ")})` : base;
 }
