@@ -234,6 +234,71 @@ class TestEventItemCRUD:
         by_corroboration = repo.list_event_items(order_by="corroboration")
         assert [i.state.item_id for i in by_corroboration] == ["many-old", "few-new"]
 
+    def test_list_event_items_can_order_by_level(self, repo: RunHistoryRepository) -> None:
+        """重要度 6 段階 (importance_v2) の高い順 (低い level から) に並べられる。
+
+        事象の level = 構成記事のうち最良 (最小) の level。未記録の事象は最後。
+        """
+        from src.cti.importance_v2 import ImportanceV2
+
+        def _save(article_id: str, severity: str | None, relevant: bool) -> None:
+            repo.save_importance_v2(
+                article_id,
+                ImportanceV2(
+                    severity=severity,  # type: ignore[arg-type]
+                    severity_basis="x",
+                    strategic_weight=None,
+                    jp="none",
+                    nations=(),
+                    sir_ids=(),
+                    relevant=relevant,
+                ),
+            )
+
+        older = _NOW - timedelta(hours=10)
+        for item_id, ts in (
+            ("worst-new", _NOW),
+            ("best-old", older),
+            ("unrecorded", older - timedelta(hours=1)),
+        ):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=ts,
+                last_reported_at=ts,
+                importance="high",
+            )
+        repo.add_event_member(
+            item_id="worst-new",
+            article_id="art-worst",
+            joined_at=_NOW,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.add_event_member(
+            item_id="best-old",
+            article_id="art-best",
+            joined_at=older,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        repo.add_event_member(
+            item_id="unrecorded",
+            article_id="art-none",
+            joined_at=older,
+            contributed_new_facts=0,
+            join_signal="seed",
+        )
+        _save("art-worst", "S1", relevant=False)  # level 6
+        _save("art-best", "S3", relevant=True)  # level 1
+        # art-none は記録なし → level None
+
+        by_recency = repo.list_event_items()
+        assert [i.state.item_id for i in by_recency] == ["worst-new", "best-old", "unrecorded"]
+
+        by_level = repo.list_event_items(order_by="level")
+        assert [i.state.item_id for i in by_level] == ["best-old", "worst-new", "unrecorded"]
+
     def test_list_event_items_filters_by_since(self, repo: RunHistoryRepository) -> None:
         """事象そのものの新しさで絞れる (記事側の since_hours とは別物)。"""
         for item_id, ts in (("recent", _NOW), ("stale", _NOW - timedelta(days=5))):

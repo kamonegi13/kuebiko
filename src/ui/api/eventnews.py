@@ -13,13 +13,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from src.cti.importance_v2 import importance_level
 from src.cti.source_basis import classify_source_tier
 from src.eventnews.fidelity import draft_text, entity_gaps
 from src.storage.run_history import RunHistoryRepository
@@ -454,6 +455,26 @@ def _strongest_jp(values: Any) -> str | None:
     return best
 
 
+def _event_level(
+    member_ids: Sequence[str], iv2_by_article: Mapping[str, dict[str, Any]]
+) -> tuple[str | None, int | None]:
+    """事象の重要度 = 構成記事のうち最良 (最小) の level。severity はその記事のもの。
+
+    構成記事のうち 1 件でも重要度 v2 を記録していなければ (severity, level) = (None, None)。
+    """
+    best_level: int | None = None
+    best_severity: str | None = None
+    for aid in member_ids:
+        info = iv2_by_article.get(aid)
+        if info is None:
+            continue
+        level = importance_level(info["severity"], info["relevant"])
+        if level is not None and (best_level is None or level < best_level):
+            best_level = level
+            best_severity = info["severity"]
+    return best_severity, best_level
+
+
 def _matching_article_ids(request: Request, **filters: Any) -> list[str] | None:
     """記事側フィルタに該当する article_id。フィルタ無指定なら None (絞らない)。
 
@@ -528,6 +549,7 @@ def list_event_news(  # noqa: PLR0913
     entity_type: str | None = None,
     entity_value: str | None = None,
     jp: str | None = None,
+    sort: str | None = None,
     since_hours: int = 0,
     min_independent_sources: int = 0,
     has_news: bool | None = None,
@@ -542,8 +564,12 @@ def list_event_news(  # noqa: PLR0913
 
     ``min_independent_sources`` / ``has_news`` は読み手が **自分で** 複数媒体報や
     統合済みだけに絞るための軸 (既定は絞らない)。記事側には無い事象固有の facet。
+
+    ``sort="level"`` で重要度 6 段階 (構成記事のうち最良 [最小] の level) の高い順に
+    並べる (未記録は最後)。未指定・不正値は既定 (新着順) のまま (2026-10-04)。
     """
     repo = _repo()
+    order_by = "level" if sort == "level" else "recency"
     statuses = [s.strip() for s in status.split(",")] if status else None
     wanted = [i.strip() for i in importance.split(",")] if importance else None
     # 記事側の絞り込みは **既存のニュース検索と同じ経路** で解決する
@@ -591,16 +617,21 @@ def list_event_news(  # noqa: PLR0913
         member_article_ids=member_ids,
         search_item_ids=search_item_ids,
         search_member_article_ids=search_member_ids,
+        order_by=order_by,
         limit=min(limit, _LIST_LIMIT_MAX),
         offset=max(0, offset),
     )
     resolved = _headlines_and_previews(repo, shown)
+    all_member_ids = [aid for r in shown for aid in r.state.member_ids]
     # 日本との関係 (2026-10-04): 構成記事のうち最も強い関係 (targeted > affected > mentioned
     # > none) を事象の代表値として返す (ミラーの事象タグ・一覧表示用、batch fetch で N+1 回避)。
-    jp_by_article = repo.jp_relation_by_article([aid for r in shown for aid in r.state.member_ids])
+    jp_by_article = repo.jp_relation_by_article(all_member_ids)
+    # 重要度 6 段階 (2026-10-04): 構成記事のうち最良 (最小) の level を事象の代表値とする。
+    iv2_by_article = repo.importance_v2_by_article(all_member_ids)
     items = []
     for r in shown:
         headline, preview = resolved[r.state.item_id]
+        severity, level = _event_level(r.state.member_ids, iv2_by_article)
         items.append(
             {
                 "id": r.state.item_id,
@@ -610,6 +641,8 @@ def list_event_news(  # noqa: PLR0913
                 "change_kind": r.change_kind,
                 "importance": r.state.importance,
                 "jp": _strongest_jp(jp_by_article.get(aid) for aid in r.state.member_ids),
+                "level": level,
+                "severity": severity,
                 "member_count": len(r.state.member_ids),
                 # 裏取りは 3 値で返す。member_count を裏取りとして使わせない
                 "independent_sources": r.independent_sources,

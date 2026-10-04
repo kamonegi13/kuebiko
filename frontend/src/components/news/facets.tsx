@@ -49,6 +49,42 @@ export const JP_OPTS: Opt[] = [
   { value: "mentioned", label: "日本に触れるもの" },
 ];
 
+/** 並び順。ニュース検索・事象ニュースが共有する (2026-10-04)。
+ *  "level" = 重要度 6 段階 (深刻さ×関連性、src/cti/importance_v2.py)。 */
+export const SORT_OPTS: Opt[] = [
+  { value: "", label: "新しい順" },
+  { value: "level", label: "重要度順" },
+];
+
+/** 重要度 6 段階のラベル (1 が最上位)。SSoT は
+ *  src/cti/importance_v2.py の importance_level()。◎ = 関連性あり
+ *  (日本・注視国・SIR)。生の severity/level を画面に出さない
+ *  (CLAUDE.md §UI 文言規約)。 */
+const LEVEL_LABELS: Record<number, string> = {
+  1: "重大◎",
+  2: "重大",
+  3: "注意◎",
+  4: "注意",
+  5: "参考◎",
+  6: "参考",
+};
+
+export function levelLabel(level: number | null | undefined): string | null {
+  if (level == null) return null;
+  return LEVEL_LABELS[level] ?? null;
+}
+
+/** 重要度バッジ。level が無い (未記録) 記事・事象には何も出さない。 */
+export function LevelBadge({ level }: { level: number | null | undefined }) {
+  const label = levelLabel(level);
+  if (!label) return null;
+  return (
+    <span className="px-1 rounded bg-surface-2 text-fg-muted" title="重要度 (深刻さ×関連性)">
+      {label}
+    </span>
+  );
+}
+
 export interface FacetOptions {
   category: Opt[];
   channel: Opt[];

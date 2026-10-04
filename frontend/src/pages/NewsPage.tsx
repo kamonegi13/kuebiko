@@ -14,7 +14,8 @@ import { articlesApi } from "../api/articles";
 import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
-  BODY_OPTS, IMPORTANCE_OPTS, JP_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput,
+  BODY_OPTS, IMPORTANCE_OPTS, JP_OPTS, LevelBadge, Sel, SINCE_OPTS, SORT_OPTS,
+  useFacetOptions, VendorInput,
 } from "../components/news/facets";
 import { SearchResults } from "../components/news/SearchResults";
 import { PivotResults } from "../components/news/PivotResults";
@@ -52,6 +53,7 @@ interface NewsState {
   search: string; malware: string; cve: string; intent: string; pir: string; actor: string; vendor: string;
   body: string; // "" / "stump"(切り株) / "full"(全文取得済)
   jp: string; // "" / "targeted_affected" / "mentioned" (日本との関係)
+  sort: string; // "" / "level" (重要度順、2026-10-04)
   mode: "headline" | "summary"; precise: boolean; pivot: Pivot | null;
 }
 
@@ -74,6 +76,7 @@ function readState(): NewsState {
     vendor: p.get("affected_vendor") ?? "",
     body: p.get("body") ?? "",
     jp: p.get("jp") ?? "",
+    sort: p.get("sort") === "level" ? "level" : "",
     mode: p.get("mode") === "summary" ? "summary" : "headline",
     precise: p.get("precise") === "1",
     pivot: pt && pv ? { type: pt, value: pv } : null,
@@ -97,6 +100,7 @@ function writeState(s: NewsState): void {
   if (s.vendor) q.set("affected_vendor", s.vendor);
   if (s.body) q.set("body", s.body);
   if (s.jp) q.set("jp", s.jp);
+  if (s.sort) q.set("sort", s.sort);
   if (s.mode === "summary") q.set("mode", "summary");
   if (s.precise) q.set("precise", "1");
   if (s.pivot) { q.set("pivot_type", s.pivot.type); q.set("pivot_value", s.pivot.value); }
@@ -133,6 +137,7 @@ export function NewsPage() {
   const [actor, setActor] = useState(init.actor);
   const [body, setBody] = useState(init.body);
   const [jp, setJp] = useState(init.jp);
+  const [sort, setSort] = useState(init.sort);
   const [vendorRaw, setVendorRaw] = useState(init.vendor);
   const [vendor, setVendor] = useState(init.vendor);
   const [precise, setPrecise] = useState(init.precise);
@@ -153,10 +158,10 @@ export function NewsPage() {
     const t = setTimeout(() => setVendor(vendorRaw.trim()), 300);
     return () => clearTimeout(t);
   }, [vendorRaw]);
-  useEffect(() => { setLimit(30); }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, newOnly, lastSeen]);
+  useEffect(() => { setLimit(30); }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, newOnly, lastSeen]);
   useEffect(() => {
-    writeState({ category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, mode, precise, pivot });
-  }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, mode, precise, pivot]);
+    writeState({ category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot });
+  }, [category, channel, importance, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot]);
 
   // facet (閲覧・検索で共有する AND 条件)。空値は undefined にして送らない。
   const facets: SearchFacets = useMemo(() => ({
@@ -188,13 +193,16 @@ export function NewsPage() {
   const browseSinceHours = newOnly ? (lastSeen ? undefined : 24) : facets.since_hours;
 
   // --- 閲覧 (browse) ---
+  // sort は閲覧 (/api/v1/articles) のみ対応。検索 (/api/v1/search) は hybrid
+  // retrieval + rerank の融合スコア順が前提のため、並び替えの対象にしない。
   const browseQ = useQuery({
-    queryKey: ["news-browse", facets, mode, limit, newOnly, lastSeen],
+    queryKey: ["news-browse", facets, mode, sort, limit, newOnly, lastSeen],
     queryFn: () => articlesApi.list({
       ...facets,
       since_hours: browseSinceHours,
       since: browseSince,
       status: "posted",
+      sort: sort === "level" ? "level" : undefined,
       include_summary: mode === "summary",
       limit,
     }),
@@ -279,6 +287,8 @@ export function NewsPage() {
           listId="news-vendor-list"
         />
         <Sel value={since} onChange={setSince} opts={SINCE_OPTS} />
+        {/* 並び順は閲覧のみ (検索は融合スコア順が前提)。 */}
+        {view === "browse" && <Sel value={sort} onChange={setSort} opts={SORT_OPTS} />}
         {view === "search" ? (
           <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center" title="精密 = LLM で関連度を並べ直す (~25-35s)">
             {([["quick", "クイック"], ["precise", "精密 (LLM)"]] as const).map(([k, label]) => (
@@ -466,6 +476,7 @@ export function NewsPage() {
                       {a.importance && a.importance !== "low" && (
                         <Chip tone="muted" active={importance === a.importance} onClick={() => setImportance(importance === a.importance ? "" : a.importance!)}>{vocabLabel("importance", a.importance)}</Chip>
                       )}
+                      <LevelBadge level={a.level} />
                       {a.victim_sector && <span className="px-1 rounded bg-surface-2 text-fg-muted">{sectorLabel(a.victim_sector)}</span>}
                       {a.victim_country && <span className="px-1 rounded bg-surface-2 text-fg-muted">{countryLabel(a.victim_country)}</span>}
                       {a.socio_political_intent && hasIntent(a.socio_political_intent) && (

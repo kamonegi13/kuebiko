@@ -512,6 +512,66 @@ class TestArticleRecording:
 
         assert len(repo.list_articles()) == 3  # jp 未指定は絞り込まない
 
+    def test_list_articles_sort_level(self, repo: RunHistoryRepository) -> None:
+        """``sort="level"`` — 重要度 6 段階 (importance_level) の高い順。
+
+        未記録は最後 (2026-10-04)。
+        """
+        run_id = repo.start_run(
+            RunRecord(started_at=_now(), pipeline="daily", dry_run=False),
+        )
+        # created_at は「新しい順」なら worst が先に来る並びにしておく (level 順との差を確認)。
+        now = _now()
+        rows = (
+            ("worst", now),
+            ("best", now - timedelta(hours=1)),
+            ("unrecorded", now - timedelta(hours=2)),
+        )
+        for aid, ts in rows:
+            repo.add_article(
+                ArticleRecord(
+                    run_id=run_id,
+                    article_id=aid,
+                    title=aid,
+                    url=f"https://example.com/{aid}",
+                    status="posted",
+                    created_at=ts,
+                ),
+            )
+        from src.cti.importance_v2 import ImportanceV2
+
+        repo.save_importance_v2(
+            "worst",
+            ImportanceV2(
+                severity="S1",
+                severity_basis="x",
+                strategic_weight=None,
+                jp="none",
+                nations=(),
+                sir_ids=(),
+                relevant=False,
+            ),
+        )
+        repo.save_importance_v2(
+            "best",
+            ImportanceV2(
+                severity="S3",
+                severity_basis="x",
+                strategic_weight=None,
+                jp="none",
+                nations=(),
+                sir_ids=(),
+                relevant=True,
+            ),
+        )
+        # "unrecorded" は article_importance_v2 に行を持たない (level=None)。
+
+        by_recency = repo.list_articles()
+        assert [a.article_id for a in by_recency] == ["worst", "best", "unrecorded"]
+
+        by_level = repo.list_articles(sort="level")
+        assert [a.article_id for a in by_level] == ["best", "worst", "unrecorded"]
+
     def test_importance_breakdown_cyber_only(self, repo: RunHistoryRepository) -> None:
         """cyber_only=True は geopolitical 等の非サイバーを重要度分布から除外。"""
         run_id = repo.start_run(

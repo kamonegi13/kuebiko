@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.eventnews.models import VERSION_CAP, ItemState
+from src.storage.importance_level_sql import min_level_subquery_for_event
 from src.storage.records import EventNoteRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _from_iso, _to_iso
@@ -389,8 +390,10 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         member_ids は対象アイテム群をまとめて 1 クエリで引く。
 
         ``since`` は ``last_reported_at`` の下限 (事象そのものの新しさ。記事側の
-        ``since_hours`` とは別物)。``order_by`` は "recency" (既定: 新着順) か
-        "corroboration" (独立媒体数の多い順 → 同数なら新しい順)。
+        ``since_hours`` とは別物)。``order_by`` は "recency" (既定: 新着順) /
+        "corroboration" (独立媒体数の多い順 → 同数なら新しい順) /
+        "level" (重要度 6 段階、構成記事の最小 level [=最良] の順 → 同値は新しい順。
+        構成記事が未記録なら NULL で最後、2026-10-04)。
 
         ⚠ ``corroboration`` は **表示順のためだけ** に使うこと。重要性の背骨は
         PIR → importance → channel であり、収集量 (何媒体が報じたか) で重要性を
@@ -515,11 +518,16 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         params.append(int(limit))
         params.append(max(0, int(offset)))
         with self._connect() as conn:
-            order_sql = (
-                "independent_sources DESC, datetime(last_reported_at) DESC"
-                if order_by == "corroboration"
-                else "datetime(last_reported_at) DESC"
-            )
+            if order_by == "level":
+                level_expr = min_level_subquery_for_event("event_items.id")
+                order_sql = (
+                    f"(CASE WHEN {level_expr} IS NULL THEN 1 ELSE 0 END) ASC, "
+                    f"{level_expr} ASC, datetime(last_reported_at) DESC"
+                )
+            elif order_by == "corroboration":
+                order_sql = "independent_sources DESC, datetime(last_reported_at) DESC"
+            else:
+                order_sql = "datetime(last_reported_at) DESC"
             rows = conn.execute(
                 f"SELECT * FROM event_items {where} "  # noqa: S608 — where句/order は固定
                 f"ORDER BY {order_sql} LIMIT ? OFFSET ?",

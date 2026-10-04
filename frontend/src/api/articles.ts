@@ -19,6 +19,9 @@ export interface ArticleFeedItem {
   malware_families: string[];
   // 日本との関係 (2026-10-04、article_importance_v2.jp)。記録前の記事は null。
   jp?: "targeted" | "affected" | "mentioned" | "none" | null;
+  // 重要度 6 段階 (1 が最上位) と深刻さ (S3/S2/S1)。記録前の記事は null (2026-10-04)。
+  level?: number | null;
+  severity?: "S3" | "S2" | "S1" | null;
   summary: string | null;
   published_at: string | null;
   created_at: string | null;
@@ -44,6 +47,8 @@ export interface ArticleFeedParams {
   body?: string; // "stump"=切り株(全文未取得) / "full"=全文取得済
   // 日本との関係: "targeted_affected"=標的・被害 / "mentioned"=言及以上。未指定=絞らない。
   jp?: "targeted_affected" | "mentioned";
+  // 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新しい順 (既定)。
+  sort?: "level";
   status?: string;
   since_hours?: number;
   since?: string; // W2: 「前回確認以降」カーソル (ISO 絶対時刻)。あれば since_hours より優先。
@@ -67,6 +72,7 @@ export const articlesApi = {
     if (params.affected_vendor) q.set("affected_vendor", params.affected_vendor);
     if (params.body) q.set("body", params.body);
     if (params.jp) q.set("jp", params.jp);
+    if (params.sort) q.set("sort", params.sort);
     if (params.status) q.set("status", params.status);
     if (params.since_hours) q.set("since_hours", String(params.since_hours));
     if (params.since) q.set("since", params.since);

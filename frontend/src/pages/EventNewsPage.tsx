@@ -15,7 +15,9 @@ import { pageContainer } from "../components/Page";
 import { Drawer } from "../components/Drawer";
 import { formatJstCompact } from "../utils/date";
 import { vocabLabel } from "../hooks/useVocab";
-import { JP_OPTS, Sel, SINCE_OPTS, useFacetOptions, VendorInput } from "../components/news/facets";
+import {
+  JP_OPTS, LevelBadge, Sel, SINCE_OPTS, SORT_OPTS, useFacetOptions, VendorInput,
+} from "../components/news/facets";
 import { EventNewsDetailBody, SourceChip } from "./eventnews/EventNewsDetail";
 import { fetchEventNews, type EventNewsQuery } from "../api/eventnews";
 import { PAGE_TITLE } from "../components/headings";
@@ -58,6 +60,7 @@ function readQuery(): EventNewsQuery & { importance: string } {
     pir: p.get("pir") ?? undefined,
     affected_vendor: p.get("affected_vendor") ?? undefined,
     jp: (p.get("jp") as "targeted_affected" | "mentioned" | null) ?? undefined,
+    sort: p.get("sort") === "level" ? "level" : undefined,
     // エンティティ chip からの逆引き (ニュース検索と同じクエリ名)
     entity_type: p.get("pivot_type") ?? undefined,
     entity_value: p.get("pivot_value") ?? undefined,
@@ -78,7 +81,7 @@ function writeQuery(q: EventNewsQuery & { importance: string }): void {
   if (q.min_independent_sources) p.set("min_sources", String(q.min_independent_sources));
   if (q.has_news) p.set("has_news", "1");
   if (q.semantic) p.set("semantic", "1");
-  for (const k of ["category", "channel", "feed", "actor", "cve", "malware", "intent", "pir", "affected_vendor", "status", "jp"] as const) {
+  for (const k of ["category", "channel", "feed", "actor", "cve", "malware", "intent", "pir", "affected_vendor", "status", "jp", "sort"] as const) {
     if (q[k]) p.set(k, String(q[k]));
   }
   if (q.entity_type && q.entity_value) {
@@ -215,6 +218,11 @@ export function EventNewsPage() {
           onChange={(v) => set({ since_hours: Number(v) || 0 })}
           opts={SINCE_OPTS}
         />
+        <Sel
+          value={q.sort ?? ""}
+          onChange={(v) => set({ sort: v === "level" ? "level" : undefined })}
+          opts={SORT_OPTS}
+        />
       </div>
 
       {/* 事象固有の軸。記事側には存在しないので facet バーとは分けて置く。
@@ -320,6 +328,7 @@ export function EventNewsPage() {
               )}
               <div className="text-[13px] flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
                 <SourceChip item={it} />
+                <LevelBadge level={it.level} />
                 {it.member_count > 1 && (
                   <span className="px-1 rounded bg-surface-2 text-fg-muted">{it.member_count} 記事を統合</span>
                 )}

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.storage.event_time import EVENT_TS_EXPR
+from src.storage.importance_level_sql import level_scalar_subquery, order_by_level_then_recency
 from src.storage.records import ArticleRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _row_to_article, _to_iso
@@ -1107,6 +1108,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         since: datetime | None = None,
         until: datetime | None = None,
         jp: str | None = None,
+        sort: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ArticleRecord]:
@@ -1197,16 +1199,25 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 "article_id IN (SELECT article_id FROM article_importance_v2 WHERE jp <> 'none')"
             )
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        # 並びは既定 **事象時刻** (公開時刻・取得で上限) の新しい順。表示している時刻と
+        # 並びの鍵を一致させる — 従来は created_at (取得時刻) で並べて published_at
+        # (公開時刻) を表示していたため、一覧の時刻が前後して見えた (2026-08-24 利用者指摘)。
+        # ANSSI のようにその日の advisory をまとめて後から配信する媒体で顕著
+        # (実測: 公開と取得の差は中央値 0.9h だが 6h 超が 10%・24h 超が 2.4%)。
+        # ⚠ **絞り込み (since/until) は created_at のまま**。ここを事象時刻にすると
+        # 「公開は古いが取得は今」の記事が直近窓から消え、見落としになる。
+        recency_desc = f"{EVENT_TS_EXPR.format(a='articles')} DESC"
+        # sort="level" (重要度順、2026-10-04): JOIN だと article_id/created_at が
+        # article_importance_v2 と ambiguous になる (そちらにも同名列がある) ため、
+        # JOIN せず相関サブクエリで引く。NULL (未記録・軸なし等) は最後に回す。
+        order_sql = (
+            order_by_level_then_recency(level_scalar_subquery("articles.article_id"), recency_desc)
+            if sort == "level"
+            else recency_desc
+        )
         sql = (
             f"SELECT * FROM articles {where} "  # noqa: S608 (clauses are param placeholders)
-            # 並びは **事象時刻** (公開時刻・取得で上限)。表示している時刻と並びの鍵を
-            # 一致させる — 従来は created_at (取得時刻) で並べて published_at (公開時刻) を
-            # 表示していたため、一覧の時刻が前後して見えた (2026-08-24 利用者指摘)。
-            # ANSSI のようにその日の advisory をまとめて後から配信する媒体で顕著
-            # (実測: 公開と取得の差は中央値 0.9h だが 6h 超が 10%・24h 超が 2.4%)。
-            # ⚠ **絞り込み (since/until) は created_at のまま**。ここを事象時刻にすると
-            # 「公開は古いが取得は今」の記事が直近窓から消え、見落としになる。
-            f"ORDER BY {EVENT_TS_EXPR.format(a='articles')} DESC LIMIT ? OFFSET ?"
+            f"ORDER BY {order_sql} LIMIT ? OFFSET ?"
         )
         params.extend([limit, offset])
         with self._connect() as conn:

@@ -16,6 +16,7 @@ from typing import Any, cast
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from src.cti.diamond_model import SOCIO_POLITICAL_INTENTS
+from src.cti.importance_v2 import importance_level
 from src.logging_config import get_logger
 from src.search.models import SearchFacets
 from src.tools.embedding_client import EmbeddingClient
@@ -209,13 +210,14 @@ def list_articles_feed(  # noqa: PLR0913
     status: str = Query(default="posted"),
     since_hours: int = Query(default=0, ge=0, le=24 * 90),
     since: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=200),
     # 静的ミラーの書き出しが全件を辿るために要る (2026-08-29)。画面は使わないので
     # 既定 0 のまま挙動は変わらない。repo 側は元から offset を持っていた。
     offset: int = Query(default=0, ge=0),
     include_summary: bool = Query(default=False),
 ) -> dict[str, Any]:
-    """記事を柔軟なフィルタで返す (新しい順)。
+    """記事を柔軟なフィルタで返す (既定は新しい順)。
 
     - ``category`` は単一 category か合成グループ (vuln / threat / incident_breach)。
     - ``pir`` は PIR-persist、``actor`` は脅威アクター (canonical id) による絞り込み。
@@ -223,9 +225,12 @@ def list_articles_feed(  # noqa: PLR0913
       絞り込む (exposure)。
     - ``since_hours`` > 0 で時間窓を限定 (0=全期間)。``since`` (ISO 絶対時刻) があれば優先し、
       「前回確認以降の新着」(W2) を created_at で絞り込む。
+    - ``sort="level"`` で重要度 6 段階 (``src/cti/importance_v2.py``) の高い順 (1→6、
+      未記録は最後) に並べる。未指定・不正値は既定 (新しい順) のまま (2026-10-04)。
     - ``include_summary`` で LLM 要約も返す (重いので既定 off)。
     """
     repo = request.app.state.repo
+    sort_norm = sort if sort == "level" else None
 
     facets = _build_facets(
         importance=importance,
@@ -249,6 +254,7 @@ def list_articles_feed(  # noqa: PLR0913
     articles = repo.list_articles(
         **facets.to_query_kwargs(),
         search=term,
+        sort=sort_norm,
         limit=limit,
         offset=offset,
     )
@@ -257,6 +263,15 @@ def list_articles_feed(  # noqa: PLR0913
     malware_map = repo.entity_values_by_article([a.article_id for a in articles], "malware_family")
     # 日本との関係 (2026-10-04): ミラー書き出し・News カード表示用に batch fetch
     jp_map = repo.jp_relation_by_article([a.article_id for a in articles])
+    # 重要度 6 段階 (2026-10-04): severity/relevant から Python 側で level を導く
+    # (SQL の ORDER BY 式を SSoT にしない — importance_level() のみが決める)。
+    iv2_map = repo.importance_v2_by_article([a.article_id for a in articles])
+
+    def _level(article_id: str) -> int | None:
+        info = iv2_map.get(article_id)
+        if info is None:
+            return None
+        return importance_level(info["severity"], info["relevant"])
 
     return {
         "articles": [
@@ -276,6 +291,9 @@ def list_articles_feed(  # noqa: PLR0913
                 "technical_axis_summary": a.technical_axis_summary,
                 "malware_families": malware_map.get(a.article_id, []),
                 "jp": jp_map.get(a.article_id),
+                # 重要度 6 段階 (1 が最上位)・深刻さ (S3/S2/S1)。未記録は null。
+                "level": _level(a.article_id),
+                "severity": iv2_map.get(a.article_id, {}).get("severity"),
                 "summary": (a.summary or "")[:_MAX_SUMMARY_CHARS] if include_summary else None,
                 "published_at": a.published_at.isoformat() if a.published_at else None,
                 "created_at": a.created_at.isoformat() if a.created_at else None,

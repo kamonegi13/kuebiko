@@ -95,6 +95,11 @@ function matchesEvent(item: MirrorEventNewsItem, q: EventNewsQuery): boolean {
   return true;
 }
 
+// 重要度 6 段階 (1 が最上位・未記録は null)。null は常に最後に回す。
+function levelSortValue(item: MirrorEventNewsItem): number {
+  return item.level == null ? Number.POSITIVE_INFINITY : item.level;
+}
+
 /** 写しの事象一覧へ、画面の絞り込み・並び順・ページングを適用する。
  *  ライブ API と同じ応答の形 ({items, note, scan_capped}) を返す。 */
 export function filterMirrorEvents(
@@ -102,11 +107,20 @@ export function filterMirrorEvents(
   q: EventNewsQuery,
 ): { items: MirrorEventNewsItem[]; note: string; scan_capped?: boolean } {
   const matched = all.filter((it) => matchesEvent(it, q));
-  // 新着順 (last_reported_at DESC) — ライブの既定順と同じ。書き出し時点で既に
-  // この順だが、フィルタ後の安定性のため明示的にも揃える。
-  matched.sort(
-    (a, b) => new Date(b.last_reported_at).getTime() - new Date(a.last_reported_at).getTime(),
-  );
+  if (q.sort === "level") {
+    // 重要度 6 段階の高い順 (未記録は最後) → 同値は新着順 (ライブと同じ意味論)。
+    matched.sort((a, b) => {
+      const diff = levelSortValue(a) - levelSortValue(b);
+      if (diff !== 0) return diff;
+      return new Date(b.last_reported_at).getTime() - new Date(a.last_reported_at).getTime();
+    });
+  } else {
+    // 新着順 (last_reported_at DESC) — ライブの既定順と同じ。書き出し時点で既に
+    // この順だが、フィルタ後の安定性のため明示的にも揃える。
+    matched.sort(
+      (a, b) => new Date(b.last_reported_at).getTime() - new Date(a.last_reported_at).getTime(),
+    );
+  }
   const offset = Math.max(0, q.offset ?? 0);
   const limit = q.limit ?? 50;
   return {

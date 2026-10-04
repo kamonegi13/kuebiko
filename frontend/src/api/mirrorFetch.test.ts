@@ -198,6 +198,33 @@ describe("一覧の全件ファイル", () => {
     });
   });
 
+  // sort=level (重要度順、2026-10-04)。
+  describe("sort=level で並び替える", () => {
+    beforeEach(() => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 1, level: null }),
+          fixtureArticle({ id: 2, level: 6 }),
+          fixtureArticle({ id: 3, level: 1 }),
+          fixtureArticle({ id: 4, level: 3 }),
+        ],
+        count: 4,
+      };
+    });
+
+    test("重要度の高い順 (未記録は最後)", async () => {
+      const r = await fetch("/api/v1/articles?sort=level&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([3, 4, 2, 1]);
+    });
+
+    test("未指定は書き出し元の順のまま", async () => {
+      const r = await fetch("/api/v1/articles?status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3, 4]);
+    });
+  });
+
   // ⚠ 写していない絞り込み (search/malware/cve/pir/actor 等) に全件を返すと、画面は
   //    黙って違うものを出す (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
   test("ブラウザ側で再現できない絞り込みは全件を返さず 501 にする", async () => {

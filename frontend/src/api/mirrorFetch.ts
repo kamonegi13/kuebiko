@@ -42,9 +42,14 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 // actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
 // 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
-  "status", "category", "channel", "importance", "feed", "jp",
+  "status", "category", "channel", "importance", "feed", "jp", "sort",
   "since_hours", "since", "limit", "offset", "include_summary",
 ]);
+
+// 重要度 6 段階 (1 が最上位・未記録は null)。null は常に最後に回す。
+function levelSortValue(a: ArticleFeedItem): number {
+  return a.level == null ? Number.POSITIVE_INFINITY : a.level;
+}
 
 function matchesImportance(a: ArticleFeedItem, importance: string): boolean {
   // backend と同じ意味論: "medium" は medium 以上 (medium+high) を含む。
@@ -122,7 +127,11 @@ async function fallbackArticles(
   const since = params.get("since");
   if (since) items = items.filter((a) => withinSinceIso(a, since));
 
-  // 並び順は書き出し元 (created_at DESC) のまま保つ。絞り込みは順序を変えない。
+  // 並び順は既定で書き出し元 (created_at DESC) のまま保つ。絞り込みは順序を変えない。
+  // sort=level (2026-10-04) は重要度 6 段階の高い順 (未記録は最後) に並べ直す。
+  if (params.get("sort") === "level") {
+    items = [...items].sort((a, b) => levelSortValue(a) - levelSortValue(b));
+  }
   const offset = Number(params.get("offset") || "0");
   const limit = Number(params.get("limit") || "20");
   const page = items.slice(offset, offset + limit);

@@ -189,4 +189,23 @@ describe("filterMirrorEvents", () => {
       expect(out.length).toBe(5);
     });
   });
+
+  describe("sort (重要度順)", () => {
+    const items = [
+      item({ id: "worst", level: 6, last_reported_at: "2026-10-03T00:00:00+00:00" }),
+      item({ id: "best", level: 1, last_reported_at: "2026-10-01T00:00:00+00:00" }),
+      item({ id: "mid", level: 3, last_reported_at: "2026-10-02T00:00:00+00:00" }),
+      item({ id: "unrecorded", level: null, last_reported_at: "2026-10-04T00:00:00+00:00" }),
+    ];
+
+    it("sort=level は重要度の高い順 (未記録は最後)", () => {
+      const { items: out } = filterMirrorEvents(items, { sort: "level" });
+      expect(out.map((i) => i.id)).toEqual(["best", "mid", "worst", "unrecorded"]);
+    });
+
+    it("未指定は新着順のまま (level を見ない)", () => {
+      const { items: out } = filterMirrorEvents(items, {});
+      expect(out.map((i) => i.id)).toEqual(["unrecorded", "worst", "mid", "best"]);
+    });
+  });
 });

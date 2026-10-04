@@ -161,6 +161,34 @@ class ImportanceV2Mixin:
                     out[str(r["article_id"])] = str(r["jp"])
         return out
 
+    def importance_v2_by_article(
+        self: Any, article_ids: Sequence[str]
+    ) -> dict[str, dict[str, Any]]:
+        """記事 id → {"severity": str|None, "relevant": bool}。無い記事は含めない。
+
+        重要度 6 段階 (``importance_level()``) を一覧 API が表示するための材料。
+        レベルそのものはここでは出さない — Python 側 (``importance_level()``) を
+        呼ぶのは呼び手の責務 (SSoT を 1 箇所に保つ)。
+        """
+        ids = list(dict.fromkeys(article_ids))
+        if not ids:
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        with self._connect() as conn:
+            for i in range(0, len(ids), _CHUNK):
+                chunk = ids[i : i + _CHUNK]
+                ph = ",".join("?" * len(chunk))
+                for r in conn.execute(
+                    "SELECT article_id, severity, relevant FROM article_importance_v2 "  # noqa: S608
+                    f"WHERE article_id IN ({ph})",
+                    tuple(chunk),
+                ).fetchall():
+                    out[str(r["article_id"])] = {
+                        "severity": r["severity"],
+                        "relevant": bool(r["relevant"]),
+                    }
+        return out
+
     def importance_v2_crosstab(self: Any, *, since: str) -> list[dict[str, Any]]:
         """いまの重要度 × 新しい値の件数 (比較の画面用)。"""
         sql = """
