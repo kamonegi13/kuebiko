@@ -2,6 +2,7 @@
 // 切り替え、脆弱性 / 特定サイト / ニュースサマリー / ヘッドライン 等の preset に化ける。
 // backend: /api/v1/articles (src/ui/api/articles_feed.py)。
 
+import { jpTitleTag, severityTitleTags } from "../../../components/news/facets";
 import { useQuery } from "@tanstack/react-query";
 import { articlesApi } from "../../../api/articles";
 import { formatJstCompact } from "../../../utils/date";
@@ -59,7 +60,7 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   const arts = data?.articles ?? [];
   // チャンネル名は useChannelMeta (SSoT) で解決 (未登録 id は原値 fallback)。
   const channelLabel = channel ? chMeta(channel).label : "";
-  const title = buildTitle({ category, feed, channelLabel, severity, categoryLabelMap });
+  const title = buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap });
   // widget の絞り込みをそのまま引き継いで News ページへ deep-link
   const href = buildNewsHref({ category, feed, channel, severity, sinceHours, jp });
 
@@ -125,8 +126,8 @@ function buildNewsHref({ category, feed, channel, severity, sinceHours, jp }: {
   return qs ? `/app/news?${qs}` : "/app/news";
 }
 
-function buildTitle({ category, feed, channelLabel, severity, categoryLabelMap }: {
-  category: string; feed: string; channelLabel: string; severity: SeverityFacetState; categoryLabelMap: Record<string, string>;
+function buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap }: {
+  category: string; feed: string; channelLabel: string; severity: SeverityFacetState; jp: string; categoryLabelMap: Record<string, string>;
 }): string {
   if (feed) return feed;
   const cat = label(categoryLabelMap, category) || category;
@@ -138,10 +139,9 @@ function buildTitle({ category, feed, channelLabel, severity, categoryLabelMap }
     : category ? cat
     : "最新ニュース";
   const tags: string[] = [];
-  if (severity.minSeverity === "S3") tags.push("重大");
-  else if (severity.minSeverity === "S2") tags.push("注意以上");
-  else if (severity.minSeverity === "S1") tags.push("参考以上");
-  if (severity.relevantOnly) tags.push("関連性あり");
+  tags.push(...severityTitleTags(severity));
+  const jpTag = jpTitleTag(jp);
+  if (jpTag) tags.push(jpTag);
   if (channelLabel) tags.push(channelLabel);
   return tags.length > 0 ? `${base} (${tags.join(" · ")})` : base;
 }

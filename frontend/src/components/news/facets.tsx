@@ -460,3 +460,22 @@ export function VendorInput({
     </>
   );
 }
+
+
+/** ダッシュボードの部品のタイトルに添える、深刻さ・関連性・政策地政学の短い印 (2026-10-04)。 */
+export function severityTitleTags(s: SeverityFacetState): string[] {
+  const tags: string[] = [];
+  if (s.minSeverity === "S3") tags.push("重大");
+  else if (s.minSeverity === "S2") tags.push("注意以上");
+  else if (s.minSeverity === "S1") tags.push("参考以上");
+  if (s.relevantOnly) tags.push("関連性あり");
+  if (s.minSeverity && s.includeStrategic) tags.push("政策・地政学を含む");
+  return tags;
+}
+
+/** 日本との関係の絞り込みをタイトルに添える印。選択肢の表示名 (JP_OPTS) と同じ言い方にする。 */
+export function jpTitleTag(jp: string): string {
+  if (jp === "targeted_affected") return "日本が標的・被害";
+  if (jp === "mentioned") return "日本に触れるもの";
+  return "";
+}

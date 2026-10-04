@@ -5,6 +5,7 @@
 // 見出しの click は **その場でドロワーを開く** (一覧ページへ飛ばさない)。
 // widget から読み始めて、必要なら原記事ドロワーへ進む、が読み手の動線。
 
+import { severityTitleTags } from "../../../components/news/facets";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchEventNews } from "../../../api/eventnews";
@@ -25,6 +26,11 @@ const TONE: Record<string, string> = {
 // widget 単体の既定 (registry の defaultConfig が付かない古い保存設定向けの最終 fallback)。
 // 旧既定 level_filter="notable" と同じ「注意以上 + 政策・地政学を含める」。
 const WIDGET_DEFAULT_SEVERITY = { minSeverity: "S2" as const, relevantOnly: false, includeStrategic: true };
+
+function eventTitle(severity: Parameters<typeof severityTitleTags>[0]): string {
+  const tags = severityTitleTags(severity);
+  return tags.length > 0 ? `事象ニュース (${tags.join(" · ")})` : "事象ニュース";
+}
 
 export function EventNewsWidget({ config }: WidgetProps) {
   const per = cfgNum(config, "per", 6);
@@ -48,7 +54,7 @@ export function EventNewsWidget({ config }: WidgetProps) {
   const items = (data?.items ?? []).slice(0, per);
 
   return (
-    <WidgetCard title="事象ニュース" href="/app/eventnews" linkLabel="すべて →">
+    <WidgetCard title={eventTitle(severity)} href="/app/eventnews" linkLabel="すべて →">
       {isError ? <WidgetError /> : !data ? <Loading /> : items.length === 0 ? (
         <Empty>まだ事象がありません。</Empty>
       ) : (

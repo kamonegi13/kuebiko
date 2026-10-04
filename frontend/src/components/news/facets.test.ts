@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  jpTitleTag, severityTitleTags,
   EMPTY_SEVERITY_FACET, legacyLevelFilterToSeverityFacet, levelLabel,
   migrateImportanceToLevelFilter, migrateLegacyToSeverityFacet, readSeverityFacet,
   severityFacetFromConfigStrings, severityFacetQueryParams, writeSeverityFacet,
@@ -160,5 +161,20 @@ describe("levelLabel", () => {
   it("null/undefined は null (未記録)", () => {
     expect(levelLabel(null)).toBeNull();
     expect(levelLabel(undefined)).toBeNull();
+  });
+});
+
+describe("ダッシュボードのタイトルに添える印", () => {
+  it("日本との関係の選択がタイトルの印になる", () => {
+    expect(jpTitleTag("targeted_affected")).toBe("日本が標的・被害");
+    expect(jpTitleTag("mentioned")).toBe("日本に触れるもの");
+    expect(jpTitleTag("")).toBe("");
+  });
+
+  it("深刻さ・関連性・政策地政学が印になり、深刻さがすべてなら政策地政学は付かない", () => {
+    expect(severityTitleTags({ minSeverity: "S3", relevantOnly: true, includeStrategic: true })).toEqual([
+      "重大", "関連性あり", "政策・地政学を含む",
+    ]);
+    expect(severityTitleTags({ minSeverity: "", relevantOnly: false, includeStrategic: true })).toEqual([]);
   });
 });
