@@ -64,6 +64,9 @@ MAX_ARTICLES = 9000
 MAX_EVENTS = 4000
 DEFAULT_MIN_ARTICLES = 100
 DEFAULT_MIN_EVENTS = 50
+#: 国別ニュース (脅威マップの国ドリルダウン) を書き出す上限国数 (日次窓あたり、件数降順)。
+#: 観測国が万一極端に多くても書き出しを有界にする。
+_COUNTRY_DRILLDOWN_CAP = 80
 
 #: 画面が起動時・描画時に必ず引く小さな参照データ。
 #:
@@ -595,6 +598,50 @@ def main() -> int:
                         continue
         except httpx.HTTPError as exc:
             missing.append(f"国別 ({type(exc).__name__})")
+
+        # 脅威マップの国別ニュース (`/api/v1/geo/country/{iso}`)。MapPage の右パネルと
+        # dashboard の mini_map/geo_ranking widget の両方が選択国のドリルダウンでこれを叩く。
+        # 旧実装はこの個別エンドポイントをまったく書き出しておらず、国を選ぶと常に 501
+        # (「写しに含まれていません」) になっていた (2026-10-04 発見)。
+        # cyber-map が既に書き出し済みの国集合をそのまま使う (facet は既定の 1 組のみ、
+        # 他 facet 組み合わせは爆発するので対象外 = ページ/widget 側の既定と同じ値)。
+        # 地政学レイヤー (domain=geopolitical) の国ドリルダウンは dashboard widget が使わない
+        # ため対象外 (MapPage 単体で地政学ダイヤを選んだときのみ、従来どおり 501 のまま残る)。
+        try:
+            for d in _DASHBOARD_TIMES:
+                if d == "365":
+                    # dashboard 共有窓 (1/7/30/90) にも MapPage の選択肢 (1/7/30/90/全期間=0) にも
+                    # 無い値なので国別ニュースの対象外 (cyber-map 自体は他画面の都合で書き出す)。
+                    continue
+                map_ep = (
+                    f"/api/v1/geo/cyber-map?days={d}&threat_class=all&source_status=all"
+                    "&min_importance=medium_up&pmesii=all&time_basis=report"
+                )
+                try:
+                    cyber_map = _get(client, map_ep)
+                except httpx.HTTPError as exc:
+                    missing.append(f"{map_ep} ({type(exc).__name__})")
+                    continue
+                nodes = sorted(
+                    cyber_map.get("nodes", []), key=lambda n: n.get("count", 0), reverse=True
+                )[:_COUNTRY_DRILLDOWN_CAP]
+                for node in nodes:
+                    iso = str(node.get("iso") or "")
+                    if not iso:
+                        continue
+                    enc = urllib.parse.quote(iso, safe="")
+                    ep = (
+                        f"/api/v1/geo/country/{enc}?days={d}&threat_class=all&domain=cyber"
+                        "&source_status=all&min_importance=medium_up&pmesii=all"
+                    )
+                    try:
+                        total_bytes += _write(
+                            out / "api" / f"{_safe_name(ep)}.json", _get(client, ep)
+                        )
+                    except httpx.HTTPError:
+                        continue
+        except httpx.HTTPError as exc:
+            missing.append(f"脅威マップ国別ニュース ({type(exc).__name__})")
 
         # SIR (PIR) 個別 (詳細画面用)。一覧 (`/api/v1/pir`) は既に SCREEN_ENDPOINTS で
         # 書き出し済みだが、詳細画面 (PirDetailPage) は個別の get/kpi を別経路で叩くため

@@ -24,12 +24,17 @@ export interface ConfigChoice {
 export interface ConfigOption {
   key: string;
   label: string;
-  // 静的選択肢。dynamic な場合は loadChoices を使う (排他)。
+  // "select" (既定) = choices/loadChoices から選ぶ。"text" = 自由入力 (区切り widget の
+  // 見出し文字列など、列挙できない値用)。
+  kind?: "select" | "text";
+  // 静的選択肢。dynamic な場合は loadChoices を使う (排他)。kind="text" では無視。
   choices?: ConfigChoice[];
   // 動的選択肢 (アクター一覧など)。編集 UI が fetch して select を埋める。
   loadChoices?: () => Promise<ConfigChoice[]>;
   // 先頭に付ける「未選択」相当の選択肢 (loadChoices と併用)。
   placeholder?: ConfigChoice;
+  // kind="text" の input placeholder (空欄時のヒント)。
+  placeholderText?: string;
 }
 // ツールボックスのサムネイル種別 (各 widget が「どんな見た目か」を模式図で示す)。
 // フル screenshot でなく軽量な schematic (データ取得なし・陳腐化しない)。
@@ -42,7 +47,8 @@ export type ThumbKind =
   | "text" // 段落 (synthesis 等)
   | "trend" // 縦棒の時系列
   | "composition" // 1 本の積上げ構成バー
-  | "grid"; // 統計の格子 (holdings)
+  | "grid" // 統計の格子 (holdings)
+  | "divider"; // 区切り線 (データ・機能なし)
 
 export interface WidgetDef {
   title: string;

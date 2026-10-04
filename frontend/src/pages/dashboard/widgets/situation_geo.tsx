@@ -13,9 +13,11 @@ import { fetchCyberMap, fetchTrend } from "../../../api/geo";
 import { LeafletThreatMap } from "../../../components/geo/LeafletThreatMap";
 import { TrendChart } from "../../../components/geo/TrendChart";
 import { SectorMiniBar, ConfidenceDot, LedgerTag } from "../../../components/geo/RankingParts";
+import { CountryNewsPanel } from "../../../components/geo/CountryNewsPanel";
 import { useMapKnobs } from "../../../components/geo/mapKnobs";
 import { WidgetCard, Loading, Empty, WidgetError, cfgStr, type WidgetProps } from "../shared";
 import { useWidgetWindow } from "../overviewWindow";
+import { useDashboardSelection } from "../DashboardSelection";
 
 const SITU = "/app/intel/pmesii";
 const MAP = "/app/map";
@@ -73,14 +75,20 @@ export function SituationWidget({ config }: WidgetProps = {}) {
 }
 
 // ── ミニ Leaflet 地図 (任意配置、実地図) ──
+// 国クリックは脅威マップページへの遷移ではなく dashboard 共有選択 (DashboardSelection) を
+// 切替える: 同一 dashboard の geo_ranking widget があればそこに記事一覧が出て連動する。
+// 単独配置時もこの widget 自身が地図右上にオーバーレイで記事一覧を出す (脅威マップページの
+// 「地図 + 右パネル」と同じ体験を 1 widget 内で縮小再現)。
 export function MiniMapWidget({ config }: WidgetProps = {}) {
   const days = useWidgetWindow(config); // 窓のみ共有窓連動 (⚙ で固定可)、他はページ設定を鏡写し
   const k = useMapKnobs();
+  const { selectedIso, selectIso } = useDashboardSelection();
   const { data, isError } = useQuery({
     queryKey: ["dash-geo-map", days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis],
     queryFn: () => fetchCyberMap(days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis),
     refetchInterval: 10 * 60_000,
   });
+  const selectedNode = selectedIso ? data?.nodes.find((n) => n.iso === selectedIso) : undefined;
   return (
     <WidgetCard title="脅威マップ" href={`${MAP}?days=${days}`} linkLabel="脅威マップ →">
       {isError ? (
@@ -102,12 +110,29 @@ export function MiniMapWidget({ config }: WidgetProps = {}) {
             selectedIntent={k.selectedIntent}
             colorBy={k.colorBy}
             layer={k.layer}
+            highlightIso={selectedIso}
             persistViewKey="cti.map.mini.view"
-            onCountryClick={() => {
-              window.location.href = `${MAP}?days=${days}`;
-            }}
+            onCountryClick={(iso) => selectIso(iso)}
           />
           </div>
+          {/* 選択国の記事一覧 (右上オーバーレイ)。isolate の内側に置くので Leaflet の
+              z-index と競合しない。geo_ranking widget が同じ選択を映す場合もこちらは
+              単独配置でも動くよう常設する。 */}
+          {selectedIso && (
+            <div className="absolute right-2 top-2 bottom-2 z-[500] w-56 max-w-[70%] overflow-hidden rounded-md border border-border-subtle bg-surface-1/95 p-2 shadow-lg backdrop-blur-sm">
+              <CountryNewsPanel
+                iso={selectedIso}
+                domain="cyber"
+                days={days}
+                threatClass={k.threatClass}
+                sourceStatus={k.sourceStatus}
+                minImportance={k.minImportance}
+                pmesii={k.pmesii}
+                onClose={() => selectIso(null)}
+                fallbackLabel={selectedNode?.label}
+              />
+            </div>
+          )}
         </div>
       )}
     </WidgetCard>
@@ -115,16 +140,21 @@ export function MiniMapWidget({ config }: WidgetProps = {}) {
 }
 
 // ── 被害国ランキング (脅威マップページの右パネルと同じ行部品) ──
-// セクター構成ミニバー + カバレッジ信頼度ドット + 台帳のみタグ。行クリックで脅威マップへ。
+// セクター構成ミニバー + カバレッジ信頼度ドット + 台帳のみタグ。行クリックで dashboard 共有
+// 選択 (DashboardSelection) を切替える: 選択中は一覧をその国の記事一覧 (CountryNewsPanel) に
+// 差し替える — 脅威マップページの RightPanel (idle→country) と同じ振る舞い。mini_map widget が
+// 同じ dashboard にあれば地図側のハイライトも連動する。
 export function GeoRankingWidget({ config }: WidgetProps = {}) {
   const days = useWidgetWindow(config); // 窓のみ共有窓連動 (⚙ で固定可)、他はページ設定を鏡写し
   const k = useMapKnobs();
+  const { selectedIso, selectIso } = useDashboardSelection();
   const { data, isError } = useQuery({
     queryKey: ["dash-geo-map", days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis],
     queryFn: () => fetchCyberMap(days, k.threatClass, k.sourceStatus, k.minImportance, k.pmesii, k.timeBasis),
     refetchInterval: 10 * 60_000,
   });
   const nodes = data ? [...data.nodes].sort((a, b) => b.count - a.count) : [];
+  const selectedNode = selectedIso ? data?.nodes.find((n) => n.iso === selectedIso) : undefined;
   return (
     <WidgetCard title={k.minImportance === "all" ? "被害国ランキング" : "重要被害国ランキング"}
       href={`${MAP}?days=${days}`} linkLabel="脅威マップ →">
@@ -132,13 +162,28 @@ export function GeoRankingWidget({ config }: WidgetProps = {}) {
         <WidgetError />
       ) : !data ? (
         <Loading />
+      ) : selectedIso ? (
+        <CountryNewsPanel
+          iso={selectedIso}
+          domain="cyber"
+          days={days}
+          threatClass={k.threatClass}
+          sourceStatus={k.sourceStatus}
+          minImportance={k.minImportance}
+          pmesii={k.pmesii}
+          onClose={() => selectIso(null)}
+          fallbackLabel={selectedNode?.label}
+        />
       ) : nodes.length === 0 ? (
         <Empty>被害データなし。</Empty>
       ) : (
         <ul className="divide-y divide-border-subtle">
           {nodes.map((n) => (
             <li key={n.iso}>
-              <a href={`${MAP}?days=${days}`} className="flex w-full items-center gap-2 py-1.5 text-left text-sm hover:bg-surface-2">
+              <button
+                onClick={() => selectIso(n.iso)}
+                className="flex w-full items-center gap-2 py-1.5 text-left text-sm hover:bg-surface-2"
+              >
                 <SectorMiniBar sectors={n.sectors} total={n.count} />
                 <ConfidenceDot
                   confidence={n.confidence}
@@ -149,7 +194,7 @@ export function GeoRankingWidget({ config }: WidgetProps = {}) {
                 <span className="min-w-0 truncate text-fg">{n.label}</span>
                 {n.posted_count === 0 && n.collected_count > 0 && <LedgerTag />}
                 <span className="ml-auto tnum text-fg-muted">{n.count}</span>
-              </a>
+              </button>
             </li>
           ))}
         </ul>

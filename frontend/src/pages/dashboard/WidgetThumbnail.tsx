@@ -129,6 +129,12 @@ function Body({ kind }: { kind: ThumbKind }) {
           </div>
         </div>
       );
+    case "divider":
+      return (
+        <div className="flex h-full items-center">
+          <div className="h-px w-full bg-surface-3" />
+        </div>
+      );
     case "grid":
       return (
         <div className="grid grid-cols-2 gap-1.5 h-full content-center">

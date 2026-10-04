@@ -31,6 +31,7 @@ import { WidgetThumbnail } from "./dashboard/WidgetThumbnail";
 import { GlobalWindowSelector } from "./dashboard/GlobalWindow";
 import { ConfigOptionEditor, ViewSettingsPill } from "./dashboard/ViewSettings";
 import { pruneWidgetView, useWidgetViewAll } from "./dashboard/widgetView";
+import { DashboardSelectionProvider } from "./dashboard/DashboardSelection";
 import type { WidgetDef } from "./dashboard/shared";
 
 // 他 page (History/Run/Schedule) が dashboard 由来の StatusBadge を使うため再 export。
@@ -365,8 +366,13 @@ export function DashboardPage() {
   ) : null;
 
   return (
-    // ⚠ カスタマイズ中の印を root に置き、枠線は CSS で拾う (shared.tsx の
-    //    TILE_CHROME)。widget 全部に prop を配ると 20 箇所の付け忘れが起きる。
+    // DashboardSelectionProvider: mini_map / geo_ranking widget 間で「選択中の国」を共有する
+    // (脅威マップページの地図↔ランキング連動と同じ体験を widget を跨いで再現する)。
+    // widget 単体だけでも provider の外に出ないので no-op にはならない — 1 個だけ配置時も
+    // 自分の選択で自分のドリルダウンが開く。
+    <DashboardSelectionProvider>
+    {/* ⚠ カスタマイズ中の印を root に置き、枠線は CSS で拾う (shared.tsx の
+        TILE_CHROME)。widget 全部に prop を配ると 20 箇所の付け忘れが起きる。 */}
     <div className={`${pageContainer("wide")} space-y-4`} {...(editing ? { "data-dash-editing": "" } : {})}>
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -583,6 +589,7 @@ export function DashboardPage() {
         </div>
       )}
     </div>
+    </DashboardSelectionProvider>
   );
 }
 

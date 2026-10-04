@@ -16,6 +16,7 @@ import { DailyPostsTrendWidget, HealthWidget, RecentRunsWidget } from "./widgets
 import { ArticleFeedWidget } from "./widgets/articles";
 import { KpiRowWidget, ThreatPictureWidget, NotableActorsWidget, VulnerabilitiesWidget } from "./widgets/overview";
 import { JpCiThreatWidget } from "./widgets/jpci";
+import { SeparatorWidget } from "./widgets/separator";
 
 // ── 共通 config option 定義 ──
 const PER_OPTION: ConfigOption = { key: "per", label: "件数", choices: COUNT_CHOICES };
@@ -184,4 +185,11 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
   daily_posts_trend: { title: "日次投稿推移", Component: DailyPostsTrendWidget, defaultSpan: 2, defaultHeight: 260, thumb: "trend", blurb: "投稿数の時系列バー", configOptions: [DAYS_OPTION] },
   health: { title: "死活監視", Component: HealthWidget, defaultSpan: 2, defaultHeight: 180, thumb: "status", blurb: "Ollama/Discord/IMAP 疎通", liveState: true },
   recent_runs: { title: "直近の実行", Component: RecentRunsWidget, defaultSpan: 2, defaultHeight: 320, thumb: "list", blurb: "最近の run と結果", configOptions: [PER_OPTION], liveState: true },
+  // ── レイアウト用 (データ・機能なし) ──
+  separator: {
+    title: "区切り", Component: SeparatorWidget, defaultSpan: 4, defaultHeight: 40, thumb: "divider",
+    multi: true, blurb: "見出しのみの区切り線 (データ取得・機能なし)。並びの長い dashboard を仕切る",
+    configOptions: [{ key: "label", label: "見出し", kind: "text", placeholderText: "(空白可)" }],
+    defaultConfig: { label: "" },
+  },
 };

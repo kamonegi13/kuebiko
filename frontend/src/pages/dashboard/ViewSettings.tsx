@@ -28,6 +28,22 @@ export function ConfigOptionEditor({
     enabled: !!opt.loadChoices,
     staleTime: 5 * 60_000,
   });
+  // kind="text": 列挙できない自由入力 (区切り widget の見出し文字列など)。select とは
+  // 無関係に早期 return する (loadChoices の query 自体は hook 順序を保つため呼んだままで良い)。
+  if (opt.kind === "text") {
+    return (
+      <label className="flex items-center gap-1 text-[13px] text-fg-muted">
+        {opt.label}:
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={opt.placeholderText}
+          className="bg-surface-2 border border-border-subtle rounded px-1 py-0.5 text-[13px] max-w-[180px]"
+        />
+      </label>
+    );
+  }
   const choices = opt.loadChoices
     ? [...(opt.placeholder ? [opt.placeholder] : []), ...(dynamic ?? [])]
     : (opt.choices ?? []);
