@@ -39,13 +39,26 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 };
 
 // この集合 **だけ** をブラウザ側で絞り込む。ここに無いキー (malware/cve/intent/pir/
-// actor/affected_vendor/body/search 等) が指定されたら、黙って全件を返すのではなく
+// actor/affected_vendor/body 等) が指定されたら、黙って全件を返すのではなく
 // 501 にして表に出す (実測: 30 件のはずが 6,443 件出ていた、という事故を再発させない)。
+// "search" (2026-10-04 検索 UX 統一): ニュース検索の「キーワード」モードはこの口
+// (/api/v1/articles?search=) を通る。ライブは title/summary/body の文字列一致だが、
+// 写しは本文を持たないため title/summary (+タグ) で近似する (events の
+// mirrorEventsFilter.ts の見出し+要点検索と同じ割り切り)。
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
   "status", "category", "channel", "importance", "feed", "jp", "level_filter",
-  "min_severity", "relevant_only", "include_strategic", "sort",
+  "min_severity", "relevant_only", "include_strategic", "sort", "search",
   "since_hours", "since", "limit", "offset", "include_summary",
 ]);
+
+/** 写しのキーワード検索。title/summary + malware_families (タグ) の部分一致。
+ *  ライブは body まで見るため、写しの結果はライブの部分集合になる (events と同じ割り切り)。 */
+function matchesArticleSearch(a: ArticleFeedItem, term: string): boolean {
+  const n = term.trim().toLowerCase();
+  if (!n) return true;
+  const haystack = `${a.title} ${a.summary ?? ""} ${(a.malware_families ?? []).join(" ")}`.toLowerCase();
+  return haystack.includes(n);
+}
 
 // 重要度 6 段階 (1 が最上位・未記録は null)。null は常に最後に回す。
 function levelSortValue(a: ArticleFeedItem): number {
@@ -178,6 +191,10 @@ async function fallbackArticles(
 
   const since = params.get("since");
   if (since) items = items.filter((a) => withinSinceIso(a, since));
+
+  // title/summary + タグの部分一致 (summary 剥がし前、2026-10-04)。
+  const searchTerm = params.get("search");
+  if (searchTerm) items = items.filter((a) => matchesArticleSearch(a, searchTerm));
 
   // 並び順は既定で書き出し元 (created_at DESC) のまま保つ。絞り込みは順序を変えない。
   // sort=level (2026-10-04) は重要度 6 段階の高い順 (未記録は最後) に並べ直す。

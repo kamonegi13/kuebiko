@@ -10,8 +10,8 @@
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import {
-  MIN_SEVERITY_OPTS, Sel, SINCE_OPTS, SORT_OPTS, type FacetOptions, type Opt,
-  type SeverityFacetState, VendorInput,
+  MIN_SEVERITY_OPTS, SEARCH_MODE_OPTS, Sel, SINCE_OPTS, SORT_OPTS, type FacetOptions, type Opt,
+  type SearchMode, type SeverityFacetState, VendorInput,
 } from "./facets";
 
 export type RelationValue = "" | "relevant" | "targeted_affected" | "mentioned";
@@ -56,6 +56,12 @@ export interface FilterBarProps {
   searchExtra?: ReactNode;
   /** 事象ニュースは Enter 確定 (打鍵ごとに走らせない)。省略時は通常の即時入力。 */
   onSearchKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+
+  /** 検索モード (キーワード / 意味も含める)。ニュース検索・事象ニュースが共有する
+   *  統一コントロール (2026-10-04)。省略時は select 自体を出さない — 写し
+   *  (embedding が使えない) は呼び手が undefined を渡して隠す。 */
+  searchMode?: SearchMode;
+  onSearchMode?: (v: SearchMode) => void;
 
   severity: SeverityFacetState;
   onSeverity: (s: SeverityFacetState) => void;
@@ -130,6 +136,14 @@ export function FilterBar(props: FilterBarProps) {
           className="h-8 px-3 bg-surface-2 border border-border-subtle rounded-md text-sm min-w-[180px] flex-1 max-w-[320px] placeholder:text-fg-subtle focus:outline-none focus:border-accent"
         />
         {props.searchExtra}
+        {props.searchMode !== undefined && props.onSearchMode && (
+          <Sel
+            value={props.searchMode}
+            onChange={(v) => props.onSearchMode!(v as SearchMode)}
+            opts={SEARCH_MODE_OPTS}
+            title="検索モード (キーワード = 文字列一致 / 意味も含める = 言い換え・多言語も拾う)"
+          />
+        )}
         <Sel
           value={props.severity.minSeverity}
           onChange={(v) => props.onSeverity({ ...props.severity, minSeverity: v as SeverityFacetState["minSeverity"] })}
@@ -232,6 +246,7 @@ function ActiveChips(props: FilterBarProps): ReactNode {
     if (props.body?.value) out.push({ key: "body", text: props.body.value === "full" ? "全文取得済" : "切り株のみ", onClear: () => props.body!.onChange("") });
     if (props.channel?.value) out.push({ key: "channel", text: `チャンネル: ${labelOf(props.facetOpts.channel, props.channel.value)}`, onClear: () => props.channel!.onChange("") });
     if (props.severity.includeStrategic) out.push({ key: "strategic", text: "政策・地政学を含む", onClear: () => props.onSeverity({ ...props.severity, includeStrategic: false }) });
+    if (props.searchMode === "semantic" && props.onSearchMode) out.push({ key: "search_mode", text: "意味も含める", onClear: () => props.onSearchMode!("keyword") });
     if (props.eventOnly?.minSources) out.push({ key: "minsrc", text: "複数媒体", onClear: () => props.eventOnly!.onMinSources(false) });
     if (props.eventOnly?.hasNews) out.push({ key: "hasnews", text: "統合済み", onClear: () => props.eventOnly!.onHasNews(false) });
     if (props.eventOnly?.newFacts) out.push({ key: "newfacts", text: "新事実あり", onClear: () => props.eventOnly!.onNewFacts(false) });

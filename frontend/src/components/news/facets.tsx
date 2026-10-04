@@ -199,6 +199,19 @@ export const SORT_OPTS: Opt[] = [
   { value: "level", label: "重要度順" },
 ];
 
+/** 検索モード。ニュース検索・事象ニュースが共有する (2026-10-04 検索 UX 統一)。
+ *  "keyword" = 見出し・要約・本文の文字列一致 (embedding 不要、常に使える) /
+ *  "semantic" = 言い換え・多言語も拾う意味検索を併用 (embedding が要る —
+ *  ライブで未設定なら黙って keyword のみに縮退、写しでは常に使えないため
+ *  mode select 自体を隠す)。既定は両画面とも "keyword"
+ *  (docs: FilterBar の searchMode、SSoT はこの Opt 配列)。 */
+export const SEARCH_MODE_OPTS: Opt[] = [
+  { value: "keyword", label: "キーワード" },
+  { value: "semantic", label: "意味も含める" },
+];
+
+export type SearchMode = "keyword" | "semantic";
+
 /** 重要度 6 段階のラベル (1 が最上位)。SSoT は
  *  src/cti/importance_v2.py の importance_level()。◎ = 関連性あり
  *  (日本・注視国・SIR)。生の severity/level を画面に出さない

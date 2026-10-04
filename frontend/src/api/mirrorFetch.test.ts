@@ -328,12 +328,58 @@ describe("一覧の全件ファイル", () => {
     });
   });
 
-  // ⚠ 写していない絞り込み (search/malware/cve/pir/actor 等) に全件を返すと、画面は
+  // ⚠ 写していない絞り込み (malware/cve/pir/actor 等) に全件を返すと、画面は
   //    黙って違うものを出す (実測: 30 件のはずが 6,443 件出ていた)。501 にして表に出す。
   test("ブラウザ側で再現できない絞り込みは全件を返さず 501 にする", async () => {
     served["/data/articles.json"] = { articles: [fixtureArticle({})], count: 1 };
-    const r = await fetch("/api/v1/articles?search=ransomware&status=posted&limit=30");
+    const r = await fetch("/api/v1/articles?malware=emotet&status=posted&limit=30");
     expect(r.status).toBe(501);
+  });
+
+  // search (2026-10-04 検索 UX 統一): ニュース検索の「キーワード」モードはこの口を
+  // 通る。title/summary + malware_families (タグ) の部分一致で近似する。
+  describe("search でキーワード検索を再現する (2026-10-04)", () => {
+    beforeEach(() => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 1, title: "Ransomware gang hits hospital" }),
+          fixtureArticle({ id: 2, title: "新しい脆弱性が公開", summary: "ransomware と無関係の内容" }),
+          fixtureArticle({ id: 3, title: "無関係の記事", summary: null }),
+        ],
+        count: 3,
+      };
+    });
+
+    test("title の部分一致 (大小無視)", async () => {
+      const r = await fetch("/api/v1/articles?search=RANSOMWARE&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2]);
+    });
+
+    test("summary が null の記事は落ちずに除外されるだけ", async () => {
+      const r = await fetch("/api/v1/articles?search=無関係&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([2, 3]);
+    });
+
+    test("一致しなければ空", async () => {
+      const r = await fetch("/api/v1/articles?search=存在しない語&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles).toEqual([]);
+    });
+
+    test("他の絞り込み (category 等) と AND で効く", async () => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 1, title: "ransomware hits vendor A", category: "malware" }),
+          fixtureArticle({ id: 2, title: "ransomware hits vendor B", category: "breach" }),
+        ],
+        count: 2,
+      };
+      const r = await fetch("/api/v1/articles?search=ransomware&category=threat&status=posted&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([1]);
+    });
   });
 
   // status=posted 以外は写し (= status=posted のみ書き出し済み) では救えない。

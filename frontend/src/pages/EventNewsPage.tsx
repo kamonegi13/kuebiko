@@ -52,8 +52,9 @@ const NEW_FACTS_STATUS = "updated";
 
 const PAGE_SIZE = 60;
 
-// 意味検索は embedding 計算 (ライブの Ollama) が要るため、静的な写しでは動かない。
-// ボタン自体を隠す (押せても何も変わらない UI を出さない)。
+// 「意味も含める」(= semantic) は embedding 計算 (ライブの Ollama) が要るため、
+// 静的な写しでは動かない。検索モード select 自体を隠す (押せても何も変わらない
+// UI を出さない。FilterBar に searchMode=undefined を渡す、ニュース検索と同じ扱い)。
 const MIRROR = import.meta.env.VITE_MIRROR === "1";
 
 /** URL クエリ ⇄ 絞り込み状態。deep-link と戻る操作を壊さない。
@@ -235,22 +236,11 @@ export function EventNewsPage() {
         onSearchKeyDown={(e) => {
           if (e.key === "Enter") set({ search: term.trim() || undefined });
         }}
-        searchExtra={
-          !MIRROR ? (
-            <button
-              onClick={() => set({ semantic: q.semantic ? undefined : true })}
-              aria-pressed={q.semantic === true}
-              title="言い換えや多言語の記事も拾う (embedding で類似検索)"
-              className={`h-8 px-3 rounded-md border text-sm transition-colors ${
-                q.semantic
-                  ? "border-accent text-accent bg-accent/10"
-                  : "border-border-subtle text-fg-muted hover:text-fg"
-              }`}
-            >
-              意味検索
-            </button>
-          ) : undefined
-        }
+        // 検索モード (キーワード / 意味も含める) はニュース検索と共有する統一
+        // コントロール (2026-10-04)。旧「意味検索」単独ボタンはこれに統合し、
+        // q.semantic の意味論は変えない (URL param "semantic=1" も後方互換のまま)。
+        searchMode={MIRROR ? undefined : q.semantic ? "semantic" : "keyword"}
+        onSearchMode={MIRROR ? undefined : (v) => set({ semantic: v === "semantic" ? true : undefined })}
         severity={q.severity}
         onSeverity={(v) => set({ severity: v })}
         relation={relationFromState(q.jp ?? "", q.severity.relevantOnly)}

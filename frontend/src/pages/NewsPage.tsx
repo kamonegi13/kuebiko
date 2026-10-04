@@ -1,10 +1,20 @@
 // 記事サーフェス (統合): 閲覧・検索・逆引きを 1 画面に集約。
 // - 検索 box 空 → 閲覧 (/api/v1/articles の軽い SQL filter + facet)。
-// - box にテキスト → 強力検索 (/api/v1/search, hybrid + LLM rerank) を **facet 込み** で実行。
-//   入力 debounce では quick (融合スコア順, ~1-2s)、「精密 (LLM)」ON で precise に格上げ。
+// - box にテキスト + 検索モード「キーワード」(既定) → 閲覧と同じ /api/v1/articles を
+//   search 付きで呼ぶ (title/summary/body の文字列一致、embedding 不要)。事象ニュースの
+//   既定検索 (search パラメータ) と同じ意味論に揃える (2026-10-04 検索 UX 統一)。
+// - box にテキスト + 検索モード「意味も含める」→ 強力検索 (/api/v1/search, hybrid +
+//   LLM rerank) を **facet 込み** で実行。入力 debounce では quick (融合スコア順、
+//   ~1-2s)、「精密 (LLM)」ON で precise に格上げ — この quick/precise 切替は
+//   「意味も含める」モード内の追加選択として残す (事象ニュースには無い、ニュース検索
+//   固有の機能)。
 // - box に CVE/IP/ドメイン/ハッシュ、または entity deep-link / 共起 click → 逆引き (pivot)。
 // facet (category/feed/channel/importance/intent/期間 + cve/malware タグ) は閲覧・検索の
 // 双方に AND 合成される。フィルタ/検索/pivot は URL クエリに同期し deep-link 可能。
+//
+// 検索モードの既定は両画面 (ニュース検索・事象ニュース) とも「キーワード」(2026-10-04)。
+// 「意味も含める」は embedding 計算が要り、ライブでも未設定なら黙って縮退し、写しでは
+// そもそも使えない (mode select 自体を隠す) — 常に同じ結果が出る方を既定にする。
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
@@ -15,7 +25,7 @@ import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
   EMPTY_SEVERITY_FACET, LevelBadge, readSeverityFacet, useFacetOptions,
-  severityFacetQueryParams, writeSeverityFacet, type SeverityFacetState,
+  severityFacetQueryParams, writeSeverityFacet, type SearchMode, type SeverityFacetState,
 } from "../components/news/facets";
 import { applyRelation, FilterBar, relationFromState } from "../components/news/FilterBar";
 import { NewsViewTabs } from "../components/news/NewsViewTabs";
@@ -58,6 +68,7 @@ interface NewsState {
   jp: string; // "" / "targeted_affected" / "mentioned" (日本との関係)
   sort: string; // "" / "level" (重要度順、2026-10-04)
   mode: "headline" | "summary"; precise: boolean; pivot: Pivot | null;
+  searchMode: SearchMode; // "keyword"(既定) / "semantic" — 検索 UX 統一 (2026-10-04)
 }
 
 function readState(): NewsState {
@@ -68,6 +79,18 @@ function readState(): NewsState {
   // ところから探索を始める (事象ニュースの既定「注意以上」とは違う)。旧 level_filter /
   // importance (high/medium/low) の deep-link は新 facet が無いときだけ移行する。
   const severity = readSeverityFacet(p, EMPTY_SEVERITY_FACET);
+  // 検索モード (2026-10-04)。新 param "search_mode" が無い旧 deep-link は、
+  // 当時唯一の挙動だった hybrid 検索へ "precise=1" が明示的に格上げを示していた
+  // 場合だけ "semantic" に移行する (精密 = LLM rerank は意味も含めるモード専用の
+  // 追加選択のため)。それ以外の旧 link ("search=X" のみ) は新既定 "keyword" に
+  // 揃える — 404/エラーにはならず、より速く確実な検索結果が出るだけの変更。
+  const searchModeRaw = p.get("search_mode");
+  const searchMode: SearchMode =
+    searchModeRaw === "semantic" || searchModeRaw === "keyword"
+      ? searchModeRaw
+      : p.get("precise") === "1"
+        ? "semantic"
+        : "keyword";
   return {
     category: p.get("category") ?? "",
     channel: p.get("channel") ?? "",
@@ -86,6 +109,7 @@ function readState(): NewsState {
     sort: p.get("sort") === "level" ? "level" : "",
     mode: p.get("mode") === "summary" ? "summary" : "headline",
     precise: p.get("precise") === "1",
+    searchMode,
     pivot: pt && pv ? { type: pt, value: pv } : null,
   };
 }
@@ -109,6 +133,7 @@ function writeState(s: NewsState): void {
   if (s.jp) q.set("jp", s.jp);
   if (s.sort) q.set("sort", s.sort);
   if (s.mode === "summary") q.set("mode", "summary");
+  if (s.searchMode === "semantic") q.set("search_mode", "semantic");
   if (s.precise) q.set("precise", "1");
   if (s.pivot) { q.set("pivot_type", s.pivot.type); q.set("pivot_value", s.pivot.value); }
   const qs = q.toString();
@@ -148,6 +173,8 @@ export function NewsPage() {
   const [vendorRaw, setVendorRaw] = useState(init.vendor);
   const [vendor, setVendor] = useState(init.vendor);
   const [precise, setPrecise] = useState(init.precise);
+  // 写しは embedding が使えないため常に "keyword" (mode select 自体を隠す、2026-10-04)。
+  const [searchMode, setSearchMode] = useState<SearchMode>(MIRROR ? "keyword" : init.searchMode);
   const [pivot, setPivot] = useState<Pivot | null>(init.pivot);
   const [searchRaw, setSearchRaw] = useState(init.search);
   const [search, setSearch] = useState(init.search);
@@ -165,10 +192,10 @@ export function NewsPage() {
     const t = setTimeout(() => setVendor(vendorRaw.trim()), 300);
     return () => clearTimeout(t);
   }, [vendorRaw]);
-  useEffect(() => { setLimit(30); }, [category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, newOnly, lastSeen]);
+  useEffect(() => { setLimit(30); }, [category, channel, severity, feed, since, search, searchMode, malware, cve, intent, pir, actor, vendor, body, jp, sort, newOnly, lastSeen]);
   useEffect(() => {
-    writeState({ category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot });
-  }, [category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, pivot]);
+    writeState({ category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, searchMode, pivot });
+  }, [category, channel, severity, feed, since, search, malware, cve, intent, pir, actor, vendor, body, jp, sort, mode, precise, searchMode, pivot]);
 
   // facet (閲覧・検索で共有する AND 条件)。空値は undefined にして送らない。
   const facets: SearchFacets = useMemo(() => ({
@@ -187,10 +214,15 @@ export function NewsPage() {
     since_hours: Number(since) || undefined,
   }), [severity, category, feed, channel, cve, malware, intent, pir, actor, vendor, body, jp, since]);
 
-  // ビュー判定: 明示 pivot > box の構造化エンティティ自動逆引き > テキスト検索 > 閲覧。
+  // ビュー判定: 明示 pivot > box の構造化エンティティ自動逆引き >
+  // テキスト検索 (「意味も含める」のみ強力検索 /api/v1/search へ) > 閲覧。
+  // 「キーワード」モードの検索語は閲覧 (/api/v1/articles?search=) に乗せるので
+  // view は "browse" のまま — 事象ニュースの既定検索と同じ経路・同じ意味論
+  // (title/summary/body の文字列一致) に揃える (2026-10-04 検索 UX 統一)。
   const autoPivot = useMemo(() => (pivot == null && search ? detectEntity(search) : null), [pivot, search]);
   const activePivot = pivot ?? autoPivot;
-  const view: "browse" | "search" | "pivot" = activePivot ? "pivot" : search ? "search" : "browse";
+  const view: "browse" | "search" | "pivot" =
+    activePivot ? "pivot" : search && searchMode === "semantic" ? "search" : "browse";
 
   // W2: 新着モードの時間絞り込み。cursor あり→絶対 since(=「前回確認以降」)、cursor 未設定→
   // 直近 24h を暫定表示 (『ここまで既読』で基準を作るまでの足場)。新着 off→従来の since_hours。
@@ -201,9 +233,12 @@ export function NewsPage() {
   // sort は閲覧 (/api/v1/articles) のみ対応。検索 (/api/v1/search) は hybrid
   // retrieval + rerank の融合スコア順が前提のため、並び替えの対象にしない。
   const browseQ = useQuery({
-    queryKey: ["news-browse", facets, mode, sort, limit, newOnly, lastSeen],
+    queryKey: ["news-browse", facets, mode, sort, limit, newOnly, lastSeen, search, searchMode],
     queryFn: () => articlesApi.list({
       ...facets,
+      // 「キーワード」モードの検索語はここに乗る (title/summary/body の文字列一致)。
+      // 「意味も含める」選択時は view が "search" に切り替わるのでここには来ない。
+      search: searchMode === "keyword" ? search || undefined : undefined,
       since_hours: browseSinceHours,
       since: browseSince,
       status: "posted",
@@ -303,7 +338,13 @@ export function NewsPage() {
         facetOpts={facetOpts}
         searchValue={searchRaw}
         onSearchChange={onSearchInput}
-        searchPlaceholder="検索 (CVE/IP/ドメインは逆引き)…"
+        searchPlaceholder={
+          MIRROR
+            ? "検索 (見出し・要約から) — CVE/IP/ドメインは逆引き…"
+            : "検索 (CVE/IP/ドメインは逆引き)…"
+        }
+        searchMode={MIRROR ? undefined : searchMode}
+        onSearchMode={MIRROR ? undefined : setSearchMode}
         severity={severity}
         onSeverity={setSeverity}
         relation={relationFromState(jp, severity.relevantOnly)}
