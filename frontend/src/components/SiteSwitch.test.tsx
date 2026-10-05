@@ -10,7 +10,7 @@ describe("SiteSwitch", () => {
     const current = screen.getByText("標準");
     expect(current.getAttribute("aria-current")).toBe("page");
     const other = screen.getByText("拡張");
-    expect(other.closest("a")?.getAttribute("href")).toBe("/app/eventnews");
+    expect(other.closest("a")?.getAttribute("href")).toBe("/app");
   });
 
   it("アドバンスド面では「標準」が /news への相対リンク", () => {

@@ -9,18 +9,17 @@
 // アドバンスド自体にも事象ニュース詳細への URL ルートが無い (2026-10-04 時点、
 // EventNewsPage は openId という画面内 state のみで開く — path に id を持たない)。
 // そのため現時点では **詳細同士の対応付けができず**、常に相手サイトのトップへ落とす。
-// 公開サイトは事象ニュース中心 (CLAUDE.md §13) なので、アドバンスド側のトップは
-// ダッシュボードでなく `/app/eventnews` を選ぶ。
+// 拡張側の行き先はダッシュボード (`/app`) — 2026-10-05 利用者指示 (以前は事象ニュース)。
 
-/** アドバンスドの事象ニュース一覧 — 公開サイトの等価トップ。 */
-export const MIRROR_EVENTNEWS_PATH = "/app/eventnews";
+/** 拡張 (旧アドバンスド) のトップ = ダッシュボード。 */
+export const MIRROR_HOME_PATH = "/app";
 
 /** 公開サイト (標準) の固定配信パス。 */
 export const PUBLIC_NEWS_PATH = "/news";
 
 /** 公開サイトのヘッダから出す「アドバンスド」への href (常に相対パス)。 */
 export function mirrorSwitchHref(): string {
-  return MIRROR_EVENTNEWS_PATH;
+  return MIRROR_HOME_PATH;
 }
 
 /** アドバンスドのヘッダから出す「標準」への href (常に相対パス)。 */

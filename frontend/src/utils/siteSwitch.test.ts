@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mirrorSwitchHref, publicSwitchHref, MIRROR_EVENTNEWS_PATH, PUBLIC_NEWS_PATH } from "./siteSwitch";
+import { mirrorSwitchHref, publicSwitchHref, MIRROR_HOME_PATH, PUBLIC_NEWS_PATH } from "./siteSwitch";
 
 describe("mirrorSwitchHref (公開サイト → アドバンスド)", () => {
   it("同一オリジンの相対パスを返す", () => {
-    expect(mirrorSwitchHref()).toBe(MIRROR_EVENTNEWS_PATH);
-    expect(mirrorSwitchHref()).toBe("/app/eventnews");
+    expect(mirrorSwitchHref()).toBe(MIRROR_HOME_PATH);
+    expect(mirrorSwitchHref()).toBe("/app");
   });
 });
 
