@@ -15,7 +15,7 @@ export function OutsideMirror() {
       <Archive size={32} className="text-fg-muted" />
       <h1 className="text-lg font-semibold text-fg">この画面では表示できません</h1>
       <p className="max-w-md text-sm leading-relaxed text-fg-muted">
-        アドバンスドは書き出し済みの画面だけを表示する簡易版です。
+        拡張は書き出し済みの画面だけを表示する簡易版です。
         すべての画面を見るには運用環境を開いてください。
       </p>
       <a

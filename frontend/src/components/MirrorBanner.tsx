@@ -21,12 +21,13 @@ export function MirrorSwitchBar() {
 
   const stamp = isError || !data ? "時点不明" : `${formatJstCompact(data.generated_at)} 現在`;
   return (
-    <div className="flex items-baseline gap-2.5 px-4 pt-3 pb-2 border-b border-border">
+    <div className="flex items-center gap-2.5 whitespace-nowrap px-4 pt-3 pb-2 border-b border-border">
       <a href="/app" className="text-[17px] font-bold tracking-tight text-fg hover:text-accent">
         kuebiko
       </a>
-      <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
-      <span className={`text-[13px] ${isError || !data ? "text-warning" : "text-fg-muted"}`}>{stamp}</span>
+      {/* 狭い画面では 1 行に収めるため省く (2026-10-05 利用者指示) */}
+      <span className="hidden sm:inline text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
+      <span className={`min-w-0 truncate text-[13px] ${isError || !data ? "text-warning" : "text-fg-muted"}`}>{stamp}</span>
       <div className="ml-auto">
         <SiteSwitch current="advanced" />
       </div>

@@ -227,14 +227,14 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
     <>
       {/* 題字は **スクロールで流す**。読み始めたら要らない (2026-08-25 利用者指摘)。 */}
       <header className="w-full max-w-[72rem] mx-auto px-5">
-        <div className="flex items-baseline gap-2.5 pt-4 pb-3">
+        <div className="flex items-center gap-2.5 whitespace-nowrap pt-4 pb-3">
           <button
             onClick={() => navigate(HOME_PATH)}
             className="text-[17px] font-bold tracking-tight text-fg [@media(hover:hover)]:hover:text-accent transition-colors"
           >
             kuebiko
           </button>
-          <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
+          <span className="hidden sm:inline text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
           <div className="ml-auto">
             <SiteSwitch current="standard" />
           </div>

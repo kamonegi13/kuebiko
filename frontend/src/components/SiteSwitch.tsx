@@ -15,12 +15,12 @@ export function SiteSwitch({ current }: SiteSwitchProps) {
   const otherHref = current === "standard" ? mirrorSwitchHref() : publicSwitchHref();
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-full border border-border-subtle bg-surface-2 p-0.5 text-[11px]"
+      className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border border-border-subtle bg-surface-2 p-0.5 text-[11px]"
       role="group"
-      aria-label="標準・アドバンスド切替"
+      aria-label="標準・拡張の切替"
     >
       <SwitchSegment label="標準" active={current === "standard"} href={current === "standard" ? null : otherHref} />
-      <SwitchSegment label="アドバンスド" active={current === "advanced"} href={current === "advanced" ? null : otherHref} />
+      <SwitchSegment label="拡張" active={current === "advanced"} href={current === "advanced" ? null : otherHref} />
     </div>
   );
 }
