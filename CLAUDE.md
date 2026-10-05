@@ -625,9 +625,13 @@ kuebiko/
     - ⚠ **2026-10-05: アドバンスド (旧「写し」) を公開サイトと同じドメインの `/app`
       配下へ統合した**。旧 Tier1 (別ドメイン `mirror.kuebiko.example` に匿名公開) は
       廃止 — 旧ドメインは `scripts/deploy_mirror_redirect.sh` が配る 301 リダイレクト
-      だけが残る (`/* → <公開ドメイン>/app/:splat`)。配信は `scripts/deploy_site.sh`
-      が標準面 (`data/public_site_dist`) とアドバンスド (`data/mirror_dist`、vite
-      base=`/app/`) を 1 つの Pages プロジェクトへまとめて出す。片方の LaunchAgent
+      だけが残る (`/app/* → <公開ドメイン>/app/:splat`、それ以外は `/app` へ)。配信は `scripts/deploy_site.sh`
+      が標準面 (`data/public_site_dist`) とアドバンスド (`data/mirror_dist`) を 1 つの Pages プロジェクトへまとめて出す。
+      **アドバンスドの静的ファイルは `/adv/`、画面の URL は `/app/…`** (`/app/* → /adv/` の
+      書き換え)。⚠ `/app/` の下にファイルを置かない — Pages の書き換えは実在のファイルより先に
+      当たり、資産まで HTML に化けて真っ白になる (2026-10-05 本番で確認)。`/app/* → /app/index.html`
+      は行き先が同じ規則に当たるため「無限ループ」として捨てられる。定期配信の 2 本は
+      ロック (`data/.deploy_site.lock`) で 1 本ずつ走る。片方の LaunchAgent
       (標準=毎時 `scripts/install_public_site_launchagent.sh` / アドバンスド=3 時間ごと
       `scripts/install_mirror_launchagent.sh`) が動いても、もう片方の dist は直前のまま
       組み込まれる — いずれかの dist が無ければ配信自体を失敗させる (半分だけの

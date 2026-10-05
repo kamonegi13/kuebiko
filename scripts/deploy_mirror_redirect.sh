@@ -28,6 +28,8 @@ set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 : "${CLOUDFLARE_MIRROR_PAGES_PROJECT:?.env に CLOUDFLARE_MIRROR_PAGES_PROJECT がありません}"
 : "${PUBLIC_SITE_ORIGIN:?.env に PUBLIC_SITE_ORIGIN (新しい配信先、例 https://kuebiko.example) がありません}"
 
+# 旧サブドメインの画面の URL はもともと /app/… なので、そのまま同じパスへ (/app/app/… にしない)。
+# それ以外 (トップ・古い /data 等) はアドバンスドのトップへ。
 # スキームを落としてホストだけにする (_redirects のターゲットは常に https で書く)。
 HOST="${PUBLIC_SITE_ORIGIN#http://}"
 HOST="${HOST#https://}"
@@ -36,7 +38,8 @@ HOST="${HOST%/}"
 rm -rf "$DIST"
 mkdir -p "$DIST"
 cat >| "$DIST/_redirects" <<REDIRECTS
-/*   https://${HOST}/app/:splat   301
+/app/*  https://${HOST}/app/:splat   301
+/*      https://${HOST}/app   301
 REDIRECTS
 cat >| "$DIST/index.html" <<HTML
 <!doctype html>

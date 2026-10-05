@@ -28,10 +28,12 @@ fi
 
 # ⚠ **アドバンスド用ビルド** (VITE_MIRROR=1)。通常ビルドを置くと API を叩きに行って
 #    全部失敗し、しかも帯 (いつ時点の情報か・標準/アドバンスド切替) が出ない。
-#    base は通常ビルドと同じ /app/ (frontend/vite.config.ts)。データの参照先だけ、
-#    組み立て後に実際に置かれる場所 (/app/data) に向ける。
-( cd "$ROOT/frontend" && VITE_MIRROR=1 VITE_MIRROR_DATA=/app/data npm run build >/dev/null )
+#    静的ファイルは /adv/ に置く (画面の URL は /app/…。frontend/vite.config.ts の base)。
+#    データの参照先も組み立て後の置き場所 (/adv/data) に向ける。
+( cd "$ROOT/frontend" && VITE_MIRROR=1 VITE_MIRROR_DATA=/adv/data npm run build >/dev/null )
 rm -rf "$DIST/assets" "$DIST/index.html" "$DIST/pwa"
 cp -R "$ROOT/frontend/dist/." "$DIST/"
+# index.html と manifest の PWA 参照は /app/pwa/… で直書き (vite の base が効かない)。置き場所の /adv/pwa/ へ
+sed -i '' 's#"/app/pwa/#"/adv/pwa/#g' "$DIST/index.html" "$DIST/pwa/manifest.webmanifest"
 # 通常ビルドへ戻す (ローカルの運用画面がアドバンスドビルドのままにならないように)
 ( cd "$ROOT/frontend" && npm run build >/dev/null )

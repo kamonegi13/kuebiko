@@ -25,6 +25,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 組み立て (build_public_site.sh は OPERATOR_ORIGIN を要する) より前に .env を読む
+set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
+# 公開 (毎時) とアドバンスド (3 時間ごと) の定期配信が重なると、組み立て用の場所を消し合い、
+# 片方の組み立て途中の中身を配信しうる。手順全体を 1 本ずつに (mkdir は原子的)。最大 40 分待つ。
+LOCK="$ROOT/data/.deploy_site.lock"
+GOT_LOCK=0
+for _ in $(seq 1 240); do
+  if mkdir "$LOCK" 2>/dev/null; then GOT_LOCK=1; break; fi
+  sleep 10
+done
+[ "$GOT_LOCK" = "1" ] || { echo "配信のロックを取れませんでした ($LOCK)" >&2; exit 1; }
+trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 PUBLIC_DIST="$ROOT/data/public_site_dist"
 MIRROR_DIST="$ROOT/data/mirror_dist"
 COMBINED="$ROOT/data/combined_site_dist"
@@ -57,7 +69,6 @@ esac
   exit 1
 }
 
-set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 : "${CLOUDFLARE_API_TOKEN:?.env に CLOUDFLARE_API_TOKEN がありません}"
 : "${CLOUDFLARE_ACCOUNT_ID:?.env に CLOUDFLARE_ACCOUNT_ID がありません}"
 : "${CLOUDFLARE_PAGES_PROJECT:?.env に CLOUDFLARE_PAGES_PROJECT がありません}"
@@ -66,16 +77,18 @@ set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 #    アドバンスドは vite base=/app/ で組んでいるので (frontend/vite.config.ts)、
 #    assets/data/pwa への参照はそのまま /app/… に解決される。
 rm -rf "$COMBINED"
-mkdir -p "$COMBINED/app"
+mkdir -p "$COMBINED/adv"
 cp -R "$PUBLIC_DIST/." "$COMBINED/"
-cp -R "$MIRROR_DIST/." "$COMBINED/app/"
+cp -R "$MIRROR_DIST/." "$COMBINED/adv/"
+# アドバンスドの静的ファイルは /adv/、画面の URL は /app/…。/app/ の下には実在のファイルを置かない
+# (/app/* の書き換えは実在のファイルより先に当たり、置くと資産まで HTML に化ける — 2026-10-05 本番で確認)。
 
 # 2) _redirects: 公開サイトの規則 (build_public_site.sh が書いた /news 系) に、
 #    アドバンスド (/app) の SPA フォールバックを追記する。より具体的な規則を
 #    先に書く (重複はしないが、順序の意図を残す)。
 cat >> "$COMBINED/_redirects" <<'REDIRECTS'
-/app/*    /app/index.html   200
-/app      /app/index.html   200
+/app/*    /adv/   200
+/app      /adv/   200
 REDIRECTS
 
 # 3) _headers は公開サイトのものをそのまま使う (cp -R で既に乗っている)。

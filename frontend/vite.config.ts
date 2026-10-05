@@ -16,7 +16,11 @@ export default defineConfig({
   // アドバンスドを公開ドメインの /app に統合した際に合わせた。旧ルート直下配信の
   // 名残で `/app/pwa/…` を `/pwa/…` に書き換えていた build_mirror.sh の sed は、
   // base が揺れなくなったので不要になった)。
-  base: process.env.VITE_PUBLIC_STATIC === "1" ? "/" : "/app/",
+  // アドバンスドの静的ファイルは /adv/ に置く (画面の URL は /app/…)。/app/* を画面の殻へ振り向ける
+  // 規則は実在のファイルより先に当たるため、/app/ の下にファイルを置くと資産まで HTML に化ける
+  // (2026-10-05 本番で確認)。
+  base:
+    process.env.VITE_PUBLIC_STATIC === "1" ? "/" : process.env.VITE_MIRROR === "1" ? "/adv/" : "/app/",
   build: {
     outDir: process.env.VITE_PUBLIC_STATIC === "1" ? "dist-public" : "dist",
     sourcemap: false,
