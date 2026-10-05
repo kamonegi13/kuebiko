@@ -5,27 +5,19 @@ import { SiteSwitch } from "./SiteSwitch";
 afterEach(() => cleanup());
 
 describe("SiteSwitch", () => {
-  it("標準面では「標準」が現在、「アドバンスド」がリンク", () => {
-    render(<SiteSwitch current="standard" otherOrigin="https://mirror.kuebiko.example" />);
+  it("標準面では「標準」が現在、「アドバンスド」が /app への相対リンク", () => {
+    render(<SiteSwitch current="standard" />);
     const current = screen.getByText("標準");
     expect(current.getAttribute("aria-current")).toBe("page");
     const other = screen.getByText("アドバンスド");
-    expect(other.closest("a")?.getAttribute("href")).toBe(
-      "https://mirror.kuebiko.example/app/eventnews",
-    );
+    expect(other.closest("a")?.getAttribute("href")).toBe("/app/eventnews");
   });
 
-  it("アドバンスド面では「標準」がリンク", () => {
-    render(<SiteSwitch current="advanced" otherOrigin="https://kuebiko.example" />);
+  it("アドバンスド面では「標準」が /news への相対リンク", () => {
+    render(<SiteSwitch current="advanced" />);
     const current = screen.getByText("アドバンスド");
     expect(current.getAttribute("aria-current")).toBe("page");
     const other = screen.getByText("標準");
-    expect(other.closest("a")?.getAttribute("href")).toBe("https://kuebiko.example/news");
-  });
-
-  it("相手サイトのオリジン未設定なら無効表示 (リンクにしない)", () => {
-    render(<SiteSwitch current="standard" otherOrigin="" />);
-    const other = screen.getByText("アドバンスド");
-    expect(other.closest("a")).toBeNull();
+    expect(other.closest("a")?.getAttribute("href")).toBe("/news");
   });
 });

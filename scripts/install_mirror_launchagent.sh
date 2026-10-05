@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# 運用画面の写しを 3 時間ごとに書き出して配信する LaunchAgent。
+# アドバンスド (旧「写し」) を 3 時間ごとに書き出し、公開サイトと合わせて
+# 配信する LaunchAgent (scripts/deploy_site.sh mirror を呼ぶ)。
 #
 #   bash scripts/install_mirror_launchagent.sh
 #   bash scripts/install_mirror_launchagent.sh --uninstall
 #
 # 間隔を 3 時間にした理由 (2026-08-29):
 #   Pages の配信回数には無料枠があり、毎時だと月 720 回で超える見込み。
-#   3 時間なら月 240 回。写しは「Mac 不達時の継続」であって日常の閲覧経路では
-#   ないので、失うのは最悪でも記事 25〜32 件ぶん (到着 10.7 件/時)。
-#   足りなければ間隔を詰める — 判断材料は access_audit と実際の不便さ。
+#   3 時間なら月 240 回。アドバンスドは分析者向けの画面を広く見せる面であって
+#   標準面ほど更新頻度が要らないので、失うのは最悪でも記事 25〜32 件ぶん
+#   (到着 10.7 件/時)。足りなければ間隔を詰める — 判断材料は実際の不便さ。
+#
+# ⚠ 2026-10-05: 配信先は公開サイトと同じ Cloudflare Pages プロジェクトの
+#    `/app/` 配下 (scripts/deploy_site.sh が公開面と合わせて 1 回で配信する)。
+#    このスクリプト自身は「アドバンスドを作り直す」契機を 3 時間ごとに作るだけ。
 set -euo pipefail
 
 LABEL="com.cti.kuebiko-mirror"
@@ -39,7 +44,8 @@ cat >| "$PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>${REPO}/scripts/deploy_mirror.sh</string>
+    <string>${REPO}/scripts/deploy_site.sh</string>
+    <string>mirror</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO}</string>
   <!-- 3 時間ごとの :50。収集 (:00) と事象ニュース生成 (:20) の後に回すことで、

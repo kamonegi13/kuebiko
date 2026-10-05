@@ -108,7 +108,7 @@ describe("記事詳細 — 写しでの本文非表示", () => {
     stubFetch(baseArticle({ body: null, body_ja: null }));
     renderPage();
 
-    await waitFor(() => expect(screen.getByText(/本文は写しに含まれません/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/本文はこの画面では表示できません/)).toBeTruthy());
     expect(screen.getByText(/本文は出典でお読みください/)).toBeTruthy();
     const sourceLink = screen.getByRole("link", { name: /出典を開く/ });
     expect(sourceLink.getAttribute("href")).toBe("https://example.test/original");

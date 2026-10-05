@@ -46,9 +46,6 @@ const PORTAL_CATEGORY_COUNT = 4;
  * 配信先を変えたときに一部のリンクだけ壊れる。 */
 const HOME_PATH = import.meta.env.VITE_PUBLIC_BASE || "/app/news";
 
-/** 写し (アドバンスド、匿名公開) の入口。未設定なら導線を無効表示にする。 */
-const MIRROR_URL: string = import.meta.env.VITE_MIRROR_ORIGIN || "";
-
 /** カテゴリの表示名。どの category を束ねるかの定義も表示名も backend が持つ。
  *
  * 静的配信 (Cloudflare Pages) では語彙 API を読めないので、書き出しに同梱された
@@ -239,7 +236,7 @@ function SiteHeader({ route, backdrop }: { route: Route; backdrop?: Route }) {
           </button>
           <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
           <div className="ml-auto">
-            <SiteSwitch current="standard" otherOrigin={MIRROR_URL} />
+            <SiteSwitch current="standard" />
           </div>
         </div>
       </header>

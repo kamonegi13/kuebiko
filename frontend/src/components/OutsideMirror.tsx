@@ -13,16 +13,16 @@ export function OutsideMirror() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
       <Archive size={32} className="text-fg-muted" />
-      <h1 className="text-lg font-semibold text-fg">この画面は写しに含まれていません</h1>
+      <h1 className="text-lg font-semibold text-fg">この画面では表示できません</h1>
       <p className="max-w-md text-sm leading-relaxed text-fg-muted">
-        写しは Mac に到達できないときの続きを読むためのもので、書き出した画面だけを持ちます。
-        最新のすべてを見るには Mac 側の画面を開いてください。
+        アドバンスドは書き出し済みの画面だけを表示する簡易版です。
+        すべての画面を見るには運用環境を開いてください。
       </p>
       <a
         href={MIRROR_HOME}
         className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
       >
-        写しにある画面へ
+        表示できる画面へ
       </a>
     </div>
   );

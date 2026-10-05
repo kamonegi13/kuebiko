@@ -15,7 +15,7 @@ import type { ArticleFeedItem, ArticleFeedResponse } from "./articles";
 const DATA_BASE = import.meta.env.VITE_MIRROR_DATA || "/data";
 
 function notMirrored(path: string): Response {
-  return new Response(JSON.stringify({ detail: `写しに含まれていません: ${path}` }), {
+  return new Response(JSON.stringify({ detail: `この画面では表示できません: ${path}` }), {
     status: 501,
     headers: { "content-type": "application/json" },
   });

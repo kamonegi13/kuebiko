@@ -11,12 +11,12 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
   },
   // 公開サイトの静的ビルド (VITE_PUBLIC_STATIC=1) は Cloudflare Pages のルート配下に
-  // 置く。運用者の PC で配信する通常ビルドは従来どおり /app/ 配下。
-  // base は **配信される場所**で決まる。運用画面はアプリが /app/ で serve するが、
-  // 静的配信 (公開サイト / 写し) はルート直下に置くので "/" でなければ、
-  // index.html が /app/assets/… を参照して真っ白になる (2026-08-29 実測)。
-  base:
-    process.env.VITE_PUBLIC_STATIC === "1" || process.env.VITE_MIRROR === "1" ? "/" : "/app/",
+  // 置く。運用者の PC で配信する通常ビルドと、アドバンスド (旧写し、VITE_MIRROR=1) は
+  // どちらも **配信先が `/app/` 配下** なので同じ base を使う (2026-10-05、
+  // アドバンスドを公開ドメインの /app に統合した際に合わせた。旧ルート直下配信の
+  // 名残で `/app/pwa/…` を `/pwa/…` に書き換えていた build_mirror.sh の sed は、
+  // base が揺れなくなったので不要になった)。
+  base: process.env.VITE_PUBLIC_STATIC === "1" ? "/" : "/app/",
   build: {
     outDir: process.env.VITE_PUBLIC_STATIC === "1" ? "dist-public" : "dist",
     sourcemap: false,

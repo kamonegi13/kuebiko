@@ -102,7 +102,7 @@ function BodySection({
     if (isMirror()) {
       return (
         <div className="rounded-lg border border-border-subtle bg-surface-1 px-4 py-3 text-sm text-fg-muted">
-          本文は写しに含まれません。本文は出典でお読みください。
+          本文はこの画面では表示できません。本文は出典でお読みください。
           {sourceUrl && (
             <>
               {" "}

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 公開サイトの配信を macOS LaunchAgent 化する (毎時・変更があったときだけ上げる)。
+# 公開サイト (標準面) の配信を macOS LaunchAgent 化する (毎時・変更があったときだけ
+# 上げる。scripts/deploy_site.sh public を呼び、アドバンスドと合わせて 1 回で配信する)。
 #
 # 使い方 (リポジトリ直下で):
 #   bash scripts/install_public_site_launchagent.sh            # 導入 / 更新
@@ -43,7 +44,8 @@ cat >| "$PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>${REPO}/scripts/deploy_public_site.sh</string>
+    <string>${REPO}/scripts/deploy_site.sh</string>
+    <string>public</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO}</string>
   <!-- 毎時 :40。収集 (:00 前後) と事象ニュース生成 (:20) の後に回す。 -->

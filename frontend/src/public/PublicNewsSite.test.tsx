@@ -908,10 +908,11 @@ describe("標準 / アドバンスド切替 (2026-10-04)", () => {
     expect(siteSource).not.toContain("運用画面 (最新)");
   });
 
-  it("写しのオリジンをビルド時に差し込める", () => {
-    // 静的配信 (Pages) には写しのビルド時オリジンが埋め込まれていないので、
-    // VITE_MIRROR_ORIGIN で注入する (未設定なら SiteSwitch 側で無効表示)。
-    expect(siteSource).toContain("VITE_MIRROR_ORIGIN");
+  it("アドバンスドは同一オリジン /app なのでビルド時オリジン注入が不要", () => {
+    // 2026-10-05: アドバンスドを公開ドメインの /app 配下に統合したため、
+    // SiteSwitch は相手サイトのオリジンを受け取らない (常に相対パス)。
+    expect(siteSource).not.toContain("VITE_MIRROR_ORIGIN");
+    expect(siteSource).not.toContain("otherOrigin");
   });
 
   it("運用画面への導線はフッターに残さない", () => {

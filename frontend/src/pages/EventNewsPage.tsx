@@ -230,7 +230,7 @@ export function EventNewsPage() {
         onSearchChange={setTerm}
         searchPlaceholder={
           MIRROR
-            ? "事象を検索 (Enter) — 見出し・要点のみ (写しは本文を持たない)"
+            ? "事象を検索 (Enter) — 見出し・要点のみ (本文は対象外)"
             : "事象を検索 (Enter) — 生成本文と構成記事の本文・タイトル"
         }
         onSearchKeyDown={(e) => {

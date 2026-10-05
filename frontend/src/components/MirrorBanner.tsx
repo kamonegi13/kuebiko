@@ -3,11 +3,7 @@ import { fetchMirrorMeta } from "../api/mirrorStatic";
 import { formatJstCompact } from "../utils/date";
 import { SiteSwitch } from "./SiteSwitch";
 
-/** 公開サイト (標準) の入口。写しビルド (VITE_MIRROR=1) 時に build_mirror.sh が
- *  .env の PUBLIC_SITE_ORIGIN から注入する。未設定なら導線を無効表示にする。 */
-const PUBLIC_URL: string = import.meta.env.VITE_PUBLIC_ORIGIN || "";
-
-/** 写し (アドバンスド) の上部の帯。公開サイト (標準) と同じ「kuebiko サイバー脅威ニュース」の
+/** アドバンスド (旧写し) の上部の帯。公開サイト (標準) と同じ「kuebiko サイバー脅威ニュース」の
  *  表示に、**いつ時点の情報か** と標準 / アドバンスドの切り替えを同じ段に並べる (2026-10-04 利用者指示)。
  *
  *  ⚠ 時点は必ず出す — 古いことではなく、古いと分からないことが危険 (2026-08-29)。
@@ -32,7 +28,7 @@ export function MirrorSwitchBar() {
       <span className="text-[13px] text-fg-subtle">サイバー脅威ニュース</span>
       <span className={`text-[13px] ${isError || !data ? "text-warning" : "text-fg-muted"}`}>{stamp}</span>
       <div className="ml-auto">
-        <SiteSwitch current="advanced" otherOrigin={PUBLIC_URL} />
+        <SiteSwitch current="advanced" />
       </div>
     </div>
   );
