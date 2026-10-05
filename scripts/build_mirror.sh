@@ -34,6 +34,8 @@ fi
 rm -rf "$DIST/assets" "$DIST/index.html" "$DIST/pwa"
 cp -R "$ROOT/frontend/dist/." "$DIST/"
 # index.html と manifest の PWA 参照は /app/pwa/… で直書き (vite の base が効かない)。置き場所の /adv/pwa/ へ
-sed -i '' 's#"/app/pwa/#"/adv/pwa/#g' "$DIST/index.html" "$DIST/pwa/manifest.webmanifest"
+# 運用画面だけ専用のアイコン (/app/pwa/ops/) を使う (2026-10-05)。拡張は従来のアイコンに戻す
+sed -i '' 's#"/app/pwa/ops/#"/adv/pwa/#g; s#"/app/pwa/#"/adv/pwa/#g' "$DIST/index.html" "$DIST/pwa/manifest.webmanifest"
+rm -rf "$DIST/pwa/ops"
 # 通常ビルドへ戻す (ローカルの運用画面がアドバンスドビルドのままにならないように)
 ( cd "$ROOT/frontend" && npm run build >/dev/null )
