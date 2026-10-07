@@ -273,6 +273,8 @@ class TestTier1Access:
 
     def test_runtime_flags_report_auth_state(self, access_client: TestClient) -> None:
         anon = access_client.get("/api/v1/runtime-flags").json()
+        # 公開版のオリジン (2026-10-08) は実行環境の .env しだいなので形だけ見る
+        assert isinstance(anon.pop("public_site_origin"), str)
         assert anon == {
             "read_only": True,
             "authenticated": False,
