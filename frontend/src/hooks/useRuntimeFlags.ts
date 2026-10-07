@@ -31,6 +31,7 @@ declare global {
     __READ_ONLY__?: boolean;
     __AUTHENTICATED__?: boolean;
     __AUTH_AVAILABLE__?: boolean;
+    __PUBLIC_SITE_ORIGIN__?: string;
   }
 }
 
@@ -42,6 +43,9 @@ function seedFlags(): RuntimeFlags | undefined {
     auth_available: window.__AUTH_AVAILABLE__ === true,
     // 初期値には無い (埋め込みは認証状態までで十分)。fetch 後に確定する。
     remote_write: false,
+    // 公開版のオリジン (2026-10-08)。staleTime が無限で fetch し直さないので、埋め込みから読む
+    public_site_origin:
+      typeof window.__PUBLIC_SITE_ORIGIN__ === "string" ? window.__PUBLIC_SITE_ORIGIN__ : "",
   };
 }
 

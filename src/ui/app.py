@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import threading
 import time
@@ -835,12 +836,17 @@ def create_app() -> FastAPI:
             # useRuntimeFlags の CSR fetch 完了前に誤ったメニューが一瞬描画されるのを、
             # bundle 実行前の inline script で防ぐ。認証状態も同じ理由で seed する
             # (2026-08-01)。デプロイで index.html を差し替えるため毎回読み直す。
+            from src.ui.api.pages import _public_site_origin
+
             authenticated, auth_available = request_auth_state(request)
             seed = ";".join(
                 [
                     f"window.__READ_ONLY__={_js_bool(READ_ONLY_FLAG)}",
                     f"window.__AUTHENTICATED__={_js_bool(authenticated)}",
                     f"window.__AUTH_AVAILABLE__={_js_bool(auth_available)}",
+                    # 公開版のオリジン (2026-10-08、未ログインの入口の案内用)。https の形に
+                    # 限って検証済みの値を JSON 文字列で埋める
+                    f"window.__PUBLIC_SITE_ORIGIN__={json.dumps(_public_site_origin())}",
                 ]
             )
             html = index_path.read_text(encoding="utf-8").replace(

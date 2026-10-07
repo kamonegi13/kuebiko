@@ -420,6 +420,7 @@ class TestSpaReadOnlySeed:
         assert res.status_code == 200
         assert "window.__READ_ONLY__=true" in res.text
         assert "window.__AUTH_AVAILABLE__=false" in res.text
+        assert "window.__PUBLIC_SITE_ORIGIN__=" in res.text
         assert res.headers["cache-control"] == "no-cache"
 
     def test_auth_state_is_embedded(self, access_client: TestClient) -> None:
