@@ -32,7 +32,7 @@ import { isOutsideMirror } from "./components/nav";
 import { OutsideMirror } from "./components/OutsideMirror";
 import { isFullOnlyPath } from "./components/nav";
 import { ArticlePeekHost } from "./components/ArticlePeek";
-import { PublicNewsSite } from "./public/PublicNewsSite";
+import { OpsLoginLanding } from "./components/OpsLoginLanding";
 
 type IntelTab = "synthesis" | "pmesii" | "threats" | "forecast" | "operations";
 
@@ -178,11 +178,11 @@ export default function App() {
 
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/app";
 
-  // 公開 instance の未認証アクセスは **ニュースサイト** を出す (2026-08-25)。
-  // 分析者向けの画面は出さない — 匿名で読める API も allowlist の 4 つだけなので、
-  // 従来の AppShell を描いても中身が 403 だらけになる。認証 (Cloudflare Access) すれば
-  // 従来どおり全機能に戻る。判定は shouldHideFullOnly と同じ述語を共有する。
-  if (shouldHideFullOnly(flags)) return <PublicNewsSite />;
+  // 公開 instance (運用画面の公開側) の未認証アクセスは、ログインの入口と公開版への案内だけを
+  // 出す (2026-10-08)。以前 (2026-08-25〜) はここで公開ニュースサイトを出していたが、公開ニュースは
+  // 公開ドメイン (標準 / 拡張) へ移った。運用画面には標準 / 拡張の区別が無い (利用者指摘)。
+  // 認証 (Cloudflare Access) すれば従来どおり全機能。判定は shouldHideFullOnly と同じ述語。
+  if (shouldHideFullOnly(flags)) return <OpsLoginLanding flags={flags} />;
 
   // 写し (Cloudflare Pages) では、書き出した画面しか描かない。
   // 着地先のダッシュボードは写していないため、そのままだと読み込み中で固まる。

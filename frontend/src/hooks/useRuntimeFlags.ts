@@ -13,6 +13,8 @@ export interface RuntimeFlags {
   // 遠隔からの設定変更が開いているか (2026-08-29)。開いていても書けるのは
   // DB 由来の運用設定だけ。**遮断の実体は常にサーバ側の名簿** で、これは表示用。
   remote_write: boolean;
+  // 公開版 (標準 + 拡張) のオリジン (2026-10-08)。運用画面の未ログインの入口が案内に使う。空 = 未設定
+  public_site_origin?: string;
 }
 
 const ANONYMOUS: RuntimeFlags = {

@@ -175,6 +175,27 @@ def ops_notices(request: Request, limit: int = 50) -> dict[str, Any]:
 # ---------- /runtime-flags (Phase Diamond verify-mobile) ----------
 
 
+_HTTPS_ORIGIN = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d+)?$")
+
+
+def _public_site_origin() -> str:
+    """公開版 (標準 + 拡張) のオリジン。運用画面の未ログインの入口が案内に使う (2026-10-08)。
+
+    .env はファイルとしてコンテナに渡る (環境変数ではない) ので、環境変数 → .env の順に読む。
+    https のオリジンだけを返し、それ以外は空 (リンクに使うので形を検証する)。
+    """
+    import os as _os
+
+    value = _os.environ.get("PUBLIC_SITE_ORIGIN", "").strip()
+    if not value:
+        with contextlib.suppress(OSError, ImportError):
+            from dotenv import dotenv_values
+
+            value = str(dotenv_values(".env").get("PUBLIC_SITE_ORIGIN") or "").strip()
+    value = value.rstrip("/")
+    return value if _HTTPS_ORIGIN.match(value) else ""
+
+
 @pages_api.get("/runtime-flags")
 def runtime_flags(request: Request) -> dict[str, Any]:
     """フロントが起動時に取得する runtime config。
@@ -186,6 +207,7 @@ def runtime_flags(request: Request) -> dict[str, Any]:
     - ``remote_write``: 遠隔からの設定変更が開いているか (2026-08-29)。開いていても
       書けるのは DB 由来の運用設定だけ。**画面はこれを「隠すか出すか」にしか使わない** —
       遮断の実体は常にサーバ側の名簿 (REMOTE_WRITE_ALLOWLIST)。
+    - ``public_site_origin``: 公開版のオリジン (未ログインの入口から案内する)。
     """
     import os as _os
 
@@ -204,6 +226,7 @@ def runtime_flags(request: Request) -> dict[str, Any]:
         "authenticated": authenticated,
         "auth_available": auth_available,
         "remote_write": remote_write,
+        "public_site_origin": _public_site_origin(),
     }
 
 
