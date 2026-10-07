@@ -8,22 +8,36 @@ import { api } from "../../../api/client";
 import { pagesApi } from "../../../api/pages";
 import { WidgetCard, Loading, Empty, WidgetError, Holding, HBar, cfgNum, type WidgetProps } from "../shared";
 
-// db_stats の生キー → 日本語ラベル (未知キーは生キーで fallback)
-const HOLDING_LABEL: Record<string, string> = {
-  articles: "記事", iocs: "IoC", actors: "アクター", entities: "エンティティ",
-  embeddings: "埋め込み", runs: "実行", spotlights: "Spotlight", syntheses: "現況",
-  feeds: "フィード", subscriptions: "購読",
-};
+// db_stats のキー → 表示 (2026-10-08 利用者承認)。キーは src/storage/repo_knowledge.py の db_stats と対。
+// ここに無いキーは出さない (生のキー名を読者に見せない)。
+// - file_size_bytes は出さない: 本番 (PostgreSQL) ではなく使っていない旧 SQLite の大きさで誤り
+// - run_logs は出さない: 処理の記録の行数で、蓄積の指標ではない
+// - 拡張 (公開版) では分析の蓄積だけ (収集した記事・追跡アクター)。実行回数や URL 数は運用の内部の数字
+export const HOLDING_ITEMS: { key: string; label: string; opsOnly: boolean }[] = [
+  { key: "articles", label: "収集した記事", opsOnly: false },
+  { key: "article_embeddings", label: "意味検索の対象", opsOnly: true },
+  { key: "dedup_seen_urls", label: "確認済みの URL", opsOnly: true },
+  { key: "runs", label: "処理の実行", opsOnly: true },
+];
+
+export function holdingItems(dbStats: Record<string, number>, mirror: boolean): { label: string; value: number }[] {
+  return HOLDING_ITEMS.filter((it) => (mirror ? !it.opsOnly : true) && dbStats[it.key] !== undefined).map((it) => ({
+    label: it.label,
+    value: dbStats[it.key],
+  }));
+}
 
 export function HoldingsWidget() {
   const { data: dash } = useQuery({ queryKey: ["dashboard"], queryFn: () => dashboardApi.summary(7), staleTime: 30_000 });
   const { data: snap } = useQuery({ queryKey: ["dash-snapshot"], queryFn: () => api.snapshot({ time: "30" }), staleTime: 60_000 });
   const dbStats = dash?.db_stats ?? {};
+  const mirror = import.meta.env.VITE_MIRROR === "1";
   return (
-    <WidgetCard title="Intelligence Holdings" href="/app/subscriptions" linkLabel="ソース →">
+    // 拡張には購読ソースの画面が無いので、見出しのリンクは運用画面だけ
+    <WidgetCard title="Intelligence Holdings" href={mirror ? undefined : "/app/subscriptions"} linkLabel="ソース →">
       <div className="grid grid-cols-2 gap-2 text-sm">
         {snap?.actors_count !== undefined && <Holding label="追跡アクター" value={snap.actors_count} />}
-        {Object.entries(dbStats).map(([k, v]) => <Holding key={k} label={HOLDING_LABEL[k] ?? k} value={v} />)}
+        {holdingItems(dbStats, mirror).map((it) => <Holding key={it.label} label={it.label} value={it.value} />)}
       </div>
     </WidgetCard>
   );
