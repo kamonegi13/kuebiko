@@ -26,3 +26,34 @@ export function mirrorSwitchHref(): string {
 export function publicSwitchHref(): string {
   return PUBLIC_NEWS_PATH;
 }
+
+
+/** 標準 / 拡張のどちらを選んだかを、そのブラウザに覚える (2026-10-08 利用者指示)。
+ *  次にサイトの入口 (/ と /news) を開いたとき、前回の選択で開く。奥の画面 (記事・事象の
+ *  共有リンクなど) を直接開いたときは振り向けない。 */
+export const SITE_PREF_KEY = "kuebiko.site";
+export type SiteChoice = "standard" | "advanced";
+
+export function rememberSite(choice: SiteChoice): void {
+  try {
+    localStorage.setItem(SITE_PREF_KEY, choice);
+  } catch {
+    /* 保存できない環境 (プライベートウィンドウ等) では覚えないだけ */
+  }
+}
+
+export function preferredSite(): SiteChoice | null {
+  try {
+    const v = localStorage.getItem(SITE_PREF_KEY);
+    return v === "standard" || v === "advanced" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 公開サイトの入口で、前回 拡張 を選んでいたら移る先。それ以外は null。 */
+export function entryRedirect(pathname: string, pref: SiteChoice | null): string | null {
+  if (pref !== "advanced") return null;
+  const p = pathname.replace(/\/+$/, "") || "/";
+  return p === "/" || p === PUBLIC_NEWS_PATH ? MIRROR_HOME_PATH : null;
+}

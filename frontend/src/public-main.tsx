@@ -13,8 +13,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import { queryClient } from "./api/queryClient";
 import { PublicNewsSite } from "./public/PublicNewsSite";
+import { entryRedirect, preferredSite } from "./utils/siteSwitch";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+// 前回 拡張 を選んでいたら、入口 (/ と /news) から拡張へ移す (2026-10-08)。描画の前にやる
+const redirectTo = entryRedirect(window.location.pathname, preferredSite());
+if (redirectTo) window.location.replace(redirectTo);
+else ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <PublicNewsSite />

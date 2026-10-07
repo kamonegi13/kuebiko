@@ -4,7 +4,7 @@
 // 使う共有の見た目。2026-10-05 にアドバンスドを公開サイトと同じドメインの `/app/`
 // 配下へ統合したため、両面は常に同一オリジン — 相手サイトのオリジンを渡す必要が
 // 無くなり、リンクは常に有効 (無効表示の分岐は廃止)。
-import { mirrorSwitchHref, publicSwitchHref } from "../utils/siteSwitch";
+import { mirrorSwitchHref, publicSwitchHref, rememberSite, type SiteChoice } from "../utils/siteSwitch";
 
 interface SiteSwitchProps {
   /** 今どちらの面を見ているか。 */
@@ -19,18 +19,20 @@ export function SiteSwitch({ current }: SiteSwitchProps) {
       role="group"
       aria-label="標準・拡張の切替"
     >
-      <SwitchSegment label="標準" active={current === "standard"} href={current === "standard" ? null : otherHref} />
-      <SwitchSegment label="拡張" active={current === "advanced"} href={current === "advanced" ? null : otherHref} />
+      <SwitchSegment label="標準" choice="standard" active={current === "standard"} href={current === "standard" ? null : otherHref} />
+      <SwitchSegment label="拡張" choice="advanced" active={current === "advanced"} href={current === "advanced" ? null : otherHref} />
     </div>
   );
 }
 
 function SwitchSegment({
   label,
+  choice,
   active,
   href,
 }: {
   label: string;
+  choice: SiteChoice;
   active: boolean;
   /** null = 今の面 (リンクにしない)。 */
   href: string | null;
@@ -46,7 +48,7 @@ function SwitchSegment({
     );
   }
   return (
-    <a href={href ?? undefined} className="rounded-full px-2.5 py-1 text-fg-subtle hover:bg-surface-3 hover:text-fg">
+    <a href={href ?? undefined} onClick={() => rememberSite(choice)} className="rounded-full px-2.5 py-1 text-fg-subtle hover:bg-surface-3 hover:text-fg">
       {label}
     </a>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  jpTitleTag, severityTitleTags, buildFacetedTitle,
+  jpTitleTag, severityTitleTags, buildFacetedTitle, viewWidgetTitle,
   EMPTY_SEVERITY_FACET, legacyLevelFilterToSeverityFacet, levelLabel,
   migrateImportanceToLevelFilter, migrateLegacyToSeverityFacet, readSeverityFacet,
   severityFacetFromConfigStrings, severityFacetQueryParams, writeSeverityFacet,
@@ -228,5 +228,12 @@ describe("buildFacetedTitle (記事フィード・事象ニュース widget 共�
       categoryLabelMap: {}, defaultBase: "最新ニュース",
     });
     expect(title).toBe("最新ニュース");
+  });
+});
+
+describe("ビューを選んだ部品のタイトル", () => {
+  it("部品の名前 · ビューの名前。すべては部品の名前だけ", () => {
+    expect(viewWidgetTitle("事象ニュース", { id: "builtin:notable", label: "注意以上" })).toBe("事象ニュース · 注意以上");
+    expect(viewWidgetTitle("最新ニュース", { id: "builtin:all", label: "すべて" })).toBe("最新ニュース");
   });
 });

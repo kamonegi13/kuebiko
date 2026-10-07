@@ -2,7 +2,7 @@
 // 切り替え、脆弱性 / 特定サイト / ニュースサマリー / ヘッドライン 等の preset に化ける。
 // backend: /api/v1/articles (src/ui/api/articles_feed.py)。
 
-import { buildFacetedTitle } from "../../../components/news/facets";
+import { buildFacetedTitle, viewWidgetTitle } from "../../../components/news/facets";
 import { useQuery } from "@tanstack/react-query";
 import { articlesApi } from "../../../api/articles";
 import { formatJstCompact } from "../../../utils/date";
@@ -77,7 +77,7 @@ export function ArticleFeedWidget({ config, mobile }: WidgetProps) {
   // チャンネル名は useChannelMeta (SSoT) で解決 (未登録 id は原値 fallback)。
   const channelLabel = channel ? chMeta(channel).label : "";
   // Title = ビュー名 (選ばれていれば)。ad-hoc (旧設定・未選択) は従来どおり絞り込みから組む。
-  const title = view ? view.label : buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap });
+  const title = view ? viewWidgetTitle("最新ニュース", view) : buildTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap });
   // widget の絞り込みをそのまま引き継いで News ページへ deep-link
   const href = toNewsPageHref(filters);
 

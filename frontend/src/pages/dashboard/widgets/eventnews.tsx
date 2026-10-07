@@ -17,7 +17,7 @@ import { Drawer } from "../../../components/Drawer";
 import { useChannelMeta } from "../../../components/channel";
 import { vocabLabel, useVocabMap } from "../../../hooks/useVocab";
 import {
-  LevelBadge, buildFacetedTitle, severityFacetFromConfigStrings, severityFacetQueryParams,
+  LevelBadge, buildFacetedTitle, severityFacetFromConfigStrings, severityFacetQueryParams, viewWidgetTitle,
   writeSeverityFacet, type SeverityFacetState,
 } from "../../../components/news/facets";
 import { useNewsViews } from "../../../components/news/useNewsViews";
@@ -122,7 +122,7 @@ export function EventNewsWidget({ config, mobile }: WidgetProps) {
   const items = (data?.items ?? []).slice(0, per);
   const channelLabel = channel ? chMeta(channel).label : "";
   // Title = ビュー名 (選ばれていれば)。ad-hoc (旧設定・未選択) は従来どおり絞り込みから組む。
-  const title = view ? view.label : buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "事象ニュース" });
+  const title = view ? viewWidgetTitle("事象ニュース", view) : buildFacetedTitle({ category, feed, channelLabel, severity, jp, categoryLabelMap, defaultBase: "事象ニュース" });
   const href = toEventNewsPageHref(filters);
 
   return (

@@ -529,3 +529,10 @@ export function buildFacetedTitle({
   if (channelLabel) tags.push(channelLabel);
   return tags.length > 0 ? `${base} (${tags.join(" · ")})` : base;
 }
+
+
+/** ビューを選んだダッシュボードの部品のタイトル = 部品の名前 · ビューの名前 (2026-10-08 利用者指示)。
+ *  「すべて」のビューは条件が無いので部品の名前だけ。 */
+export function viewWidgetTitle(base: string, view: { id: string; label: string }): string {
+  return view.id === "builtin:all" ? base : `${base} · ${view.label}`;
+}
