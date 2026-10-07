@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from typing import Literal
 
@@ -30,6 +31,16 @@ from src.tools.llm_client import LLMClient
 from src.tools.text_utils import strip_html as _strip_html
 
 _log = get_logger(__name__)
+
+#: s23 の平たい (関連性なし) triage prompt を使う rollback フラグ (既定 0 = 現行挙動のまま、
+#: docs/importance_relevance_redesign.md §6 の 2026-10-08 利用者決定)。ON でも
+#: PIR_DRIVEN_TRIAGE の意味は変えない — こちらが有効なら PIR-driven / legacy の分岐より先に
+#: 平たい prompt を返す (下記 _build_prompt 参照)。
+_TRIAGE_FLAT_ENV = "TRIAGE_FLAT"
+
+
+def _is_flat_triage_enabled() -> bool:
+    return os.environ.get(_TRIAGE_FLAT_ENV, "0").strip() in ("1", "true", "yes", "on")
 
 
 class TriageDecision(BaseModel):
@@ -104,6 +115,11 @@ class ArticleTriage:
             env var PIR_DRIVEN_TRIAGE=0 or PIR yaml が空のとき、Phase 5T 時点の
             hardcoded 13 high criteria を使用 (緊急 rollback 経路)。
         """
+        # s23: 平たい (関連性なし) prompt (TRIAGE_FLAT=1)。PIR-driven / legacy の分岐より先に
+        # 判定する — 既定 (0) なら素通りして以下の既存分岐のみが効く (挙動不変)。
+        if _is_flat_triage_enabled():
+            return self._build_prompt_flat(article)
+
         # Lazy import で循環依存 + テスト時の副作用を回避
         from src.pir.integration import (
             build_triage_high_criteria,
@@ -263,6 +279,22 @@ class ArticleTriage:
             "- reason: 判定理由を簡潔に。当てはまった基準と記事の事実だけを書き、"
             "材料に無いことを足さない "
             "(例: 「中国APTのSolarWinds型サプライチェーン侵害」「金銭目的犯罪、影響限定的」)\n"
+        )
+
+    def _build_prompt_flat(self, article: Article) -> str:
+        """s23 の平たい (関連性なし) triage prompt (``TRIAGE_FLAT=1`` の実体)。
+
+        日本・SIR・注視国での上げ下げをしない深刻さだけの見込み判定
+        (docs/importance_relevance_redesign.md §6、2026-10-08 利用者決定)。
+        ``src.tools.triage_flat_rubric`` が本番・教師データ生成の双方から呼ばれる単一の
+        組み立て元 (教師プロンプト == 本番プロンプトを保証する)。
+        """
+        from src.tools.triage_flat_rubric import build_flat_triage_prompt
+
+        return build_flat_triage_prompt(
+            feed=(article.feed_title or "").strip(),
+            title=(article.title or "").strip(),
+            body_preview=self._triage_content(article),
         )
 
 
