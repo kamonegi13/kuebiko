@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -205,3 +206,112 @@ def test_incident_relations_are_capped_per_event() -> None:
 
     assert len(got) == INCIDENT_CAP
     assert got[0].b == f"e{INCIDENT_CAP + 2}"  # 確率の高い順
+
+
+# ---------- GraphRAG 専用の候補線 (relations.GRAPHRAG_EXTRA_TYPES、既定で節に出さない) ----------
+
+
+def _is_state(nation: str | None) -> Callable[[str], bool]:
+    mapping = {"apt_a": True, "apt_b": True, "unit": True, "rus": True, "crime": False}
+
+    def f(actor_id: str) -> bool:
+        return mapping.get(actor_id, False)
+
+    return f
+
+
+def _derive_extra(*events: EventFeatures) -> dict[tuple[str, str], str]:
+    from src.eventnews.relations import derive_graphrag_extra_relations
+
+    rels = derive_graphrag_extra_relations(
+        list(events), nation_of=_nation, is_state_actor_id=_is_state(None)
+    )
+    return {(r.a, r.b): r.rel_type for r in rels}
+
+
+def test_rare_shared_tool_without_shared_subject_is_same_capability() -> None:
+    got = _derive_extra(
+        _e("a", 0, tools={"rareimplant"}, subjects={"apt_a"}),
+        _e("b", 5, tools={"rareimplant"}, subjects={"rus"}),
+    )
+
+    assert got == {("a", "b"): "same_capability"}
+
+
+def test_same_nation_takes_precedence_over_same_capability() -> None:
+    """同一能力は節に出さない (精度 3/20) ので、先に当てて同じ帰属国の線を隠さない。"""
+    got = _derive_extra(
+        _e("a", 0, tools={"rareimplant"}, subjects={"apt_a"}),
+        _e("b", 5, tools={"rareimplant"}, subjects={"apt_b"}),
+    )
+
+    assert got == {("a", "b"): "same_nation"}
+
+
+def test_index_extra_relations_keeps_only_enabled_types_and_latest_within_cap() -> None:
+    from src.eventnews.relations import DerivedRelation, index_extra_relations
+
+    rels = [DerivedRelation("a", f"b{i}", "same_nation", ("nation:cn",)) for i in range(5)]
+    rels.append(DerivedRelation("a", "c", "same_capability", ("cap:x",)))
+
+    got = index_extra_relations(rels, types=frozenset({"same_nation"}), cap=3)
+
+    assert [r.b for r in got["a"]] == ["b2", "b3", "b4"]
+    assert "c" not in got
+
+
+def test_shared_subject_is_not_same_capability() -> None:
+    """主題アクターを共有する組は、既存の campaign 規則の対象であって same_capability ではない。"""
+    got = _derive_extra(
+        _e("a", 0, tools={"rareimplant"}, subjects={"apt_a"}),
+        _e("b", 5, tools={"rareimplant"}, subjects={"apt_a"}),
+    )
+
+    assert got == {}
+
+
+def test_different_state_actors_same_nation_is_same_nation() -> None:
+    got = _derive_extra(
+        _e("a", 0, subjects={"apt_a"}),
+        _e("b", 5, subjects={"unit"}),
+    )
+
+    assert got == {("a", "b"): "same_nation"}
+
+
+def test_non_state_actor_is_not_same_nation() -> None:
+    got = _derive_extra(
+        _e("a", 0, subjects={"apt_a"}),
+        _e("b", 5, subjects={"crime"}),
+    )
+
+    assert got == {}
+
+
+def test_rare_same_sector_and_country_within_window_is_same_target() -> None:
+    got = _derive_extra(
+        _e("a", 0, sectors={"finance"}, countries={"JP"}),
+        _e("b", 10, sectors={"finance"}, countries={"JP"}),
+    )
+
+    assert got == {("a", "b"): "same_target"}
+
+
+def test_same_target_outside_window_is_not_related() -> None:
+    got = _derive_extra(
+        _e("a", 0, sectors={"finance"}, countries={"JP"}),
+        _e("b", 30, sectors={"finance"}, countries={"JP"}),
+    )
+
+    assert got == {}
+
+
+def test_frequent_sector_country_combo_is_not_same_target() -> None:
+    """(業種, 国) の組み合わせが窓内で頻出なら「珍しい」とみなさず線にしない。"""
+    extra = [_e(f"x{i}", i, sectors={"finance"}, countries={"JP"}) for i in range(10)]
+    a = _e("a", 0, sectors={"finance"}, countries={"JP"})
+    b = _e("b", 5, sectors={"finance"}, countries={"JP"})
+
+    got = _derive_extra(a, b, *extra)
+
+    assert ("a", "b") not in got

@@ -77,7 +77,9 @@ class TestRender:
         assert text.index("同じ出来事の関連") < text.index("同じアクター")
 
     def test_line_cap(self) -> None:
-        rels = {"E1": [Rel("E1", f"X{i}", "same_actor", ("actor:apt1",)) for i in range(40)]}
+        # アクターを散らす (別名の「同じアクター」40 本) — ハブ抑制 (同じアクターは節全体で
+        # 上限 SAME_ACTOR_HUB_CAP 本) に巻き込まれず、max_lines による切り詰めだけを見る
+        rels = {"E1": [Rel("E1", f"X{i}", "same_actor", (f"actor:apt{i}",)) for i in range(40)]}
         first = {f"X{i}": datetime(2026, 8, 1, tzinfo=UTC) for i in range(40)}
         heads = {f"X{i}": f"事象 {i}" for i in range(40)}
 

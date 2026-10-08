@@ -16,6 +16,11 @@
 - ``contains`` 包含: まとめの事象が、個別の事象と焦点 CVE か被害組織を共有
 
 珍しさ = その指標を持つ事象の数 (df)。汎用の道具・頻出の国は線にしない (§12)。
+
+GraphRAG (src/graph/) 専用の候補線 (``GRAPHRAG_EXTRA_TYPES``、画面には出さない):
+- ``same_capability`` 同一能力: 珍しいマルウェア/ツールの共有、主題アクターの共有は無い
+- ``same_nation`` 同じ帰属国: 主題アクターは別だが帰属国 (国家系のみ) が同じ
+- ``same_target`` 同じ業種・国: 珍しい (業種, 国) の組み合わせ + 14 日以内
 """
 
 from __future__ import annotations
@@ -314,6 +319,202 @@ def derive_with_model(
             basis = tuple(f"actor:{s}" for s in sorted(a.subjects & b.subjects))
             out.append(DerivedRelation(a.item_id, b.item_id, "same_actor", basis, extra))
     return out
+
+
+#: GraphRAG 専用の候補線 (src/graph/ の取得だけが使う。既定では画面・本番の節に出さない —
+#: 精度を種類ごとに盲検で測ってから開くため)。ENABLED_TYPES には入れない。
+GRAPHRAG_EXTRA_TYPES: tuple[str, ...] = ("same_capability", "same_nation", "same_target")
+RELATION_LABELS.update(
+    {
+        "same_capability": "珍しい道具の共有",
+        "same_nation": "同じ帰属国 (別アクター)",
+        "same_target": "同じ業種・国の被害",
+    }
+)
+#: same_target の時間窓 (日)。帰属の無いキャンペーンと同じ目安 (§「珍しい組み合わせに限る」)
+SAME_TARGET_WINDOW = UNATTRIBUTED_WINDOW
+#: (業種, 国) 組の珍しさの上限
+SAME_TARGET_RARE_DF = RARE_DF
+#: (業種, 国) 組で候補を作る上限 (多産な組み合わせは総当たりにしない)
+_TARGET_INDEX_CAP = 200
+
+
+def _target_key(sector: str, country: str) -> str:
+    return f"{sector}|{country}"
+
+
+def _target_df(events: Iterable[EventFeatures]) -> dict[str, int]:
+    out: dict[str, int] = defaultdict(int)
+    for e in events:
+        for s in e.sectors:
+            for c in e.countries:
+                out[_target_key(s, c)] += 1
+    return out
+
+
+def _target_candidate_pairs(events: list[EventFeatures]) -> set[tuple[int, int]]:
+    """(業種, 国) 組を共有する事象の組 (添字)。多産な組み合わせは除く。"""
+    index: dict[str, list[int]] = defaultdict(list)
+    for i, e in enumerate(events):
+        for s in e.sectors:
+            for c in e.countries:
+                index[_target_key(s, c)].append(i)
+    pairs: set[tuple[int, int]] = set()
+    for members in index.values():
+        if len(members) > _TARGET_INDEX_CAP:
+            continue
+        for x in range(len(members)):
+            for y in range(x + 1, len(members)):
+                pairs.add((members[x], members[y]))
+    return pairs
+
+
+def _nation_candidate_pairs(
+    events: list[EventFeatures],
+    *,
+    nation_of: Callable[[str], str | None],
+    is_state_actor_id: Callable[[str], bool],
+) -> set[tuple[int, int]]:
+    """帰属国 (国家系アクターのみ) を共有する事象の組 (添字)。"""
+    index: dict[str, list[int]] = defaultdict(list)
+    for i, e in enumerate(events):
+        nations = {nation_of(s) for s in e.subjects if is_state_actor_id(s)} - {None}
+        for n in nations:
+            index[str(n)].append(i)
+    pairs: set[tuple[int, int]] = set()
+    for members in index.values():
+        if len(members) > _TARGET_INDEX_CAP:
+            continue
+        for x in range(len(members)):
+            for y in range(x + 1, len(members)):
+                pairs.add((members[x], members[y]))
+    return pairs
+
+
+def classify_graphrag_extra(
+    a: EventFeatures,
+    b: EventFeatures,
+    stats: _Stats,
+    *,
+    nation_of: Callable[[str], str | None],
+    is_state_actor_id: Callable[[str], bool],
+    target_df: Mapping[str, int],
+) -> DerivedRelation | None:
+    """GraphRAG 専用の候補線 (同一能力 / 同じ帰属国 / 同じ業種・国)。
+
+    画面にはまだ出さない (§「取り方」)。候補の質を標本で測ってから
+    :data:`ENABLED_TYPES` に合流させるかを決める。
+    """
+    a, b = _ordered(a, b)
+    shared_subjects = a.subjects & b.subjects
+    capability = stats.rare("malware", a.malware & b.malware) | stats.rare(
+        "tools", a.tools & b.tools
+    )
+    a_state = {s for s in a.subjects if is_state_actor_id(s)}
+    b_state = {s for s in b.subjects if is_state_actor_id(s)}
+    if a_state and b_state and not shared_subjects:
+        nations = {nation_of(s) for s in a_state} & {nation_of(s) for s in b_state}
+        nations -= {None}
+        if nations:
+            basis = tuple(sorted(f"nation:{n}" for n in nations if n))
+            return DerivedRelation(a.item_id, b.item_id, "same_nation", basis)
+
+    if capability and not shared_subjects:
+        basis = tuple(sorted(f"cap:{c}" for c in capability))
+        return DerivedRelation(a.item_id, b.item_id, "same_capability", basis)
+
+    shared_target = {
+        _target_key(s, c) for s in (a.sectors & b.sectors) for c in (a.countries & b.countries)
+    }
+    rare_target = {k for k in shared_target if target_df.get(k, 0) <= SAME_TARGET_RARE_DF}
+    gap = b.first - a.last
+    if rare_target and gap <= SAME_TARGET_WINDOW:
+        basis = tuple(sorted(f"target:{k}" for k in rare_target))
+        return DerivedRelation(a.item_id, b.item_id, "same_target", basis)
+
+    return None
+
+
+def derive_graphrag_extra_relations(
+    events: list[EventFeatures],
+    *,
+    nation_of: Callable[[str], str | None],
+    is_state_actor_id: Callable[[str], bool],
+) -> list[DerivedRelation]:
+    """GraphRAG 専用の候補線を導く (純粋関数。呼び手は src/graph/ のみ)。"""
+    stats = _Stats({attr: _df(events, attr) for attr in _INDEXED})
+    target_df = _target_df(events)
+    pairs = (
+        _candidate_pairs(events, stats)
+        | _target_candidate_pairs(events)
+        | _nation_candidate_pairs(events, nation_of=nation_of, is_state_actor_id=is_state_actor_id)
+    )
+    out: list[DerivedRelation] = []
+    for i, j in sorted(pairs):
+        rel = classify_graphrag_extra(
+            events[i],
+            events[j],
+            stats,
+            nation_of=nation_of,
+            is_state_actor_id=is_state_actor_id,
+            target_df=target_df,
+        )
+        if rel is not None:
+            out.append(rel)
+    return out
+
+
+#: GraphRAG の節に出す専用の線 (2026-10-08、Opus 5.5 盲検 各 20 組)。
+#: - same_nation: 正しい 17/20 (役に立つ 15)。誤りは帰属の無い事象に付いた帰属国の 1 件由来
+#: - same_target: 13/20 — 被害国の抽出 (報告機関の国を被害国に) が直るまで出さない
+#: - same_capability: 3/20 — 触れただけの道具を「使った」と抽出している。出さない
+GRAPHRAG_ENABLED_EXTRA: frozenset[str] = frozenset({"same_nation"})
+#: 1 事象あたりの専用の線の上限 (時期の近い順)
+GRAPHRAG_EXTRA_CAP = 3
+_extra_cache: dict[int, tuple[float, dict[str, list[DerivedRelation]]]] = {}
+
+
+def index_extra_relations(
+    rels: list[DerivedRelation], *, types: frozenset[str], cap: int = GRAPHRAG_EXTRA_CAP
+) -> dict[str, list[DerivedRelation]]:
+    """事象 id → 専用の線 (``types`` のみ、``cap`` 本まで。入力は時期順を保つ)。"""
+    index: dict[str, list[DerivedRelation]] = defaultdict(list)
+    for r in rels:
+        if r.rel_type in types:
+            index[r.a].append(r)
+            index[r.b].append(r)
+    return {iid: rs[-cap:] for iid, rs in index.items()}
+
+
+def graphrag_extra_by_event(
+    repo: object, *, days: int = WINDOW_DAYS, types: frozenset[str] = GRAPHRAG_ENABLED_EXTRA
+) -> dict[str, list[DerivedRelation]]:
+    """事象 id → GraphRAG 専用の線 (キャッシュつき)。呼び手は src/graph/ のみ。"""
+    import time
+
+    from src.cti.actor_normalizer import load_actor_aliases
+    from src.cti.threat_actor_doctrine import is_state_actor
+    from src.eventnews.relation_features import actor_helpers, load_event_features
+
+    if not types:
+        return {}
+    now = time.monotonic()
+    hit = _extra_cache.get(days)
+    if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
+        return hit[1]
+    nation_of, _related = actor_helpers()
+    reg = load_actor_aliases()
+
+    def is_state_actor_id(actor_id: str) -> bool:
+        actor = reg.by_id(actor_id)
+        return actor is not None and is_state_actor(actor.nation, actor.family)
+
+    events = sorted(load_event_features(repo, days=days), key=lambda e: e.first)  # type: ignore[arg-type]
+    rels = derive_graphrag_extra_relations(
+        events, nation_of=nation_of, is_state_actor_id=is_state_actor_id
+    )
+    _extra_cache[days] = (now, index_extra_relations(rels, types=types))
+    return _extra_cache[days][1]
 
 
 def index_relations(rels: list[DerivedRelation]) -> dict[str, list[DerivedRelation]]:
