@@ -803,6 +803,11 @@ CREATE TABLE IF NOT EXISTS triage_shadow (
     new_kept            SMALLINT  NOT NULL,
     created_at          TEXT      NOT NULL
 );
+-- 日本関連性 ML カスケード (M4、2026-10-08)。SQLite _SCHEMA と対。
+ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS jp_prob REAL;
+ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS jp_ml_fired SMALLINT;
+ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS jp_cascade SMALLINT;
+ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS new_kept_v2 SMALLINT;
 CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
 
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。

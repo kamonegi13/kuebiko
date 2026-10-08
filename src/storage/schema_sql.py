@@ -661,7 +661,12 @@ CREATE TABLE IF NOT EXISTS triage_shadow (
     hint_fired          INTEGER NOT NULL,       -- 0/1
     hint_reasons        TEXT    NOT NULL,       -- 発火理由をカンマ区切りで保存 (空文字=未発火)
     new_kept            INTEGER NOT NULL,       -- 0/1 (flat_importance>=medium OR hint_fired)
-    created_at          TEXT    NOT NULL                -- ISO8601 UTC
+    created_at          TEXT    NOT NULL,               -- ISO8601 UTC
+    -- 日本関連性 ML カスケード (M4、2026-10-08)。既存 DB への追加は _apply_migrations で行う。
+    jp_prob             REAL,       -- src.cti.relevance_ml の y_jp 確率 (モデル不在/失敗=NULL)
+    jp_ml_fired         INTEGER,    -- 0/1/NULL (99%-recall 閾値、カスケード前)
+    jp_cascade          INTEGER,    -- 0/1/NULL (帯外=LLM 未呼出、NULL)
+    new_kept_v2         INTEGER     -- 0/1/NULL (flat>=medium OR jp_final OR 決定論ヒント)
 );
 CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
 

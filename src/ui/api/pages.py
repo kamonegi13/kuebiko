@@ -631,6 +631,7 @@ def triage_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> d
     from src.cti.nation_gazetteer import nations_in_text
 
     summary = repo.summarize_triage_shadow(days=days)
+    summary_v2 = repo.summarize_triage_shadow_v2(days=days)
     disagreements = repo.list_triage_shadow_disagreements(days=days, limit=limit)
     # go/no-go 基準 (§6): 現行は採用・新ルールは不採用の記事のうち日本関連 (タイトルの
     # 国名ガゼッタ判定) の件数は 0 が目標。この行は新ルールのヒントが不発火 (だから
@@ -651,6 +652,18 @@ def triage_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> d
             "total": summary.total,
         },
         "japan_dropped_by_new_rule": japan_dropped_by_new_rule,
+        # v2 (M4、2026-10-08): 日本関連性 ML カスケード込みの new_kept_v2 で見た 2x2 と、
+        # flat-low (平たい triage 単独なら落とす) を ML/カスケードが拾い直した件数。
+        # new_kept_v2 が NULL (ML 未使用・embedder/model 不在) の行は除外して集計する。
+        "summary_v2": {
+            "both_kept": summary_v2.both_kept,
+            "current_only": summary_v2.current_only,
+            "new_only": summary_v2.new_only,
+            "both_dropped": summary_v2.both_dropped,
+            "total": summary_v2.total,
+            "rescued": summary_v2.rescued,
+            "rescued_label_unknown": summary_v2.rescued_label_unknown,
+        },
         "disagreements": [
             {
                 "article_id": r.article_id,
@@ -664,6 +677,10 @@ def triage_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> d
                 "hint_reasons": list(r.hint_reasons),
                 "new_kept": r.new_kept,
                 "ts": r.ts,
+                "jp_prob": r.jp_prob,
+                "jp_ml_fired": r.jp_ml_fired,
+                "jp_cascade": r.jp_cascade,
+                "new_kept_v2": r.new_kept_v2,
             }
             for r in disagreements
         ],

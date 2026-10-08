@@ -140,6 +140,11 @@ class Step(StrEnum):
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
     PIR_LLM_JUDGE = "pir_llm_judge"  # 概念 PIR の主題判定 (夜間バッチ、候補ゲート通過分のみ)
     ACTOR_SYNC = "actor_sync"  # MITRE actor alias 和訳・提案
+    # 日本関連性 ML カスケード (M4、2026-10-08、triage shadow 専用)。確信度が低い帯
+    # (``src.cti.relevance_ml.in_uncertain_band``) の記事だけに「日本関与か」を聞く
+    # 小さな構造化判定。triage 本体と別 step にする理由は EVENT_KIND と同じ (借用禁止の衛生) —
+    # 将来ここだけ別モデルを割り当てたくなった時に triage の上書きを継承しない
+    RELEVANCE_JP_CASCADE = "relevance_jp_cascade"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -197,6 +202,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # spotlight は PIR 縦断 narrative (散文生成)。timeout は step 固有 600s。
     Step.PIR_SPOTLIGHT: StepSpec(Tier.NARRATIVE, 600.0),
     Step.ACTOR_SYNC: StepSpec(Tier.FAST, 300.0),
+    # 1 件 = タイトル+概要の小さな bool 判定 (max_tokens 200)。triage と同じ fast ティア。
+    Step.RELEVANCE_JP_CASCADE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),

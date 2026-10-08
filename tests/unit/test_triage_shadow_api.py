@@ -113,5 +113,43 @@ def test_japan_dropped_by_new_rule_field_is_present(
     assert res.json()["japan_dropped_by_new_rule"] >= 0
 
 
+def test_summary_v2_field_present(shadow_client: tuple[TestClient, RunHistoryRepository]) -> None:
+    client, repo = shadow_client
+    rescued = TriageShadowRow(
+        article_id="rss:1",
+        url="https://a.example/1",
+        title="rescued",
+        feed_title="A",
+        feed_url="https://a.example/feed",
+        current_importance="low",
+        current_kept=False,
+        flat_importance="low",
+        hint_fired=False,
+        hint_reasons=(),
+        new_kept=False,
+        jp_prob=0.5,
+        jp_ml_fired=True,
+        jp_cascade=True,
+        new_kept_v2=True,
+    )
+    repo.record_triage_shadow([rescued])
+
+    res = client.get("/api/v1/triage-shadow/summary?days=7")
+
+    data = res.json()
+    assert "summary_v2" in data
+    for key in (
+        "both_kept",
+        "current_only",
+        "new_only",
+        "both_dropped",
+        "total",
+        "rescued",
+        "rescued_label_unknown",
+    ):
+        assert key in data["summary_v2"]
+    assert data["summary_v2"]["rescued"] == 1
+
+
 def test_not_in_public_get_allowlist() -> None:
     assert is_read_only_blocked_get("/api/v1/triage-shadow/summary") is True

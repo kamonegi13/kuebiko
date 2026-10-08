@@ -361,6 +361,7 @@ async def run_pipeline(
     skip_dedup: bool = False,
     triage_llm: LLMClient | None = None,
     triage_rescue_llm: LLMClient | None = None,
+    relevance_jp_cascade_llm: LLMClient | None = None,
     run_id: int | None = None,
     channel_routing: ChannelRouting | None = None,
     enrichment: object | None = None,  # LlmEnrichment (Phase 5D)
@@ -566,6 +567,8 @@ async def run_pipeline(
             max_keep=pipeline.processor.triage_max_keep,
             think=pipeline.processor.think_enabled,
             rescue_llm=triage_rescue_llm,
+            relevance_embedder=embedder,
+            relevance_cascade_llm=relevance_jp_cascade_llm,
         )
         # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。triage_rejections
         # と同じ dry-run gate (手動プレビューで go/no-go の集計を汚さない)。

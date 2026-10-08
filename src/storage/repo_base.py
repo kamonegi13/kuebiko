@@ -394,3 +394,16 @@ class RunHistoryRepositoryBase:
             conn.execute(
                 "ALTER TABLE article_severity_axes ADD COLUMN distribution_compromise INTEGER"
             )
+
+        # 日本関連性 ML カスケード (M4、2026-10-08): triage_shadow に ML 確率・ML 発火・
+        # カスケード結果・v2 版 new_kept を追加 (既存 new_kept はそのまま残し比較用)。
+        # jp_cascade は帯外 (ML だけで確定) なら NULL のまま (LLM を呼んでいない印)。
+        existing_shadow = {row["name"] for row in conn.execute("PRAGMA table_info(triage_shadow)")}
+        if existing_shadow and "jp_prob" not in existing_shadow:
+            conn.execute("ALTER TABLE triage_shadow ADD COLUMN jp_prob REAL")
+        if existing_shadow and "jp_ml_fired" not in existing_shadow:
+            conn.execute("ALTER TABLE triage_shadow ADD COLUMN jp_ml_fired INTEGER")
+        if existing_shadow and "jp_cascade" not in existing_shadow:
+            conn.execute("ALTER TABLE triage_shadow ADD COLUMN jp_cascade INTEGER")
+        if existing_shadow and "new_kept_v2" not in existing_shadow:
+            conn.execute("ALTER TABLE triage_shadow ADD COLUMN new_kept_v2 INTEGER")

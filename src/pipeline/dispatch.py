@@ -160,6 +160,10 @@ async def run_default(
             if os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0"
             else None
         )
+        # 日本関連性 ML カスケード (M4、2026-10-08)。影子記録専用、本番判定は変えない。
+        relevance_jp_cascade_llm: LLMClient | None = build_llm_for(
+            Step.RELEVANCE_JP_CASCADE, config
+        )
 
         # Phase 2: Grok email source の場合のみ IMAP / Playwright を立ち上げる
         imap_client: ImapClient | None = None
@@ -204,6 +208,7 @@ async def run_default(
             skip_dedup=skip_dedup,
             triage_llm=triage_llm,
             triage_rescue_llm=triage_rescue_llm,
+            relevance_jp_cascade_llm=relevance_jp_cascade_llm,
             run_id=run_id,
             channel_routing=channel_routing,
             enrichment=enrichment,

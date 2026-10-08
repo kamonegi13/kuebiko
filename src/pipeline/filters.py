@@ -162,6 +162,8 @@ async def _filter_by_triage(
     max_keep: int,
     think: bool = False,
     rescue_llm: LLMClient | None = None,
+    relevance_embedder: EmbeddingClient | None = None,
+    relevance_cascade_llm: LLMClient | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -185,6 +187,10 @@ async def _filter_by_triage(
         shadow_rows: M4 の影子記録 (``src.tools.triage_shadow``、2026-10-08)。
             現行判定と「平たい triage + 取り込みヒント」を並べて記録する安全網。
             本番の判定・配信には一切影響しない (呼び出し側が DB に保存するかは任意)。
+
+    ``relevance_embedder`` / ``relevance_cascade_llm`` (M4、2026-10-08): 日本関連性 ML
+    カスケードに使う埋込クライアント・LLM。いずれか None なら ML 側は skip (jp_prob 等は
+    None で記録)。dedup 用に既に構築済みの embedder を再利用する想定 (同じ生産埋込モデル)。
     """
     from src.tools.article_triage import ArticleTriage  # 遅延インポート (循環回避)
 
@@ -284,7 +290,12 @@ async def _filter_by_triage(
             for article, importance, _err, _reason in decisions
         ]
         shadow_rows = await run_triage_shadow(
-            shadow_decisions, llm=llm, keep_importance=keep_importance, think=think
+            shadow_decisions,
+            llm=llm,
+            keep_importance=keep_importance,
+            think=think,
+            relevance_embedder=relevance_embedder,
+            relevance_cascade_llm=relevance_cascade_llm,
         )
     except Exception as e:  # noqa: BLE001 — 影子記録の失敗は本処理を止めない
         _log.warning("triage_shadow_run_failed", error=str(e)[:200])
