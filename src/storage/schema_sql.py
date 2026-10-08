@@ -642,6 +642,29 @@ CREATE TABLE IF NOT EXISTS triage_rejections (
 );
 CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
 
+-- triage 影子記録 (2026-10-08、M4、docs/importance_relevance_redesign.md §6)。s23 投入前に
+-- 「平たい triage (TRIAGE_FLAT) + 取り込み時ヒント (src.cti.ingest_relevance)」の新しい
+-- 取り込み判定を、本番 (現行 triage) の判定と並べて記録する安全網。本番の判定は変えない
+-- (記録のみ)。1 run あたり TRIAGE_SHADOW_PER_RUN 件まで。retention 60 日。
+-- title/feed_title は articles 行に依存しない (落選記事は articles 行が無い、
+-- triage_rejections と同じ理由で直接保存する)。
+CREATE TABLE IF NOT EXISTS triage_shadow (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id          TEXT    NOT NULL,
+    url                 TEXT    NOT NULL,
+    title               TEXT    NOT NULL,
+    feed_title          TEXT    NOT NULL,
+    feed_url            TEXT    NOT NULL,
+    current_importance  TEXT    NOT NULL,
+    current_kept        INTEGER NOT NULL,       -- 0/1
+    flat_importance      TEXT    NOT NULL,
+    hint_fired          INTEGER NOT NULL,       -- 0/1
+    hint_reasons        TEXT    NOT NULL,       -- 発火理由をカンマ区切りで保存 (空文字=未発火)
+    new_kept            INTEGER NOT NULL,       -- 0/1 (flat_importance>=medium OR hint_fired)
+    created_at          TEXT    NOT NULL                -- ISO8601 UTC
+);
+CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

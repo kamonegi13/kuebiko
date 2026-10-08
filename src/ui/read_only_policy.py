@@ -63,6 +63,12 @@ PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
     "/api/v1/public/news",
 )
 
+# 運用系 read API の例 (2026-10-08、M4): GET /api/v1/triage-shadow/summary は
+# 落選記事のタイトル・判定理由を含むため、意図的にここへ追加しない (= 既定で
+# Tier1 認証済みのみ到達可能。is_public_get の default-deny が実体)。
+# 新しい運用系 read API を足すときは、ここに入れるべきでないことを 1 行で記録する
+# (「書き忘れて露出した」のか「意図して出していない」のかを後から判別できるように)。
+
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に
 # 化けないよう完全一致で判定する (path traversal / endpoint すり替えの排除)。
 _TRIGGER_PATH_RE = re.compile(r"^/api/v1/jobs/[A-Za-z0-9._-]{1,64}/run$")

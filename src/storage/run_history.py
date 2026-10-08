@@ -63,6 +63,7 @@ from src.storage.repo_summary_embeddings import SummaryEmbeddingMixin
 from src.storage.repo_synthesis import SynthesisMixin
 from src.storage.repo_translation import TranslationChunksMixin
 from src.storage.repo_triage_rejections import TriageRejectionsMixin
+from src.storage.repo_triage_shadow import TriageShadowMixin
 from src.storage.repo_tuning_labels import TuningLabelsMixin
 from src.storage.row_mappers import (
     _from_iso,
@@ -96,6 +97,7 @@ class RunHistoryRepository(
     TranslationChunksMixin,
     OpsNoticesMixin,
     TriageRejectionsMixin,
+    TriageShadowMixin,
     TuningLabelsMixin,
     EventNewsMixin,
     SummaryEmbeddingMixin,

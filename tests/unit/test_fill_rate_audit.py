@@ -120,6 +120,11 @@ class TestMetricsRegistration:
         keys = {m.key for m in METRICS}
         assert {"article_type", "victim_country", "is_ransomware"} <= keys
 
+    def test_triage_shadow_registered(self) -> None:
+        """M4 (2026-10-08): triage_shadow の生存監視が METRICS に登録されている。"""
+        keys = {m.key for m in METRICS}
+        assert "triage_shadow" in keys
+
 
 class TestDetectFillDrift:
     """緩慢劣化 (トレンド) 検知 — collapse 比 0.5 では不可視の単調ドリフトを捉える。

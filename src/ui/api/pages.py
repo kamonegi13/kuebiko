@@ -611,6 +611,65 @@ def subscriptions_triage_rejections(
     }
 
 
+#: triage-shadow summary の窓幅上限 (2026-10-08、M4)。長期保持 (60 日) より短く絞る —
+#: 画面用途は直近の go/no-go 判断であり、purge_triage_shadow の retention とは別物
+_TRIAGE_SHADOW_MAX_DAYS = 60
+_TRIAGE_SHADOW_MAX_LIMIT = 200
+
+
+@pages_api.get("/triage-shadow/summary")
+def triage_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> dict[str, Any]:
+    """triage 影子記録 (M4) の go/no-go 用集計を返す (2026-10-08)。
+
+    2x2 (current_kept × new_kept) の件数と、食い違った記事の一覧 (タイトル・フィード・
+    両方の判定・ヒントの理由) を返す。運用系 read API のため PUBLIC_GET_ALLOWLIST には
+    入れない (公開 instance では匿名から読めない、src/ui/read_only_policy.py)。
+    """
+    days = max(1, min(int(days), _TRIAGE_SHADOW_MAX_DAYS))
+    limit = max(1, min(int(limit), _TRIAGE_SHADOW_MAX_LIMIT))
+    repo: RunHistoryRepository = request.app.state.repo
+    from src.cti.nation_gazetteer import nations_in_text
+
+    summary = repo.summarize_triage_shadow(days=days)
+    disagreements = repo.list_triage_shadow_disagreements(days=days, limit=limit)
+    # go/no-go 基準 (§6): 現行は採用・新ルールは不採用の記事のうち日本関連 (タイトルの
+    # 国名ガゼッタ判定) の件数は 0 が目標。この行は新ルールのヒントが不発火 (だから
+    # new_kept=False) なので hint_reasons には出ない — タイトルから別途判定する
+    # (概要は保存していないので粗い近似。厳密な再現率確認は disagreements 一覧を目視)
+    japan_dropped_by_new_rule = sum(
+        1
+        for r in disagreements
+        if r.current_kept and not r.new_kept and "JP" in nations_in_text(r.title)
+    )
+    return {
+        "days": days,
+        "summary": {
+            "both_kept": summary.both_kept,
+            "current_only": summary.current_only,
+            "new_only": summary.new_only,
+            "both_dropped": summary.both_dropped,
+            "total": summary.total,
+        },
+        "japan_dropped_by_new_rule": japan_dropped_by_new_rule,
+        "disagreements": [
+            {
+                "article_id": r.article_id,
+                "url": r.url,
+                "title": r.title,
+                "feed_title": r.feed_title,
+                "current_importance": r.current_importance,
+                "current_kept": r.current_kept,
+                "flat_importance": r.flat_importance,
+                "hint_fired": r.hint_fired,
+                "hint_reasons": list(r.hint_reasons),
+                "new_kept": r.new_kept,
+                "ts": r.ts,
+            }
+            for r in disagreements
+        ],
+    }
+
+
 @pages_api.post("/subscriptions/reliability")
 def subscriptions_set_reliability(
     request: Request,

@@ -158,7 +158,7 @@ S3 にし、被害者のいない重大な脆弱性を S1 にした)。記事の
 | M2 | 深刻さを軸から導いて記録だけする。6 段階を記録だけする | 旧 3 値との対応表、変わる記事を読む |
 | M3 | 下流を 1 つずつ新しい値へ (SIR 別要点 → 台帳 → 地図 → 画面)。旧値は残す | 各下流で変わる記事を読む |
 | M3b | 配信 (Discord) を新しい値の上で作り直す。いまのルールは移さない (原則 6)。切替前に過去の期間で新旧の配信先を再現して比べる | 即時通知の件数と、新旧で差の出た記事を読む |
-| M4 | 段1 (取り込み) を平たい rubric + 関連性の見込みへ。救済の段を外す | 取り込みの増減と、落ちた記事の判定記録 (triage_rejections) |
+| M4 | 段1 (取り込み) を平たい rubric + 関連性の見込みへ。救済の段を外す。**実装は §6b (2026-10-08、安全網の記録のみ・既定 OFF)** | 取り込みの増減と、落ちた記事の判定記録 (triage_rejections)・影子記録 (triage_shadow、§6b の go/no-go 基準) |
 | M5 | 学習: s23 から深刻さの rubric (平たい) と深刻度の軸だけを教師に。基準を変えた例を混ぜる | 裁定した正解集で |
 | M6 | 旧 3 値の生成を止める (表示・互換のための写像だけ残す) | — |
 
@@ -169,6 +169,56 @@ S3 にし、被害者のいない重大な脆弱性を S1 にした)。記事の
   ∨ 関連性の決まりごと)** を済ませる。順番を逆にすると、日本関連の記事が取り込みと配信で下がる
   (いまの配信と取り込みは triage の旧来の重要度に依存している)
 - triage の正解集も同じ平たい基準で付け直す (v4 は関連性込みの基準)
+
+## 6b. M4 実装 (2026-10-08、安全網)
+
+s23 (平たい triage、§6 の 2026-10-08 決定) を本番投入する前に、「関連性を見ない判定が
+日本・SIR・注視国の記事を落とさない」ことを確かめるための記録専用の仕掛け。**既定では
+本番の取り込み判定・配信を一切変えない** (下記フラグをすべて立てて初めて挙動が変わる)。
+
+### フラグ
+
+| env | 既定 | 効果 |
+|---|---|---|
+| `TRIAGE_FLAT` | 0 (無効) | triage の prompt を平たい rubric に切替 (既存、`src/tools/triage_flat_rubric.py`) |
+| `TRIAGE_SHADOW_PER_RUN` | **20** (常時 ON) | 1 run あたり最大 N 件、現行判定と「平たい triage + 取り込みヒント」を並べて `triage_shadow` に記録する。0 で無効化 |
+| `TRIAGE_SHADOW_BUDGET_SECONDS` | 180 | 影子記録の 1 run あたり時間予算。超えたら残りをスキップ (本処理を遅延させない) |
+| `INGEST_RULE_V2` | 0 (無効) | ON で取り込みの足切りが `flat triage >= medium OR 取り込みヒント発火` になる。`TRIAGE_FLAT=1` と組み合わせて使う想定 (平たい triage と組まないと「関連性込みの判定 OR 取り込みヒント」の二重足しになる) |
+
+### 実装
+
+- `src/cti/ingest_relevance.py`: `ingest_relevance_hint(feed, title, summary_preview)` —
+  タイトル+概要のみ・再現率優先の粗いヒント。日本/注視国 (中露朝イラン) は
+  `src.cti.nation_gazetteer` の国名ガゼッタ + 既知 APT の国籍 (`config/cti/actor_aliases.yaml`
+  の SSoT を再利用)、関連性の核 8 SIR (`RELEVANCE_CORE_SIRS`) は PIR (DB 正) の
+  `strong_signals.keywords` を `src.cti.keyword_match` の語境界照合で当てる。複製辞書は作らない
+- `src/tools/article_triage.py`: `ArticleTriage.triage_flat()` — `TRIAGE_FLAT` の値に関わらず
+  常に平たい prompt で判定する (影子記録専用、本番モードの切替とは独立)
+- `src/tools/triage_shadow.py`: `run_triage_shadow()` — `TRIAGE_SHADOW_PER_RUN` 件まで
+  `triage_flat` + `ingest_relevance_hint` を実行し `TriageShadowRow` を組み立てる。1 件の
+  失敗は飲む、時間予算超過で残りをスキップ
+- `src/pipeline/filters.py::_filter_by_triage`: 本番判定のあとに影子記録を実行し呼び出し元
+  (`src/pipeline/orchestrator.py`) が `RunHistoryRepository.record_triage_shadow` で保存
+  (dry-run は保存しない、triage_rejections と同じ gate)。`INGEST_RULE_V2=1` のときは
+  rejected 候補に対してのみ (決定論・LLM 不使用なので安い) `ingest_relevance_hint` を適用し、
+  発火すれば `kept` に回す
+- DB: `triage_shadow` テーブル (SQLite `schema_sql.py` / PostgreSQL `pg_schema.py` 両方に追加、
+  `repo_triage_shadow.py` が読み書きの mixin)。retention 60 日 (`maintenance.py` の日次衛生)
+- API: `GET /api/v1/triage-shadow/summary?days=7&limit=50` — 2x2 (`current_kept × new_kept`)
+  の集計、食い違った記事一覧 (タイトル・フィード・両方の判定・ヒント理由)、`タイトルの国名
+  ガゼッタ判定で近似した「現行は採用・新ルールは不採用・日本関連」の件数を返す。公開面には出さない
+  (`src/ui/read_only_policy.py` の `PUBLIC_GET_ALLOWLIST` に入れていない = 既定で Tier1 認証済みのみ)
+- fill-rate 監査: `src/ui/services/fill_rate_audit.py` の `METRICS` に `triage_shadow` を追加
+  (監視対象は完全な沈黙のみ — 既定でも posted 全件の一部にしか付かないため被覆率そのものは低くて正常)
+
+### 読み方と go/no-go 基準 (提案)
+
+- `current_only` (現行は採用・新ルールは不採用) のうち **日本関連が 7 日以上 0 件** であること
+  (`japan_dropped_by_new_rule` フィールド、タイトルの国名ガゼッタ近似。厳密な確認は
+  `disagreements` の一覧を目視)
+- 取り込みの総量変化 (`new_only` − `current_only` を `total` に対する比で見る) が **±20% 以内**
+- 上記 2 点を満たしたら `TRIAGE_FLAT=1` + `INGEST_RULE_V2=1` を本番投入してよい (s23 投入の
+  前提、§6 の 2026-10-08 決定の「投入の順番の制約」に従い M3b (配信を 6 段階へ) も先に済ませる)
 
 ## 7. 検証計画
 

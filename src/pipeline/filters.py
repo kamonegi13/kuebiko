@@ -11,9 +11,11 @@ from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 from src.config_loader import AppConfig
+from src.cti.ingest_relevance import ingest_relevance_hint
 from src.logging_config import get_logger
 from src.pipeline.grok_convert import _is_grok_article
 from src.storage.repo_triage_rejections import TriageRejectionRow
+from src.storage.repo_triage_shadow import TriageShadowRow
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, check_extracted_identity
@@ -105,6 +107,21 @@ def _triage_concurrency() -> int:
     return min(value, _TRIAGE_CONCURRENCY_MAX)
 
 
+_INGEST_RULE_V2_ENV = "INGEST_RULE_V2"
+
+
+def _ingest_rule_v2_enabled() -> bool:
+    """M4 の取り込みルール (2026-10-08): ``flat triage >= medium OR 取り込みヒント``。
+
+    既定 OFF = 従来どおり importance (triage の判定) のみで足切り。ON にする意味は
+    ``TRIAGE_FLAT=1`` (平たい triage) と組み合わせたときのみ — 関連性を見ない平たい判定が
+    日本・SIR・注視国の記事を落とさないための安全網 (docs/importance_relevance_redesign.md
+    §6 M4)。triage が旧来の関連性込み判定のままでも hint の OR 自体は害にならないが、
+    その場合は二重に関連性を効かせることになるため非推奨。
+    """
+    return os.environ.get(_INGEST_RULE_V2_ENV, "0").strip() in ("1", "true", "yes", "on")
+
+
 def _filter_duplicates(
     articles: list[Article],
     dedup_repo: RunHistoryRepository,
@@ -145,7 +162,7 @@ async def _filter_by_triage(
     max_keep: int,
     think: bool = False,
     rescue_llm: LLMClient | None = None,
-) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow]]:
+) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
     Grok 経路の記事は triage 対象外 (元から重要度を内包しているため)。
@@ -165,6 +182,9 @@ async def _filter_by_triage(
             呼び出し側が URL 既読化する = 判断済みの終端状態 (2026-07-12)。
             max_keep の枠あふれ (評価は通ったが予算切り) は含めない —
             未採用でなく未処理であり、次 run のリトライ権を保持する。
+        shadow_rows: M4 の影子記録 (``src.tools.triage_shadow``、2026-10-08)。
+            現行判定と「平たい triage + 取り込みヒント」を並べて記録する安全網。
+            本番の判定・配信には一切影響しない (呼び出し側が DB に保存するかは任意)。
     """
     from src.tools.article_triage import ArticleTriage  # 遅延インポート (循環回避)
 
@@ -180,7 +200,7 @@ async def _filter_by_triage(
             triage_targets.append(a)
 
     if not triage_targets:
-        return articles, 0, [], 0, []
+        return articles, 0, [], 0, [], []
 
     # 並列 triage (既定 5 — Ollama サーバへの負荷バランス)
     sem = asyncio.Semaphore(_triage_concurrency())
@@ -214,10 +234,25 @@ async def _filter_by_triage(
     importance_rank = {"high": 0, "medium": 1, "low": 2}
     decisions.sort(key=lambda x: (importance_rank.get(x[1], 3), x[0].id in rescued))
 
+    ingest_rule_v2 = _ingest_rule_v2_enabled()
     kept: list[Article] = []
     rejected: list[TriageRejectionRow] = []  # importance 不足 = 評価済み・不採用 (既読化対象)
     for article, importance, _err, reason in decisions:
         if importance not in keep_importance:
+            # M4 (2026-10-08): INGEST_RULE_V2=1 なら、importance 不足でも取り込みヒント
+            # (日本・注視国・関連性の核 SIR) が発火すれば落とさない。TRIAGE_FLAT=1 と
+            # 組み合わせて使う想定 (§6)。hint は決定論・LLM 不使用なので全件に適用して安い。
+            hint_fired = False
+            if ingest_rule_v2:
+                hint = ingest_relevance_hint(
+                    feed=(article.feed_title or "").strip(),
+                    title=(article.title or "").strip(),
+                    summary_preview=triage._triage_content(article),
+                )
+                hint_fired = hint.fired
+            if hint_fired and len(kept) < max_keep:
+                kept.append(article)
+                continue
             rejected.append(
                 TriageRejectionRow(
                     article_id=article.id,
@@ -236,7 +271,25 @@ async def _filter_by_triage(
     kept_ids = {a.id for a in kept}
     skipped_ids = [a.id for a in triage_targets if a.id not in kept_ids]
     survivors = grok_articles + kept
-    return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected
+
+    # M4 影子記録 (2026-10-08): 現行判定 (importance in keep_importance、max_keep の
+    # 枠あふれは数えない) と平たい triage + 取り込みヒントを並べて記録する安全網。
+    # TRIAGE_SHADOW_PER_RUN=0 または対象無しなら no-op (shadow_rows=[])。
+    shadow_rows: list[TriageShadowRow] = []
+    try:
+        from src.tools.triage_shadow import run_triage_shadow
+
+        shadow_decisions = [
+            (article, importance, importance in keep_importance)
+            for article, importance, _err, _reason in decisions
+        ]
+        shadow_rows = await run_triage_shadow(
+            shadow_decisions, llm=llm, keep_importance=keep_importance, think=think
+        )
+    except Exception as e:  # noqa: BLE001 — 影子記録の失敗は本処理を止めない
+        _log.warning("triage_shadow_run_failed", error=str(e)[:200])
+
+    return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected, shadow_rows
 
 
 #: 救済の対象 = triage が地政学・軍事・外交を理由に落とした記事 (理由の欄で判定する)

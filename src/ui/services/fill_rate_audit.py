@@ -305,6 +305,17 @@ METRICS: tuple[FillMetric, ...] = (
         " OR a.socio_political_rationale NOT LIKE '%%</%%')",
         None,
     ),
+    # triage 影子記録 (2026-10-08、M4、docs/importance_relevance_redesign.md §6)。
+    # 既定で全 posted 記事の一部 (TRIAGE_SHADOW_PER_RUN 件/run) にしか付かないため
+    # 被覆率そのものは低くて正常 — 監視対象は**完全な沈黙** (供給が止まったこと)。
+    # rejected (非 posted) の影子記録はこの母集団 (articles.status='posted') に出ないため、
+    # この指標は「記録が生きているか」の生存証明に限る (件数の目安は API 側で見る)。
+    FillMetric(
+        "triage_shadow",
+        "triage影子記録",
+        "EXISTS (SELECT 1 FROM triage_shadow s WHERE s.article_id = a.article_id)",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

@@ -558,6 +558,7 @@ async def run_pipeline(
             skipped_triage_ids,
             triage_error_count,
             rejected_triage,
+            shadow_triage,
         ) = await _filter_by_triage(
             articles,
             effective_triage_llm,
@@ -566,6 +567,13 @@ async def run_pipeline(
             think=pipeline.processor.think_enabled,
             rescue_llm=triage_rescue_llm,
         )
+        # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。triage_rejections
+        # と同じ dry-run gate (手動プレビューで go/no-go の集計を汚さない)。
+        if not dry_run and dedup_repo is not None and shadow_triage:
+            try:
+                dedup_repo.record_triage_shadow(shadow_triage)
+            except Exception as e:  # noqa: BLE001
+                _log.warning("triage_shadow_record_failed", error=str(e)[:200])
         skipped_for_mark_read.extend(skipped_triage_ids)
         # 評価済み・不採用 (importance 不足) は URL 既読化する — 「既読」の状態機械に
         # 欠けていた終端状態 (2026-07-12 根治)。旧経路の「skip→既読化」が Phase X-1

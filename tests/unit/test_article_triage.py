@@ -59,6 +59,35 @@ async def test_llm_failure_falls_back_to_medium() -> None:
 
 
 @pytest.mark.asyncio
+async def test_triage_flat_uses_flat_prompt_regardless_of_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """triage_flat は TRIAGE_FLAT env の値に関わらず常に平たい prompt を使う (2026-10-08、M4)。"""
+    from src.tools.triage_flat_rubric import RUBRIC_VERSION
+
+    monkeypatch.delenv("TRIAGE_FLAT", raising=False)
+    llm = AsyncMock()
+    llm.generate_structured = AsyncMock(
+        return_value=TriageDecision(importance="medium", reason="x"),
+    )
+    triage = ArticleTriage(llm)
+    decision = await triage.triage_flat(_article("テスト記事"))
+    assert decision.importance == "medium"
+    prompt = llm.generate_structured.await_args.args[0]
+    assert RUBRIC_VERSION in prompt
+
+
+@pytest.mark.asyncio
+async def test_triage_flat_failure_falls_back_to_medium() -> None:
+    llm = AsyncMock()
+    llm.generate_structured = AsyncMock(side_effect=RuntimeError("ollama down"))
+    triage = ArticleTriage(llm)
+    decision = await triage.triage_flat(_article("X"))
+    assert decision.importance == "medium"
+    assert decision.error is True
+
+
+@pytest.mark.asyncio
 async def test_prompt_includes_title_and_body() -> None:
     """プロンプトにタイトル・概要が含まれる (LLM 入力の確認)。"""
     llm = AsyncMock()
@@ -177,7 +206,7 @@ class TestFilterByTriageRejectedSplit:
             return TriageDecision(importance="low", reason="?")
 
         llm.generate_structured = AsyncMock(side_effect=_gen)
-        survivors, skipped, skipped_ids, _err, rejected = await _filter_by_triage(
+        survivors, skipped, skipped_ids, _err, rejected, _shadow = await _filter_by_triage(
             arts, llm, keep_importance={"high", "medium"}, max_keep=10
         )
         assert [a.id for a in survivors] == ["a-high"]
@@ -198,13 +227,85 @@ class TestFilterByTriageRejectedSplit:
         llm.generate_structured = AsyncMock(
             return_value=TriageDecision(importance="high", reason="x"),
         )
-        survivors, skipped, skipped_ids, _err, rejected = await _filter_by_triage(
+        survivors, skipped, skipped_ids, _err, rejected, _shadow = await _filter_by_triage(
             arts, llm, keep_importance={"high", "medium"}, max_keep=2
         )
         assert len(survivors) == 2
         assert skipped == 1  # 枠あふれは skip には数える (既読化はしない)
         assert len(skipped_ids) == 1
         assert rejected == []  # 評価は keep 水準 → リトライ権を保持
+
+
+class TestIngestRuleV2:
+    """INGEST_RULE_V2 (2026-10-08、M4): flat triage >= medium OR 取り込みヒント発火。
+
+    既定 (env 未設定) では importance 不足の記事は従来どおり rejected のまま
+    (docs/importance_relevance_redesign.md §6b)。
+    """
+
+    @staticmethod
+    def _a(aid: str, title: str) -> Article:
+        return TestFilterByTriageRejectedSplit._a(aid, title)
+
+    @pytest.mark.asyncio
+    async def test_default_off_rejects_low_japan_article(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.pipeline.filters import _filter_by_triage
+
+        monkeypatch.delenv("INGEST_RULE_V2", raising=False)
+        arts = [self._a("jp", "日本の重要インフラ企業への攻撃")]
+        llm = AsyncMock()
+        llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="low", reason="平たい判定で low"),
+        )
+        survivors, _s, _i, _e, rejected, _shadow = await _filter_by_triage(
+            arts, llm, keep_importance={"high", "medium"}, max_keep=10
+        )
+        assert survivors == []
+        assert [r.article_id for r in rejected] == ["jp"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_keeps_low_japan_article_via_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.pipeline.filters import _filter_by_triage
+
+        monkeypatch.setenv("INGEST_RULE_V2", "1")
+        arts = [
+            self._a("jp", "日本の重要インフラ企業への攻撃"),
+            self._a("noise", "新しいパスワード管理アプリのレビュー"),
+        ]
+        llm = AsyncMock()
+        llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="low", reason="平たい判定で low"),
+        )
+        survivors, _s, _i, _e, rejected, _shadow = await _filter_by_triage(
+            arts, llm, keep_importance={"high", "medium"}, max_keep=10
+        )
+        assert [a.id for a in survivors] == ["jp"]
+        assert [r.article_id for r in rejected] == ["noise"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_still_respects_max_keep_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.pipeline.filters import _filter_by_triage
+
+        monkeypatch.setenv("INGEST_RULE_V2", "1")
+        arts = [
+            self._a("jp1", "日本の重要インフラ企業への攻撃 第一報"),
+            self._a("jp2", "日本の重要インフラ企業への攻撃 第二報"),
+        ]
+        llm = AsyncMock()
+        llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="low", reason="平たい判定で low"),
+        )
+        survivors, _s, _i, _e, rejected, _shadow = await _filter_by_triage(
+            arts, llm, keep_importance={"high", "medium"}, max_keep=1
+        )
+        assert len(survivors) == 1
+        assert [r.article_id for r in rejected] == ["jp2"]
 
 
 class TestGeoRescue:
@@ -256,7 +357,7 @@ class TestGeoRescue:
             }
         )
 
-        survivors, _skipped, _ids, _err, rejected = await _filter_by_triage(
+        survivors, _skipped, _ids, _err, rejected, _shadow = await _filter_by_triage(
             arts, primary, keep_importance={"high", "medium"}, max_keep=10, rescue_llm=rescue
         )
 
@@ -280,7 +381,7 @@ class TestGeoRescue:
         )
         rescue = self._llm({"Russian Navy": TriageDecision(importance="medium", reason="露軍")})
 
-        survivors, _s, _i, _e, rejected = await _filter_by_triage(
+        survivors, _s, _i, _e, rejected, _shadow = await _filter_by_triage(
             arts, primary, keep_importance={"high", "medium"}, max_keep=1, rescue_llm=rescue
         )
 
@@ -294,7 +395,7 @@ class TestGeoRescue:
         arts = [self._a("geo", "PLA drills")]
         primary = self._llm({"PLA drills": TriageDecision(importance="low", reason="軍事")})
 
-        survivors, _s, _i, _e, rejected = await _filter_by_triage(
+        survivors, _s, _i, _e, rejected, _shadow = await _filter_by_triage(
             arts, primary, keep_importance={"high", "medium"}, max_keep=10
         )
 

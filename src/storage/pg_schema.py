@@ -787,6 +787,24 @@ CREATE TABLE IF NOT EXISTS triage_rejections (
 );
 CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
 
+-- triage 影子記録 (2026-10-08、M4、SQLite _SCHEMA と対)。詳細コメントは schema_sql.py の同表。
+CREATE TABLE IF NOT EXISTS triage_shadow (
+    id                  BIGSERIAL PRIMARY KEY,
+    article_id          TEXT      NOT NULL,
+    url                 TEXT      NOT NULL,
+    title               TEXT      NOT NULL,
+    feed_title          TEXT      NOT NULL,
+    feed_url            TEXT      NOT NULL,
+    current_importance  TEXT      NOT NULL,
+    current_kept        SMALLINT  NOT NULL,
+    flat_importance     TEXT      NOT NULL,
+    hint_fired          SMALLINT  NOT NULL,
+    hint_reasons        TEXT      NOT NULL,
+    new_kept            SMALLINT  NOT NULL,
+    created_at          TEXT      NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (

@@ -94,6 +94,33 @@ class ArticleTriage:
                 error=True,
             )
 
+    async def triage_flat(self, article: Article) -> TriageDecision:
+        """平たい (関連性なし) rubric で判定する (``TRIAGE_FLAT`` env に関わらず常に平たい prompt)。
+
+        M4 の影子記録 (``src.tools.triage_shadow``) が、本番の triage モードとは独立に
+        「平たい判定だけなら結果はどうなるか」を比較するために使う。例外処理は
+        ``triage`` と同じ fail-open (medium フォールバック)。
+        """
+        prompt = self._build_prompt_flat(article)
+        try:
+            return await self._llm.generate_structured(
+                prompt,
+                schema=TriageDecision,
+                think=self._think,
+                max_tokens=400,
+            )
+        except Exception as e:  # noqa: BLE001
+            _log.warning(
+                "triage_flat_failed",
+                article_id=article.id,
+                error=str(e),
+            )
+            return TriageDecision(
+                importance="medium",
+                reason=f"triage_flat error: {type(e).__name__}",
+                error=True,
+            )
+
     def _triage_content(self, article: Article) -> str:
         """triage 判定に使う本文プレビューを返す。
 
