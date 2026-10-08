@@ -356,9 +356,40 @@ JUDGE = """あなたは CTI 部門の上級分析官です。同じ台帳 (estim
 """
 
 
+#: 格上げ語の直後 (この字数以内) にあれば否定・留保とみなす語。2026-10-08 の対読で、
+#: 線つき版の「同一キャンペーン」は全件が「…の根拠にはならない」の否定だった
+_NEGATION_WINDOW = 40
+_NEGATIONS: tuple[str, ...] = (
+    "根拠にはなら",
+    "根拠とはなら",
+    "根拠ではな",
+    "根拠はな",
+    "示すものではな",
+    "意味するものではな",
+    "を示す根拠",
+    "かどうか",
+    "か否か",
+    "予断せ",
+    "扱わな",
+    "不明",
+    "断定できな",
+)
+
+
+def _asserted(phrase: str, text: str) -> bool:
+    """``phrase`` が否定・留保を伴わずに 1 回でも使われているか。"""
+    start = 0
+    while (i := text.find(phrase, start)) >= 0:
+        tail = text[i + len(phrase) : i + len(phrase) + _NEGATION_WINDOW]
+        if not any(n in tail for n in _NEGATIONS):
+            return True
+        start = i + len(phrase)
+    return False
+
+
 def _escalation_hits(a_text: str, b_text: str) -> list[str]:
-    """線つき版 (b) にだけ出た格上げ語彙 (機械検出)。"""
-    return [p for p in ESCALATION_PHRASES if p in b_text and p not in a_text]
+    """線つき版 (b) にだけ、否定・留保なしで出た格上げ語彙 (機械検出)。"""
+    return [p for p in ESCALATION_PHRASES if _asserted(p, b_text) and not _asserted(p, a_text)]
 
 
 async def judge(args: argparse.Namespace) -> int:
