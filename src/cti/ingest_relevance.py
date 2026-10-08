@@ -176,7 +176,36 @@ _WATCHED_CAPITALS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: 安全保障・地政学の文脈の語。国名だけだと経済・文化の記事
+#: (中国企業の業績・公演・自然環境) にも反応し、取り込みに雑音が増えた
+#: (並走の記録 91 件中 5 件、2026-10-08)
+_SECURITY_CONTEXT = re.compile(
+    r"攻撃|侵害|ハッカ|サイバー|マルウェア|ランサム|諜報|スパイ|工作|軍|兵器|ミサイル|核|制裁|"
+    r"安全保障|国防|防衛|外交|紛争|戦争|侵攻|偵察|情報機関|当局|政府|輸出規制|訪問|首脳|会談|"
+    r"CIA|FBI|NSA|GCHQ|MI6|"
+    r"attack|hack|breach|cyber|malware|ransom|espionage|spy|intelligence|military|army|navy|"
+    r"missile|nuclear|weapon|sanction|security|defen[cs]e|diplomat|war\b|invasion|government|"
+    r"export control|summit|talks|visit",
+    re.IGNORECASE,
+)
+
+
+#: 経済・文化・スポーツ・自然科学の話題の語。これがあり、安全保障の語 (_SECURITY_CONTEXT) が
+#: 無いときだけ
+#: 注視国の手がかりを外す。許可する語を並べる形は外交・政治の語の幅が広く取りこぼしが増えたため、
+#: 外す語を並べる形にした (取り込みは落とさない側に倒すのが原則)
+_NON_SECURITY_TOPIC = re.compile(
+    r"業績|利益|増益|減益|売上|株価|上場|決算|投資家|公演|バレエ|映画|音楽|芸術|スポーツ|五輪|"
+    r"野生動物|生物多様性|観光|料理|"
+    r"profit|revenue|earnings|shares|stock|ipo|investor|ballet|film|movie|music|art\b|"
+    r"sport|olympic|wildlife|vertebrate|biodiversity|tourism|cuisine",
+    re.IGNORECASE,
+)
+
+
 def _watched_nation_reasons(text: str) -> tuple[str, ...]:
+    if _NON_SECURITY_TOPIC.search(text) and not _SECURITY_CONTEXT.search(text):
+        return ()
     lower = text.lower()
     capital_hits = {n for n, names in _WATCHED_CAPITALS.items() if any(x in lower for x in names)}
     hits = (nations_in_text(text) & WATCHED_NATIONS) | capital_hits

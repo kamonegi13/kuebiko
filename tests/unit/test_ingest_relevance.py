@@ -127,3 +127,22 @@ def test_watched_capital_names_fire() -> None:
         feed="any", title="CIA 長官によるモスクワ訪問の背景", summary_preview=""
     )
     assert "nation:RU" in hint.reasons
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Uniqlo sees profits soar in China despite Beijing-Tokyo tensions",
+        "Bruce Lee ballet to lead WestK performance season in China",
+    ],
+)
+def test_watched_nation_without_security_context_does_not_fire(title: str) -> None:
+    hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+    assert not any(r.startswith("nation:") for r in hint.reasons)
+
+
+def test_watched_nation_with_security_context_fires() -> None:
+    hint = ingest_relevance_hint(
+        feed="any", title="ロシア、ウクライナのエネルギー施設をミサイルで攻撃", summary_preview=""
+    )
+    assert "nation:RU" in hint.reasons
