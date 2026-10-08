@@ -30,9 +30,8 @@ def main() -> None:
     lines = derive_crossdomain(events)
     real = count_by_kind(lines)
     base = permuted_baseline(events, rounds=args.rounds)
-    print(
-        f"geo={sum(e.domain == 'geo' for e in events)} cyber={sum(e.domain == 'cyber' for e in events)}"
-    )
+    n_geo = sum(e.domain == "geo" for e in events)
+    print(f"geo={n_geo} cyber={len(events) - n_geo}")
     rng = random.Random(7)
     samples = []
     for kind in KINDS:
