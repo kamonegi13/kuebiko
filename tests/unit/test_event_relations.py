@@ -231,11 +231,21 @@ def _derive_extra(*events: EventFeatures) -> dict[tuple[str, str], str]:
 
 def test_rare_shared_tool_without_shared_subject_is_same_capability() -> None:
     got = _derive_extra(
+        _e("a", 0, tools={"rareimplant"}, tools_head={"rareimplant"}, subjects={"apt_a"}),
+        _e("b", 5, tools={"rareimplant"}, tools_head={"rareimplant"}, subjects={"rus"}),
+    )
+
+    assert got == {("a", "b"): "same_capability"}
+
+
+def test_tool_only_mentioned_in_body_is_not_same_capability() -> None:
+    """見出しに出ない道具は「触れただけ」かもしれない (盲検 3/20)。"""
+    got = _derive_extra(
         _e("a", 0, tools={"rareimplant"}, subjects={"apt_a"}),
         _e("b", 5, tools={"rareimplant"}, subjects={"rus"}),
     )
 
-    assert got == {("a", "b"): "same_capability"}
+    assert got == {}
 
 
 def test_same_nation_takes_precedence_over_same_capability() -> None:
@@ -290,11 +300,21 @@ def test_non_state_actor_is_not_same_nation() -> None:
 
 def test_rare_same_sector_and_country_within_window_is_same_target() -> None:
     got = _derive_extra(
+        _e("a", 0, sectors={"finance"}, countries={"JP"}, countries_head={"JP"}),
+        _e("b", 10, sectors={"finance"}, countries={"JP"}, countries_head={"JP"}),
+    )
+
+    assert got == {("a", "b"): "same_target"}
+
+
+def test_country_absent_from_headline_is_not_same_target() -> None:
+    """報告機関の国などが被害国に入る誤抽出を、見出しの裏づけで除く (盲検 13/20)。"""
+    got = _derive_extra(
         _e("a", 0, sectors={"finance"}, countries={"JP"}),
         _e("b", 10, sectors={"finance"}, countries={"JP"}),
     )
 
-    assert got == {("a", "b"): "same_target"}
+    assert got == {}
 
 
 def test_same_target_outside_window_is_not_related() -> None:
@@ -315,3 +335,16 @@ def test_frequent_sector_country_combo_is_not_same_target() -> None:
     got = _derive_extra(a, b, *extra)
 
     assert ("a", "b") not in got
+
+
+def test_headline_countries_matches_names_but_not_two_letter_codes() -> None:
+    from src.eventnews.relation_features import headline_countries
+
+    lookup = {"japan": "JP", "日本": "JP", "jp": "JP", "iran": "IR"}
+
+    assert headline_countries("hackers hit japan banks", lookup) == {"JP"}
+    assert headline_countries("日本の銀行を狙う", lookup) == {"JP"}
+    assert headline_countries("jp-cert advisory", lookup) == set()
+    assert headline_countries("iranian group", lookup) == {"IR"}
+    assert headline_countries("ex-iran", lookup) == {"IR"}
+    assert headline_countries("miran", lookup) == set()

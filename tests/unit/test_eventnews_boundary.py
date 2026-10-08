@@ -51,6 +51,8 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 線 (relations) と事象の指標 (relation_features) に加え、相手事象の要点 1 文として
         # 最新版の BLUF を読む (版の無い事象は構成記事の見出し・要約)。節は既定 off の flag 経由
         "src/graph/context.py",
+        # 2026-10-09: 領域をまたぐ線の試作 (読み取りのみ、本番の配線なし)
+        "src/graph/crossdomain_load.py",
         # 2026-10-02: まとめ記事を投稿直前の重複判定から外す。参照するのは記事種別の
         # 分類器 (event_kind.classify) と ROUNDUP_KIND のみで、事象の生成物は読まない
         "src/pipeline/roundup_guard.py",

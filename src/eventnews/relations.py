@@ -77,6 +77,11 @@ class EventFeatures:
     victims: frozenset[str] = frozenset()  # 正規化済みの被害組織
     sectors: frozenset[str] = frozenset()
     countries: frozenset[str] = frozenset()
+    # 見出しに名前が出ているものだけ (GraphRAG 専用の線の入力)。本文の言及を「使った・狙われた」と
+    # 取り違えない (盲検 2026-10-08: same_capability 3/20・same_target 13/20)
+    malware_head: frozenset[str] = frozenset()
+    tools_head: frozenset[str] = frozenset()
+    countries_head: frozenset[str] = frozenset()
     kinds: frozenset[str] = frozenset()  # 事象の種別 (記事の種別の和集合、分からなければ空)
     roundup: bool = False
     member_ids: tuple[str, ...] = ()  # 構成記事 (要約埋込の重心に使う)
@@ -347,7 +352,7 @@ def _target_df(events: Iterable[EventFeatures]) -> dict[str, int]:
     out: dict[str, int] = defaultdict(int)
     for e in events:
         for s in e.sectors:
-            for c in e.countries:
+            for c in e.countries_head:
                 out[_target_key(s, c)] += 1
     return out
 
@@ -357,7 +362,7 @@ def _target_candidate_pairs(events: list[EventFeatures]) -> set[tuple[int, int]]
     index: dict[str, list[int]] = defaultdict(list)
     for i, e in enumerate(events):
         for s in e.sectors:
-            for c in e.countries:
+            for c in e.countries_head:
                 index[_target_key(s, c)].append(i)
     pairs: set[tuple[int, int]] = set()
     for members in index.values():
@@ -407,8 +412,8 @@ def classify_graphrag_extra(
     """
     a, b = _ordered(a, b)
     shared_subjects = a.subjects & b.subjects
-    capability = stats.rare("malware", a.malware & b.malware) | stats.rare(
-        "tools", a.tools & b.tools
+    capability = stats.rare("malware", a.malware_head & b.malware_head) | stats.rare(
+        "tools", a.tools_head & b.tools_head
     )
     a_state = {s for s in a.subjects if is_state_actor_id(s)}
     b_state = {s for s in b.subjects if is_state_actor_id(s)}
@@ -424,7 +429,9 @@ def classify_graphrag_extra(
         return DerivedRelation(a.item_id, b.item_id, "same_capability", basis)
 
     shared_target = {
-        _target_key(s, c) for s in (a.sectors & b.sectors) for c in (a.countries & b.countries)
+        _target_key(s, c)
+        for s in (a.sectors & b.sectors)
+        for c in (a.countries_head & b.countries_head)
     }
     rare_target = {k for k in shared_target if target_df.get(k, 0) <= SAME_TARGET_RARE_DF}
     gap = b.first - a.last

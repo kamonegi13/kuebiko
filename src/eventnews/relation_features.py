@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,21 @@ _CHUNK = 800
 def _ts(value: object) -> datetime:
     dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def headline_countries(text: str, lookup: dict[str, str]) -> set[str]:
+    """見出しに出ている国 (ISO)。英字 2 文字の略号は使わず、英字は語頭一致。"""
+    low = text.lower()
+    found: set[str] = set()
+    for alias, iso in lookup.items():
+        if iso in found or (alias.isascii() and len(alias) < 3):
+            continue
+        if alias.isascii():
+            if re.search(rf"(?<![a-z0-9]){re.escape(alias)}", low):
+                found.add(iso)
+        elif alias in text:
+            found.add(iso)
+    return found
 
 
 def _chunks(ids: list[str]) -> list[list[str]]:
@@ -154,6 +170,9 @@ def load_event_features(
             e["kinds"].add(kinds[aid])
     # まとめの判定に事象の見出しも使う (構成記事の見出しだけだと週刊まとめを取りこぼした)
     headlines = repo.latest_event_versions(list(acc))
+    from src.cti.taxonomy_normalizer import load_normalizer
+
+    lookup = dict(load_normalizer().country_lookup)
     for iid, v in headlines.items():
         if _ROUNDUP.search(v.headline) or is_rollup_title(v.headline):
             acc[iid]["roundup"] = True
@@ -165,6 +184,10 @@ def load_event_features(
         text = normalize_for_match(ver.headline if ver is not None else " ".join(e["titles"]))
         e["victims"] = {x for x in e["victims"] if x and x in text}
         e["cves"] = {c for c in e["cves"] if c.lower() in text.lower()}
+        head = (ver.headline if ver is not None else " ".join(e["titles"])).lower()
+        e["malware_head"] = {x for x in e["malware"] if x in head}
+        e["tools_head"] = {x for x in e["tools"] if x in head}
+        e["countries_head"] = headline_countries(head, lookup) & e["countries"]
     return [
         EventFeatures(
             item_id=iid,
@@ -180,6 +203,9 @@ def load_event_features(
                     "victims",
                     "sectors",
                     "countries",
+                    "malware_head",
+                    "tools_head",
+                    "countries_head",
                     "kinds",
                 )
             },
