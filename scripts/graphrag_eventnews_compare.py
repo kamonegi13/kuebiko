@@ -205,6 +205,12 @@ def _load_or_build_frozen(args: argparse.Namespace) -> list[dict[str, Any]]:
 # ---------- 生成 ----------
 
 
+def _count_keys(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return len({json.loads(x)["key"] for x in path.open(encoding="utf-8") if x.strip()})
+
+
 async def generate(args: argparse.Namespace) -> int:
     windows = _load_or_build_frozen(args)
     total_lines = sum(w["n_lines"] for w in windows)
@@ -253,7 +259,8 @@ async def generate(args: argparse.Namespace) -> int:
                 fh.write(json.dumps(row, ensure_ascii=False) + "\n")
                 fh.flush()
                 print("済", w["key"], flush=True)
-    return 0
+    # 失敗した窓が残れば非 0 — run_until_done.sh が上限の解除後に残りだけ再開する
+    return 0 if _count_keys(OUT) >= len(windows) else 1
 
 
 # ---------- 対読 ----------
@@ -335,15 +342,15 @@ async def judge(args: argparse.Namespace) -> int:
         print(f"  {len(escalations)}/{len(rows)} 窓")
         for key, hits in escalations:
             print(f"  {key}: {hits}")
-    return 0
+    return 0 if _count_keys(judge_out) >= len(rows) else 1
 
 
 def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--model", default="claudecode:opus")
-    p.add_argument("--judge-model", default="claudecode:opus")
+    p.add_argument("--model", default="claudecode:claude-opus-5-5")
+    p.add_argument("--judge-model", default="claudecode:claude-opus-5-5")
     p.add_argument("--n", type=int, default=15)
     p.add_argument("--pool", type=int, default=120, help="候補として走査するアイテム数")
     p.add_argument("--min-lines", type=int, default=2, help="線がこれ未満の窓は比べない")
