@@ -249,6 +249,16 @@ detect ML の作り直しが要る)。
 | 翻訳 | いまは素の 26B。JSON の形で学習させるかは、訳の忠実さの盲検の後に決める | 10-02 |
 | 引き継ぐもの | ATT&CK の引用欄・PIR 別の要点の自由文 | 9.1 |
 
+### 9.3.1 s23 の教師の進み具合 (2026-10-08)
+| 課題 | 状態 | ファイル |
+|---|---|---|
+| 深刻度の軸 | 済。範囲の定義を明確化 (同じ事案が複数組織に及ぶときだけ) して 265 件付け直し | `data/eval/axes_teacher_v4.jsonl` |
+| triage (平たい) | 済。s22 の 743 件 + 正解集 150 件を平たい基準 (`src/tools/triage_flat_rubric.py`) で Opus | `data/eval/triage_flat_teacher_v1.jsonl` |
+| PIR 判定 | 済。790 件をいまの SIR の定義で組み直して Opus | `data/eval/pir_teacher_v2.jsonl` |
+| 要約 | 点検と書き直し中 (本文の残る 493 件。本文が整理済みの 220 件は s22 の教師のまま) | `data/eval/summary_audit_v2.jsonl` / `summary_teacher_v2.jsonl` |
+| 関与国・暴走 | 未 (機械の作業が中心) | — |
+| 投入の前提 | 取り込みの 2 本立て (M4) の並走の記録を 10-08 に開始。日本関連の取りこぼし 0・取り込みの増減 ±20% 以内を 7 日見てから切り替え | `triage_shadow` / `/api/v1/triage-shadow/summary` |
+
 ### 9.4 教師の作り手
 - 既定は Opus 5.5・中。ただし週の上限が厳しい (10-03 利用者)
 - **オープンウェイトの教師候補を Opus の正解集で測っている** (10-03 着手): 素の Gemma 4 26B・gpt-oss-120b・
