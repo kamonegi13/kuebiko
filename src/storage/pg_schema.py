@@ -914,6 +914,13 @@ CREATE TABLE IF NOT EXISTS article_severity_axes (
     model         TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+-- s23 (2026-10-08、docs/importance_relevance_redesign.md §4.1): 本文から付ける 5 欄。
+-- 欠測は NULL のまま (false に既定しない — 消費者が「無い」と読んでしまう)。真偽値は 0/1
+ALTER TABLE article_severity_axes ADD COLUMN IF NOT EXISTS recent_action INTEGER;
+ALTER TABLE article_severity_axes ADD COLUMN IF NOT EXISTS victim_size TEXT;
+ALTER TABLE article_severity_axes ADD COLUMN IF NOT EXISTS recoverability TEXT;
+ALTER TABLE article_severity_axes ADD COLUMN IF NOT EXISTS credential_compromise INTEGER;
+ALTER TABLE article_severity_axes ADD COLUMN IF NOT EXISTS distribution_compromise INTEGER;
 
 -- 重要度の再設計 (2026-10-03、src/cti/importance_v2.py)。深刻さ (事象) と
 -- 関連性 (日本・注視国・SIR) を分けて記録するだけの段 (M1・M2)。いまの

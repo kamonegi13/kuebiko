@@ -196,6 +196,60 @@ class TestSeverity:
         assert derive_severity(_inp(category="incident")) == ("S1", "incident")
 
 
+class TestExtraAxesRules:
+    """s23 (``.9``、2026-10-08): 本文由来の 5 欄を消費する 2 規則。
+
+    欄が NULL (s21 以前・要約入力) なら ``ax.get(...)`` は ``None`` を返し発火しない
+    (``.8`` と同じ結果になる — ``_AXES`` は 5 欄を一切含まない)。
+    """
+
+    def test_distribution_compromise_true_is_s3_even_for_malware_category(self) -> None:
+        # .8 なら「新しい手口を含む脅威の分析」で S2 (test_malware_analysis_is_s2_and_...)
+        inp = _inp(
+            category="malware",
+            article_type="research",
+            axes=_axes(distribution_compromise="true"),
+        )
+
+        assert derive_severity(inp) == ("S3", "distribution_compromise")
+
+    def test_distribution_compromise_false_does_not_change_the_8_result(self) -> None:
+        inp = _inp(category="malware", article_type="research", axes=_axes())
+        with_false = replace(inp, axes=_axes(distribution_compromise="false"))
+
+        assert derive_severity(inp) == derive_severity(with_false) == ("S2", "malware")
+
+    def test_distribution_compromise_does_not_resurrect_non_cyber_or_derivative(self) -> None:
+        # (a) は「サイバーの深刻さが付く記事」だけを引き上げる。政策・派生記事は対象外のまま
+        geo = _inp(category="geopolitical", axes=_axes(distribution_compromise="true"))
+        assert derive_severity(geo) == (None, "non_cyber")
+
+        derivative = _inp(article_type="opinion", axes=_axes(distribution_compromise="true"))
+        assert derive_severity(derivative) == (None, "derivative")
+
+    def test_distribution_compromise_does_not_fire_without_axes(self) -> None:
+        # 軸自体が無い記事 (no_axes) は s23 の欄も無いので .8 と同じ no_axes のまま
+        assert derive_severity(_inp(axes={})) == (None, "no_axes")
+
+    def test_large_org_confirmed_disruption_is_s3(self) -> None:
+        # .8 なら single_org の確認済み disruption は S2 ("harm")
+        inp = _inp(axes=_axes(impact="disruption", confirmation="confirmed", victim_size="large"))
+
+        assert derive_severity(inp) == ("S3", "large_org_disruption")
+
+    @pytest.mark.parametrize("victim_size", ["medium", "small", "unknown", None])
+    def test_large_org_rule_requires_large_victim_size(self, victim_size: str | None) -> None:
+        extra = {} if victim_size is None else {"victim_size": victim_size}
+        inp = _inp(axes=_axes(impact="disruption", confirmation="confirmed", **extra))
+
+        assert derive_severity(inp) == ("S2", "harm")
+
+    def test_large_org_rule_requires_confirmation(self) -> None:
+        inp = _inp(axes=_axes(impact="disruption", confirmation="possible", victim_size="large"))
+
+        assert derive_severity(inp)[0] != "S3"
+
+
 class TestStatedCvss:
     @pytest.mark.parametrize(
         ("text", "expected"),

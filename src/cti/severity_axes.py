@@ -21,6 +21,7 @@ detect_model.json の ``axes_model`` と照合し、食い違えば警告する�
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections.abc import Mapping
 from typing import Literal, get_args
@@ -54,6 +55,11 @@ Target = Literal[
     "individuals",
     "not_applicable",
 ]
+#: s23 で足す欄 (2026-10-08、本文入力時のみ LLM が埋める)。
+#: 設計: docs/importance_relevance_redesign.md §4.1・docs/research/llm_training/
+#: next_models_s22_n20.md §9.3
+VictimSize = Literal["large", "medium", "small", "none", "unknown"]
+Recoverability = Literal["regular", "extended", "not_recoverable", "not_applicable", "unknown"]
 
 #: 特徴量に使う欄と選択肢の SSoT (並び = 特徴量の列順。変えたら detect ML を作り直す)。
 AXES: dict[str, tuple[str, ...]] = {
@@ -64,12 +70,28 @@ AXES: dict[str, tuple[str, ...]] = {
     "actor": get_args(Actor),
     "target": get_args(Target),
 }
-#: DB に保存する欄 (特徴量に使わない magnitude も監査用に残す)
+#: DB に保存する欄 (特徴量に使わない magnitude も監査用に残す)。s21 以前の 7 欄 + 1 — 変えない
+#: (ML の特徴量名の SSoT なので、s23 の新欄は別に ``EXTRA_FIELDS`` で持つ)
 STORED_FIELDS: tuple[str, ...] = (*AXES, "magnitude")
 
 AXIS_FEATURE_NAMES: tuple[str, ...] = (
     *(f"axis_{k}={o}" for k, opts in AXES.items() for o in opts),
     "axis_magnitude_log10",
+)
+
+#: s23 で本文から足す 5 欄 (2026-10-08)。``AXES_FROM_BODY=1`` のときだけ LLM が埋める。
+#: 欠測は DB に NULL のまま保存する (false に既定すると消費者が「無い」と読んでしまう)
+EXTRA_FIELDS: tuple[str, ...] = (
+    "recent_action",
+    "victim_size",
+    "recoverability",
+    "credential_compromise",
+    "distribution_compromise",
+)
+#: EXTRA_FIELDS のうち真偽値 (DB は INTEGER 0/1/NULL。``get_severity_axes`` は "true"/"false" の
+#: 文字列で返す)
+BOOL_EXTRA_FIELDS: frozenset[str] = frozenset(
+    {"recent_action", "credential_compromise", "distribution_compromise"}
 )
 
 
@@ -85,6 +107,12 @@ class SeverityAxes(BaseModel):
     exploitation: Exploitation
     actor: Actor
     target: Target
+    # s23 の 5 欄 (本文入力時のみ埋まる。要約入力 (既定) では prompt が聞かないので常に None)
+    recent_action: bool | None = None
+    victim_size: VictimSize | None = None
+    recoverability: Recoverability | None = None
+    credential_compromise: bool | None = None
+    distribution_compromise: bool | None = None
 
 
 PROMPT = (
@@ -150,19 +178,86 @@ _NUM = re.compile(
 )
 _UNIT = {"万": 1e4, "億": 1e8}
 
+#: s23 で足す欄の定義文 (2026-10-08)。data/mlx/build_axes_teacher.py FIELDS のコード所有コピー ——
+#: 教師も同じ定義文で付けているため (axes_teacher_v2 以降)、文言を変えるときは両方を直す
+EXTRA_FIELDS_PROMPT = (
+    "8. recent_action (直近の行動。true/false)\n"
+    "   見出しや冒頭が、記事の公開日から 7 日以内の具体的な行動 (いつ・どこで・誰が) を報じて\n"
+    "   いるか。書かれていなければ false\n"
+    "9. victim_size (被害組織の規模)\n"
+    "   large: 大企業・大規模組織・中央省庁 / medium: 中堅の組織・地方自治体 / "
+    "small: 小規模な組織・個人\n"
+    "   none: 被害組織がいない / unknown: 書かれていない\n"
+    "10. recoverability (回復の見込み、NCISS の考え方)\n"
+    "   regular: 通常の手順で回復 / extended: 長期間・外部の支援が要る / "
+    "not_recoverable: 回復できない\n"
+    "   (漏えいしたデータの公開など) / not_applicable: 被害なし / unknown: 書かれていない\n"
+    "11. credential_compromise (管理者などの認証情報・鍵・トークンが盗まれたか。true/false)\n"
+    "12. distribution_compromise (配布経路の汚染。true/false)\n"
+    "   正規のソフトウェア・パッケージの公式な配布経路 (リリースの仕組み・更新サーバ・正規の\n"
+    "   パッケージの公開アカウント) から悪性の版が配られたことが本文で確認できるか。名前を似せた\n"
+    "   偽のパッケージ・攻撃者が自分で公開したパッケージは false\n"
+)
+
+#: 本文の入力上限 (教師作成時と同じ値、data/mlx/build_axes_teacher.py の BODY_MAX)
+BODY_MAX_CHARS = 12000
+#: 本文入力版の出力上限 (7 欄 → 12 欄で増える分、要約版 (400) より少し多く取る)
+_BODY_MAX_TOKENS = 550
+
+#: 本文入力版の prompt (``AXES_FROM_BODY=1``)。既存 7 欄の定義文は ``PROMPT`` と同一の文字列を
+#: 再利用する (DRY — 教師・既存の判定基準と文言をずらさない)
+PROMPT_BODY = (
+    "あなたは CTI アナリストです。次の記事が報じる事象について、下の 12 の欄を\n"
+    "**記事に書かれた事実だけから**選んでください。推測で埋めず、書かれていなければ unknown / "
+    "false /\n"
+    "not_applicable などを選ぶこと。重要かどうか・日本に関係するかは判断しない "
+    "(別の工程で扱う)。\n"
+    "\n"
+    "# 記事\n"
+    "見出し: {title}\n"
+    "本文:\n"
+    "{body}{cut}\n"
+    "\n"
+    "# 欄\n" + PROMPT.split("# 欄\n", 1)[1] + EXTRA_FIELDS_PROMPT
+)
+
+_AXES_FROM_BODY_FLAG = "AXES_FROM_BODY"
+
+
+def axes_from_body_enabled() -> bool:
+    """``AXES_FROM_BODY=1`` のときだけ本文入力の prompt を使う (既定 0 = 要約のまま)。"""
+    return os.environ.get(_AXES_FROM_BODY_FLAG, "0") == "1"
+
 
 def build_prompt(title: str, summary: str) -> str:
     return PROMPT.format(title=title, summary=(summary or "")[:_SUMMARY_MAX_CHARS])
 
 
-async def classify_axes(llm: LLMClient, title: str, summary: str) -> SeverityAxes | None:
-    """記事 1 本の軸。失敗は None (呼び手を止めない。欠測は特徴量で全 0 になる)。"""
+def build_body_prompt(title: str, body: str) -> str:
+    """本文入力版の prompt。本文は教師作成時と同じ上限で切る (``BODY_MAX_CHARS``)。"""
+    text = body or ""
+    cut = "" if len(text) <= BODY_MAX_CHARS else "\n(本文はここで切れています)"
+    return PROMPT_BODY.format(title=title, body=text[:BODY_MAX_CHARS], cut=cut)
+
+
+async def classify_axes(
+    llm: LLMClient, title: str, summary: str, body: str = ""
+) -> SeverityAxes | None:
+    """記事 1 本の軸。失敗は None (呼び手を止めない。欠測は特徴量で全 0 になる)。
+
+    ``AXES_FROM_BODY=1`` かつ ``body`` が渡されたときだけ本文入力の prompt (s23、
+    12 欄) を使う。既定 (0、または body なし) は見出し+要約のまま
+    (``build_prompt`` と byte-identical — 今日の本番挙動を変えない)。
+    """
+    use_body = axes_from_body_enabled() and bool(body)
+    prompt = build_body_prompt(title, body) if use_body else build_prompt(title, summary)
+    max_tokens = _BODY_MAX_TOKENS if use_body else _MAX_TOKENS
     try:
         return await llm.generate_structured(
-            build_prompt(title, summary),
+            prompt,
             SeverityAxes,
             temperature=0.0,
-            max_tokens=_MAX_TOKENS,
+            max_tokens=max_tokens,
             think=False,
         )
     except Exception as exc:  # noqa: BLE001 — 軸の失敗で detect / 毎時の段を止めない

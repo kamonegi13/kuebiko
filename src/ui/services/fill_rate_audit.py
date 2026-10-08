@@ -104,6 +104,24 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
+        # s23 本文由来の 5 欄 (2026-10-08、``AXES_FROM_BODY=1`` のときだけ埋まる)。消費者は
+        # importance_v2.derive_severity の distribution_compromise 規則 (``.9``)。既定 OFF の
+        # 間は 0% が正常 — 見るのはフラグを立てた後の急落だけ
+        "axes_distribution_compromise",
+        "配布経路の汚染欄 (s23)",
+        "EXISTS (SELECT 1 FROM article_severity_axes s WHERE s.article_id = a.article_id"
+        " AND s.distribution_compromise IS NOT NULL)",
+        None,
+    ),
+    FillMetric(
+        # 消費者は importance_v2.derive_severity の large_org_disruption 規則 (``.9``)
+        "axes_victim_size",
+        "被害組織の規模欄 (s23)",
+        "EXISTS (SELECT 1 FROM article_severity_axes s WHERE s.article_id = a.article_id"
+        " AND s.victim_size IS NOT NULL)",
+        None,
+    ),
+    FillMetric(
         # 重要度の再設計の記録 (2026-10-03、記録のみ)。2026-10-04 に深刻度の軸の有無を
         # 問わず投稿済み全件を対象化 (「日本との関係」フィルタの母数)。軸は無くても
         # jp/relevant は計算できるため上限は posted 全件 (= severity_axes の充足率に

@@ -30,7 +30,14 @@ from typing import Literal
 #: 販売価格・主張を除く)
 #: / .8 軸の無い記事 (事案・マルウェア・研究) は深刻さを付けない (``no_axes``)。日本との関係のため
 #: 全記事を記録するようにした (2026-10-04)
-RULE_VERSION = "2026-10-04.8"
+#: / .9 s23 の本文由来の 5 欄 (``distribution_compromise`` / ``victim_size`` 等) を消費する
+#: (2026-10-08、docs/importance_relevance_redesign.md §4.1・§9.3 採用分のみ (a)(b)。(c) は
+#: 提案のまま未実装): (a) 配布経路の汚染 (``distribution_compromise``) = S3
+#: (b) 確認済みの業務停止・破壊が大規模組織 (``victim_size=large``) に及ぶ = S3
+#: (NCSC Significant)。いずれも既にサイバーの深刻さが付く記事だけを S3 へ引き上げる
+#: (軸なし・非サイバー・派生記事はそのまま None)。欄が NULL (s21 以前・要約入力) なら
+#: 発火しない (``.8`` と同じ結果)
+RULE_VERSION = "2026-10-08.9"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -164,6 +171,10 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
     # 空の軸で導くと事案は S1・マルウェアは S2 になり、「未判断」が「参考」に化ける
     if not ax:
         return None, "no_axes"
+    # s23 (a): 配布経路の汚染 (正規の配布経路から悪性版) は、カテゴリを問わず S3
+    # (``.9``、本文から付けた記事だけ発火。欄が NULL の記事は .8 と同じ結果)
+    if ax.get("distribution_compromise") == "true":
+        return "S3", "distribution_compromise"
     # 暴露サイトへの掲載 (攻撃者の主張だけ) は、カテゴリがマルウェアでも事案として扱う
     if inp.category == "malware" and ax.get("confirmation") != "claimed_only":
         if ax.get("scope") in _WIDE and ax.get("actor") == "state":
@@ -209,6 +220,10 @@ def _incident_severity(ax: Mapping[str, str], loss_usd: float = 0.0) -> tuple[Se
         return "S3", "state_on_critical"
     if confirmed and impact in {"disruption", "destructive"} and target in _CRITICAL_TARGETS:
         return "S3", "critical_disruption"
+    # s23 (b): 確認済みの業務停止・破壊が大規模組織に及ぶ (NCSC Category の上から 3 番目
+    # "Significant" に相当)。重要インフラに限らず、被害組織の規模だけで判断する (``.9``)
+    if confirmed and impact in {"disruption", "destructive"} and ax.get("victim_size") == "large":
+        return "S3", "large_org_disruption"
     if ax.get("exploitation") == "exploited_in_wild" and target in _PRODUCT_TARGETS:
         return "S3", "exploited_product"
     if impact in _HARMED and ax.get("magnitude") in _LARGE_MAGNITUDE:

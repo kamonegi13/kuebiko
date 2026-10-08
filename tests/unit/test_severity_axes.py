@@ -87,6 +87,107 @@ class TestClassify:
         assert "あ" * 1500 in p and "あ" * 1501 not in p
 
 
+class TestExtraFields:
+    """s23 (2026-10-08): 本文から付ける 5 欄。"""
+
+    def test_schema_has_the_five_extra_fields_optional(self) -> None:
+        fields = sa.SeverityAxes.model_fields
+        for name in sa.EXTRA_FIELDS:
+            assert name in fields
+            assert fields[name].default is None  # 欠測は None (false に既定しない)
+
+    def test_missing_extra_fields_stay_none(self) -> None:
+        axes = sa.SeverityAxes.model_validate(_AXES)
+        for name in sa.EXTRA_FIELDS:
+            assert getattr(axes, name) is None
+
+    def test_extra_fields_accept_their_values(self) -> None:
+        axes = sa.SeverityAxes.model_validate(
+            {
+                **_AXES,
+                "recent_action": True,
+                "victim_size": "large",
+                "recoverability": "not_recoverable",
+                "credential_compromise": False,
+                "distribution_compromise": True,
+            }
+        )
+        assert axes.victim_size == "large"
+        assert axes.distribution_compromise is True
+
+
+class TestBodyPrompt:
+    """``AXES_FROM_BODY`` フラグ — 既定 (0) は今日の prompt と byte-identical。"""
+
+    def test_default_build_prompt_is_unchanged(self) -> None:
+        # 既定経路 (build_prompt) は本改修で一切触っていないことを文字列で固定する
+        p = sa.build_prompt("見出し", "要約です")
+        assert p == sa.PROMPT.format(title="見出し", summary="要約です")
+
+    def test_flag_off_classify_axes_ignores_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AXES_FROM_BODY", raising=False)
+        seen: list[str] = []
+
+        class _Recorder:
+            model = "m"
+
+            async def generate_structured(self, prompt: str, *a: Any, **k: Any) -> Any:
+                seen.append(prompt)
+                return sa.SeverityAxes.model_validate(_AXES)
+
+        asyncio.run(sa.classify_axes(_Recorder(), "見出し", "要約", body="本文のはず"))  # type: ignore[arg-type]
+        assert seen == [sa.build_prompt("見出し", "要約")]
+        assert "本文のはず" not in seen[0]
+
+    def test_flag_on_without_body_still_uses_summary_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AXES_FROM_BODY", "1")
+        assert sa.axes_from_body_enabled() is True
+
+        seen: list[str] = []
+
+        class _Recorder:
+            model = "m"
+
+            async def generate_structured(self, prompt: str, *a: Any, **k: Any) -> Any:
+                seen.append(prompt)
+                return sa.SeverityAxes.model_validate(_AXES)
+
+        asyncio.run(sa.classify_axes(_Recorder(), "見出し", "要約", body=""))  # type: ignore[arg-type]
+        assert seen == [sa.build_prompt("見出し", "要約")]
+
+    def test_flag_on_with_body_uses_body_prompt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AXES_FROM_BODY", "1")
+        seen: list[str] = []
+
+        class _Recorder:
+            model = "m"
+
+            async def generate_structured(self, prompt: str, *a: Any, **k: Any) -> Any:
+                seen.append(prompt)
+                return sa.SeverityAxes.model_validate(_AXES)
+
+        asyncio.run(sa.classify_axes(_Recorder(), "見出し", "要約は無視", body="攻撃の本文"))  # type: ignore[arg-type]
+        assert "攻撃の本文" in seen[0]
+        assert "要約は無視" not in seen[0]
+        assert "distribution_compromise" in seen[0]
+
+    def test_body_prompt_truncates_at_teacher_limit(self) -> None:
+        p = sa.build_body_prompt("見出し", "あ" * (sa.BODY_MAX_CHARS + 500))
+        assert "あ" * sa.BODY_MAX_CHARS in p
+        assert "あ" * (sa.BODY_MAX_CHARS + 1) not in p
+        assert "ここで切れています" in p
+
+    def test_body_prompt_lists_every_axis_option_and_extra_fields(self) -> None:
+        p = sa.build_body_prompt("t", "b")
+        for opts in sa.AXES.values():
+            for o in opts:
+                assert o in p, o
+        for name in sa.EXTRA_FIELDS:
+            assert name in p
+
+
 class TestStorage:
     @pytest.fixture
     def repo(self, tmp_path: Path) -> RunHistoryRepository:
@@ -102,6 +203,34 @@ class TestStorage:
         repo.set_severity_axes("a1", _AXES, "m1")
         repo.set_severity_axes("a1", {**_AXES, "scope": "national"}, "m2")
         assert repo.get_severity_axes(["a1"])["a1"]["scope"] == "single_org"
+
+    def test_missing_extra_fields_are_absent_from_the_dict(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        # s21 (要約入力) は 5 欄を返さない — NULL のまま、"false" に化けさせない
+        repo.set_severity_axes("a1", sa.SeverityAxes.model_validate(_AXES).model_dump(), "s21")
+        got = repo.get_severity_axes(["a1"])["a1"]
+        for name in sa.EXTRA_FIELDS:
+            assert name not in got
+
+    def test_extra_fields_round_trip_booleans_and_enums(self, repo: RunHistoryRepository) -> None:
+        axes = sa.SeverityAxes.model_validate(
+            {
+                **_AXES,
+                "recent_action": True,
+                "victim_size": "large",
+                "recoverability": "not_recoverable",
+                "credential_compromise": False,
+                "distribution_compromise": True,
+            }
+        )
+        repo.set_severity_axes("a1", axes.model_dump(), "s23")
+        got = repo.get_severity_axes(["a1"])["a1"]
+        assert got["recent_action"] == "true"
+        assert got["credential_compromise"] == "false"
+        assert got["distribution_compromise"] == "true"
+        assert got["victim_size"] == "large"
+        assert got["recoverability"] == "not_recoverable"
 
     def test_hourly_job_picks_unlabeled_posted_high_medium(
         self, repo: RunHistoryRepository

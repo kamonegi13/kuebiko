@@ -374,3 +374,23 @@ class RunHistoryRepositoryBase:
             )
         if "cost_usd" not in existing_usage:
             conn.execute("ALTER TABLE llm_usage ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
+
+        # s23 (2026-10-08、docs/importance_relevance_redesign.md §4.1): 深刻度の軸に
+        # 本文から付ける 5 欄を追加。欠測は NULL (false に既定しない)。真偽値は INTEGER (0/1)
+        existing_axes = {
+            row["name"] for row in conn.execute("PRAGMA table_info(article_severity_axes)")
+        }
+        if existing_axes and "recent_action" not in existing_axes:
+            conn.execute("ALTER TABLE article_severity_axes ADD COLUMN recent_action INTEGER")
+        if existing_axes and "victim_size" not in existing_axes:
+            conn.execute("ALTER TABLE article_severity_axes ADD COLUMN victim_size TEXT")
+        if existing_axes and "recoverability" not in existing_axes:
+            conn.execute("ALTER TABLE article_severity_axes ADD COLUMN recoverability TEXT")
+        if existing_axes and "credential_compromise" not in existing_axes:
+            conn.execute(
+                "ALTER TABLE article_severity_axes ADD COLUMN credential_compromise INTEGER"
+            )
+        if existing_axes and "distribution_compromise" not in existing_axes:
+            conn.execute(
+                "ALTER TABLE article_severity_axes ADD COLUMN distribution_compromise INTEGER"
+            )

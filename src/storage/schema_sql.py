@@ -777,7 +777,14 @@ CREATE TABLE IF NOT EXISTS article_severity_axes (
     actor         TEXT NOT NULL,
     target        TEXT NOT NULL,
     model         TEXT NOT NULL,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    -- s23 (2026-10-08): 本文から付ける 5 欄。既存 DB への追加は _apply_migrations で行う。
+    -- 欠測は NULL (false に既定しない)。真偽値は INTEGER (0/1/NULL)
+    recent_action             INTEGER,
+    victim_size               TEXT,
+    recoverability            TEXT,
+    credential_compromise     INTEGER,
+    distribution_compromise   INTEGER
 );
 
 -- 重要度の再設計 (2026-10-03、src/cti/importance_v2.py)。深刻さ (事象) と
