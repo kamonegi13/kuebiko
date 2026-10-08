@@ -10,6 +10,7 @@ from src.graph.render import (
     EventContext,
     PriorityHint,
     clip_sentence,
+    relation_strength,
     render_relation_section,
 )
 
@@ -96,7 +97,7 @@ class TestEnrichedLine:
             **_base_kwargs(),
         )
 
-        assert "(19 日前)" in text
+        assert "(相手が 19 日先行)" in text
 
     def test_no_gap_label_when_own_event_first_reported_is_unknown(self) -> None:
         """旧 render_graph_context との互換: ev 側の first_reported が無ければ時間差を出さない。"""
@@ -111,8 +112,9 @@ class TestEnrichedLine:
             **_base_kwargs(),
         )
 
-        assert "日前" not in text
-        assert "日後" not in text
+        line = next(ln for ln in text.splitlines() if ln.startswith("- "))
+        assert "日先行" not in line
+        assert "日後" not in line
 
     def test_rarity_note_appended_to_shared_basis(self) -> None:
         rels = {"E1": [Rel("E1", "E2", "follow_up", ("cve:CVE-2026-1",))]}
@@ -146,7 +148,7 @@ class TestEnrichedLine:
             actor_name=str,
         )
 
-        assert "(確度: 強)" in text
+        assert "[根拠: 強]" in text
 
     def test_same_actor_legend_shown_only_when_same_actor_lines_present(self) -> None:
         rels = {"E1": [Rel("E1", "E9", "same_actor", ("actor:apt1",))]}
@@ -311,7 +313,7 @@ class TestCounterpartMerge:
         lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
         assert len(lines) == 1
         assert lines[0].startswith("- 記事 [1][2] ↔ 候補外の事象「候補外の事象 9」")
-        assert "日後" not in lines[0]
+        assert "相手が" not in lines[0]
 
 
 class TestSameNationScope:
@@ -363,3 +365,48 @@ class TestSameNationScope:
         lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
         assert len(lines) == 3
         assert "同じ帰属国" in lines[-1]
+
+
+class TestRelationStrength:
+    def test_name_sharing_types_are_weak(self) -> None:
+        for t in ("same_actor", "same_nation", "same_target", "same_capability"):
+            assert relation_strength(t, ("actor:apt1",), {}) == "弱"
+
+    def test_follow_up_with_shared_victim_or_cve_is_strong(self) -> None:
+        assert relation_strength("follow_up", ("victim:acme",), {}) == "強"
+        assert relation_strength("side", ("cve:CVE-2026-1",), {}) == "強"
+
+    def test_campaign_without_identity_basis_is_medium(self) -> None:
+        assert relation_strength("campaign", ("actor:apt1", "cap:toolx"), {}) == "中"
+
+    def test_incident_strength_follows_classifier_probability(self) -> None:
+        assert relation_strength("incident", (), {"p": "0.91"}) == "強"
+        assert relation_strength("incident", (), {"p": "0.70"}) == "中"
+        assert relation_strength("incident", (), {}) == "中"
+
+
+class TestStrengthInSection:
+    def test_every_line_carries_strength_and_legend_appears_once(self) -> None:
+        rels = {
+            "E1": [
+                Rel("E1", "E9", "same_actor", ("actor:apt1",)),
+                Rel("E1", "E8", "follow_up", ("victim:acme",)),
+            ]
+        }
+        first = {
+            "E1": datetime(2026, 8, 20, tzinfo=UTC),
+            "E9": datetime(2026, 8, 1, tzinfo=UTC),
+            "E8": datetime(2026, 8, 5, tzinfo=UTC),
+        }
+
+        text = render_relation_section(
+            ["art1"],
+            relations=rels,
+            first_reported=first,
+            headlines={"E9": "過去 A", "E8": "過去 B"},
+            **_base_kwargs(),
+        )
+
+        assert text.count("[根拠: 弱]") == 1
+        assert text.count("[根拠: 強]") == 1
+        assert text.count("弱 = 名前や属性の共有だけ") == 1

@@ -50,6 +50,11 @@ _BASIS = {
     "nation": "帰属国",
     "target": "標的",
 }
+_STRENGTH_LEGEND = (
+    "各線の「根拠」は強 = 同じ被害組織・CVE か高確度の分類、中 = それ未満、"
+    "弱 = 名前や属性の共有だけ。弱い線は連携・因果を示さない。"
+    "「相手が N 日先行」は相手事象の報告が先だったことだけを示す。"
+)
 _NOTE = (
     "上の線は、事象が共有する指標 (被害組織・CVE・道具・攻撃者) から機械的に導いたもの"
     "である。書くときは線を根拠として引用してよいが、線に無い事象どうしの関係は推測しない。"
@@ -133,22 +138,38 @@ def _basis_label(
     return text
 
 
-def _confidence_word(p: str) -> str:
-    try:
-        value = float(p)
-    except ValueError:
-        return ""
-    return "強" if value >= STRONG_CONFIDENCE_P else "中"
+#: 名前・属性の共有だけを示す線 (事象どうしの連携・因果の根拠にならない)
+_WEAK_TYPES = frozenset({"same_actor", "same_capability", "same_nation", "same_target"})
+#: 同じ被害組織・CVE の共有は、同じ対象を指す同一性の証拠になる
+_IDENTITY_BASIS = frozenset({"victim", "cve"})
+
+
+def relation_strength(rel_type: str, basis: Sequence[str], extra: Mapping[str, str]) -> str:
+    """線の根拠の強さ (強 / 中 / 弱)。決定論 — 読み手が線の重みを取り違えないための事実の層。
+
+    強 = 同じ被害組織・CVE を共有、または分類器が高確度で同じ出来事とみたもの。
+    弱 = 名前・属性の共有だけ。中 = その間。
+    """
+    if rel_type in _WEAK_TYPES:
+        return "弱"
+    if rel_type == "incident":
+        try:
+            return "強" if float(extra.get("p", "")) >= STRONG_CONFIDENCE_P else "中"
+        except ValueError:
+            return "中"
+    kinds = {b.partition(":")[0] for b in basis}
+    return "強" if kinds & _IDENTITY_BASIS else "中"
 
 
 def _gap_label(ev_first: datetime | None, other_first: datetime) -> str:
+    """相手事象が自分より先か後か (向き) を明示する。"""
     if ev_first is None:
         return ""
     gap_days = (ev_first.date() - other_first.date()).days
     if gap_days > 0:
-        return f"{gap_days} 日前"
+        return f"相手が {gap_days} 日先行"
     if gap_days < 0:
-        return f"{-gap_days} 日後"
+        return f"相手が {-gap_days} 日後"
     return "同日"
 
 
@@ -295,10 +316,8 @@ def render_relation_section(
             label = _REL_LABELS.get(r.rel_type, r.rel_type)
             origin = sources.get((other, r.rel_type)) or events[ev]
             parts = [f"- 記事 {_refs(origin)} ↔ {target}: {label}"]
-            if r.rel_type == "incident" and "p" in getattr(r, "extra", {}):
-                word = _confidence_word(r.extra["p"])
-                if word:
-                    parts.append(f" (確度: {word})")
+            strength = relation_strength(r.rel_type, r.basis, getattr(r, "extra", {}) or {})
+            parts.append(f" [根拠: {strength}]")
             parts.append(f" (共有: {basis})")
             # まとめた行の時間差は起点ごとに違うので出さない (相手の日付は見出しの後ろにある)
             gap = _gap_label(first_reported.get(ev), first) if len(set(origin)) == 1 else ""
@@ -355,7 +374,7 @@ def render_relation_section(
         )
         if rel_type in shown
     ]
-    legend = "\n".join([*legends, _NOTE])
+    legend = "\n".join([*legends, _STRENGTH_LEGEND, _NOTE])
     return (
         f"## 線でたどった関連事象 ({len(lines)} 本 / 全 {len(found)} 本)\n"
         + "\n".join(lines)
@@ -381,5 +400,6 @@ __all__ = [
     "PriorityHint",
     "clip_sentence",
     "insert_after_candidates",
+    "relation_strength",
     "render_relation_section",
 ]

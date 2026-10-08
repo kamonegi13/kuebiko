@@ -54,7 +54,7 @@ class TestRender:
         rels = {"E1": [Rel("E1", "E2", "follow_up", ("victim:acme",))]}
         first = {"E2": datetime(2026, 9, 1, tzinfo=UTC)}
 
-        assert "記事 [1] ↔ 記事 [2]: 続報 (共有: 被害組織: acme)" in _render(rels, first)
+        assert "記事 [1] ↔ 記事 [2]: 続報 [根拠: 強] (共有: 被害組織: acme)" in _render(rels, first)
 
     def test_events_reported_after_the_window_are_excluded(self) -> None:
         """今の関係表から引くので、窓より後の事象を混ぜない (未来の混入)。"""
