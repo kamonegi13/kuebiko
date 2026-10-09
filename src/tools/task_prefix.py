@@ -47,7 +47,7 @@ _EXTRA_MODELS_ENV = "SFT_TASK_PREFIX_MODELS"
 #: 黙って外れる事故を構造で消す — s19 から印を外すと event_kind が 277 → 257 に落ちた)。
 #: 評価中の新モデルは環境変数 ``SFT_TASK_PREFIX_MODELS`` (カンマ区切り) で一時的に足す。
 PREFIX_TRAINED_MODELS: frozenset[str] = frozenset(
-    {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19"}
+    {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58"}
 )
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。

@@ -143,3 +143,9 @@ def test_evidence_models_can_be_added_by_env_for_evaluation(
 
     assert mod.summary_schema_for("kuebiko-sft:s99") is mod.SummaryEvidenceOutput
     assert mod.summary_schema_for("kuebiko-sft:s21") is mod.SummaryOutput
+
+
+def test_i58_uses_evidence_schema() -> None:
+    from src.pipeline.summary import SummaryEvidenceOutput, summary_schema_for
+
+    assert summary_schema_for("kuebiko-sft:i58") is SummaryEvidenceOutput

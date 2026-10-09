@@ -207,3 +207,16 @@ def test_axes_marker_only_for_models_trained_on_it(monkeypatch) -> None:  # type
     assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:n19") == "本文"
     monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s22")
     assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:s22") == "[task: axes]\n本文"
+
+
+def test_i58_gets_every_marker_including_pir_focus_and_axes() -> None:
+    """i58 (s22/s23 の LoRA 補間) は両親と同じく全 step を接頭辞つきで学習している (2026-10-10)。"""
+    from src.tools.task_prefix import task_prefix_enabled, with_task_prefix
+
+    assert task_prefix_enabled("kuebiko-sft:i58")
+    assert (
+        with_task_prefix("本文", Step.PIR_DAILY_FOCUS, "kuebiko-sft:i58")
+        == "[task: pir_focus]\n本文"
+    )
+    assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:i58") == "[task: axes]\n本文"
+    assert with_task_prefix("本文", Step.TRIAGE, "kuebiko-sft:i58") == "[task: triage]\n本文"
