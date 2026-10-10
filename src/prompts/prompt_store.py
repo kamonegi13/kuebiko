@@ -331,6 +331,21 @@ def python_block_slot_ids(spec: PromptSpec) -> tuple[str, ...]:
     return ()
 
 
+def python_block_optional_slot_ids(spec: PromptSpec) -> frozenset[str]:
+    """``python_block_slot_ids`` のうち block 欠落を保存前検証で許す slot (2026-10-10)。
+
+    article_triage の ``boundary_rules`` のための一般化 — 既定は空集合 (ioc_llm_verifier /
+    judgment_classifier は従来通り全 slot 必須、挙動不変)。欠落時の合成結果は対象モジュールの
+    合成関数 (``compose_from_blocks`` 等) が空文字扱いで決める責務を持つ (ここでは検証の
+    「必須」判定だけを緩める)。
+    """
+    if spec.prompt_id == "article_triage":
+        from src.tools.article_triage import OPTIONAL_SLOT_IDS
+
+        return OPTIONAL_SLOT_IDS
+    return frozenset()
+
+
 def python_block_sample_targets(spec: PromptSpec) -> Any:
     """保存前検証・preview 用のサンプル動的データ (対象モジュールが持つ非空ダミー)。
 
@@ -364,16 +379,22 @@ def compose_python_block(spec: PromptSpec, rubric: SummarizerRubric, targets: An
 
 
 def validate_python_block_rubric(spec: PromptSpec, rubric: SummarizerRubric) -> list[str]:
-    """python_block kind の保存前検証: slot/block 1:1 → サンプル候補での合成 (最後の砦)。"""
+    """python_block kind の保存前検証: slot/block 1:1 → サンプル候補での合成 (最後の砦)。
+
+    ``python_block_optional_slot_ids`` に挙げた slot (article_triage の ``boundary_rules``)
+    は欠落をエラーにしない — 旧版 (本 slot 追加前) の DB row を開いて他 block だけ編集・保存
+    する運用を壊さないため (2026-10-10)。
+    """
     slots = python_block_slot_ids(spec)
     if not slots:
         return [f"python_block の slot 定義が見つかりません (code 側の欠陥): {spec.prompt_id}"]
     slot_set = set(slots)
+    optional_slots = python_block_optional_slot_ids(spec)
     block_ids = [s.field_id for s in rubric.sections]
     errors: list[str] = []
     for duplicate in {b for b in block_ids if block_ids.count(b) > 1}:
         errors.append(f"block id が重複しています: {duplicate}")
-    for missing in [s for s in slots if s not in set(block_ids)]:
+    for missing in [s for s in slots if s not in set(block_ids) and s not in optional_slots]:
         errors.append(f"slot に対応する block がありません: {missing}")
     for unknown in [b for b in block_ids if b not in slot_set]:
         errors.append(f"未知の block です (書いても出力されません): {unknown}")

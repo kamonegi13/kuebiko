@@ -34,6 +34,7 @@ from src.prompts.prompt_store import (
     compose_python_block,
     invalidate_prompt_cache,
     load_seed_rubric,
+    python_block_optional_slot_ids,
     python_block_sample_targets,
     python_block_slot_ids,
     validate_python_block_rubric,
@@ -42,6 +43,7 @@ from src.prompts.registry import PromptSpec, get_spec
 from src.prompts.rubric_model import RubricExample
 from src.tools.article_model import Article
 from src.tools.article_triage import (
+    OPTIONAL_SLOT_IDS,
     SAMPLE_CONTEXT,
     SLOT_IDS,
     ArticleTriage,
@@ -132,7 +134,9 @@ _LONG_SUMMARY = "<p>" + "長い本文が延々と続く。" * 300 + "</p>"
 
 
 class TestGolden:
-    """核心不変量: seed の blocks で合成した結果が legacy (frozen) 実装と byte 一致。"""
+    """核心不変量: seed の blocks で合成した結果が legacy (frozen) 実装 + BOUNDARY_RULES と
+    byte 一致 (2026-10-10、boundary_rules slot 追加後)。
+    """
 
     @pytest.mark.parametrize(
         ("title", "summary", "high_criteria", "medium_criteria"),
@@ -158,9 +162,14 @@ class TestGolden:
         ],
         ids=["with_medium", "medium_empty", "long_body"],
     )
-    def test_seed_composition_is_byte_identical_to_legacy(
+    def test_seed_composition_is_byte_identical_to_legacy_plus_boundary_rules(
         self, title: str, summary: str, high_criteria: str, medium_criteria: str
     ) -> None:
+        """seed (boundary_rules 含む 4 block) の合成 == legacy 出力 + BOUNDARY_RULES。
+
+        ``scripts/triage_boundary_ab.py`` の arm B (``prompt_a + BOUNDARY_RULES``) と同じ
+        連結であることを固定する (A/B で v4 非境界一致率 89.0%→94.5%、i58)。
+        """
         spec = _spec()
         rubric = load_seed_rubric(spec)
         assert rubric is not None
@@ -169,6 +178,25 @@ class TestGolden:
         triage = ArticleTriage(_FakeLLM())
         article = _article(title=title, summary=summary)
         context, legacy = _context_and_legacy(triage, article, high_criteria, medium_criteria)
+
+        assert compose_from_blocks(blocks, context) == legacy + blocks["boundary_rules"]
+
+    def test_boundary_rules_block_absent_matches_todays_legacy_output_byte_identical(
+        self,
+    ) -> None:
+        """boundary_rules が blocks に無い (= 本 slot 追加前の DB row) 場合、合成結果は
+        今日までの出力 (legacy) と byte 一致する (optional slot、KeyError フォールバックに
+        依存しない)。
+        """
+        spec = _spec()
+        rubric = load_seed_rubric(spec)
+        assert rubric is not None
+        blocks = {s.field_id: s.body for s in rubric.sections if s.field_id != "boundary_rules"}
+        assert "boundary_rules" not in blocks
+
+        triage = ArticleTriage(_FakeLLM())
+        article = _article()
+        context, legacy = _context_and_legacy(triage, article, "1. x", "- y")
 
         assert compose_from_blocks(blocks, context) == legacy
 
@@ -235,12 +263,31 @@ class TestValidation:
         errors = validate_python_block_rubric(spec, broken)
         assert any("examples" in e for e in errors)
 
+    def test_missing_boundary_rules_is_not_an_error_optional_slot(self) -> None:
+        """boundary_rules (OPTIONAL_SLOT_IDS) の欠落は保存を拒否しない (2026-10-10)。
+
+        本 slot 追加前に保存された DB row (3 block のみ) を開いて他 block だけ編集・保存する
+        既存運用を壊さないための不変量。必須 slot (low_criteria 等) の欠落は従来通りエラーに
+        する (``test_missing_block_is_an_error`` で固定済み)。
+        """
+        spec = _spec()
+        rubric = load_seed_rubric(spec)
+        assert rubric is not None
+        without_boundary = rubric.model_copy(
+            update={"sections": [s for s in rubric.sections if s.field_id != "boundary_rules"]}
+        )
+        assert validate_python_block_rubric(spec, without_boundary) == []
+
 
 class TestDispatchRegistration:
     """article_triage が python_block dispatch 表に正しく登録されていることの実証。"""
 
     def test_slot_ids_resolve_via_store(self) -> None:
         assert python_block_slot_ids(_spec()) == SLOT_IDS
+
+    def test_optional_slot_ids_resolve_via_store(self) -> None:
+        assert python_block_optional_slot_ids(_spec()) == OPTIONAL_SLOT_IDS
+        assert frozenset({"boundary_rules"}) == OPTIONAL_SLOT_IDS
 
     def test_sample_targets_resolve_via_store(self) -> None:
         assert python_block_sample_targets(_spec()) == SAMPLE_CONTEXT
@@ -286,8 +333,10 @@ class TestStoreFallback:
             high, medium = "1. x", "- y"
             prompt = triage._build_prompt_pir_driven(article, high, medium)  # noqa: SLF001
             legacy = triage._build_prompt_pir_driven_legacy(article, high, medium)  # noqa: SLF001
-            # seed = legacy byte 一致なので、実際に区別できるのは None でないことだけ。
-            assert prompt == legacy
+            # seed = legacy + boundary_rules block (2026-10-10 以降) なので、legacy と
+            # 文字単位で一致するのは boundary_rules を除いた前方部分だけ。
+            assert prompt.startswith(legacy)
+            assert prompt != legacy
         finally:
             invalidate_prompt_cache(spec.prompt_id)
 

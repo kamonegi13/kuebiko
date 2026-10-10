@@ -458,6 +458,7 @@ kuebiko/
   | (10-02) 配信の定型文 (「The post … appeared first on …」) だけの本文は要約しない / 高脅威の安全網を Web の日次ブリーフにも載せる | (コード) |
   | (10-10) M3b 段1: 配信の判断の時点で深刻度の軸を inline で取り (Step.SEVERITY_AXES、毎時の段と同じ client)、新しいルール (`cti/routing_v2.M3B_RULES`: alert=S3∧関連性 / vuln=S3∧悪用の根拠∧関連性なし / japan_watch / watch) の配信先を `routing_v2_shadow` に**記録だけ**する。本番の配信は v12 のまま。`GET /api/v1/routing-v2-shadow/summary` で新旧を比べる | `ROUTING_V2_INLINE_AXES=0` (inline の LLM 呼び出しだけ止まる) |
   | (10-10) 被害組織名の無い非インシデント記事 (advisory/press/research/opinion/tutorial) は被害国を付けない (`cti/victim_country_gate`)。監査 140 件で発火 30 件中 27 件が誤り (発行元の国・被害組織の無い記事)。直近 90 日の既存 2,319 行も遡及で空にした | `VICTIM_COUNTRY_GATE=0` / 既存行は `_backup_victim_country_gate_20261010_072036` から戻す |
+  | (10-10) triage の PIR 駆動プロンプトに境界の型 A〜I の決まりを追加 (v4 境界除く 89.0→94.5%、i58) | 画面で triage_rubric を前の版に戻す (or boundary_rules block を空文字にして保存) |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

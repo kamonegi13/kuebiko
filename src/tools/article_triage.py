@@ -345,7 +345,20 @@ class ArticleTriage:
 # 省略 — 現挙動を byte 一致で維持)。
 #
 # slot id (skeleton が無いため固定表で持つ — prompt_store.python_block_slot_ids が参照)。
-SLOT_IDS: tuple[str, ...] = ("intro", "low_criteria", "output_rules")
+#
+# boundary_rules (4 本目、2026-10-10): 2026-10-03 利用者決定の「境界の型の定め (A〜I)」を
+# 末尾に追加する任意 slot。triage gold v4 の境界再判定に使った文そのもの
+# (旧 data/mlx/adjudicate_gold.py:BOUNDARY_RULES、A/B で v4 非境界一致率 89.0%→94.5%,
+# i58)。**OPTIONAL_SLOT_IDS に挙げた slot は compose_from_blocks が未保存時に空文字で
+# 合成する** — 既存 DB row (本 slot 追加前に保存された 3 block 版) が今日まで出していた
+# 出力と byte 一致を保つため、KeyError→legacy フォールバック (本番で頻発すると
+# fallback_reason の監視がノイズ化する) に依存しない。UI で保存すれば即時反映される。
+SLOT_IDS: tuple[str, ...] = ("intro", "low_criteria", "output_rules", "boundary_rules")
+
+#: 未保存でも合成を許す slot (prompt_store.python_block_optional_slot_ids が参照)。
+#: 他の 2 本 (ioc_llm_verifier / judgment_classifier) は空集合のまま — 必須 slot の
+#: 欠落は従来通りエラーにする。
+OPTIONAL_SLOT_IDS: frozenset[str] = frozenset({"boundary_rules"})
 
 _PROMPT_ID = "article_triage"
 
@@ -372,9 +385,15 @@ def compose_from_blocks(blocks: Mapping[str, str], context: Mapping[str, str]) -
     レイアウトは ``_build_prompt_pir_driven_legacy`` と同一。blocks が legacy 由来の verbatim
     テキストなら結果は byte 一致する (golden 不変量、tests/unit で固定)。``context`` は
     ``{feed, title, body_preview, high_criteria, medium_criteria}`` の dict。``blocks`` に
-    ``SLOT_IDS`` の欠落があれば ``KeyError`` (呼び出し側の保存前検証 / fail-safe で拾う)。
-    直接組み立てのため block 中の生 brace (``{high, medium, low}`` 等) はそのまま出力に残る
-    (.format() を通さない — judgment_classifier との違い)。
+    ``SLOT_IDS`` の必須 slot (intro/low_criteria/output_rules) の欠落があれば ``KeyError``
+    (呼び出し側の保存前検証 / fail-safe で拾う)。直接組み立てのため block 中の生 brace
+    (``{high, medium, low}`` 等) はそのまま出力に残る (.format() を通さない —
+    judgment_classifier との違い)。
+
+    ``boundary_rules`` (``OPTIONAL_SLOT_IDS``) は output_rules の直後にそのまま追記する
+    (A/B 実験 ``scripts/triage_boundary_ab.py`` の arm B = ``prompt_a + BOUNDARY_RULES`` と
+    同じ連結で、区切りの空行を追加しない — block 本文の先頭に必要な空行を持たせる前提)。
+    未保存で ``blocks`` に無ければ空文字 (= 今日までの出力と byte 一致)。
     """
     medium_criteria = context["medium_criteria"]
     medium_section = ""
@@ -392,6 +411,7 @@ def compose_from_blocks(blocks: Mapping[str, str], context: Mapping[str, str]) -
         f"{medium_section}"
         f"{blocks['low_criteria']}\n\n"
         f"{blocks['output_rules']}\n"
+        f"{blocks.get('boundary_rules', '')}"
     )
 
 
@@ -408,6 +428,7 @@ def _composed_prompt(context: Mapping[str, str]) -> str | None:
 
 # 後方互換: 既存 test / コードが import するための named export
 __all__ = [
+    "OPTIONAL_SLOT_IDS",
     "SAMPLE_CONTEXT",
     "SLOT_IDS",
     "ArticleTriage",
