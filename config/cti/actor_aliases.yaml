@@ -1480,6 +1480,7 @@ actors:
   - FROZENLAKE
   - GruesomeLarch
   - UAC-0001
+  - BlueDelta
   mitre_group: G0007
   nation: ru
   sponsor: GRU Unit 26165
@@ -2172,6 +2173,7 @@ actors:
   - TA453
   - COBALT ILLUSION
   - ITG18
+  - Eclipsed Wasp
   mitre_group: G0059
   nation: ir
   description: 政府・ジャーナリスト標的のイラン系 APT
@@ -3378,6 +3380,7 @@ actors:
   - Callisto Group
   - TA446
   - COLDRIVER
+  - Callisto
   mitre_group: G1033
   summary: Star Blizzardは、少なくとも2019年から活動しているロシアを拠点とするサイバースパイおよび影響力工作グループです。Star Blizzardのキャンペーンはロシアの国家利益と密接に一致しており、NATO加盟国、特に米国や英国の学術機関、防衛関連、政府、NGO、シンクタンクを対象とした、継続的なフィッシングや資格情報の窃取を行っています。
   associated_malware:
@@ -4905,6 +4908,7 @@ actors:
   - DEV#POPPER
   - PurpleBravo
   - TAG-121
+  - WaterPlum
   mitre_group: G1052
   summary: Contagious Interviewは、2023年から活動している北朝鮮に関連する脅威アクターです。同グループはサイバーエスピオナージと、暗号資産やユーザー資格情報の窃取を含む金銭目的のオペレーションの両方を行っています。Contagious
     InterviewはWindows、Linux、macOSを標的としており、特にソフトウェア開発や暗号資産関連の活動に従事する個人に焦点を当てています。
@@ -6349,6 +6353,7 @@ actors:
   - ShellForce
   - DeadCatx3
   - SHADOW-WATER-058
+  - Altered Spider
   kind: group
   family: ''
   associated_malware:
@@ -6651,7 +6656,8 @@ actors:
 - id: play
   canonical: Play
   ambiguous: true
-  aliases: []
+  aliases:
+  - PlayCrypt
   kind: group
   family: ''
   associated_malware:
@@ -6972,6 +6978,7 @@ actors:
   - COPPER FIELDSTONE
   - Mythic Leopard
   - ProjectM
+  - Earth Karkaddan
   kind: group
   family: ''
   nation: pk
@@ -7102,6 +7109,7 @@ actors:
   canonical: Silverfox
   aliases:
   - Silver Fox
+  - Yinhu
   kind: group
   family: ''
   nation: cn
@@ -7250,12 +7258,15 @@ actors:
   family: ''
 - id: toy_ghouls
   canonical: Toy Ghouls
-  aliases: []
+  aliases:
+  - Bearlyfy
   kind: group
   family: ''
 - id: nimbus_manticore
   canonical: Nimbus Manticore
-  aliases: []
+  aliases:
+  - GalaxyGato
+  - Screening Serpens
   kind: group
   family: ''
 - id: nso_group
@@ -7498,3 +7509,163 @@ actors:
   family: ''
   summary: Fire Ant は Sygnia が追跡する中国関連とみられる脅威アクター。仮想化基盤 (ハイパーバイザ) から、ネットワーク機器や認証基盤といった信頼されたインフラ層へ
     標的を広げている。TACACS 認証情報の収集手法に UNC3886 として文書化された ツールとの技術的な重なりが報告されているが、報道は同一とは述べていない。
+- id: qtfy
+  canonical: Qtfy
+  aliases: []
+  kind: group
+  family: ''
+- id: uac_0099
+  canonical: Uac-0099
+  aliases: []
+  kind: group
+  family: ''
+- id: tegal_cyber_team
+  canonical: Tegal Cyber Team
+  aliases: []
+  kind: group
+  family: ''
+- id: gordonfreeman
+  canonical: Gordonfreeman
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_3075
+  canonical: Storm-3075
+  aliases: []
+  kind: group
+  family: ''
+- id: unc5267
+  canonical: UNC5267
+  aliases: []
+  kind: group
+  family: ''
+- id: dark_caracal
+  canonical: Dark Caracal
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_3121
+  canonical: Storm-3121
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_3032
+  canonical: Storm-3032
+  aliases: []
+  kind: group
+  family: ''
+- id: uat_11823
+  canonical: UAT-11823
+  aliases: []
+  kind: group
+  family: ''
+- id: uat_12197
+  canonical: UAT-12197
+  aliases: []
+  kind: group
+  family: ''
+- id: uat_11988
+  canonical: UAT-11988
+  aliases: []
+  kind: group
+  family: ''
+- id: apt24
+  canonical: APT24
+  aliases: []
+  kind: group
+  family: ''
+- id: ta412
+  canonical: TA412
+  aliases: []
+  kind: group
+  family: ''
+- id: ta419
+  canonical: TA419
+  aliases: []
+  kind: group
+  family: ''
+- id: unc3569
+  canonical: UNC3569
+  aliases: []
+  kind: group
+  family: ''
+- id: prey_0058
+  canonical: Prey-0058
+  aliases: []
+  kind: group
+  family: ''
+- id: woodgnat
+  canonical: Woodgnat
+  aliases: []
+  kind: group
+  family: ''
+- id: nighteagle
+  canonical: Nighteagle
+  aliases: []
+  kind: group
+  family: ''
+- id: red_heron
+  canonical: Red Heron
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_2992
+  canonical: Storm-2992
+  aliases: []
+  kind: group
+  family: ''
+- id: uta0565
+  canonical: Uta0565
+  aliases: []
+  kind: group
+  family: ''
+- id: uat_11587
+  canonical: UAT-11587
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_3069
+  canonical: Storm-3069
+  aliases: []
+  kind: group
+  family: ''
+- id: cl_cri_1040
+  canonical: CL-CRI-1040
+  aliases: []
+  kind: group
+  family: ''
+- id: konni
+  canonical: Konni
+  aliases: []
+  kind: group
+  family: ''
+- id: n0n
+  canonical: N0n
+  aliases: []
+  kind: group
+  family: ''
+- id: lamashtu
+  canonical: Lamashtu
+  aliases: []
+  kind: group
+  family: ''
+- id: cry0
+  canonical: Cry0
+  aliases: []
+  kind: group
+  family: ''
+- id: vexy_ransomware
+  canonical: Vexy Ransomware
+  aliases: []
+  kind: group
+  family: ''
+- id: black_x
+  canonical: Black X
+  aliases: []
+  kind: group
+  family: ''
+- id: auditteam
+  canonical: Auditteam
+  aliases: []
+  kind: group
+  family: ''

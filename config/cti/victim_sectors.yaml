@@ -12,6 +12,7 @@ canonical:
     display: 金融
     stix: financial-services
     aliases:
+      - "保険"
       - 金融
       - finance
       - banking
@@ -27,6 +28,7 @@ canonical:
     display: 医療
     stix: healthcare
     aliases:
+      - "biotechnology"
       - 医療
       - healthcare
       - hospital
@@ -74,6 +76,11 @@ canonical:
     display: 政府
     stix: government
     aliases:
+      - "自治体"
+      - "地方自治体"
+      - "行政"
+      - "公共"
+      - "public safety"
       - 政府
       - government
       - ministry
@@ -116,6 +123,7 @@ canonical:
     display: 重要インフラ
     stix: infrastructure
     aliases:
+      - "水インフラ"
       - "水道インフラ"
       - 重要インフラ
       - critical_infrastructure
@@ -158,6 +166,7 @@ canonical:
     display: 小売
     stix: retail
     aliases:
+      - "eコマース"
       - 小売
       - retail
       - "e-commerce"
@@ -186,6 +195,16 @@ canonical:
     display: IT
     stix: technology
     aliases:
+      - "it_infrastructure"
+      - "ICT"
+      - "IT/サービス"
+      - "IT サービス"
+      - "IT / インフラ"
+      - "IT / ソフトウェア開発"
+      - "IT/SaaS"
+      - "IT / MSP"
+      - "information_services"
+      - "database infrastructure"
       - "managed service providers"
       - "IoT infrastructure"
       - "AI infrastructure"
@@ -228,6 +247,7 @@ canonical:
   media:
     display: メディア
     aliases:
+      - "social_media"
       - メディア
       - media
       - news
@@ -244,6 +264,7 @@ canonical:
     display: NGO
     stix: non-profit
     aliases:
+      - "非営利団体"
       - NGO
       - civil_society
       - 非政府組織
@@ -287,6 +308,7 @@ canonical:
     display: 専門サービス
     stix: commercial
     aliases:
+      - "法律"
       - professional services
       - professional services firm
       - legal
