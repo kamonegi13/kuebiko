@@ -214,3 +214,24 @@ API クレジットでなく **Claude サブスクリプション (Pro/Max)** �
   (synthesis の llm_model 記録が実態と乖離しない)。発動は WARNING `llm_fallback_engaged`
 - 構築段階の失敗 (API キー未設定等) もローカルで継続
 - rollback: `LLM_LOCAL_FALLBACK=0` で旧挙動 (外部失敗 = step 失敗)
+
+## ⑪ 学習モデルの命名規則 (2026-10-10)
+
+`kuebiko-sft:s<世代><種別>` の形にする。世代は学習の系統、種別は派生の仕方。
+
+| 名前 | 意味 |
+|---|---|
+| `s21` `s22` `s23` | 学習で得た素のモデル (fast 系)。`n19` は narrative 系 |
+| `s23i` | s22 と s23 の LoRA 差分 (ΔW) を補間した版。**現行の fast / ACH / detect の本番**。旧名 `i58` (s22/s23 の t=0.58) |
+| `s24i` (将来) | s24 と、直近の本番版 `s23i` の補間 |
+
+- 補間の係数 t は名前に入れない (評価で決める調整値で、変えるたびに名前が変わるため)。
+  元の 2 つと t は評価記録とこの表に残す。係数違いの試行は `i25` `i50` のような一時タグで評価し、
+  採用したものだけを `s<世代>i` に改名する。
+- ΔW の再現元は `data/cloud-runs/<世代>/out/adapter`。**これを消すと補間を作り直せない**。
+  補間は `scripts/cloud_train/merge_interp.py` と `data/mlx/import_interp.sh` (a=s22, b=s23 を固定で
+  持つので、s24i を作るときは a / b を直す)。
+- 新しい学習を補間する目的は、新モデルの退行 (s23 では暴走) を実績ある側へ引き戻すこと。
+  そのため引き戻す先は直近の本番版にする。
+- 許可リスト (`task_prefix.PREFIX_TRAINED_MODELS` / `summary.EVIDENCE_TRAINED_MODELS`) には
+  タグ名で入れるので、改名・新規追加のたびに両方を直す。

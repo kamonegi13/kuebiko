@@ -293,7 +293,7 @@ class MitreEvidence(BaseModel):
 #: 技術ごとに本文の引用を出すよう学習したモデル (``mitre_evidence`` 欄を出させる)。学習して
 #: いないモデルに欄を足すと、見たことのない出力の形を求めることになる (接頭辞と同じ考え方、
 #: 2026-09-29)
-EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:i58"})
+EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:i58", "kuebiko-sft:s23i"})
 
 
 class SummaryEvidenceOutput(SummaryOutput):
