@@ -292,3 +292,47 @@ class TestLooksAccidentalLeak:
         assert looks_accidental_leak("ランサムウェア攻撃で侵害") is False
         assert looks_accidental_leak("") is False
         assert looks_accidental_leak("通常のセキュリティ更新") is False
+
+
+class TestM3bFields:
+    """M3b 段1 (2026-10-10) で足した 4 フィールドの既定値。
+
+    既定値は「未計算」を表し、extract_signals_from_briefing (本番 v12 ルール用の抽出) は
+    これらを一切設定しない — inline 計算 (``src/cti/importance_v2_inline.py``) が
+    ``dataclasses.replace()`` で後から注入する専用の経路。
+    """
+
+    def test_defaults_are_empty_and_unset(self) -> None:
+        from src.cti.routing_signals import RoutingSignals
+
+        sig = RoutingSignals(source="briefing", importance="low", article_type="breaking")
+
+        assert sig.severity == ""
+        assert sig.severity_basis == ""
+        assert sig.jp == ""
+        assert sig.relevant is False
+
+    def test_extract_signals_from_briefing_leaves_m3b_fields_at_default(self) -> None:
+        msg = self._msg(summary="通常の記事")
+        sig = extract_signals_from_briefing(msg, body_text="本文")
+
+        assert sig.severity == ""
+        assert sig.severity_basis == ""
+        assert sig.jp == ""
+        assert sig.relevant is False
+
+    @staticmethod
+    def _msg(
+        *,
+        summary: str,
+        importance: str = "medium",
+        category: str = "incident",
+    ) -> BriefingMessage:
+        return BriefingMessage(
+            title="t",
+            bluf="",
+            summary=summary,
+            importance=importance,  # type: ignore[arg-type]
+            category=category,
+            metadata={},
+        )

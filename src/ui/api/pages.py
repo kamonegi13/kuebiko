@@ -687,6 +687,51 @@ def triage_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> d
     }
 
 
+#: routing-v2-shadow summary の窓幅上限 (2026-10-10、M3b 段1)。triage-shadow と同じ基準
+#: (go/no-go の短命な観察データ、retention とは別物)。
+_ROUTING_V2_SHADOW_MAX_DAYS = 60
+_ROUTING_V2_SHADOW_MAX_LIMIT = 200
+
+
+@pages_api.get("/routing-v2-shadow/summary")
+def routing_v2_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> dict[str, Any]:
+    """routing v2 (重要度の再設計ベース) の shadow 記録 (M3b 段1) の go/no-go 用集計。
+
+    現行 (v12 ルール、old_channel) × 新ルール (M3B_RULES、new_channel) の件数と、
+    食い違った記事の一覧を返す。``/api/v1/triage-shadow/summary`` と同じ形。運用系 read API
+    のため PUBLIC_GET_ALLOWLIST には入れない (src/ui/read_only_policy.py を参照)。
+    """
+    days = max(1, min(int(days), _ROUTING_V2_SHADOW_MAX_DAYS))
+    limit = max(1, min(int(limit), _ROUTING_V2_SHADOW_MAX_LIMIT))
+    repo: RunHistoryRepository = request.app.state.repo
+    crosstab = repo.summarize_routing_v2_shadow(days=days)
+    changed = repo.list_routing_v2_shadow_changed(days=days, limit=limit)
+    return {
+        "days": days,
+        "crosstab": [
+            {"old_channel": c.old_channel, "new_channel": c.new_channel, "count": c.count}
+            for c in crosstab
+        ],
+        "total": sum(c.count for c in crosstab),
+        "changed": [
+            {
+                "article_id": r.article_id,
+                "old_channel": r.old_channel,
+                "old_rule_id": r.old_rule_id,
+                "new_channel": r.new_channel,
+                "new_rule_id": r.new_rule_id,
+                "severity": r.severity,
+                "severity_basis": r.severity_basis,
+                "jp": r.jp,
+                "relevant": r.relevant,
+                "importance": r.importance,
+                "created_at": r.created_at,
+            }
+            for r in changed
+        ],
+    }
+
+
 @pages_api.post("/subscriptions/reliability")
 def subscriptions_set_reliability(
     request: Request,

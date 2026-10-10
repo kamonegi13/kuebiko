@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import jinja2
 
@@ -28,6 +30,10 @@ from src.tools.text_sanitizer import (
     sanitize_for_display,
 )
 from src.tools.text_utils import strip_html as _strip_html
+
+if TYPE_CHECKING:
+    from src.cti.routing_decision import RoutingDecision
+    from src.cti.routing_signals import RoutingSignals
 
 # summarizer の出力が下流で **必ず捨てられる** フィールド (2026-08-18)。
 #
@@ -245,6 +251,18 @@ async def _summarize_and_build(
             }
         )
 
+    # b3. M3b 段1 (2026-10-10): 重要度の再設計の軸を inline で先取りする (shadow 専用、
+    # 本番の投稿先は変えない)。対象は毎時の段 (severity_axes_job) と同じ importance 帯に
+    # 深刻さを導出しうるカテゴリの絞りを加えたもの (src/cti/importance_v2_inline.py)。
+    from src.cti.importance_v2_inline import classify_axes_inline
+
+    inline_axes, inline_axes_model = await classify_axes_inline(
+        getattr(article, "title", "") or "",
+        summary.summary,
+        importance=summary.importance,
+        category=summary.category,
+    )
+
     # c. Phase 4: 機械的 IOC 抽出 + アクター名正規化
     from src.cti.actor_candidates import harvest_candidates, harvest_enabled
     from src.cti.actor_normalizer import load_actor_aliases
@@ -380,6 +398,8 @@ async def _summarize_and_build(
         body_source=body_source,
         extraction_failure_reason=extraction_failure_reason,
         trust_input_title=trust_input_title,
+        severity_axes=inline_axes,
+        severity_axes_model=inline_axes_model,
     )
 
 
@@ -576,6 +596,8 @@ def _build_briefing(
     body_source: str = "unknown",
     extraction_failure_reason: str | None = None,
     trust_input_title: bool = True,
+    severity_axes: Mapping[str, str] | None = None,
+    severity_axes_model: str = "",
 ) -> BriefingMessage:
     metadata: dict[str, object] = {
         "feed_url": article.feed_url,
@@ -867,6 +889,11 @@ def _build_briefing(
             to=capped_importance,
             reason="no_exploit_signal",
         )
+    # M3b 段1: inline で取った深刻度の軸を metadata に載せる (persistence が
+    # set_severity_axes と同じ setter で保存し、毎時の段がこの記事をスキップする)。
+    if severity_axes:
+        metadata["_severity_axes"] = dict(severity_axes)
+        metadata["_severity_axes_model"] = severity_axes_model
     msg = BriefingMessage(
         title=display_title,
         # Phase 5T-O: RSS 経路は 1 記事 = 1 incident で BLUF が title と重複するため廃止。
@@ -914,10 +941,76 @@ def _build_briefing(
         reason=decision.reason,
         signals=decision.signals_snapshot,
     )
+    # M3b 段1 (2026-10-10): 新しいルール (M3B_RULES) を同じ signals で shadow 評価し、
+    # 本番の決定 (decision、v12 現行ルール) と並べて記録する材料を作る。投稿先は
+    # decision のまま変えない。失敗しても本処理 (投稿) を止めない。
+    shadow_metadata = _build_routing_v2_shadow_metadata(
+        signals=signals,
+        decision=decision,
+        msg=msg,
+        body_text=body_text,
+        feed_title=feed_title,
+        severity_axes=severity_axes,
+        importance=capped_importance,
+        article_id=article.id,
+    )
     new_metadata = {
         **msg.metadata,
         "target_channel": decision.channel,
         "routing_reason": decision.reason,
         "routing_rule_id": decision.rule_id,
+        **shadow_metadata,
     }
     return msg.model_copy(update={"metadata": new_metadata})
+
+
+def _build_routing_v2_shadow_metadata(
+    *,
+    signals: RoutingSignals,
+    decision: RoutingDecision,
+    msg: BriefingMessage,
+    body_text: str,
+    feed_title: str,
+    severity_axes: Mapping[str, str] | None,
+    importance: str,
+    article_id: str,
+) -> dict[str, object]:
+    """``_routing_v2_shadow`` metadata キーを組み立てる (失敗しても空 dict、記録のみ)。"""
+    try:
+        from dataclasses import replace
+
+        from src.cti.importance_v2_inline import build_importance_v2_inline
+        from src.cti.router import get_source_quality
+        from src.cti.routing_rules import evaluate_routing_rules
+        from src.cti.routing_v2 import M3B_RULES
+
+        v2 = build_importance_v2_inline(
+            msg=msg,
+            body_text=body_text,
+            feed_title=feed_title,
+            severity_axes=severity_axes,
+        )
+        signals_v2 = replace(
+            signals,
+            severity=v2.severity or "",
+            severity_basis=v2.severity_basis,
+            jp=v2.jp,
+            relevant=v2.relevant,
+        )
+        v2_decision = evaluate_routing_rules(signals_v2, get_source_quality(), {}, rules=M3B_RULES)
+        return {
+            "_routing_v2_shadow": {
+                "old_channel": decision.channel,
+                "old_rule_id": decision.rule_id,
+                "new_channel": v2_decision.channel if v2_decision is not None else "",
+                "new_rule_id": v2_decision.rule_id if v2_decision is not None else "",
+                "severity": v2.severity or "",
+                "severity_basis": v2.severity_basis,
+                "jp": v2.jp,
+                "relevant": v2.relevant,
+                "importance": importance,
+            }
+        }
+    except Exception as e:  # noqa: BLE001 — shadow 記録の失敗で投稿を止めない
+        _log.warning("routing_v2_shadow_build_failed", article_id=article_id, error=str(e))
+        return {}

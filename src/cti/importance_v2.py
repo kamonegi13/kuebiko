@@ -46,6 +46,39 @@ JapanRelation = Literal["targeted", "affected", "mentioned", "none"]
 #: 注視国 (関与国の ISO)。関連性と戦略上の重みの両方で使う
 WATCHED_NATIONS: frozenset[str] = frozenset({"CN", "RU", "KP", "IR"})
 
+#: ``derive_severity()`` / ``_vuln_severity()`` / ``_incident_severity()`` が返しうる
+#: ``severity_basis`` の全値 (M3b 段1、2026-10-10)。routing の新 property (``severity_basis``)
+#: の値域 SSoT。新しい basis 文字列を追加したら必ずここにも 1 行足す
+#: (``tests/unit/test_importance_v2.py`` が全網羅を検証する)。
+SEVERITY_BASES: frozenset[str] = frozenset(
+    {
+        "non_cyber",
+        "derivative",
+        "kev",
+        "no_axes",
+        "distribution_compromise",
+        "malware_state_wide",
+        "malware",
+        "research_state_or_wide",
+        "research",
+        "exploited",
+        "cvss_critical",
+        "poc",
+        "vuln",
+        "confirmed_wide_harm",
+        "state_on_critical",
+        "critical_disruption",
+        "large_org_disruption",
+        "exploited_product",
+        "large_magnitude",
+        "large_loss",
+        "harm",
+        "claimed_disruption",
+        "poc_or_state",
+        "incident",
+    }
+)
+
 #: 「誰が・どこで」を表す SIR (設計書 §8.1 の推奨、判断待ち)。「何が起きたか」を表す SIR
 #: (新しい PoC の脆弱性・重要インフラ・サプライチェーン・機関の勧告) は深刻さの側の話なので数えない
 RELEVANCE_CORE_SIRS: frozenset[str] = frozenset(
@@ -65,6 +98,9 @@ _JP_TARGETED_SIRS = frozenset({"pir_jp_targeted"})
 _JP_AFFECTED_SIRS = frozenset({"pir_jp_company_breach"})
 
 _NON_CYBER = frozenset({"geopolitical", "policy", "other"})
+#: 公開版 (他モジュールが再利用する用、例: ``src/cti/importance_v2_inline.py`` の inline
+#: 軸取得の対象カテゴリ絞り込み)。値は ``_NON_CYBER`` と同一オブジェクト (SSoT を 1 つに保つ)。
+NON_CYBER_CATEGORIES: frozenset[str] = _NON_CYBER
 _VULN = frozenset({"vulnerability", "advisory"})
 #: 派生記事 (事象そのものを報じない)。深刻さは元の事象で扱う
 _DERIVATIVE_TYPES = frozenset({"opinion", "recap", "tutorial"})
@@ -123,6 +159,48 @@ class ImportanceV2:
     def level(self) -> int | None:
         """重要度の 6 段階 (1 が最上位)。``importance_level`` を参照。"""
         return importance_level(self.severity, self.relevant)
+
+
+def build_inputs(
+    *,
+    category: str,
+    article_type: str,
+    axes: Mapping[str, str] | None,
+    cves: Iterable[str],
+    kev: frozenset[str],
+    year: int,
+    victim_country: str,
+    involved_countries: Iterable[str],
+    mentioned_countries: Iterable[str],
+    sir_ids: Iterable[str],
+    text: str,
+    stored_max_cvss: float = 0.0,
+) -> ImportanceInputs:
+    """``ImportanceInputs`` の共通組み立て (M3b 段1、2026-10-10)。
+
+    記録済みの値から組み立てる repo 経路 (``repo_importance_v2.pending_importance_inputs``)
+    と、routing 時点の値から組み立てる inline 経路 (``src/cti/importance_v2_inline.py``) が
+    共有する。本文からの件数・被害額・CVSS 抽出 (``stated_*``) と規模の補正 (``corrected_axes``)
+    はここに一元化し、両経路の挙動を一致させる。
+
+    ``stored_max_cvss``: NVD カタログ等から取った既知 CVSS (無ければ 0.0)。本文中の
+    記載 (``stated_cvss``) との大きい方を採る (既存の repo 経路と同じ規則)。
+    """
+    cves_list = list(cves)
+    victim_count = stated_victim_count(text)
+    corrected = corrected_axes(dict(axes or {}), victim_count)
+    return ImportanceInputs(
+        category=category,
+        article_type=article_type,
+        axes=corrected,
+        on_kev=subject_kev(cves_list, kev, year),
+        max_cvss=max(stored_max_cvss, stated_cvss(text)),
+        victim_country=victim_country.upper(),
+        involved_countries=frozenset(c.upper() for c in involved_countries if c),
+        mentioned_countries=frozenset(c.upper() for c in mentioned_countries if c),
+        sir_ids=frozenset(sir_ids),
+        loss_usd=stated_loss_usd(text),
+    )
 
 
 #: 6 段階の並び = 深刻さを先に見る (案 A、2026-10-04 利用者決定)。関連性ありは記事の約 39% と広く、

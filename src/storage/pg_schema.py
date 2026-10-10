@@ -810,6 +810,24 @@ ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS jp_cascade SMALLINT;
 ALTER TABLE triage_shadow ADD COLUMN IF NOT EXISTS new_kept_v2 SMALLINT;
 CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
 
+-- routing v2 の shadow 記録 (2026-10-10、M3b 段1、SQLite _SCHEMA と対)。詳細コメントは
+-- schema_sql.py の同表を参照。
+CREATE TABLE IF NOT EXISTS routing_v2_shadow (
+    id              BIGSERIAL PRIMARY KEY,
+    article_id      TEXT      NOT NULL,
+    created_at      TEXT      NOT NULL,
+    old_channel     TEXT      NOT NULL,
+    old_rule_id     TEXT      NOT NULL,
+    new_channel     TEXT      NOT NULL,
+    new_rule_id     TEXT      NOT NULL,
+    severity        TEXT      NOT NULL,
+    severity_basis  TEXT      NOT NULL,
+    jp              TEXT      NOT NULL,
+    relevant        SMALLINT  NOT NULL,
+    importance      TEXT      NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_routing_v2_shadow_created_at ON routing_v2_shadow(created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (

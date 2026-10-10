@@ -146,6 +146,47 @@ class TestEngineEquivalence:
                     f"imp={imp} cnt={cnt}: engine={engine.rule_id} legacy={legacy.rule_id}"
                 )
 
+    def test_m3b_fields_do_not_affect_v12_rules(self) -> None:
+        """M3b 段1 (2026-10-10) で足した severity/severity_basis/jp/relevant は、
+        現行 v12 ルール (seed) のどの条件にも参照されていない。値を埋めても
+        埋めなくても決定が変わらないことを確認する (既存ルールの挙動保存)。
+        """
+        sq = get_source_quality()
+        seed = load_seed_from_yaml()
+        snap: dict[str, object] = {}
+        importances = ["high", "medium", "low"]
+        article_types = ["breaking", "recap", "opinion"]
+        categories = ["apt", "vulnerability", "other"]
+
+        for imp, atype, cat in itertools.product(importances, article_types, categories):
+            base = _sig(
+                importance=imp,
+                article_type=atype,
+                category=cat,
+                is_security_relevant=True,
+                mentions_japan_critical=True,
+                has_known_apt=True,
+                has_kev_or_active_exploit=True,
+            )
+            with_m3b = _sig(
+                importance=imp,
+                article_type=atype,
+                category=cat,
+                is_security_relevant=True,
+                mentions_japan_critical=True,
+                has_known_apt=True,
+                has_kev_or_active_exploit=True,
+                severity="S3",
+                severity_basis="kev",
+                jp="targeted",
+                relevant=True,
+            )
+            without = evaluate_routing_rules(base, sq, snap, rules=seed)
+            with_fields = evaluate_routing_rules(with_m3b, sq, snap, rules=seed)
+            assert without is not None
+            assert with_fields is not None
+            assert (without.channel, without.rule_id) == (with_fields.channel, with_fields.rule_id)
+
 
 class TestRuleValidation:
     """Stage 2: 保存前検証 (silent typo 防止)。"""

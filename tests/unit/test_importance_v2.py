@@ -17,7 +17,9 @@ import pytest
 
 from src.cti.importance_v2 import (
     RULE_VERSION,
+    SEVERITY_BASES,
     ImportanceInputs,
+    build_inputs,
     corrected_axes,
     derive,
     derive_severity,
@@ -558,3 +560,113 @@ class TestRecording:
         monkeypatch.setenv("IMPORTANCE_V2_RECORD", "0")
 
         assert record_importance_v2(repo) == {"skipped": "flag_off"}
+
+
+class TestBuildInputsMatchesRepoPath:
+    """``build_inputs()`` (M3b 段1) が repo 経路 (pending_importance_inputs) と同一の
+    ``ImportanceInputs`` を組み立てる (共有リファクタの等価性確認)。"""
+
+    def test_build_inputs_equals_repo_pending_inputs(self, repo: RunHistoryRepository) -> None:
+        from src.tools.kev_client import get_kev_cve_set
+
+        repo_inputs = repo.pending_importance_inputs(
+            since="2000-01-01", rule_version=RULE_VERSION, limit=10
+        )
+        # a1 の fixture: category=vulnerability, axes=_axes(exploitation=exploited_in_wild),
+        # victim_country_iso=JP, summary/body 未設定 (text="\n")、entity なし。
+        # get_severity_axes() は model キーも一緒に返す (set_severity_axes("a1", ..., "m"))。
+        expected = build_inputs(
+            category="vulnerability",
+            article_type="breaking",
+            axes=_axes(exploitation="exploited_in_wild", model="m"),
+            cves=[],
+            kev=get_kev_cve_set(),
+            year=datetime.now(UTC).year,
+            victim_country="JP",
+            involved_countries=[],
+            mentioned_countries=[],
+            sir_ids=[],
+            text="\n",
+            stored_max_cvss=0.0,
+        )
+
+        assert repo_inputs["a1"] == expected
+
+
+#: derive_severity() が返しうる全 basis を 1 つずつ再現する最小の ImportanceInputs。
+#: SEVERITY_BASES の全網羅 (余剰なし・漏れなし) を固定する。
+_BASIS_CASES: list[tuple[ImportanceInputs, str]] = [
+    (_inp(category="geopolitical"), "non_cyber"),
+    (_inp(article_type="recap"), "derivative"),
+    (_inp(on_kev=True), "kev"),
+    (_inp(axes={}), "no_axes"),
+    (_inp(axes=_axes(distribution_compromise="true")), "distribution_compromise"),
+    (
+        _inp(category="malware", axes=_axes(scope="sector_wide", actor="state")),
+        "malware_state_wide",
+    ),
+    (_inp(category="malware"), "malware"),
+    (_inp(category="research", axes=_axes(actor="state")), "research_state_or_wide"),
+    (_inp(category="research"), "research"),
+    (
+        _inp(category="vulnerability", axes=_axes(exploitation="exploited_in_wild")),
+        "exploited",
+    ),
+    (
+        _inp(category="vulnerability", axes=_axes(exploitation="disclosed_only"), max_cvss=9.5),
+        "cvss_critical",
+    ),
+    (_inp(category="vulnerability", axes=_axes(exploitation="poc")), "poc"),
+    (_inp(category="vulnerability"), "vuln"),
+    (
+        _inp(axes=_axes(confirmation="confirmed", impact="data_exposure", scope="sector_wide")),
+        "confirmed_wide_harm",
+    ),
+    (_inp(axes=_axes(actor="state", target="government")), "state_on_critical"),
+    (
+        _inp(
+            axes=_axes(
+                confirmation="confirmed", impact="disruption", target="government", actor="criminal"
+            )
+        ),
+        "critical_disruption",
+    ),
+    (
+        _inp(
+            axes=_axes(
+                confirmation="confirmed",
+                impact="disruption",
+                target="general_org",
+                actor="criminal",
+                victim_size="large",
+            )
+        ),
+        "large_org_disruption",
+    ),
+    (
+        _inp(axes=_axes(exploitation="exploited_in_wild", target="enterprise_product")),
+        "exploited_product",
+    ),
+    (_inp(axes=_axes(impact="data_exposure", magnitude="ge_1m")), "large_magnitude"),
+    (_inp(axes=_axes(impact="data_exposure"), loss_usd=200_000_000.0), "large_loss"),
+    (_inp(axes=_axes(impact="data_exposure", confirmation="possible")), "harm"),
+    (_inp(axes=_axes(impact="disruption", confirmation="claimed_only")), "claimed_disruption"),
+    (_inp(axes=_axes(exploitation="poc")), "poc_or_state"),
+    (_inp(), "incident"),
+]
+
+
+class TestSeverityBasesCoverage:
+    """SEVERITY_BASES (M3b 段1) が derive_severity() の全出力を漏れなく・余剰なく覆う。"""
+
+    @pytest.mark.parametrize(("inp", "expected_basis"), _BASIS_CASES)
+    def test_each_case_reproduces_expected_basis(
+        self, inp: ImportanceInputs, expected_basis: str
+    ) -> None:
+        _, basis = derive_severity(inp)
+        assert basis == expected_basis
+        assert basis in SEVERITY_BASES
+
+    def test_cases_cover_severity_bases_exactly(self) -> None:
+        observed = {basis for _, basis in _BASIS_CASES}
+        assert observed == SEVERITY_BASES

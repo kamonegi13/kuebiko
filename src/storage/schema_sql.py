@@ -670,6 +670,26 @@ CREATE TABLE IF NOT EXISTS triage_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_triage_shadow_created_at ON triage_shadow(created_at);
 
+-- routing v2 の shadow 記録 (2026-10-10、M3b 段1、docs/importance_relevance_redesign.md)。
+-- 重要度の再設計ベースの新ルール (M3B_RULES) を、本番の投稿先 (現行 v12 ルール) と並べて
+-- 記録する安全網。本番の投稿先は変えない (記録のみ)。1 記事 = route() 時点の 1 回のみ記録。
+-- retention は triage_shadow と同じ 60 日。
+CREATE TABLE IF NOT EXISTS routing_v2_shadow (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id      TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL,       -- ISO8601 UTC
+    old_channel     TEXT    NOT NULL,       -- 現行 v12 ルールの投稿先 (本番で実際に使われた)
+    old_rule_id     TEXT    NOT NULL,
+    new_channel     TEXT    NOT NULL,       -- M3B_RULES の判定 (shadow、未登録 channel 可)
+    new_rule_id     TEXT    NOT NULL,
+    severity        TEXT    NOT NULL,       -- ImportanceV2.severity (S3/S2/S1/空=None)
+    severity_basis  TEXT    NOT NULL,
+    jp              TEXT    NOT NULL,       -- ImportanceV2.jp (targeted/affected/mentioned/none)
+    relevant        INTEGER NOT NULL,       -- 0/1
+    importance      TEXT    NOT NULL        -- 投稿時の articles.importance (high/medium/low)
+);
+CREATE INDEX IF NOT EXISTS idx_routing_v2_shadow_created_at ON routing_v2_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

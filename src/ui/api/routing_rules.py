@@ -89,6 +89,23 @@ def _resolve_domain(domain: str) -> list[str]:
         except Exception as e:  # noqa: BLE001
             _log.warning("routing_vocab_keyword_lists_failed", error=str(e))
             return []
+    # M3b 段1 (2026-10-10): 重要度の再設計の値域。SSoT = src/cti/importance_v2.py
+    if domain == "severities":
+        from typing import get_args
+
+        from src.cti.importance_v2 import Severity
+
+        return list(get_args(Severity))
+    if domain == "severity_bases":
+        from src.cti.importance_v2 import SEVERITY_BASES
+
+        return sorted(SEVERITY_BASES)
+    if domain == "jp_relations":
+        from typing import get_args
+
+        from src.cti.importance_v2 import JapanRelation
+
+        return list(get_args(JapanRelation))
     return []
 
 

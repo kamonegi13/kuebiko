@@ -158,6 +158,16 @@ class RoutingSignals:
     # 使わないこと (粗い国一致で無関係を吸う事故を招く。過剰帰属の再発防止)。
     involved_countries: frozenset[str] = field(default_factory=frozenset)
 
+    # M3b 段1 (2026-10-10、src/cti/importance_v2.py の再設計値)。routing 時点で
+    # importance_v2_inline が計算し、``_build_briefing`` が route() の直前に注入する
+    # (replace())。本番 (v12) ルールはまだこれらを参照しない — shadow 専用の M3B_RULES
+    # (src/cti/routing_v2.py) だけが使う。既定値は「未計算」を表し、既存ルールの判定結果を
+    # 変えない (どのルールもこれらの property を条件に使っていないため)。
+    severity: str = ""
+    severity_basis: str = ""
+    jp: str = ""
+    relevant: bool = False
+
     # 元データ (デバッグ用)
     extras: dict[str, object] = field(default_factory=dict)
 

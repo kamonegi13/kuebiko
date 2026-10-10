@@ -209,6 +209,18 @@ def _build_property_catalog() -> list[PropertySpec]:
             lambda s, sq: _brief_cap_reached(s, sq),
         ),
     )
+    # M3b 段1 (2026-10-10): 重要度の再設計 (src/cti/importance_v2.py) の値を routing の
+    # property として公開する。本番 (v12) ルールはまだこれらを参照しない — shadow 専用の
+    # M3B_RULES (src/cti/routing_v2.py) だけが使う。既存ルールの挙動は変わらない。
+    specs.append(
+        PropertySpec(
+            "relevant",
+            "boolean",
+            "深刻度",
+            "関連性あり (日本/注視国/SIR、M3b)",
+            _bool_accessor("relevant"),
+        ),
+    )
     # str
     specs += [
         PropertySpec(
@@ -260,6 +272,31 @@ def _build_property_catalog() -> list[PropertySpec]:
             "被害国",
             lambda s, _sq: s.victim_country,
             domain="countries",
+        ),
+        # M3b 段1 (2026-10-10): 重要度の再設計の値 (shadow 専用、M3B_RULES のみ参照)。
+        PropertySpec(
+            "severity",
+            "str",
+            "深刻度",
+            "深刻さ (S3/S2/S1、M3b)",
+            lambda s, _sq: s.severity,
+            domain="severities",
+        ),
+        PropertySpec(
+            "severity_basis",
+            "str",
+            "深刻度",
+            "深刻さの根拠 (M3b)",
+            lambda s, _sq: s.severity_basis,
+            domain="severity_bases",
+        ),
+        PropertySpec(
+            "jp",
+            "str",
+            "日本関連",
+            "日本との関係 (targeted/affected/mentioned/none、M3b)",
+            lambda s, _sq: s.jp,
+            domain="jp_relations",
         ),
     ]
     # set

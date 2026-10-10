@@ -317,6 +317,50 @@ def _persist_article_outcomes(
                             article_id=article_id,
                             error=str(e),
                         )
+                # M3b 段1 (2026-10-10): routing 時点で inline 計算した深刻度の軸を、毎時の段
+                # (severity_axes_job) と同じ setter で保存する (INSERT OR IGNORE なので
+                # 毎時の段はこの記事を「既に軸あり」としてスキップする)。失敗しても投稿は止めない。
+                _axes_raw = msg.metadata.get("_severity_axes")
+                if isinstance(_axes_raw, dict):
+                    try:
+                        dedup_repo.set_severity_axes(
+                            article_id,
+                            _axes_raw,
+                            str(msg.metadata.get("_severity_axes_model") or ""),
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        _log.debug(
+                            "routing_v2_inline_axes_persist_failed",
+                            article_id=article_id,
+                            error=str(e),
+                        )
+                # M3b 段1: 新しいルール (M3B_RULES) の shadow 判定を記録する (記録のみ、
+                # 投稿先は変えない)。失敗しても投稿は止めない。
+                _shadow_raw = msg.metadata.get("_routing_v2_shadow")
+                if isinstance(_shadow_raw, dict):
+                    try:
+                        from src.storage.repo_routing_v2_shadow import RoutingV2ShadowRow
+
+                        dedup_repo.record_routing_v2_shadow(
+                            RoutingV2ShadowRow(
+                                article_id=article_id,
+                                old_channel=str(_shadow_raw.get("old_channel") or ""),
+                                old_rule_id=str(_shadow_raw.get("old_rule_id") or ""),
+                                new_channel=str(_shadow_raw.get("new_channel") or ""),
+                                new_rule_id=str(_shadow_raw.get("new_rule_id") or ""),
+                                severity=str(_shadow_raw.get("severity") or ""),
+                                severity_basis=str(_shadow_raw.get("severity_basis") or ""),
+                                jp=str(_shadow_raw.get("jp") or ""),
+                                relevant=bool(_shadow_raw.get("relevant")),
+                                importance=str(_shadow_raw.get("importance") or ""),
+                            )
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        _log.debug(
+                            "routing_v2_shadow_persist_failed",
+                            article_id=article_id,
+                            error=str(e),
+                        )
             else:
                 # B3a: 抽出失敗 (msg=None、DegenerateBodyError) の状態を可視化する。body は
                 # 書かず (NULL のまま) body_source + reason だけ残し、不可視だった抽出失敗
@@ -372,6 +416,26 @@ def _persist_article_outcomes(
                 _log.debug("failed_article_seen_mark_failed", article_id=article_id, error=str(e))
 
 
+def rule_based_sir_ids(article_data: dict[str, object], actor_values: set[str]) -> frozenset[str]:
+    """規則ベースの SIR (旧 PIR) 該当 id 集合 (M3b 段1、2026-10-10)。
+
+    ``_append_pir_entities`` (取込時 inline 永続化) と ``src/cti/importance_v2_inline.py``
+    (routing 時点の shadow 計算、``subject_actor_ids=None`` で評価) が共有する。
+    バッチ (rebuild_pir_entities) と**同一の evaluate_pir_for_article** を使い挙動を一致させる。
+    例外は呼び出し側の責務 (本処理は本体 try/except に包まれず raise しうる)。
+    """
+    from src.pir.evaluator import evaluate_pir_for_article, has_match_criteria
+    from src.pir.integration import get_pir_config
+
+    return frozenset(
+        pir.id
+        for pir in get_pir_config().priorities
+        if pir.enabled
+        and has_match_criteria(pir)
+        and evaluate_pir_for_article(pir, article_data, actor_values)
+    )
+
+
 def _append_pir_entities(
     entities: list[tuple[str, str]],
     *,
@@ -385,13 +449,10 @@ def _append_pir_entities(
 
     監査 backlog 2026-07-05: PIR だけが日次 full-replace バッチで付与され、取込〜翌朝の
     freshness ラグで夕方 synthesis が PIR 盲目だった。他エンティティ同様その場で評価し、
-    situation が開いた瞬間に pir_ids が載るようにする。バッチ (rebuild_pir_entities) と
-    **同一の evaluate_pir_for_article** を使い挙動を一致させる。失敗しても本処理は止めない。
+    situation が開いた瞬間に pir_ids が載るようにする。判定本体は ``rule_based_sir_ids`` に
+    集約 (M3b 段1 で routing shadow 計算と共有)。失敗しても本処理は止めない。
     """
     try:
-        from src.pir.evaluator import evaluate_pir_for_article, has_match_criteria
-        from src.pir.integration import get_pir_config
-
         body = msg.metadata.get("_article_body")
         article_data: dict[str, object] = {
             "title": msg.title or "",
@@ -412,13 +473,8 @@ def _append_pir_entities(
             "subject_actor_ids": subject_actor_ids,
             "subject_actor_source": subject_actor_source,
         }
-        for pir in get_pir_config().priorities:
-            if (
-                pir.enabled
-                and has_match_criteria(pir)
-                and evaluate_pir_for_article(pir, article_data, actor_values)
-            ):
-                entities.append(("pir", pir.id))
+        for pir_id in rule_based_sir_ids(article_data, actor_values):
+            entities.append(("pir", pir_id))
     except Exception as e:  # noqa: BLE001 — PIR 評価失敗で entity 永続化を止めない
         _log.debug("inline_pir_tag_failed", error=str(e))
 

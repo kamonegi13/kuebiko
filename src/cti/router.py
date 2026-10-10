@@ -379,4 +379,9 @@ def _signals_snapshot(signals: RoutingSignals) -> dict[str, object]:
         "is_security_relevant": signals.is_security_relevant,
         "confidence_all_low": signals.confidence_all_low,
         "is_apt_leak": signals.is_apt_leak,  # Phase 5N
+        # M3b 段1 (2026-10-10): shadow 専用の新 property。本番ルールには未使用。
+        "severity": signals.severity,
+        "severity_basis": signals.severity_basis,
+        "jp": signals.jp,
+        "relevant": signals.relevant,
     }

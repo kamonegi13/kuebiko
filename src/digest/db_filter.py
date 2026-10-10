@@ -61,6 +61,9 @@ def _fetch_watch_articles_in_range(
     """watch ch に投稿された article を期間絞りで取得 (共通)。
 
     重複 (同 article_id が複数 run に出現する場合) は最新のみ採用。
+    ``vuln`` (M3b 段1、2026-10-10、現時点は投稿先として未使用) も watch 系として含める —
+    いずれ投入されたときに digest から黙って漏れないようにする (いまは posted_channel が
+    'vuln' の記事が存在しないので無害)。
     """
     sql = """
         SELECT a.article_id, a.title, a.url, a.feed_title,
@@ -71,7 +74,7 @@ def _fetch_watch_articles_in_range(
         FROM articles a
         WHERE a.created_at >= ? AND a.created_at < ?
           AND a.status = 'posted'
-          AND a.posted_channel = 'watch'
+          AND a.posted_channel IN ('watch', 'vuln')
         GROUP BY a.article_id, a.title, a.url, a.feed_title,
                  a.importance, a.category, a.posted_channel,
                  a.discord_message_id, a.discord_channel_id, a.summary, a.dedup_key
@@ -115,9 +118,10 @@ def fetch_recent_brief_titles(
     db_path: Path = DEFAULT_DB_PATH,
     max_titles: int = 50,
 ) -> list[str]:
-    """直近 lookback_hours 以内に brief / alert ch へ投稿した article のタイトル。
+    """直近 lookback_hours 以内に brief / alert / vuln ch へ投稿した article のタイトル。
 
-    deep dive 選定の context (今週速報案件) として LLM prompt に注入する。
+    deep dive 選定の context (今週速報案件) として LLM prompt に注入する。``vuln``
+    (M3b 段1、2026-10-10、現時点は投稿先として未使用) も速報級として含める。
     """
     base = now or datetime.now(UTC)
     since = base - timedelta(hours=lookback_hours)
@@ -125,7 +129,7 @@ def fetch_recent_brief_titles(
         SELECT title FROM articles
          WHERE created_at >= ? AND created_at < ?
            AND status = 'posted'
-           AND posted_channel IN ('brief', 'alert')
+           AND posted_channel IN ('brief', 'alert', 'vuln')
          ORDER BY created_at DESC
          LIMIT ?
     """

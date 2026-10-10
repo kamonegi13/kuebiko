@@ -76,7 +76,8 @@ def collect_high_threats(
 ) -> tuple[list[HighThreatItem], int]:
     """期間内の high サイバー脅威で **alert 未 push** のものを返す (items, total)。
 
-    - alert (即応 push 済み) は除外 — 本リストは「push されなかった high」の安全網。
+    - alert (即応 push 済み) / vuln (M3b 段1、2026-10-10、現時点は投稿先として未使用) は
+      除外 — 本リストは「どこにも速報として push されなかった high」の安全網。
     - dedup_key で重複排除 (最新 1 件)。japan 標的を先頭、以降 created_at 降順。
     - total = 上限適用前の件数 ("+N 件" 表示用)。
     """
@@ -87,7 +88,7 @@ def collect_high_threats(
         " dedup_key, created_at"
         " FROM articles"
         " WHERE status='posted' AND importance='high'"
-        " AND posted_channel <> 'alert'"
+        " AND posted_channel NOT IN ('alert', 'vuln')"
         f" AND category IN ({placeholders})"
         " AND created_at >= ?"
         " ORDER BY created_at DESC"

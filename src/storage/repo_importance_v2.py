@@ -14,12 +14,8 @@ from typing import Any
 from src.cti.importance_v2 import (
     ImportanceInputs,
     ImportanceV2,
-    corrected_axes,
+    build_inputs,
     legacy_level_filter_to_severity,
-    stated_cvss,
-    stated_loss_usd,
-    stated_victim_count,
-    subject_kev,
 )
 from src.storage.importance_level_sql import severity_relevance_sql
 
@@ -67,17 +63,19 @@ class ImportanceV2Mixin:
             e = ents.get(aid, {})
             cves = sorted(e.get("cve", set()))
             text = f"{r['summary'] or ''}\n{r['body'] or ''}"
-            out[aid] = ImportanceInputs(
+            out[aid] = build_inputs(
                 category=str(r["category"] or ""),
                 article_type=str(r["article_type"] or ""),
-                axes=corrected_axes(axes.get(aid, {}), stated_victim_count(text)),
-                on_kev=subject_kev(cves, kev, datetime.now(UTC).year),
-                max_cvss=max(max_cvss(cves), stated_cvss(text)),
-                victim_country=str(r["victim_country_iso"] or "").upper(),
-                involved_countries=frozenset(e.get("involved_country", set())),
-                mentioned_countries=frozenset(e.get("mentioned_country", set())),
-                sir_ids=frozenset(e.get("pir", set())),
-                loss_usd=stated_loss_usd(text),
+                axes=axes.get(aid, {}),
+                cves=cves,
+                kev=kev,
+                year=datetime.now(UTC).year,
+                victim_country=str(r["victim_country_iso"] or ""),
+                involved_countries=e.get("involved_country", set()),
+                mentioned_countries=e.get("mentioned_country", set()),
+                sir_ids=e.get("pir", set()),
+                text=text,
+                stored_max_cvss=max_cvss(cves),
             )
         return out
 

@@ -68,6 +68,9 @@ PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
 # Tier1 認証済みのみ到達可能。is_public_get の default-deny が実体)。
 # 新しい運用系 read API を足すときは、ここに入れるべきでないことを 1 行で記録する
 # (「書き忘れて露出した」のか「意図して出していない」のかを後から判別できるように)。
+#
+# 同様に GET /api/v1/routing-v2-shadow/summary (2026-10-10、M3b 段1) も意図的に
+# ここへ追加しない。記事 id・投稿先の食い違いを含む運用系の観察データのため。
 
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に
 # 化けないよう完全一致で判定する (path traversal / endpoint すり替えの排除)。

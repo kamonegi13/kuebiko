@@ -46,6 +46,9 @@ class FeedStats:
     # をソース単位で可視化する。
     full_body_count: int = 0
     stump_count: int = 0
+    # M3b 段1 (2026-10-10)。現時点では posted_channel='vuln' の記事は存在しない (shadow
+    # 記録のみ) ので常に 0 — 将来投入されたときに統計から黙って漏れないための先取り。
+    vuln_count: int = 0
     # 層別健全性 (2026-08-01): feed 取得は成功しているのに本文抽出で全滅している
     # ソース (JS チャレンジ導入等) を「30日 記事なし」と区別するための観測点。
     # 例: Indo-Pacific Defense Forum — feed 200 / 記事レコードあり / extract_failed 15 件
@@ -206,6 +209,8 @@ def fetch_all_feed_stats(
                     AS brief_count,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'watch' THEN 1 ELSE 0 END)
                     AS watch_count,
+                SUM(CASE WHEN status = 'posted' AND posted_channel = 'vuln' THEN 1 ELSE 0 END)
+                    AS vuln_count,
                 SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'high'
                     THEN 1 ELSE 0 END)
                     AS high_count,
@@ -235,7 +240,7 @@ def fetch_all_feed_stats(
         SELECT
             r.feed_title AS feed_title,
             r.posted_count, r.dup_skipped,
-            r.alert_count, r.brief_count, r.watch_count,
+            r.alert_count, r.brief_count, r.watch_count, r.vuln_count,
             r.high_count, r.medium_count, r.low_count,
             r.full_body_count, r.stump_count, r.extract_failed_count,
             f.first_seen_at AS first_seen_at
@@ -270,6 +275,7 @@ def fetch_all_feed_stats(
             alert_count=int(r["alert_count"] or 0),
             brief_count=int(r["brief_count"] or 0),
             watch_count=int(r["watch_count"] or 0),
+            vuln_count=int(r["vuln_count"] or 0),
             high_count=int(r["high_count"] or 0),
             medium_count=int(r["medium_count"] or 0),
             low_count=int(r["low_count"] or 0),
