@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -49,7 +50,7 @@ from src.tools.article_triage import ArticleTriage, TriageDecision  # noqa: E402
 from src.tools.model_tiers import Step, build_llm_for  # noqa: E402
 
 EVAL = Path("/app/data/eval")
-OUT = EVAL / "triage_boundary_ab_v1.jsonl"
+OUT = Path(os.environ.get("BOUNDARY_AB_OUT", str(EVAL / "triage_boundary_ab_v1.jsonl")))  # noqa: E501
 GOLD_V4 = EVAL / "triage_gold_v4.jsonl"
 GOLD_V2 = EVAL / "triage_gold_v2.jsonl"
 GOLDSET_SRC = EVAL / "triage_goldset_v2.json"  # title/feed/summary の fallback 元
@@ -194,7 +195,10 @@ async def main() -> None:
             article = articles[aid]
             prompt_a = triage._build_prompt_pir_driven(article, high_criteria, medium_criteria)  # noqa: SLF001
             prompt_b = prompt_a + BOUNDARY_RULES
+            arms = os.environ.get("BOUNDARY_AB_ARMS", "AB")
             for arm, prompt in (("A", prompt_a), ("B", prompt_b)):
+                if arm not in arms:
+                    continue
                 made += 1
                 if (aid, arm) in done:
                     continue
