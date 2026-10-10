@@ -64,7 +64,7 @@ export function PirDetailPage({ pirId }: { pirId: string }) {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <a href="/app/pir" className="text-fg-muted text-sm no-underline hover:text-fg">← PIR 一覧</a>
+            <a href="/app/pir" className="text-fg-muted text-sm no-underline hover:text-fg">← SIR 一覧</a>
             <span className="text-fg-subtle">/</span>
             <code className="text-[13.5px] text-fg-subtle font-mono">{pir.id}</code>
           </div>
