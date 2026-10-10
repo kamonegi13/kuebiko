@@ -161,6 +161,9 @@ services:
       # TRIAGE_CONCURRENCY は速度上どちらでもよい (既定 5 のままでよい)。
       ARTICLE_CONCURRENCY: ${ARTICLE_CONCURRENCY:-1}
       TRIAGE_CONCURRENCY: ${TRIAGE_CONCURRENCY:-5}
+      # triage で low に落ちた記事のうちサイバー政策を medium に救済する段 (docs/importance_relevance_redesign.md §6b)。
+      # off (既定) / shadow=判定を data/policy_rescue_shadow.jsonl に貯めるだけ / 1=救済を有効化。
+      CYBER_POLICY_RESCUE: ${CYBER_POLICY_RESCUE:-off}
 
     # 設定・プロンプト・データを bind mount で共有
     # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する

@@ -14,6 +14,7 @@ from src.config_loader import AppConfig
 from src.cti.ingest_relevance import ingest_relevance_hint
 from src.logging_config import get_logger
 from src.pipeline.grok_convert import _is_grok_article
+from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
 from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.repo_triage_shadow import TriageShadowRow
 from src.storage.run_history import RunHistoryRepository
@@ -231,10 +232,18 @@ async def _filter_by_triage(
     triage_error_count = sum(1 for _, _, err, _ in decisions if err)
 
     rescued: set[str] = set()
-    if rescue_llm is not None:
+    if rescue_llm is not None and os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0":
         decisions, rescued = await _rescue_geopolitical(
             decisions, rescue_llm, keep_importance=keep_importance, think=think
         )
+
+    # サイバー政策の救済 (2026-10-10)。CYBER_POLICY_RESCUE=1 で適用 / shadow で記録のみ
+    policy_mode = policy_rescue_mode()
+    if rescue_llm is not None and policy_mode != "off":
+        decisions, policy_rescued = await rescue_cyber_policy(
+            decisions, rescue_llm, shadow=policy_mode == "shadow"
+        )
+        rescued = rescued | policy_rescued
 
     # importance ランクで並び替え。救済した記事は同じ重要度の中で後ろ (枠あふれで先に押し出す)
     importance_rank = {"high": 0, "medium": 1, "low": 2}

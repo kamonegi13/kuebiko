@@ -146,3 +146,54 @@ def test_watched_nation_with_security_context_fires() -> None:
         feed="any", title="ロシア、ウクライナのエネルギー施設をミサイルで攻撃", summary_preview=""
     )
     assert "nation:RU" in hint.reasons
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Securing the United States Bulk-Power System",
+        "Anthropic rolls out program to secure critical infrastructure",
+        "Senate bill would push DOD to oversee commercial frontier AI models",
+    ],
+)
+def test_cyber_policy_topics_fire_without_nation(title: str) -> None:
+    hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+    assert "cyber_policy" in hint.reasons
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Hillsides turn green as Lüliang continues to improve in China",
+        "Crime drama leads China's National Day box office",
+        "Through a Serbian lens, a different China unfolds in Hainan",
+    ],
+)
+def test_nation_only_without_security_context_does_not_fire(title: str) -> None:
+    hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+    assert not hint.fired
+
+
+def test_generic_actor_alias_without_security_context_does_not_fire() -> None:
+    hint = ingest_relevance_hint(
+        feed="any",
+        title="Clean economy co-operation agenda for India and the EU",
+        summary_preview="",
+    )
+    assert not any(r.startswith("actor:") for r in hint.reasons)
+
+
+def test_nation_with_tech_policy_context_fires() -> None:
+    hint = ingest_relevance_hint(
+        feed="any",
+        title="Pentagon unveils quantum computing push as China rivalry grows",
+        summary_preview="",
+    )
+    assert "nation:CN" in hint.reasons
+
+
+def test_cyber_policy_term_does_not_fire_alone_on_preprint_feed() -> None:
+    hint = ingest_relevance_hint(
+        feed="arXiv cs.CR", title="A new quantum-resistant encryption scheme", summary_preview=""
+    )
+    assert "cyber_policy" not in hint.reasons

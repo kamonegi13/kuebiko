@@ -190,21 +190,40 @@ _SECURITY_CONTEXT = re.compile(
 )
 
 
-#: 経済・文化・スポーツ・自然科学の話題の語。これがあり、安全保障の語 (_SECURITY_CONTEXT) が
-#: 無いときだけ
-#: 注視国の手がかりを外す。許可する語を並べる形は外交・政治の語の幅が広く取りこぼしが増えたため、
-#: 外す語を並べる形にした (取り込みは落とさない側に倒すのが原則)
-_NON_SECURITY_TOPIC = re.compile(
-    r"業績|利益|増益|減益|売上|株価|上場|決算|投資家|公演|バレエ|映画|音楽|芸術|スポーツ|五輪|"
-    r"野生動物|生物多様性|観光|料理|"
-    r"profit|revenue|earnings|shares|stock|ipo|investor|ballet|film|movie|music|art\b|"
-    r"sport|olympic|wildlife|vertebrate|biodiversity|tourism|cuisine",
+#: サイバー情勢につながる政策・重要インフラ・技術安全保障の語。平たい triage が low にしても
+#: 落とさない (2026-10-10 利用者決定: 落ちる High はサイバー情勢に繋がる情報だった)。
+#: 単独で発火する狭い語 (_CYBER_POLICY_CORE) と、注視国・アクターの手がかりを有効にする
+#: 文脈としてだけ働く広い語 (_CYBER_POLICY_CONTEXT) に分ける
+_CYBER_POLICY_CORE = re.compile(
+    r"critical infrastructure|bulk[- ]power|power (?:grid|system)|encryption|quantum|"
+    r"frontier (?:ai|model)|ai (?:safety|security|agent)|"
+    r"重要インフラ|電力系統|暗号|量子|資安",
+    re.IGNORECASE,
+)
+_CYBER_POLICY_CONTEXT = re.compile(
+    r"semiconductor|chip(?:s|maker)?\b|ai (?:standard|governance)|(?:chinese|russian|rogue) ai|"
+    r"disinformation|propaganda|bots?\b|drone|nato|半導体|偽情報|情報戦",
     re.IGNORECASE,
 )
 
 
+_PREPRINT_FEED = re.compile(r"arxiv|eprint|iacr", re.IGNORECASE)
+
+
+def _is_preprint_feed(feed: str) -> bool:
+    return bool(_PREPRINT_FEED.search(feed))
+
+
+def _has_security_context(text: str) -> bool:
+    return bool(
+        _SECURITY_CONTEXT.search(text)
+        or _CYBER_POLICY_CORE.search(text)
+        or _CYBER_POLICY_CONTEXT.search(text)
+    )
+
+
 def _watched_nation_reasons(text: str) -> tuple[str, ...]:
-    if _NON_SECURITY_TOPIC.search(text) and not _SECURITY_CONTEXT.search(text):
+    if not _has_security_context(text):
         return ()
     lower = text.lower()
     capital_hits = {n for n, names in _WATCHED_CAPITALS.items() if any(x in lower for x in names)}
@@ -218,6 +237,8 @@ def _watched_apt_reasons(text: str) -> tuple[str, ...]:
         registry = load_actor_aliases()
     except Exception as e:  # noqa: BLE001 — 辞書破損で ingest 判定全体を殺さない
         _log.warning("ingest_relevance_actor_dict_load_failed", error=str(e))
+        return ()
+    if not _has_security_context(text):
         return ()
     reasons: list[str] = []
     for actor in registry.find_all(text):
@@ -250,6 +271,9 @@ def ingest_relevance_hint(*, feed: str, title: str, summary_preview: str) -> Rel
     reasons.extend(_watched_nation_reasons(text))
     reasons.extend(_watched_apt_reasons(text))
     reasons.extend(_core_sir_reasons(text.lower()))
+    # 暗号・量子などの語は学術論文の投稿サイトに大量に当たるため、そのフィードでは単独発火させない
+    if _CYBER_POLICY_CORE.search(text) and not _is_preprint_feed(feed):
+        reasons.append("cyber_policy")
 
     # 重複除去 (順序保持)
     deduped = tuple(dict.fromkeys(reasons))

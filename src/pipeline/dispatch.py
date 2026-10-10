@@ -158,6 +158,7 @@ async def run_default(
         triage_rescue_llm: LLMClient | None = (
             build_llm_for(Step.TRIAGE_GEO_RESCUE, config)
             if os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0"
+            or os.environ.get("CYBER_POLICY_RESCUE", "0") in ("1", "shadow")
             else None
         )
         # 日本関連性 ML カスケード (M4、2026-10-08)。影子記録専用、本番判定は変えない。
