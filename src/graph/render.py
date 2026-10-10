@@ -57,7 +57,12 @@ _STRENGTH_LEGEND = (
 )
 _NOTE = (
     "上の線は、事象が共有する指標 (被害組織・CVE・道具・攻撃者) から機械的に導いたもの"
-    "である。書くときは線を根拠として引用してよいが、線に無い事象どうしの関係は推測しない。"
+    "である。線に無い事象どうしの関係は推測しない。"
+    "⚠ 出典番号の取り違え防止: 線 [G#] は「## 対象記事」の候補記事ではない。候補記事の"
+    "番号 [N] を出典として要求する欄に、線の内容を [N] 付きの事実として書いてはならない"
+    "— 対象記事のどれもその事実を述べていないのに [N] を付けると誤引用になる。線から得た"
+    "気づき (他事象との関連・類似の手口など) は、出典番号を要求しない自由記述の欄に"
+    "[G#] を添えて書くこと。"
 )
 _SAME_ACTOR_LEGEND = (
     "「同じアクター」の線は攻撃者名の共有だけを示す。同一キャンペーン・同一の侵入経路の"
@@ -364,7 +369,9 @@ def render_relation_section(
     # 同じアクターが節を埋めても、同じ帰属国の枠 (上限まで) は残す
     room = max(0, max_lines - len(incident) - len(same_nation))
     ordered = incident + same_actor[:room] + same_nation
-    lines = [f.line for f in ordered[:max_lines]]
+    lines = [
+        f.line.replace("- ", f"- [G{i}] ", 1) for i, f in enumerate(ordered[:max_lines], start=1)
+    ]
     shown = {f.rel_type for f in ordered[:max_lines]}
     legends = [
         text

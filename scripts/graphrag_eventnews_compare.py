@@ -56,7 +56,7 @@ from src.eventnews.generator import (  # noqa: E402
     build_prompt,
     select_members,
 )
-from src.eventnews.identifier_gate import render_allowed_identifiers  # noqa: E402
+from src.eventnews.identifier_gate import render_allowed_identifiers, verify_draft  # noqa: E402
 from src.eventnews.models import EventNewsDraft, MemberArticle  # noqa: E402
 from src.spotlight.graph_context import build_graph_context  # noqa: E402
 from src.storage.event_time import EVENT_TS_EXPR  # noqa: E402
@@ -182,6 +182,8 @@ def _build_frozen(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "prompt_a": prompt_a,
                 "prompt_b": with_block(prompt_a, block),
                 "n_lines": n_lines,
+                # verify_draft (identifier_gate) の再適用用 — members を再取得するための ID。
+                "article_ids": article_ids,
             }
         )
     print(
@@ -224,10 +226,11 @@ async def generate(args: argparse.Namespace) -> int:
     if args.dry:
         return 0
     done = {json.loads(x)["key"] for x in OUT.open()} if OUT.exists() else set()
+    repo = RunHistoryRepository()
     llm = build_llm_for_ref(args.model, Step.EVENT_NEWS, load_app_config(), timeout_seconds=600.0)
     sem = asyncio.Semaphore(2)
 
-    async def arm(prompt: str) -> str | None:
+    async def arm(prompt: str, members: list[MemberArticle]) -> str | None:
         async with sem:
             try:
                 out = await llm.generate_structured(
@@ -240,14 +243,19 @@ async def generate(args: argparse.Namespace) -> int:
             except Exception as exc:  # noqa: BLE001
                 print("FAIL", type(exc).__name__, str(exc)[:120], flush=True)
                 return None
-        return out.model_dump_json()
+        # 本番と同じ関門 ([G#] 誤引用の strip 含む) を通した後の形で保存・対読する —
+        # 関門前の生出力を対読すると、本番ではあり得ない誤引用を基準に判定してしまう。
+        gated = verify_draft(out, members)
+        return gated.draft.model_dump_json()
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with OUT.open("a", encoding="utf-8") as fh:
         for w in windows:
             if w["key"] in done:
                 continue
-            a, b = await asyncio.gather(arm(w["prompt_a"]), arm(w["prompt_b"]))
+            members_by_id = _fetch_members(repo, w["article_ids"])
+            members = [members_by_id[aid] for aid in w["article_ids"] if aid in members_by_id]
+            a, b = await asyncio.gather(arm(w["prompt_a"], members), arm(w["prompt_b"], members))
             if a and b:
                 row = {
                     "key": w["key"],

@@ -312,7 +312,7 @@ class TestCounterpartMerge:
 
         lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
         assert len(lines) == 1
-        assert lines[0].startswith("- 記事 [1][2] ↔ 候補外の事象「候補外の事象 9」")
+        assert lines[0].startswith("- [G1] 記事 [1][2] ↔ 候補外の事象「候補外の事象 9」")
         assert "相手が" not in lines[0]
 
 

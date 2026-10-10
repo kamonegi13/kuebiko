@@ -36,6 +36,16 @@ from src.tools.identifier_match import extract_identifiers
 # 決定論でも落とす (2026-08-19 の規約)。行中の [N] は文意に関わるため末尾のみ除去。
 _TRAILING_CITE_RE = re.compile(r"(?:\s*\[\d{1,2}\])+\s*([。.!?！？])?\s*$")
 
+# GraphRAG の線 ([G#]、src/graph/render.py) を本文で引用した行 — 候補記事の本文ではない
+# ため、facts/discrepancies/caveats の source_index (候補記事の番号) を指すのは誤引用
+# (2026-10-10、対読評価で「指示では止まらない」ことを確認済み: [G#] に触れつつ実在の
+# 候補番号を付ける誤りが残った)。この文字列が出たら source_index を無条件で無効化する。
+_GRAPH_CITE_RE = re.compile(r"\[G\d+\]")
+
+
+def _has_graph_citation(text: str) -> bool:
+    return bool(_GRAPH_CITE_RE.search(text))
+
 
 def strip_trailing_citation(text: str) -> str:
     """行末の [N] を落とす (句点が前後どちらにあっても文末の句点は保つ)。"""
@@ -104,8 +114,8 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
     facts: list[FactItem] = []
     dropped = 0
     for item in draft.facts:
-        if not (1 <= item.source_index <= n_members):
-            dropped += 1  # 0 / 範囲外 / 創作番号は行ごと落とす
+        if not (1 <= item.source_index <= n_members) or _has_graph_citation(item.text):
+            dropped += 1  # 0 / 範囲外 / 創作番号 / 線 [G#] の内容は行ごと落とす
             continue
         text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
         text = strip_trailing_citation(text)
@@ -124,13 +134,18 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
 
     discrepancies: list[FactItem] = []
     for item in draft.discrepancies:
-        cited = item.source_index if 1 <= item.source_index <= n_members else 0
+        has_graph_cite = _has_graph_citation(item.text)
+        cited = (
+            0
+            if has_graph_cite
+            else (item.source_index if 1 <= item.source_index <= n_members else 0)
+        )
         text, st = resolve_text(item.text, catalog, cited_member=cited)
         total = total.merged(st)
         discrepancies.append(
             FactItem(
                 text=text,
-                source_index=item.source_index,
+                source_index=0 if has_graph_cite else item.source_index,
                 paragraph=item.paragraph,
                 section=item.section,
             )
@@ -144,13 +159,18 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
 
     caveats: list[FactItem] = []
     for item in draft.caveats:
-        cited = item.source_index if 1 <= item.source_index <= n_members else 0
+        has_graph_cite = _has_graph_citation(item.text)
+        cited = (
+            0
+            if has_graph_cite
+            else (item.source_index if 1 <= item.source_index <= n_members else 0)
+        )
         text, st = resolve_text(item.text, catalog, cited_member=cited)
         total = total.merged(st)
         caveats.append(
             FactItem(
                 text=text,
-                source_index=item.source_index,
+                source_index=0 if has_graph_cite else item.source_index,
                 paragraph=item.paragraph,
                 section=item.section,
             )
