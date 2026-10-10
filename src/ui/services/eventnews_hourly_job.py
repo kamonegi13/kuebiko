@@ -30,6 +30,8 @@ from src.eventnews.models import (
     ItemState,
     MemberArticle,
 )
+from src.eventnews.runner import _SOLO_MIN_BODY_CHARS as SOLO_MIN_BODY_CHARS
+from src.eventnews.runner import _SOLO_MIN_IMPORTANCE as SOLO_MIN_IMPORTANCE
 from src.eventnews.runner import BackfillStats
 from src.logging_config import get_logger
 from src.storage.event_time import DEDUP_ARTICLES, EVENT_TS_EXPR
@@ -215,8 +217,32 @@ async def _resolve_kinds(
     return kinds
 
 
+SOLO_PENDING_DAYS = 7
+
+
+def _is_pending_candidate(state: ItemState) -> bool:
+    """複数報、または直近の high の単独報 (本文の長さは本文を読んだ後で判定する)。"""
+    if len(state.member_ids) >= 2:
+        return True
+    if len(state.member_ids) != 1 or state.importance != SOLO_MIN_IMPORTANCE:
+        return False
+    return state.last_reported_at >= datetime.now(UTC) - timedelta(days=SOLO_PENDING_DAYS)
+
+
+def _should_generate_solo(state: ItemState, textual: Sequence[MemberArticle]) -> bool:
+    return (
+        state.importance == SOLO_MIN_IMPORTANCE
+        and len(textual[0].body or "") >= SOLO_MIN_BODY_CHARS
+    )
+
+
 def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[MemberArticle]]]:
-    """まだ版を持たず、本文を持つメンバーが 2 件以上あるアイテム (新しい順)。
+    """まだ版を持たず、生成の対象になるアイテム (新しい順)。
+
+    対象 = 本文を持つメンバーが 2 件以上、または単独報で high かつ本文が十分長いもの
+    (``runner._should_generate`` と同じ定義)。単独報は直近 ``SOLO_PENDING_DAYS`` 日だけ拾う —
+    毎時の群化は ``generate=False`` で生成をここに任せるため、ここが拾わない単独報は永久に
+    本文を持てない (2026-09 以降 high の単独報 450 件超が未生成だった)。
 
     ⚠ 遡及統合とバックフィルの **両方** がここを通る。2026-09-02 まで
     ``scripts/eventnews_backfill.py`` の私有関数だったため、遡及統合は統合先の
@@ -227,14 +253,14 @@ def pending_items(repo: RunHistoryRepository) -> list[tuple[ItemState, list[Memb
     records = [
         r
         for r in repo.list_event_items(origin="live", limit=20000)
-        if not r.merged_into and r.state.current_version == 0 and len(r.state.member_ids) >= 2
+        if not r.merged_into and r.state.current_version == 0 and _is_pending_candidate(r.state)
     ]
     members_by_id = _load_members(repo, [a for r in records for a in r.state.member_ids], counts)
     out: list[tuple[ItemState, list[MemberArticle]]] = []
     for r in records:
         members = [members_by_id[a] for a in r.state.member_ids if a in members_by_id]
         textual, _ = select_members(members)
-        if len(textual) >= 2:
+        if len(textual) >= 2 or (len(textual) == 1 and _should_generate_solo(r.state, textual)):
             out.append((r.state, members))
     # 新しい事象から順に (読み手にとっての価値が高い順)
     out.sort(key=lambda pair: pair[0].last_reported_at, reverse=True)
