@@ -38,6 +38,7 @@ def _build_extractor(
         min_content_length=min_content_length,
         user_agent=user_agent,
         client=client,
+        enable_playwright_fallback=False,
     )
 
 
