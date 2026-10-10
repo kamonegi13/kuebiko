@@ -324,13 +324,15 @@ def _register_bespoke_jobs(
     # pipeline 段は subprocess run を起動して完了を待つ。段の timeout は段自身の max_runtime。
     from src.scheduler.job_chain import ChainStep, run_chain
 
-    async def _await_pipeline(name: str, deadline: float) -> None:
+    async def _await_pipeline(name: str, deadline: float) -> dict[str, str] | None:
         if run_pipeline is None:
             raise RuntimeError("pipeline 段の runner が未配線")
         # 段の締め切りを子へ渡す (子が時間内に着手を止めて処理済み分を保存できるように)
         run_id = await run_pipeline(name, deadline=deadline)
         if run_id is None:
-            return  # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ
+            # 抑止 (heavy 帯) or 起動失敗 (ログ済) — 段としては成功扱いで次へ。
+            # 記録には skipped を残す (0 秒成功の取り違え防止)
+            return {"skipped": "suppressed_or_not_started"}
         try:
             status = await wait_for_run(repo, run_id)
         except asyncio.CancelledError:
@@ -340,10 +342,11 @@ def _register_bespoke_jobs(
             raise
         if status not in (None, "succeeded"):
             raise RuntimeError(f"pipeline {name} run {run_id} {status}")
+        return None
 
-    def _pipeline_step(name: str, timeout: float) -> Callable[[], Awaitable[None]]:
-        async def _step() -> None:
-            await _await_pipeline(name, time.monotonic() + timeout)
+    def _pipeline_step(name: str, timeout: float) -> Callable[[], Awaitable[Any]]:
+        async def _step() -> dict[str, str] | None:
+            return await _await_pipeline(name, time.monotonic() + timeout)
 
         return _step
 

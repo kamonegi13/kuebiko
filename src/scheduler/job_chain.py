@@ -110,7 +110,10 @@ async def _run_step(step: ChainStep) -> tuple[str, str, float]:
     status = "succeeded"
     detail = ""
     try:
-        await asyncio.wait_for(step.run(), timeout=step.timeout_seconds)
+        result = await asyncio.wait_for(step.run(), timeout=step.timeout_seconds)
+        # 0 秒の成功が「何もしなかった」のか「速く終わった」のか区別できるよう理由を記録に残す
+        if isinstance(result, dict) and result.get("skipped"):
+            detail = f"skipped={result['skipped']}"
     except TimeoutError:
         status = "failed"
         detail = f"timeout ({step.timeout_seconds:.0f}s)"

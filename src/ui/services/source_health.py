@@ -85,6 +85,7 @@ def build_heartbeat_text(
     products_line: str | None = None,
     proposals_line: str | None = None,
     external_tier_line: str | None = None,
+    chain_gap_line: str | None = None,
 ) -> tuple[str, str, str]:
     """heartbeat の (title, body, importance) を組み立てる (純粋関数)。
 
@@ -112,6 +113,8 @@ def build_heartbeat_text(
         parts.append(proposals_line)
     if external_tier_line:
         parts.append(external_tier_line)
+    if chain_gap_line:
+        parts.append(chain_gap_line)
     if silent:
         names = ", ".join(s.name for s in silent[:_MAX_NAMES_IN_HEARTBEAT])
         if len(silent) > _MAX_NAMES_IN_HEARTBEAT:
@@ -119,7 +122,7 @@ def build_heartbeat_text(
         parts.append(f"⚠️ {SILENT_FEED_THRESHOLD_DAYS}日以上無産出: {names}")
     has_line_warn = any(
         line and "⚠️" in line
-        for line in (fill_line, products_line, proposals_line, external_tier_line)
+        for line in (fill_line, products_line, proposals_line, external_tier_line, chain_gap_line)
     )
     importance = "medium" if (silent or failed or has_line_warn) else "low"
     return ("💓 daily heartbeat", " · ".join(parts), importance)
@@ -130,7 +133,6 @@ _PRODUCT_FRESHNESS_LIMITS: tuple[tuple[str, str, str, int], ...] = (
     ("週次総括", "status_synthesis", "WHERE period_type='weekly'", 9),
     ("recap", "weekly_recaps", "", 9),
     ("spotlight", "pir_spotlight", "", 9),
-    ("月次総括", "status_synthesis", "WHERE period_type='monthly'", 35),
     # 事象ニュースは毎時生成。2026-08-24: 結合信号 entity の取得誤りで **生成が
     # 一度も起きないまま毎時 succeeded を返し続け**、利用者の指摘まで気付けなかった。
     # 実測の期待収量は 3-4 件/日なので、2 日ゼロは異常。
@@ -210,6 +212,58 @@ def _build_product_freshness_line(repo: RunHistoryRepository) -> str | None:
         return "製品鮮度: " + " / ".join(frags)
     except Exception as e:  # noqa: BLE001 — heartbeat 本体を止めない
         _log.warning("product_freshness_line_failed", error=str(e))
+        return None
+
+
+#: 毎時チェーンがこの時間以上空いたら欠落とみなす (毎時 interval + 猶予 2h)
+_CHAIN_GAP_HOURS = 3
+_CHAIN_GAP_WINDOW_HOURS = 24
+_CHAIN_JOB_ID = "hourly-collect"
+
+
+def detect_chain_gaps(
+    ran_ats: list[datetime],
+    *,
+    now: datetime,
+    window_hours: int = _CHAIN_GAP_WINDOW_HOURS,
+    min_gap_hours: int = _CHAIN_GAP_HOURS,
+) -> list[tuple[datetime, datetime]]:
+    """窓内で実行記録が min_gap_hours 以上空いた区間 (開始, 終了) を返す (純粋関数)。
+
+    窓の両端も区間として数える (直近まで動いていない = 現在進行中の欠落)。
+    """
+    start = now - timedelta(hours=window_hours)
+    points = sorted([start, *[t for t in ran_ats if start <= t <= now], now])
+    limit = timedelta(hours=min_gap_hours)
+    return [(a, b) for a, b in zip(points, points[1:], strict=False) if b - a >= limit]
+
+
+def _build_chain_gap_line(repo: RunHistoryRepository) -> str | None:
+    """毎時チェーンの欠落 1 行 (2026-10-10 監査: 7 時間の欠落で夕ブリーフが 5 時間遅れた)。
+
+    ホストの停止・デプロイ・スケジューラ停止は個々の run 成否に現れないため、
+    実行記録の時刻の空きで検知する。
+    """
+    try:
+        now = datetime.now(UTC)
+        since = (now - timedelta(hours=_CHAIN_GAP_WINDOW_HOURS)).isoformat()
+        with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用
+            rows = conn.execute(
+                "SELECT ran_at FROM job_run_log WHERE job_id = ? AND ran_at >= ?",
+                (_CHAIN_JOB_ID, since),
+            ).fetchall()
+        ran_ats = [datetime.fromisoformat(str(r["ran_at"])).astimezone(UTC) for r in rows]
+        gaps = detect_chain_gaps(ran_ats, now=now)
+        if not gaps:
+            return "毎時チェーン: 欠落なし"
+        jst = timedelta(hours=9)
+        frags = [
+            f"{(a + jst):%H:%M}→{(b + jst):%H:%M}({(b - a).total_seconds() / 3600:.0f}h)"
+            for a, b in gaps
+        ]
+        return "⚠️毎時チェーン欠落(JST): " + ", ".join(frags)
+    except Exception as e:  # noqa: BLE001 — heartbeat 本体を止めない
+        _log.warning("chain_gap_line_failed", error=str(e))
         return None
 
 
@@ -300,6 +354,7 @@ async def run_daily_heartbeat() -> None:
             products_line=_build_product_freshness_line(repo),
             proposals_line=_build_proposals_line(repo),
             external_tier_line=_build_external_tier_line(repo),
+            chain_gap_line=_build_chain_gap_line(repo),
         )
         from src.ui.services.ops_notify import post_ops_message
 
