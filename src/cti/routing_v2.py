@@ -1,18 +1,12 @@
-"""M3b 段1: 重要度の再設計 (``src/cti/importance_v2.py``) に基づく新ルール (shadow 専用)。
+"""M3b: 重要度の再設計 (``src/cti/importance_v2.py``) に基づく新ルール。
 
 ``M3B_RULES`` は ``src/cti/routing_rules.py`` の ``evaluate_routing_rules(rules=...)`` が
-そのまま評価できる形式 (config 駆動エンジンと同じ dict ルール列)。本番の投稿先決定には使わない
-— ``_build_briefing`` が現行 v12 ルールの判定 (``route()``) の**後**に、同じ signals から
-この新ルールを評価して ``routing_v2_shadow`` に記録する (記録のみ)。
+そのまま評価できる形式 (config 駆動エンジンと同じ dict ルール列)。
 
-``vuln`` (旧称 ``exploited``) は新規チャンネル (未登録)。``validate_routing_rules`` は
-shadow 経路では呼ばない — 評価 (``evaluate_routing_rules``) 自体は channel の存在を
-確認しないため、未登録でも shadow 記録は問題なく動く。``vuln`` channel を
-``src/tools/channel_registry.py`` の built-in (または DB) に登録すれば
-``validate_routing_rules(M3B_RULES, ...)`` も通るようになる (詳細はモジュール docstring 末尾)。
-
-想定の channel 登録 (将来、本番投入時): id=``vuln``、label="VULN（悪用中の脆弱性）"、
-webhook_env_key=``DISCORD_WEBHOOK_VULN``、fallback=``watch``。
+2026-10-10: 利用者判断により、本番 Discord routing を DB ruleset v12 からこの
+``M3B_RULES`` (= v13) へ切替える。``vuln`` (旧称 ``exploited``) は新規チャンネル
+(未登録なら ``src/tools/channel_registry.py`` の built-in または DB に登録が必要)。
+投入は ``scripts/apply_m3b_routing_rules.py`` (既定 dry-run、``--apply`` で DB 保存)。
 """
 
 from __future__ import annotations
@@ -20,8 +14,20 @@ from __future__ import annotations
 from typing import Any
 
 #: 評価順 = first-match。src/cti/routing_rules.py の PROPERTY_CATALOG (severity /
-#: severity_basis / jp / relevant / article_type) を参照する。
+#: severity_basis / jp / relevant / victim_sector / article_type) を参照する。
 M3B_RULES: list[dict[str, Any]] = [
+    {
+        "id": "V2.alert_defense_targeted",
+        "label": "日本の防衛セクターが標的 (深刻さ不問)",
+        "channel": "alert",
+        # 日本の防衛機関が標的の記事は深刻さを問わず alert へ (利用者判断 2026-10-10)。
+        "when": {
+            "all": [
+                {"property": "jp", "op": "eq", "value": "targeted"},
+                {"property": "victim_sector", "op": "eq", "value": "defense"},
+            ]
+        },
+    },
     {
         "id": "V2.alert",
         "label": "深刻 (S3) かつ関連性あり",

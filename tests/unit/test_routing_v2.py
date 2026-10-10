@@ -49,6 +49,27 @@ class TestM3bRulesCoreBehavior:
         assert _decide(sig) == "watch"
 
 
+class TestM3bRulesDefenseTargeted:
+    def test_defense_targeted_goes_to_alert_regardless_of_severity(self) -> None:
+        sig = _sig(severity="S1", relevant=False, jp="targeted", victim_sector="defense")
+        decision_channel = _decide(sig)
+        assert decision_channel == "alert"
+
+    def test_defense_targeted_fires_before_other_rules(self) -> None:
+        signals = _sig(severity="S1", relevant=False, jp="targeted", victim_sector="defense")
+        decision = evaluate_routing_rules(signals, get_source_quality(), {}, rules=M3B_RULES)
+        assert decision is not None
+        assert decision.rule_id == "V2.alert_defense_targeted"
+
+    def test_defense_affected_not_targeted_does_not_match_defense_rule(self) -> None:
+        signals = _sig(severity="S1", relevant=False, jp="affected", victim_sector="defense")
+        decision = evaluate_routing_rules(signals, get_source_quality(), {}, rules=M3B_RULES)
+        assert decision is not None
+        assert decision.rule_id != "V2.alert_defense_targeted"
+        # jp=affected は V2.japan_watch に落ちる (defense 無関係に既存挙動のまま)。
+        assert decision.channel == "japan_watch"
+
+
 class TestM3bRulesEdgeCases:
     def test_s3_targeted_relevant_is_alert_even_with_jp_affected(self) -> None:
         # alert が先に評価されるので jp.affected より優先 (first-match)
