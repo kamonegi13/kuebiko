@@ -7303,8 +7303,9 @@ actors:
   - Violet Typhoon
   - RedBravo
   - BRONZE VINEWOOD
+  - JungleBamboo
   kind: group
-  family: ''
+  family: null
   nation: cn
   mitre_group: G0128
   description: 中国 MSS 湖北支局に関連するとされるサイバースパイグループ (MITRE G0128 / ZIRCONIUM)。政府・防衛・重要インフラ・議会関係者を標的とし、2021
@@ -7345,6 +7346,16 @@ actors:
   - T1665 Hide Infrastructure
   summary: ZIRCONIUMは、少なくとも2017年から活動している中国を拠点とする脅威グループであり、2020年米国大統領選挙に関連する個人や、国際情勢における著名なリーダーを標的としてきました。
   mitre_summary_sha1: cdeaaa317a1ea17f3512ec62cfbc733a3d849c76
+  sponsor: null
+  sponsor_org: null
+  ambiguous: false
+  context_cues: []
+  motivation: null
+  first_seen: null
+  target_sectors: []
+  target_regions: []
+  associated_malware: []
+  notable_campaigns: []
 - id: tradertraitor
   canonical: TraderTraitor
   aliases:
@@ -7666,6 +7677,41 @@ actors:
   family: ''
 - id: auditteam
   canonical: Auditteam
+  aliases: []
+  kind: group
+  family: ''
+- id: moyu_group
+  canonical: Moyu Group
+  aliases: []
+  kind: group
+  family: ''
+- id: spring_ring
+  canonical: Spring Ring
+  aliases: []
+  kind: group
+  family: ''
+- id: bigbear
+  canonical: Bigbear
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_2570
+  canonical: Storm-2570
+  aliases: []
+  kind: group
+  family: ''
+- id: storm_3168
+  canonical: Storm-3168
+  aliases: []
+  kind: group
+  family: ''
+- id: lenai
+  canonical: Lenai
+  aliases: []
+  kind: group
+  family: ''
+- id: nightmareeclipse
+  canonical: Nightmareeclipse
   aliases: []
   kind: group
   family: ''
