@@ -23,6 +23,7 @@ DB・kev/nvd キャッシュは読み取りのみ (refresh系は呼ばない)。
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hashlib
 import json
@@ -37,13 +38,7 @@ from typing import Any
 sys.path.insert(0, "/app")
 
 from src.config_loader import load_app_config  # noqa: E402
-from src.cti.importance_v2 import (  # noqa: E402
-    ImportanceInputs,
-    derive,
-    stated_cvss,
-    stated_loss_usd,
-    subject_kev,  # noqa: E402
-)
+from src.cti.importance_v2 import build_inputs, derive  # noqa: E402
 from src.cti.severity_axes import classify_axes  # noqa: E402
 from src.storage.db_backend import connect as db_connect  # noqa: E402
 from src.tools.kev_client import get_kev_cve_set  # noqa: E402
@@ -52,6 +47,9 @@ from src.tools.nvd_client import max_cvss  # noqa: E402
 
 EVAL_DIR = Path("/app/data/eval")
 OUT_PATH = EVAL_DIR / "i58_severity_eval_v1.jsonl"
+#: ``--rederive`` の出力先。LLM を呼ばず、v1 に保存済みの pred_axes/gold_axes を
+#: build_inputs() 経由で再導出した版 (v1 は変更しない)。
+OUT_PATH_V2 = EVAL_DIR / "i58_severity_eval_v2.jsonl"
 AX = ("scope", "impact", "confirmation", "magnitude", "exploitation", "actor", "target")
 _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
 _CHUNK = 300
@@ -242,20 +240,27 @@ def derive_sev(
 
     (DB の現在値ではない — s21 の測定スクリプト ``heldout_random_axes_report.py`` と
     同じ方式。articles テーブルの再分類で drift していても測定条件を揃える)。
+
+    ``ImportanceInputs`` は本番 (``src.storage.repo_importance_v2.pending_importance_inputs``)
+    と同じ ``build_inputs()`` 経由で組み立てる (2026-10-10 修正: 直接組み立てを廃止)。
+    これにより本文由来の規模補正 (``corrected_axes``)・CVSS/被害額の本文抽出・KEV 判定の
+    対象年が本番と一致する。
     """
     text = f"{article.summary}\n{article.body}"
     cves = sorted(ents.get("cve", set()))
-    inp = ImportanceInputs(
+    inp = build_inputs(
         category=category,
         article_type=article_type,
         axes=axes,
-        on_kev=subject_kev(cves, kev, 2026),
-        max_cvss=max(max_cvss(cves), stated_cvss(text)),
+        cves=cves,
+        kev=kev,
+        year=datetime.now(UTC).year,
         victim_country=article.victim_country,
-        involved_countries=frozenset(ents.get("involved_country", set())),
-        mentioned_countries=frozenset(ents.get("mentioned_country", set())),
-        sir_ids=frozenset(ents.get("pir", set())),
-        loss_usd=stated_loss_usd(text),
+        involved_countries=ents.get("involved_country", set()),
+        mentioned_countries=ents.get("mentioned_country", set()),
+        sir_ids=ents.get("pir", set()),
+        text=text,
+        stored_max_cvss=max_cvss(cves),
     )
     d = derive(inp)
     return d.severity, d.strategic_weight, d.severity_basis
@@ -403,5 +408,105 @@ async def main() -> None:
     print(f"[done] {n_done_now} newly evaluated, output -> {OUT_PATH}", flush=True)
 
 
+async def main_rederive() -> None:
+    """LLM を呼ばず、``OUT_PATH`` (v1) の pred_axes/gold_axes を ``build_inputs()`` 経由で
+    再導出して ``OUT_PATH_V2`` (v2) に書く (v1 は変更しない)。
+
+    v1 に保存した軸の分類結果 (LLM 呼び出し済み) 自体は変えず、深刻さの導出方法だけを
+    本番と一致させる (2026-10-10 修正)。DB・KEV キャッシュは読み取りのみ。決定論的な
+    再計算のみなので resume は不要 — 毎回 ``OUT_PATH_V2`` を作り直す。
+    """
+    if not OUT_PATH.exists():
+        print(f"[error] {OUT_PATH} が無い (先に通常実行で v1 を作る)", flush=True)
+        return
+
+    v1_rows = _read_jsonl(OUT_PATH)
+    print(f"[info] v1 rows = {len(v1_rows)}", flush=True)
+
+    # category/article_type は v1 に保存していない (正解集の labeling 時点の値が必要) ので、
+    # gold set から (article_id, set) で引き直す。
+    v4_rows, random_rows = load_gold_sets()
+    meta_by_key: dict[tuple[str, str], tuple[str, str]] = {}
+    for set_name, rows in (("v4", v4_rows), ("random", random_rows)):
+        for r in rows:
+            key = (str(r["article_id"]), set_name)
+            meta_by_key[key] = (str(r.get("category") or ""), str(r.get("article_type") or ""))
+
+    all_ids = sorted({str(r["article_id"]) for r in v1_rows})
+    conn = db_connect()
+    try:
+        articles = fetch_articles(conn, all_ids)
+        ents = fetch_entities(conn, all_ids)
+    finally:
+        conn.close()
+    kev = get_kev_cve_set()
+
+    n_written = 0
+    n_missing_meta = 0
+    with OUT_PATH_V2.open("w", encoding="utf-8") as out:
+        for r in v1_rows:
+            aid = str(r["article_id"])
+            set_name = str(r["set"])
+            article = articles.get(aid)
+            if article is None:
+                print(f"[warn] {aid} missing from DB, skipping", flush=True)
+                continue
+            meta = meta_by_key.get((aid, set_name))
+            if meta is None:
+                n_missing_meta += 1
+                category, article_type = "", ""
+            else:
+                category, article_type = meta
+            e = ents.get(aid, {})
+
+            pred_ax: dict[str, str] = dict(r.get("pred_axes") or {})
+            gold_ax_raw: dict[str, Any] = dict(r.get("gold_axes") or {})
+            gold_ax = {k: v for k, v in gold_ax_raw.items() if v}
+
+            failure = bool(r.get("failure"))
+            pred_sev, _pred_weight, pred_basis = (None, None, "no_axes")
+            if not failure:
+                pred_sev, _pred_weight, pred_basis = derive_sev(
+                    article=article,
+                    category=category,
+                    article_type=article_type,
+                    axes=pred_ax,
+                    ents=e,
+                    kev=kev,
+                )
+            gold_sev, _gold_weight, gold_basis = derive_sev(
+                article=article,
+                category=category,
+                article_type=article_type,
+                axes=gold_ax,
+                ents=e,
+                kev=kev,
+            )
+
+            rec = dict(r)
+            rec["pred_severity_i58_axes"] = pred_sev
+            rec["pred_basis_i58_axes"] = pred_basis
+            rec["pred_severity_gold_axes"] = gold_sev
+            rec["pred_basis_gold_axes"] = gold_basis
+            rec["ts"] = datetime.now(UTC).isoformat()
+            out.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            n_written += 1
+
+    if n_missing_meta:
+        print(
+            f"[warn] {n_missing_meta} 件は gold set に (article_id, set) が見つからず "
+            "category/article_type が空のまま導出した",
+            flush=True,
+        )
+    print(f"[done] {n_written} rederived, output -> {OUT_PATH_V2}", flush=True)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    _parser = argparse.ArgumentParser()
+    _parser.add_argument(
+        "--rederive",
+        action="store_true",
+        help="LLM を呼ばず、v1 保存済みの軸を build_inputs() 経由で再導出して v2 に書く",
+    )
+    _args = _parser.parse_args()
+    asyncio.run(main_rederive() if _args.rederive else main())
