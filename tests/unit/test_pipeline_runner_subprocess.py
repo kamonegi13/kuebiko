@@ -559,12 +559,6 @@ class TestPerPipelineTimeout:
         assert pipeline_runner._resolve_pipeline_timeout("weekly-recap") == 3300.0
 
 
-def test_monthly_synthesis_timeout_headroom(monkeypatch: pytest.MonkeyPatch) -> None:
-    """monthly は最重のため per-pipeline timeout で 3600s の headroom を持つ。"""
-    monkeypatch.delenv("PIPELINE_TIMEOUT_SECONDS", raising=False)
-    assert pipeline_runner._resolve_pipeline_timeout("monthly-status-synthesis") == 3600.0
-
-
 class TestCancelRun:
     """チェーンの段の timeout で subprocess も止める (2026-09-27)。"""
 

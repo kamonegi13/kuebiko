@@ -48,9 +48,12 @@
 >   し、pipelines.yaml には宣言的 yaml で表現できない bespoke scraper (nicter / 38north 等の
 >   Playwright/特殊系) のみ列挙する (pipelines.yaml は移行対象外、bespoke 宣言として git 管理のまま)。
 > - 全体設計の見直し記録: [docs/source_pipeline_architecture_review.md](docs/source_pipeline_architecture_review.md)
->   (P0/P1/P5・P2-lite・P3 の stagger は実施済。ingest の merge・P4・P6 は見送り — 同文書 §8-9)。§5 のディレクトリ表に未記載の package:
->   `src/watchers/ src/digest/ src/taxonomy/ src/synthesis/ src/pir/ src/spotlight/`。
-> - §6 のフェーズ表は歴史的記録 (Phase 2.6a「現在地」は古い)。現在は上記の統合再設計フェーズ。
+>   (P0/P1/P5・P2-lite・P3 の stagger は実施済。ingest の merge・P4・P6 は見送り — 同文書 §8-9)。§5 のディレクトリ表に未記載の package (2026-10-10 に `ls src/` と照合):
+>   `src/watchers/ src/digest/ src/taxonomy/ src/synthesis/ src/pir/ src/spotlight/ src/assessment/ src/assistant/
+>   src/eval/ src/eventnews/ src/forecast/ src/graph/ src/pipeline/ src/search/ src/sources/ src/vocab/ src/prompts/`。
+>   HTMX + Jinja2 前提の記述 (§1・§5・§10・§11) は初期設計の記録で、現行 UI は上記 React SPA。
+> - §6 のフェーズ表は 2026-10-10 に完了状態へ更新済。現在は上記の統合再設計フェーズ。
+> - 月次の状況総括 (`monthly-status-synthesis`) は 2026-09-29 に廃止 (長期の軌跡は PIR の 30 日推移)。
 
 ### 全体構成 (Phase 1.5 以降)
 
@@ -322,10 +325,10 @@ kuebiko/
 | Phase 1.5b | SSE + DB 永続な live_log (タブ離脱に強い即時実行 UX) | **完了** |
 | Phase 2 | Grok 対応 (IMAP 受信 + Playwright で本文取得) + 複数 source の統一インタフェース | **完了** |
 | Phase 2.5 | Grok チャットページの DOM 抽出 (Playwright locator) | **完了** |
-| **Phase 2.6a** | **Grok 専用パーサ + LLM スキップ + セクション単位 Discord 投稿** | **現在地** |
+| Phase 2.6a | Grok 専用パーサ + LLM スキップ + セクション単位 Discord 投稿 | 完了 (JSONL 経路へ移行済) |
 | Phase 3a | URL 正規化 + SHA-256 ハッシュベースの重複排除 (SQLite dedup_seen_urls) | 完了 |
 | Phase 3b | Embedding + SQLite blob + numpy コサイン類似度 | 完了 (実機は embedding ティア割当後) |
-| Phase 4 | CTI 観点メタデータ付与 (脅威アクター, MITRE ATT&CK, IOC) | 未着手 |
+| Phase 4 | CTI 観点メタデータ付与 (脅威アクター, MITRE ATT&CK, IOC) | 完了 (`src/cti/` で稼働) |
 | Phase 5 | 責務別パッケージへの再構成 (完了) / CrewAI 化は保留・残骸撤去済 (2026-08-15) | 一部完了 |
 
 > **Phase 1 における「翻訳」の位置付け**: 翻訳は独立ステップではなく、要約 (BLUF + 重要度 + カテゴリ) と同一の LLM プロンプト内で同時実行する (`prompts/briefing/summarizer.j2`)。

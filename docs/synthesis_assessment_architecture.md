@@ -216,6 +216,7 @@ period は **窓 + 前回差分 (delta-since-last-render-of-this-cadence) + fore
     デプロイ前の dry-run レビューでも source_caveat が state_media(RT/Sputnik) を明示割引、forecast_alignment が
     ランサム急増を犯罪動向として分離、freshness_note が振り返り 67% を警告、scorecard が前期予測を正直に partial
     採点 = **synthesis 品質改善は 31B で実戦動作**。段2 spotlight は次回 spotlight (月 09:00) から反映。
+- **⚠ 2026-09-29 廃止**: 月次総括は廃止 (長期の軌跡は PIR の 30 日推移で読む)。以下は当時の記録。死活の鮮度監視からも外した (2026-10-10)。
 - **✅ 段3 (真の月次) 実装+デプロイ済 (2026-06-28, commit d6c927d, container recreate 17:28 JST)**: monthly を
   weekly 便乗 (rolling) から分離し月末専用 cron に。schedule schema に day (day-of-month, 'last') 追加、weekly に
   synthesis_periods:[weekly] 明示で便乗停止、monthly-status-synthesis 新設 (day=last 20:00 JST)。スケジューラ登録

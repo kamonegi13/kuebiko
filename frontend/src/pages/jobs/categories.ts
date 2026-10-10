@@ -45,7 +45,7 @@ export const JOB_CATEGORIES: JobCategoryDef[] = [
   {
     key: "analysis",
     title: "分析・総括",
-    ids: ["auto-trigger-synthesis", "weekly-recap", "weekly-status-synthesis", "monthly-status-synthesis", "pir-spotlight"],
+    ids: ["auto-trigger-synthesis", "weekly-recap", "weekly-status-synthesis", "pir-spotlight"],
     icon: BrainCircuit,
     accentText: "text-accent-hover",
     accentBar: "bg-accent-hover",
@@ -133,7 +133,6 @@ export const SHORT_LABELS: Record<string, string> = {
   "evening-brief": "夕ブ",
   "weekly-recap": "深掘",
   "weekly-status-synthesis": "週総",
-  "monthly-status-synthesis": "月総",
   "pir-spotlight": "スポット",
   "weekly-taxonomy-review": "分類",
   "mitre-actor-sync": "MITRE",

@@ -279,16 +279,12 @@ class TestMonthlySynthesisPipeline:
         assert result[0].schedule.day == "last"
         assert list(result[0].source.synthesis_periods) == ["monthly"]
 
-    def test_real_config_separates_monthly_from_weekly(self) -> None:
-        """実 config: weekly は weekly のみ、monthly は専用 cron (案2: 1日未明) で生成。"""
+    def test_real_config_has_no_monthly_pipeline(self) -> None:
+        """月次総括は 2026-09-29 に廃止。weekly は weekly のみ生成する。"""
         by_name = {p.name: p for p in load_pipelines(Path("config/pipelines.yaml"))}
+        assert "monthly-status-synthesis" not in by_name
         weekly = by_name["weekly-status-synthesis"]
-        assert list(weekly.source.synthesis_periods) == ["weekly"]  # 便乗 monthly を停止
-        monthly = by_name["monthly-status-synthesis"]
-        assert monthly.schedule is not None
-        assert monthly.schedule.day == "1"  # 案2: 1 日未明 (prev-period で前月総括)
-        assert monthly.schedule.day_of_week is None  # 固定曜日でない
-        assert list(monthly.source.synthesis_periods) == ["monthly"]
+        assert list(weekly.source.synthesis_periods) == ["weekly"]
 
     def test_pipeline_config_is_frozen(self, tmp_path: Path) -> None:
         p = tmp_path / "pipelines.yaml"

@@ -177,29 +177,9 @@ pipelines:
     digest_max_items: 1
     # 段3 (真の月次): weekly のみ生成。旧来は synthesis_periods 未指定で runner が
     # ("weekly","monthly") に fallback し monthly を毎週 UPSERT する「便乗 rolling」だった。
-    # monthly は専用 monthly-status-synthesis (月末) に分離 → 便乗生成を断つ。
+    # monthly 生成は 2026-09-29 に廃止。
     synthesis_periods:
     - weekly
-  processor:
-    extract_method: trafilatura
-    extract_min_length: 200
-    target_language: ja
-- name: monthly-status-synthesis
-  # 段3 (真の月次) + 案2 (深夜化): 1 日未明 03:00 JST に実行。_resolve_period prev-period 化で
-  # 「完結した前月」を総括 (period_start=前月1日)。_load_previous_synthesis(monthly) が前々月の
-  # forecasts を採点 → 月次の予測 track record (過去参照×将来予測の戦略高度版)。
-  schedule:
-    enabled: false  # 2026-09-29 廃止: 長期の軌跡は PIR (問いの面) の 30 日推移で読む
-    hour: 3
-    minute: 0
-    day: "1"
-  source:
-    type: status_synthesis
-    max_articles: 1
-    digest_lookback_hours: 720
-    digest_max_items: 1
-    synthesis_periods:
-    - monthly
   processor:
     extract_method: trafilatura
     extract_min_length: 200

@@ -53,7 +53,6 @@ _PIPELINE_TIMEOUT_OVERRIDES: dict[str, float] = {
     "weekly-status-synthesis": 2400.0,
     # monthly は 720h (月) を総括する最重の synthesis。夜間解析帯で collection が
     # 停止し資源を専有できる前提で、より大きい headroom を与える (day=1 のみ・低頻度)。
-    "monthly-status-synthesis": 3600.0,
     # weekly-recap は deep-dive を chunk-all で全件採点する (2026-07-07)。候補 ~900 →
     # ~8 チャンク × 数分 + digest 生成で ~20-25 分。夜間・週1なので 45 分の headroom を与える。
     "weekly-recap": 2700.0,

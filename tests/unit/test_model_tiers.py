@@ -79,7 +79,6 @@ class TestRegistry:
         assert narrative == {
             Step.SYNTHESIS_NARRATIVE,
             Step.PIR_SPOTLIGHT,
-            Step.LEDGER_DEEP_REVIEW,
             # 事象ニュース (2026-08-23): fast(26B) では日本語破損が出たため narrative へ
             # (同一入力の A/B で 26B 3件/5事象 → 31B 0件。docs/event_news_design.md §14b)
             Step.EVENT_NEWS,
@@ -557,13 +556,6 @@ class TestNarrativeThink:
         invalidate_model_tiers_cache()
         assert not isinstance(
             build_llm_for(Step.SYNTHESIS_ANALYSIS, _cfg(), db_path=db_path), ThinkOnClient
-        )
-
-        # 夜間精査 step は narrative ティア経由 = 外部+auto なら think 包装 (UI 1:1 原則)
-        save_config(MODEL_TIERS_CONFIG_KEY, {"narrative": "claudecode:sonnet"}, db_path=db_path)
-        invalidate_model_tiers_cache()
-        assert isinstance(
-            build_llm_for(Step.LEDGER_DEEP_REVIEW, _cfg(), db_path=db_path), ThinkOnClient
         )
 
 

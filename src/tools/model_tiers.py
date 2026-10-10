@@ -164,7 +164,6 @@ class Step(StrEnum):
     # 帰属の言語証拠まで拾う)。頻度は 0.25 回/時なので 65 秒/回でも毎時運用に収まる。
     EVENT_NEWS = "event_news"
     PIR_SPOTLIGHT = "pir_spotlight"  # PIR 縦断 narrative (本番 31b 踏襲)
-    LEDGER_DEEP_REVIEW = "ledger_deep_review"  # 台帳 ACH の夜間 think 再評価
     # --- embedding tier ---
     EMBED = "embed"  # 意味的重複排除・検索埋込
 
@@ -220,7 +219,6 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.EVENT_NEWS: StepSpec(Tier.NARRATIVE, 600.0),
     # 夜間精査は「think を使う ACH」= narrative ティア経由でモデルと think 設定を継承する
     # (reasoning のモデルを factory 外で wrap すると UI の think 1:1 原則が壊れる)。
-    Step.LEDGER_DEEP_REVIEW: StepSpec(Tier.NARRATIVE, 900.0),
     # 台帳 ACH (増分評価は 1 呼出数百秒級) — narrative から分離 (2026-07-24 think ティア分離)。
     Step.SYNTHESIS_ANALYSIS: StepSpec(Tier.REASONING, 900.0),
     Step.EMBED: StepSpec(Tier.EMBEDDING, 120.0),

@@ -574,7 +574,7 @@ def test_semantic_search_endpoint(client: TestClient) -> None:
 
 
 def test_semantic_search_disabled_returns_503(client: TestClient) -> None:
-    """OLLAMA_EMBED_MODEL 未設定 (embedder None) のとき 503 を返す。"""
+    """embedding ティア未割当 (embedder None) のとき 503 を返す。"""
     client.app.state.embedder = None  # type: ignore[attr-defined]
     resp = client.get("/api/v1/semantic-search", params={"query": "anything"})
     assert resp.status_code == 503
@@ -748,7 +748,7 @@ def test_unified_search_quick_endpoint(client: TestClient) -> None:
 
     from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 
-    # embedder 無効化 (OLLAMA_EMBED_MODEL 未設定相当) — keyword leg で動く
+    # embedder 無効化 (embedding ティア未割当相当) — keyword leg で動く
     client.app.state.embedder = None  # type: ignore[attr-defined]
     repo = RunHistoryRepository(db_path=Path.cwd() / "data" / "run_history.db")
     rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))

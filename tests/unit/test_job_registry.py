@@ -136,7 +136,18 @@ class TestDynamicCollectionSuppression:
         weekly = by_id["weekly-recap"]  # mon
         assert jr._heavy_active_on(weekly, weekday="mon", day_of_month=15) is True
         assert jr._heavy_active_on(weekly, weekday="tue", day_of_month=15) is False
-        monthly = by_id["monthly-status-synthesis"]  # day=1
+        monthly = jr.JobDef(
+            id="x-monthly",
+            kind="pipeline",
+            title="t",
+            description="d",
+            heavy=True,
+            max_runtime_minutes=45,
+            schedule_type="cron",
+            day="1",
+            hour=1,
+            minute=40,
+        )
         assert jr._heavy_active_on(monthly, weekday="wed", day_of_month=1) is True
         assert jr._heavy_active_on(monthly, weekday="wed", day_of_month=15) is False
         daily = by_id["morning-brief"]  # 毎日
@@ -223,14 +234,13 @@ class TestDynamicCollectionSuppression:
             is False
         )
 
-    def test_heavy_runtime_widths_differ_monthly_longest(self) -> None:
+    def test_heavy_runtime_widths_differ(self) -> None:
         by_id = {j.id: j for j in jr.default_jobs()}
-        monthly = by_id["monthly-status-synthesis"].max_runtime_minutes
         weekly = by_id["weekly-status-synthesis"].max_runtime_minutes
         mitre = by_id["mitre-actor-sync"].max_runtime_minutes
-        # 帯幅で差が付く (monthly > weekly > mitre)。全体最長は goldset 切替評価
+        # 帯幅で差が付く (weekly > mitre)。全体最長は goldset 切替評価
         # (90分、土曜深夜。3×86 件の LLM 実行 — 較正格子 P2)。
-        assert monthly > weekly > mitre
+        assert weekly > mitre
         assert by_id["weekly-goldset-eval"].max_runtime_minutes == max(
             j.max_runtime_minutes for j in jr.default_jobs()
         )
@@ -238,7 +248,7 @@ class TestDynamicCollectionSuppression:
     def test_danger_windows_expose_runtime_width(self) -> None:
         jobs = jr.default_jobs()
         by_label = {w["label"]: w for w in jr.danger_windows(jobs)}
-        assert by_label["月次状況総括"]["max_runtime_minutes"] == 45
+        assert "月次状況総括" not in by_label
         assert by_label["MITRE アクター同期"]["max_runtime_minutes"] == 6
 
     def test_collection_jobs_flagged(self) -> None:
