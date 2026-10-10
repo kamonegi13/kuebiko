@@ -22,6 +22,7 @@ import hashlib
 import json
 import shutil
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -203,7 +204,13 @@ def export(out_dir: Path) -> dict[str, Any]:
         if path.name == "meta.json":
             continue
         digest.update(path.read_bytes())
-    meta = {"items": len(items), "details": details, "bytes": total, "sha256": digest.hexdigest()}
+    meta = {
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "items": len(items),
+        "details": details,
+        "bytes": total,
+        "sha256": digest.hexdigest(),
+    }
     _write(out_dir / "meta.json", meta)
     return meta
 
