@@ -456,6 +456,7 @@ kuebiko/
   | (10-02) 統合の段で、頻出の名前 (当局・大手取引所の名前等) を共有し本文 cos 0.80 以上の別事象の組も ML で採点して統合する | `EVENTNEWS_MERGE_FREQUENT=0` |
   | (10-02) 台帳: 低確度の見立ての反転は 1 回では確定させない (確かな出所の反証が根拠なら即確定) | `LEDGER_FLIP_HYSTERESIS=0` |
   | (10-02) 配信の定型文 (「The post … appeared first on …」) だけの本文は要約しない / 高脅威の安全網を Web の日次ブリーフにも載せる | (コード) |
+  | (10-10) 被害組織名の無い非インシデント記事 (advisory/press/research/opinion/tutorial) は被害国を付けない (`cti/victim_country_gate`)。監査 140 件で発火 30 件中 27 件が誤り (発行元の国・被害組織の無い記事)。直近 90 日の既存 2,319 行も遡及で空にした | `VICTIM_COUNTRY_GATE=0` / 既存行は `_backup_victim_country_gate_20261010_072036` から戻す |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

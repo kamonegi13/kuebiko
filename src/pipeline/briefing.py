@@ -618,6 +618,7 @@ def _build_briefing(
     # Phase H: PMESII-PT 軸 + Diamond victim を metadata に保存 (V1/V2/V3 で利用)。
     # LLM 判定 + feed/category default mapping を union (Recall 重視)。
     from src.cti.taxonomy_normalizer import load_normalizer as _load_taxonomy_normalizer
+    from src.cti.victim_country_gate import should_drop_victim_country
 
     _taxonomy = _load_taxonomy_normalizer()
     merged_axes = _taxonomy.merge_axes(
@@ -627,6 +628,12 @@ def _build_briefing(
     )
     sector_canonical, sector_raw = _taxonomy.normalize_sector(summary.victim_sector)
     country_iso, country_raw = _taxonomy.normalize_country(summary.victim_country)
+    # 被害国の過剰付与対策 (2026-10-10 監査): advisory/press/research/opinion/tutorial
+    # は被害組織が無いインシデントでない記事。発行元の国 (CISA→US、BSI→DE 等) を
+    # 被害国と誤認する例が多かったため、被害組織名が無いときは落とす
+    # (誤った国名より欠落の方が許容できる判断、rollback=VICTIM_COUNTRY_GATE=0)。
+    if should_drop_victim_country(summary.article_type, summary.victim_orgs or []):
+        country_iso, country_raw = None, None
     # 状態分離監査 2026-07-16: T 軸は廃止 (書かない)、I-infra は NISC 写像の決定論
     # フロアで補強する (決定論供給は枯れない — feed_default だけが生き残った実測の一般化)。
     merged_axes = _final_pmesii_axes(
