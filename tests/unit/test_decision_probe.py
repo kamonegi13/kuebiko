@@ -131,9 +131,14 @@ class TestExtractChoiceProbabilities:
         # yes. (-0.2) の方が Yes (-4.0) より高いので、Yes 側の確率は yes. 由来の値になる。
         assert result["Yes"] > result["No"]
 
-    def test_returns_none_when_a_choice_is_missing(self) -> None:
-        candidates = [("Yes", -0.1), ("Maybe", -1.0)]
-        assert _extract_choice_probabilities(candidates, ("Yes", "No")) is None
+    def test_missing_choice_takes_floor_of_candidates(self) -> None:
+        """確信が強いと反対の選択肢が top から落ちる — None にせず候補の最小値を上限に使う。"""
+        candidates = [("Yes", -0.0001), (" yes", -9.0), ("Maybe", -18.0)]
+        probs = _extract_choice_probabilities(candidates, ("Yes", "No"))
+        assert probs is not None
+        assert probs["Yes"] > 0.9999
+        assert 0.0 < probs["No"] < 1e-6
+        assert abs(sum(probs.values()) - 1.0) < 1e-9
 
     def test_returns_none_when_no_choices_found(self) -> None:
         candidates = [("Maybe", -0.1)]

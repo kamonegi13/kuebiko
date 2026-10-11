@@ -99,7 +99,10 @@ def _extract_choice_probabilities(
 ) -> dict[str, float] | None:
     """top_logprobs の候補一覧から各選択肢の確率 (softmax) を読む。
 
-    全選択肢が候補に見つからない場合は ``None`` (呼び出し側は従来の決定的な経路へ)。
+    どの選択肢も候補に無ければ ``None`` (呼び出し側は従来の決定的な経路へ)。一部だけ見つかった
+    ときは、見つからない選択肢の logprob を候補一覧の最小値 (= top_logprobs に入らなかった上限)
+    とみなす。2026-10-11: 全選択肢を必須にしていたため、確信の強い判定ほど反対の選択肢が
+    top から落ちて None になり、台帳の割当で 2/3 が欠落していた (反対側の相対確率は 1e-7〜1e-10)。
     """
     best_logprob: dict[str, float] = {}
     for choice in choices:
@@ -109,8 +112,11 @@ def _extract_choice_probabilities(
                 continue
             if choice not in best_logprob or logprob > best_logprob[choice]:
                 best_logprob[choice] = logprob
-    if len(best_logprob) != len(choices):
+    if not best_logprob:
         return None
+    floor = min(lp for _, lp in candidates)
+    for choice in choices:
+        best_logprob.setdefault(choice, floor)
 
     max_logprob = max(best_logprob.values())
     exp_values = {choice: math.exp(lp - max_logprob) for choice, lp in best_logprob.items()}
