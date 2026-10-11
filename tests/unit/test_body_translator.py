@@ -314,3 +314,74 @@ async def test_broken_output_raises_instead_of_caching() -> None:
     llm = FakeLLM(responses=['{"a": "b"}'])
     with pytest.raises(LLMError):
         await translate_body(llm, _SRC)
+
+
+# ---------- 決定論関門 (translation_fidelity、2026-10-11) ----------
+
+
+async def test_translate_body_repairs_garbled_proper_noun(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
+    llm = FakeLLM(responses=["Gite0 は重大な脆弱性を修正しました。"])
+    out = await translate_body(llm, "Gitea fixed a critical vulnerability.")
+    assert out == "Gitea は重大な脆弱性を修正しました。"
+    assert len(llm.prompts) == 1  # 語トークン修復は決定論、再試行は不要
+
+
+async def test_translate_body_repairs_garbled_cve(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
+    llm = FakeLLM(responses=["この欠陥は CVE-2016-76746 として追跡されています。"])
+    out = await translate_body(llm, "The flaw is tracked as CVE-2026-76746.")
+    assert out == "この欠陥は CVE-2026-76746 として追跡されています。"
+
+
+async def test_translate_body_fidelity_gate_disabled_keeps_garbled_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "0")
+    llm = FakeLLM(responses=["Gite0 は重大な脆弱性を修正しました。"])
+    out = await translate_body(llm, "Gitea fixed a critical vulnerability.")
+    assert out == "Gite0 は重大な脆弱性を修正しました。"
+
+
+async def test_translate_body_retries_once_on_suspicious_number_and_adopts_resolved_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
+    # 2桁以上が対象 (1桁は助数詞ノイズが支配的、data/eval/p1_report.md)
+    llm = FakeLLM(
+        responses=[
+            "このグループは 130 人を制裁しました。",  # 136 → 130 の疑い (1 回目)
+            "このグループは 136 人を制裁しました。",  # 再試行で解消
+        ]
+    )
+    out = await translate_body(llm, "The group sanctioned 136 individuals.")
+    assert out == "このグループは 136 人を制裁しました。"
+    assert len(llm.prompts) == 2
+    # 再試行は本番温度 (0.2) と異なる温度を使う
+    assert llm.kwargs[1]["temperature"] != llm.kwargs[0]["temperature"]
+
+
+async def test_translate_body_keeps_chunk_when_retry_still_suspicious(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
+    llm = FakeLLM(
+        responses=[
+            "このグループは 130 人を制裁しました。",
+            "このグループは 131 人を制裁しました。",  # 再試行でも依然疑わしい (136 と距離1)
+        ]
+    )
+    out = await translate_body(llm, "The group sanctioned 136 individuals.")
+    # チャンクの訳は丸ごと失わず、再試行の訳を採用して進める (記録は構造化ログのみ)
+    assert out == "このグループは 131 人を制裁しました。"
+    assert len(llm.prompts) == 2
+
+
+async def test_translate_body_fidelity_gate_disabled_skips_number_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "0")
+    llm = FakeLLM(responses=["このグループは 130 人を制裁しました。"])
+    out = await translate_body(llm, "The group sanctioned 136 individuals.")
+    assert out == "このグループは 130 人を制裁しました。"
+    assert len(llm.prompts) == 1
