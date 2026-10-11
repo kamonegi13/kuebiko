@@ -27,12 +27,14 @@ from src.pir.evaluator import PirMatch, evaluate_pir_matches
 from src.pir.integration import load_current_pir_config
 from src.pir.models import Pir
 from src.spotlight.identifier_check import find_unsupported_identifiers
+from src.tools.decision_probe import probe_choice
 from src.tools.discord_publisher import (
     BriefingMessage,
     DiscordPublisher,
     Source,
 )
 from src.tools.llm_client import LLMClient
+from src.tools.model_tiers import Step
 
 _log = get_logger(__name__)
 
@@ -59,6 +61,152 @@ def fidelity_gate_enabled() -> bool:
     """関門の有効判定 (既定 ON)。``PIR_FOCUS_FIDELITY_GATE=0`` で無効化 (検査なし)。"""
     raw = os.environ.get(PIR_FOCUS_FIDELITY_GATE_FLAG_ENV, "1").strip()
     return raw not in ("0", "false", "False")
+
+
+# 文単位の裏付け判定 (S6、2026-10-11)。識別子関門 (上記) をすり抜けた生成文を「。」区切りで
+# 文に分け、文ごとに入力記事 (``matches``) との max_k P(yes) (Jev 型 logprob、
+# ``src.tools.decision_probe.probe_choice``) を読む。しきい値未満の文があれば要点全体を
+# 1 回だけ作り直し、それでも残れば **その文だけ** を落とす (全文落ちたら既存の失敗時の
+# 扱いで空文字)。``=1``/``=true`` で有効化 (既定 off — 試作 (S5) の回収率がまだ実用の
+# 安全網として弱いため、本番投入はオーケストレータの判断に委ねる、data/eval/s6_report.md)。
+PIR_FOCUS_CLAIM_GATE_FLAG_ENV = "PIR_FOCUS_CLAIM_GATE"
+_CLAIM_GATE_MAX_ATTEMPTS = 2  # 初回生成 + 作り直し 1 回 (識別子関門と同じ型)
+
+# しきい値の根拠 (data/eval/s6_report.md 詳細):
+# data/eval/s5_claims_gold.jsonl (Opus 5.5・medium 裁定、300 主張) と
+# data/eval/s5_probe.jsonl (kuebiko-sft:i58 の記事ごと P(yes)、文のスコア=max_k) を
+# date:pir_id の key 単位で較正 40 key (124 主張) / 測定 40 key (131 主張) に分割
+# (seed=10115、data/mlx/measure_S5_report.py:_split_keys と同一の分割)。較正側で
+# 「正しい文 (supported) の誤検出 ≤ 5%」を満たす最大のしきい値 = 0.22
+# (0.22 で誤検出 4/104=3.8%、0.23 まで上げると 6/104=5.8% で基準を超えるため止める)。
+# 測定側 (未使用の key) での再現: 裏付けなしの検出率 15/34=44.1%、
+# 正しい文の誤検出率 2/97=2.1%。
+PIR_FOCUS_CLAIM_THRESHOLD = 0.22
+
+
+def claim_gate_enabled() -> bool:
+    """関門の有効判定 (既定 off)。
+
+    ``PIR_FOCUS_CLAIM_GATE`` に "0"/"false"/空 以外を明示したときだけ有効化する。
+    """
+    raw = os.environ.get(PIR_FOCUS_CLAIM_GATE_FLAG_ENV, "0").strip()
+    return raw not in ("", "0", "false", "False")
+
+
+def split_claim_sentences(text: str) -> list[str]:
+    """「。」区切りで文に分ける (S5 試作と同じ単純な分割、LLM では分けない)。空要素は捨てる。"""
+    parts = [p.strip() for p in text.replace("\r", "").replace("\n", "").split("。")]
+    return [p for p in parts if p]
+
+
+def _claim_article_block(idx: int, match: PirMatch) -> str:
+    """1 記事分の表示行 (番号付き)。S5 試作 (data/mlx/measure_S5.py:article_line、
+    truncate=None — 要約は切らない) と同じ整形。"""
+    lines = [f"[記事{idx}] [{match.importance}] {match.title} ({match.feed_title})"]
+    if match.summary:
+        lines.append(f"  要約: {match.summary}")
+    return "\n".join(lines)
+
+
+def _claim_question(sentence: str, article: str) -> str:
+    """S5 試作 (data/mlx/s5_probe.py:_question) と同じ問い (較正と合わせるため文面を変えない)。"""
+    return (
+        f"{article}\n\n"
+        "## 判定対象の文\n"
+        f"{sentence}\n\n"
+        "質問: 「判定対象の文」に書かれている事実は、上の記事に書かれているか。"
+        "一つでも書かれていない事実・断定の格上げ・但し書きの脱落があれば No と答える。"
+    )
+
+
+async def _claim_max_score(
+    sentence: str, matches: list[PirMatch], *, config: AppConfig
+) -> float | None:
+    """文 × 全入力記事の max_k P(yes)。全記事で ``probe_choice`` が None (通信失敗・外部 LLM
+    割当時等) ならこの文も None (呼び出し側は fail-open — 判定不能な文は落とさない)。
+    """
+    scores: list[float] = []
+    for idx, match in enumerate(matches, start=1):
+        article = _claim_article_block(idx, match)
+        probabilities = await probe_choice(
+            Step.PIR_FOCUS_CLAIM_JUDGE,
+            _claim_question(sentence, article),
+            ("Yes", "No"),
+            config=config,
+        )
+        if probabilities is None:
+            continue
+        p_yes = probabilities.get("Yes")
+        if p_yes is not None:
+            scores.append(p_yes)
+    return max(scores) if scores else None
+
+
+async def _score_claim_sentences(
+    text: str, matches: list[PirMatch], *, config: AppConfig
+) -> tuple[list[str], list[str]]:
+    """text を文に分けて判定する。戻り値は (通った文, 落ちた文) の順。
+
+    スコアが読めない文 (``_claim_max_score`` が None) は通った扱い (fail-open)。
+    """
+    passed: list[str] = []
+    failed: list[str] = []
+    for sentence in split_claim_sentences(text):
+        score = await _claim_max_score(sentence, matches, config=config)
+        if score is not None and score < PIR_FOCUS_CLAIM_THRESHOLD:
+            failed.append(sentence)
+        else:
+            passed.append(sentence)
+    return passed, failed
+
+
+async def apply_claim_gate(
+    text: str,
+    *,
+    llm: LLMClient,
+    pir: Pir,
+    matches: list[PirMatch],
+    config: AppConfig | None,
+) -> str:
+    """文単位の裏付け判定 (既定 off)。``config`` が無い (呼び出し側が未対応) ときも無効。
+
+    ``_CLAIM_GATE_MAX_ATTEMPTS`` (初回 + 作り直し 1 回) の最終試行でもしきい値未満の文が
+    残れば、**その文だけ** を落とす (全文落ちたら既存の失敗時の扱いで空文字)。
+    """
+    if not claim_gate_enabled() or config is None or not text:
+        return text
+
+    candidate = text
+    passed: list[str] = []
+    failed: list[str] = []
+    for attempt in range(1, _CLAIM_GATE_MAX_ATTEMPTS + 1):
+        passed, failed = await _score_claim_sentences(candidate, matches, config=config)
+        if not failed:
+            return candidate
+        if attempt == 1:
+            _log.warning(
+                "daily_focus_claim_gate_fired",
+                pir_id=pir.id,
+                failed_count=len(failed),
+            )
+        if attempt == _CLAIM_GATE_MAX_ATTEMPTS:
+            break  # 最終試行: これ以上は作り直さず、下で失格文を落とす
+        # 要点全体を作り直す (識別子関門もこの再生成に乗る — 既存の _generate_llm_summary を
+        # そのまま呼ぶ、合成ロジックを複製しない)
+        candidate = await _generate_llm_summary(llm, pir, matches)
+        if not candidate:
+            # 既存の失敗時の扱い (headline のみ)
+            return ""
+
+    if not passed:
+        _log.warning("daily_focus_claim_gate_all_dropped", pir_id=pir.id)
+        return ""
+    _log.warning(
+        "daily_focus_claim_gate_dropped_sentences",
+        pir_id=pir.id,
+        dropped_count=len(failed),
+    )
+    return "。".join(passed) + "。"
 
 
 @dataclass(frozen=True)
@@ -270,6 +418,7 @@ async def collect_pir_focus_sections(
     llm: LLMClient,
     lookback_hours: int = 24,
     max_pirs_with_llm: int = 25,
+    config: AppConfig | None = None,
 ) -> list[PirFocusSection]:
     """全 enabled PIR を loop して match を集計、各 PIR に LLM 1-2 文要約を付加。
 
@@ -277,6 +426,7 @@ async def collect_pir_focus_sections(
         llm: Ollama client (per-PIR で 1 call)
         lookback_hours: PIR match の振り返り期間 (default 24h)
         max_pirs_with_llm: LLM 要約を付ける PIR 上限 (cost 安全弁)
+        config: 文単位の裏付け判定 (``PIR_FOCUS_CLAIM_GATE``) が使う。省略時は無効
 
     Returns:
         match が >=1 件の PIR のみを含む list (空 PIR は除外)
@@ -307,6 +457,9 @@ async def collect_pir_focus_sections(
         llm_summary = ""
         if len(sections) < max_pirs_with_llm:
             llm_summary = await _generate_llm_summary(llm, pir, top)
+            llm_summary = await apply_claim_gate(
+                llm_summary, llm=llm, pir=pir, matches=top, config=config
+            )
 
         sections.append(
             PirFocusSection(
@@ -334,13 +487,13 @@ async def run_pir_daily_focus(
     dry_run: bool = False,
 ) -> DailyFocusRunResult:
     """pir-daily-focus pipeline 本体。"""
-    _ = config
     lookback = pipeline.source.digest_lookback_hours or 24
     period_label = _today_label()
 
     sections = await collect_pir_focus_sections(
         llm=llm,
         lookback_hours=lookback,
+        config=config,
     )
 
     if not sections:
@@ -437,10 +590,15 @@ async def run_pir_daily_focus(
 
 __all__: list[str] = [
     "DAILY_FOCUS_TARGET_CHANNEL",
+    "PIR_FOCUS_CLAIM_GATE_FLAG_ENV",
+    "PIR_FOCUS_CLAIM_THRESHOLD",
     "PIR_FOCUS_FIDELITY_GATE_FLAG_ENV",
     "DailyFocusRunResult",
     "PirFocusSection",
+    "apply_claim_gate",
+    "claim_gate_enabled",
     "collect_pir_focus_sections",
     "fidelity_gate_enabled",
     "run_pir_daily_focus",
+    "split_claim_sentences",
 ]

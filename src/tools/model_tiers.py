@@ -150,6 +150,11 @@ class Step(StrEnum):
     # (src/tools/decision_probe.py、data/eval/s1_report.md の試作を本番移植)。
     # 既定は triage と同じ fast ティア (同じ 1 件=小さな判定、GPU 枠を分けない)。
     THIN_BODY_JUDGE = "thin_body_judge"
+    # PIR daily focus 要点の文単位裏付け判定 (S6、2026-10-11)。PIR_DAILY_FOCUS で生成した
+    # 要点を「。」区切りの文に分け、文ごとに入力記事との P(裏付けあり) を logprob で読む
+    # (src/tools/decision_probe.py、data/eval/s5_report.md の試作 (Jev 型、1 主張=1 判定)
+    # を本番移植)。既定は PIR_DAILY_FOCUS と同じ fast ティア (1 件=小さな判定)。
+    PIR_FOCUS_CLAIM_JUDGE = "pir_focus_claim_judge"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -211,6 +216,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # logprob を 1 回読むだけ (num_predict=1)。生成系 step より短くて良いが、他の小さな
     # 判定 (pair_judge/event_kind/relevance_jp_cascade) と同じ 120s を既定にして揃える。
     Step.THIN_BODY_JUDGE: StepSpec(Tier.FAST, 120.0),
+    # logprob を 1 回読むだけ (num_predict=1)。PIR_DAILY_FOCUS と同じ fast ティア・120s。
+    Step.PIR_FOCUS_CLAIM_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),

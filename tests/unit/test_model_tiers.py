@@ -371,6 +371,11 @@ class TestDialogTier:
         # dialog に置くと外部モデル割当時にバックログ翻訳が外部消費になるため。
         assert STEP_REGISTRY[Step.ARTICLE_TRANSLATE].tier is Tier.FAST
 
+    def test_pir_focus_claim_judge_is_fast_tier(self) -> None:
+        # S6 (2026-10-11): PIR daily focus 要点の文単位裏付け判定。logprob を 1 回読むだけの
+        # 小さな判定なので、他の判定系 step (thin_body_judge 等) と同じ fast ティア。
+        assert STEP_REGISTRY[Step.PIR_FOCUS_CLAIM_JUDGE].tier is Tier.FAST
+
     def test_dialog_builtin_matches_fast(self, db_path: Path) -> None:
         # 分離時の挙動保存: DB 未保存 (既存環境) では従来どおり fast と同モデルに解決
         assert resolve_tier_model(Tier.DIALOG, db_path=db_path) == BUILTIN_MODEL_TIERS["fast"]
