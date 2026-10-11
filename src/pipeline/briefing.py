@@ -1095,6 +1095,18 @@ def _build_briefing(
         feed_title=feed_title,
         brief_count_24h_snapshot=brief_count_24h,
     )
+    # 2026-10-11: v13 (M3B_RULES) は severity / jp / relevant / severity_basis を参照するが、
+    # これらは shadow 側 (build_importance_v2_inline) でしか計算しておらず、本番の route() には
+    # 空のまま渡っていた → v13 にした 10-10 20:33 以降 alert 0・japan_watch 1 件。route() の前に
+    # 同じ計算を通す (失敗時は従来の signals のまま)。
+    signals = _enrich_signals_v2(
+        signals,
+        msg=msg,
+        body_text=body_text,
+        feed_title=feed_title,
+        severity_axes=severity_axes,
+        article_id=article.id,
+    )
     decision = route(signals)
     _log.info(
         "routing_decision",
@@ -1126,6 +1138,42 @@ def _build_briefing(
         **shadow_metadata,
     }
     return msg.model_copy(update={"metadata": new_metadata})
+
+
+def _enrich_signals_v2(
+    signals: RoutingSignals,
+    *,
+    msg: BriefingMessage,
+    body_text: str,
+    feed_title: str,
+    severity_axes: Mapping[str, str] | None,
+    article_id: str,
+) -> RoutingSignals:
+    """v13 のルールが参照する severity / jp / relevant / severity_basis を signals に足す。
+
+    計算に失敗したら元の signals を返す (配信は止めない — 従来の信号で判定される)。
+    """
+    try:
+        from dataclasses import replace
+
+        from src.cti.importance_v2_inline import build_importance_v2_inline
+
+        v2 = build_importance_v2_inline(
+            msg=msg,
+            body_text=body_text,
+            feed_title=feed_title,
+            severity_axes=severity_axes,
+        )
+        return replace(
+            signals,
+            severity=v2.severity or "",
+            severity_basis=v2.severity_basis,
+            jp=v2.jp,
+            relevant=v2.relevant,
+        )
+    except Exception as exc:  # noqa: BLE001 — 配信を止めない
+        _log.warning("routing_signals_v2_enrich_failed", article_id=article_id, error=str(exc))
+        return signals
 
 
 def _build_routing_v2_shadow_metadata(
