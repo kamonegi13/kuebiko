@@ -197,3 +197,99 @@ def test_cyber_policy_term_does_not_fire_alone_on_preprint_feed() -> None:
         feed="arXiv cs.CR", title="A new quantum-resistant encryption scheme", summary_preview=""
     )
     assert "cyber_policy" not in hint.reasons
+
+
+class TestSecurityContextNationHintFixR2b:
+    """2026-10-11 (R2b, data/eval/r2_report.md): `_SECURITY_CONTEXT` の nation ヒントが
+    国営メディアの生活・観光記事に誤発火していた 2 つの原因 (頭字語に単語境界が無い /
+    government・visit・summit・talks・diplomat・war 等が広すぎる) を固定する。"""
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # 頭字語の単語境界なし + IGNORECASE により "financial"/"transaction" の部分
+            # 文字列 (cia / nsa) に CIA/NSA が誤って当たっていた
+            "China's financial markets rally as Beijing eyes new growth targets",
+            "Cross-border transaction volumes surge between China and partner nations",
+            # government/visit/summit/talks/diplomat/war が広すぎて生活・観光記事に反応していた
+            "Panda cub mistaken for stray bear returns home as local government hails reunion",
+            "Tourists visit Beijing's Forbidden City ahead of National Day holiday",
+            "Elephant dung notebook craze delights visitors at Yunnan nature reserve",
+            "Taxi driver returns lost wallet to grateful tourist in Shanghai",
+            "ロシア企業の会談記録、観光客誘致策を発表",
+            "北京市当局、花火大会の日程を発表",
+        ],
+    )
+    def test_lifestyle_tourism_articles_do_not_fire_nation_hint(self, title: str) -> None:
+        hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+        assert not any(r.startswith("nation:") for r in hint.reasons)
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # 国家系 APT・サイバー作戦 (cyber/hack/attack 等の語で依然発火すべき)
+            "China-linked hackers breach European telecom networks",
+            "北朝鮮のサイバー部隊、暗号資産取引所を標的に攻撃",
+            "ロシア軍、ウクライナのエネルギー施設にミサイル攻撃",
+            "イランの諜報機関がスパイ活動を展開との報告",
+            # 頭字語は単語単位なら依然発火する (区切りがあれば誤爆ではない)
+            "CIA report ties Beijing-based group to espionage campaign",
+            "FBI と NSA、ロシア発のランサムウェア集団を制裁対象に指定",
+            # 制裁・輸出規制は国家系の CTI で頻出
+            "対北朝鮮制裁、ミサイル開発関連の輸出規制を強化",
+        ],
+    )
+    def test_cti_relevant_articles_still_fire_nation_hint(self, title: str) -> None:
+        hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+        assert any(r.startswith("nation:") for r in hint.reasons)
+
+    def test_japan_reason_unaffected_by_security_context_fix(self) -> None:
+        """`_japan_reason` は `_SECURITY_CONTEXT` を参照しない独立経路 — 修正の影響を受けない。"""
+        hint = ingest_relevance_hint(
+            feed="any",
+            title="北京市当局、花火大会の日程を発表",
+            summary_preview="日本からの観光客も増加している。",
+        )
+        assert "jp" in hint.reasons
+
+
+class TestSecurityContextIntelligenceAndSpyFixR2bFollowup:
+    """2026-10-11 追加確認 (data/eval/r2b_report.md の追加調査): 修正後もなお残った非 CTI 誤発火を
+    本文まで読んで分類した結果、最大要因は bare `intelligence` が "artificial intelligence" (AI
+    業界ニュース) に誤爆すること (shadow 13 件中 5 件)。次点は `spy` が "no more spying" のような
+    貿易交渉の慣用句的引用に反応すること。`intelligence` は agency/service/officer 等の文脈語を
+    要求し、`spy` は削除する (espionage は残すため取りこぼしなし)。"""
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # "intelligence" = artificial intelligence (AI) の誤爆 (本物の国家情報機関ではない)
+            "China hails 'constructive' trade talks with EU as both sides seek ties in AI,"
+            " new energy and artificial intelligence cooperation",
+            "US AI firm Anthropic boosts artificial intelligence adoption as China eyes"
+            " language model access",
+            "Modi and Xi can't bridge the India-China divide on artificial intelligence"
+            " governance by themselves",
+            # "spy" が貿易交渉の慣用句的引用に反応する誤爆
+            "EU is its own worst enemy: China's envoy says bloc wants 'no more dumping,"
+            " no more spying and fair competition'",
+        ],
+    )
+    def test_ai_and_spying_idiom_do_not_fire_nation_hint(self, title: str) -> None:
+        hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+        assert not any(r.startswith("nation:") for r in hint.reasons)
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # intelligence agency/service/officer は本物の情報機関なので引き続き発火すべき
+            "China's intelligence agency accused of running influence operation in Europe",
+            "Russia intelligence officer identified as handler of European hacking ring",
+            "North Korea intelligence service linked to cryptocurrency theft campaign",
+            # espionage は残すので削除の影響を受けない
+            "China national charged with espionage against defense contractor",
+        ],
+    )
+    def test_intelligence_agency_and_espionage_still_fire_nation_hint(self, title: str) -> None:
+        hint = ingest_relevance_hint(feed="any", title=title, summary_preview="")
+        assert any(r.startswith("nation:") for r in hint.reasons)

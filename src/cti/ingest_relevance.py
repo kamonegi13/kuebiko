@@ -179,13 +179,33 @@ _WATCHED_CAPITALS: dict[str, tuple[str, ...]] = {
 #: 安全保障・地政学の文脈の語。国名だけだと経済・文化の記事
 #: (中国企業の業績・公演・自然環境) にも反応し、取り込みに雑音が増えた
 #: (並走の記録 91 件中 5 件、2026-10-08)
+#:
+#: 2026-10-11 (R2b, docs/eval/r2_report.md): 本文を再取得した 33 件の bare `nation:XX`
+#: ヒットのうち 29 件 (88%) が国営メディアの生活・観光記事への誤発火だった。原因は 2 点:
+#: (1) 頭字語 (CIA/FBI/NSA 等) に単語境界が無く、`re.IGNORECASE` と合わせて
+#:    "financial" (CIA を含む) や "transaction" (NSA を含む) のような無関係な語の部分文字列に
+#:    誤って当たっていた → `\b…\b` で囲んで単語単位に限定
+#: (2) government/visit/summit/talks/diplomat/war (および対応する和語 当局/政府/訪問/首脳/会談)
+#:    が一般的な外交・政府報道語として広すぎ、安全保障と無関係な記事 (観光客の訪問・要人の表敬訪問・
+#:    政府の日常広報等) まで拾っていた → 削除。本物の CTI 記事は他のサイバー・軍事語
+#:    (攻撃/ハッカ/サイバー/軍/兵器/制裁 等) が併記されるため、この削除で取りこぼしは生まれない
+#:    (修正後 4/33 まで低下、日本関連の取りこぼしは 0 のまま)
+#:
+#: 2026-10-11 追加確認 (R2b followup、data/eval/r2b_report.md): 上記修正後もなお残った shadow
+#: サンプルの誤発火 13 件を本文まで読んで分類した結果、最大要因 (5/13) は bare `intelligence` が
+#: "artificial intelligence" (AI 業界ニュース・通商協議) に誤爆すること。次点は `spy` が
+#: "no more dumping, no more spying" のような貿易交渉の慣用句的引用に反応すること。
+#: → `intelligence` は agency/service/officer の文脈語を要求 (国家情報機関の意味に限定)、
+#:   `spy` は削除 (espionage は残すため、本物のスパイ活動の記事は引き続き拾える)
 _SECURITY_CONTEXT = re.compile(
     r"攻撃|侵害|ハッカ|サイバー|マルウェア|ランサム|諜報|スパイ|工作|軍|兵器|ミサイル|核|制裁|"
-    r"安全保障|国防|防衛|外交|紛争|戦争|侵攻|偵察|情報機関|当局|政府|輸出規制|訪問|首脳|会談|"
-    r"CIA|FBI|NSA|GCHQ|MI6|"
-    r"attack|hack|breach|cyber|malware|ransom|espionage|spy|intelligence|military|army|navy|"
-    r"missile|nuclear|weapon|sanction|security|defen[cs]e|diplomat|war\b|invasion|government|"
-    r"export control|summit|talks|visit",
+    r"安全保障|国防|防衛|外交|紛争|戦争|侵攻|偵察|情報機関|輸出規制|"
+    r"\b(?:CIA|FBI|NSA|GCHQ|MI6)\b|"
+    r"attack|hack|breach|cyber|malware|ransom|espionage|"
+    r"intelligence (?:agency|service|officer)|"
+    r"military|army|navy|"
+    r"missile|nuclear|weapon|sanction|security|defen[cs]e|invasion|"
+    r"export control",
     re.IGNORECASE,
 )
 
