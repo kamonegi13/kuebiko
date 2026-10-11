@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
-from scripts.train_detect_ml import choose_threshold
+# sklearn は依存に宣言していないホスト専用の学習ツール (uv sync で消える) — 無ければ飛ばす
+pytest.importorskip("sklearn")
+
+from scripts.train_detect_ml import choose_threshold  # noqa: E402
 
 
 def test_threshold_picks_target_count_per_day() -> None:
