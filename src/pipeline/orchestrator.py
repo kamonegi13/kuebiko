@@ -12,6 +12,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import jinja2
 
@@ -21,6 +22,8 @@ from src.config_loader import (
     PipelineConfig,
     StixAttachPolicy,
 )
+from src.cti.alert_dedup_gate import ALERT_CHANNEL
+from src.cti.alert_demotion import DEMOTED_CHANNEL, maybe_demote_alert
 from src.cti.identity_dedup import DedupGateResult, check_pre_post_dedup
 from src.logging_config import get_logger
 from src.pipeline.briefing import (
@@ -1065,6 +1068,67 @@ async def run_pipeline(
             else:
                 skipped_for_mark_read.append(art_id)
             continue
+
+        # R1b (2026-10-11、利用者決定 10-11): alert 候補への 2 関門 (既定どちらも off)。
+        #   1. 当局の法執行発表 (摘発/無力化/起訴/押収/逮捕/制裁指定) は alert にしない
+        #   2. 同じ事象への重複 alert を止める (新事実の続報は残す、設計の限界は
+        #      src/cti/alert_dedup_gate.py の docstring 参照)
+        # 一般投稿直前 dedup (check_pre_post_dedup、channel 不問) を通過した後、
+        # web-only/STIX/投稿より前に判定する。降格時は channel・publisher・
+        # msg.metadata の routing 系フィールドをすべて揃えて以降の処理に流す。
+        if channel == ALERT_CHANNEL:
+            _demotion_article = articles_by_id.get(art_id)
+            demotion = await maybe_demote_alert(
+                msg,
+                article_url=_demotion_article.url if _demotion_article is not None else "",
+                article_id=art_id,
+                category=msg.category or "",
+                feed_title=_demotion_article.feed_title if _demotion_article is not None else "",
+                published_at=(
+                    _demotion_article.published
+                    if _demotion_article is not None
+                    else datetime.now(UTC)
+                ),
+                embedding=semantic_embeddings.get(art_id),
+                config=config,
+                dedup_repo=dedup_repo,
+            )
+            if demotion is not None:
+                _log.info(
+                    "alert_channel_demoted",
+                    article_id=art_id,
+                    reason=demotion.reason,
+                )
+                old_channel = channel
+                channel = DEMOTED_CHANNEL
+                publisher = publishers.get(channel)
+                if publisher is None and channel in channel_fallbacks:
+                    channel = channel_fallbacks[channel]
+                    publisher = publishers.get(channel)
+                msg = msg.model_copy(
+                    update={
+                        "metadata": {
+                            **msg.metadata,
+                            "target_channel": channel,
+                            "routing_reason": f"alert_demoted:{demotion.reason}",
+                            "routing_rule_id": "R1b.alert_demoted",
+                            "_alert_demoted_from": old_channel,
+                        }
+                    }
+                )
+                # outcome["msg"] は _persist_article_outcomes が routing_reason/
+                # routing_rule_id/dedup_key を読む参照元 (id(msg) キー経由ではなく
+                # 値で持つ) なので、降格後の msg に付け替えないと DB に旧 metadata
+                # (channel=alert 時の reason) が残ってしまう。
+                if outcome is not None:
+                    outcome["msg"] = msg
+                if publisher is None:
+                    errors.append(f"{art_id}: no publisher for channel {channel}")
+                    _log.error("no_publisher_for_channel", channel=channel, article_id=art_id)
+                    if outcome is not None:
+                        outcome["status"] = "post_failed"
+                        outcome["failure_reason"] = f"no publisher for channel {channel}"
+                    continue
 
         # 通知再設計: web-only disposition。channel レジストリで push=False の tier (情報フローで
         # 設定。既定は全 tier push=True) は Discord push をスキップし DB 保存のみ (status='posted'

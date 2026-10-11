@@ -541,6 +541,19 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             )
             return int(cur.rowcount or 0)
 
+    def get_article_entities(self, article_id: str) -> list[tuple[str, str]]:
+        """1 article の永続化済み entity 群を ``(entity_type, value)`` で返す (R1b)。
+
+        配信済みの先行記事 (同事象重複ゲートの候補) の entity 集合を読むのに使う。
+        対象記事が無い/entity 未保存なら空リスト。
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT entity_type, value FROM article_entities WHERE article_id = ?",
+                (article_id,),
+            ).fetchall()
+        return [(str(r["entity_type"]), str(r["value"])) for r in rows]
+
     def list_articles_needing_refetch(
         self,
         limit: int = 40,

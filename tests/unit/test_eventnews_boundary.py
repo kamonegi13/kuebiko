@@ -59,6 +59,13 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 2026-10-02: まとめ記事を投稿直前の重複判定から外す。参照するのは記事種別の
         # 分類器 (event_kind.classify) と ROUNDUP_KIND のみで、事象の生成物は読まない
         "src/pipeline/roundup_guard.py",
+        # 2026-10-11 (R1b): alert の同事象重複抑止ゲート。事象ニュースの生成物
+        # (event_items/版) は読まない — 参照するのは記事ペアの特徴量 (pair_features) と
+        # 学習済み判定モデルの推論 (pair_model.load_model/.probability/.joins) のみ。
+        # 配信時点では毎時の事象群化そのものを待てない (orchestrator は 1 記事ごとに即時
+        # 投稿決定を行うため) ので、同じ「同事象か」の判定を配信時点の候補
+        # (embedding コサイン近傍 + channel=alert 投稿済み) に前倒しして使う。
+        "src/cti/alert_dedup_gate.py",
     }
 )
 

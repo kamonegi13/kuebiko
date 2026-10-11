@@ -162,6 +162,10 @@ class Step(StrEnum):
     # モデルだと誤認して step 上書きを外さないこと (供給元モデルの無断シフトを防ぐ衛生、
     # EVENT_KIND/SEVERITY_AXES と同じ理由)。既定 fast ティア (gemma4:26b 相当)。
     ASSIGN_EVIDENCE_JUDGE = "assign_evidence_judge"
+    # alert channel 候補記事が「当局 (警察・検察等) による摘発・無力化・起訴・押収・逮捕・
+    # 制裁指定の発表」が主題かどうかの logprob 判定 (R1b、2026-10-11)。P(はい) を
+    # decision_probe.probe_choice で読む。1 件=小さな bool 判定、他の judge 系と同じ fast ティア。
+    ALERT_LAW_ENFORCEMENT_JUDGE = "alert_law_enforcement_judge"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -227,6 +231,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.PIR_FOCUS_CLAIM_JUDGE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (pair_judge 等) と同じ 120s。
     Step.ASSIGN_EVIDENCE_JUDGE: StepSpec(Tier.FAST, 120.0),
+    # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (thin_body_judge 等) と同じ 120s。
+    Step.ALERT_LAW_ENFORCEMENT_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),
