@@ -23,7 +23,7 @@ sections:
 - field_id: pattern_detection
   kind: rubric
   title: 横断パターンの指摘
-  body: '- 横並びの記事から共通 pattern (同 actor / 同 sector / 同 TTP) が見えれば 1 文で指摘'
+  body: '- 複数記事に **同一のアクター名・同一の CVE** など一致する具体的事実があるときだけ、共通 pattern として 1 文で指摘してよい。**各事実は必ず 1 つの記事のみに基づいて書く** (複数記事の数値・事例を混ぜない)'
   note: ''
 - field_id: no_speculation
   kind: rubric

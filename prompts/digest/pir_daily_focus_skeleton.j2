@@ -22,7 +22,7 @@
 {% for m in matches -%}
 - [{{ m.importance }}] **{{ m.title }}** ({{ m.feed_title }})
 {%- if m.summary %}
-  要約: {{ m.summary[:240] }}
+  要約: {{ m.summary }}
 {%- endif %}
 {% endfor %}
 

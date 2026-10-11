@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from src.pir.evaluator import PirMatch, evaluate_pir_matches
 # PIR と古い説明文で朝ブリーフの PIR 別の要点を書いていた
 from src.pir.integration import load_current_pir_config
 from src.pir.models import Pir
+from src.spotlight.identifier_check import find_unsupported_identifiers
 from src.tools.discord_publisher import (
     BriefingMessage,
     DiscordPublisher,
@@ -44,6 +46,19 @@ _MAX_ARTICLES_PER_PIR = 3
 _PROMPT_TEMPLATE = "digest/pir_daily_focus.j2"
 _LLM_MAX_TOKENS = 256
 _LLM_TEMPERATURE = 0.3
+
+# 決定的な識別子関門 (C3 測定で確認した「別記事の数値・事例を混ぜる」対策、2026-10-11)。
+# 生成文に入力記事 (タイトル・要約) に実在しない CVE / IP / domain / hash / version /
+# cvss / actor_id があれば 1 回だけ再生成し、それでも駄目なら要点を出さず空文字を返す
+# (既存の LLM 失敗時と同じ扱い — headline のみになる)。``=0`` で関門無効 (旧挙動)。
+PIR_FOCUS_FIDELITY_GATE_FLAG_ENV = "PIR_FOCUS_FIDELITY_GATE"
+_FIDELITY_GATE_MAX_ATTEMPTS = 2  # 初回生成 + 再生成 1 回
+
+
+def fidelity_gate_enabled() -> bool:
+    """関門の有効判定 (既定 ON)。``PIR_FOCUS_FIDELITY_GATE=0`` で無効化 (検査なし)。"""
+    raw = os.environ.get(PIR_FOCUS_FIDELITY_GATE_FLAG_ENV, "1").strip()
+    return raw not in ("0", "false", "False")
 
 
 @dataclass(frozen=True)
@@ -114,6 +129,12 @@ def _build_prompt(pir: Pir, matches: list[PirMatch]) -> str:
             keep_trailing_newline=True,
         )
         template = env.get_template(_PROMPT_TEMPLATE)
+    # 要約は切らずに全文渡す (2026-10-11 P4b)。先頭段落だけに切っていた旧実装
+    # (``_first_paragraphs``) は、字数切り (``m.summary[:240]``) の改善として入れたが、
+    # 2 段落目以降にしか書かれていない事実まで入力から消してしまい、Opus 裁定の比較で
+    # 旧実装の正しい記述を「入力に無い」と誤判定させた (C3b は無効、data/eval/improve_progress.md)。
+    # 1 PIR あたり記事は ``_MAX_ARTICLES_PER_PIR`` (3) 件までで総字数は抑えられているため、
+    # プロンプト長の調整は記事数 (N) で行う方針とし、字数での機械的な切り捨てはしない。
     return template.render(pir=pir, matches=matches)
 
 
@@ -143,19 +164,45 @@ async def _generate_llm_summary(
     pir: Pir,
     matches: list[PirMatch],
 ) -> str:
-    """LLM に 1-2 文要点を生成させる。失敗時は空文字。"""
+    """LLM に 1-2 文要点を生成させる。
+
+    失敗時、または識別子関門 (``fidelity_gate_enabled``) を再生成込みで満たせなかった
+    場合は空文字 (呼び出し側は既存の LLM 失敗時と同じ扱いで headline のみにする)。
+    """
     prompt = _build_prompt(pir, matches)
-    try:
-        response = await llm.generate(
-            prompt=prompt,
-            temperature=_LLM_TEMPERATURE,
-            max_tokens=_LLM_MAX_TOKENS,
-            think=False,
+    gate_on = fidelity_gate_enabled()
+    max_attempts = _FIDELITY_GATE_MAX_ATTEMPTS if gate_on else 1
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = await llm.generate(
+                prompt=prompt,
+                temperature=_LLM_TEMPERATURE,
+                max_tokens=_LLM_MAX_TOKENS,
+                think=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            _log.warning("daily_focus_llm_failed", pir_id=pir.id, error=str(e))
+            return ""
+
+        text = unwrap_json_text(response.text.strip())
+        if not gate_on:
+            return text
+
+        unsupported = find_unsupported_identifiers(text, prompt)
+        if not unsupported:
+            return text
+
+        _log.warning(
+            "daily_focus_fidelity_gate_fired",
+            pir_id=pir.id,
+            attempt=attempt,
+            unsupported_count=len(unsupported),
+            unsupported_kinds=sorted({ident.kind for ident in unsupported}),
         )
-        return unwrap_json_text(response.text.strip())
-    except Exception as e:  # noqa: BLE001
-        _log.warning("daily_focus_llm_failed", pir_id=pir.id, error=str(e))
-        return ""
+
+    # 再生成しても出典に実在しない識別子が残った → 要点を出さない (空文字)
+    return ""
 
 
 def _format_match_line(m: PirMatch) -> str:
@@ -390,8 +437,10 @@ async def run_pir_daily_focus(
 
 __all__: list[str] = [
     "DAILY_FOCUS_TARGET_CHANNEL",
+    "PIR_FOCUS_FIDELITY_GATE_FLAG_ENV",
     "DailyFocusRunResult",
     "PirFocusSection",
     "collect_pir_focus_sections",
+    "fidelity_gate_enabled",
     "run_pir_daily_focus",
 ]

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.digest.pir_daily_focus import (
     PirFocusSection,
+    _build_prompt,
     _filter_meaningful_matches,
     _format_match_line,
     _format_section,
+    _generate_llm_summary,
     _sort_matches,
     collect_pir_focus_sections,
 )
@@ -294,3 +297,95 @@ def test_plain_or_multi_key_text_is_left_as_is() -> None:
     assert unwrap_json_text("ただの要点。") == "ただの要点。"
     multi = '{"a": "x", "b": "y"}'
     assert unwrap_json_text(multi) == multi
+
+
+class TestBuildPromptFullSummary:
+    """2026-10-11 (P4b): 要約は切らずに全文渡す。
+
+    先頭段落だけに切る旧実装 (``_first_paragraphs``) は、Opus 盲検比較で
+    2 段落目以降にしか書かれていない正しい記述を「入力に無い」と誤判定させた
+    (C3b は無効、data/eval/improve_progress.md)。``_build_prompt`` に渡した
+    match の summary がそのまま (複数段落とも) プロンプトに現れることを確かめる。
+    """
+
+    def test_multi_paragraph_summary_is_passed_in_full(self) -> None:
+        multi_paragraph_summary = "第一段落の事実。\n\n第二段落にしかない固有の事実。"
+        match = replace(_make_match(), summary=multi_paragraph_summary)
+        pir = _make_pir()
+
+        prompt = _build_prompt(pir, [match])
+
+        assert "第一段落の事実。" in prompt
+        assert "第二段落にしかない固有の事実。" in prompt
+
+    def test_matches_passed_to_template_are_not_copied_or_mutated(self) -> None:
+        """組み立てで match を複製・変更しない (イミュータブル規約、元の値を変えない)。"""
+        original = replace(_make_match(), summary="段落1。\n\n段落2。")
+        pir = _make_pir()
+
+        _build_prompt(pir, [original])
+
+        assert original.summary == "段落1。\n\n段落2。"
+
+
+class TestFidelityGate:
+    """P4: 生成文に出典 (入力記事) に実在しない識別子があれば再生成、駄目なら空文字。"""
+
+    def _pir_and_matches(self) -> tuple[Pir, list[PirMatch]]:
+        pir = _make_pir()
+        matches = [_make_match(title="通信事業者を狙う侵入", feed_title="Feed")]
+        return pir, matches
+
+    @pytest.mark.asyncio
+    async def test_clean_text_passes_on_first_attempt(self) -> None:
+        pir, matches = self._pir_and_matches()
+        llm = AsyncMock()
+        llm.generate = AsyncMock(
+            return_value=type("R", (), {"text": "既知の手口での侵入が続いた。"})(),
+        )
+        result = await _generate_llm_summary(llm, pir, matches)
+        assert result == "既知の手口での侵入が続いた。"
+        assert llm.generate.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_unsupported_identifier_triggers_one_retry_then_succeeds(self) -> None:
+        pir, matches = self._pir_and_matches()
+        bad = type("R", (), {"text": "CVE-2099-99999 の悪用が確認された。"})()
+        good = type("R", (), {"text": "既知の手口での侵入が続いた。"})()
+        llm = AsyncMock()
+        llm.generate = AsyncMock(side_effect=[bad, good])
+        result = await _generate_llm_summary(llm, pir, matches)
+        assert result == "既知の手口での侵入が続いた。"
+        assert llm.generate.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_unsupported_identifier_persists_returns_empty(self) -> None:
+        pir, matches = self._pir_and_matches()
+        bad = type("R", (), {"text": "CVE-2099-99999 の悪用が確認された。"})()
+        llm = AsyncMock()
+        llm.generate = AsyncMock(side_effect=[bad, bad])
+        result = await _generate_llm_summary(llm, pir, matches)
+        assert result == ""
+        assert llm.generate.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_gate_disabled_returns_raw_text_without_retry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PIR_FOCUS_FIDELITY_GATE", "0")
+        pir, matches = self._pir_and_matches()
+        bad = type("R", (), {"text": "CVE-2099-99999 の悪用が確認された。"})()
+        llm = AsyncMock()
+        llm.generate = AsyncMock(side_effect=[bad])
+        result = await _generate_llm_summary(llm, pir, matches)
+        assert result == "CVE-2099-99999 の悪用が確認された。"
+        assert llm.generate.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_llm_exception_returns_empty_without_gate_check(self) -> None:
+        pir, matches = self._pir_and_matches()
+        llm = AsyncMock()
+        llm.generate = AsyncMock(side_effect=RuntimeError("ollama down"))
+        result = await _generate_llm_summary(llm, pir, matches)
+        assert result == ""
+        assert llm.generate.await_count == 1
