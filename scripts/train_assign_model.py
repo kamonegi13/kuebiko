@@ -26,21 +26,56 @@ import numpy as np  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # type: ignore[import-untyped]  # noqa: E402
 from sklearn.model_selection import GroupKFold  # type: ignore[import-untyped]  # noqa: E402
 
-from src.assessment.assign_features import FEATURE_NAMES, assign_feature_vector  # noqa: E402
-from src.assessment.assign_model import DEFAULT_MODEL_PATH  # noqa: E402
+from src.assessment.assign_features import (  # noqa: E402
+    FEATURE_NAMES,
+    FEATURE_NAMES_WITH_PROBE,
+    append_probe_feature,
+    assign_feature_vector,
+)
+from src.assessment.assign_model import DEFAULT_MODEL_PATH, PROBE_MODEL_PATH  # noqa: E402
+from src.assessment.assign_probe import probe_logit  # noqa: E402
 from src.assessment.assignment import build_article_keys, build_situation_keys  # noqa: E402
 from src.assessment.situation_store import SituationStore  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 
 GOLD = Path("data/mlx/assign_goldset.jsonl")
+#: F2b (2026-10-11): gemma4:26b の P(yes) (data/mlx/assign_probe_run.py の出力)。
+#: ``kuebiko-sft:s23i`` は無情報 (data/eval/f2_report.md) なので学習には使わない。
+PROBE_OUTPUT = Path("data/mlx/assign_probe_output.jsonl")
+PROBE_MODEL_NAME = "gemma4:26b"
 N_TREES = 400
 MIN_LEAF = 3
 
 
-async def build_xy(repo: RunHistoryRepository, store: SituationStore) -> tuple[Any, Any, list[str]]:
+def _load_probe_p_yes(
+    path: Path = PROBE_OUTPUT, *, model: str = PROBE_MODEL_NAME
+) -> dict[str, float]:
+    """``key`` → P(yes) (``model`` のみ、エラー・欠落行は含めない)。"""
+    if not path.exists():
+        return {}
+    out: dict[str, float] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        if d.get("model") != model or d.get("error") is not None or d.get("p_yes") is None:
+            continue
+        out[d["key"]] = float(d["p_yes"])
+    return out
+
+
+async def build_xy(
+    repo: RunHistoryRepository, store: SituationStore, *, with_probe: bool = False
+) -> tuple[Any, Any, list[str]]:
+    """``with_probe=True``: gemma4:26b の P(yes) (logit) を特徴量に 1 列足す (F2b)。
+
+    probe 欠落行 (未収集・エラー) は学習から外す — 推論時は probe 欠落の組は base モデルへ
+    退避するため、probe モデル自体を欠落データで学習させる必要はない。
+    """
     from src.assessment.stateful import _days_between, _embed_texts, _seed_centroids, _unit_vectors
 
     gold = [json.loads(x) for x in GOLD.read_text(encoding="utf-8").splitlines() if x.strip()]
+    probe = _load_probe_p_yes() if with_probe else {}
     rows = {r.situation_id: r for r in store.load_situations(("active", "dormant", "closed"))}
     claim = {}
     for sid in rows:
@@ -70,6 +105,7 @@ async def build_xy(repo: RunHistoryRepository, store: SituationStore) -> tuple[A
             or aid not in arts
             or art_vecs.get(aid) is None
             or sit_vecs.get(sid) is None
+            or (with_probe and g["key"] not in probe)
         ):
             continue
         ak = build_article_keys(
@@ -78,15 +114,16 @@ async def build_xy(repo: RunHistoryRepository, store: SituationStore) -> tuple[A
         sk = build_situation_keys(rows[sid], claim_type=claim.get(sid, ""))
         av = art_vecs[aid]
         seed = seeds.get(sid)
-        xs.append(
-            assign_feature_vector(
-                ak,
-                sk,
-                cos_title=float(av @ sit_vecs[sid]),
-                cos_seed=None if seed is None else float(av @ seed),
-                age_days=_days_between(rows[sid].opened_at, arts[aid].created_at),
-            )
+        x = assign_feature_vector(
+            ak,
+            sk,
+            cos_title=float(av @ sit_vecs[sid]),
+            cos_seed=None if seed is None else float(av @ seed),
+            age_days=_days_between(rows[sid].opened_at, arts[aid].created_at),
         )
+        if with_probe:
+            x = append_probe_feature(x, probe_logit(probe[g["key"]]))
+        xs.append(x)
         ys.append(int(g["label"] == "same"))
         groups.append(sid)
     return np.array(xs, dtype=np.float32), np.array(ys), groups
@@ -106,7 +143,7 @@ def choose_threshold(p: Any, y: Any, *, min_precision: float) -> tuple[float, fl
     return best
 
 
-def export(model: Any, threshold: float, n: int) -> dict[str, Any]:
+def export(model: Any, threshold: float, n: int, feature_names: tuple[str, ...]) -> dict[str, Any]:
     trees = []
     for est in model.estimators_:
         t = est.tree_
@@ -125,7 +162,7 @@ def export(model: Any, threshold: float, n: int) -> dict[str, Any]:
     return {
         "version": 1,
         "n_samples": n,
-        "feature_names": list(FEATURE_NAMES),
+        "feature_names": list(feature_names),
         "threshold": threshold,
         "trees": trees,
     }
@@ -134,11 +171,18 @@ def export(model: Any, threshold: float, n: int) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--min-precision", type=float, default=0.75)
-    ap.add_argument("--out", type=Path, default=DEFAULT_MODEL_PATH)
+    ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--with-probe",
+        action="store_true",
+        help="gemma4:26b の P(yes) (data/mlx/assign_probe_output.jsonl) を特徴量に足す (F2b)",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+    feature_names = FEATURE_NAMES_WITH_PROBE if args.with_probe else FEATURE_NAMES
+    out_path = args.out or (PROBE_MODEL_PATH if args.with_probe else DEFAULT_MODEL_PATH)
     repo = RunHistoryRepository()
-    x, y, groups = asyncio.run(build_xy(repo, SituationStore()))
+    x, y, groups = asyncio.run(build_xy(repo, SituationStore(), with_probe=args.with_probe))
     if len(y) == 0:
         print("⚠ 組 0 件 — DATABASE_URL 無し (空 SQLite) を疑う", file=sys.stderr)
         return 1
@@ -163,7 +207,7 @@ def main() -> int:
     )
     print(f"閾値 {t:.2f} (規則の候補の交差検証: 精度 {100 * prec:.0f}% 回収 {100 * rec:.0f}%)")
     model = mk().fit(x, y)
-    out = export(model, t, len(y))
+    out = export(model, t, len(y), feature_names)
     # 書き出した木を numpy 実装で読み、sklearn と一致するか照合する
     from src.assessment.assign_model import AssignModel
 
@@ -180,9 +224,9 @@ def main() -> int:
         return 1
     if args.dry_run:
         return 0
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
-    print(f"書込: {args.out}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+    print(f"書込: {out_path}")
     return 0
 
 

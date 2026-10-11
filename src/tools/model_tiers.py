@@ -155,6 +155,13 @@ class Step(StrEnum):
     # (src/tools/decision_probe.py、data/eval/s5_report.md の試作 (Jev 型、1 主張=1 判定)
     # を本番移植)。既定は PIR_DAILY_FOCUS と同じ fast ティア (1 件=小さな判定)。
     PIR_FOCUS_CLAIM_JUDGE = "pir_focus_claim_judge"
+    # 台帳の証拠割当 ML の特徴量供給 (F2b、2026-10-11)。「この記事はこの情勢そのものの
+    # 証拠か」の P(yes) を ML の特徴量に 1 列追加する (data/eval/f2_report.md: Opus 盲検
+    # 662 組で AUC 0.917→0.955、本番相当 260 組で精度 80%→85%・回収 79% のまま)。
+    # ``kuebiko-sft:s23i`` は無情報 (AUC 0.537) だった — fast ティア本体がこの step 専用
+    # モデルだと誤認して step 上書きを外さないこと (供給元モデルの無断シフトを防ぐ衛生、
+    # EVENT_KIND/SEVERITY_AXES と同じ理由)。既定 fast ティア (gemma4:26b 相当)。
+    ASSIGN_EVIDENCE_JUDGE = "assign_evidence_judge"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -218,6 +225,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.THIN_BODY_JUDGE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。PIR_DAILY_FOCUS と同じ fast ティア・120s。
     Step.PIR_FOCUS_CLAIM_JUDGE: StepSpec(Tier.FAST, 120.0),
+    # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (pair_judge 等) と同じ 120s。
+    Step.ASSIGN_EVIDENCE_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),

@@ -20,6 +20,9 @@ from src.logging_config import get_logger
 _log = get_logger(__name__)
 
 DEFAULT_MODEL_PATH = Path("config/models/assign_model.json")
+#: probe 特徴量ありのモデルの既定パス (F2b、2026-10-11)。base モデルとは別ファイル —
+#: 無ければ呼び出し側は base モデル (``load_assign_model``) にそのまま退避する。
+PROBE_MODEL_PATH = Path("config/models/assign_model_probe.json")
 _ENABLE_ENV = "ASSIGN_ML"
 
 
@@ -55,23 +58,49 @@ class AssignModel:
         return self.probability(features) >= self.threshold
 
 
-@lru_cache(maxsize=2)
-def load_assign_model(path: str | None = None) -> AssignModel | None:
-    """モデルを読む。無い・壊れている・並びが違う → None (埋込の関門へ退避)。"""
-    target = Path(path) if path else DEFAULT_MODEL_PATH
+def _load_model(
+    target: Path, expected_names: tuple[str, ...], *, event_prefix: str
+) -> AssignModel | None:
+    """モデル JSON を読んで検証する (``load_assign_model`` / ``load_assign_model_probe`` 共通本体)。
+
+    無い・壊れている・特徴量の並びが違う → None (呼び出し側はより単純な判定へ退避する)。
+    """
     if not target.exists():
         return None
     try:
-        from src.assessment.assign_features import FEATURE_NAMES
-
         raw = json.loads(target.read_text(encoding="utf-8"))
         got = tuple(raw["feature_names"])
-        if got != FEATURE_NAMES:
-            _log.warning("assign_model_feature_mismatch", expected=len(FEATURE_NAMES), got=len(got))
+        if got != expected_names:
+            _log.warning(
+                f"{event_prefix}_feature_mismatch", expected=len(expected_names), got=len(got)
+            )
             return None
         return AssignModel(
             feature_names=got, threshold=float(raw["threshold"]), _trees=tuple(raw["trees"])
         )
     except Exception as e:  # noqa: BLE001 — 壊れたモデルで台帳を止めない
-        _log.warning("assign_model_load_failed", path=str(target), error=str(e)[:200])
+        _log.warning(f"{event_prefix}_load_failed", path=str(target), error=str(e)[:200])
         return None
+
+
+@lru_cache(maxsize=2)
+def load_assign_model(path: str | None = None) -> AssignModel | None:
+    """モデルを読む。無い・壊れている・並びが違う → None (埋込の関門へ退避)。"""
+    from src.assessment.assign_features import FEATURE_NAMES
+
+    target = Path(path) if path else DEFAULT_MODEL_PATH
+    return _load_model(target, FEATURE_NAMES, event_prefix="assign_model")
+
+
+@lru_cache(maxsize=2)
+def load_assign_model_probe(path: str | None = None) -> AssignModel | None:
+    """probe 特徴量 (gemma4:26b の P(yes)) ありのモデルを読む (F2b、2026-10-11)。
+
+    無い・壊れている・並びが違う → None — 呼び出し側は base モデル
+    (``load_assign_model``) にそのまま退避する (`ASSIGN_PROBE_FEATURE=1` でも
+    base の挙動を壊さない)。
+    """
+    from src.assessment.assign_features import FEATURE_NAMES_WITH_PROBE
+
+    target = Path(path) if path else PROBE_MODEL_PATH
+    return _load_model(target, FEATURE_NAMES_WITH_PROBE, event_prefix="assign_model_probe")

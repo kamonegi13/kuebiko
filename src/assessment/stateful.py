@@ -451,6 +451,8 @@ async def _apply_assign_gate(
     """規則による割当に確認を課す (`assign_gate`)。**入力は書き換えず新しい組を返す**。
 
     判定は ``ASSIGN_ML=1`` かつモデルがあれば ML (`assign_model`)、なければ埋込の類似度 0.6。
+    ``ASSIGN_ML=1`` かつ ``ASSIGN_PROBE_FEATURE=1`` なら gemma4:26b の P(yes) を ML の
+    特徴量にもう 1 列足す (F2b、既定 off、data/eval/f2_report.md)。
     shadow: 落ちるはずの割当を記録するだけ / on: 落ちた記事を未割当へ戻す (detect の候補になる)。
     ⚠ 埋込が作れなければ割当を残す — 関門の失敗で台帳の挙動を変えない。
     """
@@ -464,8 +466,18 @@ async def _apply_assign_gate(
         return kept, by, rest
     try:
         sit_vecs, art_vecs = await _gate_vectors(kept, situation_titles, repo)
+        probe_p_yes = await _probe_assign_evidence(
+            kept, art_keys=art_keys, sit_keys=sit_keys, repo=repo
+        )
         decide, judge = _gate_decider(
-            kept, sit_vecs, art_vecs, repo=repo, art_keys=art_keys, sit_keys=sit_keys, store=store
+            kept,
+            sit_vecs,
+            art_vecs,
+            repo=repo,
+            art_keys=art_keys,
+            sit_keys=sit_keys,
+            store=store,
+            probe_p_yes=probe_p_yes,
         )
     except Exception as e:  # noqa: BLE001 — 確認できなくても台帳の割当は続ける
         _log.warning("assign_gate_embed_failed", error=str(e)[:160], mode=mode)
@@ -511,10 +523,21 @@ def _gate_decider(
     art_keys: Mapping[str, ArticleKeys] | None,
     sit_keys: Mapping[str, SituationKeys] | None,
     store: SituationStore | None,
+    probe_p_yes: Mapping[tuple[str, str], float | None] | None = None,
 ) -> tuple[Callable[[str, str], tuple[bool, float | None]], str]:
-    """(情勢, 記事) → (通すか, 点数) の判定器と、その名前 ('ml' / 'embed')。"""
+    """(情勢, 記事) → (通すか, 点数) の判定器と、その名前 ('ml' / 'embed')。
+
+    ``probe_p_yes`` (F2b、既定 None = 未使用): (situation_id, article_id) → gemma4:26b の
+    P(yes)。probe モデル (``load_assign_model_probe``) があり、かつ該当組に値があるときだけ
+    base の特徴量に logit を 1 列足した拡張モデルで判定する。それ以外は base モデルのまま
+    (旧挙動を保つ — 本番モデルの切替ごとの再検証を要さない)。
+    """
     from src.assessment.assign_gate import evaluate_gate
-    from src.assessment.assign_model import assign_ml_enabled, load_assign_model
+    from src.assessment.assign_model import (
+        assign_ml_enabled,
+        load_assign_model,
+        load_assign_model_probe,
+    )
 
     def by_embed(sid: str, aid: str) -> tuple[bool, float | None]:
         r = evaluate_gate(article_vec=art_vecs.get(aid), situation_vec=sit_vecs.get(sid))
@@ -523,6 +546,7 @@ def _gate_decider(
     model = load_assign_model() if assign_ml_enabled() else None
     if model is None or art_keys is None or sit_keys is None or store is None:
         return by_embed, "embed"
+    probe_model = load_assign_model_probe()
     seed_c = _seed_centroids(sorted(kept), art_vecs, repo=repo, store=store)
     created = {a: r.created_at for a, r in repo.get_articles_by_ids(sorted(art_vecs)).items()}
 
@@ -530,21 +554,83 @@ def _gate_decider(
         av, sv = art_vecs.get(aid), sit_vecs.get(sid)
         if av is None or sv is None or aid not in art_keys or sid not in sit_keys:
             return by_embed(sid, aid)  # 材料が揃わなければ埋込の関門で判定する
-        from src.assessment.assign_features import assign_feature_vector
+        from src.assessment.assign_features import append_probe_feature, assign_feature_vector
 
         sk = sit_keys[sid]
         seed = seed_c.get(sid)
-        x = assign_feature_vector(
+        base = assign_feature_vector(
             art_keys[aid],
             sk,
             cos_title=float(av @ sv),
             cos_seed=None if seed is None else float(av @ seed),
             age_days=_days_between(sk.row.opened_at, created.get(aid)),
         )
-        p = model.probability(x)
+        p_yes = None if probe_p_yes is None else probe_p_yes.get((sid, aid))
+        if probe_model is not None and p_yes is not None:
+            from src.assessment.assign_probe import probe_logit
+
+            x = append_probe_feature(base, probe_logit(p_yes))
+            p = probe_model.probability(x)
+            return p >= probe_model.threshold, p
+        p = model.probability(base)
         return p >= model.threshold, p
 
     return by_ml, "ml"
+
+
+async def _probe_assign_evidence(
+    kept: Mapping[str, list[str]],
+    *,
+    art_keys: Mapping[str, ArticleKeys] | None,
+    sit_keys: Mapping[str, SituationKeys] | None,
+    repo: RunHistoryRepository,
+) -> dict[tuple[str, str], float | None]:
+    """``ASSIGN_PROBE_FEATURE=1`` のときだけ、各組の P(yes) (gemma4:26b) を読む (F2b)。
+
+    既定 off。material (art_keys/sit_keys) が無い・flag off・ASSIGN_ML off・probe モデルが
+    無いときは空で返す — 呼び出し側 (``_gate_decider``) はそのまま base モデルへ退避する。
+    1 件の probe 失敗で台帳の割当は止めない (None を記録して続ける)。
+    """
+    from src.assessment.assign_model import assign_ml_enabled, load_assign_model_probe
+    from src.assessment.assign_probe import assign_probe_feature_enabled, probe_assign_p_yes
+
+    out: dict[tuple[str, str], float | None] = {}
+    if (
+        not assign_probe_feature_enabled()
+        or not assign_ml_enabled()
+        or art_keys is None
+        or sit_keys is None
+        or load_assign_model_probe() is None
+    ):
+        return out
+    from src.config_loader import load_app_config
+
+    config = load_app_config()
+    aids = sorted({a for v in kept.values() for a in v})
+    arts = repo.get_articles_by_ids(aids)
+    for sid in sorted(kept):
+        sk = sit_keys.get(sid)
+        if sk is None:
+            continue
+        for aid in kept[sid]:
+            ak = art_keys.get(aid)
+            art = arts.get(aid)
+            if ak is None or art is None:
+                continue
+            try:
+                out[(sid, aid)] = await probe_assign_p_yes(
+                    situation_title=sk.row.title,
+                    anchors=sk.row.anchors,
+                    article_title=ak.title,
+                    article_summary=art.summary or "",
+                    config=config,
+                )
+            except Exception as e:  # noqa: BLE001 — 1 件の失敗で台帳の割当を止めない
+                _log.warning(
+                    "assign_probe_failed", situation_id=sid, article_id=aid, error=str(e)[:160]
+                )
+                out[(sid, aid)] = None
+    return out
 
 
 def _seed_centroids(

@@ -28,6 +28,13 @@ FEATURE_NAMES: tuple[str, ...] = (
     *(f"ct_{c}" for c in _CLAIM_TYPES),
 )
 
+#: gemma4:26b の P(yes) (logit 変換) を 1 列足した特徴量名 (F2b、2026-10-11)。
+#: data/eval/f2_report.md: Opus 盲検 662 組で AUC 0.917→0.955、本番相当 260 組で
+#: 精度 80%→85% (回収 79% のまま)。``load_assign_model_probe`` 専用の並び —
+#: ``FEATURE_NAMES`` (base モデル) とは別のモデル JSON で検証する。
+PROBE_FEATURE_NAME = "probe_logit_gemma4_26b"
+FEATURE_NAMES_WITH_PROBE: tuple[str, ...] = (*FEATURE_NAMES, PROBE_FEATURE_NAME)
+
 
 def _count_type(keys: frozenset[str], type_: str) -> float:
     return float(sum(1 for k in keys if k.startswith(f"{type_}:")))
@@ -65,3 +72,12 @@ def assign_feature_vector(
         **{f"ct_{c}": float(sit.claim_type == c) for c in _CLAIM_TYPES},
     }
     return [values[n] for n in FEATURE_NAMES]
+
+
+def append_probe_feature(base_vector: list[float], probe_logit_value: float) -> list[float]:
+    """base の特徴量ベクトルに probe の logit を 1 列足す (``FEATURE_NAMES_WITH_PROBE`` の並び)。
+
+    logit への変換 (``src.assessment.assign_probe.probe_logit``) は呼び出し側が行う —
+    このモジュールはベクトルの組み立てだけを持ち、probe の確率変換の知識を持たない。
+    """
+    return [*base_vector, probe_logit_value]

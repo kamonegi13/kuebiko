@@ -8,6 +8,8 @@ anchor 31% / nation 10% / token 4% — 台帳の証拠の約 8 割が別事案�
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import numpy as np
 import pytest
 
@@ -201,3 +203,152 @@ class TestMlPath:
 
         assert new_by_sid == {"s1": ["a1"]}
         assert [a["article_id"] for a in unassigned] == ["a2"]
+
+
+class TestProbeFeaturePath:
+    """F2b (2026-10-11): ``ASSIGN_PROBE_FEATURE=1`` で probe の P(yes) を ML に足す。"""
+
+    @staticmethod
+    def _run(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        base_model: object,
+        probe_model: object | None,
+        probe_flag: str = "1",
+        p_yes_by_aid: dict[str, float | None] | None = None,
+    ) -> tuple[tuple[dict[str, list[str]], dict[str, str], list[dict[str, object]]], AsyncMock]:
+        import asyncio
+        from types import SimpleNamespace
+
+        from src.assessment import assign_model, stateful
+        from tests.unit.test_assign_model import _keys
+
+        monkeypatch.setenv("ASSIGN_EMBED_GATE", "on")
+        monkeypatch.setenv("ASSIGN_ML", "1")
+        monkeypatch.setenv("ASSIGN_PROBE_FEATURE", probe_flag)
+        monkeypatch.setattr(assign_model, "load_assign_model", lambda path=None: base_model)
+        monkeypatch.setattr(assign_model, "load_assign_model_probe", lambda path=None: probe_model)
+        vecs = {"近い記事": _v(1, 0.1), "遠い記事": _v(0, 1), "情勢の題名": _v(1, 0)}
+
+        async def fake_embed(texts):  # type: ignore[no-untyped-def]
+            return [vecs.get(t) for t in texts]
+
+        monkeypatch.setattr(stateful, "_embed_texts", fake_embed)
+
+        p_by_aid = p_yes_by_aid or {}
+
+        async def fake_probe(**kwargs):  # type: ignore[no-untyped-def]
+            # article_title に a1/a2 を積んでおき、そこから引けるようにする (下の repo 定義)
+            return p_by_aid.get(kwargs["article_title"])
+
+        probe_mock = AsyncMock(side_effect=fake_probe)
+        monkeypatch.setattr("src.assessment.assign_probe.probe_assign_p_yes", probe_mock)
+        monkeypatch.setattr(
+            "src.config_loader.load_app_config",
+            lambda: SimpleNamespace(ollama_base_url="http://localhost:11434"),
+        )
+
+        texts = {"a1": "近い記事", "a2": "遠い記事"}
+        repo = SimpleNamespace(
+            load_summary_embeddings=lambda ids: {},
+            summary_embedding_inputs=lambda ids: {a: texts[a] for a in ids if a in texts},
+            save_summary_embeddings=lambda vecs, model: len(vecs),
+            get_articles_by_ids=lambda ids: {
+                a: SimpleNamespace(created_at="2026-09-03T00:00:00+00:00", summary=f"要約-{a}")
+                for a in ids
+            },
+        )
+        store = SimpleNamespace(evidence_ids_by_situation=lambda sids, assigned_by=None: {})
+        art, sit = _keys()
+        # article_title は probe の呼出キーに使うので a1/a2 で分かるようにしておく
+        art_a1 = SimpleNamespace(**{**art.__dict__, "article_id": "a1", "title": "a1"})
+        art_a2 = SimpleNamespace(**{**art.__dict__, "article_id": "a2", "title": "a2"})
+        result = asyncio.run(
+            stateful._apply_assign_gate(  # noqa: SLF001
+                new_by_sid={"s1": ["a1", "a2"]},
+                assigned_by_aid={"a1": "token", "a2": "token"},
+                unassigned=[],
+                pool_by_id={"a1": {"article_id": "a1"}, "a2": {"article_id": "a2"}},
+                situation_titles={"s1": "情勢の題名"},
+                repo=repo,  # type: ignore[arg-type]
+                art_keys={"a1": art_a1, "a2": art_a2},  # type: ignore[dict-item]
+                sit_keys={"s1": sit},
+                store=store,  # type: ignore[arg-type]
+            )
+        )
+        return result, probe_mock
+
+    def test_flag_off_never_calls_probe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class _Base:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.9
+
+        _, probe_mock = self._run(
+            monkeypatch, base_model=_Base(), probe_model=object(), probe_flag="0"
+        )
+
+        probe_mock.assert_not_called()
+
+    def test_no_probe_model_never_calls_probe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class _Base:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.9
+
+        _, probe_mock = self._run(monkeypatch, base_model=_Base(), probe_model=None)
+
+        probe_mock.assert_not_called()
+
+    def test_probe_value_switches_to_probe_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """probe に値があれば probe モデルを使い、base モデルとは違う判定になる。"""
+
+        class _BaseRejectsAll:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.1  # base だけなら両方落ちる
+
+        class _ProbeAcceptsAll:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.9  # probe が使われれば両方残る
+
+        (new_by_sid, _, unassigned), probe_mock = self._run(
+            monkeypatch,
+            base_model=_BaseRejectsAll(),
+            probe_model=_ProbeAcceptsAll(),
+            p_yes_by_aid={"a1": 0.8, "a2": 0.8},
+        )
+
+        assert new_by_sid == {"s1": ["a1", "a2"]}
+        assert unassigned == []
+        assert probe_mock.await_count == 2
+
+    def test_probe_none_falls_back_to_base_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """probe が None (外部割当・失敗) の組は base モデルの判定に退避する。"""
+
+        class _BaseRejectsAll:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.1
+
+        class _ProbeAcceptsAll:
+            threshold = 0.5
+
+            def probability(self, x: list[float]) -> float:
+                return 0.9
+
+        (new_by_sid, _, unassigned), _ = self._run(
+            monkeypatch,
+            base_model=_BaseRejectsAll(),
+            probe_model=_ProbeAcceptsAll(),
+            p_yes_by_aid={"a1": None, "a2": None},
+        )
+
+        assert new_by_sid == {}
+        assert sorted(str(a["article_id"]) for a in unassigned) == ["a1", "a2"]

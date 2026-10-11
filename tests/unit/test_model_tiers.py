@@ -376,6 +376,12 @@ class TestDialogTier:
         # 小さな判定なので、他の判定系 step (thin_body_judge 等) と同じ fast ティア。
         assert STEP_REGISTRY[Step.PIR_FOCUS_CLAIM_JUDGE].tier is Tier.FAST
 
+    def test_assign_evidence_judge_is_fast_tier(self) -> None:
+        # F2b (2026-10-11): 台帳の割当 ML への特徴量供給。他の logprob 判定系 step と同じ
+        # fast ティア・120s。
+        assert STEP_REGISTRY[Step.ASSIGN_EVIDENCE_JUDGE].tier is Tier.FAST
+        assert STEP_REGISTRY[Step.ASSIGN_EVIDENCE_JUDGE].timeout_seconds == 120.0
+
     def test_dialog_builtin_matches_fast(self, db_path: Path) -> None:
         # 分離時の挙動保存: DB 未保存 (既存環境) では従来どおり fast と同モデルに解決
         assert resolve_tier_model(Tier.DIALOG, db_path=db_path) == BUILTIN_MODEL_TIERS["fast"]

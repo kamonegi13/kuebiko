@@ -12,7 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from src.assessment.assign_features import FEATURE_NAMES, assign_feature_vector
+from src.assessment.assign_features import (
+    FEATURE_NAMES,
+    FEATURE_NAMES_WITH_PROBE,
+    append_probe_feature,
+    assign_feature_vector,
+)
 from src.assessment.assignment import ArticleKeys, SituationKeys
 
 
@@ -118,3 +123,57 @@ class TestModel:
         from src.assessment.assign_model import load_assign_model
 
         assert load_assign_model(str(tmp_path / "none.json")) is None
+
+
+class TestProbeFeature:
+    """F2b (2026-10-11): gemma4:26b の P(yes) (logit) を 1 列足した特徴量とモデル。"""
+
+    def test_feature_names_with_probe_appends_one_column(self) -> None:
+        assert (*FEATURE_NAMES, "probe_logit_gemma4_26b") == FEATURE_NAMES_WITH_PROBE
+
+    def test_append_probe_feature_adds_the_value_at_the_end(self) -> None:
+        base = [1.0, 2.0, 3.0]
+
+        assert append_probe_feature(base, 0.75) == [1.0, 2.0, 3.0, 0.75]
+        assert base == [1.0, 2.0, 3.0]  # 入力は書き換えない (イミュータブル)
+
+
+class TestModelProbe:
+    @staticmethod
+    def _write(tmp_path: Path, names: list[str], *, split_on: str, threshold: float = 0.6) -> Path:
+        idx = names.index(split_on)
+        tree = {
+            "left": [1, -1, -1],
+            "right": [2, -1, -1],
+            "feature": [idx, -2, -2],
+            "threshold": [0.0, -2.0, -2.0],
+            "proba": [0.0, 0.2, 0.95],
+        }
+        p = tmp_path / "assign_model_probe.json"
+        p.write_text(json.dumps({"feature_names": names, "threshold": threshold, "trees": [tree]}))
+        return p
+
+    def test_probability_reads_the_probe_column(self, tmp_path: Path) -> None:
+        from src.assessment.assign_model import load_assign_model_probe
+
+        path = self._write(
+            tmp_path, list(FEATURE_NAMES_WITH_PROBE), split_on="probe_logit_gemma4_26b"
+        )
+        m = load_assign_model_probe(str(path))
+        assert m is not None
+        x = append_probe_feature([0.0] * len(FEATURE_NAMES), 1.0)  # logit > 0
+
+        assert m.probability(x) == pytest.approx(0.95)
+
+    def test_feature_mismatch_refuses_the_probe_model(self, tmp_path: Path) -> None:
+        """⚠ base モデルの並びでは probe モデルとして読まない (列ずれ防止)。"""
+        from src.assessment.assign_model import load_assign_model_probe
+
+        path = self._write(tmp_path, list(FEATURE_NAMES), split_on="cos_title")
+
+        assert load_assign_model_probe(str(path)) is None
+
+    def test_missing_file_returns_none(self, tmp_path: Path) -> None:
+        from src.assessment.assign_model import load_assign_model_probe
+
+        assert load_assign_model_probe(str(tmp_path / "none.json")) is None
