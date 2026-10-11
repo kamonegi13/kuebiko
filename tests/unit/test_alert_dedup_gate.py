@@ -122,6 +122,91 @@ class TestBuildCurrentEntities:
         )
         assert entities == frozenset()
 
+    @pytest.mark.parametrize(
+        "tech, expected",
+        [
+            ("cve-2024-12345", "CVE-2024-12345"),  # 小文字 → 大文字化して保持
+            ("CVE-2024-12345", "CVE-2024-12345"),  # 既に大文字
+            ("T1059", None),  # MITRE technique ID は CVE でないので無視
+            ("CVE-2024-1", None),  # 4 桁未満なので fullmatch しない
+            ("CVE-2024-123", None),  # 3 桁なので fullmatch しない
+            ("CVE-2024-1234", "CVE-2024-1234"),  # ちょうど 4 桁
+            ("CVE-2024-1234567", "CVE-2024-1234567"),  # 7 桁 (上限)
+            ("CVE-2024-12345678", None),  # 8 桁 (上限超)
+            ("", None),  # 空文字
+            ("   ", None),  # 空白のみ
+        ],
+    )
+    def test_mitre_techniques_cve_fullmatch_and_uppercase(
+        self, tech: str, expected: str | None
+    ) -> None:
+        entities = build_current_entities(
+            iocs=[],
+            mitre_techniques=[tech],
+            malware_families=[],
+            tools=[],
+            detected_actor_ids=[],
+            victim_orgs=[],
+        )
+        if expected is None:
+            assert entities == frozenset()
+        else:
+            assert entities == frozenset({("cve", expected)})
+
+    def test_cve_embedded_in_ioc_string_is_extracted(self) -> None:
+        entities = build_current_entities(
+            iocs=["see CVE-2023-4567 advisory", "cve-2022-0001 embedded"],
+            mitre_techniques=[],
+            malware_families=[],
+            tools=[],
+            detected_actor_ids=[],
+            victim_orgs=[],
+        )
+        assert ("cve", "CVE-2023-4567") in entities
+        assert ("cve", "CVE-2022-0001") in entities
+
+    @pytest.mark.parametrize(
+        "field_name",
+        ["malware_families", "tools", "detected_actor_ids", "victim_orgs"],
+    )
+    def test_whitespace_and_empty_strings_dropped(self, field_name: str) -> None:
+        """空白のみ・空文字は除外、前後の空白は strip される。"""
+        kwargs: dict[str, list[str] | None] = {
+            "iocs": [],
+            "mitre_techniques": [],
+            "malware_families": [],
+            "tools": [],
+            "detected_actor_ids": [],
+            "victim_orgs": [],
+        }
+        kwargs[field_name] = ["", "   ", "  LockBit  ", "\t", "Cobalt Strike "]
+        entities = build_current_entities(**kwargs)
+        # 空・空白のみは除外、strip された値のみ残る
+        values = {v for _, v in entities}
+        assert "" not in values
+        assert "   " not in values
+        assert "  LockBit  " not in values
+        assert "LockBit" in values
+        assert "Cobalt Strike" in values
+
+    def test_duplicate_values_collapse(self) -> None:
+        entities = build_current_entities(
+            iocs=["CVE-2024-1234", "CVE-2024-1234"],
+            mitre_techniques=["CVE-2024-1234"],
+            malware_families=["LockBit", "LockBit", "lockbit"],
+            tools=["Cobalt Strike", "Cobalt Strike"],
+            detected_actor_ids=["APT29", "APT29"],
+            victim_orgs=["Acme", "Acme"],
+        )
+        # frozenset なので重複は自動的に collapse
+        assert len([e for e in entities if e[0] == "cve"]) == 1
+        assert (
+            len([e for e in entities if e[0] == "malware_family"]) == 2
+        )  # "LockBit" と "lockbit" は別値
+        assert len([e for e in entities if e[0] == "tool"]) == 1
+        assert len([e for e in entities if e[0] == "actor"]) == 1
+        assert len([e for e in entities if e[0] == "victim_org"]) == 1
+
 
 class TestHasNewNamedEntities:
     def test_true_when_current_has_new_actor(self) -> None:
@@ -138,6 +223,54 @@ class TestHasNewNamedEntities:
         prior: frozenset[tuple[str, str]] = frozenset()
         current = frozenset({("pir", "pir_china_apt"), ("ioc_ip", "1.2.3.4")})
         assert has_new_named_entities(current, prior) is False
+
+    def test_comparison_ignores_case(self) -> None:
+        prior = frozenset({("malware_family", "LockBit")})
+        current = frozenset({("malware_family", "lockbit")})
+        assert has_new_named_entities(current, prior) is False
+
+    @pytest.mark.parametrize(
+        "entity_type, value",
+        [
+            ("actor", "APT41"),
+            ("malware_family", "BlackCat"),
+            ("tool", "Mimikatz"),
+            ("cve", "CVE-2025-9999"),
+            ("victim_org", "Example Inc"),
+        ],
+    )
+    def test_new_value_of_tracked_type_returns_true(self, entity_type: str, value: str) -> None:
+        prior: frozenset[tuple[str, str]] = frozenset()
+        current = frozenset({(entity_type, value)})
+        assert has_new_named_entities(current, prior) is True
+
+    def test_entity_only_in_prior_returns_false(self) -> None:
+        """current が prior の部分集合なら新しい entity は無い → False。"""
+        prior = frozenset({("actor", "APT29"), ("cve", "CVE-2024-1234")})
+        current = frozenset({("actor", "APT29")})
+        assert has_new_named_entities(current, prior) is False
+
+    @pytest.mark.parametrize(
+        "untracked_type, value",
+        [
+            ("ioc_ip", "10.0.0.1"),
+            ("country", "CN"),
+            ("mitre_technique", "T1059"),
+        ],
+    )
+    def test_untracked_types_in_current_are_ignored(self, untracked_type: str, value: str) -> None:
+        prior: frozenset[tuple[str, str]] = frozenset()
+        current = frozenset({(untracked_type, value)})
+        assert has_new_named_entities(current, prior) is False
+
+    def test_both_empty_returns_false(self) -> None:
+        assert has_new_named_entities(frozenset(), frozenset()) is False
+
+    def test_same_value_different_type_counts_as_new(self) -> None:
+        """同じ値でも type が違えば新しい entity とみなす。"""
+        prior = frozenset({("malware_family", "Cobalt Strike")})
+        current = frozenset({("tool", "Cobalt Strike")})
+        assert has_new_named_entities(current, prior) is True
 
 
 class TestFindPriorAlertDuplicateExactMatch:
