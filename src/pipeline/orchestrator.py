@@ -23,6 +23,7 @@ from src.config_loader import (
     StixAttachPolicy,
 )
 from src.cti.alert_dedup_gate import ALERT_CHANNEL
+from src.cti.alert_dedup_shadow import record_alert_dedup_shadow
 from src.cti.alert_demotion import DEMOTED_CHANNEL, maybe_demote_alert
 from src.cti.identity_dedup import DedupGateResult, check_pre_post_dedup
 from src.logging_config import get_logger
@@ -1078,6 +1079,15 @@ async def run_pipeline(
         # msg.metadata の routing 系フィールドをすべて揃えて以降の処理に流す。
         if channel == ALERT_CHANNEL:
             _demotion_article = articles_by_id.get(art_id)
+            # R1h: 重複 alert の ML を影として記録するだけ (配信先・msg は変えない、
+            # flag ALERT_DEDUP_SHADOW=0 で停止、失敗は log して続行)
+            record_alert_dedup_shadow(
+                msg=msg,
+                article=_demotion_article,
+                article_id=art_id,
+                embedding=semantic_embeddings.get(art_id),
+                repo=dedup_repo,
+            )
             demotion = await maybe_demote_alert(
                 msg,
                 article_url=_demotion_article.url if _demotion_article is not None else "",

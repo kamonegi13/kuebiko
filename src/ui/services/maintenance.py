@@ -39,6 +39,7 @@ _TRIAGE_SHADOW_RETENTION_DAYS = 60
 # routing v2 の影子記録 (2026-10-10、M3b 段1)。triage_shadow と同じ go/no-go 用の
 # 短命な観察データなので同水準の 60 日。
 _ROUTING_V2_SHADOW_RETENTION_DAYS = 60
+_ALERT_DEDUP_SHADOW_RETENTION_DAYS = 60
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -66,6 +67,9 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_routing_v2_shadow = repo.purge_routing_v2_shadow(
             days=_ROUTING_V2_SHADOW_RETENTION_DAYS
         )
+        purged_alert_dedup_shadow = repo.purge_alert_dedup_shadow(
+            days=_ALERT_DEDUP_SHADOW_RETENTION_DAYS
+        )
         # 評価資産 (ラベル/評価記録/goldset) を日次で data/backups へ退避。
         # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
         from src.storage.asset_export import export_eval_assets
@@ -86,6 +90,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_triage_rejections=purged_triage_rejections,
             purged_triage_shadow=purged_triage_shadow,
             purged_routing_v2_shadow=purged_routing_v2_shadow,
+            purged_alert_dedup_shadow=purged_alert_dedup_shadow,
             subject_backfilled=backfill,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない

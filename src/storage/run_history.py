@@ -48,6 +48,7 @@ from src.storage.records import (
     TaxonomyProposalRecord,
 )
 from src.storage.repo_actor_profile import ActorProfileMixin
+from src.storage.repo_alert_dedup_shadow import AlertDedupShadowMixin
 from src.storage.repo_articles import ArticlesMixin
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.repo_dedup import DedupMixin
@@ -105,6 +106,7 @@ class RunHistoryRepository(
     SeverityAxesMixin,
     ImportanceV2Mixin,
     RoutingV2ShadowMixin,
+    AlertDedupShadowMixin,
     RunHistoryRepositoryBase,
 ):
     """SQLite/PostgreSQL ベースの run / article / live_log 履歴リポジトリ (mixin 合成)。"""

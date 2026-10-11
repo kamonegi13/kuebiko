@@ -66,6 +66,11 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 投稿決定を行うため) ので、同じ「同事象か」の判定を配信時点の候補
         # (embedding コサイン近傍 + channel=alert 投稿済み) に前倒しして使う。
         "src/cti/alert_dedup_gate.py",
+        # 2026-10-11 (R1h): 重複 alert の ML の影の記録。alert_dedup_gate と同じ理由で
+        # pair_features / pair_model (記事ペアの特徴量と推論) だけを読み、事象の生成物は読まない。
+        "src/cti/alert_dedup_features.py",
+        "src/cti/alert_dedup_model.py",
+        "src/cti/alert_dedup_shadow.py",
     }
 )
 

@@ -301,6 +301,12 @@ _TIER_RANK: dict[SourceTier, int] = {
     "unknown": 0,
 }
 
+
+def tier_rank(tier: SourceTier) -> int:
+    """tier の序列 (official=4 ... unknown=0)。特徴量など外部の数値化に使う。"""
+    return _TIER_RANK[tier]
+
+
 _TIER_LABEL: dict[SourceTier, str] = {
     "official": "一次",
     "research": "研究",

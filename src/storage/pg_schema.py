@@ -828,6 +828,19 @@ CREATE TABLE IF NOT EXISTS routing_v2_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_routing_v2_shadow_created_at ON routing_v2_shadow(created_at);
 
+-- 重複 alert の ML の影の記録 (2026-10-11、R1h、SQLite _SCHEMA と対)。詳細は schema_sql.py。
+CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
+    id                BIGSERIAL        PRIMARY KEY,
+    article_id        TEXT             NOT NULL,
+    created_at        TEXT             NOT NULL,
+    prior_article_id  TEXT             NOT NULL,
+    p_suppress        DOUBLE PRECISION NOT NULL,
+    model_version     TEXT             NOT NULL,
+    features_json     TEXT             NOT NULL,
+    would_suppress    SMALLINT         NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (

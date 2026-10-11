@@ -690,6 +690,21 @@ CREATE TABLE IF NOT EXISTS routing_v2_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_routing_v2_shadow_created_at ON routing_v2_shadow(created_at);
 
+-- 重複 alert の ML の影の記録 (2026-10-11、R1h)。配信は変えない (記録のみ)。
+-- 配信時点の特徴量で ML の P(抑止すべき重複) を残し、Opus 正解が溜まってから評価する。
+-- retention は routing_v2_shadow と同じ 60 日。
+CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id        TEXT    NOT NULL,
+    created_at        TEXT    NOT NULL,       -- ISO8601 UTC
+    prior_article_id  TEXT    NOT NULL,       -- 選ばれた先行 alert (72h 内で最も新しい一致)
+    p_suppress        REAL    NOT NULL,
+    model_version     TEXT    NOT NULL,
+    features_json     TEXT    NOT NULL,       -- {feature_name: value} (FEATURE_NAMES の順)
+    would_suppress    INTEGER NOT NULL        -- 0/1 (p_suppress >= model の閾値)
+);
+CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

@@ -7,6 +7,7 @@ import contextlib
 import csv
 import importlib
 import io
+import json
 import re
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
@@ -728,6 +729,47 @@ def routing_v2_shadow_summary(request: Request, days: int = 7, limit: int = 50) 
                 "created_at": r.created_at,
             }
             for r in changed
+        ],
+    }
+
+
+#: alert-dedup-shadow summary の窓幅・件数の上限 (R1h、routing-v2-shadow と同じ基準)。
+_ALERT_DEDUP_SHADOW_MAX_DAYS = 60
+_ALERT_DEDUP_SHADOW_MAX_LIMIT = 200
+_P_HISTOGRAM_BINS = 10
+
+
+@pages_api.get("/alert-dedup-shadow/summary")
+def alert_dedup_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> dict[str, Any]:
+    """重複 alert の ML (R1h) の影の記録の集計。件数・would_suppress 件数・p の分布・直近の行。
+
+    配信は変えない観察データ。運用系 read API のため PUBLIC_GET_ALLOWLIST には入れない
+    (src/ui/read_only_policy.py を参照)。
+    """
+    days = max(1, min(int(days), _ALERT_DEDUP_SHADOW_MAX_DAYS))
+    limit = max(1, min(int(limit), _ALERT_DEDUP_SHADOW_MAX_LIMIT))
+    repo: RunHistoryRepository = request.app.state.repo
+    values = repo.alert_dedup_shadow_p_values(days=days)
+    histogram = [0] * _P_HISTOGRAM_BINS
+    for p, _ in values:
+        histogram[min(int(p * _P_HISTOGRAM_BINS), _P_HISTOGRAM_BINS - 1)] += 1
+    recent = repo.list_alert_dedup_shadow(days=days, limit=limit)
+    return {
+        "days": days,
+        "total": len(values),
+        "would_suppress": sum(1 for _, w in values if w),
+        "p_histogram": histogram,
+        "recent": [
+            {
+                "article_id": r.article_id,
+                "prior_article_id": r.prior_article_id,
+                "p_suppress": round(r.p_suppress, 4),
+                "would_suppress": r.would_suppress,
+                "model_version": r.model_version,
+                "features": json.loads(r.features_json),
+                "created_at": r.created_at,
+            }
+            for r in recent
         ],
     }
 
