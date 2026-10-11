@@ -1085,29 +1085,20 @@ def _build_briefing(
     # brief_count_24h は呼び出し側 (run_pipeline) で repo から取得して渡す。
     # 単体 test は default=0 で渡されないため cap 機能 OFF となり既存挙動を維持。
     # Phase B-cal: source-based low_reliability 降格は撤去 (完全 content-based 化)。
-    from src.cti.router import route
-    from src.cti.routing_signals import extract_signals_from_briefing
-
+    #
+    # 2026-10-11: 配信判定の組み立て (extract_signals_from_briefing → _enrich_signals_v2 →
+    # route) は decide_channel に 1 箇所へ集約した。本番 (ここ) と再現スクリプト
+    # (scripts/m3b_routing_replay.py) の両方がこの関数を呼ぶ — 二重実装で route() 直前の
+    # enrich 呼び出しが片方だけ欠落する再発 (v13 alert 0 件の原因) を防ぐため。
     feed_title = article.feed_title or ""
-    signals = extract_signals_from_briefing(
+    decision = decide_channel(
         msg,
-        body_text=body_text,
-        feed_title=feed_title,
-        brief_count_24h_snapshot=brief_count_24h,
-    )
-    # 2026-10-11: v13 (M3B_RULES) は severity / jp / relevant / severity_basis を参照するが、
-    # これらは shadow 側 (build_importance_v2_inline) でしか計算しておらず、本番の route() には
-    # 空のまま渡っていた → v13 にした 10-10 20:33 以降 alert 0・japan_watch 1 件。route() の前に
-    # 同じ計算を通す (失敗時は従来の signals のまま)。
-    signals = _enrich_signals_v2(
-        signals,
-        msg=msg,
         body_text=body_text,
         feed_title=feed_title,
         severity_axes=severity_axes,
         article_id=article.id,
+        brief_count_24h=brief_count_24h,
     )
-    decision = route(signals)
     _log.info(
         "routing_decision",
         article_id=article.id,
@@ -1120,8 +1111,18 @@ def _build_briefing(
     # M3b 段1 (2026-10-10): 新しいルール (M3B_RULES) を同じ signals で shadow 評価し、
     # 本番の決定 (decision、v12 現行ルール) と並べて記録する材料を作る。投稿先は
     # decision のまま変えない。失敗しても本処理 (投稿) を止めない。
+    # shadow 記録専用の base signals (decide_channel の内部計算とは独立 — v13 enrich 前の値を
+    # _build_routing_v2_shadow_metadata 内部で replace するため)。
+    from src.cti.routing_signals import extract_signals_from_briefing
+
+    base_signals = extract_signals_from_briefing(
+        msg,
+        body_text=body_text,
+        feed_title=feed_title,
+        brief_count_24h_snapshot=brief_count_24h,
+    )
     shadow_metadata = _build_routing_v2_shadow_metadata(
-        signals=signals,
+        signals=base_signals,
         decision=decision,
         msg=msg,
         body_text=body_text,
@@ -1138,6 +1139,44 @@ def _build_briefing(
         **shadow_metadata,
     }
     return msg.model_copy(update={"metadata": new_metadata})
+
+
+def decide_channel(
+    msg: BriefingMessage,
+    *,
+    body_text: str,
+    feed_title: str,
+    severity_axes: Mapping[str, str] | None,
+    article_id: str,
+    brief_count_24h: int = 0,
+) -> RoutingDecision:
+    """``BriefingMessage`` から配信先を決める唯一の入口 (2026-10-11)。
+
+    ``extract_signals_from_briefing`` (基本シグナル抽出) → ``_enrich_signals_v2``
+    (v13 が参照する severity/jp/relevant/severity_basis を注入) → ``route`` (決定) の
+    並びを 1 箇所に固定する。``_build_briefing`` (本番) と
+    ``scripts/m3b_routing_replay.py`` (過去記事での再現) の両方がこの関数を呼ぶこと —
+    片方が signals を自前で組み立てると、enrich 呼び出しが一方だけ欠落し得る
+    (v13 切替直後に alert が 0 件になった不具合の原因)。
+    """
+    from src.cti.router import route
+    from src.cti.routing_signals import extract_signals_from_briefing
+
+    signals = extract_signals_from_briefing(
+        msg,
+        body_text=body_text,
+        feed_title=feed_title,
+        brief_count_24h_snapshot=brief_count_24h,
+    )
+    signals = _enrich_signals_v2(
+        signals,
+        msg=msg,
+        body_text=body_text,
+        feed_title=feed_title,
+        severity_axes=severity_axes,
+        article_id=article_id,
+    )
+    return route(signals)
 
 
 def _enrich_signals_v2(

@@ -1,16 +1,24 @@
-"""M3b: 過去の投稿済み記事に M3B_RULES (v13) を当て直し、現行ルール (v12) との食い違いを見る
+"""M3b: 過去の投稿済み記事に v13 (M3B_RULES) を当て直し、現行 (投稿時点) との食い違いを見る
 (read-only)。
 
 対象: 直近 N 日 (既定 30)、posted_channel が非 NULL、``article_importance_v2`` に記録済みの
-記事 (同 article_id は最新 1 行)。``articles`` に保存済みの値 (importance / article_type /
-posted_channel / routing_rule_id) と ``article_importance_v2`` (severity / severity_basis /
-jp / relevant) から ``RoutingSignals`` を組み立て、``src/cti/routing_v2.M3B_RULES`` を評価する。
+記事 (同 article_id は最新 1 行)。
+
+## 配信判定の経路 (2026-10-11、二重実装の解消)
+
+本スクリプトは ``src/pipeline/briefing.py:decide_channel`` を**本番と同じ関数**として呼ぶ。
+以前は ``evaluate_routing_rules``/``RoutingSignals`` をこのスクリプト側で自前に組み立てて
+いたため、本番 (``_build_briefing``) が route() 直前に通す ``_enrich_signals_v2``
+(severity/jp/relevant/severity_basis の注入) の欠落を再現できなかった — v13 切替後に
+alert が 0 件になった不具合 (10-10 20:33〜10-11 17:25) の検証で露呈した。再発防止のため
+``decide_channel`` を経由しない配信判定の実装 (``route``/``evaluate_routing_rules`` の
+直接呼び出し) はこのスクリプトから排除している (tests/unit で固定)。
 
 DB への書き込みは一切行わない (SELECT のみ)。
 
 使い方::
 
-    uv run python scripts/m3b_routing_replay.py [--days 30] [--samples 5]
+    uv run python scripts/m3b_routing_replay.py [--days 30] [--samples 5] [--axes stored|i58]
 
 または (本番 DB に read-only で当てる場合、コンテナ内)::
 
@@ -18,35 +26,17 @@ DB への書き込みは一切行わない (SELECT のみ)。
         -v $PWD/src:/app/src:ro -v $PWD/scripts:/app/scripts:ro \\
         kuebiko python scripts/m3b_routing_replay.py
 
-## --routing-time (2026-10-10)
+``decide_channel`` は記事ごとに ``src/cti/importance_v2_inline.build_importance_v2_inline``
+を内部で呼ぶ (``_enrich_signals_v2`` 経由)。このスクリプトは DB の保存済み値から
+``BriefingMessage`` 代替を組み立てて渡すだけで、severity/jp/relevant/SIR/CVE 等の計算は
+一切再実装しない。相違点 (DB 保存値を材料にすることによる近似):
 
-既存 (既定) の replay は ``article_importance_v2`` の**記録済みの値**を当て直すだけなので、
-以下 2 点を過大に見積もる:
-
-1. ``sir_ids`` — 記録済みの値には投稿**後**に付く SIR タグ (LLM judge の主題アクター判定・
-   夜間 full-replace rebuild) まで混じる。routing 時点で使えるのは規則ベースの SIR 照合だけ
-   (``src/cti/importance_v2_inline.py`` が ``rule_based_sir_ids(..., subject_actor_ids=None)``
-   で評価しているのと同じ)。
-2. 深刻度の軸 (severity axes) — 古い記事の記録済みの軸は旧モデル (s21) 由来。routing 時点の
-   本番は ``kuebiko-sft:i58`` (``build_llm_for(Step.SEVERITY_AXES, ...)``) を使う。
-
-``--routing-time`` は、記事ごとに ``src/cti/importance_v2_inline.build_importance_v2_inline``
-と**同じ組み立て**を DB の保存済み値から再現する (同じ helper — ``build_inputs`` /
-``rule_based_sir_ids`` / ``derive_mention_entities`` — を再利用し、入力の作り方だけを
-「保存済みの BriefingMessage」から「DB の articles / article_entities / article_severity_axes
-行」に変える)。相違点:
-
-- ``actor_values`` (SIR 照合の検出アクター) と関与国 (``involved_countries``) は
-  ``article_entities`` (``entity_type='actor'`` / ``'involved_country'``) から読む。これらは
-  ingest 時点で付くエンティティで、SIR タグのような投稿後の再付与対象ではないため、ここでの
-  「保存済み値を使う」ことによる過大評価は severity axes や SIR ほど大きくない。
-- CVE 集合は本文 regex (``_CVE_TOKEN_RE`` と同一パターン) ∪ ``article_entities``
-  (``entity_type='cve'``) — ``msg.iocs`` (実行時の LLM 抽出値) の代用。
-- KEV catalog / NVD CVSS cache は **replay 実行時点の最新**を使う (過去のある時点の
-  スナップショットではない)。これは既存の記録済み値 replay にも共通する限界 — stored
-  severity/severity_basis も生成当時の KEV/NVD で確定済みの値であり本質的に同じ近似。
-- ``subject_kev`` の年判定 (``SUBJECT_CVE_YEARS``) は記事の ``created_at`` 年を使う
-  (「routing 時点の "今年"」を近似。replay 実行日の年ではない)。
+- ``sir_ids`` の評価には規則ベースの照合だけが使える (``subject_actor_ids=None``、
+  判定時点ではまだ articles 永続化後の主題アクター層が確定していない — inline と同じ)。
+- 年判定 (``SUBJECT_CVE_YEARS``) は ``build_importance_v2_inline`` と同じく常に
+  **replay 実行時点の年** を使う (記事の投稿年ではない)。
+- ``actor_values`` / 関与国 / CVE は ``article_entities`` (ingest 時点で付くエンティティ)
+  から読む。KEV catalog / NVD CVSS cache は **replay 実行時点の最新** を使う。
 
 ``--axes {stored,i58}``:
 
@@ -68,8 +58,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
-import sqlite3
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -81,8 +69,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 if TYPE_CHECKING:
-    from src.cti.importance_v2 import ImportanceInputs, ImportanceV2
-    from src.cti.routing_signals import RoutingSignals
+    from src.tools.discord_publisher import BriefingMessage
 
 DEFAULT_DB_PATH = Path("data/run_history.db")
 DEFAULT_LOOKBACK_DAYS = 30
@@ -91,37 +78,22 @@ DEFAULT_AXES_CACHE_PATH = Path("data/eval/m3b_rt_axes_cache.jsonl")
 #: DB IN (...) の chunk サイズ (src/storage/repo_severity_axes.py の _CHUNK と同じ値)。
 _DB_CHUNK = 400
 
-_SQL = """
-SELECT article_id, title, importance, article_type, posted_channel, routing_rule_id,
-       severity, severity_basis, jp, relevant
-FROM (
-    SELECT a.article_id, a.title, a.importance, a.article_type, a.posted_channel,
-           a.routing_rule_id, v.severity, v.severity_basis, v.jp, v.relevant,
-           ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
-    FROM articles a
-    JOIN article_importance_v2 v ON v.article_id = a.article_id
-    WHERE a.created_at >= ? AND a.posted_channel IS NOT NULL
-) t
-WHERE rn = 1
-"""  # noqa: S608 — 固定 SQL (バインドは since のみ)
-
-#: --routing-time 用の拡張 SQL。importance_v2_inline.build_importance_v2_inline が
-#: BriefingMessage から読む材料 (title/summary/body/feed_title/category/article_type/
-#: victim_sector_canonical/victim_country_iso/socio_political_intent/is_ransomware) を
-#: articles から取る。severity/severity_basis/jp/relevant は「保存済み値 replay」との
-#: 比較用に引き続き同梱する。
-_SQL_ROUTING_TIME = """
+#: 対象記事の取得。``importance_v2_inline.build_importance_v2_inline`` (= decide_channel が
+#: 内部で呼ぶもの) が ``BriefingMessage`` から読む材料 (title/summary/body/feed_title/
+#: category/article_type/victim_sector_canonical/victim_country_iso/socio_political_intent/
+#: is_ransomware) を articles から取る。``article_importance_v2`` への JOIN は対象母集団
+#: (= 旧 replay と同一の「投稿済み + 旧 importance 計算済み」記事) を揃えるためだけに残す
+#: (severity/jp/relevant 列は再計算するため選択しない)。
+_SQL_ARTICLES = """
 SELECT article_id, title, summary, body, feed_title, category, article_type,
        importance, posted_channel, created_at,
        victim_sector_canonical, victim_country_iso,
-       socio_political_intent, is_ransomware,
-       severity, severity_basis, jp, relevant
+       socio_political_intent, is_ransomware
 FROM (
     SELECT a.article_id, a.title, a.summary, a.body, a.feed_title, a.category,
            a.article_type, a.importance, a.posted_channel, a.created_at,
            a.victim_sector_canonical, a.victim_country_iso,
            a.socio_political_intent, a.is_ransomware,
-           v.severity, v.severity_basis, v.jp, v.relevant,
            ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
     FROM articles a
     JOIN article_importance_v2 v ON v.article_id = a.article_id
@@ -150,10 +122,6 @@ _AXES_SQL = """
 SELECT article_id, {cols} FROM article_severity_axes WHERE article_id IN ({placeholders})
 """  # noqa: S608 — 列名は固定定数、IN の placeholder 数のみ可変
 
-#: 本文中の CVE トークン (src/cti/routing_signals._CVE_TOKEN_RE と同一パターンの複製。
-#: private 属性の cross-module import を避けるため、値を複製して保持する)。
-_CVE_TOKEN_RE = re.compile(r"CVE-(?:19|20)\d{2}-\d{4,7}", re.IGNORECASE)
-
 _JST = ZoneInfo("Asia/Tokyo")
 _BRIEF_TIMES_JST: tuple[tuple[int, int], ...] = ((6, 30), (19, 30))
 _BRIEF_WINDOW_MINUTES = 15
@@ -163,22 +131,8 @@ _BRIEF_POLL_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
-class ReplayRow:
-    article_id: str
-    title: str
-    importance: str
-    article_type: str
-    old_channel: str
-    old_rule_id: str
-    severity: str
-    severity_basis: str
-    jp: str
-    relevant: bool
-
-
-@dataclass(frozen=True)
 class RoutingTimeRow:
-    """``--routing-time`` 用の 1 記事分の材料 (DB から組み立てた BriefingMessage 代替)。"""
+    """1 記事分の材料 (DB から組み立てた BriefingMessage 代替)。"""
 
     article_id: str
     title: str
@@ -194,76 +148,21 @@ class RoutingTimeRow:
     victim_country: str
     socio_political_intent: str
     is_ransomware: bool
-    # 保存済み値 (「保存済み値 replay」との比較用)。
-    stored_severity: str
-    stored_severity_basis: str
-    stored_jp: str
-    stored_relevant: bool
     actor_ids: frozenset[str] = field(default_factory=frozenset)
     involved_countries: frozenset[str] = field(default_factory=frozenset)
     persisted_cves: frozenset[str] = field(default_factory=frozenset)
     stored_axes: dict[str, str] = field(default_factory=dict)
 
-    @property
-    def full_text(self) -> str:
-        return f"{self.title}\n{self.summary}\n{self.body}"
-
 
 def _connect(db_path: Path) -> Any:
+    import sqlite3
+
     from src.storage.db_backend import connect as backend_connect
 
     con = backend_connect(db_path)
     if hasattr(con, "row_factory"):
         con.row_factory = sqlite3.Row
     return con
-
-
-def fetch_rows(*, since: datetime, db_path: Path = DEFAULT_DB_PATH) -> list[ReplayRow]:
-    """対象記事を取得する (read-only)。"""
-    with _connect(db_path) as con:
-        rows = con.execute(_SQL, (since.isoformat(),)).fetchall()
-    return [
-        ReplayRow(
-            article_id=str(r["article_id"]),
-            title=str(r["title"] or ""),
-            importance=str(r["importance"] or ""),
-            article_type=str(r["article_type"] or ""),
-            old_channel=str(r["posted_channel"] or ""),
-            old_rule_id=str(r["routing_rule_id"] or ""),
-            severity=str(r["severity"] or ""),
-            severity_basis=str(r["severity_basis"] or ""),
-            jp=str(r["jp"] or ""),
-            relevant=bool(r["relevant"]),
-        )
-        for r in rows
-    ]
-
-
-def new_channel_for(
-    row: ReplayRow, *, rules: list[dict[str, Any]] | None = None
-) -> tuple[str, str]:
-    """ルール (既定 M3B_RULES) を保存済みの値で評価して (channel, rule_id) を返す。"""
-    from src.cti.router import get_source_quality
-    from src.cti.routing_rules import evaluate_routing_rules
-    from src.cti.routing_signals import RoutingSignals
-    from src.cti.routing_v2 import M3B_RULES
-
-    signals = RoutingSignals(
-        source="briefing",
-        importance=row.importance if row.importance in ("high", "medium", "low") else "low",  # type: ignore[arg-type]
-        article_type=row.article_type,  # type: ignore[arg-type]
-        severity=row.severity,
-        severity_basis=row.severity_basis,
-        jp=row.jp,
-        relevant=row.relevant,
-    )
-    decision = evaluate_routing_rules(signals, get_source_quality(), {}, rules=rules or M3B_RULES)
-    if decision is None:
-        return "", ""
-    return decision.channel, decision.rule_id
-
-
-# ===== --routing-time: DB から BriefingMessage 代替を組み立てる =====
 
 
 def _entity_maps(article_ids: list[str], *, db_path: Path) -> dict[str, dict[str, frozenset[str]]]:
@@ -320,9 +219,9 @@ def _stored_axes_map(article_ids: list[str], *, db_path: Path) -> dict[str, dict
 def fetch_routing_time_rows(
     *, since: datetime, db_path: Path = DEFAULT_DB_PATH, want_stored_axes: bool
 ) -> list[RoutingTimeRow]:
-    """``--routing-time`` 用の対象記事を取得する (read-only、articles + 付帯 entity/axes)。"""
+    """対象記事を取得する (read-only、articles + 付帯 entity/axes)。"""
     with _connect(db_path) as con:
-        base_rows = con.execute(_SQL_ROUTING_TIME, (since.isoformat(),)).fetchall()
+        base_rows = con.execute(_SQL_ARTICLES, (since.isoformat(),)).fetchall()
     article_ids = [str(r["article_id"]) for r in base_rows]
     entities = _entity_maps(article_ids, db_path=db_path)
     axes_map = _stored_axes_map(article_ids, db_path=db_path) if want_stored_axes else {}
@@ -352,10 +251,6 @@ def fetch_routing_time_rows(
                 victim_country=str(r["victim_country_iso"] or ""),
                 socio_political_intent=str(r["socio_political_intent"] or ""),
                 is_ransomware=bool(r["is_ransomware"]),
-                stored_severity=str(r["severity"] or ""),
-                stored_severity_basis=str(r["severity_basis"] or ""),
-                stored_jp=str(r["jp"] or ""),
-                stored_relevant=bool(r["relevant"]),
                 actor_ids=ent["actor"],
                 involved_countries=ent["involved_country"],
                 persisted_cves=ent["cve"],
@@ -365,107 +260,42 @@ def fetch_routing_time_rows(
     return out
 
 
-def _article_year(created_at: str) -> int:
-    """``created_at`` の年 (parse 失敗は replay 実行時点の UTC 年、SUBJECT_CVE_YEARS 判定用)。"""
-    try:
-        return datetime.fromisoformat(created_at.replace("Z", "+00:00")).year
-    except ValueError:
-        return datetime.now(UTC).year
+# ===== decide_channel への入力組み立て (本番と同じ関数を呼ぶだけ、判定は再実装しない) =====
+
+_VALID_IMPORTANCE: frozenset[str] = frozenset({"high", "medium", "low"})
 
 
-def _article_data_for_sir(row: RoutingTimeRow) -> dict[str, Any]:
-    """``rule_based_sir_ids`` が読む article_data (importance_v2_inline と同じ形)。
+def message_for_row(row: RoutingTimeRow) -> BriefingMessage:
+    """DB の保存値から ``decide_channel`` に渡す ``BriefingMessage`` 代替を組み立てる。
 
-    ``subject_actor_ids=None`` / ``subject_actor_source=None`` — 主題アクター層は routing
-    時点ではまだ未確定 (legacy keyword 照合にフォールバック、inline と同じ挙動)。
+    ``build_importance_v2_inline`` (decide_channel が内部で呼ぶ) が読む metadata キー
+    だけを持たせる — 新規抽出はしない (保存済みの値のみ、判定ロジックはここに置かない)。
     """
-    return {
-        "title": row.title,
-        "summary": row.summary,
-        "body": row.body,
-        "feed_title": row.feed_title,
-        "victim_sector_canonical": row.victim_sector or None,
-        "victim_country_iso": row.victim_country or None,
-        "article_type": row.article_type or None,
-        "category": row.category or None,
-        "socio_political_intent": row.socio_political_intent or None,
-        "is_ransomware": row.is_ransomware,
-        "subject_actor_ids": None,
-        "subject_actor_source": None,
-    }
+    from src.tools.discord_publisher import BriefingMessage, Source
 
-
-def _compute_sir_ids(row: RoutingTimeRow) -> frozenset[str]:
-    from src.pipeline.persistence import rule_based_sir_ids
-
-    try:
-        return rule_based_sir_ids(_article_data_for_sir(row), set(row.actor_ids))
-    except Exception:  # noqa: BLE001 — SIR 評価の失敗で replay を止めない (inline と同じ fail-safe)
-        return frozenset()
-
-
-def _compute_cves(row: RoutingTimeRow) -> set[str]:
-    found = {m.group(0).upper() for m in _CVE_TOKEN_RE.finditer(row.full_text)}
-    return found | set(row.persisted_cves)
-
-
-def build_importance_inputs(row: RoutingTimeRow, axes: dict[str, str] | None) -> ImportanceInputs:
-    """``importance_v2_inline.build_importance_v2_inline`` と同じ組み立て (DB 行から)。"""
-    from src.cti.importance_v2 import build_inputs
-    from src.cti.mention_tagger import derive_mention_entities
-    from src.tools.kev_client import get_kev_cve_set
-    from src.tools.nvd_client import max_cvss as nvd_max_cvss
-
-    cves = _compute_cves(row)
-    kev = get_kev_cve_set()
-    mention_entities = derive_mention_entities(
+    metadata: dict[str, object] = {"article_type": row.article_type}
+    if row.victim_sector:
+        metadata["victim_sector_canonical"] = row.victim_sector
+    if row.victim_country:
+        metadata["victim_country_iso"] = row.victim_country
+    if row.involved_countries:
+        metadata["involved_country_isos"] = sorted(row.involved_countries)
+    if row.socio_political_intent:
+        metadata["socio_political_intent"] = row.socio_political_intent
+    if row.is_ransomware:
+        metadata["is_ransomware"] = True
+    if row.actor_ids:
+        metadata["detected_actor_ids"] = sorted(row.actor_ids)
+    importance = row.importance if row.importance in _VALID_IMPORTANCE else "low"
+    return BriefingMessage(
         title=row.title,
-        summary=row.summary,
-        involved_isos={c.lower() for c in row.involved_countries},
-    )
-    mentioned = [v for (etype, v) in mention_entities if etype == "mentioned_country"]
-    sir_ids = _compute_sir_ids(row)
-
-    return build_inputs(
+        importance=importance,  # type: ignore[arg-type]
         category=row.category,
-        article_type=row.article_type,
-        axes=axes,
-        cves=cves,
-        kev=kev,
-        year=_article_year(row.created_at),
-        victim_country=row.victim_country,
-        involved_countries=row.involved_countries,
-        mentioned_countries=mentioned,
-        sir_ids=sir_ids,
-        text=row.full_text,
-        stored_max_cvss=nvd_max_cvss(list(cves)),
+        summary=row.summary,
+        iocs=sorted(row.persisted_cves),
+        sources=[Source(title=row.feed_title or "source", url="", language="auto")],
+        metadata=metadata,
     )
-
-
-def routing_signals_from_importance_v2(row: RoutingTimeRow, iv2: ImportanceV2) -> RoutingSignals:
-    from src.cti.routing_signals import RoutingSignals
-
-    return RoutingSignals(
-        source="briefing",
-        importance=row.importance if row.importance in ("high", "medium", "low") else "low",  # type: ignore[arg-type]
-        article_type=row.article_type,  # type: ignore[arg-type]
-        severity=iv2.severity or "",
-        severity_basis=iv2.severity_basis,
-        jp=iv2.jp,
-        relevant=iv2.relevant,
-        victim_sector=row.victim_sector,
-    )
-
-
-def decide_m3b_rules(signals: RoutingSignals) -> tuple[str, str]:
-    from src.cti.router import get_source_quality
-    from src.cti.routing_rules import evaluate_routing_rules
-    from src.cti.routing_v2 import M3B_RULES
-
-    decision = evaluate_routing_rules(signals, get_source_quality(), {}, rules=M3B_RULES)
-    if decision is None:
-        return "", ""
-    return decision.channel, decision.rule_id
 
 
 # ===== --axes i58: LLM 呼出し (resumable cache + 本番ジョブとの時間帯衝突回避) =====
@@ -588,7 +418,6 @@ class RoutingTimeReport:
     crosstab: dict[str, int] = field(default_factory=dict)
     samples: dict[str, list[str]] = field(default_factory=dict)
     per_day: dict[str, dict[str, int]] = field(default_factory=dict)
-    stored_vs_routing_time: dict[str, int] = field(default_factory=dict)
 
 
 def _cell_key(old_ch: str, new_ch: str) -> str:
@@ -603,22 +432,30 @@ def run_routing_time_replay(
     samples: int,
     i58_cache: dict[str, dict[str, str] | None] | None,
 ) -> RoutingTimeReport:
+    """本番と同じ ``decide_channel`` を記事ごとに呼び、旧チャンネルとの食い違いを集計する。
+
+    ``route``/``evaluate_routing_rules`` はここから直接呼ばない (tests/unit/
+    test_m3b_routing_replay.py が import 検査で固定)。
+    """
+    from src.pipeline.briefing import decide_channel
+
     report = RoutingTimeReport(axes_mode=axes_mode, days=days, total_rows=len(rows))
     crosstab: dict[tuple[str, str], int] = defaultdict(int)
     samples_by_cell: dict[tuple[str, str], list[str]] = defaultdict(list)
     per_day: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    stored_alert = routing_time_alert = 0
 
     for row in rows:
         axes = row.stored_axes if axes_mode == "stored" else (i58_cache or {}).get(row.article_id)
         axes = axes or None
-        inputs = build_importance_inputs(row, axes)
-        from src.cti.importance_v2 import derive
-
-        iv2 = derive(inputs)
-        signals = routing_signals_from_importance_v2(row, iv2)
-
-        new_ch, _ = decide_m3b_rules(signals)
+        msg = message_for_row(row)
+        decision = decide_channel(
+            msg,
+            body_text=row.body,
+            feed_title=row.feed_title,
+            severity_axes=axes,
+            article_id=row.article_id,
+        )
+        new_ch = decision.channel
 
         day = row.created_at[:10] if row.created_at else "(unknown)"
         cell = (row.old_channel, new_ch)
@@ -627,45 +464,10 @@ def run_routing_time_replay(
         if row.old_channel != new_ch and len(samples_by_cell[cell]) < samples:
             samples_by_cell[cell].append(row.title)
 
-        if new_ch == "alert":
-            routing_time_alert += 1
-        # 保存済み値 (M3B_RULES, 既存 replay 相当) との比較用。
-        stored_signals = routing_signals_from_importance_v2(
-            row,
-            _stored_importance_v2(row),
-        )
-        stored_ch, _ = decide_m3b_rules(stored_signals)
-        if stored_ch == "alert":
-            stored_alert += 1
-
     report.crosstab = {_cell_key(*k): v for k, v in crosstab.items()}
     report.samples = {_cell_key(*k): v for k, v in samples_by_cell.items()}
     report.per_day = {d: dict(v) for d, v in sorted(per_day.items())}
-    report.stored_vs_routing_time = {
-        "stored_values_replay_alert_count": stored_alert,
-        "routing_time_m3b_rules_alert_count": routing_time_alert,
-        "alerts_lost_vs_stored_m3b_rules": stored_alert - routing_time_alert,
-    }
     return report
-
-
-def _stored_importance_v2(row: RoutingTimeRow) -> ImportanceV2:
-    """保存済みの severity/severity_basis/jp/relevant から ImportanceV2 を組み立てる (比較用)。
-
-    sir_ids/nations/strategic_weight は比較対象の計算 (decide_m3b_rules) が使わないので
-    空のままでよい。
-    """
-    from src.cti.importance_v2 import ImportanceV2
-
-    return ImportanceV2(
-        severity=row.stored_severity or None,  # type: ignore[arg-type]
-        severity_basis=row.stored_severity_basis,
-        strategic_weight=None,
-        jp=row.stored_jp or "none",  # type: ignore[arg-type]
-        nations=(),
-        sir_ids=(),
-        relevant=row.stored_relevant,
-    )
 
 
 def _print_crosstab(title: str, crosstab: dict[str, int]) -> None:
@@ -692,13 +494,13 @@ def _print_per_day(title: str, per_day: dict[str, dict[str, int]]) -> None:
         print(f"  {day}: {parts}")
 
 
-def run_and_report_routing_time(args: argparse.Namespace) -> None:
+def run_and_report(args: argparse.Namespace) -> None:
     since = datetime.now(UTC) - timedelta(days=args.days)
     want_stored_axes = args.axes == "stored"
     rows = fetch_routing_time_rows(
         since=since, db_path=args.db_path, want_stored_axes=want_stored_axes
     )
-    print(f"対象記事 (routing-time, axes={args.axes}): {len(rows)} 件 (直近 {args.days} 日)")
+    print(f"対象記事 (axes={args.axes}): {len(rows)} 件 (直近 {args.days} 日)")
     if not rows:
         return
 
@@ -710,14 +512,9 @@ def run_and_report_routing_time(args: argparse.Namespace) -> None:
         rows, axes_mode=args.axes, days=args.days, samples=args.samples, i58_cache=i58_cache
     )
 
-    _print_crosstab("旧 (v12) × 新 (M3B_RULES) チャンネルの件数:", report.crosstab)
-    _print_samples(
-        f"食い違ったセルのサンプル (M3B_RULES, 各最大 {args.samples}件):", report.samples
-    )
-    _print_per_day("\n日次 alert/vuln/japan_watch 件数 (M3B_RULES):", report.per_day)
-    print("\n保存済み値 replay との比較:")
-    for k, v in report.stored_vs_routing_time.items():
-        print(f"  {k}: {v}")
+    _print_crosstab("旧 (投稿時点) × 新 (decide_channel, v13) チャンネルの件数:", report.crosstab)
+    _print_samples(f"食い違ったセルのサンプル (各最大 {args.samples}件):", report.samples)
+    _print_per_day("\n日次 alert/vuln/japan_watch 件数:", report.per_day)
 
     out_path = Path("data/eval") / f"m3b_routing_time_{args.axes}_{args.days}d.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -730,7 +527,6 @@ def run_and_report_routing_time(args: argparse.Namespace) -> None:
                 "crosstab": report.crosstab,
                 "samples": report.samples,
                 "per_day": report.per_day,
-                "stored_vs_routing_time": report.stored_vs_routing_time,
             },
             f,
             ensure_ascii=False,
@@ -739,73 +535,20 @@ def run_and_report_routing_time(args: argparse.Namespace) -> None:
     print(f"\n詳細を {out_path} に保存しました。")
 
 
-# ===== 既存 (保存済み値) replay =====
-
-
-def run_legacy_replay(args: argparse.Namespace) -> None:
-    since = datetime.now(UTC) - timedelta(days=args.days)
-    rows = fetch_rows(since=since, db_path=args.db_path)
-    print(f"対象記事: {len(rows)} 件 (直近 {args.days} 日、article_importance_v2 記録済み)")
-    if not rows:
-        return
-
-    crosstab: dict[tuple[str, str], int] = defaultdict(int)
-    samples: dict[tuple[str, str], list[str]] = defaultdict(list)
-    would_be_alert_low = 0
-
-    for row in rows:
-        new_channel, _new_rule_id = new_channel_for(row)
-        cell = (row.old_channel, new_channel)
-        crosstab[cell] += 1
-        if row.old_channel != new_channel and len(samples[cell]) < args.samples:
-            samples[cell].append(row.title)
-        # publish._resolve_channel は importance=low の alert を default へ降格する
-        # (衛生ゲート)。new_channel='alert' かつ importance='low' は「shadow 上は alert
-        # だが本番導入時は降格される」件数として別途数える。
-        if new_channel == "alert" and row.importance == "low":
-            would_be_alert_low += 1
-
-    print("\n旧 (v12) × 新 (M3B_RULES) チャンネルの件数:")
-    print(f"{'old_channel':<16} {'new_channel':<16} {'count':>6}")
-    for (old_ch, new_ch), count in sorted(crosstab.items(), key=lambda kv: -kv[1]):
-        print(f"{old_ch or '(none)':<16} {new_ch or '(none)':<16} {count:>6}")
-
-    print(f"\n食い違ったセルのサンプル (各最大 {args.samples}件):")
-    for cell, titles in samples.items():
-        old_ch, new_ch = cell
-        print(f"\n  {old_ch or '(none)'} -> {new_ch or '(none)'}:")
-        for t in titles:
-            print(f"    - {t}")
-
-    print(
-        f"\nnew_channel='alert' だが importance='low' (本番導入時に publish._resolve_channel "
-        f"が default へ降格する件数): {would_be_alert_low}"
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=DEFAULT_LOOKBACK_DAYS)
     parser.add_argument("--samples", type=int, default=DEFAULT_SAMPLES_PER_CELL)
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument(
-        "--routing-time",
-        action="store_true",
-        help="保存済みの article_importance_v2 ではなく、routing 時点と同じ材料で再計算する",
-    )
-    parser.add_argument(
         "--axes",
         choices=("stored", "i58"),
         default="stored",
-        help="--routing-time 専用: 深刻度の軸を保存済み値 (stored) か i58 再計算 (i58) にするか",
+        help="深刻度の軸を保存済み値 (stored) か i58 再計算 (i58) にするか",
     )
     parser.add_argument("--axes-cache", type=Path, default=DEFAULT_AXES_CACHE_PATH)
     args = parser.parse_args()
-
-    if args.routing_time:
-        run_and_report_routing_time(args)
-    else:
-        run_legacy_replay(args)
+    run_and_report(args)
 
 
 if __name__ == "__main__":
