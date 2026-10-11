@@ -15,6 +15,7 @@ data/eval/s1_report.md) の本番移植。最初の用途は薄い本文の 2 �
   (s1_report.md §3 実測) ため、raw モードで ``{"answer": "`` まで前置してから続きを読む。
   それ以外のモデルは Ollama 自身のチャットテンプレートに任せる (``/api/chat``)。
 - 選択肢の表記揺れ (Yes/yes/Yes. 等) は末尾の句読点 1 文字までを剥がして比較する。
+  複数トークンに分かれる選択肢 (「いいえ」) は最初のトークン (選択肢の先頭一致) で照合する。
 - 全選択肢が top_logprobs に見つからない場合、呼出自体が失敗した場合、外部 LLM 割当の
   場合はいずれも ``None`` を返す — 呼び出し側は従来の決定的な経路にそのまま戻ること。
 """
@@ -94,6 +95,21 @@ def _default_messages(question: str, choices: tuple[str, ...]) -> list[dict[str,
     return [{"role": "user", "content": content}]
 
 
+def _choice_for_token(token: str, choices: tuple[str, ...]) -> str | None:
+    """候補トークンが指す選択肢。選択肢の**先頭**に一致すれば、その選択肢の最初のトークンとみなす。
+
+    選択肢は複数トークンに分かれうる (Gemma で「いいえ」=「いい」+「え」)。完全一致だけで照合すると
+    分かれた選択肢が常に見つからず floor 扱いになり、明白な「いいえ」が P(はい)≈0.88 に化けていた
+    (2026-10-11、摘発発表・新事実の判定がほぼ全件「はい」)。複数の選択肢の先頭に当たるトークンは
+    どちらの証拠にもしない (``None``)。
+    """
+    norm = _normalize_token(token)
+    if not norm:
+        return None
+    matched = [c for c in choices if _normalize_token(c).startswith(norm)]
+    return matched[0] if len(matched) == 1 else None
+
+
 def _extract_choice_probabilities(
     candidates: list[tuple[str, float]], choices: tuple[str, ...]
 ) -> dict[str, float] | None:
@@ -105,13 +121,12 @@ def _extract_choice_probabilities(
     top から落ちて None になり、台帳の割当で 2/3 が欠落していた (反対側の相対確率は 1e-7〜1e-10)。
     """
     best_logprob: dict[str, float] = {}
-    for choice in choices:
-        norm_choice = _normalize_token(choice)
-        for token, logprob in candidates:
-            if _normalize_token(token) != norm_choice:
-                continue
-            if choice not in best_logprob or logprob > best_logprob[choice]:
-                best_logprob[choice] = logprob
+    for token, logprob in candidates:
+        choice = _choice_for_token(token, choices)
+        if choice is None:
+            continue
+        if choice not in best_logprob or logprob > best_logprob[choice]:
+            best_logprob[choice] = logprob
     if not best_logprob:
         return None
     floor = min(lp for _, lp in candidates)

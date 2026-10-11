@@ -144,6 +144,24 @@ class TestExtractChoiceProbabilities:
         candidates = [("Maybe", -0.1)]
         assert _extract_choice_probabilities(candidates, ("Yes", "No")) is None
 
+    def test_multi_token_choice_matches_by_first_token(self) -> None:
+        """「いいえ」は「いい」+「え」に分かれる — 最初のトークンで照合する (10-11 実測)。
+
+        完全一致だけで照合すると「いいえ」が見つからず floor 扱いになり、明白な「いいえ」が
+        P(はい)≈0.88 に化けていた。
+        """
+        candidates = [("いい", 0.0), (" いい", -20.95), ("はい", -26.32), ("{{", -28.31)]
+        probs = _extract_choice_probabilities(candidates, ("はい", "いいえ"))
+        assert probs is not None
+        assert probs["いいえ"] > 0.9999
+
+    def test_token_prefix_of_several_choices_is_ignored(self) -> None:
+        """複数の選択肢の先頭に当たるトークンはどちらの証拠にもしない。"""
+        candidates = [("い", -0.1), ("はい", -5.0), ("x", -30.0)]
+        probs = _extract_choice_probabilities(candidates, ("いいえ", "いいかも", "はい"))
+        assert probs is not None
+        assert probs["はい"] > 0.99
+
 
 class TestJsonBiasedPrompt:
     def test_uses_gemma_raw_template_with_json_prefix(self) -> None:
