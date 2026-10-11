@@ -85,18 +85,12 @@ class TestMaybeDemoteAlert:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_law_enforcement_gate_uses_keyword_fallback_when_probe_none(
+    async def test_law_enforcement_gate_demotes_on_keyword(
         self, monkeypatch: pytest.MonkeyPatch, repo: RunHistoryRepository
     ) -> None:
         monkeypatch.setenv(LAW_GATE_ENV, "1")
         monkeypatch.delenv(DEDUP_GATE_ENV, raising=False)
 
-        async def _fake_probe(*_args: object, **_kwargs: object) -> None:
-            return None
-
-        monkeypatch.setattr(
-            "src.cti.alert_demotion.probe_law_enforcement_announcement", _fake_probe
-        )
         msg = _make_msg(title="FBI、中国系ハッキング基盤を無力化")
         result = await _demote(msg, repo=repo)
         assert result is not None
@@ -109,12 +103,6 @@ class TestMaybeDemoteAlert:
         monkeypatch.setenv(LAW_GATE_ENV, "1")
         monkeypatch.delenv(DEDUP_GATE_ENV, raising=False)
 
-        async def _fake_probe(*_args: object, **_kwargs: object) -> None:
-            return None
-
-        monkeypatch.setattr(
-            "src.cti.alert_demotion.probe_law_enforcement_announcement", _fake_probe
-        )
         msg = _make_msg(title="新しいゼロデイが広く悪用中")
         result = await _demote(msg, repo=repo)
         assert result is None

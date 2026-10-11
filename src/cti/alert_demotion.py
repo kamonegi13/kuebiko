@@ -25,7 +25,6 @@ from src.cti.alert_dedup_gate import (
 from src.cti.law_enforcement_gate import (
     has_law_enforcement_keyword,
     is_law_enforcement_gate_enabled,
-    probe_law_enforcement_announcement,
 )
 from src.logging_config import get_logger
 
@@ -37,10 +36,6 @@ if TYPE_CHECKING:
     from src.tools.discord_publisher import BriefingMessage
 
 _log = get_logger(__name__)
-
-#: probe の P(はい) をこの値より大きければ law_enforcement 扱いにする (多数決の仮値)。
-#: gold set での校正は未実施 — data/eval/r1b_report.md の設計を参照 (裁定は承認後)。
-LAW_ENFORCEMENT_PROBE_THRESHOLD = 0.5
 
 #: 降格先 channel (利用者決定: watch/日次で読む)。
 DEMOTED_CHANNEL = "watch"
@@ -80,12 +75,13 @@ async def maybe_demote_alert(
     事象重複ゲートの embedding/pair_model 段は素通りする (dedup_key/advisory id の
     完全一致だけ有効)。
     """
-    if is_law_enforcement_gate_enabled():
-        is_law_enforcement = await _is_law_enforcement(
-            msg.title or "", msg.summary or "", config=config
-        )
-        if is_law_enforcement:
-            return AlertDemotionResult("law_enforcement_announcement")
+    # 語の条件だけで判定する。logprob の判定 (probe_law_enforcement_announcement) は
+    # 校正 (185 件、2026-10-11) で s23i・gemma4:26b とも P(はい) がほぼ全件 0.5 超 —
+    # 本番に使うと alert のほぼ全件が降格する。語の条件は精度 10/11・回収 10/10
+    if is_law_enforcement_gate_enabled() and has_law_enforcement_keyword(
+        msg.title or "", msg.summary or ""
+    ):
+        return AlertDemotionResult("law_enforcement_announcement")
 
     if is_alert_dedup_event_enabled() and dedup_repo is not None:
         current_entities = build_current_entities(
@@ -131,17 +127,8 @@ def _should_suppress_duplicate(
     return not has_new_named_entities(current_entities, dedup_match.prior_entities)
 
 
-async def _is_law_enforcement(title: str, summary: str, *, config: AppConfig) -> bool:
-    """probe 優先、``None`` (外部 LLM 割当・denylist 抵触・通信失敗) なら決定的な語の条件へ退避。"""
-    p_yes = await probe_law_enforcement_announcement(title=title, summary=summary, config=config)
-    if p_yes is not None:
-        return p_yes > LAW_ENFORCEMENT_PROBE_THRESHOLD
-    return has_law_enforcement_keyword(title, summary)
-
-
 __all__ = [
     "DEMOTED_CHANNEL",
-    "LAW_ENFORCEMENT_PROBE_THRESHOLD",
     "AlertDemotionResult",
     "maybe_demote_alert",
 ]
