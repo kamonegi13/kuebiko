@@ -776,6 +776,7 @@ async def run_pipeline(
                     think=pipeline.processor.think_enabled,
                     enrichment=enrich,
                     brief_count_24h=brief_count_24h_snapshot,
+                    config=config,
                 )
                 if article_timeout is not None:
                     briefing = await asyncio.wait_for(process_coro, timeout=article_timeout)

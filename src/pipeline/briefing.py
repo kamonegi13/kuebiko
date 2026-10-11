@@ -22,8 +22,10 @@ from src.pipeline.summary import (
 )
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, ExtractionResult, check_extracted_identity
+from src.tools.decision_probe import probe_choice
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
+from src.tools.model_tiers import Step
 from src.tools.text_sanitizer import (
     cut_json_tail,
     has_html_residue,
@@ -33,6 +35,7 @@ from src.tools.text_sanitizer import (
 from src.tools.text_utils import strip_html as _strip_html
 
 if TYPE_CHECKING:
+    from src.config_loader import AppConfig
     from src.cti.routing_decision import RoutingDecision
     from src.cti.routing_signals import RoutingSignals
 
@@ -96,6 +99,7 @@ async def _process_article(
     think: bool = False,
     enrichment: object | None = None,  # LlmEnrichment (Phase 5T-N で LLM verifier 制御に使用)
     brief_count_24h: int = 0,  # Phase 5T-V: R6 cap 判定 snapshot
+    config: AppConfig | None = None,  # 薄い本文の 2 段目判定 (THIN_BODY_PROBE) が使う。省略時は無効
 ) -> BriefingMessage:
     """1 記事を抽出 → 要約 → BriefingMessage 化する。
 
@@ -116,6 +120,13 @@ async def _process_article(
         body, body_source, extraction_failure_reason = _resolve_body(article, extraction)
         article = _resolve_published(article, extraction)
     degenerate = _degenerate_body_reason(body, title=article.title or "", article_id=article.id)
+    if degenerate is None:
+        # 決定的な関門 (THIN_BODY_GATE) をすり抜けた短い本文に、logprob 判定で 2 段目を
+        # かける (S4、既定 off)。await が要るため sync な _degenerate_body_reason とは
+        # 分けている (イベントループを塞がない — probe_choice は 1 回のネットワーク呼出)。
+        degenerate = await _thin_body_probe_reason(
+            body, title=article.title or "", article_id=article.id, config=config
+        )
     if degenerate is not None:
         # 取得側の失敗理由 (http_error_403 等) を運ぶ — raise で破棄すると初回
         # extract_failed の理由が DB に一切残らない (監査 2026-08-01)。
@@ -532,6 +543,70 @@ def _degenerate_body_reason(body: str, *, title: str = "", article_id: str = "")
     ):
         return "thin_body"
     return None
+
+
+# 薄い本文の 2 段目判定 (S4、2026-10-11)。決定的な関門 (THIN_BODY_GATE、上の _is_thin_body)
+# をすり抜けた短い本文に、生成せず 1 回の前向き計算で P(中身あり) を読む
+# (data/eval/s1_report.md の試作 → data/eval/s4_report.md で本番経路の再現測定)。
+# 既定 off: THIN_BODY_PROBE を "0" 以外に明示したときだけ有効化する (THIN_BODY_GATE と同じ契約)。
+THIN_BODY_PROBE_ENV = "THIN_BODY_PROBE"
+
+# 対象は p2/p2b (data/eval/p2_items.json・p2b_items.json) と同じ母集団定義: 本文 600 字未満
+# (タイトル除去前の生の字数)。この上限より長い記事はそもそも調整・測定の対象になっていない。
+THIN_BODY_PROBE_MAX_BODY_CHARS = 600
+
+# しきい値: p2 (較正、117 件、kuebiko-sft:i58、data/eval/s1_task_a_probe.jsonl の
+# source=p2 行) で選んだ値。「中身のある記事 (content) への誤発火 ≤3%」を満たす最大のしきい値
+# (0.075 なら 2/84=2.4%、0.080 まで上げると 3/84=3.6% に悪化するため 0.075 で止める)。
+# この条件での thin (title_only/media_stub) 側の回収率は 24/33=72.7% (較正用、参考値)。
+# p2b (測定用 99 件) での 2 段構成の再現測定は data/eval/s4_report.md。
+THIN_BODY_PROBE_THRESHOLD = 0.075
+
+
+def _thin_body_probe_enabled() -> bool:
+    """``THIN_BODY_PROBE`` (既定 off)。"0" 以外を明示したときだけ有効化する。"""
+    value = os.environ.get(THIN_BODY_PROBE_ENV, "0").strip()
+    return value not in ("", "0")
+
+
+def _thin_body_probe_question(title: str, body: str) -> str:
+    """P2 試作 (data/mlx/s1_task_a.py の ``_question``) と同じ問い (再現性のため文面を変えない)。"""
+    return (
+        "以下はニュース記事のタイトルと本文です。\n\n"
+        f"タイトル: {title}\n\n"
+        f"本文:\n{body}\n\n"
+        "質問: この本文は、記事の中身 (出来事の事実や主張) を具体的に書いているか。"
+        "タイトルの繰り返し、音声/動画/イベントの告知、登壇者一覧だけなら No と答える。"
+    )
+
+
+async def _thin_body_probe_reason(
+    body: str, *, title: str, article_id: str, config: AppConfig | None
+) -> str | None:
+    """決定的な関門をすり抜けた短い本文に、logprob 判定 (P(中身あり)) で 2 段目をかける。
+
+    既定 off (``THIN_BODY_PROBE``)。``config`` が無い (呼び出し側が未対応) ときも無効。
+    対象は Grok 以外・本文 600 字未満 (p2/p2b と同じ母集団定義) のみ — それ以外は決定的な
+    経路のみに委ねる (この関数は補強であって必須経路ではない。``probe_choice`` 自体も通信
+    失敗や外部 LLM 割当時に ``None`` を返す設計なので、その場合もここで素通りする)。
+    """
+    if not _thin_body_probe_enabled() or config is None:
+        return None
+    text = (body or "").strip()
+    if len(text) >= THIN_BODY_PROBE_MAX_BODY_CHARS or _is_grok_article(article_id):
+        return None
+    probabilities = await probe_choice(
+        Step.THIN_BODY_JUDGE,
+        _thin_body_probe_question(title, text),
+        ("Yes", "No"),
+        config=config,
+    )
+    if probabilities is None:
+        return None
+    p_content = probabilities.get("Yes")
+    if p_content is None or p_content >= THIN_BODY_PROBE_THRESHOLD:
+        return None
+    return "thin_body_probe"
 
 
 def body_source_for_extraction(extraction: ExtractionResult) -> str:

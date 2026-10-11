@@ -145,6 +145,11 @@ class Step(StrEnum):
     # 小さな構造化判定。triage 本体と別 step にする理由は EVENT_KIND と同じ (借用禁止の衛生) —
     # 将来ここだけ別モデルを割り当てたくなった時に triage の上書きを継承しない
     RELEVANCE_JP_CASCADE = "relevance_jp_cascade"
+    # 薄い本文の 2 段目判定 (S4、2026-10-11)。決定的な関門 (_is_thin_body) をすり抜けた
+    # 短い本文 (<600字) に、生成せず 1 回の前向き計算で P(中身あり) を読む
+    # (src/tools/decision_probe.py、data/eval/s1_report.md の試作を本番移植)。
+    # 既定は triage と同じ fast ティア (同じ 1 件=小さな判定、GPU 枠を分けない)。
+    THIN_BODY_JUDGE = "thin_body_judge"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -203,6 +208,9 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ACTOR_SYNC: StepSpec(Tier.FAST, 300.0),
     # 1 件 = タイトル+概要の小さな bool 判定 (max_tokens 200)。triage と同じ fast ティア。
     Step.RELEVANCE_JP_CASCADE: StepSpec(Tier.FAST, 120.0),
+    # logprob を 1 回読むだけ (num_predict=1)。生成系 step より短くて良いが、他の小さな
+    # 判定 (pair_judge/event_kind/relevance_jp_cascade) と同じ 120s を既定にして揃える。
+    Step.THIN_BODY_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),

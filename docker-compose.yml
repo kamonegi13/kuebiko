@@ -139,6 +139,9 @@ services:
       # 翻訳の化けの関門は語の修復が 16/29 しか正しくないため無効のまま
       VICTIM_COUNTRY_GATE_KEYWORD: ${VICTIM_COUNTRY_GATE_KEYWORD:-1}
       THIN_BODY_GATE: ${THIN_BODY_GATE:-1}
+      # 薄い本文の 2 段目: 決定的な条件をすり抜けた 600 字未満の本文を fast ティアの logprob で判定
+      # (Jev 型、別標本 p2b で 2 段の回収 12/27→19/27・誤発火 1/72 のまま)
+      THIN_BODY_PROBE: ${THIN_BODY_PROBE:-1}
       PIR_FOCUS_FIDELITY_GATE: ${PIR_FOCUS_FIDELITY_GATE:-1}
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-0}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
