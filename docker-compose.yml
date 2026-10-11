@@ -134,6 +134,13 @@ services:
       # token 4% (Opus 盲検 362 組) で、類似度 0.6 の確認で精度 28% → 67%・同じ情勢の 86% を残す。
       # off / shadow (落ちるはずの割当をログに出すだけ) / on (落ちた記事を未割当へ戻す)。
       ASSIGN_EMBED_GATE: ${ASSIGN_EMBED_GATE:-shadow}
+      # 2026-10-11 の関門 (戻すときは .env で 0 に)。被害国の語の関門 (新標本で正しい値を落とした 0/34)・
+      # 薄い本文の関門 (別標本で適合率 12/13・誤発火 1/72)・SIR 別の要点の識別子の関門は有効、
+      # 翻訳の化けの関門は語の修復が 16/29 しか正しくないため無効のまま
+      VICTIM_COUNTRY_GATE_KEYWORD: ${VICTIM_COUNTRY_GATE_KEYWORD:-1}
+      THIN_BODY_GATE: ${THIN_BODY_GATE:-1}
+      PIR_FOCUS_FIDELITY_GATE: ${PIR_FOCUS_FIDELITY_GATE:-1}
+      TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-0}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。
       ASSIGN_ML: ${ASSIGN_ML:-0}
