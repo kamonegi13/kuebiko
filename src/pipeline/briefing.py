@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -114,7 +115,7 @@ async def _process_article(
         check_extracted_identity(extraction, article.title, article_id=article.id)
         body, body_source, extraction_failure_reason = _resolve_body(article, extraction)
         article = _resolve_published(article, extraction)
-    degenerate = _degenerate_body_reason(body)
+    degenerate = _degenerate_body_reason(body, title=article.title or "", article_id=article.id)
     if degenerate is not None:
         # 取得側の失敗理由 (http_error_403 等) を運ぶ — raise で破棄すると初回
         # extract_failed の理由が DB に一切残らない (監査 2026-08-01)。
@@ -422,6 +423,39 @@ _FEED_BOILERPLATE_RE = re.compile(
     r"|投稿 .{1,400}? は .{1,160}? に最初に表示されました。?$",
     re.IGNORECASE | re.DOTALL,
 )
+
+# 薄い本文の関門 (data/eval/p2_report.md §4、2026-10-11)。本文 <600 字の posted 記事の
+# title_only (タイトル・日付の繰り返し程度) / media_stub (音声・動画告知のみ) 28% で、
+# 要約が 100% (33/33) 作り話だった。条件案 `residual<200 OR keyword_hit` (調整用標本で
+# 適合率 88.5%・回収率 69.7%、中身のある記事への誤発火 3/84=3.6%) を既定 off の関門にする。
+# 既定 off: THIN_BODY_GATE を "0" 以外に明示したときだけ有効化 (別の無作為標本で測り直すまで)。
+THIN_BODY_GATE_ENV = "THIN_BODY_GATE"
+# 本文からタイトル文字列を除いた残り字数の上限 (p2_report.md §4 の `residual_chars`)。
+_THIN_BODY_RESIDUAL_MAX_CHARS = 200
+# 媒体の決まり文句 (p2_report.md §4 の `keyword_hit`)。英語は語境界つき、日本語は部分一致。
+_MEDIA_STUB_KEYWORDS_EN: tuple[str, ...] = (
+    "Listen",
+    "Watch",
+    "Video",
+    "Podcast",
+    "Webinar",
+    "Register",
+    "RSVP",
+    "Livestream",
+    "Replay",
+)
+_MEDIA_STUB_PATTERN_EN: re.Pattern[str] = re.compile(
+    r"\b(?:" + "|".join(_MEDIA_STUB_KEYWORDS_EN) + r")\b", re.IGNORECASE
+)
+_MEDIA_STUB_KEYWORDS_JA: tuple[str, ...] = (
+    "視聴",
+    "配信",
+    "ポッドキャスト",
+    "登壇",
+    "参加申込",
+    "お申し込み",
+    "ウェビナー",
+)
 # ブロック画面は短い。長い本文中に語句が出ても記事本文 (例: Cloudflare についての記事) とみなす
 _BLOCK_PAGE_MAX_LEN = 2000
 
@@ -440,8 +474,49 @@ class DegenerateBodyError(Exception):
         self.extraction_reason = extraction_reason
 
 
-def _degenerate_body_reason(body: str) -> str | None:
-    """本文が「読めていない」なら理由文字列、健全なら None (決定論)。"""
+def _thin_body_gate_enabled() -> bool:
+    """``THIN_BODY_GATE`` (既定 off)。"0" 以外を明示したときだけ有効化する。"""
+    value = os.environ.get(THIN_BODY_GATE_ENV, "0").strip()
+    return value not in ("", "0")
+
+
+def _is_grok_article(article_id: str) -> bool:
+    """Grok 発記事 (``article_id`` が ``grok:`` 接頭辞) か。
+
+    本文の性質が短文前提で構造的に異なるため、薄い本文の関門の対象外とする
+    (data/eval/p2_report.md §1.1、``src/pipeline/grok_convert.py:_is_grok`` と同じ判定)。
+    """
+    return article_id.startswith("grok:")
+
+
+def _residual_chars_after_title(body: str, title: str) -> int:
+    """本文からタイトル文字列を除いた残り字数 (p2_report.md §4 の ``residual_chars``)。"""
+    text = body or ""
+    if title:
+        text = text.replace(title, "")
+    return len(text.strip())
+
+
+def _has_media_stub_keyword(body: str) -> bool:
+    """媒体の決まり文句 (p2_report.md §4 の ``keyword_hit``) を含むか。"""
+    if _MEDIA_STUB_PATTERN_EN.search(body):
+        return True
+    return any(word in body for word in _MEDIA_STUB_KEYWORDS_JA)
+
+
+def _is_thin_body(body: str, title: str) -> bool:
+    """``residual<200 OR keyword_hit`` (p2_report.md §4、調整用で適合率 88.5%・回収率 69.7%)。"""
+    if _residual_chars_after_title(body, title) < _THIN_BODY_RESIDUAL_MAX_CHARS:
+        return True
+    return _has_media_stub_keyword(body)
+
+
+def _degenerate_body_reason(body: str, *, title: str = "", article_id: str = "") -> str | None:
+    """本文が「読めていない」なら理由文字列、健全なら None (決定論)。
+
+    ``title`` / ``article_id`` は薄い本文の関門 (``THIN_BODY_GATE``、既定 off) にのみ使う —
+    既存の block_page/body_too_short/feed_boilerplate 判定は従来どおり ``body`` だけで決まる。
+    """
     text = (body or "").strip()
     match = _FEED_BOILERPLATE_RE.search(text)
     if match and len(text[: match.start()].strip()) < _DEGENERATE_BODY_MIN_CHARS:
@@ -450,6 +525,12 @@ def _degenerate_body_reason(body: str) -> str | None:
         return f"body_too_short:{len(text)}"
     if len(text) <= _BLOCK_PAGE_MAX_LEN and _BLOCK_PAGE_RE.search(text[:_BLOCK_PAGE_SCAN_CHARS]):
         return "block_page"
+    if (
+        _thin_body_gate_enabled()
+        and not _is_grok_article(article_id)
+        and _is_thin_body(text, title)
+    ):
+        return "thin_body"
     return None
 
 
@@ -654,7 +735,15 @@ def _build_briefing(
     # は被害組織が無いインシデントでない記事。発行元の国 (CISA→US、BSI→DE 等) を
     # 被害国と誤認する例が多かったため、被害組織名が無いときは落とす
     # (誤った国名より欠落の方が許容できる判断、rollback=VICTIM_COUNTRY_GATE=0)。
-    if should_drop_victim_country(summary.article_type, summary.victim_orgs or []):
+    # 案 A (VICTIM_COUNTRY_GATE_KEYWORD、既定 on、2026-10-11): 被害組織名があっても
+    # 本文+要約に侵害・攻撃の語彙 (事故由来の漏えいの語を含む) が無ければなお落とす。
+    # JP (victim_country_iso) の行は語の関門の対象外 (gate 内部で判定、回収率優先)。
+    if should_drop_victim_country(
+        summary.article_type,
+        summary.victim_orgs or [],
+        body_text=f"{body_text}\n{summary.summary or ''}",
+        victim_country_iso=country_iso,
+    ):
         country_iso, country_raw = None, None
     # 状態分離監査 2026-07-16: T 軸は廃止 (書かない)、I-infra は NISC 写像の決定論
     # フロアで補強する (決定論供給は枯れない — feed_default だけが生き残った実測の一般化)。

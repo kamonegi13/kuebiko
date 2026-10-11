@@ -2744,6 +2744,132 @@ class TestDegenerateBodyGate:
             await _process_article(article, extractor, AsyncMock(), AsyncMock())
 
 
+class TestThinBodyGate:
+    """P2 (data/eval/p2_report.md §4): 本文がタイトルの繰り返し程度 (title_only) /
+    動画・音声告知のみ (media_stub) の記事は、要約が 100% 作り話になる (33/33)。
+    `THIN_BODY_GATE` (既定 off) を立てると、条件案 `residual<200 OR keyword_hit`
+    (調整用標本で適合率 88.5%・回収率 69.7%) を決定論の関門として `_degenerate_body_reason`
+    に足す。別の無作為標本で測り直すまで本番の既定は off (Grok 発記事は対象外)。
+    """
+
+    _TITLE = "A" * 50
+    _THIN_BODY = _TITLE + "B" * 40  # len=90 (>=80 で body_too_short を回避)、残り 40字 (<200)
+    _HEALTHY_BODY = _TITLE + "実質的な本文が続く。" * 30  # 残り >=200字、決まり文句も無し
+
+    def test_flag_unset_defaults_to_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Arrange
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.delenv("THIN_BODY_GATE", raising=False)
+
+        # Act
+        result = _degenerate_body_reason(self._THIN_BODY, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
+    def test_flag_zero_disables_gate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Arrange
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "0")
+
+        # Act
+        result = _degenerate_body_reason(self._THIN_BODY, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
+    def test_flag_on_detects_residual_under_threshold(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: タイトルを除いた残りが 200 字未満 (title_only の近似)
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+
+        # Act
+        result = _degenerate_body_reason(self._THIN_BODY, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result == "thin_body"
+
+    def test_flag_on_detects_english_media_stub_keyword(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: 残り字数は十分でも「Listen」等の媒体の決まり文句があれば発火する
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = self._TITLE + " Listen to the full episode here. " * 10
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result == "thin_body"
+
+    def test_flag_on_detects_japanese_media_stub_keyword(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = self._TITLE + "こちらから視聴できます。" * 10
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result == "thin_body"
+
+    def test_flag_on_keeps_healthy_long_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Arrange: 残り字数が十分あり媒体の決まり文句も無い、中身のある記事
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+
+        # Act
+        result = _degenerate_body_reason(self._HEALTHY_BODY, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
+    def test_flag_on_excludes_grok_articles(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Arrange: Grok 発記事 (article_id が "grok:" 接頭辞) は本文の性質が短文前提で
+        # 異なるため対象外 (p2_report.md §1.1)
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+
+        # Act
+        result = _degenerate_body_reason(
+            self._THIN_BODY, title=self._TITLE, article_id="grok:12345"
+        )
+
+        # Assert
+        assert result is None
+
+    def test_block_page_takes_precedence_over_thin_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: ブロック画面の判定は thin_body より先に評価される (既存の決定論関門が優先)
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = (
+            "This website uses a security service to protect against malicious bots. "
+            "Please enable JavaScript and cookies to continue. " * 3
+        )
+
+        # Act
+        result = _degenerate_body_reason(body, title="Unrelated title", article_id="rss:1")
+
+        # Assert
+        assert result == "block_page"
+
+
 class TestGrokSubArticlePersistence:
     """2026-07-05 実測退行の回帰固定: Grok per-tweet briefing の DB 永続化。
 
