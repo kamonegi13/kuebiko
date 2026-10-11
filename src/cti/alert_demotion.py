@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.cti.alert_dedup_gate import (
+    AlertDedupMatch,
     build_current_entities,
     find_prior_alert_duplicate,
     has_new_named_entities,
@@ -43,6 +44,14 @@ LAW_ENFORCEMENT_PROBE_THRESHOLD = 0.5
 
 #: 降格先 channel (利用者決定: watch/日次で読む)。
 DEMOTED_CHANNEL = "watch"
+
+#: 事象重複ゲート: pair_model の P(同じ出来事) がこの値以上なら entity-diff を経ずに
+#: 抑止する (高確信 bypass、2026-10-11 コーディネータ指示)。backtest で校正
+#: (data/mlx/analyze_r1b_dedup_options.py、data/eval/r1b_report.md §8):
+#: 52 件中 11 件抑止 (21.2%)・新事実 21 件中 1 件誤抑止 (4.8%、目標 <=1/21 を満たす最大値)。
+#: 別名解決で entity-diff を緩める案 (victim_org 正規化・actor resolve_actor_id) は
+#: 新事実誤抑止が 3/21=14.3% に悪化 (目標超過) のため採用しなかった。
+HIGH_CONFIDENCE_BYPASS_THRESHOLD = 0.94
 
 
 @dataclass(frozen=True)
@@ -101,11 +110,25 @@ async def maybe_demote_alert(
             entities=current_entities,
             candidate_article_id=article_id,
         )
-        if dedup_match is not None and not has_new_named_entities(
-            current_entities, dedup_match.prior_entities
-        ):
+        if dedup_match is not None and _should_suppress_duplicate(dedup_match, current_entities):
             return AlertDemotionResult(f"alert_dedup_event:{dedup_match.reason}")
     return None
+
+
+def _should_suppress_duplicate(
+    dedup_match: AlertDedupMatch, current_entities: frozenset[tuple[str, str]]
+) -> bool:
+    """同事象の重複として watch へ降格すべきか。
+
+    完全一致 (dedup_key/advisory_id) は常に抑止。pair_model 一致は、確率が高確信
+    bypass 閾値以上ならそのまま抑止 (entity-diff を経ない)。それ以外は entity-diff
+    (``has_new_named_entities``) で「新事実の続報」を見送る。
+    """
+    if dedup_match.reason in ("dedup_key", "advisory_id"):
+        return True
+    if dedup_match.probability >= HIGH_CONFIDENCE_BYPASS_THRESHOLD:
+        return True
+    return not has_new_named_entities(current_entities, dedup_match.prior_entities)
 
 
 async def _is_law_enforcement(title: str, summary: str, *, config: AppConfig) -> bool:

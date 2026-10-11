@@ -8,7 +8,14 @@ from pathlib import Path
 import pytest
 
 from src.cti.alert_dedup_gate import GATE_ENV as DEDUP_GATE_ENV
-from src.cti.alert_demotion import DEMOTED_CHANNEL, AlertDemotionResult, maybe_demote_alert
+from src.cti.alert_dedup_gate import AlertDedupMatch
+from src.cti.alert_demotion import (
+    DEMOTED_CHANNEL,
+    HIGH_CONFIDENCE_BYPASS_THRESHOLD,
+    AlertDemotionResult,
+    _should_suppress_duplicate,
+    maybe_demote_alert,
+)
 from src.cti.law_enforcement_gate import GATE_ENV as LAW_GATE_ENV
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
 from src.tools.discord_publisher import BriefingMessage
@@ -141,10 +148,14 @@ class TestMaybeDemoteAlert:
         assert result.reason == "alert_dedup_event:dedup_key"
 
     @pytest.mark.asyncio
-    async def test_dedup_gate_keeps_alert_when_new_named_entity_added(
+    async def test_dedup_key_exact_match_suppresses_even_with_new_entity(
         self, monkeypatch: pytest.MonkeyPatch, repo: RunHistoryRepository
     ) -> None:
-        """新事実 (新しい被害組織名) を足した続報は demote しない (利用者決定)。"""
+        """dedup_key 完全一致は高確信 (bypass 相当) として扱い、entity-diff を経ずに抑止する
+        (2026-10-11 コーディネータ指示の backtest で校正、`_should_suppress_duplicate` 参照)。
+        entity-diff が効くのは pair_model 一致 かつ 確率が bypass 閾値未満のときだけ
+        (``TestShouldSuppressDuplicate`` で直接検証)。
+        """
         monkeypatch.delenv(LAW_GATE_ENV, raising=False)
         monkeypatch.setenv(DEDUP_GATE_ENV, "1")
         run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="x", dry_run=False))
@@ -169,7 +180,8 @@ class TestMaybeDemoteAlert:
             victim_orgs=["Acme Corp"],  # 先行記事には無い新しい固有名詞
         )
         result = await _demote(msg, repo=repo)
-        assert result is None
+        assert result is not None
+        assert result.reason == "alert_dedup_event:dedup_key"
 
     @pytest.mark.asyncio
     async def test_dedup_gate_disabled_returns_none_even_with_prior_match(
@@ -198,3 +210,45 @@ class TestMaybeDemoteAlert:
 
 def test_demoted_channel_is_watch() -> None:
     assert DEMOTED_CHANNEL == "watch"
+
+
+class TestShouldSuppressDuplicate:
+    """高確信 bypass (R1b 続き、2026-10-11) の単体テスト。"""
+
+    def test_exact_match_always_suppresses(self) -> None:
+        match = AlertDedupMatch("a1", "t", "dedup_key", frozenset(), probability=0.0)
+        current = frozenset({("victim_org", "新しい被害企業")})  # 新事実があっても
+        assert _should_suppress_duplicate(match, current) is True
+
+    def test_pair_model_above_threshold_bypasses_entity_diff(self) -> None:
+        match = AlertDedupMatch(
+            "a1",
+            "t",
+            "pair_model",
+            frozenset({("actor", "flax-typhoon")}),
+            probability=HIGH_CONFIDENCE_BYPASS_THRESHOLD,
+        )
+        current = frozenset({("actor", "flax-typhoon"), ("victim_org", "新しい被害企業")})
+        assert _should_suppress_duplicate(match, current) is True
+
+    def test_pair_model_below_threshold_with_new_entity_keeps_alert(self) -> None:
+        match = AlertDedupMatch(
+            "a1",
+            "t",
+            "pair_model",
+            frozenset({("actor", "flax-typhoon")}),
+            probability=HIGH_CONFIDENCE_BYPASS_THRESHOLD - 0.01,
+        )
+        current = frozenset({("actor", "flax-typhoon"), ("victim_org", "新しい被害企業")})
+        assert _should_suppress_duplicate(match, current) is False
+
+    def test_pair_model_below_threshold_without_new_entity_suppresses(self) -> None:
+        match = AlertDedupMatch(
+            "a1",
+            "t",
+            "pair_model",
+            frozenset({("actor", "flax-typhoon")}),
+            probability=0.5,
+        )
+        current = frozenset({("actor", "flax-typhoon")})
+        assert _should_suppress_duplicate(match, current) is True
