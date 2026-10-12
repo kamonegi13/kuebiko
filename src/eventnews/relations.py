@@ -471,11 +471,13 @@ def derive_graphrag_extra_relations(
     return out
 
 
-#: GraphRAG の節に出す専用の線 (2026-10-08、Opus 5.5 盲検 各 20 組)。
-#: - same_nation: 正しい 17/20 (役に立つ 15)。誤りは帰属の無い事象に付いた帰属国の 1 件由来
-#: - same_target: 13/20 — 被害国の抽出 (報告機関の国を被害国に) が直るまで出さない
-#: - same_capability: 3/20 — 触れただけの道具を「使った」と抽出している。出さない
-GRAPHRAG_ENABLED_EXTRA: frozenset[str] = frozenset({"same_nation"})
+#: GraphRAG の節に出す専用の線 (2026-10-12 時点で 0 型)。
+#: - same_nation: 盲検 17/20 だが、帰属国の一致は事象の属性の等号そのもので、線にする情報が無い
+#:   (対照の入れ替えで本数が不変 = 時期等の条件を持たない。research/event_knowledge_graph.md §24)
+#: - same_target: 盲検 13/20、対照 lift 1.73 (区間 1.39-2.15) — 被害国の抽出 (報告機関の国を
+#:   被害国に) が直るまで出さない
+#: - same_capability: 盲検 3/20、lift 0.90 — 触れただけの道具を「使った」と抽出している。出さない
+GRAPHRAG_ENABLED_EXTRA: frozenset[str] = frozenset()
 #: 1 事象あたりの専用の線の上限 (時期の近い順)
 GRAPHRAG_EXTRA_CAP = 3
 _extra_cache: dict[int, tuple[float, dict[str, list[DerivedRelation]]]] = {}

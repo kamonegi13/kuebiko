@@ -9,8 +9,8 @@
 線の付帯情報 (相手事象の種別・被害業種/国・要点 1 文・共有指標の珍しさ) は
 ``src/eventnews/relation_features.py`` の ``EventFeatures`` と、最新版の ``bluf`` から組む。
 節に出すのは ``relations.ENABLED_TYPES`` (続報・側面・包含・同じ出来事の関連・同じアクター) と、
-GraphRAG 専用の線のうち精度を測って開いた ``relations.GRAPHRAG_ENABLED_EXTRA`` (同じ帰属国、
-2026-10-08)。``include_extra=False`` で前者だけに戻せる。
+GraphRAG 専用の線のうち開いた ``relations.GRAPHRAG_ENABLED_EXTRA`` (2026-10-12 に同じ帰属国を
+外し、現在は空)。``include_extra=False`` で前者だけに戻せる。
 """
 
 from __future__ import annotations

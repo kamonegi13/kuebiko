@@ -348,3 +348,12 @@ def test_headline_countries_matches_names_but_not_two_letter_codes() -> None:
     assert headline_countries("iranian group", lookup) == {"IR"}
     assert headline_countries("ex-iran", lookup) == {"IR"}
     assert headline_countries("miran", lookup) == set()
+
+
+def test_no_graphrag_extra_type_is_enabled_for_the_section() -> None:
+    """対照・盲検で採らなかった専用の線 (同じ帰属国を含む) は GraphRAG の節に出さない。"""
+    from src.eventnews.relations import GRAPHRAG_ENABLED_EXTRA, graphrag_extra_by_event
+
+    assert not GRAPHRAG_ENABLED_EXTRA
+    assert "same_nation" not in GRAPHRAG_ENABLED_EXTRA
+    assert graphrag_extra_by_event(object()) == {}
