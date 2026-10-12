@@ -148,6 +148,9 @@ services:
       PIR_FOCUS_FIDELITY_GATE: ${PIR_FOCUS_FIDELITY_GATE:-1}
       # SIR 別の要点の文ごとの裏付け判定 (logprob、測定 131 文で裏付けなし検出 15/34・誤検出 2/97)
       PIR_FOCUS_CLAIM_GATE: ${PIR_FOCUS_CLAIM_GATE:-1}
+      # 当局の摘発発表を alert から watch に下げる (語の条件のみ、正解 185 件で精度 10/11・回収 10/10)。
+      # 2026-10-12 有効化 (v13 の配信を本番と同じ関数の再現で確認した後)
+      ALERT_EXCLUDE_LAW_ENFORCEMENT: ${ALERT_EXCLUDE_LAW_ENFORCEMENT:-1}
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-0}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。
