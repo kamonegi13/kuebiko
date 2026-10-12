@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 import numpy as np
 
 from src.assessment.evidence_verify import normalize_for_match
+from src.cti.org_normalizer import org_match_key
 from src.eventnews.models import (
     COS_THRESHOLD,
     DORMANT_AFTER_DAYS,
@@ -36,6 +38,16 @@ _MIN_SHARED_FOR_EDGE = 1
 _EdgeOutcome = tuple[float, tuple[tuple[str, str], ...]] | str | None
 
 
+#: victim_org の結合キーを法人格・総称まで畳む (``org_match_key``)。既定は off。
+#: 10-12 の測り直しで、群化から漏れた alert 重複の約半数が「株式会社X ⇔ X」等の
+#: 表記ゆれで共有が成立せず、さらに ``blocked_by_different_victims`` が別事象として塞いでいた。
+_ORG_NORM_ENV = "EVENTNEWS_ORG_NORM"
+
+
+def org_norm_enabled() -> bool:
+    return os.environ.get(_ORG_NORM_ENV, "0") == "1"
+
+
 def join_entity_key(entity_type: str, value: str) -> tuple[str, str]:
     """結合信号 entity のキー。**分母 (頻出ガードの counts) と参照側で必ず共有する**。
 
@@ -46,6 +58,8 @@ def join_entity_key(entity_type: str, value: str) -> tuple[str, str]:
     キーの作り方が 2 箇所にあると必ずずれるので、ここを唯一の口にする。
     """
     if entity_type == "victim_org":
+        if org_norm_enabled():
+            return (entity_type, org_match_key(value))
         return (entity_type, normalize_for_match(value))
     return (entity_type, value)
 

@@ -276,6 +276,11 @@ def singleton_rescue_enabled() -> bool:
 FREQUENT_ENTITY_MIN_COS = 0.80
 
 
+def cve_gate_enabled() -> bool:
+    """主題の CVE が食い違う事象どうしを統合しない (既定 OFF、EVENTNEWS_MERGE_CVE_GATE=1)。"""
+    return os.environ.get("EVENTNEWS_MERGE_CVE_GATE", "0") == "1"
+
+
 def frequent_merge_enabled() -> bool:
     """頻出の名前の共有を統合の候補にする (既定 ON)。EVENTNEWS_MERGE_FREQUENT=0 で止める。"""
     return os.environ.get("EVENTNEWS_MERGE_FREQUENT", "1") != "0"
@@ -334,6 +339,7 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
         approved=approved,
         single_edge_ok=strong,
         extra_edges=extra,
+        cve_disjoint_gate=cve_gate_enabled(),
     )
     return MergePlan(
         groups=tuple(groups),

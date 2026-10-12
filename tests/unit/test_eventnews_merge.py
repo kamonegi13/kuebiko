@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.eventnews.merge import candidate_pairs_by_entity, plan_merges
+from src.eventnews.merge import MergeGroup, candidate_pairs_by_entity, plan_merges
 
 _E = ("actor", "lazarus")
 _F = ("cve", "cve-2026-1")
@@ -247,3 +247,49 @@ def test_frequent_entity_pairs_requires_cos_cross_item_and_no_roundup() -> None:
     )
 
     assert got == {("a", "b"), ("b", "d")}
+
+
+class TestCveDisjointGate:
+    """別の CVE を主題にする同ベンダ勧告どうしを統合しない (2026-10-12)。"""
+
+    _ITEM_OF = {"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"}
+    _FIRST = {"i1": "2026-09-01", "i2": "2026-09-10"}
+    _VECS = {"a1": _v(1, 0), "a2": _v(1, 0.01), "b1": _v(1, 0.02), "b2": _v(1, 0.03)}
+
+    def _plan(self, ents: dict[str, frozenset[tuple[str, str]]], *, gate: bool) -> list[MergeGroup]:
+        return plan_merges(
+            item_of=self._ITEM_OF,
+            first_seen=self._FIRST,
+            entities=ents,
+            vectors=self._VECS,
+            cve_disjoint_gate=gate,
+        )
+
+    @staticmethod
+    def _ents(cves_a: set[str], cves_b: set[str]) -> dict[str, frozenset[tuple[str, str]]]:
+        shared = ("victim_org", "examplevendor")
+        side_a = frozenset({shared, *(("cve", c) for c in cves_a)})
+        side_b = frozenset({shared, *(("cve", c) for c in cves_b)})
+        return {"a1": side_a, "a2": side_a, "b1": side_b, "b2": side_b}
+
+    def test_blocks_merge_when_focal_cves_do_not_overlap(self) -> None:
+        ents = self._ents({"cve-2026-1111"}, {"cve-2026-2222"})
+
+        assert len(self._plan(ents, gate=False)) == 1  # 既定 off は従来どおり
+        assert self._plan(ents, gate=True) == []
+
+    def test_allows_merge_when_a_cve_is_shared(self) -> None:
+        ents = self._ents({"cve-2026-1111"}, {"cve-2026-1111"})
+
+        assert len(self._plan(ents, gate=True)) == 1
+
+    def test_bulk_advisory_articles_do_not_count_as_focal(self) -> None:
+        """CVE を FOCAL_CVE_MAX 超 列挙する一括勧告は主題ではないので、ゲートの根拠にしない。"""
+        ents = self._ents({"cve-2026-1111"}, {f"cve-2026-{n}" for n in range(50)})
+
+        assert len(self._plan(ents, gate=True)) == 1
+
+    def test_no_cve_on_one_side_never_blocks(self) -> None:
+        ents = self._ents({"cve-2026-1111"}, set())
+
+        assert len(self._plan(ents, gate=True)) == 1

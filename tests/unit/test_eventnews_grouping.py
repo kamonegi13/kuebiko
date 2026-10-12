@@ -622,3 +622,38 @@ def test_roundup_kind_constant_matches_classifier_vocabulary() -> None:
     from src.eventnews.models import ROUNDUP_KIND
 
     assert ROUNDUP_KIND in KINDS
+
+
+# ---------- victim_org の法人格ゆれ (EVENTNEWS_ORG_NORM) ----------
+
+
+def test_join_entity_key_folds_legal_form_only_when_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.eventnews.grouping import join_entity_key
+
+    monkeypatch.delenv("EVENTNEWS_ORG_NORM", raising=False)
+    assert join_entity_key("victim_org", "株式会社サンプル商事") != join_entity_key(
+        "victim_org", "サンプル商事"
+    )
+
+    monkeypatch.setenv("EVENTNEWS_ORG_NORM", "1")
+    assert join_entity_key("victim_org", "株式会社サンプル商事") == join_entity_key(
+        "victim_org", "サンプル商事"
+    )
+    # victim_org 以外は触らない
+    assert join_entity_key("actor", "Sample Inc.") == ("actor", "Sample Inc.")
+
+
+def test_org_norm_removes_false_different_victim_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    """法人格の付け外しだけの差で『被害者が食い違う別事象』と塞がれない。"""
+    from src.eventnews.grouping import blocked_by_different_victims
+
+    raw = [("a", "victim_org", "株式会社サンプル商事"), ("b", "victim_org", "サンプル商事")]
+    monkeypatch.delenv("EVENTNEWS_ORG_NORM", raising=False)
+    off = build_join_entities(raw, {})
+    assert blocked_by_different_victims(off["a"], off["b"])
+
+    monkeypatch.setenv("EVENTNEWS_ORG_NORM", "1")
+    on = build_join_entities(raw, {})
+    assert not blocked_by_different_victims(on["a"], on["b"])

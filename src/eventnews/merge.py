@@ -43,7 +43,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.eventnews.grouping import blocked_by_different_victims, edge_is_allowed
-from src.eventnews.models import FREQ_CAP_EXEMPT_TYPES, MemberArticle
+from src.eventnews.models import FOCAL_CVE_MAX, FREQ_CAP_EXEMPT_TYPES, MemberArticle
 
 #: 事象どうしを結ぶのに要る辺の本数。**1 本では結ばない**。
 #: ⭐ 一括勧告 (ハブ) は「多数の無関係な事案と CVE を共有する」ため、相手ごとに
@@ -132,6 +132,25 @@ def frequent_entity_pairs(
     return pairs
 
 
+def focal_cves_by_item(
+    item_of: Mapping[str, str],
+    entities: Mapping[str, frozenset[tuple[str, str]]],
+) -> dict[str, frozenset[str]]:
+    """事象ごとの「主題の CVE」。一括勧告の記事 (CVE が ``FOCAL_CVE_MAX`` 超) は数えない。"""
+    out: dict[str, set[str]] = {}
+    for aid, iid in item_of.items():
+        cves = {v for t, v in entities.get(aid, frozenset()) if t == "cve"}
+        if cves and len(cves) <= FOCAL_CVE_MAX:
+            out.setdefault(iid, set()).update(cves)
+    return {iid: frozenset(v) for iid, v in out.items()}
+
+
+def cve_sets_disjoint(cves: Mapping[str, frozenset[str]], item_a: str, item_b: str) -> bool:
+    """両方の事象が主題の CVE を持ち、1 つも重ならないか (= 別の脆弱性の話)。"""
+    a, b = cves.get(item_a), cves.get(item_b)
+    return bool(a) and bool(b) and not (a & b)  # type: ignore[operator]
+
+
 def _root(parent: dict[str, str], x: str) -> str:
     while parent[x] != x:
         parent[x] = parent[parent[x]]
@@ -150,6 +169,7 @@ def plan_merges(
     min_edges: int = MIN_EDGES_BETWEEN_ITEMS,
     single_edge_ok: set[tuple[str, str]] | None = None,
     extra_edges: Sequence[tuple[str, str]] | None = None,
+    cve_disjoint_gate: bool = False,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -172,6 +192,7 @@ def plan_merges(
             辺として本数に数え、単独事象の救済にも使う (本数の規則そのものは変えない)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
+    focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
     allow = set(approved) if approved is not None else None
     # ⭐ 事象の組ごとに辺を数える。**1 本では結ばない** (ハブ対策)。
     edge_count: dict[tuple[str, str], int] = {}
@@ -179,6 +200,8 @@ def plan_merges(
     for a, b in pairs:
         ia, ib = item_of.get(a), item_of.get(b)
         if ia is None or ib is None or ia == ib:
+            continue
+        if focal and cve_sets_disjoint(focal, ia, ib):
             continue
         if allow is not None and (a, b) not in allow and (b, a) not in allow:
             continue
@@ -194,6 +217,8 @@ def plan_merges(
     for a, b in extra_edges or ():
         ia, ib = item_of.get(a), item_of.get(b)
         if ia is None or ib is None or ia == ib or tuple(sorted((a, b))) in counted:
+            continue
+        if focal and cve_sets_disjoint(focal, ia, ib):
             continue
         key = (ia, ib) if ia < ib else (ib, ia)
         edge_count[key] = edge_count.get(key, 0) + 1
