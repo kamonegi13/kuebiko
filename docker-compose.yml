@@ -185,6 +185,11 @@ services:
       # triage で low に落ちた記事のうちサイバー政策を medium に救済する段 (docs/importance_relevance_redesign.md §6b)。
       # off (既定) / shadow=判定を data/policy_rescue_shadow.jsonl に貯めるだけ / 1=救済を有効化。
       CYBER_POLICY_RESCUE: ${CYBER_POLICY_RESCUE:-off}
+      # M4 (取り込み、2026-10-12 有効化): 平たい triage (深刻さの見込みだけ) ∨ 取り込みヒント
+      # (日本・注視国・関連性の核 SIR)。並走 4.3 日 1,213 件で日本の取りこぼし 0・取り込み −9.7%、
+      # 過去 30 日の再現でも日本 0。保存される importance は要約の段が付けるので下流は不変
+      TRIAGE_FLAT: ${TRIAGE_FLAT:-1}
+      INGEST_RULE_V2: ${INGEST_RULE_V2:-1}
 
     # 設定・プロンプト・データを bind mount で共有
     # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する
