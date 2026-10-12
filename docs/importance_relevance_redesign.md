@@ -183,7 +183,7 @@ s23 (平たい triage、§6 の 2026-10-08 決定) を本番投入する前に�
 | `TRIAGE_FLAT` | 0 (無効) | triage の prompt を平たい rubric に切替 (既存、`src/tools/triage_flat_rubric.py`) |
 | `TRIAGE_SHADOW_PER_RUN` | **20** (常時 ON) | 1 run あたり最大 N 件、現行判定と「平たい triage + 取り込みヒント」を並べて `triage_shadow` に記録する。0 で無効化 |
 | `TRIAGE_SHADOW_BUDGET_SECONDS` | 180 | 影子記録の 1 run あたり時間予算。超えたら残りをスキップ (本処理を遅延させない) |
-| `CYBER_POLICY_RESCUE` | 0 (無効) | `shadow` = 判定を `data/policy_rescue_shadow.jsonl` に記録するだけ (取り込みは変えない)。`1` で、平たい triage が low にした記事を素の 26B (`Step.TRIAGE_GEO_RESCUE`) が話題の種類 (cyber_event / cyber_policy / noncyber_geopolitics / other) で判定し直し、cyber_policy を **medium に引き上げる** (`src/pipeline/policy_rescue.py`)。サイバー要素のない軍事・地政学は救わない |
+| `CYBER_POLICY_RESCUE` | 0 (無効)。**2026-10-12 閉じた** (shadow の裁定で救済 0/59、§8 の決定) | `shadow` = 判定を `data/policy_rescue_shadow.jsonl` に記録するだけ (取り込みは変えない)。`1` で、平たい triage が low にした記事を素の 26B (`Step.TRIAGE_GEO_RESCUE`) が話題の種類 (cyber_event / cyber_policy / noncyber_geopolitics / other) で判定し直し、cyber_policy を **medium に引き上げる** (`src/pipeline/policy_rescue.py`)。サイバー要素のない軍事・地政学は救わない |
 | `INGEST_RULE_V2` | 0 (無効) | ON で取り込みの足切りが `flat triage >= medium OR 取り込みヒント発火` になる。`TRIAGE_FLAT=1` と組み合わせて使う想定 (平たい triage と組まないと「関連性込みの判定 OR 取り込みヒント」の二重足しになる) |
 
 ### 実装
@@ -262,6 +262,10 @@ cyber_policy。現行 low の cyber_policy 17 は約半数が雑音、現行 med
 ## 8. 利用者の判断が要る点
 > **決定 (2026-10-03)**: 3 = 同じ決め方に揃える (Grok・ransomware.live の固定値をやめる)。5 = 「戦略上の重み」の欄を設ける。
 > 4 = 推奨どおり (深刻さの正解集の基準に使用)。6 は推奨を仮の値として使用中 (§8.1)。
+> **決定 (2026-10-12)**: 2 = 下限を残す (日本の組織の被害 affected は常に最低 medium 相当 — 日本の CTI という目的に直結し、増える件数は少ない)。
+> 6 = 推奨の 8 本 (「誰が・どこで」型) で確定 (関連性ありが 77%→39% に縮み、v13 の配信もこの前提で動いている)。
+> `CYBER_POLICY_RESCUE` は閉じる (`off`): Opus 裁定 59 件で救済すべき記事 0・low 妥当 56・境界 3 (data/eval/r2_report.md)。
+>  基準の作り直しは取りこぼしの実例が出てから。
 > 7 = 観察期間は置かない (2026-10-03 改訂、利用者指摘): 新しい値は保存済みの値から決まりごとで導くので、
 > 過去の記事に当てて下流ごとに再現比較できる。M1・M2 は 10-03 にデプロイし、過去 35 日分 2,747 件を記録済み
 > (関連性は SIR の生の該当をすべて記録し、どれを「核」に数えるかは導出時に決めるので 6 を待たない。深刻さの決まりごとには版を付けるので、4 が決まったら記録し直せる)
