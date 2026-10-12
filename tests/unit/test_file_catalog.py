@@ -37,7 +37,7 @@ class TestCatalogCompleteness:
         # +eventnews/refine.j2 (事象単位ニュース §9、2026-08-23)
         # +synthesis/detect_new_v2.j2 / detect_ml_select.j2 (detect の A/B 実験用、2026-09-19)。
         # **本番経路では使わない** (replay ハーネスが --mode prompt / select で明示指定する)。
-        assert len(actual) == 28
+        assert len(actual) == 29
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 

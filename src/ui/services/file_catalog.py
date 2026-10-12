@@ -176,6 +176,12 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "block マーカー。指示散文 (blocks) は DB 所有でプロンプトタブから編集 "
         "(層分け 7〜12 本目 2026-08-20)。seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
+    "prompts/synthesis/claim_rewrite.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "見立て反転後の claim 書き直し",
+        "台帳の見立てが反転確定したのに結論文 (claim) が前回のままのとき、新しい見立てに合わせて"
+        "claim だけを書き直す小さなプロンプト (`LEDGER_CLAIM_REWRITE_ON_FLIP`)。",
+    ),
     "prompts/synthesis/adversarial.j2": FileInfo(
         "状況総括 (synthesis)",
         "対称 adversarial 検証",

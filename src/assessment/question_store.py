@@ -50,6 +50,11 @@ QUESTIONS_KEY = "standing_questions"
 _ID_PREFIX = "s-standing-q-"
 
 
+def is_promoted_question(situation_id: str) -> bool:
+    """昇格した問いの situation か (title がそのまま問いの文 — ``promote`` 参照)。"""
+    return situation_id.startswith(_ID_PREFIX)
+
+
 def _question_id(draft: QuestionDraft) -> str:
     """問いの同一性 = 型 + スロット値。**決心や注記では変わらない**。
 

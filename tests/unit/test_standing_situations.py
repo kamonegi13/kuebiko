@@ -555,6 +555,18 @@ class TestAnswerIsNotAnEcho:
         assert _standing_question(STANDING_SEEDS[0].situation_id) == STANDING_SEEDS[0].title
         assert _standing_question("s-some-event") == ""
 
+    def test_promoted_question_is_resolved_from_the_situation_title(self) -> None:
+        """昇格した問いは title が問いの文。空を返すと事象用のプロンプトで評価される。"""
+        from src.assessment.stateful import _standing_question
+
+        question = "中国による日本の重要インフラへの活動は平時の水準を越えたか"
+        assert _standing_question("s-standing-q-0123456789ab", question) == question
+        # 事象の title は問いではない
+        assert _standing_question("s-some-event", "ある事象") == ""
+        # seed は title より seed の問い文を優先する
+        seed = STANDING_SEEDS[0]
+        assert _standing_question(seed.situation_id, "別の題") == seed.title
+
 
 def _prior_view_stub() -> object:
     from src.synthesis.grounded.incremental import PriorJudgmentView

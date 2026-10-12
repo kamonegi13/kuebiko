@@ -71,6 +71,8 @@ class QuestionStatus:
     missing_evidence: tuple[str, ...]
     days_since_evidence: int | None
     open_indicators: int
+    #: 最新の改訂が「見立てだけ動いて結論文は未改訂」— 文面が前回の見立てのまま
+    claim_unrevised: bool = False
 
     @property
     def confidence_label(self) -> str:
@@ -133,6 +135,19 @@ def _moves_in_window(card: dict[str, Any], since: datetime) -> tuple[Move, ...]:
     return tuple(merged.values())
 
 
+#: 台帳 (stateful._delta_note) が見立て反転で結論文が前回と同一のときに付ける注記。
+UNREVISED_CLAIM_MARKER = "結論文は未改訂"
+CLAIM_UNREVISED_NOTICE = "※ 見立ては変わったが、この文面は前回の見立てのまま (書き直し待ち)"
+
+
+def _latest_claim_unrevised(card: dict[str, Any]) -> bool:
+    revs = [r for r in card.get("trajectory") or [] if isinstance(r, dict)]
+    if not revs:
+        return False
+    latest = max(revs, key=lambda r: int(r.get("rev") or 0))
+    return UNREVISED_CLAIM_MARKER in str(latest.get("note") or "")
+
+
 def _status(card: dict[str, Any], since: datetime, now: datetime) -> QuestionStatus:
     last = _parse_ts(card.get("last_evidence_at"))
     return QuestionStatus(
@@ -147,6 +162,7 @@ def _status(card: dict[str, Any], since: datetime, now: datetime) -> QuestionSta
         open_indicators=sum(
             1 for i in card.get("indicators") or [] if str(i.get("status")) == "open"
         ),
+        claim_unrevised=_latest_claim_unrevised(card),
     )
 
 
@@ -192,6 +208,8 @@ def _clip(text: str, limit: int) -> str:
 
 def _format_moved(s: QuestionStatus) -> list[str]:
     lines = [f"▶ {s.question}", f"  答え ({s.confidence_label}): {s.claim}"]
+    if s.claim_unrevised:
+        lines.append(f"  {CLAIM_UNREVISED_NOTICE}")
     for m in s.moves:
         times = f" (24 時間で {m.count} 回)" if m.count > 1 else ""
         lines.append(f"  {m.label}: {m.reason}{times}" if m.reason else f"  {m.label}{times}")
@@ -203,9 +221,10 @@ def _format_moved(s: QuestionStatus) -> list[str]:
 
 
 def _format_still(s: QuestionStatus) -> str:
+    unrevised = " ※前回の見立てのまま" if s.claim_unrevised else ""
     return (
         f"・{s.question} — {_clip(s.claim, _STILL_CLAIM_CHARS)} ({s.confidence_label}・"
-        f"{_freshness(s)}・待っている指標 {s.open_indicators})"
+        f"{_freshness(s)}・待っている指標 {s.open_indicators}){unrevised}"
     )
 
 
@@ -232,6 +251,8 @@ def format_pir_brief_compact(brief: PirBrief) -> str:
         why = f" — {move.reason}" if move.reason else ""
         lines.append(f"・{s.question}: {move.label}{why}")
         lines.append(f"　→ {_clip(s.claim, _COMPACT_CLAIM_CHARS)} ({s.confidence_label})")
+        if s.claim_unrevised:
+            lines.append(f"　{CLAIM_UNREVISED_NOTICE}")
     return "\n".join(lines)
 
 
@@ -255,6 +276,7 @@ def _status_payload(s: QuestionStatus) -> dict[str, Any]:
         "missing_evidence": list(s.missing_evidence),
         "days_since_evidence": s.days_since_evidence,
         "open_indicators": s.open_indicators,
+        "claim_unrevised": s.claim_unrevised,
     }
 
 

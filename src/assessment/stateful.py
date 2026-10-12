@@ -33,6 +33,7 @@ from src.assessment.assignment import (
     split_anchor_keys,
     topic_tokens,
 )
+from src.assessment.claim_guard import apply_subject_gate, guard_claim
 from src.assessment.detect_scope import relevant_titles_by_embedding
 from src.assessment.ledger import (
     _judgment_pir_ids,
@@ -148,13 +149,22 @@ def first_answer(*, title: str, leading: str, is_standing: bool) -> str:
     return hyp.label if hyp else leading
 
 
-def _standing_question(situation_id: str) -> str:
-    """常設情報要求の問い文 (event なら空)。``STANDING_SEEDS`` が SSoT。
+def _standing_question(situation_id: str, title: str = "") -> str:
+    """常設情報要求の問い文 (event なら空)。
 
+    現行 4 seed は ``STANDING_SEEDS`` が SSoT、昇格した問い (``s-standing-q-*``) は
+    situation の title が問いの文 (``question_store.promote``)。
     問いがあると増分 ACH は「問いへの答え」を書くプロンプトに切り替わる
     (事象用の claim 指示だと問い文をオウム返しし続ける — 2026-09-15 実測)。
+    ⚠ 2026-10-12 まで昇格した問いは空を返し、事象用のプロンプトで評価されていた
+    (答えが問いの主語を離れ他国の事例になる不具合の根)。
     """
-    return next((s.title for s in STANDING_SEEDS if s.situation_id == situation_id), "")
+    from src.assessment.question_store import is_promoted_question
+
+    seed = next((s.title for s in STANDING_SEEDS if s.situation_id == situation_id), "")
+    if seed:
+        return seed
+    return title if is_promoted_question(situation_id) else ""
 
 
 def _aggregate_signal_for(
@@ -1519,7 +1529,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 sources=sources,
                 tier_by_id=tier_by_id,
                 hypotheses_override=hyp_override,
-                question=_standing_question(sid),
+                question=_standing_question(sid, row.title),
                 aggregate_signal=agg_signal,
             )
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
@@ -1739,8 +1749,24 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             prev = p.get("prev") or latest_revs.get(sid)
             if prev is None:
                 delta, note = "opened", "初回判定"
+                j, gate_note = apply_subject_gate(j, None, _standing_question(sid, row.title))
+                if gate_note:
+                    note = f"{note} / {gate_note}"
             else:
                 j, hold_note = _hold_unconfirmed_flip(j, prev, was_dormant=bool(p["was_dormant"]))
+                # 反転確定時の claim 書き直し + 問いの主語の関門 (claim_guard)
+                guard = await guard_claim(
+                    llm=llm,
+                    j=j,
+                    prev=prev,
+                    question=_standing_question(sid, row.title),
+                    title=row.title,
+                    flip_confirmed=(
+                        j.leading_hypothesis != prev.leading_hypothesis
+                        and not bool(p["was_dormant"])
+                    ),
+                )
+                j = guard.judgment
                 delta = _final_delta(
                     prev=prev,
                     was_dormant=bool(p["was_dormant"]),
@@ -1750,8 +1776,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                     scope_expanded=bool(p["scope_expanded"]),
                 )
                 note = _delta_note(prev, j, delta)
-                if hold_note:
-                    note = f"{note} / {hold_note}" if note else hold_note
+                for extra in (hold_note, *guard.notes):
+                    if extra:
+                        note = f"{note} / {extra}" if note else extra
             store.touch_situation(sid, last_evidence_at=now_iso, status="active")
             # 同一性追従 (P2): 評価済み claim が title と乖離したら title を進める。
             # 単発事象で開いた Situation が続報で scope 拡大しても「〜が実施された」の

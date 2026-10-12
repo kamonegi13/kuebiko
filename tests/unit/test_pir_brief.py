@@ -249,3 +249,22 @@ def test_hypothesis_ids_in_reason_are_shown_as_labels() -> None:
 
     assert "trend_flat" not in reason
     assert label.label in reason
+
+
+class TestUnrevisedClaimNotice:
+    def _brief(self, note: str) -> Any:
+        traj = [_rev("2026-09-28T22:00:00+00:00", "hypothesis_flip", note)]
+        return build_pir_brief([_card("a", trajectory=traj)], now=NOW)
+
+    def test_notice_shown_when_latest_revision_left_claim_unrevised(self) -> None:
+        brief = self._brief("見立て trend_worsening→trend_flat (結論文は未改訂)")
+
+        assert brief.moved[0].claim_unrevised is True
+        assert "前回の見立てのまま" in format_pir_brief_full(brief)
+        assert "前回の見立てのまま" in format_pir_brief_compact(brief)
+
+    def test_no_notice_when_claim_was_revised(self) -> None:
+        brief = self._brief("見立て trend_worsening→trend_flat")
+
+        assert brief.moved[0].claim_unrevised is False
+        assert "前回の見立てのまま" not in format_pir_brief_full(brief)
