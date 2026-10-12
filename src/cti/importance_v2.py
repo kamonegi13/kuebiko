@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -468,27 +469,112 @@ def stated_loss_usd(text: str) -> float:
     return best
 
 
-#: 被害の件数 (人・記録・アカウント)。「31万2000件」「1万2345人」のように万の後ろの端数も読む
+#: 日本語の数 (位取り付き): 「21万7,295」「17万7千」「1億2,300万」「3千万」「1.5万」を 1 つに読む。
+#: 数字 + 単位 (千万・百万・億・万・千) の並びで、最後の端数は単位なしの数字
+_JA_NUM = r"\d[\d,]*(?:\.\d+)?(?:\s*(?:千万|百万|億|万|千)\s*(?:\d[\d,]*(?:\.\d+)?)?)*"
+_JA_NUM_TOKEN = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(千万|百万|億|万|千)?")
+_JA_UNIT_SCALE = {"千万": 1e7, "百万": 1e6, "億": 1e8, "万": 1e4, "千": 1e3}
+#: 被害の件数 (人・記録・アカウント・口座・世帯)
 _JA_COUNT = re.compile(
-    r"(\d[\d,]*(?:\.\d+)?)\s*(億|万)?(\d[\d,]*)?\s*(件|人分|人|名|アカウント|レコード)"
+    rf"({_JA_NUM})\s*(?:超|以上|余り?|あまり)?\s*の?\s*"
+    r"(件|人分|名分|人|名|アカウント|レコード|口座|世帯)"
 )
 _EN_COUNT = re.compile(
-    r"(\d[\d,]*(?:\.\d+)?)\s*(million|billion|bn|k)?\s+(?:[a-z-]+\s+){0,2}?"
-    r"(records|users|customers|accounts|people|individuals|patients|members|subscribers|employees)",
+    r"(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|mn|bn|k|m)?\s+(?:[a-z-]+\s+){0,2}?"
+    r"(records|users|customers|accounts|people|individuals|patients|members|subscribers|"
+    r"employees|email addresses|residents|students|clients|households)",
     re.IGNORECASE,
 )
-_EN_COUNT_SCALE = {"million": 1e6, "billion": 1e9, "bn": 1e9, "k": 1e3}
-#: 件数を被害の数と読む文の語 (同じ文に無ければ数えない — 利用者数・市場規模を拾わない)
+_EN_COUNT_SCALE = {
+    "thousand": 1e3,
+    "million": 1e6,
+    "billion": 1e9,
+    "mn": 1e6,
+    "bn": 1e9,
+    "k": 1e3,
+    "m": 1e6,
+}
+#: 件数を被害の数と読む文の語 (同じ文に無ければ数えない — 利用者数・市場規模を拾わない)。
+#: 誤送付・誤公開・表示・ダウンロード可能のような事故由来の語と、対象件数・被害者数のような
+#: 件数そのものを指す語も含む (正解集の読み損ね: 誤送付 17.7 万人分・他社の個人情報が表示された
+#: 13,460 名分・対象件数の単純合計 21.7 万件)
 _HARM_WORDS = re.compile(
     r"流出|漏えい|漏洩|窃取|盗まれ|盗難|閲覧され|不正アクセス|改ざん|侵害|暴露|公開され|複製|"
-    r"leak|breach|expos|stolen|steal|compromis|exfiltrat|accessed|copied",
+    r"誤送付|誤送信|誤公開|誤交付|誤って|混入|表示され|ダウンロード(?:でき|可能)|閲覧(?:でき|可能)|"
+    r"対象件数|対象者数|対象人数|被害件数|被害者|被害を受け|影響を受け|"
+    r"leak|breach|expos|stolen|steal|stole|compromis|exfiltrat|accessed|copied|"
+    r"victims|affected|impacted|notified",
     re.IGNORECASE,
 )
-#: 件数の直後がこれなら被害者の数ではない (送信したメール・試行・ファイル・脆弱性)
+#: 件数の直後がこれなら被害者の数ではない (送信したメール・試行・ファイル・脆弱性・事案・ドメイン等)
 _NOT_VICTIM_AFTER = re.compile(
-    r"^\s*(?:超|以上|程度)?\s*の?\s*(?:不審な?|迷惑|スパム)?\s*"
-    r"(メール|フィッシング|攻撃|試行|脆弱性|ファイル|送金|ダウンロード|通知)"
+    r"^\s*(?:を?超える|超|以上|程度)?\s*の?\s*(?:不審な?|迷惑|スパム)?\s*"
+    r"(メール|フィッシング|攻撃|試行|脆弱性|ファイル|送金|ダウンロード|通知|事案|事件|インシデント|"
+    r"(?:混入)?報告(?!書)|検知|検出|ログ|IP|ドメイン|サイト|URL|パッケージ|リクエスト|アクセス|CVE|サーバ|端末|"
+    r"組織|企業|社|詐欺|マルウェア|サンプル|投稿|問い合わせ|認証|通信|検索)"
 )
+_CVE_ID = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
+#: 関連記事・参照の見出し行 (本文の被害ではない)。件数の読み取りから除く
+_RELATED_LINE = re.compile(
+    r"^\s*[-・*]?\s*(?:related|see also|read more|also read|関連記事|関連リンク|関連)\b.*$"
+    r"|^\s*(?:関連記事|関連リンク|関連)\s*[:：].*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _ja_number(raw: str) -> int:
+    """位取り付きの日本語の数 (``_JA_NUM`` の一致) を整数にする。
+
+    「21万7,295」→ 217295 / 「17万7千」→ 177000 / 「3千万」→ 30000000 / 「1億2,300万」→ 123000000。
+    """
+    total = 0.0
+    pending = 0.0  # 万・億でまだ位取りしていない分 (千の位や端数)
+    for num_raw, unit in _JA_NUM_TOKEN.findall(raw):
+        num = _num(num_raw)
+        if unit == "千":
+            pending += num * 1_000
+        elif unit == "万":
+            total += (pending + num) * 1e4
+            pending = 0.0
+        elif unit == "億":
+            total += (pending + num) * 1e8
+            pending = 0.0
+        elif unit:
+            total += (pending + num) * _JA_UNIT_SCALE[unit]
+            pending = 0.0
+        else:
+            pending += num
+    return int(total + pending)
+
+
+#: 「対象は…」の文が、被害の語を探しに戻る直前の文の数
+#: (「…が表示される状態となった。発覚は…。対象は 2,322 企業・団体の 13,460 名分」)
+_CONTEXT_SENTENCES = 2
+_TARGET_LEAD = re.compile(r"^\s*[-・]?\s*(?:対象|該当|影響)")
+
+
+def _victim_count_sentences(text: str) -> list[str]:
+    """件数を読む文: 被害の語を含む文と、被害の語を含む文の近くの「対象は…」の文。
+
+    主張・販売・企業規模・打ち消しの文、CVE を並べる文は除く (``_sentences`` と同じ除外)。
+    """
+    sents = _SENTENCE.split(text)
+    out: list[str] = []
+    for i, s in enumerate(sents):
+        if (
+            _CLAIM_OR_SIZE_WORDS.search(s)
+            or _NEGATION_WORDS.search(s)
+            or _QUOTE_ONLY.match(s)
+            or _CVE_ID.search(s)
+        ):
+            continue
+        has_harm = bool(_HARM_WORDS.search(s))
+        follows_harm = bool(_TARGET_LEAD.match(s)) and any(
+            _HARM_WORDS.search(prev) for prev in sents[max(0, i - _CONTEXT_SENTENCES) : i]
+        )
+        if has_harm or follows_harm:
+            out.append(s)
+    return out
 
 
 def stated_victim_count(text: str) -> int:
@@ -498,14 +584,17 @@ def stated_victim_count(text: str) -> int:
     見逃し 2 件) 一方、件数の無い記事に大きな規模を付ける (規模を根拠の S3 は 20 件中 14 件が誤り)。
     被害の語のある文の、人・記録・アカウントの数だけを数える。ダウンロード数・送金数・送信数・
     ファイル数・攻撃者が主張する件数は被害者の数ではない (基準の文 §4)。
+
+    2026-10-12: 全角数字 (NFKC)、万の後ろの千 (17万7千)、千万・億の組合せ、事故由来の語
+    (誤送付・表示)、対象件数、関連記事の見出し行の除外を追加した。
     """
     best = 0
-    for sent in _sentences(text, _HARM_WORDS):
+    cleaned = _RELATED_LINE.sub("", unicodedata.normalize("NFKC", text))
+    for sent in _victim_count_sentences(cleaned):
         for m in _JA_COUNT.finditer(sent):
             if _NOT_VICTIM_AFTER.match(sent[m.end() :]):
                 continue
-            head = _num(m.group(1)) * _JA_SCALE.get(m.group(2) or "", 1.0)
-            best = max(best, int(head + (_num(m.group(3)) if m.group(3) else 0)))
+            best = max(best, _ja_number(m.group(1)))
         for m in _EN_COUNT.finditer(sent):
             scale = _EN_COUNT_SCALE.get((m.group(2) or "").lower(), 1.0)
             best = max(best, int(_num(m.group(1)) * scale))

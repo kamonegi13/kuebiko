@@ -337,6 +337,71 @@ class TestStatedVictimCount:
         assert stated_victim_count(text) == 0
 
 
+class TestStatedVictimCountRecall:
+    """日本語の位取り・全角・単位の取りこぼしを直した版 (2026-10-12)。"""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            # 万の後ろに千 (契約者約17万7千人分)
+            ("契約者約17万7千人分の情報が誤送付された", 177_000),
+            ("約1万5千人の個人情報が流出した", 15_000),
+            # 千・千万・億の組合せ
+            ("約3千人分のアカウント情報が流出した", 3_000),
+            ("約3千万件の会員情報が流出した", 30_000_000),
+            ("約1億2千万件のレコードが流出した", 120_000_000),
+            ("約1億2,300万件の個人情報が流出した", 123_000_000),
+            # 全角数字・全角カンマ
+            ("２１万７，２９５件の個人情報が漏えいした", 217_295),
+            ("顧客情報１３６，４６４件が流出した", 136_464),
+            # 件数は書いてあるが害の語が同じ文に無い (対象件数・名分・表示)
+            ("公表された4区分の対象件数を単純合計すると21万7,295件となります", 217_295),
+            ("他社の個人情報が表示され、対象は2,322企業・団体の13,460名分である", 13_460),
+            ("個人情報の一部が表示される状態だった。対象は2,322企業・団体の13,460名分で、", 13_460),
+            # 単位の追加
+            ("会員5万2,000世帯の情報が流出した", 52_000),
+            ("約8万口座の情報が不正アクセスで閲覧された", 80_000),
+            ("約12万人超の個人情報が漏えいした", 120_000),
+            # 英語
+            ("Hackers stole data on 4.5 million users from the service.", 4_500_000),
+            ("The breach exposed 250k email addresses.", 250_000),
+            ("Attackers leaked records of 1.2 billion people.", 1_200_000_000),
+            ("The leak affected 80 thousand customers.", 80_000),
+        ],
+    )
+    def test_reads_previously_missed_counts(self, text: str, expected: int) -> None:
+        assert stated_victim_count(text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # 関連記事の見出しは本文の被害ではない
+            "Related: Personal Information for Over 1 Million People Stolen in a Cyberattack",
+            "関連記事: 約500万件の個人情報が流出",
+            # 年号・CVE・バージョン・電話番号・金額
+            "2026年に発覚した不正アクセスで CVE-2021-36260 が悪用された",
+            "Ubuntu 22.04.3 と OpenSSL 3.0.13 の脆弱性が悪用された",
+            "問い合わせは 03-1234-5678 まで。被害が発生している",
+            "被害額は約120万円で、10億円の損害ではない",
+            "The attacker stole $4.5 million in crypto.",
+            # 被害者でない件数
+            "同社は昨年 12,000 件の事案を処理し、侵害を検知した",
+            "攻撃者は 5 万件のドメインを登録し、侵害に悪用した",
+            "報告された 3 万件のIPアドレスが侵害に使われた",
+            "ECサイトで25件を超える混入報告があったと伝えられている",
+            "7 件の CVE が共通して該当し、影響を受ける",
+            "FBI said the group extorted more than $70 million from victims.",
+            "Akira lists 3 new victims on their leak site.",
+        ],
+    )
+    def test_still_ignores_non_victim_numbers(self, text: str) -> None:
+        assert stated_victim_count(text) == 0
+
+    def test_takes_the_largest_victim_count(self) -> None:
+        text = "約1,200件の誤送付が判明した。その後、約3万5千人分の情報が漏えいしたと確認された。"
+        assert stated_victim_count(text) == 35_000
+
+
 class TestImportanceLevel:
     @pytest.mark.parametrize(
         ("severity", "relevant", "expected"),
