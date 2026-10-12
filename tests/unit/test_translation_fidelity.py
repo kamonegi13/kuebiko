@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from src.cti.translation_fidelity import (
-    apply_fidelity_gate,
+    detect_garbling,
     find_garbled_identifiers,
     find_garbled_word_tokens,
     find_suspicious_numbers,
@@ -167,31 +167,26 @@ def test_single_digit_number_is_not_flagged() -> None:
     assert find_suspicious_numbers(source, output) == ()
 
 
-# ---------- apply_fidelity_gate (統合) ----------
+# ---------- detect_garbling (統合、検出のみ) ----------
 
 
-def test_apply_fidelity_gate_repairs_word_and_identifier_and_flags_number() -> None:
+def test_detect_garbling_reports_word_identifier_and_number_without_rewriting() -> None:
     source = "Gitea fixed CVE-2026-76746 affecting 136 deployments, a 250% jump from last year."
     output = (
         "Gite0 は CVE-2016-76746 を修正し、130 件の構成に影響しました。"
         "これは昨年から 200% の増加です。"
     )
-    result = apply_fidelity_gate(source, output)
-    assert "Gitea" in result.repaired_text
-    assert "Gite0" not in result.repaired_text
-    assert "CVE-2026-76746" in result.repaired_text
-    assert "CVE-2016-76746" not in result.repaired_text
-    assert len(result.word_repairs) == 1
-    assert len(result.identifier_repairs) == 1
-    assert len(result.number_flags) == 2
+    report = detect_garbling(source, output)
+    assert report.is_garbled
+    assert len(report.word_hits) == 1
+    assert len(report.identifier_hits) == 1
+    assert len(report.number_flags) >= 2  # 130 / 200% (識別子内の桁も数字として拾う)
+    assert report.total == 2 + len(report.number_flags)
 
 
-def test_apply_fidelity_gate_no_issues_returns_unchanged_text() -> None:
+def test_detect_garbling_clean_translation_is_not_garbled() -> None:
     source = "Gitea fixed a vulnerability affecting 36 deployments."
     output = "Gitea は 36 件の構成に影響する脆弱性を修正しました。"
-    result = apply_fidelity_gate(source, output)
-    assert result.repaired_text == output
-    assert result.word_repairs == ()
-    assert result.identifier_repairs == ()
-    assert result.number_flags == ()
-    assert result.repaired_count == 0
+    report = detect_garbling(source, output)
+    assert not report.is_garbled
+    assert report.total == 0

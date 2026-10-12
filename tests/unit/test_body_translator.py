@@ -8,12 +8,15 @@ from __future__ import annotations
 from typing import Any, TypeVar
 
 import pytest
+import structlog
 from pydantic import BaseModel
 
 from src.cti.body_translator import (
     _CHUNK_MAX_CHARS,
+    TranslationGarbledError,
     body_hash_for_translation,
     broken_translation_reason,
+    fidelity_gate_mode,
     is_probably_japanese,
     split_for_translation,
     translate_body,
@@ -316,72 +319,89 @@ async def test_broken_output_raises_instead_of_caching() -> None:
         await translate_body(llm, _SRC)
 
 
-# ---------- 決定論関門 (translation_fidelity、2026-10-11) ----------
+# ---------- 決定論関門 (translation_fidelity、2026-10-12: 検出のみ・保存しない) ----------
+
+_GARBLED_SRC = "Gitea fixed a critical vulnerability."
+_GARBLED_OUT = "Gite0 は重大な脆弱性を修正しました。"
 
 
-async def test_translate_body_repairs_garbled_proper_noun(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
-    llm = FakeLLM(responses=["Gite0 は重大な脆弱性を修正しました。"])
-    out = await translate_body(llm, "Gitea fixed a critical vulnerability.")
-    assert out == "Gitea は重大な脆弱性を修正しました。"
-    assert len(llm.prompts) == 1  # 語トークン修復は決定論、再試行は不要
-
-
-async def test_translate_body_repairs_garbled_cve(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
-    llm = FakeLLM(responses=["この欠陥は CVE-2016-76746 として追跡されています。"])
-    out = await translate_body(llm, "The flaw is tracked as CVE-2026-76746.")
-    assert out == "この欠陥は CVE-2026-76746 として追跡されています。"
-
-
-async def test_translate_body_fidelity_gate_disabled_keeps_garbled_text(
+async def test_gate_on_rejects_garbled_proper_noun_without_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "0")
-    llm = FakeLLM(responses=["Gite0 は重大な脆弱性を修正しました。"])
-    out = await translate_body(llm, "Gitea fixed a critical vulnerability.")
-    assert out == "Gite0 は重大な脆弱性を修正しました。"
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "on")
+    llm = FakeLLM(responses=[_GARBLED_OUT])
+    with pytest.raises(TranslationGarbledError):
+        await translate_body(llm, _GARBLED_SRC)
+    assert len(llm.prompts) == 1  # 同じ位置で化けるので再試行しない
 
 
-async def test_translate_body_retries_once_on_suspicious_number_and_adopts_resolved_retry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
-    # 2桁以上が対象 (1桁は助数詞ノイズが支配的、data/eval/p1_report.md)
-    llm = FakeLLM(
-        responses=[
-            "このグループは 130 人を制裁しました。",  # 136 → 130 の疑い (1 回目)
-            "このグループは 136 人を制裁しました。",  # 再試行で解消
-        ]
+async def test_gate_default_is_shadow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既定は shadow — 化けを検出しても訳は保存される (本番の発火を見てから on にする)。"""
+    monkeypatch.delenv("TRANSLATE_FIDELITY_GATE", raising=False)
+    llm = FakeLLM(responses=[_GARBLED_OUT])
+    assert await translate_body(llm, _GARBLED_SRC)
+
+
+async def test_gate_on_rejects_garbled_cve_and_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "on")
+    with pytest.raises(TranslationGarbledError):
+        await translate_body(
+            FakeLLM(responses=["この欠陥は CVE-2016-76746 として追跡されています。"]),
+            "The flaw is tracked as CVE-2026-76746.",
+        )
+    with pytest.raises(TranslationGarbledError):
+        await translate_body(
+            FakeLLM(responses=["このグループは 130 人を制裁しました。"]),
+            "The group sanctioned 136 individuals.",
+        )
+
+
+async def test_gate_on_passes_faithful_translation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "on")
+    out = await translate_body(
+        FakeLLM(responses=["Gitea は CVE-2026-76746 を修正し、136 件に影響しました。"]),
+        "Gitea fixed CVE-2026-76746 affecting 136 deployments.",
     )
-    out = await translate_body(llm, "The group sanctioned 136 individuals.")
-    assert out == "このグループは 136 人を制裁しました。"
-    assert len(llm.prompts) == 2
-    # 再試行は本番温度 (0.2) と異なる温度を使う
-    assert llm.kwargs[1]["temperature"] != llm.kwargs[0]["temperature"]
+    assert out == "Gitea は CVE-2026-76746 を修正し、136 件に影響しました。"
 
 
-async def test_translate_body_keeps_chunk_when_retry_still_suspicious(
+async def test_gate_shadow_keeps_text_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "shadow")
+    with structlog.testing.capture_logs() as logs:
+        out = await translate_body(FakeLLM(responses=[_GARBLED_OUT]), _GARBLED_SRC)
+    assert out == _GARBLED_OUT  # 修復も拒否もしない
+    events = [e for e in logs if e["event"] == "translate_fidelity_garbled"]
+    assert len(events) == 1 and events[0]["mode"] == "shadow"
+    assert _GARBLED_OUT not in str(events[0])  # 本文は log に出さない
+
+
+async def test_gate_off_does_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "off")
+    out = await translate_body(FakeLLM(responses=[_GARBLED_OUT]), _GARBLED_SRC)
+    assert out == _GARBLED_OUT
+
+
+def test_gate_mode_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    for raw, expected in [
+        ("on", "on"),
+        ("shadow", "shadow"),
+        ("off", "off"),
+        ("0", "off"),
+        ("1", "on"),
+        ("bogus", "shadow"),
+        ("", "shadow"),
+    ]:
+        monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", raw)
+        assert fidelity_gate_mode() == expected
+
+
+async def test_resumable_garbled_raises_and_keeps_no_garbled_chunk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "1")  # 既定 off のため明示
-    llm = FakeLLM(
-        responses=[
-            "このグループは 130 人を制裁しました。",
-            "このグループは 131 人を制裁しました。",  # 再試行でも依然疑わしい (136 と距離1)
-        ]
-    )
-    out = await translate_body(llm, "The group sanctioned 136 individuals.")
-    # チャンクの訳は丸ごと失わず、再試行の訳を採用して進める (記録は構造化ログのみ)
-    assert out == "このグループは 131 人を制裁しました。"
-    assert len(llm.prompts) == 2
-
-
-async def test_translate_body_fidelity_gate_disabled_skips_number_retry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "0")
-    llm = FakeLLM(responses=["このグループは 130 人を制裁しました。"])
-    out = await translate_body(llm, "The group sanctioned 136 individuals.")
-    assert out == "このグループは 130 人を制裁しました。"
-    assert len(llm.prompts) == 1
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "on")
+    store = MemoryChunkStore()
+    with pytest.raises(TranslationGarbledError):
+        await translate_body_resumable(
+            FakeLLM(responses=[_GARBLED_OUT]), _GARBLED_SRC, article_id="a", store=store
+        )
+    assert store.rows == {}  # 化けた訳のチャンクは保存されない

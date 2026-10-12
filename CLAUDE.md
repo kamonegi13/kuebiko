@@ -463,7 +463,7 @@ kuebiko/
   | (10-11) 重複 alert の ML (木) の判断を `alert_dedup_shadow` に記録だけする (配信は不変)。集計は `GET /api/v1/alert-dedup-shadow/summary` (公開面には出さない) | `ALERT_DEDUP_SHADOW=0` |
   | (10-11) `decision_probe` が複数トークンに分かれる選択肢 (Gemma の「いいえ」= 「いい」+「え」) を最初のトークンで照合する (完全一致だと floor 扱いで P(はい)≈0.88 に化けていた。本番の Yes/No は各 1 トークンで影響なし) | (コード) |
   | (10-11) 薄い本文の関門 (`THIN_BODY_GATE`) と logprob の 2 段目 (`THIN_BODY_PROBE`)・SIR 別の要点の記事またぎ混同の関門 (`PIR_FOCUS_FIDELITY_GATE`) と文ごとの裏付け判定 (`PIR_FOCUS_CLAIM_GATE`)・被害国の語の関門 (`VICTIM_COUNTRY_GATE_KEYWORD`)・台帳の割当 ML への証拠確率の特徴量 (`ASSIGN_PROBE_FEATURE`) を on (compose の既定 1) | それぞれ `=0` |
-  | (10-11) 翻訳の固有名詞・識別子・数字の化けを検出する決定論関門は実装のみで **off** (保留) | `TRANSLATE_FIDELITY_GATE=1` で有効化 |
+  | (10-12) 翻訳の固有名詞・識別子・数字の化けを**検出**したら訳を保存せず (body_ja='' = 翻訳なし、画面は原文)、再試行もしない。修復はしない (語の修復は誤りが多かった)。標本 150 件で重い問題の回収 24/46・問題なしの誤発火 2/40 (5.0%)。on だと約 26% の記事の訳が出なくなるため**既定 shadow** (log のみ、本番の発火を見て on) | `TRANSLATE_FIDELITY_GATE=on` で適用 / `off`。保存済みの '' は `UPDATE articles SET body_ja=NULL` で再翻訳キューへ |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

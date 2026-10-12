@@ -15,9 +15,11 @@
 確定保存し、失敗・時間切れ後は未訳チャンクだけを続きから処理する。
 部分訳を ``body_ja`` として**キャッシュしない**原則は不変 (完訳時のみ確定)。
 
-2026-10-11 決定論関門 (``TRANSLATE_FIDELITY_GATE``、既定 off で保留) 追加: 外来語の固有名詞・
+2026-10-12 決定論関門 (``TRANSLATE_FIDELITY_GATE`` = on/shadow/off): 外来語の固有名詞・
 識別子・数字が 1〜数文字だけ挿入/置換/脱落する化け (data/eval/c2c_x_report.md、
-例: Gitea→Gite0) を原文との対称照合で検出・修復する (``src.cti.translation_fidelity``)。
+例: Gitea→Gite0) を原文との対称照合で**検出**する (``src.cti.translation_fidelity``)。
+修復はしない (誤修復が多いため)。on = 化けた訳は保存せず (body_ja='' = 翻訳なし) 画面は原文を出す。
+同じ位置で化けるため再試行はしない。
 """
 
 from __future__ import annotations
@@ -30,24 +32,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from src.cti.translation_fidelity import apply_fidelity_gate
+from src.cti.translation_fidelity import detect_garbling
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient, LLMError
 
 _log = get_logger(__name__)
 
-# 決定論関門 (固有名詞・識別子・数字の化け検出・修復、2026-10-11)。既定 off (2026-10-11 保留)、
-# ``0`` で旧挙動 (検出・修復なし) に戻せる。詳細は data/eval/p1_report.md。
+# 決定論関門 (固有名詞・識別子・数字の化け検出、2026-10-12)。on / shadow / off、既定 on。
+# 詳細は data/eval/p1_report.md と CLAUDE.md §7。
 TRANSLATE_FIDELITY_GATE_ENV = "TRANSLATE_FIDELITY_GATE"
 
 # 本番の翻訳温度 (サンプリングあり、低温で安定重視)。
 _TRANSLATE_TEMPERATURE = 0.2
-
-# 数字の化けを検出した際の再試行温度。本番温度 (0.2) とも temperature=0 (決定論
-# デコード) とも十分離す — 再現実験 (data/eval/c2c_x_report.md) で sft モデルは
-# temperature=0 でも本番温度と同じ崩れを固定的に出すことを確認済みのため、単純な
-# 再試行では直らない可能性がある。それでも試す価値があるぶん温度を大きく変える。
-_FIDELITY_RETRY_TEMPERATURE = 0.6
 
 # 1 チャンクの最大文字数。26B (FAST/DIALOG 既定) の 1 呼出で全訳が
 # max_tokens 内に収まり、かつ step timeout (300s) に余裕がある規模。
@@ -199,14 +195,27 @@ def broken_translation_reason(source: str, output: str) -> str | None:
     return None
 
 
-def fidelity_gate_enabled() -> bool:
-    """決定論関門の有効判定 (既定 off)。``TRANSLATE_FIDELITY_GATE=1`` で有効。
+def fidelity_gate_mode() -> str:
+    """``TRANSLATE_FIDELITY_GATE`` (on / shadow / off、既定 shadow)。未知の値は shadow。
 
-    2026-10-11: 150 件の訳で語の修復の 29 件中 13 件が誤修復 (例: 仏語の綴りを英語に直す)
-    だったため既定 off で保留。確率による確認 (data/eval/s1_report.md) を挟んでから有効化する。
+    旧値 ``1`` は on、``0`` は off として読む (旧 flag との互換)。
+    既定 shadow の理由 (2026-10-12): 標本 150 件で on にすると約 26% の記事で訳が出なくなり、
+    重い問題の回収は 24/46 に留まる (軽微のみの記事 13/64・問題なしの 2/40 も巻き込む)。
+    本番の発火の内訳を見てから on を判断する。
     """
-    value = os.environ.get(TRANSLATE_FIDELITY_GATE_ENV, "0").strip()
-    return value not in ("", "0", "false", "False")
+    raw = os.environ.get(TRANSLATE_FIDELITY_GATE_ENV, "shadow").strip().lower()
+    if raw in ("0", "false", "off"):
+        return "off"
+    if raw in ("1", "true", "on"):
+        return "on"
+    return "shadow"
+
+
+class TranslationGarbledError(LLMError):
+    """訳に固有名詞・識別子・数字の化けを検出した (同じ位置で化けるので再試行しない)。
+
+    呼び出し側は訳を保存せず ``body_ja=''`` (翻訳なし扱い、画面は原文) で処理済みにする。
+    """
 
 
 async def _generate_translation(llm: LLMClient, chunk: str, temperature: float) -> str:
@@ -220,37 +229,10 @@ async def _generate_translation(llm: LLMClient, chunk: str, temperature: float) 
     return resp.text.strip()
 
 
-async def _retry_for_number_fidelity(
-    llm: LLMClient, chunk: str, repaired_out: str, flags_before_retry: int
-) -> str:
-    """数字の化け疑いを検出した際に温度を変えて 1 回だけ再翻訳する (自動修復はしない)。
-
-    再試行結果が使えない (空応答・壊れた訳) 場合は元の訳をそのまま使う。
-    再試行後も疑いが残る場合も、**チャンクの訳は採用しつつ** 構造化ログに残す
-    (記事全体の訳を丸ごと失う方が実害が大きいという判断。data/eval/p1_report.md の
-    測定結果に基づく。本文は出さず件数のみ記録 — CLAUDE.md §4)。
-    """
-    retry_out = await _generate_translation(llm, chunk, _FIDELITY_RETRY_TEMPERATURE)
-    out = repaired_out
-    unresolved = flags_before_retry
-    if retry_out and not broken_translation_reason(chunk, retry_out):
-        retry_result = apply_fidelity_gate(chunk, retry_out)
-        out = retry_result.repaired_text
-        unresolved = len(retry_result.number_flags)
-
-    if unresolved:
-        _log.warning("translate_fidelity_number_unresolved", count=unresolved, model=llm.model)
-    else:
-        _log.info("translate_fidelity_number_resolved_by_retry", model=llm.model)
-    return out
-
-
 async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -> str:
-    """チャンク 1 つを翻訳する。空応答・壊れた訳は ``LLMError``。
+    """1 チャンクを翻訳する。空・壊れた訳は ``LLMError``、化けは ``TranslationGarbledError``。
 
-    決定論関門 (``TRANSLATE_FIDELITY_GATE``、既定 off) が有効なら、固有名詞・識別子の
-    化けは原文との対称照合で自動修復し、数字の化け疑いは温度を変えて 1 回再試行する
-    (詳細は ``src.cti.translation_fidelity`` と data/eval/p1_report.md)。
+    決定論関門 (``TRANSLATE_FIDELITY_GATE``) は化けの検出のみ (修復・再試行なし)。
     """
     out = await _generate_translation(llm, chunk, _TRANSLATE_TEMPERATURE)
     if not out:
@@ -260,23 +242,32 @@ async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -
         raise LLMError(
             f"翻訳結果が壊れている: {why} (chunk {index + 1}/{total}, model={llm.model})"
         )
-    if not fidelity_gate_enabled():
-        return out
+    _check_fidelity(chunk, out, index, total, llm.model)
+    return out
 
-    result = apply_fidelity_gate(chunk, out)
-    if result.repaired_count:
-        _log.info(
-            "translate_fidelity_repaired",
-            word_repairs=len(result.word_repairs),
-            identifier_repairs=len(result.identifier_repairs),
-            chunk_index=index,
-            chunk_total=total,
-            model=llm.model,
+
+def _check_fidelity(chunk: str, out: str, index: int, total: int, model: str) -> None:
+    """化けを検出。on なら ``TranslationGarbledError``、shadow は log のみ (本文は出さない)。"""
+    mode = fidelity_gate_mode()
+    if mode == "off":
+        return
+    report = detect_garbling(chunk, out)
+    if not report.is_garbled:
+        return
+    _log.warning(
+        "translate_fidelity_garbled",
+        mode=mode,
+        words=len(report.word_hits),
+        identifiers=len(report.identifier_hits),
+        numbers=len(report.number_flags),
+        chunk_index=index,
+        chunk_total=total,
+        model=model,
+    )
+    if mode == "on":
+        raise TranslationGarbledError(
+            f"訳に固有名詞・数字の化けを検出 (chunk {index + 1}/{total}, model={model})"
         )
-    out = result.repaired_text
-    if not result.number_flags:
-        return out
-    return await _retry_for_number_fidelity(llm, chunk, out, len(result.number_flags))
 
 
 async def translate_body(llm: LLMClient, text: str) -> str:

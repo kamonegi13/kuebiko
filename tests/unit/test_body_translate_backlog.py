@@ -22,9 +22,10 @@ _T = TypeVar("_T", bound=BaseModel)
 class FakeLLM(LLMClient):
     """本文ごとに決め打ち応答。fail_on に含まれる本文は失敗させる。"""
 
-    def __init__(self, fail_on: set[str] | None = None) -> None:
+    def __init__(self, fail_on: set[str] | None = None, fixed_text: str | None = None) -> None:
         self.calls: list[str] = []
         self._fail_on = fail_on or set()
+        self._fixed_text = fixed_text
 
     @property
     def model(self) -> str:
@@ -42,7 +43,8 @@ class FakeLLM(LLMClient):
         for marker in self._fail_on:
             if marker in prompt:
                 raise LLMError("simulated failure")
-        return LLMResponse(text=f"訳-{len(self.calls)}", model="fake-model")
+        text = self._fixed_text or f"訳-{len(self.calls)}"
+        return LLMResponse(text=text, model="fake-model")
 
     async def generate_structured(
         self,
@@ -138,6 +140,23 @@ async def test_backlog_continues_after_single_failure(repo: RunHistoryRepository
     assert stats == {**stats, "translated": 1, "failed": 1}
     assert repo.get_article_body_ja("bad") is None
     assert repo.get_article_body_ja("good") is not None
+
+
+async def test_backlog_garbled_translation_is_not_saved_and_not_retried(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "on")
+    _add(repo, "g", "Gitea fixed a critical vulnerability.", age_minutes=1)
+    llm = FakeLLM(fixed_text="Gite0 は重大な脆弱性を修正しました。")
+
+    stats = await run_body_translate_backlog(repo, llm)
+
+    # 化けた訳は保存せず '' (翻訳なし = 画面は原文) で処理済み。次周期で再試行しない
+    assert stats["skipped_garbled"] == 1
+    assert stats["translated"] == 0
+    assert repo.get_article_body_ja("g") == ""
+    assert repo.list_articles_untranslated() == []
+    assert len(llm.calls) == 1
 
 
 async def test_backlog_respects_batch_limit(repo: RunHistoryRepository) -> None:

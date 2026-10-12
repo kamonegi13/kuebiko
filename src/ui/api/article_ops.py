@@ -23,7 +23,11 @@ from fastapi.responses import Response
 
 from src.config_loader import load_app_config
 from src.cti.actor_normalizer import load_actor_aliases
-from src.cti.body_translator import is_probably_japanese, translate_body_resumable
+from src.cti.body_translator import (
+    TranslationGarbledError,
+    is_probably_japanese,
+    translate_body_resumable,
+)
 from src.cti.stix_from_briefing import make_attachment_filename
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMError, LLMForbiddenModelError
@@ -79,6 +83,15 @@ async def translate_article(request: Request, article_id: str) -> dict[str, Any]
             store=repo,
             deadline_seconds=_TRANSLATE_REQUEST_DEADLINE_SECONDS,
         )
+    except TranslationGarbledError as e:
+        # 化けた訳は保存しない。'' = 翻訳なし (バックログの再試行も止める)。画面は原文のまま。
+        _log.warning("article_translate_garbled", article_id=aid, error=str(e))
+        repo.update_article_body_ja(aid, "")
+        repo.clear_body_ja_chunks(aid)
+        raise HTTPException(
+            status_code=422,
+            detail="訳に固有名詞・数字の化けを検出したため、日本語訳は表示しません (原文を参照)",
+        ) from e
     except LLMError as e:
         # 訳し終えたチャンクは body_ja_chunks に確定済み。再試行は続きから再開する。
         _log.error("article_translate_failed", article_id=aid, error=str(e))

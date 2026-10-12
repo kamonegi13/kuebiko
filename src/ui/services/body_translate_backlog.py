@@ -40,7 +40,11 @@ async def run_body_translate_backlog(
     time_budget_seconds: float = _TIME_BUDGET_SECONDS,
 ) -> dict[str, int]:
     """未訳記事を新しい順に翻訳して body_ja に保存する。統計 dict を返す。"""
-    from src.cti.body_translator import is_probably_japanese, translate_body_resumable
+    from src.cti.body_translator import (
+        TranslationGarbledError,
+        is_probably_japanese,
+        translate_body_resumable,
+    )
 
     repo = repo or RunHistoryRepository()
     if llm is None:
@@ -55,11 +59,19 @@ async def run_body_translate_backlog(
     failed = 0
     partial = 0
     skipped_japanese = 0
+    skipped_garbled = 0
     skipped_budget = 0
     for aid in article_ids:
         remaining = time_budget_seconds - (time.monotonic() - started)
         if remaining <= 0:
-            skipped_budget = len(article_ids) - translated - failed - partial - skipped_japanese
+            skipped_budget = (
+                len(article_ids)
+                - translated
+                - failed
+                - partial
+                - skipped_japanese
+                - skipped_garbled
+            )
             break
         body = repo.get_article_body(aid)
         if not body or not body.strip():
@@ -77,6 +89,14 @@ async def run_body_translate_backlog(
             progress = await translate_body_resumable(
                 llm, body, article_id=aid, store=repo, deadline_seconds=remaining
             )
+        except TranslationGarbledError as e:
+            # 化けた訳は保存せず「翻訳なし」(body_ja='') で処理済みにする。同じ位置で化けるため
+            # 再試行しない (毎時の無限再試行を防ぐ)。画面は原文を出す。
+            repo.update_article_body_ja(aid, "")
+            repo.clear_body_ja_chunks(aid)
+            skipped_garbled += 1
+            _log.info("body_backlog_translate_garbled", article_id=aid, error=str(e))
+            continue
         except LLMError as e:
             # 1 件の失敗でジョブを落とさない。訳せた分はチャンク保存済みのため、
             # 次周期の再試行は失敗チャンクから続く (毒薬記事の毎時全損を防ぐ)。
@@ -102,6 +122,7 @@ async def run_body_translate_backlog(
         "failed": failed,
         "partial": partial,
         "skipped_japanese": skipped_japanese,
+        "skipped_garbled": skipped_garbled,
         "skipped_budget": skipped_budget,
         "elapsed_seconds": int(time.monotonic() - started),
     }

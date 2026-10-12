@@ -1,4 +1,9 @@
-"""翻訳の文字化け (固有名詞・識別子・数字の 1〜数文字破損) 検出・修復の決定論関門。
+"""翻訳の文字化け (固有名詞・識別子・数字の 1〜数文字破損) の検出関門 (2026-10-12: 検出のみ)。
+
+⚠ 2026-10-12 方針変更: 以下の「修復」は廃止した (語の修復の約 45% が誤修復だったため)。
+検出 (``detect_garbling``) だけを使い、化けた訳は保存せず画面は原文を出す。
+関数名の ``find_garbled_*`` は「原文の近傍語へ解決できる = 化けの疑い」の検出器として残る。
+
 
 背景 (data/eval/c2c_x_report.md): 記事本文翻訳 (``src.cti.body_translator._translate_chunk``、
 モデル ``kuebiko-sft:26b``) の「重い問題あり」判定の約 1/3 は、外来語の固有名詞・数字・
@@ -57,14 +62,6 @@ def _levenshtein(a: str, b: str) -> int:
 def _is_word_char(ch: str) -> bool:
     """トークン境界判定用 (identifier_match と同じ ASCII 英数字限定の定義)。"""
     return ch.isascii() and ch.isalnum()
-
-
-def _replace_token(text: str, broken: str, repaired: str) -> str:
-    """``broken`` の全出現を ``repaired`` に置換する (トークン境界つき)。"""
-    if not broken:
-        return text
-    pattern = re.compile(rf"(?<![0-9A-Za-z]){re.escape(broken)}(?![0-9A-Za-z])")
-    return pattern.sub(lambda _m: repaired, text)
 
 
 # ---------- 1. 単純な語トークン (固有名詞・短い略語) ----------
@@ -243,14 +240,6 @@ def find_garbled_word_tokens(source: str, output: str) -> tuple[WordRepair, ...]
     return tuple(repairs)
 
 
-def apply_word_repairs(output: str, repairs: tuple[WordRepair, ...]) -> str:
-    """``find_garbled_word_tokens`` の結果を訳文に適用する。"""
-    text = output
-    for r in repairs:
-        text = _replace_token(text, r.broken, r.repaired)
-    return text
-
-
 # ---------- 2. 識別子 (CVE/IP/domain/hash/version/cvss/actor_id) ----------
 
 
@@ -287,14 +276,6 @@ def find_garbled_identifiers(source: str, output: str) -> tuple[IdentifierRepair
         seen.add(ident.normalized)
         repairs.append(IdentifierRepair(kind=ident.kind, broken=ident.raw, repaired=candidate))
     return tuple(repairs)
-
-
-def apply_identifier_repairs(output: str, repairs: tuple[IdentifierRepair, ...]) -> str:
-    """``find_garbled_identifiers`` の結果を訳文に適用する。"""
-    text = output
-    for r in repairs:
-        text = _replace_token(text, r.broken, r.repaired)
-    return text
 
 
 # ---------- 3. 数字 (自動修復はしない、検出のみ) ----------
@@ -398,40 +379,30 @@ def find_suspicious_numbers(source: str, output: str) -> tuple[NumberFlag, ...]:
 
 
 @dataclass(frozen=True)
-class FidelityResult:
-    """``apply_fidelity_gate`` の結果。"""
+class GarbleReport:
+    """``detect_garbling`` の結果 (検出のみ。訳文は一切書き換えない)。"""
 
-    repaired_text: str
-    word_repairs: tuple[WordRepair, ...]
-    identifier_repairs: tuple[IdentifierRepair, ...]
+    word_hits: tuple[WordRepair, ...]
+    identifier_hits: tuple[IdentifierRepair, ...]
     number_flags: tuple[NumberFlag, ...]
 
     @property
-    def repaired_count(self) -> int:
-        return len(self.word_repairs) + len(self.identifier_repairs)
+    def is_garbled(self) -> bool:
+        return bool(self.word_hits or self.identifier_hits or self.number_flags)
 
     @property
-    def has_suspicious_numbers(self) -> bool:
-        return bool(self.number_flags)
+    def total(self) -> int:
+        return len(self.word_hits) + len(self.identifier_hits) + len(self.number_flags)
 
 
-def apply_fidelity_gate(source: str, output: str) -> FidelityResult:
-    """原文 ``source`` を基準に訳文 ``output`` の化けを検出・修復する (純粋関数)。
+def detect_garbling(source: str, output: str) -> GarbleReport:
+    """原文 ``source`` を基準に訳文 ``output`` の化けを検出する (純粋関数、修復はしない)。
 
-    識別子 (厳密文法) を先に修復し、残りを語トークン (緩い検出) で修復する。
-    数字は最後に (修復後のテキストに対して) 検出のみ行う。
+    2026-10-12: 語の修復は 29 件中 13 件が誤修復だったため「直す」をやめ、
+    検出だけを使って化けた訳を保存させない (呼び出し側 ``body_translator``)。
     """
-    identifier_repairs = find_garbled_identifiers(source, output)
-    text = apply_identifier_repairs(output, identifier_repairs)
-
-    word_repairs = find_garbled_word_tokens(source, text)
-    text = apply_word_repairs(text, word_repairs)
-
-    number_flags = find_suspicious_numbers(source, text)
-
-    return FidelityResult(
-        repaired_text=text,
-        word_repairs=word_repairs,
-        identifier_repairs=identifier_repairs,
-        number_flags=number_flags,
+    return GarbleReport(
+        word_hits=find_garbled_word_tokens(source, output),
+        identifier_hits=find_garbled_identifiers(source, output),
+        number_flags=find_suspicious_numbers(source, output),
     )
