@@ -134,9 +134,9 @@ services:
       # 照合規則 30/30 (別標本 30/30)、alert の重複の回収 14→22/52 (再現)、新しい辺の適合 39/45
       EVENTNEWS_ORG_NORM: ${EVENTNEWS_ORG_NORM:-1}
       # 被害組織名の別名 (日本語 ⇔ 英語・略称・旧社名・親子会社) を logprob 判定で畳む (2026-10-12)。
-      # 0=off / shadow=判定だけ記録 / 1=群化の entity を置き換える。要 EVENTNEWS_ORG_NORM=1。
+      # 0=off / shadow=判定だけ記録 (10-12 開始、数日見て 1) / 1=群化の entity を置き換える。要 EVENTNEWS_ORG_NORM=1。
       # 判定役は素の fast ティア (step org_identity_judge)。src/eventnews/org_identity.py
-      EVENTNEWS_ORG_IDENTITY: ${EVENTNEWS_ORG_IDENTITY:-0}
+      EVENTNEWS_ORG_IDENTITY: ${EVENTNEWS_ORG_IDENTITY:-shadow}
       # 統合で、両事象が主題の CVE を持ち共有ゼロなら結ばない (2026-10-12)。統合 40 組で適合 75%→85%
       EVENTNEWS_MERGE_CVE_GATE: ${EVENTNEWS_MERGE_CVE_GATE:-1}
       # 台帳の割当に埋込の確認を課す (2026-09-24)。規則の「同じ情勢」率は anchor 31% /
