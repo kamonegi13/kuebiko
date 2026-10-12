@@ -795,6 +795,12 @@ def _build_briefing(
 
     # Phase H: PMESII-PT 軸 + Diamond victim を metadata に保存 (V1/V2/V3 で利用)。
     # LLM 判定 + feed/category default mapping を union (Recall 重視)。
+    from src.cti.involved_country_gate import (
+        MODE_OFF,
+        MODE_ON,
+        filter_involved_countries,
+        gate_mode,
+    )
     from src.cti.taxonomy_normalizer import load_normalizer as _load_taxonomy_normalizer
     from src.cti.victim_country_gate import should_drop_victim_country
 
@@ -866,6 +872,25 @@ def _build_briefing(
             if iso and iso.lower() not in _seen_iso:
                 _seen_iso.add(iso.lower())
                 _isos.append(iso)
+        # 付けすぎの関門 (2026-10-12): サイバー系カテゴリは空に、4 件目以降は本文で
+        # 言及の薄い国を落とす (適合率 69%→87%、回収率 94%→82%、正解集 150 件)。
+        # rollback=INVOLVED_COUNTRY_GATE=0 / shadow は落とす国をログに出すだけ。
+        _gate_mode = gate_mode()
+        if _gate_mode != MODE_OFF and _isos:
+            _kept = filter_involved_countries(
+                _isos,
+                summary.category,
+                f"{article.title or ''}\n{body_text}\n{summary.summary or ''}",
+            )
+            if _kept != _isos:
+                _log.info(
+                    "involved_country_gate",
+                    mode=_gate_mode,
+                    dropped=[iso for iso in _isos if iso not in _kept],
+                    category=summary.category,
+                )
+                if _gate_mode == MODE_ON:
+                    _isos = _kept
         if _isos:
             metadata["involved_country_isos"] = _isos
     # Phase 2 (geo-map): 被害組織名 (実際に攻撃された組織のみ)。後続の

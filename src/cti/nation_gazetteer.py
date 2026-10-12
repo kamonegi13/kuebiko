@@ -111,3 +111,22 @@ def nations_in_text(text: str) -> frozenset[str]:
     for m in _SHORT_CODE_RE.finditer(text):
         found.add(_SHORT_CODE_WHITELIST[m.group(1)])
     return frozenset(found)
+
+
+def country_mention_counts(text: str) -> dict[str, int]:
+    """テキスト中の国ごとの言及回数 (ISO → 出現位置の異なる一致の数、決定論・LLM 不使用)。
+
+    ``nations_in_text`` と同じ辞書・境界規則で、集合でなく回数を返す版。同じ位置を
+    複数の alias が拾った場合は 1 回と数える (「アメリカ合衆国」と「アメリカ」等)。
+    """
+    if not text:
+        return {}
+    for phrase in _PRE_REMOVE:
+        text = text.replace(phrase, " ")
+    positions: dict[str, set[int]] = {}
+    for pat, iso in _patterns():
+        for m in pat.finditer(text):
+            positions.setdefault(iso, set()).add(m.start())
+    for m in _SHORT_CODE_RE.finditer(text):
+        positions.setdefault(_SHORT_CODE_WHITELIST[m.group(1)], set()).add(m.start())
+    return {iso: len(pos) for iso, pos in positions.items()}

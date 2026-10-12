@@ -464,6 +464,8 @@ kuebiko/
   | (10-11) `decision_probe` が複数トークンに分かれる選択肢 (Gemma の「いいえ」= 「いい」+「え」) を最初のトークンで照合する (完全一致だと floor 扱いで P(はい)≈0.88 に化けていた。本番の Yes/No は各 1 トークンで影響なし) | (コード) |
   | (10-11) 薄い本文の関門 (`THIN_BODY_GATE`) と logprob の 2 段目 (`THIN_BODY_PROBE`)・SIR 別の要点の記事またぎ混同の関門 (`PIR_FOCUS_FIDELITY_GATE`) と文ごとの裏付け判定 (`PIR_FOCUS_CLAIM_GATE`)・被害国の語の関門 (`VICTIM_COUNTRY_GATE_KEYWORD`)・台帳の割当 ML への証拠確率の特徴量 (`ASSIGN_PROBE_FEATURE`) を on (compose の既定 1) | それぞれ `=0` |
   | (10-12) 翻訳の固有名詞・識別子・数字の化けを**検出**したら訳を保存せず (body_ja='' = 翻訳なし、画面は原文)、再試行もしない。修復はしない (語の修復は誤りが多かった)。標本 150 件で重い問題の回収 24/46・問題なしの誤発火 2/40 (5.0%)。on だと約 26% の記事の訳が出なくなるため**既定 shadow** (log のみ、本番の発火を見て on) | `TRANSLATE_FIDELITY_GATE=on` で適用 / `off`。保存済みの '' は `UPDATE articles SET body_ja=NULL` で再翻訳キューへ |
+  | (10-12) 関与国 (involved_countries) の付けすぎの関門 (`cti/involved_country_gate`): サイバー系カテゴリは空・4 件目以降は本文+要約での言及が 3 回未満の国を落とす (JP は対象外)。正解集 150 件で適合率 69%→87%・回収率 94%→82% (調整と測定が同じ標本のため**既定 shadow**、新しい正解で確かめて on) | `INVOLVED_COUNTRY_GATE=1` で適用 / `0` |
+  | (10-12) 被害の件数の抽出 (`importance_v2.stated_victim_count`) を、17万7千・千万・億・全角数字・誤送付/表示の語・「対象は…」の文・関連記事行の除外に対応 (S3 の根拠 large_magnitude が増える) | (コード) |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す
