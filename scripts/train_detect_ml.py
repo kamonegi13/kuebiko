@@ -27,8 +27,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
-from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]  # noqa: E402
-from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]  # noqa: E402
+from sklearn.linear_model import LogisticRegression  # noqa: E402
+from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.synthesis.grounded.detect_features import FEATURE_NAMES, feature_vector  # noqa: E402

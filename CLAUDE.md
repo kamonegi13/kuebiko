@@ -295,7 +295,6 @@ kuebiko/
 ├── data/                      # (gitignore default-deny) SQLite, ChromaDB の実体。compose が起動時に作成
 ├── docs/
 │   ├── deployment.md          # Docker 込みの運用ガイド
-│   ├── architecture.md        # アーキテクチャ図と決定の根拠
 │   └── archive/
 │       └── claude_code_prompts.md   # Phase 1 実装ガイド (役目終了)
 └── .github/                   # (将来用)
@@ -459,6 +458,12 @@ kuebiko/
   | (10-10) M3b 段1: 配信の判断の時点で深刻度の軸を inline で取り (Step.SEVERITY_AXES、毎時の段と同じ client)、新しいルール (`cti/routing_v2.M3B_RULES`: alert=S3∧関連性 / vuln=S3∧悪用の根拠∧関連性なし / japan_watch / watch) の配信先を `routing_v2_shadow` に**記録だけ**する。本番の配信は v12 のまま。`GET /api/v1/routing-v2-shadow/summary` で新旧を比べる | `ROUTING_V2_INLINE_AXES=0` (inline の LLM 呼び出しだけ止まる) |
   | (10-10) 被害組織名の無い非インシデント記事 (advisory/press/research/opinion/tutorial) は被害国を付けない (`cti/victim_country_gate`)。監査 140 件で発火 30 件中 27 件が誤り (発行元の国・被害組織の無い記事)。直近 90 日の既存 2,319 行も遡及で空にした | `VICTIM_COUNTRY_GATE=0` / 既存行は `_backup_victim_country_gate_20261010_072036` から戻す |
   | (10-10) triage の PIR 駆動プロンプトに境界の型 A〜I の決まりを追加 (v4 境界除く 89.0→94.5%、i58) | 画面で triage_rubric を前の版に戻す (or boundary_rules block を空文字にして保存) |
+  | (10-11) alert の候補から当局の摘発・無力化・起訴・押収・逮捕の発表を watch に下げる関門 (語の条件のみ。logprob 判定は全件「はい」に偏り外した、185 件の正解で精度 10/11・回収 10/10) | `ALERT_EXCLUDE_LAW_ENFORCEMENT=0` (既定 off) |
+  | (10-11) 過去 72 時間の alert と同じ事象 (群化 ML の確率 0.94 以上) の重複 alert を watch に下げる。Opus の正解 65 組で測り直すと誤抑止 12% (規則 contributed_new_facts を正解にした旧測定 1/21 は過小) のため既定 off。正解を週 ~10 組ずつ足して再評価 | `ALERT_DEDUP_EVENT=0` (既定 off) |
+  | (10-11) 重複 alert の ML (木) の判断を `alert_dedup_shadow` に記録だけする (配信は不変)。集計は `GET /api/v1/alert-dedup-shadow/summary` (公開面には出さない) | `ALERT_DEDUP_SHADOW=0` |
+  | (10-11) `decision_probe` が複数トークンに分かれる選択肢 (Gemma の「いいえ」= 「いい」+「え」) を最初のトークンで照合する (完全一致だと floor 扱いで P(はい)≈0.88 に化けていた。本番の Yes/No は各 1 トークンで影響なし) | (コード) |
+  | (10-11) 薄い本文の関門 (`THIN_BODY_GATE`) と logprob の 2 段目 (`THIN_BODY_PROBE`)・SIR 別の要点の記事またぎ混同の関門 (`PIR_FOCUS_FIDELITY_GATE`) と文ごとの裏付け判定 (`PIR_FOCUS_CLAIM_GATE`)・被害国の語の関門 (`VICTIM_COUNTRY_GATE_KEYWORD`)・台帳の割当 ML への証拠確率の特徴量 (`ASSIGN_PROBE_FEATURE`) を on (compose の既定 1) | それぞれ `=0` |
+  | (10-11) 翻訳の固有名詞・識別子・数字の化けを検出する決定論関門は実装のみで **off** (保留) | `TRANSLATE_FIDELITY_GATE=1` で有効化 |
   STIX 2.1 の書き出しは [docs/stix_export.md](docs/stix_export.md)、準拠は OASIS 検証器のテストが固定する
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す

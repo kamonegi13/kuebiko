@@ -85,7 +85,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["discord_webhook", "apscheduler.*", "playwright.*", "transformers", "mlx_lm.*", "stix2validator", "stix2validator.*", "jsonschema"]
+module = ["discord_webhook", "apscheduler.*", "playwright.*", "transformers", "mlx_lm.*", "stix2validator", "stix2validator.*", "jsonschema", "sklearn.*"]
 ignore_missing_imports = true
 
 
@@ -103,6 +103,7 @@ module = [
     "claude_code_bridge",
     "eval_goldset",
     "export_mirror",
+    "m3b_routing_replay",
     "summarizer_diff_contract",
     "verify_prompt_cutover",
     "verify_summarizer_rubric",
