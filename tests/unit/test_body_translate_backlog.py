@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import pytest
 from pydantic import BaseModel
@@ -157,6 +157,32 @@ async def test_backlog_garbled_translation_is_not_saved_and_not_retried(
     assert repo.get_article_body_ja("g") == ""
     assert repo.list_articles_untranslated() == []
     assert len(llm.calls) == 1
+
+
+async def test_backlog_ident_mode_skips_garbled_identifier_only(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    _add(repo, "c", "The flaw is tracked as CVE-2026-76746.", age_minutes=1)
+    _add(repo, "w", "Gitea fixed a critical vulnerability.", age_minutes=2)
+
+    class _ByBody(FakeLLM):
+        async def generate(  # type: ignore[override]
+            self, prompt: str, system: str | None = None, **kw: Any
+        ) -> LLMResponse:
+            text = (
+                "この欠陥は CVE-2016-76746 です。"
+                if "CVE-2026" in prompt
+                else "Gite0 は重大な脆弱性を修正しました。"
+            )
+            return LLMResponse(text=text, model="fake-model")
+
+    stats = await run_body_translate_backlog(repo, _ByBody())
+
+    assert stats["skipped_garbled"] == 1  # 識別子の化けのみ
+    assert stats["translated"] == 1  # 語の化けは ident では通る
+    assert repo.get_article_body_ja("c") == ""
+    assert repo.get_article_body_ja("w")
 
 
 async def test_backlog_respects_batch_limit(repo: RunHistoryRepository) -> None:

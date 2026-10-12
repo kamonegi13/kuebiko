@@ -15,10 +15,11 @@
 確定保存し、失敗・時間切れ後は未訳チャンクだけを続きから処理する。
 部分訳を ``body_ja`` として**キャッシュしない**原則は不変 (完訳時のみ確定)。
 
-2026-10-12 決定論関門 (``TRANSLATE_FIDELITY_GATE`` = on/shadow/off): 外来語の固有名詞・
+2026-10-12 決定論関門 (``TRANSLATE_FIDELITY_GATE`` = on/ident/shadow/off): 外来語の固有名詞・
 識別子・数字が 1〜数文字だけ挿入/置換/脱落する化け (data/eval/c2c_x_report.md、
 例: Gitea→Gite0) を原文との対称照合で**検出**する (``src.cti.translation_fidelity``)。
 修復はしない (誤修復が多いため)。on = 化けた訳は保存せず (body_ja='' = 翻訳なし) 画面は原文を出す。
+ident = 識別子の化けだけで同様に保存しない (語・数字はログのみ)。
 同じ位置で化けるため再試行はしない。
 """
 
@@ -32,13 +33,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from src.cti.translation_fidelity import detect_garbling
+from src.cti.translation_fidelity import GarbleReport, detect_garbling
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient, LLMError
 
 _log = get_logger(__name__)
 
-# 決定論関門 (固有名詞・識別子・数字の化け検出、2026-10-12)。on / shadow / off、既定 on。
+# 決定論関門 (化け検出、2026-10-12)。on / ident / shadow / off、既定 shadow。
 # 詳細は data/eval/p1_report.md と CLAUDE.md §7。
 TRANSLATE_FIDELITY_GATE_ENV = "TRANSLATE_FIDELITY_GATE"
 
@@ -196,19 +197,33 @@ def broken_translation_reason(source: str, output: str) -> str | None:
 
 
 def fidelity_gate_mode() -> str:
-    """``TRANSLATE_FIDELITY_GATE`` (on / shadow / off、既定 shadow)。未知の値は shadow。
+    """``TRANSLATE_FIDELITY_GATE`` (on / ident / shadow / off、既定 shadow)。未知の値は shadow。
 
+    - on: 語・識別子・数字のどれかの化けで訳を保存しない
+    - ident: 識別子 (CVE・ハッシュ等) の化けだけで訳を保存しない。語・数字はログのみ
+    - shadow: 検出をログに出すだけ / off: 検出しない
     旧値 ``1`` は on、``0`` は off として読む (旧 flag との互換)。
     既定 shadow の理由 (2026-10-12): 標本 150 件で on にすると約 26% の記事で訳が出なくなり、
     重い問題の回収は 24/46 に留まる (軽微のみの記事 13/64・問題なしの 2/40 も巻き込む)。
-    本番の発火の内訳を見てから on を判断する。
+    本番の発火の内訳を見てから on / ident を判断する。
     """
     raw = os.environ.get(TRANSLATE_FIDELITY_GATE_ENV, "shadow").strip().lower()
     if raw in ("0", "false", "off"):
         return "off"
     if raw in ("1", "true", "on"):
         return "on"
+    if raw == "ident":
+        return "ident"
     return "shadow"
+
+
+def should_block_translation(mode: str, report: GarbleReport) -> bool:
+    """モードと検出結果から「この訳を保存しないか」を決める (純粋関数)。"""
+    if mode == "on":
+        return report.is_garbled
+    if mode == "ident":
+        return bool(report.identifier_hits)
+    return False
 
 
 class TranslationGarbledError(LLMError):
@@ -247,16 +262,22 @@ async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -
 
 
 def _check_fidelity(chunk: str, out: str, index: int, total: int, model: str) -> None:
-    """化けを検出。on なら ``TranslationGarbledError``、shadow は log のみ (本文は出さない)。"""
+    """化けを検出。保存しない判定 (``should_block_translation``) なら ``TranslationGarbledError``。
+
+    ログ (本文・訳文は出さない) は種類別の件数 (word/ident/number) と適用の有無 (blocked) を持つ。
+    チャンク単位の判定 (毎時ジョブも記事詳細の翻訳も ``_translate_chunk`` を通る)。
+    """
     mode = fidelity_gate_mode()
     if mode == "off":
         return
     report = detect_garbling(chunk, out)
     if not report.is_garbled:
         return
+    blocked = should_block_translation(mode, report)
     _log.warning(
         "translate_fidelity_garbled",
         mode=mode,
+        blocked=blocked,
         words=len(report.word_hits),
         identifiers=len(report.identifier_hits),
         numbers=len(report.number_flags),
@@ -264,9 +285,9 @@ def _check_fidelity(chunk: str, out: str, index: int, total: int, model: str) ->
         chunk_total=total,
         model=model,
     )
-    if mode == "on":
+    if blocked:
         raise TranslationGarbledError(
-            f"訳に固有名詞・数字の化けを検出 (chunk {index + 1}/{total}, model={model})"
+            f"訳に固有名詞・識別子・数字の化けを検出 (chunk {index + 1}/{total}, model={model})"
         )
 
 

@@ -165,8 +165,10 @@ services:
       # 2026-10-12 有効化 (v13 の配信を本番と同じ関数の再現で確認した後)
       ALERT_EXCLUDE_LAW_ENFORCEMENT: ${ALERT_EXCLUDE_LAW_ENFORCEMENT:-1}
       # 翻訳の化け (固有名詞・識別子・数字) を検出したら訳を保存せず原文を出す (2026-10-12)。
-      # on / shadow (log のみ) / off。修復はしない (誤修復が多いため)。既定 shadow: on だと標本で
-      # 約 26% の記事の訳が出なくなる (重い問題の回収 24/46) — 本番の発火の内訳を見てから on
+      # on = 語・識別子・数字のどれでも / ident = 識別子 (CVE・ハッシュ・IP 等) の化けだけ
+      # (語・数字は log のみ) / shadow = 全部 log のみ / off。修復はしない。既定 shadow:
+      # on は 14 日で 30% の訳が消える、ident は約 2% (識別子の検出は精度ほぼ 100%、
+      # 語 約 5 割・数字 1 割未満)。ログ translate_fidelity_garbled に blocked / 種類別件数
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-shadow}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。

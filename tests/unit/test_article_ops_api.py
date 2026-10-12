@@ -147,6 +147,35 @@ def test_translate_llm_failure_502_and_no_cache(
     assert repo.get_article_body_ja("a1") is None
 
 
+def test_translate_ident_mode_garbled_identifier_422_and_marks_empty(
+    client: TestClient, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """記事詳細の翻訳ボタン経路でも ident が効く (識別子の化け → 保存せず '' )。"""
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    _add(repo, "a1", body="The flaw is tracked as CVE-2026-76746.")
+    fake = FakeLLM(text="この欠陥は CVE-2016-76746 として追跡されています。")
+    monkeypatch.setattr(article_ops, "build_llm_for", lambda *a, **k: fake)
+
+    resp = client.post("/api/v1/articles/a1/translate")
+
+    assert resp.status_code == 422
+    assert repo.get_article_body_ja("a1") == ""
+
+
+def test_translate_ident_mode_word_garble_still_saved(
+    client: TestClient, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    _add(repo, "a1", body="Gitea fixed a critical vulnerability.")
+    fake = FakeLLM(text="Gite0 は重大な脆弱性を修正しました。")
+    monkeypatch.setattr(article_ops, "build_llm_for", lambda *a, **k: fake)
+
+    resp = client.post("/api/v1/articles/a1/translate")
+
+    assert resp.status_code == 200
+    assert repo.get_article_body_ja("a1")
+
+
 def test_translate_japanese_body_rejected_400(
     client: TestClient, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:

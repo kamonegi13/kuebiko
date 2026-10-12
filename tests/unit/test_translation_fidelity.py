@@ -190,3 +190,25 @@ def test_detect_garbling_clean_translation_is_not_garbled() -> None:
     report = detect_garbling(source, output)
     assert not report.is_garbled
     assert report.total == 0
+
+
+def test_spaced_cve_in_source_is_not_flagged() -> None:
+    """原文が 'CVE-2026- 57941' と空白入りで、訳文が詰めた表記でも化けとしない。"""
+    report = detect_garbling("Details CVE-2026- 57941 Use After Free", "詳細 CVE-2026-57941 UAF")
+    assert report.identifier_hits == ()
+
+
+def test_spaced_cve_real_garble_still_detected() -> None:
+    report = detect_garbling("Details CVE-2026- 57941 Use After Free", "詳細 CVE-2016-57941 UAF")
+    assert report.identifier_hits
+
+
+def test_cve_prefix_dropped_in_source_is_not_flagged() -> None:
+    """原文で連番だけが別のセルに出る (接頭辞欠落) とき、訳が復元した CVE は化けではない。"""
+    report = detect_garbling("More Details\n103475\nyii2-starter-kit", "CVE-2026-103475 yii2")
+    assert report.identifier_hits == ()
+
+
+def test_cve_year_garble_still_flagged_when_source_has_prefix() -> None:
+    report = detect_garbling("Tracked as CVE-2026-103475 here.", "CVE-2020-103475 です")
+    assert report.identifier_hits

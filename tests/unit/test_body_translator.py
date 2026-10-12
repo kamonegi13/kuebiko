@@ -384,6 +384,7 @@ async def test_gate_off_does_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_gate_mode_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     for raw, expected in [
         ("on", "on"),
+        ("ident", "ident"),
         ("shadow", "shadow"),
         ("off", "off"),
         ("0", "off"),
@@ -405,3 +406,60 @@ async def test_resumable_garbled_raises_and_keeps_no_garbled_chunk(
             FakeLLM(responses=[_GARBLED_OUT]), _GARBLED_SRC, article_id="a", store=store
         )
     assert store.rows == {}  # 化けた訳のチャンクは保存されない
+
+
+# ---------- ident モード (識別子の化けだけで訳を保存しない) ----------
+
+_CVE_SRC = "The flaw is tracked as CVE-2026-76746."
+_CVE_OUT = "この欠陥は CVE-2016-76746 として追跡されています。"
+
+
+async def test_ident_mode_blocks_garbled_identifier_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    llm = FakeLLM(responses=[_CVE_OUT])
+    with structlog.testing.capture_logs() as logs, pytest.raises(TranslationGarbledError):
+        await translate_body(llm, _CVE_SRC)
+    assert len(llm.prompts) == 1
+    ev = [e for e in logs if e["event"] == "translate_fidelity_garbled"]
+    assert len(ev) == 1
+    assert ev[0]["blocked"] is True and ev[0]["identifiers"] == 1
+    assert ev[0]["words"] == 0
+    assert _CVE_OUT not in str(ev[0])
+
+
+async def test_ident_mode_keeps_word_and_number_garble_but_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    with structlog.testing.capture_logs() as logs:
+        out_word = await translate_body(FakeLLM(responses=[_GARBLED_OUT]), _GARBLED_SRC)
+        out_num = await translate_body(
+            FakeLLM(responses=["このグループは 130 人を制裁しました。"]),
+            "The group sanctioned 136 individuals.",
+        )
+    assert out_word == _GARBLED_OUT
+    assert out_num.startswith("このグループ")
+    ev = [e for e in logs if e["event"] == "translate_fidelity_garbled"]
+    assert len(ev) == 2 and all(e["blocked"] is False for e in ev)
+    assert ev[0]["words"] >= 1 and ev[1]["numbers"] >= 1
+
+
+async def test_shadow_and_on_log_blocked_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "shadow")
+    with structlog.testing.capture_logs() as logs:
+        await translate_body(FakeLLM(responses=[_CVE_OUT]), _CVE_SRC)
+    assert logs[0]["blocked"] is False
+
+
+async def test_ident_mode_resumable_saves_no_garbled_chunk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRANSLATE_FIDELITY_GATE", "ident")
+    store = MemoryChunkStore()
+    with pytest.raises(TranslationGarbledError):
+        await translate_body_resumable(
+            FakeLLM(responses=[_CVE_OUT]), _CVE_SRC, article_id="a", store=store
+        )
+    assert store.rows == {}

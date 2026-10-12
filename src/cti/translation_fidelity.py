@@ -243,6 +243,19 @@ def find_garbled_word_tokens(source: str, output: str) -> tuple[WordRepair, ...]
 # ---------- 2. 識別子 (CVE/IP/domain/hash/version/cvss/actor_id) ----------
 
 
+def _cve_number_bare_in(source: str, raw: str) -> bool:
+    """CVE の連番が、原文に「前に数字・ハイフンの無い単独の数字列」として存在するか。
+
+    原文が "CVE-2026-" と連番を別の行・セルに分けている場合、訳が接頭辞を復元して正しい
+    CVE 番号になる (2026-10-12 実測: 14 日の識別子ヒットの誤検出型)。年だけ化けた訳
+    (原文 CVE-2026-N → 訳 CVE-2020-N) は、原文の N が "-" の直後にあるため該当しない。
+    """
+    m = re.fullmatch(r"CVE-\d{4}-(\d{4,})", raw, re.IGNORECASE)
+    if m is None:
+        return False
+    return re.search(rf"(?<![\d-]){m.group(1)}(?!\d)", source) is not None
+
+
 def find_garbled_identifiers(source: str, output: str) -> tuple[IdentifierRepair, ...]:
     """訳文の識別子のうち、原文に無く同一 kind の一意な近傍識別子へ解決できるものを返す。
 
@@ -270,6 +283,8 @@ def find_garbled_identifiers(source: str, output: str) -> tuple[IdentifierRepair
             continue
         if contains_identifier(source, ident):
             continue  # 原文にそのまま存在 → 化けではない
+        if _cve_number_bare_in(source, ident.raw):
+            continue  # 原文で接頭辞 "CVE-YYYY-" だけ欠落 (表の折り返し等) → 復元で化けではない
         candidate = _unique_nearest(ident.raw, by_kind.get(ident.kind, []))
         if candidate is None:
             continue
@@ -395,12 +410,24 @@ class GarbleReport:
         return len(self.word_hits) + len(self.identifier_hits) + len(self.number_flags)
 
 
+#: 原文側の CVE 表記ゆれ ("CVE-2026- 57941" のようにハイフン後へ空白が入る) を詰める。
+#: 訳文では空白が詰まって出るため、詰めないと原文に無い識別子と誤検出する (2026-10-12、
+#: 14 日の識別子検出 41 件中 1 件・ヒット 185 件中 4 件で実測)。
+_CVE_SPACED_RE = re.compile(r"(CVE)\s*-\s*(\d{4})\s*-\s*(\d{4,})", re.IGNORECASE)
+
+
+def _squeeze_cve_spacing(text: str) -> str:
+    return _CVE_SPACED_RE.sub(r"\1-\2-\3", text)
+
+
 def detect_garbling(source: str, output: str) -> GarbleReport:
     """原文 ``source`` を基準に訳文 ``output`` の化けを検出する (純粋関数、修復はしない)。
 
     2026-10-12: 語の修復は 29 件中 13 件が誤修復だったため「直す」をやめ、
     検出だけを使って化けた訳を保存させない (呼び出し側 ``body_translator``)。
     """
+    source = _squeeze_cve_spacing(source)
+    output = _squeeze_cve_spacing(output)
     return GarbleReport(
         word_hits=find_garbled_word_tokens(source, output),
         identifier_hits=find_garbled_identifiers(source, output),
