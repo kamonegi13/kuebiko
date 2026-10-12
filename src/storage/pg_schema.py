@@ -787,6 +787,16 @@ CREATE TABLE IF NOT EXISTS triage_rejections (
 );
 CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
 
+-- 被害組織名の別名判定のキャッシュ (2026-10-12、SQLite _SCHEMA と対)。詳細は schema_sql.py の同表。
+CREATE TABLE IF NOT EXISTS org_identity_pairs (
+    key_a     TEXT             NOT NULL,
+    key_b     TEXT             NOT NULL,
+    form      TEXT             NOT NULL,
+    logit     DOUBLE PRECISION NOT NULL,
+    judged_at TEXT             NOT NULL,
+    PRIMARY KEY (key_a, key_b, form)
+);
+
 -- triage 影子記録 (2026-10-08、M4、SQLite _SCHEMA と対)。詳細コメントは schema_sql.py の同表。
 CREATE TABLE IF NOT EXISTS triage_shadow (
     id                  BIGSERIAL PRIMARY KEY,

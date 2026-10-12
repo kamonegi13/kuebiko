@@ -57,6 +57,7 @@ from src.storage.repo_importance_v2 import ImportanceV2Mixin
 from src.storage.repo_knowledge import KnowledgeMixin
 from src.storage.repo_llm_usage import LlmUsageMixin
 from src.storage.repo_ops_notices import OpsNoticesMixin
+from src.storage.repo_org_identity import OrgIdentityMixin
 from src.storage.repo_pir import PirJudgmentsMixin
 from src.storage.repo_routing_v2_shadow import RoutingV2ShadowMixin
 from src.storage.repo_runs import RunsMixin
@@ -99,6 +100,7 @@ class RunHistoryRepository(
     TranslationChunksMixin,
     OpsNoticesMixin,
     TriageRejectionsMixin,
+    OrgIdentityMixin,
     TriageShadowMixin,
     TuningLabelsMixin,
     EventNewsMixin,

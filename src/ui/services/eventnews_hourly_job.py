@@ -39,6 +39,7 @@ from src.storage.repo_summary_embeddings import summary_embedding_text
 from src.storage.run_history import RunHistoryRepository
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step, build_llm_for
+from src.ui.services.eventnews_org_identity import resolve_org_identity
 
 _log = get_logger(__name__)
 
@@ -370,6 +371,10 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
         _log.info("eventnews_kind_deferred", deferred=deferred)
     if not candidates:
         return {"candidates": 0, "deferred": deferred}
+
+    # 被害組織名の別名 (日本語 ⇔ 英語・略称・親子) を畳む。EVENTNEWS_ORG_IDENTITY=1 のときだけ
+    # entity のキーを置き換える (既定 off、shadow は判定の記録のみ)。失敗しても群化は続ける
+    candidates, existing = await resolve_org_identity(repo, config, candidates, existing, vectors)
 
     def _llm() -> LLMClient:
         return build_llm_for(Step.EVENT_NEWS, config)

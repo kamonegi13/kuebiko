@@ -166,6 +166,12 @@ class Step(StrEnum):
     # 制裁指定の発表」が主題かどうかの logprob 判定 (R1b、2026-10-11)。P(はい) を
     # decision_probe.probe_choice で読む。1 件=小さな bool 判定、他の judge 系と同じ fast ティア。
     ALERT_LAW_ENFORCEMENT_JUDGE = "alert_law_enforcement_judge"
+    # 群化で食い違った被害組織名の組が「同じ事案の同じ被害者 (別名・親子・運営会社)」かの
+    # logprob 判定 (src/eventnews/org_identity.py、2026-10-12)。P(Yes) を 1 回の前向き計算で読む。
+    # ⚠ **素の fast ティアモデル (gemma4:26b 相当) が判定役**。SFT 済みモデルは自由形式の
+    # yes/no に偏る (s23i は常に yes) ので、fast ティアを SFT に割り当てている環境では
+    # step 上書き (``step:org_identity_judge``) で素の 26B を明示すること。
+    ORG_IDENTITY_JUDGE = "org_identity_judge"
     # 記事本文の日本語全訳 (UI オンデマンド + 毎時バックログ)。2026-07-25 の haiku vs 26B
     # 品質比較でローカル 26B が同等以上と確定 → 翻訳系既存 step と同じ fast に置く
     # (dialog に置くと外部モデル割当時にバッチ翻訳が外部消費になるため)。
@@ -233,6 +239,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ASSIGN_EVIDENCE_JUDGE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (thin_body_judge 等) と同じ 120s。
     Step.ALERT_LAW_ENFORCEMENT_JUDGE: StepSpec(Tier.FAST, 120.0),
+    # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定と同じ 120s。
+    Step.ORG_IDENTITY_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
     # コストに波及しない。timeout は従来 (fast 時代) の値を踏襲。
     Step.PIR_COMPILE: StepSpec(Tier.DIALOG, 180.0),

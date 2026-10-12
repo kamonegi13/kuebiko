@@ -642,6 +642,18 @@ CREATE TABLE IF NOT EXISTS triage_rejections (
 );
 CREATE INDEX IF NOT EXISTS idx_triage_rejections_ts ON triage_rejections(ts);
 
+-- 被害組織名の別名判定のキャッシュ (2026-10-12、PG _SCHEMA と対)。群化が「被害者が食い違う
+-- 別事象」と塞ぐ組のうち、別名 (日本語 ⇔ 英語・略称・旧社名・親子会社) を判定役の logit で畳む
+-- (src/eventnews/org_identity.py)。名前の組ごとに 1 度だけ判定する。form は問いの版。
+CREATE TABLE IF NOT EXISTS org_identity_pairs (
+    key_a     TEXT NOT NULL,
+    key_b     TEXT NOT NULL,
+    form      TEXT NOT NULL,
+    logit     REAL NOT NULL,
+    judged_at TEXT NOT NULL,                    -- ISO8601 UTC
+    PRIMARY KEY (key_a, key_b, form)
+);
+
 -- triage 影子記録 (2026-10-08、M4、docs/importance_relevance_redesign.md §6)。s23 投入前に
 -- 「平たい triage (TRIAGE_FLAT) + 取り込み時ヒント (src.cti.ingest_relevance)」の新しい
 -- 取り込み判定を、本番 (現行 triage) の判定と並べて記録する安全網。本番の判定は変えない
