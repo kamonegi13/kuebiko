@@ -67,6 +67,13 @@ _LOGIT_CLIP = 15.0
 _P_EPS = 1e-12
 #: 文脈として問いに載せる 1 文の上限。
 _CONTEXT_CHARS = 130
+#: 名前だけの短い文 (見出し的な 1 行) は文脈にならないので飛ばす。名前の長さにこの余裕を足した
+#: 長さに満たない文は、より情報のある次の文を探す。
+_STUB_EXTRA_CHARS = 8
+#: 名前の組 1 つあたりに判定する文脈 (= 記事の組) の上限。判定は文脈で大きく振れる
+#: (2026-10-15 実測: 同じ組でも文脈次第で margin が +3 ⇔ -27)。最初に当たった文脈 1 つで
+#: 永続させると、似た被害の記事が来た組が誤って同一に固定される。過半数の文脈で通ったときだけ同一。
+MAX_CONTEXTS_PER_NAME_PAIR = 3
 _CHOICES = ("Yes", "No")
 _SENTENCE_SPLIT = re.compile(r"(?<=[。.!?！？\n])\s*")
 
@@ -159,17 +166,35 @@ def candidate_name_pairs(
 
 
 def context_sentence(title: str, body: str, summary: str, name: str) -> str:
-    """記事の中で名前が出る最初の 1 文。見つからなければ見出し。"""
+    """記事の中で名前が出る最初の 1 文。見つからなければ見出し。
+
+    名前だけの短い文 (社名の見出し行など) は文脈にならないので、あれば次の文を優先する。
+    """
     needle = unicodedata.normalize("NFKC", name).casefold()
     text = f"{title}。{body or summary}"
+    stub: str | None = None
     for sentence in _SENTENCE_SPLIT.split(text):
-        if needle and needle in unicodedata.normalize("NFKC", sentence).casefold():
-            return sentence.strip()[:_CONTEXT_CHARS]
-    return title[:_CONTEXT_CHARS]
+        if not needle or needle not in unicodedata.normalize("NFKC", sentence).casefold():
+            continue
+        stripped = sentence.strip()
+        if len(stripped) >= len(needle) + _STUB_EXTRA_CHARS:
+            return stripped[:_CONTEXT_CHARS]
+        stub = stub or stripped
+    return (stub or title)[:_CONTEXT_CHARS]
 
 
 _NAMES_AND_CONTEXTS = (
     "名前1: {name_a}\n名前1が出る文: {ctx_a}\n名前2: {name_b}\n名前2が出る文: {ctx_b}\n"
+)
+
+
+#: 文脈が似ていても名前が別の組織なら「いいえ」にさせる注意書き。2026-10-15: 本番の同一判定 28 組の
+#: うち 3 組 (別ホテル・競合する 2 つの小売グループ・別の EC 事業者) は、同じ手口・同時期の別の
+#: 被害を述べた文脈に引きずられて「はい」になっていた。
+_CAUTION = (
+    "注意: 2つの文脈が似た種類の被害(同じ手口・同時期の別の漏えい)を述べていても、名前が別の"
+    "組織を指すなら「いいえ」です。同じ事案の別々の被害者同士も「いいえ」です。名前そのものが"
+    "同じ組織を指すと言える場合だけ「はい」にしてください。\n"
 )
 
 
@@ -179,6 +204,7 @@ def same_event_question(name_a: str, ctx_a: str, name_b: str, ctx_b: str) -> str
         "2つの記事が同じサイバー事案を報じているかを調べています。次の2つの名前が、その事案の"
         "同じ被害者(同一組織、またはその親会社・子会社・運営会社・サービス名)を指すか判定して"
         "ください。\n"
+        + _CAUTION
         + _NAMES_AND_CONTEXTS.format(name_a=name_a, ctx_a=ctx_a, name_b=name_b, ctx_b=ctx_b)
         + "同じ事案の同じ被害者を指していますか?"
     )
@@ -188,7 +214,9 @@ def same_org_question(name_a: str, ctx_a: str, name_b: str, ctx_b: str) -> str:
     """問い 2: 同じ組織か (表記違い・略称・翻訳・旧社名は同じ、似た名前の別法人は違う)。"""
     return (
         "次の2つの組織名が、同じ組織を指しているか判定してください。表記違い・略称・翻訳・"
-        "旧社名は同じ組織、別の組織(似た名前の別法人を含む)は違います。\n"
+        "旧社名は同じ組織、別の組織(似た名前の別法人・同業他社・同時期に似た被害に遭った別法人を"
+        "含む)は違います。\n"
+        + _CAUTION
         + _NAMES_AND_CONTEXTS.format(name_a=name_a, ctx_a=ctx_a, name_b=name_b, ctx_b=ctx_b)
         + "名前1と名前2は同じ組織ですか?"
     )
@@ -290,6 +318,46 @@ class ResolveStats:
 Judge = Callable[[NamePairTask], Awaitable[float | None]]
 
 
+def _distinct_contexts(tasks: Sequence[NamePairTask], limit: int) -> list[NamePairTask]:
+    """同じ名前の組の文脈を、向きと重複を無視して最大 ``limit`` 件 (出現順)。"""
+    seen: set[frozenset[tuple[str, str]]] = set()
+    picked: list[NamePairTask] = []
+    for task in tasks:
+        signature = frozenset({(task.name_a, task.ctx_a), (task.name_b, task.ctx_b)})
+        if signature in seen:
+            continue
+        seen.add(signature)
+        picked.append(task)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+def lower_median(margins: Sequence[float]) -> float:
+    """下側中央値。件数が偶数なら小さい方 — 過半数 (厳密) が通ったときだけ 0 以上になる。"""
+    ordered = sorted(margins)
+    return ordered[(len(ordered) - 1) // 2]
+
+
+async def _judge_contexts(contexts: Sequence[NamePairTask], judge: Judge) -> list[float]:
+    """文脈を順に判定する。結果が決まったら残りは判定しない (多数が通る/通らないが確定)。"""
+    total = len(contexts)
+    margins: list[float] = []
+    positives = negatives = 0
+    for task in contexts:
+        margin = await judge(task)
+        if margin is None:
+            continue
+        margins.append(margin)
+        if margin >= SAME_MARGIN:
+            positives += 1
+        else:
+            negatives += 1
+        if positives * 2 > total or negatives * 2 >= total:
+            break
+    return margins
+
+
 async def resolve_same_pairs(
     tasks: Sequence[NamePairTask],
     store: VerdictStore,
@@ -297,32 +365,39 @@ async def resolve_same_pairs(
     *,
     max_judgments: int = MAX_JUDGMENTS_PER_RUN,
 ) -> tuple[list[tuple[str, str]], ResolveStats]:
-    """名前の組を判定し、同一と判定された照合キーの組を返す。判定は組ごとに 1 回 (DB に残す)。"""
-    unique: dict[tuple[str, str], NamePairTask] = {}
+    """名前の組を判定し、同一と判定された照合キーの組を返す。判定は組ごとに 1 回 (DB に残す)。
+
+    1 つの組に複数の文脈 (記事の組) があるときは最大 ``MAX_CONTEXTS_PER_NAME_PAIR`` 件を判定し、
+    保存する余裕は下側中央値 (過半数の文脈で通ったときだけ 0 以上)。
+    ``max_judgments`` は名前の組の数。
+    """
+    by_key: dict[tuple[str, str], list[NamePairTask]] = {}
     for task in tasks:
-        unique.setdefault(task.key, task)
-    verdicts = store.get_many(list(unique))
+        by_key.setdefault(task.key, []).append(task)
+    verdicts = store.get_many(list(by_key))
     fresh: dict[tuple[str, str], float] = {}
     judged = failed = deferred = 0
-    for key, task in unique.items():
+    for key, key_tasks in by_key.items():
         if key in verdicts:
             continue
         if judged >= max_judgments:
             deferred += 1
             continue
-        margin = await judge(task)
+        margins = await _judge_contexts(
+            _distinct_contexts(key_tasks, MAX_CONTEXTS_PER_NAME_PAIR), judge
+        )
         judged += 1
-        if margin is None:
+        if not margins:
             failed += 1
             continue
-        fresh[key] = margin
+        fresh[key] = lower_median(margins)
     if fresh:
         store.put_many(fresh)
     verdicts = {**verdicts, **fresh}
     same = [key for key, margin in verdicts.items() if margin >= SAME_MARGIN]
     stats = ResolveStats(
         judged=judged,
-        cache_hits=len(unique) - judged - deferred,
+        cache_hits=len(by_key) - judged - deferred,
         deferred=deferred,
         failed=failed,
         same=len(same),

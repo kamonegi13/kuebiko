@@ -83,6 +83,19 @@ class TestQuestionAndContext:
     def test_context_sentence_falls_back_to_title(self) -> None:
         assert oi.context_sentence("見出し", "別の話。", "", "Nothing") == "見出し"
 
+    def test_context_sentence_skips_name_only_stub_line(self) -> None:
+        body = "GMOリサーチ&AI株式会社\nGMOリサーチ&AIは不正アクセスによる漏えいを公表した。"
+        ctx = oi.context_sentence("見出し", body, "", "GMOリサーチ&AI")
+        assert "不正アクセス" in ctx
+
+    def test_context_sentence_uses_stub_when_nothing_better(self) -> None:
+        assert oi.context_sentence("見出し", "Foo社", "", "Foo社") == "Foo社"
+
+    @pytest.mark.parametrize("build", [oi.same_event_question, oi.same_org_question])
+    def test_questions_warn_that_similar_context_is_not_identity(self, build: object) -> None:
+        q = build("A社", "a", "B社", "b")  # type: ignore[operator]
+        assert "別々の被害者" in q and "似た種類の被害" in q
+
     @pytest.mark.parametrize("build", [oi.same_event_question, oi.same_org_question])
     def test_questions_mention_both_names_and_contexts(self, build: object) -> None:
         q = build("A社", "A社が被害", "B社", "B社が被害")  # type: ignore[operator]
@@ -173,6 +186,88 @@ class TestResolve:
             [_task("Foo", "ふー"), _task("ふー", "Foo")], _Store(), judge, max_judgments=5
         )
         assert calls == 1
+
+
+def _ctx_task(ctx: str) -> oi.NamePairTask:
+    return oi.NamePairTask(name_a="Foo", ctx_a=ctx, name_b="ふー", ctx_b=ctx)
+
+
+class TestMultiContext:
+    """判定は文脈で振れるので、名前の組ごとに複数の文脈を見て過半数で決める。"""
+
+    @staticmethod
+    def _judge_by_ctx(values: dict[str, float | None], calls: list[str]) -> oi.Judge:
+        async def judge(task: oi.NamePairTask) -> float | None:
+            calls.append(task.ctx_a)
+            return values[task.ctx_a]
+
+        return judge
+
+    @pytest.mark.asyncio
+    async def test_first_context_alone_cannot_make_a_pair_same(self) -> None:
+        calls: list[str] = []
+        judge = self._judge_by_ctx({"c1": 3.0, "c2": -27.0, "c3": -27.0}, calls)
+        store = _Store()
+        same, _ = await oi.resolve_same_pairs(
+            [_ctx_task("c1"), _ctx_task("c2"), _ctx_task("c3")], store, judge
+        )
+        assert same == [] and calls == ["c1", "c2", "c3"]
+        assert next(iter(store.puts.values())) < oi.SAME_MARGIN
+
+    @pytest.mark.asyncio
+    async def test_majority_of_contexts_makes_pair_same(self) -> None:
+        calls: list[str] = []
+        judge = self._judge_by_ctx({"c1": -2.0, "c2": 3.0, "c3": 3.0}, calls)
+        same, _ = await oi.resolve_same_pairs(
+            [_ctx_task("c1"), _ctx_task("c2"), _ctx_task("c3")], _Store(), judge
+        )
+        assert same == [oi.pair_key("Foo", "ふー")]
+
+    @pytest.mark.asyncio
+    async def test_stops_early_when_outcome_is_decided(self) -> None:
+        calls: list[str] = []
+        judge = self._judge_by_ctx({"c1": -9.0, "c2": -9.0, "c3": 3.0}, calls)
+        await oi.resolve_same_pairs(
+            [_ctx_task("c1"), _ctx_task("c2"), _ctx_task("c3")], _Store(), judge
+        )
+        assert calls == ["c1", "c2"]
+
+    @pytest.mark.asyncio
+    async def test_two_contexts_need_both_to_pass(self) -> None:
+        calls: list[str] = []
+        judge = self._judge_by_ctx({"c1": 3.0, "c2": -1.0}, calls)
+        same, _ = await oi.resolve_same_pairs([_ctx_task("c1"), _ctx_task("c2")], _Store(), judge)
+        assert same == [] and calls == ["c1", "c2"]
+
+    @pytest.mark.asyncio
+    async def test_caps_contexts_per_pair(self) -> None:
+        calls: list[str] = []
+        ctxs = [f"c{i}" for i in range(6)]
+        judge = self._judge_by_ctx(
+            {c: 3.0 if i % 2 == 0 else -3.0 for i, c in enumerate(ctxs)}, calls
+        )
+        _, stats = await oi.resolve_same_pairs([_ctx_task(c) for c in ctxs], _Store(), judge)
+        assert len(calls) <= oi.MAX_CONTEXTS_PER_NAME_PAIR and stats.judged == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_context_is_skipped_not_fatal(self) -> None:
+        calls: list[str] = []
+        judge = self._judge_by_ctx({"c1": None, "c2": 3.0, "c3": 3.0}, calls)
+        same, stats = await oi.resolve_same_pairs(
+            [_ctx_task("c1"), _ctx_task("c2"), _ctx_task("c3")], _Store(), judge
+        )
+        assert same == [oi.pair_key("Foo", "ふー")] and stats.failed == 0
+
+    @pytest.mark.asyncio
+    async def test_all_contexts_failing_counts_as_failed(self) -> None:
+        judge = self._judge_by_ctx({"c1": None, "c2": None}, [])
+        store = _Store()
+        _, stats = await oi.resolve_same_pairs([_ctx_task("c1"), _ctx_task("c2")], store, judge)
+        assert stats.failed == 1 and store.puts == {}
+
+    def test_lower_median_is_conservative_for_even_counts(self) -> None:
+        assert oi.lower_median([5.0, -1.0]) == -1.0
+        assert oi.lower_median([3.0, -27.0, 3.0]) == 3.0
 
 
 def _article(

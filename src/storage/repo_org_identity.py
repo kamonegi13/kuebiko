@@ -14,7 +14,7 @@ from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _to_iso
 
 #: 問いの版。``org_identity`` の問いかしきい値を変えたらここも上げる。
-FORM_VERSION = "and_event12_org-4_v1"
+FORM_VERSION = "and_event12_org-4_v2"
 _KEY_MAX = 200
 
 
