@@ -7555,6 +7555,28 @@ actors:
   aliases: []
   kind: group
   family: ''
+  associated_malware:
+  - Bandook
+  - CrossRAT
+  - FinFisher
+  references:
+  - https://info.lookout.com/rs/051-ESQ-475/images/Lookout_Dark-Caracal_srr_20180118_us_v.1.0.pdf
+  mitre_ttps:
+  - T1005 Data from Local System
+  - T1027.002 Software Packing
+  - T1027.013 Encrypted/Encoded File
+  - T1059.003 Windows Command Shell
+  - T1071.001 Web Protocols
+  - T1083 File and Directory Discovery
+  - T1113 Screen Capture
+  - T1189 Drive-by Compromise
+  - T1204.002 Malicious File
+  - T1218.001 Compiled HTML File
+  - T1547.001 Registry Run Keys / Startup Folder
+  - T1566.003 Spearphishing via Service
+  mitre_group: G0070
+  summary: Dark Caracalは、Lebanese General Directorate of General Security (GDGS) の関与が指摘されている脅威グループであり、少なくとも2012年以降活動している。
+  mitre_summary_sha1: a28ec7f8b1f4c50499fd9a793b64d7dffa81d957
 - id: storm_3121
   canonical: Storm-3121
   aliases: []
