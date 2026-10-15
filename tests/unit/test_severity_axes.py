@@ -322,3 +322,84 @@ def test_shipped_detect_model_matches_the_feature_contract() -> None:
     m = load_detect_model()
     assert m is not None, "同梱 detect モデルが列ずれしている"
     assert m.axes_model, "軸を付けたモデルが記録されていない (照合できない)"
+
+
+class TestAxesFromBodyWiring:
+    """3 つの呼び出し経路が本文を渡す。AXES_FROM_BODY=0 では prompt が従来と byte-identical。"""
+
+    class _LLM:
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        async def generate_structured(
+            self, prompt: str, *_a: object, **_k: object
+        ) -> sa.SeverityAxes:
+            self.prompts.append(prompt)
+            return sa.SeverityAxes.model_validate(_AXES)
+
+    def test_flag_off_prompt_is_byte_identical_even_with_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("AXES_FROM_BODY", raising=False)
+        llm = self._LLM()
+        asyncio.run(sa.classify_axes(llm, "t", "s", "本文あり"))  # type: ignore[arg-type]
+        assert llm.prompts == [sa.build_prompt("t", "s")]
+
+    def test_flag_on_uses_body_prompt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AXES_FROM_BODY", "1")
+        llm = self._LLM()
+        asyncio.run(sa.classify_axes(llm, "t", "s", "本文あり"))  # type: ignore[arg-type]
+        assert llm.prompts == [sa.build_body_prompt("t", "本文あり")]
+
+    def test_ensure_axes_passes_body_only_when_given(self) -> None:
+        from src.synthesis.grounded.detect_ml import ensure_axes
+
+        seen: list[tuple[str, ...]] = []
+
+        async def classify(*args: str) -> dict[str, str] | None:
+            seen.append(args)
+            return dict(_AXES)
+
+        repo = TestEnsureAxes._Repo(set())
+        asyncio.run(
+            ensure_axes(
+                repo,
+                [("a", "ta", "sa"), ("b", "tb", "sb")],
+                classify,
+                model_label="m",
+                bodies={"a": "BODY"},
+            )
+        )
+        assert sorted(seen) == [("ta", "sa", "BODY"), ("tb", "sb")]
+
+    def test_fetch_bodies_off_returns_empty_without_db(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("AXES_FROM_BODY", raising=False)
+
+        class _NoDb:
+            def _connect(self) -> None:
+                raise AssertionError("DB を読んではならない")
+
+        assert sa.fetch_bodies(_NoDb(), ["a"]) == {}
+
+    def test_fetch_bodies_on_reads_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AXES_FROM_BODY", "1")
+        repo = RunHistoryRepository(tmp_path / "r.db")
+        with repo._connect() as conn:  # noqa: SLF001
+            conn.execute(
+                "INSERT INTO runs (started_at, pipeline, dry_run, status)"
+                " VALUES ('2026-09-25T00:00:00+00:00', 't', 0, 'done')"
+            )
+            rid = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            for body in ("長い本文です",):
+                conn.execute(
+                    "INSERT INTO articles (run_id, article_id, title, summary, url, status, body,"
+                    " created_at)"
+                    " VALUES (?, 'x', 't', 's', 'https://kuebiko.example/x', 'posted', ?,"
+                    " '2026-09-25T02:00:00+00:00')",
+                    (rid, body),
+                )
+        assert sa.fetch_bodies(repo, ["x", "none"]) == {"x": "長い本文です"}

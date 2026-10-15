@@ -2401,11 +2401,17 @@ async def _ensure_severity_axes(
     if expected_model and label and label != expected_model:
         _log.warning("detect_ml_axes_model_mismatch", trained_on=expected_model, assigned=label)
 
-    async def _classify(title: str, summary: str) -> dict[str, str] | None:
-        axes = await severity_axes.classify_axes(axes_llm, title, summary)
+    async def _classify(title: str, summary: str, body: str = "") -> dict[str, str] | None:
+        axes = await severity_axes.classify_axes(axes_llm, title, summary, body)
         return axes.model_dump() if axes is not None else None
 
-    await detect_ml.ensure_axes(repo, triples, _classify, model_label=label)
+    await detect_ml.ensure_axes(
+        repo,
+        triples,
+        _classify,
+        model_label=label,
+        bodies=severity_axes.fetch_bodies(repo, [t[0] for t in triples]),
+    )
 
 
 def _record_detect_ml_shadow(

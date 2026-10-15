@@ -273,6 +273,7 @@ async def _summarize_and_build(
         summary.summary,
         importance=summary.importance,
         category=summary.category,
+        body=llm_body,
     )
 
     # c. Phase 4: 機械的 IOC 抽出 + アクター名正規化

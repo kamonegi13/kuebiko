@@ -23,8 +23,8 @@ from __future__ import annotations
 import math
 import os
 import re
-from collections.abc import Mapping
-from typing import Literal, get_args
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict
 
@@ -227,6 +227,33 @@ _AXES_FROM_BODY_FLAG = "AXES_FROM_BODY"
 def axes_from_body_enabled() -> bool:
     """``AXES_FROM_BODY=1`` のときだけ本文入力の prompt を使う (既定 0 = 要約のまま)。"""
     return os.environ.get(_AXES_FROM_BODY_FLAG, "0") == "1"
+
+
+def fetch_bodies(repo: Any, article_ids: Sequence[str]) -> dict[str, str]:
+    """記事 id → 本文 (articles.body、同一 id の複数行は最長を採る)。
+
+    ``AXES_FROM_BODY=1`` のときだけ読む (既定 0 では DB を読まない)。
+    失敗・欠損は空 (= 要約入力に倒れる)。
+    """
+    ids = [a for a in dict.fromkeys(article_ids) if a]
+    if not ids or not axes_from_body_enabled():
+        return {}
+    marks = ",".join("?" for _ in ids)
+    try:
+        with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の接続 seam 共有
+            rows = conn.execute(
+                f"SELECT article_id, body FROM articles WHERE article_id IN ({marks})", ids
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — 本文が取れなくても軸の段は要約入力で続ける
+        _log.warning("severity_axes_fetch_bodies_failed", error=type(exc).__name__)
+        return {}
+    out: dict[str, str] = {}
+    for r in rows:
+        text = str(r["body"] or "")
+        key = str(r["article_id"])
+        if len(text) > len(out.get(key, "")):
+            out[key] = text
+    return out
 
 
 def build_prompt(title: str, summary: str) -> str:
