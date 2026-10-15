@@ -71,3 +71,25 @@ async def test_unclear_and_failure_fall_toward_ingestion() -> None:
         )
         is None
     )
+
+
+def test_dedup_cluster_judge_has_own_step_without_task_marker() -> None:
+    """triage 借用をやめ、triage と同じティア・timeout の専用 step で、印は付けない。"""
+    from src.tools.model_tiers import STEP_REGISTRY, Step
+    from src.tools.task_prefix import TASK_MARKERS
+
+    assert STEP_REGISTRY[Step.DEDUP_CLUSTER_JUDGE] == STEP_REGISTRY[Step.TRIAGE]
+    assert Step.DEDUP_CLUSTER_JUDGE not in TASK_MARKERS
+
+
+@pytest.mark.asyncio
+async def test_failure_is_logged_with_reason_and_falls_toward_ingestion() -> None:
+    from structlog.testing import capture_logs
+
+    with capture_logs() as logs:
+        got = await is_duplicate(
+            cast(LLMClient, _Llm(None)), skipped_title="a", skipped_feed="f", matched_title="b"
+        )
+    assert got is None
+    failed = [e for e in logs if e["event"] == "dedup_cluster_judge_failed"]
+    assert len(failed) == 1 and failed[0]["reason"] == "RuntimeError"

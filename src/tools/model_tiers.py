@@ -124,6 +124,9 @@ class Step(StrEnum):
     # 同じ基準で判定し直す。**triage と別のモデルを割り当てるための step** — triage の
     # SFT モデルは「一般地政学 = low」を学習しており、同じモデルでは救えない (素の 26B を割当)
     TRIAGE_GEO_RESCUE = "triage_geo_rescue"
+    # cluster 帯 dedup の最終確認 (duplicate/different/unclear)。以前は Step.TRIAGE 借用で、
+    # triage 専用の印 ([task: triage]) が別の問いに付いていた。学習していない問いなので印なし。
+    DEDUP_CLUSTER_JUDGE = "dedup_cluster_judge"
     PAIR_JUDGE = "pair_judge"  # 事象ペアの同一性判定 (R 型 = 関係判定。S 族 SFT の適用対象外)
     EVENT_KIND = "event_kind"  # 記事種別分類 (ML pair モデルの特徴量供給 — 供給元を固定する)
     # 深刻度の軸 (広がり・被害の性質・実害の確認・悪用状況・行為者・標的、2026-09-25)。
@@ -209,6 +212,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE_GEO_RESCUE: StepSpec(Tier.FAST, 300.0),
+    Step.DEDUP_CLUSTER_JUDGE: StepSpec(Tier.FAST, 300.0),  # 旧 TRIAGE 借用と同じ解決先・timeout
     # pair 判定は 1 呼出 = 小さな関係判定 (max_tokens 300)。専用 step の理由: 以前は
     # Step.TRIAGE を借用しており、triage の step 上書きを黙って継承していた (借用禁止の衛生)。
     # 実測では pair 判定は SFT に不変 (base/s1/s15/s16/N1 の 5 腕が held-out 149 で全問一致、

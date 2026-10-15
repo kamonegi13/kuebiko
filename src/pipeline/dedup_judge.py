@@ -56,7 +56,13 @@ async def is_duplicate(
             prompt, DuplicateVerdict, system=SYSTEM, max_attempts=2, think=False
         )
     except Exception as e:  # noqa: BLE001 — 判定できないときは取り込む (Recall 優先)
-        _log.warning("dedup_judge_failed", error=str(e)[:120])
+        # 理由つきで残す (黙って取込側へ倒れた件数を後から数えられるように)
+        _log.warning(
+            "dedup_cluster_judge_failed",
+            reason=type(e).__name__,
+            error=str(e)[:120],
+            fell_toward="ingest",
+        )
         return None
     if v.verdict == "duplicate":
         return True

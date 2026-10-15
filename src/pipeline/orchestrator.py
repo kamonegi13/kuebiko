@@ -488,7 +488,7 @@ async def run_pipeline(
             from src.tools.model_tiers import Step as _Step
             from src.tools.model_tiers import build_llm_for as _build_llm
 
-            _judge_llm = _build_llm(_Step.TRIAGE, config)
+            _judge_llm = _build_llm(_Step.DEDUP_CLUSTER_JUDGE, config)
 
             async def cluster_judge(article: Article, matched_hash: str) -> bool | None:
                 seen = dedup_repo.get_seen_url(matched_hash)
