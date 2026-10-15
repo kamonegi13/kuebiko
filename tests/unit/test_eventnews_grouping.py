@@ -657,3 +657,16 @@ def test_org_norm_removes_false_different_victim_block(monkeypatch: pytest.Monke
     monkeypatch.setenv("EVENTNEWS_ORG_NORM", "1")
     on = build_join_entities(raw, {})
     assert not blocked_by_different_victims(on["a"], on["b"])
+
+
+def test_masked_victim_gate_drops_masked_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw = [
+        ("a", "victim_org", "ab***.com"),
+        ("a", "victim_org", "Real Corp"),
+        ("b", "victim_org", "ab***.com"),
+    ]
+    monkeypatch.delenv("EVENTNEWS_MASKED_VICTIM_GATE", raising=False)
+    assert len(build_join_entities(raw, {})["a"]) == 2
+    monkeypatch.setenv("EVENTNEWS_MASKED_VICTIM_GATE", "1")
+    got = build_join_entities(raw, {})
+    assert got["a"] == frozenset({("victim_org", "realcorp")}) and "b" not in got

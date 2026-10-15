@@ -48,6 +48,22 @@ def org_norm_enabled() -> bool:
     return os.environ.get(_ORG_NORM_ENV, "0") == "1"
 
 
+#: 伏字 (``*`` 等) を含む victim_org を結合信号と組織名照合から外す。既定は off。
+#: 実例: 流出サイトの一覧が伏字ドメインを複数社ぶん並べ、別々の被害者が同じ伏字で
+#: 「同じ組織」に見えて統合された (10-15 の統合の再測定)。群化 (毎時) と統合は同じ
+#: ``build_join_entities`` を通るので、ここ 1 箇所で両方に効く。
+_MASKED_VICTIM_ENV = "EVENTNEWS_MASKED_VICTIM_GATE"
+_MASK_CHARS = ("*", "＊")
+
+
+def masked_victim_gate_enabled() -> bool:
+    return os.environ.get(_MASKED_VICTIM_ENV, "0") == "1"
+
+
+def is_masked_victim(value: str) -> bool:
+    return any(c in value for c in _MASK_CHARS)
+
+
 def join_entity_key(entity_type: str, value: str) -> tuple[str, str]:
     """結合信号 entity のキー。**分母 (頻出ガードの counts) と参照側で必ず共有する**。
 
@@ -77,8 +93,11 @@ def build_join_entities(
       ``ENTITY_FREQ_CAP`` を超える値は結合信号から除外する (頻出ガード)
     """
     grouped: dict[str, set[tuple[str, str]]] = {}
+    masked = masked_victim_gate_enabled()
     for article_id, entity_type, value in raw:
         if entity_type not in JOIN_ENTITY_TYPES:
+            continue
+        if entity_type == "victim_org" and masked and is_masked_victim(value):
             continue
         key = join_entity_key(entity_type, value)
         if entity_type not in FREQ_CAP_EXEMPT_TYPES and counts.get(key, 0) > ENTITY_FREQ_CAP:
