@@ -145,6 +145,29 @@ def focal_cves_by_item(
     return {iid: frozenset(v) for iid, v in out.items()}
 
 
+def _cve_count(entities: frozenset[tuple[str, str]]) -> int:
+    return sum(1 for t, _ in entities if t == "cve")
+
+
+def is_bulletin_cve_bridge(
+    ents_a: frozenset[tuple[str, str]],
+    ents_b: frozenset[tuple[str, str]],
+    shared: Sequence[tuple[str, str]],
+) -> bool:
+    """辺が CVE だけを根拠にし、**片方だけ**が一括の勧告 (CVE が ``FOCAL_CVE_MAX`` 超) か。
+
+    ⭐ 両方が一括の勧告の辺は止めない: 同じ勧告群を報じた記事どうし (Tomcat・Nessus・KEV 5 件の
+    追加の続報) で、14 日の裁定では止めた 13 件のうち同一の 3 件は全てこの形だった。
+
+    一括の勧告は先に事象に入るとハブになり、その CVE の 1 つだけを持つ別件を吸収する
+    (別 CVE の勧告どうし、Patch Tuesday が 2 CVE の KEV 記事を橋に別事象へ入った例)。
+    被害組織などの CVE 以外の共有がある辺は対象外 (変えない)。
+    """
+    if not any(t == "cve" for t, _ in shared) or any(t != "cve" for t, _ in shared):
+        return False
+    return (_cve_count(ents_a) > FOCAL_CVE_MAX) != (_cve_count(ents_b) > FOCAL_CVE_MAX)
+
+
 def cve_sets_disjoint(cves: Mapping[str, frozenset[str]], item_a: str, item_b: str) -> bool:
     """両方の事象が主題の CVE を持ち、1 つも重ならないか (= 別の脆弱性の話)。"""
     a, b = cves.get(item_a), cves.get(item_b)
@@ -170,6 +193,7 @@ def plan_merges(
     single_edge_ok: set[tuple[str, str]] | None = None,
     extra_edges: Sequence[tuple[str, str]] | None = None,
     cve_disjoint_gate: bool = False,
+    bulletin_bridge_gate: bool = False,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -190,6 +214,8 @@ def plan_merges(
             (2026-10-02、``frequent_entity_pairs``)。
             頻出ガード後の entity では共有が無いため ``edge_is_allowed`` を通らない。承認済みの
             辺として本数に数え、単独事象の救済にも使う (本数の規則そのものは変えない)
+        bulletin_bridge_gate: CVE だけを根拠にする辺のうち、一括の勧告 (CVE が
+            ``FOCAL_CVE_MAX`` 超) と焦点の記事を結ぶ辺を使わない (一括の勧告を橋にしない)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
@@ -206,6 +232,8 @@ def plan_merges(
         if allow is not None and (a, b) not in allow and (b, a) not in allow:
             continue
         shared = tuple(sorted(entities[a] & entities[b]))
+        if bulletin_bridge_gate and is_bulletin_cve_bridge(entities[a], entities[b], shared):
+            continue
         cos = float(np.dot(vectors[a], vectors[b]))
         if not edge_is_allowed(entities[a], entities[b], shared, cos):
             continue

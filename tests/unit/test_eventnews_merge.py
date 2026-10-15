@@ -293,3 +293,54 @@ class TestCveDisjointGate:
         ents = self._ents({"cve-2026-1111"}, set())
 
         assert len(self._plan(ents, gate=True)) == 1
+
+
+class TestBulletinBridgeGate:
+    """一括の勧告 (CVE 4 件以上) と焦点の記事を CVE だけで結ぶ辺を使わない (既定 off)。"""
+
+    @staticmethod
+    def _plan(ents: dict[str, frozenset[tuple[str, str]]], *, gate: bool) -> list[MergeGroup]:
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ents)}
+        return plan_merges(
+            item_of={"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"},
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+            bulletin_bridge_gate=gate,
+        )
+
+    @staticmethod
+    def _cves(*ids: int) -> frozenset[tuple[str, str]]:
+        return frozenset(("cve", f"cve-2026-{i}") for i in ids)
+
+    def test_blocks_edges_between_a_bulletin_and_a_focal_article(self) -> None:
+        ents = {
+            "a1": self._cves(1, 2, 3, 4, 5),
+            "a2": self._cves(1, 2, 3, 4, 5),
+            "b1": self._cves(1),
+            "b2": self._cves(2),
+        }
+
+        assert len(self._plan(ents, gate=False)) == 1
+        assert self._plan(ents, gate=True) == []
+
+    def test_keeps_edges_between_focal_articles(self) -> None:
+        ents = {k: self._cves(1) for k in ("a1", "a2", "b1", "b2")}
+
+        assert len(self._plan(ents, gate=True)) == 1
+
+    def test_keeps_edges_between_two_bulletins_about_the_same_advisories(self) -> None:
+        ents = {k: self._cves(1, 2, 3, 4, 5) for k in ("a1", "a2", "b1", "b2")}
+
+        assert len(self._plan(ents, gate=True)) == 1
+
+    def test_keeps_edges_that_share_a_non_cve_basis(self) -> None:
+        victim = ("victim_org", "acme")
+        ents = {
+            "a1": self._cves(1, 2, 3, 4, 5) | {victim},
+            "a2": self._cves(1, 2, 3, 4, 5) | {victim},
+            "b1": self._cves(1) | {victim},
+            "b2": self._cves(2) | {victim},
+        }
+
+        assert len(self._plan(ents, gate=True)) == 1

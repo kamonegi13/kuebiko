@@ -281,6 +281,11 @@ def cve_gate_enabled() -> bool:
     return os.environ.get("EVENTNEWS_MERGE_CVE_GATE", "0") == "1"
 
 
+def bulletin_bridge_gate_enabled() -> bool:
+    """一括の勧告を CVE 結合の橋にしない (既定 OFF、EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE=1)。"""
+    return os.environ.get("EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE", "0") == "1"
+
+
 def frequent_merge_enabled() -> bool:
     """頻出の名前の共有を統合の候補にする (既定 ON)。EVENTNEWS_MERGE_FREQUENT=0 で止める。"""
     return os.environ.get("EVENTNEWS_MERGE_FREQUENT", "1") != "0"
@@ -340,6 +345,7 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
         single_edge_ok=strong,
         extra_edges=extra,
         cve_disjoint_gate=cve_gate_enabled(),
+        bulletin_bridge_gate=bulletin_bridge_gate_enabled(),
     )
     return MergePlan(
         groups=tuple(groups),
