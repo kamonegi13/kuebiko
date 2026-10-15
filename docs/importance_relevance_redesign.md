@@ -183,7 +183,7 @@ s23 (平たい triage、§6 の 2026-10-08 決定) を本番投入する前に�
 | `TRIAGE_FLAT` | 0 (無効) | triage の prompt を平たい rubric に切替 (既存、`src/tools/triage_flat_rubric.py`) |
 | `TRIAGE_SHADOW_PER_RUN` | **20** (常時 ON) | 1 run あたり最大 N 件、現行判定と「平たい triage + 取り込みヒント」を並べて `triage_shadow` に記録する。0 で無効化 |
 | `TRIAGE_SHADOW_BUDGET_SECONDS` | 180 | 影子記録の 1 run あたり時間予算。超えたら残りをスキップ (本処理を遅延させない) |
-| `CYBER_POLICY_RESCUE` | 0 (無効)。**2026-10-12 閉じた** (shadow の裁定で救済 0/59、§8 の決定) | `shadow` = 判定を `data/policy_rescue_shadow.jsonl` に記録するだけ (取り込みは変えない)。`1` で、平たい triage が low にした記事を素の 26B (`Step.TRIAGE_GEO_RESCUE`) が話題の種類 (cyber_event / cyber_policy / noncyber_geopolitics / other) で判定し直し、cyber_policy を **medium に引き上げる** (`src/pipeline/policy_rescue.py`)。サイバー要素のない軍事・地政学は救わない |
+| `CYBER_POLICY_RESCUE` | 0 (無効)。**2026-10-12 閉じた** (shadow の裁定で救済 0/59、§8 の決定) | `shadow` = 判定を `data/policy_rescue_shadow.jsonl` に記録するだけ (取り込みは変えない)。`1` で、平たい triage が low にした記事を別モデル (`Step.TRIAGE_GEO_RESCUE`。本番の割当は `kuebiko-sft:26b` = N1 で素の 26B ではない) が話題の種類 (cyber_event / cyber_policy / noncyber_geopolitics / other) で判定し直し、cyber_policy を **medium に引き上げる** (`src/pipeline/policy_rescue.py`)。サイバー要素のない軍事・地政学は救わない |
 | `INGEST_RULE_V2` | 0 (無効) | ON で取り込みの足切りが `flat triage >= medium OR 取り込みヒント発火` になる。`TRIAGE_FLAT=1` と組み合わせて使う想定 (平たい triage と組まないと「関連性込みの判定 OR 取り込みヒント」の二重足しになる) |
 
 ### 実装

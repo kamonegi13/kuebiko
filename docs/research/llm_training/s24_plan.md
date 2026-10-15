@@ -2,6 +2,8 @@
 
 > 状態: 案。利用者の承認待ち。数字はすべて出典ファイルからの再掲。推測には「推測」と書いた。
 > 改訂: 10-15 の抜け漏れレビュー (`data/eval/s24_plan_review.md`、23 項目) の (推) を §1〜§10 の本文へ反映済み。利用者判断の 3 項目は §12。
+> 2 系統化 (10-15 決定): 本番の LLM を s24 (fast) と n20 (narrative) の 2 本だけにする。全体は `two_family_plan.md`、n 系は `n20_plan.md`。**logprob 判定 4 本 (thin・claim・assign・org) と triage_geo_rescue を s24 の範囲に入れた (§4.2・§4.3)**。
+> 改訂 (10-15 Opus レビュー、`data/eval/two_family_review.md`): 20 項目を反映済み。**件数・Opus 回数・合否線の SSoT は `two_family_plan.md` §5・§7** (本書の数字はそれと一致)。利用者判断は「推奨で決定 (10-15)」と書く。
 > 関連: s23 の計画 `next_models_s22_n20.md` §9、学習要領 `training_recipe_v2.md`、目標値 `docs/accuracy_targets.md`、命名 `docs/model_tier_architecture.md` ⑪。
 
 ## 1. 目的
@@ -16,7 +18,7 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 ## 2. 現状 (s24 が置き換える範囲)
 
 - 本番の割当は model_tiers 版 40 (10-12)。`fast = kuebiko-sft:s23i`、ACH (`step:synthesis_analysis`)・detect (`step:synthesis_detect`) も s23i。
-- 素の 26B 系の step: `article_translate`・`actor_sync`・`triage_geo_rescue` (kuebiko-sft:26b)、`assign_evidence_judge`・`org_identity_judge` (gemma4:26b)。
+- s23i 以外が担う step: `article_translate`・`actor_sync`・`triage_geo_rescue` (**kuebiko-sft:26b = N1、n 系の初版 (09-04、MLX 8 層・4bit QLoRA、事象ニュースを学習)。素の 26B ではない**)、`assign_evidence_judge`・`org_identity_judge` (gemma4:26b = 素の公式 26B)。2 系統化で、翻訳・和訳は n20 (`n20_plan.md` §3)、判定 4 本と地政学の救済は s24 (§4.2・§4.3)。全 step の割当表と「上書きが要るか」は `two_family_plan.md` §3。**隠れた呼び出し `dedup_cluster_judge`** (`DEDUP_CLUSTER_JUDGE=1`、`orchestrator.py:491`) も fast に乗る。以前は `Step.TRIAGE` を借り `[task: triage]` の印が付いていたが、`Step.DEDUP_CLUSTER_JUDGE` の新設で解消済み (c7aebefa、印なし)。切替前に実物と解析失敗率を見る。
 - **全 step の扱い表** (fast に解決される step は `src/tools/model_tiers.py` STEP_REGISTRY が SSoT。切替前に model_tiers の step 上書きを全部書き出して、この表と照合する):
 
 | step | s23 で学習 | s24 での扱い |
@@ -28,10 +30,13 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 | pir_daily_focus | あり (285、旧形) | 学習 (新しい組み立てで全作り直し、§4) |
 | event_kind / pair_judge | あり (591 / 300) | 引き継ぎ (replay) |
 | synthesis_analysis / synthesis_detect | あり (361 / 255) | ACH は引き継ぎ、detect は選び直し (§4、§12 項目 2) |
-| digest_deep_dive_select / digest_deep_dive | 学習なし。STEP_REGISTRY では FAST、`TASK_MARKERS` に印あり | 学習しない。fast の切替で挙動が変わるので**実物の出力を確認**。`UNTRAINED_STEPS` に s24 / s24i の項を足す (n19 と同じ扱い) |
+| digest_deep_dive_select / digest_deep_dive | 学習なし。STEP_REGISTRY では FAST、`TASK_MARKERS` に印あり | **n20 の範囲。s24 では触れない。`UNTRAINED_STEPS` 追加不要** (`step:<name>=kuebiko-sft:n20` の上書きを恒久に残す、`two_family_plan.md` §4)。選定は「判定」なので s24 に置く案と比べる (n20_plan §7.2) |
 | relevance_jp_cascade | なし (自由形式の bool JSON) | 学習しない。切替前に実物確認 |
-| thin_body_judge / pir_focus_claim_judge / alert_law_enforcement_judge | なし (logprob 判定) | 学習しない。しきい値の扱いは §12 項目 3 |
-| article_translate / actor_sync / triage_geo_rescue / assign_evidence_judge / org_identity_judge | — | 上書きで素の 26B のまま (変えない) |
+| thin_body_judge / pir_focus_claim_judge / assign_evidence_judge / org_identity_judge | なし (logprob 判定。thin・claim は s23i、assign・org は gemma4:26b の上書き) | **学習する** (§4.2、10-15 決定)。上書きは合格後に外す |
+| alert_law_enforcement_judge | なし | **学習しない** (本番未使用: `alert_demotion.py:78-80` は語の条件のみ。§4.2) |
+| dedup_cluster_judge | `Step.DEDUP_CLUSTER_JUDGE` (fast、借用は c7aebefa で解消済み) | 学習しない。実物と解析失敗率を見る |
+| triage_geo_rescue | なし (kuebiko-sft:26b の上書き) | 段ごと廃止を第一案。測定で決める (§4.3) |
+| article_translate / actor_sync | — | s24 の範囲外。**n20 で学習** (`n20_plan.md` §3)。それまで上書き (kuebiko-sft:26b) のまま |
 
 - s23 の学習データ (`data/mlx/dataset_s23_manifest.json`): train 4,537 / valid 149。設定 1 epoch・rank 32・lr 2e-5 (s22 と同じ)。
 
@@ -53,7 +58,7 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 | TTP の適合 | 関門後 0.70 (≥80%) | a | s23 の TTP 水増し (20 個以上の例 10 件) |
 | SIR 別の要点の誤り | 27.5% (≤2%) | a (一部) + b | 記事の混同・主体の取り違えは生成の誤り。安全網は PIR_FOCUS_CLAIM_GATE |
 | triage の平たい基準 | 96.2% (境界除く n=106)、過大 4・重い 0 (C6) | 達成 | s24 は退行させない。残る過大 4 は教師の入力の改訂では直さない (§4) |
-| 翻訳の重い問題 17.1%・失敗 1,310 件 (`A2_shadow_review_report.md`) | 原文の写し ~1,070・JSON 混入 70 | b | 担当外 (素の 26B)。s 系に学習させて JSON に偏り壊れた前例 |
+| 翻訳の重い問題 17.1% (境界除く 18/105)・境界込み 30.7% (46/150)・失敗 1,310 件 (`A2_shadow_review_report.md`) | 原文の写し 1,074・JSON 混入 70 | b | 担当外 → **n20** (`n20_plan.md` §3)。s 系に学習させて JSON に偏り壊れた前例 |
 | 規模 (件数) cyber 層 74% | | b | 本番値は importance_v2 の正規表現 (繁体字「萬」の取りこぼし) |
 | 群化 85%・回収 46%・統合 80% | | b | eventnews の関門・ML・照合キー |
 | alert の対象外のうち部品で説明できない 73/114 | | b | 配信の規則 (方針で後回し) |
@@ -66,17 +71,17 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 
 | step | 何を | 教師 | 件数 (s23 → 案) | Opus 回数 (推測) |
 |---|---|---|---|---|
-| 要約 | ①反復ループの例・TTP 20 個以上の例を除く ②長さ分布を s22 に揃える (字数で切らず、選び直すか Opus に意味を保って縮めさせる) ③全例に mitre_evidence ④書き直しの残り 60 件 ⑤**抽出欄の点検** (下の定義、Strata 型 A と規則で疑わしい例を選び Opus が直す) ⑥被害の中身・件数・結論を落とさない例を新しい長い cyber 記事で足す。**教師は全例を新しい rubric 版で描画し直す** (下記) | Opus / Strata 型 A | 692 → 約 800 | 約 500 |
-| 深刻度の軸 | 本文入力 12 欄 (`axes_teacher_v4` を基に)。**319 件を現行の scope 定義 (版 .8) で付け直す**。難例は脆弱性・勧告層と cyber 層の impact・scope・confirmation (勧告層は先に不一致 18 件を読んで定義を確かめる) | Opus | 419 → 約 570 | 約 470 (付け直し 319 + 難例 150) |
+| 要約 | ①反復ループの例・TTP 20 個以上の例を除く ②長さ分布を s22 に揃える (字数で切らず、選び直すか Opus に意味を保って縮めさせる) ③全例に mitre_evidence ④書き直しの残り 60 件 ⑤**抽出欄の点検** (下の定義、Strata 型 A と規則で疑わしい例を選び Opus が直す) ⑥被害の中身・件数・結論を落とさない例を新しい長い cyber 記事で足す。**教師は全例を新しい rubric 版で描画し直す** (下記) | Opus / Strata 型 A | 692 → 約 800 | 500 |
+| 深刻度の軸 | 本文入力 12 欄 (`axes_teacher_v4` を基に)。**319 件を現行の scope 定義 (版 .8) で付け直す**。難例は脆弱性・勧告層と cyber 層の impact・scope・confirmation (勧告層は先に不一致 18 件を読んで定義を確かめる) | Opus | 419 → 約 570 | 470 (付け直し 319 + 難例 150) |
 | triage | **教師は `triage_flat_teacher_v1` (743 件) を replay し、Opus 0 回**。平たい prompt (`build_flat_triage_prompt`、`src/tools/triage_flat_rubric.py:95`) には基準の文を差し込む口が無く、PIR 駆動の境界の型 A〜I を足しても平たい基準では効果が無かった (段 B)。平たい正解での誤りは過大 4 のみ。基準の差し替えに追従するかの評価は PIR 判定にだけ課す | — (replay) | 705 → 約 743 | 0 |
-| SIR 別の要点 | 入力は 285 例すべて旧形 (要約を 240 字で切る・旧指示) → **新しい組み立てで全件作り直し**。記事を混ぜない例・出典を 1 つにする例 | Opus | 285 → 285 | 約 285 |
-| detect | 引き継ぎ 255 のうち評価記事に当たる 150 を除き、**残り 105 で続ける** (判断待ち、§12 項目 2)。選び直しの Opus 回数は推奨案なら 0 | — | 255 → 105 (案) | 0〜100 |
+| SIR 別の要点 | 入力は 285 例すべて旧形 (要約を 240 字で切る・旧指示) → **新しい組み立てで全件作り直し**。記事を混ぜない例・出典を 1 つにする例 | Opus | 285 → 285 | 285 |
+| detect | 引き継ぎ 255 のうち評価記事に当たる 150 を除き、**残り 105 で続ける** (判断待ち、§12 項目 2)。選び直しの Opus 回数は推奨案なら 0 | — | 255 → 105 (案) | 0〜100 (推奨案 0) |
 | PIR 判定 | `pir_teacher_v2` を引き継ぐ | — | 729 | 0 |
 | ACH / kind / pair / 知識 QA | 引き継ぐ (replay)。ACH は教師の修正で変わる例を数えてから決める | — | 361 / 591 / 300 / 200 | 0 |
 
-- Opus 回数の合計: 教師 **約 1,300〜1,500 回** (旧見積り 770 は pir_focus 全作り直し・軸 319 付け直し・detect 選び直しを数えていなかった)、評価 約 800 回。triage の旧見積り 100 回は削った。
-- 合計 train 約 4,900 (推測)。損失は例ごとの平均なので**課題の重み = 例数**。要約を 16% 前後に保つ (`training_recipe_v2.md` §1.2・§2.2)。
-- 翻訳・logprob 判定・relevance_jp_cascade・deep_dive 系は学習しない。
+- **件数と Opus 回数の表 (SSoT は `two_family_plan.md` §7)**: 本体 train = 800 + 570 + 743 + 285 + 105 + 引き継ぎ 2,181 (PIR 729・ACH 361・kind 591・pair 300・知識 QA 200) = **4,684** (旧本文の「約 4,900」は誤り)。判定 4 本 = 250 + 300 + 400 + 500 (org は名前の組 250 の 2 問) = **1,450**。**合計 train 6,134**。Opus 回数: 本体 **1,255 (detect の選び直しを入れると 〜1,355)** + 判定の教師 1,200 + 較正集 400 = **教師 2,855 (〜2,955)**、評価 約 800。LE の教師 (250) と較正 100 は除いた (§4.2)。triage の旧見積り 100 回は削った。
+- **要約の比率**: 800/6,134 = **13.0%** (旧本文の「16% 前後」は誤り。判定 1,450 例は 1 トークン出力で損失への寄与が小さいため、要約の重みは 13% を目安にする。`training_recipe_v2.md` §1.2・§2.2)。
+- 翻訳・relevance_jp_cascade・deep_dive 系は s24 では学習しない (翻訳・和訳・深掘りは n20)。logprob 判定 4 本は §4.2 で学習する。
 - 設定は s23 と同じ (1 epoch・rank 32・lr 2e-5)。1 回に変えるのはデータだけ。**s24 は素のモデルから学習する** (s23 の続きにしない)。
 - RunPod H100 で約 3 時間 (推測)。int8 で取り込む (int4 は効果が消える)。
 - **抽出欄の教師の定義** (c2d・B4 の正解と同じ文にそろえる):
@@ -85,6 +90,49 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 - **要約の rubric は新しい版として作る**: 決定 2・3 (業種の canonical・「被害の件数・中身・記事の結論を落とさない」、§11) を入れた版を作り、教師は全例をその版で描画し直す。**本番の rubric は s24 の切替と同時に上げる** (それまで s23i は旧版 v7)。c2a と B4 の業種の正解は新版で付け直すか、旧版のまま使うかを §10 手順 2 で判断する。
 - **長い例の検査**: 組み立て時に学習のトークナイザで数え、`max-seq 12500` を超える例は**除く (切り詰めない)**。超過は検査で止める (sft_nan の再発防止)。
 - 学習と本番の入力の形は、長い実例複数の prompt_eval_count で突き合わせる。
+
+### 4.2 logprob 判定 4 本を s24 で学習する (10-15 決定、旧 §12 項目 3)
+
+旧案 (gemma4:26b に固定) をやめ、**s24 に Yes/No の判定を学習させる** (2 系統化のため gemma4:26b を残せない)。
+SFT 済みが yes/no に無情報な原因は、JSON の癖で最初のトークンが問いを見ないこと (assign で s23i は AUC 0.537・p_yes 平均 same 0.999 / unrelated 0.974、`f2_report.md`)。**最初のトークンを実ラベルで学習すれば直る見込み** (推測。i58 は薄い本文で AUC 0.982 と読めており、`s1_report.md` 課題 A)。**ただし 0/1 の硬いラベルで学習すると P(Yes) が飽和する方向に偏る危険がある** (s23i は assign で Yes/No が top_logprobs に出ず欠けた組が 11、org の現行しきい値は logit ≥12・上限 15 の際)。合格線に飽和検査を入れる (下)。
+
+**alert_law_enforcement_judge は対象から外す (10-15、Opus レビュー)**: 本番未使用 (`alert_demotion.py:78-80` は語の条件のみ)。`R1b_le_gold` は正例 10/185 で、181 件が語の条件由来の理由文 = 学習にも評価にも独立した正解でない。→ 2 本化の条件から外し学習しない (Opus −250)。使う日が来たら**独立の Opus 正解 (正例 ≥40) を先に**作る。`R1b_le_gold` は guard には残す。
+
+| 判定 | 問い (本番の呼び出し) | 教師 (Opus) 件数 | 評価の正解集 (学習に入れない) | 現行の基線 |
+|---|---|---|---|---|
+| thin_body_judge | 本文に中身があるか (`briefing.py`、しきい値 0.075) | 250 | p2_audit 120・p2b_audit 100 | s23i の本番値 (gemma4:26b AUC 0.994・i58 0.982、`s1_report.md`) |
+| pir_focus_claim_judge | 要点の文が記事に裏付けられるか (`pir_daily_focus.py`、0.22) | 300 | s5_claims_gold 300 | s23i の本番値 (`s5_report.md`) |
+| assign_evidence_judge | 記事は情勢そのものの証拠か (`assign_probe.py`、ML の特徴量) | 400 | assign_probe 662 組 (f2)・`data/mlx/assign_goldset.jsonl` 662 | gemma4:26b AUC 0.938、ML + 26B で AUC 0.917→0.955、ML 込み適合 85.1%・回収 79% |
+| org_identity_judge | 2 つの被害組織名は同一か (`org_identity.py`、**2 問の AND**: event_logit 12・org_logit −4) | 名前の組 250 (問いは 2 つで学習例 500) | org_identity_labels_opus 195 | 確認用 98 組で誤同一視 0/62・回収 89% |
+
+**答えの形**: 本番の `decision_probe._json_biased_prompt` が出す raw プロンプト (`<start_of_turn>user\n{問い + 1語だけで答えてください (Yes または No)}<end_of_turn>\n<start_of_turn>model\n{"answer": "`) の**続き**として `Yes"}` / `No"}` を学習する。組み立てはこの関数をインポートして作る (複製しない)。s24 を `PREFIX_TRAINED_MODELS` に足せば、本番が同じ raw 経路を通る (`_JSON_BIASED_MODELS` はそこから導出される)。損失は答えの最初のトークンに掛かる。**候補モデルの logprob は本番と同じ経路で測る**: `decision_probe._JSON_BIASED_MODELS` は `PREFIX_TRAINED_MODELS` の固定集合で `SFT_TASK_PREFIX_MODELS` の追加分を含まず、一時タグは chat 経路で測られてしまう → `calibrate_probes.py` はモデルを引数で受け、`_is_json_biased` も env の追加分を読む (テスト)。生の `top_logprobs` を 1 件見て経路一致を確認する。
+- **印**: probe は `TaskPrefixClient` を通らず印が付かない。判定 4 本を区別するため `TASK_MARKERS` に印を足す。**印は `_json_biased_prompt` に直接足さず `with_task_prefix(…, step, model)` で付ける** (直接足すと s23i の判定も変わる。`UNTRAINED_STEPS` の除外は `with_task_prefix` にしかない)。**s23i・i58 の `UNTRAINED_STEPS` に判定 4 step を足す**。印・Yes/No 化は s23i のしきい値を変えるので、**切替前に s23i の較正を取り直す**。
+- **ラベル**: 0/1 のみ (軟ラベルにしない)。Opus の `boundary=true` は学習から外す。**3 分割** = 教師 (学習) / 較正集 (しきい値決め) / 評価 (既存の正解集)。いずれも記事 id・組で互いに分け、評価は guard に入れる (§7.1)。
+- **分布**: 正例比率を課題ごとに数えて表にする。基準を変えたら追従するかは判定課題には課さない (問いが固定)。
+- **Opus 回数**: 教師 1,200 (250 + 300 + 400 + 250) + 較正集 4 × 100 = 400 = **1,600 回**。出力は 1 語 + 理由なので 1 回は短い (推測)。要約・軸の教師の週とは別の週にする。
+- **合格線** (s24 を現行モデルと同じ評価集・同じ夜に測る。判定ごとの基線と必要な正例数は `two_family_plan.md` §5 の表): ①AUC (logit で) が現行 − 0.02 以上 ②確信帯 (P<0.2 または >0.8) の正解率が現行以上 ③較正後のしきい値で現行の動作点 (適合率・回収) を割らない。assign は ML に入れた状態の適合 85.1%・回収 79% (f2、本番相当 260 組) を割らない。org は誤同一視 0 と回収 ≥85%、2 問それぞれ較正。**加えて飽和検査**: (i) Yes と No の**両方**が top_logprobs に入る率 ≥95% (ii) logit が ±15 に張り付く割合と同点数が学習前以下 (iii) 較正集の ECE。張り付いたら境界例を軟ラベルで入れる版 or 例数を半分にした版を作る (ラベルは 0/1 を基本とするが、この場合のみ軟ラベル)。AUC の区間が −0.02 をまたぐ判定は較正集を足して測り直す。1 本ずつ判定し、合格した判定から上書き (assign・org は gemma4:26b、thin・claim は s23i) を外す (旧モデルが 3 本目になる期間を最小化)。
+
+**切替ごとの較正の自動化** (新規 `scripts/calibrate_probes.py` の設計):
+
+1. **較正集** `data/eval/probe_calib/<step>.jsonl` (4 本 × 約 100 件、Opus ラベル、サンプリング重み、`boundary`、問いの描画に要る入力、manifest に sha256)。**問いの描画は本番の関数で行う** (描画側の版ずれを防ぐ)。作ったら凍結し、教師・評価と記事 id を分ける。
+2. **実行**: `resolve_step_model` で各 step の実効モデルを解決 → `probe_choice` で較正集を流す (1 件 ~0.25 秒 × 400 = 数分、本番を止めた夜に評価と一緒に) → AUC・Platt/isotonic・ECE・確信帯を算出。
+3. **しきい値の決め方**: 各 step の「現行の動作点」(thin: 0.075 での適合率・回収、claim: 0.22、org: 誤同一視 0) を新モデルで**再現できる中で最も回収の高い点**。サンプリング重みで自然比に戻して計算する。
+4. **出力** `config/models/probe_thresholds.json` = `{model: {step: {question: {threshold, auc, ece, n, calib_sha256, date}}}}` (org は 2 問それぞれ、他は question = `main`)。本番の定数 (`THIN_BODY_PROBE_THRESHOLD`・`PIR_FOCUS_CLAIM_THRESHOLD` ほか) はこのファイルの**解決済みモデルの項**を読む。**先に s23i と gemma4:26b の項を入れておく** (戻し先の項がないと fail-closed で判定が `None` になり黙って止まる)。
+5. **fail-closed**: 解決モデルの項が無ければ、その判定は使わず `None` を返す (従来の決定論の経路に戻る。`probe_choice` の既存の規約と同じ)。
+6. **テスト**: 本番の model_tiers が解決する全モデルについて、4 本の項があることを単体テストで検証。モデル割当の保存 API は、項が無ければ UI に警告を出す。
+7. assign は ML の特徴量なのでしきい値でなく、切替時に P(yes) の分布差 (KS 統計量) を見て、閾値超なら assign ML を `assign_probe_cv.py` で再学習 (差し替え確認)。
+
+### 4.3 triage_geo_rescue の扱い (判断材料と第一案)
+
+- 由来 (`model_tiers.py:125`): triage の SFT は「一般地政学 = low」を学習しており同じモデルでは救えない → 別モデルで再質問する段 (`filters._rescue_geopolitical`)。理由の語 (`_GEO_REASON`) に当たる low のみを対象に、同じ `ArticleTriage.triage` を別モデルで呼び、medium 以上なら medium に抑える。
+- **実測 (本番 run_logs、30 日保持)**: 10-02〜10-15 で 344 回・候補 1,885・救済 807。平たい triage の後 (10-12〜10-15) は候補 939・救済 77 (8.2%)。
+- **今すぐ測れる**: M4 (`INGEST_RULE_V2`・`TRIAGE_FLAT`) は **10-12 から本番 on** (compose 既定 1)。旧記載「INGEST_RULE_V2 は既定 off・M4 が前提」は誤り。まず run_logs で救済 77 件 (10-12〜15) のうち**取り込みヒントで既に取り込まれていた件数**を数える (Opus 0 回、推奨で決定 10-15)。
+- **救済の質の正解は無い**。同じ step を使う `CYBER_POLICY_RESCUE` (別経路) は Opus の裁定で救済 0/59 のため閉じた (`importance_relevance_redesign.md` §6・§8、`data/eval/r2_report.md`)。
+- **構造上の結論**: 救済は「同じ問いを別モデルで再質問」するだけなので、救済を s24 に寄せると**同一モデル・同一入力で結果が変わらない (温度 0 なら no-op)**。「別の問い」として学習する余地は無い。
+  一方、関連性 (日本・SIR・注視国) は triage の学習から外す決定 (10-08) で、地政学 SIR の取り込みは `INGEST_RULE_V2` の取り込みヒントが担う → **平たい triage の構成では救済は不要になる見込み** (推測。M4 は既に on なので、上の照合で今すぐ確かめられる)。
+- **第一案 = 段ごと廃止**。判定手順: ①triage_rejections (理由つき、180 日) から、理由が `_GEO_REASON` に当たる落選 150 件を層化抽出 ②Opus が平たい基準と地政学 SIR (`pir_geo_*`) の定義で「取り込むべきか」を 2 回裁定 ③(A) 現行 = s23i + 救済 (kuebiko-sft:26b) / (B) s24 のみ + INGEST_RULE_V2 のヒント / (C) s24 のみ・ヒントなし を比べる。合格 = B の取りこぼし (取り込むべきを落とした数) が A + 2 点以内、かつ範囲外の取り込み過ぎが A 以下。
+- 通れば: `TRIAGE_GEO_RESCUE=0` を既定にし、`Step.TRIAGE_GEO_RESCUE` と policy_rescue を別 PR で削除。通らなければ: triage の学習に地政学の両向きの難例 (取り込むべき / 範囲外 各 75、Opus 約 150 回) を足して s24 を再測定。それでも通らない場合は利用者判断 (救済を残すなら 3 本目のモデルが要る)。
+- **それまでの暫定**: 廃止が決まるまで `step:triage_geo_rescue` は kuebiko-sft:26b のまま (毎時 数十秒だけ載る)。Opus 回数は照合が 0、150 件の裁定が必要になった場合のみ 300 (150 × 2 回、評価の週)。
 
 ## 5. 既存の方針 (守ること)
 
@@ -108,7 +156,7 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 
 ### 7.1 学習の記事と評価の記事を分ける
 
-`build_dataset_s24.py` の guard (`EXTRA_GUARD_FILES`) で、次を train/valid に入れない: triage_gold v2〜v4、pir_judge_gold v2・v3、severity_gold_v4、severity_random_v3、i58_severity_eval v1・v2、c2a (要約 92)、c2d (関与国 150)、c3 (SIR 要点 80)、s5_claims_gold、r1g_gold_v2、**upstream_gold_B4 の 320 記事 (評価専用)**、triage v4 の誤り、goldset 86、runaway_set 300、**10-15 に追加: p2b_items (薄い本文)・R1b_le_gold (摘発)・triage_gold_flat_v1・ttp_goldset・event_kind 評価**。guard 合計は article_id 2,166→2,861・title 1,977→2,123。
+`build_dataset_s24.py` の guard (`EXTRA_GUARD_FILES`) で、次を train/valid に入れない: triage_gold v2〜v4、pir_judge_gold v2・v3、severity_gold_v4、severity_random_v3、i58_severity_eval v1・v2、c2a (要約 92)、c2d (関与国 150)、c3 (SIR 要点 80)、s5_claims_gold、r1g_gold_v2、**upstream_gold_B4 の 320 記事 (評価専用)**、triage v4 の誤り、goldset 86、runaway_set 300、**10-15 に追加: p2b_items (薄い本文)・R1b_le_gold (摘発)・triage_gold_flat_v1・ttp_goldset・event_kind 評価**、**p2_audit (120)・`data/mlx/assign_goldset.jsonl` (662)・org_identity_labels_opus (195)・`data/eval/probe_calib/*`** (判定 4 本の評価・較正集)。guard 合計は article_id 2,166→2,861・title 1,977→2,123。
 - B4 の 320 には学習済みの alert_quality 62 件が含まれるので、学習外の部分 (263 件) を別に出す。弱点選定と評価の両方に B4 を使っているため、**狙った層の改善は B4 以外の新標本 (層別 50 件程度) でも確認**する。
 - guard の残り (推測で手当て未了): ach_daytime_eval は状況キーで記事 id が無く、merge_labels_opus は事象 id、A2 の関与国 70 記事は id を保存したファイルが無い、triage_gold_flat_v1 は `key` のみで title でしか守れない。detect_goldset の扱いは §12 項目 2。
 - **見出し一覧に評価記事が入るのは漏えいではない**扱い (§12 項目 2 の推奨とセット)。
@@ -134,14 +182,16 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 | SIR 別の要点 | c3 (`measure_c3.py`、2 回裁定) | 27.5% から下がる |
 | ATT&CK | ttp_goldset (関門後) / CTIBench | 関門後 0.71 以上 |
 | kind / pair / ACH / detect | eval_event_kind 300 / eval_pair_vs_frozen / ach_daytime_eval / detect_goldset | 差が誤差内 |
+| logprob 判定 4 本 | §4.2 の評価集 (p2・p2b / s5_claims_gold / assign_probe 662 / org_identity_labels_opus) + 較正集 | §4.2 の合格線 (AUC が現行 − 0.02 以上・確信帯の正解率・動作点を割らない + 飽和検査 3 点) |
+| 地政学の救済 | まず run_logs の照合 (Opus 0 回)、必要なら triage_rejections 由来 150 件 (Opus 2 回) | §4.3 (B の取りこぼしが A + 2 点以内) |
 
-3. **補間 `s24i` (s24 × s23i)**: t は一時タグ (i25 / i50 / i65 等) で試す。**t の選び方は学習前に決める**: 「暴走 ≤ s23i かつ退行なし」を満たす中で最大の t。採用 t は**別の半分の標本で確認**する。一時タグは `SFT_TASK_PREFIX_MODELS` / `SFT_EVIDENCE_MODELS` に入れる (入れ忘れると接頭辞・証拠欄が付かず評価が壊れる)。採用した 1 本だけを s24i に改名。s23 では t ≥ 0.65 で暴走増。
+3. **補間 `s24i` (s24 × s23i)**: t は一時タグ (i25 / i50 / i65 等) で試す。**t の選び方は学習前に決める**: 「暴走 ≤ s23i かつ退行なし」を満たす中で最大の t。採用 t は**別の半分の標本で確認**する。**t の条件に logprob 判定 4 本の合格線 (飽和検査を含む) を足す** (補間 s24i は判定の学習を薄める)。s24i は較正 (`calibrate_probes.py`) と `PREFIX_TRAINED_MODELS` 登録を別に行う。一時タグは `SFT_TASK_PREFIX_MODELS` / `SFT_EVIDENCE_MODELS` に入れる (入れ忘れると接頭辞・証拠欄が付かず評価が壊れる)。採用した 1 本だけを s24i に改名。s23 では t ≥ 0.65 で暴走増。
 
 ## 8. s24 で扱わないものと担当
 
 | 項目 | 担当 |
 |---|---|
-| 翻訳の重い問題・失敗 1,310 件 | 翻訳の経路 (素の 26B)。原文が写る原因の調査 + TRANSLATE_FIDELITY_GATE (ident) |
+| 翻訳の重い問題・失敗 1,310 件 | **n20** (`n20_plan.md` §3、担当は n20b)。原文が写る原因の調査 + TRANSLATE_FIDELITY_GATE (ident) |
 | 件数の抽出 (萬・千万) | 規則 (`importance_v2.stated_victim_count`) |
 | 関与国の地政学層の残り | INVOLVED_COUNTRY_GATE。規則 3 のしきい値・協力語の例外は総当たりで現行を超えず (`C1_icg_tune_report.md`)。**10-15 12:19 に on** (調整に使わない B4 層化 143 件で適合 62→82%・回収 99→94%、JP 誤落ち 0)。A2 の裁定では落とした国の 29% (参加・署名・支援国) が誤落ちだが、関門で救える規則は見つからなかった → 参加・署名・支援を残す教師 (§4) で補う |
 | 群化 85%・統合 80%・重複 alert | eventnews の関門 (CVE 不一致・照合キー・伏字 G2)・ALERT_DEDUP_EVENT。記事対の CVE 判定 (G1) は効果 0 で不採用 (`C3_merge_gates_report.md`) |
@@ -155,7 +205,7 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 - **多課題の干渉**: 例数がそのまま勾配の配分。要約を増やしすぎない。分類・抽出は数百例で飽和 (`multitask_interference.md` §3・§6)。
 - **忘却**: 引き継ぐ課題を replay として混ぜ、評価で確かめる (`catastrophic_forgetting.md`)。退行は補間で戻す。ルータ方式・アダプタ単体はこの構成で使えない (`lora_composition.md`)。
 - **変えるデータが多く退行の原因を切り分けられない**: 部品の評価で退行した課題は、**その課題だけ旧データに戻した学習を 1 回行う予算**を見込む (H100 約 3 時間 + 評価)。
-- **未学習の自由文 step が切替で壊れる**: 切替前に fast が担う**全 step の実物の出力**を見る (§2 の表の全行、deep_dive 系を含む)。relevance_jp_cascade、logprob 判定 3 本、SIR 別の要点 (`data/mlx/focus_same_run.sh`)。
+- **未学習の自由文 step が切替で壊れる**: 切替前に fast が担う**全 step の実物の出力**を見る (§2 の表の全行。deep_dive 系は n20 の担当なので除く。`dedup_cluster_judge` の実物と解析失敗率を含む)。relevance_jp_cascade、SIR 別の要点 (`data/mlx/focus_same_run.sh`)。logprob 判定 4 本は学習するので、実物の確認は raw 経路で P(Yes) が 0/1 に張り付かないこと (分布・飽和検査) を見る。
 - **下流の消費者への波及** (切替前後で shadow 比較する):
 
 | 出力 | 消費者 | 比べるもの |
@@ -166,9 +216,9 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 | 関与国 | alert の関連性 | 関連性の判定件数 |
 
 - **軸の供給元の順序** (detect ML は軸の one-hot を特徴量にする唯一の ML で、作り直しは s24 で 1 回): ①呼び出し改修 (済 49f0524f) ②s23i + AXES_FROM_BODY=1 + detect ML 作り直し + inline 軸の確認 (`D1_switch_plan.md`) ③これを s24 の基線にする。s24 を切り替えるときは、軸の供給元を変えるだけなので detect ML は再学習ではなく**差し替えの確認**で済むか、軸の分布の差で判断する (推測)。
-- **許可リストの更新漏れ**: `task_prefix.PREFIX_TRAINED_MODELS`・`summary.EVIDENCE_TRAINED_MODELS` にタグを足す。`import_interp.sh` の a/b を直す。`UNTRAINED_STEPS` に s24 / s24i の deep_dive 系 (§2)。
-- **戻し方の単位** (組で 1 つの手順書にまとめる): model_tiers の版 (戻し先は版 40)・`AXES_FROM_BODY`・detect ML の成果物 (`data/model_backups/` の `.bak`)・logprob のしきい値・`summarizer_rubric` の版。片方だけ戻した状態 (新モデル + 旧 rubric、旧モデル + 本文入力の軸) は分布が合わないので避ける。
-- **Opus の枠**: 教師約 1,300〜1,500 回 + 評価約 800 回で週枠の 1〜3 割 (推測、旧見積りは不足)。**教師の週と評価の週を分ける**。
+- **許可リストの更新漏れ**: `task_prefix.PREFIX_TRAINED_MODELS`・`summary.EVIDENCE_TRAINED_MODELS` にタグを足す。`import_interp.sh` の a/b を直す。判定 4 step を s23i・i58 の `UNTRAINED_STEPS` に足す (§4.2)。deep_dive 系は n20 の担当なので s24 の `UNTRAINED_STEPS` は不要。
+- **戻し方の単位** (組で 1 つの手順書にまとめる): model_tiers の版 (戻し先は版 40)・`AXES_FROM_BODY`・detect ML の成果物 (`data/model_backups/` の `.bak`)・logprob のしきい値ファイル (`probe_thresholds.json`、s23i と gemma4:26b の項を先に入れる。戻し先は版 40 の割当 = thin・claim は s23i、assign・org は gemma4:26b)・`summarizer_rubric` の版。片方だけ戻した状態 (新モデル + 旧 rubric、旧モデル + 本文入力の軸) は分布が合わないので避ける。
+- **Opus の枠**: 教師 2,855 (〜2,955) 回 + 評価約 800 回 (SSoT は `two_family_plan.md` §7、推測)。**教師の週と評価の週を分ける**。
 - **GPU と本番の時間帯**: 本番の収集と毎時の段は評価中に止まる。夜間の窓を決め (朝夕ブリーフ 06:30 / 19:30・`daily-maintenance` 00:10 を避ける。D1 の例は 20:45 開始・締め切り 23:45)、締め切りを必ず置き、終了時に本番を再開する。止めた間の収集・毎時の段の追いつきを翌朝確認する。
 - **物差しの版**: 正解の版と本番のプロンプトの版をそろえる。'none' と null をそろえる。
 
@@ -177,11 +227,11 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 1. **事前 (Opus なし、1〜2 日、実施済み: §11)**: s23i の基線 (広い定義の暴走率・B4 の学習外・triage・軸)、入力の形のずれの確認、Strata 型 A + 規則での教師候補の選別、領域別の分布表。
 2. **基準の文の確認と基線の整理 (半日)**: 要約の新しい rubric 版 (§4)・軸 版 .8・関与国の定義 (§4)・業種の canonical。**勧告層の confirmation の不一致 18 件を読む**。**s23i の cyber 業種の不一致を B-lite で裁定**する。c2a・B4 の業種の正解を新版で付け直すか判断。
 3. **軸の基線 (D1)**: §9 の順序 ①②。detect ML の作り直しはここで 1 回。
-4. **教師 (Opus 約 1,300〜1,500 回、数日)**: 要約の点検・書き直し → 軸の付け直しと難例 → SIR 要点の作り直し。triage は replay。
+4. **教師 (Opus 1,255〜1,355 回、数日)**: 要約の点検・書き直し → 軸の付け直しと難例 → SIR 要点の作り直し。triage は replay。**別の週**に 判定 4 本の教師と較正集 (1,600 回、§4.2)。地政学の救済の廃止判定 (§4.3) は run_logs の照合が 0 回、裁定が要る場合のみ 300 回で評価の週。
 5. **データの組み立て**: `build_dataset_s24.py` (guard 拡張済み、§7.1)。長い例を学習のトークナイザで数えて除く。最後に `audit_sft_dataset.py`。
 6. **学習**: RunPod H100 約 3 時間 (推測)、素のモデルから、int8 で取り込み、prompt_eval_count で入力の形を突き合わせる。
 7. **評価 (夜間、本番停止、教師の週とは別の週)**: `eval_s23.sh` を元に。補間の t を振る。続けて Opus の測り直し (約 800 回)。
-8. **切替 (利用者の承認後)**: 全 step の実物確認・model_tiers の全 step 上書きの照合・logprob 判定の扱い (§12 項目 3)・要約 rubric の新版を同時に上げる・下流の shadow 比較 (§9)。戻し先は §9 の組。`data/cloud-runs/s22|s23` と s23i は消さない。
+8. **切替 (利用者の承認後)**: 全 step の実物確認・model_tiers の全 step 上書きの照合・logprob 判定は §4.2 の較正 (`calibrate_probes.py`) を通した 1 本ずつ (s23i の較正の取り直しを先に)・要約 rubric の新版を同時に上げる・下流の shadow 比較 (§9)。戻し先は §9 の組。`data/cloud-runs/s22|s23` と s23i は消さない。
 
 ## 11. 事前作業で分かったことと決定 (2026-10-15 午後)
 
@@ -204,4 +254,5 @@ B 番号 (10-12 の棚卸し): B1 = 要約の欠落 20.7% / B2 = 要約の事実
 |---|---|---|---|
 | 1 | 教師と正解が同じ裁定者・同じ定義 (自己一致)。§7 の数字は「Opus の定義の再現率」 | (a) 利用者が、答えを伏せて triage・抽出欄・軸の正解から 20〜30 件を読み、定義が妥当か確かめる / (b) 読まずに Opus の定義を正とする | (a)。1 回 30 分程度の作業で、定義そのものの誤りは Opus の再測定では見つからないため。読む対象は triage の過大 4 件・勧告層の confirmation 不一致も含める |
 | 2 | detect の引き継ぎ: 255 例のうち 150 例が guard に当たる。title 一致は除き過ぎ (見出し一覧に評価記事が出るだけで除外される) | (a) 残り 105 で続ける。見出し一覧に評価記事が入るのは漏えいではないと明文化し、title 一致の除外を緩める / (b) 新しい窓から detect の例を作り直す (Opus 回数が増える) | (a)。detect_goldset (1,886 件) を guard に入れるかは同じ判断に含める。**現状の guard は detect の title 一致を変えていない** |
-| 3 | logprob 判定 3 本 (thin_body / pir_focus_claim / alert_law_enforcement) の扱い。SFT 済みは yes/no に無情報なことがある (s23i は AUC 0.537) | (a) step 上書きで `gemma4:26b` に固定し、fast の切替のたびの較正をやめる / (b) 切替のたびに fast のモデルで較正し直す | (a)。ただし固定の**前に**、今の s23i との判定一致と較正を測る (測らずに固定すると薄い本文の関門の挙動が変わりうる) |
+| 3 | ~~logprob 判定 3 本の扱い~~ **決定 (10-15、利用者): s24 で学習する**。Opus レビュー後の対象は **4 本** = thin_body / pir_focus_claim / assign_evidence / org_identity (alert_law_enforcement は本番未使用のため除外、§4.2)。旧案 (a) 固定・(b) 切替ごとの較正し直しは、gemma4:26b を残せない 2 系統化と両立しないため採らない | — | §4.2。切替ごとの較正は自動化する (`calibrate_probes.py`)。固定の前に測る、は不要になり、代わりに 4 本それぞれの合格線で個別に切り替える |
+| 4 | detect の引き継ぎ・要約の比率・dialog の退避先 など Opus レビューの利用者判断項目 | — | **推奨で決定 (10-15)**: dialog の退避先は 4 step の実物を s24 と n20 の両方で 1 回ずつ見て決める (暫定 s24、`two_family_plan.md` §3.3)。地政学の救済は今すぐ廃止判定を測る (§4.3)。翻訳は n20 の 2 腕 (`n20_plan.md` §3.4) |
