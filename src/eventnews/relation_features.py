@@ -183,7 +183,7 @@ def load_event_features(
         ver = headlines.get(iid)
         text = normalize_for_match(ver.headline if ver is not None else " ".join(e["titles"]))
         e["victims"] = {x for x in e["victims"] if x and x in text}
-        e["cves"] = {c for c in e["cves"] if c.lower() in text.lower()}
+        e["cves"] = headline_cves(e["cves"], text)
         head = (ver.headline if ver is not None else " ".join(e["titles"])).lower()
         e["malware_head"] = {x for x in e["malware"] if x in head}
         e["tools_head"] = {x for x in e["tools"] if x in head}
@@ -214,6 +214,17 @@ def load_event_features(
         )
         for iid, v in acc.items()
     ]
+
+
+def headline_cves(cves: set[str], normalized_text: str) -> set[str]:
+    """見出し (``normalize_for_match`` 済み) に出ている CVE だけ残す。
+
+    ⚠ 正規化はハイフンを落とすので、CVE 番号も同じ正規化をして比べる
+    (ハイフン付きのまま照合すると常に空になり、CVE 経由の線が一度も張られなかった)。
+    """
+    from src.assessment.evidence_verify import normalize_for_match
+
+    return {c for c in cves if (n := normalize_for_match(c)) and n in normalized_text}
 
 
 def _actor_names() -> frozenset[str]:

@@ -357,3 +357,15 @@ def test_no_graphrag_extra_type_is_enabled_for_the_section() -> None:
     assert not GRAPHRAG_ENABLED_EXTRA
     assert "same_nation" not in GRAPHRAG_ENABLED_EXTRA
     assert graphrag_extra_by_event(object()) == {}
+
+
+def test_headline_cves_matches_after_same_normalization() -> None:
+    # Arrange: 見出しは normalize_for_match 済み (ハイフンが落ちる)
+    from src.assessment.evidence_verify import normalize_for_match
+    from src.eventnews.relation_features import headline_cves
+
+    text = normalize_for_match("Gitea CVE-2026-60004 の修正更新")
+    # Act
+    kept = headline_cves({"CVE-2026-60004", "CVE-2026-1"}, text)
+    # Assert
+    assert kept == {"CVE-2026-60004"}
