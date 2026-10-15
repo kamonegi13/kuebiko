@@ -119,6 +119,12 @@ def _current_side(
     )
 
 
+def _skip(article_id: str, reason: str) -> bool:
+    """記録しなかった理由を残す (0 行の原因が追えるように)。常に False。"""
+    _log.info("alert_dedup_shadow_skipped", article_id=article_id, reason=reason)
+    return False
+
+
 def record_alert_dedup_shadow(
     *,
     msg: BriefingMessage,
@@ -129,17 +135,21 @@ def record_alert_dedup_shadow(
     asof: datetime | None = None,
 ) -> bool:
     """影の記録を 1 行追記する。記録したら True。配信には一切影響しない (例外も外へ出さない)。"""
-    if repo is None or embedding is None or not is_alert_dedup_shadow_enabled():
+    if not is_alert_dedup_shadow_enabled():
         return False
+    if repo is None:
+        return _skip(article_id, "no_repo")
+    if embedding is None:
+        return _skip(article_id, "no_embedding")
     try:
         pair_model, model = load_model(), load_alert_dedup_model()
         if pair_model is None or model is None:
-            return False
+            return _skip(article_id, "model_missing")
         embedding_model, vector = embedding
         cur = _current_side(msg, article, article_id, vector, asof or datetime.now(UTC))
         choice = select_prior(cur, _load_candidates(repo, vector, embedding_model), pair_model)
         if choice is None:
-            return False
+            return _skip(article_id, "no_prior_alert")
         features = alert_dedup_features(cur, choice.side, choice.p_pair)
         p = model.p_suppress(features)
         repo.record_alert_dedup_shadow(

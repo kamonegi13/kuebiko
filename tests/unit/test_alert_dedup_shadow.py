@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
 from src.cti import alert_dedup_shadow as shadow
 from src.cti.alert_dedup_features import FEATURE_NAMES
@@ -140,6 +141,24 @@ class TestRecord:
 
         assert no_embedding is False
         assert no_repo is False
+
+    def test_skip_reasons_are_logged(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        msg = _msg()
+        with capture_logs() as logs:
+            shadow.record_alert_dedup_shadow(
+                msg=msg, article=None, article_id="cur", embedding=None, repo=repo
+            )
+            shadow.record_alert_dedup_shadow(
+                msg=msg, article=None, article_id="cur", embedding=(_EMBED_MODEL, _VEC), repo=None
+            )
+            _record(repo, msg)  # 先行 alert なし
+            monkeypatch.setattr(shadow, "load_model", lambda: None)
+            _record(repo, msg)
+
+        reasons = [e["reason"] for e in logs if e["event"] == "alert_dedup_shadow_skipped"]
+        assert reasons == ["no_embedding", "no_repo", "no_prior_alert", "model_missing"]
 
     def test_model_missing_is_noop(
         self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
