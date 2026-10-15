@@ -447,11 +447,11 @@ kuebiko/
   | 事象どうしの関係を画面に出す: 同じ出来事の関連 = 分類器 (`config/models/relation_model.json`、盲検で推定精度 0.85)・同じアクター = 信頼できる主題の共有 (精度 0.88、1 事象 5 件まで)。同一キャンペーン・共通の供給元は出さない | `relations.ENABLED_TYPES` を空に / モデルを消すと同じアクターだけ |
   | (09-29) fast ティア・ACH・深刻度の軸を s17 → **s21** (クラウド学習、int8 配備 27GB。要約の盲検 64:21・PIR の誤該当 48→19)。detect ML も s21 の軸で学習し直した版へ | UI「設定 → モデル」で前の版に戻す + `config/models/detect_model.json` を `data/model_backups/detect_model.json.bak_s17` から戻す |
   | (09-29) narrative ティア・事象ニュース・Spotlight・状況総括・深掘りを n17m30 / n17c → **n19** (n 系統合、クラウド学習 int8。事象 16:2・Spotlight 22:0・状況総括 14:0)、detect の LLM 段を n17c → s21 (開設すべき 9→18)。常駐 2 本 (s21 + n19)。深掘りは未学習のため n19 に接頭辞を付けない (`task_prefix.UNTRAINED_STEPS`) | UI「設定 → モデル」で前の版に戻す (n17m30 / n17c はディスクに保全) |
-  | (10-02) 翻訳 (`article_translate`) と MITRE 同期の和訳 (`actor_sync`) を s21 → **素の 26B** (`kuebiko-sft:26b`)。s21/n19 は未学習の自由文で JSON 形に崩れる (翻訳 637 件・PIR 別の要点が全件崩れていた)。壊れた訳は `body_translator.broken_translation_reason` が保存させない | UI「設定 → モデル」の step 上書きを外す |
+  | (10-02) 翻訳 (`article_translate`) と MITRE 同期の和訳 (`actor_sync`) を s21 → **`kuebiko-sft:26b`** (⚠ 素の 26B ではなく 09-04 の最初期の SFT 版。素の 26B は `gemma4:26b`、10-15 確認)。s21/n19 は未学習の自由文で JSON 形に崩れる (翻訳 637 件・PIR 別の要点が全件崩れていた)。壊れた訳は `body_translator.broken_translation_reason` が保存させない | UI「設定 → モデル」の step 上書きを外す |
   | (10-02) 投稿直前の重複判定に当たった記事を**分析に残す** (status='posted' / posted_channel=NULL / `duplicate_of`=一致先の根)。Discord へは流さない。規則の重複判定は新事実を見ず、続報が台帳・PIR・総括から消えていた | `DEDUP_KEEP_FOR_ANALYSIS=0` |
   | (10-02) triage の落選を理由つきで `triage_rejections` に記録 (180 日)。購読ソースの媒体詳細で件数と一覧 | (記録のみ — 戻す必要なし) |
   | (10-02) まとめ記事 (event_kind=roundup) を群化・統合・投稿直前の重複判定に参加させない。毎時の群化は候補の全件に種別を付ける (1 回 120 件まで、残りは持ち越し) | `models.ROUNDUP_KIND` の判定を外す (コード) |
-  | (10-02) 地政学の SIR 4 本 (pir_geo_*、medium) を追加。triage が地政学・軍事・外交を理由に落とした記事を素の 26B で判定し直す救済の段 (`triage_geo_rescue`、high にはしない) | `TRIAGE_GEO_RESCUE=0` / SIR は UI で無効化 |
+  | (10-02) 地政学の SIR 4 本 (pir_geo_*、medium) を追加。triage が地政学・軍事・外交を理由に落とした記事を`kuebiko-sft:26b` (最初期の SFT 版) で判定し直す救済の段 (`triage_geo_rescue`、high にはしない) | `TRIAGE_GEO_RESCUE=0` / SIR は UI で無効化 |
   | (10-02) 統合の段で、頻出の名前 (当局・大手取引所の名前等) を共有し本文 cos 0.80 以上の別事象の組も ML で採点して統合する | `EVENTNEWS_MERGE_FREQUENT=0` |
   | (10-02) 台帳: 低確度の見立ての反転は 1 回では確定させない (確かな出所の反証が根拠なら即確定) | `LEDGER_FLIP_HYSTERESIS=0` |
   | (10-02) 配信の定型文 (「The post … appeared first on …」) だけの本文は要約しない / 高脅威の安全網を Web の日次ブリーフにも載せる | (コード) |
