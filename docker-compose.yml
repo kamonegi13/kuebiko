@@ -143,6 +143,9 @@ services:
       EVENTNEWS_MASKED_VICTIM_GATE: ${EVENTNEWS_MASKED_VICTIM_GATE:-1}
       # 片方だけが一括の勧告 (CVE が多い記事) で根拠が CVE だけの統合の辺を張らない (2026-10-15)。14 日で 5 件止め誤り 0/5
       EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE: ${EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE:-1}
+      # detect の判断を部品に分けた形を記録だけする (2026-10-16、0=off / shadow / 1=置換)。shadow は本番の開設の後に
+      # 予算 120 秒・書き手 6 件までで動き、結果は detect_bundles (variant=decompose_shadow) に残る
+      DETECT_DECOMPOSE: ${DETECT_DECOMPOSE:-shadow}
       # 台帳の割当に埋込の確認を課す (2026-09-24)。規則の「同じ情勢」率は anchor 31% /
       # token 4% (Opus 盲検 362 組) で、類似度 0.6 の確認で精度 28% → 67%・同じ情勢の 86% を残す。
       # off / shadow (落ちるはずの割当をログに出すだけ) / on (落ちた記事を未割当へ戻す)。
