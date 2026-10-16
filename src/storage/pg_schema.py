@@ -997,6 +997,29 @@ CREATE TABLE IF NOT EXISTS detect_ml_shadow (
     PRIMARY KEY (run_at, article_id)
 );
 
+-- detect が束ねた記事の記録 (2026-10-16、M2)。LLM の束ね (llm_article_ids) と後処理後の塊
+-- (final_article_ids)・開設/合流/見送りの結果を残す。variant: current = 本番の detect、
+-- decompose_shadow / decompose = 分けた形 (DETECT_DECOMPOSE)。記録だけで挙動は変えない。
+CREATE TABLE IF NOT EXISTS detect_bundles (
+    id                 BIGSERIAL PRIMARY KEY,
+    run_at             TEXT    NOT NULL,
+    run_date           TEXT    NOT NULL,
+    variant            TEXT    NOT NULL,
+    claim_id           TEXT    NOT NULL,
+    origin             TEXT    NOT NULL,
+    claim              TEXT    NOT NULL,
+    domain             TEXT    NOT NULL DEFAULT '',
+    llm_article_ids    TEXT    NOT NULL DEFAULT '[]',
+    final_article_ids  TEXT    NOT NULL DEFAULT '[]',
+    outcome            TEXT    NOT NULL,
+    situation_id       TEXT,
+    reason             TEXT    NOT NULL DEFAULT '',
+    probability        REAL,
+    model              TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_detect_bundles_run ON detect_bundles(run_at);
+CREATE INDEX IF NOT EXISTS idx_detect_bundles_claim ON detect_bundles(claim_id);
+
 -- 関門に落ちた草稿 (DPO の rejected 側、2026-09-03)。採用版 (event_item_versions) と
 -- 対で読む: 基底プロンプトと採用本文は版の側に既にある。書き直しが走った版にだけ 1 行
 CREATE TABLE IF NOT EXISTS event_draft_rejects (

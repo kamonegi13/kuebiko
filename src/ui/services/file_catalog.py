@@ -141,6 +141,13 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "書いてまとめるだけにする版。replay ハーネス (--mode select) が明示指定する "
         "(SYNTHESIS §50-51)",
     ),
+    "prompts/synthesis/detect_cluster_claim.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "新規情勢の検出 (分けた形: 塊 → claim)",
+        "`DETECT_DECOMPOSE` (既定 0 = 使われない) の書き手。機械的に塊化済みの記事群を "
+        "claim 1 文に書く (選び直し・束ねはしない)。shadow は記録のみ、1 で本番の開設に使う "
+        "(M2、2026-10-16)",
+    ),
     "prompts/synthesis/detect_new_skeleton.j2": FileInfo(
         "状況総括 (synthesis)",
         "新規情勢の検出の骨格 (code 所有)",

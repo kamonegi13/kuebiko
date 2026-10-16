@@ -31,10 +31,13 @@ def split_clusters(
     strong_by_aid: Mapping[str, set[str] | frozenset[str]],
     items_by_aid: Mapping[str, set[str] | frozenset[str]],
     vec_by_aid: Mapping[str, Any] | None = None,
+    bare_as_singletons: bool = False,
 ) -> list[list[str]]:
     """記事を「同じ事象 / 強い鍵の共有 / 要約がほぼ同じ」で繋いだ塊 (大きい順、塊の中は入力順)。
 
     ``vec_by_aid`` は正規化済みの要約埋込 (無い記事は類似度で繋がない)。
+    判断材料の無い記事は既定では最大の塊に含める (束ね検査では分ける根拠にしない)。
+    ``bare_as_singletons=True`` なら 1 件ずつの塊にする (候補全体の塊化 = DETECT_DECOMPOSE 用)。
     """
     ids = list(dict.fromkeys(article_ids))
     parent = {a: a for a in ids}
@@ -69,6 +72,8 @@ def split_clusters(
             groups.setdefault(root(a), []).append(a)
     order = {a: i for i, a in enumerate(ids)}
     ranked = sorted(groups.values(), key=lambda g: (-len(g), order[g[0]]))
+    if bare_as_singletons:
+        return [*ranked, *([b] for b in bare)]
     if not ranked:
         return [list(bare)] if bare else []
     # 判断材料の無い記事は最大の塊に含める (入力順を保つ)

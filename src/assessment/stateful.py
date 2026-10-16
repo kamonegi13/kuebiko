@@ -34,7 +34,9 @@ from src.assessment.assignment import (
     topic_tokens,
 )
 from src.assessment.claim_guard import apply_subject_gate, guard_claim
+from src.assessment.detect_bundle_log import Outcome, make_claim_id, resolve_outcomes
 from src.assessment.detect_scope import relevant_titles_by_embedding
+from src.assessment.detect_step import DetectContext, decide_detect, shadow_records
 from src.assessment.ledger import (
     _judgment_pir_ids,
     _pir_ids_for_articles,
@@ -506,9 +508,13 @@ async def _apply_assign_gate(
 
 
 async def _gate_vectors(
-    kept: Mapping[str, list[str]], situation_titles: Mapping[str, str], repo: RunHistoryRepository
+    kept: Mapping[str, list[str]],
+    situation_titles: Mapping[str, str],
+    repo: RunHistoryRepository,
+    *,
+    save_fresh: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """情勢の題名と記事の要約埋込 (無い記事はその場で作って保存)。"""
+    """情勢の題名と記事の要約埋込 (無い記事はその場で作る。``save_fresh=False`` は保存しない)。"""
     sids = sorted(kept)
     titles = [situation_titles.get(s, "") for s in sids]
     sit_vecs = dict(zip(sids, await _embed_texts(titles), strict=True))
@@ -520,7 +526,8 @@ async def _gate_vectors(
     fresh_vecs = await _embed_texts([inputs[a] for a in fresh_ids])
     fresh = dict(zip(fresh_ids, fresh_vecs, strict=True))
     art_vecs.update({a: v for a, v in fresh.items() if v is not None})
-    _save_fresh_summary_embeddings(repo, fresh)
+    if save_fresh:
+        _save_fresh_summary_embeddings(repo, fresh)
     return sit_vecs, art_vecs
 
 
@@ -1400,58 +1407,38 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             high_floor=len(high_ids - rollup_ids),
             rollup_dropped=len(rollup_ids),
         )
-    detected = await detect_new_claims(
+    # detect の決定 (従来の LLM detect + ML 和集合 + 束ねの関門、または DETECT_DECOMPOSE=1 の
+    # 分けた形)。束ねの記録 (detect_bundles) の行もここで作る
+    detect_ctx = DetectContext(
+        llm_input=llm_input,
+        detect_input=detect_input,
+        ml_scores=ml_scores,
+        ml_kinds=ml_kinds,
+        entities_by_id=entities_by_id,
+        sit_keys=sit_keys,
+        art_keys=art_keys_by_id,
+        repo=repo,
+        store=store,
         llm=fast_llm or llm,
-        articles=llm_input,
         active_titles=active_titles,
         pir_context=pir_context,
         period_label=label,
+        now_iso=now_iso,
     )
-    # 和集合 (SYNTHESIS §51): LLM が選ばなかったもののうち ML の上位を足す。両腕の視点が
-    # 直交しており (replay 5 日で重なり 31 件中 1 件)、回収が 8→17 に増えて精度は落ちない。
-    # 失敗しても本体を落とさない (ML は可用性に影響させない)
-    if ml_scores:
-        try:
-            detected = await _add_ml_union_claims(
-                detected=detected,
-                llm=fast_llm or llm,
-                # ⚠ 絞り込み **後** の候補から採る — replay (§51) が測ったのはこの経路。
-                #    絞り込み前を渡すと、測った形と出荷した形がずれる
-                detect_input=llm_input,
-                ml_scores=ml_scores,
-                active_titles=active_titles,
-                pir_context=pir_context,
-                period_label=label,
-            )
-        except Exception as exc:  # noqa: BLE001
-            _log.warning("detect_ml_union_failed", error=type(exc).__name__)
-
-    # shadow: 閾値以上の上位を記録 (切替判断の差分比較用)。失敗しても本体を落とさない
-    try:
-        _record_detect_ml_shadow(
-            store=store,
-            run_at=now_iso,
-            scores=ml_scores,
-            kinds=ml_kinds,
-            llm_opened={a for c in detected.open for a in c.article_ids},
-        )
-    except Exception as exc:  # noqa: BLE001 — shadow は本体の可用性に影響させない
-        _log.warning("detect_ml_shadow_failed", error=type(exc).__name__)
-
-    # 束ねの関門: 別々の事案を 1 claim にまとめたら開設せず、塊ごとに書き直させる (2026-09-24)
-    try:
-        detected = await _unbundle_detected(
-            detected,
-            repo=repo,
-            entities_by_id=entities_by_id,
-            detect_input=detect_input,
-            llm=fast_llm or llm,
-            active_titles=active_titles,
-            pir_context=pir_context,
-            period_label=label,
-        )
-    except Exception as exc:  # noqa: BLE001 — 関門の失敗で開設を止めない
-        _log.warning("detect_bundle_gate_failed", error=type(exc).__name__)
+    decision = await decide_detect(detect_ctx)
+    detected = decision.detected
+    bundle_variant = decision.bundle_variant
+    bundle_records = list(decision.bundle_records)
+    # 分けた形の合流は通常の割当に足す (同じ run の増分 ACH で評価され、永続化・休眠復帰も同じ経路)
+    if decision.merges:
+        new_by_sid = {
+            **new_by_sid,
+            **{sid: [*new_by_sid.get(sid, []), *aids] for sid, aids in decision.merges.items()},
+        }
+        assigned_by_aid = {
+            **assigned_by_aid,
+            **{aid: "token" for aids in decision.merges.values() for aid in aids},
+        }
 
     period_start = now_dt - timedelta(hours=lookback)
     context_start = now_dt - timedelta(hours=_CONTEXT_WINDOW_HOURS.get(period_type, 90 * 24))
@@ -1556,7 +1543,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         )
 
     opened_count = 0
+    bundle_outcomes: dict[str, tuple[Outcome, str | None, str]] = {}
     for c in detected.open:
+        cid = _safe_claim_id(now_iso, bundle_variant, c.article_ids, c.claim)
         # 重複ガード: 既存 Situation に照合したら開設せず割当扱い (NetNut 型重複の根治)
         strong, nations = split_anchor_keys(
             frozenset().union(*(entities_by_id.get(a, set()) for a in c.article_ids))
@@ -1594,6 +1583,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 reason=f"開設候補が既存に照合: {c.claim[:60]}",
                 situation_id=sid,
             )
+            bundle_outcomes[cid] = ("merged", sid, f"既存に照合 ({dup[1]})")
             continue
         # フル接地 (裏取りクラスタ拡張 + 過去文脈 — 初回接地にのみ歴史窓を使う)
         expanded = expand_claim_sources(
@@ -1630,6 +1620,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 sources.append(src)
                 tier_by_id[aid] = classify_source_tier(src["feed_title"], src["feed_url"])
         if not sources:
+            bundle_outcomes[cid] = ("skipped", None, "本文を取得できた記事なし")
             continue
         try:
             analysis = await ground_and_score(
@@ -1637,6 +1628,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             )
         except Exception as e:  # noqa: BLE001
             _log.warning("stateful_open_ground_failed", claim=c.claim[:60], error=str(e))
+            bundle_outcomes[cid] = ("skipped", None, "接地(ACH)に失敗")
             continue
         pending.append(
             {
@@ -1650,6 +1642,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 "fired": (),
                 "scope_expanded": False,
                 "was_dormant": False,
+                "bundle_cid": cid,
             }
         )
         opened_count += 1
@@ -1739,6 +1732,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             )
             delta: DeltaType = "opened"
             note = "新規開設 (detect-new)"
+            if p.get("bundle_cid"):
+                bundle_outcomes[str(p["bundle_cid"])] = ("opened", sid, "")
         else:
             row = row_by_sid[sid]
             # L1b: 開設時に pir 未タグ (取込 inline の遅延) で空だった situation を自己修復。
@@ -1836,6 +1831,14 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             )
         )
     judgments = enriched
+
+    # detect の束ねの記録 (M2): 開設ループの結果で確定して残す。失敗しても本体を落とさない
+    try:
+        # shadow: 本番の開設ループの後ろで分けた形を走らせる (追加の LLM 呼出は時間の予算つき)
+        bundle_records.extend(await shadow_records(detect_ctx))
+        store.record_detect_bundles(resolve_outcomes(bundle_records, bundle_outcomes))
+    except Exception as exc:  # noqa: BLE001 — 記録は本体の可用性に影響させない
+        _log.warning("detect_bundles_record_failed", error=type(exc).__name__)
 
     # ---- 5. 落選/未割当の監査台帳 + lifecycle ----
     rejected_ids = set()
@@ -2274,6 +2277,15 @@ async def _unbundle_detected(
         rewrite=rewrite,
         vec_by_aid=_unit_vectors(repo.load_summary_embeddings(ids)),
     )
+
+
+def _safe_claim_id(run_at: str, variant: str, article_ids: Sequence[str], claim: str) -> str:
+    """束ねの記録の id。作れなければ空 (記録の失敗で開設ループを落とさない)。"""
+    try:
+        return make_claim_id(run_at, variant, article_ids, claim)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("detect_bundle_claim_id_failed", error=type(exc).__name__)
+        return ""
 
 
 async def _add_ml_union_claims(

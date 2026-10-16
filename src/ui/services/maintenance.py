@@ -19,6 +19,8 @@ _log = get_logger(__name__)
 
 # situation_detection_log の retention (選定台帳、設計 §3.3)
 _DETECTION_LOG_RETENTION_DAYS = 90
+# detect_bundles (束ねの記録、M2) は評価の正解づくりに使うので長めに残す
+_DETECT_BUNDLES_RETENTION_DAYS = 180
 # articles.body の retention (schema 記載の 90 日、監査 backlog 2026-07-05 で実装)
 _BODY_RETENTION_DAYS = 90
 # 認証の監査証跡 (2026-08-02)。run_logs より長い 180 日 — 不正アクセスの発覚は
@@ -109,12 +111,25 @@ def _run_subject_backfill_safety_net(repo: RunHistoryRepository) -> int:
 
 
 def _purge_detection_log(repo: RunHistoryRepository) -> int:
-    """situation_detection_log の 90 日 retention (台帳稼働時のみ意味を持つ)。"""
-    try:
-        from src.assessment.situation_store import SituationStore
+    """situation_detection_log の 90 日 retention (台帳稼働時のみ意味を持つ)。
 
+    detect_bundles の purge は別の try (こちらの失敗で本流の purge を止めない)。
+    """
+    from src.assessment.situation_store import SituationStore
+
+    try:
         cutoff = (datetime.now(UTC) - timedelta(days=_DETECTION_LOG_RETENTION_DAYS)).isoformat()
-        return SituationStore(db_path=repo.db_path).purge_detection_log(before_iso=cutoff)
+        store = SituationStore(db_path=repo.db_path)
+        purged = store.purge_detection_log(before_iso=cutoff)
     except Exception as e:  # noqa: BLE001 — 台帳不在/未初期化でも他の purge は継続
-        _log.warning("detection_log_purge_skipped", error=str(e))
+        _log.warning("detection_log_purge_skipped", error=type(e).__name__)
         return 0
+    try:
+        bundles_cutoff = (
+            datetime.now(UTC) - timedelta(days=_DETECT_BUNDLES_RETENTION_DAYS)
+        ).isoformat()
+        bundles = store.purge_detect_bundles(before_iso=bundles_cutoff)
+        _log.info("detect_bundles_purged", purged=bundles)
+    except Exception as e:  # noqa: BLE001 — 記録表の purge 失敗は衛生バッチを止めない
+        _log.warning("detect_bundles_purge_failed", error=type(e).__name__)
+    return purged

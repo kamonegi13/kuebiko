@@ -12,13 +12,16 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from src.assessment.evidence_verify import excerpt_is_supported
 from src.assessment.situation_store_marks import NOT_WEAK as _NOT_WEAK
 from src.assessment.situation_store_marks import SituationMarksMixin
 from src.logging_config import get_logger
 from src.storage.run_history import DEFAULT_DB_PATH, RunHistoryRepository
+
+if TYPE_CHECKING:
+    from src.assessment.detect_bundle_log import BundleRecord
 
 _log = get_logger(__name__)
 
@@ -816,6 +819,25 @@ class SituationStore(SituationMarksMixin):
                     "(run_at, article_id, probability, kind, llm_opened) VALUES (?,?,?,?,?)",
                     (run_at, aid, float(prob), kind, 1 if opened else 0),
                 )
+
+    def record_detect_bundles(self, records: Sequence[BundleRecord]) -> None:
+        """detect の束ねの記録 (M2、挙動は変えない)。空なら何もしない。"""
+        if not records:
+            return
+        with self._repo._connect() as conn:  # noqa: SLF001
+            for r in records:
+                conn.execute(
+                    "INSERT INTO detect_bundles (run_at, run_date, variant, claim_id, origin, "
+                    "claim, domain, llm_article_ids, final_article_ids, outcome, situation_id, "
+                    "reason, probability, model) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    r.to_row(),
+                )
+
+    def purge_detect_bundles(self, *, before_iso: str) -> int:
+        """detect_bundles の retention。削除行数を返す。"""
+        with self._repo._connect() as conn:  # noqa: SLF001
+            cur = conn.execute("DELETE FROM detect_bundles WHERE run_at < ?", (before_iso,))
+            return int(cur.rowcount if cur.rowcount is not None else 0)
 
     def log_detection(
         self,
