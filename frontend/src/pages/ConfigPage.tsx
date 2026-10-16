@@ -547,6 +547,7 @@ const STEP_LABELS: Record<string, string> = {
   triage: "重要度判定 (triage)",
   triage_geo_rescue: "重要度判定 — 地政学の救済",
   article_summary: "記事要約・翻訳",
+  ioc_llm_verify: "IOC の LLM 検証",
   article_translate: "本文翻訳",
   dedup_cluster_judge: "重複排除の最終確認",
   pair_judge: "事象ペア同一性判定",
@@ -561,6 +562,8 @@ const STEP_LABELS: Record<string, string> = {
   pir_spotlight: "SIR Spotlight",
   synthesis_analysis: "台帳 ACH 分析",
   synthesis_detect: "新規事象検知",
+  detect_claim_write: "新規事象の claim 書き直し (和集合・束ね)",
+  ledger_ach_aux: "台帳 開設の採点・反証・書き直し",
   ledger_deep_review: "夜間精査 (廃止済み)",
 };
 

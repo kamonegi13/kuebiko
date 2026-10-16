@@ -115,6 +115,7 @@ class Step(StrEnum):
 
     # --- fast tier (収集系バッチ) ---
     ARTICLE_SUMMARY = "article_summary"  # per-article 要約・翻訳 (RSS/Grok)
+    IOC_LLM_VERIFY = "ioc_llm_verify"  # IOC 候補の KEEP/DROP 検証 (旧 ARTICLE_SUMMARY 借用)
     # GROK_EXTRACT は撤去 (2026-09-04)。Grok は Phase 2.6a で LLM 抽出を廃し JSONL
     # パーサへ移行したため、この step を解決する呼出は 1 つも無かった。登録だけが残ると
     # 「ここを割り当てれば Grok の抽出モデルが変わる」という誤認を生む (config/agents.yaml
@@ -141,6 +142,7 @@ class Step(StrEnum):
     DIGEST_DEEP_DIVE_SELECT = "digest_deep_dive_select"  # weekly-recap 選定 (rubric 採点)
     DIGEST_DEEP_DIVE = "digest_deep_dive"  # weekly-recap 本文 (narrative)
     SYNTHESIS_DETECT = "synthesis_detect"  # synthesis 内 detect-new (大量入力 triage)
+    DETECT_CLAIM_WRITE = "detect_claim_write"  # ML 和集合・束ねの書き直し (旧 DETECT 借用)
     PIR_DAILY_FOCUS = "pir_daily_focus"  # PIR daily focus 要点
     PIR_LLM_JUDGE = "pir_llm_judge"  # 概念 PIR の主題判定 (夜間バッチ、候補ゲート通過分のみ)
     ACTOR_SYNC = "actor_sync"  # MITRE actor alias 和訳・提案
@@ -187,6 +189,10 @@ class Step(StrEnum):
     ASSISTANT_CHAT = "assistant_chat"  # 分析チャット plan+answer (対話)
     # --- reasoning tier (構造化分析、think 常時 OFF) ---
     SYNTHESIS_ANALYSIS = "synthesis_analysis"  # 台帳 ACH: nominate/採点/増分/adversarial/射影
+    # 借用の解消 (2026-10-16): 下の 3 つは以前 SYNTHESIS_ANALYSIS / SYNTHESIS_DETECT /
+    # ARTICLE_SUMMARY の client を流用していた呼び出し。専用 step に分けたが**挙動は不変**
+    # (``STEP_INHERITS`` で借り元の step 上書きを継承し、timeout と課題の印も借り元と同じ)。
+    LEDGER_ACH_AUX = "ledger_ach_aux"  # 台帳の新規開設の採点・反証役・見立て変更時の書き直し
     # --- narrative tier (散文生成 + 夜間精査、think は外部モデル割当時に設定可) ---
     SYNTHESIS_NARRATIVE = "synthesis_narrative"  # status synthesis 散文 (legacy 経路)
     # 事象単位ニュース精製 (docs/event_news_design.md §9/§14b)。当初 fast(26B) に置いたが、
@@ -211,6 +217,7 @@ class StepSpec:
 # timeout は同一ティアでも入力量で異なる (step 属性であることの証左)。
 STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
+    Step.IOC_LLM_VERIFY: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE_GEO_RESCUE: StepSpec(Tier.FAST, 300.0),
     Step.DEDUP_CLUSTER_JUDGE: StepSpec(Tier.FAST, 300.0),  # 旧 TRIAGE 借用と同じ解決先・timeout
@@ -227,6 +234,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.DIGEST_DEEP_DIVE_SELECT: StepSpec(Tier.FAST, 900.0),
     Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),
+    Step.DETECT_CLAIM_WRITE: StepSpec(Tier.FAST, 900.0),
     Step.PIR_DAILY_FOCUS: StepSpec(Tier.FAST, 120.0),
     # 主題判定は 1 件 = 小さな分類呼出 (max_tokens 300)。候補ゲート通過分のみに走る。
     Step.PIR_LLM_JUDGE: StepSpec(Tier.FAST, 120.0),
@@ -264,6 +272,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # (reasoning のモデルを factory 外で wrap すると UI の think 1:1 原則が壊れる)。
     # 台帳 ACH (増分評価は 1 呼出数百秒級) — narrative から分離 (2026-07-24 think ティア分離)。
     Step.SYNTHESIS_ANALYSIS: StepSpec(Tier.REASONING, 900.0),
+    Step.LEDGER_ACH_AUX: StepSpec(Tier.REASONING, 900.0),
     Step.EMBED: StepSpec(Tier.EMBEDDING, 120.0),
 }
 
@@ -355,14 +364,28 @@ def resolve_embedding_model(*, db_path: Path | None = None) -> str:
 # ティア解決に fallback (挙動保存 = 既存環境で migration 不要)。
 STEP_OVERRIDE_PREFIX = "step:"
 
+#: 借用を解消した step → 借り元。**借り元の step 上書きを継承する** (自分の上書きが優先)。
+#: 継承にした理由: 新 step ごとに DB へ同じ値を二重に持つと、借り元だけ差し替えたとき
+#: (例: s23i → 次の版) に片方が取り残されて、分けた意味のない食い違いが起きる。
+#: 分離を完了する (独立に割り当てる) ときは、この表から外し上書きを明示する。
+#: 不変条件 (tier / timeout が借り元と同じ) は tests/unit/test_borrowed_steps.py が固定する。
+STEP_INHERITS: dict[Step, Step] = {
+    Step.IOC_LLM_VERIFY: Step.ARTICLE_SUMMARY,
+    Step.DETECT_CLAIM_WRITE: Step.SYNTHESIS_DETECT,
+    Step.LEDGER_ACH_AUX: Step.SYNTHESIS_ANALYSIS,
+}
+
 
 def resolve_step_model(step: Step, *, db_path: Path | None = None) -> str:
     """step の実効モデル名。解決順: step override (DB) → ティア割当 (DB → BUILTIN)。"""
     spec = STEP_REGISTRY[step]
     if _db_enabled():
-        override = _load_tier_map(db_path=db_path).get(f"{STEP_OVERRIDE_PREFIX}{step.value}", "")
-        if override:
-            return override
+        tier_map = _load_tier_map(db_path=db_path)
+        chain = [step, STEP_INHERITS[step]] if step in STEP_INHERITS else [step]
+        for candidate in chain:
+            override = tier_map.get(f"{STEP_OVERRIDE_PREFIX}{candidate.value}", "")
+            if override:
+                return override
     return resolve_tier_model(spec.tier, db_path=db_path)
 
 
@@ -487,7 +510,9 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
     from src.tools.task_prefix import TaskPrefixClient, prefix_for  # 遅延 import (循環回避)
 
     if prefix_for(step):
-        client = TaskPrefixClient(client, step)
+        client = TaskPrefixClient(
+            client, step, rebuild=lambda other: build_llm_for(other, config, db_path=db_path)
+        )
     return client
 
 

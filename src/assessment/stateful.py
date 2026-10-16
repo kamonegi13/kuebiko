@@ -98,6 +98,8 @@ from src.synthesis.grounded.incremental import (
 )
 from src.synthesis.grounded.passes import ground_and_score, truncate_body
 from src.tools.llm_client import LLMClient
+from src.tools.model_tiers import Step
+from src.tools.task_prefix import client_for_step
 
 _log = get_logger(__name__)
 
@@ -1161,6 +1163,10 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         _POOL_IMPORTANCE,
     )
 
+    # 新規開設の採点・反証役・見立て変更時の書き直しは Step.LEDGER_ACH_AUX (旧 SYNTHESIS_ANALYSIS
+    # 借用。解決先・timeout・印は借り元と同じ)。増分の採点 (incremental_ground_and_score) は
+    # 学習した課題そのものなので ``llm`` のまま
+    aux_llm = client_for_step(llm, Step.LEDGER_ACH_AUX)
     now_dt = now or datetime.now(UTC)
     now_iso = now_dt.isoformat()
     start, end, label, lookback, _bw = _resolve_period(period_type=period_type, now=now_dt)
@@ -1469,7 +1475,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         if prev is None:
             # revision の無い Situation (standing の初回評価 / event の異常系): フル接地
             analysis = await ground_and_score(
-                llm=llm,
+                llm=aux_llm,
                 claim=row.title,
                 domain=row.domain,
                 sources=sources,
@@ -1624,7 +1630,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             continue
         try:
             analysis = await ground_and_score(
-                llm=llm, claim=c.claim, domain=c.domain, sources=sources, tier_by_id=tier_by_id
+                llm=aux_llm, claim=c.claim, domain=c.domain, sources=sources, tier_by_id=tier_by_id
             )
         except Exception as e:  # noqa: BLE001
             _log.warning("stateful_open_ground_failed", claim=c.claim[:60], error=str(e))
@@ -1702,7 +1708,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
 
     if judgments:
         try:
-            reviews = await adversarial_review(llm=llm, judgments=tuple(judgments))
+            reviews = await adversarial_review(llm=aux_llm, judgments=tuple(judgments))
             judgments = [apply_adversarial(j, reviews.get(j.id)) for j in judgments]
         except Exception as e:  # noqa: BLE001
             _log.warning("adversarial_review_failed", error=str(e))
@@ -1751,7 +1757,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 j, hold_note = _hold_unconfirmed_flip(j, prev, was_dormant=bool(p["was_dormant"]))
                 # 反転確定時の claim 書き直し + 問いの主語の関門 (claim_guard)
                 guard = await guard_claim(
-                    llm=llm,
+                    llm=aux_llm,
                     j=j,
                     prev=prev,
                     question=_standing_question(sid, row.title),
@@ -1900,7 +1906,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         )
         if standing_targets:
             try:
-                reviews = await adversarial_review(llm=llm, judgments=tuple(standing_targets))
+                reviews = await adversarial_review(llm=aux_llm, judgments=tuple(standing_targets))
                 for j in standing_targets:
                     rev_after = apply_adversarial(j, reviews.get(j.id))
                     if not rev_after.adversarial_refuted:

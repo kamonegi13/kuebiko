@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -63,6 +64,12 @@ TASK_MARKERS: dict[Step, str] = {
     Step.EVENT_NEWS: "[task: event_news]\n",
     Step.PIR_SPOTLIGHT: "[task: spotlight]\n",
     Step.SYNTHESIS_NARRATIVE: "[task: synthesis]\n",
+    # 借用を解消した step (2026-10-16)。**印は借り元と同じまま** — 外すかは s24 の評価で決める。
+    # 学習した課題は summary / detect / ach の 3 つで、これらの呼び出しは未学習の別課題
+    # (IOC 検証・claim の書き直し・開設の採点/反証/書き直し)。
+    Step.IOC_LLM_VERIFY: "[task: summary]\n",
+    Step.DETECT_CLAIM_WRITE: "[task: detect]\n",
+    Step.LEDGER_ACH_AUX: "[task: ach]\n",
     Step.DIGEST_DEEP_DIVE_SELECT: "[task: deep_dive_select]\n",
     Step.DIGEST_DEEP_DIVE: "[task: deep_dive]\n",
     # s22 から学習 (2026-09-29)。s21 / n19 は学習していない (UNTRAINED_STEPS)
@@ -121,9 +128,35 @@ class TaskPrefixClient(LLMClient):
     call site を 1 つずつ直すと必ず漏れる (漏れた経路だけ学習時と形が違う)。
     """
 
-    def __init__(self, inner: LLMClient, step: Step) -> None:
+    def __init__(
+        self,
+        inner: LLMClient,
+        step: Step,
+        *,
+        rebuild: Callable[[Step], LLMClient] | None = None,
+    ) -> None:
         self._inner = inner
         self._step = step
+        self._rebuild = rebuild
+        self._by_step: dict[Step, LLMClient] = {}
+
+    def for_step(self, step: Step) -> LLMClient:
+        """同じ呼び出し元が別の step として呼ぶ client (借用の解消用、結果は run 中キャッシュ)。
+
+        ``build_llm_for`` 由来なら step を解決し直す (その step の上書きが効く)。明示 ref の
+        client (評価・教師収穫) は内側のモデルを保ったまま印だけ付け替える。
+        """
+        if step == self._step:
+            return self
+        cached = self._by_step.get(step)
+        if cached is None:
+            cached = (
+                self._rebuild(step)
+                if self._rebuild is not None
+                else TaskPrefixClient(self._inner, step)
+            )
+            self._by_step[step] = cached
+        return cached
 
     @property
     def model(self) -> str:
@@ -169,3 +202,8 @@ class TaskPrefixClient(LLMClient):
             think=think,
             max_attempts=max_attempts,
         )
+
+
+def client_for_step(llm: LLMClient, step: Step) -> LLMClient:
+    """``llm`` を別 step の client にする。印つき client 以外 (テストの代役等) はそのまま返す。"""
+    return llm.for_step(step) if isinstance(llm, TaskPrefixClient) else llm

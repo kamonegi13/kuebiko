@@ -292,11 +292,13 @@ async def _summarize_and_build(
     # Phase 5T-N: Layer 2 (LLM verifier) で context-aware に誤抽出を drop
     if enrich.enabled and enrich.verify_iocs_with_llm:
         from src.cti.ioc_llm_verifier import verify_iocs_with_llm
+        from src.tools.model_tiers import Step
+        from src.tools.task_prefix import client_for_step
 
         extracted = await verify_iocs_with_llm(
             extracted,
             body,
-            llm=llm,
+            llm=client_for_step(llm, Step.IOC_LLM_VERIFY),
             article_id=article.id,
         )
     # Phase 5F: LLM 出力の IOC 配列に出典 URL が混入した場合の二重防御

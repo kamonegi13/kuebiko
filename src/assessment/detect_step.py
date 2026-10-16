@@ -36,6 +36,8 @@ from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.incremental import DetectResult, detect_new_claims
 from src.tools.llm_client import LLMClient
+from src.tools.model_tiers import Step
+from src.tools.task_prefix import client_for_step
 
 _log = get_logger(__name__)
 
@@ -149,7 +151,7 @@ async def _current(ctx: DetectContext) -> DetectDecision:
         try:
             detected = await stateful._add_ml_union_claims(  # noqa: SLF001
                 detected=detected,
-                llm=ctx.llm,
+                llm=client_for_step(ctx.llm, Step.DETECT_CLAIM_WRITE),
                 detect_input=list(ctx.llm_input),
                 ml_scores=dict(ctx.ml_scores),
                 active_titles=ctx.active_titles,
@@ -176,7 +178,7 @@ async def _current(ctx: DetectContext) -> DetectDecision:
             repo=ctx.repo,
             entities_by_id=ctx.entities_by_id,
             detect_input=ctx.detect_input,
-            llm=ctx.llm,
+            llm=client_for_step(ctx.llm, Step.DETECT_CLAIM_WRITE),
             active_titles=ctx.active_titles,
             pir_context=ctx.pir_context,
             period_label=ctx.period_label,

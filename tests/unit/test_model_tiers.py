@@ -75,7 +75,7 @@ class TestRegistry:
         # think ティア分離 (2026-07-24): 構造化分析=reasoning / 散文生成=narrative。
         reasoning = {s for s, spec in STEP_REGISTRY.items() if spec.tier is Tier.REASONING}
         narrative = {s for s, spec in STEP_REGISTRY.items() if spec.tier is Tier.NARRATIVE}
-        assert reasoning == {Step.SYNTHESIS_ANALYSIS}
+        assert reasoning == {Step.SYNTHESIS_ANALYSIS, Step.LEDGER_ACH_AUX}
         assert narrative == {
             Step.SYNTHESIS_NARRATIVE,
             Step.PIR_SPOTLIGHT,
