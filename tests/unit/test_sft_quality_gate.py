@@ -292,3 +292,30 @@ def test_run_gate_end_to_end_fails_and_cli_exit_code(
     assert code == 1
     assert (ds / "quality_gate.json").exists()
     assert "FAIL" in gate.format_table(report)
+
+
+def _triage_user(summary: str) -> str:
+    return f"[task: triage]\nフィード: F\nタイトル: T\n概要: {summary}\n\n## 判定基準 (high)\nx"
+
+
+def test_empty_triage_summary_is_a_violation(tmp_path: Path) -> None:
+    rows = _rows(
+        tmp_path,
+        [
+            _row(_triage_user(""), '{"importance": "low", "reason": "r"}'),
+            _row(_triage_user("本文の冒頭"), '{"importance": "low", "reason": "r"}'),
+        ],
+    )
+    res = gate.check_empty_input_fields(rows)
+    assert res.violations == 1
+    assert res.detail == {"triage:概要": 1}
+
+
+def test_empty_summary_body_is_a_violation_and_filled_passes(tmp_path: Path) -> None:
+    res = gate.check_empty_input_fields(
+        _rows(
+            tmp_path,
+            [_row(_summary_user(""), _summary_out()), _row(_summary_user(), _summary_out())],
+        )
+    )
+    assert res.violations == 1

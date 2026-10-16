@@ -693,6 +693,33 @@ def distributions(rows: list[Row]) -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 12. 入力の欄が空でない (N1 #79: s23 の triage 705 行は全行「概要:」が空だった)
+# ---------------------------------------------------------------------------
+
+#: 課題 → (欄の名前, user 内でその欄の値を取り出す正規表現)。値が空 (空白のみ) なら違反
+REQUIRED_INPUT_FIELDS: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
+    "triage": (("概要", re.compile(r"概要:[ \t]*(.*?)\n\n(?:上から順に見る|##)", re.DOTALL)),),
+    "summary": (
+        ("記事 本文", re.compile(r"【記事 本文】\n(.*?)(?:\n+# 出力スキーマ|\Z)", re.DOTALL)),
+    ),
+}
+
+
+def check_empty_input_fields(rows: list[Row]) -> CheckResult:
+    res = CheckResult("12_empty_input_fields")
+    for r in rows:
+        for name, pattern in REQUIRED_INPUT_FIELDS.get(r.task, ()):
+            m = pattern.search(r.user)
+            if m is None:
+                res.uninspectable[r.task] = res.uninspectable.get(r.task, 0) + 1
+            elif not m.group(1).strip():
+                res.violations += 1
+                res.detail[f"{r.task}:{name}"] = res.detail.get(f"{r.task}:{name}", 0) + 1
+                res.add_example(f"{r.label} {r.task}: 入力の欄「{name}」が空")
+    return res
+
+
 def run_gate(
     dataset_dir: Path,
     manifest_path: Path | None = None,
@@ -726,6 +753,7 @@ def run_gate(
         check_duplicates(rows, manifest),
         check_guard(rows, eval_oldest, guard),
         distributions(rows),
+        check_empty_input_fields(rows),
     ]
     return {
         "dataset": str(dataset_dir),
