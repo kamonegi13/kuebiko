@@ -207,3 +207,14 @@ s24 を先にする理由: (a) 計画が最も進んでいる (`s24_plan.md`)、
 ### 9.2 未決
 
 - なし (s24_plan §12 の項目 1・2 は s24 内の判断として残る)。
+
+## 補記 (10-16): dialog 4 step を s23i で動かした結果 (`data/eval/J1_dialog_report.md`、各 5 件、haiku と比較)
+
+| step | s23i | 扱い |
+|---|---|---|
+| selector_proposal | 取れる記事 URL が haiku と完全一致 (5/5) | s 系で可 |
+| precise_search | Opus の適合度 5.94 対 haiku 5.78 で同等、所要は中央 42s 対 29s | s 系で可 (待ち時間を運用で確認) |
+| assistant_chat | **回答が 5/5 で JSON に包まれ質問に答えない**。盲検 haiku 10 勝 0 敗。ツールの計画は同じ | s 系は不可。n20 の候補。n20 でも崩れるなら外部のまま (2 本化の例外) を判断 |
+| pir_compile | 形は 5/5 正しい (haiku は 1 件 JSON 破損)。ただし 30 日の該当記事が haiku・現行とも 0 件の PIR が多く、比べ方が機能していない疑い | 測り直し |
+
+`fallback:dialog` を s23i にする案は撤回 (チャットが崩れる)。予備は今は設定しない。
