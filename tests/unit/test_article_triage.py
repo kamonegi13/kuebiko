@@ -401,3 +401,31 @@ class TestGeoRescue:
 
         assert survivors == []
         assert [r.article_id for r in rejected] == ["geo"]
+
+
+def test_long_reason_keeps_importance_and_trims_at_sentence() -> None:
+    from src.tools.article_triage import TRIAGE_REASON_MAX, TriageDecision
+
+    reason = "基準に該当する。" * 60  # 480 字
+    d = TriageDecision.model_validate({"importance": "high", "reason": reason})
+    assert d.importance == "high"
+    assert d.error is False
+    assert len(d.reason) <= TRIAGE_REASON_MAX
+    assert d.reason.endswith("。")
+
+
+def test_long_reason_without_delimiter_gets_ellipsis() -> None:
+    from src.tools.article_triage import TRIAGE_REASON_MAX, TriageDecision
+
+    d = TriageDecision.model_validate({"importance": "low", "reason": "あ" * 500})
+    assert d.importance == "low"
+    assert len(d.reason) == TRIAGE_REASON_MAX
+    assert d.reason.endswith("…")
+
+
+def test_schema_has_no_max_length_for_generation() -> None:
+    import json
+
+    from src.tools.article_triage import TriageDecision
+
+    assert "maxLength" not in json.dumps(TriageDecision.model_json_schema())

@@ -21,11 +21,12 @@ import os
 from collections.abc import Mapping
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from src.logging_config import get_logger
 from src.tools.article_model import Article
 from src.tools.llm_client import LLMClient
+from src.tools.reason_trim import TRIAGE_REASON_MAX, trim_reason, trim_reason_logged
 
 # Phase 5I: _strip_html を src/tools/text_utils.py に集約 (main.py と統合)
 from src.tools.text_utils import strip_html as _strip_html
@@ -49,11 +50,16 @@ class TriageDecision(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     importance: Literal["high", "medium", "low"] = "medium"
-    reason: str = Field(default="", max_length=200)
+    reason: str = ""
     # Phase 5P: LLM 失敗による medium フォールバックかを表す。
     # True なら呼び出し側でカウントし run_history.triage_error_count に集計、
     # ops チャンネルへ即時通知する (silent 失敗対策)。
     error: bool = False
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def _trim_reason(cls, v: str) -> str:
+        return trim_reason_logged(v, owner="TriageDecision")
 
 
 class ArticleTriage:
@@ -78,7 +84,7 @@ class ArticleTriage:
                 prompt,
                 schema=TriageDecision,
                 think=self._think,
-                max_tokens=400,
+                max_tokens=400,  # reason 300 字 + JSON ≈ 206 token (Gemma tokenizer 実測)
             )
         except Exception as e:  # noqa: BLE001
             _log.warning(
@@ -432,6 +438,8 @@ __all__ = [
     "SAMPLE_CONTEXT",
     "SLOT_IDS",
     "ArticleTriage",
+    "TRIAGE_REASON_MAX",
     "TriageDecision",
+    "trim_reason",
     "compose_from_blocks",
 ]

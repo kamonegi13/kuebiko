@@ -20,7 +20,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_validator
 
 from src.assessment.claim_bundle import split_clusters
 from src.assessment.detect_bundle_log import (
@@ -37,6 +37,7 @@ from src.synthesis.grounded.incremental import (
     DetectResult,
 )
 from src.synthesis.grounded.passes import _render
+from src.tools.reason_trim import trim_reason_logged
 
 if TYPE_CHECKING:
     from src.assessment.assignment import ArticleKeys, SituationKeys
@@ -93,9 +94,21 @@ class ClusterClaimWire(BaseModel):
     """「塊 → claim 1 文」課題の出力契約。配列も自由な id も無い (暴走・引用の捏造を構造で防ぐ)。"""
 
     model_config = {"extra": "ignore"}
-    claim: str = Field(default="", max_length=_WIRE_CLAIM_MAX_CHARS)
+    claim: str = ""
     domain: str = ""
-    skip_reason: str = Field(default="", max_length=_SKIP_REASON_MAX_CHARS)
+    skip_reason: str = ""
+
+    @field_validator("claim", mode="after")
+    @classmethod
+    def _trim_claim(cls, v: str) -> str:
+        return trim_reason_logged(v, owner="ClusterClaimWire.claim", limit=_WIRE_CLAIM_MAX_CHARS)
+
+    @field_validator("skip_reason", mode="after")
+    @classmethod
+    def _trim_skip_reason(cls, v: str) -> str:
+        return trim_reason_logged(
+            v, owner="ClusterClaimWire.skip_reason", limit=_SKIP_REASON_MAX_CHARS
+        )
 
 
 @dataclass(frozen=True)

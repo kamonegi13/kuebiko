@@ -24,12 +24,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.logging_config import get_logger
 from src.tools.embedding_client import EmbeddingClient
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step, build_llm_for, resolve_embedding_model
+from src.tools.reason_trim import trim_reason_logged
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
@@ -171,7 +172,12 @@ class JapanInvolvementJudgement(BaseModel):
     japan_involved: bool = Field(
         description="日本の組織・日本人・日本政府・日本が標的/被害当事者として関与するか"
     )
-    reason: str = Field(description="判定理由 (1文)", max_length=200)
+    reason: str = Field(description="判定理由 (1文)")
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def _trim_reason(cls, v: str) -> str:
+        return trim_reason_logged(v, owner="JapanInvolvementJudgement")
 
 
 _CASCADE_PROMPT_TEMPLATE = """以下の記事 (タイトル+概要) が、日本の組織・日本のユーザ/市民・
@@ -196,7 +202,7 @@ async def cascade_japan_involved(
             prompt,
             schema=JapanInvolvementJudgement,
             think=False,
-            max_tokens=200,
+            max_tokens=400,  # reason 300 字 + JSON ≈ 204 token (Gemma 実測)
         )
     except Exception as e:  # noqa: BLE001 — 1 件の失敗で影子記録全体を止めない
         _log.warning("relevance_jp_cascade_failed", error=str(e))

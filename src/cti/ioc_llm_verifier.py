@@ -17,11 +17,12 @@ import re
 from collections.abc import Mapping
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.cti.ioc_extractor import ExtractedIocs
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient
+from src.tools.reason_trim import trim_reason_logged
 
 _log = get_logger(__name__)
 
@@ -33,7 +34,9 @@ _CONTEXT_WINDOW = 80
 # chunk し全件判定する (cap でなく chunk サイズ)。
 _VERIFY_CHUNK_SIZE = 40
 # LLM 出力 token 上限
-_VERIFY_MAX_TOKENS = 2000
+# Gemma tokenizer 実測: 判定 1 件 (reason 60 字) ≈ 48 token → 40 件 ≈ 1920。reason が
+# 長めになっても途中切れで判定を失わないよう 3000 (旧 2000 は余裕 4%)。
+_VERIFY_MAX_TOKENS = 3000
 _VERIFY_TEMPERATURE = 0.0  # 決定的にしたいので低 temperature
 # CVE 候補の LLM verify 上限 (2026-08-01)。CERT-FR 等の patch-roundup advisory は
 # CVE 参照リストを数百件含み、全件 chunk verify だと 1 記事 10+ LLM 呼出 (実測 6-8 分、
@@ -71,7 +74,12 @@ class IocDecision(BaseModel):
 
     id: int = Field(ge=0)
     action: _Action
-    reason: str = Field(default="", max_length=200)
+    reason: str = ""
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def _trim_reason(cls, v: str) -> str:
+        return trim_reason_logged(v, owner="IocDecision")
 
 
 class IocVerifyOutput(BaseModel):

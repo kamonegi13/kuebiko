@@ -11,7 +11,7 @@ import re
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
+from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler, field_validator
 from pydantic.config import JsonDict
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
@@ -19,6 +19,7 @@ from pydantic_core import CoreSchema
 from src.cti.llm_routing_flags import EditorialStance
 from src.logging_config import get_logger
 from src.tools.discord_publisher import Importance
+from src.tools.reason_trim import trim_reason_logged
 
 _log = get_logger(__name__)
 
@@ -191,6 +192,9 @@ def _max_items(field: str) -> JsonDict:
     return {"maxItems": _LIST_MAX_ITEMS[field]}
 
 
+TITLE_JA_MAX = 120
+
+
 class SummaryOutput(BaseModel):
     """``prompts/briefing/summarizer.j2`` で LLM に生成させる JSON 構造。"""
 
@@ -207,7 +211,14 @@ class SummaryOutput(BaseModel):
         return schema
 
     # Phase 5J-2: title_ja を required に格上げ (MoE 系で optional 省略を防ぐ)。
-    title_ja: str = Field(min_length=1, max_length=120)
+    title_ja: str = Field(min_length=1)
+
+    @field_validator("title_ja", mode="after")
+    @classmethod
+    def _trim_title_ja(cls, v: str) -> str:
+        # 長さで要約全体の検証を落とさない (旧 max_length=120)。表示用に 120 字へ収める。
+        return trim_reason_logged(v, owner="SummaryOutput.title_ja", limit=TITLE_JA_MAX)
+
     # Phase 5T-O: RSS 経路では BLUF が title と重複するため LLM 生成を廃止。
     # field は後方互換のため optional として残す (Grok 経路の機械的 BLUF 生成では引き続き使用)。
     bluf: str = ""

@@ -244,8 +244,8 @@ class TestConversions:
 
     def test_claim_wire_accepts_a_slightly_long_claim_but_stops_runaways(self) -> None:
         assert len(ClusterClaimWire(claim="あ" * 201).claim) == 201
-        with pytest.raises(ValueError):
-            ClusterClaimWire(claim="あ" * 601)
+        # 2026-10-18: 超過は検証失敗ではなく後処理で 600 字に収める (塊を失わない)
+        assert len(ClusterClaimWire(claim="あ" * 601).claim) <= 600
 
     def test_claim_wire_ignores_extra_fields(self) -> None:
         got = ClusterClaimWire.model_validate({"claim": "x", "article_ids": ["bogus"]})

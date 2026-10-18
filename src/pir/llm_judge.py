@@ -19,7 +19,7 @@ import asyncio
 import hashlib
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from src.logging_config import get_logger
 from src.pir.article_facts import ArticleFacts
@@ -30,6 +30,7 @@ from src.storage.run_history import RunHistoryRepository
 
 if TYPE_CHECKING:
     from src.tools.llm_client import LLMClient
+from src.tools.reason_trim import trim_reason_logged
 
 _log = get_logger(__name__)
 
@@ -53,7 +54,12 @@ class JudgeVerdict(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     matched: bool = False
-    reason: str = Field(default="", max_length=200)
+    reason: str = ""
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def _trim_reason(cls, v: str) -> str:
+        return trim_reason_logged(v, owner="JudgeVerdict")
 
 
 def pir_judge_rev(pir: Pir) -> str:
@@ -251,7 +257,7 @@ async def judge_pending(
                     build_judge_prompt(pir, row),
                     schema=JudgeVerdict,
                     temperature=0.0,
-                    max_tokens=300,
+                    max_tokens=400,  # reason 300 字 + JSON ≈ 202 token (Gemma tokenizer 実測)
                     think=False,
                 )
             except Exception as e:  # noqa: BLE001 — 個別失敗は翌日バッチが拾う
