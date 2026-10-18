@@ -24,9 +24,9 @@ _PERIOD_LABEL: dict[str, str] = {
 
 # 配信時のセクション見出し (status_synthesis の各 section column に対応)。
 _SECTION_HEADERS: list[tuple[str, str]] = [
-    ("weight_section", "■ 比重 (どの軸が重いか)"),
+    ("weight_section", "■ 主な変化"),
     ("chain_section", "■ 連鎖 (軸間の因果)"),
-    ("cog_section", "■ 重心 (CoG)"),
+    ("cog_section", "■ 継続中の判定"),
     ("spillover_section", "■ 波及"),
     ("pir_section", "■ PIR 達成度"),
 ]
@@ -95,9 +95,12 @@ def build_synthesis_message(record: StatusSynthesisRecord) -> BriefingMessage:
     )
 
 
-# Discord 要点射影 (BLUF, 2026-07-12): 日次ブリーフの全文 push をやめ、headline + 比重 +
-# 重心のみを配信する。連鎖 / 波及 / PIR 達成度 / トレードクラフトは Web 全文 (daily_briefs
-# → /app/daily-brief) で読む。決定論の節選択のみで LLM 追加呼出なし。
+# Discord 要点射影 (BLUF, 2026-07-12): 日次ブリーフの全文 push をやめ、headline + 主な変化 +
+# 継続中の判定のみを配信する (旧版・BRIEF_DISCORD_V2=0)。連鎖 / 波及 / PIR 達成度 / トレード
+# クラフトは Web 全文 (daily_briefs → /app/daily-brief) で読む。2026-10-18 以降の朝夕ブリーフは
+# src/digest/discord_brief.py (見出し 1 文のみ)。決定論の節選択のみで LLM 追加呼出なし。
+# 見出しは中身に合わせた名 (2026-10-18): weight_section=この期間に変わった判定
+# (【新規】【転換】等)、cog_section=変わらず続いている判定。列名は DB 互換のためそのまま。
 _COMPACT_SECTION_KEYS: tuple[str, ...] = ("weight_section", "cog_section")
 
 

@@ -90,10 +90,10 @@ export function StandingAssessmentWidget({ config }: WidgetProps) {
 
 // ── synthesis セクション (CoG / 波及 / 連鎖 / 比重 / SIR) を選んで表示 ──
 const SECTION_META: Record<string, { label: string; field: "cog_section" | "spillover_section" | "chain_section" | "weight_section" | "pir_section" }> = {
-  cog: { label: "重心", field: "cog_section" },
+  cog: { label: "継続中の判定", field: "cog_section" },
   spillover: { label: "波及", field: "spillover_section" },
   chain: { label: "連鎖", field: "chain_section" },
-  weight: { label: "比重", field: "weight_section" },
+  weight: { label: "主な変化", field: "weight_section" },
   pir: { label: "SIR 評価", field: "pir_section" },
 };
 export function SynthesisSectionWidget({ config }: WidgetProps) {

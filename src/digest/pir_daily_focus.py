@@ -359,10 +359,10 @@ def _format_match_line(m: PirMatch) -> str:
     title = (m.title or m.article_id).strip()
     feed = m.feed_title or "source"
     # S1: 出典の信頼度マーカー (朝の通読で SNS/一次を一目で。tier は feed メタから決定的)。
-    from src.cti.source_basis import classify_source_tier
+    from src.cti.source_basis import SOURCE_TIER_MARKER, classify_source_tier
 
     tier = classify_source_tier(m.feed_title or "", m.feed_url or "")
-    marker = {"social": " ⚠SNS(要裏取り)", "official": " ✓一次"}.get(tier, "")
+    marker = SOURCE_TIER_MARKER.get(tier, "")
     return f"  {icon} [{imp}]{marker} [{title}]({m.url}) — {feed}"
 
 

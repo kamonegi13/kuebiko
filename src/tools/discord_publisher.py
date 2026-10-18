@@ -879,6 +879,10 @@ class DiscordPublisher:
         head = f"{emoji} {tag}".strip() if tag else emoji
         return f"{head} {title}{suffix}".strip()
 
+    def count_description_chunks(self, message: BriefingMessage) -> int:
+        """本文が何通に分割されて投稿されるか (投稿はしない)。"""
+        return len(_chunk_text(self._compose_description(message), max_chars=DESC_CHUNK_SAFE))
+
     def _compose_description(self, message: BriefingMessage) -> str:
         """description (本文) を組み立てる。
 

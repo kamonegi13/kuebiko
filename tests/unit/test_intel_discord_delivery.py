@@ -89,7 +89,7 @@ class TestBuildMessages:
         assert msg.importance == "medium"
         assert msg.category == "status_synthesis"
         assert "今週は中国APT" in msg.summary
-        assert "比重" in msg.summary  # section header
+        assert "主な変化" in msg.summary  # section header
         assert "PIR 達成度" in msg.summary
 
     def test_synthesis_message_includes_tradecraft_when_present(self) -> None:
@@ -236,8 +236,8 @@ class TestBuildSynthesisCompact:
 
         text = build_synthesis_compact(_synthesis("daily"))
         assert text.startswith("**今週は中国APTの通信事業者標的が比重を増した**")
-        assert "■ 比重" in text and "軍事/情報軸が突出" in text
-        assert "■ 重心" in text and "重心はエッジ機器" in text
+        assert "■ 主な変化" in text and "軍事/情報軸が突出" in text
+        assert "■ 継続中の判定" in text and "重心はエッジ機器" in text
         # 全文 push を構成していた節は含めない (Web 全文で読む)
         assert "連鎖" not in text
         assert "波及" not in text

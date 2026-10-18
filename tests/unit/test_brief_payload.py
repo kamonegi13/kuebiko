@@ -65,7 +65,7 @@ class TestSynthesisPayload:
         keys = [s["key"] for s in syn["sections"]]
         assert "chain_section" not in keys  # 空節は除外
         weight = next(s for s in syn["sections"] if s["key"] == "weight_section")
-        assert weight["label"].startswith("比重")  # 「■ 」prefix は剥がす
+        assert weight["label"].startswith("主な変化")  # 「■ 」prefix は剥がす
         assert not weight["label"].startswith("■")
 
     def test_none_record_gives_null_synthesis(self) -> None:

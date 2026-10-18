@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from src.cti.japan_relevance import is_japan_targeted_row
+from src.cti.source_basis import classify_source_tier
 from src.logging_config import get_logger
 from src.storage.run_history import DEFAULT_DB_PATH
 
@@ -54,6 +55,8 @@ class HighThreatItem:
     category: str
     url: str
     is_japan: bool
+    #: 出典の信頼度ティア (classify_source_tier)。SNS 由来の目印用。空 = 不明
+    source_tier: str = ""
 
 
 def _connect(db_path: Path) -> Any:
@@ -85,7 +88,7 @@ def collect_high_threats(
     placeholders = ", ".join("?" for _ in _ACTIONABLE_CATEGORIES)
     sql = (
         "SELECT article_id, title, url, category, victim_country_iso, posted_channel,"
-        " dedup_key, created_at"
+        " dedup_key, created_at, feed_title, feed_url, account_class"
         " FROM articles"
         " WHERE status='posted' AND importance='high'"
         " AND posted_channel NOT IN ('alert', 'vuln')"
@@ -114,6 +117,11 @@ def collect_high_threats(
                 category=str(r["category"] or ""),
                 url=str(r["url"] or ""),
                 is_japan=is_japan_targeted_row(r["victim_country_iso"], r["posted_channel"]),
+                source_tier=classify_source_tier(
+                    str(r["feed_title"] or ""),
+                    str(r["feed_url"] or ""),
+                    account_class=str(r["account_class"] or ""),
+                ),
             )
         )
     # japan 標的を先頭に安定ソート (以降は created_at 降順を維持)。
@@ -148,6 +156,7 @@ def high_threats_payload(items: list[HighThreatItem], *, total: int) -> dict[str
                 "category_label": _CATEGORY_JA.get(it.category, it.category),
                 "url": it.url,
                 "is_japan": it.is_japan,
+                "source_tier": it.source_tier,
             }
             for it in items
         ],

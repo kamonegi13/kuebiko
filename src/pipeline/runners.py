@@ -5,6 +5,7 @@ src.main から分割。
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, cast, get_args
 
 from src.config_loader import AppConfig, PipelineConfig
@@ -304,6 +305,49 @@ def _compose_compact_summary(
     return "\n\n".join(parts)
 
 
+def _latest_morning_headline() -> str:
+    """直近の朝ブリーフの状況総括の見出し (夕の「朝と同じ」判定用)。取れなければ ""。"""
+    try:
+        for row in RunHistoryRepository().list_daily_briefs(limit=6):
+            if row.get("slot") == "morning":
+                syn = (row.get("payload") or {}).get("synthesis") or {}
+                return str(syn.get("headline") or "")
+    except Exception as e:  # noqa: BLE001 — 判定材料が無ければ通常の夕版にする
+        _log.warning("daily_brief_prior_headline_failed", error=str(e))
+    return ""
+
+
+def _compose_discord_summary(
+    *,
+    slot: str,
+    payload: dict[str, Any],
+    bursts: list[Any],
+    base_url: str | None,
+    legacy: Callable[[], str],
+) -> str:
+    """Discord の要点版を決める (2026-10-18 再設計)。BRIEF_DISCORD_V2=0 で旧版。
+
+    1 通 (3,500 字) に収め、畳んだ節を log に残す。
+    """
+    from src.digest import discord_brief
+
+    if not discord_brief.is_enabled():
+        return legacy()
+    if slot == "evening":
+        brief = discord_brief.compose_evening(
+            payload, prior_headline=_latest_morning_headline(), base_url=base_url
+        )
+    else:
+        brief = discord_brief.compose_morning(payload, bursts=bursts, base_url=base_url)
+    _log.info(
+        "daily_brief_discord_composed",
+        slot=slot,
+        chars=len(brief.text),
+        collapsed=list(brief.collapsed),
+    )
+    return brief.text
+
+
 async def _run_daily_brief_default(
     *,
     config: AppConfig,
@@ -318,6 +362,7 @@ async def _run_daily_brief_default(
     ③ 1 つの BriefingMessage (朝/夕 ブリーフィング) に合成して #brief に 1 投稿。
     朝刊=synthesis+PIR focus / 夕刊=synthesis のみ (夕方の状況更新)。
     """
+    from src.digest.brief_payload import build_brief_payload
     from src.digest.pir_daily_focus import _today_label
     from src.synthesis.discord import build_synthesis_compact, build_synthesis_message
     from src.synthesis.generator import generate_synthesis
@@ -376,12 +421,13 @@ async def _run_daily_brief_default(
     # 決定論・LLM 追加呼出なし・DB read (+ 非 dry-run のみ indicator 起票)。
     # 失敗しても brief 全体を止めない (burst 側も fail-open の二重防御)。
     burst_section = ""
+    burst_events: list[Any] = []
     if is_morning:
         try:
             from src.forecast.burst import detect_daily_bursts, format_burst_compact
 
-            bursts = detect_daily_bursts(RunHistoryRepository(), persist=not dry_run)
-            burst_section = format_burst_compact(bursts)
+            burst_events = list(detect_daily_bursts(RunHistoryRepository(), persist=not dry_run))
+            burst_section = format_burst_compact(burst_events)
         except Exception as e:  # noqa: BLE001 — I&W 節の失敗で朝刊を止めない
             _log.error("daily_brief_burst_failed", error=str(e))
 
@@ -443,13 +489,26 @@ async def _run_daily_brief_default(
         _log.error("daily_brief_high_threat_failed", slot=slot, error=str(e))
 
     # Discord には要点射影 (BLUF) のみ、全文は daily_briefs → Web で pull (2026-07-12)。
-    compact_summary = _compose_compact_summary(
-        narrative=build_synthesis_compact(syn_record) if syn_record is not None else "",
-        pir_body=pir_compact,
-        high_threats=high_threat_compact,
-        burst=burst_section,
-        pir_brief=pir_brief_compact,
-        base_url=resolve_public_base_url(),
+    base_url = resolve_public_base_url()
+    brief_payload = build_brief_payload(
+        syn_record=syn_record,
+        sections=sections,
+        pir_brief=pir_brief,
+        high_threats=high_threats_web,
+    )
+    compact_summary = _compose_discord_summary(
+        slot=slot,
+        payload=brief_payload,
+        bursts=burst_events,
+        base_url=base_url,
+        legacy=lambda: _compose_compact_summary(
+            narrative=build_synthesis_compact(syn_record) if syn_record is not None else "",
+            pir_body=pir_compact,
+            high_threats=high_threat_compact,
+            burst=burst_section,
+            pir_brief=pir_brief_compact,
+            base_url=base_url,
+        ),
     )
 
     if dry_run:
@@ -467,8 +526,6 @@ async def _run_daily_brief_default(
     # 保存し push 失敗でも本文を Web に残す。dry_run は repo=None で skip。
     if repo is not None:
         try:
-            from src.digest.brief_payload import build_brief_payload
-
             repo.record_daily_brief(
                 run_id=run_id,
                 slot=slot,
@@ -476,12 +533,7 @@ async def _run_daily_brief_default(
                 title=message.title,
                 bluf=message.bluf,
                 summary=message.summary,
-                payload=build_brief_payload(
-                    syn_record=syn_record,
-                    sections=sections,
-                    pir_brief=pir_brief,
-                    high_threats=high_threats_web,
-                ),
+                payload=brief_payload,
                 section_count=len(sections),
                 sources=[{"title": s.title, "url": s.url} for s in message.sources],
             )
@@ -506,7 +558,14 @@ async def _run_daily_brief_default(
     try:
         # 一時的な障害 (5xx / 429) は数分おきに試し直す — 本文は生成・保存済みで、捨てると
         # 手動の再実行 (生成からやり直し) しか無かった (2026-09-26 朝の Discord 500)
-        await post_patiently(publisher, message.model_copy(update={"summary": compact_summary}))
+        compact_message = message.model_copy(update={"summary": compact_summary})
+        # 1 通 (3,500 字) に収まったか: 分割した回数を残す (2 以上なら要点版が長すぎる)
+        _log.info(
+            "daily_brief_discord_chunks",
+            slot=slot,
+            chunks=publisher.count_description_chunks(compact_message),
+        )
+        await post_patiently(publisher, compact_message)
     except Exception as e:  # noqa: BLE001
         _log.error("daily_brief_post_failed", slot=slot, error=str(e))
         return PipelineRunResult(

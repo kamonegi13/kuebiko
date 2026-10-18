@@ -332,6 +332,11 @@ ACCOUNT_CLASS_TIER: dict[str, SourceTier] = {
 }
 
 
+#: 朝の通読で出典の信頼度を一目で見せる目印 (SNS=未裏取り / 一次=公式)。
+#: PIR Daily Focus と高脅威の一覧が同じ作法で付ける (複製しない)。
+SOURCE_TIER_MARKER: dict[str, str] = {"social": " ⚠SNS(要裏取り)", "official": " ✓一次"}
+
+
 def classify_source_tier(feed_title: str, feed_url: str, *, account_class: str = "") -> SourceTier:
     """source の信頼度ティアを決定的に分類する (briefing 評価層)。
 

@@ -137,9 +137,9 @@ function GlobalSynthesisView() {
           {/* Sections — 2 カラム grid。行内のカード高さは stretch で揃える (隙間ガタつき防止)。
               奇数個の最後 (6. SIR) は全幅 + 内部 2 段組で空きスロットを作らない。 */}
           <div id="syn-narrative" className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1 mb-5 scroll-mt-24">
-            <Section title="軸別の重みと不均衡" body={data.latest.weight_section} />
+            <Section title="主な変化" body={data.latest.weight_section} />
             <Section title="軸間連鎖の解釈" body={data.latest.chain_section} />
-            <Section title="重心" body={data.latest.cog_section} />
+            <Section title="継続中の判定" body={data.latest.cog_section} />
             <Section title="波及解釈 (中期予想)" body={data.latest.spillover_section} />
             <Section title="SIR 達成度" body={data.latest.pir_section} className="lg:col-span-2" columns />
           </div>

@@ -68,7 +68,7 @@ export function WeeklyRetrospectView() {
               <div className="bg-surface-1 border border-border-subtle rounded-lg p-4 space-y-3">
                 <div className="text-fg-muted text-xs uppercase">この週の状況総括</div>
                 <p className="text-sm text-fg font-medium leading-relaxed">{data.synthesis.headline}</p>
-                <Section title="重心 (CoG)" body={data.synthesis.cog_section} />
+                <Section title="継続中の判定" body={data.synthesis.cog_section} />
                 <Section title="連鎖" body={data.synthesis.chain_section} />
                 <Section title="波及予想 (当時)" body={data.synthesis.spillover_section} />
               </div>
