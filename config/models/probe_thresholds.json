@@ -1,0 +1,32 @@
+{
+  "gemma4:26b": {
+    "assign_evidence_judge": {
+      "main": 0.5
+    },
+    "org_identity_judge": {
+      "event_logit": 12.0,
+      "org_logit": -4.0
+    },
+    "pir_focus_claim_judge": {
+      "main": 0.22
+    },
+    "thin_body_judge": {
+      "main": 0.075
+    }
+  },
+  "kuebiko-sft:s23i": {
+    "assign_evidence_judge": {
+      "main": 0.5
+    },
+    "org_identity_judge": {
+      "event_logit": 12.0,
+      "org_logit": -4.0
+    },
+    "pir_focus_claim_judge": {
+      "main": 0.22
+    },
+    "thin_body_judge": {
+      "main": 0.075
+    }
+  }
+}

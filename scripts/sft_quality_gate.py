@@ -174,6 +174,7 @@ class CheckResult:
 def check_task_marks(rows: list[Row], manifest: dict[str, Any]) -> CheckResult:
     res = CheckResult("1_task_marks")
     outside_user: Counter[str] = Counter()
+    in_system: Counter[str] = Counter()
     for r in rows:
         if len(r.marks) > 1:
             res.violations += 1
@@ -184,10 +185,19 @@ def check_task_marks(rows: list[Row], manifest: dict[str, Any]) -> CheckResult:
             res.detail["unmarked_not_qa"] = res.detail.get("unmarked_not_qa", 0) + 1
             res.add_example(f"{r.label} 印が無く知識 QA でもない: {r.user[:60]!r}")
         if r.task != r.build_task:
+            # 印を system の先頭に置く課題 (kind / pair) は本番の task_prefix と同じ位置なので
+            # 正しい。
+            # user だけを見る組み立てが取りこぼす型の検出なので、system に印があれば違反にしない
+            sys_text = "\n".join(m["content"] for m in r.messages if m["role"] == "system")
+            if TASK_MARK.search(sys_text):
+                in_system[r.task] += 1
+                continue
             res.violations += 1
             outside_user[r.task] += 1
     if outside_user:
         res.detail["mark_not_in_user_message"] = dict(outside_user)
+    if in_system:
+        res.detail["mark_in_system_message_ok"] = dict(in_system)
     res.detail["rows_per_task"] = dict(Counter(r.task for r in rows))
     res.violations += _manifest_count_mismatches(rows, manifest, res)
     return res
@@ -525,10 +535,12 @@ def _percentile(values: list[int], p: float) -> float:
     return float(s[min(len(s) - 1, int(p * (len(s) - 1) + 0.5))])
 
 
-def length_profile(rows: list[Row], tokens: dict[str, int | None]) -> dict[str, dict[str, float]]:
+def length_profile(
+    rows: list[Row], tokens: dict[str, int | None], *, chars_of_output: bool = False
+) -> dict[str, dict[str, float]]:
     by: dict[str, list[int]] = defaultdict(list)
     for r in rows:
-        n = tokens.get(r.label)
+        n = len(r.out) if chars_of_output else tokens.get(r.label)
         if n:
             by[r.task].append(n)
     return {
@@ -537,23 +549,43 @@ def length_profile(rows: list[Row], tokens: dict[str, int | None]) -> dict[str, 
 
 
 def check_length_vs_baseline(
-    profile: dict[str, dict[str, float]], baseline: dict[str, dict[str, float]] | None
+    profile: dict[str, dict[str, float]],
+    baseline: dict[str, dict[str, float]] | None,
+    rules: dict[str, dict[str, Any]] | None = None,
+    output_profile: dict[str, dict[str, float]] | None = None,
+    output_baseline: dict[str, dict[str, float]] | None = None,
 ) -> CheckResult:
+    """課題ごとの長さを基準版 (s22) と比べる。
+
+    ``rules[task]`` で課題ごとに基準を見直せる (理由を必ず書く)。
+
+    rules[task] = {"reason": str, "skip": True} で比較しない /
+    {"reason": str, "output_only": True} で入力は比べず出力の文字数だけ基準版と比べる
+    (入力の組み立てを意図して変えた課題の暴走だけ見張る)。
+    """
     res = CheckResult("8_length_vs_baseline")
     res.detail["profile"] = profile
+    rules = rules or {}
+    res.detail["rules"] = rules
     if baseline is None:
         res.violations += 1
         res.add_example("基準版が読めない (--baseline)")
         return res
     res.detail["baseline"] = baseline
     for task, pcts in profile.items():
-        for name, value in pcts.items():
-            base = baseline.get(task, {}).get(name)
+        rule = rules.get(task) or {}
+        if rule.get("skip"):
+            continue
+        if rule.get("output_only"):
+            got = (output_profile or {}).get(task, {})
+            base_p = (output_baseline or {}).get(task, {})
+            pairs = [(f"{task} 出力 {k}", got[k], base_p.get(k)) for k in got]
+        else:
+            pairs = [(f"{task} {k}", v, baseline.get(task, {}).get(k)) for k, v in pcts.items()]
+        for label, value, base in pairs:
             if base and value > base * LENGTH_RATIO_MAX:
                 res.violations += 1
-                res.add_example(
-                    f"{task} {name}: {value:.0f} > 基準 {base:.0f} x {LENGTH_RATIO_MAX}"
-                )
+                res.add_example(f"{label}: {value:.0f} > 基準 {base:.0f} x {LENGTH_RATIO_MAX}")
     return res
 
 
@@ -728,6 +760,8 @@ def run_gate(
     eval_oldest: str = DEFAULT_EVAL_OLDEST,
     tokenizer_dir: Path | None = None,
     guard: tuple[set[str], set[str]] | None = None,
+    length_rules: dict[str, dict[str, Any]] | None = None,
+    baseline_row_filter: Any = None,
 ) -> dict[str, Any]:
     rows = load_rows(dataset_dir)
     manifest = (
@@ -738,9 +772,14 @@ def run_gate(
     counter = TokenCounter(tokenizer_dir)
     tokens = count_tokens(rows, counter)
     baseline: dict[str, dict[str, float]] | None = None
+    output_baseline: dict[str, dict[str, float]] | None = None
     if baseline_dir and (baseline_dir / "train.jsonl").exists():
         brows = load_rows(baseline_dir)
+        # 例: pair の「(要約なし)」行は新版で除くので基準からも除く
+        if baseline_row_filter is not None:
+            brows = [r for r in brows if baseline_row_filter(r)]
         baseline = length_profile(brows, count_tokens(brows, counter))
+        output_baseline = length_profile(brows, {}, chars_of_output=True)
     results = [
         check_task_marks(rows, manifest),
         check_schema(rows),
@@ -749,7 +788,13 @@ def run_gate(
         check_token_limits(rows, tokens, counter, limits or {"*": DEFAULT_MAX_SEQ}),
         check_grounding(rows),
         check_runaway(rows),
-        check_length_vs_baseline(length_profile(rows, tokens), baseline),
+        check_length_vs_baseline(
+            length_profile(rows, tokens),
+            baseline,
+            length_rules,
+            length_profile(rows, {}, chars_of_output=True),
+            output_baseline,
+        ),
         check_duplicates(rows, manifest),
         check_guard(rows, eval_oldest, guard),
         distributions(rows),

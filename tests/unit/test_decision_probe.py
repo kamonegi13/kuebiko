@@ -177,6 +177,16 @@ class TestJsonBiasedPrompt:
         assert _is_json_biased("gemma4:26b") is False
         assert _is_json_biased("  kuebiko-sft:i58  ") is True
 
+    def test_is_json_biased_reads_extra_models_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 評価中の一時タグ (SFT_TASK_PREFIX_MODELS) も raw + JSON 前置きの経路で測る
+        monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
+        assert _is_json_biased("kuebiko-sft:s24x") is False
+        monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", " kuebiko-sft:s24x , other ")
+        assert _is_json_biased("kuebiko-sft:s24x") is True
+        assert _is_json_biased("gemma4:26b") is False
+
 
 # ---------- probe_choice (end-to-end、MockTransport) ----------
 
@@ -285,6 +295,41 @@ class TestProbeChoiceJsonBiasedModel:
         assert seen_paths == ["/api/generate"]
         assert result is not None
         assert result["Yes"] > 0.9
+
+    @pytest.mark.asyncio
+    async def test_env_extra_model_uses_raw_generate(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # 評価中の一時タグ (SFT_TASK_PREFIX_MODELS) は chat でなく raw 経路で測られる
+        monkeypatch.setattr(
+            "src.tools.decision_probe.resolve_step_model",
+            lambda step, db_path=None: "kuebiko-sft:s24x",
+        )
+        monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s24x")
+        logprobs = _logprobs_payload(("Yes", -0.05), [("Yes", -0.05), ("No", -3.0)])
+        seen_paths: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_paths.append(request.url.path)
+            return httpx.Response(
+                200,
+                json={
+                    "model": "kuebiko-sft:s24x",
+                    "created_at": "2026-10-18T00:00:00Z",
+                    "response": 'Yes"',
+                    "done": True,
+                    "logprobs": logprobs,
+                },
+            )
+
+        result = await probe_choice(
+            Step.THIN_BODY_JUDGE,
+            "質問",
+            ("Yes", "No"),
+            config=_cfg(),
+            client=_build_client(handler),
+        )
+
+        assert seen_paths == ["/api/generate"]
+        assert result is not None
 
 
 class TestProbeChoiceGuards:

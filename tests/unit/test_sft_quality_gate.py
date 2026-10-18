@@ -60,11 +60,12 @@ def _rows(
     return gate.load_rows(_write(tmp_path, train, valid))
 
 
-def test_task_mark_found_in_system_message_and_flagged_as_outside_user(tmp_path: Path) -> None:
+def test_task_mark_in_system_message_is_found_and_not_a_violation(tmp_path: Path) -> None:
+    # kind / pair は本番の task_prefix でも system の先頭に印を置くので、違反にしない (10-17)
     rows = _rows(tmp_path, [_row("見出し: a", '{"kind": "other"}', system="[task: kind]\n")])
     res = gate.check_task_marks(rows, {})
     assert rows[0].task == "kind"
-    assert res.detail["mark_not_in_user_message"] == {"kind": 1}
+    assert "kind" not in res.detail.get("mark_not_in_user_message", {})
 
 
 def test_unmarked_row_must_be_knowledge_qa(tmp_path: Path) -> None:
