@@ -132,8 +132,35 @@ def cmd_upload(a: argparse.Namespace) -> None:
     print("送信 コード")
 
 
+#: 学習の成果物 (アダプタ約 4GB + 予備の複製 約 4GB) を書ける空き。足りないと学習が終わってから
+#: 書き出しに失敗し、サーバの削除とともに成果物を失う (2026-10-18 s24 で保存領域 20GB が満杯)
+MIN_FREE_GB = 10.0
+
+
+def _volume_free_gb(e: dict[str, str]) -> tuple[float, float]:
+    """保存領域の (容量, 空き) を GB で返す。容量は API、使用量は S3 の一覧の合計。"""
+    size = 0.0
+    for v in api(e, "GET", "/networkvolumes") or []:
+        if v.get("id") == e["RUNPOD_VOLUME_ID"]:
+            size = float(v.get("size") or 0)
+    c = s3(e)
+    used = sum(
+        o["Size"]
+        for page in c.get_paginator("list_objects_v2").paginate(Bucket=e["RUNPOD_VOLUME_ID"])
+        for o in page.get("Contents", [])
+    )
+    return size, size - used / 1e9
+
+
 def cmd_launch(a: argparse.Namespace) -> None:
     e = env()
+    size, free = _volume_free_gb(e)
+    if free < a.min_free_gb:
+        sys.exit(
+            f"保存領域の空きが足りない ({free:.1f}GB / 容量 {size:.0f}GB、必要 {a.min_free_gb:.0f}GB)。"
+            " 古い予備 (backup/<run>) を消すか容量を増やしてから起動する"
+        )
+    print(f"保存領域の空き {free:.1f}GB / 容量 {size:.0f}GB")
     body = {
         "name": f"kuebiko-train-{a.run_id}"[:60],
         "imageName": a.image,
@@ -307,6 +334,7 @@ def main() -> int:
     p.add_argument("--disk-gb", type=int, default=150)
     p.add_argument("--image", default=DEFAULT_IMAGE)
     p.add_argument("--train-args", default="")
+    p.add_argument("--min-free-gb", type=float, default=MIN_FREE_GB)
     for name in ("status", "fetch", "watch", "runtime"):
         p = sub.add_parser(name)
         p.add_argument("run_id")
