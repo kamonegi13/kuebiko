@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import jinja2
 
+from src.cti.publication_event import resolve_publication_basis
 from src.cti.roundup_detector import cap_mode, cap_roundup_importance
 from src.logging_config import get_logger
 from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
@@ -984,6 +985,14 @@ def _build_briefing(
     )
     if _ev:
         metadata["event_date"] = _ev
+        # 発表そのものが出来事の種別 (当局の発表・流出サイト・勧告) は reported → disclosed。
+        _basis = resolve_publication_basis(
+            _basis,
+            article_type=summary.article_type,
+            category=summary.category,
+            feed_title=article.feed_title,
+            feed_url=article.feed_url,
+        )
         if _basis:
             metadata["event_date_basis"] = _basis
         _precision = event_date_precision(summary.event_date, _ev, _basis)
