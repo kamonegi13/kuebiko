@@ -10,8 +10,18 @@ from src.cti.publication_event import (
 )
 
 
-def test_advisory_type_is_publication() -> None:
-    assert publication_kind(article_type="advisory", category="vulnerability") == "advisory"
+def test_advisory_from_issuer_is_publication() -> None:
+    kind = publication_kind(
+        article_type="advisory", feed_title="CISA Cybersecurity Advisories", feed_url=""
+    )
+    assert kind == "advisory"
+    assert publication_kind(article_type="advisory", account_class="vendor_official") == "advisory"
+
+
+def test_advisory_reported_by_news_outlet_is_not_publication() -> None:
+    # 報道媒体が勧告・脆弱性を報じた記事 (境界 5 件の型)
+    for outlet in ("Example Security News", "Example Daily Wire"):
+        assert publication_kind(article_type="advisory", feed_title=outlet) is None
 
 
 def test_leak_site_by_feed_title() -> None:
@@ -19,8 +29,22 @@ def test_leak_site_by_feed_title() -> None:
     assert publication_kind(feed_title="Ransomware.live") == "leak_site"
 
 
-def test_leak_site_by_category() -> None:
-    assert publication_kind(category="apt_leak") == "leak_site"
+def test_apt_leak_category_alone_is_not_leak_site() -> None:
+    # 内部リーク報道の研究記事 (誤り型)
+    assert publication_kind(category="apt_leak", article_type="research") is None
+    assert publication_kind(category="apt_leak", feed_title="Example Loop") is None
+
+
+def test_exclusions_apply_to_all_kinds() -> None:
+    for t in ("research", "opinion", "tutorial", "recap"):
+        assert publication_kind(article_type=t, feed_title="ransomware.live") is None
+        assert publication_kind(article_type=t, account_class="gov_official") is None
+
+
+def test_lessons_and_explainers_from_news_are_not_publication() -> None:
+    # 侵害の教訓・マルウェア解説・ベンダー研究 (誤り型)
+    assert publication_kind(article_type="advisory", feed_title="Example Blog") is None
+    assert publication_kind(article_type="research", feed_title="Example Intel") is None
 
 
 def test_authority_by_gov_account_class() -> None:
@@ -37,7 +61,10 @@ def test_plain_news_is_not_publication() -> None:
 
 
 def test_reported_becomes_disclosed_for_publication() -> None:
-    assert resolve_publication_basis("reported", article_type="advisory") == "disclosed"
+    got = resolve_publication_basis(
+        "reported", article_type="advisory", account_class="gov_official"
+    )
+    assert got == "disclosed"
 
 
 def test_other_basis_untouched() -> None:
@@ -51,4 +78,7 @@ def test_non_publication_reported_untouched() -> None:
 
 def test_flag_off_restores_old_behavior(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EVENT_DATE_PUBLICATION_AS_EVENT", "0")
-    assert resolve_publication_basis("reported", article_type="advisory") == "reported"
+    got = resolve_publication_basis(
+        "reported", article_type="advisory", account_class="gov_official"
+    )
+    assert got == "reported"

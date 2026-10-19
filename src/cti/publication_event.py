@@ -5,8 +5,8 @@
 (利用者判断。s24b 教師の「発表そのものが出来事」と同じ定義)。
 
 種別は本番の列から決定的に判定する (推測しない):
-- advisory   = articles.article_type == 'advisory'
-- leak_site  = category == 'apt_leak' または流出サイトを巡回する source (feed_title)
+- advisory   = article_type == 'advisory' かつ発行元そのもの (official ティア / vendor_official)
+- leak_site  = 流出サイトを巡回する source (feed_title のみ。category は見ない)
 - authority  = 当局発の source (classify_source_tier が official かつ ベンダー/当事者でない)
                で、解説・論説・まとめでない記事
 
@@ -21,7 +21,6 @@ from typing import Literal
 PublicationKind = Literal["authority", "leak_site", "advisory"]
 
 FLAG_ENV = "EVENT_DATE_PUBLICATION_AS_EVENT"
-LEAK_SITE_CATEGORIES = frozenset({"apt_leak"})
 # 流出サイトの掲載を取り込む source (feed_title、小文字比較)
 LEAK_SITE_FEED_TITLES = frozenset({"ransomware.live", "distributed denial of secrets"})
 ADVISORY_ARTICLE_TYPE = "advisory"
@@ -34,18 +33,12 @@ def is_enabled() -> bool:
     return os.environ.get(FLAG_ENV, "1").strip().lower() not in {"0", "false", "off", "no"}
 
 
-def _is_authority(article_type: str, feed_title: str, feed_url: str, account_class: str) -> bool:
-    if article_type in NON_PUBLICATION_ARTICLE_TYPES:
-        return False
-    if account_class in NON_AUTHORITY_ACCOUNT_CLASSES:
-        return False
-    if account_class == "gov_official":
-        return True
-    if not (feed_title or feed_url):
-        return False
+def _source_tier(feed_title: str, feed_url: str, account_class: str) -> str:
+    if not (feed_title or feed_url or account_class):
+        return "unknown"
     from src.cti.source_basis import classify_source_tier
 
-    return classify_source_tier(feed_title, feed_url) == "official"
+    return classify_source_tier(feed_title, feed_url, account_class=account_class)
 
 
 def publication_kind(
@@ -56,14 +49,27 @@ def publication_kind(
     feed_url: str | None = None,
     account_class: str | None = None,
 ) -> PublicationKind | None:
-    """発表そのものが出来事の種別。当たらなければ None。"""
+    """発表そのものが出来事の種別。当たらなければ None。
+
+    解説・論説・まとめ・研究は 3 種別すべてで除外する。advisory は発行元そのもの
+    (当局または vendor_official) が出したときだけ (報道媒体が勧告を報じた記事は
+    報道日 != 勧告日のため対象外)。leak_site は feed_title だけで判定する。
+    """
     atype = (article_type or "").strip()
+    if atype in NON_PUBLICATION_ARTICLE_TYPES:
+        return None
     title = (feed_title or "").strip()
-    if (category or "") in LEAK_SITE_CATEGORIES or title.lower() in LEAK_SITE_FEED_TITLES:
+    url = (feed_url or "").strip()
+    acls = (account_class or "").strip()
+    if title.lower() in LEAK_SITE_FEED_TITLES:
         return "leak_site"
+    tier = _source_tier(title, url, acls)
     if atype == ADVISORY_ARTICLE_TYPE:
-        return "advisory"
-    if _is_authority(atype, title, (feed_url or "").strip(), (account_class or "").strip()):
+        is_issuer = tier == "official" and acls != "affected_party"
+        return "advisory" if is_issuer else None
+    if acls in NON_AUTHORITY_ACCOUNT_CLASSES:
+        return None
+    if acls == "gov_official" or tier == "official":
         return "authority"
     return None
 

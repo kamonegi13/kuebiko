@@ -31,8 +31,8 @@ _SELECT = (
     "SELECT id, article_id, title, feed_title, feed_url, category, article_type, account_class,"
     " event_date, event_date_basis, published_at FROM articles WHERE event_date_basis = 'reported'"
 )
-DEFAULT_SAMPLE = 20
-SAMPLE_SEED = 20261019
+DEFAULT_SAMPLE = 30
+SAMPLE_SEED = 20261020
 UPDATE_CHUNK = 500
 
 
@@ -52,8 +52,22 @@ def select_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def stratified_sample(targets: list[dict[str, Any]], sample: int) -> list[dict[str, Any]]:
+    """種別ごとに均等に (端数は先頭の種別から) 抽出する。seed 固定。"""
+    rng = random.Random(SAMPLE_SEED)
+    by_kind: dict[str, list[dict[str, Any]]] = {}
+    for t in targets:
+        by_kind.setdefault(str(t["kind"]), []).append(t)
+    kinds = sorted(by_kind)
+    picked: list[dict[str, Any]] = []
+    for i, k in enumerate(kinds):
+        n = sample // len(kinds) + (1 if i < sample % len(kinds) else 0)
+        picked.extend(rng.sample(by_kind[k], min(n, len(by_kind[k]))))
+    return picked
+
+
 def render_preview(targets: list[dict[str, Any]], sample: int) -> str:
-    picked = random.Random(SAMPLE_SEED).sample(targets, min(sample, len(targets)))
+    picked = stratified_sample(targets, sample)
     lines = [
         "# publication_as_event プレビュー (dry-run)",
         "",

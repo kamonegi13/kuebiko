@@ -18,12 +18,21 @@ def _row(**kw: object) -> dict[str, object]:
 
 
 def test_select_targets_picks_publication_rows_only() -> None:
-    rows = [_row(id=1), _row(id=2, article_type="advisory"), _row(id=3, category="apt_leak")]
+    rows = [
+        _row(id=1),
+        _row(id=2, article_type="advisory", account_class="gov_official"),
+        _row(id=3, feed_title="ransomware.live"),
+    ]
     got = select_targets(rows)
     assert [(r["id"], r["kind"]) for r in got] == [(2, "advisory"), (3, "leak_site")]
     assert "kind" not in rows[1]  # 入力は変更しない
 
 
 def test_render_preview_has_headline_and_no_body() -> None:
-    out = render_preview(select_targets([_row(article_type="advisory", title="A | B")]), 5)
+    out = render_preview(
+        select_targets(
+            [_row(article_type="advisory", account_class="gov_official", title="A | B")]
+        ),
+        5,
+    )
     assert "A / B" in out and "reported → disclosed" in out
