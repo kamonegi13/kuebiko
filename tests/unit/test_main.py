@@ -2025,6 +2025,10 @@ class TestArticlePersistenceWithRunId:
         # posted_channel も埋まっている (Phase 5K: 中立 fixture は brief 集約)
         channels = {r.article_id: r.posted_channel for r in records}
         assert channels == {"a-high": "brief", "a-med": "brief"}
+        # 取得時の元の見出しも保存される (title は要約後の見出しで別物)
+        assert {r.article_id: r.original_title for r in records} == {
+            a.id: a.title for a in articles
+        }
 
     @pytest.mark.asyncio
     async def test_records_summarize_failure_for_failed_article(

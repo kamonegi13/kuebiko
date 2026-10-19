@@ -157,6 +157,8 @@ class ArticleRecord(BaseModel):
     # status='posted' (posted_channel=None) で分析に残し、ここに一致先を記録する。
     # None = 重複でない (または重複元を特定できない同一 run 内の一致)。
     duplicate_of: str | None = None
+    # 取得時の元の見出し (2026-10-18、多くは英語)。title は要約後の見出し。None = 未記録 (旧行)。
+    original_title: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None
     # アナリスト所見 (2026-08-18 に永続化)。Discord 投稿だけに出て DB に残らず、
@@ -182,6 +184,9 @@ class ArticleRecord(BaseModel):
     # compromise_date = 初期侵害開始日 → dwell = event_date - compromise_date。
     event_date: str | None = None
     event_date_basis: str | None = None
+    # 日付の粒度 (2026-10-18): day | month | relative | unknown。NULL = 未記録 (旧行)。
+    # event_date の意味は変えない (月のみは従来どおり当月 1 日に補う) — 粒度は別欄で正直に示す。
+    event_date_precision: str | None = None
     compromise_date: str | None = None
     # 本文完全性 (2026-07-27, docs/body_extraction_and_entity_integrity_redesign.md):
     # body_source = body の由来 (full_extract/playwright_extract/prefetch/scraper/grok/

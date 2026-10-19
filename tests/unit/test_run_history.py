@@ -290,6 +290,7 @@ class TestArticleRecording:
             "llm_primary_confidence": "high",
             "subject_actor_rationale": "候補は背景言及のため主題なし",
             "duplicate_of": "prior-article-1",
+            "original_title": "Original English Title",
             "remediation": "patch",
             "analyst_note": "所見",
             "socio_political_rationale": "r",
@@ -300,6 +301,7 @@ class TestArticleRecording:
             "published_at": datetime(2026, 5, 20, 9, 0, tzinfo=UTC),
             "event_date": "2026-05-19",
             "event_date_basis": "reported",
+            "event_date_precision": "unknown",
             "compromise_date": "2026-05-01",
             "article_type": "advisory",
             # 発信者種別 (Grok/X の account_class)。裏取り内訳の表示と tier 判定に使う

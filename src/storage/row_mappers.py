@@ -206,6 +206,7 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         ),
         event_date=_opt_text("event_date"),
         event_date_basis=_opt_text("event_date_basis"),
+        event_date_precision=_opt_text("event_date_precision"),
         compromise_date=_opt_text("compromise_date"),
         # 主題アクター層 (2026-07-17): NULL = 未評価 (legacy) — 消費側は none と区別すること
         subject_actor_ids=_opt_text("subject_actor_ids"),
@@ -216,6 +217,7 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         llm_primary_confidence=_opt_text("llm_primary_confidence"),
         subject_actor_rationale=_opt_text("subject_actor_rationale"),
         duplicate_of=_opt_text("duplicate_of"),
+        original_title=_opt_text("original_title"),
         # 本文完全性 (2026-07-27): body の由来 + 全文取得失敗理由 (NULL=保存開始前 or heuristic 前)
         body_source=_opt_text("body_source"),
         extraction_failure_reason=_opt_text("extraction_failure_reason"),

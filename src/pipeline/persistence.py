@@ -72,6 +72,13 @@ def _persist_article_outcomes(
         importance = msg.importance if msg is not None else None
         category = msg.category if msg is not None else None
         title = msg.title if msg is not None else article.title
+        # 取得時の元の見出し (2026-10-18)。msg あり = briefing が metadata に保持した値、
+        # msg なし (失敗等) は title が既に article.title なのでそれを使う。
+        original_title_val = (
+            (str(msg.metadata.get("original_title") or "") or None)
+            if msg is not None
+            else (article.title or None)
+        )
         # Phase B-cal2 (2026-06-05): 永続 URL は briefing の primary source を優先する。
         # 背景: Grok は 1 レポート (article.url=grok.com/chat の JSON ページ) から N 件の
         # tweet briefing を展開するため、article.url のままだと全件が grok.com/chat を指し
@@ -113,6 +120,7 @@ def _persist_article_outcomes(
         # 時間軸レイヤ b/c (2026-06-27): 事象発生日 / 基準 / 侵害開始日 (報道時刻と分離)。
         event_date_val: str | None = None
         event_date_basis_val: str | None = None
+        event_date_precision_val: str | None = None
         compromise_date_val: str | None = None
         # 主題アクター層 (2026-07-17): NULL = 未評価 (判定失敗時も NULL = legacy 照合に fail-safe)
         subject_ids_val: str | None = None
@@ -158,9 +166,11 @@ def _persist_article_outcomes(
             # 時間軸レイヤ b/c: 事象発生日 / 基準 / 侵害開始日 (報道時刻と分離)。
             _evd = msg.metadata.get("event_date")
             _evb = msg.metadata.get("event_date_basis")
+            _evp = msg.metadata.get("event_date_precision")
             _cmp = msg.metadata.get("compromise_date")
             event_date_val = _evd if isinstance(_evd, str) else None
             event_date_basis_val = _evb if isinstance(_evb, str) else None
+            event_date_precision_val = _evp if isinstance(_evp, str) else None
             compromise_date_val = _cmp if isinstance(_cmp, str) else None
             # 主題アクター判定 (docs/subject_actor_attribution_design.md)。全経路 (RSS/grok)
             # の永続化直前 = 単一の判定点。失敗は NULL のまま = legacy 照合に fail-safe。
@@ -222,6 +232,7 @@ def _persist_article_outcomes(
                     duplicate_of=(
                         str(outcome["duplicate_of"]) if outcome.get("duplicate_of") else None
                     ),
+                    original_title=original_title_val,
                     dedup_key=dedup_key_val,
                     discord_message_id=(
                         str(outcome["discord_message_id"])
@@ -266,6 +277,7 @@ def _persist_article_outcomes(
                     # 時間軸レイヤ b/c: 事象の実発生日 / 基準 / 侵害開始日 (報道時刻と分離)。
                     event_date=event_date_val,
                     event_date_basis=event_date_basis_val,
+                    event_date_precision=event_date_precision_val,
                     compromise_date=compromise_date_val,
                     # 主題アクター層 (言及と分離した「記事の主語」、PIR 照合の主題ゲート用)
                     subject_actor_ids=subject_ids_val,

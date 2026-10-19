@@ -218,7 +218,7 @@ class RunHistoryRepositoryBase:
             conn.execute("ALTER TABLE articles ADD COLUMN published_at TEXT")
 
         # 時間軸レイヤ b/c (2026-06-27): 事象発生日 / 基準 / 侵害開始日 (SQLite fallback)。
-        for col in ("event_date", "event_date_basis", "compromise_date"):
+        for col in ("event_date", "event_date_basis", "event_date_precision", "compromise_date"):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
 
@@ -273,6 +273,8 @@ class RunHistoryRepositoryBase:
             "subject_actor_rationale",
             # 重複元の記事 id (2026-10-02)。重複に当たった記事も分析に残すための印
             "duplicate_of",
+            # 取得時の元の見出し (2026-10-18)。title は要約後の日本語見出し
+            "original_title",
         ):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
@@ -358,6 +360,14 @@ class RunHistoryRepositoryBase:
         # 弱い証拠の印 (2026-09-27): 関門で落ちる旧割当。評価の読み取りから外す (行は残す)。
         if "weak_at" not in existing_ev:
             conn.execute("ALTER TABLE situation_evidence ADD COLUMN weak_at TEXT")
+        # 逐語の照合に落ちた抜粋の記録 (2026-10-18)
+        for col, typ in (
+            ("excerpt_rejected", "TEXT"),
+            ("excerpt_best_match", "REAL"),
+            ("excerpt_match_unique", "INTEGER"),
+        ):
+            if col not in existing_ev:
+                conn.execute(f"ALTER TABLE situation_evidence ADD COLUMN {col} {typ}")
         # 旧 rich 行 (excerpt あり = ACH 引用済) を評価済みに刻む (冪等: 新規行は
         # record_assessment が常に assessed_at を書くため再 match しない)。
         conn.execute(

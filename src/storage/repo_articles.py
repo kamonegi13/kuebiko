@@ -46,13 +46,14 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    technical_axis_summary,
                    editorial_stance, routing_rule_id, routing_reason,
                    published_at, event_date, event_date_basis, compromise_date,
+                   event_date_precision,
                    subject_actor_ids, subject_actor_source, subject_actor_confidence,
                    llm_primary_actor_raw, llm_primary_confidence,
-                   subject_actor_rationale, duplicate_of,
+                   subject_actor_rationale, duplicate_of, original_title,
                    article_type, account_class, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.run_id,
@@ -98,6 +99,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.event_date,
                     record.event_date_basis,
                     record.compromise_date,
+                    record.event_date_precision,
                     record.subject_actor_ids,
                     record.subject_actor_source,
                     record.subject_actor_confidence,
@@ -105,6 +107,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.llm_primary_confidence,
                     record.subject_actor_rationale,
                     record.duplicate_of,
+                    record.original_title,
                     record.article_type,
                     record.account_class,
                     _to_iso(record.created_at),
@@ -307,6 +310,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "analyst_note",
             "event_date",
             "event_date_basis",
+            "event_date_precision",
             "compromise_date",
             "is_ransomware",
             "article_type",

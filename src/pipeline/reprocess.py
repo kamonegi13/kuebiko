@@ -213,6 +213,7 @@ def _enrichment_fields(msg: object, rf: dict[str, object]) -> dict[str, object]:
         "remediation": _s("remediation"),
         "event_date": _s("event_date"),
         "event_date_basis": _s("event_date_basis"),
+        "event_date_precision": _s("event_date_precision"),
         "compromise_date": _s("compromise_date"),
         "article_type": _s("article_type"),
         "is_ransomware": 1 if meta.get("is_ransomware") else 0,

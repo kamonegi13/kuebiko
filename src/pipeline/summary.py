@@ -305,6 +305,8 @@ class MitreEvidence(BaseModel):
 #: いないモデルに欄を足すと、見たことのない出力の形を求めることになる (接頭辞と同じ考え方、
 #: 2026-09-29)
 EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:i58", "kuebiko-sft:s23i"})
+#: 名前の前方一致で同じ扱いにする系統 (s24 / s24b とその補間の一時タグ ``s24i25`` / ``s24bi50`` 等)
+EVIDENCE_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24",)
 
 
 class SummaryEvidenceOutput(SummaryOutput):
@@ -338,7 +340,9 @@ def summary_schema_for(model: str) -> type[SummaryOutput]:
     """
     extra = {m.strip() for m in os.environ.get(_EVIDENCE_EXTRA_ENV, "").split(",") if m.strip()}
     trained = EVIDENCE_TRAINED_MODELS | extra
-    return SummaryEvidenceOutput if model.strip() in trained else SummaryOutput
+    name = str(model.strip())
+    is_trained = name in trained or name.startswith(EVIDENCE_TRAINED_FAMILIES)
+    return SummaryEvidenceOutput if is_trained else SummaryOutput
 
 
 # ---------- importance 決定的ガード (Phase B-cal2, 2026-06-04) ----------
@@ -427,6 +431,37 @@ def _normalize_iso_date(raw: str | None, *, ceiling: date) -> str | None:
     if d < _EVENT_DATE_FLOOR or d > ceiling:
         return None
     return d.isoformat()
+
+
+# event_date の粒度 (2026-10-18)。event_date 自体は従来どおり月のみ → 当月 1 日に補う
+# (読み手の意味は不変) ため、日の確からしさは別欄 articles.event_date_precision に残す。
+PRECISION_DAY = "day"
+PRECISION_MONTH = "month"
+PRECISION_RELATIVE = "relative"
+PRECISION_UNKNOWN = "unknown"
+EVENT_DATE_PRECISIONS = frozenset(
+    {PRECISION_DAY, PRECISION_MONTH, PRECISION_RELATIVE, PRECISION_UNKNOWN}
+)
+
+
+def event_date_precision(raw: str | None, normalized: str | None, basis: str | None) -> str | None:
+    """正規化後の event_date の粒度を返す。event_date が無ければ None。
+
+    - basis=relative: 相対表現を代表日に解決した値 → relative
+    - raw が YYYY-MM (月のみ): month (正規化で当月 1 日に補われた)
+    - raw が YYYY-MM-DD で日が 01 以外: 月のみを 1 日に寄せた値ではありえない → day
+    - raw が YYYY-MM-01: 実際の 1 日か寄せられた値か抽出文字列からは区別できない → unknown
+    """
+    if not normalized:
+        return None
+    if basis == "relative":
+        return PRECISION_RELATIVE
+    m = _ISO_DATE_RE.match((raw or "").strip())
+    if not m:
+        return PRECISION_UNKNOWN
+    if m.group(3) is None:
+        return PRECISION_MONTH
+    return PRECISION_DAY if m.group(3) != "01" else PRECISION_UNKNOWN
 
 
 def _normalize_temporal(

@@ -391,6 +391,8 @@ CREATE INDEX IF NOT EXISTS idx_articles_is_ransomware
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS event_date TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS event_date_basis TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS compromise_date TEXT;
+-- 日付の粒度 (2026-10-18): day|month|relative|unknown。NULL=未記録 (計測用)。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS event_date_precision TEXT;
 CREATE INDEX IF NOT EXISTS idx_articles_event_date
     ON articles(event_date) WHERE event_date IS NOT NULL;
 
@@ -663,6 +665,10 @@ UPDATE situation_evidence SET assessed_at = added_at, read_at = added_at
 -- 弱い証拠の印 (2026-09-27): 割当の関門 (assign_gate) が入る前に規則で入った証拠を同じ関門で
 -- 採点し直し、落ちるものに刻む。行は消さない (戻せるように)。評価 (ACH・総括) の読み取りから外す。
 ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS weak_at TEXT;
+-- 逐語の照合に落ちた抜粋の記録 (2026-10-18): 先頭 300 字 / 最良一致率 / 9 割一致が 1 か所か。
+ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS excerpt_rejected TEXT;
+ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS excerpt_best_match DOUBLE PRECISION;
+ALTER TABLE situation_evidence ADD COLUMN IF NOT EXISTS excerpt_match_unique INTEGER;
 -- 台帳の型 (2026-09-27、docs/research/event_knowledge_graph.md §18): event の台帳を
 -- 'actor' (主題アクターを追う持続的な主体 = STIX Intrusion Set) / 'campaign' (期間と標的で
 -- 区切られた活動 = STIX Campaign) に分ける。standing は NULL。
@@ -745,6 +751,10 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS subject_actor_rationale TEXT;
 -- 重複元の記事 id (2026-10-02): 投稿直前の重複判定に当たった記事は Discord へ流さず
 -- status='posted' (posted_channel=NULL) で分析に残し、一致先をここに記録する。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS duplicate_of TEXT;
+
+-- 取得時の元の見出し (2026-10-18): title は要約後の日本語見出し。LLM の入力 (要約・triage) には
+-- 元の見出し (多くは英語) が渡るため、教師・評価の入力を本番と揃える目的で保存する。index なし。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS original_title TEXT;
 
 -- 本文日本語訳のチャンク単位キャッシュ (2026-08-06 resumable 翻訳)。
 -- 詳細コメントは schema_sql.py の同表を参照 (SQLite と対)。
