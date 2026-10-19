@@ -56,13 +56,12 @@ CLAIM_MAX_CHARS = 200
 _WIRE_CLAIM_MAX_CHARS = 600
 #: shadow の追加 LLM 呼出の時間の予算 (秒) と書き手の件数 (本番の開設ループの後ろで走らせる)
 SHADOW_BUDGET_SECONDS = 120.0
-SHADOW_MAX_CLAIMS = 6
+#: 本番の開設の上限と同じ値 (二重管理しない)
+SHADOW_MAX_CLAIMS = _DETECT_OPEN_MAX
 _SKIP_REASON_MAX_CHARS = 120
 #: 合流の判定: 塊の記事のうち ML が通した割合がこれを **超える** (半数ちょうどは合流しない =
 #: 迷いは detect 側に残す。割当 ML の誤合流は本来開くべき追跡を消す — CLAUDE.md 実測)
 MERGE_MIN_PASS_FRACTION = 0.5
-#: 合流先の候補にする追跡中の情勢の上限 (採点の組数を抑える。超過は log)
-MAX_MERGE_SITUATIONS = 40
 _TEMPERATURE = 0.2
 _MAX_TOKENS = 600
 _DOMAINS = frozenset(
@@ -396,12 +395,11 @@ async def score_merge_pairs(
     from src.assessment import stateful
 
     wanted = set(active_titles)
-    sits = [k for k in situation_keys if k.row.title in wanted][:MAX_MERGE_SITUATIONS]
+    # 上限は設けない: 今の形の detect も ``active_titles`` (埋込で絞った全件) を無制限に見る
+    sits = [k for k in situation_keys if k.row.title in wanted]
     aids = [a for a in candidate_ids if a in art_keys]
     if not sits or not aids:
         return {}, []
-    if len([k for k in situation_keys if k.row.title in wanted]) > MAX_MERGE_SITUATIONS:
-        _log.warning("detect_decompose_situations_capped", cap=MAX_MERGE_SITUATIONS)
     kept = {k.row.situation_id: list(aids) for k in sits}
     sit_vecs, art_vecs = await stateful._gate_vectors(  # noqa: SLF001
         kept, {k.row.situation_id: k.row.title for k in sits}, repo, save_fresh=save_fresh

@@ -86,6 +86,17 @@ class TestMode:
         assert decompose_mode() == want
 
 
+class TestShadowCaps:
+    def test_shadow_claim_cap_matches_production_open_cap(self) -> None:
+        from src.assessment.detect_decompose import SHADOW_MAX_CLAIMS
+        from src.synthesis.grounded.incremental import _DETECT_OPEN_MAX
+
+        assert SHADOW_MAX_CLAIMS == _DETECT_OPEN_MAX
+
+    def test_merge_scoring_has_no_situation_cap(self) -> None:
+        assert not hasattr(detect_decompose, "MAX_MERGE_SITUATIONS")
+
+
 class TestPickMerge:
     def test_merges_when_more_than_half_of_the_cluster_passes(self) -> None:
         scores = {("s1", "a"): (True, 0.9), ("s1", "b"): (True, 0.7), ("s1", "c"): (False, 0.1)}
