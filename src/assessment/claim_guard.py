@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,36 @@ _MAX_TOKENS = 600
 _MAX_EVIDENCE_SHOWN = 4
 _EXCERPT_CHARS = 120
 _JAPAN = "JP"
+
+
+# claim に混ざる台帳内部の文 (新着・期間・記事・ソースへの言及)。答えは問いの主語について
+# 述べるもので、評価の根拠は implication / missing_evidence に書く。「直接証拠は観測されて
+# いない」等の正当な表現は含まない語だけで組む (広い「証拠は」は使わない)。
+_INTERNAL_CLAIM_RE = re.compile(
+    r"今回の新着|新着ソース|新着の|新着で|新着証拠|新着記事|本期間|今期|今回の観測|記事は|ソースは|経験談"
+)
+
+
+def internal_claim_text(claim: str) -> str:
+    """claim に台帳内部の文の語が含まれれば最初の一致語、無ければ空文字。"""
+    m = _INTERNAL_CLAIM_RE.search(claim)
+    return m.group(0) if m else ""
+
+
+CLAIM_RESET_PLACEHOLDER = "(前回の答えは破棄済み。問いへの答えを新たに 1 文で書く)"
+RESET_FLAG_ENV = "LEDGER_CLAIM_INTERNAL_RESET"
+
+
+def claim_reset_enabled() -> bool:
+    """常設の問いの claim に内部の文が混ざっていたら前回の claim を渡さない (既定 on、0 で無効)。"""
+    return os.environ.get(RESET_FLAG_ENV, "1").strip() != "0"
+
+
+def log_internal_claim(j: KeyJudgment) -> None:
+    """記録だけの検査 (shadow)。保存は止めない。混入率を見て関門化を判断する。"""
+    term = internal_claim_text(j.claim)
+    if term:
+        _log.warning("claim_internal_text", situation=j.id, term=term)
 
 
 class _WireClaim(BaseModel):
@@ -177,6 +208,7 @@ async def guard_claim(
     j, gate_note = apply_subject_gate(j, prev, question)
     if gate_note:
         notes.append(gate_note)
+    log_internal_claim(j)
     if (
         prev is None
         or not flip_confirmed

@@ -33,7 +33,14 @@ from src.assessment.assignment import (
     split_anchor_keys,
     topic_tokens,
 )
-from src.assessment.claim_guard import apply_subject_gate, guard_claim
+from src.assessment.claim_guard import (
+    CLAIM_RESET_PLACEHOLDER,
+    apply_subject_gate,
+    claim_reset_enabled,
+    guard_claim,
+    internal_claim_text,
+    log_internal_claim,
+)
 from src.assessment.detect_bundle_log import Outcome, make_claim_id, resolve_outcomes
 from src.assessment.detect_scope import relevant_titles_by_embedding
 from src.assessment.detect_step import DetectContext, decide_detect, shadow_records
@@ -328,6 +335,7 @@ def _prior_view(
     excerpts: list[dict[str, str]],
     *,
     carried: tuple[str, ...] = (),
+    reset_internal_claim: bool = False,
 ) -> PriorJudgmentView:
     """台帳の latest revision から増分 prompt 用の前回判定ビューを作る。
 
@@ -335,6 +343,12 @@ def _prior_view(
     先頭に置き、持ち越し分を後ろに重複排除して連結する — 最新の watch list を
     優先しつつ、押し出された過去指標も照会対象に残す。
     """
+    # 前回の claim に台帳内部の文が混ざっていたら渡さない (持ち越しを断つ)。そのまま渡すと
+    # 「前回の答えをそのまま返してよい」で同じ文が毎時再生産される。混入が無ければ何もしない
+    # ので、書き直された後は自然に効かなくなる。
+    claim = rev.claim
+    if reset_internal_claim and internal_claim_text(claim):
+        claim = CLAIM_RESET_PLACEHOLDER
     hyps = tuple(
         {
             "hypothesis": str(h.get("hypothesis", "")),
@@ -344,7 +358,7 @@ def _prior_view(
         for h in json.loads(rev.hypotheses_json or "[]")
     )
     return PriorJudgmentView(
-        claim=rev.claim,
+        claim=claim,
         claim_type=rev.claim_type,
         leading_hypothesis=rev.leading_hypothesis,
         confidence=rev.confidence,
@@ -1512,6 +1526,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             prev,
             store.evidence_excerpts(sid),
             carried=store.open_indicators_for(sid, limit=CARRIED_INDICATORS_MAX),
+            reset_internal_claim=is_standing and claim_reset_enabled(),
         )
         try:
             inc = await incremental_ground_and_score(
@@ -1528,6 +1543,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))
             continue
+        if inc.claim == CLAIM_RESET_PLACEHOLDER:  # 書き直さず写された → 前回を保持
+            inc = replace(inc, claim=prev.claim)
         # 提示できた指標だけに印を付ける (cap で載らなかった分は未照会のまま = 外れにしない)
         store.mark_forecasts_presented(sid, prior_view.indicators)
         pending.append(
@@ -1751,6 +1768,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             if prev is None:
                 delta, note = "opened", "初回判定"
                 j, gate_note = apply_subject_gate(j, None, _standing_question(sid, row.title))
+                log_internal_claim(j)
                 if gate_note:
                     note = f"{note} / {gate_note}"
             else:
@@ -2419,8 +2437,10 @@ async def _ensure_severity_axes(
     if expected_model and label and label != expected_model:
         _log.warning("detect_ml_axes_model_mismatch", trained_on=expected_model, assigned=label)
 
-    async def _classify(title: str, summary: str, body: str = "") -> dict[str, str] | None:
-        axes = await severity_axes.classify_axes(axes_llm, title, summary, body)
+    async def _classify(
+        title: str, summary: str, body: str = "", published: str | None = None
+    ) -> dict[str, str] | None:
+        axes = await severity_axes.classify_axes(axes_llm, title, summary, body, published)
         return axes.model_dump() if axes is not None else None
 
     await detect_ml.ensure_axes(
@@ -2429,6 +2449,7 @@ async def _ensure_severity_axes(
         _classify,
         model_label=label,
         bodies=severity_axes.fetch_bodies(repo, [t[0] for t in triples]),
+        published=severity_axes.fetch_published(repo, [t[0] for t in triples]),
     )
 
 

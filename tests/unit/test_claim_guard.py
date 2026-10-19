@@ -216,3 +216,63 @@ async def test_shadow_gate_accepts_rewrite_that_drops_subject(
 
     assert res.judgment.claim == "台湾では事前配置が横ばいである"
     assert any("記録のみ" in n for n in res.notes)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "今回の新着ソースでは侵入の証拠は見られない",
+        "本期間の記事は事前配置の兆候を示す",
+        "今期は活動が活発化している",
+    ],
+)
+def test_internal_claim_text_detects_ledger_internal_phrases(claim: str) -> None:
+    assert claim_guard.internal_claim_text(claim) != ""
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "日本の重要インフラへの事前配置の直接証拠は観測されていない",
+        OLD_CLAIM,
+    ],
+)
+def test_internal_claim_text_passes_legitimate_answers(claim: str) -> None:
+    assert claim_guard.internal_claim_text(claim) == ""
+
+
+def test_log_internal_claim_only_logs_and_does_not_change_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warned: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(claim_guard._log, "warning", lambda event, **kw: warned.append((event, kw)))
+    j = _j(claim="今回の新着ソースでは変化なし")
+
+    claim_guard.log_internal_claim(j)
+    claim_guard.log_internal_claim(_j())
+
+    assert [w[0] for w in warned] == ["claim_internal_text"]
+    assert j.claim == "今回の新着ソースでは変化なし"
+
+
+def test_prior_view_drops_internal_claim_for_standing_only_when_requested() -> None:
+    from src.assessment.stateful import _prior_view
+
+    dirty = _prev("今回の新着ソースでは変化は見られない")
+
+    reset = _prior_view(dirty, [], reset_internal_claim=True)
+    kept = _prior_view(dirty, [], reset_internal_claim=False)
+    clean = _prior_view(_prev(), [], reset_internal_claim=True)
+
+    assert reset.claim == claim_guard.CLAIM_RESET_PLACEHOLDER
+    assert kept.claim == dirty.claim
+    assert clean.claim == OLD_CLAIM
+
+
+def test_claim_reset_flag_defaults_on_and_can_be_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(claim_guard.RESET_FLAG_ENV, raising=False)
+    assert claim_guard.claim_reset_enabled() is True
+    monkeypatch.setenv(claim_guard.RESET_FLAG_ENV, "0")
+    assert claim_guard.claim_reset_enabled() is False
