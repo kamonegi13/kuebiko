@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import jinja2
 
+from src.cti.roundup_detector import cap_mode, cap_roundup_importance
 from src.logging_config import get_logger
 from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
 from src.pipeline.persistence import _relevant_actors
@@ -19,6 +20,7 @@ from src.pipeline.summary import (
     _drop_self_url,
     _has_japanese_kana,
     _normalize_temporal,
+    event_date_precision,
 )
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor, ExtractionResult, check_extracted_identity
@@ -210,13 +212,15 @@ async def _summarize_and_build(
     # (docs/actor_observed_history_design.md)。失敗時は None → summarizer 由来を維持 (正直な欠測)。
     from src.cti.actor_normalizer import load_actor_aliases
     from src.cti.judgment_classifier import classify_judgment
+    from src.tools.model_tiers import Step  # この関数内の後段の局所 import と同じ名前
+    from src.tools.task_prefix import client_for_step
 
     _registry = load_actor_aliases()
     # subject 候補 = 本文言及集合 (R-A 済)。二重ゲート (辞書 + 言及所属) を構造内蔵。
     _candidates = _relevant_actors(_registry.find_all(llm_body), summary.category)
     _published = getattr(article, "published", None)
     _j = await classify_judgment(
-        llm,
+        client_for_step(llm, Step.JUDGMENT_CLASSIFY),
         title=getattr(article, "title", "") or "",
         category=summary.category,
         body=llm_body,
@@ -274,6 +278,7 @@ async def _summarize_and_build(
         importance=summary.importance,
         category=summary.category,
         body=llm_body,
+        published=_published.strftime("%Y-%m-%d") if _published else None,
     )
 
     # c. Phase 4: 機械的 IOC 抽出 + アクター名正規化
@@ -981,6 +986,9 @@ def _build_briefing(
         metadata["event_date"] = _ev
         if _basis:
             metadata["event_date_basis"] = _basis
+        _precision = event_date_precision(summary.event_date, _ev, _basis)
+        if _precision:
+            metadata["event_date_precision"] = _precision
     if _comp:
         metadata["compromise_date"] = _comp
     # Phase 5L-4: dedup_key を計算して metadata に保存 (ch 横断 dedup / クラスタリング用)
@@ -1081,6 +1089,25 @@ def _build_briefing(
             to=capped_importance,
             reason="no_exploit_signal",
         )
+    # まとめ記事 (複数の独立した事案の束) は記事全体として high にしない (上限 medium、
+    # 2026-10-18 U2)。既定 shadow = 落とす件数と記事をログに残すだけ。
+    # rollback / 切替: ROUNDUP_IMPORTANCE_CAP=off|shadow|title|on。
+    _roundup = cap_roundup_importance(
+        capped_importance,
+        display_title,
+        llm_article_type=summary.article_type,
+        category=summary.category,
+    )
+    if _roundup.would_cap:
+        _log.info(
+            "roundup_importance_capped",
+            article_id=article.id,
+            title=display_title[:80],
+            basis=_roundup.basis,
+            mode=cap_mode(),
+            applied=_roundup.applied,
+        )
+    capped_importance = _roundup.importance
     # M3b 段1: inline で取った深刻度の軸を metadata に載せる (persistence が
     # set_severity_axes と同じ setter で保存し、毎時の段がこの記事をスキップする)。
     if severity_axes:
