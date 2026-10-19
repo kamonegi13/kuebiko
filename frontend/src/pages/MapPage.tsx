@@ -33,6 +33,7 @@ import { formatJst } from "../utils/date";
 import { intentHex, intentLabel } from "../utils/diamond";
 import { usePersistedState } from "../utils/usePersistedState";
 import { useVocab, vocabLabel } from "../hooks/useVocab";
+import { OCCURRED_MODE_LABEL, TIME_VOCAB, formatTimeCoverage } from "../utils/timeVocab";
 
 const WINDOWS: { label: string; days: number }[] = [
   { label: "24時間", days: 1 },
@@ -409,13 +410,13 @@ export function MapPage() {
         <Seg
           title="報道時刻=記事が出た時刻(全件) / 発生時刻=事象が実際に起きた時刻(発生日が判明した記事のみ・過去に偏る・1年の期間で効く)"
           items={[
-            { label: "報道時刻", active: timeBasis === "report", on: () => setTimeBasis("report") },
-            { label: "発生時刻", active: timeBasis === "event", on: () => setTimeBasis("event") },
+            { label: TIME_VOCAB.reported, active: timeBasis === "report", on: () => setTimeBasis("report") },
+            { label: OCCURRED_MODE_LABEL, active: timeBasis === "event", on: () => setTimeBasis("event") },
           ]}
         />
         {timeBasis === "event" && data?.time_coverage && (
           <span className="self-center text-[12px] leading-snug text-fg-subtle">
-            発生日付き {data.time_coverage.dated}/{data.time_coverage.total}・未抽出は
+            {formatTimeCoverage(data.time_coverage)}・不明（報道日のみ含む）は
             <span className="text-warning">非表示(不明≠無し)</span>
           </span>
         )}

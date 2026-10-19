@@ -18,6 +18,7 @@ import { goToActor } from "../../utils/intelNav";
 import { vocabLabel } from "../../hooks/useVocab";
 import { usePeriodSwipe } from "../../hooks/usePeriodSwipe";
 import { SectionHeading } from "../SectionHeading";
+import { OCCURRED_MODE_LABEL, TIME_VOCAB, formatTimeCoverage } from "../../utils/timeVocab";
 
 // セレクタの役割グループ (敵対 → 同盟 → その他 の順で前面化)。ラベルは backend vocab
 // "pmesii_role" (vocabLabel) を SSoT に解決する (静的 value→label マップは持たない)。
@@ -96,22 +97,22 @@ export function PMESIITab() {
             <div className="bg-surface-1 border border-border-subtle rounded-lg px-3 py-2">
               <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
                 <div className="text-[13px] font-medium text-fg-muted">
-                  テンポ — {data.label} の日次活動（{isEvent ? "発生時刻" : "報道時刻"}）
+                  テンポ — {data.label} の日次活動（{isEvent ? OCCURRED_MODE_LABEL : TIME_VOCAB.reported}）
                 </div>
                 <div className="inline-flex rounded border border-border-subtle overflow-hidden text-[12.5px]">
                   <button
                     onClick={() => setTempoBasis("report")}
                     className={`px-2 py-0.5 transition-colors ${!isEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
-                    title="記事が報道/取得された時刻 (現況認識の正、全件)"
+                    title="記事が報じられた時刻 = 公開時刻 (現況認識の正、全件)"
                   >
-                    報道時刻
+                    {TIME_VOCAB.reported}
                   </button>
                   <button
                     onClick={() => setTempoBasis("event")}
                     className={`px-2 py-0.5 transition-colors ${isEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
-                    title="事象が実際に発生した時刻 (発生日が判明した記事のみ・過去事象に偏る)"
+                    title="事象が実際に発生した時刻 (報道日の写しを除く・発生日が判明した記事のみ・過去事象に偏る)"
                   >
-                    発生時刻
+                    {OCCURRED_MODE_LABEL}
                   </button>
                 </div>
               </div>
@@ -119,8 +120,8 @@ export function PMESIITab() {
               {/* 発生時刻は dated subset のみ=未抽出を「無し」と誤読させない (暗域=不明≠安全)。 */}
               {isEvent && data.tempo.coverage && (
                 <div className="mt-1 text-[12px] leading-snug text-fg-subtle">
-                  発生日付き {data.tempo.coverage.dated}/{data.tempo.coverage.total} 件（期間内{" "}
-                  {data.tempo.coverage.event_in_window}）。未抽出（速報の大半）は非表示＝
+                  {formatTimeCoverage(data.tempo.coverage)} 件（期間内{" "}
+                  {data.tempo.coverage.event_in_window}）。不明（報道日のみ含む）は非表示＝
                   <span className="text-warning">不明（≠無し）</span>。
                   {Number(f.time) <= 7 && " 短い期間では発生時刻はほぼ空（速報は日付未記載）。"}
                 </div>

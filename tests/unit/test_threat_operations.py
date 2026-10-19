@@ -586,3 +586,40 @@ class TestSnapshotCoreCache:
             assert vt.total_articles == 2
         finally:
             to_mod.invalidate_threat_snapshot_cache()
+
+
+class TestActorTimelineVocab:
+    """時刻の語彙: 報道時刻=錨 (公開時刻)、発生日は basis=reported を除く。"""
+
+    def test_event_series_excludes_reported_basis_and_counts_coverage(self) -> None:
+        from datetime import UTC, datetime
+
+        from src.ui.services.threat_operations import _event_daily_series
+
+        now = datetime(2026, 10, 18, tzinfo=UTC)
+        rows = [
+            {"event_date": "2026-10-10", "event_date_basis": "detected"},
+            {"event_date": "2026-10-10", "event_date_basis": "reported"},
+            {"event_date": None, "event_date_basis": None},
+            {
+                "event_date": "2026-10-01",
+                "event_date_basis": "occurred",
+                "event_date_precision": "month",
+            },
+        ]
+        series, cov = _event_daily_series(rows, lookback_days=30, now=now)  # type: ignore[arg-type]
+        assert dict(series)["2026-10-10"] == 1
+        assert cov["occurred"] == 1 and cov["reported_only"] == 1
+        assert cov["month_only"] == 1 and cov["unknown"] == 2 and cov["total"] == 4
+
+    def test_report_series_uses_published_time_not_ingest(self) -> None:
+        from datetime import UTC, datetime
+
+        from src.ui.services.threat_operations import _daily_series
+
+        now = datetime(2026, 10, 18, 12, tzinfo=UTC)
+        rows = [
+            {"created_at": "2026-10-17T12:00:00+00:00", "published_at": "2026-10-10T12:00:00+00:00"}
+        ]
+        series = dict(_daily_series(rows, lookback_days=30, now=now))  # type: ignore[arg-type]
+        assert series["2026-10-10"] == 1 and series["2026-10-17"] == 0

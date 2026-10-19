@@ -16,6 +16,7 @@ import { useChannelMeta } from "../channel";
 import { vocabLabel } from "../../hooks/useVocab";
 import { Sparkline } from "../charts";
 import { usePeriodSwipe } from "../../hooks/usePeriodSwipe";
+import { OCCURRED_MODE_LABEL, TIME_VOCAB, formatTimeCoverage, type TimeCoverage } from "../../utils/timeVocab";
 
 // 辞書の参照カードをその場で開くローダ (脅威アクターページの context を保つ)。
 // getActors は react-query で辞書ページと共有キャッシュ。actor 未収載なら案内を出す。
@@ -413,7 +414,7 @@ function MonthlyHistoryStrip({ actorId, onOpenDict }: { actorId: string; onOpenD
   );
 }
 
-function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../../api/types").ActorDetail["activity"]>; recent_articles?: import("../../api/types").ActorArticle[]; timeline_daily?: [string, number][]; timeline_event?: [string, number][]; timeline_coverage?: { dated: number; total: number; event_in_window: number }; relations?: import("../../api/types").ActorRelations; known_ttps?: string[]; child_groups?: [string, string, number, string][] } }) {
+function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../../api/types").ActorDetail["activity"]>; recent_articles?: import("../../api/types").ActorArticle[]; timeline_daily?: [string, number][]; timeline_event?: [string, number][]; timeline_coverage?: TimeCoverage; relations?: import("../../api/types").ActorRelations; known_ttps?: string[]; child_groups?: [string, string, number, string][] } }) {
   const a = detail.activity;
   const chMeta = useChannelMeta();
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -544,24 +545,23 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
             <button
               onClick={() => setTlBasis("report")}
               className={`px-2 py-0.5 transition-colors ${!tlIsEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
-              title="記事が報道/取得された時刻 (全件)"
+              title="記事が報じられた時刻 = 公開時刻 (全件。取込時刻は使わない)"
             >
-              報道時刻
+              {TIME_VOCAB.reported}
             </button>
             <button
               onClick={() => setTlBasis("event")}
               className={`px-2 py-0.5 transition-colors ${tlIsEvent ? "bg-accent-soft text-accent-hover" : "text-fg-subtle hover:text-fg"}`}
-              title="事象が実際に発生した時刻 = このアクターの活動年代 (発生日が判明した記事のみ・過去に偏る)"
+              title="事象が実際に発生した時刻 = このアクターの活動年代 (報道日の写しを除く・発生日が判明した記事のみ・過去に偏る)"
             >
-              発生時刻
+              {OCCURRED_MODE_LABEL}
             </button>
           </div>
         </div>
         <TimelineBars data={(tlIsEvent ? detail.timeline_event : detail.timeline_daily) || []} />
         {tlIsEvent && tlCov && (
           <div className="mt-1 text-[12px] leading-snug text-fg-subtle">
-            発生日付き {tlCov.dated}/{tlCov.total} 件（期間内 {tlCov.event_in_window}）。未抽出（速報の
-            大半）は非表示＝<span className="text-warning">不明（≠無し）</span>。期間を長く（1年など）とるほど活動年代が出る。
+            {formatTimeCoverage(tlCov)} 件（期間内 {tlCov.event_in_window}）。{TIME_VOCAB.unknown}には報道日のみ（{tlCov.reported_only ?? 0}）を含み、非表示＝<span className="text-warning">不明（≠無し）</span>。期間を長く（1年など）とるほど活動年代が出る。
           </div>
         )}
       </Section>

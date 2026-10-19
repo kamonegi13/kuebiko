@@ -19,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from src.cti.category_scopes import CYBER_THREAT_SCOPE
+from src.storage.event_time import (
+    anchor_ts,
+    classify_event_date,
+    coverage_counts,
+    row_value,
+    window_clause,
+)
 from src.ui.services.geo_cyber_map import _COUNTRIES_YAML, _yaml_display_map
 
 DEFAULT_DB_PATH = Path("data/run_history.db")
@@ -85,12 +92,19 @@ def _nation_actors() -> dict[str, list[str]]:
 def _article_cols() -> str:
     return (
         "article_id, title, url, importance, socio_political_intent AS intent, "
-        "created_at, published_at, event_date, pmesii_m, pmesii_e, pmesii_s, pmesii_p, "
+        "created_at, published_at, event_date, event_date_basis, "
+        "pmesii_m, pmesii_e, pmesii_s, pmesii_p, "
         "pmesii_i_infra, pmesii_i_cyber, pmesii_p_env, pmesii_t"
     )
 
 
-def _face_rows(con: Any, entity_type: str, values: list[str], since: datetime | None) -> list[Any]:
+def _face_rows(
+    con: Any,
+    entity_type: str,
+    values: list[str],
+    since: datetime | None,
+    time_basis: str = "report",
+) -> list[Any]:
     """指定 entity (actor 群 or involved_country) に該当する記事行 (DISTINCT) を返す。"""
     vals = [v.lower() for v in values if v]
     if not vals:
@@ -103,13 +117,15 @@ def _face_rows(con: Any, entity_type: str, values: list[str], since: datetime | 
     )
     params: list[Any] = [entity_type, *vals]
     if since is not None:
-        sql += " AND COALESCE(datetime(published_at), datetime(created_at)) >= datetime(?)"
+        sql += window_clause(time_basis)
         params.append(since.isoformat())
     sql += " ORDER BY COALESCE(datetime(published_at), datetime(created_at)) DESC"
     return list(con.execute(sql, tuple(params)).fetchall())
 
 
-def _attacker_face_rows(con: Any, actor_ids: list[str], since: datetime | None) -> list[Any]:
+def _attacker_face_rows(
+    con: Any, actor_ids: list[str], since: datetime | None, time_basis: str = "report"
+) -> list[Any]:
     """攻撃者面 (主題起点): actor_ids のいずれかが主題 (subject) の脅威記事を返す。
 
     2026-08-20 反転: 従来は article_entities の **言及 (mention)** を数えていたが、実測
@@ -138,7 +154,7 @@ def _attacker_face_rows(con: Any, actor_ids: list[str], since: datetime | None) 
     )
     params: list[Any] = [*(c.lower() for c in _CYBER_CATS), *ids]
     if since is not None:
-        sql += " AND COALESCE(datetime(published_at), datetime(created_at)) >= datetime(?)"
+        sql += window_clause(time_basis)
         params.append(since.isoformat())
     sql += " ORDER BY COALESCE(datetime(published_at), datetime(created_at)) DESC"
     return list(con.execute(sql, tuple(params)).fetchall())
@@ -160,7 +176,9 @@ def _derive_actor_counts(rows: list[Any], actor_ids: frozenset[str]) -> Counter[
     return counts
 
 
-def _cyber_mention_rows(con: Any, iso: str, since: datetime | None) -> list[Any]:
+def _cyber_mention_rows(
+    con: Any, iso: str, since: datetime | None, time_basis: str = "report"
+) -> list[Any]:
     """帰属なしサイバー言及レーン: i_cyber 点灯 × involved_country=iso × actor entity 無し。
 
     地政学/政策記事に埋もれた『その国に関わるサイバー言及』を、帰属済みサイバー作戦
@@ -180,14 +198,14 @@ def _cyber_mention_rows(con: Any, iso: str, since: datetime | None) -> list[Any]
     )
     params: list[Any] = [lower]
     if since is not None:
-        sql += " AND COALESCE(datetime(published_at), datetime(created_at)) >= datetime(?)"
+        sql += window_clause(time_basis)
         params.append(since.isoformat())
     sql += " ORDER BY COALESCE(datetime(published_at), datetime(created_at)) DESC"
     return list(con.execute(sql, tuple(params)).fetchall())
 
 
 def _day(row: Any) -> str | None:
-    v = row["published_at"] or row["created_at"]
+    v = anchor_ts(row["published_at"], row["created_at"])
     if hasattr(v, "strftime"):
         return str(v.strftime("%Y-%m-%d"))
     s = str(v or "")
@@ -200,11 +218,9 @@ def _event_day(row: Any) -> str | None:
     時間軸トグル (報道時刻↔発生時刻) の発生時刻系列に使う。event_date が無い記事
     (速報の大半) は発生時刻系列に出ない=「不明」(≠無し)。カバレッジで正直に示す。
     """
-    try:
-        v = row["event_date"]
-    except (KeyError, IndexError):
-        return None
-    if not v:
+    v = row_value(row, "event_date")
+    # 発生日として数えるのは basis=reported 以外 (報道日の写しは発生日でない)。
+    if classify_event_date(v, row_value(row, "event_date_basis")) == "reported_only" or not v:
         return None
     if hasattr(v, "strftime"):
         return str(v.strftime("%Y-%m-%d"))
@@ -410,6 +426,10 @@ def situation_by_nation(
         actor_counts = _derive_actor_counts(cyber_rows, frozenset(actors))
         # 標的レンズ: この国が受けている cyber 脅威 (victim_country)。
         cyber_target = _victim_cyber_face(con, iso, since)
+        # 発生時刻の系列は「その期間に発生した」= 発生日で窓を切った行から作る
+        # (地図と同じ window_clause)。報道窓の行から発生日で数えると窓の意味がずれる。
+        cyber_ev_rows = _attacker_face_rows(con, actors, since, "event")
+        geo_ev_rows = _face_rows(con, "involved_country", [iso], since, "event")
     finally:
         con.close()
 
@@ -438,24 +458,27 @@ def situation_by_nation(
     geo_day: Counter[str] = Counter()
     cyber_ev_day: Counter[str] = Counter()
     geo_ev_day: Counter[str] = Counter()
-    dated = 0
-    total = len(cyber_rows) + len(geo_rows)
     for r in cyber_rows:
-        d = _day(r)
-        if d:
+        if d := _day(r):
             cyber_day[d] += 1
-        ed = _event_day(r)
-        if ed:
-            dated += 1
-            cyber_ev_day[ed] += 1
     for r in geo_rows:
-        d = _day(r)
-        if d:
+        if d := _day(r):
             geo_day[d] += 1
-        ed = _event_day(r)
-        if ed:
-            dated += 1
+    for r in cyber_ev_rows:
+        if ed := _event_day(r):
+            cyber_ev_day[ed] += 1
+    for r in geo_ev_rows:
+        if ed := _event_day(r):
             geo_ev_day[ed] += 1
+    # 被覆: 報道窓の行の発生日の状態 (発生日 N / 全 M・月のみ K・不明 U)。
+    states = [
+        classify_event_date(
+            row_value(r, "event_date"),
+            row_value(r, "event_date_basis"),
+            row_value(r, "event_date_precision"),
+        )
+        for r in [*cyber_rows, *geo_rows]
+    ]
     now = datetime.now(UTC)
     days_all = set(cyber_day) | set(geo_day)
     if since is not None:
@@ -481,7 +504,7 @@ def situation_by_nation(
         "cyber_event": [cyber_ev_day.get(b, 0) for b in buckets],
         "geopol_event": [geo_ev_day.get(b, 0) for b in buckets],
         # カバレッジ: 報道窓内の記事のうち発生日付き dated / total、うち窓内に着地した数。
-        "coverage": {"dated": dated, "total": total, "event_in_window": in_window_ev},
+        "coverage": coverage_counts(states, in_window_ev),
     }
 
     return {

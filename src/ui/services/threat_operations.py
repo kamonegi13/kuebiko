@@ -36,6 +36,12 @@ from src.cti.actor_normalizer import (
 from src.cti.japan_relevance import JAPAN_TARGETED_SQL_FRAGMENT, is_japan_targeted_row
 from src.cti.subject_gate import passes_subject_gate
 from src.logging_config import get_logger
+from src.storage.event_time import (
+    anchor_ts,
+    classify_event_date,
+    coverage_counts,
+    row_value,
+)
 
 _log = get_logger(__name__)
 
@@ -142,13 +148,14 @@ class ActorDetail:
     activity: ActorActivity
     relations: ActorRelations
     recent_articles: tuple[ActorArticleRef, ...]
-    # timeline (date_iso, count) — 日次 series for Plotly chart (報道時刻 = created_at)
+    # timeline (date_iso, count) — 日次 series for Plotly chart (報道時刻 = 錨)
     timeline_daily: tuple[tuple[str, int], ...]
     # 時間軸トグル (2026-06-27): 発生時刻 (event_date) 系列 + カバレッジ。報道時刻と切替え、
     # アクターの「実際に活動した年代」(作戦史) を dated subset で復元する。過去事象に偏るので
-    # 1y+ 窓で効く。coverage=(dated, total, event_in_window)。
+    # 1y+ 窓で効く。発生日は basis=reported を除く (event_time.classify_event_date)。
+    # coverage は event_time.coverage_counts (発生日 N / 全 M・月のみ K・不明 U)。
     timeline_event: tuple[tuple[str, int], ...] = ()
-    timeline_coverage: tuple[int, int, int] = (0, 0, 0)
+    timeline_coverage: dict[str, int] = field(default_factory=lambda: coverage_counts([]))
     # 既知 TTP (Actor 辞書の mitre_ttps、knowledge 側)。観測 top_ttps との
     # 突き合わせで「MITRE 既知外の観測 TTP」をハイライトするために返す
     known_ttps: tuple[str, ...] = ()
@@ -438,10 +445,14 @@ def _daily_series(
     jst = ZoneInfo("Asia/Tokyo")
     counts: dict[str, int] = {}
     for r in rows:
+        # 報道時刻 = 錨 (公開時刻、取込で上限)。取込時刻 created_at は新着の窓にだけ使う。
+        ts = anchor_ts(row_value(r, "published_at"), r["created_at"])
         try:
-            dt = datetime.fromisoformat(str(r["created_at"]).replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
         except (ValueError, TypeError):
             continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
         d = dt.astimezone(jst).strftime("%Y-%m-%d")
         counts[d] = counts.get(d, 0) + 1
     out: list[tuple[str, int]] = []
@@ -457,27 +468,28 @@ def _event_daily_series(
     *,
     lookback_days: int,
     now: datetime,
-) -> tuple[tuple[tuple[str, int], ...], tuple[int, int, int]]:
-    """発生時刻 (event_date) 日次 series + カバレッジ (dated, total, event_in_window)。
+) -> tuple[tuple[tuple[str, int], ...], dict[str, int]]:
+    """発生日 (basis=reported 除く) の日次 series + 被覆 (event_time.coverage_counts)。
 
-    時間軸トグルの発生時刻側。event_date 無し (速報の大半) は dated に数えず系列にも出ない
-    =「不明」(≠無し)。窓内に着地した発生件数を event_in_window で正直に返す。
+    発生日として数えるのは classify_event_date == occurred のみ。報道日の写し
+    (basis=reported) と発生日なしは不明側に回す (系列に出さない=不明≠無し)。
+    月のみ (precision 列 T0) は日次に置けないので系列に出さず被覆の「月のみ」へ。
     """
     from zoneinfo import ZoneInfo
 
     jst = ZoneInfo("Asia/Tokyo")
     counts: dict[str, int] = {}
-    dated = 0
+    states: list[str] = []
     for r in rows:
-        try:
-            ev = r["event_date"]
-        except (KeyError, IndexError):
-            ev = None
-        if not ev:
-            continue
-        dated += 1
-        d = str(ev)[:10]
-        counts[d] = counts.get(d, 0) + 1
+        st = classify_event_date(
+            row_value(r, "event_date"),
+            row_value(r, "event_date_basis"),
+            row_value(r, "event_date_precision"),
+        )
+        states.append(st)
+        if st == "occurred":
+            d = str(r["event_date"])[:10]
+            counts[d] = counts.get(d, 0) + 1
     out: list[tuple[str, int]] = []
     earliest = now.astimezone(jst) - timedelta(days=lookback_days)
     in_window = 0
@@ -486,7 +498,7 @@ def _event_daily_series(
         c = counts.get(d, 0)
         in_window += c
         out.append((d, c))
-    return tuple(out), (dated, len(rows), in_window)
+    return tuple(out), coverage_counts(states, in_window)
 
 
 # ====================== Public API ======================
@@ -1025,6 +1037,7 @@ def fetch_actor_detail(
                    posted_channel, created_at, discord_message_id, discord_channel_id,
                    victim_sector_canonical, victim_country_iso,
                    socio_political_intent, technical_axis_summary, event_date,
+                   event_date_basis, published_at,
                    subject_actor_ids, subject_actor_source
               FROM articles
              WHERE status='posted'

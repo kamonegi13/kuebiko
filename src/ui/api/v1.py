@@ -234,11 +234,7 @@ def get_actor_detail(  # sync def = threadpool 実行 (同上)
         "timeline_daily": [list(t) for t in detail.timeline_daily],
         # 時間軸トグル: 発生時刻系列 + カバレッジ (報道時刻 timeline_daily と切替え)。
         "timeline_event": [list(t) for t in detail.timeline_event],
-        "timeline_coverage": {
-            "dated": detail.timeline_coverage[0],
-            "total": detail.timeline_coverage[1],
-            "event_in_window": detail.timeline_coverage[2],
-        },
+        "timeline_coverage": dict(detail.timeline_coverage),
         # 既知 TTP (Actor 辞書由来、knowledge)。観測 top_ttps との gap 表示用
         "known_ttps": list(detail.known_ttps),
         # 配下グループ rollup (organization のみ): [actor_id, canonical, count, sparkline]

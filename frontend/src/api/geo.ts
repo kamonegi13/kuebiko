@@ -1,6 +1,8 @@
 // 脅威マップ (Geo-Cyber Map) の API クライアント。
 // backend: /api/v1/geo/cyber-map (read-only、counts のみ)。
 
+import type { TimeCoverageBase } from "../utils/timeVocab";
+
 export interface GeoSectorBreakdown {
   sector: string;
   label: string;
@@ -81,7 +83,7 @@ export interface CyberMapResponse {
   totals: { placed_events: number; countries: number };
   // 時間軸トグル: 報道時刻(report) / 発生時刻(event)。event は dated subset のみ表示。
   time_basis?: "report" | "event";
-  time_coverage?: { dated: number; total: number };
+  time_coverage?: TimeCoverageBase;
 }
 
 // 時間軸: 報道/取得時刻 (collection が出している) / 事象の実発生時刻 (dated のみ)。

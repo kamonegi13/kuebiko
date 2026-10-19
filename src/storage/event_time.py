@@ -28,4 +28,115 @@ DEDUP_ARTICLES = (
     " MIN(published_at) AS published_at FROM articles GROUP BY article_id)"
 )
 
-__all__ = ["DEDUP_ARTICLES", "EVENT_TS_EXPR"]
+# ---------------------------------------------------------------------------
+# 時刻の語彙 (2026-10-18、SSoT)。画面ごとに「報道時刻」「発生時刻」の中身が揃っていなかった
+# (アクター画面の報道時刻=取込時刻、発生時刻に basis=reported の報道日の写しが約 71% 混入)。
+#   取込時刻   = articles.created_at。新着の窓にだけ使う
+#   報道時刻   = 上の錨 (公開時刻、取込で上限)。「いつ報じられたか」
+#   発生日     = event_date のうち basis が reported 以外。「いつ起きたか」
+#   報道日のみ = basis=reported (event_date は報道日の写しで、発生日ではない)
+# UI の文言は frontend/src/utils/timeVocab.ts に同じ語を置く
+# (一致は tests/unit/test_time_vocab.py が固定する)。
+# ---------------------------------------------------------------------------
+TIME_VOCAB: dict[str, str] = {
+    "ingested": "取込時刻",
+    "reported": "報道時刻",
+    "occurred": "発生日",
+    "reported_only": "報道日のみ",
+    "month_only": "月のみ",
+    "unknown": "不明",
+}
+
+REPORTED_BASIS = "reported"
+# 発生日の精度の列 (T0 が追加予定)。列が無い間は Python 側の判定で None 扱い。
+MONTH_ONLY_PRECISIONS = frozenset({"month", "year"})
+
+# SQL: 発生日として使える行 (basis=reported を外す)。利用側は .format(a="<別名>.")。
+OCCURRED_DATE_CLAUSE = (
+    "({a}event_date IS NOT NULL AND {a}event_date <> ''"
+    " AND COALESCE({a}event_date_basis, '') <> 'reported')"
+)
+
+
+def occurred_date_clause(alias: str = "") -> str:
+    """OCCURRED_DATE_CLAUSE を別名つきで返す (alias は 'a.' のように末尾ドット込み)。"""
+    return OCCURRED_DATE_CLAUSE.format(a=alias)
+
+
+def window_clause(time_basis: str, alias: str = "") -> str:
+    """窓フィルタ SQL 片 (先頭 ' AND ' 込み、param は since.isoformat() を 1 つ追加)。
+
+    report = 報道時刻 (COALESCE published/created)。
+    event  = 「その期間に発生した」= 発生日 (basis=reported 除く) で窓を切る。
+    地図・アクター・国家の情勢はすべてこの関数を使う。
+    """
+    if time_basis == "event":
+        # event_date は TEXT 'YYYY-MM-DD' のため日付部の辞書順比較 (ISO は辞書順=時系列順)。
+        return f" AND {alias}event_date >= substr(?, 1, 10) AND {occurred_date_clause(alias)}"
+    pub, cre = f"{alias}published_at", f"{alias}created_at"
+    return f" AND COALESCE(datetime({pub}), datetime({cre})) >= datetime(?)"
+
+
+def classify_event_date(event_date: object, basis: object = None, precision: object = None) -> str:
+    """行の発生日の状態: occurred / month_only / reported_only / unknown。
+
+    unknown = 発生日なし。reported_only = basis=reported (報道日の写し)。
+    precision (列が無い間は None) が month/year なら month_only。
+    """
+    if not event_date:
+        return "unknown"
+    if basis == REPORTED_BASIS:
+        return "reported_only"
+    if precision in MONTH_ONLY_PRECISIONS:
+        return "month_only"
+    return "occurred"
+
+
+def row_value(row: object, key: str) -> object:
+    """Row から列を取る。列が無い (まだ追加されていない) なら None。"""
+    try:
+        return row[key]  # type: ignore[index]
+    except (KeyError, IndexError):
+        return None
+
+
+def anchor_ts(published_at: object, created_at: object) -> object:
+    """EVENT_TS_EXPR の Python 版: 公開時刻 (取込を超えない)、欠損は取込時刻。"""
+    if published_at is not None and created_at is not None and str(published_at) <= str(created_at):
+        return published_at
+    return created_at if created_at is not None else published_at
+
+
+def coverage_counts(states: list[str], in_window: int = 0) -> dict[str, int]:
+    """classify_event_date の結果列から被覆を作る。
+
+    occurred=発生日 N / total=全 M / month_only=月のみ K / unknown=不明 U
+    (unknown は発生日なし + 報道日のみ。うち reported_only を内訳として別に出す)。
+    dated は後方互換 (= occurred)。
+    """
+    occurred = states.count("occurred")
+    month_only = states.count("month_only")
+    reported_only = states.count("reported_only")
+    return {
+        "dated": occurred,
+        "occurred": occurred,
+        "month_only": month_only,
+        "reported_only": reported_only,
+        "unknown": states.count("unknown") + reported_only,
+        "total": len(states),
+        "event_in_window": in_window,
+    }
+
+
+__all__ = [
+    "DEDUP_ARTICLES",
+    "EVENT_TS_EXPR",
+    "OCCURRED_DATE_CLAUSE",
+    "TIME_VOCAB",
+    "anchor_ts",
+    "classify_event_date",
+    "coverage_counts",
+    "occurred_date_clause",
+    "row_value",
+    "window_clause",
+]

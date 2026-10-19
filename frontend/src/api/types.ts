@@ -1,3 +1,4 @@
+import type { TimeCoverage } from "../utils/timeVocab";
 // Backend (Python) との型同期。openapi-typescript 自動生成は将来の improvement。
 
 import type { SourceBasis } from "./spotlight";
@@ -91,7 +92,7 @@ export interface ActorDetail {
   // 時間軸トグル: 発生時刻 (event_date) 系列 + カバレッジ。報道時刻 timeline_daily と切替え、
   // アクターの実際の活動年代 (作戦史) を dated subset で復元 (過去事象に偏る・1y+ で効く)。
   timeline_event?: [string, number][];
-  timeline_coverage?: { dated: number; total: number; event_in_window: number };
+  timeline_coverage?: TimeCoverage;
   // 既知 TTP (Actor 辞書由来の knowledge、"T1566 Phishing" 形式)。
   // 観測 top_ttps との突き合わせ (既知外ハイライト) に使う
   known_ttps?: string[];
@@ -209,7 +210,7 @@ export interface SituationResponse {
     geopol: number[];
     cyber_event: number[];
     geopol_event: number[];
-    coverage: { dated: number; total: number; event_in_window: number };
+    coverage: TimeCoverage;
   };
 }
 

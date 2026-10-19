@@ -212,3 +212,42 @@ def test_nation_actors_excludes_ransom_groups_with_nationality() -> None:
     ru = set(_nation_actors().get("ru", []))
     assert not ru & {"qilin", "lockbit", "cl0p", "alphv"}
     assert "apt28" in ru
+
+
+def test_situation_tempo_excludes_reported_basis_from_occurred(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """basis=reported (報道日の写し) は発生日として数えず「不明」側に回る。
+
+    発生時刻の窓は発生日で切る (地図と同じ window_clause)。
+    """
+    db = _seed(tmp_path)
+    repo = RunHistoryRepository(db_path=db)
+    rid = repo.start_run(RunRecord(started_at=_NOW, pipeline="t", dry_run=True))
+    today = _NOW.date().isoformat()
+
+    def cn(aid: str, basis: str) -> ArticleRecord:
+        return ArticleRecord(
+            run_id=rid,
+            article_id=aid,
+            title=aid,
+            url=f"https://e/{aid}",
+            category="apt",
+            status="posted",
+            socio_political_intent="prepositioning",
+            created_at=_NOW,
+            published_at=_NOW,
+            event_date=today,
+            event_date_basis=basis,
+            subject_actor_ids="volt_typhoon",
+            subject_actor_source="llm",
+        )
+
+    for aid, basis in (("occ1", "detected"), ("rep1", "reported")):
+        repo.add_article(cn(aid, basis))
+        repo.add_article_entities(aid, [("actor", "volt_typhoon")], when=_NOW)
+
+    t = situation_by_nation("CN", window_days=None, db_path=db)["tempo"]
+    cov = t["coverage"]
+    assert sum(t["cyber_event"]) == 1  # occ1 のみ。rep1 (reported) は系列に出ない
+    assert cov["occurred"] == 1 and cov["reported_only"] == 1
+    assert cov["unknown"] >= 1 + 1  # cy1 (発生日なし) + rep1 (報道日のみ)
+    assert cov["month_only"] == 0

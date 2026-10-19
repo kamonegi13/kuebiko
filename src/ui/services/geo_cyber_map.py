@@ -31,6 +31,7 @@ from src.cti.geocoder import Geocoder
 from src.cti.routing_signals import looks_accidental_leak
 from src.cti.subject_gate import trusted_subject_clause
 from src.logging_config import get_logger
+from src.storage.event_time import window_clause
 
 _log = get_logger(__name__)
 
@@ -171,17 +172,8 @@ def _connect(db_path: Path) -> Any:
 
 
 def _win_frag(time_basis: str, alias: str = "") -> str:
-    """窓フィルタ SQL 片 (先頭 ' AND ' 込み、param は since.isoformat() を1つ追加)。
-
-    time_basis='report' (既定)=報道/取得時刻 (COALESCE published/created)。
-    'event'=事象の実発生時刻 (event_date)。dated subset のみ (event_date IS NOT NULL)。
-    """
-    if time_basis == "event":
-        # event_date は TEXT 'YYYY-MM-DD'。datetime() で cast されない (timestamptz でない) ため、
-        # since.isoformat() の日付部 substr(?,1,10) と **辞書順比較** (ISO 日付は辞書順=時系列順)。
-        return f" AND {alias}event_date >= substr(?, 1, 10) AND {alias}event_date IS NOT NULL"
-    pub, cre = f"{alias}published_at", f"{alias}created_at"
-    return f" AND COALESCE(datetime({pub}), datetime({cre})) >= datetime(?)"
+    """窓フィルタ SQL 片。定義は event_time.window_clause (アクター・国家と共通)。"""
+    return window_clause(time_basis, alias)
 
 
 def _country_sector_rows(
@@ -399,7 +391,10 @@ def _time_coverage(con: Any, since: datetime | None) -> dict[str, int]:
     """
     sql = (
         "SELECT COUNT(*) AS total, "  # noqa: S608 — カテゴリは内部固定
-        "COUNT(*) FILTER (WHERE event_date IS NOT NULL) AS dated FROM articles "
+        "COUNT(*) FILTER (WHERE event_date IS NOT NULL AND event_date <> '' "
+        "AND COALESCE(event_date_basis, '') <> 'reported') AS dated, "
+        "COUNT(*) FILTER (WHERE event_date IS NOT NULL AND event_date <> '' "
+        "AND COALESCE(event_date_basis, '') = 'reported') AS reported_only FROM articles "
         "WHERE status='posted' AND victim_country_iso IS NOT NULL AND victim_country_iso != '' "
         f"AND ({_cyber_category_clause('category')} OR category IN "
         f"({','.join(['?'] * len(_GEOPOLITICAL_CATEGORIES))}))"
@@ -409,7 +404,18 @@ def _time_coverage(con: Any, since: datetime | None) -> dict[str, int]:
         sql += " AND COALESCE(datetime(published_at), datetime(created_at)) >= datetime(?)"
         params.append(since.isoformat())
     row = con.execute(sql, tuple(params)).fetchone()
-    return {"dated": int(row["dated"] or 0), "total": int(row["total"] or 0)}
+    total = int(row["total"] or 0)
+    dated = int(row["dated"] or 0)
+    reported_only = int(row["reported_only"] or 0)
+    # month_only は precision 列 (T0) が入るまで 0。unknown = 発生日なし + 報道日のみ。
+    return {
+        "dated": dated,
+        "occurred": dated,
+        "month_only": 0,
+        "reported_only": reported_only,
+        "unknown": total - dated,
+        "total": total,
+    }
 
 
 def build_cyber_map(
