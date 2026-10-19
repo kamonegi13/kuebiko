@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.cti.importance_v2 import legacy_level_filter_to_severity
@@ -986,8 +986,8 @@ class EventNewsMixin(RunHistoryRepositoryBase):
         """N 日より古い dedup_semantic_skips を削除する (§11 retention、dedup と連動)。"""
         with self._connect() as conn:
             cur = conn.execute(
-                "DELETE FROM dedup_semantic_skips WHERE ts < datetime('now', ?)",
-                (f"-{days} days",),
+                "DELETE FROM dedup_semantic_skips WHERE ts < ?",
+                (_to_iso(datetime.now(UTC) - timedelta(days=days)),),
             )
             return int(cur.rowcount or 0)
 

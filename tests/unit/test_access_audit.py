@@ -165,3 +165,25 @@ class TestRetention:
         assert repo.purge_old_access_audit(days=180) == 1
         remaining = repo.list_access_audit()
         assert [e["subject_hash"] for e in remaining] == ["recent"]
+
+
+class TestTextColumnRetentionSqlOnPg:
+    """TEXT の時刻列は NOW()/interval と比べない (PG で text < timestamptz になり毎回失敗した)。"""
+
+    def test_purge_sql_has_no_pg_time_arithmetic_after_translation(self) -> None:
+        import inspect
+
+        from src.storage.db_backend import translate_sql
+        from src.storage.repo_eventnews import EventNewsMixin
+        from src.storage.repo_ops_notices import OpsNoticesMixin
+
+        sources = [
+            inspect.getsource(RunHistoryRepository.purge_old_access_audit),
+            inspect.getsource(OpsNoticesMixin.purge_old_ops_notices),
+            inspect.getsource(EventNewsMixin.purge_semantic_skips),
+        ]
+        for src in sources:
+            sql = next(s for s in src.split('"') if s.startswith("DELETE FROM"))
+            translated = translate_sql(sql)
+            assert "NOW()" not in translated and "interval" not in translated
+            assert translated.endswith("< %s")

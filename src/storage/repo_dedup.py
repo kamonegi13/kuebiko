@@ -627,8 +627,8 @@ class DedupMixin(RunHistoryRepositoryBase):
         """
         with self._connect() as conn:
             cur = conn.execute(
-                "DELETE FROM access_audit WHERE at < datetime('now', ?)",
-                (f"-{days} days",),
+                "DELETE FROM access_audit WHERE at < ?",
+                (_to_iso(datetime.now(UTC) - timedelta(days=days)),),
             )
             return int(cur.rowcount or 0)
 

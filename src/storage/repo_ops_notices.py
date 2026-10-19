@@ -8,7 +8,7 @@ DB にも残す。webhook 不達・未設定・送信例外でも必ず 1 行残
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.storage.repo_base import RunHistoryRepositoryBase
@@ -69,7 +69,7 @@ class OpsNoticesMixin(RunHistoryRepositoryBase):
         """N 日より古い ops 通知を削除する (access_audit と同じ 180 日水準)。"""
         with self._connect() as conn:
             cur = conn.execute(
-                "DELETE FROM ops_notices WHERE created_at < datetime('now', ?)",
-                (f"-{days} days",),
+                "DELETE FROM ops_notices WHERE created_at < ?",
+                (_to_iso(datetime.now(UTC) - timedelta(days=days)),),
             )
             return int(cur.rowcount or 0)
