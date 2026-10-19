@@ -182,9 +182,9 @@ class TestJsonBiasedPrompt:
     ) -> None:
         # 評価中の一時タグ (SFT_TASK_PREFIX_MODELS) も raw + JSON 前置きの経路で測る
         monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
-        assert _is_json_biased("kuebiko-sft:s24x") is False
-        monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", " kuebiko-sft:s24x , other ")
-        assert _is_json_biased("kuebiko-sft:s24x") is True
+        assert _is_json_biased("kuebiko-sft:x99") is False
+        monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", " kuebiko-sft:x99 , other ")
+        assert _is_json_biased("kuebiko-sft:x99") is True
         assert _is_json_biased("gemma4:26b") is False
 
 

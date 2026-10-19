@@ -69,7 +69,9 @@ def interp(base: Path, adapters: list[Path], weights: list[float], out: Path) ->
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", type=Path, required=True)
-    ap.add_argument("--adapter", action="append", required=True, help="<dir>:<weight> (複数、重みの和は 1)")
+    ap.add_argument(
+        "--adapter", action="append", required=True, help="<dir>:<weight> (複数、重みの和は 1)"
+    )
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     pairs = [x.rsplit(":", 1) for x in args.adapter]
