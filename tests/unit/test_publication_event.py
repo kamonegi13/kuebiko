@@ -82,3 +82,24 @@ def test_flag_off_restores_old_behavior(monkeypatch: pytest.MonkeyPatch) -> None
         "reported", article_type="advisory", account_class="gov_official"
     )
     assert got == "reported"
+
+
+def test_advisory_on_x_requires_gov_official() -> None:
+    # X の投稿は gov_official 以外 (vendor_official・無印) では advisory にしない
+    for acls in ("vendor_official", "analyst_known", ""):
+        assert (
+            publication_kind(
+                article_type="advisory",
+                feed_title="@ExampleVendor",
+                feed_url="https://x.com/ExampleVendor",
+                account_class=acls,
+            )
+            is None
+        )
+    got = publication_kind(
+        article_type="advisory",
+        feed_title="@ExampleAgency",
+        feed_url="https://twitter.com/ExampleAgency",
+        account_class="gov_official",
+    )
+    assert got == "advisory"

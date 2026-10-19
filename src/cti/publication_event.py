@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import os
 from typing import Literal
+from urllib.parse import urlparse
 
 PublicationKind = Literal["authority", "leak_site", "advisory"]
 
 FLAG_ENV = "EVENT_DATE_PUBLICATION_AS_EVENT"
 # 流出サイトの掲載を取り込む source (feed_title、小文字比較)
 LEAK_SITE_FEED_TITLES = frozenset({"ransomware.live", "distributed denial of secrets"})
+X_HOSTS = frozenset({"x.com", "twitter.com"})
 ADVISORY_ARTICLE_TYPE = "advisory"
 # 当局発でも発表そのものとは言えない記事の型
 NON_PUBLICATION_ARTICLE_TYPES = frozenset({"opinion", "tutorial", "research", "recap"})
@@ -39,6 +41,13 @@ def _source_tier(feed_title: str, feed_url: str, account_class: str) -> str:
     from src.cti.source_basis import classify_source_tier
 
     return classify_source_tier(feed_title, feed_url, account_class=account_class)
+
+
+def _is_x_feed(feed_title: str, feed_url: str) -> bool:
+    """X (旧 Twitter) の投稿 feed か。feed_title は '@handle' 形式。"""
+    host = (urlparse(feed_url).hostname or "").lower()
+    on_x = host in X_HOSTS or any(host.endswith("." + h) for h in X_HOSTS)
+    return on_x or feed_title.startswith("@")
 
 
 def publication_kind(
@@ -66,6 +75,8 @@ def publication_kind(
     tier = _source_tier(title, url, acls)
     if atype == ADVISORY_ARTICLE_TYPE:
         is_issuer = tier == "official" and acls != "affected_party"
+        if is_issuer and _is_x_feed(title, url):
+            is_issuer = acls == "gov_official"
         return "advisory" if is_issuer else None
     if acls in NON_AUTHORITY_ACCOUNT_CLASSES:
         return None
