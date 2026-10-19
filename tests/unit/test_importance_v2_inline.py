@@ -105,7 +105,7 @@ class TestClassifyAxesInline:
         )
 
         async def _fake_classify_axes(
-            llm: object, title: str, summary: str, body: str = ""
+            llm: object, title: str, summary: str, body: str = "", published: str | None = None
         ) -> SeverityAxes:
             return axes
 

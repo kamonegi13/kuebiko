@@ -220,3 +220,54 @@ def test_i58_gets_every_marker_including_pir_focus_and_axes() -> None:
     )
     assert with_task_prefix("本文", Step.SEVERITY_AXES, "kuebiko-sft:i58") == "[task: axes]\n本文"
     assert with_task_prefix("本文", Step.TRIAGE, "kuebiko-sft:i58") == "[task: triage]\n本文"
+
+
+def test_s24_family_gets_markers_for_trained_steps_and_none_for_untrained() -> None:
+    """s24 / s24b とその補間タグ (前方一致) は印つき。未学習の step には印を付けない。"""
+    from src.tools.task_prefix import task_prefix_enabled, with_task_prefix
+
+    for tag in ("kuebiko-sft:s24", "kuebiko-sft:s24b", "kuebiko-sft:s24i25", "kuebiko-sft:s24bi25"):
+        assert task_prefix_enabled(tag)
+        assert with_task_prefix("本文", Step.TRIAGE, tag) == "[task: triage]\n本文"
+        for step in (Step.SYNTHESIS_DETECT, Step.DETECT_CLAIM_WRITE):
+            assert with_task_prefix("本文", step, tag) == "本文"
+    # IOC 検証・ACH 補助・重複判定は s24b 系だけ学習する。s24 (b なし) は未学習 = 印なし
+    for step in (Step.LEDGER_ACH_AUX, Step.IOC_LLM_VERIFY, Step.DEDUP_CLUSTER_JUDGE):
+        assert with_task_prefix("本文", step, "kuebiko-sft:s24") == "本文"
+
+
+def test_judgment_marker_follows_s24b_family_only() -> None:
+    from src.tools.task_prefix import with_task_prefix
+
+    for tag in ("kuebiko-sft:s24b", "kuebiko-sft:s24bi25", "kuebiko-sft:s24bi50"):
+        assert with_task_prefix("本文", Step.JUDGMENT_CLASSIFY, tag) == "[task: judgment]\n本文"
+    # s23i は今と同じ (要約の印を借りる)
+    assert (
+        with_task_prefix("本文", Step.JUDGMENT_CLASSIFY, "kuebiko-sft:s23i")
+        == "[task: summary]\n本文"
+    )  # noqa: E501
+
+
+def test_s24_family_evidence_schema_follows_prefix() -> None:
+    from src.pipeline.summary import SummaryEvidenceOutput, SummaryOutput, summary_schema_for
+
+    assert summary_schema_for("kuebiko-sft:s24bi25") is SummaryEvidenceOutput
+    assert summary_schema_for("kuebiko-sft:s23i") is SummaryEvidenceOutput
+    assert summary_schema_for("kuebiko-sft:s21") is SummaryOutput
+
+
+def test_s24b_aux_markers_follow_s24b_family_only() -> None:
+    expected = {
+        Step.IOC_LLM_VERIFY: "[task: ioc_verify]\n",
+        Step.LEDGER_ACH_AUX: "[task: ach_aux]\n",
+        Step.DEDUP_CLUSTER_JUDGE: "[task: dedup_judge]\n",
+    }
+    for tag in ("kuebiko-sft:s24b", "kuebiko-sft:s24bi25", "kuebiko-sft:s24bi50"):
+        for step, mark in expected.items():
+            assert with_task_prefix("本文", step, tag) == mark + "本文"
+        assert with_task_prefix("本文", Step.SYNTHESIS_DETECT, tag) == "本文"
+    # s23i は今と同じ (要約 / ach の借用、重複判定は印なし)
+    s23i = "kuebiko-sft:s23i"
+    assert with_task_prefix("本文", Step.IOC_LLM_VERIFY, s23i) == "[task: summary]\n本文"
+    assert with_task_prefix("本文", Step.LEDGER_ACH_AUX, s23i) == "[task: ach]\n本文"
+    assert with_task_prefix("本文", Step.DEDUP_CLUSTER_JUDGE, "kuebiko-sft:s23i") == "本文"

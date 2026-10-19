@@ -68,6 +68,7 @@ async def classify_axes_inline(
     importance: str,
     category: str,
     body: str = "",
+    published: str | None = None,
 ) -> tuple[dict[str, str] | None, str]:
     """eligible なら深刻度の軸を 1 回 LLM で取る。不適格・失敗は ``(None, "")``。
 
@@ -86,7 +87,7 @@ async def classify_axes_inline(
     except Exception as e:  # noqa: BLE001 — client を組めなくても本処理を止めない
         _log.warning("routing_v2_inline_axes_client_failed", error=type(e).__name__)
         return None, ""
-    axes = await classify_axes(llm, title, summary, body)
+    axes = await classify_axes(llm, title, summary, body, published)
     if axes is None:
         return None, ""
     try:

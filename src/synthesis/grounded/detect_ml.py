@@ -304,12 +304,14 @@ async def ensure_axes(
     limit: int = _AXES_CLASSIFY_MAX,
     concurrency: int = _AXES_CONCURRENCY,
     bodies: Mapping[str, str] | None = None,
+    published: Mapping[str, str] | None = None,
 ) -> int:
     """軸が無い記事を classify して保存する (上限あり)。新たに付けた件数を返す。
 
     失敗 (None) は保存しない — 次の run でまた試す (欠測を「被害なし」等に化けさせない)。
     ``bodies`` (article_id → 本文) が渡され、その記事の本文があるときだけ ``classify`` に
     第 3 引数で本文を渡す (``AXES_FROM_BODY=1`` の呼び手のみ。無ければ従来の 2 引数)。
+    ``published`` (article_id → 公開日) も渡されたときは第 4 引数で公開日を渡す。
     """
     have = repo.get_severity_axes([a[0] for a in articles])
     missing = [a for a in articles if a[0] not in have][:limit]
@@ -320,7 +322,12 @@ async def ensure_axes(
     async def _one(aid: str, title: str, summary: str) -> bool:
         async with sem:
             body = (bodies or {}).get(aid, "")
-            axes = await (classify(title, summary, body) if body else classify(title, summary))
+            if not body:
+                axes = await classify(title, summary)
+            elif published is None:
+                axes = await classify(title, summary, body)
+            else:
+                axes = await classify(title, summary, body, published.get(aid))
         if axes is None:
             return False
         repo.set_severity_axes(aid, axes, model_label)

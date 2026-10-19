@@ -154,6 +154,55 @@ def schema_errors_detect(j: Any) -> list[str]:
     return errs
 
 
+def schema_errors_ioc_verify(j: Any) -> list[str]:
+    from src.cti.ioc_llm_verifier import IocVerifyOutput
+
+    errs = _model_errors(IocVerifyOutput, j)
+    if isinstance(j, dict):
+        errs += [f"extra_key:{k}" for k in j if k != "decisions"]
+        ids = [d.get("id") for d in j.get("decisions") or [] if isinstance(d, dict)]
+        if ids != list(range(len(ids))) or not ids:
+            errs.append("decision_ids_not_0..N-1")
+    return errs
+
+
+def schema_errors_dedup_judge(j: Any) -> list[str]:
+    from src.pipeline.dedup_judge import DuplicateVerdict
+
+    errs = _model_errors(DuplicateVerdict, j)
+    if isinstance(j, dict) and j.get("verdict") not in ("duplicate", "different", "unclear"):
+        errs.append(f"verdict_out_of_range:{j.get('verdict')}")
+    return errs
+
+
+def schema_errors_ach_aux(j: Any) -> list[str]:
+    """3 形のどれか: 採点 (evidence/hypotheses/…) / 反証 (reviews) / 書き直し (claim)。"""
+    if not isinstance(j, dict):
+        return ["not_object"]
+    if set(j) == {"claim"}:
+        return [] if isinstance(j["claim"], str) and j["claim"].strip() else ["empty_claim"]
+    if set(j) == {"reviews"}:
+        keys = {"judgment_id", "refutes_leading", "strongest_counter", "recommended_leading"}
+        return [
+            "review_keys"
+            for r in j["reviews"]
+            if not isinstance(r, dict)
+            or set(r) != keys
+            or not isinstance(r["refutes_leading"], bool)
+        ]
+    want = {
+        "evidence", "hypotheses", "leading_hypothesis", "confidence", "key_assumptions",
+        "missing_evidence", "indicators", "claim_type", "implication",
+    }  # fmt: skip
+    errs = [f"extra_key:{k}" for k in j if k not in want]
+    errs += [f"missing_key:{k}" for k in want if k not in j]
+    if j.get("claim_type") not in ACH_CLAIM_TYPES:
+        errs.append(f"claim_type_out_of_range:{j.get('claim_type')}")
+    if j.get("confidence") not in ACH_CONFIDENCE:
+        errs.append(f"confidence_out_of_range:{j.get('confidence')}")
+    return errs
+
+
 SCHEMA_CHECKS: dict[str, Callable[[Any], list[str]]] = {
     "summary": schema_errors_summary,
     "axes": schema_errors_axes,
@@ -163,4 +212,7 @@ SCHEMA_CHECKS: dict[str, Callable[[Any], list[str]]] = {
     "kind": schema_errors_kind,
     "ach": schema_errors_ach,
     "detect": schema_errors_detect,
+    "ioc_verify": schema_errors_ioc_verify,
+    "ach_aux": schema_errors_ach_aux,
+    "dedup_judge": schema_errors_dedup_judge,
 }

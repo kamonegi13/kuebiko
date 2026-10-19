@@ -548,6 +548,7 @@ const STEP_LABELS: Record<string, string> = {
   triage_geo_rescue: "重要度判定 — 地政学の救済",
   article_summary: "記事要約・翻訳",
   ioc_llm_verify: "IOC の LLM 検証",
+  judgment_classify: "統合判断分類器 (タイプ・動機・発生日・主題)",
   article_translate: "本文翻訳",
   dedup_cluster_judge: "重複排除の最終確認",
   pair_judge: "事象ペア同一性判定",

@@ -65,7 +65,7 @@ async def run_severity_axes_hourly() -> dict[str, Any]:
         _log.info("severity_axes_hourly_disabled")
         return {"skipped": "flag_off"}
     from src.config_loader import load_app_config
-    from src.cti.severity_axes import classify_axes, fetch_bodies
+    from src.cti.severity_axes import classify_axes, fetch_bodies, fetch_published
     from src.storage.run_history import RunHistoryRepository
     from src.synthesis.grounded.detect_ml import ensure_axes
     from src.tools.model_tiers import Step, build_llm_for
@@ -77,8 +77,10 @@ async def run_severity_axes_hourly() -> dict[str, Any]:
         return {"pending": 0, "saved": 0, "importance_v2": _record_v2(repo)}
     llm = build_llm_for(Step.SEVERITY_AXES, load_app_config())
 
-    async def _classify(title: str, summary: str, body: str = "") -> dict[str, str] | None:
-        axes = await classify_axes(llm, title, summary, body)
+    async def _classify(
+        title: str, summary: str, body: str = "", published: str | None = None
+    ) -> dict[str, str] | None:
+        axes = await classify_axes(llm, title, summary, body, published)
         return axes.model_dump() if axes is not None else None
 
     saved = await ensure_axes(
@@ -88,6 +90,7 @@ async def run_severity_axes_hourly() -> dict[str, Any]:
         model_label=str(getattr(llm, "model", "")),
         limit=cap,
         bodies=fetch_bodies(repo, [t[0] for t in todo]),
+        published=fetch_published(repo, [t[0] for t in todo]),
     )
     _log.info("severity_axes_hourly_done", pending=len(todo), saved=saved)
     return {"pending": len(todo), "saved": saved, "importance_v2": _record_v2(repo)}

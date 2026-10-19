@@ -163,3 +163,17 @@ class TestBinomialNoise:
 
         line = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("f ")][0]
         assert "ノイズ内" in line
+
+
+class TestPreferOriginalTitle:
+    def test_uses_original_title_when_present(self) -> None:
+        from eval_goldset import prefer_original_title
+
+        assert prefer_original_title("日本語の見出し", "English Title") == "English Title"
+
+    def test_falls_back_to_title_when_original_missing(self) -> None:
+        from eval_goldset import prefer_original_title
+
+        assert prefer_original_title("日本語の見出し", None) == "日本語の見出し"
+        assert prefer_original_title("日本語の見出し", "") == "日本語の見出し"
+        assert prefer_original_title(None, None) == ""

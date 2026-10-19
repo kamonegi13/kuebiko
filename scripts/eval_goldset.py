@@ -74,12 +74,17 @@ def _binomial_sd_pt(rate: float, n: int) -> float:
 # ---------------- build ----------------
 
 
+def prefer_original_title(title: object, original_title: object) -> str:
+    """本番の要約には元の見出しが渡る。保存があればそれ、無ければ title (従来どおり)。"""
+    return str(original_title or title or "")
+
+
 def _fetch_candidates(days: int, limit: int) -> list[GoldArticle]:
     from src.storage.run_history import RunHistoryRepository
 
     repo = RunHistoryRepository()
     sql = """
-        SELECT id, title, body, feed_title, published_at, category, importance
+        SELECT id, title, body, feed_title, published_at, category, importance, original_title
         FROM articles
         WHERE created_at > NOW() - INTERVAL '%s days'
           AND body IS NOT NULL AND body <> ''
@@ -95,11 +100,11 @@ def _fetch_candidates(days: int, limit: int) -> list[GoldArticle]:
     for r in rows:
         d = dict(r) if not isinstance(r, dict) else r
         vals = list(d.values()) if not isinstance(r, (list, tuple)) else list(r)
-        aid, title, body, feed, pub, cat, imp = vals[:7]
+        aid, title, body, feed, pub, cat, imp, original_title = vals[:8]
         out.append(
             GoldArticle(
                 article_id=str(aid),
-                title=str(title or ""),
+                title=prefer_original_title(title, original_title),
                 body=str(body or ""),
                 feed_title=str(feed or ""),
                 published=str(pub) if pub else None,

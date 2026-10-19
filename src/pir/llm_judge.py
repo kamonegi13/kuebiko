@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -62,6 +63,20 @@ class JudgeVerdict(BaseModel):
         return trim_reason_logged(v, owner="JudgeVerdict")
 
 
+#: 判定理由の字数の指示。s24b の教師は「40 字以内」で作った。既定は本番のまま 30 字
+#: (``PIR_JUDGE_REASON_V2=1`` で 40 字。s24b へ切り替えるときに compose / .env で立てる)
+_REASON_LIMIT_DEFAULT = 30
+_REASON_LIMIT_V2 = 40
+_REASON_V2_FLAG = "PIR_JUDGE_REASON_V2"
+
+
+def reason_char_limit() -> int:
+    """プロンプトに書く理由の字数 (旗が 1 のとき 40、既定 30)。"""
+    return (
+        _REASON_LIMIT_V2 if os.environ.get(_REASON_V2_FLAG, "0") == "1" else _REASON_LIMIT_DEFAULT
+    )
+
+
 def pir_judge_rev(pir: Pir) -> str:
     """判定基準の版ハッシュ。title / description / question のどれを編集しても変わる。"""
     basis = "\n".join([pir.title or "", pir.description or "", pir.llm_judge.question or ""])
@@ -94,7 +109,7 @@ def build_judge_prompt(pir: Pir, row: Any) -> str:  # noqa: ANN401 — row は R
         "- 記事の主題 (中心的に扱う事象) がこの PIR の関心事なら matched=true。\n"
         "- 過去事例としての例示・他事象との比較・背景説明としての言及だけなら matched=false "
         "(語が出てくることと主題であることは別)。\n"
-        "- reason: 30 字以内で判定理由。\n"
+        f"- reason: {reason_char_limit()} 字以内で判定理由。\n"
     )
 
 

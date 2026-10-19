@@ -116,6 +116,10 @@ class Step(StrEnum):
     # --- fast tier (収集系バッチ) ---
     ARTICLE_SUMMARY = "article_summary"  # per-article 要約・翻訳 (RSS/Grok)
     IOC_LLM_VERIFY = "ioc_llm_verify"  # IOC 候補の KEEP/DROP 検証 (旧 ARTICLE_SUMMARY 借用)
+    # 統合判断分類器 (stance/article_type/intent/event_date/i_infra/subject_actor、2026-10-18)。
+    # 以前は要約と同じ client を流用 (印も [task: summary])。専用 step に分けたが**挙動は不変**
+    # (STEP_INHERITS で ARTICLE_SUMMARY を継承)。s24b だけ印が [task: judgment] (task_prefix)。
+    JUDGMENT_CLASSIFY = "judgment_classify"
     # GROK_EXTRACT は撤去 (2026-09-04)。Grok は Phase 2.6a で LLM 抽出を廃し JSONL
     # パーサへ移行したため、この step を解決する呼出は 1 つも無かった。登録だけが残ると
     # 「ここを割り当てれば Grok の抽出モデルが変わる」という誤認を生む (config/agents.yaml
@@ -218,6 +222,7 @@ class StepSpec:
 STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ARTICLE_SUMMARY: StepSpec(Tier.FAST, 300.0),
     Step.IOC_LLM_VERIFY: StepSpec(Tier.FAST, 300.0),
+    Step.JUDGMENT_CLASSIFY: StepSpec(Tier.FAST, 300.0),  # 旧 ARTICLE_SUMMARY 借用と同じ
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE_GEO_RESCUE: StepSpec(Tier.FAST, 300.0),
     Step.DEDUP_CLUSTER_JUDGE: StepSpec(Tier.FAST, 300.0),  # 旧 TRIAGE 借用と同じ解決先・timeout
@@ -371,6 +376,7 @@ STEP_OVERRIDE_PREFIX = "step:"
 #: 不変条件 (tier / timeout が借り元と同じ) は tests/unit/test_borrowed_steps.py が固定する。
 STEP_INHERITS: dict[Step, Step] = {
     Step.IOC_LLM_VERIFY: Step.ARTICLE_SUMMARY,
+    Step.JUDGMENT_CLASSIFY: Step.ARTICLE_SUMMARY,
     Step.DETECT_CLAIM_WRITE: Step.SYNTHESIS_DETECT,
     Step.LEDGER_ACH_AUX: Step.SYNTHESIS_ANALYSIS,
 }

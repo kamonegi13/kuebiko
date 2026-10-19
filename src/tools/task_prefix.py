@@ -51,6 +51,11 @@ PREFIX_TRAINED_MODELS: frozenset[str] = frozenset(
     {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58", "kuebiko-sft:s23i"}
 )
 
+#: 名前の**前方一致**で接頭辞つきと見なすモデル系統。s24 (と s24b) とその補間の一時タグ
+#: (``kuebiko-sft:s24i25`` / ``kuebiko-sft:s24bi50`` 等、``import_interp_s24.sh`` が付ける名前)
+#: は、本番へ上げる補間の重みが決まる前でも印つきで学習した系統として扱う。s23i 以前は完全一致のまま。  # noqa: E501
+PREFIX_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24",)
+
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
 TASK_MARKERS: dict[Step, str] = {
@@ -68,6 +73,9 @@ TASK_MARKERS: dict[Step, str] = {
     # 学習した課題は summary / detect / ach の 3 つで、これらの呼び出しは未学習の別課題
     # (IOC 検証・claim の書き直し・開設の採点/反証/書き直し)。
     Step.IOC_LLM_VERIFY: "[task: summary]\n",
+    # 統合判断分類器 (2026-10-18)。**既定の印は借り元 (要約) と同じ** — s23i 以前は今まで通り。
+    # s24b 系だけ MODEL_STEP_MARKERS で [task: judgment] に差し替える
+    Step.JUDGMENT_CLASSIFY: "[task: summary]\n",
     Step.DETECT_CLAIM_WRITE: "[task: detect]\n",
     Step.LEDGER_ACH_AUX: "[task: ach]\n",
     Step.DIGEST_DEEP_DIVE_SELECT: "[task: deep_dive_select]\n",
@@ -77,10 +85,25 @@ TASK_MARKERS: dict[Step, str] = {
     Step.SEVERITY_AXES: "[task: axes]\n",
 }
 
+#: モデル名の接頭辞 → {step: 印}。**そのモデルだけ** TASK_MARKERS の既定と別の印を付ける。
+#: s24b は判断の分類器を専用の課題 ``judgment`` として学習する (それまでは要約の印を借りていた)。
+#: 前方一致なので s24b の一時タグ (``kuebiko-sft:s24b…``) にも効く。s23i 以前は既定のまま
+#: (印は ``[task: summary]`` で本番と不変)。
+MODEL_STEP_MARKERS: dict[str, dict[Step, str]] = {
+    "kuebiko-sft:s24b": {
+        Step.JUDGMENT_CLASSIFY: "[task: judgment]\n",
+        # 補助課題 3 本 (2026-10-18、W4): s24b だけ専用の印で学習する。s23i 以前・s24 は今のまま
+        Step.IOC_LLM_VERIFY: "[task: ioc_verify]\n",
+        Step.LEDGER_ACH_AUX: "[task: ach_aux]\n",
+        Step.DEDUP_CLUSTER_JUDGE: "[task: dedup_judge]\n",
+    },
+}
 
 #: 接頭辞つきで学習したモデルのうち、**その step は学習していない**もの。印を付けると、
 #: 学習していない step に見たことのない印が届く
 #: (n19 は深掘りの教師データが無いまま投入 — 2026-09-29)。
+_S24_FAMILY = "kuebiko-sft:s24"
+_S24B_FAMILY = "kuebiko-sft:s24b"
 UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
     "kuebiko-sft:n19": frozenset(
         {
@@ -91,7 +114,29 @@ UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
         }
     ),
     "kuebiko-sft:s21": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
+    # s24 系 (前方一致、``_S24_FAMILY``): 学習した課題は triage / summary / pir / kind / pair / ach /  # noqa: E501
+    # axes / pir_focus (s24b は judgment も)。下は**学習していない**のに印が付く step
+    # (detect 系・ach/summary の借用・narrative 系・深掘り)。深掘りは n20 の担当
+    _S24_FAMILY: frozenset(
+        {
+            Step.SYNTHESIS_DETECT,
+            Step.DETECT_CLAIM_WRITE,
+            Step.LEDGER_ACH_AUX,
+            Step.IOC_LLM_VERIFY,
+            Step.EVENT_NEWS,
+            Step.PIR_SPOTLIGHT,
+            Step.SYNTHESIS_NARRATIVE,
+            Step.DIGEST_DEEP_DIVE,
+            Step.DIGEST_DEEP_DIVE_SELECT,
+        }
+    ),
     "kuebiko-sft:s19": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
+}
+#: s24b 系は IOC 検証・ACH 補助・重複判定を学習する (専用の印)。s24 は未学習のまま
+UNTRAINED_STEPS[_S24B_FAMILY] = UNTRAINED_STEPS[_S24_FAMILY] - {
+    Step.LEDGER_ACH_AUX,
+    Step.IOC_LLM_VERIFY,
+    Step.DEDUP_CLUSTER_JUDGE,
 }
 
 
@@ -103,19 +148,40 @@ def task_prefix_enabled(model: str) -> bool:
     旧旗は読まない (一度も本番で立てていない)。
     """
     extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
-    return model.strip() in PREFIX_TRAINED_MODELS | extra
+    name = str(model.strip())
+    return name in PREFIX_TRAINED_MODELS | extra or name.startswith(PREFIX_TRAINED_FAMILIES)
 
 
-def prefix_for(step: Step) -> str:
-    """step の接頭辞 (学習していない step は空文字)。"""
+def untrained_steps_for(model: str) -> frozenset[Step]:
+    """このモデルで学習していない step (完全一致 → s24 系は前方一致)。"""
+    name = str(model.strip())
+    if name in UNTRAINED_STEPS:
+        return UNTRAINED_STEPS[name]
+    if name.startswith(_S24B_FAMILY):
+        return UNTRAINED_STEPS[_S24B_FAMILY]
+    if name.startswith(_S24_FAMILY):
+        return UNTRAINED_STEPS[_S24_FAMILY]
+    return frozenset()
+
+
+def prefix_for(step: Step, model: str | None = None) -> str:
+    """step の接頭辞 (学習していない step は空文字)。
+
+    ``model`` を渡すと ``MODEL_STEP_MARKERS`` の差し替えを反映する (省略時は既定の印)。
+    """
+    if model:
+        name = str(model.strip())
+        for model_prefix, markers in MODEL_STEP_MARKERS.items():
+            if name.startswith(model_prefix) and step in markers:
+                return markers[step]
     return TASK_MARKERS.get(step, "")
 
 
 def with_task_prefix(prompt: str, step: Step, model: str) -> str:
     """プロンプトの先頭へ課題の印を付ける (二重付与はしない)。"""
-    if not task_prefix_enabled(model) or step in UNTRAINED_STEPS.get(model.strip(), frozenset()):
+    if not task_prefix_enabled(model) or step in untrained_steps_for(model):
         return prompt
-    marker = prefix_for(step)
+    marker = prefix_for(step, model)
     if not marker or prompt.startswith(marker):
         return prompt
     return marker + prompt

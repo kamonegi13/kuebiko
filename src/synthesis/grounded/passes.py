@@ -7,6 +7,7 @@ generate_structured (pydantic 検証 + 修復) で頑健化し、未知値はコ
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -304,6 +305,28 @@ def _resolve_evidence_source(
     return _resolve_source_id(raw_id, known)
 
 
+#: 証拠の件数の上限 (確定の関門)。教師 (ground_incremental の vnext) は「判定に最も効く 6 件まで」
+#: と指示する。スキーマの maxItems は文法に入って出力が途中で閉じるため使わず、保存の前に
+#: 重要度順で切る。旗 ``ACH_EVIDENCE_CAP`` が 1 のときだけ (既定 0 = 切らない)
+EVIDENCE_CAP = 6
+_EVIDENCE_CAP_FLAG = "ACH_EVIDENCE_CAP"
+
+
+def cap_evidence_items(
+    items: Sequence[EvidenceItem], *, cap: int = EVIDENCE_CAP
+) -> tuple[EvidenceItem, ...]:
+    """判定に効く順 (支持・反証 > 中立、同順位は LLM の並び) で ``cap`` 件に切る。
+
+    ``ACH_EVIDENCE_CAP`` が 1 でなければ何もしない。切った件数はログに残す。
+    """
+    if os.environ.get(_EVIDENCE_CAP_FLAG, "0") != "1" or len(items) <= cap:
+        return tuple(items)
+    ranked = sorted(enumerate(items), key=lambda p: (p[1].polarity == "neutral", p[0]))
+    kept = tuple(item for _, item in ranked[:cap])
+    _log.info("grounded_evidence_capped", before=len(items), after=len(kept))
+    return kept
+
+
 def build_evidence_items(
     wire_evidence: Sequence[Any],
     *,
@@ -343,7 +366,7 @@ def build_evidence_items(
         _log.warning(
             "grounded_evidence_id_unresolved", context=log_context[:60], dropped=unresolved
         )
-    return tuple(items)
+    return cap_evidence_items(items)
 
 
 async def ground_and_score(

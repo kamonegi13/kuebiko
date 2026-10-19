@@ -403,3 +403,88 @@ class TestAxesFromBodyWiring:
                     (rid, body),
                 )
         assert sa.fetch_bodies(repo, ["x", "none"]) == {"x": "長い本文です"}
+
+
+class TestPromptV10:
+    """本文入力の prompt は教師 (axes_prompt_v10) と同一、公開日つき (s24 の切替用、既定 off)。"""
+
+    def test_matches_teacher_prompt_byte_for_byte(self) -> None:
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[2] / "data" / "mlx" / "axes_prompt_v10.py"
+        if not path.exists():
+            pytest.skip("data/mlx/axes_prompt_v10.py が無い")
+        spec = importlib.util.spec_from_file_location("axes_prompt_v10", path)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        assert sa.PROMPT_BODY == mod.PROMPT_BODY_V10
+        for pub in ("2026-10-01", None):
+            assert sa.build_body_prompt("見出し", "本文", pub) == mod.build_body_prompt_v10(
+                "見出し", "本文", pub
+            )
+
+    def test_published_is_in_the_prompt_and_defaults_to_unknown(self) -> None:
+        assert "公開日: 2026-10-01\n" in sa.build_body_prompt("t", "b", "2026-10-01")
+        assert "公開日: 不明\n" in sa.build_body_prompt("t", "b")
+
+    def test_classify_axes_passes_published_to_body_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AXES_FROM_BODY", "1")
+        seen: list[str] = []
+
+        class _LLM:
+            async def generate_structured(self, prompt: str, *_a: object, **_k: object) -> Any:
+                seen.append(prompt)
+                return sa.SeverityAxes.model_validate(_AXES)
+
+        asyncio.run(sa.classify_axes(_LLM(), "t", "s", "本文", "2026-10-02"))  # type: ignore[arg-type]
+        assert seen == [sa.build_body_prompt("t", "本文", "2026-10-02")]
+
+    def test_flag_off_summary_prompt_ignores_published(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("AXES_FROM_BODY", raising=False)
+        seen: list[str] = []
+
+        class _LLM:
+            async def generate_structured(self, prompt: str, *_a: object, **_k: object) -> Any:
+                seen.append(prompt)
+                return sa.SeverityAxes.model_validate(_AXES)
+
+        asyncio.run(sa.classify_axes(_LLM(), "t", "s", "本文", "2026-10-02"))  # type: ignore[arg-type]
+        assert seen == [sa.build_prompt("t", "s")]
+
+    def test_fetch_published_is_noop_when_flag_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AXES_FROM_BODY", raising=False)
+        assert sa.fetch_published(object(), ["a"]) == {}
+
+    def test_ensure_axes_passes_published_as_fourth_argument(self) -> None:
+        from src.synthesis.grounded.detect_ml import ensure_axes
+
+        seen: list[tuple[object, ...]] = []
+
+        async def classify(*args: object) -> dict[str, str] | None:
+            seen.append(args)
+            return dict(_AXES)
+
+        class _Repo:
+            def get_severity_axes(self, ids: list[str]) -> dict[str, object]:
+                return {}
+
+            def set_severity_axes(self, *_a: object) -> None:
+                return None
+
+        asyncio.run(
+            ensure_axes(
+                _Repo(),
+                [("a", "t", "s")],
+                classify,
+                model_label="m",
+                bodies={"a": "本文"},
+                published={"a": "2026-10-02"},
+            )
+        )
+        assert seen == [("t", "s", "本文", "2026-10-02")]

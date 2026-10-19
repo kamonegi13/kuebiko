@@ -204,21 +204,94 @@ BODY_MAX_CHARS = 12000
 #: 本文入力版の出力上限 (7 欄 → 12 欄で増える分、要約版 (400) より少し多く取る)
 _BODY_MAX_TOKENS = 550
 
-#: 本文入力版の prompt (``AXES_FROM_BODY=1``)。既存 7 欄の定義文は ``PROMPT`` と同一の文字列を
-#: 再利用する (DRY — 教師・既存の判定基準と文言をずらさない)
+#: 本文入力版の prompt (``AXES_FROM_BODY=1``、s24 から版 10)。教師 (``data/mlx/axes_prompt_v10.py``)
+#: と**完全に同じ文字列** — 定義文は欄ごとに『分からないとき』の値を持ち、入力に記事の公開日
+#: (``{published}``、無ければ「不明」) を含む。⚠ 旧版 (s23、``PROMPT`` の定義を再利用) とは別物で、
+#: v10 で学習していないモデルには使わない (既定 ``AXES_FROM_BODY=0`` では呼ばれない)。
 PROMPT_BODY = (
     "あなたは CTI アナリストです。次の記事が報じる事象について、下の 12 の欄を\n"
-    "**記事に書かれた事実だけから**選んでください。推測で埋めず、書かれていなければ unknown / "
-    "false /\n"
-    "not_applicable などを選ぶこと。重要かどうか・日本に関係するかは判断しない "
-    "(別の工程で扱う)。\n"
+    "**記事に書かれた事実だけから**選んでください。推測で埋めず、書かれていなければ各欄の『分からないとき』の値を\n"
+    "選ぶこと。重要かどうか・日本に関係するかは判断しない (別の工程で扱う)。\n"
     "\n"
     "# 記事\n"
     "見出し: {title}\n"
+    "公開日: {published}\n"
     "本文:\n"
     "{body}{cut}\n"
     "\n"
-    "# 欄\n" + PROMPT.split("# 欄\n", 1)[1] + EXTRA_FIELDS_PROMPT
+    "# 欄\n"
+    "1. scope (被害の広がり)\n"
+    "   - no_victim: 被害者がいない、または個別の被害組織・被害者の集団 (業界・国) が記事で特定されていない\n"  # noqa: E501
+    "     (脆弱性の公表・勧告・研究・政策・統計・攻撃手口や感染の統計の分析・過去の流出を素材にした研究など)\n"  # noqa: E501
+    "   - single_org: 単一の組織・個人\n"
+    "   - multi_org_or_provider: 複数の組織、または提供者 (SaaS・クラウド・ホスティング・委託先・共通基盤・\n"  # noqa: E501
+    "     広く使われるソフトウェア) を経由して他の組織へ及ぶ。\n"
+    "     ⚠ **被害者が提供者自身で、その利用者・顧客のアカウントやデータに影響が及ぶ場合もこれ**\n"
+    "     ⚠ **同じ攻撃・事案が複数の組織に及ぶときだけ**。互いに関係の示されない別々の\n"
+    "     単独事案を 1 本にまとめた記事は、最も重い 1 件で選ぶ (single_org)。摘発・起訴の\n"
+    "     記事で触れる過去の被害は数えない。提供者が侵害され顧客に通知したとあっても、記事で被害が確認できる\n"  # noqa: E501
+    "     組織が 1 つだけなら single_org\n"
+    "   - sector_wide: 特定の業界全体に及ぶ\n"
+    "   - national: 国家規模・多国に及ぶ (国の基幹サービス・多国にまたがる作戦)\n"
+    "   分からないとき: 被害組織が 1 つ書かれていれば single_org、書かれていなければ no_victim\n"
+    "2. impact (被害の性質、最も重いもの。軽い順: none < attempted < unauthorized_access < data_exposure < disruption < destructive)\n"  # noqa: E501
+    "   - none: 被害なし (被害の記述が無い公表・研究・分析も) / attempted: 攻撃の試行・未遂・撃退・フィッシングの送信\n"  # noqa: E501
+    "   - unauthorized_access: 不正アクセス・アカウント乗っ取り・改ざん (漏えいの記述なし)。脆弱性の悪用が観測され\n"  # noqa: E501
+    "     (認証回避・権限奪取・コード実行・WebShell の設置など)、被害組織が書かれていないものもこれ\n"  # noqa: E501
+    "   - data_exposure: 情報の漏えい・流出 (不正アクセスと漏えいの両方があればこちら)\n"
+    "   - disruption: 業務・サービスの停止 / destructive: ランサムウェアによる暗号化・データの破壊・物理的被害\n"  # noqa: E501
+    "   分からないとき: 実際の被害が書かれていなければ、攻撃の試行が書かれていれば attempted、それも無ければ none\n"  # noqa: E501
+    "3. confirmation (実害の確認)\n"
+    "   - confirmed: 被害者・当局・ベンダーが被害を確認、または独立した研究者が直接の証拠 (漏えいデータの検証・\n"  # noqa: E501
+    "     攻撃者の管理画面への到達・自社の観測データ) を持つ。被害者のいない脆弱性でも、当局 (KEV 掲載など)・\n"  # noqa: E501
+    "     ベンダー・研究者が悪用の観測を確認していれば confirmed\n"
+    "   - claimed_only: 攻撃者の主張のみ (暴露サイト・フォーラムの主張とその転載)\n"
+    "   - possible: 可能性がある・調査中。悪用が「報告されている」程度で確認する主体や証拠が書かれていないものも\n"  # noqa: E501
+    "   - no_impact_stated: 影響がない・被害は確認されていないと明記されている (脆弱性で「悪用は確認されていない」と\n"  # noqa: E501
+    "     書かれているものを含む)\n"
+    "   - not_applicable: 被害者がいない・被害にも悪用にも触れていない (公表・修正・研究・政策・論評など)\n"  # noqa: E501
+    "   分からないとき: 被害が示唆されるが確認が書かれていなければ possible、被害に触れなければ not_applicable\n"  # noqa: E501
+    "4. magnitude (影響を受けた件数・人数・アカウント数の桁。**複数の数字があれば最大のもの**\n"
+    "   (「最大」「可能性」の数も含む)。数えるのは、漏えい・露出・影響を受けた人・記録・アカウントの数。\n"  # noqa: E501
+    "   ダウンロード数・送金や送信の数・攻撃の試行の数・ファイル数・サービスの利用者数・攻撃者が主張する件数は数えない)\n"  # noqa: E501
+    "   分からないとき: unknown\n"
+    "5. exploitation (脆弱性の場合の悪用状況。脆弱性の話でなければ not_applicable)\n"
+    "   - disclosed_only: 公表・修正のみ (悪用への言及なしも) / poc: 実証コードの公開 / exploited_in_wild: 実際の悪用が観測\n"  # noqa: E501
+    "   分からないとき: 脆弱性の話なら disclosed_only\n"
+    "6. actor (行為者)\n"
+    "   - state: 国家・国家支援・APT と記事が国家との結び付きを書く勢力 (支援・指示の明示。金銭目的のみで国家との\n"  # noqa: E501
+    "     関連が書かれない集団は criminal)\n"
+    "   - criminal: 犯罪集団・ランサムウェア集団・営利目的で攻撃的手段を使う者 / hacktivist: ハクティビスト\n"  # noqa: E501
+    "   - insider_or_accident: 内部不正・人為的ミス・紛失・設定不備・AI エージェントなどの自律動作や暴走\n"  # noqa: E501
+    "   - unknown: 攻撃があるが行為者が不明 / not_applicable: 行為者がいない (脆弱性の公表・訴訟・制度・研究・\n"  # noqa: E501
+    "     所有関係の記事など攻撃を伴わないもの)\n"
+    "   分からないとき: 攻撃があれば unknown、攻撃が無ければ not_applicable\n"
+    "7. target (標的・被害者の種類。脆弱性の話なら影響を受ける製品の種類)\n"
+    "   **標的は侵害された組織・システムの運営者**。漏えいした情報の本人 (顧客・会員・利用者) は標的ではない。\n"  # noqa: E501
+    "   individuals は個人そのものを直接狙った攻撃 (詐欺・個人の端末へのマルウェアなど) のときだけ。\n"  # noqa: E501
+    "   - government: 政府機関・自治体・議会 / critical_infra: 電力・ガス・水道・通信・交通・医療機関と、\n"  # noqa: E501
+    "     金融では銀行・決済事業者・清算機関・証券取引所・中央銀行。暗号資産取引所・証券会社・医薬品や\n"  # noqa: E501
+    "     医療機器の卸売やメーカーは含めない (general_org)\n"
+    "   - defense: 軍・防衛関連 / ics_ot_product: 制御システム (ICS/OT) 製品の脆弱性\n"
+    "   - enterprise_product: 企業で広く使われる製品・サービスの脆弱性 (ネットワーク機器・サーバ製品・SaaS 等)\n"  # noqa: E501
+    "   - general_org: 上記以外の企業・団体 / individuals: 個人・消費者 / not_applicable: 標的がない\n"  # noqa: E501
+    "   分からないとき: 組織が書かれていれば general_org、組織も製品も無ければ not_applicable\n"
+    "8. recent_action (直近の行動。true/false)\n"
+    "   本文に書かれた行為 (攻撃・悪用・被害) の**発生日、または進行中であること**が、記事の公開日から 7 日以内か。\n"  # noqa: E501
+    "   記事の公開日と行為の発生日は別物で、公開日が新しくても行為が古い (過去の事案の分析・まとめ) なら false。\n"  # noqa: E501
+    "   発生日も進行中の記述も本文に無いときは false\n"
+    "9. victim_size (被害組織の規模)\n"
+    "   large: 大企業・大規模組織・中央省庁 / medium: 中堅の組織・地方自治体 / small: 小規模な組織・個人\n"  # noqa: E501
+    "   none: 被害組織がいない / unknown: 書かれていない\n"
+    "10. recoverability (回復の見込み、NCISS の考え方)\n"
+    "   regular: 通常の手順で回復 / extended: 長期間・外部の支援が要る / not_recoverable: 回復できない\n"  # noqa: E501
+    "   (漏えいしたデータの公開など) / not_applicable: 被害なし / unknown: 書かれていない\n"
+    "11. credential_compromise (管理者などの認証情報・鍵・トークンが盗まれたか。true/false。公開状態で露出して\n"  # noqa: E501
+    "   いるだけで盗まれたと書かれていなければ false)\n"
+    "12. distribution_compromise (配布経路の汚染。true/false)\n"
+    "   正規のソフトウェア・パッケージの公式な配布経路 (リリースの仕組み・更新サーバ・正規の\n"
+    "   パッケージの公開アカウント) から悪性の版が配られたことが本文で確認できるか。名前を似せた\n"
+    "   偽のパッケージ・攻撃者が自分で公開したパッケージは false\n"
 )
 
 _AXES_FROM_BODY_FLAG = "AXES_FROM_BODY"
@@ -256,19 +329,52 @@ def fetch_bodies(repo: Any, article_ids: Sequence[str]) -> dict[str, str]:
     return out
 
 
+def fetch_published(repo: Any, article_ids: Sequence[str]) -> dict[str, str]:
+    """記事 id → 公開日 (``YYYY-MM-DD``、articles.published_at)。本文入力の prompt 用。
+
+    ``AXES_FROM_BODY=1`` のときだけ読む (既定 0 では DB を読まない)。欠損・失敗は空
+    (= prompt では「不明」)。同一 id の複数行は最も新しい公開日を採る。
+    """
+    ids = [a for a in dict.fromkeys(article_ids) if a]
+    if not ids or not axes_from_body_enabled():
+        return {}
+    marks = ",".join("?" for _ in ids)
+    try:
+        with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の接続 seam 共有
+            rows = conn.execute(
+                f"SELECT article_id, published_at FROM articles WHERE article_id IN ({marks})",
+                ids,
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — 公開日が取れなくても軸の段は「不明」で続ける
+        _log.warning("severity_axes_fetch_published_failed", error=type(exc).__name__)
+        return {}
+    out: dict[str, str] = {}
+    for r in rows:
+        day = str(r["published_at"] or "")[:10]
+        key = str(r["article_id"])
+        if day and day > out.get(key, ""):
+            out[key] = day
+    return out
+
+
 def build_prompt(title: str, summary: str) -> str:
     return PROMPT.format(title=title, summary=(summary or "")[:_SUMMARY_MAX_CHARS])
 
 
-def build_body_prompt(title: str, body: str) -> str:
-    """本文入力版の prompt。本文は教師作成時と同じ上限で切る (``BODY_MAX_CHARS``)。"""
+def build_body_prompt(title: str, body: str, published: str | None = None) -> str:
+    """本文入力版の prompt。本文は教師作成時と同じ上限で切る (``BODY_MAX_CHARS``)。
+
+    ``published`` は ``YYYY-MM-DD`` (無ければ「不明」。教師の ``build_body_prompt_v10`` と同じ)。
+    """
     text = body or ""
     cut = "" if len(text) <= BODY_MAX_CHARS else "\n(本文はここで切れています)"
-    return PROMPT_BODY.format(title=title, body=text[:BODY_MAX_CHARS], cut=cut)
+    return PROMPT_BODY.format(
+        title=title, published=published or "不明", body=text[:BODY_MAX_CHARS], cut=cut
+    )
 
 
 async def classify_axes(
-    llm: LLMClient, title: str, summary: str, body: str = ""
+    llm: LLMClient, title: str, summary: str, body: str = "", published: str | None = None
 ) -> SeverityAxes | None:
     """記事 1 本の軸。失敗は None (呼び手を止めない。欠測は特徴量で全 0 になる)。
 
@@ -277,7 +383,7 @@ async def classify_axes(
     (``build_prompt`` と byte-identical — 今日の本番挙動を変えない)。
     """
     use_body = axes_from_body_enabled() and bool(body)
-    prompt = build_body_prompt(title, body) if use_body else build_prompt(title, summary)
+    prompt = build_body_prompt(title, body, published) if use_body else build_prompt(title, summary)
     max_tokens = _BODY_MAX_TOKENS if use_body else _MAX_TOKENS
     try:
         return await llm.generate_structured(

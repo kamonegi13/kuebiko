@@ -32,6 +32,7 @@ from src.tools.task_prefix import (
 
 PAIRS = [
     (Step.IOC_LLM_VERIFY, Step.ARTICLE_SUMMARY),
+    (Step.JUDGMENT_CLASSIFY, Step.ARTICLE_SUMMARY),
     (Step.DETECT_CLAIM_WRITE, Step.SYNTHESIS_DETECT),
     (Step.LEDGER_ACH_AUX, Step.SYNTHESIS_ANALYSIS),
 ]
@@ -81,7 +82,10 @@ def test_tier_timeout_and_marker_match_donor(new: Step, old: Step) -> None:
 def test_prefixed_prompt_identical_for_every_model(new: Step, old: Step, model: str) -> None:
     # UNTRAINED_STEPS の扱いも含め、どのモデルでも付く印 (または付かない結果) が同じ
     assert with_task_prefix("本文", new, model) == with_task_prefix("本文", old, model)
-    for untrained in UNTRAINED_STEPS.values():
+    # s24 系は借用を解消して未学習を明示する系統 (借り元は学習済みなので一致しない)
+    for name, untrained in UNTRAINED_STEPS.items():
+        if name.startswith("kuebiko-sft:s24"):
+            continue
         assert (new in untrained) == (old in untrained)
 
 

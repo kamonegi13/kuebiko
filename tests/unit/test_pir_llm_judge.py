@@ -99,6 +99,19 @@ def test_build_judge_prompt_contains_subject_rule_and_question() -> None:
     assert "i-Soon leak dossier" in prompt
 
 
+def test_reason_limit_is_30_by_default_and_40_with_flag(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    pir = _judge_pir(question="q")
+    row = {"title": "t", "summary": "s", "body": "b"}
+
+    monkeypatch.delenv("PIR_JUDGE_REASON_V2", raising=False)
+    assert "reason: 30 字以内で判定理由。\n" in build_judge_prompt(pir, row)
+
+    monkeypatch.setenv("PIR_JUDGE_REASON_V2", "1")
+    prompt = build_judge_prompt(pir, row)
+    assert "reason: 40 字以内で判定理由。\n" in prompt
+    assert "30 字以内" not in prompt
+
+
 # ---- verdict 永続化 (repo mixin) ----
 
 
