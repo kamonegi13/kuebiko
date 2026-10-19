@@ -166,6 +166,12 @@ services:
       # (Jev 型、別標本 p2b で 2 段の回収 12/27→19/27・誤発火 1/72 のまま)
       THIN_BODY_PROBE: ${THIN_BODY_PROBE:-1}
       PIR_FOCUS_FIDELITY_GATE: ${PIR_FOCUS_FIDELITY_GATE:-1}
+      # 台帳 claim の主語の関門 (2026-10-19 on): 問いの対象国に言及しない新 claim は採らず前回を保持。
+      # shadow=記録のみ / off=無効。常設の問いの改訂 76 件で発火 1 件 (1.3%)
+      LEDGER_CLAIM_SUBJECT_GATE: ${LEDGER_CLAIM_SUBJECT_GATE:-on}
+      # まとめ記事 (複数の独立した事案の束) は重要度の上限を medium にする (2026-10-19 title)。
+      # title=見出しの型で判定して適用 / shadow=ログのみ / off=無効
+      ROUNDUP_IMPORTANCE_CAP: ${ROUNDUP_IMPORTANCE_CAP:-title}
       # SIR 別の要点の文ごとの裏付け判定 (logprob、測定 131 文で裏付けなし検出 15/34・誤検出 2/97)
       PIR_FOCUS_CLAIM_GATE: ${PIR_FOCUS_CLAIM_GATE:-1}
       # 当局の摘発発表を alert から watch に下げる (語の条件のみ、正解 185 件で精度 10/11・回収 10/10)。
