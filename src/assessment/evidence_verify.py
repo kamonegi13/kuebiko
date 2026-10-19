@@ -68,3 +68,62 @@ def excerpt_is_supported(excerpt: str, *bodies: str) -> bool:
         fragments = [normalized]
 
     return any(all(f in hay for f in fragments) for hay in haystacks)
+
+
+#: 一致率の計算に使う抜粋 / 本文の文字数の上限 (正規化後。計算量を本文の長さに対し線形に抑える)
+MATCH_EXCERPT_CAP = 300
+MATCH_BODY_CAP = 100_000
+_NGRAM = 3
+#: 1 つの n-gram について数える本文内の出現位置の上限 (頻出語での膨張を防ぐ)
+_MAX_POSITIONS_PER_NGRAM = 20
+#: 「ほぼ一致」とみなす一致率と、同じ箇所とみなす斜めのずれの幅
+_NEAR_MATCH_RATIO = 0.9
+_SAME_SPOT_DIAGONAL_GAP = 8
+
+
+def _diagonal_votes(needle: str, hay: str) -> dict[int, int]:
+    """needle の n-gram が hay のどこに在るか数え、(本文位置 - 抜粋位置) ごとの票にする。"""
+    positions: dict[str, list[int]] = {}
+    for i in range(len(needle) - _NGRAM + 1):
+        positions.setdefault(needle[i : i + _NGRAM], [])
+    if not positions:
+        return {}
+    for p in range(len(hay) - _NGRAM + 1):
+        gram = hay[p : p + _NGRAM]
+        bucket = positions.get(gram)
+        if bucket is not None and len(bucket) < _MAX_POSITIONS_PER_NGRAM:
+            bucket.append(p)
+    votes: dict[int, int] = {}
+    for i in range(len(needle) - _NGRAM + 1):
+        for p in positions[needle[i : i + _NGRAM]]:
+            votes[p - i] = votes.get(p - i, 0) + 1
+    return votes
+
+
+def excerpt_match_stats(excerpt: str, *bodies: str) -> tuple[float, bool]:
+    """逐語の照合に落ちた抜粋の近さ: (最良一致率 0〜1, 9 割以上一致の箇所が 1 か所だけか)。
+
+    一致率 = 抜粋の連続した 3-gram のうち、同じ位置関係 (斜め) で本文に在る割合の最大値。
+    置換には強く、挿入・削除には弱い近似で、計算量は本文の長さに線形。
+    ``unique`` は 9 割以上一致する箇所が全本文を通して **ちょうど 1 か所** のとき True。
+    抜粋が短すぎる / 本文が空なら (0.0, False)。
+    """
+    needle = normalize_for_match(excerpt)[:MATCH_EXCERPT_CAP]
+    total = len(needle) - _NGRAM + 1
+    if total <= 0:
+        return 0.0, False
+    best = 0
+    near_spots = 0
+    for body in bodies:
+        hay = normalize_for_match(body)[:MATCH_BODY_CAP]
+        votes = _diagonal_votes(needle, hay)
+        if not votes:
+            continue
+        best = max(best, max(votes.values()))
+        near = sorted(d for d, v in votes.items() if v / total >= _NEAR_MATCH_RATIO)
+        prev: int | None = None
+        for d in near:
+            if prev is None or d - prev > _SAME_SPOT_DIAGONAL_GAP:
+                near_spots += 1
+            prev = d
+    return round(best / total, 4), near_spots == 1

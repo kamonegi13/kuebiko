@@ -19,7 +19,11 @@ from typing import Any
 
 import pytest
 
-from src.assessment.evidence_verify import excerpt_is_supported, normalize_for_match
+from src.assessment.evidence_verify import (
+    excerpt_is_supported,
+    excerpt_match_stats,
+    normalize_for_match,
+)
 from src.assessment.situation_store import SituationStore
 from src.storage.records import ArticleRecord, RunRecord
 
@@ -142,6 +146,39 @@ class TestWriteSeamGate:
         rows = self._rows(store)
         assert len(rows) == 1
         assert rows[0]["excerpt"] == ""
+
+    def test_rejected_excerpt_is_recorded_in_db(self, store: SituationStore) -> None:
+        # Arrange — 1 字だけ違う引用 (逐語でないので落ちる)
+        body = "Researchers reported that APT29 deployed a new loader against ministries."
+        self._seed_article(store, "a1", body)
+        excerpt = "Researchers reported that APT29 deployed a new loadar against ministries."
+
+        # Act
+        self._record(store, "a1", excerpt)
+
+        # Assert — 抜粋は空、落ちた抜粋と近さが記録される
+        row = self._rows(store)[0]
+        assert row["excerpt"] == ""
+        assert row["excerpt_rejected"] == excerpt[:300]
+        assert row["excerpt_best_match"] > 0.9
+        assert row["excerpt_match_unique"] == 1
+
+    def test_supported_excerpt_leaves_rejection_columns_null(self, store: SituationStore) -> None:
+        self._seed_article(store, "a1", "研究者は APT29 が新たなローダーを用いたと報告した。")
+        self._record(store, "a1", "APT29 が新たなローダーを用いた")
+        row = self._rows(store)[0]
+        assert row["excerpt_rejected"] is None
+        assert row["excerpt_best_match"] is None
+        assert row["excerpt_match_unique"] is None
+
+    def test_rejection_log_does_not_contain_excerpt(
+        self, store: SituationStore, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        self._seed_article(store, "a1", "Houthi forces announced a blockade near Saudi Arabia.")
+        marker = "フーシ派が全面海上封鎖を宣言し米の攻撃に連動"
+        self._record(store, "a1", marker)
+        captured = capsys.readouterr()
+        assert marker not in captured.out + captured.err
 
     def test_excerpt_kept_when_body_unavailable(self, store: SituationStore) -> None:
         """本文 purge 済み等で照合不能なら引用を保持する (検証不能 ≠ 反証)。"""
@@ -329,3 +366,37 @@ class TestSingleAssemblySeam:
             if "EvidenceItem(" in py.read_text(encoding="utf-8"):
                 offenders.append(py.name)
         assert offenders == [], f"証拠の組み立てが再び分岐している: {offenders}"
+
+
+class TestExcerptMatchStats:
+    """逐語に落ちた抜粋の近さ (DB に記録する診断値)。"""
+
+    BODY = "Researchers reported that APT29 deployed a new loader against ministries in June."
+
+    def test_near_verbatim_scores_high_and_unique(self) -> None:
+        ratio, unique = excerpt_match_stats(
+            "APT29 deployed a new loadar against ministries", self.BODY
+        )
+        assert ratio > 0.9
+        assert unique is True
+
+    def test_unrelated_scores_low(self) -> None:
+        ratio, unique = excerpt_match_stats(
+            "フーシ派が全面海上封鎖を宣言し米の攻撃に連動", self.BODY
+        )
+        assert ratio < 0.3
+        assert unique is False
+
+    def test_repeated_passage_is_not_unique(self) -> None:
+        body = self.BODY + " Unrelated filler text. " + self.BODY
+        _, unique = excerpt_match_stats("APT29 deployed a new loadar against ministries", body)
+        assert unique is False
+
+    def test_short_excerpt_or_empty_body_yields_zero(self) -> None:
+        assert excerpt_match_stats("ab", self.BODY) == (0.0, False)
+        assert excerpt_match_stats("APT29 deployed a new loader", "") == (0.0, False)
+
+    def test_long_body_is_bounded(self) -> None:
+        body = "x" * 500_000
+        ratio, _ = excerpt_match_stats("APT29 deployed a new loader", body)
+        assert ratio == 0.0

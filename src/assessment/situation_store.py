@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from src.assessment.evidence_verify import excerpt_is_supported
+from src.assessment.evidence_verify import excerpt_is_supported, excerpt_match_stats
 from src.assessment.situation_store_marks import NOT_WEAK as _NOT_WEAK
 from src.assessment.situation_store_marks import SituationMarksMixin
 from src.logging_config import get_logger
@@ -44,6 +44,8 @@ AssignedBy = Literal["seed", "anchor", "nation", "token", "llm", "standing", "st
 
 # anchors の肥大 (identity 汚染) を防ぐ上限。超過時は既存を優先し新規を捨てる。
 _MAX_ANCHORS = 24
+#: 逐語の照合に落ちた抜粋を DB に残す字数
+_REJECTED_EXCERPT_CHARS = 300
 _MAX_PIR_IDS = 8
 # add_revision の UNIQUE(situation_id, rev) 衝突 retry 上限 (並行採番の微小窓のみ想定)
 _ADD_REVISION_MAX_ATTEMPTS = 3
@@ -607,10 +609,18 @@ class SituationStore(SituationMarksMixin):
             )
             return False
         verified_excerpt = excerpt
+        rejected: str | None = None
+        best_match: float | None = None
+        match_unique: int | None = None
         if excerpt and bodies and not excerpt_is_supported(excerpt, *bodies):
             _log.info(
                 "evidence_excerpt_unsupported", situation=situation_id, article=article_id[:80]
             )
+            # 落ちた抜粋は DB にだけ残す (本文の写しを名乗る文字列なのでログには出さない)
+            ratio, unique = excerpt_match_stats(excerpt, *bodies)
+            rejected = excerpt[:_REJECTED_EXCERPT_CHARS]
+            best_match = ratio
+            match_unique = int(unique)
             verified_excerpt = ""
         with self._repo._connect() as conn:  # noqa: SLF001
             before = conn.execute(
@@ -620,15 +630,19 @@ class SituationStore(SituationMarksMixin):
             conn.execute(
                 "INSERT INTO situation_evidence "
                 "(situation_id, article_id, polarity, attribution_basis, excerpt,"
-                " source_tier, added_at, assigned_by, read_at, assessed_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " source_tier, added_at, assigned_by, read_at, assessed_at,"
+                " excerpt_rejected, excerpt_best_match, excerpt_match_unique)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT (situation_id, article_id) DO UPDATE SET"
                 " polarity=excluded.polarity,"
                 " attribution_basis=excluded.attribution_basis,"
                 " excerpt=excluded.excerpt,"
                 " source_tier=excluded.source_tier,"
                 " read_at=excluded.read_at,"
-                " assessed_at=excluded.assessed_at",
+                " assessed_at=excluded.assessed_at,"
+                " excerpt_rejected=excluded.excerpt_rejected,"
+                " excerpt_best_match=excluded.excerpt_best_match,"
+                " excerpt_match_unique=excluded.excerpt_match_unique",
                 (
                     situation_id,
                     article_id,
@@ -640,6 +654,9 @@ class SituationStore(SituationMarksMixin):
                     assigned_by,
                     assessed_at,
                     assessed_at,
+                    rejected,
+                    best_match,
+                    match_unique,
                 ),
             )
         return before is None
