@@ -15,7 +15,7 @@ export interface NewsFilters {
   jp: "" | "targeted_affected" | "mentioned";
   /** 期間 (時間)。"0" = 全期間。文字列で持つ (URL クエリとの往復がそのままできる)。 */
   since: string;
-  sort: "" | "level";
+  sort: "" | "level" | "occurred";
   category: string;
   feed: string;
   intent: string;

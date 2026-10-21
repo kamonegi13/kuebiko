@@ -31,6 +31,9 @@ export interface ArticleFeedItem {
   summary: string | null;
   published_at: string | null;
   created_at: string | null;
+  // 発生日 (粒度反映: "2026-10-19" / "2026-10" / "2026-10-19頃")。報道日の写しは null。
+  event_date_label?: string | null;
+  event_state?: "occurred" | "month_only" | "reported_only" | "unknown";
 }
 
 export interface ArticleFeedResponse {
@@ -66,7 +69,9 @@ export interface ArticleFeedParams {
   // 政策・地政学を含める (min_severity 指定時のみ意味を持つ)。
   include_strategic?: boolean;
   // 並び順。"level"=重要度 6 段階の高い順 (未記録は最後)。未指定=新しい順 (既定)。
-  sort?: "level";
+  sort?: "level" | "occurred";
+  /** 発生日の日次絞り込み (YYYY-MM-DD)。発生日の無い記事は含まれない。 */
+  event_on?: string;
   status?: string;
   since_hours?: number;
   since?: string; // W2: 「前回確認以降」カーソル (ISO 絶対時刻)。あれば since_hours より優先。
@@ -95,6 +100,7 @@ export const articlesApi = {
     if (params.relevant_only) q.set("relevant_only", "1");
     if (params.include_strategic) q.set("include_strategic", "1");
     if (params.sort) q.set("sort", params.sort);
+    if (params.event_on) q.set("event_on", params.event_on);
     if (params.status) q.set("status", params.status);
     if (params.since_hours) q.set("since_hours", String(params.since_hours));
     if (params.since) q.set("since", params.since);

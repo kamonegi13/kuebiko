@@ -19,6 +19,7 @@ from src.cti.diamond_model import SOCIO_POLITICAL_INTENTS
 from src.cti.importance_v2 import importance_level
 from src.logging_config import get_logger
 from src.search.models import SearchFacets
+from src.storage.event_time import classify_event_date, event_date_label
 from src.tools.embedding_client import EmbeddingClient
 
 _log = get_logger(__name__)
@@ -227,6 +228,7 @@ def list_articles_feed(  # noqa: PLR0913
     since_hours: int = Query(default=0, ge=0, le=24 * 90),
     since: str | None = Query(default=None),
     sort: str | None = Query(default=None),
+    event_on: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(default=20, ge=1, le=200),
     # 静的ミラーの書き出しが全件を辿るために要る (2026-08-29)。画面は使わないので
     # 既定 0 のまま挙動は変わらない。repo 側は元から offset を持っていた。
@@ -242,7 +244,10 @@ def list_articles_feed(  # noqa: PLR0913
     - ``since_hours`` > 0 で時間窓を限定 (0=全期間)。``since`` (ISO 絶対時刻) があれば優先し、
       「前回確認以降の新着」(W2) を created_at で絞り込む。
     - ``sort="level"`` で重要度 6 段階 (``src/cti/importance_v2.py``) の高い順 (1→6、
-      未記録は最後) に並べる。未指定・不正値は既定 (新しい順) のまま (2026-10-04)。
+      未記録は最後) に並べる。``sort="occurred"`` は発生日の新しい順 (発生日の無い記事は
+      報道時刻の日付で置き、落とさない。各記事の ``event_state`` で区別する、2026-10-20)。
+      ``event_on`` (YYYY-MM-DD) はその日に発生した記事だけ (発生日の無い記事は含めない)。
+      未指定・不正値は既定 (新しい順) のまま (2026-10-04)。
     - ``min_severity`` ("" / "S3" / "S2" / "S1") ・``relevant_only``・``include_strategic``
       は深刻さ・関連性・戦略上の重みの 3 独立 facet (2026-10-04)。「関連性ありの重大」
       のように旧 1 本化 ``level_filter`` では表せない組み合わせを選べる。``min_severity``:
@@ -255,7 +260,7 @@ def list_articles_feed(  # noqa: PLR0913
     - ``include_summary`` で LLM 要約も返す (重いので既定 off)。
     """
     repo = request.app.state.repo
-    sort_norm = sort if sort == "level" else None
+    sort_norm = sort if sort in ("level", "occurred") else None
 
     facets = _build_facets(
         importance=importance,
@@ -284,6 +289,7 @@ def list_articles_feed(  # noqa: PLR0913
         **facets.to_query_kwargs(),
         search=term,
         sort=sort_norm,
+        event_on=event_on,
         limit=limit,
         offset=offset,
     )
@@ -332,6 +338,13 @@ def list_articles_feed(  # noqa: PLR0913
                 "summary": (a.summary or "")[:_MAX_SUMMARY_CHARS] if include_summary else None,
                 "published_at": a.published_at.isoformat() if a.published_at else None,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
+                # 発生日 (粒度反映の表示 '2026-10' 等。報道日の写しは出さない) と状態
+                "event_date_label": event_date_label(
+                    a.event_date, a.event_date_basis, a.event_date_precision
+                ),
+                "event_state": classify_event_date(
+                    a.event_date, a.event_date_basis, a.event_date_precision
+                ),
             }
             for a in articles
         ],

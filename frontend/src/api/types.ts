@@ -74,6 +74,9 @@ export interface ActorArticle {
   socio_political_intent: string | null;
   intent_confidence?: string | null;
   technical_axis_summary: string | null;
+  // 発生日 (粒度反映: "2026-10-19" / "2026-10" / "2026-10-19頃")。報道日の写し・無しは null。
+  event_date_label?: string | null;
+  event_state?: "occurred" | "month_only" | "reported_only" | "unknown";
 }
 
 export interface ActorRelations {
@@ -93,6 +96,8 @@ export interface ActorDetail {
   // アクターの実際の活動年代 (作戦史) を dated subset で復元 (過去事象に偏る・1y+ で効く)。
   timeline_event?: [string, number][];
   timeline_coverage?: TimeCoverage;
+  // 発生日を日に置けない記事 (発生日なし・報道日のみ・月のみ) の日次系列 (報道時刻で配置)。
+  timeline_event_undated?: [string, number][];
   // 既知 TTP (Actor 辞書由来の knowledge、"T1566 Phishing" 形式)。
   // 観測 top_ttps との突き合わせ (既知外ハイライト) に使う
   known_ttps?: string[];

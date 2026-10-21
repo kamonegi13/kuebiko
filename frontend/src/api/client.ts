@@ -72,8 +72,12 @@ export const api = {
   threats(f: CommonFilters = {}) {
     return get<ThreatsResponse>(`${BASE}/threats${commonQs(f)}`);
   },
-  actorDetail(actorId: string, time: string | number = "30") {
-    return get<ActorDetail>(`${BASE}/threats/actor/${encodeURIComponent(actorId)}${qs({ time })}`);
+  /** day (YYYY-MM-DD) で最近の記事をその日に絞る。dayBasis: report=報道日 / event=発生日 /
+   *  undated=発生日を置けない記事の報道日。 */
+  actorDetail(actorId: string, time: string | number = "30", day = "", dayBasis = "") {
+    return get<ActorDetail>(
+      `${BASE}/threats/actor/${encodeURIComponent(actorId)}${qs({ time, day, day_basis: day ? dayBasis : "" })}`,
+    );
   },
   pmesii(time: string | number = "30", axis = "") {
     return get<PMESIIResponse>(`${BASE}/pmesii${qs({ time, axis })}`);

@@ -181,7 +181,7 @@ export function EventNewsPage() {
       severity: { minSeverity: next.minSeverity, relevantOnly: next.relevantOnly, includeStrategic: next.includeStrategic },
       jp: next.jp || undefined,
       since_hours: Number(next.since) || 0,
-      sort: next.sort || undefined,
+      sort: next.sort === "level" ? "level" : undefined,
       category: next.category || undefined,
       feed: next.feed || undefined,
       intent: next.intent || undefined,

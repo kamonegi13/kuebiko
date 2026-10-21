@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.cti.importance_v2 import legacy_level_filter_to_severity
-from src.storage.event_time import EVENT_TS_EXPR
+from src.storage.event_time import EVENT_TS_EXPR, occurred_date_clause, occurred_sort_key_sql
 from src.storage.importance_level_sql import (
     level_scalar_subquery,
     order_by_level_then_recency,
@@ -1135,6 +1135,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         relevant_only: bool = False,
         include_strategic: bool = False,
         sort: str | None = None,
+        event_on: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ArticleRecord]:
@@ -1213,6 +1214,11 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         if until is not None:
             clauses.append("created_at < ?")
             params.append(_to_iso(until))
+        # 発生日の日次絞り込み (2026-10-20): 発生日 (basis=reported 除く) がその日の記事だけ。
+        # 発生日の無い記事は「その日に起きた」と言えないので含めない (≠無し、画面で不明側に出る)。
+        if event_on:
+            clauses.append(f"{occurred_date_clause()} AND substr(event_date, 1, 10) = ?")
+            params.append(event_on[:10])
         # 日本との関係 (2026-10-04): article_importance_v2.jp による絞り込み。
         # "targeted_affected"=標的・被害のみ / "mentioned"=言及以上 (jp <> 'none')。
         if jp == "targeted_affected":
@@ -1256,11 +1262,15 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         # sort="level" (重要度順、2026-10-04): JOIN だと article_id/created_at が
         # article_importance_v2 と ambiguous になる (そちらにも同名列がある) ため、
         # JOIN せず相関サブクエリで引く。NULL (未記録・軸なし等) は最後に回す。
-        order_sql = (
-            order_by_level_then_recency(level_scalar_subquery("articles.article_id"), recency_desc)
-            if sort == "level"
-            else recency_desc
-        )
+        if sort == "level":
+            order_sql = order_by_level_then_recency(
+                level_scalar_subquery("articles.article_id"), recency_desc
+            )
+        elif sort == "occurred":
+            # 発生日の新しい順 (2026-10-20)。発生日の無い記事は報道時刻の日付で置く (落とさない)。
+            order_sql = f"{occurred_sort_key_sql('articles')} DESC, {recency_desc}"
+        else:
+            order_sql = recency_desc
         sql = (
             f"SELECT * FROM articles {where} "  # noqa: S608 (clauses are param placeholders)
             f"ORDER BY {order_sql} LIMIT ? OFFSET ?"

@@ -18,13 +18,14 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
+import { TIME_VOCAB } from "../utils/timeVocab";
 import { pageContainer } from "../components/Page";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { articlesApi } from "../api/articles";
 import { fetchSearch, type SearchFacets } from "../api/search";
 import { fetchPivot } from "../api/pivot";
 import {
-  EMPTY_SEVERITY_FACET, LevelBadge, readSeverityFacet, useFacetOptions,
+  ARTICLE_SORT_OPTS, EMPTY_SEVERITY_FACET, LevelBadge, readSeverityFacet, useFacetOptions,
   severityFacetQueryParams, writeSeverityFacet, type SearchMode, type SeverityFacetState,
 } from "../components/news/facets";
 import { applyRelation, FilterBar, relationFromState } from "../components/news/FilterBar";
@@ -106,7 +107,7 @@ function readState(): NewsState {
     vendor: p.get("affected_vendor") ?? "",
     body: p.get("body") ?? "",
     jp: p.get("jp") ?? "",
-    sort: p.get("sort") === "level" ? "level" : "",
+    sort: p.get("sort") === "level" || p.get("sort") === "occurred" ? (p.get("sort") as string) : "",
     mode: p.get("mode") === "summary" ? "summary" : "headline",
     precise: p.get("precise") === "1",
     searchMode,
@@ -170,6 +171,8 @@ export function NewsPage() {
   const [body, setBody] = useState(init.body);
   const [jp, setJp] = useState(init.jp);
   const [sort, setSort] = useState(init.sort);
+  // 発生日の日次絞り込み (発生日順のときだけ有効、URL には載せない)。
+  const [eventOn, setEventOn] = useState("");
   const [vendorRaw, setVendorRaw] = useState(init.vendor);
   const [vendor, setVendor] = useState(init.vendor);
   const [precise, setPrecise] = useState(init.precise);
@@ -233,7 +236,7 @@ export function NewsPage() {
   // sort は閲覧 (/api/v1/articles) のみ対応。検索 (/api/v1/search) は hybrid
   // retrieval + rerank の融合スコア順が前提のため、並び替えの対象にしない。
   const browseQ = useQuery({
-    queryKey: ["news-browse", facets, mode, sort, limit, newOnly, lastSeen, search, searchMode],
+    queryKey: ["news-browse", facets, mode, sort, eventOn, limit, newOnly, lastSeen, search, searchMode],
     queryFn: () => articlesApi.list({
       ...facets,
       // 「キーワード」モードの検索語はここに乗る (title/summary/body の文字列一致)。
@@ -242,7 +245,8 @@ export function NewsPage() {
       since_hours: browseSinceHours,
       since: browseSince,
       status: "posted",
-      sort: sort === "level" ? "level" : undefined,
+      sort: sort === "level" || sort === "occurred" ? sort : undefined,
+      event_on: sort === "occurred" && eventOn ? eventOn : undefined,
       include_summary: mode === "summary",
       limit,
     }),
@@ -357,6 +361,7 @@ export function NewsPage() {
         onSince={setSince}
         sort={view === "browse" ? sort : undefined}
         onSort={view === "browse" ? setSort : undefined}
+        sortOpts={ARTICLE_SORT_OPTS}
         category={category}
         onCategory={setCategory}
         feed={feed}
@@ -373,7 +378,17 @@ export function NewsPage() {
         body={{ value: body, onChange: setBody }}
         channel={MIRROR ? undefined : { value: channel, onChange: setChannel }}
         trailing={
-          view === "search" ? (
+          view === "browse" && sort === "occurred" ? (
+            <label className="inline-flex items-center gap-1 text-xs text-fg-muted"
+              title="その日に発生した記事だけに絞る (発生日の無い記事は含まれない)">
+              {TIME_VOCAB.occurred}
+              <input type="date" value={eventOn} onChange={(e) => setEventOn(e.target.value)}
+                className="h-8 px-1.5 rounded-md bg-surface-2 border border-border-subtle text-fg text-xs" />
+              {eventOn && (
+                <button onClick={() => setEventOn("")} className="px-1.5 text-fg-subtle hover:text-fg">解除</button>
+              )}
+            </label>
+          ) : view === "search" ? (
             <div className="inline-flex bg-surface-2 border border-border-subtle rounded-md p-0.5 h-8 items-center" title="精密 = LLM で関連度を並べ直す (~25-35s)">
               {([["quick", "クイック"], ["precise", "精密 (LLM)"]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setPrecise(k === "precise")}
@@ -546,6 +561,14 @@ export function NewsPage() {
                       {a.posted_channel && <span className="text-fg-subtle">{chMeta(a.posted_channel).label}</span>}
                       <a href={a.url} target="_blank" rel="noopener noreferrer"
                         className="text-fg-subtle hover:text-accent" title="元記事を開く">元記事 ↗</a>
+                      {sort === "occurred" && (
+                        <span className={a.event_date_label ? "text-fg-muted tnum" : "text-fg-subtle/70"}
+                          title={a.event_date_label ? "事象が起きた日 (粒度を反映)" : "発生日が分からない記事。報道時刻の日付で並べている"}>
+                          {a.event_date_label
+                            ? `${TIME_VOCAB.occurred} ${a.event_date_label}`
+                            : `${TIME_VOCAB.occurred}不明 (${TIME_VOCAB.reported}で配置)`}
+                        </span>
+                      )}
                       {(a.published_at ?? a.created_at) && (
                         <span className="ml-auto shrink-0 text-fg-subtle" title={a.published_at ? "公開時刻" : "取得時刻 (公開時刻不明)"}>
                           {formatJstCompact(a.published_at ?? a.created_at)}

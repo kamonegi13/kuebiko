@@ -92,6 +92,43 @@ def classify_event_date(event_date: object, basis: object = None, precision: obj
     return "occurred"
 
 
+def event_date_label(
+    event_date: object, basis: object = None, precision: object = None
+) -> str | None:
+    """発生日の表示文字列 (粒度を反映)。発生日として出せないものは None。
+
+    day/unknown → 'YYYY-MM-DD'、month → 'YYYY-MM'、year → 'YYYY'、relative → 'YYYY-MM-DD頃'。
+    basis=reported (報道日の写し) と日付なしは None (発生日として出さない)。
+    """
+    if not event_date or basis == REPORTED_BASIS:
+        return None
+    d = str(event_date)[:10]
+    if precision == "month":
+        return d[:7]
+    if precision == "year":
+        return d[:4]
+    if precision == "relative":
+        return f"{d}頃"
+    return d
+
+
+# 発生日で並べるときの日付キー (SQL)。発生日の無い記事 (報道日のみ・不明) は報道時刻の日付で
+# 代わりに置き、並べ替えで黙って落とさない。利用側は .format(a="<別名>.", anchor=<錨式>)。
+OCCURRED_SORT_KEY = (
+    "COALESCE(CASE WHEN {occurred} THEN substr({a}event_date, 1, 10) END,"
+    " substr(CAST({anchor} AS TEXT), 1, 10))"
+)
+
+
+def occurred_sort_key_sql(table: str) -> str:
+    """OCCURRED_SORT_KEY を table 別名 (末尾ドットなし) で組み立てる。"""
+    return OCCURRED_SORT_KEY.format(
+        occurred=occurred_date_clause(f"{table}."),
+        a=f"{table}.",
+        anchor=f"({EVENT_TS_EXPR.format(a=table)})",
+    )
+
+
 def row_value(row: object, key: str) -> object:
     """Row から列を取る。列が無い (まだ追加されていない) なら None。"""
     try:
@@ -134,6 +171,8 @@ __all__ = [
     "OCCURRED_DATE_CLAUSE",
     "TIME_VOCAB",
     "anchor_ts",
+    "event_date_label",
+    "occurred_sort_key_sql",
     "classify_event_date",
     "coverage_counts",
     "occurred_date_clause",

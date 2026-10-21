@@ -40,6 +40,7 @@ from src.storage.event_time import (
     anchor_ts,
     classify_event_date,
     coverage_counts,
+    event_date_label,
     row_value,
 )
 
@@ -139,6 +140,10 @@ class ActorArticleRef:
     # Phase Diamond-Axes: この incident の socio-political 軸 (intent) と technical 軸 narrative
     socio_political_intent: str | None = None
     technical_axis_summary: str | None = None
+    # 発生日 (粒度を反映した表示、'2026-10' 等。発生日として出せないものは None) と状態
+    # (occurred / month_only / reported_only / unknown = event_time.classify_event_date)。
+    event_date_label: str | None = None
+    event_state: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -156,6 +161,9 @@ class ActorDetail:
     # coverage は event_time.coverage_counts (発生日 N / 全 M・月のみ K・不明 U)。
     timeline_event: tuple[tuple[str, int], ...] = ()
     timeline_coverage: dict[str, int] = field(default_factory=lambda: coverage_counts([]))
+    # 発生日を日に置けない記事 (発生日なし・報道日のみ・月のみ) の日次 series (報道時刻で配置)。
+    # 発生時刻モードでも最近の記事を落とさず、別系列として「発生日不明」を出すため。
+    timeline_event_undated: tuple[tuple[str, int], ...] = ()
     # 既知 TTP (Actor 辞書の mitre_ttps、knowledge 側)。観測 top_ttps との
     # 突き合わせで「MITRE 既知外の観測 TTP」をハイライトするために返す
     known_ttps: tuple[str, ...] = ()
@@ -499,6 +507,50 @@ def _event_daily_series(
         in_window += c
         out.append((d, c))
     return tuple(out), coverage_counts(states, in_window)
+
+
+def _row_event_state(r: sqlite3.Row) -> str:
+    return classify_event_date(
+        row_value(r, "event_date"),
+        row_value(r, "event_date_basis"),
+        row_value(r, "event_date_precision"),
+    )
+
+
+def _undated_daily_series(
+    rows: list[sqlite3.Row],
+    *,
+    lookback_days: int,
+    now: datetime,
+) -> tuple[tuple[str, int], ...]:
+    """発生日を日に置けない行 (occurred 以外) の日次 series。報道時刻 (錨) の JST 日で置く。"""
+    undated = [r for r in rows if _row_event_state(r) != "occurred"]
+    return _daily_series(undated, lookback_days=lookback_days, now=now)
+
+
+def _row_report_day(r: sqlite3.Row) -> str | None:
+    """行の報道時刻 (錨) の JST 日付。解釈できなければ None。"""
+    from zoneinfo import ZoneInfo
+
+    raw = anchor_ts(row_value(r, "published_at"), row_value(r, "created_at"))
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d")
+
+
+def _row_matches_day(r: sqlite3.Row, day: str, day_basis: str) -> bool:
+    """日次絞り込み: event=発生日がその日 / undated=発生日を置けない行で報道日がその日 /
+    それ以外 (report)=報道日がその日。"""
+    state = _row_event_state(r)
+    if day_basis == "event":
+        return state == "occurred" and str(r["event_date"])[:10] == day
+    if day_basis == "undated" and state == "occurred":
+        return False
+    return _row_report_day(r) == day
 
 
 # ====================== Public API ======================
@@ -1018,8 +1070,14 @@ def fetch_actor_detail(
     lookback_days: int = 30,
     now: datetime | None = None,
     db_path: Path = DEFAULT_DB_PATH,
+    day: str | None = None,
+    day_basis: str = "report",
 ) -> ActorDetail | None:
-    """1 actor の詳細 view (timeline + 関連 + 記事 list)。"""
+    """1 actor の詳細 view (timeline + 関連 + 記事 list)。
+
+    day (YYYY-MM-DD) を渡すと最近の記事をその日に絞る (日次の絞り込み)。day_basis は
+    report (報道日) / event (発生日) / undated (発生日を置けない行の報道日)。
+    """
     base = now or datetime.now(UTC)
     earliest = base - timedelta(days=lookback_days)
 
@@ -1037,7 +1095,7 @@ def fetch_actor_detail(
                    posted_channel, created_at, discord_message_id, discord_channel_id,
                    victim_sector_canonical, victim_country_iso,
                    socio_political_intent, technical_axis_summary, event_date,
-                   event_date_basis, published_at,
+                   event_date_basis, event_date_precision, published_at,
                    subject_actor_ids, subject_actor_source
               FROM articles
              WHERE status='posted'
@@ -1130,7 +1188,10 @@ def fetch_actor_detail(
 
     # Recent articles (新しい順 上位 20)
     recent: list[ActorArticleRef] = []
-    for r in matched_rows[:20]:
+    recent_rows = (
+        [r for r in matched_rows if _row_matches_day(r, day, day_basis)] if day else matched_rows
+    )
+    for r in recent_rows[:20]:
         recent.append(
             ActorArticleRef(
                 article_id=str(r["article_id"]),
@@ -1152,6 +1213,10 @@ def fetch_actor_detail(
                 technical_axis_summary=(
                     str(r["technical_axis_summary"]) if r["technical_axis_summary"] else None
                 ),
+                event_date_label=event_date_label(
+                    r["event_date"], r["event_date_basis"], r["event_date_precision"]
+                ),
+                event_state=_row_event_state(r),
             ),
         )
 
@@ -1189,6 +1254,9 @@ def fetch_actor_detail(
         timeline_daily=_daily_series(matched_rows, lookback_days=lookback_days, now=base),
         timeline_event=timeline_event,
         timeline_coverage=timeline_coverage,
+        timeline_event_undated=_undated_daily_series(
+            matched_rows, lookback_days=lookback_days, now=base
+        ),
         known_ttps=meta.mitre_ttps,
         child_groups=child_groups,
     )

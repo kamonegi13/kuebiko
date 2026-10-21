@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
 import { pagesApi } from "../../api/pages";
 import { useFilters } from "../../state/filters";
@@ -122,10 +122,14 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
       .filter((s) => s.actors.length > 0);
   }, [railActors, isFlatRail]);
 
+  // 活動タイムラインの棒クリックで最近の記事をその日に絞る (アクター・期間が変われば解除)。
+  const [dayPick, setDayPick] = useState<DayPick | null>(null);
+  useEffect(() => { setDayPick(null); }, [f.actor, f.time]);
   const { data: detail } = useQuery({
-    queryKey: ["actorDetail", f.actor, f.time],
-    queryFn: () => api.actorDetail(f.actor, f.time),
+    queryKey: ["actorDetail", f.actor, f.time, dayPick?.day ?? "", dayPick?.basis ?? ""],
+    queryFn: () => api.actorDetail(f.actor, f.time, dayPick?.day ?? "", dayPick?.basis ?? ""),
     enabled: !!f.actor,
+    placeholderData: keepPreviousData,
   });
 
   // Mobile (< md): actor 未選択時は list 表示、選択時は detail に切替
@@ -251,10 +255,11 @@ export function ThreatsTab({ actorLookup }: { actorLookup: Record<string, string
               timeline_daily: detail.timeline_daily,
               timeline_event: detail.timeline_event,
               timeline_coverage: detail.timeline_coverage,
+              timeline_event_undated: detail.timeline_event_undated,
               relations: detail.relations,
               known_ttps: detail.known_ttps,
               child_groups: detail.child_groups,
-            }} />
+            }} dayPick={dayPick} onPickDay={setDayPick} />
             {/* < xl では右 rail が無いので relations を detail 末尾に折りたたみ表示 */}
             {detail.relations && (
               <details className="xl:hidden border-t border-border-subtle">
@@ -414,7 +419,10 @@ function MonthlyHistoryStrip({ actorId, onOpenDict }: { actorId: string; onOpenD
   );
 }
 
-function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../../api/types").ActorDetail["activity"]>; recent_articles?: import("../../api/types").ActorArticle[]; timeline_daily?: [string, number][]; timeline_event?: [string, number][]; timeline_coverage?: TimeCoverage; relations?: import("../../api/types").ActorRelations; known_ttps?: string[]; child_groups?: [string, string, number, string][] } }) {
+/** 活動タイムラインで選んだ日 (basis: report=報道日 / event=発生日 / undated=発生日不明の報道日)。 */
+interface DayPick { day: string; basis: "report" | "event" | "undated" }
+
+function ActorDetail({ detail, dayPick, onPickDay }: { dayPick: DayPick | null; onPickDay: (p: DayPick | null) => void; detail: { activity: NonNullable<import("../../api/types").ActorDetail["activity"]>; recent_articles?: import("../../api/types").ActorArticle[]; timeline_daily?: [string, number][]; timeline_event?: [string, number][]; timeline_coverage?: TimeCoverage; timeline_event_undated?: [string, number][]; relations?: import("../../api/types").ActorRelations; known_ttps?: string[]; child_groups?: [string, string, number, string][] } }) {
   const a = detail.activity;
   const chMeta = useChannelMeta();
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -558,10 +566,25 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
             </button>
           </div>
         </div>
-        <TimelineBars data={(tlIsEvent ? detail.timeline_event : detail.timeline_daily) || []} />
+        <TimelineBars
+          data={(tlIsEvent ? detail.timeline_event : detail.timeline_daily) || []}
+          undated={tlIsEvent ? detail.timeline_event_undated : undefined}
+          picked={dayPick}
+          basis={tlIsEvent ? "event" : "report"}
+          onPick={onPickDay}
+        />
+        {dayPick && (
+          <div className="mt-1 text-[12px] text-fg-muted flex items-center gap-2">
+            <span>
+              {dayPick.basis === "event" ? TIME_VOCAB.occurred : TIME_VOCAB.reported} {dayPick.day}
+              {dayPick.basis === "undated" ? `（${TIME_VOCAB.occurred}${TIME_VOCAB.unknown}）` : ""} の記事に絞り込み中
+            </span>
+            <button onClick={() => onPickDay(null)} className="text-accent hover:underline">解除</button>
+          </div>
+        )}
         {tlIsEvent && tlCov && (
           <div className="mt-1 text-[12px] leading-snug text-fg-subtle">
-            {formatTimeCoverage(tlCov)} 件（期間内 {tlCov.event_in_window}）。{TIME_VOCAB.unknown}には報道日のみ（{tlCov.reported_only ?? 0}）を含み、非表示＝<span className="text-warning">不明（≠無し）</span>。期間を長く（1年など）とるほど活動年代が出る。
+            {formatTimeCoverage(tlCov)} 件（期間内 {tlCov.event_in_window}）。{TIME_VOCAB.unknown}には報道日のみ（{tlCov.reported_only ?? 0}）を含み、<span className="text-warning">不明（≠無し）</span>。薄い棒は{TIME_VOCAB.occurred}{TIME_VOCAB.unknown}・月のみの記事を{TIME_VOCAB.reported}の日に置いたもの（棒をクリックでその日に絞り込み）。期間を長く（1年など）とるほど活動年代が出る。
           </div>
         )}
       </Section>
@@ -738,6 +761,11 @@ function ActorDetail({ detail }: { detail: { activity: NonNullable<import("../..
                   <span>{art.feed_title.slice(0, 20)}</span>
                   <span>·</span>
                   <span>{art.created_at}</span>
+                  {art.event_date_label ? (
+                    <span className="tnum text-fg-muted" title="事象が起きた日 (粒度を反映)">
+                      {TIME_VOCAB.occurred} {art.event_date_label}
+                    </span>
+                  ) : null}
                   {art.posted_channel && <span className="bg-surface-3 text-fg-muted px-1.5 rounded-sm text-[12px] font-mono">{chMeta(art.posted_channel).label}</span>}
                   {art.socio_political_intent && intentMeta(art.socio_political_intent) && (
                     <span className={`px-1.5 rounded-sm text-[12px] bg-surface-2 ${intentMeta(art.socio_political_intent)?.tone}`}
@@ -958,7 +986,15 @@ function Relations({ family, familyMembers, cooccurActors, actorLookup, onSelect
 }
 
 // SVG bar chart for actor activity timeline (Plotly 依存を排除、bundle 無影響)。
-function TimelineBars({ data }: { data: [string, number][] }) {
+// undated = 発生時刻モードで日に置けない記事 (報道時刻で配置した薄い棒を重ねる)。
+// 棒をクリックするとその日に絞り込む (picked と同じ日をもう一度押すと解除)。
+function TimelineBars({ data, undated, picked, basis, onPick }: {
+  data: [string, number][];
+  undated?: [string, number][];
+  picked: DayPick | null;
+  basis: "report" | "event";
+  onPick: (p: DayPick | null) => void;
+}) {
   if (data.length === 0) {
     return (
       <div className="h-32 bg-surface-2 rounded-md p-3 flex items-center justify-center text-fg-subtle text-xs">
@@ -966,30 +1002,42 @@ function TimelineBars({ data }: { data: [string, number][] }) {
       </div>
     );
   }
-  const max = Math.max(1, ...data.map((d) => d[1]));
+  const undatedMap = new Map(undated ?? []);
+  const max = Math.max(1, ...data.map(([d, c]) => c + (undatedMap.get(d) ?? 0)));
   const w = 100; // viewport %
   const barWidth = w / data.length;
   const gap = barWidth * 0.18;
   const innerWidth = barWidth - gap;
+  const toggle = (day: string, b: DayPick["basis"]) =>
+    onPick(picked && picked.day === day && picked.basis === b ? null : { day, basis: b });
   return (
     <div className="h-32 bg-surface-2 rounded-md p-2 flex flex-col">
       <svg viewBox={`0 0 ${w} 100`} preserveAspectRatio="none" className="flex-1 w-full">
         {data.map(([date, count], i) => {
           const h = (count / max) * 90; // top 10% は label 用 padding
+          const uc = undatedMap.get(date) ?? 0;
+          const uh = (uc / max) * 90;
           const x = i * barWidth + gap / 2;
-          const y = 100 - h;
+          const isPicked = picked?.day === date;
           return (
-            <rect
-              key={date}
-              x={x}
-              y={y}
-              width={innerWidth}
-              height={h}
-              fill="#6b88ff"
-              opacity={count === 0 ? 0.15 : 0.9}
-            >
-              <title>{date}: {count} 件</title>
-            </rect>
+            <g key={date}>
+              <rect
+                x={x} y={100 - h} width={innerWidth} height={h} fill="#6b88ff"
+                opacity={isPicked && picked?.basis === basis ? 1 : count === 0 ? 0.15 : 0.9}
+                className="cursor-pointer" onClick={() => toggle(date, basis)}
+              >
+                <title>{date}: {count} 件</title>
+              </rect>
+              {uc > 0 && (
+                <rect
+                  x={x} y={100 - h - uh} width={innerWidth} height={uh} fill="#6b88ff"
+                  opacity={isPicked && picked?.basis === "undated" ? 0.6 : 0.3}
+                  className="cursor-pointer" onClick={() => toggle(date, "undated")}
+                >
+                  <title>{date}: {TIME_VOCAB.occurred}{TIME_VOCAB.unknown} {uc} 件 ({TIME_VOCAB.reported}で配置)</title>
+                </rect>
+              )}
+            </g>
           );
         })}
       </svg>

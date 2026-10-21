@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -184,11 +184,18 @@ def get_threats(  # sync def = threadpool 実行 (同上)
 
 @api.get("/threats/actor/{actor_id}")
 def get_actor_detail(  # sync def = threadpool 実行 (同上)
-    actor_id: str, time: str = "30"
+    actor_id: str,
+    time: str = "30",
+    day: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    day_basis: Literal["report", "event", "undated"] = "report",
 ) -> dict[str, Any]:
-    """Actor 詳細 (stats + timeline + recent articles + relations)。"""
+    """Actor 詳細 (stats + timeline + recent articles + relations)。
+
+    ``day`` (YYYY-MM-DD) で最近の記事をその日に絞る。``day_basis`` は report=報道日 /
+    event=発生日 / undated=発生日を置けない記事の報道日。
+    """
     lookback = _parse_lookback(time)
-    detail = fetch_actor_detail(actor_id, lookback_days=lookback)
+    detail = fetch_actor_detail(actor_id, lookback_days=lookback, day=day, day_basis=day_basis)
     if detail is None:
         return {"actor_id": actor_id, "found": False}
     return {
@@ -228,6 +235,8 @@ def get_actor_detail(  # sync def = threadpool 実行 (同上)
                 # Phase Diamond-Axes: incident 単位の 2 軸
                 "socio_political_intent": r.socio_political_intent,
                 "technical_axis_summary": r.technical_axis_summary,
+                "event_date_label": r.event_date_label,
+                "event_state": r.event_state,
             }
             for r in detail.recent_articles
         ],
@@ -235,6 +244,8 @@ def get_actor_detail(  # sync def = threadpool 実行 (同上)
         # 時間軸トグル: 発生時刻系列 + カバレッジ (報道時刻 timeline_daily と切替え)。
         "timeline_event": [list(t) for t in detail.timeline_event],
         "timeline_coverage": dict(detail.timeline_coverage),
+        # 発生日を日に置けない記事 (報道時刻で配置)。発生時刻モードでも落とさず別系列で出す。
+        "timeline_event_undated": [list(t) for t in detail.timeline_event_undated],
         # 既知 TTP (Actor 辞書由来、knowledge)。観測 top_ttps との gap 表示用
         "known_ttps": list(detail.known_ttps),
         # 配下グループ rollup (organization のみ): [actor_id, canonical, count, sparkline]

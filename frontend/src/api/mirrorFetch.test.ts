@@ -153,6 +153,34 @@ describe("一覧の全件ファイル", () => {
       expect(body.count).toBe(1);
     });
 
+    test("sort=occurred は発生日の新しい順で、発生日の無い記事は報道時刻の日付で置く (落とさない)", async () => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 3, event_date_label: "2026-10-05", published_at: "2026-10-20T00:00:00+00:00" }),
+          fixtureArticle({ id: 2, event_date_label: null, published_at: "2026-10-10T00:00:00+00:00" }),
+          fixtureArticle({ id: 1, event_date_label: "2026-10", published_at: "2026-10-12T00:00:00+00:00" }),
+        ],
+        count: 3,
+      };
+      const r = await fetch("/api/v1/articles?status=posted&sort=occurred&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      // 月のみ (2026-10) は日に置けないので報道時刻 10-12 で並ぶ
+      expect(body.articles.map((a) => a.id)).toEqual([1, 2, 3]);
+    });
+
+    test("event_on はその日に発生した記事だけ (発生日の無い記事は含めない)", async () => {
+      served["/data/articles.json"] = {
+        articles: [
+          fixtureArticle({ id: 3, event_date_label: "2026-10-05" }),
+          fixtureArticle({ id: 2, event_date_label: null }),
+        ],
+        count: 2,
+      };
+      const r = await fetch("/api/v1/articles?status=posted&event_on=2026-10-05&limit=30");
+      const body = (await r.json()) as { articles: Array<{ id: number }> };
+      expect(body.articles.map((a) => a.id)).toEqual([3]);
+    });
+
     test("include_summary が無ければ summary を null にする (本物の API と同じ形)", async () => {
       const r = await fetch("/api/v1/articles?status=posted&limit=30");
       const body = (await r.json()) as { articles: Array<{ summary: unknown }> };

@@ -65,7 +65,7 @@ export function fromWireFilters(w: WireFilters): Partial<NewsFilters> {
   if (w.include_strategic) f.includeStrategic = true;
   if (w.jp) f.jp = w.jp;
   if (w.since) f.since = w.since;
-  if (w.sort === "level") f.sort = "level";
+  if (w.sort === "level" || w.sort === "occurred") f.sort = w.sort;
   if (w.category) f.category = w.category;
   if (w.feed) f.feed = w.feed;
   if (w.intent) f.intent = w.intent;

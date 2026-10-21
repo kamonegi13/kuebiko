@@ -76,6 +76,8 @@ export interface FilterBarProps {
 
   /** 並び順。省略時は並び替え無し (ニュース検索の検索ビューと同じ)。 */
   sort?: string;
+  /** 並びの選択肢 (既定 SORT_OPTS)。 */
+  sortOpts?: Opt[];
   onSort?: (v: string) => void;
 
   category: string;
@@ -158,7 +160,7 @@ export function FilterBar(props: FilterBarProps) {
         />
         <Sel value={props.since} onChange={props.onSince} opts={SINCE_OPTS} title="期間" />
         {props.sort !== undefined && props.onSort && (
-          <Sel value={props.sort} onChange={props.onSort} opts={SORT_OPTS} title="並び" />
+          <Sel value={props.sort} onChange={props.onSort} opts={props.sortOpts ?? SORT_OPTS} title="並び" />
         )}
         {props.trailing}
         <button

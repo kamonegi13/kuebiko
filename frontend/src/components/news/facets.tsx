@@ -199,6 +199,10 @@ export const SORT_OPTS: Opt[] = [
   { value: "level", label: "重要度順" },
 ];
 
+/** ニュース検索 (記事単位) の並び。事象ニュースは発生日順を持たないので SORT_OPTS のまま。
+ *  発生日順 = 発生日の新しい順。発生日の無い記事は報道時刻の日付で置く (落とさない)。 */
+export const ARTICLE_SORT_OPTS: Opt[] = [...SORT_OPTS, { value: "occurred", label: "発生日順" }];
+
 /** 検索モード。ニュース検索・事象ニュースが共有する (2026-10-04 検索 UX 統一)。
  *  "keyword" = 見出し・要約・本文の文字列一致 (embedding 不要、常に使える) /
  *  "semantic" = 言い換え・多言語も拾う意味検索を併用 (embedding が要る —

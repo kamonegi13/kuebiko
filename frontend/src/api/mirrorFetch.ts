@@ -48,7 +48,7 @@ const ARTICLES_CATEGORY_GROUPS: Record<string, string[]> = {
 const ARTICLES_FALLBACK_SUPPORTED = new Set([
   "status", "category", "channel", "importance", "feed", "jp", "level_filter",
   "min_severity", "relevant_only", "include_strategic", "sort", "search",
-  "since_hours", "since", "limit", "offset", "include_summary",
+  "since_hours", "since", "limit", "offset", "include_summary", "event_on",
 ]);
 
 /** 写しのキーワード検索。title/summary + malware_families (タグ) の部分一致。
@@ -126,6 +126,17 @@ function matchesSeverityFacet(
   return core;
 }
 
+/** 発生日 (日付部)。発生日として出せない記事 (報道日のみ・不明) は null。 */
+function occurredDay(a: ArticleFeedItem): string | null {
+  const label = a.event_date_label;
+  return label && /^\d{4}-\d{2}-\d{2}/.test(label) ? label.slice(0, 10) : null;
+}
+
+/** 発生日順のキー: 発生日、無ければ報道時刻の日付。 */
+function occurredSortKey(a: ArticleFeedItem): string {
+  return occurredDay(a) ?? (a.published_at ?? a.created_at ?? "").slice(0, 10);
+}
+
 function withinSinceHours(a: ArticleFeedItem, sinceHours: number): boolean {
   const at = a.published_at ?? a.created_at;
   if (!at) return false;
@@ -200,6 +211,13 @@ async function fallbackArticles(
   // sort=level (2026-10-04) は重要度 6 段階の高い順 (未記録は最後) に並べ直す。
   if (params.get("sort") === "level") {
     items = [...items].sort((a, b) => levelSortValue(a) - levelSortValue(b));
+  }
+  // sort=occurred / event_on (2026-10-20): 発生日の新しい順・日次絞り込み。サーバ側
+  // (articles_feed) と同じ規則: 発生日の無い記事は報道時刻の日付で置き、落とさない。
+  const eventOn = params.get("event_on");
+  if (eventOn) items = items.filter((a) => occurredDay(a) === eventOn);
+  if (params.get("sort") === "occurred") {
+    items = [...items].sort((a, b) => occurredSortKey(b).localeCompare(occurredSortKey(a)));
   }
   const offset = Number(params.get("offset") || "0");
   const limit = Number(params.get("limit") || "20");
