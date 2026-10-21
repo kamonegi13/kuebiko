@@ -117,8 +117,9 @@ def event_date_label(
 # 発生日で並べるときの日付キー (SQL)。発生日の無い記事 (報道日のみ・不明) は報道時刻の日付で
 # 代わりに置き、並べ替えで黙って落とさない。利用側は .format(a="<別名>.", anchor=<錨式>)。
 OCCURRED_SORT_KEY = (
-    "COALESCE(CASE WHEN {occurred} THEN substr({a}event_date, 1, 10) END,"
-    " substr(CAST({anchor} AS TEXT), 1, 10))"
+    # ⚠ event_date は正規化済みの 10 桁 TEXT。substr(col,1,10) は PG 翻訳が to_char(text) に
+    # 化けて落ちる (db_backend._SUBSTR_DATE_RE) ので列をそのまま使う。
+    "COALESCE(CASE WHEN {occurred} THEN {a}event_date END, substr(CAST({anchor} AS TEXT), 1, 10))"
 )
 
 

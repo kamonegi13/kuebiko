@@ -1218,7 +1218,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         # 発生日の無い記事は「その日に起きた」と言えないので含めない (≠無し、画面で不明側に出る)。
         if event_on:
             clauses.append(
-                f"{occurred_date_clause()} AND substr(event_date, 1, 10) = ?"
+                f"{occurred_date_clause()} AND event_date = ?"
                 " AND COALESCE(event_date_precision, '') NOT IN ('month', 'year', 'unknown')"
             )
             params.append(event_on[:10])

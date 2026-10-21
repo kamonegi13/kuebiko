@@ -175,3 +175,12 @@ class TestOccurredSortAndFilter:
             "d",
             "l",
         ]
+
+
+def test_occurred_sql_survives_pg_translation() -> None:
+    # substr(列,1,10) は PG 翻訳で to_char(text) になり本番だけ 500 になった (2026-10-21)
+    from src.storage.db_backend import translate_sql
+    from src.storage.event_time import occurred_sort_key_sql
+
+    sql = translate_sql(f"SELECT 1 FROM articles ORDER BY {occurred_sort_key_sql('articles')} DESC")
+    assert "to_char" not in sql
