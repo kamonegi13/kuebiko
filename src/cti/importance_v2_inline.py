@@ -180,6 +180,7 @@ def build_importance_v2_inline(
         text=full_text,
         stored_max_cvss=nvd_max_cvss(list(cves)),
         title=title,
+        summary=summary_text,
     )
     return derive(inputs)
 

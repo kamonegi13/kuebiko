@@ -529,6 +529,70 @@ class TestSubjectKev:
     def test_previous_year_cve_still_counts(self) -> None:
         assert subject_kev(["cve-2025-9999"], frozenset({"CVE-2025-9999"}), 2026)
 
+    def test_cve_in_title_counts(self) -> None:
+        kev = frozenset({"CVE-2026-1111"})
+
+        assert subject_kev(
+            ["CVE-2026-1111", "CVE-2026-2222"], kev, 2026, title="X の CVE-2026-1111 が悪用中"
+        )
+
+    def test_kev_announcement_with_many_cves_not_in_title_does_not_count(self) -> None:
+        # CISA が KEV に複数件追加した告知: 見出しに CVE が無く、要約が複数の CVE を列挙する
+        kev = frozenset({"CVE-2026-1111", "CVE-2026-2222"})
+
+        assert not subject_kev(
+            ["CVE-2026-1111", "CVE-2026-2222"],
+            kev,
+            2026,
+            title="CISA、悪用された脆弱性 2 件を KEV に追加",
+            summary="CVE-2026-1111 と CVE-2026-2222 を追加した。",
+        )
+
+    def test_kev_cve_only_in_passing_does_not_count(self) -> None:
+        # 主題は別の CVE (KEV 外) で、KEV 掲載の CVE は要約でも複数並ぶ中の 1 つにすぎない
+        kev = frozenset({"CVE-2026-1111"})
+
+        assert not subject_kev(
+            ["CVE-2026-1111", "CVE-2026-9999"],
+            kev,
+            2026,
+            title="Y の重大な脆弱性を修正",
+            summary="CVE-2026-9999 を修正。過去の CVE-2026-1111 にも言及。",
+        )
+
+    def test_single_cve_named_in_summary_counts_without_title_cve(self) -> None:
+        kev = frozenset({"CVE-2026-1111"})
+
+        assert subject_kev(
+            ["CVE-2026-1111"],
+            kev,
+            2026,
+            title="JVN: Z における OS コマンドインジェクション",
+            summary="CVE-2026-1111 が実環境で悪用されている。",
+        )
+
+    def test_empty_title_keeps_legacy_behavior(self) -> None:
+        assert subject_kev(["CVE-2026-1111", "CVE-2026-2222"], frozenset({"CVE-2026-1111"}), 2026)
+
+    def test_build_inputs_passes_summary_to_subject_kev(self) -> None:
+        inp = build_inputs(
+            category="vulnerability",
+            article_type="advisory",
+            axes={},
+            cves=["CVE-2026-1111", "CVE-2026-2222"],
+            kev=frozenset({"CVE-2026-1111", "CVE-2026-2222"}),
+            year=2026,
+            victim_country="",
+            involved_countries=[],
+            mentioned_countries=[],
+            sir_ids=[],
+            text="",
+            title="CISA、2 件を KEV に追加",
+            summary="CVE-2026-1111 と CVE-2026-2222",
+        )
+
+        assert not inp.on_kev
+
 
 class TestRelevance:
     @pytest.mark.parametrize(

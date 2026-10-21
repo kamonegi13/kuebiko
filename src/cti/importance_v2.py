@@ -43,7 +43,12 @@ from typing import Literal
 #: 派生にしない)。LLM の recap は単一事案の続報・侵害に多く付き (適合率 約 5 割)、侵害の記事が
 #: 派生で外れて深刻さを失っていた (正解集で 2 件、直近 30 日で recap 311 件中の約 57 件が該当、
 #: 2026-10-22)。見出しが空の入力は従来どおり派生 (後方互換)
-RULE_VERSION = "2026-10-22.10"
+#: / .11 ``kev`` 根拠を記事の主題の CVE に限る (``subject_kev``): KEV 掲載の CVE が見出しに
+#: 出ているか、要約が名指す CVE がその 1 つだけのときだけ。KEV の更新の告知 (複数追加) や、本文に
+#: KEV の CVE が出てくるだけの記事は S3 の根拠にしない (14 日の本番で S3 から外れるのは約 16 件、
+#: 正解集の S3 の取りこぼし 0、2026-10-22)。``confirmed_wide_harm`` は正解集で S3 を取りこぼす
+#: ため直していない
+RULE_VERSION = "2026-10-22.11"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -190,6 +195,7 @@ def build_inputs(
     stored_max_cvss: float = 0.0,
     title: str = "",
     event_kind: str = "",
+    summary: str = "",
 ) -> ImportanceInputs:
     """``ImportanceInputs`` の共通組み立て (M3b 段1、2026-10-10)。
 
@@ -208,7 +214,7 @@ def build_inputs(
         category=category,
         article_type=article_type,
         axes=corrected,
-        on_kev=subject_kev(cves_list, kev, year),
+        on_kev=subject_kev(cves_list, kev, year, title=title, summary=summary),
         max_cvss=max(stored_max_cvss, stated_cvss(text)),
         victim_country=victim_country.upper(),
         involved_countries=frozenset(c.upper() for c in involved_countries if c),
@@ -668,15 +674,33 @@ SUBJECT_CVE_YEARS = 2
 _CVE_YEAR = re.compile(r"^CVE-(\d{4})-", re.IGNORECASE)
 
 
-def subject_kev(cves: Iterable[str], kev: frozenset[str], year: int) -> bool:
+def subject_kev(
+    cves: Iterable[str],
+    kev: frozenset[str],
+    year: int,
+    *,
+    title: str = "",
+    summary: str = "",
+) -> bool:
     """記事の主題とみなせる新しい CVE が KEV に載っているか。
 
     正解集 (版 .6) の定め: 記事が触れるだけの古い CVE (既に修正済み) が KEV に載っていても
-    S3 にしない。
-    記事の主題の CVE を決定論では特定できないので、今年と前年の CVE に限ることで近似する。
+    S3 にしない。今年と前年の CVE に限ることで近似する。
+
+    ``title`` を渡すと (版 .11) さらに主題に絞る: KEV 掲載の CVE が見出しに出ているか、要約が名指す
+    CVE がその 1 つだけのとき。KEV の更新の告知 (複数追加) や、本文に KEV の CVE が出てくるだけの
+    記事を外す。``title`` が空なら従来どおり (材料が無い呼び出しの後方互換)。
     """
-    for c in cves:
-        m = _CVE_YEAR.match(c)
-        if m and int(m.group(1)) > year - SUBJECT_CVE_YEARS and c.upper() in kev:
-            return True
-    return False
+    recent = [
+        c.upper()
+        for c in cves
+        if (m := _CVE_YEAR.match(c)) and int(m.group(1)) > year - SUBJECT_CVE_YEARS
+    ]
+    on_kev = [c for c in recent if c in kev]
+    if not on_kev or not title:
+        return bool(on_kev)
+    title_upper = title.upper()
+    if any(c in title_upper for c in on_kev):
+        return True
+    named = set(_CVE_ID.findall(summary.upper()))
+    return len(named) == 1 and named <= set(on_kev)

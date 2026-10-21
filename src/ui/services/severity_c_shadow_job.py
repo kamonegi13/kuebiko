@@ -114,6 +114,7 @@ def _materials(repo: Any, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any
             stored_max_cvss=max_cvss(cves),
             title=str(r["title"] or ""),
             event_kind=kind,
+            summary=str(r["summary"] or ""),
         )
         sev, basis = derive_severity(inp)
         meta = ArticleMeta(

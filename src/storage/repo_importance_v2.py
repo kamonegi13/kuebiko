@@ -80,6 +80,7 @@ class ImportanceV2Mixin:
                 stored_max_cvss=max_cvss(cves),
                 title=str(r["title"] or ""),
                 event_kind=str(r["event_kind"] or ""),
+                summary=str(r["summary"] or ""),
             )
         return out
 
