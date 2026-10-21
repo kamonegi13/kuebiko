@@ -992,6 +992,7 @@ def _build_briefing(
             category=summary.category,
             feed_title=article.feed_title,
             feed_url=article.feed_url,
+            account_class=article.account_class or None,
         )
         if _basis:
             metadata["event_date_basis"] = _basis
