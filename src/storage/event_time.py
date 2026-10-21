@@ -49,7 +49,8 @@ TIME_VOCAB: dict[str, str] = {
 
 REPORTED_BASIS = "reported"
 # 発生日の精度の列 (T0 が追加予定)。列が無い間は Python 側の判定で None 扱い。
-MONTH_ONLY_PRECISIONS = frozenset({"month", "year"})
+# unknown = 日が 01 で、本当の 1 日か月だけを 1 日に寄せた値か区別できない行 → 日には置かない。
+MONTH_ONLY_PRECISIONS = frozenset({"month", "year", "unknown"})
 
 # SQL: 発生日として使える行 (basis=reported を外す)。利用側は .format(a="<別名>.")。
 OCCURRED_DATE_CLAUSE = (
@@ -97,13 +98,13 @@ def event_date_label(
 ) -> str | None:
     """発生日の表示文字列 (粒度を反映)。発生日として出せないものは None。
 
-    day/unknown → 'YYYY-MM-DD'、month → 'YYYY-MM'、year → 'YYYY'、relative → 'YYYY-MM-DD頃'。
+    day → 'YYYY-MM-DD'、month/unknown (日を区別できない) → 'YYYY-MM'、year → 'YYYY'、relative → 'YYYY-MM-DD頃'。
     basis=reported (報道日の写し) と日付なしは None (発生日として出さない)。
     """
     if not event_date or basis == REPORTED_BASIS:
         return None
     d = str(event_date)[:10]
-    if precision == "month":
+    if precision in ("month", "unknown"):
         return d[:7]
     if precision == "year":
         return d[:4]

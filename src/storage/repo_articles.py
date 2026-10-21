@@ -1217,7 +1217,10 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         # 発生日の日次絞り込み (2026-10-20): 発生日 (basis=reported 除く) がその日の記事だけ。
         # 発生日の無い記事は「その日に起きた」と言えないので含めない (≠無し、画面で不明側に出る)。
         if event_on:
-            clauses.append(f"{occurred_date_clause()} AND substr(event_date, 1, 10) = ?")
+            clauses.append(
+                f"{occurred_date_clause()} AND substr(event_date, 1, 10) = ?"
+                " AND COALESCE(event_date_precision, '') NOT IN ('month', 'year', 'unknown')"
+            )
             params.append(event_on[:10])
         # 日本との関係 (2026-10-04): article_importance_v2.jp による絞り込み。
         # "targeted_affected"=標的・被害のみ / "mentioned"=言及以上 (jp <> 'none')。

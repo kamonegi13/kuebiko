@@ -24,8 +24,14 @@ class TestEventDateLabel:
     def test_relative_precision_marks_approximation(self) -> None:
         assert event_date_label("2026-10-19", "relative", "relative") == "2026-10-19頃"
 
-    def test_unknown_precision_shows_date_as_is(self) -> None:
-        assert event_date_label("2026-10-01", "occurred", "unknown") == "2026-10-01"
+    def test_unknown_precision_shows_month_only(self) -> None:
+        # 日が 01 の行は本当の 1 日か月だけを寄せた値か区別できない → 日まで出さない
+        assert event_date_label("2026-10-01", "occurred", "unknown") == "2026-10"
+
+    def test_unknown_precision_is_month_only_state(self) -> None:
+        from src.storage.event_time import classify_event_date
+
+        assert classify_event_date("2026-10-01", "occurred", "unknown") == "month_only"
 
     def test_reported_basis_has_no_label(self) -> None:
         assert event_date_label("2026-10-19", "reported", "day") is None
@@ -137,3 +143,35 @@ class TestOccurredSortAndFilter:
             precision="day",
         )
         assert _ids(repo.list_articles(status="posted", event_on="2026-10-18")) == ["a"]
+
+    def test_event_on_excludes_day_ambiguous_precisions(self, repo: RunHistoryRepository) -> None:
+        # 月のみ・日が区別できない (unknown) は 1 日に寄せた値なので「その日に起きた」と見せない
+        _add(
+            repo,
+            "m",
+            created="2026-10-20T00:00:00",
+            event_date="2026-10-01",
+            basis="occurred",
+            precision="month",
+        )
+        _add(
+            repo,
+            "u",
+            created="2026-10-20T00:00:00",
+            event_date="2026-10-01",
+            basis="occurred",
+            precision="unknown",
+        )
+        _add(
+            repo,
+            "d",
+            created="2026-10-20T00:00:00",
+            event_date="2026-10-01",
+            basis="occurred",
+            precision="day",
+        )
+        _add(repo, "l", created="2026-10-20T00:00:00", event_date="2026-10-01", basis="occurred")
+        assert sorted(_ids(repo.list_articles(status="posted", event_on="2026-10-01"))) == [
+            "d",
+            "l",
+        ]
