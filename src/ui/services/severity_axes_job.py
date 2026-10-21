@@ -7,6 +7,7 @@ detect 側にも穴埋め (上限 40) はあるが、朝夕の run でまとめ�
 停止: ``SEVERITY_AXES_HOURLY=0``。軸の後に重要度の再設計の記録も付ける
 (``importance_v2_job``、停止は ``IMPORTANCE_V2_RECORD=0``)。
 上限: ``SEVERITY_AXES_HOURLY_CAP`` (既定 40)。
+同じ段の続きで深刻さ C の影の記録 (``severity_c_shadow_job``、予算 150 秒) を付ける。
 """
 
 from __future__ import annotations
@@ -60,7 +61,19 @@ def pending_articles(
 
 
 async def run_severity_axes_hourly() -> dict[str, Any]:
-    """毎時ジョブの入口。戻り値は run_history に載せる要約。"""
+    """毎時ジョブの入口。戻り値は run_history に載せる要約。
+
+    軸の後に深刻さ C の影の記録も付ける (``severity_c_shadow_job``、停止 ``SEVERITY_C_SHADOW=0``)。
+    """
+    from src.storage.run_history import RunHistoryRepository
+    from src.ui.services.severity_c_shadow_job import run_severity_c_shadow
+
+    summary = await _run_axes_stage()
+    summary["severity_c"] = await run_severity_c_shadow(RunHistoryRepository())
+    return summary
+
+
+async def _run_axes_stage() -> dict[str, Any]:
     if not hourly_axes_enabled():
         _log.info("severity_axes_hourly_disabled")
         return {"skipped": "flag_off"}

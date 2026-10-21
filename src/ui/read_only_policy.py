@@ -74,6 +74,9 @@ PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
 #
 # GET /api/v1/alert-dedup-shadow/summary (2026-10-11、R1h) も同様に追加しない。
 # 記事 id と先行 alert の対・特徴量を含む運用系の観察データのため (default-deny)。
+#
+# GET /api/v1/severity-c-shadow/summary (2026-10-22) も同様に追加しない。
+# 記事 id と深刻さの判定の食い違いを含む運用系の観察データのため (default-deny)。
 
 # Tier1 の唯一の write: ジョブ即時実行。job_id の文字種を絞り、proxy 先で別 endpoint に
 # 化けないよう完全一致で判定する (path traversal / endpoint すり替えの排除)。

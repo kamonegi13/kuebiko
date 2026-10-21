@@ -42,6 +42,7 @@ _TRIAGE_SHADOW_RETENTION_DAYS = 60
 # 短命な観察データなので同水準の 60 日。
 _ROUTING_V2_SHADOW_RETENTION_DAYS = 60
 _ALERT_DEDUP_SHADOW_RETENTION_DAYS = 60
+_SEVERITY_C_SHADOW_RETENTION_DAYS = 60
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -72,6 +73,9 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_alert_dedup_shadow = repo.purge_alert_dedup_shadow(
             days=_ALERT_DEDUP_SHADOW_RETENTION_DAYS
         )
+        purged_severity_c_shadow = repo.purge_severity_c_shadow(
+            days=_SEVERITY_C_SHADOW_RETENTION_DAYS
+        )
         # 評価資産 (ラベル/評価記録/goldset) を日次で data/backups へ退避。
         # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
         from src.storage.asset_export import export_eval_assets
@@ -93,6 +97,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_triage_shadow=purged_triage_shadow,
             purged_routing_v2_shadow=purged_routing_v2_shadow,
             purged_alert_dedup_shadow=purged_alert_dedup_shadow,
+            purged_severity_c_shadow=purged_severity_c_shadow,
             subject_backfilled=backfill,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない

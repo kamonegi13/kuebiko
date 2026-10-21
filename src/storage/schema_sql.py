@@ -717,6 +717,25 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
+-- 深刻さ C (Jev 型の問い + ML) の影の記録 (2026-10-22)。配信・重要度は変えない (記録のみ)。
+-- 1 記事 1 行 (article_id UNIQUE)。skip_reason あり = A の決まりごとが外した記事 (問いは当てていない)。
+CREATE TABLE IF NOT EXISTS severity_c_shadow (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id     TEXT    NOT NULL UNIQUE,
+    created_at     TEXT    NOT NULL,       -- ISO8601 UTC
+    skip_reason    TEXT,                   -- non_cyber / derivative / roundup / NULL (問いを当てた)
+    p_s3           REAL,                   -- RF の P(S3)。skip 時は NULL
+    would_s3       INTEGER,                -- 0/1 (p_s3 >= threshold)。skip 時は NULL
+    threshold      REAL,
+    probe_model    TEXT,                   -- 問いを当てたモデル (その時の fast ティアの割当)
+    trained_model  TEXT,                   -- RF を学習したときのモデル
+    model_match    INTEGER,                -- 0/1 (probe_model == trained_model)
+    probs_json     TEXT,                   -- {問い id: P(はい)} (欠測は null)
+    a_severity     TEXT,                   -- そのときの A (決まりごと) の S1〜S3 / NULL
+    a_basis        TEXT                    -- A の根拠名 (SEVERITY_BASES)
+);
+CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

@@ -75,6 +75,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "src/cti/alert_dedup_features.py",
         "src/cti/alert_dedup_model.py",
         "src/cti/alert_dedup_shadow.py",
+        # 2026-10-22: 深刻さ C の shadow。まとめ記事 (分類 roundup) に問いを当てないために
+        # ROUNDUP_KIND の値だけを参照する。事象の生成物は読まない
+        "src/cti/severity_c.py",
     }
 )
 

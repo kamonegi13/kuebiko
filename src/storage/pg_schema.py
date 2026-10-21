@@ -861,6 +861,24 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
+-- 深刻さ C の影の記録 (2026-10-22、SQLite _SCHEMA と対)。詳細は schema_sql.py。
+CREATE TABLE IF NOT EXISTS severity_c_shadow (
+    id             BIGSERIAL        PRIMARY KEY,
+    article_id     TEXT             NOT NULL UNIQUE,
+    created_at     TEXT             NOT NULL,
+    skip_reason    TEXT,
+    p_s3           DOUBLE PRECISION,
+    would_s3       SMALLINT,
+    threshold      DOUBLE PRECISION,
+    probe_model    TEXT,
+    trained_model  TEXT,
+    model_match    SMALLINT,
+    probs_json     TEXT,
+    a_severity     TEXT,
+    a_basis        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (

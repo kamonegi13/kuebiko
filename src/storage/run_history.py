@@ -62,6 +62,7 @@ from src.storage.repo_pir import PirJudgmentsMixin
 from src.storage.repo_routing_v2_shadow import RoutingV2ShadowMixin
 from src.storage.repo_runs import RunsMixin
 from src.storage.repo_severity_axes import SeverityAxesMixin
+from src.storage.repo_severity_c_shadow import SeverityCShadowMixin
 from src.storage.repo_summary_embeddings import SummaryEmbeddingMixin
 from src.storage.repo_synthesis import SynthesisMixin
 from src.storage.repo_translation import TranslationChunksMixin
@@ -109,6 +110,7 @@ class RunHistoryRepository(
     ImportanceV2Mixin,
     RoutingV2ShadowMixin,
     AlertDedupShadowMixin,
+    SeverityCShadowMixin,
     RunHistoryRepositoryBase,
 ):
     """SQLite/PostgreSQL ベースの run / article / live_log 履歴リポジトリ (mixin 合成)。"""

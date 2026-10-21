@@ -344,6 +344,15 @@ METRICS: tuple[FillMetric, ...] = (
         None,
         population="a.posted_channel = 'alert'",
     ),
+    # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
+    # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
+    # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常
+    FillMetric(
+        "severity_c_shadow",
+        "深刻さC影の記録",
+        "EXISTS (SELECT 1 FROM severity_c_shadow s WHERE s.article_id = a.article_id)",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

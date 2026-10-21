@@ -733,6 +733,26 @@ def routing_v2_shadow_summary(request: Request, days: int = 7, limit: int = 50) 
     }
 
 
+#: severity-c-shadow summary の窓幅・件数の上限 (routing-v2-shadow と同じ基準)。
+_SEVERITY_C_SHADOW_MAX_DAYS = 60
+_SEVERITY_C_SHADOW_MAX_LIMIT = 200
+
+
+@pages_api.get("/severity-c-shadow/summary")
+def severity_c_shadow_summary(request: Request, days: int = 7, limit: int = 50) -> dict[str, Any]:
+    """深刻さ C (9 問の logprob + RF) の shadow 記録を A (決まりごと) と並べた集計 (2026-10-22)。
+
+    A の S3 × C の S3 のクロス表・外した記事の理由別件数・モデル不一致の件数・食い違いの記事。
+    運用系 read API のため PUBLIC_GET_ALLOWLIST には入れない (src/ui/read_only_policy.py を参照)。
+    """
+    from src.cti.severity_c_summary import summarize
+
+    days = max(1, min(int(days), _SEVERITY_C_SHADOW_MAX_DAYS))
+    limit = max(1, min(int(limit), _SEVERITY_C_SHADOW_MAX_LIMIT))
+    repo: RunHistoryRepository = request.app.state.repo
+    return summarize(repo.list_severity_c_shadow(days=days), days=days, limit=limit)
+
+
 #: alert-dedup-shadow summary の窓幅・件数の上限 (R1h、routing-v2-shadow と同じ基準)。
 _ALERT_DEDUP_SHADOW_MAX_DAYS = 60
 _ALERT_DEDUP_SHADOW_MAX_LIMIT = 200
