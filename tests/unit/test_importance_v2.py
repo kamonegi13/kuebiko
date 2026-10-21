@@ -112,6 +112,48 @@ class TestSeverity:
 
         assert (sev, basis) == (None, "derivative")
 
+    @pytest.mark.parametrize(
+        ("category", "title"),
+        [
+            ("breach", "生協アプリに不正アクセス、データベースの内容を精査し漏えいの可能性を公表"),
+            ("incident", "ある企業の資金流出についてまとめてみた"),
+        ],
+    )
+    def test_llm_recap_on_single_incident_is_not_derivative(
+        self, category: str, title: str
+    ) -> None:
+        # Arrange: LLM が recap と付けたが、見出しは単一事案 (roundup_detector に当たらない)
+        inp = _inp(category=category, article_type="recap", title=title)
+
+        # Act
+        sev, basis = derive_severity(inp)
+
+        # Assert: 派生記事として外さず、事案として導く
+        assert basis != "derivative"
+        assert sev is not None or basis == "no_axes"
+
+    def test_llm_recap_with_single_breach_kind_is_not_derivative(self) -> None:
+        # Arrange: LLM の recap だけが根拠 (見出しに束ねの語なし) で、分類は単一の侵害
+        title = "中国系ハッカー、Gitea と Zyxel の脆弱性を悪用し産業自動化業者を侵害"
+        base = _inp(category="apt", article_type="recap", title=title)
+
+        # Act / Assert
+        assert derive_severity(replace(base, event_kind="breach"))[1] != "derivative"
+        assert derive_severity(replace(base, event_kind="stats")) == (None, "derivative")
+        assert derive_severity(replace(base, event_kind="")) == (None, "derivative")
+
+    @pytest.mark.parametrize(
+        "title",
+        ["週刊サイバーニュース: 今週の脆弱性悪用", "Weekly Recap: Cisco 0-day, RCE"],
+    )
+    def test_recap_with_periodical_title_stays_derivative(self, title: str) -> None:
+        # 見出しの定期刊行の語は分類 (breach) より優先する
+        inp = _inp(article_type="recap", title=title, event_kind="breach")
+        assert derive_severity(inp) == (None, "derivative")
+
+    def test_recap_without_title_keeps_derivative_for_backward_compatibility(self) -> None:
+        assert derive_severity(_inp(article_type="recap", title="")) == (None, "derivative")
+
     def test_kev_is_s3_for_any_cyber_category(self) -> None:
         assert derive_severity(_inp(category="incident", on_kev=True)) == ("S3", "kev")
 
@@ -653,6 +695,7 @@ class TestBuildInputsMatchesRepoPath:
             sir_ids=[],
             text="\n",
             stored_max_cvss=0.0,
+            title="t",
         )
 
         assert repo_inputs["a1"] == expected

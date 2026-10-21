@@ -38,7 +38,12 @@ from typing import Literal
 #: (NCSC Significant)。いずれも既にサイバーの深刻さが付く記事だけを S3 へ引き上げる
 #: (軸なし・非サイバー・派生記事はそのまま None)。欄が NULL (s21 以前・要約入力) なら
 #: 発火しない (``.8`` と同じ結果)
-RULE_VERSION = "2026-10-08.9"
+#: / .10 article_type=recap の記事を、見出しがまとめ記事 (``roundup_detector``) と読めるときだけ
+#: 派生にする (LLM の recap だけが根拠で、記事の種類の分類が単一の侵害 ``breach`` と読む記事も
+#: 派生にしない)。LLM の recap は単一事案の続報・侵害に多く付き (適合率 約 5 割)、侵害の記事が
+#: 派生で外れて深刻さを失っていた (正解集で 2 件、直近 30 日で recap 311 件中の約 57 件が該当、
+#: 2026-10-22)。見出しが空の入力は従来どおり派生 (後方互換)
+RULE_VERSION = "2026-10-22.10"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -105,6 +110,8 @@ NON_CYBER_CATEGORIES: frozenset[str] = _NON_CYBER
 _VULN = frozenset({"vulnerability", "advisory"})
 #: 派生記事 (事象そのものを報じない)。深刻さは元の事象で扱う
 _DERIVATIVE_TYPES = frozenset({"opinion", "recap", "tutorial"})
+#: 記事の種類の分類 (``article_kinds``) で単一の侵害を指す値
+_SINGLE_INCIDENT_KIND = "breach"
 
 _WIDE = frozenset({"multi_org_or_provider", "sector_wide", "national"})
 _HARMED = frozenset({"unauthorized_access", "data_exposure", "disruption", "destructive"})
@@ -141,6 +148,11 @@ class ImportanceInputs:
     sir_ids: frozenset[str]
     #: 本文に書かれた被害額 (米ドル換算の最大値、``stated_loss_usd``)。書かれていなければ 0
     loss_usd: float = 0.0
+    #: 見出し。article_type=recap をまとめ記事と読めるか (``roundup_detector``) の判定に使う。
+    #: 空なら recap を従来どおり派生として扱う
+    title: str = ""
+    #: 記事の種類の分類 (``article_kinds.kind``)。遅延分類で未分類なら空
+    event_kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -176,6 +188,8 @@ def build_inputs(
     sir_ids: Iterable[str],
     text: str,
     stored_max_cvss: float = 0.0,
+    title: str = "",
+    event_kind: str = "",
 ) -> ImportanceInputs:
     """``ImportanceInputs`` の共通組み立て (M3b 段1、2026-10-10)。
 
@@ -201,6 +215,8 @@ def build_inputs(
         mentioned_countries=frozenset(c.upper() for c in mentioned_countries if c),
         sir_ids=frozenset(sir_ids),
         loss_usd=stated_loss_usd(text),
+        title=title,
+        event_kind=event_kind,
     )
 
 
@@ -239,7 +255,7 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
     """深刻さと、その根拠の短い名前 (どの決まりごとに当たったか)。"""
     if inp.category in _NON_CYBER:
         return None, "non_cyber"
-    if inp.article_type in _DERIVATIVE_TYPES:
+    if _is_derivative(inp):
         return None, "derivative"
     if inp.on_kev:
         return "S3", "kev"
@@ -265,6 +281,21 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
             return "S2", "research_state_or_wide"
         return "S1", "research"
     return _incident_severity(ax, inp.loss_usd)
+
+
+def _is_derivative(inp: ImportanceInputs) -> bool:
+    """派生記事か。recap は見出しがまとめ記事と読めるときだけ (``.10``)。"""
+    if inp.article_type not in _DERIVATIVE_TYPES:
+        return False
+    if inp.article_type != "recap" or not inp.title:
+        return True
+    from src.cti.roundup_detector import BASIS_LLM, roundup_basis
+
+    basis = roundup_basis(inp.title, llm_article_type=inp.article_type, category=inp.category)
+    if basis is None:
+        return False
+    # LLM の recap だけが根拠で、分類が単一の侵害と読むなら事案として扱う
+    return not (basis == BASIS_LLM and inp.event_kind == _SINGLE_INCIDENT_KIND)
 
 
 def _vuln_severity(inp: ImportanceInputs) -> tuple[Severity, str]:
