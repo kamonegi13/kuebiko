@@ -98,7 +98,8 @@ def event_date_label(
 ) -> str | None:
     """発生日の表示文字列 (粒度を反映)。発生日として出せないものは None。
 
-    day → 'YYYY-MM-DD'、month/unknown (日を区別できない) → 'YYYY-MM'、year → 'YYYY'、relative → 'YYYY-MM-DD頃'。
+    day → 'YYYY-MM-DD'、month/unknown (日を区別できない) → 'YYYY-MM'、year → 'YYYY'、
+    relative → 'YYYY-MM-DD頃'。
     basis=reported (報道日の写し) と日付なしは None (発生日として出さない)。
     """
     if not event_date or basis == REPORTED_BASIS:
