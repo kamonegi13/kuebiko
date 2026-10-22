@@ -1,0 +1,136 @@
+# 要約の基準 v8r4 (s24c 用、2026-10-22)。運用の SSoT は DB (summarizer_rubric) のまま。
+# 使われ方: 環境変数 SUMMARIZER_RUBRIC_V8R4=1 のときだけ src/prompts/rubric_store.py が DB より優先して読む
+# (DB を書かずに切替・戻しができる)。DB へ恒久投入する手順は data/eval/S24c_switch_runbook.md。
+# 元: data/eval/S24A_rubric_v8r4.json (s24c の教師の描画と同一)。
+schema_version: 1
+intro: '以下の英語・中国語・日本語等の記事を読んで、CTI 担当者向けの
+
+  ブリーフィングを **日本語** で生成してください。'
+sections:
+- field_id: title_ja
+  kind: rubric
+  title: 和訳タイトル
+  body: "**記事タイトルの日本語訳 (60 字以内)**。\n  原タイトルが日本語(ひらがな/カタカナを含む)ならそのままコピー。\n  英語・中国語・その他の言語はすべて **必ず日本語に訳す**。固有名詞\n  (アクター名 / 製品名 / CVE-ID / 組織名) は **原文ママ** を維持。\n  例: \"Microsoft Patches Critical RCE in Exchange\" → \"Microsoft、Exchange の重大 RCE を修正\"。\n  例: \"重要数据性质的再认识\" → \"重要データ性質の再認識\"。"
+  note: ''
+- field_id: importance
+  kind: rubric
+  title: 重要度
+  body: "**category により判定軸が異なる**:\n\n  【サイバーカテゴリ (apt / apt_leak / vulnerability / malware / incident / breach /\n   advisory / policy) の場合】= **脅威としての actionability** (種別でなく、具体的な\n   脅威・被害・脆弱性への直結度で測る):\n  * **high**: 緊急対応が必要な APT 活動、KEV 級・実悪用中/0day 脆弱性、進行中の重大\n    インシデント、重要 malware キャンペーンの詳細解析。\n  * **medium**: 注視すべき新規 TTP、重要な脆弱性 (PoC 公開含む)、特定組織を狙う進行中\n    だが非緊急の脅威、具体的脅威含意のあるサイバー政策。\n  * **low**: 一般的な動向・論説・解説、長期観察対象、具体的脅威含意の薄い記事、\n    プロパガンダ的言説。\n  ⚠️ **「報道だから medium」とはしない**。具体的なサイバー脅威/被害/脆弱性に直結するかで判定。\n  \U0001F6AB **脆弱性 (vulnerability/advisory) の high は厳格に**: high は「**実際に悪用されている\n     (in the wild / KEV 掲載) / 0day / 緊急パッチ命令**」が本文で明示された場合のみ。以下は\n     high にしない:\n     - **既にパッチ済み**で実悪用の言及が無い CVE → ``medium`` 以下\n     - **PoC 公開のみ**で実悪用が無い → ``medium``\n     - CVSS が高い \"だけ\" / 「重大な脆弱性」という形容のみで実悪用根拠が無い → ``medium``\n     - 複数 CVE のまとめ・定例アップデート (例「Chrome に N 件の脆弱性」) → ``medium`` 以下\n     悪用の事実 (悪用が確認/攻撃を観測/actively exploited/KEV) が本文に無ければ high を選ばない。\n\n  【``category=geopolitical`` の場合】= **importance は medium までで、high にしない**\n   (日本・同盟国への地政学的インパクトの大きさでは high にしない。地政学は深刻さ (脅威としての\n   緊急性) の対象外で、重さは strategic_weight (戦略上の重み) で別に表す。地政文脈はサイバー\n   脅威活動の \"なぜ\" を説明する PMESII の M/P 軸材料):\n  * **medium**: 重大なエスカレーション・武力紛争・戦略転換、主要国の軍事配備・大規模演習、\n    重要な外交合意・制裁、緊張の有意な高まり、防衛政策の重要転換など、注目すべき地政動向。\n  * **low**: 日常的外交・論説・周辺的報道・プロパガンダ的言説。\n\n  【``category=research`` の場合】= 原則 ``low`` (画期的・実害直結の成果のみ ``medium``)。\n\n  ⚠️ **複数の独立した事案を束ねた定期のまとめ記事** (週刊・週報・週次のまとめ等。中の話題が悪用でも) は、記事全体の importance を ``medium`` 以下にする。KEV への追加・一括の勧告・単一事案の続報は対象外。\n"
+  note: ''
+- field_id: category
+  kind: rubric
+  title: カテゴリ
+  body: "以下から 1 つ選択:\n  ``apt`` / ``apt_leak`` / ``vulnerability`` / ``malware`` / ``incident`` /\n  ``breach`` / ``advisory`` / ``policy`` / ``geopolitical`` / ``research`` / ``other``。\n\n  **最重要原則**: ``apt`` / ``apt_leak`` / ``vulnerability`` / ``malware`` /\n  ``incident`` / ``breach`` / ``advisory`` は **すべてサイバー事象に限定**する。\n  物理・軍事・地政・学術の記事を cyber カテゴリに入れてはならない。\n  判定の第一歩は「**これはサイバー攻撃・侵入・脆弱性・malware の話か?**」:\n    - YES → 下記サイバーカテゴリ\n    - NO (物理破壊 / 軍事行動 / 外交 / 政治 / 制裁 / 学術) → ``geopolitical`` / ``policy`` / ``research``\n\n  【サイバー脅威カテゴリ】\n  * ``apt``: 国家系 APT の **サイバー**活動報告 (攻撃キャンペーン解説)。\n  * ``apt_leak``: **APT 組織自体の内部資料・ツール・通信のリーク**。\n    例: i-Soon / 安洵信息 (中国 MSS 請負) 内部文書、NTC Vulkan (露 FSB/GRU) 仕様書、\n        Conti / Lazarus の内部チャット流出。決め手は **攻撃者側の機密が暴露された** こと。\n        被害組織からの一般的データ流出は ``breach``。\n  * ``vulnerability``: **実際の脆弱性開示** (CVE / PoC / 製品の欠陥)。\n  * ``malware``: malware / ransomware の解析・報告。\n  * ``incident``: **サイバーインシデント** (サイバー攻撃 / 侵入 / 改ざん / DDoS 等)。\n    ⚠️ **物理・軍事事件は incident にしない**: ミサイル/ドローン攻撃、銃撃、軍事衝突、\n       航空機事故、物理テロ、戦闘は ``geopolitical``。「event だから incident」は誤り。\n       **サイバー攻撃の event のみ incident**。\n  * ``breach``: **サイバー**侵害 / 情報漏洩 (不正アクセス・データ流出)。\n  * ``advisory``: ベンダー / CERT advisory・CVE 警告・KEV。\n\n  【非脅威コンテキスト (PMESII 文脈材料)】\n  * ``policy``: **サイバー政策・規制・規範・帰属・サイバー戦略** (cyber-specific のみ)。\n    例: EU Cyber Resilience Act、CISA directive、UN サイバー規範、国家サイバー戦略、\n        サイバー攻撃の attribution 声明、サイバー軍創設。\n    ⚠️ **非サイバーの政策・外交・軍事は policy ではなく geopolitical**。\n  * ``geopolitical``: **物理・軍事・地政** (非サイバー)。kinetic 攻撃・軍事作戦・外交・\n    制裁・同盟・核・軍備・紛争・領土・戦略態勢。CTI の PMESII (M 軍事 / P 政治 / P-env)\n    軸の文脈材料として収集。\n    例: ミサイル/ドローン攻撃、軍事衝突、New START / NPT、国防予算・国防法案、軍備拡張、\n        外交会談、制裁リスト、領土紛争、原潜配備、ホルムズ海峡情勢。\n  * ``research``: **学術論文・技術研究** (arXiv / 大学 / 研究機関)。実証・ベンチマーク・\n    手法提案。importance は原則 ``low``。\n    ⚠️ **topic ≠ disclosure**: 脆弱性や malware を *研究テーマ* にした論文も ``research``。\n       実際の脆弱性 *開示* のみ ``vulnerability``。\n    例: 「LLM エージェントへの poisoning 攻撃の評価ベンチマーク」「暗号ライブラリの\n        サイドチャネル防御手法の提案」→ ``research`` (✗ vulnerability にしない)。\n  * ``other``: 上記いずれにも該当しない時のみ (最終手段)。\n\n  **判別 hint**:\n  - ``feed_title`` が ``DDoSecrets`` / ``vx-underground`` / leak アーカイブ → APT 内部\n    リークなら ``apt_leak``。\n  - ``feed_title`` が ``JPCERT`` / ``JVN`` / ``CISA`` → 内容に応じ ``advisory`` /\n    ``vulnerability``。\n  - ``feed_title`` が ``arXiv`` → ほぼ ``research`` (実脆弱性開示でない限り)。\n  - 軍事・防衛・通信社系 (RT / Sputnik / Defense News / Breaking Defense / 戦争報道) で\n    内容が kinetic / 軍事 / 外交 → ``geopolitical``。"
+  note: ''
+- field_id: victim_sector
+  kind: rubric
+  title: 被害セクタ
+  body: "被害組織のセクター。**次の 21 語のうち 1 つをそのまま書く** (これ以外の語・英語・複合・括弧書きは不可): 金融 / 医療 / エネルギー / 製造 / 政府 / 防衛 / 通信 / 重要インフラ / 小売 / 食品・農業 / IT / 教育 / メディア / NGO / 宇宙 / 研究機関 / 国家安全保障 / 専門サービス / 企業全般 / 複数セクター / その他。\n  **書いてよい根拠は次の 2 つだけ。根拠が無ければ ``null``** (根拠の無い推測で埋めない):\n  ① 記事に被害組織の業種・分野が書かれている (例: 「病院が被害」→ ``\"医療\"``、「製造業の工場」→ ``\"製造\"``)。\n  ② 記事に名指しされた被害組織の業種が明らか (例: 「トヨタ」→ ``\"製造\"``、「みずほ銀行」→ ``\"金融\"``)。\n  根拠にならないもの: 記事の話題・攻撃手法・悪用された製品の種類 (「Apache 製品の脆弱性」だけでは ``\"IT\"`` にしない)・発行元や配信元・筆者の所属・一般論。\n  * 個別事案 (incident / breach / 標的明示の apt) でも、被害組織の業種が分からなければ ``null``。\n  * 業界横断の recap / trend で複数の業種が記事に書かれているなら ``\"複数セクター\"``。\n  * **``geopolitical`` / ``policy`` / ``research``**: 事案の直接対象組織の業種が明確なら埋めてよい (例: 制裁対象が金融機関 → ``\"金融\"``)。無ければ ``null``。"
+  note: ''
+- field_id: victim_country
+  kind: rubric
+  title: 被害国
+  body: "被害組織の国 (raw text or ISO code)。**書いてよい根拠は次の 3 つだけ。根拠が無ければ ``null``** (根拠の無い推測で埋めない):\n  ① 記事に被害国が書かれている (例: ``\"Japan\"`` / ``\"US\"`` / ``\"日本\"``)。複数国にまたがる攻撃は ``\"global\"`` / ``\"EU\"`` / ``\"APAC\"``。\n  ② 記事の都市・地域から国が導ける (例: 「大阪の病院」→ ``\"Japan\"``、「Munich-based firm」→ ``\"Germany\"``)。\n  ③ 記事に名指しされた被害組織の本国が明らか (例: ``\"Comcast\"`` → ``\"US\"``、``\"いすゞ自動車\"`` → ``\"Japan\"``、``\"Framesi\"`` → ``\"Italy\"``)。\n     本国が曖昧・無名・不明な組織は ``null``。多国籍企業の特定国の子会社/拠点が被害なら、記事が示す被害発生国を優先する (例: トヨタ米国法人の侵害 → ``\"US\"``)。\n  根拠にならないもの: 発行元・配信元の国、記事の話題、筆者の所属、攻撃者の国籍、一般論。\n  * 被害組織が記事に無い (脆弱性・研究・政策の解説など) 場合は ``null``。"
+  note: ''
+- field_id: victim_city
+  kind: rubric
+  title: 被害都市
+  body: "被害組織の **所在都市 / 地域** が記事に明示されていれば\n  原文ママで (例: ``\"Osaka\"`` / ``\"大阪\"`` / ``\"Munich\"`` / ``\"カリフォルニア州\"``)。地図の\n  都市レベル plot に使う。\n  * **明示されている時だけ** 埋める。本社所在地を推測で補完しない (偽の点を出さない)。\n  * 国レベルしか分からなければ ``null`` (victim_country は埋める)。\n  * geopolitical / policy / 非サイバー被害: ``null``。"
+  note: ''
+- field_id: involved_countries
+  kind: rubric
+  title: 当事国 (地政学)
+  body: "**geopolitical / policy 事象の「当事国（主体国）」**。\n  victim_country (被害国・サイバー用) とは別軸で、その地政学事象に **関与する国家** を列挙\n  (国名 or ISO、原文ママで可)。サイバー↔地政学を「国家」で相関する情勢把握の橋になる。\n  * **当事国を全て** (典型 1〜3 個): 二国間/多国間なら両方 (例: 中台緊張 → ``[\"China\",\"Taiwan\"]``、\n    米イラン → ``[\"US\",\"Iran\"]``、NATO拡大 → 主要関与国)。\n  * 行為主体と対象の **両方** を入れる (例: 「ロシアのウクライナ侵攻」→ ``[\"Russia\",\"Ukraine\"]``)。\n  * 推測で広げない。記事が明確に扱う国のみ。明示が無ければ ``[]``。\n  * **サイバー系カテゴリ (apt / apt_leak / vulnerability / malware / incident / breach / advisory) の記事では必ず ``[]``**。被害国は victim_country に書き、攻撃側の国籍はアクターの帰属であり別軸なので、ここには入れない。\n  * 例: 「ホルムズ海峡情勢」→ 関係国 (Iran/US/沿岸国) / 「EU サイバー規制」→ ``[\"EU\"]`` 不可なら主要加盟国。"
+  note: ''
+- field_id: victim_orgs
+  kind: rubric
+  title: 被害組織
+  body: "地図プロット用の **実際に攻撃を受け侵害された組織名**\n  (企業 / 団体 / 政府機関 / 重要インフラ事業者等)。**記事(タイトル・本文のいずれか)に\n  明示された場合は必ず拾う**(原文ママの固有名詞で列挙)。なければ空配列 ``[]``。\n  ⚠️ **タイトルに被害組織名がある速報・リークサイト系は必ず抽出する**\n  (例:「イタリアの Framesi 社が被害」→ ``[\"Framesi\"]``、社名/組織名を拾う。`.com` 等の\n  ドメインのみ示される場合は組織名として列挙可)。\n  ⚠️ **厳格な判別 (地図に誤った点を出さないため最重要)**:\n  * **含めるのは「実際に侵害 / 攻撃された被害組織」のみ**\n    (例: 「A社が不正アクセスで顧客情報漏洩」→ ``[\"A社\"]``)\n  * **含めないもの**: ① **ベンダ / ソフトメーカー**(脆弱性・製品の提供元) ② 悪用された\n    製品 / ソフト名 ③ 攻撃者(APT / ランサム集団) ④ 研究者 / 報告者 / CERT / ニュース社\n  * 例:「Cisco SD-WAN の 0day が in-the-wild で悪用された」→ **攻撃された組織が不明なら\n    ``[]``**(Cisco は提供元なので**入れない**。本社を地図に誤プロットしてしまう)\n  * 例:「Acme 社製ソフトの脆弱性を突き B 病院が侵害された」→ ``[\"B病院\"]``\n    (Acme は提供元なので除外、被害は B 病院)\n  * **名指しで被害/影響を受けた組織は全部列挙**する。これは 2 種を含む (地図側で区別表示する):\n    - 直接被害: その組織自身のシステムが攻撃・侵害された (ランサム被害、自社サービス停止 等)\n    - 影響/露出: 一括流出に名前が含まれる等 (例:「73,000 件の資格情報が流出、Toyota・Siemens 等も\n      含む」→ ``[\"Toyota\", \"Siemens\", ...]``)。名指しされていれば列挙してよい\n  * ⚠️ **含めない**: ベンダ/製品提供元 (脆弱性の出元)、悪用された製品名、攻撃者、研究者/報告者/\n    CERT/ニュース社。「単に文脈で言及」「顧客になり得る」だけは除外 (名指しの被害/影響に限る)\n  * ⑤ **技術・プラットフォーム提供者も含めない** — その組織の**製品/モデル/サービスへの\n    攻撃手法・脆弱性・悪用が論じられているだけ**なら被害組織ではない\n    (例: 「ChatGPT への prompt injection 手法」→ OpenAI は**入れない** /\n    「Hugging Face 上の悪性モデル」→ Hugging Face は**入れない** /\n    「Claude を悪用した攻撃キャンペーン」→ Anthropic は**入れない**)。\n    ✓ 例外: その組織**自身の社内システム/顧客データが実際に侵害された**と記事が明言する\n    場合のみ含める (例: 「OpenAI の社内 Slack が侵害され内部資料が流出」→ ``[\"OpenAI\"]``)\n  * **``research`` / ``policy`` / ``geopolitical`` カテゴリ**: サイバー被害組織は通常\n    存在しないが、**事案の直接対象になった組織** (制裁対象・提訴/調査対象・攻撃対象の\n    政府機関等) が名指しされていれば列挙してよい。発信者・報道機関・研究者を含めない\n    ルールは従来どおり。直接対象の明示が無ければ ``[]``\n  * **攻撃/影響を受けた具体組織が明記されていなければ空配列**。ベンダ / セクター / 国で代替しない"
+  note: ''
+- field_id: summary
+  kind: rubric
+  title: 要約
+  body: "**日本語要約 (1〜4 段落)。長さは字数でなく内容で決める**。\n  重要事項 (何が起きたか・誰が — 帰属とその確度・何が狙われ影響は何か・時期・留保と但し書き・対処) を漏らさず、重複・一般論・記事に無い背景は書かない。単純な事象は短く。\n  被害の件数・被害の中身・記事の結論は、本文に書かれているときは落とさない。"
+  note: ''
+- field_id: iocs
+  kind: rubric
+  title: IoC
+  body: "本文に明示されている IP / ドメイン / ハッシュ /\n  CVE のリスト。**推測ではなく明示的記載のみ**。なければ空配列。\n  **重要**:\n    - 出典系の URL (記事のリンク、ベンダーブログ、参考文献) は **IOC ではない**。含めないこと。\n    - 攻撃に直接関与した悪性 IOC のみ。「○○社が報告した」レベルの引用先 URL を含めない。\n    - **本文に IoC があれば全部列挙** (10 件以上でも可)。summary 圧縮で省略禁止。\n    - ⚠️ **CVE は「全部列挙」の例外**: iocs に入れる CVE は **本件で実際に悪用/開示された\n      脆弱性のみ**。過去事案・他社の類似事例・比較・背景説明、および「関連記事」「出典」\n      「参考」一覧として言及されただけの CVE は **含めない**。本件で悪用された脆弱性が\n      未公表/不明なら CVE は **出さない** (空のまま。無理に紐付けない)。\n      ※ IP / ドメイン / ハッシュ の網羅列挙とは別扱い (それらは攻撃指標なので全部、CVE は本件の脆弱性のみ)。\n      例: 「KDDI のメール基盤が第三者製ソフトの脆弱性で侵害 (詳細未公表)。なお過去には IIJ が\n      Active! mail のゼロデイ CVE-2025-42599 で侵害された」→ 本件 CVE 不明なので **iocs に CVE を入れない**。\n    - summary 本文内にも主要 IoC は **原文のまま引用** (例: 「C2 ドメイン evil-c2.example.com から\n      ペイロードを取得」) — アナリストが summary を読むだけで IoC 候補が把握できる状態に。"
+  note: ''
+- field_id: mitre_techniques
+  kind: rubric
+  title: MITRE ATT&CK
+  body: "MITRE ATT&CK Technique ID。\n  **低信頼度でも候補は列挙**してよい (post-process で filter する)。\n  記事本文からの mapping ガイド:\n    - phishing / メール添付 → ``T1566.001``\n    - 公開アプリ脆弱性悪用 → ``T1190``\n    - 認証情報窃取 / Mimikatz → ``T1003``\n    - PowerShell / cmd 実行 → ``T1059.001`` (PowerShell) / ``T1059.003`` (cmd)\n    - 有効アカウント悪用 → ``T1078``\n    - 永続化 (cron/scheduled task) → ``T1053.005``\n    - C2 通信 (HTTPS) → ``T1071.001``\n    - 横展開 (RDP) → ``T1021.001``\n    - データ exfiltration → ``T1041``\n    - 防御回避 (obfuscation) → ``T1027``\n  本文に明示的な記載がなくても **incident report 系で挙動が読み取れれば mapping**。\n  なければ空配列。"
+  note: ''
+- field_id: malware_families
+  kind: rubric
+  title: マルウェア ファミリ
+  body: "本文に明示されている\n  malware family / ransomware の名前。固有名詞のみ (推測禁止)。例:\n  ``[\"TeamPCP\", \"Cobalt Strike\", \"Megalodon\", \"Conti\", \"BlackCat\", \"LockBit\"]``。\n  カテゴリ語 (例: \"ransomware\", \"infostealer\") は含めない。なければ空配列。"
+  note: ''
+- field_id: tools
+  kind: rubric
+  title: 攻撃ツール
+  body: "本文に明示されている **サイバー攻撃ツール** の名前。\n  以下に該当するもののみ:\n  * **Offensive / red-team framework**: Cobalt Strike, Sliver, Mythic, Brute Ratel, Empire, Havoc, Metasploit\n  * **認証情報・recon tool**: Mimikatz, Rubeus, BloodHound, Impacket, CrackMapExec, ROADtools, NetExec\n  * **C2 / persistence tool**: PowerView, PowerSploit, AdFind, fscan, Chisel, Ngrok\n  * **RMM (ransomware affiliate 悪用)**: ScreenConnect, AnyDesk, TeamViewer, ConnectWise, Atera, Splashtop, Action1, NetSupport\n  * **File transfer / archiver (exfiltration 用途のみ)**: WinSCP, FileZilla\n  * **Recon / scanner**: Nmap, Masscan, ZGrab\n\n  **絶対に含めない (false positive 防止)**:\n  - 軍事兵器 / 防空システム / ドローン名 (BARAK MX, Blue Spear, Harop, Harpy, UAV 等)\n  - AI モデル / プラットフォーム名 (LoRA, Mythos AI 等)\n  - installer / loader 実体名 (InitInstall.dll など) → これは IoC (filename) 扱い\n  - 一般 SaaS 製品名 (Slack, Notion 等)\n  - malware 本体 (TeamPCP, BlackCat 等) → これは ``malware_families`` へ\n  - 検出 tool / scanner 単独使用 (TruffleHog 単独はやや曖昧、攻撃文脈で確実なら含めて可)\n\n  なければ空配列 (該当無し)。**疑わしいものは含めない**。"
+  note: ''
+- field_id: analyst_note
+  kind: rubric
+  title: アナリスト所見
+  body: "日本の CTI 担当者の視点での\n  補足コメント (1 行、日本語、任意)。なければ ``null``。"
+  note: ''
+- field_id: article_type
+  kind: suppressed
+  title: 記事タイプ
+  body: ''
+  note: judgment_classifier が確定・上書き
+- field_id: routing_flags
+  kind: suppressed
+  title: ルーティング フラグ
+  body: ''
+  note: dedup_key=自動生成 / primary_actor_id・confidence=judgment_classifier / japan_targeted・is_breaking_critical=決定論判定
+- field_id: editorial_stance
+  kind: suppressed
+  title: 編集スタンス
+  body: '**出力不要** (取得時に別途 focused 分類器が付与するため。出しても無視される)。'
+  note: judgment_classifier が確定・上書き
+- field_id: pmesii_axes
+  kind: suppressed
+  title: PMESII 軸
+  body: ''
+  note: category/feed 既定マッピング + judgment の I-infra が確定
+- field_id: remediation
+  kind: rubric
+  title: 対処 (remediation)
+  body: "**本文に明示された対処** (修正版/パッチ/回避策/緩和策/推奨対応)\n  を簡潔に (2 文以内・目安 120 字、日本語) で。修正バージョン番号・設定名・無効化すべき機能名など**具体**を優先\n  (例: 「23.9.8 以降へ更新。適用不可なら外部公開を遮断」)。**本文に対処の記載が無ければ null** —\n  「パッチ適用を推奨」のような一般論を創作しない (無いことが分かるのも情報)。"
+  note: ''
+- field_id: bluf
+  kind: suppressed
+  title: BLUF
+  body: ''
+  note: RSS 経路では title と重複するため生成させない (Grok 経路の機械生成のみ)
+- field_id: diamond
+  kind: suppressed
+  title: Diamond 2 軸
+  body: ''
+  note: judgment_classifier (focused) が model_copy で上書き。summarizer に出させると末尾フィールドが枯死する
+- field_id: event_date
+  kind: suppressed
+  title: 事象発生日
+  body: ''
+  note: judgment_classifier (focused) が model_copy で上書き
+- field_id: event_date_basis
+  kind: suppressed
+  title: 発生日の根拠
+  body: ''
+  note: judgment_classifier (focused) が model_copy で上書き
+- field_id: compromise_date
+  kind: suppressed
+  title: 初期侵害日
+  body: ''
+  note: judgment_classifier (focused) が model_copy で上書き
+examples:
+- label: 参考
+  json_text: "{\n  \"title_ja\": \"APT41、日本の製造業向けに新 C2 インフラ展開\",\n  \"importance\": \"high\",\n  \"category\": \"apt\",\n  \"summary\": \"(1〜4 段落の日本語要約)\",\n  \"iocs\": [\"203.0.113.5\", \"evil-c2.example.com\"],\n  \"mitre_techniques\": [\"T1071.001\", \"T1566.001\"],\n  \"analyst_note\": \"国内製造業の SOC は当該 IOC のブロックを推奨。\",\n  \"remediation\": \"ScreenConnect を 23.9.8 以降へ更新し、掲載 IOC (C2 ドメイン/IP) を遮断する。\"\n}"
+- label: 'japan_targeted=false の境界事例: グローバル CVE (悪用の記述が無い「重大な脆弱性」は medium)'
+  json_text: "{\n  \"title_ja\": \"Apache HTTP/2 の重大な脆弱性 CVE-2026-23918 で DoS および RCE が可能に\",\n  \"importance\": \"medium\",\n  \"category\": \"vulnerability\",\n  \"summary\": \"(要約本文)\",\n  \"iocs\": [\"CVE-2026-23918\"],\n  \"mitre_techniques\": [],\n  \"analyst_note\": \"国内外の Apache 利用者は速やかにパッチ適用を推奨。\"\n}"
+- label: 'propaganda 判定: 国営メディアの一方的 framing'
+  json_text: "{\n  \"title_ja\": \"ロシア外務省、EU は対露制裁で 1 兆ドル損失と主張\",\n  \"importance\": \"low\",\n  \"category\": \"geopolitical\",\n  \"summary\": \"(要約)\",\n  \"iocs\": [],\n  \"mitre_techniques\": [],\n  \"analyst_note\": \"\"\n}"

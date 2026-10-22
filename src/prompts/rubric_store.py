@@ -31,6 +31,12 @@ CONFIG_KEY = "summarizer_rubric"
 SEED_PATH = Path("config/prompts/summarizer_rubric.yaml")
 ENV_FLAG = "SUMMARIZER_COMPOSER"
 
+#: s24c 用の要約の基準 v8r4 (2026-10-22)。``SUMMARIZER_RUBRIC_V8R4=1`` のときだけ DB より優先して
+#: 読む (DB を書かずに切替・戻しができる)。既定 (未設定 / 0) は従来どおり DB → seed。
+#: 恒久化は DB へ PUT し、投入後はこの flag を外す (data/eval/S24c_switch_runbook.md)。
+V8R4_ENV_FLAG = "SUMMARIZER_RUBRIC_V8R4"
+V8R4_PATH = Path("config/prompts/summarizer_rubric_v8r4.yaml")
+
 _RUBRIC_CACHE: SummarizerRubric | None = None
 _TEMPLATE_CACHE: jinja2.Template | None = None
 _TEMPLATE_CACHE_KEY: str = ""
@@ -40,6 +46,11 @@ _FALLBACK_REASON: str = ""
 def is_composer_enabled() -> bool:
     """構造化判定基準を使うか (既定 ON)。``SUMMARIZER_COMPOSER=0`` で legacy .j2 へ rollback。"""
     return os.environ.get(ENV_FLAG, "1") != "0"
+
+
+def is_v8r4_enabled() -> bool:
+    """v8r4 を DB より優先して使うか (既定 off)。"""
+    return os.environ.get(V8R4_ENV_FLAG, "0").strip() == "1"
 
 
 def last_fallback_reason() -> str:
@@ -109,12 +120,22 @@ def _load_from_db() -> SummarizerRubric | None:
     return _validate_rubric_value(value, source="db")
 
 
+def _load_v8r4_override() -> SummarizerRubric | None:
+    """flag on のときの v8r4。読めなければ None (= DB → seed へ。黙らず WARNING は seed 読込側)。"""
+    if not is_v8r4_enabled():
+        return None
+    rubric = load_seed_rubric(V8R4_PATH)
+    if rubric is None:
+        _log.warning("summarizer_rubric_v8r4_unavailable_fallback_to_db")
+    return rubric
+
+
 def load_rubric() -> SummarizerRubric | None:
     """現在の判定基準。DB → seed yaml → None の順に解決する (壊れた値は seed に fail-safe)。"""
     global _RUBRIC_CACHE  # noqa: PLW0603
     if _RUBRIC_CACHE is not None:
         return _RUBRIC_CACHE
-    rubric = _load_from_db() or load_seed_rubric()
+    rubric = _load_v8r4_override() or _load_from_db() or load_seed_rubric()
     if rubric is not None:
         _RUBRIC_CACHE = rubric
     return rubric
@@ -155,7 +176,7 @@ def build_summarizer_template(path: Path) -> jinja2.Template | None:
         # 意図的な rollback なので WARNING にはしない (理由だけ残して UI に出す)
         _FALLBACK_REASON = f"{ENV_FLAG}=0 (legacy .j2 を使用)"
         return None
-    key = str(path)
+    key = f"{path}|v8r4" if is_v8r4_enabled() else str(path)
     if _TEMPLATE_CACHE is not None and key == _TEMPLATE_CACHE_KEY:
         return _TEMPLATE_CACHE
     rubric = load_rubric()

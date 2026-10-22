@@ -372,6 +372,11 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "s24c のときだけ使う SIR 別の要点の文面 (DB は介さない。モデルが s24c 系、または "
         "PIR_FOCUS_PROMPT_V6=1。2026-10-22)",
     ),
+    "config/prompts/summarizer_rubric_v8r4.yaml": FileInfo(
+        "プロンプト",
+        "記事要約の判定基準 v8r4 (s24c 用)",
+        "SUMMARIZER_RUBRIC_V8R4=1 のとき DB より優先して使う写し (DB は書かない。2026-10-22)",
+    ),
     "config/prompts/deep_dive_rubric.yaml": FileInfo(
         "プロンプト",
         "深掘り選定ルーブリックの編集層 (blocks)",
