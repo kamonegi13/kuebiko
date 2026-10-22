@@ -366,6 +366,12 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "pir_daily_focus の指示散文 (初回 seed 専用 — runtime SSoT は DB、"
         "UI 編集はプロンプトタブ。層分け 3 本目 2026-08-20)",
     ),
+    "config/prompts/pir_daily_focus_rubric_v6_2.yaml": FileInfo(
+        "プロンプト",
+        "PIR Daily Focus v6.2 (s24c 用の編集層)",
+        "s24c のときだけ使う SIR 別の要点の文面 (DB は介さない。モデルが s24c 系、または "
+        "PIR_FOCUS_PROMPT_V6=1。2026-10-22)",
+    ),
     "config/prompts/deep_dive_rubric.yaml": FileInfo(
         "プロンプト",
         "深掘り選定ルーブリックの編集層 (blocks)",

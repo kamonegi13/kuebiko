@@ -1,0 +1,46 @@
+# SIR 別の要点 v6.2 (s24c 用、2026-10-22)。字数・文数の指示なし・SIR 不該当を明示する版。
+# 使われ方: src/digest/focus_v6.py が s24c 系モデル (または PIR_FOCUS_PROMPT_V6=1) のときだけ読む。
+# DB (pir_daily_focus_rubric) は書き換えない。s23i のときは従来の DB 版のまま。
+# 元: data/eval/S24B_switch_prompts/pir_daily_focus_v6_2.json (教師の描画と同一)。
+schema_version: 1
+intro: ''
+sections:
+- field_id: mission
+  kind: rubric
+  title: ミッション (分析指示)
+  body: '**ある特定の SIR (収集要求)** に直近 24h で match した article を分析し、
+
+    **本日この SIR 領域で押さえるべき要点** を書いてください。目的は SIR の問いに答えることで、match した article は 1 件ずつ、SIR に効くかどうかを判断します。'
+  note: ''
+- field_id: output_length_style
+  kind: rubric
+  title: 出力ルール (網羅・不該当)
+  body: '## 出力ルール
+
+    - 平叙文で書く (長さは事実の量で決まる)。SIR に効く article の **重要な事実はすべて含め、1 件も落とさない**
+
+    - SIR に当たらない article は、その article の主題を挙げて「本 SIR には該当しない」と明示する (無理に SIR へ結び付けて要約しない)
+
+    - 余分な記述は書かない: 背景・一般論、同じ事実の言い直し (1 つの事実は 1 度だけ)、SIR の対象外の部分 (1 件の article の一部だけが SIR に効くなら、効く部分だけを書く)。ただし SIR に効く article の事実 (何が起き、誰・何が対象で、どんな影響・被害があり、どう対応され、何が留保されているか) は細部まで落とさない'
+  note: ''
+- field_id: proper_noun_requirement
+  kind: rubric
+  title: 固有名詞優先・generic 表現禁止
+  body: '- actor 名 / TTP / 標的セクター・国 など **固有名詞優先**。「活動が活発化」「注意が必要」のような generic 表現は禁止'
+  note: ''
+- field_id: pattern_detection
+  kind: rubric
+  title: 横断パターンの指摘
+  body: '- **各事実は必ず 1 つの article のみに基づいて書く** (複数 article の数値・事例を 1 つの事実に混ぜない)。1 文に複数 article の事実を並べてよいが、どの article の事実かが主語 (組織名・製品名・CVE 等) から特定できるように書く。複数 article に **同一のアクター名・同一の CVE** があるときは共通点として指摘してよい'
+  note: ''
+- field_id: no_speculation
+  kind: rubric
+  title: 推測禁止
+  body: '- 推測は禁止、article で言及されている事実のみ使用 (留保表現「とされる」「推定」はそのまま残す)。article に無い一般論・評価・注意喚起は書かない'
+  note: ''
+- field_id: output_format_only
+  kind: rubric
+  title: 出力形式 (本文のみ)
+  body: '- 出力は **要点本文のみ**、見出し / 前置き / 箇条書き禁止'
+  note: ''
+examples: []

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import jinja2
 
 from src.config_loader import AppConfig, DiscordChannel, PipelineConfig
+from src.digest import focus_v6
 from src.logging_config import get_logger
 from src.pir.evaluator import PirMatch, evaluate_pir_matches
 
@@ -152,6 +153,10 @@ async def _score_claim_sentences(
     passed: list[str] = []
     failed: list[str] = []
     for sentence in split_claim_sentences(text):
+        if focus_v6.is_not_applicable(sentence):
+            # v6.2 の「本 SIR には該当しない」は記事の事実の主張ではない (裏付けの判定対象外)
+            passed.append(sentence)
+            continue
         score = await _claim_max_score(sentence, matches, config=config)
         if score is not None and score < PIR_FOCUS_CLAIM_THRESHOLD:
             failed.append(sentence)
@@ -317,7 +322,12 @@ async def _generate_llm_summary(
     失敗時、または識別子関門 (``fidelity_gate_enabled``) を再生成込みで満たせなかった
     場合は空文字 (呼び出し側は既存の LLM 失敗時と同じ扱いで headline のみにする)。
     """
-    prompt = _build_prompt(pir, matches)
+    use_v6 = focus_v6.is_enabled(str(getattr(llm, "model", "")))
+    v6_prompt = focus_v6.build_prompt(pir, matches) if use_v6 else None
+    if use_v6 and v6_prompt is None:
+        _log.warning("daily_focus_v6_prompt_unavailable_fallback", pir_id=pir.id)
+    prompt = v6_prompt if v6_prompt is not None else _build_prompt(pir, matches)
+    max_tokens = focus_v6.MAX_TOKENS if v6_prompt is not None else _LLM_MAX_TOKENS
     gate_on = fidelity_gate_enabled()
     max_attempts = _FIDELITY_GATE_MAX_ATTEMPTS if gate_on else 1
 
@@ -326,7 +336,7 @@ async def _generate_llm_summary(
             response = await llm.generate(
                 prompt=prompt,
                 temperature=_LLM_TEMPERATURE,
-                max_tokens=_LLM_MAX_TOKENS,
+                max_tokens=max_tokens,
                 think=False,
             )
         except Exception as e:  # noqa: BLE001
@@ -334,6 +344,8 @@ async def _generate_llm_summary(
             return ""
 
         text = unwrap_json_text(response.text.strip())
+        if v6_prompt is not None:
+            text = focus_v6.unwrap_lenient(text)
         if not gate_on:
             return text
 

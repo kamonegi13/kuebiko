@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from src.cti.source_basis import SOURCE_TIER_MARKER
+from src.digest import focus_v6
 
 #: 要点版を使う (0 で旧版)。旧版は runners._compose_compact_summary。
 ENV_FLAG = "BRIEF_DISCORD_V2"
@@ -179,8 +180,20 @@ def _burst_block(events: Sequence[BurstLike]) -> str:
     return "\n".join(lines)
 
 
+def _applicable_summary(summary: str) -> str:
+    """先頭の「本 SIR には該当しない」の明示文を飛ばした要点 (v6.2 の長い要点用)。
+
+    該当しない文しか無い、または明示文が無い (従来の短い要点) ときは入力をそのまま返す。
+    """
+    sentences = [p for p in summary.replace("\n", " ").split("。") if p.strip()]
+    if not any(focus_v6.is_not_applicable(p) for p in sentences):
+        return summary
+    kept = [p for p in sentences if not focus_v6.is_not_applicable(p)]
+    return "。".join(kept) + "。" if kept else summary
+
+
 def _focus_gist(section: dict[str, Any]) -> str:
-    gist = first_sentence(str(section.get("summary") or ""), SENTENCE_SOFT_MAX)
+    gist = first_sentence(_applicable_summary(str(section.get("summary") or "")), SENTENCE_SOFT_MAX)
     if gist:
         return gist
     for m in section.get("matches") or []:
