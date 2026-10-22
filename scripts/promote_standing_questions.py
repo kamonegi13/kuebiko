@@ -18,6 +18,10 @@
 使い方 (コンテナ内):
     docker exec kuebiko python scripts/promote_standing_questions.py            # dry-run
     docker exec kuebiko python scripts/promote_standing_questions.py --apply
+    # opt-in の問い (既定の一覧には入らない。2026-10-22 犯罪組織の金銭目的)
+    docker exec kuebiko python scripts/promote_standing_questions.py --only criminal-financial
+    docker exec kuebiko python scripts/promote_standing_questions.py \\
+        --only criminal-financial --apply
 """
 
 from __future__ import annotations
@@ -65,6 +69,16 @@ def _trend(threat: str) -> QuestionDraft:
         answer_can_move_ack=True,
         note="直接=日本被害 / 間接=世界のCI。集約シグナルが構成比の移動を供給する。",
     )
+
+
+def _criminal_financial() -> QuestionDraft:
+    """型 E: 日本の重要インフラに対する金銭目的 (= 犯罪組織の脅威) は悪化しているか。
+
+    直接 = 日本の被害 / 間接 = 世界の重要インフラでの同種活動。根拠の候補は
+    ``standing_scope`` (STANDING_EVIDENCE_SCOPE) が「サイバーの事案 ∧ 非国家の犯罪アクター
+    (ransom_group / spider)」に絞る。国家系の金銭目的 (Lazarus 等) は入れない。
+    """
+    return _trend("financial")
 
 
 def _threshold(nation: str) -> QuestionDraft:
@@ -115,18 +129,30 @@ DRAFTS: tuple[QuestionDraft, ...] = (
 )
 
 
+#: opt-in の問い。既定の一覧 (DRAFTS) に入れない = ``--only <key>`` で明示したときだけ昇格する。
+OPT_IN_DRAFTS: dict[str, QuestionDraft] = {
+    "criminal-financial": _criminal_financial(),
+}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--apply", action="store_true", help="実際に昇格する (既定は dry-run)")
+    ap.add_argument(
+        "--only",
+        choices=sorted(OPT_IN_DRAFTS),
+        help="opt-in の問い 1 件だけを対象にする (既定の一覧は対象外)",
+    )
     args = ap.parse_args()
+    drafts = (OPT_IN_DRAFTS[args.only],) if args.only else DRAFTS
 
     existing = {r.get("situation_id") for r in list_questions()}
     print(f"既に昇格済み: {len(existing)} 件\n")
 
     failed = 0
-    for d in DRAFTS:
+    for d in drafts:
         result = qualify(d)
         mark = "✓" if result.ok else "✗"
         print(f"{mark} [{d.frame_id}] {question_text(d)}")
@@ -145,7 +171,7 @@ def main() -> int:
 
     store = SituationStore()
     now_iso = datetime.now(UTC).isoformat()
-    for d in DRAFTS:
+    for d in drafts:
         sid = promote(d, store=store, now_iso=now_iso)
         state = "既存" if sid in existing else "新規"
         print(f"  {state} {sid}  {question_text(d)}")

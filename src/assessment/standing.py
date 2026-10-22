@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from src.assessment.standing_scope import (
     category_in_scope,
+    criminal_actor_in_scope,
     scope_for_question,
     scope_for_seed,
 )
@@ -361,9 +362,12 @@ def _harvest_declarative(
             if not category_in_scope(scope, c.get("category")):
                 continue
             aid = str(c["article_id"])
+            entity_keys = frozenset(entities_by_id.get(aid, set()))
+            if not criminal_actor_in_scope(scope, entity_keys):
+                continue
             signals = signals_from_candidate(
                 c,
-                entity_keys=frozenset(entities_by_id.get(aid, set())),
+                entity_keys=entity_keys,
                 nation_by_key=nation_by_key,
             )
             if _eval_condition(cond, signals, sq):
