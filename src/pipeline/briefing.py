@@ -698,6 +698,48 @@ def _resolve_body(article: Article, extraction: ExtractionResult) -> tuple[str, 
     return fallback, "feed_summary", extraction.failure_reason
 
 
+def _fill_victim_country(
+    summary: SummaryOutput,
+    title: str,
+    country_iso: str | None,
+    country_raw: str | None,
+    *,
+    article_id: str,
+) -> tuple[str | None, str | None]:
+    """LLM が被害国を出さなかった行を決定論の規則で埋める (モードにより適用/ログのみ)。"""
+    from src.cti.victim_country_fill import (
+        INFERRED_RAW_PREFIX,
+        FillMode,
+        fill_mode,
+        get_org_history,
+        infer_victim_country,
+    )
+
+    mode = fill_mode()
+    if mode is FillMode.OFF or country_iso or country_raw:
+        return country_iso, country_raw
+    fill = infer_victim_country(
+        article_type=summary.article_type,
+        category=summary.category,
+        victim_orgs=summary.victim_orgs or [],
+        title=title,
+        summary=summary.summary or "",
+        org_history=get_org_history(),
+    )
+    if fill is None:
+        return country_iso, country_raw
+    _log.info(
+        "victim_country_fill",
+        mode=mode.value,
+        iso=fill.iso,
+        rule=fill.rule,
+        article_id=article_id,
+    )
+    if mode is FillMode.SHADOW:
+        return country_iso, country_raw
+    return fill.iso, f"{INFERRED_RAW_PREFIX}{fill.rule}"
+
+
 def _final_pmesii_axes(
     merged: list[str],
     *,
@@ -836,6 +878,12 @@ def _build_briefing(
         victim_country_iso=country_iso,
     ):
         country_iso, country_raw = None, None
+    # 取りこぼしの補完 (VICTIM_COUNTRY_FILL、既定 shadow、2026-10-22): LLM が国を出さなかった
+    # 速報のサイバー記事に、確実な根拠 (日本の法人格・開示文の定型・過去の同一組織) がある
+    # ときだけ国を足す。shadow は埋める値をログに出すだけ。raw には出所 (inferred:規則) を残す。
+    country_iso, country_raw = _fill_victim_country(
+        summary, article.title or "", country_iso, country_raw, article_id=article.id
+    )
     # 状態分離監査 2026-07-16: T 軸は廃止 (書かない)、I-infra は NISC 写像の決定論
     # フロアで補強する (決定論供給は枯れない — feed_default だけが生き残った実測の一般化)。
     merged_axes = _final_pmesii_axes(
