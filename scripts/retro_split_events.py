@@ -33,9 +33,7 @@ import numpy as np
 from src.config_loader import AppConfig, load_app_config
 from src.eventnews import pair_shadow
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
-from src.eventnews.runner import _max_importance
 from src.eventnews.split import split_components
-from src.eventnews.state import compute_source_breakdown
 from src.storage.repo_eventnews import EventItemRecord
 from src.storage.run_history import RunHistoryRepository
 from src.tools.model_tiers import Step, build_llm_for
@@ -47,6 +45,7 @@ from src.ui.services.eventnews_hourly_job import (
     _resolve_kinds,
     regenerate_pending_bodies,
 )
+from src.ui.services.eventnews_merge_undo import refresh_item_state
 
 #: 承認辺の閾値。較正 (2026-09-02) の結果で確定する。
 DEFAULT_EDGE_THRESHOLD = 0.7
@@ -68,25 +67,8 @@ def _split_target_id(repo: RunHistoryRepository, article_id: str, current_item: 
 def _refresh_item_state(
     repo: RunHistoryRepository, item_id: str, members: list[MemberArticle]
 ) -> None:
-    breakdown = compute_source_breakdown(members)
-    importance = ""
-    for m in members:
-        importance = _max_importance(importance, m.importance)
-    repo.update_event_item(
-        item_id,
-        {
-            "current_version": 0,  # メンバーが変わったので本文を作り直す
-            "importance": importance,
-            "best_source_tier": breakdown.best_tier,
-            "independent_sources": breakdown.independent,
-            "state_media_count": breakdown.state_media,
-            "unclassified_sources": breakdown.unclassified,
-            "first_reported_at": min(m.anchor_ts for m in members),
-            "last_reported_at": max(m.anchor_ts for m in members),
-            "merged_into": None,
-            "updated_at": datetime.now(UTC),
-        },
-    )
+    """状態の作り直しは統合を戻す操作と共有する (src/ui/services/eventnews_merge_undo.py)。"""
+    refresh_item_state(repo, item_id, members, now=datetime.now(UTC), clear_merged_into=True)
 
 
 async def _judge_all(

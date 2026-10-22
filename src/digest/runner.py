@@ -8,12 +8,14 @@ DB 取得 → LLM 集約 → Discord brief channel 投稿の最小フロー。
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.config_loader import AppConfig, DiscordChannel, PipelineConfig
 from src.digest.db_filter import (
+    DigestCandidate,
     fetch_for_deep_dive_candidates,
     fetch_recent_brief_titles,
 )
@@ -76,6 +78,19 @@ _F1_NOVELTY_LOOKBACK_HOURS = 672
 # Phase G1 trend は Phase H で UI 化、baseline 窓は trend_aggregator のデフォルト引数で管理
 
 
+def _event_roots(
+    repo: RunHistoryRepository | None, candidates: Sequence[DigestCandidate]
+) -> dict[str, str] | None:
+    """候補の記事 → 事象の根 (時事性の「関連事案」判定用)。取れなければ None = dedup_key に退避。"""
+    if repo is None:
+        return None
+    try:
+        return repo.event_roots_by_article([c.article_id for c in candidates])
+    except Exception as e:  # noqa: BLE001 — 補助の信号。選定を止めない
+        _log.warning("deep_dive_event_roots_failed", error=str(e)[:160])
+        return None
+
+
 async def _run_weekly_deep_dive(
     *,
     llm: LLMClient,
@@ -117,6 +132,7 @@ async def _run_weekly_deep_dive(
         candidates=prefilter.candidates,
         recent_briefs=recent_briefs,
         past_selected_keys=sorted(past_selected_keys),
+        event_roots=_event_roots(repo, prefilter.candidates),
     )
 
     if selected and repo is not None and run_id is not None and not dry_run:
