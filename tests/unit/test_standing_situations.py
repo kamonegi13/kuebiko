@@ -125,13 +125,13 @@ class TestSeeds:
 
 
 class TestHarvest:
-    def test_r1_prepositioning_by_involved_country(self, store: SituationStore) -> None:
+    def test_r1_prepositioning_by_state_actor(self, store: SituationStore) -> None:
         ensure_standing_situations(store=store, now_iso=_NOW_ISO)
         _seed_article(
             store,
             article_id="a1",
             intent="prepositioning",
-            entities=(("involved_country", "CN"),),
+            entities=(("actor", "volt_typhoon"),),
         )
         _seed_article(store, article_id="a2", intent="prepositioning")  # 国なし → 不収穫
         added = _harvest(store)
@@ -191,7 +191,7 @@ class TestHarvest:
             store,
             article_id="d1",
             intent="prepositioning",
-            entities=(("involved_country", "RU"),),
+            entities=(("actor", "apt28"),),
         )
         assert _harvest(store) == 1
         assert _harvest(store) == 0  # 既存ペアは冪等 skip
@@ -203,7 +203,7 @@ class TestHarvest:
                 store,
                 article_id=f"e{i}",
                 intent="prepositioning",
-                entities=(("involved_country", "KP"),),
+                entities=(("actor", "lazarus"),),
             )
         added = _harvest(store)
         assert added == 30  # cap

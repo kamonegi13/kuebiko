@@ -20,8 +20,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from src.assessment.standing_scope import (
+    category_in_scope,
+    scope_for_question,
+    scope_for_seed,
+)
 from src.cti.nisc_sectors import _CANONICAL_TO_NISC
 from src.cti.routing_signals import RoutingSignals
+from src.cti.threat_actor_doctrine import is_state_actor
 from src.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -110,9 +116,11 @@ def ensure_standing_situations(*, store: SituationStore, now_iso: str) -> int:
     return opened
 
 
-@lru_cache(maxsize=1)
-def _actor_lookup() -> dict[str, str]:
+@lru_cache(maxsize=2)
+def _actor_lookup(state_only: bool = False) -> dict[str, str]:
     """actor 辞書から id/canonical/alias → nation (lowercase) を構築。
+
+    ``state_only`` なら国家系アクターだけ (``is_state_actor``: ransom_group 等の非国家は除く)。
 
     subprocess 単位で 1 回だけ読む (lru_cache)。辞書ゲート済み帰属のみを使う確定原則の
     実装 — entity value (actor id) が辞書に無ければ nation 解決されず収穫対象外。
@@ -123,6 +131,8 @@ def _actor_lookup() -> dict[str, str]:
     for actor in load_actor_aliases().actors:
         nation = (actor.nation or "").strip().lower()
         if not nation:
+            continue
+        if state_only and not is_state_actor(nation, actor.family):
             continue
         names = {actor.id.lower(), actor.canonical.lower(), *(a.lower() for a in actor.aliases)}
         for k in names:
@@ -236,13 +246,15 @@ def _match_rules(
     *,
     nation: str,
     nation_by_key: dict[str, str],
+    actor_only: bool = False,
 ) -> str | None:
     """記事 1 件を standing (国家 N) の収穫規則 R1-R3 に照合する (決定論)。"""
     parts = [k.partition(":") for k in entity_keys]
     actor_values = {v.lower() for t, _, v in parts if t == "actor"}
     involved = {v.upper() for t, _, v in parts if t == "involved_country"}
     actor_nation_hit = any(nation_by_key.get(a) == nation for a in actor_values)
-    nation_hit = actor_nation_hit or nation.upper() in involved
+    # actor_only (STANDING_EVIDENCE_SCOPE): 関与国の言及だけでは国家の活動の根拠にしない
+    nation_hit = actor_nation_hit or (not actor_only and nation.upper() in involved)
 
     intent = str(row.get("intent") or "")
     sector = str(row.get("victim_sector") or "")
@@ -336,15 +348,18 @@ def _harvest_declarative(
     entities_by_id = repo.entity_keys_for_articles(
         [c["article_id"] for c in candidates], types=("actor", "involved_country")
     )
-    nation_by_key = _actor_lookup()
     sq = get_source_quality()
 
     added_total = 0
     for q in questions:
         sid = str(q.get("situation_id"))
         cond = q.get("evidence_condition") or {}
+        scope = scope_for_question(q)
+        nation_by_key = _actor_lookup(scope.state_only)
         matches: list[tuple[str, str]] = []
         for c in candidates:
+            if not category_in_scope(scope, c.get("category")):
+                continue
             aid = str(c["article_id"])
             signals = signals_from_candidate(
                 c,
@@ -402,7 +417,8 @@ def harvest_standing_evidence(
     entities_by_id = repo.entity_keys_for_articles(
         [c["article_id"] for c in candidates], types=("actor", "involved_country")
     )
-    nation_by_key = _actor_lookup()
+    seed_scope = scope_for_seed()
+    nation_by_key = _actor_lookup(seed_scope.state_only)
 
     for seed in seeds:
         matches: list[tuple[str, str]] = []
@@ -413,6 +429,7 @@ def harvest_standing_evidence(
                 entities_by_id.get(aid, set()),
                 nation=seed.nation,
                 nation_by_key=nation_by_key,
+                actor_only=seed_scope.state_only,
             )
             if rule is not None:
                 matches.append((aid, rule))
