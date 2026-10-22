@@ -128,6 +128,12 @@ function QuestionCard({ q, moved }: { q: PostureCard; moved: boolean }) {
           <span>
             証拠 直接 {q.evidence_direct_30d} / 関連 {q.evidence_related_30d} 件 (30 日)
           </span>
+          {q.evidence_proximity_30d && (
+            <span title="被害国が日本・同盟国なら直接、それ以外は間接 (答えの重みは同じ)">
+              被害国: 日本・同盟国 {q.evidence_proximity_30d.direct} / それ以外{" "}
+              {q.evidence_proximity_30d.indirect} / 不明 {q.evidence_proximity_30d.unknown}
+            </span>
+          )}
         </div>
       </header>
 
