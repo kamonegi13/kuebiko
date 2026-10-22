@@ -1,4 +1,6 @@
-"""常設の問い「日本の重要インフラに対する金銭目的 (犯罪組織) は悪化しているか」(2026-10-22)。
+"""常設の問い「日本の組織に対する金銭目的 (犯罪組織) は悪化しているか」(2026-10-22)。
+
+対象は重要インフラ以外の企業・団体も含む (利用者判断 10-22 17:40)。
 
 - 型は趨勢 (trend) × 脅威 = financial。根拠の候補は **非国家の犯罪アクター (ransom_group /
   spider) に結び付き、サイバーの事案** のものだけ (STANDING_EVIDENCE_SCOPE の型に載せる)。
@@ -52,10 +54,24 @@ class TestDraft:
         result = qualify(draft)
         assert result.ok, result.failures
 
-    def test_question_text_names_japan_ci_and_financial(self) -> None:
+    def test_question_text_names_japan_organizations_and_financial(self) -> None:
         draft = _load_script().OPT_IN_DRAFTS["criminal-financial"]
         text = question_text(draft)
-        assert "日本" in text and "重要インフラ" in text and "金銭" in text
+        assert text == "日本の組織に対する金銭目的は悪化しているか"
+
+    def test_scope_is_all_organizations_not_critical_infrastructure(self) -> None:
+        from src.assessment.question_frame import SCOPE_ALL_ORGS
+
+        draft = _load_script().OPT_IN_DRAFTS["criminal-financial"]
+        assert draft.slots["target_scope"] == SCOPE_ALL_ORGS
+
+    def test_aggregate_population_is_japan_victims_of_any_sector(self) -> None:
+        from src.assessment.question_frame import SCOPE_ALL_ORGS, aggregate_population
+
+        pop = aggregate_population(
+            "trend", {"target_country": "JP", "target_scope": SCOPE_ALL_ORGS}
+        )
+        assert pop == {"property": "victim_country", "op": "eq", "value": "JP"}
 
     def test_evidence_has_direct_and_indirect_arms(self) -> None:
         cond = _load_script().OPT_IN_DRAFTS["criminal-financial"].evidence_condition
@@ -190,13 +206,14 @@ class TestHarvest:
         _article(store, "non_cyber", category="geopolitical", actors=("qilin",))
         _article(store, "wrong_intent", intent="espionage", actors=("qilin",))
         _article(store, "world_non_ci", victim_country="PL", actors=("qilin",))
+        _article(store, "jp_non_ci", victim_country="JP", victim_sector="retail", actors=("qilin",))
 
     def test_scope_on_keeps_cyber_cases_tied_to_criminal_actors(
         self, store: SituationStore, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("STANDING_EVIDENCE_SCOPE", "1")
         self._seed(store)
-        assert _run(store) == {"jp_ransom", "jp_spider", "world_ci"}
+        assert _run(store) == {"jp_ransom", "jp_spider", "jp_non_ci", "world_ci"}
 
     def test_scope_off_is_legacy(
         self, store: SituationStore, monkeypatch: pytest.MonkeyPatch
@@ -206,6 +223,7 @@ class TestHarvest:
         assert _run(store) == {
             "jp_ransom",
             "jp_spider",
+            "jp_non_ci",
             "world_ci",
             "state_actor",
             "no_actor",

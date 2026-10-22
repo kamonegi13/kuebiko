@@ -35,7 +35,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.assessment.question_draft import QuestionDraft, qualify, question_text  # noqa: E402
-from src.assessment.question_frame import SCOPE_ALL_CI  # noqa: E402
+from src.assessment.question_frame import SCOPE_ALL_CI, SCOPE_ALL_ORGS  # noqa: E402
 from src.assessment.question_store import list_questions, promote  # noqa: E402
 from src.assessment.situation_store import SituationStore  # noqa: E402
 from src.cti.nisc_sectors import _CANONICAL_TO_NISC  # noqa: E402
@@ -72,13 +72,27 @@ def _trend(threat: str) -> QuestionDraft:
 
 
 def _criminal_financial() -> QuestionDraft:
-    """型 E: 日本の重要インフラに対する金銭目的 (= 犯罪組織の脅威) は悪化しているか。
+    """型 E: 日本の組織 (業種を問わない) に対する金銭目的 (= 犯罪組織の脅威) は悪化しているか。
 
-    直接 = 日本の被害 / 間接 = 世界の重要インフラでの同種活動。根拠の候補は
-    ``standing_scope`` (STANDING_EVIDENCE_SCOPE) が「サイバーの事案 ∧ 非国家の犯罪アクター
-    (ransom_group / spider)」に絞る。国家系の金銭目的 (Lazarus 等) は入れない。
+    直接 = 日本が被害 (どの業種でも) / 間接 = 世界の重要インフラでの同種活動。
+    間接を世界の「全組織」に広げないのは、被害が桁違いに多く (直近 30 日で世界 CI 45 件に対し
+    その他 153 件) 日本の趨勢を希釈するため。日本の被害は薄い (30 日で 17 件) ので、世界の
+    重要インフラを蓄積側の腕として残す。根拠の候補は ``standing_scope`` が
+    「サイバーの事案 ∧ 非国家の犯罪アクター (ransom_group / spider)」に絞る。
     """
-    return _trend("financial")
+    return QuestionDraft(
+        frame_id="trend",
+        slots={"target_country": "JP", "target_scope": SCOPE_ALL_ORGS, "threat": "financial"},
+        decision=_DECISION_PRIORITY,
+        evidence_condition={
+            "any": [
+                {"all": [_leaf("intent", "eq", "financial"), _leaf("victim_country", "eq", "JP")]},
+                {"all": [_leaf("intent", "eq", "financial"), _leaf("victim_sector", "in", _CI)]},
+            ]
+        },
+        answer_can_move_ack=True,
+        note="直接=日本の被害(全業種) / 間接=世界のCI。犯罪アクター×サイバーに絞る。",
+    )
 
 
 def _threshold(nation: str) -> QuestionDraft:
