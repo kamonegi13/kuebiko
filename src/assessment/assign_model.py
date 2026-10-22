@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
-
 from src.logging_config import get_logger
+from src.tools.tree_forest import forest_probability
 
 _log = get_logger(__name__)
 
@@ -39,20 +38,11 @@ class AssignModel:
 
     def probability(self, features: list[float]) -> float:
         """同じ情勢である確率 (木ごとの葉の比率の平均)。"""
-        # ⚠ float32 で比較する (sklearn は入力を float32 に落として分岐する)
-        x = np.asarray(features, dtype=np.float32)
-        if x.shape[0] != len(self.feature_names):
-            raise ValueError(f"特徴量の数が合いません: {x.shape[0]} != {len(self.feature_names)}")
-        total = 0.0
-        for tree in self._trees:
-            left, right = tree["left"], tree["right"]
-            feature, threshold, proba = tree["feature"], tree["threshold"], tree["proba"]
-            node = 0
-            while int(left[node]) != -1:
-                idx = int(feature[node])
-                node = int(left[node]) if x[idx] <= threshold[node] else int(right[node])
-            total += float(proba[node])
-        return total / len(self._trees)
+        if len(features) != len(self.feature_names):
+            raise ValueError(
+                f"特徴量の数が合いません: {len(features)} != {len(self.feature_names)}"
+            )
+        return forest_probability(self._trees, features)
 
     def assigns(self, features: list[float]) -> bool:
         return self.probability(features) >= self.threshold

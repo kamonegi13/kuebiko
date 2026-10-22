@@ -19,9 +19,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
-
 from src.logging_config import get_logger
+from src.tools.tree_forest import forest_probability
 
 _log = get_logger(__name__)
 
@@ -39,21 +38,11 @@ class PairModel:
 
     def probability(self, features: list[float]) -> float:
         """同じ出来事である確率 (木ごとの葉の比率を平均する)。"""
-        # ⚠ **float32 で比較する。** sklearn は内部で入力を float32 に落とすので、
-        #    float64 のまま比べると閾値の近傍で分岐が変わる (実測 最大差 0.0034)。
-        x = np.asarray(features, dtype=np.float32)
-        if x.shape[0] != len(self.feature_names):
-            raise ValueError(f"特徴量の数が合いません: {x.shape[0]} != {len(self.feature_names)}")
-        total = 0.0
-        for tree in self._trees:
-            left, right = tree["left"], tree["right"]
-            feature, threshold, proba = tree["feature"], tree["threshold"], tree["proba"]
-            node = 0
-            while int(left[node]) != -1:  # 葉は children_left == -1
-                idx = int(feature[node])
-                node = int(left[node]) if x[idx] <= threshold[node] else int(right[node])
-            total += float(proba[node])
-        return total / len(self._trees)
+        if len(features) != len(self.feature_names):
+            raise ValueError(
+                f"特徴量の数が合いません: {len(features)} != {len(self.feature_names)}"
+            )
+        return forest_probability(self._trees, features)
 
     def joins(self, features: list[float], *, llm_available: bool) -> bool:
         """繋ぐか。⭐ **閾値は LLM の有無で使い分ける** (欠測時は分布が変わる)。"""
