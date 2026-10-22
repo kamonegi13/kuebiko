@@ -968,6 +968,25 @@ CREATE TABLE IF NOT EXISTS event_pair_shadow (
     ml_joined      INTEGER
 );
 
+-- 統合の判断記録 (2026-10-22)。吸収された事象 1 つ = 1 行。どの記事対 (cos・ML 確率) と
+-- どの関門の状態で結んだかを残し、誤統合を戻せるようにする。戻したら undone_at を立てる。
+CREATE TABLE IF NOT EXISTS event_merge_decisions (
+    id             BIGSERIAL PRIMARY KEY,
+    decided_at     TEXT     NOT NULL,
+    run_kind       TEXT     NOT NULL,
+    target_id      TEXT     NOT NULL,
+    absorbed_id    TEXT     NOT NULL,
+    edges_json     TEXT     NOT NULL,
+    edge_count     INTEGER  NOT NULL DEFAULT 0,
+    rescued        INTEGER  NOT NULL DEFAULT 0,
+    flags_json     TEXT     NOT NULL DEFAULT '{}',
+    undone_at      TEXT,
+    undone_reason  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_absorbed ON event_merge_decisions(absorbed_id);
+CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_target ON event_merge_decisions(target_id);
+CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_decided ON event_merge_decisions(decided_at);
+
 -- 記事の種別キャッシュ (event_kind、2026-09-03)。群化の特徴量。記事ごとに 1 回だけ分類する
 CREATE TABLE IF NOT EXISTS article_kinds (
     article_id  TEXT PRIMARY KEY,

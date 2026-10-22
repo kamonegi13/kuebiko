@@ -56,6 +56,7 @@ from src.storage.repo_eventnews import EventNewsMixin
 from src.storage.repo_importance_v2 import ImportanceV2Mixin
 from src.storage.repo_knowledge import KnowledgeMixin
 from src.storage.repo_llm_usage import LlmUsageMixin
+from src.storage.repo_merge_decisions import MergeDecisionsMixin
 from src.storage.repo_ops_notices import OpsNoticesMixin
 from src.storage.repo_org_identity import OrgIdentityMixin
 from src.storage.repo_pir import PirJudgmentsMixin
@@ -105,6 +106,7 @@ class RunHistoryRepository(
     TriageShadowMixin,
     TuningLabelsMixin,
     EventNewsMixin,
+    MergeDecisionsMixin,
     SummaryEmbeddingMixin,
     SeverityAxesMixin,
     ImportanceV2Mixin,

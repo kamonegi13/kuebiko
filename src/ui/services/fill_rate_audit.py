@@ -783,6 +783,21 @@ async def run_weekly_fill_rate_audit() -> None:
             rule_warn_count += int(fid_warn)
         except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
             _log.warning("eventnews_fidelity_audit_failed", error=str(e)[:160])
+        # 統合の判断記録の被覆 (2026-10-22)。記録が欠けた統合は根拠を辿れず戻せない
+        try:
+            from src.storage.run_history import RunHistoryRepository
+            from src.ui.services.fill_rate_merge_section import (
+                collect_merge_audit_stats,
+                merge_decision_line,
+            )
+
+            merge_line, merge_warn = merge_decision_line(
+                collect_merge_audit_stats(RunHistoryRepository(), since=now - timedelta(days=7))
+            )
+            rule_lines.append(merge_line)
+            rule_warn_count += int(merge_warn)
+        except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
+            _log.warning("merge_decision_audit_failed", error=str(e)[:160])
         # アクター単位の汚染 (2026-09-27)。主題判定の平均精度は集中した誤りを隠す
         # (APT37 は主題 26 記事中 17 記事が無人機の記事 = 別名の衝突)
         try:

@@ -15,7 +15,12 @@
 事業者の大規模漏えいの続報が 25-26 日差で別事象、Citrix の「修正」と「悪用確認」が
 18 日差で分断、PaperCut の 48 記事が 19 事象)。
 
-⭐ **時間差の上限は設けない**。実測 (全期間・候補ペア 62,884):
+⚠ **2026-10-22 に時間の上限を戻した** (``plan_merges(max_gap=...)``、既定 60 日、
+``EVENTNEWS_MERGE_MAX_GAP_DAYS``、0 で無制限)。下の「上限なし」は 09-21 の判断で、
+判定が緩む方向 (ML のずれ・ハブへの吸収) の歯止めが無いことが全体見直しで問題になった。
+30 日と無制限の差は 2% なので、60 日なら正しい統合をほぼ失わず被害の上限になる。
+
+(09-21 当時の判断) **時間差の上限は設けない**。実測 (全期間・候補ペア 62,884):
 
 | 時間差の上限 | 畳む事象 |
 |---|---|
@@ -39,6 +44,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import numpy as np
 
@@ -63,11 +69,29 @@ HUB_CORE_SHARE = 0.30
 
 
 @dataclass(frozen=True)
+class MergeLink:
+    """統合の根拠 1 本 = 結ばれた事象の組と、その組を支えた記事対 (辺)。
+
+    ``rescued`` は辺の本数が足りないのに「記事 1 件の事象の救済」で結んだ組 (2026-10-22 追加、
+    統合の判断を記録して後から戻せるようにするため)。
+    """
+
+    item_a: str
+    item_b: str
+    edges: tuple[tuple[str, str], ...]
+    rescued: bool = False
+
+
+@dataclass(frozen=True)
 class MergeGroup:
-    """統合する事象の組。``target`` が統合先 (最初に立った事象)。"""
+    """統合する事象の組。``target`` が統合先 (最初に立った事象)。
+
+    ``links`` は群を結んだ根拠 (記録用。判定には使わない)。
+    """
 
     target: str
     absorbed: tuple[str, ...]
+    links: tuple[MergeLink, ...] = ()
 
 
 def candidate_pairs_by_entity(
@@ -231,6 +255,21 @@ def cve_sets_disjoint(cves: Mapping[str, frozenset[str]], item_a: str, item_b: s
     return bool(a) and bool(b) and not (a & b)  # type: ignore[operator]
 
 
+def exceeds_time_gap(
+    article_ts: Mapping[str, datetime],
+    a: str,
+    b: str,
+    max_gap: timedelta | None,
+) -> bool:
+    """記事対の時刻差が上限を超えるか。上限なし・時刻不明は False (= 止めない)。"""
+    if max_gap is None:
+        return False
+    ta, tb = article_ts.get(a), article_ts.get(b)
+    if ta is None or tb is None:
+        return False
+    return abs(ta - tb) > max_gap
+
+
 def _root(parent: dict[str, str], x: str) -> str:
     while parent[x] != x:
         parent[x] = parent[parent[x]]
@@ -253,6 +292,8 @@ def plan_merges(
     bulletin_bridge_gate: bool = False,
     hub_gate: bool = False,
     report_periods: Mapping[str, str] | None = None,
+    article_ts: Mapping[str, datetime] | None = None,
+    max_gap: timedelta | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -280,6 +321,8 @@ def plan_merges(
             焦点の CVE で照合する)
         report_periods: article_id → 期間 (``roundup_detector.report_period``)。両端が期間つき
             レポートで期間が違う辺を使わない (月次レポートどうしを統合しない)。None で無効
+        article_ts / max_gap: 記事対の時刻差が ``max_gap`` を超える辺を使わない (2026-10-22)。
+            判定が緩む方向 (ML のずれ・ハブ) の被害の上限。None で無制限 (09-21 の挙動)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
@@ -303,6 +346,8 @@ def plan_merges(
             continue
         if report_periods and reports_of_different_periods(report_periods, a, b):
             continue
+        if article_ts and exceeds_time_gap(article_ts, a, b, max_gap):
+            continue
         cos = float(np.dot(vectors[a], vectors[b]))
         if not edge_is_allowed(entities[a], entities[b], shared, cos):
             continue
@@ -319,6 +364,8 @@ def plan_merges(
             continue
         if report_periods and reports_of_different_periods(report_periods, a, b):
             continue
+        if article_ts and exceeds_time_gap(article_ts, a, b, max_gap):
+            continue
         key = (ia, ib) if ia < ib else (ib, ia)
         edge_count[key] = edge_count.get(key, 0) + 1
         edge_articles.setdefault(key, []).append((a, b))
@@ -329,22 +376,34 @@ def plan_merges(
     parent: dict[str, str] = {}
     for iid in set(item_of.values()):
         parent[iid] = iid
+    used: list[MergeLink] = []
     for (ia, ib), n in edge_count.items():
-        if n < min_edges and (ia, ib) not in rescued:
+        is_rescued = (ia, ib) in rescued and n < min_edges
+        if n < min_edges and not is_rescued:
             continue
+        used.append(MergeLink(ia, ib, tuple(sorted(edge_articles[(ia, ib)])), is_rescued))
         ra, rb = _root(parent, ia), _root(parent, ib)
         if ra != rb:
             parent[ra] = rb
     groups: dict[str, list[str]] = {}
     for iid in parent:
         groups.setdefault(_root(parent, iid), []).append(iid)
+    links_of: dict[str, list[MergeLink]] = {}
+    for link in used:
+        links_of.setdefault(_root(parent, link.item_a), []).append(link)
     out: list[MergeGroup] = []
-    for ids in groups.values():
+    for root, ids in groups.items():
         if len(ids) < 2:
             continue
         # ⭐ 統合先は **最初に立った事象** — URL がそこに残る
         ordered = sorted(ids, key=lambda i: str(first_seen.get(i, "")))
-        out.append(MergeGroup(target=ordered[0], absorbed=tuple(ordered[1:])))
+        out.append(
+            MergeGroup(
+                target=ordered[0],
+                absorbed=tuple(ordered[1:]),
+                links=tuple(sorted(links_of.get(root, ()), key=lambda lk: (lk.item_a, lk.item_b))),
+            )
+        )
     return out
 
 

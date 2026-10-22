@@ -21,6 +21,7 @@ import time
 sys.path.insert(0, "/app")
 
 from src.storage.run_history import RunHistoryRepository
+from src.ui.services.eventnews_merge_decisions import RUN_KIND_MANUAL
 from src.ui.services.eventnews_merge_job import MergePlan, merge_and_regenerate
 
 
@@ -67,6 +68,7 @@ def main() -> None:
             apply=args.apply,
             regen_limit=args.regen_cap,
             on_regen_progress=_progress,
+            run_kind=RUN_KIND_MANUAL,
         )
     )
     _print_plan(outcome.plan)
