@@ -15,6 +15,7 @@ LLM 追加呼出なし。個別 push は復活させない (再設計の 1 通�
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -140,12 +141,117 @@ _CATEGORY_JA: dict[str, str] = {
 }
 
 
-def high_threats_payload(items: list[HighThreatItem], *, total: int) -> dict[str, Any]:
+#: 事象の統合 (merged_into) をたどる最大段数 (実測の最大は 2-3 段)
+_MERGE_HOPS = 6
+#: 別チャンネルへ流れた件数を数える投稿先 (薄い日の補足行用)
+OTHER_CHANNELS: tuple[str, ...] = ("alert", "japan_watch")
+
+
+def _in_clause(values: Sequence[str]) -> str:
+    return ", ".join("?" for _ in values)
+
+
+def collect_event_info(
+    article_ids: Sequence[str], *, db_path: Path = DEFAULT_DB_PATH
+) -> dict[str, tuple[str, str]]:
+    """記事 id → (事象 id, 事象の日本語見出し)。事象ニュースの群に入っていない記事は含めない。
+
+    統合された事象 (merged_into) は根まで追う。同じ事象の記事を 1 行にまとめるための材料で、
+    読めないときは空 (呼び出し側は従来どおり記事ごとに出す)。
+    """
+    ids = [a for a in dict.fromkeys(article_ids) if a]
+    if not ids:
+        return {}
+    con = _connect(db_path)
+    try:
+        member_rows = con.execute(
+            "SELECT article_id, item_id FROM event_item_members"
+            f" WHERE article_id IN ({_in_clause(ids)}) ORDER BY joined_at ASC",
+            ids,
+        ).fetchall()
+        item_of = {str(r["article_id"]): str(r["item_id"]) for r in member_rows}
+        root_of = _resolve_roots(con, set(item_of.values()))
+        roots = sorted(set(root_of.values()))
+        headlines = _current_headlines(con, roots)
+    finally:
+        con.close()
+    return {
+        aid: (root_of[iid], headlines.get(root_of[iid], ""))
+        for aid, iid in item_of.items()
+        if iid in root_of
+    }
+
+
+def _resolve_roots(con: Any, item_ids: set[str]) -> dict[str, str]:
+    """item id → 統合先の根 id (統合されていなければ自分自身)。"""
+    root_of = {i: i for i in item_ids}
+    for _ in range(_MERGE_HOPS):
+        pending = sorted(set(root_of.values()))
+        rows = con.execute(
+            f"SELECT id, merged_into FROM event_items WHERE id IN ({_in_clause(pending)})",
+            pending,
+        ).fetchall()
+        nxt = {str(r["id"]): str(r["merged_into"]) for r in rows if r["merged_into"]}
+        if not nxt:
+            break
+        root_of = {k: nxt.get(v, v) for k, v in root_of.items()}
+    return root_of
+
+
+def _current_headlines(con: Any, item_ids: Sequence[str]) -> dict[str, str]:
+    if not item_ids:
+        return {}
+    rows = con.execute(
+        "SELECT i.id AS item_id, v.headline AS headline FROM event_items i"
+        " JOIN event_item_versions v ON v.item_id = i.id AND v.version = i.current_version"
+        f" WHERE i.id IN ({_in_clause(list(item_ids))})",
+        list(item_ids),
+    ).fetchall()
+    return {str(r["item_id"]): str(r["headline"] or "").strip() for r in rows}
+
+
+def collect_other_channel_counts(
+    *,
+    lookback_hours: int,
+    db_path: Path = DEFAULT_DB_PATH,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """同じ時間窓で別チャンネル (alert / japan_watch) へ配信した件数 (dedup_key 単位)。
+
+    高脅威の節は alert / vuln を設計上除くため、薄い回には「他へ流れた」ことが見えない。
+    その補足行の材料。
+    """
+    end = now or datetime.now(UTC)
+    since = end - timedelta(hours=lookback_hours)
+    sql = (
+        "SELECT posted_channel, COUNT(DISTINCT COALESCE(dedup_key, article_id)) AS n"
+        " FROM articles WHERE status = 'posted'"
+        f" AND posted_channel IN ({_in_clause(OTHER_CHANNELS)})"
+        " AND created_at >= ? AND created_at <= ?"
+        " GROUP BY posted_channel"
+    )
+    con = _connect(db_path)
+    try:
+        rows = con.execute(sql, [*OTHER_CHANNELS, since.isoformat(), end.isoformat()]).fetchall()
+    finally:
+        con.close()
+    found = {str(r["posted_channel"]): int(r["n"]) for r in rows}
+    return {ch: found.get(ch, 0) for ch in OTHER_CHANNELS}
+
+
+def high_threats_payload(
+    items: list[HighThreatItem],
+    *,
+    total: int,
+    event_info: Mapping[str, tuple[str, str]] | None = None,
+) -> dict[str, Any]:
     """Web の日次ブリーフに載せる形 (daily_briefs.payload["high_threats"]、2026-10-02)。
 
     従来は Discord の要点にだけ出ていた。alert に流れなかった high の脅威は、ここが
-    唯一の通読面なので Web にも残す。
+    唯一の通読面なので Web にも残す。event_info (``collect_event_info``) があれば
+    事象 id と日本語見出しを付ける (Discord が同じ事象を 1 行にまとめる材料、2026-10-22)。
     """
+    info = event_info or {}
     return {
         "total": total,
         "items": [
@@ -157,6 +263,8 @@ def high_threats_payload(items: list[HighThreatItem], *, total: int) -> dict[str
                 "url": it.url,
                 "is_japan": it.is_japan,
                 "source_tier": it.source_tier,
+                "event_id": info.get(it.article_id, ("", ""))[0],
+                "event_headline": info.get(it.article_id, ("", ""))[1],
             }
             for it in items
         ],

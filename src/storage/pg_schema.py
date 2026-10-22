@@ -648,6 +648,8 @@ CREATE INDEX IF NOT EXISTS idx_job_run_log_job ON job_run_log(job_id, ran_at DES
 -- 日次ブリーフ構造化 payload (2026-07-12): Web はテキストでなく構造から描画する。
 -- 既存 DB への新列は末尾 ALTER (本体 CREATE に index を足すと既存 DB で crash する既知 gotcha)。
 ALTER TABLE daily_briefs ADD COLUMN IF NOT EXISTS payload TEXT;
+-- Discord に投稿した要点版の本文 (2026-10-22)
+ALTER TABLE daily_briefs ADD COLUMN IF NOT EXISTS discord_text TEXT;
 
 -- 常設情報要求 standing situations (段A, 2026-07-13): event/standing の種別。
 -- 設計: docs/prepositioning_posture_ledger_design.md

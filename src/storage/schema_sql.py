@@ -269,6 +269,7 @@ CREATE TABLE IF NOT EXISTS daily_briefs (
     section_count   INTEGER NOT NULL DEFAULT 0,
     sources         TEXT    NOT NULL DEFAULT '[]',  -- JSON: [{title,url}]
     payload         TEXT,                           -- JSON: 構造化 payload (Web 構造描画用)
+    discord_text    TEXT,                           -- Discord に投稿した要点版の本文 (2026-10-22)
     generated_at    TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_daily_briefs_generated_at

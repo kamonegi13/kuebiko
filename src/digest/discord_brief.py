@@ -14,6 +14,7 @@ z 値つきの急増を流していた。Discord は「何が起きたか・ど�
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -35,6 +36,17 @@ SENTENCE_SOFT_MAX = 110
 SENTENCE_HARD_FACTOR = 2
 #: PIR の答え (claim) は結論そのものなので Focus の要点より長く許す
 CLAIM_SENTENCE_MAX = 160
+
+#: 載せる事象がこの数以下の回は「薄い日」として別チャンネルの件数を 1 行足す
+THIN_EVENTS_MAX = 3
+_OTHER_CHANNEL_LABELS: tuple[tuple[str, str], ...] = (
+    ("alert", "alert"),
+    ("japan_watch", "日本関連の注視"),
+)
+_KANA_RE = re.compile(r"[\u3041-\u309f\u30a0-\u30ff]")
+_HAN_RE = re.compile(r"[\u4e00-\u9fff]")
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_FOREIGN_MIN_LATIN_WORDS = 3
 
 _WEB_BRIEF_PATH = "/app/daily-brief"
 _WEB_HIGH_PATH = "/app/news?importance=high"
@@ -65,26 +77,28 @@ def is_enabled() -> bool:
 
 
 def first_sentence(text: str, max_chars: int = SENTENCE_SOFT_MAX) -> str:
-    """最初の 1 文を返す (機械の字数切りをしない)。
+    """最初の 1 文を返す。文の途中で切らない (読点切りの「…」は出さない)。
 
-    1 文が max_chars を超えるとき: max_chars 以内の最後の読点 (、) で切って「…」を付ける。
-    読点が前半に無ければ文全体を残す (語の途中で切らない)。ただし hard cap
-    (max_chars × 2) を超える異常に長い文だけは max_chars で切る。
+    1 文が max_chars × 2 以内ならそのまま返す。超える文は述語を残したまま短くできないので
+    空文字を返す (呼び出し側が領域名・件数だけにする)。
     """
     flat = " ".join(text.split())
     if not flat:
         return ""
     end = flat.find("。")
     sentence = flat[: end + 1] if end >= 0 else flat
-    if len(sentence) <= max_chars:
-        return sentence
-    window = sentence[:max_chars]
-    comma = window.rfind("、")
-    if comma >= max_chars // 2:
-        return window[:comma] + "…"
     if len(sentence) > max_chars * SENTENCE_HARD_FACTOR:
-        return window + "…"
+        return ""
     return sentence
+
+
+def is_foreign_title(title: str) -> bool:
+    """かなを含まず、漢字 (中国語) か英単語 3 語以上で書かれた見出し (= 日本語の見出しではない)。"""
+    if not title or _KANA_RE.search(title):
+        return False
+    if _HAN_RE.search(title):
+        return True
+    return len(_LATIN_WORD_RE.findall(title)) >= _FOREIGN_MIN_LATIN_WORDS
 
 
 def _clip_title(title: str) -> str:
@@ -95,18 +109,86 @@ def _clip_title(title: str) -> str:
 # ── 各節 ────────────────────────────────────────────────────────────
 
 
-def _high_threat_lines(items: list[dict[str, Any]], limit: int) -> list[str]:
+@dataclass(frozen=True)
+class _ThreatGroup:
+    """同じ事象の高脅威記事のまとまり (事象の無い記事は 1 件だけの群)。"""
+
+    members: tuple[dict[str, Any], ...]
+
+    @property
+    def lead(self) -> dict[str, Any]:
+        return self.members[0]
+
+
+def _group_threats(items: list[dict[str, Any]]) -> list[_ThreatGroup]:
+    """事象 id (event_items の群) ごとにまとめる。出現順を保ち、群の無い記事はそのまま 1 群。"""
+    order: list[str] = []
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for idx, it in enumerate(items):
+        key = str(it.get("event_id") or "") or f"_solo{idx}"
+        if key not in buckets:
+            order.append(key)
+            buckets[key] = []
+        buckets[key].append(it)
+    return [_ThreatGroup(tuple(buckets[k])) for k in order]
+
+
+def _title_candidates(group: _ThreatGroup) -> list[str]:
+    """表示する見出しの候補 (優先順)。複数報道は事象の見出しを先に、外国語の見出しは
+    日本語の欄 (title_ja → 事象の見出し) があればそれに替える。"""
+    lead = group.lead
+    headline = str(lead.get("event_headline") or "")
+    title = str(lead.get("title") or "")
+    ja = str(lead.get("title_ja") or "")
+    if len(group.members) > 1 and headline:
+        return [headline, title]
+    if not is_foreign_title(title):
+        return [title, headline] if headline and not is_foreign_title(headline) else [title]
+    japanese = [t for t in (ja, headline) if t and not is_foreign_title(t)]
+    return [*japanese, title]
+
+
+def _threat_title(group: _ThreatGroup) -> str:
+    """候補のうち 1 行に収まる最初のもの。どれも長ければ最も短い候補を (最後の手段で) 切る。"""
+    candidates = [c for c in _title_candidates(group) if c]
+    for c in candidates:
+        if len(" ".join(c.split())) <= TITLE_MAX:
+            return c
+    return min(candidates, key=len) if candidates else ""
+
+
+def _group_marker(group: _ThreatGroup) -> str:
+    """SNS 由来の印は、まとまり全体が SNS のときだけ付ける。"""
+    tiers = {str(m.get("source_tier") or "") for m in group.members}
+    return SOURCE_TIER_MARKER.get(next(iter(tiers)), "") if len(tiers) == 1 else ""
+
+
+def _group_url(group: _ThreatGroup) -> str:
+    for m in group.members:
+        if m.get("url") and str(m.get("source_tier") or "") != "social":
+            return str(m["url"])
+    return str(group.lead.get("url") or "")
+
+
+def _high_threat_lines(groups: list[_ThreatGroup], limit: int) -> list[str]:
     lines: list[str] = []
-    for it in items[:limit]:
-        flag = "🇯🇵 " if it.get("is_japan") else ""
-        marker = SOURCE_TIER_MARKER.get(str(it.get("source_tier") or ""), "")
-        cat = str(it.get("category_label") or "")
+    for g in groups[:limit]:
+        flag = "🇯🇵 " if any(m.get("is_japan") for m in g.members) else ""
+        cat = str(g.lead.get("category_label") or "")
         cat_part = f" ({cat})" if cat else ""
-        line = f"・{flag}{_clip_title(str(it.get('title') or ''))}{cat_part}{marker}"
-        if it.get("url"):
-            line += f" <{it['url']}>"
+        count = f" (報道 {len(g.members)} 件)" if len(g.members) > 1 else ""
+        line = f"・{flag}{_clip_title(_threat_title(g))}{cat_part}{count}{_group_marker(g)}"
+        if url := _group_url(g):
+            line += f" <{url}>"
         lines.append(line)
     return lines
+
+
+def _threat_group_total(ht: dict[str, Any] | None) -> int:
+    """事象数 (payload に載っていない分は 1 件 1 事象として数える)。"""
+    items = list((ht or {}).get("items") or [])
+    total = int((ht or {}).get("total") or 0)
+    return len(_group_threats(items)) + max(0, total - len(items))
 
 
 def _high_threat_block(
@@ -117,15 +199,32 @@ def _high_threat_block(
     label = "朝以降の高脅威" if since_morning else "本日の高脅威"
     if total == 0 or not items:
         return f"🔴 **{label}** 0 件"
-    shown = _high_threat_lines(items, limit)
-    lines = [f"🔴 **{label} (要確認 · {total} 件)**", *shown]
-    rest = total - len(shown)
+    groups = _group_threats(items)
+    shown = _high_threat_lines(groups, limit)
+    n_events = _threat_group_total(ht)
+    grouped = n_events < total
+    count_part = f"{total} 件 · {n_events} 事象" if grouped else f"{total} 件"
+    lines = [f"🔴 **{label} (要確認 · {count_part})**", *shown]
+    rest = n_events - len(shown)
     if rest > 0:
-        tail = f"…他 {rest} 件"
+        tail = f"…他 {rest} {'事象' if grouped else '件'}"
         if base_url:
             tail += f" → {base_url}{_WEB_HIGH_PATH}"
         lines.append(tail)
     return "\n".join(lines)
+
+
+def _other_channels_block(payload: dict[str, Any]) -> str:
+    """薄い回の補足: 同じ時間窓で別チャンネルへ流れた件数。多い回・件数 0 の回は出さない。"""
+    other = payload.get("other_channels")
+    if not other or _threat_group_total(payload.get("high_threats")) > THIN_EVENTS_MAX:
+        return ""
+    parts = [
+        f"{label} {int(other.get(key) or 0)} 件"
+        for key, label in _OTHER_CHANNEL_LABELS
+        if int(other.get(key) or 0) > 0
+    ]
+    return f"📨 別のチャンネル: {'・'.join(parts)}" if parts else ""
 
 
 def _pir_brief_block(pb: dict[str, Any] | None, *, collapsed: bool = False) -> str:
@@ -141,9 +240,10 @@ def _pir_brief_block(pb: dict[str, Any] | None, *, collapsed: bool = False) -> s
     for q in moved:
         claim = first_sentence(str(q.get("claim") or ""), CLAIM_SENTENCE_MAX)
         conf = _CONF_JA.get(str(q.get("confidence") or ""), str(q.get("confidence") or ""))
-        lines.append(f"・{q.get('question', '')}")
-        stale = "・文面は前回の見立てのまま" if q.get("claim_unrevised") else ""
-        lines.append(f"　→ {claim} ({conf}{stale})")
+        lines.append(f"・{q.get('question', '')}" + ("" if claim else f" ({conf})"))
+        if claim:
+            stale = "・文面は前回の見立てのまま" if q.get("claim_unrevised") else ""
+            lines.append(f"　→ {claim} ({conf}{stale})")
     return "\n".join(lines)
 
 
@@ -193,9 +293,10 @@ def _applicable_summary(summary: str) -> str:
 
 
 def _focus_gist(section: dict[str, Any]) -> str:
-    gist = first_sentence(_applicable_summary(str(section.get("summary") or "")), SENTENCE_SOFT_MAX)
-    if gist:
-        return gist
+    summary = _applicable_summary(str(section.get("summary") or ""))
+    if summary.strip():
+        # 文として収まらない要点は出さない (見出しで代用もしない — 領域名と件数だけにする)
+        return first_sentence(summary, SENTENCE_SOFT_MAX)
     for m in section.get("matches") or []:
         if str(m.get("importance")) == "high":
             return _clip_title(str(m.get("title") or ""))
@@ -317,6 +418,7 @@ def compose_morning(
     blocks = [
         _Block("summary", (_summary_line(payload, bursts, since_morning=False),)),
         _Block("high_threats", (high_full, high_short)),
+        _Block("other_channels", (_other_channels_block(payload), "")),
         _Block("pir_brief", (_pir_brief_block(pb), _pir_brief_block(pb, collapsed=True))),
         _Block("synthesis", (_synthesis_line(payload.get("synthesis")),)),
         _Block("burst", (_burst_block(bursts), "")),
@@ -351,6 +453,7 @@ def compose_evening(
     blocks = [
         _Block("summary", (_summary_line(payload, (), since_morning=True),)),
         _Block("high_threats", (high_full, high_short)),
+        _Block("other_channels", (_other_channels_block(payload), "")),
         _Block("synthesis", (_synthesis_line(syn),)),
     ]
     return _fit(blocks, link, budget)

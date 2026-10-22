@@ -341,6 +341,9 @@ class RunHistoryRepositoryBase:
         existing_brief = {row["name"] for row in conn.execute("PRAGMA table_info(daily_briefs)")}
         if "payload" not in existing_brief:
             conn.execute("ALTER TABLE daily_briefs ADD COLUMN payload TEXT")
+        # Discord に投稿した本文 (2026-10-22): 後から読み返せるように保存する
+        if "discord_text" not in existing_brief:
+            conn.execute("ALTER TABLE daily_briefs ADD COLUMN discord_text TEXT")
 
         # 常設情報要求 standing situations (段A, 2026-07-13): event/standing の種別。
         existing_sit = {row["name"] for row in conn.execute("PRAGMA table_info(situations)")}

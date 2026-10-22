@@ -305,6 +305,28 @@ def _compose_compact_summary(
     return "\n\n".join(parts)
 
 
+def _safe_event_info(items: list[Any]) -> dict[str, tuple[str, str]]:
+    """高脅威の記事 → (事象 id, 見出し)。取れなければ空 (記事ごとに出す従来の形)。"""
+    from src.digest.high_threat_digest import collect_event_info
+
+    try:
+        return collect_event_info([it.article_id for it in items])
+    except Exception as e:  # noqa: BLE001 — まとめる材料が無くても brief は出す
+        _log.warning("daily_brief_event_info_failed", error=str(e))
+        return {}
+
+
+def _safe_other_channels(lookback_hours: int) -> dict[str, int] | None:
+    """同じ窓で別チャンネルへ流れた件数。取れなければ None (補足行を出さない)。"""
+    from src.digest.high_threat_digest import collect_other_channel_counts
+
+    try:
+        return collect_other_channel_counts(lookback_hours=lookback_hours)
+    except Exception as e:  # noqa: BLE001 — 補足行が出せなくても brief は出す
+        _log.warning("daily_brief_other_channels_failed", error=str(e))
+        return None
+
+
 def _latest_morning_headline() -> str:
     """直近の朝ブリーフの状況総括の見出し (夕の「朝と同じ」判定用)。取れなければ ""。"""
     try:
@@ -484,7 +506,9 @@ async def _run_daily_brief_default(
         high_threat_compact = format_high_threat_compact(
             _ht_items[:DISCORD_MAX_ITEMS], total=_ht_total, base_url=resolve_public_base_url()
         )
-        high_threats_web = high_threats_payload(_ht_items, total=_ht_total)
+        high_threats_web = high_threats_payload(
+            _ht_items, total=_ht_total, event_info=_safe_event_info(_ht_items)
+        )
     except Exception as e:  # noqa: BLE001 — 安全網の失敗で brief 全体を止めない
         _log.error("daily_brief_high_threat_failed", slot=slot, error=str(e))
 
@@ -496,6 +520,9 @@ async def _run_daily_brief_default(
         pir_brief=pir_brief,
         high_threats=high_threats_web,
     )
+    other_channels = _safe_other_channels(24 if is_morning else 13)
+    if other_channels is not None:
+        brief_payload = {**brief_payload, "other_channels": other_channels}
     compact_summary = _compose_discord_summary(
         slot=slot,
         payload=brief_payload,
@@ -534,6 +561,7 @@ async def _run_daily_brief_default(
                 bluf=message.bluf,
                 summary=message.summary,
                 payload=brief_payload,
+                discord_text=compact_summary,
                 section_count=len(sections),
                 sources=[{"title": s.title, "url": s.url} for s in message.sources],
             )

@@ -57,18 +57,12 @@ class TestFirstSentence:
     def test_takes_first_sentence(self) -> None:
         assert db.first_sentence("一つ目。二つ目。") == "一つ目。"
 
-    def test_long_sentence_cut_at_comma_not_mid_word(self) -> None:
-        text = "あ" * 60 + "、" + "い" * 100 + "。"
-        out = db.first_sentence(text, 110)
-        assert out == "あ" * 60 + "…"
-
     def test_long_sentence_without_comma_kept_whole(self) -> None:
         text = "あ" * 150 + "。"
         assert db.first_sentence(text, 110) == text
 
-    def test_absurdly_long_sentence_hard_capped(self) -> None:
-        text = "あ" * 400
-        assert db.first_sentence(text, 110) == "あ" * 110 + "…"
+    def test_absurdly_long_sentence_is_dropped_not_cut(self) -> None:
+        assert db.first_sentence("あ" * 400, 110) == ""
 
     def test_empty(self) -> None:
         assert db.first_sentence("  ") == ""

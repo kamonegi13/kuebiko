@@ -98,6 +98,7 @@ def _row_to_daily_brief(row: Any) -> dict[str, Any]:
         "section_count": int(row["section_count"] or 0),
         "sources": _parse_brief_sources(row["sources"]),
         "payload": _parse_brief_payload(row["payload"]),
+        "discord_text": str(row["discord_text"] or ""),
         "generated_at": gen.isoformat() if gen else str(row["generated_at"]),
     }
 

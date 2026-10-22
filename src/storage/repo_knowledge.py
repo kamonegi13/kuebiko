@@ -467,6 +467,7 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
         section_count: int,
         sources: list[dict[str, str]],
         payload: dict[str, Any] | None = None,
+        discord_text: str | None = None,
         generated_at: datetime | None = None,
     ) -> None:
         """W1: 合成した日次ブリーフ (朝刊/夕刊) 本文を永続化する (Web 日次ブリーフビュー)。
@@ -485,8 +486,8 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
                 """
                 INSERT INTO daily_briefs
                   (run_id, slot, period_label, title, bluf, summary,
-                   section_count, sources, payload, generated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   section_count, sources, payload, discord_text, generated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -498,6 +499,7 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
                     section_count,
                     sources_json,
                     payload_json,
+                    discord_text,
                     ts,
                 ),
             )
@@ -541,7 +543,7 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
             rows = conn.execute(
                 """
                 SELECT id, run_id, slot, period_label, title, bluf, summary,
-                       section_count, sources, payload, generated_at
+                       section_count, sources, payload, discord_text, generated_at
                   FROM daily_briefs
                  ORDER BY generated_at DESC
                  LIMIT ?
@@ -556,7 +558,7 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
             row = conn.execute(
                 """
                 SELECT id, run_id, slot, period_label, title, bluf, summary,
-                       section_count, sources, payload, generated_at
+                       section_count, sources, payload, discord_text, generated_at
                   FROM daily_briefs
                  WHERE id = ?
                 """,

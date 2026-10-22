@@ -344,6 +344,17 @@ METRICS: tuple[FillMetric, ...] = (
         None,
         population="a.posted_channel = 'alert'",
     ),
+    # Discord に投稿した本文の保存 (2026-10-22)。daily_briefs.discord_text は記事単位の
+    # 列ではないので「その日 (UTC) に本文つきのブリーフが保存されたか」を日の代理にする。
+    # 消費者は GET /api/v1/daily-briefs (discord_text)。監視対象は**完全な沈黙**
+    # (保存の経路の断線)。ブリーフは朝夕の 2 本/日なので被覆率は日単位で 0 か 100
+    FillMetric(
+        "daily_brief_discord_text",
+        "Discord投稿本文の保存",
+        "EXISTS (SELECT 1 FROM daily_briefs d WHERE COALESCE(d.discord_text, '') <> ''"
+        " AND substr(d.generated_at, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
     # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
     # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
     # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常
