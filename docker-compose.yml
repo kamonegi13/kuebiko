@@ -192,6 +192,20 @@ services:
       SYNTHESIS_COT_NOTES: ${SYNTHESIS_COT_NOTES:-0}
       # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
       DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
+      # --- s24c 切替の旗 (2026-10-22、data/eval/S24c_switch_runbook.md)。**既定はすべて現行 (s23i) の挙動**。
+      # モデル割当 (UI「設定 → モデル」) と同時に揃える。片方だけ上げた状態は避ける
+      # 深刻度の軸を本文入力 + 公開日つきの v10 に (s24 系で学習。detect ML の差し替えと同時)
+      AXES_FROM_BODY: ${AXES_FROM_BODY:-0}
+      # PIR 判定の理由を「40 字以内」に (s24b/s24c の教師に合わせる。既定 30 字)
+      PIR_JUDGE_REASON_V2: ${PIR_JUDGE_REASON_V2:-0}
+      # ACH の証拠を保存の前に 6 件へ切る (s24b/s24c の教師の形)
+      ACH_EVIDENCE_CAP: ${ACH_EVIDENCE_CAP:-0}
+      # YYYY-MM-01 を本当の 1 日として扱う / 相対表現のみの記事の basis を残す (vnext の判断プロンプト用)
+      EVENT_DATE_MONTH_FORM: ${EVENT_DATE_MONTH_FORM:-0}
+      # SIR 別の要点を v6.2 の文面・長い出力で: 空=モデルが s24c 系のときだけ / 1=常に / 0=常に従来
+      PIR_FOCUS_PROMPT_V6: ${PIR_FOCUS_PROMPT_V6:-}
+      # 要約の基準を v8r4 (config/prompts/summarizer_rubric_v8r4.yaml) に。DB より優先 (DB は書かない)
+      SUMMARIZER_RUBRIC_V8R4: ${SUMMARIZER_RUBRIC_V8R4:-0}
       # Tier1 認証 (2026-08-02)。**full instance では認証を行わない** (127.0.0.1 バインドの
       # ローカル専用) が、設定画面が「公開面の認証が設定済みか」を正しく表示するために
       # 同じ値を渡す。認証の実施は readonly instance のみ。
