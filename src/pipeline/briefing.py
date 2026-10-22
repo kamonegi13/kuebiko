@@ -21,6 +21,7 @@ from src.pipeline.summary import (
     _drop_self_url,
     _has_japanese_kana,
     _normalize_temporal,
+    event_date_month_form_enabled,
     event_date_precision,
 )
 from src.tools.article_model import Article
@@ -999,6 +1000,10 @@ def _build_briefing(
         _precision = event_date_precision(summary.event_date, _ev, _basis)
         if _precision:
             metadata["event_date_precision"] = _precision
+    elif _basis == "relative" and event_date_month_form_enabled():
+        # EVENT_DATE_MONTH_FORM=1: 相対表現だけで日付が定まらない記事も basis/precision を残す
+        metadata["event_date_basis"] = _basis
+        metadata["event_date_precision"] = event_date_precision(None, None, _basis)
     if _comp:
         metadata["compromise_date"] = _comp
     # Phase 5L-4: dedup_key を計算して metadata に保存 (ch 横断 dedup / クラスタリング用)

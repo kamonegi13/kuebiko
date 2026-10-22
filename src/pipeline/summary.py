@@ -444,6 +444,16 @@ EVENT_DATE_PRECISIONS = frozenset(
 )
 
 
+#: s24b / s24c の判断プロンプト (vnext) は月のみを ``YYYY-MM`` で出し、相対表現だけの記事は
+#: ``event_date=null`` + ``basis=relative`` で返す。旧モデルは月のみを ``YYYY-MM-01`` で出すため
+#: 区別できない。**切替と同時に 1** (既定 0 = 従来どおり)。
+EVENT_DATE_MONTH_FORM_ENV = "EVENT_DATE_MONTH_FORM"
+
+
+def event_date_month_form_enabled() -> bool:
+    return os.environ.get(EVENT_DATE_MONTH_FORM_ENV, "0").strip() == "1"
+
+
 def event_date_precision(raw: str | None, normalized: str | None, basis: str | None) -> str | None:
     """正規化後の event_date の粒度を返す。event_date が無ければ None。
 
@@ -451,7 +461,11 @@ def event_date_precision(raw: str | None, normalized: str | None, basis: str | N
     - raw が YYYY-MM (月のみ): month (正規化で当月 1 日に補われた)
     - raw が YYYY-MM-DD で日が 01 以外: 月のみを 1 日に寄せた値ではありえない → day
     - raw が YYYY-MM-01: 実際の 1 日か寄せられた値か抽出文字列からは区別できない → unknown
+      (``EVENT_DATE_MONTH_FORM=1`` では vnext が月のみを YYYY-MM で出すので本当の 1 日 → day)
+    - ``EVENT_DATE_MONTH_FORM=1`` では basis=relative は日付が無くても relative
     """
+    if basis == "relative" and event_date_month_form_enabled():
+        return PRECISION_RELATIVE
     if not normalized:
         return None
     if basis == "relative":
@@ -461,7 +475,9 @@ def event_date_precision(raw: str | None, normalized: str | None, basis: str | N
         return PRECISION_UNKNOWN
     if m.group(3) is None:
         return PRECISION_MONTH
-    return PRECISION_DAY if m.group(3) != "01" else PRECISION_UNKNOWN
+    if m.group(3) != "01":
+        return PRECISION_DAY
+    return PRECISION_DAY if event_date_month_form_enabled() else PRECISION_UNKNOWN
 
 
 def _normalize_temporal(
@@ -478,7 +494,12 @@ def _normalize_temporal(
     - compromise_date は event_date 以前のみ採用 (dwell が負になる抽出は捨てる)。
     """
     ev = _normalize_iso_date(event_date, ceiling=reference)
-    b = basis if (ev and isinstance(basis, str) and basis in _EVENT_DATE_BASES) else None
+    keeps_relative = basis == "relative" and event_date_month_form_enabled()
+    b = (
+        basis
+        if ((ev or keeps_relative) and isinstance(basis, str) and basis in _EVENT_DATE_BASES)
+        else None
+    )
     comp = _normalize_iso_date(compromise_date, ceiling=reference)
     # dwell の起点は侵害 → 検知/公表。event_date 以前でなければ意味を成さない。
     if comp and ev and comp > ev:
