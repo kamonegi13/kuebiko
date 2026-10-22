@@ -12,6 +12,7 @@ LLM prompt は実出力を見て反復改善する前提 (5T-T design decision)�
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -266,6 +267,7 @@ async def score_deep_dive_candidates(
     window_end: datetime | None = None,
     actor_map: dict[str, set[str]] | None = None,
     briefed_actors: set[str] | None = None,
+    event_roots: Mapping[str, str] | None = None,
 ) -> list[ScoredArticle]:
     """候補**全件**を LLM rubric で採点する (閾値も上限もかけない)。
 
@@ -277,6 +279,7 @@ async def score_deep_dive_candidates(
         window_end: 時事性の基準時刻 (None なら現在)。過去窓の再現で使う
         actor_map: article_id → actor の集合
         briefed_actors: 今週 brief/alert に出た記事の actor (anchor 5 の条件)
+        event_roots: article_id → 事象の根。時事性の「関連事案」(anchor 4) をこれで判定する
 
     Returns:
         composite 降順の ScoredArticle (全候補)。
@@ -356,6 +359,7 @@ async def score_deep_dive_candidates(
             window_end=window_end,
             actors=actor_map,
             briefed=briefed_actors,
+            event_roots=event_roots,
         ),
     )
     # ⭐ **採点されなかった候補を黙らせない**。2026-09-21 に 60 件中 5 件しか採点されず、
@@ -381,6 +385,7 @@ async def select_deep_dive_articles(
     weights: dict[str, float] | None = None,
     composite_threshold: float = DEFAULT_COMPOSITE_THRESHOLD,
     max_select: int = DEFAULT_MAX_SELECT,
+    event_roots: Mapping[str, str] | None = None,
 ) -> list[ScoredArticle]:
     """候補から LLM rubric scoring で深掘り対象を選定 (composite 降順)。
 
@@ -404,6 +409,7 @@ async def select_deep_dive_articles(
         recent_briefs=recent_briefs,
         past_selected_keys=past_selected_keys,
         weights=weights,
+        event_roots=event_roots,
     )
     above = [s for s in scored if s.composite >= composite_threshold]
     selected = above[:max_select]
@@ -418,12 +424,25 @@ async def select_deep_dive_articles(
     return selected
 
 
+def _cohort_key(candidate: DigestCandidate, roots: Mapping[str, str]) -> str:
+    """時事性の「同じ事案が候補内に複数」を数える鍵。
+
+    事象の根を優先する (2026-10-22)。dedup_key は 1 群 1.01 記事で実質何も束ねない最も粗い
+    群化だった (§64)。事象に入っていない記事だけが dedup_key に退避する (名前空間を分ける)。
+    """
+    root = roots.get(candidate.article_id)
+    if root:
+        return f"event:{root}"
+    return f"dedup:{candidate.dedup_key}" if candidate.dedup_key else ""
+
+
 def _timeliness_for(
     candidates: list[DigestCandidate],
     *,
     window_end: datetime | None,
     actors: dict[str, set[str]] | None,
     briefed: set[str] | None,
+    event_roots: Mapping[str, str] | None = None,
 ) -> dict[str, float]:
     """候補ごとの時事性を計算する。
 
@@ -433,7 +452,9 @@ def _timeliness_for(
     """
     end = window_end or datetime.now(UTC)
     amap = actors or {}
-    seen: Counter[str] = Counter(c.dedup_key for c in candidates if c.dedup_key)
+    roots = event_roots or {}
+    cohort_key = {c.article_id: _cohort_key(c, roots) for c in candidates}
+    seen: Counter[str] = Counter(k for k in cohort_key.values() if k)
     repeated = {k for k, n in seen.items() if n >= 2}
     out: dict[str, float] = {}
     for c in candidates:
@@ -442,7 +463,7 @@ def _timeliness_for(
             window_end=end,
             article_actors=amap.get(c.article_id, set()),
             briefed_actors=briefed or set(),
-            dedup_key=c.dedup_key,
+            dedup_key=cohort_key[c.article_id],
             cohort_dedup_keys=repeated,
         )
         if score is not None:
