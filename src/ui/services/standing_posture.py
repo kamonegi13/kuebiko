@@ -16,6 +16,8 @@ from typing import Any
 
 from src.assessment.situation_store import SituationStore
 from src.assessment.standing import STANDING_KIND, STANDING_SEEDS
+from src.assessment.standing_proximity import count_proximity
+from src.cti.alliance import proximity_enabled
 from src.storage.run_history import DEFAULT_DB_PATH
 from src.synthesis.grounded.hypotheses import get_hypothesis
 
@@ -169,6 +171,7 @@ def build_standing_posture(
                 " WHERE e.situation_id = ? AND datetime(a.created_at) >= datetime(?)",
                 (sid, since),
             ).fetchone()
+            proximity = count_proximity(conn, sid, since_iso=since) if proximity_enabled() else None
         revs = _within_trajectory_window(list(reversed(rev_rows)), now=now)
         latest = revs[-1] if revs else None
         leading = str(latest[2]) if latest else ""
@@ -211,6 +214,9 @@ def build_standing_posture(
                 ],
                 "evidence_related_30d": int(counts[0] or 0),
                 "evidence_direct_30d": int(counts[1] or 0),
+                # 根拠を被害国で 直接 (日本・同盟国) / 間接 (それ以外) / 不明 に分けた件数。
+                # 印だけで答えの重みは変えない (旗 STANDING_EVIDENCE_PROXIMITY=0 で None)
+                "evidence_proximity_30d": proximity,
                 "trajectory": [
                     {
                         "rev": int(r[0]),

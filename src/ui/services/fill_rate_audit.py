@@ -88,6 +88,19 @@ def _entity_cond_any(*entity_types: str) -> str:
 # (CLAUDE.md §7 の規約)。
 METRICS: tuple[FillMetric, ...] = (
     FillMetric(
+        # 常設の問いの根拠の直接/間接の印 (2026-10-22)。被害国から導出するので、被害国が
+        # 空だと印が「不明」になる。消費者は posture カードの evidence_proximity_30d。
+        # 母集団は常設の問いの根拠になった記事だけ — 低下は「根拠の被害国抽出が崩れた」
+        "standing_evidence_victim_country",
+        "常設の根拠の被害国",
+        "a.victim_country_iso IS NOT NULL AND a.victim_country_iso <> ''",
+        None,
+        population=(
+            "EXISTS (SELECT 1 FROM situation_evidence se WHERE se.article_id = a.article_id"
+            " AND se.assigned_by IN ('standing', 'standing_declarative'))"
+        ),
+    ),
+    FillMetric(
         # 記事種別 (event_kind、2026-09-03)。群化 ML の特徴量。判定に使った記事にだけ
         # 付く (遅延分類) ので、母集団全体では低くても正常 — 見るのは急落だけ
         "event_kind",

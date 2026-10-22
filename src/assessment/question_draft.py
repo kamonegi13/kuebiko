@@ -101,10 +101,10 @@ def _domain_values(domain: str) -> set[str] | None:
 
             return set(SOCIO_POLITICAL_INTENTS)
         if domain == "nisc_sectors":
-            from src.assessment.question_frame import SCOPE_ALL_CI
+            from src.assessment.question_frame import SCOPE_ALL_CI, SCOPE_ALL_ORGS
             from src.cti.nisc_sectors import NISC_SECTORS
 
-            return {SCOPE_ALL_CI, *NISC_SECTORS}
+            return {SCOPE_ALL_CI, SCOPE_ALL_ORGS, *NISC_SECTORS}
     except Exception:  # noqa: BLE001 — 語彙が引けないことを起草の失敗にしない
         return None
     return None

@@ -42,8 +42,12 @@ from src.synthesis.grounded.hypotheses import (
 #: 単独分野を選べば ``victim_sector eq <その分野>`` になる。
 SCOPE_ALL_CI = "critical_infrastructure"
 
+#: 「業種を問わない組織全般」を表す値 (2026-10-22)。重要インフラ以外の企業・団体も含む。
+#: 証拠条件では分野の絞りが無い (対象国の被害そのもの)。
+SCOPE_ALL_ORGS = "all_organizations"
+
 #: 語彙に載らない特殊スコープの表示名 (NISC 分野そのものは nisc_sectors が SSoT)。
-_SCOPE_LABELS: dict[str, str] = {SCOPE_ALL_CI: "重要インフラ"}
+_SCOPE_LABELS: dict[str, str] = {SCOPE_ALL_CI: "重要インフラ", SCOPE_ALL_ORGS: "組織"}
 
 
 @dataclass(frozen=True)
@@ -298,6 +302,8 @@ def aggregate_population(frame_id: str, slots: Mapping[str, str]) -> dict[str, A
         return {}
     country = str(slots.get("target_country") or "")
     scope = str(slots.get("target_scope") or "")
+    if scope == SCOPE_ALL_ORGS and country:
+        return {"property": "victim_country", "op": "eq", "value": country}
     if scope != SCOPE_ALL_CI or not country:
         return {}
     from src.cti.nisc_sectors import _CANONICAL_TO_NISC

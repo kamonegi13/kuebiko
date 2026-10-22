@@ -10,6 +10,14 @@
 # **座標は src/cti/geocoder.py の _COUNTRY_CENTROIDS に首都点として持つ** (両者の ISO 集合は
 # tests/unit/test_geocoder.py の drift-guard で同期を強制)。
 
+# 日本の同盟・同志国 (alliance: ally) — 2026-10-22。常設の問いの根拠を「直接 (日本・同盟国が被害) /
+# 間接 (それ以外)」に分ける区分で、threat_actor_doctrine.ALLIED_NATIONS もここから導出する。
+# 入れた国と根拠: US = 日米安全保障条約 / AU・GB・CA・NZ = 米と併せ Five Eyes (サイバー情報共有)、
+#   豪英は円滑化協定 (RAA) も / KR = 日米韓の枠組み / PH = RAA (2024) / TW = 政府の「重要な
+#   パートナー」(条約同盟ではないが、被害観測の読み替えは同盟国に準じる)。
+# 入れていない (迷う国): IN (Quad)・FR・DE・IT (NATO・日との協力協定)・NL・PL・UA・SG・TH 等。
+#   足すときはこの行に根拠を書く。ALLIED_NATIONS の重み (actor_threat) も動くので注意。
+
 canonical:
   # ===== 東アジア =====
   JP:
@@ -22,10 +30,12 @@ canonical:
 
   TW:
     display: 台湾
+    alliance: ally
     aliases: [台湾, Taiwan, TW, TWN, 台湾省, ROC]
 
   KR:
     display: 韓国
+    alliance: ally
     aliases: [韓国, "South Korea", ROK, KR, KOR, "S. Korea"]
 
   KP:
@@ -47,6 +57,7 @@ canonical:
 
   PH:
     display: フィリピン
+    alliance: ally
     aliases: [フィリピン, Philippines, PH, PHL]
 
   TH:
@@ -187,6 +198,7 @@ canonical:
   # ===== ヨーロッパ =====
   GB:
     display: 英国
+    alliance: ally
     aliases: [英国, UK, "United Kingdom", Britain, GB, GBR]
 
   DE:
@@ -416,10 +428,12 @@ canonical:
   # ===== 北米 =====
   US:
     display: 米国
+    alliance: ally
     aliases: [米国, USA, アメリカ, "United States", US, USA, "U.S.", "U.S.A."]
 
   CA:
     display: カナダ
+    alliance: ally
     aliases: [カナダ, Canada, CA, CAN]
 
   MX:
@@ -486,10 +500,12 @@ canonical:
   # ===== オセアニア =====
   AU:
     display: 豪州
+    alliance: ally
     aliases: [豪州, オーストラリア, Australia, AU, AUS]
 
   NZ:
     display: ニュージーランド
+    alliance: ally
     aliases: [ニュージーランド, "New Zealand", NZ, NZL]
 
   # ===== CLDR 由来の一括拡充 (2026-08-19) =====

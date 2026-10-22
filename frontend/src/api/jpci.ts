@@ -165,6 +165,8 @@ export interface PostureCard {
   indicators: QuestionIndicator[];
   evidence_related_30d: number;
   evidence_direct_30d: number;
+  /** 根拠を被害国で分けた件数 (直接 = 日本・同盟国 / 間接 = それ以外)。旗 off のとき null。 */
+  evidence_proximity_30d: { direct: number; indirect: number; unknown: number } | null;
   trajectory: PostureTrajectoryPoint[];
 }
 

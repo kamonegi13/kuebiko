@@ -18,6 +18,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol
 
+from src.cti.alliance import allied_nations
+
 # 敵性国家 (この tool の CTI mission = 中朝露イランを主敵とする)。同盟国は本レンズ対象外。
 STATE_NATIONS: frozenset[str] = frozenset({"cn", "ru", "kp", "ir"})
 
@@ -26,7 +28,8 @@ STATE_NATIONS: frozenset[str] = frozenset({"cn", "ru", "kp", "ir"})
 # 被害は各アクターの標的分野 doctrine (STATE_ACTOR_SECTORS) 経由で捕捉される。
 # ⚠ situation.py の _nation_role("allied") は「辞書にその国のアクターが居る」という
 # 別物のプロキシであり、同盟の意味ではここを参照すること。
-ALLIED_NATIONS: frozenset[str] = frozenset({"us", "gb", "au", "ca", "nz", "kr", "tw", "ph"})
+# 区分の SSoT は config/cti/countries.yaml の ``alliance: ally`` (2026-10-22、src/cti/alliance.py)。
+ALLIED_NATIONS: frozenset[str] = allied_nations()
 
 # 戦略 intent (socio_political_intent のうち国家アクター行動を示すもの)。優先順 = I&W 上の
 # 重要度 (事前潜伏 = 最上位)。金融犯罪 (financial) や外交 (diplomacy) 等は除外。
