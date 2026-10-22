@@ -85,25 +85,30 @@ TASK_MARKERS: dict[Step, str] = {
     Step.SEVERITY_AXES: "[task: axes]\n",
 }
 
+#: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。
+#: 前方一致なので一時タグ・補間タグ (``kuebiko-sft:s24bi50`` / ``kuebiko-sft:s24c…``) にも効く。
+#: s23i 以前と s24 (無印) はここに含まれず、既定の印 (借用) のまま。
+S24_NEW_TASK_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24b", "kuebiko-sft:s24c")
+
+_NEW_TASK_MARKERS: dict[Step, str] = {
+    Step.JUDGMENT_CLASSIFY: "[task: judgment]\n",
+    # 補助課題 3 本 (2026-10-18、W4): 専用の印で学習する。s23i 以前・s24 は今のまま
+    Step.IOC_LLM_VERIFY: "[task: ioc_verify]\n",
+    Step.LEDGER_ACH_AUX: "[task: ach_aux]\n",
+    Step.DEDUP_CLUSTER_JUDGE: "[task: dedup_judge]\n",
+}
+
 #: モデル名の接頭辞 → {step: 印}。**そのモデルだけ** TASK_MARKERS の既定と別の印を付ける。
-#: s24b は判断の分類器を専用の課題 ``judgment`` として学習する (それまでは要約の印を借りていた)。
-#: 前方一致なので s24b の一時タグ (``kuebiko-sft:s24b…``) にも効く。s23i 以前は既定のまま
-#: (印は ``[task: summary]`` で本番と不変)。
+#: s24b / s24c は判断の分類器などを専用の課題として学習する (それまでは要約の印を借りていた)。
+#: s23i 以前は既定のまま (印は ``[task: summary]`` 等で本番と不変)。
 MODEL_STEP_MARKERS: dict[str, dict[Step, str]] = {
-    "kuebiko-sft:s24b": {
-        Step.JUDGMENT_CLASSIFY: "[task: judgment]\n",
-        # 補助課題 3 本 (2026-10-18、W4): s24b だけ専用の印で学習する。s23i 以前・s24 は今のまま
-        Step.IOC_LLM_VERIFY: "[task: ioc_verify]\n",
-        Step.LEDGER_ACH_AUX: "[task: ach_aux]\n",
-        Step.DEDUP_CLUSTER_JUDGE: "[task: dedup_judge]\n",
-    },
+    family: dict(_NEW_TASK_MARKERS) for family in S24_NEW_TASK_FAMILIES
 }
 
 #: 接頭辞つきで学習したモデルのうち、**その step は学習していない**もの。印を付けると、
 #: 学習していない step に見たことのない印が届く
 #: (n19 は深掘りの教師データが無いまま投入 — 2026-09-29)。
 _S24_FAMILY = "kuebiko-sft:s24"
-_S24B_FAMILY = "kuebiko-sft:s24b"
 UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
     "kuebiko-sft:n19": frozenset(
         {
@@ -132,8 +137,8 @@ UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
     ),
     "kuebiko-sft:s19": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
 }
-#: s24b 系は IOC 検証・ACH 補助・重複判定を学習する (専用の印)。s24 は未学習のまま
-UNTRAINED_STEPS[_S24B_FAMILY] = UNTRAINED_STEPS[_S24_FAMILY] - {
+#: s24b / s24c 系は IOC 検証・ACH 補助・重複判定を学習する (専用の印)。s24 は未学習のまま
+_S24_NEW_UNTRAINED: frozenset[Step] = UNTRAINED_STEPS[_S24_FAMILY] - {
     Step.LEDGER_ACH_AUX,
     Step.IOC_LLM_VERIFY,
     Step.DEDUP_CLUSTER_JUDGE,
@@ -157,8 +162,8 @@ def untrained_steps_for(model: str) -> frozenset[Step]:
     name = str(model.strip())
     if name in UNTRAINED_STEPS:
         return UNTRAINED_STEPS[name]
-    if name.startswith(_S24B_FAMILY):
-        return UNTRAINED_STEPS[_S24B_FAMILY]
+    if name.startswith(S24_NEW_TASK_FAMILIES):
+        return _S24_NEW_UNTRAINED
     if name.startswith(_S24_FAMILY):
         return UNTRAINED_STEPS[_S24_FAMILY]
     return frozenset()
