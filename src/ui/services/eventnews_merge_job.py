@@ -36,6 +36,7 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
+from src.cti.roundup_detector import report_period
 from src.eventnews import pair_model, pair_shadow
 from src.eventnews.grouping import build_join_entities
 from src.eventnews.merge import (
@@ -286,6 +287,23 @@ def bulletin_bridge_gate_enabled() -> bool:
     return os.environ.get("EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE", "0") == "1"
 
 
+def hub_gate_enabled() -> bool:
+    """ハブ事象の主題でない CVE を橋にしない (EVENTNEWS_MERGE_HUB_GATE=1)。"""
+    return os.environ.get("EVENTNEWS_MERGE_HUB_GATE", "0") == "1"
+
+
+def report_period_gate_enabled() -> bool:
+    """月だけが違う月次レポートどうしを統合しない (EVENTNEWS_MERGE_REPORT_PERIOD_GATE=1)。"""
+    return os.environ.get("EVENTNEWS_MERGE_REPORT_PERIOD_GATE", "0") == "1"
+
+
+def _report_periods(inputs: MergeInputs) -> dict[str, str] | None:
+    if not report_period_gate_enabled():
+        return None
+    periods = {aid: p for aid, m in inputs.members.items() if (p := report_period(m.title))}
+    return periods or None
+
+
 def frequent_merge_enabled() -> bool:
     """頻出の名前の共有を統合の候補にする (既定 ON)。EVENTNEWS_MERGE_FREQUENT=0 で止める。"""
     return os.environ.get("EVENTNEWS_MERGE_FREQUENT", "1") != "0"
@@ -346,6 +364,8 @@ def plan_for(repo: RunHistoryRepository) -> MergePlan:
         extra_edges=extra,
         cve_disjoint_gate=cve_gate_enabled(),
         bulletin_bridge_gate=bulletin_bridge_gate_enabled(),
+        hub_gate=hub_gate_enabled(),
+        report_periods=_report_periods(inputs),
     )
     return MergePlan(
         groups=tuple(groups),

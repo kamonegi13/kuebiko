@@ -41,6 +41,38 @@ _SINGLE_INCIDENT_CUE = re.compile(
 _LLM_UNTRUSTED_CATEGORIES = frozenset({"breach", "policy"})
 
 
+#: 期間を持つレポートの見出しの語 (月次の脅威動向など)。
+_REPORT_WORD = re.compile(
+    r"(レポート|動向|トレンド|月報|月次|統計|白書|\breports?\b|\btrends?\b|\bthreat\s+landscape\b|\bmonthly\b)",
+    re.IGNORECASE,
+)
+_PERIOD_JA = re.compile(r"(20\d{2})\s*年\s*(1[0-2]|0?[1-9])\s*月")
+_PERIOD_ISO = re.compile(r"\b(20\d{2})[-/](0[1-9]|1[0-2])\b")
+_MONTHS = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+]  # fmt: skip
+_PERIOD_EN = re.compile(r"\b(" + "|".join(_MONTHS) + r")\s+(20\d{2})\b", re.IGNORECASE)
+
+
+def report_period(title: str) -> str | None:
+    """期間つきレポート (月次の脅威動向等) の見出しなら ``YYYY-MM`` を返す (違えば None)。
+
+    統合で「月だけが違う同じ種類のレポート」を結ばないための鍵 (2026-10-22)。期間の表記と
+    レポートの語の**両方**がある見出しだけを対象にする (日付を含むだけの事案の見出しは None)。
+    """
+    text = (title or "").strip()
+    if not text or not _REPORT_WORD.search(text):
+        return None
+    if m := _PERIOD_JA.search(text):
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    if m := _PERIOD_ISO.search(text):
+        return f"{m.group(1)}-{m.group(2)}"
+    if m := _PERIOD_EN.search(text):
+        return f"{m.group(2)}-{_MONTHS.index(m.group(1).lower()) + 1:02d}"
+    return None
+
+
 BASIS_TITLE = "title"
 BASIS_LLM = "llm"
 

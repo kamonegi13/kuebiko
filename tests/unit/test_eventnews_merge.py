@@ -344,3 +344,116 @@ class TestBulletinBridgeGate:
         }
 
         assert len(self._plan(ents, gate=True)) == 1
+
+
+class TestHubGate:
+    """複数 CVE を並記する大きな事象 (ハブ) の主題でない CVE だけを根拠に吸収しない (既定 off)。"""
+
+    @staticmethod
+    def _cves(*ids: int) -> frozenset[tuple[str, str]]:
+        return frozenset(("cve", f"cve-2026-{i}") for i in ids)
+
+    def _hub(self, size: int = 10) -> dict[str, frozenset[tuple[str, str]]]:
+        """CVE 1 が主題で、先頭 4 本が別の CVE (5-8) を 1 つずつ並記するハブ。"""
+        ents = {f"h{i}": self._cves(1) for i in range(size)}
+        for i, minor in enumerate((5, 6, 7, 8)):
+            ents[f"h{i}"] = self._cves(1, minor)
+        return ents
+
+    def _plan(self, absorbed_cve: int, *, gate: bool, hub_size: int = 10) -> list[MergeGroup]:
+        ents = self._hub(hub_size)
+        item_of = dict.fromkeys(ents, "hub")
+        for b in ("b1", "b2"):
+            ents[b] = self._cves(absorbed_cve)
+            item_of[b] = "small"
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ents)}
+        return plan_merges(
+            item_of=item_of,
+            first_seen={"hub": "2026-09-01", "small": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+            hub_gate=gate,
+        )
+
+    def test_blocks_absorbing_an_item_through_a_minor_cve_of_the_hub(self) -> None:
+        assert len(self._plan(5, gate=False)) == 1  # 既定 off は従来どおり
+        assert self._plan(5, gate=True) == []
+
+    def test_keeps_merging_through_the_hubs_focal_cve(self) -> None:
+        assert len(self._plan(1, gate=True)) == 1
+
+    def test_small_items_are_not_hubs(self) -> None:
+        """記事数が少ない事象は並記があっても制限しない (大きさだけで縛らない)。"""
+        assert len(self._plan(5, gate=True, hub_size=5)) == 1
+
+    def test_hub_without_many_cves_is_not_gated(self) -> None:
+        """CVE の種類が FOCAL_CVE_MAX 以下の大きな事象は、主題が明確なので制限しない。"""
+        ents = {f"h{i}": self._cves(1, 2) for i in range(10)}
+        item_of = dict.fromkeys(ents, "hub")
+        for b in ("b1", "b2"):
+            ents[b] = self._cves(2)
+            item_of[b] = "small"
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ents)}
+
+        got = plan_merges(
+            item_of=item_of,
+            first_seen={"hub": "2026-09-01", "small": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+            hub_gate=True,
+        )
+
+        assert len(got) == 1
+
+    def test_keeps_edges_that_share_a_non_cve_basis(self) -> None:
+        ents = self._hub()
+        victim = ("victim_org", "acme")
+        ents = {k: v | {victim} for k, v in ents.items()}
+        item_of = dict.fromkeys(ents, "hub")
+        for b in ("b1", "b2"):
+            ents[b] = self._cves(5) | {victim}
+            item_of[b] = "small"
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ents)}
+
+        got = plan_merges(
+            item_of=item_of,
+            first_seen={"hub": "2026-09-01", "small": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+            hub_gate=True,
+        )
+
+        assert len(got) == 1
+
+
+class TestReportPeriodGate:
+    """同じ種類の月次レポートで月が違うものを統合しない (既定 off)。"""
+
+    @staticmethod
+    def _plan(periods: dict[str, str], *, gate: bool) -> list[MergeGroup]:
+        shared = frozenset({("malware", "foo"), ("tool", "bar")})
+        ents = dict.fromkeys(("a1", "a2", "b1", "b2"), shared)
+        vecs = {k: _v(1, 0.01 * i) for i, k in enumerate(ents)}
+        return plan_merges(
+            item_of={"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2"},
+            first_seen={"i1": "2026-09-01", "i2": "2026-09-10"},
+            entities=ents,
+            vectors=vecs,
+            report_periods=periods if gate else None,
+        )
+
+    def test_blocks_edges_between_reports_of_different_months(self) -> None:
+        periods = {"a1": "2026-07", "a2": "2026-07", "b1": "2026-08", "b2": "2026-08"}
+
+        assert len(self._plan(periods, gate=False)) == 1
+        assert self._plan(periods, gate=True) == []
+
+    def test_keeps_edges_between_reports_of_the_same_month(self) -> None:
+        periods = dict.fromkeys(("a1", "a2", "b1", "b2"), "2026-08")
+
+        assert len(self._plan(periods, gate=True)) == 1
+
+    def test_keeps_edges_when_one_side_is_not_a_periodic_report(self) -> None:
+        periods = {"a1": "2026-07", "a2": "2026-07"}
+
+        assert len(self._plan(periods, gate=True)) == 1

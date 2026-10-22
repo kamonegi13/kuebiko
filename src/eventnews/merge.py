@@ -53,6 +53,14 @@ from src.eventnews.models import FOCAL_CVE_MAX, FREQ_CAP_EXEMPT_TYPES, MemberArt
 #:   (VMware の 38 記事のうち 28 件が未分類)。**構造で見る**。
 MIN_EDGES_BETWEEN_ITEMS = 2
 
+#: ハブ (複数 CVE を並記する大きな事象) とみなす記事数の下限。CVE の種類が ``FOCAL_CVE_MAX`` 超
+#: のときだけ対象 (主題が明確な大きな事象は制限しない)。2026-10-22 の実例: NetScaler 61-76 記事
+#: (CVE 18 種)・GitLab 9-15 記事 (CVE 22 種)
+HUB_MIN_ARTICLES = 8
+#: ハブの「主題の CVE」= 事象の記事のうち、この割合以上が持つ CVE。NetScaler の主題 (70%) に対し、
+#: 吸収された別件の CVE は 4-25%。ハブの CVE の和集合で見ると全ての CVE が「事象の CVE」になる
+HUB_CORE_SHARE = 0.30
+
 
 @dataclass(frozen=True)
 class MergeGroup:
@@ -168,6 +176,55 @@ def is_bulletin_cve_bridge(
     return (_cve_count(ents_a) > FOCAL_CVE_MAX) != (_cve_count(ents_b) > FOCAL_CVE_MAX)
 
 
+def hub_core_cves(
+    item_of: Mapping[str, str],
+    entities: Mapping[str, frozenset[tuple[str, str]]],
+) -> dict[str, frozenset[str]]:
+    """ハブの事象ごとの主題の CVE (ハブでない事象は含めない、純粋関数)。
+
+    ハブ = 記事 ``HUB_MIN_ARTICLES`` 件以上で、CVE の種類が ``FOCAL_CVE_MAX`` 超。
+    主題 = 全記事のうち ``HUB_CORE_SHARE`` 以上が持つ CVE (一括勧告の記事も数える)。
+    """
+    members: dict[str, list[str]] = {}
+    for aid, iid in item_of.items():
+        members.setdefault(iid, []).append(aid)
+    out: dict[str, frozenset[str]] = {}
+    for iid, aids in members.items():
+        if len(aids) < HUB_MIN_ARTICLES:
+            continue
+        counts: dict[str, int] = {}
+        for aid in aids:
+            for t, v in entities.get(aid, frozenset()):
+                if t == "cve":
+                    counts[v] = counts.get(v, 0) + 1
+        if len(counts) <= FOCAL_CVE_MAX:
+            continue
+        floor = HUB_CORE_SHARE * len(aids)
+        out[iid] = frozenset(v for v, n in counts.items() if n >= floor)
+    return out
+
+
+def is_hub_minor_cve_edge(
+    shared: Sequence[tuple[str, str]],
+    side_cores: Sequence[frozenset[str] | None],
+) -> bool:
+    """CVE だけを根拠にした辺が、ハブの主題でない CVE を橋にしているか。
+
+    ``side_cores`` は辺の両端の事象の主題 CVE (ハブでなければ None)。ハブの側で共有 CVE が
+    主題と 1 つも重ならなければ True。被害組織など CVE 以外の共有がある辺は対象外。
+    """
+    if not shared or any(t != "cve" for t, _ in shared):
+        return False
+    cves = {v for _, v in shared}
+    return any(core is not None and not (cves & core) for core in side_cores)
+
+
+def reports_of_different_periods(report_periods: Mapping[str, str], a: str, b: str) -> bool:
+    """両端がともに期間つきレポートで、期間が違うか (月だけが違う同種のレポート)。"""
+    pa, pb = report_periods.get(a), report_periods.get(b)
+    return pa is not None and pb is not None and pa != pb
+
+
 def cve_sets_disjoint(cves: Mapping[str, frozenset[str]], item_a: str, item_b: str) -> bool:
     """両方の事象が主題の CVE を持ち、1 つも重ならないか (= 別の脆弱性の話)。"""
     a, b = cves.get(item_a), cves.get(item_b)
@@ -194,6 +251,8 @@ def plan_merges(
     extra_edges: Sequence[tuple[str, str]] | None = None,
     cve_disjoint_gate: bool = False,
     bulletin_bridge_gate: bool = False,
+    hub_gate: bool = False,
+    report_periods: Mapping[str, str] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -216,9 +275,15 @@ def plan_merges(
             辺として本数に数え、単独事象の救済にも使う (本数の規則そのものは変えない)
         bulletin_bridge_gate: CVE だけを根拠にする辺のうち、一括の勧告 (CVE が
             ``FOCAL_CVE_MAX`` 超) と焦点の記事を結ぶ辺を使わない (一括の勧告を橋にしない)
+        hub_gate: CVE だけを根拠にする辺のうち、ハブ (複数 CVE を並記する大きな事象) の
+            主題でない CVE が橋の辺を使わない (``hub_core_cves``、事象の CVE の和集合でなく
+            焦点の CVE で照合する)
+        report_periods: article_id → 期間 (``roundup_detector.report_period``)。両端が期間つき
+            レポートで期間が違う辺を使わない (月次レポートどうしを統合しない)。None で無効
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
+    hub_cores = hub_core_cves(item_of, entities) if hub_gate else {}
     allow = set(approved) if approved is not None else None
     # ⭐ 事象の組ごとに辺を数える。**1 本では結ばない** (ハブ対策)。
     edge_count: dict[tuple[str, str], int] = {}
@@ -234,6 +299,10 @@ def plan_merges(
         shared = tuple(sorted(entities[a] & entities[b]))
         if bulletin_bridge_gate and is_bulletin_cve_bridge(entities[a], entities[b], shared):
             continue
+        if hub_cores and is_hub_minor_cve_edge(shared, (hub_cores.get(ia), hub_cores.get(ib))):
+            continue
+        if report_periods and reports_of_different_periods(report_periods, a, b):
+            continue
         cos = float(np.dot(vectors[a], vectors[b]))
         if not edge_is_allowed(entities[a], entities[b], shared, cos):
             continue
@@ -247,6 +316,8 @@ def plan_merges(
         if ia is None or ib is None or ia == ib or tuple(sorted((a, b))) in counted:
             continue
         if focal and cve_sets_disjoint(focal, ia, ib):
+            continue
+        if report_periods and reports_of_different_periods(report_periods, a, b):
             continue
         key = (ia, ib) if ia < ib else (ib, ia)
         edge_count[key] = edge_count.get(key, 0) + 1
