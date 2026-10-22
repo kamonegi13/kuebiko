@@ -719,7 +719,8 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
 -- 深刻さ C (Jev 型の問い + ML) の影の記録 (2026-10-22)。配信・重要度は変えない (記録のみ)。
--- 1 記事 1 行 (article_id UNIQUE)。skip_reason あり = A の決まりごとが外した記事 (問いは当てていない)。
+-- 1 記事 1 行 (article_id UNIQUE)。skip_reason あり = A の決まりごとが外した記事
+-- (問いは当てていない)。
 CREATE TABLE IF NOT EXISTS severity_c_shadow (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     article_id     TEXT    NOT NULL UNIQUE,
