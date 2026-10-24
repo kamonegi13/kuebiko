@@ -95,6 +95,32 @@ def test_expand_follows_tco_redirect_chain() -> None:
     assert result.reason is None
 
 
+def test_expand_follows_tco_meta_refresh_page_when_no_redirect_is_sent() -> None:
+    page = (
+        '<head><noscript><META http-equiv="refresh" '
+        'content="0;URL=https://news.example/a?x=1"></noscript></head>'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=page, headers={"content-type": "text/html"})
+
+    result = asyncio.run(expand_url("https://t.co/abc", client=_client(handler), max_hops=4))
+
+    assert result.final_url == "https://news.example/a?x=1"
+
+
+def test_expand_refuses_meta_refresh_into_private_address() -> None:
+    page = '<META http-equiv="refresh" content="0;URL=http://169.254.169.254/latest">'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=page, headers={"content-type": "text/html"})
+
+    result = asyncio.run(expand_url("https://t.co/abc", client=_client(handler), max_hops=4))
+
+    assert result.final_url is None
+    assert result.reason == "unsafe_url"
+
+
 def test_expand_leaves_non_shortener_urls_untouched() -> None:
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - 呼ばれない
         raise AssertionError("non-shortener must not be requested")

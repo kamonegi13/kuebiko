@@ -155,6 +155,24 @@ def select_candidates(urls: list[str], *, max_links: int) -> list[str]:
     return out[:max_links]
 
 
+_META_REFRESH = re.compile(r"(?i)http-equiv=[\"']?refresh[\"']?[^>]*?url=([^\"'>\s]+)")
+#: meta refresh を探すために読む先頭のバイト数 (短縮 URL の応答は数百バイト)
+_META_REFRESH_PEEK_BYTES = 4096
+
+
+async def _meta_refresh_target(resp: httpx.Response) -> str | None:
+    """短縮サービスの 200 応答 (HTML) から meta refresh の行き先を取り出す。無ければ None。"""
+    if "html" not in resp.headers.get("content-type", "").lower():
+        return None
+    head = b""
+    async for chunk in resp.aiter_bytes():
+        head += chunk
+        if len(head) >= _META_REFRESH_PEEK_BYTES:
+            break
+    match = _META_REFRESH.search(head[:_META_REFRESH_PEEK_BYTES].decode("utf-8", "replace"))
+    return match.group(1) if match else None
+
+
 def _unsafe_reason(error: UnsafeUrlError) -> str:
     """名前解決の失敗 (実在しないドメイン) と SSRF 拒否 (private 等) を区別して残す。"""
     return "dns_error" if str(error).startswith("ホスト名を解決できません") else "unsafe_url"
@@ -178,7 +196,10 @@ async def expand_url(url: str, *, client: httpx.AsyncClient, max_hops: int) -> E
             async with client.stream("GET", current) as resp:
                 location = resp.headers.get("location")
                 if not resp.is_redirect or not location:
-                    return ExpandResult(current)
+                    # t.co は 301 でなく meta refresh の HTML を返すことがある (実測 39 件中 3 件)
+                    location = await _meta_refresh_target(resp)
+                    if location is None:
+                        return ExpandResult(current)
         except httpx.TimeoutException:
             return ExpandResult(None, "timeout")
         except httpx.RequestError:
