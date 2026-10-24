@@ -20,6 +20,8 @@ from typing import Any
 
 from src.eventnews.event_kind import KIND_LABELS_JA
 from src.eventnews.identity.focus import (
+    CLASS_CONFLICT,
+    CLASS_LINEAGE,
     DEFAULT_RULE,
     Focus,
     FocusArticle,
@@ -30,7 +32,9 @@ from src.eventnews.identity.focus import (
     match_focus,
     verdict_to_dict,
 )
+from src.eventnews.merge import LinkVerdict
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
+from src.eventnews.org_identity import build_alias_map
 from src.logging_config import get_logger
 from src.storage.repo_event_focus import StoredFocus
 from src.storage.repo_merge_decisions import MergeDecisionRow
@@ -39,6 +43,11 @@ from src.storage.run_history import RunHistoryRepository
 _log = get_logger(__name__)
 
 FOCUS_FLAG = "EVENTNEWS_FOCUS_RECORD"
+#: F2: 統合の判断で焦点の照合が conflict の組を結ばない (on / shadow / off、既定 on)
+GATE_FLAG = "EVENTNEWS_MERGE_FOCUS_GATE"
+GATE_ON = "on"
+GATE_SHADOW = "shadow"
+GATE_OFF = "off"
 #: 1 回に作り直す事象の上限 (初回の遡及は数回に分けて進む)
 MAX_ITEMS_PER_RUN = 3000
 #: 読み込みの 1 まとまり (記事を引く SQL のプレースホルダ数を抑える)
@@ -59,6 +68,59 @@ MemberLoader = Callable[
 
 def focus_record_enabled() -> bool:
     return os.environ.get(FOCUS_FLAG, "1") != "0"
+
+
+def focus_gate_mode() -> str:
+    """``EVENTNEWS_MERGE_FOCUS_GATE`` の解釈。未設定 = on。読めない値は shadow (止めない側)。"""
+    raw = os.environ.get(GATE_FLAG, GATE_ON).strip().lower()
+    if raw in ("on", "1", "true"):
+        return GATE_ON
+    if raw in ("off", "0", "false"):
+        return GATE_OFF
+    return GATE_SHADOW
+
+
+def load_org_alias(repo: RunHistoryRepository) -> dict[str, str]:
+    """被害組織の別名判定 (shadow の「同一」) の写像。conflict を消す方向だけに使う。
+
+    読めなくても照合は動く (別名なし = conflict が少し多めに出る側) ので、失敗は警告で続行する。
+    """
+    try:
+        return dict(build_alias_map(repo.list_org_identity_same_pairs()).mapping)
+    except Exception as e:  # noqa: BLE001 — 補助。別名が無くても照合は成り立つ
+        _log.warning("eventnews_focus_org_alias_failed", error=str(e)[:160])
+        return {}
+
+
+def build_link_veto(
+    members_of: Callable[[str], Sequence[MemberArticle]],
+    org_alias: Mapping[str, str],
+) -> Callable[[str, str], LinkVerdict | None]:
+    """統合の判断に渡す照合 (F2)。conflict / lineage だけ ``LinkVerdict`` を返し、他は None。
+
+    事象ごとの焦点は 1 回の計画の中で使い回す。照合に失敗した組は止めない (None) —
+    統合を止める根拠にできるのは、照合が成功して conflict と出たときだけ。
+    """
+    cache: dict[str, Focus] = {}
+
+    def focus_of(item_id: str) -> Focus:
+        if item_id not in cache:
+            cache[item_id] = focus_of_members(members_of(item_id))
+        return cache[item_id]
+
+    def veto(item_a: str, item_b: str) -> LinkVerdict | None:
+        try:
+            verdict = match_focus(focus_of(item_a), focus_of(item_b), org_alias=org_alias)
+        except Exception as e:  # noqa: BLE001 — 照合の失敗で統合を止めない
+            _log.warning("eventnews_focus_veto_failed", a=item_a, b=item_b, error=str(e)[:160])
+            return None
+        if verdict.klass == CLASS_CONFLICT:
+            return LinkVerdict(CLASS_CONFLICT, ",".join(verdict.conflicts))
+        if verdict.klass == CLASS_LINEAGE:
+            return LinkVerdict(CLASS_LINEAGE, verdict.reason)
+        return None
+
+    return veto
 
 
 def to_focus_article(member: MemberArticle) -> FocusArticle:
@@ -92,12 +154,14 @@ def order_members(
 
 
 def focus_fields_for_decision(
-    target_members: Sequence[MemberArticle], absorbed_members: Sequence[MemberArticle]
+    target_members: Sequence[MemberArticle],
+    absorbed_members: Sequence[MemberArticle],
+    org_alias: Mapping[str, str] | None = None,
 ) -> tuple[str, str]:
     """統合前の両側の焦点を照合し、(focus_class, focus_json) を返す。"""
     target = focus_of_members(target_members)
     absorbed = focus_of_members(absorbed_members)
-    verdict = match_focus(target, absorbed)
+    verdict = match_focus(target, absorbed, org_alias=org_alias)
     payload = {
         "rule_version": DEFAULT_RULE.version,
         "target": focus_to_dict(target),
@@ -110,8 +174,12 @@ def focus_fields_for_decision(
 def enrich_decision_rows(
     rows: Sequence[MergeDecisionRow],
     members_of: Callable[[str], Sequence[MemberArticle]],
+    org_alias: Mapping[str, str] | None = None,
 ) -> list[MergeDecisionRow]:
     """判断記録の行に焦点の照合を足す (flag off・失敗は元の行のまま)。
+
+    ``org_alias`` は統合の判断 (``build_link_veto``) と同じ別名の写像。渡さないと記録の照合が
+    判断より conflict を多く出し、止めた件数の記録と食い違う。
 
     ⚠ 焦点の失敗で統合の記録そのものを落とさない。落ちた行は focus_class が空 (= 未計算)。
     """
@@ -121,7 +189,7 @@ def enrich_decision_rows(
     for row in rows:
         try:
             klass, text = focus_fields_for_decision(
-                members_of(row.target_id), members_of(row.absorbed_id)
+                members_of(row.target_id), members_of(row.absorbed_id), org_alias
             )
         except Exception as e:  # noqa: BLE001 — 記録は補助。統合の記録を落とさない
             _log.warning(

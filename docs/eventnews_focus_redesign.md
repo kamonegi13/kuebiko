@@ -491,6 +491,35 @@ F1 (conflict + lineage の本当に別 58%) の主因 3 つを直した。**記�
 30 日の止まる統合は 126 → 37 件。詳細は data/eval/focus_f1b_check_2026_10_24.md。
 比較用の変種 `victim_trust` (被害組織にも過半の条件) は既定 off。
 
+### 9.4 F2 の投入 (2026-10-24、利用者の §9.1-1 の線に基づく判断)
+
+F1b の止めた組 (conflict) が本当に別 (different + lineage) 26/31 = 84% (区間 67〜93%)。点推定が線 (8 割) を超えたので
+**統合の判断で、焦点の照合が conflict の組を結ばない**を入れた (flag `EVENTNEWS_MERGE_FOCUS_GATE` = on / shadow / off、
+compose の既定 on、読めない値は shadow)。
+
+- **どこで効くか**: `merge.plan_merges` が「結ぶ条件 (辺の本数・単独記事の救済) を満たした事象の組」ごとに、統合前の両事象の
+  焦点を `match_focus` で照合し (`link_veto`)、conflict ならその組を結ばない。辺の足りない組は元々結ばれないので照合も呼ばない。
+  lineage は**止めず**、関係 (系統) の候補として記録だけする。support・weak は今の判定のまま。
+- **照合の入力は記録経路と同じ**: 別名判定 (`org_identity_pairs` の「同一」) を conflict を消す方向だけに渡す。判断記録の
+  `focus_class` (`enrich_decision_rows`) にも同じ別名を渡すようにした (F1b の注意点: 記録経路は別名なしで照合していた)。
+- **止めた組の記録**: 表 `event_merge_vetoes` (組ごとに 1 行、毎時の再検出は `times_seen` が進むだけ)。
+  `action` = `blocked` (結ばなかった) / `shadow` (shadow で conflict だったが結んだ) / `relation_candidate` (lineage)。
+  誤って止めた組は、この表で見つけて手で統合できる (統合の判断記録 `event_merge_decisions` は結んだ組だけなので、undo の経路と分かれている)。
+- **既知の限界**: 照合は組ごとに独立。A-B と B-C が通れば A-C が conflict でも推移で結ばれる (設計 §3.3 の逐次処理は F5)。
+  照合は適用前の事象の焦点で行うので、同じ回に A-B が結ばれた後の B-C を (A∪B) の焦点では見ない。
+- **再現** (`scripts/focus_replay.py`、直近 30 日): 統合 851 件のうち conflict 37 件 (4%)・lineage 26 件。F1b と一致。
+  80 組: 止まる誤り 3/22・止まる正しい統合 1/58。F1b の見込みは「30 日で約 31 件の誤統合を止め、約 6 件を誤って止める」。
+
+#### 継続の測定と戻す線
+
+- 週 10 組を `scripts/sample_focus_vetoes.py` で抜く (既定 dry-run、`--apply` で `sampled_at` を付けて次回から外す)。
+  出力の jsonl を Opus 2 回独立 (同一 / 系統 / 別 / unclear) で裁定し、結果を `--summarize` に渡す。
+- **線: 累計の「本当に別 (different + lineage)」の割合の Wilson 95% 区間の下限が 80% を割り続けるなら shadow に戻す**
+  (`replay.should_revert_to_shadow`)。標本は unclear を除く累計。初回は 31 組で下限 67% なので、10 組ずつ足して
+  下限が上がるかを見る。点推定が 8 割を割ったときは待たずに戻す。
+- 戻し方: `EVENTNEWS_MERGE_FOCUS_GATE=shadow` (記録は続く・結ぶ) / `off` (照合も記録もしない)。
+  shadow で止まっていた組は `event_merge_vetoes` の `action=shadow` に残るので、次の毎時で普通に結ばれる。
+
 ---
 
 ## 付録 — 机上の当ての再現

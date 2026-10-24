@@ -46,6 +46,7 @@ from src.eventnews.grouping import build_join_entities
 from src.eventnews.merge import (
     MIN_EDGES_BETWEEN_ITEMS,
     MergeGroup,
+    VetoedLink,
     candidate_pairs_by_entity,
     edge_inputs,
     frequent_entity_pairs,
@@ -59,7 +60,15 @@ from src.eventnews.state import compute_source_breakdown
 from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventItemRecord
 from src.storage.run_history import RunHistoryRepository
-from src.ui.services.eventnews_focus_job import enrich_decision_rows, run_focus_record
+from src.ui.services.eventnews_focus_job import (
+    GATE_OFF,
+    GATE_ON,
+    build_link_veto,
+    enrich_decision_rows,
+    focus_gate_mode,
+    load_org_alias,
+    run_focus_record,
+)
 from src.ui.services.eventnews_hourly_job import (
     _embed_summaries,
     _entity_counts,
@@ -116,6 +125,7 @@ __all__ = [
     "merge_flag_snapshot",
     "real_kind_enabled",
     "record_decisions",
+    "record_vetoes",
     "merge_and_regenerate",
     "merge_enabled",
     "plan_for",
@@ -166,6 +176,10 @@ class MergePlan:
     probas: Mapping[tuple[str, str], float] = field(default_factory=dict)
     #: 頻出の名前の共有で承認した記事対 (判断記録で出どころを分ける)
     frequent_pairs: frozenset[tuple[str, str]] = frozenset()
+    #: 焦点の照合で止めた (shadow・lineage は記録だけ) 事象の組 (F2)
+    vetoes: tuple[VetoedLink, ...] = ()
+    #: この計画の焦点の照合の別名の写像 (判断記録の照合を判断と揃えるため)
+    org_alias: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -395,6 +409,7 @@ def merge_flag_snapshot() -> dict[str, object]:
         "real_kind": real_kind_enabled(),
         "max_gap_days": None if gap is None else gap.days,
         "min_edges": MIN_EDGES_BETWEEN_ITEMS,
+        "focus_gate": focus_gate_mode(),
     }
 
 
@@ -504,6 +519,9 @@ def plan_for(
     extra = _frequent_entity_edges(
         repo, inputs, model, on_pair=_count, real_kind=real_kind, probas_out=probas
     )
+    gate_mode = focus_gate_mode()
+    org_alias = load_org_alias(repo) if gate_mode != GATE_OFF else {}
+    vetoed: list[VetoedLink] = []
     groups = plan_merges(
         item_of=inputs.item_of,
         first_seen=inputs.first_seen,
@@ -518,6 +536,11 @@ def plan_for(
         report_periods=_report_periods(inputs),
         article_ts={aid: m.anchor_ts for aid, m in inputs.members.items()},
         max_gap=max_gap(),
+        link_veto=(
+            None if gate_mode == GATE_OFF else build_link_veto(_members_of(inputs), org_alias)
+        ),
+        veto_enforce=gate_mode == GATE_ON,
+        vetoed_out=vetoed,
     )
     return MergePlan(
         groups=tuple(groups),
@@ -526,7 +549,20 @@ def plan_for(
         pairs_approved=len(approved),
         probas=probas,
         frequent_pairs=frozenset((a, b) if a <= b else (b, a) for a, b in extra),
+        vetoes=tuple(vetoed),
+        org_alias=org_alias,
     )
+
+
+def _members_of(inputs: MergeInputs) -> Callable[[str], list[MemberArticle]]:
+    """統合前の参加順の記事 (inputs は適用前の状態)。焦点の照合と判断記録で共有する。"""
+
+    def members_of(item_id: str) -> list[MemberArticle]:
+        record = inputs.records.get(item_id)
+        ids = record.state.member_ids if record else ()
+        return [inputs.members[a] for a in ids if a in inputs.members]
+
+    return members_of
 
 
 def apply_merge_group(
@@ -590,6 +626,19 @@ async def _prepare_inputs(
     return await fill_summary_embeddings(repo, load_app_config(), inputs, cap=embed_fill_cap())
 
 
+def record_vetoes(repo: RunHistoryRepository, plan: MergePlan, now: datetime) -> int:
+    """焦点の照合で止めた組を記録する。記録の失敗は大きく残すが統合は止めない。"""
+    if not plan.vetoes:
+        return 0
+    try:
+        return repo.record_merge_vetoes(plan.vetoes, seen_at=now, mode=focus_gate_mode())
+    except Exception as e:  # noqa: BLE001 — 補助の記録。統合の成否を巻き込まない
+        _log.error(
+            "eventnews_merge_vetoes_record_failed", rows=len(plan.vetoes), error=str(e)[:200]
+        )
+        return 0
+
+
 def record_decisions(
     repo: RunHistoryRepository, plan: MergePlan, now: datetime, *, run_kind: str
 ) -> int:
@@ -612,13 +661,7 @@ def record_decisions(
         run_kind=run_kind,
     )
 
-    def members_of(item_id: str) -> list[MemberArticle]:
-        # 統合前の参加順 (inputs は適用前の状態)。焦点の照合は記録だけで判断には使わない
-        record = inputs.records.get(item_id)
-        ids = record.state.member_ids if record else ()
-        return [inputs.members[a] for a in ids if a in inputs.members]
-
-    rows = enrich_decision_rows(rows, members_of)
+    rows = enrich_decision_rows(rows, _members_of(inputs), plan.org_alias)
     try:
         return repo.record_merge_decisions(rows, decided_at=now)
     except Exception as e:  # noqa: BLE001 — 統合は適用済み。記録の失敗は大きく残して続行
@@ -654,8 +697,9 @@ async def merge_and_regenerate(
             absorbed += apply_merge_group(repo, group, plan.inputs, now)
             applied += 1
         recorded = record_decisions(repo, plan, now, run_kind=run_kind)
+        vetoes_recorded = record_vetoes(repo, plan, now)
     else:
-        recorded = 0
+        recorded = vetoes_recorded = 0
     if applied:
         _log.info("eventnews_merge_applied", groups=applied, absorbed_items=absorbed)
 
@@ -679,6 +723,8 @@ async def merge_and_regenerate(
             "regen_failed": stats.failed,
             "regen_skipped": stats.skipped,
             "decisions_recorded": recorded,
+            "focus_vetoes": len(plan.vetoes),
+            "focus_vetoes_recorded": vetoes_recorded,
             "summary_embeddings_filled": filled,
         },
     )

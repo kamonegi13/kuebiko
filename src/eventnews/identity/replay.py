@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 import statistics
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -107,3 +109,35 @@ def size_stats(values: Sequence[int]) -> tuple[float, float, int]:
 
 def focus_sizes(focuses: Sequence[Focus]) -> list[int]:
     return [len(f.names) for f in focuses]
+
+
+#: F2 を on に保つ線: 止めた組が本当に別 (different + lineage) である割合の Wilson 下限
+#: (設計書 §9.1-1 の「8 割」を区間の下限で見る。割り続けるなら shadow に戻す)
+GATE_REVERT_LOWER_BOUND = 0.80
+_WILSON_Z = 1.96
+
+
+def wilson_interval(successes: int, total: int, z: float = _WILSON_Z) -> tuple[float, float]:
+    """二項割合の Wilson 区間 (95%)。標本が空なら (0, 1)。"""
+    if total <= 0:
+        return 0.0, 1.0
+    p = successes / total
+    denom = 1 + z * z / total
+    center = (p + z * z / (2 * total)) / denom
+    half = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / denom
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def should_revert_to_shadow(truly_different: int, total: int) -> bool:
+    """止めた組の裁定の累計で、区間の下限が線を割ったら True (= shadow に戻す)。"""
+    if total <= 0:
+        return False
+    return wilson_interval(truly_different, total)[0] < GATE_REVERT_LOWER_BOUND
+
+
+def pick_sample(keys: Sequence[tuple[str, str]], count: int, *, seed: int) -> list[tuple[str, str]]:
+    """組の無作為抽出。入力の並びに依らず seed で決まる (再実行しても同じ組)。"""
+    ordered = sorted(keys)
+    if len(ordered) <= count:
+        return ordered
+    return sorted(random.Random(seed).sample(ordered, count))  # noqa: S311 — 統計用
