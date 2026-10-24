@@ -329,6 +329,14 @@ def _persist_article_outcomes(
                             article_id=article_id,
                             error=str(e),
                         )
+                _lc = msg.metadata.get("_linked_context")
+                if isinstance(_lc, str) and _lc:
+                    try:
+                        dedup_repo.set_linked_context(article_id, _lc)
+                    except Exception as e:  # noqa: BLE001
+                        _log.debug(
+                            "linked_context_persist_failed", article_id=article_id, error=str(e)
+                        )
                 # M3b 段1 (2026-10-10): routing 時点で inline 計算した深刻度の軸を、毎時の段
                 # (severity_axes_job) と同じ setter で保存する (INSERT OR IGNORE なので
                 # 毎時の段はこの記事を「既に軸あり」としてスキップする)。失敗しても投稿は止めない。

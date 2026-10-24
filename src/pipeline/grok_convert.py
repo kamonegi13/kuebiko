@@ -7,6 +7,15 @@ from collections.abc import Callable, Sequence
 
 import jinja2
 
+from src.grok.jsonl_parser import TweetRecord
+from src.grok.link_fetch import (
+    LinkedPage,
+    LinkFetchConfig,
+    LinkFetcher,
+    build_link_section,
+    link_fetch_mode,
+    linked_context_json,
+)
 from src.logging_config import get_logger
 from src.pipeline.briefing import _summarize_and_build
 from src.tools.article_model import Article
@@ -220,7 +229,7 @@ async def _grok_jsonl_to_briefings(
     従来の機械変換 (``tweet_to_briefing``) に graceful degradation する。
     """
     from src.grok.jsonl_parser import filter_records, parse_jsonl
-    from src.grok.jsonl_to_briefings import records_to_briefings, tweet_to_briefing
+    from src.grok.jsonl_to_briefings import records_to_briefings
 
     parse_result = parse_jsonl(body)
     _log.info(
@@ -253,65 +262,28 @@ async def _grok_jsonl_to_briefings(
 
     out: list[BriefingMessage] = []
     enriched_n = 0
-    for record in filtered:
-        # 機械変換版: Grok の routing/sources/dedup の ground truth + enrichment 失敗時の fallback。
-        grok_msg = tweet_to_briefing(record)
-        if grok_msg is None:
-            continue  # unknown theme は skip
-        # per-tweet の source identity は **enrichment の成否に関わらず** 必要なので
-        # try の外で組み立てる (失敗しても媒体 = 投稿者・発信者種別は確定している)。
-        handle = (
-            record.author_handle
-            if record.author_handle.startswith("@")
-            else f"@{record.author_handle}"
-        )
-        feed_title = f"{record.author_name} ({handle})" if record.author_name else handle
-        tweet_article = Article(
-            id=f"grok-x-{record.tweet_id}",
-            title=(record.text[:120] or feed_title),
-            url=record.url,
-            summary_html=record.text,
-            author=handle,
-            published=record.posted_at_dt or article.published,
-            feed_title=feed_title,
-            feed_url=record.url,
-            # 発信者種別を下流へ運ぶ (従来は収集フィルタの判定にだけ使って捨てていた)
-            account_class=record.account_class,
-            # X の投稿にタイトルは無い。``title`` は本文の先頭を入れているだけなので、
-            # 見出しは生成に委ねる (そうしないと日本語投稿は本文が見出しになる)。
-            has_title=False,
-        )
-        try:
-            # summarizer に渡す本文 (引用 / 外部 URL でコンテキスト補強 → IOC 抽出にも寄与)
-            body_parts = [record.text]
-            if record.quoted_text:
-                body_parts.append(f"[引用] {record.quoted_text}")
-            if record.external_urls:
-                body_parts.append("参考 URL: " + " ".join(record.external_urls[:3]))
-            tweet_body = "\n".join(p for p in body_parts if p)
-
-            enriched = await _summarize_and_build(
-                tweet_article,
-                tweet_body,
-                llm,
-                template,
-                think=False,
+    link_mode = link_fetch_mode()
+    fetcher = LinkFetcher(LinkFetchConfig.from_env()) if link_mode != "off" else None
+    try:
+        for record in filtered:
+            message, is_enriched = await _grok_record_to_message(
+                record,
+                article,
+                llm=llm,
+                template=template,
                 enrichment=enrichment,
                 brief_count_24h=brief_count_24h,
-                body_source="grok",
+                fetcher=fetcher,
+                use_links=link_mode == "on",
             )
-            message = _merge_grok_overlay(enriched, grok_msg)
-            enriched_n += 1
-        except Exception as e:  # noqa: BLE001
-            _log.warning(
-                "grok_jsonl_enrichment_failed_fallback",
-                tweet_id=record.tweet_id,
-                error_type=type(e).__name__,
-                error=str(e)[:200],
-            )
-            message = grok_msg  # 機械変換版で graceful degradation
-        # 発信者種別は enrichment の成否に依らず確定しているので必ず載せる。
-        out.append(message.model_copy(update={"account_class": record.account_class}))
+            if message is None:
+                continue
+            enriched_n += int(is_enriched)
+            # 発信者種別は enrichment の成否に依らず確定しているので必ず載せる。
+            out.append(message.model_copy(update={"account_class": record.account_class}))
+    finally:
+        if fetcher is not None:
+            await fetcher.aclose()
 
     _log.info(
         "grok_jsonl_briefings_generated",
@@ -320,3 +292,100 @@ async def _grok_jsonl_to_briefings(
         enriched=enriched_n,
     )
     return out
+
+
+async def _fetch_linked_pages(
+    record: TweetRecord, fetcher: LinkFetcher | None
+) -> tuple[LinkedPage, ...]:
+    """投稿の外部リンクを取りに行く。失敗しても投稿の処理は止めない (空で返す)。"""
+    if fetcher is None or not record.external_urls:
+        return ()
+    try:
+        pages = await fetcher.fetch(record.external_urls)
+    except Exception as e:  # noqa: BLE001
+        _log.warning(
+            "grok_link_fetch_failed", tweet_id=record.tweet_id, error_type=type(e).__name__
+        )
+        return ()
+    _log.info(
+        "grok_link_fetch",
+        tweet_id=record.tweet_id,
+        attempted=len(pages),
+        succeeded=sum(1 for p in pages if p.ok),
+        elapsed_ms=sum(p.elapsed_ms for p in pages),
+        reasons=[p.reason for p in pages if not p.ok],
+    )
+    return pages
+
+
+async def _grok_record_to_message(
+    record: TweetRecord,
+    article: Article,
+    *,
+    llm: LLMClient,
+    template: jinja2.Template,
+    enrichment: object | None,
+    brief_count_24h: int,
+    fetcher: LinkFetcher | None,
+    use_links: bool,
+) -> tuple[BriefingMessage | None, bool]:
+    """1 tweet を full enrichment した BriefingMessage にする (失敗時は機械変換版)。"""
+    from src.grok.jsonl_to_briefings import tweet_to_briefing
+
+    # 機械変換版: Grok の routing/sources/dedup の ground truth + enrichment 失敗時の fallback。
+    grok_msg = tweet_to_briefing(record)
+    if grok_msg is None:
+        return None, False  # unknown theme は skip
+    # per-tweet の source identity は **enrichment の成否に関わらず** 必要なので
+    # try の外で組み立てる (失敗しても媒体 = 投稿者・発信者種別は確定している)。
+    handle = (
+        record.author_handle if record.author_handle.startswith("@") else f"@{record.author_handle}"
+    )
+    feed_title = f"{record.author_name} ({handle})" if record.author_name else handle
+    tweet_article = Article(
+        id=f"grok-x-{record.tweet_id}",
+        title=(record.text[:120] or feed_title),
+        url=record.url,
+        summary_html=record.text,
+        author=handle,
+        published=record.posted_at_dt or article.published,
+        feed_title=feed_title,
+        feed_url=record.url,
+        # 発信者種別を下流へ運ぶ (従来は収集フィルタの判定にだけ使って捨てていた)
+        account_class=record.account_class,
+        # X の投稿にタイトルは無い。``title`` は本文の先頭を入れているだけなので、
+        # 見出しは生成に委ねる (そうしないと日本語投稿は本文が見出しになる)。
+        has_title=False,
+    )
+    try:
+        # summarizer に渡す本文 (引用 / 外部 URL でコンテキスト補強 → IOC 抽出にも寄与)
+        body_parts = [record.text]
+        if record.quoted_text:
+            body_parts.append(f"[引用] {record.quoted_text}")
+        if record.external_urls:
+            body_parts.append("参考 URL: " + " ".join(record.external_urls[:3]))
+        tweet_body = "\n".join(p for p in body_parts if p)
+        # 参照先の本文: 取得結果は常に保存し、要約の材料に足すのは GROK_LINK_FETCH=on のときだけ
+        pages = await _fetch_linked_pages(record, fetcher)
+
+        enriched = await _summarize_and_build(
+            tweet_article,
+            tweet_body,
+            llm,
+            template,
+            think=False,
+            enrichment=enrichment,
+            brief_count_24h=brief_count_24h,
+            body_source="grok",
+            link_text=build_link_section(pages) if use_links else "",
+            linked_context=linked_context_json(pages),
+        )
+        return _merge_grok_overlay(enriched, grok_msg), True
+    except Exception as e:  # noqa: BLE001
+        _log.warning(
+            "grok_jsonl_enrichment_failed_fallback",
+            tweet_id=record.tweet_id,
+            error_type=type(e).__name__,
+            error=str(e)[:200],
+        )
+        return grok_msg, False  # 機械変換版で graceful degradation

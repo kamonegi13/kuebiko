@@ -178,6 +178,8 @@ async def _summarize_and_build(
     body_source: str = "unknown",
     extraction_failure_reason: str | None = None,
     trust_input_title: bool = True,
+    link_text: str = "",
+    linked_context: str | None = None,
 ) -> BriefingMessage:
     """抽出済み本文 ``body`` から 要約 → IOC 抽出 → enrich → BriefingMessage 化する。
 
@@ -207,11 +209,20 @@ async def _summarize_and_build(
     # テンプレは合成版と legacy .j2 の byte 同値が rollback 契約として固定されており、
     # 片方だけ変えると契約が崩れるため。無いものは「無い」と伝え、何をすべきかも同じ
     # 文字列で渡す。
-    prompt = template.render(article=_prompt_article(article), body=llm_body)
+    # Grok の参照先の本文 (GROK_LINK_FETCH=on のときだけ非空) は要約の材料と裏付けの照合範囲
+    # にだけ足す。IOC・アクター検出と保存本文は投稿の本文のまま (保存 ⊇ 検出の保証を保つ)。
+    prompt_body = llm_body + link_text
+    prompt = template.render(article=_prompt_article(article), body=prompt_body)
     summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
     # b1. 薄い Grok 投稿の要約が本文に無い数字・矛盾を足していないか (GROK_SUMMARY_GROUNDING)
     summary = await _ensure_grounded_summary(
-        summary, llm, prompt, article=article, body=llm_body, think=think, body_source=body_source
+        summary,
+        llm,
+        prompt,
+        article=article,
+        body=prompt_body,
+        think=think,
+        body_source=body_source,
     )
     # b2. 統合判断分類器 (2026-07-26 抜本策): 過負荷 summarizer で枯死する判断系
     # (editorial_stance / intent / diamond / event_date / i_infra / article_type /
@@ -432,6 +443,7 @@ async def _summarize_and_build(
         trust_input_title=trust_input_title,
         severity_axes=inline_axes,
         severity_axes_model=inline_axes_model,
+        linked_context=linked_context,
     )
 
 
@@ -872,6 +884,7 @@ def _build_briefing(
     trust_input_title: bool = True,
     severity_axes: Mapping[str, str] | None = None,
     severity_axes_model: str = "",
+    linked_context: str | None = None,
 ) -> BriefingMessage:
     metadata: dict[str, object] = {
         "feed_url": article.feed_url,
@@ -1144,6 +1157,9 @@ def _build_briefing(
     # 本文完全性 (2026-07-27): body の由来と全文取得失敗理由を persistence へ渡す
     # (update_article_body の source 引数 = body_source 列の SSoT)。
     metadata["_article_body_source"] = body_source
+    # Grok の外部リンク先の取得結果 (JSON)。articles.linked_context へ保存する (body とは別の由来)
+    if linked_context:
+        metadata["_linked_context"] = linked_context
     if extraction_failure_reason:
         metadata["_extraction_failure_reason"] = extraction_failure_reason
     # Phase 5J-2: 日本語訳タイトル採用ロジック (Phase 5E の改修)

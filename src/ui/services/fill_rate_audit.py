@@ -88,6 +88,16 @@ def _entity_cond_any(*entity_types: str) -> str:
 # (CLAUDE.md §7 の規約)。
 METRICS: tuple[FillMetric, ...] = (
     FillMetric(
+        # Grok 投稿が貼った外部リンク先の本文取得 (2026-10-24 GROK_LINK_FETCH)。消費者は
+        # GROK_LINK_FETCH=on のときの要約の材料と裏付けの照合範囲。母集団は参考 URL を持つ
+        # Grok 投稿 — 低下は「取得が崩れた (SSRF 関門・UA ブロック・予算切れ)」
+        "grok_linked_context",
+        "Grok の参照先の本文",
+        "a.linked_context IS NOT NULL AND a.linked_context LIKE '%%\"ok\": true%%'",
+        None,
+        population="a.body_source = 'grok' AND a.body LIKE '%%参考 URL:%%'",
+    ),
+    FillMetric(
         # 常設の問いの根拠の直接/間接の印 (2026-10-22)。被害国から導出するので、被害国が
         # 空だと印が「不明」になる。消費者は posture カードの evidence_proximity_30d。
         # 母集団は常設の問いの根拠になった記事だけ — 低下は「根拠の被害国抽出が崩れた」

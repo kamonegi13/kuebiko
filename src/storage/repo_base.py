@@ -121,6 +121,9 @@ class RunHistoryRepositoryBase:
         # (judgment_classifier) が分類済みだが未永続だった (2026-07-27 露出)。記事詳細で表示。
         if "article_type" not in existing_articles:
             conn.execute("ALTER TABLE articles ADD COLUMN article_type TEXT")
+        # Grok 投稿の外部リンク先の取得結果 (JSON、2026-10-24 GROK_LINK_FETCH)。body とは別の由来
+        if "linked_context" not in existing_articles:
+            conn.execute("ALTER TABLE articles ADD COLUMN linked_context TEXT")
         # body_source 状態機械化 (2026-07-29, docs/body_source_state_machine_design.md B1):
         # 再取得試行回数。pending_refetch が N 回失敗したら blocked へ昇格させる恒久失敗判定に使う
         # (reason 一致では救えない WAF/timeout 系を試行回数で終端化)。B1 は列追加のみ。

@@ -666,7 +666,7 @@ class DedupMixin(RunHistoryRepositoryBase):
             cur = conn.execute(
                 # body purge (retention)。body を消したら body_source も 'none' に整合させる
                 # (本文完全性の不変条件を purge 後も保つ、2026-07-27)。
-                "UPDATE articles SET body=NULL, body_ja=NULL,"
+                "UPDATE articles SET body=NULL, body_ja=NULL, linked_context=NULL,"
                 " body_source='none', extraction_failure_reason=NULL"
                 " WHERE (body IS NOT NULL OR body_ja IS NOT NULL) AND ("
                 " (body_fetched_at IS NOT NULL"
