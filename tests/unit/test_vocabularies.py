@@ -348,3 +348,13 @@ def test_ach_hypothesis_covers_full_menu_with_japanese_labels() -> None:
     # 生 ASCII token をラベルとして配信しない (UI 表示規約: 生 enum 直接表示の禁止)
     non_japanese = [v for v, lbl in labels.items() if not any(ord(c) > 0x7F for c in lbl)]
     assert not non_japanese, f"日本語ラベルでない仮説: {non_japanese}"
+
+
+def test_victim_size_matches_severity_axes_literal() -> None:
+    """victim_size vocab が深刻度の軸の VictimSize と一致 (記事詳細の「被害組織の規模」の SSoT)。"""
+    from src.cti.severity_axes import VictimSize
+
+    vocab = get_vocabulary("victim_size")
+    assert vocab is not None
+    assert set(vocab.values()) == set(get_args(VictimSize))
+    assert vocab.label_for("large") == "大規模"

@@ -20,6 +20,7 @@ from typing import get_args
 from src.config_loader import IMPORTANCE_LEVELS, KNOWN_ARTICLE_CATEGORIES
 from src.cti.geocoder import GeoPrecision
 from src.cti.llm_routing_flags import EditorialStance
+from src.cti.severity_axes import VictimSize
 from src.cti.taxonomy_normalizer import PMESII_AXES
 from src.prompts.rubric_guide import GROUPS
 from src.storage.records import ArticleStatus, RunStatus, TriggerSource
@@ -279,6 +280,19 @@ _REGISTRY: dict[str, Vocabulary] = {
         canonical=frozenset(
             {"breaking", "advisory", "recap", "tutorial", "research", "press", "opinion"}
         ),
+    ),
+    # victim_size: 深刻度の軸 (s23) の被害組織の規模。記事詳細の 1 行表示の消費者
+    # (canonical = severity_axes.VictimSize、定義文は EXTRA_FIELDS_PROMPT 9 と同じ)。
+    "victim_size": _vocab(
+        "victim_size",
+        {
+            "large": "大規模",
+            "medium": "中規模",
+            "small": "小規模",
+            "none": "被害組織なし",
+            "unknown": "不明",
+        },
+        canonical=frozenset(get_args(VictimSize)),
     ),
     # ---- long-tail (単一 consumer だが将来の multi-copy 化を防ぐため vocab へ集約) ----
     # 戦略的 intent。SocioPoliticalIntent。unknown は frontend INTENT_META で欠落していた補完。

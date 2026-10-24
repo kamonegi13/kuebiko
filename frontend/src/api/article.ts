@@ -65,6 +65,8 @@ export interface ArticleDetail {
   subject_actor_rationale: string | null;
   // 記事タイプ (breaking/advisory/recap/…、judgment_classifier 由来)。
   article_type: string | null;
+  /** 被害組織の規模 (深刻度の軸 s23、large/medium/small/none/unknown)。軸が無ければ null。 */
+  victim_size?: string | null;
 }
 
 export interface CvssInfo {

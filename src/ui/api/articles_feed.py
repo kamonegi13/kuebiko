@@ -628,6 +628,8 @@ def get_article_detail(request: Request, article_id: str) -> dict[str, Any]:
             "subject_actor_rationale": a.subject_actor_rationale,
             # 記事タイプ (breaking/advisory/recap/…、judgment_classifier 由来)。
             "article_type": a.article_type,
+            # 深刻度の軸 (s23) の被害組織の規模。軸が無ければ None (消費者: 記事詳細の 1 行表示)
+            "victim_size": repo.get_severity_axes([aid]).get(aid, {}).get("victim_size"),
             "victim_sector": a.victim_sector_canonical,
             "victim_sector_raw": a.victim_sector_raw,
             "victim_country": a.victim_country_iso,

@@ -637,6 +637,24 @@ def test_article_detail_endpoint(
     actor_group = next(g for g in data["entities"] if g["type"] == "actor")
     assert actor_group["values"] == ["lazarus"]
 
+    # 深刻度の軸が無い記事は victim_size=None (欄の消費者: 記事詳細の「被害組織の規模」)
+    assert art["victim_size"] is None
+    repo.set_severity_axes(
+        "tag:detail",
+        {
+            "scope": "single_org",
+            "impact": "disruption",
+            "confirmation": "confirmed",
+            "magnitude": "unknown",
+            "exploitation": "none",
+            "actor": "criminal",
+            "target": "enterprise",
+            "victim_size": "large",
+        },
+        "test-model",
+    )
+    assert client.get("/api/v1/articles/tag:detail").json()["article"]["victim_size"] == "large"
+
     # 存在しない article は 404
     assert client.get("/api/v1/articles/tag:nope").status_code == 404
 

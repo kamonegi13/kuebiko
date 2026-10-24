@@ -127,4 +127,18 @@ describe("記事詳細 — 写しでの本文非表示", () => {
     expect(screen.queryByText(/Should not render in mirror\./)).toBeNull();
     expect(screen.queryByText(/日本語訳を生成/)).toBeNull();
   });
+
+  it("被害組織の規模は軸があれば出し、unknown / 軸なしでは出さない (写しも同じ)", async () => {
+    vi.stubEnv("VITE_MIRROR", "1");
+    stubFetch(baseArticle({ victim_size: "large" }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("victim-size")).toBeTruthy());
+    expect(screen.getByTestId("victim-size").textContent).toContain("被害組織の規模");
+    cleanup();
+
+    stubFetch(baseArticle({ victim_size: "unknown" }));
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/重大な脆弱性が実環境で悪用中/)).toBeTruthy());
+    expect(screen.queryByTestId("victim-size")).toBeNull();
+  });
 });
