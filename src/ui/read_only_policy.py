@@ -152,8 +152,10 @@ REMOTE_WRITE_ALLOWLIST: tuple[str, ...] = (
     "/api/v1/sources/preview_url",
     "/api/v1/sources/live_preview",
     "/api/v1/sources/preview_html_listing",
-    # モデル割当 / 接続先 (鍵は CREDENTIAL_WRITE_PATHS で別に遮断)
-    "/api/v1/model-tiers",
+    # 接続先 (鍵は CREDENTIAL_WRITE_PATHS で別に遮断)。
+    # ⚠ モデル割当 (POST /api/v1/model-tiers) は 2026-10-24 に名簿から外した (利用者承認):
+    #   割当の変更は評価の後に手順書どおりローカル (full instance) の API で行う。
+    #   緊急の戻しは config-history (key=model_tiers) の revert で遠隔からも可能。
     "/api/v1/model-tiers/endpoints",
     # プロンプト編集層 (2026-08-20 以降 DB。.j2 直編集の /prompts/save は対象外)
     "/api/v1/prompts/summarizer/rubric",

@@ -193,11 +193,7 @@ export const pagesApi = {
   },
   // LLM モデルティア割当
   getModelTiers: () => getJson<ModelTiersResponse>("/api/v1/model-tiers"),
-  saveModelTiers: (tiers: Record<string, string>, narrativeThink?: string) =>
-    postJson<{ saved: boolean; count: number; version: number }>("/api/v1/model-tiers", {
-      tiers,
-      ...(narrativeThink !== undefined ? { narrative_think: narrativeThink } : {}),
-    }),
+  // (割当の変更 POST は画面から外した — 表示専用。ローカルの API で行う)
   // 外部 LLM API キー (.env に保存、即時反映。空文字 = 削除)
   saveAnthropicKey: (api_key: string) =>
     postJson<{ saved: boolean; external_enabled: boolean; anthropic_key_masked: string }>(
@@ -430,8 +426,25 @@ export interface LlmEndpointPreset {
   base_url: string;
 }
 
+// 処理 (step) ごとの解決済みモデル (step 上書き・継承を解決したあとの実値)
+export interface ModelStepRow {
+  step: string;
+  tier: string;
+  model: string;
+  tier_model: string;
+  // override: 自身の上書き / inherited: 借り元の上書きを継承 / tier: ティア割当のまま
+  source: "override" | "inherited" | "tier";
+  is_external: boolean;
+  differs_from_tier: boolean;
+  inherits_from: string | null;
+}
+
 export interface ModelTiersResponse {
   tiers: Record<string, string>;
+  steps: ModelStepRow[];
+  // model_tiers の現行版番号と最終更新 (config_store)。未保存は null
+  config_version: number | null;
+  config_updated_at: string | null;
   // 処理別の上書き (step → モデル)。ティア割当より優先される実効配線
   step_overrides: Record<string, string>;
   // 外部主腕のローカル受け皿 (tier → ローカルモデル)

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Save } from "lucide-react";
+import { AlertTriangle, Save } from "lucide-react";
 import { pageContainer } from "../components/Page";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { pagesApi, type ModelTiersResponse, type TierMeta } from "../api/pages";
+import { pagesApi } from "../api/pages";
 import { useRuntimeFlags } from "../hooks/useRuntimeFlags";
 import { ConnectionsPanel } from "./config/ConnectionsPanel";
 import { FileGroupList } from "../components/FileGroupList";
 import { ConfigHistoryView } from "./config/ConfigHistoryView";
+import { ModelAssignmentView } from "./config/ModelAssignmentView";
 import { JpCiOperatorsView } from "./config/JpCiOperatorsView";
 import { ActorDictionaryView } from "./config/ActorDictionaryView";
 import { SirDefinitionsView } from "./config/SirDefinitionsView";
@@ -540,34 +541,6 @@ function PromptsEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   );
 }
 
-const TIER_ORDER = ["narrative", "reasoning", "dialog", "fast", "embedding"] as const;
-
-// 処理別上書きの日本語ラベル (UI 文言規約: 生 enum を直接表示しない)
-const STEP_LABELS: Record<string, string> = {
-  triage: "重要度判定 (triage)",
-  triage_geo_rescue: "重要度判定 — 地政学の救済",
-  article_summary: "記事要約・翻訳",
-  ioc_llm_verify: "IOC の LLM 検証",
-  judgment_classify: "統合判断分類器 (タイプ・動機・発生日・主題)",
-  article_translate: "本文翻訳",
-  dedup_cluster_judge: "重複排除の最終確認",
-  pair_judge: "事象ペア同一性判定",
-  event_kind: "記事種別分類",
-  severity_axes: "深刻度の軸",
-  pir_llm_judge: "SIR 主題判定",
-  pir_daily_focus: "SIR 日次要点",
-  actor_sync: "アクター名同期",
-  digest_deep_dive_select: "週次深掘り (選定)",
-  digest_deep_dive: "週次深掘り (本文)",
-  event_news: "事象ニュース生成",
-  pir_spotlight: "SIR Spotlight",
-  synthesis_analysis: "台帳 ACH 分析",
-  synthesis_detect: "新規事象検知",
-  detect_claim_write: "新規事象の claim 書き直し (和集合・束ね)",
-  ledger_ach_aux: "台帳 開設の採点・反証・書き直し",
-  ledger_deep_review: "夜間精査 (廃止済み)",
-};
-
 // Claude Code サブスク bridge の状態 + 消費量。レート残量 API は存在しないため、
 // bridge が自己観測した消費 (5h 窓 = レート律速の単位 / 今日 / 7日) を表示する。
 function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
@@ -714,122 +687,33 @@ function ClaudeCodeStatus({ enabled, usage, auth, update, qc }: {
   );
 }
 
-// 外部 LLM API キーの UI 完結編集。保存先は .env (版履歴 DB には秘密を置かない §4)、
-// config は request ごとに .env を再読込するため保存は即時反映 (再起動不要)。
+// モデル割当は表示専用 (2026-10-24 利用者承認)。割当の変更は評価の後に手順書どおり API で行う。
+// 右の外部接続レール (接続先・キー・Claude Code の認証) は今回の対象外で従来どおり編集できる。
 function ModelTiersEditor({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   const { data } = useQuery({
     queryKey: ["model-tiers"],
     queryFn: () => pagesApi.getModelTiers(),
   });
-  const [tiers, setTiers] = useState<Record<string, string> | null>(null);
-  const [narrativeThink, setNarrativeThink] = useState<string | null>(null);
-  useEffect(() => {
-    if (data) {
-      setTiers({ ...data.tiers });
-      setNarrativeThink(data.narrative_think);
-    }
-  }, [data]);
 
-  const saveMut = useMutation({
-    mutationFn: () => pagesApi.saveModelTiers(tiers ?? {}, narrativeThink ?? undefined),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["model-tiers"] }),
-  });
-
-  if (!data || tiers === null) {
+  if (!data) {
     return <div className="text-fg-muted text-sm">読み込み中…</div>;
   }
 
-  const setTier = (tier: string, model: string) =>
-    setTiers((prev) => ({ ...(prev ?? {}), [tier]: model }));
-
-  const isDirty =
-    TIER_ORDER.some((t) => (tiers[t] ?? "") !== (data.tiers[t] ?? "")) ||
-    (narrativeThink ?? data.narrative_think) !== data.narrative_think;
-
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
-      {/* 左: ティア割当 (この画面の主タスク) */}
-      <div className="bg-surface-1 border border-border-subtle rounded-lg p-5 space-y-4">
-        <p className="m-0 text-xs text-fg-subtle leading-relaxed">
-          処理ごとにどのティアを使うかは<strong className="text-fg-muted">ツールが決めます</strong>。ここでは
-          各ティアに<strong className="text-fg-muted">実モデルを1つ</strong>割り当てるだけです。
-          中華系モデルはセキュリティ方針で除外。保存は版履歴に残り、次回の実行から反映されます。
-        </p>
-
+      <div className="space-y-3">
         {data.ollama_error && (
           <div className="bg-warning-soft border border-warning rounded p-3 text-xs text-fg-muted inline-flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5" /> Ollama に接続できませんでした ({data.ollama_error})。現在の割当のみ表示しています。
           </div>
         )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {TIER_ORDER.map((tier) => (
-            <TierCard
-              key={tier}
-              tier={tier}
-              meta={data.meta[tier]}
-              current={tiers[tier] ?? ""}
-              saved={data.tiers[tier] ?? ""}
-              data={data}
-              onChange={(m) => setTier(tier, m)}
-              narrativeThink={tier === "narrative" ? (narrativeThink ?? data.narrative_think) : undefined}
-              onChangeThink={tier === "narrative" ? setNarrativeThink : undefined}
-            />
-          ))}
-        </div>
-
-        {Object.keys(data.step_overrides ?? {}).length > 0 && (
-          <div className="border border-border-subtle rounded p-3 space-y-1.5">
-            <p className="m-0 text-xs font-medium text-fg-muted">
-              処理別の上書き — ティア割当より<strong>優先</strong>される実効配線
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
-              {Object.entries(data.step_overrides).map(([step, model]) => (
-                <div key={step} className="flex items-baseline justify-between text-xs gap-2">
-                  <span className="text-fg-subtle">{STEP_LABELS[step] ?? step}</span>
-                  <code className="text-fg-muted">{model}</code>
-                </div>
-              ))}
-            </div>
-            {Object.keys(data.local_fallbacks ?? {}).length > 0 && (
-              <p className="m-0 pt-1 text-[11px] text-fg-subtle">
-                ローカル受け皿:{" "}
-                {Object.entries(data.local_fallbacks)
-                  .map(([t, m]) => `${t} → ${m}`)
-                  .join(" / ")}
-              </p>
-            )}
-            <p className="m-0 text-[11px] text-fg-subtle">
-              上書きは測定に基づき運用側で設定されます (履歴は「履歴・監査」タブ)。
-            </p>
-          </div>
-        )}
-
-        <div className="flex items-center gap-3 pt-3 border-t border-border-subtle flex-wrap">
-          <button
-            onClick={() => saveMut.mutate()}
-            disabled={saveMut.isPending || !isDirty}
-            className="px-4 py-1.5 rounded text-sm font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 inline-flex items-center gap-1.5"
-          >
-            <Save className="h-3.5 w-3.5" /> {saveMut.isPending ? "保存中…" : isDirty ? "変更を保存" : "保存"}
-          </button>
-          {isDirty && !saveMut.isPending && (
-            <span className="text-warning text-xs">未保存の変更があります</span>
-          )}
-          {saveMut.isSuccess && !isDirty && (
-            <span className="inline-flex items-center gap-1 text-success text-sm">
-              <Check className="h-3.5 w-3.5" /> 保存しました（次回の実行から反映）
-            </span>
-          )}
-          {saveMut.isError && (
-            <span className="text-critical text-sm">保存失敗: {(saveMut.error as Error).message}</span>
-          )}
-          {data.excluded.length > 0 && (
-            <span className="ml-auto text-[13px] text-fg-subtle" title={data.excluded.join(", ")}>
-              方針により除外: {data.excluded.length} 件
-            </span>
-          )}
-        </div>
+        <ModelAssignmentView
+          tiers={data.tiers}
+          meta={data.meta}
+          steps={data.steps ?? []}
+          configVersion={data.config_version ?? null}
+          configUpdatedAt={data.config_updated_at ?? null}
+        />
       </div>
 
       {/* 右: 外部接続レール (キー・消費量 = 割当の前提情報)。登録済みの接続先だけが並ぶ */}
@@ -1199,132 +1083,6 @@ function LlmEndpointsPanel({ endpoints, presets, anthropic, ollama, qc }: {
               )}
             </>
           )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 1 ティア = 1 カード。割当の状態 (ローカル/外部/未保存変更) をカード上で完結して見せる。
-function TierCard({ tier, meta, current, saved, data, onChange, narrativeThink, onChangeThink }: {
-  tier: string;
-  meta?: TierMeta;
-  current: string;
-  saved: string;
-  data: ModelTiersResponse;
-  onChange: (model: string) => void;
-  narrativeThink?: string;
-  onChangeThink?: (v: string) => void;
-}) {
-  // 埋込ティアは外部プロバイダ不可 (API 側も検証で拒否)。
-  const external = tier === "embedding" ? [] : data.external ?? [];
-  const claudeCode = tier === "embedding" ? [] : data.claude_code ?? [];
-  const endpointGroups = tier === "embedding" ? [] : (data.endpoints ?? []).filter((e) => e.models.length > 0);
-  const endpointNames = (data.endpoints ?? []).map((e) => e.name);
-  const isEndpointCurrent = endpointNames.some((n) => current.startsWith(`${n}:`));
-  // 現割当が pull 済一覧に無い場合も失わないよう option に含める。
-  const isExternalCurrent =
-    external.includes(current) || claudeCode.includes(current) || isEndpointCurrent;
-  const localOptions = Array.from(
-    new Set([...(isExternalCurrent ? [] : [current]), ...data.available].filter(Boolean)),
-  );
-  const hasExternalGroups =
-    external.length > 0 || claudeCode.length > 0 || endpointGroups.length > 0;
-  const isExternal =
-    current.startsWith("anthropic:") || current.startsWith("claudecode:") || isEndpointCurrent;
-  const externalKind = current.startsWith("anthropic:")
-    ? "Anthropic API (従量課金)"
-    : current.startsWith("claudecode:")
-      ? "Claude Code (サブスク枠)"
-      : `接続先「${current.split(":")[0]}」`;
-  const dirty = current !== saved;
-
-  return (
-    <div className={`rounded-lg border p-3.5 space-y-2 ${dirty ? "border-warning" : "border-border-subtle"} bg-surface-2/40`}>
-      <div className="flex items-center gap-2 flex-wrap">
-        <h3 className="m-0 text-sm font-semibold text-fg">{meta?.label ?? tier}</h3>
-        {isExternal ? (
-          <span className="text-[12px] px-1.5 py-px rounded-sm bg-warning-soft text-warning font-semibold">外部</span>
-        ) : (
-          <span className="text-[12px] px-1.5 py-px rounded-sm bg-surface-3 text-fg-subtle font-semibold">ローカル</span>
-        )}
-        {dirty && <span className="text-[12px] text-warning ml-auto">未保存</span>}
-      </div>
-      <p className="m-0 text-[13px] text-fg-subtle leading-snug">{meta?.description}</p>
-      <select
-        value={current}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-surface-2 border border-border-subtle rounded px-2 py-1.5 text-sm text-fg"
-      >
-        {tier === "embedding" && <option value="">（無効 / 意味による重複判定をオフ）</option>}
-        {hasExternalGroups ? (
-          <>
-            <optgroup label="ローカル (Ollama)">
-              {localOptions.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </optgroup>
-            {claudeCode.length > 0 && (
-              <optgroup label="Claude Code (サブスク枠)">
-                {claudeCode.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </optgroup>
-            )}
-            {external.length > 0 && (
-              <optgroup label="Anthropic API (従量課金)">
-                {external.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </optgroup>
-            )}
-            {endpointGroups.map((ep) => (
-              <optgroup key={ep.name} label={`接続先: ${ep.name}`}>
-                {ep.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </optgroup>
-            ))}
-          </>
-        ) : (
-          localOptions.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))
-        )}
-      </select>
-      {isExternal && (
-        <p className="m-0 text-[12.5px] text-warning leading-snug">
-          {externalKind}で実行。利用できないときは自動的にローカルモデルへ切替。
-        </p>
-      )}
-      {onChangeThink !== undefined && (
-        <div className="pt-1.5 border-t border-border-subtle space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] text-fg-muted shrink-0">拡張思考 (think)</span>
-            <select
-              value={narrativeThink ?? "auto"}
-              onChange={(e) => onChangeThink(e.target.value)}
-              disabled={!isExternal}
-              className="bg-surface-2 border border-border-subtle rounded px-2 py-1 text-xs text-fg disabled:opacity-50"
-            >
-              <option value="auto">使う（外部モデルのみ）</option>
-              <option value="off">使わない</option>
-            </select>
-          </div>
-          <p className="m-0 text-[12px] text-fg-subtle leading-snug">
-            {isExternal
-              ? "分析の深さが上がる一方、生成時間は 2〜3 倍になります。"
-              : "ローカルモデルでは常に無効です（外部モデル割当時のみ選べます）。"}
-          </p>
-        </div>
-      )}
-      {meta?.examples && (
-        <div className="flex flex-wrap gap-1">
-          {meta.examples.split(/\s*\/\s*/).map((ex) => (
-            <span key={ex} className="text-[12px] px-1.5 py-px rounded-full bg-surface-3 text-fg-muted">
-              {ex}
-            </span>
-          ))}
         </div>
       )}
     </div>
