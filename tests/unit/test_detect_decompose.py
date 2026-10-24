@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from src.assessment import detect_decompose, detect_step, stateful
+from src.assessment.claim_grounding import GroundingSources
 from src.assessment.detect_bundle_log import (
     ORIGIN_DROPPED,
     ORIGIN_LLM,
@@ -22,12 +23,14 @@ from src.assessment.detect_bundle_log import (
     resolve_outcomes,
 )
 from src.assessment.detect_decompose import (
+    BODY_PREFIX_CHARS,
     ClusterClaimWire,
     ClusterOutcome,
     DecomposeInputs,
     DecomposeResult,
     MergeVerdict,
     WrittenClaim,
+    _grounding_sources,
     decompose_candidates,
     decompose_mode,
     merged_assignments,
@@ -402,6 +405,52 @@ class TestGrounding:
         assert rec.outcome == "shadow_open"
         assert "違反 1 件" in rec.reason
         assert "APT29" in rec.reason
+
+    @pytest.mark.asyncio
+    async def test_attribution_only_names_are_recorded_but_not_counted_as_violations(self) -> None:
+        async def write(cluster: Any) -> WrittenClaim | None:
+            return WrittenClaim("ある銀行で障害と VendorLabs が報告", "cyber_incident", "")
+
+        res = await decompose_candidates(
+            candidate_ids=["a"],
+            ml_scores={"a": 1.0},
+            strong_by_aid={},
+            items_by_aid={},
+            vec_by_aid=None,
+            merge_for=lambda c: None,
+            write_claim=write,
+            grounding_text=lambda c: GroundingSources(
+                text="ある銀行で障害", attribution="VendorLabs Threat Intel"
+            ),
+            enforce_grounding=True,
+        )
+
+        out = res.outcomes[0]
+        assert out.action == "open"  # 出典名は enforce でも落とさない
+        assert out.violations == ()
+        assert out.attributions == ("VendorLabs",)
+        rec = to_records(res, run_at=_RUN_AT, variant="decompose_shadow")[0]
+        assert "違反 0 件" in rec.reason
+        assert "出典名 1 件 (VendorLabs)" in rec.reason
+
+
+class TestGroundingSources:
+    def test_joins_title_summary_and_capped_body_prefix_with_feed_titles_as_attribution(
+        self,
+    ) -> None:
+        body = "X" * (BODY_PREFIX_CHARS + 50) + "TAILONLY"
+
+        got = _grounding_sources(
+            {"a": {"title": "見出し"}, "b": {"title": "別"}},
+            {"a": "要約"},
+            {"a": body},
+            {"a": "FeedA", "b": "FeedB"},
+            ["a", "b", "missing"],
+        )
+
+        assert "見出し 要約" in got.text
+        assert "TAILONLY" not in got.text  # 本文は冒頭のみ
+        assert got.attribution == "FeedA\nFeedB"
 
 
 class _LongClaimLLM:

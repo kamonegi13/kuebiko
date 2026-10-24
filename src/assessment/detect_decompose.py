@@ -15,7 +15,6 @@ LLM は選択も束ねも棄却もせず (棄却は「追跡中と同一」「�
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -23,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, field_validator
 
 from src.assessment.claim_bundle import split_clusters
+from src.assessment.claim_grounding import GroundingSources, check_grounding
 from src.assessment.detect_bundle_log import (
     ORIGIN_DECOMPOSE,
     BundleRecord,
@@ -59,6 +59,8 @@ SHADOW_BUDGET_SECONDS = 120.0
 #: 本番の開設の上限と同じ値 (二重管理しない)
 SHADOW_MAX_CLAIMS = _DETECT_OPEN_MAX
 _SKIP_REASON_MAX_CHARS = 120
+#: 固有名詞の照合に足す本文冒頭の字数 (見出し・要約に無い社名・CVE を拾う。全文は照合しない)
+BODY_PREFIX_CHARS = 1000
 #: 合流の判定: 塊の記事のうち ML が通した割合がこれを **超える** (半数ちょうどは合流しない =
 #: 迷いは detect 側に残す。割当 ML の誤合流は本来開くべき追跡を消す — CLAUDE.md 実測)
 MERGE_MIN_PASS_FRACTION = 0.5
@@ -135,7 +137,8 @@ class ClusterOutcome:
     domain: str = ""
     reason: str = ""
     probability: float | None = None
-    violations: tuple[str, ...] = ()  # claim の固有名詞で塊の見出し・要約に無いもの
+    violations: tuple[str, ...] = ()  # claim の固有名詞で塊の見出し・要約・本文冒頭に無いもの
+    attributions: tuple[str, ...] = ()  # 出典欄 (媒体名・投稿者名) にだけある語 (違反に数えない)
 
 
 @dataclass(frozen=True)
@@ -164,14 +167,15 @@ async def decompose_candidates(
     merge_for: MergeFn,
     write_claim: WriteFn,
     max_claims: int = _DETECT_OPEN_MAX,
-    grounding_text: Callable[[Sequence[str]], str] | None = None,
+    grounding_text: Callable[[Sequence[str]], GroundingSources | str] | None = None,
     enforce_grounding: bool = False,
 ) -> DecomposeResult:
     """候補を塊化 → 合流 → 残りの塊だけ claim を書く (本番の部品はすべて引数で受ける)。
 
     塊は detect ML の確率 (塊の最大) の高い順に処理し、書き手の呼出は ``max_claims`` まで。
     書き手の失敗・skip は開設しない (記事は未割当に残り次の run で候補になる)。
-    ``grounding_text`` (塊の見出し・要約) があれば claim の固有名詞が載っているかを決定論で検査し、
+    ``grounding_text`` (塊の見出し・要約・本文冒頭と出典名) があれば、
+    claim の固有名詞が載っているかを決定論で検査し、
     ``enforce_grounding`` なら違反の claim は開設しない (shadow は違反を記録するだけ)。
     """
     clusters = split_clusters(
@@ -211,7 +215,10 @@ async def decompose_candidates(
 
 
 async def _write_one(
-    ids: tuple[str, ...], write_claim: WriteFn, text: str | None, enforce_grounding: bool
+    ids: tuple[str, ...],
+    write_claim: WriteFn,
+    sources: GroundingSources | str | None,
+    enforce_grounding: bool,
 ) -> ClusterOutcome:
     try:
         res = await write_claim(ids)
@@ -223,7 +230,9 @@ async def _write_one(
         return ClusterOutcome(cluster=ids, action="skip", reason=reason or "claim なし")
     domain = res.domain.strip()
     claim = res.claim.strip()
-    violations = ungrounded_terms(claim, text) if text is not None else ()
+    report = check_grounding(claim, _as_sources(sources)) if sources is not None else None
+    violations = report.violations if report else ()
+    attributions = report.attributions if report else ()
     if violations and enforce_grounding:
         return ClusterOutcome(
             cluster=ids,
@@ -237,34 +246,20 @@ async def _write_one(
         claim=claim,
         domain=domain if domain in _DOMAINS else "unclassified",
         violations=violations,
+        attributions=attributions,
     )
 
 
-#: 固有名詞らしい語: 英数字の語で大文字か数字を含むもの (CVE-2026-1234・LockBit・APT29 等) と、
-#: 3 字以上のカタカナ語。一般語 (小文字だけの英単語) と漢字語は決定論では判定しない
-_LATIN_TERM = re.compile(r"[A-Za-z][A-Za-z0-9._-]{2,}")
-_KATAKANA_TERM = re.compile(r"[ァ-ヴー]{3,}")
+def _as_sources(sources: GroundingSources | str) -> GroundingSources:
+    return GroundingSources(text=sources) if isinstance(sources, str) else sources
 
 
 def ungrounded_terms(claim: str, source_text: str) -> tuple[str, ...]:
-    """claim の固有名詞 (上の 2 種) のうち、塊の見出し・要約に **無い** もの (出現順、重複なし)。
+    """claim の固有名詞のうち ``source_text`` に **無い** もの (出現順、重複なし)。
 
-    ``--`` 区切りの語尾 (ピリオド・ハイフンの末尾) は除いて照合し、英字は大文字小文字を無視する。
-    見出しに無い属性を LLM が足す (捏造) を決定論で止める関門。
+    判定の本体は ``claim_grounding.check_grounding`` (正規化・表記ゆれ・一般語の除外)。
     """
-    haystack = source_text.lower()
-    missing: list[str] = []
-    for m in _LATIN_TERM.finditer(claim):
-        term = m.group(0).rstrip("._-")
-        if not any(c.isupper() or c.isdigit() for c in term):
-            continue
-        if term.lower() not in haystack and term not in missing:
-            missing.append(term)
-    for m in _KATAKANA_TERM.finditer(claim):
-        term = m.group(0)
-        if term not in source_text and term not in missing:
-            missing.append(term)
-    return tuple(missing)
+    return check_grounding(claim, GroundingSources(text=source_text)).violations
 
 
 def to_detect_result(result: DecomposeResult) -> DetectResult:
@@ -296,6 +291,9 @@ def to_records(
             reason = f"shadow: 本番では開設しない / 固有名詞の違反 {len(o.violations)} 件"
             if o.violations:
                 reason = f"{reason} ({', '.join(o.violations)})"[:200]
+            if o.attributions:
+                names = ", ".join(o.attributions)
+                reason = f"{reason} / 出典名 {len(o.attributions)} 件 ({names})"[:260]
         records.append(
             BundleRecord(
                 run_at=run_at,
@@ -434,13 +432,30 @@ class DecomposeInputs:
     period_label: str
 
 
-def _grounding_text(
-    by_id: Mapping[str, Mapping[str, object]], summaries: Mapping[str, str], cluster: Sequence[str]
-) -> str:
-    """塊の見出し + 要約 (プールの記事は要約を持たないので DB から引いた分を足す)。"""
-    return "\n".join(
-        f"{by_id[a].get('title', '')} {summaries.get(a, '')}" for a in cluster if a in by_id
+def _grounding_sources(
+    by_id: Mapping[str, Mapping[str, object]],
+    summaries: Mapping[str, str],
+    bodies: Mapping[str, str],
+    feed_titles: Mapping[str, str],
+    cluster: Sequence[str],
+) -> GroundingSources:
+    """塊の見出し + 要約 + 本文冒頭 (照合の範囲) と、出典名 (媒体名・投稿者名)。
+
+    プールの記事は要約・本文を持たないので DB から引いた分を足す。
+    """
+    members = [a for a in cluster if a in by_id]
+    text = "\n".join(
+        " ".join(
+            (
+                str(by_id[a].get("title", "")),
+                summaries.get(a, ""),
+                bodies.get(a, "")[:BODY_PREFIX_CHARS],
+            )
+        )
+        for a in members
     )
+    attribution = "\n".join(feed_titles.get(a, "") for a in members)
+    return GroundingSources(text=text, attribution=attribution)
 
 
 async def run_decompose(
@@ -464,7 +479,10 @@ async def run_decompose(
         return None
     by_id = {str(a.get("article_id", "")): dict(a) for a in inp.candidates}
     ids = [a for a in by_id if a]
-    summaries = {a: str(rec.summary or "") for a, rec in inp.repo.get_articles_by_ids(ids).items()}
+    recs = inp.repo.get_articles_by_ids(ids)
+    summaries = {a: str(rec.summary or "") for a, rec in recs.items()}
+    feed_titles = {a: str(rec.feed_title or "") for a, rec in recs.items()}
+    bodies = inp.repo.get_article_bodies(ids)
     scores: dict[tuple[str, str], tuple[bool, float | None]] = {}
     sids: list[str] = []
     if merge_enabled:
@@ -498,7 +516,9 @@ async def run_decompose(
         merge_for=lambda cluster: pick_merge(cluster, scores, sids),
         write_claim=write,
         max_claims=max_claims,
-        grounding_text=lambda cluster: _grounding_text(by_id, summaries, cluster),
+        grounding_text=lambda cluster: _grounding_sources(
+            by_id, summaries, bodies, feed_titles, cluster
+        ),
         enforce_grounding=enforce_grounding,
     )
 
