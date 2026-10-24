@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import jinja2
 
+from src.cti.geopolitical_cap import cap_geopolitical_importance
+from src.cti.geopolitical_cap import cap_mode as geopolitical_cap_mode
 from src.cti.publication_event import resolve_publication_basis
 from src.cti.roundup_detector import cap_mode, cap_roundup_importance
 from src.logging_config import get_logger
@@ -1171,6 +1173,25 @@ def _build_briefing(
             applied=_roundup.applied,
         )
     capped_importance = _roundup.importance
+    # サイバーでない地政学・政策記事の high は medium まで (2026-10-24、重さは strategic_weight
+    # に残る)。IOC / ATT&CK 手法を伴う記事は対象外。GEOPOLITICAL_HIGH_CAP=on|shadow|off。
+    _geo = cap_geopolitical_importance(
+        capped_importance,
+        summary.category,
+        has_cyber_evidence=bool(
+            (merged_iocs if merged_iocs is not None else summary.iocs)
+            or (merged_techniques if merged_techniques is not None else summary.mitre_techniques)
+        ),
+    )
+    if _geo.would_cap:
+        _log.info(
+            "geopolitical_importance_capped",
+            article_id=article.id,
+            category=summary.category,
+            mode=geopolitical_cap_mode(),
+            applied=_geo.applied,
+        )
+    capped_importance = _geo.importance
     # M3b 段1: inline で取った深刻度の軸を metadata に載せる (persistence が
     # set_severity_axes と同じ setter で保存し、毎時の段がこの記事をスキップする)。
     if severity_axes:
