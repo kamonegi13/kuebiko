@@ -13,12 +13,34 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _from_iso, _to_iso
 
+
+class _VetoLike(Protocol):
+    """``eventnews.merge.VetoedLink`` の形 (storage 層から eventnews を import しない)。"""
+
+    @property
+    def item_a(self) -> str: ...
+    @property
+    def item_b(self) -> str: ...
+    @property
+    def klass(self) -> str: ...
+    @property
+    def detail(self) -> str: ...
+    @property
+    def edge_count(self) -> int: ...
+    @property
+    def enforced(self) -> bool: ...
+
+
 _CHUNK = 400
+#: 照合で止めた組の記録 (event_merge_vetoes) の action
+ACTION_BLOCKED = "blocked"
+ACTION_SHADOW = "shadow"
+ACTION_RELATION_CANDIDATE = "relation_candidate"
 #: 吸収の連鎖 (A→B→C…) をたどる上限。循環の保険でもある
 MAX_ROOT_HOPS = 8
 
@@ -41,6 +63,45 @@ class MergeDecisionRow:
     #: F0 では記録だけで判断には使わない (docs/eventnews_focus_redesign.md §3.4)
     focus_class: str = ""
     focus_json: str = ""
+
+
+@dataclass(frozen=True)
+class MergeVetoRow:
+    """焦点の照合で止めた (または止める対象だった) 事象の組 1 つ。"""
+
+    item_a: str
+    item_b: str
+    klass: str
+    detail: str
+    edge_count: int
+    action: str  # blocked | shadow | relation_candidate
+    mode: str  # その時の EVENTNEWS_MERGE_FOCUS_GATE
+    first_seen_at: datetime | None
+    last_seen_at: datetime | None
+    times_seen: int
+    sampled_at: datetime | None
+
+
+def _veto_action(veto: _VetoLike) -> str:
+    if veto.enforced:
+        return ACTION_BLOCKED
+    return ACTION_SHADOW if veto.klass == "conflict" else ACTION_RELATION_CANDIDATE
+
+
+def _row_to_veto(r: Any) -> MergeVetoRow:
+    return MergeVetoRow(
+        item_a=str(r["item_a"]),
+        item_b=str(r["item_b"]),
+        klass=str(r["klass"]),
+        detail=str(r["detail"] or ""),
+        edge_count=int(r["edge_count"] or 0),
+        action=str(r["action"]),
+        mode=str(r["mode"] or ""),
+        first_seen_at=_from_iso(r["first_seen_at"]),
+        last_seen_at=_from_iso(r["last_seen_at"]),
+        times_seen=int(r["times_seen"] or 0),
+        sampled_at=_from_iso(r["sampled_at"]),
+    )
 
 
 def _row_to_decision(r: Any) -> MergeDecisionRow:
@@ -90,6 +151,70 @@ class MergeDecisionsMixin(RunHistoryRepositoryBase):
                     ),
                 )
         return len(rows)
+
+    def record_merge_vetoes(
+        self: Any, vetoes: Sequence[_VetoLike], *, seen_at: datetime, mode: str
+    ) -> int:
+        """照合で止めた組を残す。同じ組は毎時の再検出で行を増やさず ``times_seen`` を進める。"""
+        if not vetoes:
+            return 0
+        now = _to_iso(seen_at)
+        with self._connect() as conn:
+            for v in vetoes:
+                a, b = (v.item_a, v.item_b) if v.item_a <= v.item_b else (v.item_b, v.item_a)
+                conn.execute(
+                    "INSERT INTO event_merge_vetoes (item_a, item_b, klass, detail, edge_count,"
+                    " action, mode, first_seen_at, last_seen_at, times_seen)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+                    " ON CONFLICT(item_a, item_b) DO UPDATE SET klass=excluded.klass,"
+                    " detail=excluded.detail, edge_count=excluded.edge_count,"
+                    " action=excluded.action, mode=excluded.mode,"
+                    " last_seen_at=excluded.last_seen_at,"
+                    " times_seen=event_merge_vetoes.times_seen + 1",
+                    (a, b, v.klass, v.detail, int(v.edge_count), _veto_action(v), mode, now, now),
+                )
+        return len(vetoes)
+
+    def list_merge_vetoes(
+        self: Any,
+        *,
+        since: datetime,
+        actions: Sequence[str] | None = None,
+        unsampled_only: bool = False,
+        limit: int = 5000,
+    ) -> list[MergeVetoRow]:
+        """``since`` 以降に見た組 (新しい順)。``actions`` で絞り、抽出済みを除ける。"""
+        where = ["last_seen_at >= ?"]
+        params: list[object] = [_to_iso(since)]
+        if actions:
+            where.append(f"action IN ({', '.join('?' for _ in actions)})")
+            params.extend(actions)
+        if unsampled_only:
+            where.append("sampled_at IS NULL")
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT item_a, item_b, klass, detail, edge_count, action, mode,"  # noqa: S608
+                " first_seen_at, last_seen_at, times_seen, sampled_at FROM event_merge_vetoes"
+                f" WHERE {' AND '.join(where)} ORDER BY last_seen_at DESC, item_a, item_b LIMIT ?",
+                (*params, int(limit)),
+            ).fetchall()
+        return [_row_to_veto(r) for r in rows]
+
+    def mark_merge_vetoes_sampled(
+        self: Any, pairs: Sequence[tuple[str, str]], *, sampled_at: datetime
+    ) -> int:
+        """裁定に回した組に印を付ける (次の抽出で重ならない)。"""
+        done = 0
+        with self._connect() as conn:
+            for x, y in pairs:
+                a, b = (x, y) if x <= y else (y, x)
+                cur = conn.execute(
+                    "UPDATE event_merge_vetoes SET sampled_at=?"
+                    " WHERE item_a=? AND item_b=? AND sampled_at IS NULL",
+                    (_to_iso(sampled_at), a, b),
+                )
+                done += int(cur.rowcount or 0)
+        return done
 
     def list_merge_decisions(
         self: Any,

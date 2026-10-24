@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS event_item_focus_log (
   → 事象対ごとに材料をまとめる (§3.2)
   → 焦点の照合で 4 値に分ける
        conflict → 結ばない (記録だけ)
-       lineage  → 結ばない。関係 (系統) の候補として渡す
+       lineage  → F2 では止めない (F1b、§9.3)。関係 (系統) の候補として渡す。結ぶかは下の判定器
        weak     → 事象対の判定器を厳しいしきい値で
        support  → 事象対の判定器を通常のしきい値で
   → 結ぶ組を確信度の高い順に 1 つずつ処理 (§3.3)
@@ -346,7 +346,7 @@ B の照合の 4 値で層化: support 60 / weak 60 / conflict 40 / lineage 40�
 |---|---|---|---|---|
 | **F0** 焦点の記録 | `identity/focus.py`・`event_item_focus(_log)`・毎時の群化と統合の後に焦点を更新・fill-rate 監査に 2 行・事象の画面に焦点 (運用画面のみ) | `EVENTNEWS_FOCUS_RECORD=1` | 複数記事の事象の 95% 以上で焦点が空でない / 再生と DB の値が一致 (日次の検算) / 机上の当て (§8) を本番のコードで再現 | flag を 0 (記録が止まるだけ) |
 | **F1** 統合の照合を shadow | 今の `plan_merges` が結ぶ組ごとに焦点の照合 4 値を `event_merge_decisions.focus_class` に記録。結ぶ判断は今のまま | `EVENTNEWS_MERGE_FOCUS_GATE=shadow` | 2 週間で conflict / lineage から 50 組を Opus で確認し、誤りの割合 80% 以上。support から 50 組で誤りの割合が今の全体 (約 18%) より低いこと | flag を off |
-| **F2** 食い違いだけ止める | conflict → 結ばない、lineage → 結ばず関係の候補へ。weak・support は今の判定のまま。ハブ関門・`cve_disjoint_gate` を撤去 | `EVENTNEWS_MERGE_FOCUS_GATE=on` | 切替後 2 週間の統合から 100 組で適合率 90% 以上 (F2 単独の目標)。止めた件数が週 20〜40 件の範囲 (30 日で 106 件の見込み) | `=shadow` に戻す。止めた組は記録にあるので、誤って止めたものは手で統合できる |
+| **F2** 食い違いだけ止める | conflict → 結ばない、lineage → **止めず** 関係の候補へ回す (F1b、§9.3)。weak・support は今の判定のまま。ハブ関門・`cve_disjoint_gate` を撤去 | `EVENTNEWS_MERGE_FOCUS_GATE=on` | 切替後 2 週間の統合から 100 組で適合率 90% 以上 (F2 単独の目標)。止めた件数が週 20〜40 件の範囲 (30 日で 106 件の見込み) | `=shadow` に戻す。止めた組は記録にあるので、誤って止めたものは手で統合できる |
 | **F3** 正解の作り直し | E の記事対 600・事象対 200 (F0 と並行で始める) | — | Opus の 2 回の一致率 85% 以上、利用者確認 40 組で一致 85% 以上 | — |
 | **F4** 記事対の 3 値モデル | 学習し直し → shadow で新旧の確率を並べる → 切替 | `EVENTNEWS_PAIR_MODEL=v2` (shadow で両方記録) | 新しい正解で「同一」の適合率 95% の点の回収が旧モデルより高い / 食い違い 50 組の Opus 確認で新モデルが多数正しい | モデルのファイルを戻す |
 | **F5** 事象対の判定と 1 対ずつの統合 (B) | union-find をやめ §3.3 の順序で判定。weak は事象対の判定器 | `EVENTNEWS_MERGE_PAIRWISE=shadow` → `on` | shadow で旧と新の結ぶ組の差を 2 週間記録 → 差の組 60 組を Opus / 切替後 100 組で適合率 95% 以上 (下側 90% 以上) | `=0` で union-find に戻る (判断の記録は両方とも同じ表) |
@@ -477,6 +477,48 @@ F1 の shadow で、設計に使っていない組で測る (§7)。
   support 72% / weak 13% / conflict 12% / lineage 3% (止まる 126 件 = 15%、設計書の 106 件 (12%) よりやや多い)。
   生きた複数記事の事象 623 件で焦点が空 5.3% (F0 の進む条件は空でないものが 95% 以上 — 境界)・焦点の大きさは
   中央値 2 / P90 5 / 最大 37。⚠ 80 組は設計に使った標本なので上限寄り。
+
+### 9.3 F1 の不合格と F1b の規則の修正 (2026-10-24)
+
+F1 (conflict + lineage の本当に別 58%) の主因 3 つを直した。**記録の照合だけの変更で、統合・群化の判断は変えない**。
+1. 被害組織の食い違い: 両側のどの組も同じ組織に読めるなら conflict にしない (別名判定 shadow の「同一」+ 緩い一致 =
+   ひらがな⇔カタカナ・長音符・3 文字以上の接頭辞)。別名は conflict を**消す方向だけ**に使い、共有名に数えない (結合を増やさない)。
+2. CVE の食い違い: 事象の記事 (支持 + 外れ) の過半が持つ CVE だけを根拠にする (`focus.trusted_names`)。
+3. **lineage は F2 で止めない**: 照合の 4 値は残すが、`replay.STOPPING_CLASSES` は conflict のみ。lineage は
+   `RELATION_CANDIDATE_CLASSES` として関係 (系統) の候補に回す (F2 の止める対象から外す)。
+
+結果 (新標本 50 組、Opus 盲検): 新規則の conflict が本当に別 26/31 = 84% (67〜93%)。点推定は線 80% 超、区間下限は未達。
+30 日の止まる統合は 126 → 37 件。詳細は data/eval/focus_f1b_check_2026_10_24.md。
+比較用の変種 `victim_trust` (被害組織にも過半の条件) は既定 off。
+
+### 9.4 F2 の投入 (2026-10-24、利用者の §9.1-1 の線に基づく判断)
+
+F1b の止めた組 (conflict) が本当に別 (different + lineage) 26/31 = 84% (区間 67〜93%)。点推定が線 (8 割) を超えたので
+**統合の判断で、焦点の照合が conflict の組を結ばない**を入れた (flag `EVENTNEWS_MERGE_FOCUS_GATE` = on / shadow / off、
+compose の既定 on、読めない値は shadow)。
+
+- **どこで効くか**: `merge.plan_merges` が「結ぶ条件 (辺の本数・単独記事の救済) を満たした事象の組」ごとに、統合前の両事象の
+  焦点を `match_focus` で照合し (`link_veto`)、conflict ならその組を結ばない。辺の足りない組は元々結ばれないので照合も呼ばない。
+  lineage は**止めず**、関係 (系統) の候補として記録だけする。support・weak は今の判定のまま。
+- **照合の入力は記録経路と同じ**: 別名判定 (`org_identity_pairs` の「同一」) を conflict を消す方向だけに渡す。判断記録の
+  `focus_class` (`enrich_decision_rows`) にも同じ別名を渡すようにした (F1b の注意点: 記録経路は別名なしで照合していた)。
+- **止めた組の記録**: 表 `event_merge_vetoes` (組ごとに 1 行、毎時の再検出は `times_seen` が進むだけ)。
+  `action` = `blocked` (結ばなかった) / `shadow` (shadow で conflict だったが結んだ) / `relation_candidate` (lineage)。
+  誤って止めた組は、この表で見つけて手で統合できる (統合の判断記録 `event_merge_decisions` は結んだ組だけなので、undo の経路と分かれている)。
+- **既知の限界**: 照合は組ごとに独立。A-B と B-C が通れば A-C が conflict でも推移で結ばれる (設計 §3.3 の逐次処理は F5)。
+  照合は適用前の事象の焦点で行うので、同じ回に A-B が結ばれた後の B-C を (A∪B) の焦点では見ない。
+- **再現** (`scripts/focus_replay.py`、直近 30 日): 統合 851 件のうち conflict 37 件 (4%)・lineage 26 件。F1b と一致。
+  80 組: 止まる誤り 3/22・止まる正しい統合 1/58。F1b の見込みは「30 日で約 31 件の誤統合を止め、約 6 件を誤って止める」。
+
+#### 継続の測定と戻す線
+
+- 週 10 組を `scripts/sample_focus_vetoes.py` で抜く (既定 dry-run、`--apply` で `sampled_at` を付けて次回から外す)。
+  出力の jsonl を Opus 2 回独立 (同一 / 系統 / 別 / unclear) で裁定し、結果を `--summarize` に渡す。
+- **線: 累計の「本当に別 (different + lineage)」の割合の Wilson 95% 区間の下限が 80% を割り続けるなら shadow に戻す**
+  (`replay.should_revert_to_shadow`)。標本は unclear を除く累計。初回は 31 組で下限 67% なので、10 組ずつ足して
+  下限が上がるかを見る。点推定が 8 割を割ったときは待たずに戻す。
+- 戻し方: `EVENTNEWS_MERGE_FOCUS_GATE=shadow` (記録は続く・結ぶ) / `off` (照合も記録もしない)。
+  shadow で止まっていた組は `event_merge_vetoes` の `action=shadow` に残るので、次の毎時で普通に結ばれる。
 
 ---
 

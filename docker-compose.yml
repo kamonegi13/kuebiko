@@ -156,6 +156,9 @@ services:
       EVENTNEWS_MERGE_REPORT_PERIOD_GATE: ${EVENTNEWS_MERGE_REPORT_PERIOD_GATE:-1}
       # 事象の焦点を毎時の群化・統合の後に記録する (2026-10-24 F0、記録だけで判断には使わない)。0 で止まる
       EVENTNEWS_FOCUS_RECORD: ${EVENTNEWS_FOCUS_RECORD:-1}
+      # 統合の判断で、事象の焦点の照合が conflict の組を結ばない (2026-10-24 F2)。on / shadow (記録だけ) / off。
+      # 新標本 31 組で止めた組の本当に別 84% (区間 67〜93%)、30 日の再現で 37 件。docs/eventnews_focus_redesign.md §9.4
+      EVENTNEWS_MERGE_FOCUS_GATE: ${EVENTNEWS_MERGE_FOCUS_GATE:-on}
       # detect の判断を部品に分けた形を記録だけする (2026-10-16、0=off / shadow / 1=置換)。shadow は本番の開設の後に
       # 予算 120 秒・書き手 6 件までで動き、結果は detect_bundles (variant=decompose_shadow) に残る
       DETECT_DECOMPOSE: ${DETECT_DECOMPOSE:-shadow}

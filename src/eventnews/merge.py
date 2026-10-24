@@ -42,7 +42,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -80,6 +80,39 @@ class MergeLink:
     item_b: str
     edges: tuple[tuple[str, str], ...]
     rescued: bool = False
+
+
+#: 焦点の照合で「結ばない」値 (F2)。lineage は止めず関係 (系統) の候補として記録するだけ
+VETO_BLOCKING_CLASS = "conflict"
+#: 記録だけして結ぶ値 (関係の候補)
+VETO_RELATION_CLASS = "lineage"
+
+
+@dataclass(frozen=True)
+class LinkVerdict:
+    """事象の組を結ぶ前の照合の結果 (焦点の照合の 4 値のうち support 以外)。"""
+
+    klass: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class VetoedLink:
+    """照合で止めた (または止める対象だった) 事象の組の記録。
+
+    ``enforced`` が True のときだけ実際に結ばなかった。shadow の conflict と lineage
+    (関係の候補) は結んだうえで記録だけする。
+    """
+
+    item_a: str
+    item_b: str
+    klass: str
+    detail: str
+    edge_count: int
+    enforced: bool
+
+
+LinkVeto = Callable[[str, str], LinkVerdict | None]
 
 
 @dataclass(frozen=True)
@@ -294,6 +327,9 @@ def plan_merges(
     report_periods: Mapping[str, str] | None = None,
     article_ts: Mapping[str, datetime] | None = None,
     max_gap: timedelta | None = None,
+    link_veto: LinkVeto | None = None,
+    veto_enforce: bool = True,
+    vetoed_out: list[VetoedLink] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -323,6 +359,10 @@ def plan_merges(
             レポートで期間が違う辺を使わない (月次レポートどうしを統合しない)。None で無効
         article_ts / max_gap: 記事対の時刻差が ``max_gap`` を超える辺を使わない (2026-10-22)。
             判定が緩む方向 (ML のずれ・ハブ) の被害の上限。None で無制限 (09-21 の挙動)
+        link_veto: 結ぶ条件 (辺の本数・救済) を満たした事象の組に当てる焦点の照合 (F2)。
+            conflict は結ばない (``veto_enforce`` が False なら記録だけ)。lineage は止めず記録だけ。
+            照合は組ごとに独立 (A-B と B-C が通れば A-C が食い違っても推移で結ばれる)
+        vetoed_out: 照合が conflict / lineage を返した組の記録の出力先 (呼び手が空の list を渡す)
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
@@ -381,6 +421,10 @@ def plan_merges(
         is_rescued = (ia, ib) in rescued and n < min_edges
         if n < min_edges and not is_rescued:
             continue
+        if link_veto is not None and _vetoed(
+            link_veto, ia, ib, n, veto_enforce=veto_enforce, out=vetoed_out
+        ):
+            continue
         used.append(MergeLink(ia, ib, tuple(sorted(edge_articles[(ia, ib)])), is_rescued))
         ra, rb = _root(parent, ia), _root(parent, ib)
         if ra != rb:
@@ -405,6 +449,26 @@ def plan_merges(
             )
         )
     return out
+
+
+def _vetoed(
+    link_veto: LinkVeto,
+    item_a: str,
+    item_b: str,
+    edge_count: int,
+    *,
+    veto_enforce: bool,
+    out: list[VetoedLink] | None,
+) -> bool:
+    """組を結ばないなら True。止めた・止める対象だった組は ``out`` に残す。"""
+    verdict = link_veto(item_a, item_b)
+    if verdict is None or verdict.klass not in (VETO_BLOCKING_CLASS, VETO_RELATION_CLASS):
+        return False
+    blocking = verdict.klass == VETO_BLOCKING_CLASS
+    enforced = blocking and veto_enforce
+    if out is not None:
+        out.append(VetoedLink(item_a, item_b, verdict.klass, verdict.detail, edge_count, enforced))
+    return enforced
 
 
 def _singleton_rescues(

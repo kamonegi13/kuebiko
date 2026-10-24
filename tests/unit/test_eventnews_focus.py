@@ -15,7 +15,9 @@ from src.eventnews.identity.focus import (
     focus_from_json,
     focus_to_json,
     match_focus,
+    trusted_cves,
 )
+from src.eventnews.identity.replay import RELATION_CANDIDATE_CLASSES, STOPPING_CLASSES
 
 
 def _art(aid: str, *names: tuple[str, str], kind: str = "", roundup: bool = False) -> FocusArticle:
@@ -198,3 +200,87 @@ class TestMatchFocus:
 
         assert verdict.klass == "support"
         assert verdict.shared
+
+
+class TestConflictRefinements:
+    """F1b (2026-10-24): conflict を消す方向だけの 2 つの規則と、lineage の扱い。"""
+
+    def test_alias_judged_same_org_is_not_victim_conflict(self) -> None:
+        verdict = match_focus(
+            _f(_art("a", ORG_X, APT)), _f(_art("b", ORG_Y, APT)), org_alias={"orgy": "orgx"}
+        )
+
+        assert verdict.klass != "conflict"
+
+    def test_alias_never_creates_shared_name_or_support(self) -> None:
+        verdict = match_focus(
+            _f(_art("a", ORG_X)), _f(_art("b", ORG_Y)), org_alias={"orgy": "orgx"}
+        )
+
+        # 別名で結合を増やさない: 共有名は増えず weak のまま
+        assert (verdict.klass, verdict.shared) == ("weak", ())
+
+    def test_unrelated_alias_does_not_clear_conflict(self) -> None:
+        verdict = match_focus(
+            _f(_art("a", ORG_X)), _f(_art("b", ORG_Y)), org_alias={"orgz": "orgw"}
+        )
+
+        assert verdict.klass == "conflict"
+
+    def test_loose_name_match_is_not_conflict(self) -> None:
+        verdict = match_focus(
+            _f(_art("a", ("victim_org", "サンプル運輸"))),
+            _f(_art("b", ("victim_org", "サンプル"))),
+        )
+
+        assert verdict.klass == "weak"
+
+    def test_cve_anchor_backed_by_few_event_articles_is_not_conflict(self) -> None:
+        # 錨の CVE を持つ記事は 4 本中 1 本 (残り 3 本は焦点を共有しない外れ)
+        focus = compute_focus([_art("a1", CVE_A)] + [_art(f"x{i}", CVE_B, ORG_Y) for i in range(3)])
+        assert (focus.supporters, focus.outsiders) == (1, 3)
+
+        verdict = match_focus(focus, _f(_art("b", CVE_B)))
+
+        assert verdict.klass != "conflict"
+
+    def test_cve_conflict_stays_when_anchor_is_majority(self) -> None:
+        focus = _f(_art("a1", CVE_A), _art("a2", CVE_A))
+
+        assert trusted_cves(focus) == {CVE_A[1]}
+        assert match_focus(focus, _f(_art("b", CVE_B))).klass == "conflict"
+
+    def test_trusted_cves_requires_strict_majority_of_all_articles(self) -> None:
+        # 支持 1 本 + 外れ 1 本 = 2 本中 1 本 = ちょうど半分 → 過半ではない
+        focus = compute_focus([_art("a1", CVE_A), _art("x1", ORG_Y)])
+
+        assert (focus.supporters, focus.outsiders) == (1, 1)
+        assert trusted_cves(focus) == frozenset()
+
+    def test_lineage_is_not_a_stopping_class_but_a_relation_candidate(self) -> None:
+        assert "lineage" not in STOPPING_CLASSES
+        assert "conflict" in STOPPING_CLASSES
+        assert frozenset({"lineage"}) == RELATION_CANDIDATE_CLASSES
+
+
+class TestVictimTrustVariant:
+    """被害組織にも CVE と同じ「過半で支持」の条件を足す変種 (既定 off、比較用)。"""
+
+    def _hub(self) -> Focus:
+        # 錨の被害組織 X を持つ記事は 4 本中 1 本 (残りは焦点を共有しない外れ)
+        return compute_focus([_art("a1", ORG_X)] + [_art(f"x{i}", CVE_B, APT) for i in range(3)])
+
+    def test_default_keeps_low_support_victim_conflict(self) -> None:
+        assert match_focus(self._hub(), _f(_art("b", ORG_Y))).klass == "conflict"
+
+    def test_variant_ignores_victim_names_most_articles_do_not_share(self) -> None:
+        verdict = match_focus(self._hub(), _f(_art("b", ORG_Y)), victim_trust=True)
+
+        assert verdict.klass != "conflict"
+
+    def test_variant_keeps_conflict_when_victim_is_majority(self) -> None:
+        verdict = match_focus(
+            _f(_art("a", ORG_X), _art("a2", ORG_X)), _f(_art("b", ORG_Y)), victim_trust=True
+        )
+
+        assert verdict.klass == "conflict"

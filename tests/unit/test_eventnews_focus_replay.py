@@ -43,7 +43,7 @@ def test_tally_counts_stopped_errors_and_stopped_correct() -> None:
         ]
     )
 
-    assert (tally.errors, tally.errors_stopped) == (3, 2)
+    assert (tally.errors, tally.errors_stopped) == (3, 1)  # lineage は止めない (F1b)
     assert (tally.correct, tally.correct_stopped) == (2, 1)
     assert tally.by_class["conflict"] == {"other": 1, "same": 1}
 

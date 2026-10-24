@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ import src.storage.db_backend as _db  # noqa: E402
 if not _APPLY:
     _db.ensure_pg_schema = lambda *a, **k: None  # DDL を流さない
 
-from src.eventnews.identity.focus import Focus, match_focus  # noqa: E402
+from src.eventnews.identity.focus import Focus, focus_to_dict, match_focus  # noqa: E402
 from src.eventnews.identity.replay import (  # noqa: E402
     CLASSES,
     class_shares,
@@ -59,6 +60,7 @@ from src.eventnews.identity.replay import (  # noqa: E402
     tally_labeled,
 )
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle  # noqa: E402
+from src.eventnews.org_identity import build_alias_map  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.ui.services.eventnews_focus_job import (  # noqa: E402
     focus_of_members,
@@ -141,7 +143,11 @@ class Loader:
 
 
 def _labeled_section(
-    repo: RunHistoryRepository, loader: Loader, paths: list[Path], out: list[dict[str, Any]]
+    repo: RunHistoryRepository,
+    loader: Loader,
+    paths: list[Path],
+    out: list[dict[str, Any]],
+    alias: Mapping[str, str],
 ) -> None:
     rows = _load_label_rows(paths)
     print(f"\n## 1. 正解つきの統合 ({len(rows)} 組)")
@@ -153,7 +159,7 @@ def _labeled_section(
         label = final_label(row)
         target = loader.focus(str(row["target"]), before=str(row["merged_at"]))
         absorbed = loader.focus(str(row["absorbed"]))
-        verdict = match_focus(target, absorbed)
+        verdict = match_focus(target, absorbed, org_alias=alias)
         results.append((verdict.klass, label))
         out.append(
             {
@@ -164,13 +170,19 @@ def _labeled_section(
                 "class": verdict.klass,
                 "reason": verdict.reason,
                 "conflicts": list(verdict.conflicts),
+                "target_focus": focus_to_dict(target),
+                "absorbed_focus": focus_to_dict(absorbed),
             }
         )
     print("\n".join(tally_labeled(results).as_lines()))
 
 
 def _recent_merges_section(
-    repo: RunHistoryRepository, loader: Loader, since: datetime, out: list[dict[str, Any]]
+    repo: RunHistoryRepository,
+    loader: Loader,
+    since: datetime,
+    out: list[dict[str, Any]],
+    alias: Mapping[str, str],
 ) -> None:
     rows = _q(
         repo,
@@ -186,7 +198,8 @@ def _recent_merges_section(
     for r in rows:
         merged_at = _iso(r["updated_at"])
         target = loader.focus(str(r["merged_into"]), before=merged_at)
-        verdict = match_focus(target, loader.focus(str(r["id"])))
+        absorbed = loader.focus(str(r["id"]))
+        verdict = match_focus(target, absorbed, org_alias=alias)
         classes.append(verdict.klass)
         out.append(
             {
@@ -195,12 +208,17 @@ def _recent_merges_section(
                 "target": str(r["merged_into"]),
                 "class": verdict.klass,
                 "reason": verdict.reason,
+                "target_focus": focus_to_dict(target),
+                "absorbed_focus": focus_to_dict(absorbed),
             }
         )
     shares = class_shares(classes)
     print(" / ".join(f"{k} {shares[k][0]} ({shares[k][1]:.0%})" for k in CLASSES))
-    stopped = shares["conflict"][0] + shares["lineage"][0]
-    print(f"F2 で止まる統合 (conflict+lineage): {stopped} ({stopped / len(rows):.0%})")
+    stopped = shares["conflict"][0]
+    print(
+        f"F2 で止まる統合 (conflict のみ): {stopped} ({stopped / len(rows):.0%})"
+        f" / lineage {shares['lineage'][0]} 件は関係の候補"
+    )
 
 
 def _live_section(repo: RunHistoryRepository, loader: Loader, since: datetime) -> None:
@@ -248,6 +266,7 @@ def main() -> int:
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--labels", nargs="*", type=Path, default=list(DEFAULT_LABELS))
     parser.add_argument("--out", type=Path, default=None, help="組ごとの結果の jsonl")
+    parser.add_argument("--no-alias", action="store_true", help="別名判定を使わない (比較用)")
     parser.add_argument("--apply", action="store_true", help="焦点を本番 DB へ書く (遡及)")
     parser.add_argument("--verify", type=int, default=0, metavar="N", help="記録済み N 件を検算")
     args = parser.parse_args()
@@ -259,9 +278,11 @@ def main() -> int:
         print(f"遡及: {stats.as_dict()}")
         return 0
     loader = Loader(repo)
+    alias = {} if args.no_alias else build_alias_map(repo.list_org_identity_same_pairs()).mapping
+    print(f"(被害組織の別名判定 shadow の同一 {len(alias)} キー — conflict を消す方向にだけ使う)")
     out: list[dict[str, Any]] = []
-    _labeled_section(repo, loader, args.labels, out)
-    _recent_merges_section(repo, loader, since, out)
+    _labeled_section(repo, loader, args.labels, out, alias)
+    _recent_merges_section(repo, loader, since, out, alias)
     _live_section(repo, loader, since)
     if args.verify:
         _verify(repo, args.verify)

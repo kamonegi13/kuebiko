@@ -326,3 +326,27 @@ class TestPayloadAndAudit:
         )
 
         assert warn is False
+
+
+def test_enrich_decision_rows_uses_org_alias_to_clear_victim_conflict() -> None:
+    members = {
+        "t": [_member("a1", ("victim_org", "acme-bank"))],
+        "b": [_member("b1", ("victim_org", "zenith-group"))],
+    }
+    row = MergeDecisionRow(
+        target_id="t",
+        absorbed_id="b",
+        run_kind="hourly",
+        edges_json="[]",
+        edge_count=2,
+        rescued=False,
+        flags_json="{}",
+    )
+
+    plain = enrich_decision_rows([row], lambda i: members[i])[0]
+    aliased = enrich_decision_rows(
+        [row], lambda i: members[i], org_alias={"acme-bank": "k", "zenith-group": "k"}
+    )[0]
+
+    assert plain.focus_class == "conflict"
+    assert aliased.focus_class != "conflict"

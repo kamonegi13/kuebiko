@@ -851,6 +851,26 @@ CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_absorbed ON event_merge_dec
 CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_target ON event_merge_decisions(target_id);
 CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_decided ON event_merge_decisions(decided_at);
 
+-- 焦点の照合で止めた統合の組 (2026-10-24 F2)。同じ組は毎時の再検出で times_seen が進むだけ。
+-- action: blocked (結ばなかった) / shadow (conflict だが結んだ) / relation_candidate (lineage)
+-- sampled_at: 週次の Opus 裁定に回した印 (scripts/sample_focus_vetoes.py)
+CREATE TABLE IF NOT EXISTS event_merge_vetoes (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_a        TEXT    NOT NULL,
+    item_b        TEXT    NOT NULL,
+    klass         TEXT    NOT NULL,
+    detail        TEXT    NOT NULL DEFAULT '',
+    edge_count    INTEGER NOT NULL DEFAULT 0,
+    action        TEXT    NOT NULL,
+    mode          TEXT    NOT NULL DEFAULT '',
+    first_seen_at TEXT    NOT NULL,
+    last_seen_at  TEXT    NOT NULL,
+    times_seen    INTEGER NOT NULL DEFAULT 1,
+    sampled_at    TEXT,
+    UNIQUE (item_a, item_b)
+);
+CREATE INDEX IF NOT EXISTS idx_event_merge_vetoes_seen ON event_merge_vetoes(last_seen_at);
+
 -- 事象の焦点 (2026-10-24 F0、docs/eventnews_focus_redesign.md §2.3)。
 -- キャッシュ — compute_focus で作り直せる。
 CREATE TABLE IF NOT EXISTS event_item_focus (

@@ -52,3 +52,36 @@ def org_match_key(name: str) -> str:
             break
         core = trimmed
     return core if len(core) >= _MIN_KEY_LEN else plain
+
+
+# ---------- 緩い一致 (conflict を消す方向だけに使う) ----------
+
+#: 接頭辞による一致で、短い側がこの長さ以上のときだけ「略称」とみなす
+_MIN_PREFIX_LEN = 3
+_HIRAGANA_START, _HIRAGANA_END, _KANA_SHIFT = 0x3041, 0x3096, 0x60
+_LONG_VOWEL = "ー"
+
+
+def _loose_key(key: str) -> str:
+    """ひらがな → カタカナ・長音符の除去・記号の除去まで畳んだ比較用の形。"""
+    folded = unicodedata.normalize("NFKC", key or "").casefold()
+    shifted = "".join(
+        chr(ord(ch) + _KANA_SHIFT) if _HIRAGANA_START <= ord(ch) <= _HIRAGANA_END else ch
+        for ch in folded
+    )
+    return _squash(shifted.replace(_LONG_VOWEL, ""))
+
+
+def org_names_compatible(key_a: str, key_b: str) -> bool:
+    """2 つの照合キーが同じ組織を指しうるか (表記ゆれ・略称。親子会社や言語違いは扱わない)。
+
+    一致 = 緩い形が等しい、または短い側 (3 文字以上) が長い側の接頭辞 (略称 ⇔ 正式名)。
+    焦点の「被害組織の食い違い」を **消す** ためだけに使う。結合を増やす根拠にはしない。
+    """
+    loose_a, loose_b = _loose_key(key_a), _loose_key(key_b)
+    if not loose_a or not loose_b:
+        return False
+    if loose_a == loose_b:
+        return True
+    short, long_ = sorted((loose_a, loose_b), key=len)
+    return len(short) >= _MIN_PREFIX_LEN and long_.startswith(short)

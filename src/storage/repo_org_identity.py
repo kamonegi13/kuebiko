@@ -56,3 +56,14 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
                     (key_a[:_KEY_MAX], key_b[:_KEY_MAX], form, float(logit), ts),
                 )
         return len(rows)
+
+    def list_org_identity_same_pairs(
+        self, *, form: str = FORM_VERSION, min_logit: float = 0.0
+    ) -> list[tuple[str, str]]:
+        """同一と判定済みの名前の組 (余裕が ``min_logit`` 以上)。焦点の照合の別名の材料。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT key_a, key_b FROM org_identity_pairs WHERE form = ? AND logit >= ?",
+                (form, float(min_logit)),
+            ).fetchall()
+        return [(str(r["key_a"]), str(r["key_b"])) for r in rows]
