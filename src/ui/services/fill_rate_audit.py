@@ -127,7 +127,11 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
-        # 旧消費者 large_org_disruption (.9) は .12 (P1) で撤去済み。消費者の再設計が宿題
+        # 消費者: 記事詳細の「被害組織の規模」1 行表示 (articles_feed の victim_size →
+        # ArticleReadView。標準・アドバンスドも同じ API 経由)。旧消費者 large_org_disruption
+        # (.9) は .12 (P1) で撤去済み。AXES_FROM_BODY が off の間は 0% が正常 (10-24 実測 0/9040)。
+        # 深刻さ C の ML 特徴への追加は、欄が埋まって評価標本 (sevc_v5 の 604 件) に 100 件超
+        # 揃ってから model_zoo の CV AUC で測る (10-24 時点の重なりは約 40 件で測れない)
         "axes_victim_size",
         "被害組織の規模欄 (s23)",
         "EXISTS (SELECT 1 FROM article_severity_axes s WHERE s.article_id = a.article_id"

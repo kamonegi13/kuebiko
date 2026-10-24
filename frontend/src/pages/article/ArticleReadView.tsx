@@ -286,6 +286,11 @@ export function ArticleReadView({
           {a.article_type && (
             <span className="text-fg-subtle">{vocabLabel("article_type", a.article_type)}</span>
           )}
+          {a.victim_size && a.victim_size !== "unknown" && (
+            <span className="text-fg-subtle" data-testid="victim-size">
+              被害組織の規模: {vocabLabel("victim_size", a.victim_size)}
+            </span>
+          )}
           {a.posted_channel && <span className="text-fg-subtle">{chMeta(a.posted_channel).label}</span>}
           {a.feed_title && <span className="text-fg-subtle">{a.feed_title}</span>}
           <span className="text-fg-subtle ml-auto tnum">
