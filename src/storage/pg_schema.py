@@ -426,6 +426,11 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS extraction_failure_reason TEXT;
 -- 記事タイプ (breaking/advisory/recap/…)。judgment_classifier が分類済だが未永続だった
 -- (2026-07-27 露出)。記事詳細 UI で表示。行 SELECT のみ = index 不要。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS article_type TEXT;
+-- Grok 投稿が貼った外部リンク先の取得結果 (JSON: url/final_url/ok/reason/text/elapsed_ms、
+-- 2026-10-24 GROK_LINK_FETCH)。body (= 投稿の本文、body_source='grok') とは由来も失敗状態も
+-- 違うので別列。body を混ぜると保存 ⊇ 検出の保証と fill-rate の全文判定が崩れる。
+-- 行 SELECT のみ = index 不要。本文 purge と同時に NULL 化する。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS linked_context TEXT;
 -- body_source 状態機械化 (2026-07-29, docs/body_source_state_machine_design.md B1):
 -- 再取得試行回数。pending_refetch が N 回失敗で blocked 昇格させる恒久失敗判定に使う。
 -- 行 SELECT/UPDATE のみ = index 不要 (index を張る場合はこの ADD COLUMN より後に CREATE)。

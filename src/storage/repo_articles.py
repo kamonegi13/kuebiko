@@ -154,6 +154,15 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 )
             return int(cur.rowcount or 0)
 
+    def set_linked_context(self, article_id: str, linked_context: str) -> int:
+        """Grok 投稿の外部リンク先の取得結果 (JSON) を保存する (body とは別の列)。"""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE articles SET linked_context=? WHERE article_id=?",
+                (linked_context, article_id),
+            )
+            return int(cur.rowcount or 0)
+
     def mark_extraction_state(
         self,
         article_id: str,
