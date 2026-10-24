@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from src.cti.org_normalizer import org_names_compatible
 from src.eventnews.event_kind import ACTION_KINDS, DERIVATIVE_KIND, focus_kind_of
 from src.eventnews.models import FOCAL_CVE_MAX
 
@@ -32,6 +33,8 @@ CLASS_CONFLICT = "conflict"
 CLASS_LINEAGE = "lineage"
 #: 食い違いを見る名前の型 (別の CVE / 別の被害組織)
 CONFLICT_TYPES: tuple[str, ...] = ("cve", "victim_org")
+#: 照合の規則の版 (F1b: 被害組織の緩い一致・別名、CVE の信頼条件)
+MATCH_RULE_VERSION = "f1b-v1"
 
 Name = tuple[str, str]
 
@@ -83,6 +86,11 @@ class Focus:
 
     def names_of(self, entity_type: str) -> frozenset[str]:
         return frozenset(n.value for n in self.names if n.type == entity_type)
+
+    @property
+    def article_count(self) -> int:
+        """焦点の計算に数えた記事数 (支持 + 外れ。まとめ記事は含まない)。"""
+        return self.supporters + self.outsiders
 
 
 def contributed_names(article: FocusArticle) -> frozenset[Name]:
@@ -200,12 +208,57 @@ class FocusVerdict:
     reason: str = ""
 
 
-def _conflicting_types(a: Focus, b: Focus) -> tuple[str, ...]:
+def trusted_names(focus: Focus, entity_type: str) -> frozenset[str]:
+    """事象の記事の**過半**が持つ名前だけ (F1b)。
+
+    焦点の名前は支持記事の保有率で育つが、外れの多い事象 (複数 CVE の続報を束ねたハブ) では
+    錨の CVE を持つ記事が全体の数 % しかなく、その CVE が事象を代表しない。食い違いを
+    止める根拠にしてよいのは、事象の記事の過半で支持される名前だけ。
+    """
+    total = focus.article_count
+    if total == 0:
+        return frozenset()
+    return frozenset(
+        n.value
+        for n in focus.names
+        if n.type == entity_type and n.share * focus.supporters * 2 > total
+    )
+
+
+def trusted_cves(focus: Focus) -> frozenset[str]:
+    return trusted_names(focus, "cve")
+
+
+def _org_names_clash(
+    a: Focus, b: Focus, alias: Mapping[str, str], *, victim_trust: bool = False
+) -> bool:
+    """両側が被害組織を名指しし、どの組も同じ組織に読めない (表記ゆれ・別名を除いて食い違う)。"""
+    if victim_trust:
+        names_a, names_b = trusted_names(a, "victim_org"), trusted_names(b, "victim_org")
+    else:
+        names_a, names_b = a.names_of("victim_org"), b.names_of("victim_org")
+    if not names_a or not names_b:
+        return False
+    for x in names_a:
+        for y in names_b:
+            if alias.get(x, x) == alias.get(y, y) or org_names_compatible(x, y):
+                return False
+    return True
+
+
+def _conflicting_types(
+    a: Focus,
+    b: Focus,
+    org_alias: Mapping[str, str] | None = None,
+    *,
+    victim_trust: bool = False,
+) -> tuple[str, ...]:
     out = []
-    for t in CONFLICT_TYPES:
-        sa, sb = a.names_of(t), b.names_of(t)
-        if sa and sb and not (sa & sb):
-            out.append(t)
+    cves_a, cves_b = trusted_cves(a), trusted_cves(b)
+    if cves_a and cves_b and not (cves_a & cves_b):
+        out.append("cve")
+    if _org_names_clash(a, b, org_alias or {}, victim_trust=victim_trust):
+        out.append("victim_org")
     return tuple(out)
 
 
@@ -218,12 +271,23 @@ def _lineage_reason(a: Focus, b: Focus, shared: frozenset[Name]) -> str:
     return ""
 
 
-def match_focus(a: Focus, b: Focus) -> FocusVerdict:
-    """焦点どうしの照合。**止める (conflict / lineage) のは食い違いが明示的なときだけ**。
+def match_focus(
+    a: Focus,
+    b: Focus,
+    *,
+    org_alias: Mapping[str, str] | None = None,
+    victim_trust: bool = False,
+) -> FocusVerdict:
+    """焦点どうしの照合。**止める (conflict) のは食い違いが明示的なときだけ**。
 
     材料が足りない組 (片側が空・アクター名だけの共有・共有なし) は weak として後段の判定器へ回す。
+    lineage は F2 では止めず関係 (系統) の候補として渡す (F1b、``RELATION_CANDIDATE_CLASSES``)。
+
+    ``org_alias`` (照合キー → 代表キー、別名判定の「同一」) は被害組織の conflict を**消す**
+    方向にだけ使う。共有名には数えない (= 別名で結合は増えない)。
+    ``victim_trust`` は被害組織にも CVE と同じ「事象の過半で支持」の条件を足す変種 (既定 off)。
     """
-    conflicts = _conflicting_types(a, b)
+    conflicts = _conflicting_types(a, b, org_alias, victim_trust=victim_trust)
     if conflicts:
         return FocusVerdict(CLASS_CONFLICT, conflicts=conflicts)
     shared = a.name_set & b.name_set

@@ -21,8 +21,10 @@ from src.eventnews.identity.focus import (
 )
 
 CLASSES: tuple[str, ...] = (CLASS_SUPPORT, CLASS_WEAK, CLASS_CONFLICT, CLASS_LINEAGE)
-#: F2 で結ばない 2 値
-STOPPING_CLASSES: frozenset[str] = frozenset({CLASS_CONFLICT, CLASS_LINEAGE})
+#: F2 で結ばない値 (F1b: lineage は止めず、関係の候補へ回す)
+STOPPING_CLASSES: frozenset[str] = frozenset({CLASS_CONFLICT})
+#: 結ぶ判断では止めず、関係 (系統) の候補として渡す値
+RELATION_CANDIDATE_CLASSES: frozenset[str] = frozenset({CLASS_LINEAGE})
 LABEL_SAME = "same"
 
 
@@ -57,8 +59,7 @@ class LabelTally:
 
     def as_lines(self) -> list[str]:
         lines = [
-            f"誤り (same 以外) {self.errors} 組のうち止まる (conflict+lineage) "
-            f"{self.errors_stopped}",
+            f"誤り (same 以外) {self.errors} 組のうち止まる (conflict) {self.errors_stopped}",
             f"正しい統合 (same) {self.correct} 組のうち止まる {self.correct_stopped}",
         ]
         for klass in CLASSES:
