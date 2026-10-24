@@ -16,6 +16,7 @@ from src.grok.link_fetch import (
     link_fetch_mode,
     linked_context_json,
 )
+from src.grok.link_relevance import apply_relevance_gate, link_relevance_gate_enabled
 from src.logging_config import get_logger
 from src.pipeline.briefing import _summarize_and_build
 from src.tools.article_model import Article
@@ -307,11 +308,15 @@ async def _fetch_linked_pages(
             "grok_link_fetch_failed", tweet_id=record.tweet_id, error_type=type(e).__name__
         )
         return ()
+    if link_relevance_gate_enabled():
+        # 主題に触れない参照先 (被害組織のトップページ等) は材料に入れない (本文は保存する)
+        pages = apply_relevance_gate(f"{record.text}\n{record.quoted_text or ''}", pages)
     _log.info(
         "grok_link_fetch",
         tweet_id=record.tweet_id,
         attempted=len(pages),
         succeeded=sum(1 for p in pages if p.ok),
+        off_topic=sum(1 for p in pages if p.skip_reason is not None),
         elapsed_ms=sum(p.elapsed_ms for p in pages),
         reasons=[p.reason for p in pages if not p.ok],
     )

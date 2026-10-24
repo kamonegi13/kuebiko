@@ -154,6 +154,11 @@ def _terms(claim: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def extract_terms(text: str) -> list[str]:
+    """``text`` の固有名詞候補 (出現順、重複なし、一般語は除く)。他の関門が部品として使う。"""
+    return _terms(text)
+
+
 def check_grounding(claim: str, sources: GroundingSources) -> GroundingReport:
     """claim の固有名詞を ``sources`` に照らし、違反 (本文に無い) と出典名だけの語に分ける。"""
     text_norm = _normalize(sources.text)

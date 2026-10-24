@@ -121,6 +121,9 @@ class LinkedPage:
     reason: str | None = None
     elapsed_ms: int = 0
     method: str = ""
+    #: 取得は成功したが要約の材料に入れない理由 (主題に触れない等、``link_relevance``)。
+    #: 本文は linked_context に残す
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -344,7 +347,7 @@ _SECTION_HEADER = (
 
 def build_link_section(pages: tuple[LinkedPage, ...]) -> str:
     """要約の材料に足す参照先の節。使える参照先が無ければ空文字。"""
-    usable = [p for p in pages if p.ok and p.text]
+    usable = [p for p in pages if p.ok and p.text and p.skip_reason is None]
     if not usable:
         return ""
     blocks = [
