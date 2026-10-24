@@ -420,3 +420,16 @@ class RunHistoryRepositoryBase:
             conn.execute("ALTER TABLE triage_shadow ADD COLUMN jp_cascade INTEGER")
         if existing_shadow and "new_kept_v2" not in existing_shadow:
             conn.execute("ALTER TABLE triage_shadow ADD COLUMN new_kept_v2 INTEGER")
+
+        # 事象の焦点 (2026-10-24 F0): 統合の判断記録に照合の 4 値と両側の焦点の写しを追加
+        existing_decisions = {
+            row["name"] for row in conn.execute("PRAGMA table_info(event_merge_decisions)")
+        }
+        if existing_decisions and "focus_class" not in existing_decisions:
+            conn.execute(
+                "ALTER TABLE event_merge_decisions ADD COLUMN focus_class TEXT NOT NULL DEFAULT ''"
+            )
+        if existing_decisions and "focus_json" not in existing_decisions:
+            conn.execute(
+                "ALTER TABLE event_merge_decisions ADD COLUMN focus_json TEXT NOT NULL DEFAULT ''"
+            )

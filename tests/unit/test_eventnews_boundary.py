@@ -35,6 +35,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 生成物 (版の本文) は読まず、他層へ渡さない
         "src/ui/services/eventnews_merge_decisions.py",
         "src/ui/services/eventnews_merge_undo.py",
+        # 2026-10-24 (F0): 事象の焦点の記録。構成記事の名前・種別から焦点を作って記録するだけで、
+        # 生成物 (版の本文) は読まず、群化・統合の判断にも使わない (他層へ渡さない)
+        "src/ui/services/eventnews_focus_job.py",
         # 2026-08-24: 読み手向けの出口 (分析者向け)。2026-08-25 に匿名からは外し、
         # 公開面は public_news.py が担うようになった (allowlist は default-deny)。
         "src/ui/api/eventnews.py",

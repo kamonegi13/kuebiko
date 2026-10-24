@@ -843,11 +843,39 @@ CREATE TABLE IF NOT EXISTS event_merge_decisions (
     rescued        INTEGER  NOT NULL DEFAULT 0,
     flags_json     TEXT     NOT NULL DEFAULT '{}',
     undone_at      TEXT,
-    undone_reason  TEXT
+    undone_reason  TEXT,
+    focus_class    TEXT     NOT NULL DEFAULT '',
+    focus_json     TEXT     NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_absorbed ON event_merge_decisions(absorbed_id);
 CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_target ON event_merge_decisions(target_id);
 CREATE INDEX IF NOT EXISTS idx_event_merge_decisions_decided ON event_merge_decisions(decided_at);
+
+-- 事象の焦点 (2026-10-24 F0、docs/eventnews_focus_redesign.md §2.3)。
+-- キャッシュ — compute_focus で作り直せる。
+CREATE TABLE IF NOT EXISTS event_item_focus (
+    item_id        TEXT    PRIMARY KEY,
+    rule_version   TEXT    NOT NULL,
+    anchor_article TEXT    NOT NULL DEFAULT '',
+    names_json     TEXT    NOT NULL,
+    kind           TEXT    NOT NULL DEFAULT '',
+    supporters     INTEGER NOT NULL DEFAULT 0,
+    outsiders      INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT    NOT NULL
+);
+
+-- 焦点が変わった記録 (追記のみ、180 日)。cause = seed / join / merge / undo / split / rebuild
+CREATE TABLE IF NOT EXISTS event_item_focus_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id      TEXT    NOT NULL,
+    changed_at   TEXT    NOT NULL,
+    cause        TEXT    NOT NULL,
+    decision_id  INTEGER,
+    added_json   TEXT    NOT NULL DEFAULT '[]',
+    removed_json TEXT    NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_event_item_focus_log_item ON event_item_focus_log(item_id);
+CREATE INDEX IF NOT EXISTS idx_event_item_focus_log_changed ON event_item_focus_log(changed_at);
 
 -- 記事の種別キャッシュ (event_kind、2026-09-03)。群化の特徴量。記事ごとに 1 回だけ分類する
 CREATE TABLE IF NOT EXISTS article_kinds (

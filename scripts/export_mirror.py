@@ -761,7 +761,9 @@ def main() -> int:
             except httpx.HTTPStatusError:
                 enriched.append(e)
                 continue
-            total_bytes += _write(out / "eventnews" / f"{_safe_name(eid)}.json", detail)
+            # 焦点 (2026-10-24 F0) は運用画面だけの内部表現。匿名公開の写しには出さない
+            public_detail = {k: v for k, v in detail.items() if k != "focus"}
+            total_bytes += _write(out / "eventnews" / f"{_safe_name(eid)}.json", public_detail)
             enriched.append({**e, **_eventnews_filter_tags(detail)})
 
         total_bytes += _write(out / "eventnews.json", {"items": enriched})

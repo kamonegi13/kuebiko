@@ -25,6 +25,52 @@ _log = get_logger(__name__)
 KINDS: tuple[str, ...] = ("advisory", "exploitation", "breach", "stats", "roundup", "other")
 FALLBACK_KIND = "other"
 
+#: 派生 (行政指導・処分・当局の命令/摘発など、事案の当事者とは別の行為) — 2026-10-24。
+#: ⚠ 語彙と表示だけ。分類の LLM のプロンプト (``SYSTEM`` / ``classify``) は ``KINDS`` のままで
+#: 派生を選ばせない (プロンプトの変更は F4 = docs/eventnews_focus_redesign.md §7 まで行わない)。
+#: ``article_kinds`` に実値が入るのは F4 以降。焦点 (``eventnews/identity/focus.py``) は、保存済みの
+#: 種別を ``focus_kind_of`` で写像して読むので、それまでに派生の語が出ても受けられる。
+DERIVATIVE_KIND = "derivative"
+#: 焦点の「行為」に数える種別 (other・stats・roundup は数えない)
+ACTION_KINDS: tuple[str, ...] = ("advisory", "exploitation", "breach", DERIVATIVE_KIND)
+#: 種別の全語彙 (分類の語彙 + 派生)。表示・照合はこちらを参照する
+ALL_KINDS: tuple[str, ...] = (*KINDS, DERIVATIVE_KIND)
+#: 表示名 (SSoT)
+KIND_LABELS_JA: dict[str, str] = {
+    "advisory": "勧告・修正",
+    "exploitation": "悪用",
+    "breach": "被害・侵害",
+    "stats": "統計",
+    "roundup": "まとめ",
+    "other": "その他",
+    DERIVATIVE_KIND: "派生 (行政指導・処分)",
+}
+#: 派生を指す別の綴り (分類の出力に出たら派生へ写像する)
+_DERIVATIVE_ALIASES: frozenset[str] = frozenset(
+    {
+        "derivative",
+        "enforcement",
+        "sanction",
+        "sanctions",
+        "regulatory",
+        "penalty",
+        "administrative",
+        "administrative_action",
+        "行政指導",
+        "行政処分",
+        "処分",
+    }
+)
+
+
+def focus_kind_of(raw: str) -> str:
+    """保存済みの種別 → 焦点で使う種別。派生の別綴りは派生へ、未知・空は ``other``。"""
+    key = (raw or "").strip().lower()
+    if key in _DERIVATIVE_ALIASES:
+        return DERIVATIVE_KIND
+    return key if key in ALL_KINDS else FALLBACK_KIND
+
+
 SYSTEM = "\n".join(
     (
         "あなたは日本の CTI アナリストです。記事を 1 つの種別に分類します。",

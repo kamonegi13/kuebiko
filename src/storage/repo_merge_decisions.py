@@ -37,6 +37,10 @@ class MergeDecisionRow:
     decided_at: datetime | None = None
     undone_at: datetime | None = None
     undone_reason: str = ""
+    #: 焦点の照合 (support / weak / conflict / lineage、空 = 未計算) と両側の焦点の写し。
+    #: F0 では記録だけで判断には使わない (docs/eventnews_focus_redesign.md §3.4)
+    focus_class: str = ""
+    focus_json: str = ""
 
 
 def _row_to_decision(r: Any) -> MergeDecisionRow:
@@ -51,6 +55,8 @@ def _row_to_decision(r: Any) -> MergeDecisionRow:
         decided_at=_from_iso(r["decided_at"]),
         undone_at=_from_iso(r["undone_at"]),
         undone_reason=str(r["undone_reason"] or ""),
+        focus_class=str(r["focus_class"] or ""),
+        focus_json=str(r["focus_json"] or ""),
     )
 
 
@@ -67,8 +73,9 @@ class MergeDecisionsMixin(RunHistoryRepositoryBase):
             for r in rows:
                 conn.execute(
                     "INSERT INTO event_merge_decisions (decided_at, run_kind, target_id,"
-                    " absorbed_id, edges_json, edge_count, rescued, flags_json)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    " absorbed_id, edges_json, edge_count, rescued, flags_json,"
+                    " focus_class, focus_json)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         _to_iso(decided_at),
                         r.run_kind,
@@ -78,6 +85,8 @@ class MergeDecisionsMixin(RunHistoryRepositoryBase):
                         int(r.edge_count),
                         1 if r.rescued else 0,
                         r.flags_json,
+                        r.focus_class,
+                        r.focus_json,
                     ),
                 )
         return len(rows)
@@ -105,7 +114,8 @@ class MergeDecisionsMixin(RunHistoryRepositoryBase):
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT target_id, absorbed_id, run_kind, edges_json, edge_count, rescued,"  # noqa: S608
-                " flags_json, decided_at, undone_at, undone_reason FROM event_merge_decisions"
+                " flags_json, decided_at, undone_at, undone_reason, focus_class, focus_json"
+                " FROM event_merge_decisions"
                 f"{clause} ORDER BY decided_at DESC, id DESC LIMIT ?",
                 (*params, int(limit)),
             ).fetchall()
