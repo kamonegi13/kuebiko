@@ -48,24 +48,20 @@ cat >| "$PLIST" <<EOF
     <string>mirror</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO}</string>
-  <!-- 3 時間ごとの :50。収集 (:00) と事象ニュース生成 (:20) の後に回すことで、
-       次の収集までの間は写しと live の中身がほぼ一致する。 -->
+  <!-- 毎時 :50 に起こし、日本時間 2:50 から 3 時間ごとかどうかは配信スクリプト側
+       (deploy_site.sh の KUEBIKO_SCHEDULED_MIRROR) が TZ=Asia/Tokyo で判断する。
+       StartCalendarInterval は Mac の時間帯でしか動かないため、時の指定は持たない。
+       ⚠ 時間帯の差が時間単位なら分 (:50) は変わらない。インド等 30 分ずれの時間帯では
+       分もずれる (その場合は Minute を調整するか、このスクリプトを直す)。 -->
   <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>50</integer></dict>
-    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>50</integer></dict>
-  </array>
+  <dict><key>Minute</key><integer>50</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>${LOG}</string>
   <key>StandardErrorPath</key><string>${LOG}</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>KUEBIKO_SCHEDULED_MIRROR</key><string>1</string>
+    <key>TZ</key><string>Asia/Tokyo</string>
     <key>PATH</key>
     <!-- ⚠ node は nodebrew 配下にあり LaunchAgent の既定 PATH に入らない
          (公開サイトで npx: command not found を踏んだ)。実体の場所を通す。 -->
@@ -77,4 +73,4 @@ EOF
 
 launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "installed: $LABEL (3 時間ごと :50 / log: $LOG)"
+echo "installed: $LABEL (毎時 :50 起動 → 日本時間 2:50 から 3 時間ごとに配信 / log: $LOG)"

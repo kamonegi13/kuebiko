@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export TZ=Asia/Tokyo  # ホストの時間帯に依存させない (日本時間で時刻を判断・表示)
 # OrbStack VM が macOS の sleep/wake で固まったまま復帰しない事象からの自動復旧
 # (2026-08-02)。LaunchAgent から 5 分間隔で起動される。
 #

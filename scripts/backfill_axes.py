@@ -34,6 +34,7 @@ import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO if (_REPO / "src").is_dir() else Path("/app")))
@@ -70,6 +71,8 @@ CREATE TABLE IF NOT EXISTS axes_backfill_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 """
+
+JST = ZoneInfo("Asia/Tokyo")  # cron guard 窓は日本時間 (ホストの時間帯に依存させない)
 
 
 def guard_reason(now: datetime) -> str | None:
@@ -161,8 +164,8 @@ async def _wait_for_clear_window(*, cron_guard: bool) -> None:
     """cron guard 窓の間は待機する (窓の外に出たら戻る)。"""
     if not cron_guard:
         return
-    while (reason := guard_reason(datetime.now())) is not None:
-        print(f"[guard] {reason} 窓のため待機中 ({datetime.now():%H:%M})", flush=True)
+    while (reason := guard_reason(datetime.now(JST))) is not None:
+        print(f"[guard] {reason} 窓のため待機中 ({datetime.now(JST):%H:%M})", flush=True)
         await asyncio.sleep(GUARD_POLL_SECONDS)
 
 

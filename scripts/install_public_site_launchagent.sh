@@ -48,7 +48,9 @@ cat >| "$PLIST" <<EOF
     <string>public</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO}</string>
-  <!-- 毎時 :40。収集 (:00 前後) と事象ニュース生成 (:20) の後に回す。 -->
+  <!-- 毎時 :40。収集 (:00 前後) と事象ニュース生成 (:20) の後に回す。
+       分だけの指定なので Mac の時間帯に依存しない (時間帯の差が時間単位なら分は不変。
+       インド等 30 分ずれの時間帯では :40 が :10 / :10+ にずれる)。 -->
   <key>StartCalendarInterval</key>
   <dict><key>Minute</key><integer>40</integer></dict>
   <key>RunAtLoad</key><false/>
@@ -56,6 +58,7 @@ cat >| "$PLIST" <<EOF
   <key>StandardErrorPath</key><string>${LOG}</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>TZ</key><string>Asia/Tokyo</string>
     <key>PATH</key>
     <!-- ⚠ node は nodebrew 配下にあり、LaunchAgent の既定 PATH には入らない
          (実測: npx: command not found で配信が失敗した)。実体の場所を通す。 -->

@@ -38,6 +38,7 @@ import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
@@ -132,6 +133,8 @@ class _IntentOut(BaseModel):
     confidence: str = "low"
     rationale: str | None = None
 
+JST = ZoneInfo("Asia/Tokyo")  # cron guard 窓は日本時間 (ホストの時間帯に依存させない)
+
 
 def build_prompt(title: str, category: str | None, body: str | None, summary: str | None) -> str:
     """intent 専用プロンプトを組み立てる (body 優先、なければ summary)。"""
@@ -209,8 +212,8 @@ async def _wait_for_clear_window(*, cron_guard: bool) -> None:
     """cron guard 窓の間は待機する (窓の外に出たら戻る)。"""
     if not cron_guard:
         return
-    while (reason := guard_reason(datetime.now())) is not None:
-        print(f"[guard] {reason} 窓のため待機中 ({datetime.now():%H:%M})", flush=True)
+    while (reason := guard_reason(datetime.now(JST))) is not None:
+        print(f"[guard] {reason} 窓のため待機中 ({datetime.now(JST):%H:%M})", flush=True)
         await asyncio.sleep(GUARD_POLL_SECONDS)
 
 

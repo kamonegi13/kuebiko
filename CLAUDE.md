@@ -521,6 +521,7 @@ kuebiko/
 - **Phase 1 の LLM 暫定運用**: Gemma 4 31B Dense が Ollama に未公開の間は `gemma3:27b` で代替可
 - **依存追加は最小化**: 標準ライブラリで足りるものを安易にライブラリ化しない (YAGNI)
 - **Discord Webhook の取り回し**: チャンネル別に `DISCORD_WEBHOOK_PRIORITY` / `_DAILY` / `_RESEARCH` / `_SYSTEM` の 4 本を `.env` に保持。`AppConfig.discord_webhooks: dict[Literal["priority","daily","research","system"], str]` のマッピングとしてロード
+- **ホストで時刻を見るスクリプトは `export TZ=Asia/Tokyo` を先頭に置く。LaunchAgent は分だけの指定 + スクリプト側で日本時間を判断する** (利用者が海外に滞在し Mac の時間帯を現地にするため、10-25。mirror の「日本時間 2:50 から 3 時間ごと」は毎時 :50 起動 + `deploy_site.sh` の `KUEBIKO_SCHEDULED_MIRROR` 判定)
 - **コミット前に `data/`, `.env` が含まれていないことを確認** (gitignore + `git status` 目視)
 - **コーディングは日本語コメント可、識別子は英語**
 

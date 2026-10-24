@@ -23,6 +23,15 @@
 #   CLOUDFLARE_ACCOUNT_ID
 #   CLOUDFLARE_PAGES_PROJECT 例: kuebiko-news (公開ドメインに紐づくプロジェクト)
 set -euo pipefail
+# ホストの時間帯 (利用者が海外で Mac を現地時間にしていても) に依存させない
+export TZ=Asia/Tokyo
+
+# LaunchAgent (mirror) は毎時 :50 に起こされる。launchd の StartCalendarInterval は Mac の
+# 時間帯でしか動かないため、「日本時間 2:50 から 3 時間ごと」はここで判断する
+# (日本時間の時が 3 で割って 2 余る時だけ走る。それ以外は即終了)。手動実行は対象外。
+if [ "${KUEBIKO_SCHEDULED_MIRROR:-0}" = "1" ] && [ "$(( 10#$(date +%H) % 3 ))" != "2" ]; then
+  exit 0
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 組み立て (build_public_site.sh は OPERATOR_ORIGIN を要する) より前に .env を読む
