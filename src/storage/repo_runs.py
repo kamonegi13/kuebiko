@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from src.logging_config import mask_text
 from src.storage.records import (
     MAX_LOG_LINES_PER_RUN,
     LogLine,
@@ -19,6 +20,10 @@ from src.storage.row_mappers import (
     _to_iso,
     _truncate_line,
 )
+
+
+def _mask_optional(text: str | None) -> str | None:
+    return None if text is None else mask_text(text)
 
 
 class RunsMixin(RunHistoryRepositoryBase):
@@ -47,7 +52,7 @@ class RunsMixin(RunHistoryRepositoryBase):
                     run.posted,
                     run.marked_read,
                     run.error_count,
-                    run.note,
+                    _mask_optional(run.note),
                     run.log_line_count,
                     int(run.log_truncated),
                     run.triage_error_count,
@@ -93,7 +98,7 @@ class RunsMixin(RunHistoryRepositoryBase):
                     posted,
                     marked_read,
                     error_count,
-                    note,
+                    _mask_optional(note),
                     triage_error_count,
                     int(partial_fetch),
                     partial_fetch_count,
@@ -256,7 +261,8 @@ class RunsMixin(RunHistoryRepositoryBase):
         - ``runs.log_line_count`` を毎回 +1
         """
         when = ts or datetime.now(UTC)
-        truncated_line = _truncate_line(line)
+        # マスクを先に (切り詰めで URL が途中で切れて検出漏れになるのを防ぐ)
+        truncated_line = _truncate_line(mask_text(line))
 
         with self._connect() as conn:
             row = conn.execute(
@@ -380,12 +386,12 @@ class RunsMixin(RunHistoryRepositoryBase):
                   status = excluded.status,
                   detail = excluded.detail
                 """,
-                (job_id, ts, status, detail[:500]),
+                (job_id, ts, status, mask_text(detail)[:500]),
             )
             # 履歴として append (最新 upsert とは別。詳細パネルの実行履歴表示用)。
             conn.execute(
                 "INSERT INTO job_run_log (job_id, ran_at, status, detail) VALUES (?, ?, ?, ?)",
-                (job_id, ts, status, detail[:500]),
+                (job_id, ts, status, mask_text(detail)[:500]),
             )
 
     def mark_job_running(self, job_id: str, *, when: datetime | None = None) -> None:

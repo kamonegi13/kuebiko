@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.cti.importance_v2 import legacy_level_filter_to_severity
+from src.logging_config import mask_text
 from src.storage.event_time import EVENT_TS_EXPR, occurred_date_clause, occurred_sort_key_sql
 from src.storage.importance_level_sql import (
     level_scalar_subquery,
@@ -65,7 +66,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.importance,
                     record.category,
                     record.status,
-                    record.failure_reason,
+                    None if record.failure_reason is None else mask_text(record.failure_reason),
                     record.posted_channel,
                     record.duration_seconds,
                     record.dedup_key,

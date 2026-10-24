@@ -306,6 +306,8 @@ _SECRET_VALUE = re.compile(
     # 見えて止まった (2026-08-29 実測)。前が英数・ハイフンなら鍵の始まりではない。
     r"(?i)(?<![A-Za-z0-9_-])("
     r"https://\S*(discord|slack)\.com/api/webhooks/\S+"
+    # scheme 無し (requests の例外文は "url: /api/webhooks/<id>/<token>" と出す)
+    r"|\S*/api/webhooks/\d+/\S+"
     r"|sk-(ant|proj|live)-[A-Za-z0-9_-]{12,}"
     r"|ghp_[A-Za-z0-9]{20,}"
     r"|xox[baprs]-[A-Za-z0-9-]{10,}"

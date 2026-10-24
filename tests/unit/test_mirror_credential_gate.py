@@ -46,6 +46,10 @@ def test_allows(name: str, payload: dict[str, object]) -> None:
     [
         # キー名に頼らない — 名前を変えた経路が素通りしないように値の形でも見る。
         ("Discord webhook", {"url": "https://discord.com/api/webhooks/123/AbCdEfGh_XyZ"}),
+        (
+            "Discord webhook (scheme 無しの例外文)",
+            {"note": "Max retries exceeded with url: /api/webhooks/123/AbCdEfGh_XyZ (Caused by"},
+        ),
         ("API キー (キー名なし)", {"note": "sk-ant-api03-AbCdEfGhIjKlMnOp"}),
         ("GitHub token (入れ子)", {"a": [{"b": "ghp_" + "A" * 24}]}),
         ("access_token", {"access_token": "eyJhbGciOiJIUzI1NiJ9abcdef"}),

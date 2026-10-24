@@ -63,7 +63,7 @@ NOISY_HTTP_LOGGERS: tuple[str, ...] = (
 # キー名マッチだけでは httpx の event="HTTP Request: GET https://..." のような
 # 埋め込み URL を捕捉できないため、文字列値も regex で粗くマスクする。
 _WEBHOOK_URL_RE = re.compile(
-    r"https?://(?:discord(?:app)?\.com|hooks\.slack\.com|[^/\s]+)/api/webhooks/\S+",
+    r"(?:https?://[^/\s]+)?/api/webhooks/\S+",
     re.IGNORECASE,
 )
 _MASKED_WEBHOOK = "<masked-webhook-url>"
@@ -71,6 +71,9 @@ _MASKED_WEBHOOK = "<masked-webhook-url>"
 # キー名マッチだけでは subprocess の stdout 行などに混ざった生の email を捕捉できない。
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _MASKED_EMAIL = "<masked-email>"
+# 例外文・応答ヘッダの断片に紛れた Bearer / Anthropic 形式のトークン (保存前マスク用)。
+_BEARER_RE = re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+|sk-ant-[A-Za-z0-9_-]+", re.IGNORECASE)
+_MASKED_TOKEN = "<masked-token>"
 
 
 def _mask_value(value: Any) -> str:
@@ -98,7 +101,9 @@ def _is_numeric_telemetry(value: Any) -> bool:
 
 def _mask_text(text: str) -> str:
     """文字列内に埋め込まれた webhook URL / メールアドレスをマスクする (二重防御)。"""
-    return _EMAIL_RE.sub(_MASKED_EMAIL, _WEBHOOK_URL_RE.sub(_MASKED_WEBHOOK, text))
+    no_webhook = _WEBHOOK_URL_RE.sub(_MASKED_WEBHOOK, text)
+    no_token = _BEARER_RE.sub(lambda m: (m.group(1) or "") + _MASKED_TOKEN, no_webhook)
+    return _EMAIL_RE.sub(_MASKED_EMAIL, no_token)
 
 
 def mask_text(text: str) -> str:

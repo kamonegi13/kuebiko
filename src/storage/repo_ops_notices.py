@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.logging_config import mask_text
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _to_iso
 
@@ -38,8 +39,8 @@ class OpsNoticesMixin(RunHistoryRepositoryBase):
                 " VALUES (?, ?, ?, ?, ?)",
                 (
                     _to_iso(when or datetime.now(UTC)),
-                    title[:200],
-                    body[:4000],
+                    mask_text(title)[:200],
+                    mask_text(body)[:4000],
                     importance,
                     1 if sent else 0,
                 ),
