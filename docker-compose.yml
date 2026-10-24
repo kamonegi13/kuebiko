@@ -168,6 +168,10 @@ services:
       # 薄い本文の関門 (別標本で適合率 12/13・誤発火 1/72)・SIR 別の要点の識別子の関門は有効、
       # 翻訳の化けの関門は語の修復が 16/29 しか正しくないため無効のまま
       VICTIM_COUNTRY_GATE_KEYWORD: ${VICTIM_COUNTRY_GATE_KEYWORD:-1}
+      # 被害国の取りこぼしを決定論の規則で埋める (2026-10-22): shadow=埋める値をログに出すだけ /
+      # 1=適用 / 0=無効。Opus 裁定 69 件で誤り 0・判断不能 2 だが、補完は 90 日で 22 件と小さいため
+      # まず shadow (docker logs kuebiko | grep victim_country_fill で確認してから 1 へ)
+      VICTIM_COUNTRY_FILL: ${VICTIM_COUNTRY_FILL:-shadow}
       # 関与国の付けすぎの関門 (2026-10-12): 1=有効 / 0=無効 / shadow=落とす国をログに出すだけ。
       # 正解集 150 件で適合率 69%→87%・回収率 94%→82% だが、調整と測定が同じ標本のため shadow で開始
       # (新しい正解 = upstream_accuracy 段 B で確かめてから on)
