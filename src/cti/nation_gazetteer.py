@@ -113,14 +113,14 @@ def nations_in_text(text: str) -> frozenset[str]:
     return frozenset(found)
 
 
-def country_mention_counts(text: str) -> dict[str, int]:
-    """テキスト中の国ごとの言及回数 (ISO → 出現位置の異なる一致の数、決定論・LLM 不使用)。
+def country_mention_positions(text: str) -> tuple[str, dict[str, frozenset[int]]]:
+    """(正規化後テキスト, ISO → 言及の開始位置) を返す。位置は返したテキストの添字。
 
-    ``nations_in_text`` と同じ辞書・境界規則で、集合でなく回数を返す版。同じ位置を
-    複数の alias が拾った場合は 1 回と数える (「アメリカ合衆国」と「アメリカ」等)。
+    ``_PRE_REMOVE`` の置換で添字がずれるため、文の切り出しには返したテキストを使う。
+    同じ位置を複数の alias が拾った場合は 1 回と数える。
     """
     if not text:
-        return {}
+        return "", {}
     for phrase in _PRE_REMOVE:
         text = text.replace(phrase, " ")
     positions: dict[str, set[int]] = {}
@@ -129,4 +129,14 @@ def country_mention_counts(text: str) -> dict[str, int]:
             positions.setdefault(iso, set()).add(m.start())
     for m in _SHORT_CODE_RE.finditer(text):
         positions.setdefault(_SHORT_CODE_WHITELIST[m.group(1)], set()).add(m.start())
+    return text, {iso: frozenset(pos) for iso, pos in positions.items()}
+
+
+def country_mention_counts(text: str) -> dict[str, int]:
+    """テキスト中の国ごとの言及回数 (ISO → 出現位置の異なる一致の数、決定論・LLM 不使用)。
+
+    ``nations_in_text`` と同じ辞書・境界規則で、集合でなく回数を返す版。同じ位置を
+    複数の alias が拾った場合は 1 回と数える (「アメリカ合衆国」と「アメリカ」等)。
+    """
+    _, positions = country_mention_positions(text)
     return {iso: len(pos) for iso, pos in positions.items()}

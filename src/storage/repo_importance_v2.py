@@ -27,8 +27,10 @@ _ENTITY_TYPES = ("cve", "involved_country", "mentioned_country", "pir")
 #: 軸と無関係に計算される。軸が付いている記事の深刻さの導出結果はこの変更で変わらない)。
 #: articles は同じ article_id が複数行ありうるので最新の 1 行に絞る (ROW_NUMBER が両 DB で可搬)
 _PENDING_SQL = """
-SELECT article_id, title, category, article_type, victim_country_iso, summary, body, event_kind FROM (
-    SELECT a.article_id, a.title, a.category, a.article_type, a.victim_country_iso, a.summary, a.body,
+SELECT article_id, title, category, article_type, victim_country_iso, summary, body, event_kind,
+       victim_sector_canonical FROM (
+    SELECT a.article_id, a.title, a.category, a.article_type, a.victim_country_iso,
+           a.summary, a.body, a.victim_sector_canonical,
            COALESCE(k.kind, '') AS event_kind,
            ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
     FROM articles a
@@ -81,6 +83,7 @@ class ImportanceV2Mixin:
                 title=str(r["title"] or ""),
                 event_kind=str(r["event_kind"] or ""),
                 summary=str(r["summary"] or ""),
+                victim_sector=str(r["victim_sector_canonical"] or ""),
             )
         return out
 

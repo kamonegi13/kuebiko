@@ -22,6 +22,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from src.cti.nisc_sectors import NON_CI_CANONICALS
+
 #: 版の履歴: .1 初版 / .2 正解集 (Opus 裁定 204 件) で直した — 攻撃者の主張だけは S1・
 #: 本文に書かれた CVSS も見る・マルウェアの解析は S2 / .3 複数組織への不正アクセスだけは S2
 #: / .4 流出「可能性」の侵害は S2・掲載だけ (暗号化と読まれても) は S1
@@ -48,7 +50,14 @@ from typing import Literal
 #: KEV の CVE が出てくるだけの記事は S3 の根拠にしない (14 日の本番で S3 から外れるのは約 16 件、
 #: 正解集の S3 の取りこぼし 0、2026-10-22)。``confirmed_wide_harm`` は正解集で S3 を取りこぼす
 #: ため直していない
-RULE_VERSION = "2026-10-22.11"
+#: / .12 深刻さ v5 の利用者判断 (2026-10-24、P1〜P7、data/eval/severity_rubric_v5.md §5) を反映:
+#: P1 大規模な単一事業者の停止 (``large_org_disruption``) は S3 にしない・P2 提供者/委託先の侵害は
+#: 影響を受けた組織の数が本文にあるときだけ S3 (``provider_org_count``)、無ければ S2
+#: (``provider_unquantified``)・P5 復旧・再開だけの記事は深刻さなし (``recovery_only``)・
+#: P7 重要インフラの停止は NISC の 15 分野で判定 (大学・研究機関など NISC 外の ``critical_infra``
+#: は除く。軸が一般組織の記事を業種から引き上げる案は 14 日の本番で誤配置が多く不採用)。
+#: P3 (国家系の標的の確認) は軸で区別できず変更なし、P4・P6 は既存の規則と同じ向き
+RULE_VERSION = "2026-10-24.12"
 
 Severity = Literal["S3", "S2", "S1"]
 StrategicWeight = Literal["heavy", "moderate", "light"]
@@ -77,9 +86,11 @@ SEVERITY_BASES: frozenset[str] = frozenset(
         "poc",
         "vuln",
         "confirmed_wide_harm",
+        "provider_org_count",
+        "provider_unquantified",
+        "recovery_only",
         "state_on_critical",
         "critical_disruption",
-        "large_org_disruption",
         "exploited_product",
         "large_magnitude",
         "large_loss",
@@ -158,6 +169,10 @@ class ImportanceInputs:
     title: str = ""
     #: 記事の種類の分類 (``article_kinds.kind``)。遅延分類で未分類なら空
     event_kind: str = ""
+    #: 被害組織の業種 (victim_sectors.yaml の canonical)。空なら不明
+    victim_sector: str = ""
+    #: 本文に書かれた「影響を受けた組織の数」の最大値 (``stated_org_count``)。書かれていなければ 0
+    affected_org_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -196,6 +211,7 @@ def build_inputs(
     title: str = "",
     event_kind: str = "",
     summary: str = "",
+    victim_sector: str = "",
 ) -> ImportanceInputs:
     """``ImportanceInputs`` の共通組み立て (M3b 段1、2026-10-10)。
 
@@ -223,6 +239,8 @@ def build_inputs(
         loss_usd=stated_loss_usd(text),
         title=title,
         event_kind=event_kind,
+        victim_sector=victim_sector,
+        affected_org_count=stated_org_count(text),
     )
 
 
@@ -265,6 +283,9 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
         return None, "derivative"
     if inp.on_kev:
         return "S3", "kev"
+    # P5 (.12): 復旧・再開だけを伝える続報は新しい被害の事実ではない。KEV の脆弱性より後に置く
+    if inp.category not in _VULN and is_recovery_only(inp.title):
+        return None, "recovery_only"
     if inp.category in _VULN:
         return _vuln_severity(inp)
     ax = inp.axes
@@ -286,7 +307,7 @@ def derive_severity(inp: ImportanceInputs) -> tuple[Severity | None, str]:
         if ax.get("actor") == "state" or ax.get("scope") in _WIDE:
             return "S2", "research_state_or_wide"
         return "S1", "research"
-    return _incident_severity(ax, inp.loss_usd)
+    return _incident_severity(ax, inp.loss_usd, inp)
 
 
 def _is_derivative(inp: ImportanceInputs) -> bool:
@@ -317,30 +338,49 @@ def _vuln_severity(inp: ImportanceInputs) -> tuple[Severity, str]:
     return "S1", "vuln"
 
 
-def _incident_severity(ax: Mapping[str, str], loss_usd: float = 0.0) -> tuple[Severity, str]:
+#: 提供者・委託先の侵害を S3 にする「影響を受けた組織の数」の下限 (P2、複数の組織と読める最小値)
+PROVIDER_ORG_MIN = 2
+
+
+def _is_critical_target(inp: ImportanceInputs) -> bool:
+    """標的が重要インフラ (P7 .12: 政府・防衛と NISC の 15 分野) か。
+
+    軸の ``target`` を土台に、``critical_infra`` でも被害業種が大学・研究機関など NISC 外
+    (``NON_CI_CANONICALS``) なら除く。軸が一般組織の記事を業種や見出しの語から重要インフラへ
+    引き上げることはしない (14 日の本番で ``government`` 業種の誤配置が多く、適合が落ちた)。
+    """
+    target = inp.axes.get("target")
+    if target in {"government", "defense"}:
+        return True
+    return target == "critical_infra" and inp.victim_sector not in NON_CI_CANONICALS
+
+
+def _incident_severity(
+    ax: Mapping[str, str], loss_usd: float, inp: ImportanceInputs
+) -> tuple[Severity, str]:
     scope, impact, conf = ax.get("scope"), ax.get("impact"), ax.get("confirmation")
-    actor, target = ax.get("actor"), ax.get("target")
+    actor = ax.get("actor")
     confirmed = conf == "confirmed"
-    # 複数組織への不正アクセスだけ (フィッシング・キャンペーンの解析など) は S2 — 正解集では
-    # 情報の漏えい・停止・破壊を伴うか、業界・国規模に及ぶものだけが S3
-    if (
-        confirmed
-        and impact in _HARMED
-        and (
-            scope in {"sector_wide", "national"}
-            or (scope in _WIDE and impact != "unauthorized_access")
-        )
-    ):
+    critical_target = _is_critical_target(inp)
+    # 業界・国規模の確認済みの被害は S3 (複数組織への不正アクセスだけは S2 — 正解集では情報の
+    # 漏えい・停止・破壊を伴うか、業界・国規模に及ぶものだけが S3)
+    if confirmed and impact in _HARMED and scope in {"sector_wide", "national"}:
         return "S3", "confirmed_wide_harm"
-    if actor == "state" and target in _CRITICAL_TARGETS:
+    # P2 (.12): 提供者・委託先の侵害は、影響を受けた組織の数が本文にあるときだけ S3
+    is_provider = scope == "multi_org_or_provider"
+    if (
+        is_provider
+        and impact in _HARMED
+        and conf in {"confirmed", "possible"}
+        and inp.affected_org_count >= PROVIDER_ORG_MIN
+    ):
+        return "S3", "provider_org_count"
+    if actor == "state" and critical_target:
         return "S3", "state_on_critical"
-    if confirmed and impact in {"disruption", "destructive"} and target in _CRITICAL_TARGETS:
+    if confirmed and impact in {"disruption", "destructive"} and critical_target:
         return "S3", "critical_disruption"
-    # s23 (b): 確認済みの業務停止・破壊が大規模組織に及ぶ (NCSC Category の上から 3 番目
-    # "Significant" に相当)。重要インフラに限らず、被害組織の規模だけで判断する (``.9``)
-    if confirmed and impact in {"disruption", "destructive"} and ax.get("victim_size") == "large":
-        return "S3", "large_org_disruption"
-    if ax.get("exploitation") == "exploited_in_wild" and target in _PRODUCT_TARGETS:
+    # P1 (.12): 被害組織の規模だけでは S3 にしない (大規模な単一の民間事業者の停止・侵害は S2)
+    if ax.get("exploitation") == "exploited_in_wild" and ax.get("target") in _PRODUCT_TARGETS:
         return "S3", "exploited_product"
     if impact in _HARMED and ax.get("magnitude") in _LARGE_MAGNITUDE:
         return "S3", "large_magnitude"
@@ -349,6 +389,8 @@ def _incident_severity(ax: Mapping[str, str], loss_usd: float = 0.0) -> tuple[Se
         return "S3", "large_loss"
     # 侵害そのものは確認され、流出が「可能性」の段階のものも単一組織の侵害として S2
     if impact in _HARMED and conf in {"confirmed", "possible"}:
+        if is_provider and confirmed and impact != "unauthorized_access":
+            return "S2", "provider_unquantified"
         return "S2", "harm"
     # 攻撃者の主張だけ (暴露サイトへの掲載など) は、業務停止の報道がなければ参考扱い。
     # ランサムウェアの掲載は暗号化 (destructive) と読まれやすいので、停止の報道だけを S2 にする
@@ -636,6 +678,69 @@ def stated_victim_count(text: str) -> int:
             scale = _EN_COUNT_SCALE.get((m.group(2) or "").lower(), 1.0)
             best = max(best, int(_num(m.group(1)) * scale))
     return best
+
+
+#: 影響を受けた「組織」の単位 (日本語は数字の直後、英語は数字の後ろの名詞)
+_ORG_UNITS_JA = r"(?:組織|機関|団体|施設|法人|事業者|医療機関|病院|企業|社|店舗|拠点)"
+_ORG_COUNT_JA = re.compile(rf"(\d[\d,]*)\s*(万)?\s*{_ORG_UNITS_JA}")
+#: 「医療機関最大 787 件」のように単位が先で、数字の後ろが件・社の形
+_ORG_COUNT_JA_REV = re.compile(
+    r"(?:医療機関|組織|機関|団体|施設|法人|事業者|企業|病院)[^\d。\n]{0,6}(\d[\d,]*)\s*(?:件|社|施設|機関|組織|法人)"
+)
+_ORG_COUNT_EN = re.compile(
+    r"(\d[\d,]*)\s+(?:[a-z-]+\s+){0,2}?(organi[sz]ations|companies|institutions|hospitals|clinics|"
+    r"firms|tenants|clients|customers|businesses|agencies|municipalities)",
+    re.IGNORECASE,
+)
+#: 数が会社の規模・実績の説明のとき (「顧客 1 万社超が利用」) は被害の数ではない
+_ORG_SCALE_CONTEXT = re.compile(r"(?:顧客|導入|利用|取引|契約|加盟|提携)[^\d。\n]{0,4}$")
+_ORG_COUNT_MAX = 100_000  # 桁違い (年・金額の取り違え) を除く
+
+
+def stated_org_count(text: str) -> int:
+    """本文に書かれた「影響を受けた組織の数」の最大値 (書かれていなければ 0、P2 .12)。
+
+    被害の語のある文の、組織・機関・企業などの数だけを数える。顧客数・導入数など会社の規模を
+    示す数 (「顧客 1 万社超」) と、個人の数は被害組織の数ではない。
+    """
+    best = 0
+    cleaned = _RELATED_LINE.sub("", unicodedata.normalize("NFKC", text))
+    for sent in _victim_count_sentences(cleaned):
+        for m in _ORG_COUNT_JA.finditer(sent):
+            if _ORG_SCALE_CONTEXT.search(sent[: m.start()]):
+                continue
+            n = int(_num(m.group(1)) * (1e4 if m.group(2) else 1))
+            if n <= _ORG_COUNT_MAX:
+                best = max(best, n)
+        for m in _ORG_COUNT_JA_REV.finditer(sent):
+            best = max(best, min(int(_num(m.group(1))), _ORG_COUNT_MAX))
+        for m in _ORG_COUNT_EN.finditer(sent):
+            n = int(_num(m.group(1)))
+            if n <= _ORG_COUNT_MAX:
+                best = max(best, n)
+    return best
+
+
+#: 復旧・再開を伝える見出しの語 (P5)
+_RECOVERY_WORDS = re.compile(
+    r"再開|復旧(?:し|済|完了)|平常(?:運転|運用|稼働)|通常(?:稼働|運用)|restor|resum|back online",
+    re.IGNORECASE,
+)
+#: 新しい被害の事実、または復旧がまだ終わっていない・復旧の話ではないことを示す見出しの語
+#: (復旧・再開の語があっても深刻さを残す)
+_NOT_RECOVERY_ONLY_WORDS = re.compile(
+    r"新たに|追加|拡大|判明|特定|明らか|調査結果|確認され|増え|増加|流出|漏えい|漏洩|漏れ|被害|侵害|影響|"
+    r"困難|長期|未定|未だ|いまだ|継続|停止中|分岐|学ぶ|追跡|繰り返し|"
+    r"additional|newly|expanded|more than|leak|exposed|stolen|still|ongoing",
+    re.IGNORECASE,
+)
+
+
+def is_recovery_only(title: str) -> bool:
+    """見出しが復旧・再開だけを伝え、新しい被害の事実を含まないか (P5 .12)。空の見出しは False。"""
+    if not title:
+        return False
+    return bool(_RECOVERY_WORDS.search(title)) and not _NOT_RECOVERY_ONLY_WORDS.search(title)
 
 
 def corrected_axes(axes: Mapping[str, str], victim_count: int) -> dict[str, str]:

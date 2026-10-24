@@ -52,7 +52,7 @@ _CANONICAL_TO_NISC: dict[str, str] = {
 
 # 明確に非 CI の canonical。text にデータ種別 (「クレジットカード情報」等) や CI 語が
 # 言及されても board 対象外 — **被害者の分野 ≠ 漏えいデータの種別** (誤配置の根治)。
-_NON_CI_CANONICALS: frozenset[str] = frozenset(
+NON_CI_CANONICALS: frozenset[str] = frozenset(
     {
         "retail",
         "media",
@@ -310,7 +310,7 @@ def nisc_sector_for(canonical: str | None, title: str, summary: str = "") -> str
     4. キーワード無しは canonical 既定 (許容先内のみ)。
     """
     canon = (canonical or "").strip().lower()
-    if canon in _NON_CI_CANONICALS:
+    if canon in NON_CI_CANONICALS:
         return None
     restricted = canon in _CANONICAL_ALLOWED
     allowed = _CANONICAL_ALLOWED.get(canon, _ALL_NISC)

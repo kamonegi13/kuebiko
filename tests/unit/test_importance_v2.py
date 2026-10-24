@@ -275,11 +275,11 @@ class TestExtraAxesRules:
         # 軸自体が無い記事 (no_axes) は s23 の欄も無いので .8 と同じ no_axes のまま
         assert derive_severity(_inp(axes={})) == (None, "no_axes")
 
-    def test_large_org_confirmed_disruption_is_s3(self) -> None:
-        # .8 なら single_org の確認済み disruption は S2 ("harm")
+    def test_large_org_confirmed_disruption_is_s2_since_v5_p1(self) -> None:
+        # .12 (P1): 大規模な単一の民間事業者の停止・侵害は S2 (.9〜.11 は S3 "large_org_disruption")
         inp = _inp(axes=_axes(impact="disruption", confirmation="confirmed", victim_size="large"))
 
-        assert derive_severity(inp) == ("S3", "large_org_disruption")
+        assert derive_severity(inp) == ("S2", "harm")
 
     @pytest.mark.parametrize("victim_size", ["medium", "small", "unknown", None])
     def test_large_org_rule_requires_large_victim_size(self, victim_size: str | None) -> None:
@@ -808,12 +808,28 @@ _BASIS_CASES: list[tuple[ImportanceInputs, str]] = [
             axes=_axes(
                 confirmation="confirmed",
                 impact="disruption",
-                target="general_org",
-                actor="criminal",
-                victim_size="large",
+                scope="multi_org_or_provider",
             )
         ),
-        "large_org_disruption",
+        "provider_unquantified",
+    ),
+    (
+        _inp(
+            axes=_axes(
+                confirmation="confirmed",
+                impact="disruption",
+                scope="multi_org_or_provider",
+            ),
+            affected_org_count=300,
+        ),
+        "provider_org_count",
+    ),
+    (
+        _inp(
+            axes=_axes(confirmation="confirmed", impact="disruption"),
+            title="システムの運用を再開",
+        ),
+        "recovery_only",
     ),
     (
         _inp(axes=_axes(exploitation="exploited_in_wild", target="enterprise_product")),
