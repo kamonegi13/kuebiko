@@ -43,3 +43,30 @@ def test_pair_features_defaults_to_other_kind() -> None:
     got = dict(zip(FEATURE_NAMES, pair_features(side, side), strict=True))
     assert got["kind_same"] == 1.0  # other == other
     assert got["kind_advisory_vs_incident"] == 0.0
+
+
+def test_derivative_is_in_vocabulary_but_not_in_classifier_prompt() -> None:
+    """派生 (2026-10-24) は語彙と表示だけ。分類の LLM のプロンプトは F4 まで変えない。"""
+    from src.eventnews.event_kind import (
+        ACTION_KINDS,
+        ALL_KINDS,
+        DERIVATIVE_KIND,
+        KIND_LABELS_JA,
+        KINDS,
+        SYSTEM,
+    )
+
+    assert DERIVATIVE_KIND in ALL_KINDS and DERIVATIVE_KIND in ACTION_KINDS
+    assert DERIVATIVE_KIND not in KINDS
+    assert DERIVATIVE_KIND not in SYSTEM
+    assert set(ALL_KINDS) <= set(KIND_LABELS_JA)
+
+
+def test_focus_kind_of_maps_derivative_aliases_and_unknowns() -> None:
+    from src.eventnews.event_kind import focus_kind_of
+
+    assert focus_kind_of("Enforcement") == "derivative"
+    assert focus_kind_of("行政指導") == "derivative"
+    assert focus_kind_of("breach") == "breach"
+    assert focus_kind_of("") == "other"
+    assert focus_kind_of("mystery") == "other"
