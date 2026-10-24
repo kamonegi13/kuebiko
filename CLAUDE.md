@@ -132,7 +132,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 > DB (config_store, key=model_tiers)**、fail-safe は `BUILTIN_MODEL_TIERS`。
 > 割当は UI「設定 → モデル」タブから行う (2026-09-04 に本節の記述を実装へ同期)。
 
-- **現在の割当 (2026-10-24、DB の model_tiers で確認。SSoT は常に DB)**: fast=`kuebiko-sft:s23i` / narrative=`kuebiko-sft:n19` / reasoning=`claudecode:claude-sonnet-5` / dialog=`claudecode:haiku` / embedding=`snowflake-arctic-embed2`。
+- **現在の割当 (2026-10-24、DB の model_tiers で確認。SSoT は常に DB)**: fast=`kuebiko-sft:s23i` / narrative=`kuebiko-sft:n19` / reasoning=`kuebiko-sft:s23i` (10-24 に外部の `claudecode:claude-sonnet-5` から変更 — 所属の 2 step は step 上書きで既に s23i だった。上書きを外したときに外部へ流れないよう揃えた。戻すなら版 40) / dialog=`claudecode:haiku` / embedding=`snowflake-arctic-embed2`。
   step 上書き: 深掘り・状況総括・事象ニュース・Spotlight=`kuebiko-sft:n19`、synthesis_analysis・synthesis_detect=`kuebiko-sft:s23i`、翻訳・MITRE 同期の和訳・triage_geo_rescue=`kuebiko-sft:26b`、assign_evidence_judge・org_identity_judge=`gemma4:26b`。以下の「現用」は設計時の記述で、実割当は上記
 - **fast ティア (per-article 要約・翻訳 / triage / 分類系)**: 設計時の想定は Gemma 4 26B (MoE, active 4B)
   - daily-briefing で 1 article = 1 LLM 呼出を大量実行するため**速度重視**。26B の think=False で 5-15 秒/件
