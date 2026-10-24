@@ -51,9 +51,9 @@ MAX_CONSECUTIVE_FAILURES = 3
 
 _SQL = """
 SELECT article_id, title, summary, body, published_at, category, article_type,
-       victim_country_iso FROM (
+       victim_country_iso, victim_sector_canonical FROM (
     SELECT a.article_id, a.title, a.summary, a.body, a.published_at, a.category,
-           a.article_type, a.victim_country_iso,
+           a.article_type, a.victim_country_iso, a.victim_sector_canonical,
            ROW_NUMBER() OVER (PARTITION BY a.article_id ORDER BY a.created_at DESC) AS rn
     FROM articles a
     WHERE a.status = 'posted' AND a.created_at >= ?
@@ -115,6 +115,7 @@ def _materials(repo: Any, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any
             title=str(r["title"] or ""),
             event_kind=kind,
             summary=str(r["summary"] or ""),
+            victim_sector=str(r.get("victim_sector_canonical") or ""),
         )
         sev, basis = derive_severity(inp)
         meta = ArticleMeta(

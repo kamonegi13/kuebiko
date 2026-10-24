@@ -11,6 +11,10 @@ data/eval/c2d_involved_countries_v1.jsonl)。付けすぎが主因で、
 2. 並びの先頭 ``KEEP_LEADING`` 件は残す (LLM は主要な国を先に挙げる。先頭 3 件の適合率は 88.6%)。
 3. 4 件目以降は、本文+要約での言及が ``MIN_MENTIONS`` 回以上ある国だけ残す。
 4. 日本 (JP) は 2・3 の対象外 (見逃しの代償が大きいため回収率を優先)。ただし 1 は適用する。
+5. 例外 (2026-10-24、``INVOLVED_COUNTRY_CUE_EXCEPTION``): 3 で落ちる国でも、その国の言及と
+   同じ文に参加・署名・支援の語 (共同声明の署名国・合同作戦の参加国) があれば残す。
+   語は狭い一覧 (``_PARTICIPATION_CUE``)。広い一覧 (support・partner 等) は誤りが増え不採用。
+   正解集での測定は data/eval の報告 (C3_icg_cue_exception.md) と CLAUDE.md §7 を参照。
 
 正解集 150 件での値 (全件・調整に使った): 適合率 69.1% → 87.0%、回収率 94.2% → 81.7%。
 半分に分けた検証 (選ぶ側/確かめる側を入れ替え 6 通り、確かめ側):
@@ -23,11 +27,14 @@ data/eval/c2d_involved_countries_v1.jsonl)。付けすぎが主因で、
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Sequence
 
-from src.cti.nation_gazetteer import country_mention_counts
+from src.cti.nation_gazetteer import country_mention_positions
 
 GATE_ENV = "INVOLVED_COUNTRY_GATE"
+#: 規則 5 (参加・署名・支援の語の例外)。``0`` で無効 (既定 on)
+CUE_EXCEPTION_ENV = "INVOLVED_COUNTRY_CUE_EXCEPTION"
 MODE_ON = "on"
 MODE_OFF = "off"
 MODE_SHADOW = "shadow"
@@ -42,6 +49,29 @@ KEEP_LEADING = 3
 MIN_MENTIONS = 3
 #: 日本は回収率優先 (言及の薄さでは落とさない)
 _EXEMPT_ISO = "JP"
+
+
+_PARTICIPATION_CUE = re.compile(
+    r"\b(?:sign(?:ed|ator(?:y|ies)?)|co-?sign\w*|joint statement|endors\w+|participat\w+"
+    r"|joined|joins|co-?sponsor\w*)\b|署名|共同声明|参加|賛同",
+    re.IGNORECASE,
+)
+_SENTENCE_BREAKS = "。.!?\n"
+
+
+def cue_exception_enabled() -> bool:
+    """``INVOLVED_COUNTRY_CUE_EXCEPTION`` が ``0`` / ``off`` でなければ有効 (既定 on)。"""
+    return os.environ.get(CUE_EXCEPTION_ENV, "1").strip().lower() not in ("0", "off")
+
+
+def _sentence_at(text: str, position: int) -> str:
+    start = max(text.rfind(c, 0, position) for c in _SENTENCE_BREAKS)
+    ends = [i for i in (text.find(c, position) for c in _SENTENCE_BREAKS) if i >= 0]
+    return text[start + 1 : min(ends) if ends else len(text)]
+
+
+def _has_participation_cue(text: str, positions: frozenset[int]) -> bool:
+    return any(_PARTICIPATION_CUE.search(_sentence_at(text, p)) for p in positions)
 
 
 def gate_mode() -> str:
@@ -65,16 +95,24 @@ def filter_involved_countries(
     *,
     min_mentions: int = MIN_MENTIONS,
     keep_leading: int = KEEP_LEADING,
+    cue_exception: bool = False,
 ) -> list[str]:
     """関与国 (ISO、LLM の並び順) から付けすぎを落とした新しい list を返す (入力は変えない)。
 
-    ``text`` は本文+要約。モード (``gate_mode``) は見ない — 呼び出し側が判断する。
+    ``text`` は本文+要約。モード (``gate_mode``) と ``cue_exception`` の既定は
+    呼び出し側が決める (本番は ``cue_exception_enabled()``)。
     """
     if category in CYBER_CATEGORIES:
         return []
-    counts = country_mention_counts(text)
-    return [
-        iso
-        for index, iso in enumerate(isos)
-        if index < keep_leading or iso == _EXEMPT_ISO or counts.get(iso, 0) >= min_mentions
-    ]
+    norm_text, positions = country_mention_positions(text)
+    kept: list[str] = []
+    for index, iso in enumerate(isos):
+        mentions = positions.get(iso, frozenset())
+        if (
+            index < keep_leading
+            or iso == _EXEMPT_ISO
+            or len(mentions) >= min_mentions
+            or (cue_exception and _has_participation_cue(norm_text, mentions))
+        ):
+            kept.append(iso)
+    return kept

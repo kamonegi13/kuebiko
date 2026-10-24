@@ -916,6 +916,7 @@ def _build_briefing(
     from src.cti.involved_country_gate import (
         MODE_OFF,
         MODE_ON,
+        cue_exception_enabled,
         filter_involved_countries,
         gate_mode,
     )
@@ -1005,6 +1006,7 @@ def _build_briefing(
                 _isos,
                 summary.category,
                 f"{article.title or ''}\n{body_text}\n{summary.summary or ''}",
+                cue_exception=cue_exception_enabled(),
             )
             if _kept != _isos:
                 _log.info(

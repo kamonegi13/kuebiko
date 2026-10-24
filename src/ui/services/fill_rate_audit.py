@@ -127,7 +127,7 @@ METRICS: tuple[FillMetric, ...] = (
         None,
     ),
     FillMetric(
-        # 消費者は importance_v2.derive_severity の large_org_disruption 規則 (``.9``)
+        # 旧消費者 large_org_disruption (.9) は .12 (P1) で撤去済み。消費者の再設計が宿題
         "axes_victim_size",
         "被害組織の規模欄 (s23)",
         "EXISTS (SELECT 1 FROM article_severity_axes s WHERE s.article_id = a.article_id"

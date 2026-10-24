@@ -181,6 +181,7 @@ def build_importance_v2_inline(
         stored_max_cvss=nvd_max_cvss(list(cves)),
         title=title,
         summary=summary_text,
+        victim_sector=str(msg.metadata.get("victim_sector_canonical") or ""),
     )
     return derive(inputs)
 
