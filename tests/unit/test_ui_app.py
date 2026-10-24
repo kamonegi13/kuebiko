@@ -1097,6 +1097,87 @@ class TestAnthropicKeyEndpoint:
         assert cleared.json()["external_enabled"] is False
 
 
+class TestModelTiersResolvedSteps:
+    """GET /model-tiers の処理 (step) ごとの解決済みモデル + 版情報 (表示専用画面の根拠)。"""
+
+    def _save(self, client: TestClient, extra: dict[str, str]) -> None:
+        client.post("/api/v1/model-tiers/anthropic-key", json={"api_key": "sk-ant-x-9999"})
+        resp = client.post(
+            "/api/v1/model-tiers",
+            json={
+                "tiers": {
+                    "reasoning": "gemma4:31b",
+                    "narrative": "gemma4:31b",
+                    "fast": "gemma4:26b",
+                    "dialog": "gemma4:26b",
+                    "embedding": "",
+                    **extra,
+                }
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_steps_resolve_override_inheritance_and_tier(self, client: TestClient) -> None:
+        # Arrange: article_summary だけ上書き。ioc_llm_verify はそれを継承する
+        self._save(client, {"step:article_summary": "kuebiko-sft:26b"})
+
+        # Act
+        data = client.get("/api/v1/model-tiers").json()
+        rows = {r["step"]: r for r in data["steps"]}
+
+        # Assert
+        summary = rows["article_summary"]
+        assert summary["model"] == "kuebiko-sft:26b"
+        assert summary["source"] == "override"
+        assert summary["tier"] == "fast"
+        assert summary["tier_model"] == "gemma4:26b"
+        assert summary["differs_from_tier"] is True
+        inherited = rows["ioc_llm_verify"]
+        assert inherited["model"] == "kuebiko-sft:26b"
+        assert inherited["source"] == "inherited"
+        plain = rows["triage"]
+        assert plain["source"] == "tier"
+        assert plain["differs_from_tier"] is False
+        assert plain["model"] == plain["tier_model"]
+
+    def test_external_models_are_marked(self, client: TestClient) -> None:
+        self._save(client, {"step:event_news": "anthropic:claude-sonnet-4-6"})
+        rows = {r["step"]: r for r in client.get("/api/v1/model-tiers").json()["steps"]}
+        assert rows["event_news"]["is_external"] is True
+        assert rows["triage"]["is_external"] is False
+
+    def test_config_version_and_updated_at(self, client: TestClient) -> None:
+        self._save(client, {})
+        data = client.get("/api/v1/model-tiers").json()
+        assert isinstance(data["config_version"], int)
+        assert data["config_updated_at"]
+
+
+def test_model_tiers_revert_to_previous_version(client: TestClient) -> None:
+    """緊急の戻し: config-history (key=model_tiers) で 1 つ前の版へ戻せる。"""
+    from src.storage import config_store
+    from src.tools.model_tiers import Tier, resolve_tier_model
+
+    base = {
+        "reasoning": "gemma4:31b",
+        "fast": "gemma4:26b",
+        "dialog": "gemma4:26b",
+        "embedding": "",
+    }
+    client.post("/api/v1/model-tiers", json={"tiers": base})
+    client.post("/api/v1/model-tiers", json={"tiers": {**base, "fast": "gemma4:31b"}})
+    assert resolve_tier_model(Tier.FAST) == "gemma4:31b"
+    current = client.get("/api/v1/config-history/model_tiers").json()["current_version"]
+
+    resp = client.post("/api/v1/config-history/model_tiers/revert", json={"version": current - 1})
+
+    assert resp.status_code == 200
+    assert resolve_tier_model(Tier.FAST) == "gemma4:26b"
+    assert config_store.get_config("model_tiers") == config_store.get_config_version(
+        "model_tiers", current - 1
+    )
+
+
 def test_assistant_chat_rejects_forbidden_model_override(client: TestClient) -> None:
     """会話単位 model override も denylist を通る (LLM 呼出前に 400)。"""
     resp = client.post(

@@ -8,6 +8,10 @@ POST /api/v1/model-tiers   検証して DB (config_store) に版保存 + キャ�
 (粒度過多・誤設定の温床)。dropdown は Ollama `/api/tags` から動的取得し、中華系は
 whitelist で除外する (§4 の3層防御の上流)。保存時も ``validate_model_tiers`` が中華系を弾く。
 write は READ_ONLY middleware (app.py) が 403 で block するため個別ガード不要。
+
+2026-10-24: 画面は表示専用になった。GET は処理 (step) ごとの解決済みモデル (``steps``) と
+版情報を返す。POST (割当の変更) は残すが遠隔 (Tier1) からは使えない
+(``REMOTE_WRITE_ALLOWLIST`` から外した)。緊急の戻しは config-history の revert。
 """
 
 from __future__ import annotations
@@ -185,6 +189,63 @@ def build_external_choices(
     return anthropic, claude_code
 
 
+def build_step_rows() -> list[dict[str, Any]]:
+    """処理 (step) ごとの解決済みモデル。step 上書き → 継承 → ティア割当の順で解決した実値。
+
+    ``source``: ``override`` (自身の上書き) / ``inherited`` (STEP_INHERITS の借り元の上書き) /
+    ``tier`` (ティア割当そのまま)。``differs_from_tier`` は実モデルがティア割当と食い違うか。
+    """
+    from src.tools.model_tiers import (
+        STEP_INHERITS,
+        STEP_REGISTRY,
+        is_external_model,
+        load_step_overrides,
+        resolve_step_model,
+        resolve_tier_model,
+    )
+
+    overrides = load_step_overrides()
+    rows: list[dict[str, Any]] = []
+    for step, spec in STEP_REGISTRY.items():
+        model = resolve_step_model(step)
+        tier_model = resolve_tier_model(spec.tier)
+        parent = STEP_INHERITS.get(step)
+        if step.value in overrides:
+            source = "override"
+        elif parent is not None and parent.value in overrides:
+            source = "inherited"
+        else:
+            source = "tier"
+        rows.append(
+            {
+                "step": step.value,
+                "tier": spec.tier.value,
+                "model": model,
+                "tier_model": tier_model,
+                "source": source,
+                "is_external": is_external_model(model),
+                "differs_from_tier": model != tier_model,
+                "inherits_from": parent.value if parent is not None else None,
+            }
+        )
+    return rows
+
+
+def _config_version_info() -> tuple[int | None, str | None]:
+    """model_tiers の現行版番号と最終更新 (config_store の版履歴から)。"""
+    from src.storage.config_store import list_history
+    from src.tools.model_tiers import MODEL_TIERS_CONFIG_KEY
+
+    try:
+        history = list_history(MODEL_TIERS_CONFIG_KEY, limit=1)
+    except Exception as e:  # noqa: BLE001 — 版情報の取得失敗で画面を壊さない
+        _log.warning("model_tiers_version_lookup_failed", error=str(e)[:150])
+        return None, None
+    if not history:
+        return None, None
+    return history[0].version, history[0].created_at
+
+
 @model_tiers_api.get("")
 async def get_model_tiers() -> dict[str, Any]:
     """現在のティア割当 + 選択可能モデル (中華系除外) + ティア説明。"""
@@ -274,8 +335,13 @@ async def get_model_tiers() -> dict[str, Any]:
         )
     from src.tools.model_tiers import load_local_fallbacks, load_step_overrides
 
+    config_version, config_updated_at = _config_version_info()
     return {
         "tiers": tiers,
+        # 処理ごとの解決済みモデル (表示専用画面の本体、2026-10-24)
+        "steps": build_step_rows(),
+        "config_version": config_version,
+        "config_updated_at": config_updated_at,
         # step 単位の上書きと外部主腕のローカル fallback (2026-09-06、2 族 SFT の配備単位)。
         # 保存は POST の tiers に ``step:<step名>`` / ``fallback:<tier名>`` キーを含める
         # (含めない保存は現値を持ち越す)。

@@ -130,7 +130,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 > `ollama_base_url` / `ollama_embed_query_prefix` だけで、`.env` に書いても
 > pydantic-settings の `extra="ignore"` が黙って捨てる。**モデル割当の runtime SSoT は
 > DB (config_store, key=model_tiers)**、fail-safe は `BUILTIN_MODEL_TIERS`。
-> 割当は UI「設定 → モデル」タブから行う (2026-09-04 に本節の記述を実装へ同期)。
+> 割当の変更は評価の後に API で行う (下の「切替手順」。UI「設定 → モデル」タブは 2026-10-24 から表示専用、2026-09-04 に本節の記述を実装へ同期)。
 
 - **現在の割当 (2026-10-24、DB の model_tiers で確認。SSoT は常に DB)**: fast=`kuebiko-sft:s23i` / narrative=`kuebiko-sft:n19` / reasoning=`kuebiko-sft:s23i` (10-24 に外部の `claudecode:claude-sonnet-5` から変更 — 所属の 2 step は step 上書きで既に s23i だった。上書きを外したときに外部へ流れないよう揃えた。戻すなら版 40) / dialog=`claudecode:haiku` / embedding=`snowflake-arctic-embed2`。
   step 上書き: 深掘り・状況総括・事象ニュース・Spotlight=`kuebiko-sft:n19`、synthesis_analysis・synthesis_detect=`kuebiko-sft:s23i`、翻訳・MITRE 同期の和訳・triage_geo_rescue=`kuebiko-sft:26b`、assign_evidence_judge・org_identity_judge=`gemma4:26b`。以下の「現用」は設計時の記述で、実割当は上記
@@ -153,16 +153,33 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 
 ### LLM モデルの切替手順
 
+> **2026-10-24: 「設定 → モデル」タブは表示専用になった** (選択のプルダウンと保存ボタンは無い)。
+> 画面は ティアの割当 + **処理 (step) ごとに実際に使われるモデル** (step 上書き・継承を解決した値、
+> 外部モデルの処理と「ティア割当と別のモデルで動く処理」に印) + 現行の版番号と最終更新を出す。
+> 割当の変更は**評価の後に、この手順書どおりローカル (full instance) の API で行う**。
+> `POST /api/v1/model-tiers` は `REMOTE_WRITE_ALLOWLIST` から外してあり、readonly の公開面
+> (Tier1 の遠隔 write を含む) からは 403。`GET /api/v1/model-tiers` は運用系 read で匿名公開しない。
+> 接続先 (Ollama の URL・API キー・Claude Code の認証) の編集は従来どおり画面から行える。
+
 1. `ollama pull <new-model>` で新モデルをローカルに pull
 2. `ollama list` で取得を確認
-3. **Web UI「設定 → モデル」タブ**でティア (fast / narrative / reasoning / dialog) に割り当てる。
+3. **評価** (使い捨てコンテナ / 本番を止めるか空き時間。本番コンテナの中で回さない — §7)
+4. 評価に合格したら、割当を **API で**変更する (ローカルから):
+   `curl -s http://127.0.0.1:8001/api/v1/model-tiers` で現値 (`tiers` / `step_overrides`) を読み、
+   `POST /api/v1/model-tiers` に `{"tiers": {...}}` を送る (ティアは `fast` / `narrative` / `reasoning` /
+   `dialog` / `embedding`、処理別の上書きは `step:<step名>` キー、外部主腕のローカル受け皿は
+   `fallback:<tier名>`。**含めない族は現値を持ち越す**。禁止 denylist は保存時にも検証される)。
+   保存は DB (config_store, key=model_tiers) に版保存され、次回の実行から反映。
    `.env` にモデル名を書いても効かない (上の警告を参照)
-4. CLAUDE.md §2 の記述を新モデル名に同期
-5. `uv run pytest tests/unit/test_llm_client.py` でホワイトリスト検証 (中華系排除) 通過確認
-6. **Web UI の即時実行で 1 件 dry-run** し品質を目視確認 — 特に per-article main model 変更時は 1 件あたりの応答時間も計測 (40s 超なら daily-briefing が timeout する)
-7. 必要に応じて旧モデルを `ollama rm <old-model>` で削除
+5. **緊急の戻し**: 画面の「版履歴 (緊急の戻し)」リンク (= 設定 → 履歴・監査の key=model_tiers) から
+   1 つ前の版へ戻す。API なら `POST /api/v1/config-history/model_tiers/revert` に `{"version": <戻し先>}`。
+   戻しは新しい版として残る (履歴は失われない)。この経路は遠隔 (Access 認証済み) からも使える
+6. CLAUDE.md §2 の記述を新モデル名に同期
+7. `uv run pytest tests/unit/test_llm_client.py` でホワイトリスト検証 (中華系排除) 通過確認
+8. **Web UI の即時実行で 1 件 dry-run** し品質を目視確認 — 特に per-article main model 変更時は 1 件あたりの応答時間も計測 (40s 超なら daily-briefing が timeout する)
+9. 必要に応じて旧モデルを `ollama rm <old-model>` で削除
 
-**禁止事項**: コード内 (`src/tools/llm_client.py` など) のデフォルトモデル名を直接書き換えない。`.env` または Web UI で上書きすること。
+**禁止事項**: コード内 (`src/tools/llm_client.py` など) のデフォルトモデル名を直接書き換えない。上記 API (DB の版保存) で割り当てること。
 
 ---
 
@@ -233,9 +250,9 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
   - 必要なら ID とハッシュのみ
 - [ ] **外部 LLM は利用者の明示割当時のみ (2026-07-18 改訂)**
   - 既定は **ローカル LLM** (BUILTIN_MODEL_TIERS)。外部 LLM (Anthropic 等) は、利用者が
-    API キーを設定し **かつ** UI「モデル」タブでティアに `anthropic:<model>` を
-    明示割当した場合のみ、そのティアの処理に使われる (ツールが勝手に外部送信しない)
-  - キーの保存先は **.env** (UI「設定 → モデル」から設定/削除可、即時反映・再起動不要)。
+    API キーを設定し **かつ** 利用者が (評価の後に、ローカルの API で。§2 の切替手順) ティアまたは
+    処理に `anthropic:<model>` / `claudecode:<model>` を明示割当した場合のみ、そのティアの処理に使われる (ツールが勝手に外部送信しない)
+  - キーの保存先は **.env** (UI「設定 → モデル」の接続先パネルから設定/削除可、即時反映・再起動不要。接続先の編集は表示専用化の対象外)。
     **DB (config_store) には置かない** — 版履歴 + 日次 pg_dump backup に秘密が残留するため
   - どの LLM を使うかは**利用者に委ねる** — ローカルを捨てる判断ではない。埋込ティアは
     ローカルのみ (外部不可、validate_model_tiers が拒否)
@@ -352,7 +369,7 @@ kuebiko/
 - **Phase 3a**: 同一 URL の再投稿が起きない (UTM 等の揺らぎを正規化して SHA-256 で判定)
 - **Phase 3b**:
   - 埋込モデルを設定 (先に `ollama pull`)。当時は `.env` の `OLLAMA_EMBED_MODEL`、
-    **現在は UI「設定 → モデル」の embedding ティア** (`resolve_embedding_model`)
+    **現在は model_tiers の embedding ティア (API で割当、画面は表示のみ)** (`resolve_embedding_model`)
   - 中国系 embedding モデル (qwen-, bge-, m3e 等) は CLAUDE.md §4 と同じホワイトリストで起動段階で弾く
   - 同一インシデントを扱う英語記事と日本語記事のコサイン類似度が threshold (default 0.88) 以上で重複扱い
   - embedding は SQLite に float32 BLOB で保存、numpy で全件コサイン (個人運用規模では十分高速)
@@ -447,9 +464,9 @@ kuebiko/
   | 深掘りの選定 20→40 (要約の総量は固定) | `deep_dive_selector.DEFAULT_MAX_SELECT` |
   | チェーンの段の timeout で subprocess も止める | (戻さない — 並走の防止) |
   | 事象どうしの関係を画面に出す: 同じ出来事の関連 = 分類器 (`config/models/relation_model.json`、盲検で推定精度 0.85)・同じアクター = 信頼できる主題の共有 (精度 0.88、1 事象 5 件まで)。同一キャンペーン・共通の供給元は出さない | `relations.ENABLED_TYPES` を空に / モデルを消すと同じアクターだけ |
-  | (09-29) fast ティア・ACH・深刻度の軸を s17 → **s21** (クラウド学習、int8 配備 27GB。要約の盲検 64:21・PIR の誤該当 48→19)。detect ML も s21 の軸で学習し直した版へ | UI「設定 → モデル」で前の版に戻す + `config/models/detect_model.json` を `data/model_backups/detect_model.json.bak_s17` から戻す |
-  | (09-29) narrative ティア・事象ニュース・Spotlight・状況総括・深掘りを n17m30 / n17c → **n19** (n 系統合、クラウド学習 int8。事象 16:2・Spotlight 22:0・状況総括 14:0)、detect の LLM 段を n17c → s21 (開設すべき 9→18)。常駐 2 本 (s21 + n19)。深掘りは未学習のため n19 に接頭辞を付けない (`task_prefix.UNTRAINED_STEPS`) | UI「設定 → モデル」で前の版に戻す (n17m30 / n17c はディスクに保全) |
-  | (10-02) 翻訳 (`article_translate`) と MITRE 同期の和訳 (`actor_sync`) を s21 → **`kuebiko-sft:26b`** (⚠ 素の 26B ではなく 09-04 の最初期の SFT 版。素の 26B は `gemma4:26b`、10-15 確認)。s21/n19 は未学習の自由文で JSON 形に崩れる (翻訳 637 件・PIR 別の要点が全件崩れていた)。壊れた訳は `body_translator.broken_translation_reason` が保存させない | UI「設定 → モデル」の step 上書きを外す |
+  | (09-29) fast ティア・ACH・深刻度の軸を s17 → **s21** (クラウド学習、int8 配備 27GB。要約の盲検 64:21・PIR の誤該当 48→19)。detect ML も s21 の軸で学習し直した版へ | 設定の版履歴 (key=model_tiers) で前の版に戻す + `config/models/detect_model.json` を `data/model_backups/detect_model.json.bak_s17` から戻す |
+  | (09-29) narrative ティア・事象ニュース・Spotlight・状況総括・深掘りを n17m30 / n17c → **n19** (n 系統合、クラウド学習 int8。事象 16:2・Spotlight 22:0・状況総括 14:0)、detect の LLM 段を n17c → s21 (開設すべき 9→18)。常駐 2 本 (s21 + n19)。深掘りは未学習のため n19 に接頭辞を付けない (`task_prefix.UNTRAINED_STEPS`) | 設定の版履歴 (key=model_tiers) で前の版に戻す (n17m30 / n17c はディスクに保全) |
+  | (10-02) 翻訳 (`article_translate`) と MITRE 同期の和訳 (`actor_sync`) を s21 → **`kuebiko-sft:26b`** (⚠ 素の 26B ではなく 09-04 の最初期の SFT 版。素の 26B は `gemma4:26b`、10-15 確認)。s21/n19 は未学習の自由文で JSON 形に崩れる (翻訳 637 件・PIR 別の要点が全件崩れていた)。壊れた訳は `body_translator.broken_translation_reason` が保存させない | API (§2 の切替手順) で step 上書きを外す (or 版履歴で戻す) |
   | (10-02) 投稿直前の重複判定に当たった記事を**分析に残す** (status='posted' / posted_channel=NULL / `duplicate_of`=一致先の根)。Discord へは流さない。規則の重複判定は新事実を見ず、続報が台帳・PIR・総括から消えていた | `DEDUP_KEEP_FOR_ANALYSIS=0` |
   | (10-02) triage の落選を理由つきで `triage_rejections` に記録 (180 日)。購読ソースの媒体詳細で件数と一覧 | (記録のみ — 戻す必要なし) |
   | (10-02) まとめ記事 (event_kind=roundup) を群化・統合・投稿直前の重複判定に参加させない。毎時の群化は候補の全件に種別を付ける (1 回 120 件まで、残りは持ち越し) | `models.ROUNDUP_KIND` の判定を外す (コード) |
@@ -460,7 +477,7 @@ kuebiko/
   | (10-10) M3b 段1: 配信の判断の時点で深刻度の軸を inline で取り (Step.SEVERITY_AXES、毎時の段と同じ client)、新しいルール (`cti/routing_v2.M3B_RULES`: alert=S3∧関連性 / vuln=S3∧悪用の根拠∧関連性なし / japan_watch / watch) の配信先を `routing_v2_shadow` に**記録だけ**する。本番の配信は v12 のまま。`GET /api/v1/routing-v2-shadow/summary` で新旧を比べる | `ROUTING_V2_INLINE_AXES=0` (inline の LLM 呼び出しだけ止まる) |
   | (10-10) 被害組織名の無い非インシデント記事 (advisory/press/research/opinion/tutorial) は被害国を付けない (`cti/victim_country_gate`)。監査 140 件で発火 30 件中 27 件が誤り (発行元の国・被害組織の無い記事)。直近 90 日の既存 2,319 行も遡及で空にした | `VICTIM_COUNTRY_GATE=0` / 既存行は `_backup_victim_country_gate_20261010_072036` から戻す |
   | (10-10) triage の PIR 駆動プロンプトに境界の型 A〜I の決まりを追加 (v4 境界除く 89.0→94.5%、i58) | 画面で triage_rubric を前の版に戻す (or boundary_rules block を空文字にして保存) |
-  | (10-12) 被害組織名の**別名** (日本語 ⇔ 英語・略称・旧社名・親子会社) を logprob 判定 (gemma4:26b の 2 問の AND、`eventnews/org_identity.py`) で畳み、群化の `blocked_by_different_victims` と共有 entity に効かせる。**10-22 利用者判断で保留し shadow (記録のみ)。compose の既定も shadow に揃え済み (10-22 の行)、本番コンテナも shadow (10-24 確認)**。統合の適合率が目標未達のため、結合を増やすこの変更は保留する。有効にするなら `.env` の `EVENTNEWS_ORG_IDENTITY=shadow` を外し compose 既定も 1 に戻す + `EVENTNEWS_ORG_NORM=1` + UI「モデル」で `step:org_identity_judge`=`gemma4:26b` (SFT のままだと判定せず何も畳まない)。`shadow` は判定の記録のみ。確認用 98 組で誤同一視 0/62・回収 89%、replay 30 日で alert 重複の回収 22→25/52・新しい辺の適合 36/38 (暫定の正解は Sonnet、Opus 確認待ち) | `EVENTNEWS_ORG_IDENTITY=0` |
+  | (10-12) 被害組織名の**別名** (日本語 ⇔ 英語・略称・旧社名・親子会社) を logprob 判定 (gemma4:26b の 2 問の AND、`eventnews/org_identity.py`) で畳み、群化の `blocked_by_different_victims` と共有 entity に効かせる。**10-22 利用者判断で保留し shadow (記録のみ)。compose の既定も shadow に揃え済み (10-22 の行)、本番コンテナも shadow (10-24 確認)**。統合の適合率が目標未達のため、結合を増やすこの変更は保留する。有効にするなら `.env` の `EVENTNEWS_ORG_IDENTITY=shadow` を外し compose 既定も 1 に戻す + `EVENTNEWS_ORG_NORM=1` + API で `step:org_identity_judge`=`gemma4:26b` を割り当て (SFT のままだと判定せず何も畳まない)。`shadow` は判定の記録のみ。確認用 98 組で誤同一視 0/62・回収 89%、replay 30 日で alert 重複の回収 22→25/52・新しい辺の適合 36/38 (暫定の正解は Sonnet、Opus 確認待ち) | `EVENTNEWS_ORG_IDENTITY=0` |
   | (10-11) alert の候補から当局の摘発・無力化・起訴・押収・逮捕の発表を watch に下げる関門 (語の条件のみ。logprob 判定は全件「はい」に偏り外した、185 件の正解で精度 10/11・回収 10/10) | `ALERT_EXCLUDE_LAW_ENFORCEMENT=0`。**10-12 から本番 on** (compose の既定は 1、本番コンテナも 1。コードの既定は 0) |
   | (10-11) 過去 72 時間の alert と同じ事象 (群化 ML の確率 0.94 以上) の重複 alert を watch に下げる。Opus の正解 65 組で測り直すと誤抑止 12% (規則 contributed_new_facts を正解にした旧測定 1/21 は過小) のため既定 off (コード・compose とも未設定 = 0、本番も off)。正解を週 ~10 組ずつ足して再評価 | `ALERT_DEDUP_EVENT=0` (既定 off) |
   | (10-11) 重複 alert の ML (木) の判断を `alert_dedup_shadow` に記録だけする (配信は不変)。集計は `GET /api/v1/alert-dedup-shadow/summary` (公開面には出さない) | `ALERT_DEDUP_SHADOW=0` |
@@ -575,8 +592,12 @@ kuebiko/
 
 ### 外部 LLM の開放 (採用、2026-07-18)
 - **動機**: 品質向上余地の大きい処理 (synthesis narrative / 分析チャット) で外部 LLM を選べるようにする
-- **原則**: どの LLM を使うかは**利用者がモデルティア画面で選ぶ**。既定はローカル Ollama のまま
-  (ローカルを捨てる判断ではない)。外部はティアに `anthropic:<model>` を明示割当した場合のみ
+- **原則**: どの LLM を使うかは**利用者が選ぶ**。既定はローカル Ollama のまま
+  (ローカルを捨てる判断ではない)。外部はティアに `anthropic:<model>` を明示割当した場合のみ。
+  **2026-10-24 改訂: 割当の操作は UI の選択から API (§2 の切替手順、ローカルのみ) へ移った**。
+  「設定 → モデル」タブは表示専用で、処理ごとの実際のモデル (外部の処理に印) を一覧するだけ。
+  「利用者の明示割当時のみ」の方針は不変 — 割当の入口が変わっただけで、ツールが勝手に外部へ送らない
+  (割当の変更を遠隔から受け付けない分、方針はむしろ堅くなった)
 - **実装**: `src/tools/anthropic_client.py` (LLMClient 抽象の Messages API 実装、httpx 直・SDK 非依存)。
   factory は `model_tiers.build_llm_for` の prefix dispatch。API キーは `.env` の `ANTHROPIC_API_KEY`
 - **不変の制約**: 中華系 denylist はプロバイダ横断で維持 / 埋込ティアはローカルのみ /
@@ -601,7 +622,7 @@ kuebiko/
 - **実行詳細** `/runs/{id}`: live_log を SSE でリアルタイム配信。タブ離脱・再起動でも DB から復元。Last-Event-ID で再接続
 - **プロンプト編集** `/prompts`: `prompts/**/*.j2` の編集。保存前 dry-run 必須、`*.j2.bak` 自動生成、git auto-commit
 - **設定編集** `/config`: タブは**種類で 3 群**に分ける (2026-08-02 整理。同列に並べると「設定・エスケープハッチ・記録」が混ざって見通しが落ちる):
-  **【設定】** 接続 (webhook/IMAP/LLM/モバイル公開 = **外部と繋ぐものだけ**) / モデル (ティア・接続先) /
+  **【設定】** 接続 (webhook/IMAP/LLM/モバイル公開 = **外部と繋ぐものだけ**) / モデル (ティアと処理ごとの実モデルの**表示のみ** + 接続先の編集。割当の変更は API、2026-10-24) /
   プロンプト / システム (LOG_LEVEL・TZ・**ホスト復旧 watchdog** = この端末固有) —
   **【記録】** 履歴・監査 (設定変更の版履歴 + Cloudflare Access のアクセス監査) —
   **【上級】** 設定ファイル (raw YAML。2026-06-10 に「raw 直編集は不適当」と方針決定済のため末尾へ隔離)。

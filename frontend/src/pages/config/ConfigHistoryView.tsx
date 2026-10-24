@@ -10,7 +10,11 @@ import { formatJst } from "../../utils/date";
 // full instance でのみ描画される (server 側 READ_ONLY middleware も二重防御)。
 export function ConfigHistoryView() {
   const qc = useQueryClient();
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // ?key=model_tiers で開いたときはその key を初期選択 (モデル画面の「版履歴」リンク)
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("key");
+  });
   const [viewVersion, setViewVersion] = useState<number | null>(null);
 
   const keysQuery = useQuery({

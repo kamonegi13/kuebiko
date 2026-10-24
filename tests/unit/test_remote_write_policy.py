@@ -32,7 +32,6 @@ from src.ui.read_only_policy import (
         "/api/v1/match-lists",
         "/api/v1/sources/register",
         "/api/v1/sources/bulk",
-        "/api/v1/model-tiers",
         "/api/v1/model-tiers/endpoints",
         "/api/v1/prompts/summarizer/rubric",
         "/api/v1/prompts/pir_spotlight/blocks",
@@ -99,7 +98,7 @@ def test_prefix_match_does_not_leak_into_subpaths() -> None:
     """
     assert is_remote_writable("/api/v1/channels")
     assert not is_remote_writable("/api/v1/channels/alert/webhook")
-    assert is_remote_writable("/api/v1/model-tiers")
+    assert not is_remote_writable("/api/v1/model-tiers")
     assert not is_remote_writable("/api/v1/model-tiers/anthropic-key")
     assert is_remote_writable("/api/v1/prompts/summarizer/rubric")
     assert not is_remote_writable("/api/v1/prompts/save")
@@ -117,3 +116,15 @@ def test_allowlist_has_no_wildcard_first_segment() -> None:
     for template in (*REMOTE_WRITE_ALLOWLIST, *CREDENTIAL_WRITE_PATHS):
         assert template.startswith("/api/v1/"), template
         assert "*" not in template.split("/")[3], f"{template} が第 1 セグメントを開放している"
+
+
+def test_model_tier_assignment_is_local_only() -> None:
+    """モデル割当の変更 (POST /model-tiers) は遠隔から書けない (2026-10-24 利用者承認)。
+
+    割当の変更は評価の後に手順書どおり API で行う。画面は表示のみで、
+    Access セッションが破られても割当を差し替えられない構造に倒す。
+    """
+    assert not is_remote_writable("/api/v1/model-tiers")
+    assert "/api/v1/model-tiers" not in REMOTE_WRITE_ALLOWLIST
+    # 緊急の戻しは設定の版履歴 (config-history) 経由で遠隔からも可能なまま
+    assert is_remote_writable("/api/v1/config-history/model_tiers/revert")

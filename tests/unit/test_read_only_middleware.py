@@ -573,3 +573,10 @@ class TestRemoteWrite:
             access_client.post("/api/v1/match-lists", json={"x": 1}, headers=_auth()).status_code
             == 403
         )
+
+
+def test_model_tiers_get_is_not_public() -> None:
+    """GET /api/v1/model-tiers (処理ごとの解決済みモデル含む) は匿名公開しない。"""
+    from src.ui.read_only_policy import is_public_get
+
+    assert not is_public_get("/api/v1/model-tiers")
