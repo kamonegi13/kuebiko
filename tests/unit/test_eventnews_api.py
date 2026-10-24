@@ -274,3 +274,13 @@ class TestDerivedRelations:
         assert got[0]["confidence"] == 0.91
         assert got[1]["confidence"] is None
         assert got[1]["label"] == "同じアクター"
+
+
+class TestFocusInDetail:
+    def test_detail_returns_focus_payload(self) -> None:
+        """事象の詳細 API に焦点を返す (F0 の消費者、2026-10-24)。"""
+        import inspect
+
+        from src.ui.api.eventnews import get_event_news
+
+        assert '"focus": focus_payload(repo, item_id)' in inspect.getsource(get_event_news)

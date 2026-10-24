@@ -25,6 +25,7 @@ from src.cti.source_basis import classify_source_tier
 from src.eventnews.fidelity import draft_text, entity_gaps
 from src.storage.run_history import RunHistoryRepository
 from src.ui.api.articles_feed import RELATED_ENTITY_TYPE_ORDER
+from src.ui.services.eventnews_focus_job import focus_payload
 
 _log = structlog.get_logger(__name__)
 
@@ -848,5 +849,8 @@ def get_event_news(item_id: str) -> dict[str, Any]:
         "metadata": _metadata_payload(repo, repo.list_event_members(item_id)),
         # 「別事象だが関連」 — 分割の由来リンク (親) と逆引き (子)
         "related": related_payload(repo, record),
+        # 事象の焦点 (錨 + 育った名前 + 行為、2026-10-24 F0)。記録だけで判断には使わない。
+        # 単独記事の事象・記録前は None
+        "focus": focus_payload(repo, item_id),
         "note": GENERATED_NOTE,
     }

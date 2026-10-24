@@ -811,6 +811,19 @@ async def run_weekly_fill_rate_audit() -> None:
             rule_warn_count += int(merge_warn)
         except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
             _log.warning("merge_decision_audit_failed", error=str(e)[:160])
+        # 事象の焦点の被覆 (2026-10-24 F0)。焦点が空の事象が多いと照合 (F1) が効かない
+        try:
+            from src.storage.run_history import RunHistoryRepository
+            from src.ui.services.fill_rate_focus_section import (
+                collect_focus_audit_stats,
+                focus_line,
+            )
+
+            focus_text, focus_warn = focus_line(collect_focus_audit_stats(RunHistoryRepository()))
+            rule_lines.append(focus_text)
+            rule_warn_count += int(focus_warn)
+        except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
+            _log.warning("focus_audit_failed", error=str(e)[:160])
         # アクター単位の汚染 (2026-09-27)。主題判定の平均精度は集中した誤りを隠す
         # (APT37 は主題 26 記事中 17 記事が無人機の記事 = 別名の衝突)
         try:

@@ -180,7 +180,11 @@ async def run_eventnews_hourly() -> dict[str, object]:
     if os.environ.get(_FLAG, "1") == "0":
         _log.info("eventnews_hourly_disabled")
         return {"skipped": "flag_off"}
-    return await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
+    result = await run_eventnews_window(lookback_hours=_CANDIDATE_LOOKBACK_HOURS)
+    # 焦点の記録 (F0)。群化の後に作り直す。記録だけで群化の判断には使わない
+    from src.ui.services.eventnews_focus_job import run_focus_record
+
+    return {**result, "focus": run_focus_record()}
 
 
 #: 毎時の群化で新たに種別を分類する上限 (1 件 1-2 秒。段の上限 25 分の大半は記事の生成)

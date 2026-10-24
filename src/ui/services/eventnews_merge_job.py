@@ -59,6 +59,7 @@ from src.eventnews.state import compute_source_breakdown
 from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventItemRecord
 from src.storage.run_history import RunHistoryRepository
+from src.ui.services.eventnews_focus_job import enrich_decision_rows, run_focus_record
 from src.ui.services.eventnews_hourly_job import (
     _embed_summaries,
     _entity_counts,
@@ -610,6 +611,14 @@ def record_decisions(
         flags=merge_flag_snapshot(),
         run_kind=run_kind,
     )
+
+    def members_of(item_id: str) -> list[MemberArticle]:
+        # 統合前の参加順 (inputs は適用前の状態)。焦点の照合は記録だけで判断には使わない
+        record = inputs.records.get(item_id)
+        ids = record.state.member_ids if record else ()
+        return [inputs.members[a] for a in ids if a in inputs.members]
+
+    rows = enrich_decision_rows(rows, members_of)
     try:
         return repo.record_merge_decisions(rows, decided_at=now)
     except Exception as e:  # noqa: BLE001 — 統合は適用済み。記録の失敗は大きく残して続行
@@ -688,4 +697,5 @@ async def run_eventnews_merge_hourly() -> dict[str, object]:
     )
     # ⚠ 統合数と再生成数を **同じ行に** 出す。桁で食い違っていたら本文なしが溜まっている。
     _log.info("eventnews_merge_summary", **outcome.as_dict())
-    return outcome.as_dict()
+    # 焦点の記録 (F0)。統合の後に作り直す。記録だけで統合の判断には使わない
+    return {**outcome.as_dict(), "focus": run_focus_record()}

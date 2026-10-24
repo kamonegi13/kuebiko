@@ -52,6 +52,7 @@ from src.storage.repo_alert_dedup_shadow import AlertDedupShadowMixin
 from src.storage.repo_articles import ArticlesMixin
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.repo_dedup import DedupMixin
+from src.storage.repo_event_focus import EventFocusMixin
 from src.storage.repo_eventnews import EventNewsMixin
 from src.storage.repo_importance_v2 import ImportanceV2Mixin
 from src.storage.repo_knowledge import KnowledgeMixin
@@ -107,6 +108,7 @@ class RunHistoryRepository(
     TuningLabelsMixin,
     EventNewsMixin,
     MergeDecisionsMixin,
+    EventFocusMixin,
     SummaryEmbeddingMixin,
     SeverityAxesMixin,
     ImportanceV2Mixin,
