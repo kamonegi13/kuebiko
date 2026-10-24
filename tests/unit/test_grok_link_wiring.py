@@ -21,7 +21,13 @@ _PAGE = LinkedPage(
     url="https://t.co/a",
     final_url="https://gov.example/advisory",
     ok=True,
-    text="修正版 7.0.2u4 は 2023 年 11 月 22 日に公開された。",
+    text="ESXi の修正版 7.0.2u4 は 2023 年 11 月 22 日に公開された。",
+)
+_OFF_TOPIC_PAGE = LinkedPage(
+    url="https://t.co/b",
+    final_url="https://corp.example/",
+    ok=True,
+    text="当社は地域の皆さまとともに歩む企業です。採用情報・会社概要・お問い合わせはこちら。" * 5,
 )
 
 
@@ -31,7 +37,7 @@ def _record(urls: list[str]) -> TweetRecord:
         url="https://x.com/t/status/9",
         author_handle="@t",
         posted_at="2026-10-20T03:00:00Z",
-        text="ESXi の脆弱性の修正が出た",
+        text="Patch released for the ESXi guest escape vulnerability",
         engagement=TweetEngagement(like=10, retweet=5),
         matched_theme="B",
         external_urls=urls,
@@ -100,6 +106,30 @@ def test_on_mode_passes_link_text_and_stored_context(monkeypatch: pytest.MonkeyP
     assert "7.0.2u4" in captured["link_text"]
     assert "gov.example" in captured["linked_context"]
     assert "7.0.2u4" not in captured["tweet_body"]  # 投稿の本文は参照先を含まない
+
+
+def test_off_topic_page_is_kept_in_context_but_not_in_summary_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _convert(
+        monkeypatch, _record(["https://t.co/b"]), _FakeFetcher((_OFF_TOPIC_PAGE,)), use_links=True
+    )
+
+    assert captured["link_text"] == ""
+    assert "off_topic" in captured["linked_context"]
+    assert "採用情報" in captured["linked_context"]
+
+
+def test_gate_flag_off_keeps_off_topic_page_in_summary_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GROK_LINK_RELEVANCE_GATE", "0")
+
+    captured = _convert(
+        monkeypatch, _record(["https://t.co/b"]), _FakeFetcher((_OFF_TOPIC_PAGE,)), use_links=True
+    )
+
+    assert "corp.example" in captured["link_text"]
 
 
 def test_shadow_mode_stores_context_but_keeps_summary_input_unchanged(
