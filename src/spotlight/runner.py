@@ -7,7 +7,7 @@ pir_spotlight 表に UPSERT。weekly cron / 手動 trigger 共通 entrypoint。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from src.assessment.context import build_assessment_context
@@ -30,6 +30,40 @@ class SpotlightRunResult:
     skipped_no_matches: list[str] = field(default_factory=list)  # 該当記事不足
     skipped_disabled: list[str] = field(default_factory=list)  # spotlight 無効
     errors: list[str] = field(default_factory=list)  # PIR id + error 詳細
+
+
+_NEVER_GENERATED = datetime.min.replace(tzinfo=UTC)
+
+
+def order_by_staleness(
+    candidates: list[Pir], generated_at_by_pir: dict[str, datetime]
+) -> list[Pir]:
+    """更新が最も古い PIR から先に処理する順へ並べる (新しい list を返す純粋関数)。
+
+    ⚠ 2026-10-24: 全体の上限 (1800 秒) に対し 1 run が 1500〜1800 秒かかるため、固定順だと
+    打ち切りのたびに**末尾の同じ PIR だけ**が更新されず滞留した (実測: 10-23 に 4 件が
+    前日の内容のまま)。古い順なら打ち切られても次の run が取りこぼし分から始まる。
+    未生成は最優先。同順位は元の順 (sorted は安定)。
+    """
+    return sorted(
+        candidates,
+        key=lambda p: generated_at_by_pir.get(p.id, _NEVER_GENERATED),
+    )
+
+
+def _load_generated_at(repo: RunHistoryRepository | None, period_type: str) -> dict[str, datetime]:
+    """PIR ごとの最新生成時刻。取得失敗は固定順への縮退 (空 dict) で run を止めない。"""
+    if repo is None:
+        return {}
+    try:
+        rows = repo.list_all_latest_spotlights(period_type=period_type)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("spotlight_staleness_lookup_failed", error=str(e))
+        return {}
+    return {
+        r.pir_id: r.generated_at if r.generated_at.tzinfo else r.generated_at.replace(tzinfo=UTC)
+        for r in rows
+    }
 
 
 async def run_pir_spotlights(
@@ -65,6 +99,7 @@ async def run_pir_spotlights(
             if not p.spotlight.enabled:
                 continue
         candidates.append(p)
+    candidates = order_by_staleness(candidates, _load_generated_at(repo, period_type))
 
     _log.info(
         "spotlight_run_start",
