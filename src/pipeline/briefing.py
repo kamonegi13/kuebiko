@@ -209,6 +209,10 @@ async def _summarize_and_build(
     # 文字列で渡す。
     prompt = template.render(article=_prompt_article(article), body=llm_body)
     summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
+    # b1. 薄い Grok 投稿の要約が本文に無い数字・矛盾を足していないか (GROK_SUMMARY_GROUNDING)
+    summary = await _ensure_grounded_summary(
+        summary, llm, prompt, article=article, body=llm_body, think=think, body_source=body_source
+    )
     # b2. 統合判断分類器 (2026-07-26 抜本策): 過負荷 summarizer で枯死する判断系
     # (editorial_stance / intent / diamond / event_date / i_infra / article_type /
     # subject_actor) を **1 つの focused 呼び出し**に集約して上書きする。個別 focused 分類器
@@ -330,15 +334,17 @@ async def _summarize_and_build(
     ]
     # LLM の技術は本文で裏付けられるものだけ採る (当て推量の定番技術を落とす、2026-09-27)。
     # 本文の T 番号 (extracted) は明示なのでそのまま合流する
-    from src.cti.ttp_evidence import filter_by_quotes, filter_llm_techniques
+    from src.cti.ttp_evidence import filter_by_quotes, filter_llm_techniques, limit_techniques
     from src.pipeline.summary import SummaryEvidenceOutput
 
     gate_text = f"{article.title}\n{body}"
+    quote_evidence: list[tuple[str, str]] = []
     if isinstance(summary, SummaryEvidenceOutput):
+        quote_evidence = [(e.technique, e.quote) for e in summary.mitre_evidence]
         # 引用つきで学習したモデル: 技術ごとの原文の引用が本文に在るものだけ採る (2026-09-29)
         kept_llm = filter_by_quotes(
             list(summary.mitre_techniques),
-            [(e.technique, e.quote) for e in summary.mitre_evidence],
+            quote_evidence,
             gate_text,
             article_id=article.id,
         )
@@ -346,6 +352,8 @@ async def _summarize_and_build(
         kept_llm = filter_llm_techniques(
             list(summary.mitre_techniques), gate_text, article_id=article.id
         )
+    # 引用の使い回し・実在しない ID・件数の上限 (TTP_LIMIT、2026-10-24)
+    kept_llm = limit_techniques(kept_llm, quote_evidence, gate_text, article_id=article.id)
     merged_techs = merge_techniques(kept_llm, extracted)
     # 本文に登場する既知アクターを検出 (後段で metadata に保持)
     actor_registry = load_actor_aliases()
@@ -787,6 +795,62 @@ async def _summarize_without_runaway(
         return retried
     _log.warning("summary_runaway_repaired", url=url, reasons=still)
     return repair(retried)
+
+
+class UngroundedSummaryError(Exception):
+    """Grok 投稿の要約が本文で裏付けられず、作り直しても直らなかった (LLM 要約を捨てる)。
+
+    Grok の呼び出し側 (grok_convert) は例外を受けて機械変換版 (LLM 要約なし) に落とす。
+    """
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__(",".join(reasons[:5]))
+        self.reasons = reasons
+
+
+def _grounding_reasons(summary: SummaryOutput, article: Article, body: str) -> list[str]:
+    from src.pipeline.summary_grounding import ungrounded_reasons
+
+    published = getattr(article, "published", None)
+    years = (published.year,) if published is not None else ()
+    text = f"{summary.summary}\n{summary.remediation or ''}"
+    return ungrounded_reasons(
+        text, body=body, title=getattr(article, "title", "") or "", exempt_years=years
+    )
+
+
+async def _ensure_grounded_summary(
+    summary: SummaryOutput,
+    llm: LLMClient,
+    prompt: str,
+    *,
+    article: Article,
+    body: str,
+    think: bool,
+    body_source: str,
+) -> SummaryOutput:
+    """Grok 投稿 (``body_source == "grok"``) の要約を本文に照らす (既定 shadow、2026-10-24)。
+
+    on: 違反なら 1 回だけ作り直し、なお違反なら ``UngroundedSummaryError``。
+    shadow: 違反を記録するだけ。off: 何もしない。
+    """
+    from src.pipeline.summary_grounding import gate_mode
+
+    mode = gate_mode()
+    if body_source != "grok" or mode == "off":
+        return summary
+    reasons = _grounding_reasons(summary, article, body)
+    if not reasons:
+        return summary
+    _log.warning("grok_summary_ungrounded", mode=mode, article_id=article.id, reasons=reasons[:8])
+    if mode != "on":
+        return summary
+    retried = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
+    still = _grounding_reasons(retried, article, body)
+    if not still:
+        return retried
+    _log.warning("grok_summary_dropped", article_id=article.id, reasons=still[:8])
+    raise UngroundedSummaryError(still)
 
 
 def _build_briefing(

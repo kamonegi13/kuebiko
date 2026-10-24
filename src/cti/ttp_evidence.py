@@ -14,8 +14,10 @@ docs/research/event_knowledge_graph.md §19)。定番の技術を当て推量で
 
 from __future__ import annotations
 
+import os
 import re
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Collection, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -95,8 +97,6 @@ GATE_ENV = "TTP_EVIDENCE_GATE"
 
 def gate_mode() -> str:
     """``TTP_EVIDENCE_GATE`` (既定 on)。未知の値は on として扱う。"""
-    import os
-
     mode = os.environ.get(GATE_ENV, "on").strip().lower()
     return mode if mode in ("on", "shadow", "off") else "on"
 
@@ -179,3 +179,75 @@ def filter_by_quotes(
 
 #: 引用がこれより短いと一般語に当たりすぎる (例 "RDP" の 1 語で裏付けにしない)
 _MIN_QUOTE_CHARS = 12
+
+#: 件数の歯止めの動作 (on = 適用 / shadow = 記録だけ / off = 無効)
+LIMIT_ENV = "TTP_LIMIT"
+#: 1 記事の LLM 技術の上限 (正常な記事の 99% が収まる。s24c の暴走は 30 件で頭打ち)
+DEFAULT_MAX_TECHNIQUES = 12
+#: 同じ引用を根拠にしてよい技術の数 (使い回しは当て推量の列挙の典型)
+MAX_TECHNIQUES_PER_QUOTE = 2
+
+
+def limit_mode() -> str:
+    """``TTP_LIMIT`` (既定 shadow)。未知の値は shadow として扱う。"""
+    mode = os.environ.get(LIMIT_ENV, "shadow").strip().lower()
+    return mode if mode in ("on", "shadow", "off") else "shadow"
+
+
+def _is_technique_id(value: str) -> bool:
+    return value.startswith("T") and value[1:2].isdigit()
+
+
+def limit_techniques(
+    techniques: list[str],
+    evidence: list[tuple[str, str]],
+    text: str,
+    *,
+    max_items: int = DEFAULT_MAX_TECHNIQUES,
+    mode: str | None = None,
+    catalog: Collection[str] | None = None,
+    patterns: Mapping[str, tuple[re.Pattern[str], ...]] | None = None,
+    names: Mapping[str, str] | None = None,
+    article_id: str = "",
+) -> list[str]:
+    """引用の関門を通った技術に歯止めをかける (新しい一覧、2026-10-24)。
+
+    ``filter_by_quotes`` は引用が本文に在るかしか見ないため、同じ一節を 30 個の技術に使い回しても
+    通る (s24c で TTP 20 件以上が 21 件)。次の順に落とす:
+    1. ATT&CK に実在しない ID (T1589.020 等の連番の捏造)
+    2. 同じ引用を根拠にする 3 つ目以降 (引用の欄が無いときは判定しない)
+    3. ``max_items`` を超える分 (語・名前・ID の裏付けがある技術を先に残す)
+    T 番号でない値 (グループ ID 等) はそのまま通す。
+    """
+    effective = mode if mode is not None else limit_mode()
+    if effective == "off" or not techniques:
+        return list(techniques)
+    valid_ids = {c.upper() for c in catalog} if catalog is not None else set(_technique_names())
+    quotes = {tid.strip().upper(): _norm_quote(q) for tid, q in evidence}
+    kept: list[str] = []
+    per_quote: Counter[str] = Counter()
+    for t in techniques:
+        norm = str(t).strip().upper()
+        if _is_technique_id(norm):
+            if valid_ids and norm not in valid_ids:
+                continue
+            quote = quotes.get(norm, "")
+            if quote:
+                per_quote[quote] += 1
+                if per_quote[quote] > MAX_TECHNIQUES_PER_QUOTE:
+                    continue
+        kept.append(t)
+    if len(kept) > max_items:
+        strong = [
+            t for t in kept if find_ttp_evidence(str(t), text, patterns=patterns, names=names)
+        ]
+        kept = (strong + [t for t in kept if t not in strong])[:max_items]
+    if len(kept) != len(techniques):
+        _log.info(
+            "ttp_limit",
+            mode=effective,
+            article_id=article_id,
+            before=len(techniques),
+            after=len(kept),
+        )
+    return kept if effective == "on" else list(techniques)
