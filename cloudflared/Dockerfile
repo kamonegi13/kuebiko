@@ -6,6 +6,10 @@
 
 FROM alpine:3.20
 
+# 版を固定する (latest だと再ビルドしない限り古い版が残り、更新の有無も分からない)。
+# 2026.10.2 未満は弱い鍵の中間証明書を信頼するため、それ以降が必須 (2026-10 の Cloudflare 告知)。
+ARG CLOUDFLARED_VERSION=2026.10.3
+
 RUN apk add --no-cache curl bash ca-certificates \
  && ARCH=$(uname -m) \
  && case "$ARCH" in \
@@ -13,7 +17,7 @@ RUN apk add --no-cache curl bash ca-certificates \
       aarch64) CF_ARCH=arm64 ;; \
       *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
     esac \
- && curl -fSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CF_ARCH}" \
+ && curl -fSL "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${CF_ARCH}" \
         -o /usr/local/bin/cloudflared \
  && chmod +x /usr/local/bin/cloudflared
 
