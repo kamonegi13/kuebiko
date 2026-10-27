@@ -200,28 +200,80 @@ actors:
   description: 米通信事業者を侵害した中国系諜報グループ
   family: typhoon
   mitre_group: G1045
-  summary: Salt Typhoonは、少なくとも2019年から活動している中華人民共和国（PRC）の国家支援型アクターであり、米国の主要な電気通信事業者およびインターネットサービスプロバイダー（ISP）における数多くのネットワークインフラへの侵害に対して責任を負っています。
+  summary: Salt Typhoonは、少なくとも2019年から活動している中華人民共和国 (PRC) 政府支援の脅威アクターであり、米国の主要な通信事業者およびインターネットサービスプロバイダー
+    (ISP) のネットワークインフラにおける多数の侵害に関与しています。Salt Typhoonは、外部公開されているネットワークエッジデバイスを標的とし、それらを悪用して被害者環境へのアクセスを試みてきました。Salt
+    Typhoonは、OPERATOR PANDA、RedMike、GhostEmperor、UNC5807といった、セキュリティ業界が報告している他の活動グループと類似した活動との関連が公に指摘されています。
   associated_malware:
   - JumbledPath
   references:
   - https://blog.talosintelligence.com/salt-typhoon-analysis/
   - https://home.treasury.gov/news/press-releases/jy2792
-  mitre_summary_sha1: 186e5030abab02b50d5bc86e0d5928b792b6b9b8
+  - https://cloud.google.com/blog/topics/threat-intelligence/m-trends-2026
+  - https://learn.microsoft.com/en-us/unified-secops/microsoft-threat-actor-naming
+  - https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-239a
+  - https://www.crowdstrike.com/en-us/adversaries/operator-panda/
+  - https://www.recordedfuture.com/research/redmike-salt-typhoon-exploits-vulnerable-devices
+  - https://www.sentinelone.com/labs/malicious-apprentice-how-two-hackers-went-from-cisco-academy-to-cisco-cves/
+  mitre_summary_sha1: aa96ecee8db559ba044634c88663d46f974b6f2d
   mitre_ttps:
+  - T1005 Data from Local System
+  - T1016 System Network Configuration Discovery
+  - T1018 Remote System Discovery
+  - T1020.001 Traffic Duplication
+  - T1021.001 Remote Desktop Protocol
   - T1021.004 SSH
+  - T1027.010 Command Obfuscation
   - T1040 Network Sniffing
+  - T1046 Network Service Discovery
   - T1048.003 Exfiltration Over Unencrypted Non-C2 Protocol
+  - T1059.004 Unix Shell
+  - T1059.006 Python
+  - T1059.008 Network Device CLI
+  - T1059.013 Container CLI/API
+  - T1070.003 Clear Command History
+  - T1070.007 Clear Network Connection History and Configurations
+  - T1070.009 Clear Persistence
+  - T1071.001 Web Protocols
+  - T1071.002 File Transfer Protocols
+  - T1072 Software Deployment Tools
+  - T1078 Valid Accounts
+  - T1082 System Information Discovery
+  - T1090 Proxy
+  - T1090.003 Multi-hop Proxy
+  - T1095 Non-Application Layer Protocol
   - T1098.004 SSH Authorized Keys
+  - T1105 Ingress Tool Transfer
+  - T1110.001 Password Guessing
   - T1110.002 Password Cracking
+  - T1132.001 Standard Encoding
   - T1136 Create Account
+  - T1136.001 Local Account
   - T1190 Exploit Public-Facing Application
+  - T1199 Trusted Relationship
+  - T1543.005 Container Service
+  - T1548.003 Sudo and Sudo Caching
+  - T1552.001 Credentials In Files
+  - T1556 Modify Authentication Process
+  - T1569 System Services
+  - T1571 Non-Standard Port
   - T1572 Protocol Tunneling
+  - T1583.003 Virtual Private Server
+  - T1584.008 Network Devices
+  - T1585.001 Social Media Accounts
+  - T1587 Develop Capabilities
   - T1587.001 Malware
   - T1588.002 Tool
+  - T1588.005 Exploits
   - T1590.004 Network Topology
+  - T1595 Active Scanning
+  - T1599 Network Boundary Bridging
+  - T1602.001 SNMP (MIB Dump)
   - T1602.002 Network Device Configuration Dump
+  - T1610 Deploy Container
+  - T1685 Disable or Modify Tools
   - T1685.006 Clear Linux or Mac System Logs
   - T1686 Disable or Modify System Firewall
+  - T1686.002 Network Device Firewall
   kind: group
   sponsor_org: prc_mss
 - id: silk_typhoon
@@ -1230,9 +1282,8 @@ actors:
   sponsor: DPRK RGB
   description: 暗号資産取引所・銀行 SWIFT 標的のサブグループ
   family: lazarus
-  summary: APT38は、金融目的のサイバーオペレーションを専門とする北朝鮮の国家支援型脅威グループであり、Reconnaissance General
-    Bureau（偵察総局）によるものと特定されています。少なくとも2014年から活動しているAPT38は、世界中の少なくとも38カ国において、銀行、金融機関、カジノ、暗号資産取引所、SWIFTシステムのエンドポイント、およびATMを標的としてきました。主なオペレーションには、8,100万ドルを盗み出した2016年のBank
-    of Bangladesh強奪事件や、BancomextおよびBanco de Chileへの攻撃が含まれており、その攻撃の一部は破壊的なものでした。北朝鮮のグループ定義には大きな重複があることが知られており、一部のセキュリティリサーチャーは、クラスターやサブグループを追跡する代わりに、すべての北朝鮮国家支援型サイバー活動をLazarus
+  summary: APT38は、金融関連のサイバーオペレーションを専門とする北朝鮮国家支援の脅威グループであり、Reconnaissance General Bureauとの関連が指摘されています。少なくとも2014年から活動しているAPT38は、世界38カ国以上の銀行、金融機関、カジノ、暗号資産交換所、SWIFTシステムのエンドポイント、およびATMを標的としてきました。主なオペレーションには、2016年のBank
+    of Bangladeshからの窃取、BancomextおよびBanco de Chileへの攻撃に加え、ソフトウェアのサプライチェーン侵害や破壊的なマルウェア攻撃が含まれます。北朝鮮系グループの定義には大幅な重複があることが知られており、一部のセキュリティ研究者は、クラスターやサブグループを個別に追跡するのではなく、北朝鮮国家支援によるサイバー活動のすべてをLazarus
     Groupという名称の下で報告しています。
   associated_malware:
   - DarkComet
@@ -1250,25 +1301,44 @@ actors:
   - https://www.crowdstrike.com/blog/meet-crowdstrikes-adversary-of-the-month-for-april-stardust-chollima/
   - https://www.justice.gov/opa/pr/three-north-korean-military-hackers-indicted-wide-ranging-scheme-commit-cyberattacks-and
   - https://www.secureworks.com/research/threat-profiles/nickel-gladstone
-  mitre_summary_sha1: c7214bec7cb1fd3a4e9c98cd5cb4fc90a583487a
+  - https://www.microsoft.com/en-us/security/blog/2026/04/01/mitigating-the-axios-npm-supply-chain-compromise/
+  mitre_summary_sha1: 2956131af3edd3d4a86efe3927177f8394e458f2
   mitre_ttps:
   - T1005 Data from Local System
+  - T1012 Query Registry
   - T1027.002 Software Packing
+  - T1027.010 Command Obfuscation
+  - T1027.015 Compression
+  - T1027.016 Junk Code Insertion
   - T1033 System Owner/User Discovery
   - T1036.003 Rename Legitimate Utilities
+  - T1036.005 Match Legitimate Resource Name or Location
   - T1036.006 Space after Filename
+  - T1036.008 Masquerade File Type
+  - T1041 Exfiltration Over C2 Channel
+  - T1048.002 Exfiltration Over Asymmetric Encrypted Non-C2 Protocol
   - T1049 System Network Connections Discovery
   - T1053.003 Cron
   - T1053.005 Scheduled Task
+  - T1053.006 Systemd Timers
   - T1055 Process Injection
   - T1056.001 Keylogging
+  - T1056.002 GUI Input Capture
   - T1057 Process Discovery
   - T1059.001 PowerShell
+  - T1059.002 AppleScript
   - T1059.003 Windows Command Shell
+  - T1059.004 Unix Shell
   - T1059.005 Visual Basic
+  - T1059.006 Python
+  - T1059.007 JavaScript
+  - T1070.003 Clear Command History
   - T1070.004 File Deletion
   - T1070.006 Timestomp
   - T1071.001 Web Protocols
+  - T1074.001 Local Data Staging
+  - T1078.003 Local Accounts
+  - T1078.004 Cloud Accounts
   - T1082 System Information Discovery
   - T1083 File and Directory Discovery
   - T1105 Ingress Tool Transfer
@@ -1276,34 +1346,75 @@ actors:
   - T1110 Brute Force
   - T1112 Modify Registry
   - T1115 Clipboard Data
+  - T1124 System Time Discovery
+  - T1132.001 Standard Encoding
   - T1135 Network Share Discovery
   - T1140 Deobfuscate/Decode Files or Information
   - T1189 Drive-by Compromise
+  - T1195.001 Compromise Software Dependencies and Development Tools
   - T1204.001 Malicious Link
   - T1204.002 Malicious File
+  - T1213.005 Messaging Applications
+  - T1213.006 Databases
   - T1217 Browser Information Discovery
   - T1218.001 Compiled HTML File
   - T1218.005 Mshta
   - T1218.007 Msiexec
   - T1218.011 Rundll32
+  - T1222.002 Linux and Mac Permissions
+  - T1480 Execution Guardrails
   - T1480.002 Mutual Exclusion
   - T1485 Data Destruction
   - T1486 Data Encrypted for Impact
   - T1505.003 Web Shell
+  - T1518 Software Discovery
   - T1518.001 Security Software Discovery
   - T1529 System Shutdown/Reboot
+  - T1543.001 Launch Agent
   - T1543.003 Windows Service
+  - T1543.004 Launch Daemon
+  - T1546.016 Installer Packages
+  - T1547.001 Registry Run Keys / Startup Folder
   - T1548.002 Bypass User Account Control
+  - T1548.003 Sudo and Sudo Caching
+  - T1548.006 TCC Manipulation
+  - T1552.003 Shell History
+  - T1552.004 Private Keys
   - T1553.005 Mark-of-the-Web Bypass
+  - T1555 Credentials from Password Stores
+  - T1555.001 Keychain
+  - T1555.003 Credentials from Web Browsers
+  - T1560.001 Archive via Utility
   - T1561.002 Disk Structure Wipe
+  - T1564.003 Hidden Window
+  - T1564.011 Ignore Process Interrupts
+  - T1564.012 File/Path Exclusions
   - T1565.001 Stored Data Manipulation
   - T1565.002 Transmitted Data Manipulation
   - T1565.003 Runtime Data Manipulation
   - T1566.001 Spearphishing Attachment
+  - T1566.002 Spearphishing Link
+  - T1566.003 Spearphishing via Service
+  - T1567 Exfiltration Over Web Service
   - T1569.002 Service Execution
+  - T1571 Non-Standard Port
   - T1583.001 Domains
+  - T1583.003 Virtual Private Server
+  - T1583.006 Web Services
+  - T1585.001 Social Media Accounts
+  - T1585.002 Email Accounts
+  - T1586.003 Cloud Accounts
   - T1588.002 Tool
+  - T1608.001 Upload Malware
+  - T1620 Reflective Code Loading
+  - T1657 Financial Theft
+  - T1677 Poisoned Pipeline Execution
+  - T1678 Delay Execution
+  - T1683.001 Written Content
+  - T1683.002 Audio-Visual Content
+  - T1684.001 Impersonation
   - T1685 Disable or Modify Tools
+  - T1685.003 Modify or Spoof Tool UI
   - T1685.005 Clear Windows Event Logs
   - T1686 Disable or Modify System Firewall
   - T1686.002 Network Device Firewall
@@ -2744,9 +2855,47 @@ actors:
   canonical: The Gentlemen
   aliases:
   - Gentlemen ransomware
+  - GOLD SHERWOOD
   description: 新興 RaaS (2025-)。corpus 被害上位
   family: ransom_group
   kind: group
+  associated_malware:
+  - PsExec
+  - The Gentlemen Ransomware
+  - Wevtutil
+  references:
+  - https://research.checkpoint.com/2026/dfir-report-the-gentlemen/
+  - https://unit42.paloaltonetworks.com/the-gentlemen-ransomware/
+  - https://www.huntress.com/blog/the-gentlemen-ransomware-defense-evasion-ttps
+  - https://www.intel471.com/blog/threat-hunting-case-study-the-gentlemen
+  - https://www.microsoft.com/en-us/security/blog/2026/05/28/the-gentlemen-ransomware-dissecting-a-self-propagating-go-encryptor/
+  - https://www.sophos.com/en-gb/blog/ungentlemanly-behavior-insights-into-a-ransomware-operation
+  - https://www.trendaisecurity.com/en-us/resources-insights/trendai-security-blog/unmasking-the-gentlemen-ransomware
+  - https://www.welivesecurity.com/en/eset-research/killing-me-gently-inside-gentlemens-edr-killer-framework/
+  mitre_ttps:
+  - T1018 Remote System Discovery
+  - T1027.002 Software Packing
+  - T1036 Masquerading
+  - T1036.001 Invalid Code Signature
+  - T1036.005 Match Legitimate Resource Name or Location
+  - T1068 Exploitation for Privilege Escalation
+  - T1078 Valid Accounts
+  - T1190 Exploit Public-Facing Application
+  - T1219.002 Remote Desktop Software
+  - T1486 Data Encrypted for Impact
+  - T1583.001 Domains
+  - T1585 Establish Accounts
+  - T1585.001 Social Media Accounts
+  - T1588.002 Tool
+  - T1657 Financial Theft
+  - T1683.001 Written Content
+  - T1683.002 Audio-Visual Content
+  mitre_group: G1058
+  summary: The Gentlemen は、The Gentlemen Ransomware-as-a-service (RaaS) を運営するグループです。2025年中頃に初めて観測された
+    The Gentlemen は、当初 The Gentlemen Ransomware をクローズドなランサムウェアとして運用していましたが、その後間もなく
+    2025年9月にアフィリエイト向けに RaaS として公開しました。The Gentlemen は、脅威グループである Storm-2697 および GOLD
+    SHERWOOD との関連が確認されています。
+  mitre_summary_sha1: 544775d57daeff8a2d4e5c5a34c02fa62bd9cfcd
 - id: eightbase
   canonical: 8Base
   aliases: []
@@ -2779,6 +2928,7 @@ actors:
   - Tor
   - WarzoneRAT
   - ngrok
+  - Vidar
   references:
   - https://cloud.google.com/blog/topics/threat-intelligence/defending-vsphere-from-unc3944
   - https://cloud.google.com/blog/topics/threat-intelligence/unc3944-proactive-hardening-recommendations
@@ -6401,6 +6551,7 @@ actors:
   - T1585.001 Social Media Accounts
   - T1587.001 Malware
   - T1608.001 Upload Malware
+  - T1610 Deploy Container
   - T1657 Financial Theft
   - T1677 Poisoned Pipeline Execution
   - T1683.001 Written Content
@@ -7090,6 +7241,7 @@ actors:
   - T1608.001 Upload Malware
   - T1682 Query Public AI Services
   - T1684.001 Impersonation
+  - T1697 Steal Application Specific Passwords
   mitre_group: G1044
   summary: APT42は、サイバーエスピオナージおよび監視活動を行うイラン支援の脅威グループです。同グループは主に中東地域のターゲットに焦点を当てていますが、少なくとも2015年以降、さまざまな業界や国を標的にしてきました。APT42は、spearphishingメールやPINEFLOWER
     Android malwareを通じてサイバーオペレーションを開始し、侵害したシステムやデバイスから情報の監視および収集を行います。最終的に、APT42はネイティブ機能やオープンソースツールを使用してデータをexfiltrateします。APT42の活動は、他の商用ベンダーによってMagic
@@ -7267,8 +7419,102 @@ actors:
   aliases:
   - GalaxyGato
   - Screening Serpens
+  - TA455
+  - COBALT SMOKEY
   kind: group
   family: ''
+  associated_malware:
+  - CRASHPAD
+  - DCSYNCER.SLICK
+  - DEEPROOT
+  - LIGHTRAIL
+  - MiniBike
+  - MiniBrowse
+  - MiniBus
+  - MiniFast
+  - MiniJunk
+  - POLLBLEND
+  - SIGHTGRAB
+  - TRUSTTRAP
+  - TWOSTROKE
+  references:
+  - https://cloud.google.com/blog/topics/threat-intelligence/analysis-of-unc1549-ttps-targeting-aerospace-defense
+  - https://cloud.google.com/blog/topics/threat-intelligence/suspected-iranian-unc1549-targets-israel-middle-east
+  - https://research.checkpoint.com/2025/nimbus-manticore-deploys-new-malware-targeting-europe/
+  - https://research.checkpoint.com/2026/fast-and-furious-nimbus-manticore-operations-during-the-iranian-conflict/
+  - https://www.proofpoint.com/us/blog/threat-insight/crossed-wires-case-study-iranian-espionage-and-attribution
+  - https://www.sophos.com/en-us/threat-profiles/cobalt-smokey
+  mitre_ttps:
+  - T1003.006 DCSync
+  - T1007 System Service Discovery
+  - T1021.001 Remote Desktop Protocol
+  - T1021.002 SMB/Windows Admin Shares
+  - T1027 Obfuscated Files or Information
+  - T1027.015 Compression
+  - T1036.004 Masquerade Task or Service
+  - T1036.005 Match Legitimate Resource Name or Location
+  - T1039 Data from Network Shared Drive
+  - T1046 Network Service Discovery
+  - T1047 Windows Management Instrumentation
+  - T1049 System Network Connections Discovery
+  - T1053.005 Scheduled Task
+  - T1057 Process Discovery
+  - T1059.001 PowerShell
+  - T1059.007 JavaScript
+  - T1070.004 File Deletion
+  - T1070.007 Clear Network Connection History and Configurations
+  - T1071 Application Layer Protocol
+  - T1072 Software Deployment Tools
+  - T1078.002 Domain Accounts
+  - T1078.003 Local Accounts
+  - T1078.004 Cloud Accounts
+  - T1087.001 Local Account
+  - T1087.002 Domain Account
+  - T1098 Account Manipulation
+  - T1105 Ingress Tool Transfer
+  - T1106 Native API
+  - T1110.003 Password Spraying
+  - T1114.001 Local Email Collection
+  - T1136.001 Local Account
+  - T1199 Trusted Relationship
+  - T1204.001 Malicious Link
+  - T1204.002 Malicious File
+  - T1213 Data from Information Repositories
+  - T1213.002 Sharepoint
+  - T1213.005 Messaging Applications
+  - T1534 Internal Spearphishing
+  - T1547.001 Registry Run Keys / Startup Folder
+  - T1552 Unsecured Credentials
+  - T1558.003 Kerberoasting
+  - T1563.002 RDP Hijacking
+  - T1566.001 Spearphishing Attachment
+  - T1566.002 Spearphishing Link
+  - T1574.001 DLL
+  - T1574.014 AppDomainManager
+  - T1583.001 Domains
+  - T1583.003 Virtual Private Server
+  - T1583.006 Web Services
+  - T1585.001 Social Media Accounts
+  - T1587.001 Malware
+  - T1588.002 Tool
+  - T1588.003 Code Signing Certificates
+  - T1588.007 Artificial Intelligence
+  - T1591 Gather Victim Org Information
+  - T1598.001 Spearphishing Service
+  - T1608.001 Upload Malware
+  - T1608.005 Link Target
+  - T1608.006 SEO Poisoning
+  - T1649 Steal or Forge Authentication Certificates
+  - T1678 Delay Execution
+  - T1683.001 Written Content
+  - T1683.002 Audio-Visual Content
+  - T1684.001 Impersonation
+  - T1685.003 Modify or Spoof Tool UI
+  mitre_group: G1059
+  summary: NIMBUS MANTICOREは、イランの政権、特にイラン革命防衛隊 (IRGC) に関連する国家支援型のサイバースパイグループです。NIMBUS
+    MANTICOREは、人事関連のテーマを含むソーシャルエンジニアリング攻撃を駆使し、標的に対してカスタムマルウェアを使用しています。NIMBUS MANTICOREは、ネットワーク/IT関連のドキュメント、知的財産、メールなど、標的環境内の機密情報を狙ってきました。また、侵害した組織をピボットポイントとして利用し、その他の関心対象となる組織へアクセスすることもあります。NIMBUS
+    MANTICOREは2021年から活動しており、米国、オーストラリア、中東、欧州における航空、航空宇宙、電気通信、防衛、情報技術関連の重要インフラ組織を標的としています。
+  mitre_summary_sha1: f81aad5fb4134a725df66bc71928b15a0b4d8650
 - id: nso_group
   canonical: NSO Group
   aliases: []
