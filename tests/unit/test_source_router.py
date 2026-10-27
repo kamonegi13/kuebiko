@@ -375,6 +375,38 @@ class TestGrokEmailSource:
         assert articles == []
 
     @pytest.mark.asyncio
+    async def test_page_blocked_by_gate_is_counted_not_extracted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """確認の画面 (年齢) で本文が描かれないページは、HTML から抜かず数える (10-28 実例)。
+
+        抜くと確認と cookie 同意の文が本文になり、全部が重複で捨てられ「成功・要約 0」に化けた。
+        """
+        imap = AsyncMock()
+        imap.fetch_unread.return_value = [_email()]
+        grok = AsyncMock()
+        grok.fetch.return_value = GrokFetchResult(
+            url="x",
+            final_url="https://grok.com/c/x",
+            html="<div id='grok-app-root'>年齢を教えてください 名前 年齢 続ける サインアウト</div>",
+            body_text="",
+            success=True,
+        )
+        monkeypatch.setattr(
+            "src.tools.source_router._trafilatura_extract",
+            lambda html, **kwargs: "年齢を教えてください 名前 年齢 続ける",
+            raising=False,
+        )
+
+        source = GrokEmailSource(imap, grok, MagicMock())
+        articles = await source.fetch(max_count=5)
+
+        assert articles == []
+        assert source.last_blocked_count == 1
+        imap.mark_seen.assert_not_called()  # 未読に残して、確認に答えた後に取り直す
+
+    @pytest.mark.asyncio
     async def test_max_count_caps_articles(
         self,
         monkeypatch: pytest.MonkeyPatch,

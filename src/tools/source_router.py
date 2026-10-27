@@ -90,11 +90,15 @@ class GrokEmailSource:
         # 監査残項目① (2026-07-05): セッション失効の検出数。run_pipeline が errors に
         # 搬送して可視失敗にする (従来は info ログのみ = 「🟢 取得 0」に化けていた)
         self.last_session_expired_count: int = 0
+        # ログインしたまま確認の画面 (年齢等) で本文が描かれなかった件数 (2026-10-28)。
+        # セッション失効と同じく run_pipeline が errors に載せる (従来は「成功・要約 0」)
+        self.last_blocked_count: int = 0
 
     async def fetch(self, max_count: int) -> list[Article]:
         # mark_as_read=False で取得 (BODY.PEEK)。既読化は **レポート抽出に成功した
         # メールのみ** 後段で明示的に行う (失敗メールは未読に残して再試行可能にする)。
         self.last_session_expired_count = 0
+        self.last_blocked_count = 0
         emails = await self._imap.fetch_unread(
             sender_filters=self._sender_filters,
             subject_filters=self._subject_filters,
@@ -205,6 +209,12 @@ class GrokEmailSource:
         #   2. trafilatura で HTML から本文化
         #   3. メールの summary_html (フォールバック)
         body = result.body_text.strip() if result.body_text else ""
+        if not body and _is_blocked_by_gate(result.html):
+            # 確認の画面の文 (と cookie 同意の文) を本文として抜かない。抜くと全件が同じ中身に
+            # なり重複として捨てられ、取得の失敗が見えなくなる (2026-10-26〜28 に 1 日半)
+            self.last_blocked_count += 1
+            _log.warning("grok_page_blocked_by_gate", url=url)
+            return None
         if not body:
             from src.tools import source_router as _self_module
 
@@ -235,6 +245,14 @@ class GrokEmailSource:
 
 
 # ---------- helpers ----------
+
+#: Grok の画面を塞ぐ確認のダイアログの文 (ログインしたまま本文が描かれない)。
+#: 2026-10-26 から年齢の確認が出るようになった。新しい型が出たらここに足す
+GROK_GATE_MARKERS: tuple[str, ...] = ("年齢を教えてください",)
+
+
+def _is_blocked_by_gate(html: str) -> bool:
+    return any(m in (html or "") for m in GROK_GATE_MARKERS)
 
 
 def _stable_article_id(url: str, fallback: str) -> str:

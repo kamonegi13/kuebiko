@@ -640,6 +640,14 @@ async def run_pipeline(
             f"grok: セッション失効で {_grok_expired} 件のレポート取得不可 — "
             "Web UI 死活監視の Grok セッションカードから再取得してください"
         )
+    # ログインしたまま確認の画面 (年齢等) で塞がれた件数 (2026-10-28、同じく可視失敗にする)
+    _grok_blocked_raw = getattr(source, "last_blocked_count", 0)
+    _grok_blocked = _grok_blocked_raw if isinstance(_grok_blocked_raw, int) else 0
+    if _grok_blocked > 0:
+        errors.append(
+            f"grok: 画面が確認のダイアログ (年齢等) で塞がれ {_grok_blocked} 件のレポートを"
+            "読めない — 普段のブラウザで grok.com を開き、確認に答えてください"
+        )
     # Phase 5A fix: ダッシュボード / 履歴 (articles テーブル) 用の per-briefing 結果。
     # 1 ブリーフィング = 1 ArticleRecord (Grok の section 展開も独立行になる)。
     # 完全失敗した article (briefings 0 件) は失敗ステータスで 1 行残す。
