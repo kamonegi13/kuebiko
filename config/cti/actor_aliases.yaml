@@ -2856,6 +2856,7 @@ actors:
   aliases:
   - Gentlemen ransomware
   - GOLD SHERWOOD
+  - Storm-2697
   description: 新興 RaaS (2025-)。corpus 被害上位
   family: ransom_group
   kind: group
@@ -6430,10 +6431,15 @@ actors:
   family: ''
 - id: unc1549
   canonical: UNC1549
-  aliases:
-  - Mirage Kitten
+  aliases: []
   kind: group
   family: ''
+  status: merged
+  merged_into: nimbus_manticore
+  merged_at: '2026-10-28'
+  merge_note: MITRE G1059 が UNC1549 を Nimbus Manticore の別名と定義 (提案 448)。Unit 42 も Screening
+    Serpens (aka UNC1549) と併記。UNC1549 は本 entry の canonical のため merge (redirect 墓標)
+    で対応。
 - id: cl_cri_1089
   canonical: CL-CRI-1089
   aliases: []
@@ -6469,6 +6475,11 @@ actors:
   aliases: []
   kind: group
   family: ''
+  status: merged
+  merged_into: the_gentlemen
+  merged_at: '2026-10-28'
+  merge_note: MITRE G1058 が Storm-2697 を The Gentlemen の別名と定義 (提案 447)。Storm-2697
+    は本 entry の canonical のため move_alias の自動付替が不可 — merge (redirect 墓標) で対応。
 - id: unc2814
   canonical: UNC2814
   aliases: []
@@ -6991,7 +7002,8 @@ actors:
   family: ''
 - id: killsec
   canonical: Killsec
-  aliases: []
+  aliases:
+  - Kill Security Ransomware Group
   kind: group
   family: ''
 - id: ta422
@@ -7421,6 +7433,9 @@ actors:
   - Screening Serpens
   - TA455
   - COBALT SMOKEY
+  - UNC1549
+  - Mirage Kitten
+  - Smoke Sandstorm
   kind: group
   family: ''
   associated_malware:
@@ -7538,7 +7553,8 @@ actors:
   references: []
 - id: famous_chollima
   canonical: Famous Chollima
-  aliases: []
+  aliases:
+  - WageMole
   kind: group
   family: ''
 - id: apt31
@@ -7915,7 +7931,9 @@ actors:
   family: ''
 - id: konni
   canonical: Konni
-  aliases: []
+  aliases:
+  - TA406
+  - Opal Sleet
   kind: group
   family: ''
 - id: n0n
@@ -7983,3 +8001,152 @@ actors:
   aliases: []
   kind: group
   family: ''
+- id: integrity_technology_group
+  canonical: Integrity Technology Group
+  aliases: []
+  kind: contractor
+  family: ''
+  nation: cn
+  description: 米政府が Flax Typhoon の活動を担ったと名指しする中国の企業 (請負、制裁対象)
+- id: rybar
+  canonical: Rybar
+  aliases: []
+  kind: group
+  family: ''
+  nation: ru
+  description: ロシアの親戦争宣伝・影響力工作プロジェクト (Telegram 発、EU 制裁対象)
+- id: cyberxero
+  canonical: CyberXero
+  aliases: []
+  kind: group
+  family: ''
+  description: ロシア語圏の金銭目的の初期アクセスブローカー。AI エージェント群で侵入を自動化 (SOCRadar 命名、2026-)
+- id: uat_11985
+  canonical: UAT-11985
+  aliases: []
+  kind: group
+  family: ''
+  description: AI 生成の誘い文句と AitM フィッシングで台湾の研究者を狙うアクター (Cisco Talos 命名)
+- id: cl_sta_1178
+  canonical: CL-STA-1178
+  aliases: []
+  kind: group
+  family: ''
+  nation: ir
+  description: イラン国家系のクラスタ。採用試験を装う Blinder Tunnel キャンペーンで中東の重要インフラを標的 (Unit 42 命名)
+- id: armory_castle
+  canonical: Armory Castle
+  aliases: []
+  kind: group
+  family: ''
+  nation: cn
+  description: 中国系と疑われる諜報アクター。BeyondTrust Remote Support の 0day を悪用 (GTIG/Mandiant
+    命名、2026-)
+- id: silent_lynx
+  canonical: Silent Lynx
+  aliases:
+  - UAT-6275
+  - TAG-193
+  kind: group
+  family: ''
+  nation: kz
+  description: カザフスタン系の諜報グループ。中央アジア・CIS の政府機関とエネルギー・水道の SCADA を標的 (Talos は UAT-6275、Recorded
+    Future は TAG-193)
+- id: storm_2990
+  canonical: Storm-2990
+  aliases: []
+  kind: group
+  family: ''
+  description: 大規模フィッシング基盤 (PhaaS) の運用者 (Microsoft 命名、2026 に摘発)
+- id: storm_3119
+  canonical: Storm-3119
+  aliases: []
+  kind: group
+  family: ''
+  description: 大規模フィッシング基盤 (PhaaS) の運用者 (Microsoft 命名、2026 に摘発)
+- id: uta0576
+  canonical: UTA0576
+  aliases: []
+  kind: group
+  family: ''
+  description: Ivanti Connect Secure の 0day を連鎖させて侵入したアクター (Volexity 命名)
+- id: unc5820
+  canonical: UNC5820
+  aliases:
+  - CL-STA-0954
+  kind: group
+  family: ''
+  description: FortiManager/FortiOS の脆弱性で通信 MSP を侵害し PEERSTITCH を展開 (Mandiant は UNC5820、Unit
+    42 は CL-STA-0954)
+- id: chimeraz
+  canonical: ChimeraZ
+  aliases: []
+  kind: group
+  family: ''
+  description: フランスの組織のデータベースの販売・流出を主張するアクター (2026-)
+- id: unc7017
+  canonical: UNC7017
+  aliases: []
+  kind: group
+  family: ''
+  description: AOMEI の更新サーバを改ざんしたサプライチェーン攻撃のアクター (Mandiant 命名)
+- id: uways_qarani
+  canonical: Uways Qarani
+  aliases: []
+  kind: group
+  family: ''
+  description: イエメンのアンサール・アッラー (フーシ派) のサイバー部門を自称するハクティビスト。サウジの組織の侵害を主張 (2026-)
+- id: whitearmor
+  canonical: Whitearmor
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: リークサイトで被害を公表する恐喝グループ (2026-)
+- id: storm_0940
+  canonical: Storm-0940
+  aliases: []
+  kind: group
+  family: ''
+  nation: cn
+  description: 中国系の国家系アクター。ConnectWise の資格情報を悪用し Microsoft 365 テナントへ侵入 (Microsoft
+    命名)
+- id: hyflock
+  canonical: Hyflock
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: リークサイトで被害を公表する恐喝グループ (2026-)
+- id: scarlettgroup
+  canonical: Scarlettgroup
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: リークサイトで被害を公表する恐喝グループ (2026-)
+- id: umbra
+  canonical: Umbra
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトで被害を公表する恐喝グループ (2026-)。一般語のため ambiguous
+- id: byod
+  canonical: BYOD
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトで被害を公表する恐喝グループ (2026-)。一般語 (端末持ち込み) のため ambiguous
+- id: redact
+  canonical: Redact
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトで被害を公表する恐喝グループ (2026-)。一般語のため ambiguous
+- id: the_seven_deadly_sins
+  canonical: The Seven Deadly Sins
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトで被害を公表する恐喝グループ (2026-)。成句のため ambiguous

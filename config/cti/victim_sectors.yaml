@@ -166,6 +166,7 @@ canonical:
     display: 小売
     stix: retail
     aliases:
+      - "電子書籍・EC"
       - "eコマース"
       - 小売
       - retail
@@ -195,6 +196,15 @@ canonical:
     display: IT
     stix: technology
     aliases:
+      - "AI 研究・開発"
+      - "IT・インターネットサービス"
+      - "AI・先端技術"
+      - "AI・先端技術開発"
+      - "email infrastructure"
+      - "backup infrastructure"
+      - "IT・SaaS"
+      - "ITサービス"
+      - "IT / ソフトウェア"
       - "it_infrastructure"
       - "ICT"
       - "IT/サービス"
@@ -247,6 +257,7 @@ canonical:
   media:
     display: メディア
     aliases:
+      - "電子書籍・コンテンツ配信"
       - "social_media"
       - メディア
       - media
@@ -264,6 +275,7 @@ canonical:
     display: NGO
     stix: non-profit
     aliases:
+      - "政治団体"
       - "非営利団体"
       - NGO
       - civil_society
@@ -308,6 +320,7 @@ canonical:
     display: 専門サービス
     stix: commercial
     aliases:
+      - "求人・人材サービス"
       - "法律"
       - professional services
       - professional services firm
