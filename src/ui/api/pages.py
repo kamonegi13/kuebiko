@@ -1350,6 +1350,7 @@ def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, Any]:
         move_alias,
         render_actors_yaml,
         validate_actor_edit,
+        validate_new_actor,
     )
 
     repo = RunHistoryRepository()
@@ -1366,12 +1367,7 @@ def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, Any]:
     if proposal.proposal_type == "mitre_new_actor":
         actor = {k: v for k, v in payload.items() if k != "summary_en"}
         # 提案生成後に辞書側が変わっている可能性があるため承認時にも衝突再検証
-        err = validate_actor_edit(
-            data,
-            str(actor.get("id", "")),
-            str(actor.get("canonical", "")),
-            [str(x) for x in actor.get("aliases") or []],
-        )
+        err = validate_new_actor(data, actor)
         if err:
             raise HTTPException(status_code=409, detail=f"衝突のため適用できません: {err}")
         summary_en = str(payload.get("summary_en") or "")
@@ -1423,12 +1419,7 @@ def actors_sync_approve(request: Request, proposal_id: int) -> dict[str, Any]:
     elif proposal.proposal_type == "corpus_emerging_actor":
         # Actor Recall Layer: コーパス由来の新興アクター候補を辞書化 (_evidence は除外)。
         actor = {k: v for k, v in payload.items() if not k.startswith("_")}
-        err = validate_actor_edit(
-            data,
-            str(actor.get("id", "")),
-            str(actor.get("canonical", "")),
-            [str(x) for x in actor.get("aliases") or []],
-        )
+        err = validate_new_actor(data, actor)
         if err:
             raise HTTPException(status_code=409, detail=f"衝突のため適用できません: {err}")
         try:

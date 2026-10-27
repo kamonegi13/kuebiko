@@ -229,6 +229,21 @@ def apply_actor_edit(data: dict[str, Any], actor_id: str, edit: dict[str, Any]) 
     return {**data, "actors": new_actors}
 
 
+def validate_new_actor(data: dict[str, Any], actor: dict[str, Any]) -> str | None:
+    """新規 actor (提案の payload) を検証する。ゲート状態は payload の ``ambiguous`` を使う。
+
+    新規 actor は辞書に無いので、``validate_actor_edit`` の fallback (辞書内の現在値) では
+    常に ambiguous=False になり、一般語名に ambiguous=true を足して承認する経路が弾かれる。
+    """
+    return validate_actor_edit(
+        data,
+        str(actor.get("id", "")),
+        str(actor.get("canonical", "")),
+        [str(x) for x in actor.get("aliases") or []],
+        ambiguous=bool(actor.get("ambiguous")),
+    )
+
+
 def append_new_actor(data: dict[str, Any], actor: dict[str, Any]) -> dict[str, Any]:
     """新規 actor を追加した新 data を返す (MITRE 同期提案の承認用)。
 

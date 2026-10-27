@@ -13,6 +13,7 @@ from src.cti.actor_editor import (
     load_actors_raw,
     render_actors_yaml,
     validate_actor_edit,
+    validate_new_actor,
 )
 
 _SAMPLE = """\
@@ -220,3 +221,15 @@ def test_apply_edit_ambiguous_and_cues_roundtrip(path: Path) -> None:
     rows = list_actors(path)
     # list_actors は bool を正規化して返す (未指定は False)
     assert rows[0]["ambiguous"] is False
+
+
+def test_validate_new_actor_honors_payload_ambiguous(path: Path) -> None:
+    """提案に ambiguous=true を足して承認する経路 (一般語名の新規 actor) を弾かない (10-27)。
+
+    承認 API は以前 ambiguous を渡さず「辞書内の現在値」(新規なので False) で検証していた。
+    """
+    data = load_actors_raw(path)
+    actor = {"id": "zinc_group", "canonical": "Zinc", "aliases": []}
+
+    assert validate_new_actor(data, actor) is not None
+    assert validate_new_actor(data, {**actor, "ambiguous": True}) is None
