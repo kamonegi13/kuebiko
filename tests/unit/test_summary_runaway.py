@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from src.pipeline.summary import SummaryOutput
+from src.pipeline.summary import MitreEvidence, SummaryEvidenceOutput, SummaryOutput
 from src.pipeline.summary_runaway import repair, runaway_reasons
 
 _S = "英国の政府機関が相次いで侵害され、10 万人を超える職員の情報が流出しました。"
@@ -77,6 +77,27 @@ def test_repair_collapses_repeats_without_mutating() -> None:
     assert fixed.summary == "冒頭の文はここにあります。" + _S
     assert fixed.mitre_techniques == ["T1"]
     assert broken.mitre_techniques == ["T1"] * 9  # 元は変わらない
+    assert runaway_reasons(fixed) == []
+
+
+def test_repair_collapses_repeated_structured_items() -> None:
+    """要素が構造体の一覧 (mitre_evidence) も畳める (10-27 本番で TypeError: unhashable dict)。"""
+    ev = [
+        MitreEvidence(technique="T1190", quote="exploited"),
+        MitreEvidence(technique="T1078", quote="valid"),
+    ]
+    broken = SummaryEvidenceOutput(
+        title_ja="見出し",
+        importance="medium",
+        category="breach",
+        summary="正常な要約です。",
+        mitre_evidence=ev * 6,
+    )
+
+    fixed = repair(broken)
+
+    assert fixed.mitre_evidence == ev
+    assert all(isinstance(e, MitreEvidence) for e in fixed.mitre_evidence)
     assert runaway_reasons(fixed) == []
 
 

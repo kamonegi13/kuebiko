@@ -99,8 +99,8 @@ def _cut_segment_loop(text: str) -> str:
     return text
 
 
-def repair(summary: SummaryOutput) -> SummaryOutput:
-    """繰り返しを畳んだ新しい要約 (元は変更しない)。"""
+def repair[S: SummaryOutput](summary: S) -> S:
+    """繰り返しを畳んだ新しい要約 (元は変更しない、受け取った型のまま返す)。"""
     update: dict[str, Any] = {}
     for name, value in summary.model_dump().items():
         if isinstance(value, str) and _is_runaway_text(value):
@@ -108,5 +108,21 @@ def repair(summary: SummaryOutput) -> SummaryOutput:
             text = _collapse_sentences(_CHAR_LOOP.sub(r"\1", value))
             update[name] = _cut_segment_loop(text) if _has_segment_loop(text) else text
         elif isinstance(value, list) and len(value) - len({str(v) for v in value}) >= LIST_DUP_MIN:
-            update[name] = list(dict.fromkeys(value))
+            update[name] = _dedup_items(value, getattr(summary, name))
     return summary.model_copy(update=update) if update else summary
+
+
+def _dedup_items(dumped: list[Any], original: list[Any]) -> list[Any]:
+    """2 回目以降の重複を落とす (初出の順を保つ)。
+
+    判定は検出と同じく ``str`` の一致。要素が構造体 (mitre_evidence) だと dump 後は dict で
+    ハッシュできないため、元の要素 (モデルのまま) を返す。
+    """
+    seen: set[str] = set()
+    out: list[Any] = []
+    for dumped_item, item in zip(dumped, original, strict=True):
+        key = str(dumped_item)
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
