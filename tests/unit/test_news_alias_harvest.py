@@ -50,6 +50,23 @@ def test_extracts_japanese_betsumei() -> None:
     assert [(c.actor_id, c.alias) for c in out] == [("volt_typhoon", "Redfly")]
 
 
+def test_fullwidth_paren_ends_the_alias_list() -> None:
+    """全角の「）」で別名の並びを閉じる。閉じないと後ろの文の数字 (1万2) を拾う (10-27 実例)。"""
+    text = (
+        "中国の国家支援型アクター「ボルト（Volt Typhoon、別名Redfly）」の作戦で、"
+        "米国内の6万超の組織が狙われ、1万2,700超が被害を受けた。"
+    )
+    out = extract_alias_candidates(text, _registry())
+    assert [(c.actor_id, c.alias) for c in out] == [("volt_typhoon", "Redfly")]
+
+
+def test_alias_must_be_latin_script() -> None:
+    """名前の形は英数字だけ (日本語の断片を別名にしない)。"""
+    text = "Volt Typhoon (aka 1万2, Redfly) was observed."
+    out = extract_alias_candidates(text, _registry())
+    assert [c.alias for c in out] == ["Redfly"]
+
+
 def test_known_names_are_not_harvested() -> None:
     # 既知 alias (Vanguard Panda) と他アクターの名前 (Agenda) は収穫しない
     text = "Volt Typhoon (aka Vanguard Panda, Agenda, Redfly) was observed."

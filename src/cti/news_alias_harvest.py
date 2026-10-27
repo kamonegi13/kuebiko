@@ -50,8 +50,9 @@ _AKA_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# 候補名の形: 英大文字/数字開頭、英数・空白・ハイフン・ドット、3-40 字
-_NAME_RE = re.compile(r"[A-Z0-9][\w\-. ]{1,38}[A-Za-z0-9]")
+# 候補名の形: 英大文字/数字開頭、英数・空白・ハイフン・ドット、3-40 字。``\w`` は日本語の文字も
+# 通すため英数字に限る (「1万2」が別名として起票された、2026-10-27)
+_NAME_RE = re.compile(r"[A-Z0-9][A-Za-z0-9_\-. ]{1,38}[A-Za-z0-9]")
 
 # マーカー前方でアクターを探す窓 / 後方で別名リストを読む窓 (字数)
 _BEFORE_WINDOW = 80
@@ -101,7 +102,8 @@ def extract_alias_candidates(text: str, registry: ActorAliasRegistry) -> list[Al
             continue
         # 後方窓: 閉じ括弧/文末までを別名リストとして読む
         after = text[m.end() : m.end() + _AFTER_WINDOW]
-        after = re.split(r"[)\]。;\n]", after, maxsplit=1)[0]
+        # 全角の閉じ括弧・鉤括弧でも閉じる (閉じないと後ろの文まで別名として読む)
+        after = re.split(r"[)\]）】」』。;\n]", after, maxsplit=1)[0]
         names = re.split(r",|、|/| and ", after)[:_MAX_NAMES_PER_MARKER]
         for raw in names:
             name = _clean_candidate(raw)
