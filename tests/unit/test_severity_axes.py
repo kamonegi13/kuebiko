@@ -232,6 +232,45 @@ class TestStorage:
         assert got["victim_size"] == "large"
         assert got["recoverability"] == "not_recoverable"
 
+    def _importance_ids(self, repo: RunHistoryRepository) -> set[str]:
+        with repo._connect() as conn:
+            return {
+                str(r[0])
+                for r in conn.execute("SELECT article_id FROM article_importance_v2").fetchall()
+            }
+
+    def _save_importance(self, repo: RunHistoryRepository, aid: str) -> None:
+        with repo._connect() as conn:
+            conn.execute(
+                "INSERT INTO article_importance_v2 (article_id, severity, severity_basis,"
+                " strategic_weight, jp, nations, sir_ids, relevant, rule_version, created_at)"
+                " VALUES (?, 'S2', 'x', NULL, 'none', '[]', '[]', 0, 'v', '2026-10-27')",
+                (aid,),
+            )
+
+    def test_replace_overwrites_axes_and_drops_importance(self, repo: RunHistoryRepository) -> None:
+        # 付け直した記事は軸が新しいモデルに替わり、importance_v2 は毎時の段の付け直しに回る
+        repo.set_severity_axes("a1", _AXES, "s23i")
+        repo.set_severity_axes("a2", _AXES, "s23i")
+        self._save_importance(repo, "a1")
+        self._save_importance(repo, "a2")
+        new = sa.SeverityAxes.model_validate(
+            {**_AXES, "scope": "national", "recent_action": True}
+        ).model_dump()
+
+        n = repo.replace_severity_axes([("a1", new)], "s24ci65")
+
+        got = repo.get_severity_axes(["a1", "a2"])
+        assert n == 1
+        assert got["a1"]["scope"] == "national" and got["a1"]["model"] == "s24ci65"
+        assert got["a1"]["recent_action"] == "true"
+        assert got["a2"]["model"] == "s23i"
+        assert self._importance_ids(repo) == {"a2"}
+
+    def test_replace_inserts_articles_without_prior_axes(self, repo: RunHistoryRepository) -> None:
+        repo.replace_severity_axes([("a9", _AXES)], "s24ci65")
+        assert repo.get_severity_axes(["a9"])["a9"]["model"] == "s24ci65"
+
     def test_hourly_job_picks_unlabeled_posted_high_medium(
         self, repo: RunHistoryRepository
     ) -> None:
