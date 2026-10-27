@@ -204,3 +204,35 @@ class TestFillMode:
     def test_unknown_value_falls_back_to_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VICTIM_COUNTRY_FILL", "maybe")
         assert fill_mode() is FillMode.OFF
+
+
+def test_history_query_passes_like_pattern_as_parameter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SQL に % を直書きすると psycopg がプレースホルダと読み、履歴が毎回空になる (10-27 本番)。"""
+    import src.storage.db_backend as db_backend
+    from src.cti import victim_country_fill as vcf
+
+    seen: dict[str, object] = {}
+
+    class _Cur:
+        def execute(self, sql: str, params: tuple[object, ...]) -> None:
+            seen.update(sql=sql, params=params)
+
+        def fetchall(self) -> list[dict[str, object]]:
+            return []
+
+    class _Conn:
+        def cursor(self) -> _Cur:
+            return _Cur()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(db_backend, "connect", lambda: _Conn())
+
+    assert vcf.load_org_history() == {}
+    sql = str(seen["sql"])
+    params = seen["params"]
+    assert "%" not in sql
+    assert isinstance(params, tuple)
+    assert sql.count("?") == len(params)
+    assert params[0] == f"{vcf.INFERRED_RAW_PREFIX}%"

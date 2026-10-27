@@ -207,7 +207,7 @@ FROM articles a
 JOIN article_entities e ON e.article_id = a.article_id AND e.entity_type = 'victim_org'
 WHERE a.status = 'posted' AND a.article_type = 'breaking'
   AND a.victim_country_iso IS NOT NULL
-  AND COALESCE(a.victim_country_raw, '') NOT LIKE 'inferred:%'
+  AND COALESCE(a.victim_country_raw, '') NOT LIKE ?
   AND a.created_at >= ?
 """
 
@@ -224,7 +224,8 @@ def load_org_history(*, window_days: int = ORG_HISTORY_WINDOW_DAYS) -> dict[str,
     conn = connect()
     try:
         cur = conn.cursor()
-        cur.execute(_HISTORY_SQL, (since,))
+        # LIKE の型は引数で渡す (SQL に % を直書きすると psycopg がプレースホルダと読む)
+        cur.execute(_HISTORY_SQL, (f"{INFERRED_RAW_PREFIX}%", since))
         rows = [
             (str(r["article_id"]), str(r["org"]), r["iso"], int(r["org_count"]))
             for r in cur.fetchall()
