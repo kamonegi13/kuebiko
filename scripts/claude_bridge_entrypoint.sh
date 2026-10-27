@@ -19,7 +19,8 @@ if [ ! -x "$CLAUDE_BIN" ]; then
   fi
 elif [ "${CLAUDE_BRIDGE_AUTOUPDATE:-1}" = "1" ]; then
   echo "[entrypoint] claude update (現行: $("$CLAUDE_BIN" --version 2>/dev/null || echo unknown))"
-  "$CLAUDE_BIN" update || echo "[entrypoint] update 失敗 (既存バイナリで続行)"
+  # 更新が戻らないと bridge 本体が起動しない (10-27 に 2.1.311 で実際に止まった) ため上限を付ける
+  timeout 180 "$CLAUDE_BIN" update || echo "[entrypoint] update 失敗・時間切れ (既存バイナリで続行)"
 fi
 
 exec python /app/scripts/claude_code_bridge.py --host 0.0.0.0 --port 8010
