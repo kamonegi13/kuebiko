@@ -127,8 +127,9 @@ class Step(StrEnum):
     TRIAGE = "triage"  # 重要度 pre-filter (per-article。dispatch が本 step で解決する)
     # 地政学の救済 (2026-10-02): triage が地政学・軍事・外交を理由に落とした記事だけを
     # 同じ基準で判定し直す。**triage と別のモデルを割り当てるための step** — triage の
-    # SFT モデルは「一般地政学 = low」を学習しており、同じモデルでは救えない (別モデルを割当。設計時は素の 26B を想定したが、
-    # 本番の割当は ``kuebiko-sft:26b`` = N1 (n 系の初版) で、素の 26B (``gemma4:26b``) ではない)
+    # SFT モデルは「一般地政学 = low」を学習しており、同じモデルでは救えない (別モデルを割当。
+    # 設計時は素の 26B を想定したが、本番の割当は ``kuebiko-sft:26b`` = N1 (n 系の初版) で、
+    # 素の 26B (``gemma4:26b``) ではない)
     TRIAGE_GEO_RESCUE = "triage_geo_rescue"
     # cluster 帯 dedup の最終確認 (duplicate/different/unclear)。以前は Step.TRIAGE 借用で、
     # triage 専用の印 ([task: triage]) が別の問いに付いていた。学習していない問いなので印なし。

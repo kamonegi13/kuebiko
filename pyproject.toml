@@ -104,6 +104,7 @@ module = [
     "eval_goldset",
     "export_mirror",
     "m3b_routing_replay",
+    "sft_quality_gate",
     "summarizer_diff_contract",
     "verify_prompt_cutover",
     "verify_summarizer_rubric",

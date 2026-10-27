@@ -57,7 +57,7 @@ def _write(
 def _rows(
     tmp_path: Path, train: list[dict[str, Any]], valid: list[dict[str, Any]] | None = None
 ) -> list[gate.Row]:
-    return gate.load_rows(_write(tmp_path, train, valid))
+    return list(gate.load_rows(_write(tmp_path, train, valid)))
 
 
 def test_task_mark_in_system_message_is_found_and_not_a_violation(tmp_path: Path) -> None:

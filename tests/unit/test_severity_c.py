@@ -22,6 +22,7 @@ from src.cti.severity_c_summary import summarize
 from src.eval.severity_gold_marks import ROUNDUP_GOLD_S3_IDS, gold_exclusion
 from src.storage.repo_severity_c_shadow import SeverityCShadowRow
 from src.storage.run_history import ArticleRecord, RunHistoryRepository, RunRecord
+from src.tools.tree_forest import forest_probability
 from src.ui.services import severity_c_shadow_job as job
 from tests.unit.test_ui_app import _bootstrap_project
 
@@ -146,8 +147,8 @@ class TestForestProbability:
         }  # fmt: skip
 
         # Act / Assert
-        assert sc.forest_probability([tree], [1.875]) == 1.0
-        assert sc.forest_probability([tree], [1.8749999]) == 0.0
+        assert forest_probability([tree], [1.875]) == 1.0
+        assert forest_probability([tree], [1.8749999]) == 0.0
 
     def test_averages_trees(self) -> None:
         leaf0: dict[str, list[float]] = {
@@ -159,7 +160,7 @@ class TestForestProbability:
         }
         leaf1 = {**leaf0, "proba": [0.6]}
 
-        assert sc.forest_probability([leaf0, leaf1], [0.0]) == pytest.approx(0.4)
+        assert forest_probability([leaf0, leaf1], [0.0]) == pytest.approx(0.4)
 
 
 class TestScope:
