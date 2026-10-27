@@ -251,7 +251,7 @@ def default_jobs() -> list[JobDef]:
             id="pir-spotlight",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=25,  # 実測 p90 20 分 (2026-09-15 見直し)
+            max_runtime_minutes=50,  # 対象 17 件で 30 分超 (10-28、pipeline の上限 3000s と揃える)
             title="PIR スポットライト",
             description=(
                 "PIR 縦断の narrative を毎日 04:30 に直近 7 日窓で更新 (Intel Graph の Spotlight)。"

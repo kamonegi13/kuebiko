@@ -56,6 +56,11 @@ _PIPELINE_TIMEOUT_OVERRIDES: dict[str, float] = {
     # weekly-recap は deep-dive を chunk-all で全件採点する (2026-07-07)。候補 ~900 →
     # ~8 チャンク × 数分 + digest 生成で ~20-25 分。夜間・週1なので 45 分の headroom を与える。
     "weekly-recap": 2700.0,
+    # pir-spotlight (毎日 04:30) は対象の PIR ごとに narrative ティアを 1 回 (65〜170 秒) 呼ぶ。
+    # 対象が 17 件に増えて 1800s を超え、末尾の PIR が毎回時間切れになった (2026-10-28)。
+    # 1 件ずつ保存し古い順に作るので打ち切りでも済んだ分は残るが、毎日「失敗」になる。
+    # 50 分なら 05:20 に終わり、06:30 の朝のブリーフにかからない。
+    "pir-spotlight": 3000.0,
 }
 # shutdown 時、in-flight な subprocess の自然完了を待つ秒数。これを超えたら cancel に切り替え。
 # 朝 07:30 JST の synthesis 直後にリビルドしても、ほぼ完了寸前なら救える程度を狙う。

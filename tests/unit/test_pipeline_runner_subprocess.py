@@ -549,6 +549,11 @@ class TestPerPipelineTimeout:
         # コード override で重い weekly synthesis のみ headroom (pir-spotlight 03:30 を侵さない範囲)
         assert pipeline_runner._resolve_pipeline_timeout("weekly-status-synthesis") == 2400.0
 
+    def test_spotlight_gets_headroom_for_all_pirs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PIPELINE_TIMEOUT_SECONDS", raising=False)
+        # 対象 17 PIR × 1 回 65〜170 秒で 1800s を超えた (10-28)。朝のブリーフ前に終わる範囲
+        assert pipeline_runner._resolve_pipeline_timeout("pir-spotlight") == 3000.0
+
     def test_env_global_overrides_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PIPELINE_TIMEOUT_SECONDS", "600")
         assert pipeline_runner._resolve_pipeline_timeout("weekly-status-synthesis") == 600.0
