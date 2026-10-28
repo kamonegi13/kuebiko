@@ -31,7 +31,13 @@ _log = get_logger(__name__)
 _CODE_BLOCK_RE = re.compile(r"^```(?:json|jsonl)?\s*\n(.+?)\n```\s*$", re.DOTALL)
 
 # JSONL 行の判定 (最初の `{` から最後の `}` まで)
-_JSONL_LINE_RE = re.compile(r"^\s*\{.*\}\s*$")
+_JSONL_LINE_RE = re.compile(r"^\s*\{.*\}\s*(?:\[[^\[\]{}]{1,40}\])?\s*$")
+#: 行末の短い注記 (Grok が「[blocked]」等を付ける、2026-10-28 実例)。これだけなら先頭の JSON を採る
+_TRAILING_NOTE_RE = re.compile(r"\s*(?:\[[^\[\]{}]{1,40}\])?\s*")
+#: 文字列の後ろに続けば「文字列の終わり」とみなせる形 (欄の名前 / 欄の値 / 一覧の要素)
+_KEY_END_RE = re.compile(r"\s*:")
+_VALUE_END_RE = re.compile(r'\s*(?:\}|,\s*"[A-Za-z_][A-Za-z0-9_]*"\s*:)')
+_ITEM_END_RE = re.compile(r'\s*(?:\]|,\s*")')
 
 
 class TweetEngagement(BaseModel):
@@ -170,6 +176,86 @@ def _extract_jsonl_payload(body: str) -> str:
     return "\n".join(lines[start_idx:end_idx])
 
 
+def _escape_stray_quotes(line: str) -> str:
+    """文字列の中のエスケープされていない ``"`` を ``\\"`` にする (Grok の出力の揺れ、2026-10-28)。
+
+    引用符は、その位置 (欄の名前 / 欄の値 / 一覧の要素) で文字列が終われる形が後ろに続くときだけ
+    文字列の終わりとみなす。``json.loads`` が失敗した行にだけ使う。
+    """
+    out: list[str] = []
+    stack: list[str] = []  # "{" / "["
+    expecting_key = False
+    in_string = False
+    string_is_key = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if in_string:
+            if ch == "\\":
+                out.append(line[i : i + 2])
+                i += 2
+                continue
+            if ch == '"':
+                rest = line[i + 1 :]
+                if string_is_key:
+                    ends = bool(_KEY_END_RE.match(rest))
+                elif stack and stack[-1] == "[":
+                    ends = bool(_ITEM_END_RE.match(rest))
+                else:
+                    ends = bool(_VALUE_END_RE.match(rest)) or not rest.strip()
+                if ends:
+                    in_string = False
+                    out.append(ch)
+                else:
+                    out.append('\\"')
+                i += 1
+                continue
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            string_is_key = bool(stack) and stack[-1] == "{" and expecting_key
+        elif ch == "{":
+            stack.append("{")
+            expecting_key = True
+        elif ch == "[":
+            stack.append("[")
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+            expecting_key = False
+        elif ch == ",":
+            expecting_key = bool(stack) and stack[-1] == "{"
+        elif ch == ":":
+            expecting_key = False
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _decode_line(line: str) -> object:
+    """1 行を読む。読めなければ「行末の注記を外す」「文字列の中の引用符を直す」の順に試す。
+
+    どれでも読めなければ最初の ``JSONDecodeError`` を投げる (呼び出し側が skip する)。
+    """
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError as first:
+        error = first
+    decoder = json.JSONDecoder()
+    for kind, candidate in (("trailing_note", line), ("stray_quotes", _escape_stray_quotes(line))):
+        try:
+            obj, end = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        if _TRAILING_NOTE_RE.fullmatch(candidate[end:]):
+            # 注記の意味が変わったときに気づけるよう、直して読んだ行は種類つきで残す
+            _log.info("jsonl_line_repaired", kind=kind, note=candidate[end:].strip()[:40])
+            return obj
+    raise error
+
+
 def parse_jsonl(body: str) -> JsonlParseResult:
     """Grok JSONL output を parse して TweetRecord list を返す。
 
@@ -192,7 +278,7 @@ def parse_jsonl(body: str) -> JsonlParseResult:
             skipped.append(line_stripped[:200])
             continue
         try:
-            data = json.loads(line_stripped)
+            data = _decode_line(line_stripped)
         except json.JSONDecodeError as e:
             _log.warning(
                 "jsonl_parse_decode_error",

@@ -90,6 +90,22 @@ class TestParseJsonl:
         assert result.parsed_count == 1
         assert result.records[0].tweet_id == "42"
 
+    def test_parses_record_with_trailing_annotation(self) -> None:
+        """Grok が行末に注記 (「[blocked]」) を付けた行も、先頭の JSON を読む (10-28 実例)。"""
+        body = _make_jsonl_line(tweet_id="7") + " [blocked]"
+        result = parse_jsonl(body)
+        assert result.parsed_count == 1
+        assert result.records[0].tweet_id == "7"
+
+    def test_repairs_unescaped_quotes_inside_text(self) -> None:
+        """本文の中の引用符がエスケープされていない行を直して読む (10-28 実例)。"""
+        body = _make_jsonl_line(
+            tweet_id="8", text='[DATA LEAK] "example" claims to sell data, "100k" rows'
+        )
+        result = parse_jsonl(body)
+        assert result.parsed_count == 1
+        assert result.records[0].text == '[DATA LEAK] "example" claims to sell data, "100k" rows'
+
     def test_skips_invalid_json(self) -> None:
         body = "\n".join(
             [
