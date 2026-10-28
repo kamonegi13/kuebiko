@@ -61,9 +61,21 @@ class TestIsEnabled:
         for model in ("kuebiko-sft:s24c", "kuebiko-sft:s24ci50"):
             assert focus_v6.is_enabled(model) is True
 
+    def test_s25_family_enabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(focus_v6.FLAG_ENV, raising=False)
+        for model in ("kuebiko-sft:s25", "kuebiko-sft:s25i65"):
+            assert focus_v6.is_enabled(model) is True
+
     def test_other_models_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(focus_v6.FLAG_ENV, raising=False)
-        for model in ("kuebiko-sft:s23i", "kuebiko-sft:s24", "kuebiko-sft:s24b", "gemma4:26b", ""):
+        for model in (
+            "kuebiko-sft:s23i",
+            "kuebiko-sft:s24",
+            "kuebiko-sft:s24b",
+            "kuebiko-sft:n19",
+            "gemma4:26b",
+            "",
+        ):
             assert focus_v6.is_enabled(model) is False
 
     def test_flag_one_forces_on(self, monkeypatch: pytest.MonkeyPatch) -> None:

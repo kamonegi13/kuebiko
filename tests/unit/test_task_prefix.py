@@ -254,6 +254,10 @@ def test_s24_family_evidence_schema_follows_prefix() -> None:
     assert summary_schema_for("kuebiko-sft:s24bi25") is SummaryEvidenceOutput
     assert summary_schema_for("kuebiko-sft:s23i") is SummaryEvidenceOutput
     assert summary_schema_for("kuebiko-sft:s21") is SummaryOutput
+    for tag in ("kuebiko-sft:s25", "kuebiko-sft:s25i65"):
+        assert summary_schema_for(tag) is SummaryEvidenceOutput
+    for tag in ("kuebiko-sft:n19", "gemma4:26b"):
+        assert summary_schema_for(tag) is SummaryOutput
 
 
 def test_s24b_aux_markers_follow_s24b_family_only() -> None:

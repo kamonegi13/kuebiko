@@ -65,3 +65,28 @@ def test_s24c_unmarked_steps_not_marked_for_translation() -> None:
     """翻訳・和訳の印は n20 だけ (N20C) — s24c にも付かない。"""
     for step in (Step.ARTICLE_TRANSLATE, Step.ACTOR_SYNC):
         assert with_task_prefix("本文", step, "kuebiko-sft:s24c") == "本文"
+
+
+_S25_TAGS = ("kuebiko-sft:s25", "kuebiko-sft:s25i65", "kuebiko-sft:s25i50")
+_UNRELATED_TAGS = ("kuebiko-sft:s23i", "kuebiko-sft:n19", "gemma4:26b")
+
+
+@pytest.mark.parametrize("tag", _S25_TAGS)
+def test_s25_family_behaves_like_s24c(tag: str) -> None:
+    """s25 (補間含む) は s24c と同じ印・同じ未学習 step。"""
+    from src.tools.task_prefix import task_prefix_enabled
+
+    ref = "kuebiko-sft:s24c"
+    assert task_prefix_enabled(tag)
+    assert untrained_steps_for(tag) == untrained_steps_for(ref)
+    for step in Step:
+        assert prefix_for(step, tag) == prefix_for(step, ref)
+        assert with_task_prefix("本文", step, tag) == with_task_prefix("本文", step, ref)
+
+
+@pytest.mark.parametrize("tag", _UNRELATED_TAGS)
+def test_unrelated_models_unaffected_by_s25_registration(tag: str) -> None:
+    from src.tools.task_prefix import task_prefix_enabled
+
+    assert task_prefix_enabled(tag) is (tag == "kuebiko-sft:s23i" or tag == "kuebiko-sft:n19")
+    assert with_task_prefix("本文", Step.DEDUP_CLUSTER_JUDGE, tag) == "本文"

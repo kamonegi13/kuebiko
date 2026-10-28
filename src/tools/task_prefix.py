@@ -51,10 +51,10 @@ PREFIX_TRAINED_MODELS: frozenset[str] = frozenset(
     {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58", "kuebiko-sft:s23i"}
 )
 
-#: 名前の**前方一致**で接頭辞つきと見なすモデル系統。s24 (と s24b) とその補間の一時タグ
+#: 名前の**前方一致**で接頭辞つきと見なすモデル系統。s24 (と s24b)・s25 とその補間の一時タグ
 #: (``kuebiko-sft:s24i25`` / ``kuebiko-sft:s24bi50`` 等、``import_interp_s24.sh`` が付ける名前)
 #: は、本番へ上げる補間の重みが決まる前でも印つきで学習した系統として扱う。s23i 以前は完全一致のまま。  # noqa: E501
-PREFIX_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24",)
+PREFIX_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24", "kuebiko-sft:s25")
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
@@ -88,7 +88,11 @@ TASK_MARKERS: dict[Step, str] = {
 #: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。
 #: 前方一致なので一時タグ・補間タグ (``kuebiko-sft:s24bi50`` / ``kuebiko-sft:s24c…``) にも効く。
 #: s23i 以前と s24 (無印) はここに含まれず、既定の印 (借用) のまま。
-S24_NEW_TASK_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24b", "kuebiko-sft:s24c")
+S24_NEW_TASK_FAMILIES: tuple[str, ...] = (
+    "kuebiko-sft:s24b",
+    "kuebiko-sft:s24c",
+    "kuebiko-sft:s25",  # s24c と同じ課題・印で学習 (build_dataset_s25.py、補間 s25i65 等も前方一致)
+)
 
 _NEW_TASK_MARKERS: dict[Step, str] = {
     Step.JUDGMENT_CLASSIFY: "[task: judgment]\n",

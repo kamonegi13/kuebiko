@@ -305,8 +305,8 @@ class MitreEvidence(BaseModel):
 #: いないモデルに欄を足すと、見たことのない出力の形を求めることになる (接頭辞と同じ考え方、
 #: 2026-09-29)
 EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:i58", "kuebiko-sft:s23i"})
-#: 名前の前方一致で同じ扱いにする系統 (s24 / s24b とその補間の一時タグ ``s24i25`` / ``s24bi50`` 等)
-EVIDENCE_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24",)
+#: 名前の前方一致で同じ扱いにする系統 (s24 / s24b / s25 とその補間の一時タグ ``s24i25`` 等)
+EVIDENCE_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24", "kuebiko-sft:s25")
 
 
 class SummaryEvidenceOutput(SummaryOutput):
