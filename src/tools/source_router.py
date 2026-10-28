@@ -24,6 +24,7 @@ import trafilatura
 
 from src.config_loader import AppConfig, SourceConfig
 from src.grok.fetcher import GrokFetcher
+from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor
@@ -109,6 +110,8 @@ class GrokEmailSource:
         # ログインしたまま確認の画面 (年齢等) で本文が描かれなかった件数 (2026-10-28)。
         # セッション失効と同じく run_pipeline が errors に載せる (従来は「成功・要約 0」)
         self.last_blocked_count: int = 0
+        # レポートの画面は開けたが会話の本文が DOM に無かった件数 (2026-10-29、run 8740)
+        self.last_not_rendered_count: int = 0
         # 既読化を待つメール: uid → そのメールから作った記事の id (2026-10-29)。
         # 既読化は fetch では行わず、パイプラインが記事の成果を確定させた後に
         # ``commit_seen`` で行う (run 8732: 取得直後に既読化 → 処理中に kill → 投稿 ~280 件が消失)
@@ -119,6 +122,7 @@ class GrokEmailSource:
         # メールのみ** 後段で明示的に行う (失敗メールは未読に残して再試行可能にする)。
         self.last_session_expired_count = 0
         self.last_blocked_count = 0
+        self.last_not_rendered_count = 0
         self._pending_seen = {}
         emails = await self._imap.fetch_unread(
             sender_filters=self._sender_filters,
@@ -261,6 +265,13 @@ class GrokEmailSource:
             self.last_blocked_count += 1
             _log.warning("grok_page_blocked_by_gate", url=url)
             raise _RetryableFetchError("blocked_by_gate")
+        if not body and is_grok_report_url(result.final_url or url):
+            # レポート本体 (SPA) は DOM の本文が無ければ描画の失敗。trafilatura の断片
+            # (表題 "Grok" + 十数字) を本文にすると、どのレポートも同じ中身になり意味の
+            # 重複判定で黙って落ちていた (run 8740 ほか)。未読に残して次の回で取り直す
+            self.last_not_rendered_count += 1
+            _log.warning("grok_report_not_rendered", url=url, html_length=len(result.html))
+            raise _RetryableFetchError("report_not_rendered")
         if not body:
             from src.tools import source_router as _self_module
 

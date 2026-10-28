@@ -21,6 +21,7 @@ import pytest
 
 from src.grok.fetcher import GrokFetchResult
 from src.grok.jsonl_parser import TweetEngagement, TweetRecord
+from src.grok.report_url import is_grok_report_url
 from src.pipeline import grok_convert
 from src.pipeline.dispatch import commit_source_seen
 from src.pipeline.grok_convert import GrokExpansion, drop_seen_records
@@ -309,7 +310,7 @@ def test_subarticle_source_never_returns_parent_identity() -> None:
     # 断片は正規化で落ちるため、どれも親と別の hash になること
     parent_hash = url_hash(parent.url)
     assert parent_hash not in {url_hash(a.url) for a in (alias, by_id, bare)}
-    assert not grok_convert.is_grok_report_url(bare.url)
+    assert not is_grok_report_url(bare.url)
 
 
 def test_seen_registration_and_lookup_use_the_same_key() -> None:
@@ -321,10 +322,10 @@ def test_seen_registration_and_lookup_use_the_same_key() -> None:
 
 
 def test_is_grok_report_url() -> None:
-    assert grok_convert.is_grok_report_url("https://grok.com/c/abc?rid=1")
-    assert grok_convert.is_grok_report_url("https://grok.com/chat/abc")
-    assert not grok_convert.is_grok_report_url("https://grok.com/automations?automationId=1")
-    assert not grok_convert.is_grok_report_url("https://example.com/c/abc")
+    assert is_grok_report_url("https://grok.com/c/abc?rid=1")
+    assert is_grok_report_url("https://grok.com/chat/abc")
+    assert not is_grok_report_url("https://grok.com/automations?automationId=1")
+    assert not is_grok_report_url("https://example.com/c/abc")
 
 
 def test_url_dedup_keeps_known_grok_report_but_drops_known_task_page(tmp_path: Any) -> None:

@@ -76,11 +76,13 @@ class _AnyChannel(dict[str, DiscordPublisher]):
         return self._publisher
 
 
-def _source(body: str | None = None) -> tuple[GrokEmailSource, AsyncMock]:
+def _source(
+    body: str | None = None, uids: tuple[str, ...] = ("42",)
+) -> tuple[GrokEmailSource, AsyncMock]:
     imap = AsyncMock()
     imap.fetch_unread.return_value = [
         EmailMessage(
-            uid="42",
+            uid=uid,
             subject="Grok report",
             sender="noreply@x.ai",
             received_at=datetime(2026, 10, 28, 19, tzinfo=UTC),
@@ -88,6 +90,7 @@ def _source(body: str | None = None) -> tuple[GrokEmailSource, AsyncMock]:
             body_html="",
             extracted_urls=[_REPORT_URL],
         )
+        for uid in uids
     ]
     imap.mark_seen.side_effect = lambda uids: len(uids)
     grok = AsyncMock()
@@ -154,6 +157,7 @@ async def _run(
     template: jinja2.Template,
     run_id: int,
     budget: float | None,
+    embedder: Any = None,
 ) -> PipelineRunResult:
     pipeline = PipelineConfig(
         name="grok-briefing",
@@ -174,6 +178,7 @@ async def _run(
             dedup_repo=repo,
             run_id=run_id,
             time_budget_seconds=budget,
+            embedder=embedder,
         ),
     )
 
@@ -264,3 +269,46 @@ async def test_posts_without_id_or_url_are_dropped_on_the_next_run(
     imap2.mark_seen.assert_awaited_once_with(["42"])
     rows = repo.list_articles(limit=50)
     assert len({r.article_id for r in rows}) == len(rows) == _POSTS
+
+
+@pytest.mark.asyncio
+async def test_report_identical_to_a_past_report_is_not_dropped_as_semantic_duplicate(
+    tmp_path: Path, template: jinja2.Template, clock: _Clock, summarized: list[str]
+) -> None:
+    """run 8740: 過去のレポートと埋込が 1.0 一致しても、レポート本体は落とさない。"""
+    from src.tools.embedding_client import EmbeddingClient, EmbeddingResponse
+    from src.tools.url_normalizer import url_hash
+
+    repo = _repo(tmp_path)
+    past = "https://grok.com/c/past-report"
+    repo.mark_url_seen(url_hash=url_hash(past), url=past, title="Grok")
+    repo.add_article_embedding(
+        url_hash=url_hash(past), url=past, vector=[1.0, 0.0, 0.0, 0.0], model="m", title="Grok"
+    )
+    embedder = AsyncMock(spec=EmbeddingClient)
+    embedder.embed = AsyncMock(
+        return_value=EmbeddingResponse(vector=(1.0, 0.0, 0.0, 0.0), model="m", dim=4)
+    )
+    source, imap = _source()
+
+    result = await _run(source, repo, _publisher(), template, _start(repo), None, embedder)
+
+    assert len(summarized) == _POSTS  # レポートは展開され、全投稿を処理した
+    assert result.unfinished_article_ids == ()
+    imap.mark_seen.assert_awaited_once_with(["42"])
+
+
+@pytest.mark.asyncio
+async def test_email_whose_report_was_dropped_before_expansion_stays_unseen(
+    tmp_path: Path, template: jinja2.Template, clock: _Clock, summarized: list[str]
+) -> None:
+    """同じレポートを指すメールが 2 通あると、2 通目の親は同一バッチの重複で落ちる。
+    展開まで届かなかったレポートは未完了に数え、そのメールは既読にしない。"""
+    repo = _repo(tmp_path)
+    source, imap = _source(uids=("42", "43"))
+
+    result = await _run(source, repo, _publisher(), template, _start(repo), None)
+
+    assert len(summarized) == _POSTS
+    assert len(result.unfinished_article_ids) == 1
+    imap.mark_seen.assert_awaited_once_with(["42"])

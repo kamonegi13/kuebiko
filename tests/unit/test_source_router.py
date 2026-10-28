@@ -114,6 +114,7 @@ class TestGrokEmailSource:
             html="<html><body>real article body content with enough text</body></html>",
             title="Grok Report A",
             success=True,
+            body_text="report body from the rendered DOM",
         )
 
         extractor = MagicMock()
@@ -144,6 +145,7 @@ class TestGrokEmailSource:
             html="<html><body>real article body content</body></html>",
             title="R",
             success=True,
+            body_text="report body from the rendered DOM",
         )
         monkeypatch.setattr(
             "src.tools.source_router._trafilatura_extract",
@@ -244,14 +246,16 @@ class TestGrokEmailSource:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """body_text が空なら trafilatura で抽出する。"""
+        """レポート本体でないページ (タスク画面等) は body_text が空なら trafilatura で抽出する。"""
         imap = AsyncMock()
-        imap.fetch_unread.return_value = [_email(urls=["https://grok.com/chat/x"])]
+        imap.fetch_unread.return_value = [
+            _email(urls=["https://grok.com/automations?automationId=x"])
+        ]
 
         grok = AsyncMock()
         grok.fetch.return_value = GrokFetchResult(
-            url="https://grok.com/chat/x",
-            final_url="https://grok.com/chat/x",
+            url="https://grok.com/automations?automationId=x",
+            final_url="https://grok.com/automations?automationId=x",
             html="<html><body>fallback HTML body</body></html>",
             body_text="",  # 空
             title="x",
@@ -269,6 +273,39 @@ class TestGrokEmailSource:
 
         assert len(articles) == 1
         assert articles[0].summary_html == "extracted by trafilatura"
+
+    @pytest.mark.asyncio
+    async def test_report_page_without_rendered_body_is_retried(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """レポート本体は DOM の本文が無ければ描画の失敗 (trafilatura の断片を本文にしない)。
+
+        run 8740: 断片 (表題 "Grok" + 十数字) が全レポートで同じになり、意味の重複判定で
+        1.0 一致して黙って落ち、メールは既読になっていた。
+        """
+        imap = AsyncMock()
+        imap.fetch_unread.return_value = [_email(uid="9", urls=["https://grok.com/chat/x"])]
+        grok = AsyncMock()
+        grok.fetch.return_value = GrokFetchResult(
+            url="https://grok.com/chat/x",
+            final_url="https://grok.com/c/x",
+            html="<html><body>Grok</body></html>",
+            body_text="",
+            title="Grok",
+            success=True,
+        )
+        monkeypatch.setattr(
+            "src.tools.source_router._trafilatura_extract",
+            lambda html, **kwargs: "Sign in to Grok",
+            raising=False,
+        )
+        source = GrokEmailSource(imap, grok, MagicMock(), mark_as_read=True)
+
+        assert await source.fetch(max_count=5) == []
+        assert source.last_not_rendered_count == 1
+        assert await source.commit_seen(()) == 0  # 未読に残して次の回で取り直す
+        imap.mark_seen.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_filters_urls_outside_host_allowlist(
@@ -293,6 +330,7 @@ class TestGrokEmailSource:
             html="<html><body>real grok content with enough text</body></html>",
             title="Grok",
             success=True,
+            body_text="report body from the rendered DOM",
         )
         extractor = MagicMock()
         monkeypatch.setattr(

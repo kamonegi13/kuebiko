@@ -6,7 +6,7 @@ import hashlib
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import jinja2
 
@@ -158,8 +158,6 @@ _X_PERMALINK = re.compile(r"^https?://(?:www\.)?x\.com/([A-Za-z0-9_]{1,15})/stat
 _X_HOST_ALIASES = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/", re.IGNORECASE)
 #: 匿名の permalink (投稿者が URL から取れない形)
 _ANON_HANDLE = "i"
-#: Grok のレポート本体 (チャット) のページ。毎回新しい URL で、メールの未読が再試行の権利
-_GROK_REPORT_PATH_PREFIXES = ("/c/", "/chat/", "/share/")
 #: 投稿の URL も tweet id も無いときの、投稿ごとの合成 URL (レポートの path とは重ならない)
 _SYNTHETIC_POST_BASE = "https://grok.com/post/"
 #: 投稿の安定した鍵を BriefingMessage.metadata で運ぶ欄
@@ -203,18 +201,6 @@ def canonical_post_url(url: str, tweet_id: str = "") -> str:
     if tid.isdigit():
         return f"https://x.com/{_ANON_HANDLE}/status/{tid}"
     return ""
-
-
-def is_grok_report_url(url: str) -> bool:
-    """Grok のレポート本体 (チャット) の URL か。URL の重複判定の対象から外すために使う。"""
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    host = (parsed.hostname or "").lower()
-    if host != "grok.com" and not host.endswith(".grok.com"):
-        return False
-    return (parsed.path or "").startswith(_GROK_REPORT_PATH_PREFIXES)
 
 
 def grok_subarticle_source(

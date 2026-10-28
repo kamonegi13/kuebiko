@@ -26,6 +26,7 @@ from src.cti.alert_dedup_gate import ALERT_CHANNEL
 from src.cti.alert_dedup_shadow import record_alert_dedup_shadow
 from src.cti.alert_demotion import DEMOTED_CHANNEL, maybe_demote_alert
 from src.cti.identity_dedup import DedupGateResult, check_pre_post_dedup
+from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
 from src.pipeline.briefing import (
     DegenerateBodyError,
@@ -458,6 +459,11 @@ async def run_pipeline(
                 early_result = early_result.model_copy(update={"ops_notified": True})
         return early_result
     _log.info("articles_fetched", count=len(articles), source_type=pipeline.source.type)
+    # 取得した Grok のレポート本体 (2026-10-29)。重複判定などで展開まで届かなかったものも
+    # 未完了に数え、通知メールを既読にしない (run 8740: 親が重複判定で落ち、既読化されていた)
+    fetched_grok_reports = tuple(
+        a for a in articles if _is_grok_article(a) and is_grok_report_url(a.url)
+    )
 
     # 監査 2026-07-05 P2 / 2026-08-02: per-source fetch 結果を永続化 (死活検知の観測点)。
     # RSS / html_scraper / sitemap が同じ seam (last_fetch_health) で記録する。
@@ -667,6 +673,14 @@ async def run_pipeline(
         errors.append(
             f"grok: 画面が確認のダイアログ (年齢等) で塞がれ {_grok_blocked} 件のレポートを"
             "読めない — 普段のブラウザで grok.com を開き、確認に答えてください"
+        )
+    # レポートの画面は開けたが本文 (会話) が描かれなかった件数 (2026-10-29、run 8740)
+    _grok_unrendered_raw = getattr(source, "last_not_rendered_count", 0)
+    _grok_unrendered = _grok_unrendered_raw if isinstance(_grok_unrendered_raw, int) else 0
+    if _grok_unrendered > 0:
+        errors.append(
+            f"grok: {_grok_unrendered} 件のレポートの本文が画面に描かれなかった — "
+            "メールは未読に残し、次の回で取り直す"
         )
     # Phase 5A fix: ダッシュボード / 履歴 (articles テーブル) 用の per-briefing 結果。
     # 1 ブリーフィング = 1 ArticleRecord (Grok の section 展開も独立行になる)。
@@ -904,7 +918,10 @@ async def run_pipeline(
         concurrency=_article_concurrency(),
         should_stop=should_stop,
     )
-    unfinished_ids = unfinished_article_ids(articles, _works)
+    _processed_ids = {a.id for a in articles}
+    unfinished_ids = unfinished_article_ids(
+        [*articles, *(a for a in fetched_grok_reports if a.id not in _processed_ids)], _works
+    )
     deferred_posts_total = sum(w.deferred_posts for w in _works)
     if deferred_count:
         _log.warning(

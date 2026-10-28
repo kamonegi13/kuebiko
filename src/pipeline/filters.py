@@ -12,8 +12,9 @@ from urllib.parse import urlparse
 
 from src.config_loader import AppConfig
 from src.cti.ingest_relevance import ingest_relevance_hint
+from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
-from src.pipeline.grok_convert import _is_grok_article, is_grok_report_url
+from src.pipeline.grok_convert import _is_grok_article
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
 from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.repo_triage_shadow import TriageShadowRow
@@ -458,6 +459,17 @@ async def _filter_semantic_duplicates(
     batch_ids: list[str] = []
 
     for article in articles:
+        # Grok のレポート本体は意味の重複判定に掛けない (2026-10-29、run 8740)。毎回別の
+        # 内容のはずのレポートが、表題 "Grok" + 定型の短い本文で 1.0 一致して黙って落ち、
+        # メールは既読になっていた。投稿の重複は展開時の投稿ごとの判定が受け持つ
+        if _is_grok_article(article) and is_grok_report_url(article.url):
+            _log.info(
+                "dedup_semantic_bypass_grok_report",
+                article_id=article.id,
+                url=article.url,
+            )
+            survivors.append(article)
+            continue
         text = _embedding_input_text(article)
         try:
             response = await embedder.embed(text)

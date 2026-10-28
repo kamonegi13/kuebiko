@@ -1336,14 +1336,26 @@ class TestSemanticDedup:
         assert result.skipped_dup == 0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("new_url", "expected_skipped"),
+        [
+            # レポート本体は意味の重複判定に掛けない (2026-10-29、run 8740: 定型の短い
+            # 本文が 1.0 一致して黙って落ちていた)。投稿の重複は展開時に判定する
+            ("https://grok.com/chat/dup-report", 0),
+            # レポート本体でない Grok のページは従来どおり hard tier で落ちる
+            ("https://grok.com/automations?automationId=dup", 1),
+        ],
+    )
     async def test_grok_article_still_caught_by_hard_tier(
         self,
         template: jinja2.Template,
         pipeline_cfg: PipelineConfig,
         app_cfg: Any,
         tmp_path: Any,
+        new_url: str,
+        expected_skipped: int,
     ) -> None:
-        """Phase 5T-L: Grok でも hard tier (0.92) では skip される (真の content コピー)。"""
+        """Phase 5T-L: Grok でも hard tier (0.92) では skip される (レポート本体を除く)。"""
         from src.storage.run_history import RunHistoryRepository
         from src.tools.embedding_client import EmbeddingClient, EmbeddingResponse
         from src.tools.url_normalizer import url_hash
@@ -1362,7 +1374,7 @@ class TestSemanticDedup:
 
         new_grok = _article(
             article_id="grok:abc:2",
-            url="https://grok.com/chat/dup-report",
+            url=new_url,
             title="ほぼ完全コピー",
         )
 
@@ -1404,9 +1416,7 @@ class TestSemanticDedup:
             embedder=embedder,
         )
 
-        # Grok でも hard tier は機能、真の content コピーは skip される。
-        # skipped_dup=1 で dedup-stage で skip されたことを確認 (posted は当然 0)。
-        assert result.skipped_dup == 1
+        assert result.skipped_dup == expected_skipped
 
 
 # ---------- 重要度 → チャンネルマッピング (Phase 5I: SSoT は config_loader) ----------
