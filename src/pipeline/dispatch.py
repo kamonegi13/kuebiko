@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from pathlib import Path
 
@@ -194,31 +195,65 @@ async def run_default(
         # チャンネル別の DiscordPublisher を一度に作る
         publishers = _build_publishers(config)
 
-        return await run_pipeline(
-            config=config,
-            pipeline=pipeline,
-            source=source,
-            extractor=extractor,
-            llm=llm,
-            publishers=publishers,
-            template=template,
-            dry_run=dry_run,
-            max_articles=max_articles,
-            dedup_repo=dedup_repo,
-            embedder=embedder,
-            skip_dedup=skip_dedup,
-            triage_llm=triage_llm,
-            triage_rescue_llm=triage_rescue_llm,
-            relevance_jp_cascade_llm=relevance_jp_cascade_llm,
-            run_id=run_id,
-            channel_routing=channel_routing,
-            enrichment=enrichment,
-            stix_policy=stix_policy,
-            time_budget_seconds=_resolve_time_budget_seconds(),
+        return await run_then_commit(
+            source,
+            lambda: run_pipeline(
+                config=config,
+                pipeline=pipeline,
+                source=source,
+                extractor=extractor,
+                llm=llm,
+                publishers=publishers,
+                template=template,
+                dry_run=dry_run,
+                max_articles=max_articles,
+                dedup_repo=dedup_repo,
+                embedder=embedder,
+                skip_dedup=skip_dedup,
+                triage_llm=triage_llm,
+                triage_rescue_llm=triage_rescue_llm,
+                relevance_jp_cascade_llm=relevance_jp_cascade_llm,
+                run_id=run_id,
+                channel_routing=channel_routing,
+                enrichment=enrichment,
+                stix_policy=stix_policy,
+                time_budget_seconds=_resolve_time_budget_seconds(),
+            ),
         )
 
     # AsyncExitStack を抜けると ContextManager の出力がここに来る (型を満たすため)
     raise RuntimeError("unreachable")
+
+
+async def run_then_commit(
+    source: object, run: Callable[[], Awaitable[PipelineRunResult]]
+) -> PipelineRunResult:
+    """パイプラインを流し、**正常に終わったときだけ** source の既読化を行う (2026-10-29)。
+
+    Grok の通知メールは成果が確定した後に既読化する (IMAP 接続が開いているうちに)。
+    例外・キャンセル・kill で終わればここに来ないので、メールは未読に残り次の run が取り直す。
+    """
+    result = await run()
+    await commit_source_seen(source, result)
+    return result
+
+
+async def commit_source_seen(source: object, result: PipelineRunResult) -> int:
+    """source が後段の既読化 (``commit_seen``) を持つなら、未完了の記事を除いて行う。
+
+    Grok の通知メールは取得の直後ではなくここで既読にする (2026-10-29、run 8732 の消失)。
+    既読化の失敗は本処理の結果を変えない (未読に残る = 次の run が取り直す)。
+    """
+    commit = getattr(source, "commit_seen", None)
+    if commit is None or result.dry_run:
+        # dry-run は投稿も既読の登録もしないので、メールも未読に残す
+        return 0
+    try:
+        marked: int = await commit(result.unfinished_article_ids)
+    except Exception as e:  # noqa: BLE001 — 未読に残るだけ (次の run が取り直す)
+        _log.warning("source_commit_seen_failed", error_type=type(e).__name__, error=str(e))
+        return 0
+    return marked
 
 
 def _find_pipeline(

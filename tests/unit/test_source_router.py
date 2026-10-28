@@ -152,8 +152,10 @@ class TestGrokEmailSource:
         )
         source = GrokEmailSource(imap, grok, MagicMock(), mark_as_read=True)
         await source.fetch(max_count=5)
-        # fetch は非破壊 (mark_as_read=False で取得)、成功後に明示既読化
+        # fetch は非破壊 (mark_as_read=False で取得)。既読化は成果の確定後 (commit_seen)
         assert imap.fetch_unread.call_args.kwargs["mark_as_read"] is False
+        imap.mark_seen.assert_not_called()
+        assert await source.commit_seen(()) == imap.mark_seen.return_value
         imap.mark_seen.assert_awaited_once_with(["7"])
 
     @pytest.mark.asyncio

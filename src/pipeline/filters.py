@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from src.config_loader import AppConfig
 from src.cti.ingest_relevance import ingest_relevance_hint
 from src.logging_config import get_logger
-from src.pipeline.grok_convert import _is_grok_article
+from src.pipeline.grok_convert import _is_grok_article, is_grok_report_url
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
 from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.repo_triage_shadow import TriageShadowRow
@@ -142,7 +142,10 @@ def _filter_duplicates(
     survivors: list[Article] = []
     skipped_ids: list[str] = []
     for article, h in zip(articles, hashes, strict=True):
-        if h in seen:
+        # Grok のレポート本体は既知でも落とさない (2026-10-29)。通知メールの未読が再試行の
+        # 権利で、繰り越し中のレポートを取り直したときに親ごと落とすと残りの投稿が消える。
+        # 投稿の重複は展開時の投稿ごとの既知判定 (drop_seen_records) が落とす
+        if h in seen and not (_is_grok_article(article) and is_grok_report_url(article.url)):
             skipped_ids.append(article.id)
             _log.info("dedup_skipped_url", article_id=article.id, url=article.url)
             continue

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from urllib.parse import quote, urlparse
 
 import jinja2
 
@@ -26,6 +29,29 @@ from src.tools.url_normalizer import url_hash
 
 _log = get_logger(__name__)
 
+#: run 横断の既知判定 (dedup_repo.filter_seen_and_touch と同じ形: hash 群 → 既知の hash 集合)
+SeenFilter = Callable[[Sequence[str]], set[str]]
+
+
+@dataclass(frozen=True)
+class GrokExpansion:
+    """Grok レポート 1 本の展開結果。
+
+    ``deferred`` は時間切れ (soft deadline) で着手しなかった投稿の数。1 以上なら
+    レポートは**未完了**で、呼び手は通知メールを既読にしてはいけない (次の run が
+    同じレポートを取り直し、処理済みの投稿は run 横断の既知判定で要約前に落ちる)。
+    """
+
+    briefings: list[BriefingMessage]
+    deferred: int = 0
+
+    @property
+    def is_complete(self) -> bool:
+        return self.deferred == 0
+
+
+_EMPTY_EXPANSION = GrokExpansion(briefings=[])
+
 
 def _grok_subarticle_id(parent_article_id: str, msg: BriefingMessage, index: int) -> str:
     """Grok レポートを tweet 単位に展開する際の **per-tweet 一意 article_id**。
@@ -35,9 +61,12 @@ def _grok_subarticle_id(parent_article_id: str, msg: BriefingMessage, index: int
     し最後の tweet の body が全行に残る、(2) ``article_entities`` (victim_org / IoC / actor)
     が同一 id に混載される、というデータ破損が起きていた。tweet_id (なければ index) を
     付与して **1 tweet = 1 article_id** にする。tweet_id は安定なので再処理でも同一 id。
+    tweet_id が無ければ投稿の中身から決まる ``post_key`` (2026-10-29。index は取り直すたびに
+    ずれる)、それも無い経路 (機械変換のみ) だけ index。
     """
     tid = str(msg.metadata.get("tweet_id") or "").strip()
-    suffix = tid if tid else f"i{index}"
+    key = str(msg.metadata.get(POST_KEY_FIELD) or "").strip()
+    suffix = tid or key or f"i{index}"
     return f"{parent_article_id}#{suffix}"
 
 
@@ -78,6 +107,31 @@ def filter_expanded_by_seen(
     return kept, len(expanded) - len(kept)
 
 
+def drop_seen_records(
+    records: Sequence[TweetRecord],
+    seen_filter: SeenFilter | None,
+) -> tuple[list[TweetRecord], int]:
+    """**要約の前に**、run 横断で既知の投稿を落とす (2026-10-29)。
+
+    投稿の URL (処理済みの投稿は投稿・web-only・重複のどの終端でも ``_register_seen`` 等で
+    投稿 URL を既読に登録する) と dedup_key (外部 URL 優先、filter_expanded_by_seen と同じ鍵)
+    のどちらかが既知なら落とす。巨大なレポートを複数の run に分けて処理するとき、
+    前の run で済んだ投稿を要約し直さないための関門 (要約後の filter_expanded_by_seen は
+    LLM を使い切った後なので、繰り越しの度に先頭から要約し直して進まなくなる)。
+    """
+    if seen_filter is None or not records:
+        return list(records), 0
+    from src.grok.jsonl_to_briefings import _make_dedup_key
+
+    keys = [
+        tuple(dict.fromkeys(url_hash(u) for u in (record_identity_url(r), _make_dedup_key(r)) if u))
+        for r in records
+    ]
+    seen = seen_filter(list(dict.fromkeys(h for ks in keys for h in ks)))
+    kept = [r for r, ks in zip(records, keys, strict=True) if not any(h in seen for h in ks)]
+    return kept, len(records) - len(kept)
+
+
 def grok_report_is_quiet(article: Article) -> bool:
     """レポートがハートビートのみ (事象ゼロの静穏) か。
 
@@ -100,9 +154,77 @@ def grok_report_is_quiet(article: Article) -> bool:
 
 # X の permalink: https://x.com/<handle>/status/<id>
 _X_PERMALINK = re.compile(r"^https?://(?:www\.)?x\.com/([A-Za-z0-9_]{1,15})/status/\d+")
+#: X の別名ホスト (twitter.com / mobile.x.com 等) を x.com に揃える
+_X_HOST_ALIASES = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/", re.IGNORECASE)
+#: 匿名の permalink (投稿者が URL から取れない形)
+_ANON_HANDLE = "i"
+#: Grok のレポート本体 (チャット) のページ。毎回新しい URL で、メールの未読が再試行の権利
+_GROK_REPORT_PATH_PREFIXES = ("/c/", "/chat/", "/share/")
+#: 投稿の URL も tweet id も無いときの、投稿ごとの合成 URL (レポートの path とは重ならない)
+_SYNTHETIC_POST_BASE = "https://grok.com/post/"
+#: 投稿の安定した鍵を BriefingMessage.metadata で運ぶ欄
+POST_KEY_FIELD = "post_key"
+_POST_KEY_DIGEST_CHARS = 16
 
 
-def grok_subarticle_source(parent: Article, tweet_url: str, *, account_class: str = "") -> Article:
+def record_post_key(record: TweetRecord) -> str:
+    """投稿の安定した鍵: tweet id、無ければ投稿者と本文の hash (取り直しても同じ値)。"""
+    tid = record.tweet_id.strip()
+    if tid:
+        return tid
+    raw = f"{record.author_handle.strip()}\n{record.text.strip()}".encode()
+    return "h" + hashlib.sha256(raw).hexdigest()[:_POST_KEY_DIGEST_CHARS]
+
+
+def synthetic_post_url(post_key: str) -> str:
+    """投稿の URL も tweet id も無いときの、投稿ごとの URL (既読の登録と照合で共用)。"""
+    # 断片 (#) は URL の正規化で落ちて親と同じ hash になるため path に入れる
+    return f"{_SYNTHETIC_POST_BASE}{quote(post_key, safe='')}"
+
+
+def record_identity_url(record: TweetRecord) -> str:
+    """要約前の照合に使う投稿の URL。登録側 (grok_subarticle_source) と同じ規則で作る。"""
+    return canonical_post_url(record.url, record.tweet_id) or synthetic_post_url(
+        record_post_key(record)
+    )
+
+
+def canonical_post_url(url: str, tweet_id: str = "") -> str:
+    """投稿の識別子としての URL (既読の登録と照合の両方で使う、2026-10-29)。
+
+    twitter.com / mobile.x.com は x.com に揃える。permalink にならなければ tweet id から
+    ``https://x.com/i/status/<id>`` を作る。どちらも無ければ空 (投稿の識別子にならない URL を
+    識別子に使わない — 親レポートの URL が入っていると親ごと既読になる)。
+    """
+    normalized = _X_HOST_ALIASES.sub("https://x.com/", url.strip())
+    if _X_PERMALINK.match(normalized):
+        return normalized
+    tid = tweet_id.strip()
+    if tid.isdigit():
+        return f"https://x.com/{_ANON_HANDLE}/status/{tid}"
+    return ""
+
+
+def is_grok_report_url(url: str) -> bool:
+    """Grok のレポート本体 (チャット) の URL か。URL の重複判定の対象から外すために使う。"""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    if host != "grok.com" and not host.endswith(".grok.com"):
+        return False
+    return (parsed.path or "").startswith(_GROK_REPORT_PATH_PREFIXES)
+
+
+def grok_subarticle_source(
+    parent: Article,
+    tweet_url: str,
+    *,
+    account_class: str = "",
+    tweet_id: str = "",
+    fallback_key: str = "",
+) -> Article:
     """per-tweet の source identity を持つ Article を返す (永続化・既読化用)。
 
     **なぜ要るか (2026-08-24)**: Grok は 1 ツイート = sub-article に展開されるが、
@@ -118,14 +240,26 @@ def grok_subarticle_source(parent: Article, tweet_url: str, *, account_class: st
     ここでは permalink から投稿者を取り、投稿者を媒体 (source key) にする。
     tier は ``classify_source_tier`` が x.com を 'social' に分類するため、
     「独立 3 媒体」がニュース媒体 3 社の裏取りと混同されることはない。
+
+    ⚠ 2026-10-29: 親 Article を**そのまま返さない**。親の URL で既読に登録されると、
+    繰り越し中のレポートが次の run の URL 重複判定で親ごと落ち、残りの投稿が消える。
+    permalink にならない URL でも tweet id (無ければ ``fallback_key``) で投稿ごとの URL にする。
     """
-    m = _X_PERMALINK.match(tweet_url.strip())
-    if not m:
-        return parent
+    post_url = canonical_post_url(tweet_url, tweet_id)
+    m = _X_PERMALINK.match(post_url)
+    if not m or m.group(1) == _ANON_HANDLE:
+        # 投稿者は URL から取れない: 媒体は親のまま、識別子 (URL) だけ投稿ごとにする
+        return parent.model_copy(
+            update={
+                "url": post_url or synthetic_post_url(fallback_key),
+                "account_class": account_class,
+                "has_title": False,
+            }
+        )
     handle = m.group(1)
     return parent.model_copy(
         update={
-            "url": tweet_url.strip(),
+            "url": post_url,
             # 媒体 = 投稿者。feed_url が source key の第一候補 (Source Identity Decoupling)
             "feed_url": f"https://x.com/{handle}",
             "feed_title": f"@{handle}",
@@ -143,7 +277,9 @@ async def _grok_article_to_briefings(
     llm: LLMClient | None = None,  # full enrichment 用 (summarizer LLM)
     template: jinja2.Template | None = None,  # briefing/summarizer.j2
     brief_count_24h: int = 0,
-) -> list[BriefingMessage]:
+    should_stop: Callable[[], bool] | None = None,
+    seen_filter: SeenFilter | None = None,
+) -> GrokExpansion:
     """Grok レポート (JSONL output) を tweet 単位の BriefingMessage に展開する。
 
     Phase Diamond Grok 再設計 (slot 1 X Native Signal / slot 2 JP East Asia) で
@@ -156,7 +292,7 @@ async def _grok_article_to_briefings(
     """
     raw = _strip_html_keep_newlines(article.summary_html)
     if not raw.strip():
-        return []
+        return _EMPTY_EXPANSION
 
     from src.grok.jsonl_parser import is_jsonl_output
 
@@ -167,7 +303,7 @@ async def _grok_article_to_briefings(
             sender=article.author,
             title=(article.title or "")[:80],
         )
-        return []
+        return _EMPTY_EXPANSION
 
     return await _grok_jsonl_to_briefings(
         raw,
@@ -176,6 +312,8 @@ async def _grok_article_to_briefings(
         template=template,
         enrichment=enrichment,
         brief_count_24h=brief_count_24h,
+        should_stop=should_stop,
+        seen_filter=seen_filter,
     )
 
 
@@ -213,7 +351,9 @@ async def _grok_jsonl_to_briefings(
     template: jinja2.Template | None = None,
     enrichment: object | None = None,
     brief_count_24h: int = 0,
-) -> list[BriefingMessage]:
+    should_stop: Callable[[], bool] | None = None,
+    seen_filter: SeenFilter | None = None,
+) -> GrokExpansion:
     """Grok JSONL output → 各 tweet を **他ソースと同等に full enrichment** した briefing 群へ。
 
     旧設計は「Grok は既に要約済」前提で機械変換のみ (翻訳/要約/分類なし) だった。
@@ -228,6 +368,12 @@ async def _grok_jsonl_to_briefings(
 
     llm / template が無い (テスト/設定欠落) 場合や 1 tweet の enrichment 失敗時は、
     従来の機械変換 (``tweet_to_briefing``) に graceful degradation する。
+
+    ``should_stop`` (soft deadline) が真になったら**新しい投稿の要約に着手しない**
+    (2026-10-29)。1 レポートの投稿数に上限は無く (実測 392 行)、1 投稿 ~15 秒の要約を
+    全件回すと段の上限を超えて子が kill され、成果が全損していた (run 8732)。
+    着手しなかった件数を ``deferred`` で返し、レポートを未完了として扱わせる。
+    ``seen_filter`` は要約の前の run 横断の既知判定 (``drop_seen_records``)。
     """
     from src.grok.jsonl_parser import filter_records, parse_jsonl
     from src.grok.jsonl_to_briefings import records_to_briefings
@@ -246,9 +392,11 @@ async def _grok_jsonl_to_briefings(
             article_id=article.id,
             skipped_count=len(parse_result.skipped_lines),
         )
-        return []
+        return _EMPTY_EXPANSION
 
-    filtered = filter_records(parse_result.records)
+    filtered, known = drop_seen_records(filter_records(parse_result.records), seen_filter)
+    if known:
+        _log.info("grok_records_known_before_summary", article_id=article.id, dropped=known)
 
     # llm / template が無ければ従来の機械変換に degrade (テスト/設定欠落時)。
     if llm is None or template is None:
@@ -259,14 +407,18 @@ async def _grok_jsonl_to_briefings(
             briefing_count=len(briefings),
             enriched=False,
         )
-        return briefings
+        return GrokExpansion(briefings=briefings)
 
     out: list[BriefingMessage] = []
     enriched_n = 0
     link_mode = link_fetch_mode()
     fetcher = LinkFetcher(LinkFetchConfig.from_env()) if link_mode != "off" else None
+    deferred = 0
     try:
-        for record in filtered:
+        for done, record in enumerate(filtered):
+            if should_stop is not None and should_stop():
+                deferred = len(filtered) - done
+                break
             message, is_enriched = await _grok_record_to_message(
                 record,
                 article,
@@ -281,7 +433,18 @@ async def _grok_jsonl_to_briefings(
                 continue
             enriched_n += int(is_enriched)
             # 発信者種別は enrichment の成否に依らず確定しているので必ず載せる。
-            out.append(message.model_copy(update={"account_class": record.account_class}))
+            # 投稿の安定した鍵も載せる (sub_id と既読の登録 URL を取り直しても同じにする)
+            out.append(
+                message.model_copy(
+                    update={
+                        "account_class": record.account_class,
+                        "metadata": {
+                            **message.metadata,
+                            POST_KEY_FIELD: record_post_key(record),
+                        },
+                    }
+                )
+            )
     finally:
         if fetcher is not None:
             await fetcher.aclose()
@@ -291,8 +454,11 @@ async def _grok_jsonl_to_briefings(
         article_id=article.id,
         briefing_count=len(out),
         enriched=enriched_n,
+        deferred=deferred,
     )
-    return out
+    if deferred:
+        _log.warning("grok_report_deferred_posts", article_id=article.id, deferred=deferred)
+    return GrokExpansion(briefings=out, deferred=deferred)
 
 
 async def _fetch_linked_pages(

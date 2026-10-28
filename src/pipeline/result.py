@@ -29,3 +29,6 @@ class PipelineRunResult(BaseModel):
     # 2026-08-01: 時間予算 (soft deadline) で処理を打ち切り、次 run へ繰り越した記事数。
     # 繰越記事は既読化されないため次 run の RSS 窓で自然に再取得される (成果全損の防止)。
     deferred_count: int = 0
+    # 2026-10-29: 成果が確定していない記事の id (着手しなかった記事 + 投稿を残した Grok
+    # レポート)。Grok の通知メールはこれを含むものを既読にしない (dispatch が既読化する)。
+    unfinished_article_ids: tuple[str, ...] = ()

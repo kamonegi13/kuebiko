@@ -250,13 +250,41 @@ class ImapClient:
         残して再試行可能にしつつ、成功メールはインボックスを汚さない。返り値は既読化数。
         """
         marked = 0
+        reconnected = False
         for uid in uids:
             try:
                 await asyncio.to_thread(self._mark_seen, uid)
                 marked += 1
+            except (imaplib.IMAP4.abort, OSError) as e:
+                # 2026-10-29: 既読化はパイプラインの後 (取得から最大 ~20 分後) に行うため、
+                # その間にサーバが接続を切っていることがある。1 回だけ繋ぎ直して再試行する
+                if reconnected or not await self._reconnect(e):
+                    _log.warning("imap_mark_seen_failed", uid=uid, error=str(e))
+                    continue
+                reconnected = True
+                try:
+                    await asyncio.to_thread(self._mark_seen, uid)
+                    marked += 1
+                except (imaplib.IMAP4.error, OSError) as e2:
+                    _log.warning("imap_mark_seen_failed", uid=uid, error=str(e2))
             except imaplib.IMAP4.error as e:
                 _log.warning("imap_mark_seen_failed", uid=uid, error=str(e))
         return marked
+
+    async def _reconnect(self, cause: BaseException) -> bool:
+        """切れた接続を張り直す (失敗は False。呼び手は未読に残して次の run に任せる)。"""
+        _log.info("imap_reconnect", cause=type(cause).__name__)
+        if self._conn is not None:
+            # 切れた接続も後始末する (失敗は無視 — 既に切れている)
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(self._conn.logout)
+            self._conn = None
+        try:
+            self._conn = await asyncio.to_thread(self._connect_sync)
+        except (imaplib.IMAP4.error, OSError, TimeoutError) as e:
+            _log.warning("imap_reconnect_failed", error_type=type(e).__name__)
+            return False
+        return True
 
     # ----- internal sync helpers -----
 

@@ -13,7 +13,7 @@ Phase 1 は RSS 単独だったが、Phase 2 から Grok 通知メールが入�
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,6 +45,22 @@ class ArticleSource(Protocol):
 
 
 # ---------- Grok Email Source ----------
+
+
+class _RetryableFetchError(Exception):
+    """取り直せば読める可能性がある取得の失敗 (取得エラー・認証失効・確認の画面)。
+
+    このメールは既読にしない。空の本文 (アイコン画像等) は再試行しても変わらないので対象外。
+    """
+
+
+#: 取り直しても変わらない HTTP の失敗 (4xx のうち、待てば通りうる 408 / 429 を除く)
+_RETRYABLE_4XX = frozenset({"http_error_408", "http_error_429"})
+
+
+def _is_permanent_fetch_failure(reason: str | None) -> bool:
+    text = reason or ""
+    return text.startswith("http_error_4") and text not in _RETRYABLE_4XX
 
 
 class GrokEmailSource:
@@ -93,12 +109,17 @@ class GrokEmailSource:
         # ログインしたまま確認の画面 (年齢等) で本文が描かれなかった件数 (2026-10-28)。
         # セッション失効と同じく run_pipeline が errors に載せる (従来は「成功・要約 0」)
         self.last_blocked_count: int = 0
+        # 既読化を待つメール: uid → そのメールから作った記事の id (2026-10-29)。
+        # 既読化は fetch では行わず、パイプラインが記事の成果を確定させた後に
+        # ``commit_seen`` で行う (run 8732: 取得直後に既読化 → 処理中に kill → 投稿 ~280 件が消失)
+        self._pending_seen: dict[str, tuple[str, ...]] = {}
 
     async def fetch(self, max_count: int) -> list[Article]:
         # mark_as_read=False で取得 (BODY.PEEK)。既読化は **レポート抽出に成功した
         # メールのみ** 後段で明示的に行う (失敗メールは未読に残して再試行可能にする)。
         self.last_session_expired_count = 0
         self.last_blocked_count = 0
+        self._pending_seen = {}
         emails = await self._imap.fetch_unread(
             sender_filters=self._sender_filters,
             subject_filters=self._subject_filters,
@@ -112,7 +133,7 @@ class GrokEmailSource:
             return []
 
         articles: list[Article] = []
-        processed_uids: list[str] = []  # レポート抽出に成功したメール (既読化対象)
+        pending: dict[str, tuple[str, ...]] = {}  # レポート抽出に成功したメール (既読化の候補)
         for msg in emails:
             candidates = [
                 u
@@ -127,13 +148,21 @@ class GrokEmailSource:
                     allowlist=self._url_host_allowlist,
                 )
                 continue
-            got_article = False
+            got_ids: list[str] = []
+            # 全 URL を読み切れたか。取得の失敗・max_count の打ち切りが 1 つでもあれば
+            # 既読にしない (次の run が取り直す。読めた分の投稿は要約前の既知判定で落ちる)
+            complete = True
             for url in candidates:
                 if len(articles) >= max_count:
+                    complete = False
                     break
                 try:
                     article = await self._fetch_one(url, msg)
+                except _RetryableFetchError:
+                    complete = False
+                    continue
                 except Exception as e:  # noqa: BLE001
+                    complete = False
                     _log.warning(
                         "grok_email_fetch_failed",
                         url=url,
@@ -143,24 +172,39 @@ class GrokEmailSource:
                     continue
                 if article is not None:
                     articles.append(article)
-                    got_article = True
-            if got_article:
-                processed_uids.append(msg.uid)
+                    got_ids.append(article.id)
+            if got_ids and complete:
+                pending[msg.uid] = tuple(got_ids)
             if len(articles) >= max_count:
                 break
 
-        # Grok レポートを読み取れたメールのみ既読化 (インボックス肥大防止 + 失敗は再試行)
-        marked = 0
-        if self._mark_as_read and processed_uids:
-            marked = await self._imap.mark_seen(processed_uids)
-
+        self._pending_seen = pending
         _log.info(
             "grok_email_source_completed",
             email_count=len(emails),
             article_count=len(articles),
-            marked_seen=marked,
+            pending_seen=len(pending),
         )
         return articles
+
+    async def commit_seen(self, unfinished_article_ids: Collection[str] = ()) -> int:
+        """成果が確定したメールだけを既読にする (パイプラインの後に呼ぶ)。
+
+        Grok レポートを読み取れたメールのうち、``unfinished_article_ids`` (時間切れで
+        着手しなかった・投稿を残した記事) を含まないものだけを既読化する。残したメールは
+        次の run が取り直し、処理済みの投稿は要約前の既知判定で落ちる (exactly-once は
+        dedup_seen_urls が担保)。パイプラインが例外・kill で終わり呼ばれなければ、
+        すべて未読に残る = 成果を失わない側に倒れる。返り値は既読化数。
+        """
+        pending, self._pending_seen = self._pending_seen, {}
+        if not self._mark_as_read or not pending:
+            return 0
+        unfinished = set(unfinished_article_ids)
+        done = [uid for uid, ids in pending.items() if unfinished.isdisjoint(ids)]
+        kept = len(pending) - len(done)
+        marked = await self._imap.mark_seen(done) if done else 0
+        _log.info("grok_email_commit_seen", marked_seen=marked, kept_unseen=kept)
+        return marked
 
     def _url_host_allowed(self, url: str) -> bool:
         """URL の host が allowlist にあるかを判定 (サブドメイン許容)。"""
@@ -201,7 +245,9 @@ class GrokEmailSource:
                     url=url,
                     reason=result.failure_reason,
                 )
-            return None
+            if _is_permanent_fetch_failure(result.failure_reason):
+                return None  # 404 等: 取り直しても変わらない (メールの既読化を妨げない)
+            raise _RetryableFetchError(result.failure_reason or "fetch_failed")
 
         # 本文ソースの優先順 (Grok チャットページは Next.js SPA で trafilatura
         # が抽出できないため、Playwright 側で抽出した DOM テキストを優先する):
@@ -214,7 +260,7 @@ class GrokEmailSource:
             # なり重複として捨てられ、取得の失敗が見えなくなる (2026-10-26〜28 に 1 日半)
             self.last_blocked_count += 1
             _log.warning("grok_page_blocked_by_gate", url=url)
-            return None
+            raise _RetryableFetchError("blocked_by_gate")
         if not body:
             from src.tools import source_router as _self_module
 

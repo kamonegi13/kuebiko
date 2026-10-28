@@ -399,6 +399,7 @@ def test_grok_subarticle_carries_author_identity() -> None:
     """
     from src.pipeline.grok_convert import grok_subarticle_source
     from src.tools.article_model import Article
+    from src.tools.url_normalizer import url_hash
 
     parent = Article(
         id="grok-1",
@@ -415,9 +416,12 @@ def test_grok_subarticle_carries_author_identity() -> None:
     assert got.url == "https://x.com/FalconFeedsio/status/2091643392816214268"
     assert got.feed_url == "https://x.com/FalconFeedsio"
     assert got.feed_title == "@FalconFeedsio"
-    # permalink でなければ親のまま (壊れた URL で source identity を捏造しない)
-    assert grok_subarticle_source(parent, "https://grok.com/chat/abc") is parent
-    assert grok_subarticle_source(parent, "") is parent
+    # permalink でなければ媒体は親のまま (source identity を捏造しない)。ただし URL は
+    # 投稿ごとにする — 親の URL で既読に登録すると繰り越し中のレポートが消える (2026-10-29)
+    odd = grok_subarticle_source(parent, "https://grok.com/chat/abc", fallback_key="k1")
+    assert odd.feed_title == "Grok"
+    assert url_hash(odd.url) != url_hash(parent.url)
+    assert url_hash(grok_subarticle_source(parent, "").url) != url_hash(parent.url)
 
 
 def test_account_class_lifts_expert_posts_above_aggregators() -> None:

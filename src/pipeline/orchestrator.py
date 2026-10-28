@@ -148,10 +148,30 @@ class _ArticleWork:
     errors: tuple[str, ...]
     # (sub_id, 親 article) — Grok 展開時のみ非空
     grok_subarticles: tuple[tuple[str, Article], ...]
+    # 処理した記事の id (着手しなかった記事 = 繰越の判定に使う)
+    article_id: str = ""
+    # Grok レポートで時間切れのため着手しなかった投稿の数 (1 以上 = レポート未完了)
+    deferred_posts: int = 0
+    # 一時障害 (LLM の timeout・接続断) で終わった = 次の run で取り直す
+    retry: bool = False
 
     @staticmethod
-    def empty() -> _ArticleWork:
-        return _ArticleWork(briefings=(), outcomes=(), errors=(), grok_subarticles=())
+    def empty(article_id: str = "") -> _ArticleWork:
+        return _ArticleWork(
+            briefings=(), outcomes=(), errors=(), grok_subarticles=(), article_id=article_id
+        )
+
+
+def unfinished_article_ids(
+    articles: Sequence[Article], works: Sequence[_ArticleWork]
+) -> tuple[str, ...]:
+    """成果が確定していない記事の id (着手しなかった記事 + 投稿を残した Grok レポート)。
+
+    Grok の通知メールは、ここに含まれる記事を持つものを既読にしない (2026-10-29)。
+    次の run が取り直し、処理済みの投稿は要約前の既知判定で落ちる。
+    """
+    finished = {w.article_id for w in works if w.deferred_posts == 0 and not w.retry}
+    return tuple(a.id for a in articles if a.id not in finished)
 
 
 async def _run_articles_bounded[T, R](
@@ -680,6 +700,10 @@ async def run_pipeline(
 
     article_timeout = _per_article_timeout_seconds()
 
+    should_stop: Callable[[], bool] | None = (
+        None if soft_deadline is None else lambda: time.monotonic() >= soft_deadline
+    )
+
     async def _handle_article(article: Article) -> _ArticleWork:
         """記事 1 本を処理し、**共有 list を触らずに**寄与分だけを返す。
 
@@ -690,17 +714,28 @@ async def run_pipeline(
         article_outcomes: list[dict[str, object]] = []
         errors: list[str] = []
         grok_subarticles: list[tuple[str, Article]] = []
+        deferred_posts = 0
+        retry = False
         try:
             if _is_grok_article(article):
                 # Grok レポート (JSONL output) を tweet 単位の briefing に展開する。
                 # 以降は通常記事と同様に enrichment / routing される。
-                expanded = await _grok_article_to_briefings(
+                expansion = await _grok_article_to_briefings(
                     article,
                     enrichment=enrich,
                     llm=llm,
                     template=template,
                     brief_count_24h=brief_count_24h_snapshot,
+                    # 1 レポートの投稿数に上限が無いため、投稿ごとに時間切れを見る (2026-10-29)
+                    should_stop=should_stop,
+                    seen_filter=(
+                        None
+                        if (skip_dedup or dedup_repo is None)
+                        else dedup_repo.filter_seen_and_touch
+                    ),
                 )
+                deferred_posts = expansion.deferred
+                expanded = expansion.briefings
                 # run 横断の tweet 重複を ledger で弾く (2026-09-08)。親レポート URL は
                 # 毎回新規のため fetch 段の未見選別を素通りし、別レポート内の同一 tweet
                 # が別 sub-article 化していた (実測 30 日で余剰 209 記事)。
@@ -745,7 +780,7 @@ async def run_pipeline(
                             article_id=article.id,
                             url=article.url,
                         )
-                    return _ArticleWork.empty()
+                    return _ArticleWork.empty(article.id)
                 for idx, msg in enumerate(expanded):
                     # per-tweet 一意 id (親共有による body/entity 混載バグの修正)
                     sub_id = _grok_subarticle_id(article.id, msg, idx)
@@ -765,6 +800,8 @@ async def run_pipeline(
                                 article,
                                 tweet_url,
                                 account_class=getattr(msg, "account_class", "") or "",
+                                tweet_id=str(msg.metadata.get("tweet_id") or ""),
+                                fallback_key=str(msg.metadata.get("post_key") or sub_id),
                             ),
                         )
                     )
@@ -831,6 +868,7 @@ async def run_pipeline(
             # インフラ起因。恒久 seen 化せず次 run の RSS 窓で再取得させる (Recall 保護)。
             # per-article timeout (TimeoutError) も同様に transient 扱い (2026-08-01)。
             is_transient = isinstance(e, (LLMTimeoutError, LLMConnectionError, TimeoutError))
+            retry = is_transient
             _log.warning(
                 "article_processing_failed",
                 article_id=article.id,
@@ -853,6 +891,9 @@ async def run_pipeline(
             outcomes=tuple(article_outcomes),
             errors=tuple(errors),
             grok_subarticles=tuple(grok_subarticles),
+            article_id=article.id,
+            deferred_posts=deferred_posts,
+            retry=retry,
         )
 
     # soft deadline 超過 → 残記事を次 run へ繰越 (既読化しない = リトライ権保持)。
@@ -861,8 +902,10 @@ async def run_pipeline(
         articles,
         _handle_article,
         concurrency=_article_concurrency(),
-        should_stop=(None if soft_deadline is None else lambda: time.monotonic() >= soft_deadline),
+        should_stop=should_stop,
     )
+    unfinished_ids = unfinished_article_ids(articles, _works)
+    deferred_posts_total = sum(w.deferred_posts for w in _works)
     if deferred_count:
         _log.warning(
             "pipeline_soft_deadline_reached",
@@ -897,7 +940,8 @@ async def run_pipeline(
             marked_read=0,
             errors=errors,
             dry_run=True,
-            deferred_count=deferred_count,
+            deferred_count=deferred_count + deferred_posts_total,
+            unfinished_article_ids=unfinished_ids,
         )
 
     # article_id → 元 Article のマップ (mark_url_seen / persist 用)。
@@ -1012,6 +1056,23 @@ async def run_pipeline(
                 url=seen_article.url,
             )
 
+    # Grok の投稿は既読の登録と同じ時点で articles に書く (2026-10-29)。投稿の後・run 末尾の
+    # 保存の前に kill されると、既読の投稿は次の run で要約前に落ちるため行が永久に欠ける。
+    # 範囲は Grok の投稿だけ (RSS は従来どおり末尾で一括。add_article は INSERT のため、
+    # 早めに書いた行は末尾の保存から外す)
+    persisted_early: set[str] = set()
+
+    def _persist_grok_post_now(art_id: str, outcome: dict[str, object] | None) -> None:
+        if outcome is None or art_id not in grok_subarticles:
+            return
+        _persist_article_outcomes(
+            outcomes=[outcome],
+            articles_by_id=articles_by_id_local,
+            dedup_repo=dedup_repo,
+            run_id=run_id,
+        )
+        persisted_early.add(art_id)
+
     for art_id, msg in briefings:
         outcome = outcome_by_msg_id.get(id(msg))
         channel = _resolve_channel(msg, importance_map)
@@ -1073,6 +1134,7 @@ async def run_pipeline(
             if keep_duplicates and outcome is not None:
                 # 分析に残す記事は既読化と埋込を posted と同じ経路で行う (群化が cos を使う)
                 _register_seen(art_id)
+                _persist_grok_post_now(art_id, outcome)
                 kept_duplicate_ids.append(art_id)
             else:
                 skipped_for_mark_read.append(art_id)
@@ -1163,6 +1225,7 @@ async def run_pipeline(
                 if _flags.editorial_stance and _flags.editorial_stance != "unknown":
                     outcome["editorial_stance"] = _flags.editorial_stance
             _register_seen(art_id)
+            _persist_grok_post_now(art_id, outcome)
             web_only_ids.append(art_id)
             _log.info("web_only_suppressed", article_id=art_id, channel=channel)
             continue
@@ -1240,6 +1303,7 @@ async def run_pipeline(
                     outcome["editorial_stance"] = _flags.editorial_stance
             # 投稿成功した記事の URL を seen 登録 (Phase 3a) + embedding (Phase 3b)
             _register_seen(art_id)
+            _persist_grok_post_now(art_id, outcome)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{art_id}: post failed: {type(e).__name__}: {e}")
             _log.error(
@@ -1267,7 +1331,7 @@ async def run_pipeline(
 
     # 投稿結果が確定したので articles テーブルに永続化 (Phase 5A: dashboard 用)
     _persist_article_outcomes(
-        outcomes=article_outcomes,
+        outcomes=[o for o in article_outcomes if o["article_id"] not in persisted_early],
         articles_by_id=articles_by_id_local,
         dedup_repo=dedup_repo,
         run_id=run_id,
@@ -1282,7 +1346,8 @@ async def run_pipeline(
         errors=errors,
         dry_run=False,
         triage_error_count=triage_error_count,
-        deferred_count=deferred_count,
+        deferred_count=deferred_count + deferred_posts_total,
+        unfinished_article_ids=unfinished_ids,
     )
 
     _log.info(
