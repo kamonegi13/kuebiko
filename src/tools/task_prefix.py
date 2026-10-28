@@ -87,6 +87,19 @@ TASK_MARKERS: dict[Step, str] = {
     # s22 から学習 (2026-09-29)。s21 / n19 は学習していない (UNTRAINED_STEPS)
     Step.PIR_DAILY_FOCUS: "[task: pir_focus]\n",
     Step.SEVERITY_AXES: "[task: axes]\n",
+    # n20 から学習 (2026-10-18、N20C)。**n20 以外のモデルには付けない** (STEP_TRAINED_ONLY)
+    Step.ARTICLE_TRANSLATE: "[task: translate]\n",
+    Step.ACTOR_SYNC: "[task: actor_sync]\n",
+}
+
+#: その step の印を付けてよいモデル (指定の無い step は PREFIX_TRAINED_MODELS のどれでもよい)。
+#: 翻訳・MITRE 和訳は n20 が初めて印つきで学習する課題で、s19〜s23i / n19 は学習していない
+#: (自由文の課題に未学習の印が届くと、翻訳が JSON に崩れた前例がある)。**将来のモデルを
+#: PREFIX_TRAINED_MODELS に足しても、ここに名前を足さない限り翻訳には印が付かない**。
+#: n20 の本番投入のとき、PREFIX_TRAINED_MODELS とここの両方へ ``kuebiko-sft:n20`` を足す。
+STEP_TRAINED_ONLY: dict[Step, frozenset[str]] = {
+    Step.ARTICLE_TRANSLATE: frozenset({"kuebiko-sft:n20"}),
+    Step.ACTOR_SYNC: frozenset({"kuebiko-sft:n20"}),
 }
 
 #: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。
@@ -167,12 +180,31 @@ def prefix_for(step: Step, model: str | None = None) -> str:
         for model_prefix, markers in MODEL_STEP_MARKERS.items():
             if name.startswith(model_prefix) and step in markers:
                 return markers[step]
+    if model is None and not _trained_only_active(step):
+        # n20 専用の印は、n20 を環境変数で有効化していない本番では「印なし」と同じ扱いにする
+        # (``build_llm_for`` は prefix_for(step) の真偽で wrapper を掛ける。既定の経路を変えない)。
+        return ""
     return TASK_MARKERS.get(step, "")
+
+
+def _trained_only_active(step: Step) -> bool:
+    """``STEP_TRAINED_ONLY`` の step で、対象モデルが ``SFT_TASK_PREFIX_MODELS`` で有効化済みか。
+
+    対象外の step (制限なし) は常に True。既定 (環境変数なし) では専用 step は False。
+    """
+    only = STEP_TRAINED_ONLY.get(step)
+    if only is None:
+        return True
+    extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
+    return bool(only & (extra | PREFIX_TRAINED_MODELS))
 
 
 def with_task_prefix(prompt: str, step: Step, model: str) -> str:
     """プロンプトの先頭へ課題の印を付ける (二重付与はしない)。"""
     if not task_prefix_enabled(model) or step in untrained_steps_for(model):
+        return prompt
+    only = STEP_TRAINED_ONLY.get(step)
+    if only is not None and model.strip() not in only:
         return prompt
     marker = prefix_for(step, model)
     if not marker or prompt.startswith(marker):
