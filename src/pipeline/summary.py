@@ -373,29 +373,39 @@ _CAP_CVE_RE = re.compile(r"CVE-(?:19|20)\d{2}-\d{4,7}", re.IGNORECASE)
 _VULN_CAP_CATEGORIES = frozenset({"vulnerability", "advisory"})
 
 
-def _text_has_kev_cve(text: str) -> bool:
-    """text 中の CVE のいずれかが CISA KEV catalog に載っているか (fail-safe False)。"""
+def _text_has_kev_cve(text: str, reference: date | None = None) -> bool:
+    """text 中の CVE のいずれかが、記事の時点 ``reference`` で KEV の根拠か (fail-safe False)。
+
+    ``reference`` (記事の事象時刻) を渡すと KEV の掲載日との差で見る (C4、2026-10-28)。
+    省略時は「今 KEV に載っているか」。
+    """
     try:
         from src.tools import kev_client
 
         cves = [m.group(0).upper() for m in _CAP_CVE_RE.finditer(text)]
-        return bool(cves) and bool(kev_client.any_cve_on_kev(cves))
+        return bool(cves) and bool(kev_client.any_cve_on_kev_at(cves, reference))
     except Exception as e:  # noqa: BLE001 — KEV cache 不調でも cap 自体は止めない
         _log.warning("kev_check_failed_in_cap", error=str(e))
         return False
 
 
-def _cap_vuln_importance(importance: Importance, category: str, *text_parts: str) -> Importance:
+def _cap_vuln_importance(
+    importance: Importance,
+    category: str,
+    *text_parts: str,
+    reference: date | None = None,
+) -> Importance:
     """vulnerability/advisory の high を悪用シグナル不在なら medium に降格する。
 
-    high のまま残すのは (1) KEV 掲載 CVE を含む (決定論・語彙非依存)、または
+    high のまま残すのは (1) 記事の時点 (``reference``) で KEV 掲載が根拠になる CVE を含む
+    (掲載日との差で見る。何年も前の掲載の再報は根拠にしない)、または
     (2) 実悪用の事実断定 / 0day / 緊急 の語が title・summary・本文に現れる場合のみ。
     """
     if importance != "high" or category not in _VULN_CAP_CATEGORIES:
         return importance
     haystack = " ".join(p for p in text_parts if p)
     # KEV カタログ照合が最優先: 本文に魔法語が無い KEV 記事の medium 降格 (Recall の穴) を防ぐ
-    if _text_has_kev_cve(haystack):
+    if _text_has_kev_cve(haystack, reference):
         return importance
     if _EXPLOIT_HIGH_SIGNAL.search(_EXPLOIT_PRE_REMOVE.sub(" ", haystack)):
         return importance

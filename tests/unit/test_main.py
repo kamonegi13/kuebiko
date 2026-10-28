@@ -2600,6 +2600,48 @@ class TestCapVulnImportanceAuditP1:
         assert result == "medium"
 
 
+class TestCapVulnImportanceKevDate:
+    """C4 (2026-10-28): KEV は掲載日 (dateAdded) と記事の時点の差で根拠にする。"""
+
+    @staticmethod
+    def _load_kev(monkeypatch: pytest.MonkeyPatch) -> None:
+        import src.tools.kev_client as kev_client
+
+        monkeypatch.setattr(kev_client, "_mem_set", frozenset({"CVE-2022-1234"}))
+        monkeypatch.setattr(kev_client, "_mem_dates", {"CVE-2022-1234": date(2022, 3, 1)})
+
+    def test_old_kev_listing_reported_years_later_is_downgraded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._load_kev(monkeypatch)
+        result = _cap_vuln_importance(
+            "high",
+            "vulnerability",
+            "CVE-2022-1234 の解説",
+            "パッチ解説。",
+            reference=date(2026, 10, 1),
+        )
+        assert result == "medium"
+
+    def test_fresh_kev_listing_keeps_high(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._load_kev(monkeypatch)
+        result = _cap_vuln_importance(
+            "high",
+            "vulnerability",
+            "CVE-2022-1234 の解説",
+            "パッチ解説。",
+            reference=date(2022, 3, 5),
+        )
+        assert result == "high"
+
+    def test_without_reference_keeps_legacy_membership_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._load_kev(monkeypatch)
+        result = _cap_vuln_importance("high", "vulnerability", "CVE-2022-1234 の解説", "")
+        assert result == "high"
+
+
 class TestTransientFailureSeenMark:
     """監査 2026-07-05 P1: LLM の一時障害 (timeout/接続断) は seen 登録しない。
 

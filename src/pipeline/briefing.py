@@ -1226,6 +1226,7 @@ def _build_briefing(
         display_title,
         summary_clean,
         (body_text or "")[:3000],
+        reference=article.published.date() if article.published else None,
     )
     if capped_importance != summary.importance:
         _log.info(

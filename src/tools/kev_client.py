@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -29,29 +30,54 @@ _CACHE_PATH = Path("data/kev_cache.json")
 _CACHE_TTL_SECONDS = 24 * 3600
 _FETCH_TIMEOUT_SECONDS = 20.0
 
-# process 内 cache。
+#: KEV 掲載を「記事の時点の悪用の根拠」とみなす掲載日 (dateAdded) と記事の事象時刻の差。
+#: 掲載から 90 日を超えて出た記事 (何年も前に掲載された CVE の再報・Alert 更新) は根拠にしない。
+#: 記事が掲載より数日先に出ることがあるので、掲載が記事の後でも 7 日までは許す。
+KEV_EVIDENCE_WINDOW_DAYS = 90
+KEV_EVIDENCE_LEAD_SLACK_DAYS = 7
+
+# process 内 cache。_mem_set = CVE 集合、_mem_dates = CVE → 掲載日 (不明は None)。
 _mem_set: frozenset[str] | None = None
+_mem_dates: dict[str, date | None] | None = None
 
 
-def _fetch_kev_cve_ids() -> set[str]:
-    """CISA KEV catalog から CVE-ID 集合を取得する (大文字正規化)。"""
+def _parse_date(raw: object) -> date | None:
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
+def _fetch_kev_entries() -> dict[str, str]:
+    """CISA KEV catalog から {CVE-ID(大文字): dateAdded(YYYY-MM-DD, 不明は空)} を取得する。"""
     resp = httpx.get(KEV_URL, timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True)
     resp.raise_for_status()
     data = resp.json()
     vulns = data.get("vulnerabilities", []) if isinstance(data, dict) else []
     return {
-        str(v["cveID"]).strip().upper() for v in vulns if isinstance(v, dict) and v.get("cveID")
+        str(v["cveID"]).strip().upper(): str(v.get("dateAdded") or "")
+        for v in vulns
+        if isinstance(v, dict) and v.get("cveID")
     }
 
 
-def _read_disk_cache() -> frozenset[str] | None:
+def _read_disk_cache() -> dict[str, date | None] | None:
+    """disk cache を {CVE: 掲載日|None} で返す。旧形式 (CVE の配列) は掲載日 None。"""
     if not _CACHE_PATH.exists():
         return None
     try:
-        ids = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
-        return frozenset(str(s).upper() for s in ids)
+        raw = json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return {str(k).upper(): _parse_date(v) for k, v in raw.items()}
+        return {str(s).upper(): None for s in raw}
     except Exception:  # noqa: BLE001
         return None
+
+
+def _set_mem(dates: dict[str, date | None]) -> None:
+    global _mem_set, _mem_dates  # noqa: PLW0603
+    _mem_dates = dates
+    _mem_set = frozenset(dates)
 
 
 def get_kev_cve_set() -> frozenset[str]:
@@ -60,12 +86,17 @@ def get_kev_cve_set() -> frozenset[str]:
     process 内 cache → disk cache の順に読む。どちらも無ければ空集合 (KEV 照合は無効化され
     regex/LLM 判定に degrade)。最新化は ``refresh_kev_catalog`` 経由。
     """
-    global _mem_set  # noqa: PLW0603
     if _mem_set is not None:
         return _mem_set
-    disk = _read_disk_cache()
-    _mem_set = disk if disk is not None else frozenset()
-    return _mem_set
+    _set_mem(_read_disk_cache() or {})
+    return _mem_set or frozenset()
+
+
+def get_kev_added_dates() -> dict[str, date | None]:
+    """CVE → KEV 掲載日 (dateAdded)。cache から返す (fetch しない)。旧形式 cache は None。"""
+    if _mem_dates is None:
+        get_kev_cve_set()
+    return _mem_dates or {}
 
 
 def refresh_kev_catalog(max_age_seconds: int = _CACHE_TTL_SECONDS) -> int:
@@ -74,7 +105,6 @@ def refresh_kev_catalog(max_age_seconds: int = _CACHE_TTL_SECONDS) -> int:
     app 起動時 / pipeline 開始時に呼ぶ (hot-path では呼ばない)。fetch 失敗時は既存 cache に
     degrade。fresh な cache がある場合は fetch せず件数のみ返す。
     """
-    global _mem_set  # noqa: PLW0603
     now = time.time()
     # fresh な disk cache があれば fetch しない
     if _CACHE_PATH.exists():
@@ -85,21 +115,20 @@ def refresh_kev_catalog(max_age_seconds: int = _CACHE_TTL_SECONDS) -> int:
         if fresh:
             disk = _read_disk_cache()
             if disk is not None:
-                _mem_set = disk
+                _set_mem(disk)
                 return len(disk)
     # stale / 無し → fetch
     try:
-        ids = _fetch_kev_cve_ids()
+        entries = _fetch_kev_entries()
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(sorted(ids)), encoding="utf-8")
-        _mem_set = frozenset(ids)
-        _log.info("kev_catalog_refreshed", count=len(ids))
-        return len(ids)
+        _CACHE_PATH.write_text(json.dumps(dict(sorted(entries.items()))), encoding="utf-8")
+        _set_mem({k: _parse_date(v) for k, v in entries.items()})
+        _log.info("kev_catalog_refreshed", count=len(entries))
+        return len(entries)
     except Exception as e:  # noqa: BLE001
         _log.warning("kev_fetch_failed", error=str(e))
-        disk = _read_disk_cache()
-        _mem_set = disk if disk is not None else frozenset()
-        return len(_mem_set)
+        _set_mem(_read_disk_cache() or {})
+        return len(_mem_set or ())
 
 
 def is_cve_on_kev(cve_id: str) -> bool:
@@ -117,3 +146,27 @@ def any_cve_on_kev(cve_ids: list[str]) -> bool:
     if not kev:
         return False
     return any(str(c).strip().upper() in kev for c in cve_ids)
+
+
+def any_cve_on_kev_at(cve_ids: list[str], reference: date | None) -> bool:
+    """記事の事象時刻 ``reference`` の時点で、KEV 掲載が悪用の根拠になる CVE があるか。
+
+    「今 KEV にある」ではなく掲載日 (dateAdded) との差で見る: 掲載から
+    ``KEV_EVIDENCE_WINDOW_DAYS`` 日を超えた記事 (古い CVE の再報) と、掲載より
+    ``KEV_EVIDENCE_LEAD_SLACK_DAYS`` 日を超えて前の記事 (当時は未掲載) は根拠にしない。
+    ``reference`` または掲載日が不明なら従来どおり「載っているか」で判定する。
+    """
+    if reference is None:
+        return any_cve_on_kev(cve_ids)
+    dates = get_kev_added_dates()
+    for raw in cve_ids:
+        cve = str(raw).strip().upper()
+        if cve not in dates:
+            continue
+        added = dates[cve]
+        if added is None:
+            return True
+        lag_days = (reference - added).days
+        if -KEV_EVIDENCE_LEAD_SLACK_DAYS <= lag_days <= KEV_EVIDENCE_WINDOW_DAYS:
+            return True
+    return False
