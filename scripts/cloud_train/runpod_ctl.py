@@ -132,9 +132,22 @@ def cmd_upload(a: argparse.Namespace) -> None:
     print("送信 コード")
 
 
-#: 学習の成果物 (アダプタ約 4GB + 予備の複製 約 4GB) を書ける空き。足りないと学習が終わってから
-#: 書き出しに失敗し、サーバの削除とともに成果物を失う (2026-10-18 s24 で保存領域 20GB が満杯)
-MIN_FREE_GB = 10.0
+#: 学習の成果物を書くのに要る空きの見積り (pod_run.sh の書き出しの順に合わせる)。
+#: 足りないと学習が終わってから書き出しに失敗し、サーバの削除とともに成果物を失う
+#: (2026-10-18 s24 で保存領域 20GB が満杯。2026-10-28 s25 は空き 15.8GB でも QuotaExceeded:
+#: 予備の複製が adapter + adapter-last の 7.9GB だったのに、必要を 10GB と見積もっていた)。
+#: 1. 予備: /workspace/backup/<run> へ直接複製 = アダプタ 1 つ分 (adapter-last は複製前に外す)
+#: 2. 書き出し: S3 経由で adapter を送る。多部アップロードは組み立て中に部品と完成品が併存し
+#:    最大でアダプタの 2 倍を使うとみなす (s25 の失敗と整合する保守側の仮定)
+#: 3. metrics・DONE.json などの小物 + 余裕
+ADAPTER_GB = 4.0
+BACKUP_COPIES = 1
+UPLOAD_TRANSIENT_FACTOR = 2.0
+SMALL_FILES_GB = 0.1
+MARGIN_GB = 2.0
+MIN_FREE_GB = round(
+    ADAPTER_GB * (BACKUP_COPIES + UPLOAD_TRANSIENT_FACTOR) + SMALL_FILES_GB + MARGIN_GB, 1
+)  # = 14.1
 
 
 def _volume_free_gb(e: dict[str, str]) -> tuple[float, float]:
@@ -157,7 +170,8 @@ def cmd_launch(a: argparse.Namespace) -> None:
     size, free = _volume_free_gb(e)
     if free < a.min_free_gb:
         sys.exit(
-            f"保存領域の空きが足りない ({free:.1f}GB / 容量 {size:.0f}GB、必要 {a.min_free_gb:.0f}GB)。"
+            f"保存領域の空きが足りない ({free:.1f}GB / 容量 {size:.0f}GB、"
+            f"必要 {a.min_free_gb:.1f}GB)。"
             " 古い予備 (backup/<run>) を消すか容量を増やしてから起動する"
         )
     print(f"保存領域の空き {free:.1f}GB / 容量 {size:.0f}GB")

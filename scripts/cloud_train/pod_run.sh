@@ -88,6 +88,9 @@ kill "$PROGRESS_PID" 2>/dev/null || true
 if [ $rc -eq 124 ]; then fail "上限時間 ${MAX_HOURS} 時間を超えた"; fi
 if [ $rc -ne 0 ]; then fail "学習が異常終了 (終了コード $rc)"; fi
 say "学習 完了 → S3 の窓口経由で書き出し"
+# adapter-last は途中保存で、正常終了では最終の adapter に置き換わる (どの run も adapter が新しい)。
+# 予備に入れると保存領域を 4GB 余計に食う (s25 が QuotaExceeded、2026-10-28) ので外す
+rm -rf "$OUT/adapter-last"
 mkdir -p "/workspace/backup/$RUN_ID" && cp -r "$OUT/." "/workspace/backup/$RUN_ID/" || say "⚠ 予備の複製に失敗 (続行)"
 upload() {
 python - <<'PY'

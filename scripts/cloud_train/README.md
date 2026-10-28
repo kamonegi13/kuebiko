@@ -18,7 +18,9 @@
 1. **Hugging Face**: 不要 (Gemma 4 は Apache 2.0・アクセス制限なし。2026-09-27 に未ログインで重みの
    取得を確認)
 2. **RunPod** (Settings / Storage):
-   - **Network Volume** を作る (20GB で十分。**S3 API 対応のデータセンター** を選ぶ:
+   - **Network Volume** を作る (20GB。1 run の書き出しに空き約 14GB が要る = 予備の複製 4GB +
+     S3 送信の途中 8GB (部品と完成品の併存) + 余裕。`launch` が空きを見て足りなければ止まる。
+     古い `backup/<run>` を消して空ける。**S3 API 対応のデータセンター** を選ぶ:
      EU-CZ-1 / EU-RO-1 / EUR-IS-1 / EUR-NO-1 / US-CA-2 / US-GA-2 / US-IL-1 / US-KS-2 / US-MD-1 /
      US-MO-1 / US-MO-2 / US-NC-1 / US-NC-2 / US-NE-1 / US-WA-1。**H200 の在庫があるところ**)
    - **API Key** を作る (Settings → API Keys。権限は Read/Write)
