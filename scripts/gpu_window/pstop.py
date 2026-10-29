@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import sys
 import time
@@ -96,7 +97,9 @@ def write_marker(path: Path, stopped: Sequence[str], hard_stop: datetime) -> Non
         "hard_stop": hard_stop.isoformat(),
         "written_at": datetime.now(JST).isoformat(),
     }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)  # 原子的に差し替える (途中で死んでも半端な印を残さない)
 
 
 def read_marker(path: Path) -> list[str]:
@@ -151,12 +154,35 @@ def _fetch_jobs(api: str) -> list[dict[str, Any]]:
 def _stop_all(
     plan: Sequence[PlanItem], toggle: Toggle, stopped: list[str], on_stopped: Callable[[], None]
 ) -> None:
+    """停止の**意図**を先に印へ書いてから toggle する。
+
+    toggle が成功・timeout・例外のどれでも、試みたジョブは戻しの対象に残す (サーバ側で
+    適用済みなのにクライアントが切れた場合の戻し忘れを防ぐ。enabled=true は冪等)。
+    """
     for p in plan:
         if p.action != "stop":
             continue
+        stopped.append(p.job_id)
+        on_stopped()
         toggle(p.job_id, False, p.critical)
-        stopped.append(p.job_id)  # 成功したものだけ記録 = 触っていないものは戻さない
-        on_stopped()  # 1 件ごとに印へ (途中で死んでも止めた分は戻せる)
+
+
+def verify_stopped(jobs: Sequence[dict[str, Any]], stopped: Sequence[str]) -> list[str]:
+    """停止を試みたのに GET で enabled のままのジョブ id。"""
+    by_id = {str(j.get("id")): j for j in jobs}
+    return [j for j in stopped if by_id.get(j, {}).get("enabled")]
+
+
+def validate_times(now: datetime, slot: datetime, hard_stop: datetime) -> str | None:
+    """枠の時刻の整合。エラーなら理由を返す。"""
+    stop_at = slot - timedelta(minutes=LEAD_MINUTES)
+    if slot.date() != hard_stop.date():
+        return f"slot {slot:%m-%d %H:%M} と hard stop {hard_stop:%m-%d %H:%M} が同じ日でない"
+    if stop_at >= hard_stop or slot >= hard_stop:
+        return "停止時刻 (T-40 分) ・枠の開始が hard stop より前でない"
+    if now >= hard_stop:
+        return "hard stop を過ぎている"
+    return None
 
 
 def _wait_idle(api: str, deadline: datetime) -> bool:
@@ -173,6 +199,9 @@ def run(args: argparse.Namespace) -> int:
     marker = Path(args.marker)
     toggle = make_toggle(api)
     if args.restore_from_marker:
+        if not marker.exists():
+            print(f"[pstop] 印 {marker} が無い。戻すものなし")
+            return EXIT_OK
         failed = restore_all(read_marker(marker), toggle)
         if not failed:
             marker.unlink(missing_ok=True)
@@ -191,6 +220,10 @@ def run(args: argparse.Namespace) -> int:
     hard_stop = next_clock(now, args.hard_stop)
     slot = next_clock(now, args.slot_start)
     stop_at = slot - timedelta(minutes=LEAD_MINUTES)
+    bad = validate_times(now, slot, hard_stop)
+    if bad:
+        print(f"[pstop] 時刻が不正: {bad}", file=sys.stderr)
+        return EXIT_ERROR
     stopped: list[str] = []
     state = {"done": False}
 
@@ -198,6 +231,8 @@ def run(args: argparse.Namespace) -> int:
         if state["done"]:
             return
         state["done"] = True
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)  # 戻しの最中は割り込ませない
         failed = restore_all(stopped, toggle)
         if failed:
             print("[pstop] 戻せていない。手動で:", file=sys.stderr)
@@ -218,6 +253,10 @@ def run(args: argparse.Namespace) -> int:
         plan = build_plan(_fetch_jobs(api))
         print_plan(plan)
         _stop_all(plan, toggle, stopped, lambda: write_marker(marker, stopped, hard_stop))
+        still = verify_stopped(_fetch_jobs(api), stopped)
+        if still:
+            print(f"[pstop] 停止後も enabled のまま: {still}", file=sys.stderr)
+            return EXIT_ERROR
         if not _wait_idle(api, min(hard_stop, slot)):
             print("[pstop] 走っている段が締め切りまでに 0 にならない", file=sys.stderr)
             return EXIT_BUSY

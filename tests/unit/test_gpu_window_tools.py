@@ -55,7 +55,7 @@ def test_stop_confirms_critical_and_restore_is_reverse_of_stopped_only() -> None
     assert calls == [("hourly-upkeep", True, False), ("hourly-collect", True, False)]
 
 
-def test_failed_stop_midway_restores_only_what_was_stopped() -> None:
+def test_failed_stop_midway_keeps_attempted_jobs_for_restore() -> None:
     stopped: list[str] = []
 
     def toggle(job_id: str, enabled: bool, confirm: bool) -> None:
@@ -65,7 +65,8 @@ def test_failed_stop_midway_restores_only_what_was_stopped() -> None:
     plan = pstop.build_plan([_job("hourly-collect", protection="critical"), _job("hourly-upkeep")])
     with pytest.raises(OSError):
         pstop._stop_all(plan, toggle, stopped, lambda: None)
-    assert stopped == ["hourly-collect"]
+    # 試みたものは (サーバ側で適用済みかもしれないので) 戻しの対象に残す
+    assert stopped == ["hourly-collect", "hourly-upkeep"]
 
 
 def test_restore_failure_reports_ids_and_manual_commands() -> None:
@@ -200,3 +201,53 @@ def test_per_pair_records_have_ids_and_verdicts_only(tmp_path: Path) -> None:
     out = tmp_path / "p.jsonl"
     psic.write_per_pair(out, rec)
     assert json.loads(out.read_text().strip())["left_id"] == "a"
+
+
+def test_intent_is_marked_before_toggle() -> None:
+    seen: list[list[str]] = []
+    stopped: list[str] = []
+    plan = pstop.build_plan([_job("hourly-upkeep")])
+    pstop._stop_all(
+        plan,
+        lambda j, e, c: seen.append(list(stopped)),
+        stopped,
+        lambda: None,
+    )
+    assert seen == [["hourly-upkeep"]]
+
+
+def test_verify_stopped_and_validate_times() -> None:
+    assert pstop.verify_stopped([_job("a"), _job("b", enabled=False)], ["a", "b"]) == ["a"]
+    j = common.JST
+    now = datetime(2026, 11, 8, 10, 0, tzinfo=j)
+    ok = pstop.validate_times(
+        now, datetime(2026, 11, 8, 12, tzinfo=j), datetime(2026, 11, 8, 15, tzinfo=j)
+    )
+    assert ok is None
+    assert pstop.validate_times(
+        now, datetime(2026, 11, 8, 12, tzinfo=j), datetime(2026, 11, 9, 1, tzinfo=j)
+    )
+    assert pstop.validate_times(
+        now, datetime(2026, 11, 8, 15, tzinfo=j), datetime(2026, 11, 8, 12, tzinfo=j)
+    )
+
+
+def test_thermal_parsing_fail_closed_and_ignores_battery() -> None:
+    log = (
+        "2026-10-30 11:00:00 +0900 Thermal Emergency\n"
+        "2026-10-30 11:01:00 +0900 Thermal Emergency Using Batt\n"
+    )
+    assert vs.count_emergency(log) == 1
+    with pytest.raises(vs.ThermalParseError):
+        vs.count_emergency("garbage")
+    assert vs.cpu_limited("CPU_Speed_Limit = 80") and not vs.cpu_limited("CPU_Speed_Limit = 100")
+
+
+def test_battery_noise_only_on_ac_throughout() -> None:
+    ac = vs.Power(True, 99, "AC attached; charging")
+    batt = vs.Power(False, 99, "discharging")
+    assert vs.battery_drop_is_noise(ac, ac)
+    assert not vs.battery_drop_is_noise(ac, batt)
+    assert not vs.battery_drop_is_noise(
+        vs.Power(True, 80, "not charging"), vs.Power(True, 78, "not charging")
+    )

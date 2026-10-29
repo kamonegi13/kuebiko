@@ -61,6 +61,17 @@ def lid_closed(ioreg_text: str) -> bool:
     return bool(re.search(r'"AppleClamshellState"\s*=\s*Yes', ioreg_text))
 
 
+def battery_drop_is_noise(start: Power, end: Power) -> bool:
+    """AC が測定の最初から最後まで続き、満充電付近か充電中なら、%の揺れは減りとみなさない。
+
+    仕様の max_battery_drop=0 は変えない。ここは表示の揺れ (99→98 等) だけを除く。
+    """
+    if not (start.on_ac and end.on_ac):
+        return False
+    charging = "charging" in end.raw.lower() and "not charging" not in end.raw.lower()
+    return charging or (end.battery_pct or 0) >= 99
+
+
 def decide(
     *,
     on_ac: bool,
@@ -130,8 +141,33 @@ def _sh(cmd: list[str]) -> str:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False).stdout  # noqa: S603
 
 
+class ThermalParseError(RuntimeError):
+    """pmset の出力が想定の形でない (fail closed で exit 2)。"""
+
+
+_LOG_TS = re.compile(r"^\s*\d{4}-\d{2}-\d{2} ")
+_LIMIT = re.compile(r"CPU_(?:Speed|Scheduler)_Limit\s*=\s*(\d+)")
+
+
+def count_emergency(log_text: str) -> int:
+    """pmset -g log の Thermal Emergency (電池で動作中の行は除く)。形式が不明なら例外。"""
+    lines = log_text.splitlines()
+    if not any(_LOG_TS.match(ln) for ln in lines):
+        raise ThermalParseError("pmset -g log の形式を認識できない")
+    return sum(
+        1 for ln in lines if "thermal emergency" in ln.lower() and "using batt" not in ln.lower()
+    )
+
+
+def cpu_limited(thermlog_text: str) -> bool:
+    """pmset -g thermlog の CPU_*_Limit が 100 未満か。読めなければ False (補助の指標)。"""
+    return any(int(m.group(1)) < 100 for m in _LIMIT.finditer(thermlog_text))
+
+
 def _thermal_count() -> int:
-    return sum(1 for ln in _sh(["pmset", "-g", "log"]).splitlines() if "thermal" in ln.lower())
+    return count_emergency(_sh(["pmset", "-g", "log"])) + (
+        1 if cpu_limited(_sh(["pmset", "-g", "thermlog"])) else 0
+    )
 
 
 def _generate(model: str, seed: int) -> float:
@@ -165,6 +201,12 @@ def run(args: argparse.Namespace) -> int:
     power0 = parse_pmset(_sh(["pmset", "-g", "batt"]))
     closed = lid_closed(_sh(["ioreg", "-r", "-k", "AppleClamshellState", "-d", "4"]))
 
+    def thermal_now() -> int:
+        try:
+            return _thermal_count()
+        except ThermalParseError:
+            return thermal0
+
     def finish(code: int, reason: str, tok: Sequence[float], prod: str, end: Power) -> int:
         rec = build_record(
             ts=started.isoformat(timespec="seconds"),
@@ -174,7 +216,7 @@ def run(args: argparse.Namespace) -> int:
             power=power0.raw,
             battery_start=power0.battery_pct,
             battery_end=end.battery_pct,
-            thermal_events=max(0, _thermal_count() - thermal0),
+            thermal_events=max(0, thermal_now() - thermal0),
             production=prod,
             code=code,
             reason=reason,
@@ -191,7 +233,10 @@ def run(args: argparse.Namespace) -> int:
             f" lid_closed={closed} busy={busy} deadline={deadline:%m-%d %H:%M} model={args.model}"
         )
         return EXIT_OK
-    thermal0 = _thermal_count()
+    try:
+        thermal0 = _thermal_count()
+    except ThermalParseError as e:
+        return finish(EXIT_ERROR, str(e), [], "not checked", power0)
     if not power0.on_ac or closed:
         code, why = decide(on_ac=power0.on_ac, lid_is_closed=closed, tok_s=[], battery_drop=0)
         return finish(code, why, [], "not checked", power0)
@@ -202,7 +247,11 @@ def run(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         return finish(EXIT_ERROR, f"実行エラー: {type(e).__name__}: {e}"[:200], [], "error", power0)
     end = parse_pmset(_sh(["pmset", "-g", "batt"]))
-    drop = (power0.battery_pct or 0) - (end.battery_pct or 0)
+    drop = (
+        0
+        if battery_drop_is_noise(power0, end)
+        else (power0.battery_pct or 0) - (end.battery_pct or 0)
+    )
     code, why = decide(on_ac=end.on_ac, lid_is_closed=closed, tok_s=tok, battery_drop=drop)
     return finish(code, why, tok, "idle (no running jobs)", end)
 

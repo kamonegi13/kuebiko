@@ -7,7 +7,8 @@
 - 入力・出力の sha256 を出力の meta と ``<out>.sha256.json`` に残す。
 
     python scripts/gpu_window/day0_triage.py --dry-run          # 計画だけ (生成なし)
-    python scripts/gpu_window/day0_triage.py                    # 枠の中で (使い捨てのコンテナ)
+    docker compose run --rm --no-deps -T kuebiko python scripts/gpu_window/day0_triage.py
+    # 枠の中で、必ず使い捨てのコンテナ (Ollama は host.docker.internal、ホストの uv は設定が異なる)
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -63,7 +65,9 @@ def build_output(
 
 def write_with_hashes(out: Path, payload: dict[str, Any], input_sha256: str) -> dict[str, str]:
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = out.with_name(out.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, out)  # 原子的に置く (途中で死んでも半端な出力を残さない)
     hashes = {"input_sha256": input_sha256, "output_sha256": sha256_file(out)}
     out.with_name(out.name + ".sha256.json").write_text(json.dumps(hashes, indent=2), "utf-8")
     return hashes

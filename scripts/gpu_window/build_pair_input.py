@@ -91,9 +91,15 @@ def main() -> int:
         return 0
     from readonly_conn import open_read_only
 
-    from src.storage.db_backend import connect
+    from src.storage.db_backend import connect, is_pg_enabled
     from src.storage.run_history import DEFAULT_DB_PATH
 
+    if not is_pg_enabled():
+        print(
+            "[pair-input] DATABASE_URL が無く SQLite に落ちる。使い捨てのコンテナで実行する",
+            file=sys.stderr,
+        )
+        return 2
     conn = open_read_only(connect, DEFAULT_DB_PATH)
     try:
         picked = select_pairs(candidates, conn, args.start, args.end)
