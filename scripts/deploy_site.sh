@@ -118,7 +118,9 @@ if [ "${1:-}" != "--force" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$DIGES
   exit 0
 fi
 
-npx --yes wrangler@latest pages deploy "$COMBINED" \
+# wrangler は版を固定する (10-29: @latest の 4.155.0 は x64 の Node 向けの workerd を入れられず、
+# 10-22 から配信が止まった。4.147.0 は動作を確認済み)
+npx --yes wrangler@4.147.0 pages deploy "$COMBINED" \
   --project-name "$CLOUDFLARE_PAGES_PROJECT" \
   --branch main \
   --commit-dirty=true
