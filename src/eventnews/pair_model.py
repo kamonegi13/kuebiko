@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -25,6 +26,9 @@ from src.tools.tree_forest import forest_probability
 _log = get_logger(__name__)
 
 DEFAULT_MODEL_PATH = Path("config/models/pair_model.json")
+#: 判定器の照合 (``PAIR_MODEL_CHECK``)。"warn" (既定) = 食い違いを警告するだけで判定は変えない。
+#: "off" = 照合しない。
+PAIR_MODEL_CHECK_ENV = "PAIR_MODEL_CHECK"
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,8 @@ class PairModel:
     threshold_llm_on: float
     threshold_llm_off: float
     _trees: tuple[dict[str, list[float]], ...]
+    #: このモデルの特徴量 (llm_same) を作った判定器。空 = 不明 (照合しない)。
+    trained_llm_models: tuple[str, ...] = ()
 
     def probability(self, features: list[float]) -> float:
         """同じ出来事である確率 (木ごとの葉の比率を平均する)。"""
@@ -48,6 +54,36 @@ class PairModel:
         """繋ぐか。⭐ **閾値は LLM の有無で使い分ける** (欠測時は分布が変わる)。"""
         threshold = self.threshold_llm_on if llm_available else self.threshold_llm_off
         return self.probability(features) >= threshold
+
+
+def _trained_llm_models(raw: dict[str, object]) -> tuple[str, ...]:
+    """JSON の ``trained_llm_models`` (文字列の配列。無い・形が違う = 空 = 不明)。"""
+    declared = raw.get("trained_llm_models")
+    if not isinstance(declared, list):
+        return ()
+    return tuple(m.strip() for m in declared if isinstance(m, str) and m.strip())
+
+
+def pair_llm_mismatch(model: PairModel, actual: str) -> bool:
+    """特徴量を作った判定器の宣言があり、実モデルがその中に無いとき True (空宣言は False)。"""
+    return bool(model.trained_llm_models) and actual.strip() not in model.trained_llm_models
+
+
+def warn_on_pair_llm_mismatch(model: PairModel) -> None:
+    """``step:pair_judge`` の実モデルとの食い違いを警告する。判定は変えない (warn のみ)。"""
+    if os.environ.get(PAIR_MODEL_CHECK_ENV, "warn").strip().lower() == "off":
+        return
+    from src.tools.model_tiers import Step, resolve_step_model
+
+    try:
+        actual = resolve_step_model(Step.PAIR_JUDGE)
+    except Exception as e:  # noqa: BLE001 — 照合の失敗で群化を止めない
+        _log.warning("pair_model_llm_resolve_failed", error=str(e)[:200])
+        return
+    if pair_llm_mismatch(model, actual):
+        _log.warning(
+            "pair_model_llm_mismatch", trained=list(model.trained_llm_models), actual=actual
+        )
 
 
 @lru_cache(maxsize=2)
@@ -76,12 +112,15 @@ def load_model(path: str | None = None) -> PairModel | None:
                 ),
             )
             return None
-        return PairModel(
+        model = PairModel(
             feature_names=got,
             threshold_llm_on=float(raw["threshold_llm_on"]),
             threshold_llm_off=float(raw["threshold_llm_off"]),
             _trees=tuple(raw["trees"]),
+            trained_llm_models=_trained_llm_models(raw),
         )
+        warn_on_pair_llm_mismatch(model)
+        return model
     except Exception as e:  # noqa: BLE001 — 壊れたモデルで群化を止めない
         _log.warning("pair_model_load_failed", path=str(target), error=str(e)[:200])
         return None

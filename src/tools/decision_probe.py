@@ -32,7 +32,7 @@ import ollama
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMForbiddenModelError, validate_model_name
 from src.tools.model_tiers import STEP_REGISTRY, Step, is_external_model, resolve_step_model
-from src.tools.task_prefix import PREFIX_TRAINED_MODELS, task_prefix_enabled
+from src.tools.task_prefix import PREFIX_TRAINED_MODELS, is_prefix_trained
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
@@ -63,10 +63,10 @@ def _is_json_biased(model: str) -> bool:
     """このモデルに raw モード + JSON 前置きを使うか。
 
     接頭辞つきで学習したモデル (``PREFIX_TRAINED_MODELS``) に加え、評価中の一時タグ
-    (環境変数 ``SFT_TASK_PREFIX_MODELS``) も含める (``task_prefix_enabled`` と同じ判定)。
+    (環境変数 ``SFT_TASK_PREFIX_MODELS``) も含める (``is_prefix_trained`` と同じ判定)。
     一時タグが chat 経路で測られて較正が本番とずれるのを防ぐ (s24_plan §4.2-1)。
     """
-    return model.strip() in _JSON_BIASED_MODELS or task_prefix_enabled(model)
+    return model.strip() in _JSON_BIASED_MODELS or is_prefix_trained(model)
 
 
 def _normalize_token(token: str) -> str:

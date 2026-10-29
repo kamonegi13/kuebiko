@@ -33,7 +33,7 @@ from src.cti.org_normalizer import org_match_key
 from src.logging_config import get_logger
 from src.tools.decision_probe import probe_choice
 from src.tools.model_tiers import Step, resolve_step_model
-from src.tools.task_prefix import PREFIX_TRAINED_MODELS
+from src.tools.task_prefix import is_prefix_trained
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -264,7 +264,7 @@ async def judge_name_pair(
     fast ティアが SFT のとき、素の 26B は step 上書き ``step:org_identity_judge`` で明示する。
     """
     model = resolve_step_model(Step.ORG_IDENTITY_JUDGE, db_path=db_path)
-    if model.strip() in PREFIX_TRAINED_MODELS:
+    if is_prefix_trained(model):
         _log.warning("org_identity_judge_is_sft", model=model)
         return None
     event = await _probe_logit(

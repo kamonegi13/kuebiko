@@ -149,6 +149,17 @@ _S24_NEW_UNTRAINED: frozenset[Step] = UNTRAINED_STEPS[_S24_FAMILY] - {
 }
 
 
+def is_prefix_trained(model: str) -> bool:
+    """このモデルは接頭辞つきで学習した系統か (完全一致 + s24 系の前方一致 + 環境変数の一時タグ)。
+
+    SFT 判定の唯一の入口。org_identity・decision_probe など「SFT か」を見る所はここを使う
+    (完全一致だけで見ると s24 系の補間タグが素通りする)。
+    """
+    extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
+    name = str(model.strip())
+    return name in PREFIX_TRAINED_MODELS | extra or name.startswith(PREFIX_TRAINED_FAMILIES)
+
+
 def task_prefix_enabled(model: str) -> bool:
     """このモデルに接頭辞を付けるか (= 接頭辞つきで学習したモデルか)。
 
@@ -156,9 +167,7 @@ def task_prefix_enabled(model: str) -> bool:
     学習した常駐モデル (n17c / n17m30 等) にも印が付き、見たことのない形が届く。
     旧旗は読まない (一度も本番で立てていない)。
     """
-    extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
-    name = str(model.strip())
-    return name in PREFIX_TRAINED_MODELS | extra or name.startswith(PREFIX_TRAINED_FAMILIES)
+    return is_prefix_trained(model)
 
 
 def untrained_steps_for(model: str) -> frozenset[Step]:
