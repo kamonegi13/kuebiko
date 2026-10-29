@@ -23,13 +23,14 @@ import jinja2
 import yaml
 
 from src.logging_config import get_logger
+from src.tools.model_registry import FOCUS_V6_PREFIXES
 
 _log = get_logger(__name__)
 
 FLAG_ENV = "PIR_FOCUS_PROMPT_V6"
 
 #: v6.2 で学習した系統 (前方一致。補間タグ ``kuebiko-sft:s24ci50`` / ``s25i65`` 等も含む)
-V6_MODEL_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24c", "kuebiko-sft:s25")
+V6_MODEL_FAMILIES: tuple[str, ...] = FOCUS_V6_PREFIXES
 
 RUBRIC_PATH = Path("config/prompts/pir_daily_focus_rubric_v6_2.yaml")
 

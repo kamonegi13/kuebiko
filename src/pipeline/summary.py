@@ -19,6 +19,7 @@ from pydantic_core import CoreSchema
 from src.cti.llm_routing_flags import EditorialStance
 from src.logging_config import get_logger
 from src.tools.discord_publisher import Importance
+from src.tools.model_registry import EVIDENCE_EXACT, EVIDENCE_PREFIXES
 from src.tools.reason_trim import trim_reason_logged
 
 _log = get_logger(__name__)
@@ -304,9 +305,9 @@ class MitreEvidence(BaseModel):
 #: 技術ごとに本文の引用を出すよう学習したモデル (``mitre_evidence`` 欄を出させる)。学習して
 #: いないモデルに欄を足すと、見たことのない出力の形を求めることになる (接頭辞と同じ考え方、
 #: 2026-09-29)
-EVIDENCE_TRAINED_MODELS: frozenset[str] = frozenset({"kuebiko-sft:i58", "kuebiko-sft:s23i"})
+EVIDENCE_TRAINED_MODELS: frozenset[str] = EVIDENCE_EXACT
 #: 名前の前方一致で同じ扱いにする系統 (s24 / s24b / s25 とその補間の一時タグ ``s24i25`` 等)
-EVIDENCE_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24", "kuebiko-sft:s25")
+EVIDENCE_TRAINED_FAMILIES: tuple[str, ...] = EVIDENCE_PREFIXES
 
 
 class SummaryEvidenceOutput(SummaryOutput):

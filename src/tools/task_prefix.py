@@ -37,6 +37,12 @@ from src.tools.llm_client import (
     LLMClient,
     LLMResponse,
 )
+from src.tools.model_registry import (
+    NEW_TASK_PREFIXES,
+    PREFIX_TRAINED_EXACT,
+    PREFIX_TRAINED_PREFIXES,
+    UNTRAINED_STEP_VALUES,
+)
 from src.tools.model_tiers import Step
 
 _T = TypeVar("_T", bound=BaseModel)
@@ -47,14 +53,12 @@ _EXTRA_MODELS_ENV = "SFT_TASK_PREFIX_MODELS"
 #: 名前を足した時点で、UI でそのモデルを割り当てるだけで印が付く (環境変数の設定漏れで
 #: 黙って外れる事故を構造で消す — s19 から印を外すと event_kind が 277 → 257 に落ちた)。
 #: 評価中の新モデルは環境変数 ``SFT_TASK_PREFIX_MODELS`` (カンマ区切り) で一時的に足す。
-PREFIX_TRAINED_MODELS: frozenset[str] = frozenset(
-    {"kuebiko-sft:s19", "kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58", "kuebiko-sft:s23i"}
-)
+PREFIX_TRAINED_MODELS: frozenset[str] = PREFIX_TRAINED_EXACT
 
 #: 名前の**前方一致**で接頭辞つきと見なすモデル系統。s24 (と s24b)・s25 とその補間の一時タグ
 #: (``kuebiko-sft:s24i25`` / ``kuebiko-sft:s24bi50`` 等、``import_interp_s24.sh`` が付ける名前)
 #: は、本番へ上げる補間の重みが決まる前でも印つきで学習した系統として扱う。s23i 以前は完全一致のまま。  # noqa: E501
-PREFIX_TRAINED_FAMILIES: tuple[str, ...] = ("kuebiko-sft:s24", "kuebiko-sft:s25")
+PREFIX_TRAINED_FAMILIES: tuple[str, ...] = PREFIX_TRAINED_PREFIXES
 
 #: step → 接頭辞。**SFT の教師データを持つ step だけ**に付ける。
 #: 値は短く、記事本文に現れない形にする (衝突すると本文が課題指示に見える)。
@@ -88,11 +92,7 @@ TASK_MARKERS: dict[Step, str] = {
 #: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。
 #: 前方一致なので一時タグ・補間タグ (``kuebiko-sft:s24bi50`` / ``kuebiko-sft:s24c…``) にも効く。
 #: s23i 以前と s24 (無印) はここに含まれず、既定の印 (借用) のまま。
-S24_NEW_TASK_FAMILIES: tuple[str, ...] = (
-    "kuebiko-sft:s24b",
-    "kuebiko-sft:s24c",
-    "kuebiko-sft:s25",  # s24c と同じ課題・印で学習 (build_dataset_s25.py、補間 s25i65 等も前方一致)
-)
+S24_NEW_TASK_FAMILIES: tuple[str, ...] = NEW_TASK_PREFIXES
 
 _NEW_TASK_MARKERS: dict[Step, str] = {
     Step.JUDGMENT_CLASSIFY: "[task: judgment]\n",
@@ -114,32 +114,7 @@ MODEL_STEP_MARKERS: dict[str, dict[Step, str]] = {
 #: (n19 は深掘りの教師データが無いまま投入 — 2026-09-29)。
 _S24_FAMILY = "kuebiko-sft:s24"
 UNTRAINED_STEPS: dict[str, frozenset[Step]] = {
-    "kuebiko-sft:n19": frozenset(
-        {
-            Step.DIGEST_DEEP_DIVE,
-            Step.DIGEST_DEEP_DIVE_SELECT,
-            Step.PIR_DAILY_FOCUS,
-            Step.SEVERITY_AXES,
-        }
-    ),
-    "kuebiko-sft:s21": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
-    # s24 系 (前方一致、``_S24_FAMILY``): 学習した課題は triage / summary / pir / kind / pair / ach /  # noqa: E501
-    # axes / pir_focus (s24b は judgment も)。下は**学習していない**のに印が付く step
-    # (detect 系・ach/summary の借用・narrative 系・深掘り)。深掘りは n20 の担当
-    _S24_FAMILY: frozenset(
-        {
-            Step.SYNTHESIS_DETECT,
-            Step.DETECT_CLAIM_WRITE,
-            Step.LEDGER_ACH_AUX,
-            Step.IOC_LLM_VERIFY,
-            Step.EVENT_NEWS,
-            Step.PIR_SPOTLIGHT,
-            Step.SYNTHESIS_NARRATIVE,
-            Step.DIGEST_DEEP_DIVE,
-            Step.DIGEST_DEEP_DIVE_SELECT,
-        }
-    ),
-    "kuebiko-sft:s19": frozenset({Step.PIR_DAILY_FOCUS, Step.SEVERITY_AXES}),
+    name: frozenset(Step(v) for v in values) for name, values in UNTRAINED_STEP_VALUES.items()
 }
 #: s24b / s24c 系は IOC 検証・ACH 補助・重複判定を学習する (専用の印)。s24 は未学習のまま
 _S24_NEW_UNTRAINED: frozenset[Step] = UNTRAINED_STEPS[_S24_FAMILY] - {

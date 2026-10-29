@@ -1,0 +1,31 @@
+{
+ "local_fallbacks": {},
+ "step_overrides": {
+  "actor_sync": "kuebiko-sft:26b",
+  "article_translate": "kuebiko-sft:26b",
+  "assign_evidence_judge": "gemma4:26b",
+  "detect_claim_write": "kuebiko-sft:s23i",
+  "digest_deep_dive": "kuebiko-sft:n19",
+  "digest_deep_dive_select": "kuebiko-sft:n19",
+  "event_news": "kuebiko-sft:n19",
+  "org_identity_judge": "gemma4:26b",
+  "pair_judge": "kuebiko-sft:s23i",
+  "pir_focus_claim_judge": "kuebiko-sft:s23i",
+  "pir_spotlight": "kuebiko-sft:n19",
+  "relevance_jp_cascade": "kuebiko-sft:s23i",
+  "severity_axes": "kuebiko-sft:s24ci65",
+  "synthesis_analysis": "kuebiko-sft:s24ci65",
+  "synthesis_detect": "kuebiko-sft:s23i",
+  "synthesis_narrative": "kuebiko-sft:n19",
+  "thin_body_judge": "kuebiko-sft:s24ci65",
+  "triage_geo_rescue": "kuebiko-sft:26b"
+ },
+ "tiers": {
+  "dialog": "claudecode:haiku",
+  "embedding": "snowflake-arctic-embed2",
+  "fast": "kuebiko-sft:s24ci65",
+  "narrative": "kuebiko-sft:n19",
+  "reasoning": "kuebiko-sft:s24ci65"
+ },
+ "version": 46
+}
