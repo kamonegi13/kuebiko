@@ -2911,6 +2911,37 @@ class TestThinBodyGate:
         # Assert
         assert result == "thin_body"
 
+    def test_flag_on_keyword_not_applied_at_exactly_600_chars(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: 境界 — ちょうど 600 字は調整の母集団 (600 字未満) の外
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = (self._TITLE + " Listen to the full episode here. " * 30)[:600]
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
+    def test_flag_on_does_not_treat_haishin_as_media_stub(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: 「配信」は事案の記事 (パッチの配信・メール配信サービス) に当たるため
+        # 決まり文句にしない
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = self._TITLE + "ベンダーは脆弱性を修正したパッチを配信した。" * 10
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
     def test_flag_on_keeps_healthy_long_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Arrange: 残り字数が十分あり媒体の決まり文句も無い、中身のある記事
         from src.main import _degenerate_body_reason
