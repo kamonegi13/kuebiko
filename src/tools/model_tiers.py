@@ -370,6 +370,9 @@ STEP_OVERRIDE_PREFIX = "step:"
 RETIRED_STEPS: frozenset[str] = frozenset({"alert_law_enforcement_judge"})
 
 
+_warned_retired_keys: set[str] = set()
+
+
 def _is_retired_step_key(key: str) -> bool:
     """``step:<退役済みの step 名>`` か。"""
     return key.startswith(STEP_OVERRIDE_PREFIX) and (
@@ -412,7 +415,9 @@ def load_step_overrides(*, db_path: Path | None = None) -> dict[str, str]:
         if not (key.startswith(STEP_OVERRIDE_PREFIX) and value):
             continue
         if _is_retired_step_key(key):
-            _log.warning("model_tiers_retired_step_override_ignored", step=key)
+            if key not in _warned_retired_keys:  # プロセスごとに 1 回だけ警告
+                _warned_retired_keys.add(key)
+                _log.warning("model_tiers_retired_step_override_ignored", step=key)
             continue
         out[key.removeprefix(STEP_OVERRIDE_PREFIX)] = value
     return out

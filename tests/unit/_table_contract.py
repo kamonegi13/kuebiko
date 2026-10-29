@@ -8,7 +8,7 @@
    書き手が一部の列を書き忘れる・読み手が返し忘れる、を機械的に見つける。
 3. purge が登録されている: repo に purge の method があり、定期保守
    (``src/ui/services/maintenance.py``) から呼ばれている。
-4. API を持つ表は、そのパスが匿名で読めない (``READ_ONLY_GET_DENYLIST`` の対象)。
+4. API を持つ表は、そのパスが匿名で読めない (``PUBLIC_GET_ALLOWLIST`` に無い = default-deny)。
 """
 
 from __future__ import annotations
@@ -101,4 +101,6 @@ def assert_table_contract(
     assert_roundtrip(sqlite_cols, written, read_back, auto_columns=auto_columns)
     assert_purge_registered(purge_method)
     if api_path is not None:
-        assert is_read_only_blocked_get(api_path), f"{api_path} が匿名で読める (denylist 漏れ)"
+        assert is_read_only_blocked_get(api_path), (
+            f"{api_path} が匿名で読める (allowlist に入っている)"
+        )

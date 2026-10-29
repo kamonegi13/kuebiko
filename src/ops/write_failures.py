@@ -5,6 +5,9 @@
 ``record_failure`` を呼ぶ。計数はプロセス内 (再起動で 0 に戻る)、``snapshot`` は
 ``/api/v1/health-status`` の ``write_failures`` に出る。ログには例外の型だけを出し、
 メッセージ (本文・URL・資格情報を含みうる) は出さない。
+
+限界: 数えるのはこのプロセスの中だけ。子プロセス (パイプライン) の失敗は、親の
+health-status には出ない。DB に数えて全プロセスを横断して見えるようにするのは G2 (P0-16 以降)。
 """
 
 from __future__ import annotations
