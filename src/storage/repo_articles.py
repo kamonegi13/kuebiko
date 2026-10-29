@@ -360,14 +360,21 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             )
             return int(cur.rowcount or 0)
 
-    def list_articles_untranslated(self, limit: int = 40) -> list[str]:
+    def list_articles_untranslated(
+        self, limit: int = 40, *, backoff: bool = False, now: datetime | None = None
+    ) -> list[str]:
         """body ありで未訳の article_id を新しい順に返す (バックログ翻訳ジョブ用)。
 
         新しい順 = 新規流入を優先して当日中に訳し切り、過去分は後ろから漸進消化する。
         body_ja: NULL=未処理 / ''=処理済・訳不要 (原文が日本語) / それ以外=訳キャッシュ。
         同一 article_id は run 横断で複数行あり得るため GROUP BY で重複排除する
         (重複を許すと 1 バッチ内で同じ記事を二重翻訳する)。
+
+        ``backoff=True`` (P0-24): 失敗が続く記事 (translate_attempts) を回数に応じた間隔が
+        空くまで除く。先頭詰まり対策で、既定 False は従来どおり。
         """
+        if backoff:
+            return self.list_articles_untranslated_backoff(limit, now=now)  # type: ignore[attr-defined,no-any-return]
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT article_id, MAX(created_at) AS latest FROM articles"

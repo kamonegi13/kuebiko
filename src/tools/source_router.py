@@ -28,6 +28,12 @@ from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor
+from src.tools.grok_retry import (
+    UNRENDERED_REASON,
+    GrokAttemptStore,
+    GrokRetryTracker,
+    grok_summary_every,
+)
 from src.tools.imap_client import EmailMessage, ImapClient
 from src.tools.source_fetch_outcome import SourceFetchOutcome
 
@@ -92,7 +98,9 @@ class GrokEmailSource:
         mark_as_read: bool = False,
         unseen_only: bool = True,
         url_host_allowlist: list[str] | None = None,
+        retry_tracker: GrokRetryTracker | None = None,
     ) -> None:
+        self._retry_tracker = retry_tracker
         self._imap = imap_client
         self._grok = grok_fetcher
         self._extractor = extractor
@@ -124,6 +132,8 @@ class GrokEmailSource:
         self.last_blocked_count = 0
         self.last_not_rendered_count = 0
         self._pending_seen = {}
+        if self._retry_tracker is not None:
+            self._retry_tracker.begin_run()
         emails = await self._imap.fetch_unread(
             sender_filters=self._sender_filters,
             subject_filters=self._subject_filters,
@@ -138,47 +148,17 @@ class GrokEmailSource:
 
         articles: list[Article] = []
         pending: dict[str, tuple[str, ...]] = {}  # レポート抽出に成功したメール (既読化の候補)
+        tracker = self._retry_tracker
         for msg in emails:
-            candidates = [
-                u
-                for u in msg.extracted_urls
-                if self._url_host_allowed(u) and not self._is_non_report_url(u)
-            ]
-            if not candidates:
-                _log.info(
-                    "grok_email_no_matching_url",
-                    email_uid=msg.uid,
-                    total_urls=len(msg.extracted_urls),
-                    allowlist=self._url_host_allowlist,
-                )
-                continue
-            got_ids: list[str] = []
-            # 全 URL を読み切れたか。取得の失敗・max_count の打ち切りが 1 つでもあれば
-            # 既読にしない (次の run が取り直す。読めた分の投稿は要約前の既知判定で落ちる)
-            complete = True
-            for url in candidates:
-                if len(articles) >= max_count:
-                    complete = False
-                    break
-                try:
-                    article = await self._fetch_one(url, msg)
-                except _RetryableFetchError:
-                    complete = False
-                    continue
-                except Exception as e:  # noqa: BLE001
-                    complete = False
-                    _log.warning(
-                        "grok_email_fetch_failed",
-                        url=url,
-                        email_uid=msg.uid,
-                        error=str(e),
-                    )
-                    continue
-                if article is not None:
-                    articles.append(article)
-                    got_ids.append(article.id)
+            got_ids, complete, unrendered = await self._fetch_email(msg, articles, max_count)
+            if unrendered:
+                self._count_unrendered(msg, unrendered)
             if got_ids and complete:
                 pending[msg.uid] = tuple(got_ids)
+                if tracker is not None:
+                    tracker.on_success(msg.uid)
+            elif tracker is not None:
+                tracker.check_expiry(msg)  # 取り切れなかったメールだけ、窓から外れる前に警告
             if len(articles) >= max_count:
                 break
 
@@ -190,6 +170,65 @@ class GrokEmailSource:
             pending_seen=len(pending),
         )
         return articles
+
+    async def _fetch_email(
+        self, msg: EmailMessage, articles: list[Article], max_count: int
+    ) -> tuple[list[str], bool, int]:
+        """1 通のメールの全 URL を読む。(取れた記事 id, 全 URL を読み切れたか, 描画失敗の数)。
+
+        取得の失敗・max_count の打ち切りが 1 つでもあれば complete=False で既読にしない
+        (次の run が取り直す。読めた分の投稿は要約前の既知判定で落ちる)。
+        """
+        candidates = [
+            u
+            for u in msg.extracted_urls
+            if self._url_host_allowed(u) and not self._is_non_report_url(u)
+        ]
+        if not candidates:
+            _log.info(
+                "grok_email_no_matching_url",
+                email_uid=msg.uid,
+                total_urls=len(msg.extracted_urls),
+                allowlist=self._url_host_allowlist,
+            )
+            return [], False, 0
+        got_ids: list[str] = []
+        complete = True
+        unrendered = 0
+        for url in candidates:
+            if len(articles) >= max_count:
+                complete = False
+                break
+            try:
+                article = await self._fetch_one(url, msg)
+            except _RetryableFetchError as e:
+                complete = False
+                unrendered += str(e) == UNRENDERED_REASON
+                continue
+            except Exception as e:  # noqa: BLE001
+                complete = False
+                _log.warning("grok_email_fetch_failed", url=url, email_uid=msg.uid, error=str(e))
+                continue
+            if article is not None:
+                articles.append(article)
+                got_ids.append(article.id)
+        return got_ids, complete, unrendered
+
+    def _count_unrendered(self, msg: EmailMessage, unrendered: int) -> None:
+        """描画失敗を警報に数える。追跡中は最初の失敗だけ (繰り返しは log のみ)。"""
+        tracker = self._retry_tracker
+        if tracker is None or tracker.on_unrendered(msg):
+            self.last_not_rendered_count += unrendered
+
+    @property
+    def last_unrendered_summary_count(self) -> int:
+        """今回の run で「まだ取れていない」要約を出すメールの数 (N 回目ごと)。"""
+        return self._retry_tracker.summary_count if self._retry_tracker else 0
+
+    @property
+    def last_expiring_count(self) -> int:
+        """取得窓から外れる直前で未取得のメールの数 (1 通につき 1 回だけ)。"""
+        return self._retry_tracker.expiring_count if self._retry_tracker else 0
 
     async def commit_seen(self, unfinished_article_ids: Collection[str] = ()) -> int:
         """成果が確定したメールだけを既読にする (パイプラインの後に呼ぶ)。
@@ -269,9 +308,8 @@ class GrokEmailSource:
             # レポート本体 (SPA) は DOM の本文が無ければ描画の失敗。trafilatura の断片
             # (表題 "Grok" + 十数字) を本文にすると、どのレポートも同じ中身になり意味の
             # 重複判定で黙って落ちていた (run 8740 ほか)。未読に残して次の回で取り直す
-            self.last_not_rendered_count += 1
             _log.warning("grok_report_not_rendered", url=url, html_length=len(result.html))
-            raise _RetryableFetchError("report_not_rendered")
+            raise _RetryableFetchError(UNRENDERED_REASON)
         if not body:
             from src.tools import source_router as _self_module
 
@@ -496,6 +534,7 @@ def build_source(
     imap_client: ImapClient | None = None,
     app_config: AppConfig | None = None,
     seen_hash_filter: Callable[[Sequence[str]], AbstractSet[str]] | None = None,
+    grok_attempts: GrokAttemptStore | None = None,
 ) -> ArticleSource:
     """``SourceConfig.type`` に対応する ArticleSource インスタンスを返す。
 
@@ -525,6 +564,11 @@ def build_source(
             mark_as_read=source_config.grok_mark_as_read,
             unseen_only=source_config.grok_unseen_only,
             url_host_allowlist=source_config.grok_url_host_allowlist,
+            retry_tracker=GrokRetryTracker(
+                grok_attempts,
+                summary_every=grok_summary_every(),
+                lookback_minutes=source_config.grok_lookback_minutes,
+            ),
         )
     if stype == "rss":
         # 直接 RSS fetcher (config/sources/feeds.yaml 駆動)。

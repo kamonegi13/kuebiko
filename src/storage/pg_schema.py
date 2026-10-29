@@ -868,6 +868,33 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
+-- Grok の描画されなかったレポートの取り直しの記録 (2026-10-29 P0-25、SQLite _SCHEMA と対)。
+-- メール (IMAP UID) ごとに
+-- 連続の失敗回数を持ち、通知の間引き (最初と N 回目ごと) に使う。取得窓から外れる前の
+-- 警告は 1 回だけ。メールの件名・本文・差出人は持たない。purge は last_failed_at 基準で 30 日。
+CREATE TABLE IF NOT EXISTS grok_fetch_attempts (
+    email_uid          TEXT PRIMARY KEY,
+    received_at        TEXT NOT NULL,        -- ISO8601 UTC (取得窓から外れる時刻の計算用)
+    fail_count         INTEGER NOT NULL DEFAULT 0,
+    first_failed_at    TEXT NOT NULL,
+    last_failed_at     TEXT NOT NULL,
+    last_reason        TEXT NOT NULL DEFAULT '',
+    expiry_warned_at   TEXT                  -- 「取得窓から外れる」を警告した時刻
+);
+CREATE INDEX IF NOT EXISTS idx_grok_attempts_failed ON grok_fetch_attempts(last_failed_at);
+
+-- 翻訳キューの失敗の印 (2026-10-29 P0-24、SQLite _SCHEMA と対)。
+-- 同じ未訳の先頭 40 件が毎時選び直されてキューが詰まるのを防ぐ
+-- (失敗回数に応じて一定時間 list_articles_untranslated から外す)。
+-- 本文・訳文は持たない。purge は last_failed_at 基準で 90 日。
+CREATE TABLE IF NOT EXISTS translate_attempts (
+    article_id     TEXT PRIMARY KEY,
+    fail_count     INTEGER NOT NULL DEFAULT 0,
+    last_failed_at TEXT NOT NULL,             -- ISO8601 UTC
+    last_reason    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_translate_attempts_last_failed ON translate_attempts(last_failed_at);
+
 -- 深刻さ C の影の記録 (2026-10-22、SQLite _SCHEMA と対)。詳細は schema_sql.py。
 CREATE TABLE IF NOT EXISTS severity_c_shadow (
     id             BIGSERIAL        PRIMARY KEY,

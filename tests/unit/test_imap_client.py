@@ -253,3 +253,13 @@ class TestImapClientFetch:
         assert len(store_calls) == 1
         assert store_calls[0][1] == "42"
         assert "Seen" in str(store_calls[0])
+
+
+def test_parse_internaldate_to_utc() -> None:
+    from src.tools.imap_client import _parse_internaldate
+
+    header = b'1 (INTERNALDATE "17-Jul-2026 02:44:25 +0900" BODY[] {10}'
+    got = _parse_internaldate(header)
+    assert got is not None and got.isoformat() == "2026-07-16T17:44:25+00:00"
+    assert _parse_internaldate(b"1 (BODY[] {10}") is None
+    assert _parse_internaldate(None) is None

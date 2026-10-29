@@ -179,6 +179,34 @@ _JSON_MAPPING_RE = re.compile(r'\{\s*"[^"\n]{1,400}"\s*:\s*"')
 _ECHO_MIN_CHARS = 80
 
 
+ECHO_REASON = "原文がそのまま写っている"
+
+
+@dataclass(frozen=True)
+class EchoMatch:
+    """写しと判定された段落の形 (本文・訳文は持たない — CLAUDE.md §4)。"""
+
+    paragraph_index: int
+    paragraph_chars: int
+    ascii_ratio: float  # 段落全体の ASCII 英字の割合 (0〜1)
+
+
+def find_echo_match(source: str, output: str) -> EchoMatch | None:
+    """原文のどこかの段落の先頭が訳文にそのまま含まれていれば、その段落の形を返す。
+
+    判定条件は ``broken_translation_reason`` が使うもの (2026-10-29 P0-24 では緩めない)。
+    返すのは長さと英字率だけで、緩めるかの判断材料 (製品名の並び・コード・URL か否か) に使う。
+    """
+    paragraphs = (p.strip() for p in source.split("\n") if p.strip())
+    for index, para in enumerate(paragraphs):
+        head = para[:_ECHO_MIN_CHARS]
+        letters = sum(c.isascii() and c.isalpha() for c in head)
+        if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
+            ascii_letters = sum(c.isascii() and c.isalpha() for c in para)
+            return EchoMatch(index, len(para), round(ascii_letters / len(para), 3))
+    return None
+
+
 def broken_translation_reason(source: str, output: str) -> str | None:
     """訳文が壊れていれば理由、問題なければ None (純粋関数)。
 
@@ -188,11 +216,8 @@ def broken_translation_reason(source: str, output: str) -> str | None:
     """
     if _JSON_MAPPING_RE.search(output):
         return "JSON の形が混ざっている"
-    for para in (p.strip() for p in source.split("\n") if p.strip()):
-        head = para[:_ECHO_MIN_CHARS]
-        letters = sum(c.isascii() and c.isalpha() for c in head)
-        if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
-            return "原文がそのまま写っている"
+    if find_echo_match(source, output) is not None:
+        return ECHO_REASON
     return None
 
 
@@ -226,6 +251,22 @@ def should_block_translation(mode: str, report: GarbleReport) -> bool:
     return False
 
 
+class TranslationBrokenError(LLMError):
+    """訳の中身が原因の失敗 (空・JSON の形・原文の写し)。接続や timeout の失敗とは別。
+
+    翻訳キューの失敗の印 (P0-24) はこの型だけを数える。
+    """
+
+
+class TranslationEchoError(TranslationBrokenError):
+    """原文の写しの判定に当たった (形は長さと英字率のみ、本文は持たない)。"""
+
+    def __init__(self, message: str, *, paragraph_chars: int = 0, ascii_ratio: float = 0.0) -> None:
+        super().__init__(message)
+        self.paragraph_chars = paragraph_chars
+        self.ascii_ratio = ascii_ratio
+
+
 class TranslationGarbledError(LLMError):
     """訳に固有名詞・識別子・数字の化けを検出した (同じ位置で化けるので再試行しない)。
 
@@ -251,14 +292,36 @@ async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -
     """
     out = await _generate_translation(llm, chunk, _TRANSLATE_TEMPERATURE)
     if not out:
-        raise LLMError(f"翻訳結果が空です (chunk {index + 1}/{total})")
+        raise TranslationBrokenError(f"翻訳結果が空です (chunk {index + 1}/{total})")
     why = broken_translation_reason(chunk, out)
+    if why == ECHO_REASON:
+        _raise_echo(chunk, out, index, total, llm.model)
     if why:
-        raise LLMError(
+        raise TranslationBrokenError(
             f"翻訳結果が壊れている: {why} (chunk {index + 1}/{total}, model={llm.model})"
         )
     _check_fidelity(chunk, out, index, total, llm.model)
     return out
+
+
+def _raise_echo(chunk: str, out: str, index: int, total: int, model: str) -> None:
+    """写しの判定に当たった形 (長さ・英字率のみ) をログに残して送出する。"""
+    match = find_echo_match(chunk, out)
+    chars = match.paragraph_chars if match else 0
+    ratio = match.ascii_ratio if match else 0.0
+    _log.warning(
+        "translate_echo_detected",
+        paragraph_chars=chars,
+        ascii_ratio=ratio,
+        chunk_index=index,
+        chunk_total=total,
+        model=model,
+    )
+    raise TranslationEchoError(
+        f"翻訳結果が壊れている: {ECHO_REASON} (chunk {index + 1}/{total}, model={model})",
+        paragraph_chars=chars,
+        ascii_ratio=ratio,
+    )
 
 
 def _check_fidelity(chunk: str, out: str, index: int, total: int, model: str) -> None:

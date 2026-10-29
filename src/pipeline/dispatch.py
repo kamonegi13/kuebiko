@@ -190,6 +190,8 @@ async def run_default(
             imap_client=imap_client,
             app_config=config,
             seen_hash_filter=None if skip_dedup else dedup_repo.filter_seen_and_touch,
+            # dry-run は取り直しの回数を数えない (本番の上限を dry-run が消費しない)
+            grok_attempts=None if dry_run else dedup_repo,
         )
 
         # チャンネル別の DiscordPublisher を一度に作る
