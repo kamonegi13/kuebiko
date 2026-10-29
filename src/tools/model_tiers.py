@@ -734,7 +734,7 @@ def _check_resident(
     allow_emergency: bool,
     step: str | None = None,
 ) -> None:
-    """旗が 1 なら拒否、0 なら警告ログだけ (11-28 までの警告期間)。
+    """旗が 1 なら拒否、0 なら警告ログだけ (例外の期限は model_registry の 2 つの deadline)。
 
     ⚠ ``MODEL_RESIDENT_ENFORCE=1`` は gemma4 と s23i の上書きを外した後に立てる
     (順番は ``model_end_state`` の docstring)。

@@ -16,7 +16,7 @@ from src.tools.model_tiers import BUILTIN_MODEL_TIERS, Tier
 _S = reg.RESIDENT_SLOTS["S"]
 _N = reg.RESIDENT_SLOTS["N"]
 _BEFORE = date(2026, 11, 1)
-_AFTER = date(2026, 12, 1)
+_AFTER = date(2026, 12, 21)
 _TIERS = {"fast": _S, "reasoning": _S, "narrative": _N, "dialog": "claudecode:haiku"}
 
 
@@ -81,3 +81,21 @@ def test_expired_exceptions_only_warn() -> None:
     expired = [m for m, until in reg.RESIDENT_EXCEPTIONS.items() if date.today() > until]
     if expired:
         warnings.warn(f"常駐の例外が期限切れ: {expired}", stacklevel=1)
+
+
+def test_exception_deadlines_are_split_per_model() -> None:
+    two_slot = date(2026, 12, 2)
+    translation = date(2026, 12, 20)
+
+    assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:s23i"] == two_slot
+    assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:26b"] == translation
+    assert reg.RESIDENT_STEP_EXCEPTIONS[("assign_evidence_judge", "gemma4:26b")] == two_slot
+    assert reg.RESIDENT_STEP_EXCEPTIONS[("org_identity_judge", "gemma4:26b")] == two_slot
+
+
+def test_translation_model_outlives_two_slot_deadline() -> None:
+    tiers = {**_TIERS, "fast": "kuebiko-sft:26b"}
+    between = date(2026, 12, 10)
+
+    assert find_violations(tiers, {}, {}, today=between) == []
+    assert find_violations(tiers, {}, {}, today=_AFTER) != []

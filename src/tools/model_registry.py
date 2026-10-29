@@ -66,8 +66,11 @@ _S24_UNTRAINED = frozenset(
         "digest_deep_dive_select",
     }
 )
-#: 常駐の例外の終了日 (2 枠への移行の期限。利用者の署名は未、§1.5 の手続きで書き換える)
-_TRANSITION_DEADLINE: Final = date(2026, 11, 28)
+#: 常駐の例外の終了日 (利用者承認 10-29)。s23i と、それと一緒に退役する gemma4:26b の
+#: step 上書き (assign / org) は 2 枠の状態になる 12-02 まで
+_TWO_SLOT_DEADLINE: Final = date(2026, 12, 2)
+#: 翻訳・MITRE 同期の和訳・triage_geo_rescue が使う kuebiko-sft:26b は 12-20 まで
+_TRANSLATION_DEADLINE: Final = date(2026, 12, 20)
 
 #: 登録簿。**新しいモデルはここに 1 行足すだけ** (n20 / s26 は学習が済んでから)。
 _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
@@ -84,7 +87,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
         "kuebiko-sft:s23i",
         task_prefix=True,
         evidence_fields=True,
-        exception_until=_TRANSITION_DEADLINE,
+        exception_until=_TWO_SLOT_DEADLINE,
     ),
     # s24 系 (補間タグ ``s24i25`` / ``s24ci65`` 等を含む前方一致)。S 枠の中身 (s24ci65) もここ
     ModelCapability(
@@ -107,7 +110,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
         new_task_markers=True,
     ),
     # --- 学習した課題の印を持たないモデル (割当は登録済みでなければならない) ---
-    ModelCapability("kuebiko-sft:26b", exception_until=_TRANSITION_DEADLINE),
+    ModelCapability("kuebiko-sft:26b", exception_until=_TRANSLATION_DEADLINE),
     ModelCapability("gemma4:26b"),
     ModelCapability("gemma4:31b"),
 )
@@ -145,10 +148,10 @@ RESIDENT_EXCEPTIONS: Final[dict[str, date]] = {
 
 
 #: step 単位の例外 ((step 値, モデル) → 終了日)。assign / org の判定は素の 26B の
-#: logprob で較正してあり、S へ移す測定が済むまで 11-28 まで置く (利用者承認)
+#: logprob で較正してあり、s23i と一緒に退役する (2 枠の状態 = 12-02、利用者承認)
 RESIDENT_STEP_EXCEPTIONS: Final[dict[tuple[str, str], date]] = {
-    ("assign_evidence_judge", "gemma4:26b"): _TRANSITION_DEADLINE,
-    ("org_identity_judge", "gemma4:26b"): _TRANSITION_DEADLINE,
+    ("assign_evidence_judge", "gemma4:26b"): _TWO_SLOT_DEADLINE,
+    ("org_identity_judge", "gemma4:26b"): _TWO_SLOT_DEADLINE,
 }
 
 
