@@ -39,6 +39,8 @@ MAX_PENDING = 2000
 LLM_USAGE_LOCAL_ENV = "LLM_USAGE_LOCAL"
 _OFF_VALUES = ("0", "false", "off", "")
 _MS_PER_SECOND = 1000
+# SIGTERM で DB に書く最大の待ち (超えたら捨てて正常終了を優先する)
+SHUTDOWN_FLUSH_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -143,8 +145,37 @@ class LocalUsageBuffer:
         future.add_done_callback(self._inflight.discard)
 
     def flush(self) -> None:
-        """同期で書き出す (終了時・SIGTERM・テスト用)。"""
+        """同期で書き出す (atexit・テスト用)。シグナルハンドラからは呼ばない。"""
         self._write(self._drain())
+
+    def flush_for_shutdown(self, timeout: float = SHUTDOWN_FLUSH_TIMEOUT_SECONDS) -> None:
+        """SIGTERM 用: 書き込みを別スレッドに渡し、``timeout`` 秒で見切る。
+
+        DB が止まっていても正常終了を遅らせない。見切った分と、別スレッドで書きかけの
+        バッチは捨て、件数だけ ``write_failures`` に数える (シグナルハンドラの中では
+        ロックを取る処理を直接しない)。
+        """
+        batch = self._drain()
+        lost_inflight = sum(1 for f in list(self._inflight) if not f.done())
+        if lost_inflight:
+            _count_lost_async(lost_inflight)
+        if not batch:
+            return
+        worker = threading.Thread(target=self._write, args=(batch,), daemon=True)
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            _count_lost_async(1)
+
+
+def _count_lost_async(count: int) -> None:
+    """捨てたバッチの件数を数える。ハンドラ (主スレッド) がロックで詰まらないよう別スレッドで。"""
+
+    def _count() -> None:
+        for _ in range(count):
+            record_failure("local_llm_usage", TimeoutError("dropped at shutdown"))
+
+    threading.Thread(target=_count, daemon=True).start()
 
 
 _BUFFER = LocalUsageBuffer()
@@ -166,7 +197,7 @@ def _install_sigterm_flush(buffer: LocalUsageBuffer) -> None:
         previous = signal.getsignal(signal.SIGTERM)
 
         def _handler(signum: int, frame: FrameType | None) -> None:
-            buffer.flush()
+            buffer.flush_for_shutdown()
             if callable(previous):
                 previous(signum, frame)
             elif previous == signal.SIG_DFL:

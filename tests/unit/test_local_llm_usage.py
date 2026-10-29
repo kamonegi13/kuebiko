@@ -446,3 +446,39 @@ class TestFallbackAndProbeColumns:
         assert probe["choices_missing_rate"] == 0.5
         assert out[("ollama", "article_summary")]["floor_used_rate"] is None
         assert set(repo.llm_usage_summary()) == set()
+
+
+class TestShutdownFlush:
+    def test_hung_writer_is_abandoned_after_timeout_and_counted(self) -> None:
+        import threading
+        import time
+
+        release = threading.Event()
+
+        def hung(_b: Sequence[LocalUsageRecord]) -> None:
+            release.wait(5)
+
+        buf = LocalUsageBuffer(hung, flush_size=100, flush_interval=3600)
+        buf.add(_rec())
+        started = time.monotonic()
+
+        buf.flush_for_shutdown(timeout=0.2)
+
+        elapsed = time.monotonic() - started
+        release.set()
+        for _ in range(100):
+            if write_failures.snapshot().get("local_llm_usage"):
+                break
+            time.sleep(0.01)
+        assert elapsed < 1.0
+        assert write_failures.snapshot()["local_llm_usage"] == 1
+
+    def test_writes_normally_within_timeout(self) -> None:
+        batches: list[Sequence[LocalUsageRecord]] = []
+        buf = LocalUsageBuffer(batches.append, flush_size=100, flush_interval=3600)
+        buf.add(_rec())
+
+        buf.flush_for_shutdown(timeout=1.0)
+
+        assert [len(b) for b in batches] == [1]
+        assert write_failures.snapshot().get("local_llm_usage", 0) == 0
