@@ -65,8 +65,9 @@ _SEVERITY_C_SHADOW_RETENTION_DAYS = 180
 _TRANSLATE_ATTEMPTS_RETENTION_DAYS = 90
 # Grok の取り直しの記録 (2026-10-29 P0-25)。取得窓 (24h) より十分長い 30 日
 _GROK_ATTEMPTS_RETENTION_DAYS = 30
-# llm_usage (外部の消費 + ローカルの step 別、P0-16) の保持。repo の既定と同じ 90 日
-_LLM_USAGE_RETENTION_DAYS = 90
+# llm_usage (外部の消費 + ローカルの step 別、P0-16) の保持。費用と使用量の履歴を
+# 残すため 365 日 (2026-10-30、replay の材料の保持の延長に合わせる)
+_LLM_USAGE_RETENTION_DAYS = 365
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
