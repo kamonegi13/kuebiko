@@ -125,10 +125,24 @@ class TestArticleRecording:
                 category="apt",
                 status="posted",
                 posted_channel="priority",
-                duration_seconds=12.5,
             ),
         )
         assert article_id >= 1
+
+    def test_duration_seconds_is_not_persisted(self, repo: RunHistoryRepository) -> None:
+        """読み手の無い duration_seconds は INSERT しない (列は残り NULL のまま)。"""
+        run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="daily", dry_run=False))
+        repo.add_article(
+            ArticleRecord(
+                run_id=run_id,
+                article_id="ds1",
+                title="t",
+                url="u",
+                status="posted",
+                duration_seconds=12.5,
+            ),
+        )
+        assert repo.list_articles(run_id=run_id)[0].duration_seconds is None
 
     def test_feed_url_roundtrip(self, repo: RunHistoryRepository) -> None:
         """安定 source キー feed_url が表示名 (feed_title) と別に永続化・復元される。"""
@@ -248,6 +262,8 @@ class TestArticleRecording:
             "body_source",
             "extraction_failure_reason",
             "refetch_attempts",
+            # 読み手が無く書かない列 (P0-03、2026-10-29)。列は残し常に NULL
+            "duration_seconds",
         }
         run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="daily", dry_run=False))
         sentinel: dict[str, object] = {
@@ -262,7 +278,6 @@ class TestArticleRecording:
             "status": "posted",
             "failure_reason": "fr",
             "posted_channel": "alert",
-            "duration_seconds": 1.5,
             "dedup_key": "dk",
             "discord_message_id": "dm1",
             "discord_channel_id": "dc1",

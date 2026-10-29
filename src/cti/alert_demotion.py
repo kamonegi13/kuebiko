@@ -75,7 +75,7 @@ async def maybe_demote_alert(
     事象重複ゲートの embedding/pair_model 段は素通りする (dedup_key/advisory id の
     完全一致だけ有効)。
     """
-    # 語の条件だけで判定する。logprob の判定 (probe_law_enforcement_announcement) は
+    # 語の条件だけで判定する。logprob の判定 (退役済みの alert_law_enforcement_judge、P0-05) は
     # 校正 (185 件、2026-10-11) で s23i・gemma4:26b とも P(はい) がほぼ全件 0.5 超 —
     # 本番に使うと alert のほぼ全件が降格する。語の条件は精度 10/11・回収 10/10
     if is_law_enforcement_gate_enabled() and has_law_enforcement_keyword(

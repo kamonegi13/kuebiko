@@ -277,6 +277,19 @@ def test_api_v1_health_status_returns_json(client: TestClient) -> None:
     assert isinstance(data["checks"], list)
 
 
+def test_api_v1_health_status_includes_write_failures(client: TestClient) -> None:
+    """記録の失敗の計数 (P0-10) が health-status に出る。計数の写しは dict で返る。"""
+    from src.ops import write_failures
+
+    write_failures.reset_for_tests()
+    write_failures.record_failure("unit_probe", ValueError("x"))
+    try:
+        data = client.get("/api/v1/health-status").json()
+    finally:
+        write_failures.reset_for_tests()
+    assert data["write_failures"] == {"unit_probe": 1}
+
+
 def test_api_health_liveness(client: TestClient) -> None:
     """liveness probe (/api/health) は外部 I/O なしで即時 200 を返す。
 
