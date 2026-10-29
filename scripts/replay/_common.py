@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sqlite3
 import warnings
@@ -84,6 +85,7 @@ __all__ = [
     "load_tainted_registry",
     "mcnemar_exact",
     "model_tiers_version",
+    "add_connection_args",
     "open_readonly",
     "open_readonly_sqlite",
     "require_prereg",
@@ -98,6 +100,10 @@ __all__ = [
     "wilson_interval",
     "write_manifest",
 ]
+
+
+REPLAY_URL_ENV = "REPLAY_DATABASE_URL"
+DEFAULT_STATEMENT_TIMEOUT_MS = 60_000
 
 
 class ReadOnlyConnection:
@@ -124,40 +130,62 @@ class ReadOnlyConnection:
         self.close()
 
 
-REPLAY_URL_ENV = "REPLAY_DATABASE_URL"
+def add_connection_args(parser: argparse.ArgumentParser) -> None:
+    """replay スクリプト共通の接続オプション。"""
+    parser.add_argument(
+        "--allow-owner-connection",
+        action="store_true",
+        help=f"{REPLAY_URL_ENV} が無いとき DATABASE_URL (書き込める所有者) での接続を許す",
+    )
+    parser.add_argument("--statement-timeout-ms", type=int, default=DEFAULT_STATEMENT_TIMEOUT_MS)
 
 
-def resolve_database_url(explicit: str | None = None) -> str:
-    """接続先: 明示 > REPLAY_DATABASE_URL (専用の read-only ロール) > DATABASE_URL (警告)。"""
+def resolve_database_url(
+    explicit: str | None = None, *, allow_owner_connection: bool = False
+) -> str:
+    """接続先: 明示 > REPLAY_DATABASE_URL (専用の read-only ロール)。
+
+    DATABASE_URL への退避は --allow-owner-connection を明示したときだけ (警告つき)。
+    """
     if explicit:
         return explicit
     dedicated = os.environ.get(REPLAY_URL_ENV)
     if dedicated:
         return dedicated
     fallback = os.environ.get("DATABASE_URL")
-    if not fallback:
-        raise ReadOnlyViolationError(f"{REPLAY_URL_ENV} is not set")
-    warnings.warn(
-        f"{REPLAY_URL_ENV} not set; falling back to DATABASE_URL (not a dedicated read-only role)",
-        stacklevel=2,
-    )
+    if not allow_owner_connection or not fallback:
+        raise ReadOnlyViolationError(
+            f"{REPLAY_URL_ENV} is not set (dedicated read-only role required; "
+            "--allow-owner-connection permits DATABASE_URL)"
+        )
+    warnings.warn(f"{REPLAY_URL_ENV} not set; using DATABASE_URL (owner connection)", stacklevel=2)
     return fallback
 
 
-def open_readonly(database_url: str | None = None) -> ReadOnlyConnection:
+def open_readonly(
+    database_url: str | None = None,
+    *,
+    allow_owner_connection: bool = False,
+    statement_timeout_ms: int = DEFAULT_STATEMENT_TIMEOUT_MS,
+) -> ReadOnlyConnection:
     """PostgreSQL へ read-only セッションで接続する (default_transaction_read_only = on)。
 
     専用ロールは scripts/replay/create_readonly_role.sql (CONNECT + USAGE + SELECT のみ)。
+    generate_series の巨大な範囲や重い正規表現は検査せず statement_timeout で止める。
     """
-    database_url = resolve_database_url(database_url)
     import psycopg
     from psycopg.rows import dict_row
 
+    if statement_timeout_ms <= 0:
+        raise ValueError("statement_timeout_ms must be positive")
+    database_url = resolve_database_url(database_url, allow_owner_connection=allow_owner_connection)
     conn = psycopg.connect(
         database_url,
         autocommit=True,
         row_factory=dict_row,
-        options="-c default_transaction_read_only=on",
+        options=(
+            f"-c default_transaction_read_only=on -c statement_timeout={int(statement_timeout_ms)}"
+        ),
     )
     conn.read_only = True
     conn.execute("SET default_transaction_read_only = on")

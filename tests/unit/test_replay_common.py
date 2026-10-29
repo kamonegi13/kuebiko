@@ -140,8 +140,10 @@ def test_database_url_prefers_dedicated_role(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("DATABASE_URL", "postgresql://rw@h/db")
     assert c.resolve_database_url() == "postgresql://ro@h/db"
     monkeypatch.delenv("REPLAY_DATABASE_URL")
-    with pytest.warns(UserWarning, match="not a dedicated"):
-        assert c.resolve_database_url() == "postgresql://rw@h/db"
+    with pytest.raises(c.ReadOnlyViolationError, match="REPLAY_DATABASE_URL"):
+        c.resolve_database_url()
+    with pytest.warns(UserWarning, match="owner connection"):
+        assert c.resolve_database_url(allow_owner_connection=True) == "postgresql://rw@h/db"
 
 
 def test_placeholder_translation_respects_literals_and_percent() -> None:

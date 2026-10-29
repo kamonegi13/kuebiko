@@ -51,8 +51,7 @@ _FORBIDDEN_RE = re.compile(
     r"|for\s+(?:no\s+key\s+update|update|share|key\s+share))\b",
     re.IGNORECASE,
 )
-_TOKEN_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
-_COMMENT_RE = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+_WORD_RE = re.compile(r"[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_$\u0080-\U0010ffff]*")
 _PLAIN_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_$]*$")
 _CALL_RE = re.compile(r"([a-z_][a-z0-9_$]*(?:\s*\.\s*[a-z_][a-z0-9_$]*)*)\s*\(")
 _OPAQUE_IDENT = "__quoted__"
@@ -62,17 +61,59 @@ class ReadOnlyViolationError(RuntimeError):
     """書き込み (になりうる) 文を拒否した。"""
 
 
-def _normalize_token(match: re.Match[str]) -> str:
-    token = match.group(0)
-    if token.startswith("'"):
-        return "''"
-    inner = token[1:-1].replace('""', '"').lower()
-    return inner if _PLAIN_IDENT_RE.match(inner) else _OPAQUE_IDENT
+def _scan_quoted(sql: str, start: int, quote: str, *, backslash: bool) -> int:
+    """sql[start] が開き引用符。閉じ引用符の次の位置を返す (未終了は拒否)。"""
+    i = start + 1
+    while i < len(sql):
+        ch = sql[i]
+        if backslash and ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            if sql[i + 1 : i + 2] == quote:
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    raise ReadOnlyViolationError("unterminated quoted literal/identifier")
 
 
 def normalize_sql(sql: str) -> str:
-    """コメントを除き、文字列リテラルを空にし、引用識別子の引用を外して小文字にする。"""
-    return _TOKEN_RE.sub(_normalize_token, _COMMENT_RE.sub(" ", sql)).lower()
+    """左から 1 回の字句解析。コメント・$ 引用・U& は拒否し、リテラルは空にし、
+    引用識別子は引用を外して小文字にする。E'...' は backslash エスケープを解釈する。"""
+    out: list[str] = []
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        two = sql[i : i + 2]
+        if two in ("--", "/*"):
+            raise ReadOnlyViolationError("SQL comments are refused")
+        if ch == "$":
+            raise ReadOnlyViolationError("dollar-quoting / $n parameters are refused")
+        if ch == "'":
+            i = _scan_quoted(sql, i, "'", backslash=False)
+            out.append("''")
+        elif ch == '"':
+            end = _scan_quoted(sql, i, '"', backslash=False)
+            inner = sql[i + 1 : end - 1].replace('""', '"').lower()
+            out.append(inner if _PLAIN_IDENT_RE.match(inner) else _OPAQUE_IDENT)
+            i = end
+        else:
+            m = _WORD_RE.match(sql, i)
+            if not m:
+                out.append(ch)
+                i += 1
+                continue
+            word, i = m.group(0).lower(), m.end()
+            nxt = sql[i : i + 1]
+            if word == "u" and sql[i : i + 2] in ("&'", '&"'):
+                raise ReadOnlyViolationError("U& escapes are refused")
+            if word == "e" and nxt == "'":
+                i = _scan_quoted(sql, i, "'", backslash=True)
+                out.append("''")
+            else:
+                out.append(word)
+    return "".join(out)
 
 
 def _assert_functions_allowed(normalized: str) -> None:
@@ -85,8 +126,6 @@ def _assert_functions_allowed(normalized: str) -> None:
 
 def assert_read_only_sql(sql: str) -> None:
     normalized = normalize_sql(sql)
-    if "$" in normalized:
-        raise ReadOnlyViolationError("dollar-quoting / $n parameters are refused")
     if ";" in normalized.strip().rstrip(";"):
         raise ReadOnlyViolationError(
             "semicolon inside a statement is refused (put it in a bound parameter, not the SQL)"
@@ -99,13 +138,31 @@ def assert_read_only_sql(sql: str) -> None:
     _assert_functions_allowed(normalized)
 
 
+def _literal_spans(sql: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    i = 0
+    while i < len(sql):
+        if sql[i] in "'\"":
+            is_e = (
+                sql[i] == "'"
+                and sql[i - 1 : i] in ("e", "E")
+                and not (i >= 2 and (sql[i - 2].isalnum() or sql[i - 2] in "_$"))
+            )
+            end = _scan_quoted(sql, i, sql[i], backslash=is_e)
+            spans.append((i, end))
+            i = end
+        else:
+            i += 1
+    return spans
+
+
 def to_psycopg_placeholders(sql: str) -> str:
     """ "?" を %s に、リテラル外の "%" を %% にする。リテラル内の "?" は触らず "%" だけ倍にする。"""
     out: list[str] = []
     pos = 0
-    for m in _TOKEN_RE.finditer(sql):
-        out.append(sql[pos : m.start()].replace("%", "%%").replace("?", "%s"))
-        out.append(m.group(0).replace("%", "%%"))
-        pos = m.end()
+    for start, end in _literal_spans(sql):
+        out.append(sql[pos:start].replace("%", "%%").replace("?", "%s"))
+        out.append(sql[start:end].replace("%", "%%"))
+        pos = end
     out.append(sql[pos:].replace("%", "%%").replace("?", "%s"))
     return "".join(out)
