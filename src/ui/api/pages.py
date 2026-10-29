@@ -26,6 +26,7 @@ from src.config_loader import (
     load_pipelines,
 )
 from src.logging_config import get_logger
+from src.ops import write_failures
 from src.storage.run_history import RunHistoryRepository
 from src.ui.services.env_editor import (
     EnvEditError,
@@ -388,15 +389,21 @@ def mobile_tunnel_clear_named_config() -> dict[str, Any]:
 
 @pages_api.get("/health-status")
 async def health_status() -> dict[str, Any]:
-    """run_all_checks の結果を JSON で返す。"""
+    """run_all_checks の結果を JSON で返す。
+
+    ``write_failures`` は観測用の記録の失敗の計数 (プロセス内、``src.ops.write_failures``)。
+    匿名では読めない (read_only_policy の allowlist 外 = default-deny)。
+    """
+    failures = dict(write_failures.snapshot())
     try:
         config = load_app_config()
         checks = await run_all_checks(config)
     except Exception as e:  # noqa: BLE001
-        return {"load_error": str(e), "checks": []}
+        return {"load_error": str(e), "checks": [], "write_failures": failures}
     return {
         "checks": [c.model_dump() for c in checks],
         "load_error": None,
+        "write_failures": failures,
     }
 
 
