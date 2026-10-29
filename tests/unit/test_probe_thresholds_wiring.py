@@ -64,13 +64,34 @@ def test_model_without_entry_is_fail_closed(monkeypatch: pytest.MonkeyPatch) -> 
     assert pt.effective_threshold(Step.THIN_BODY_JUDGE, fallback=0.075) is None
 
 
-def test_resolve_failure_is_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_failure_falls_back_to_constant(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(step: Step, **_: object) -> str:
         raise RuntimeError("db down")
 
     monkeypatch.setattr(pt, "resolve_step_model", boom)
 
-    assert pt.effective_threshold(Step.THIN_BODY_JUDGE, fallback=0.075) is None
+    assert pt.effective_threshold(Step.THIN_BODY_JUDGE, fallback=0.075) == 0.075
+
+
+def test_missing_warning_is_emitted_once_per_model_and_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pt._WARNED_MISSING.clear()
+    calls: list[str] = []
+    monkeypatch.setattr(pt._log, "warning", lambda event, **_: calls.append(event))
+    _assign(monkeypatch, {**CURRENT_ASSIGNMENT, Step.THIN_BODY_JUDGE: "kuebiko-sft:s99"})
+
+    for _ in range(3):
+        assert pt.effective_threshold(Step.THIN_BODY_JUDGE, fallback=0.075) is None
+
+    assert calls == ["probe_threshold_missing"]
+
+
+def test_compose_passes_the_flag() -> None:
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "PROBE_THRESHOLDS_TABLE: ${PROBE_THRESHOLDS_TABLE:-1}" in compose
 
 
 def test_underscore_keys_are_ignored(tmp_path: Path) -> None:

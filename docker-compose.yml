@@ -185,6 +185,8 @@ services:
       # 薄い本文の 2 段目: 決定的な条件をすり抜けた 600 字未満の本文を fast ティアの logprob で判定
       # (Jev 型、別標本 p2b で 2 段の回収 12/27→19/27・誤発火 1/72 のまま)
       THIN_BODY_PROBE: ${THIN_BODY_PROBE:-1}
+      # logprob 判定のしきい値を config/models/probe_thresholds.json から読む (0 で従来の定数)
+      PROBE_THRESHOLDS_TABLE: ${PROBE_THRESHOLDS_TABLE:-1}
       PIR_FOCUS_FIDELITY_GATE: ${PIR_FOCUS_FIDELITY_GATE:-1}
       # 台帳 claim の主語の関門 (2026-10-19 on): 問いの対象国に言及しない新 claim は採らず前回を保持。
       # shadow=記録のみ / off=無効。常設の問いの改訂 76 件で発火 1 件 (1.3%)

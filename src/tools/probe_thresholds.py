@@ -103,29 +103,44 @@ def table_enabled() -> bool:
     return os.environ.get(PROBE_THRESHOLDS_TABLE_ENV, "1").strip() != "0"
 
 
+_WARNED_MISSING: set[tuple[str, str]] = set()
+
+
+def _warn_missing_once(model: str, step: Step, question: str) -> None:
+    """項なしの警告は (モデル, step) ごとに 1 プロセスで 1 回だけ (熱い経路のログ洪水を防ぐ)。"""
+    key = (model.strip(), step.value)
+    if key in _WARNED_MISSING:
+        return
+    _WARNED_MISSING.add(key)
+    _log.warning("probe_threshold_missing", step=step.value, question=question, model=model)
+
+
 def effective_threshold(
     step: Step,
     question: str = MAIN_QUESTION,
     *,
     fallback: float,
     model: str | None = None,
+    db_path: Path | None = None,
     path: Path | None = None,
 ) -> float | None:
     """本番の判定が使うしきい値。旗 off → ``fallback`` (従来の定数)。
 
-    旗 on → 判定に使う実モデル (``model`` 省略時は step の解決結果) の項。項が無い・モデルを
-    解決できないときは ``None`` (fail-closed: 呼び出し側はその判定を使わない) + 警告。
+    旗 on → 判定に使う実モデル (``model`` 省略時は ``db_path`` で解決した step の実効モデル)
+    の項。項が無いときだけ ``None`` (fail-closed: 呼び出し側はその判定を使わない)。
+    モデルを解決できない (DB 障害等) ときは ``fallback`` (従来の定数) に退避する
+    (関門を黙って止めない)。
     """
     if not table_enabled():
         return fallback
     try:
-        resolved = model if model is not None else resolve_step_model(step)
-    except Exception as e:  # noqa: BLE001 — 解決の失敗で本処理を止めず、判定を使わない側に倒す
+        resolved = model if model is not None else resolve_step_model(step, db_path=db_path)
+    except Exception as e:  # noqa: BLE001 — 解決の失敗では従来の定数へ退避する
         _log.warning("probe_threshold_resolve_failed", step=step.value, error=str(e)[:200])
-        return None
+        return fallback
     value = probe_threshold(resolved, step, question, path=path)
     if value is None:
-        _log.warning("probe_threshold_missing", step=step.value, question=question, model=resolved)
+        _warn_missing_once(resolved, step, question)
     return value
 
 
