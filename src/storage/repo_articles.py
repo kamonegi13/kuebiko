@@ -35,7 +35,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 INSERT INTO articles
                   (run_id, article_id, title, url, feed_title, feed_url,
                    importance, category, status, failure_reason,
-                   posted_channel, duration_seconds, dedup_key,
+                   posted_channel, dedup_key,
                    discord_message_id, discord_channel_id, summary,
                    pmesii_p, pmesii_m, pmesii_e, pmesii_s,
                    pmesii_i_infra, pmesii_i_cyber, pmesii_p_env, pmesii_t,
@@ -54,7 +54,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    article_type, account_class, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.run_id,
@@ -68,7 +68,6 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.status,
                     None if record.failure_reason is None else mask_text(record.failure_reason),
                     record.posted_channel,
-                    record.duration_seconds,
                     record.dedup_key,
                     record.discord_message_id,
                     record.discord_channel_id,
