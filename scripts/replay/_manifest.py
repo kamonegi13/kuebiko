@@ -13,8 +13,8 @@ from typing import Any
 
 MAX_ID_LEN = 64
 MAX_PATH_LEN = 200
-# 本文は空白・日本語・改行を含む。id / 時刻 / 列挙値 / パスの文字だけを許す (allowlist)。
-_SAFE_STR_RE = re.compile(r"^[A-Za-z0-9_.:/+\-=#@]*$")
+# 日本語・空白は許す (ラベルがある)。長さの上限と制御文字 (改行・タブ) の拒否で本文を防ぐ。
+_SAFE_STR_RE = re.compile(r"^[^\x00-\x1f\x7f]*$")
 FORBIDDEN_KEYS = frozenset(
     {"body", "body_ja", "text", "content", "linked_context", "prompt_text", "summary", "raw",
      "title", "excerpt", "snippet", "claim"}
@@ -32,7 +32,7 @@ def _check_str(value: str, key: str, where: str) -> None:
 
 
 def assert_no_body(value: Any, path: str = "$", key: str = "") -> None:
-    """型の allowlist (数値・bool・None・安全文字の短い文字列) 以外を再帰的に拒否する。"""
+    """型の allowlist (数値・bool・None・制御文字を含まない短い文字列) 以外を再帰的に拒否する。"""
     if isinstance(value, dict):
         for k, v in value.items():
             if not isinstance(k, str) or k.lower() in FORBIDDEN_KEYS:
@@ -68,6 +68,9 @@ class Manifest:
     model_tiers_version: int | None
     r18_version: str
     flags: dict[str, str] = field(default_factory=dict)
+    max_component_share: float | None = None  # prereg が宣言した閉包の上限
+    component_share: float | None = None  # 実測の最大成分の占有率
+    n_components: int | None = None
     counts: dict[str, int] = field(default_factory=dict)
 
 

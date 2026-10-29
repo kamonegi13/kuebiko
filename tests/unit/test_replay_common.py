@@ -92,11 +92,11 @@ def test_split_excludes_test_rows_sharing_a_closure_with_tune() -> None:
     }
     comp = {"t1": "k", "s1": "k", "s2": "z"}
 
-    res = c.split_by_event_time(ts, comp, datetime(2026, 10, 1))
+    res = c.split_by_event_time(ts, comp, datetime(2026, 10, 1), max_component_share=0.5)
 
     assert res.tune == {"t1"} and res.test == {"s2"} and res.excluded == {"s1"}
     c.assert_no_shared_component(res.tune, res.test, comp)
-    assert res.n_excluded_components == 1
+    assert res.n_excluded_components == 1 and res.max_component_share == 0.5
 
 
 def test_sql_guard_rejects_session_escape_and_writing_functions() -> None:
@@ -108,10 +108,40 @@ def test_sql_guard_rejects_session_escape_and_writing_functions() -> None:
         "WITH d AS (DELETE FROM a RETURNING *) SELECT * FROM d",
         "SELECT $$x$$",
         "SELECT 1 /* c */; SELECT 2",
+        "SELECT \"set_config\"('default_transaction_read_only','off',false)",
+        "SELECT pg_catalog.\"set_config\"('x','off',false)",
+        "SELECT pg_logical_emit_message(true, 'a', 'b')",
+        "SELECT pg_sleep(10)",
+        "SELECT pg_ls_dir('/')",
+        "SELECT query_to_xml('delete from a', true, true, '')",
+        "SELECT x FROM a FOR SHARE",
+        "SELECT x FROM a FOR NO KEY UPDATE",
+        'SELECT "a b"(1)',
     )
     for sql in bad:
         with pytest.raises(c.ReadOnlyViolationError):
             c.assert_read_only_sql(sql)
+
+
+def test_sql_guard_allows_typical_replay_queries() -> None:
+    good = (
+        "SELECT COUNT(*) FILTER (WHERE x > 1) AS n, MAX(y) FROM a WHERE z IN (1, 2)",
+        "SELECT date_trunc('day', ts), percentile_cont(0.5) WITHIN GROUP (ORDER BY v)"
+        " FROM a GROUP BY 1",
+        "WITH t AS (SELECT 1 AS x) SELECT COALESCE(x, 0)::numeric(10, 2) FROM t",
+        "SELECT * FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.id = a.id) ORDER BY 1 LIMIT 5",
+    )
+    for sql in good:
+        c.assert_read_only_sql(sql)
+
+
+def test_database_url_prefers_dedicated_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REPLAY_DATABASE_URL", "postgresql://ro@h/db")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://rw@h/db")
+    assert c.resolve_database_url() == "postgresql://ro@h/db"
+    monkeypatch.delenv("REPLAY_DATABASE_URL")
+    with pytest.warns(UserWarning, match="not a dedicated"):
+        assert c.resolve_database_url() == "postgresql://rw@h/db"
 
 
 def test_placeholder_translation_respects_literals_and_percent() -> None:
@@ -246,11 +276,18 @@ def test_manifest_written_atomically_and_rejects_body(tmp_path: Path) -> None:
         c.write_manifest(_manifest(flags={"F": "x" * 400}), tmp_path / "o3")
 
 
+def test_manifest_allows_non_ascii_labels_and_records_component_share(tmp_path: Path) -> None:
+    m = _manifest(flags={"ラベル": "日本 の 値"}, max_component_share=0.25, component_share=0.1)
+    out = c.write_manifest(m, tmp_path / "o")
+    data = json.loads(out.read_text())
+    assert data["component_share"] == 0.1 and data["max_component_share"] == 0.25
+
+
 def test_manifest_allowlist_rejects_types_prose_and_case_variants(tmp_path: Path) -> None:
     for bad in (
         {"Body": "x"},
-        {"k": "日本語の本文"},
-        {"k": "two words"},
+        {"k": "line\nbreak"},
+        {"k": "長い" * 40},
         {"k": b"x"},
         {"k": {1, 2}},
         {"k": float("nan")},
@@ -282,6 +319,8 @@ def test_giant_closure_fails_split_and_dim_mismatch_raises() -> None:
     ts = {a: datetime(2026, 10, 5) for a in ids}
     giant = dict.fromkeys(ids, "k")
     with pytest.raises(c.ComponentTooLargeError, match="largest closure"):
+        c.split_by_event_time(ts, giant, datetime(2026, 10, 1), max_component_share=0.3)
+    with pytest.warns(UserWarning, match="not declared"), pytest.raises(c.ComponentTooLargeError):
         c.split_by_event_time(ts, giant, datetime(2026, 10, 1))
     with pytest.raises(ValueError, match="dimension"):
         c.build_components(

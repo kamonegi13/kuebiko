@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import warnings
 from typing import Any
 
 from scripts.replay._closure import (
@@ -66,14 +68,13 @@ __all__ = [
     "PreregRecord",
     "ReadOnlyConnection",
     "ReadOnlyViolationError",
-    "assert_read_only_sql",
-    "to_psycopg_placeholders",
     "SplitResult",
     "TaintedRegistry",
     "adjudication_lock",
     "assert_components_ok",
     "assert_no_body",
     "assert_no_shared_component",
+    "assert_read_only_sql",
     "build_components",
     "cluster_bootstrap_ci",
     "component_diagnostics",
@@ -86,11 +87,13 @@ __all__ = [
     "open_readonly",
     "open_readonly_sqlite",
     "require_prereg",
+    "resolve_database_url",
     "resolve_roots",
     "rule_of_three",
     "rule_of_three_exact",
     "sha256_file",
     "split_by_event_time",
+    "to_psycopg_placeholders",
     "weighted_estimate",
     "wilson_interval",
     "write_manifest",
@@ -121,8 +124,32 @@ class ReadOnlyConnection:
         self.close()
 
 
-def open_readonly(database_url: str) -> ReadOnlyConnection:
-    """PostgreSQL へ read-only セッションで接続する (default_transaction_read_only = on)。"""
+REPLAY_URL_ENV = "REPLAY_DATABASE_URL"
+
+
+def resolve_database_url(explicit: str | None = None) -> str:
+    """接続先: 明示 > REPLAY_DATABASE_URL (専用の read-only ロール) > DATABASE_URL (警告)。"""
+    if explicit:
+        return explicit
+    dedicated = os.environ.get(REPLAY_URL_ENV)
+    if dedicated:
+        return dedicated
+    fallback = os.environ.get("DATABASE_URL")
+    if not fallback:
+        raise ReadOnlyViolationError(f"{REPLAY_URL_ENV} is not set")
+    warnings.warn(
+        f"{REPLAY_URL_ENV} not set; falling back to DATABASE_URL (not a dedicated read-only role)",
+        stacklevel=2,
+    )
+    return fallback
+
+
+def open_readonly(database_url: str | None = None) -> ReadOnlyConnection:
+    """PostgreSQL へ read-only セッションで接続する (default_transaction_read_only = on)。
+
+    専用ロールは scripts/replay/create_readonly_role.sql (CONNECT + USAGE + SELECT のみ)。
+    """
+    database_url = resolve_database_url(database_url)
     import psycopg
     from psycopg.rows import dict_row
 

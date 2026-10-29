@@ -107,7 +107,7 @@ def build_components(
     return {a: uf.find(a) for a in ids}
 
 
-MAX_COMPONENT_SHARE = 0.30
+FALLBACK_COMPONENT_SHARE = 0.30  # prereg が宣言しないときの代替 (警告つき)
 MIN_ITEMS_FOR_SHARE_CHECK = 20
 
 
@@ -124,9 +124,7 @@ def component_diagnostics(component_of: Mapping[str, str]) -> tuple[int, int, fl
     return len(sizes), largest, largest / len(component_of)
 
 
-def assert_components_ok(
-    component_of: Mapping[str, str], max_share: float = MAX_COMPONENT_SHARE
-) -> None:
+def assert_components_ok(component_of: Mapping[str, str], max_share: float) -> None:
     n, largest, share = component_diagnostics(component_of)
     if len(component_of) >= MIN_ITEMS_FOR_SHARE_CHECK and share > max_share:
         raise ComponentTooLargeError(
@@ -142,6 +140,9 @@ class SplitResult:
     test: frozenset[str]
     excluded: frozenset[str]  # tune と同じ成分に入った test 側の記事 (汚染として外す)
     n_excluded_components: int
+    n_components: int = 0
+    largest_component_share: float = 0.0
+    max_component_share: float = 0.0  # 適用した上限 (manifest に残す)
 
 
 def split_by_event_time(
@@ -149,13 +150,22 @@ def split_by_event_time(
     component_of: Mapping[str, str],
     cutoff: datetime,
     *,
-    max_component_share: float = MAX_COMPONENT_SHARE,
+    max_component_share: float | None = None,
 ) -> SplitResult:
     """事象時刻 < cutoff を tune、>= cutoff を test。tune と同じ成分の test 記事は外す。
 
-    最大の成分が max_component_share を超えたら ComponentTooLargeError。
+    最大の成分が max_component_share を超えたら ComponentTooLargeError。上限は prereg が宣言する
+    値を渡す。None のときだけ代替値を使い警告する。
     """
-    assert_components_ok({a: component_of.get(a, a) for a in event_ts}, max_component_share)
+    if max_component_share is None:
+        warnings.warn(
+            f"max_component_share not declared in prereg; using {FALLBACK_COMPONENT_SHARE}",
+            stacklevel=2,
+        )
+        max_component_share = FALLBACK_COMPONENT_SHARE
+    members = {a: component_of.get(a, a) for a in event_ts}
+    assert_components_ok(members, max_component_share)
+    n_components, _, share = component_diagnostics(members)
     tune = {a for a, t in event_ts.items() if t < cutoff}
     test = {a for a, t in event_ts.items() if t >= cutoff}
     tune_components = {component_of.get(a, a) for a in tune}
@@ -165,6 +175,9 @@ def split_by_event_time(
         frozenset(test - excluded),
         frozenset(excluded),
         len({component_of.get(a, a) for a in excluded}),
+        n_components,
+        share,
+        max_component_share,
     )
 
 
