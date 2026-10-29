@@ -216,6 +216,12 @@ async def _run_articles_bounded[T, R](
     return [results[i] for i in sorted(results)], deferred
 
 
+def _int_attr(obj: object, name: str) -> int:
+    """source の計数属性を int で読む (無い・Mock など非 int は 0)。"""
+    value = getattr(obj, name, 0)
+    return value if isinstance(value, int) else 0
+
+
 def _per_article_timeout_seconds() -> float | None:
     """per-article timeout を解決する (env override → 既定値、0 以下で無効)。"""
     raw = os.environ.get("PER_ARTICLE_TIMEOUT_SECONDS", "").strip()
@@ -681,6 +687,20 @@ async def run_pipeline(
         errors.append(
             f"grok: {_grok_unrendered} 件のレポートの本文が画面に描かれなかった — "
             "メールは未読に残し、次の回で取り直す"
+        )
+    # 描画失敗の取り直しの上限 (2026-10-29 P0-25)。通知は 1 通につき 1 回だけ
+    _grok_gave_up = _int_attr(source, "last_retry_gave_up_count")
+    if _grok_gave_up > 0:
+        errors.append(
+            f"grok: {_grok_gave_up} 件のメールは本文が続けて描かれなかったため取り直しをやめた — "
+            "取得窓から外れると失われる。grok.com の画面 (ログイン・待ち時間・DOM) を確認し、"
+            "直ったらメールを未読に戻して取り直してください"
+        )
+    _grok_expiring = _int_attr(source, "last_expiring_count")
+    if _grok_expiring > 0:
+        errors.append(
+            f"grok: 未取得のメール {_grok_expiring} 件がまもなく取得窓から外れる — "
+            "このままでは取り込まれずに失われる"
         )
     # Phase 5A fix: ダッシュボード / 履歴 (articles テーブル) 用の per-briefing 結果。
     # 1 ブリーフィング = 1 ArticleRecord (Grok の section 展開も独立行になる)。

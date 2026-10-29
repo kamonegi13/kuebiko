@@ -718,6 +718,21 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
+-- Grok の描画されなかったレポートの取り直しの記録 (2026-10-29 P0-25)。メール (IMAP UID) ごとに
+-- 連続の失敗回数を持ち、上限を超えたら取り直しをやめて 1 回だけ通知する。取得窓から外れる前の
+-- 警告も 1 回だけ。メールの件名・本文・差出人は持たない。purge は last_failed_at 基準で 30 日。
+CREATE TABLE IF NOT EXISTS grok_fetch_attempts (
+    email_uid          TEXT PRIMARY KEY,
+    received_at        TEXT NOT NULL,        -- ISO8601 UTC (取得窓から外れる時刻の計算用)
+    fail_count         INTEGER NOT NULL DEFAULT 0,
+    first_failed_at    TEXT NOT NULL,
+    last_failed_at     TEXT NOT NULL,
+    last_reason        TEXT NOT NULL DEFAULT '',
+    capped_notified_at TEXT,                 -- 「取り直しをやめた」を通知した時刻
+    expiry_warned_at   TEXT                  -- 「取得窓から外れる」を警告した時刻
+);
+CREATE INDEX IF NOT EXISTS idx_grok_attempts_failed ON grok_fetch_attempts(last_failed_at);
+
 -- 翻訳キューの失敗の印 (2026-10-29 P0-24)。同じ未訳の先頭 40 件が毎時選び直されて
 -- キューが詰まるのを防ぐ (失敗回数に応じて一定時間 list_articles_untranslated から外す)。
 -- 本文・訳文は持たない。purge は last_failed_at 基準で 90 日。

@@ -218,6 +218,8 @@ services:
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-ident}
       # 翻訳キューの先頭詰まり対策 (2026-10-29 P0-24): 失敗が続く記事を 24h・72h・7 日空けるまで選ばない。0 = 従来の選び方
       TRANSLATE_QUEUE_BACKOFF: ${TRANSLATE_QUEUE_BACKOFF:-1}
+      # Grok の描画されなかったレポートの取り直しの上限 (2026-10-29 P0-25): 同じメールが N 回続けて描かれなければ取り直しをやめて 1 回だけ通知。0 = 無効
+      GROK_RETRY_CAP: ${GROK_RETRY_CAP:-3}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。
       ASSIGN_ML: ${ASSIGN_ML:-0}
