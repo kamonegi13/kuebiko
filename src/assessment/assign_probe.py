@@ -2,9 +2,10 @@
 
 F2 の効果測定 (data/eval/f2_report.md): Opus 盲検 662 組で ML 単独 AUC 0.917 →
 ML+P(yes)(logit) AUC 0.955、本番相当 (規則が候補に出した) 260 組で精度 80%→85%
-(回収 79% のまま)。``kuebiko-sft:s23i`` は無情報 (AUC 0.537) — 本番の fast ティア本体を
-この判定専用に切り替えたくなった場合でも、``Step.ASSIGN_EVIDENCE_JUDGE`` の step 上書き
-(``step:assign_evidence_judge``) で gemma4:26b を明示指定すること。
+(回収 79% のまま)。本番の経路の F1 (Opus 盲検 662 組、data/eval/F1_logprob_pin_report.md)
+では ``kuebiko-sft:s23i`` 0.956・``gemma4:26b`` 0.970 で、差は閾値の位置にある
+(旧記述の「s23i は無情報 AUC 0.537」は撤回済み)。``Step.ASSIGN_EVIDENCE_JUDGE`` の
+step 上書き (``step:assign_evidence_judge``) は、割当の照合と閾値の表が前提。
 
 既定 off (``ASSIGN_PROBE_FEATURE``)。probe が ``None`` (外部 LLM 割当・denylist 抵触・
 通信失敗) のときは、この module は何もしない — 呼び出し側 (stateful._gate_decider) が
