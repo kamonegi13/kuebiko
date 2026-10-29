@@ -66,11 +66,14 @@ _S24_UNTRAINED = frozenset(
         "digest_deep_dive_select",
     }
 )
-#: 常駐の例外の終了日 (利用者承認 10-29)。s23i と、それと一緒に退役する gemma4:26b の
-#: step 上書き (assign / org) は 2 枠の状態になる 12-02 まで
-_TWO_SLOT_DEADLINE: Final = date(2026, 12, 2)
-#: 翻訳・MITRE 同期の和訳・triage_geo_rescue が使う kuebiko-sft:26b は 12-20 まで
-_TRANSLATION_DEADLINE: Final = date(2026, 12, 20)
+#: 常駐の例外の終了日 = 計画の台帳の約束の日 + 14 日 (rules.exception_buffer_days)。
+#: s23i と、それと一緒に退役する gemma4:26b の step 上書き (assign / org) は
+#: 2 枠の状態 (TWO-SLOT、約束の日 2026-12-27) の 14 日後 = 2027-01-10 まで。
+#: 警告と CI にだけ効き、割当の挙動は変えない
+_TWO_SLOT_DEADLINE: Final = date(2027, 1, 10)
+#: 翻訳・MITRE 同期の和訳・triage_geo_rescue が使う kuebiko-sft:26b は
+#: 終着 (END-STATE、約束の日 2027-03-09) の 14 日後 = 2027-03-23 まで
+_TRANSLATION_DEADLINE: Final = date(2027, 3, 23)
 
 #: 登録簿。**新しいモデルはここに 1 行足すだけ** (n20 / s26 は学習が済んでから)。
 _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
@@ -148,7 +151,7 @@ RESIDENT_EXCEPTIONS: Final[dict[str, date]] = {
 
 
 #: step 単位の例外 ((step 値, モデル) → 終了日)。assign / org の判定は素の 26B の
-#: logprob で較正してあり、s23i と一緒に退役する (2 枠の状態 = 12-02、利用者承認)
+#: logprob で較正してあり、s23i と一緒に退役する (2 枠の状態の期限 = `_TWO_SLOT_DEADLINE`)
 RESIDENT_STEP_EXCEPTIONS: Final[dict[tuple[str, str], date]] = {
     ("assign_evidence_judge", "gemma4:26b"): _TWO_SLOT_DEADLINE,
     ("org_identity_judge", "gemma4:26b"): _TWO_SLOT_DEADLINE,

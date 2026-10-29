@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import date
+from datetime import date, timedelta
 
 from src.tools import model_registry as reg
 from src.tools.model_end_state import find_violations
@@ -16,7 +16,9 @@ from src.tools.model_tiers import BUILTIN_MODEL_TIERS, Tier
 _S = reg.RESIDENT_SLOTS["S"]
 _N = reg.RESIDENT_SLOTS["N"]
 _BEFORE = date(2026, 11, 1)
-_AFTER = date(2026, 12, 21)
+_TWO_SLOT = reg.RESIDENT_EXCEPTIONS["kuebiko-sft:s23i"]
+_TRANSLATION = reg.RESIDENT_EXCEPTIONS["kuebiko-sft:26b"]
+_AFTER = _TRANSLATION + timedelta(days=1)
 _TIERS = {"fast": _S, "reasoning": _S, "narrative": _N, "dialog": "claudecode:haiku"}
 
 
@@ -78,14 +80,22 @@ def test_unregistered_model_is_violation() -> None:
 
 
 def test_expired_exceptions_only_warn() -> None:
-    expired = [m for m, until in reg.RESIDENT_EXCEPTIONS.items() if date.today() > until]
-    if expired:
-        warnings.warn(f"常駐の例外が期限切れ: {expired}", stacklevel=1)
+    # 固定の日付で試す。「今日」に依る検査は運用の check (check_live_assignments) の仕事
+    expired = [m for m, until in reg.RESIDENT_EXCEPTIONS.items() if until < _AFTER]
+    assert set(expired) == set(reg.RESIDENT_EXCEPTIONS)
+    warnings.warn(f"常駐の例外が期限切れ (固定日 {_AFTER}): {expired}", stacklevel=1)
+
+
+def test_exception_flips_exactly_at_deadline() -> None:
+    tiers = {**_TIERS, "fast": "kuebiko-sft:s23i"}
+
+    assert find_violations(tiers, {}, {}, today=_TWO_SLOT) == []
+    assert find_violations(tiers, {}, {}, today=_TWO_SLOT + timedelta(days=1)) != []
 
 
 def test_exception_deadlines_are_split_per_model() -> None:
-    two_slot = date(2026, 12, 2)
-    translation = date(2026, 12, 20)
+    two_slot = date(2027, 1, 10)
+    translation = date(2027, 3, 23)
 
     assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:s23i"] == two_slot
     assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:26b"] == translation
@@ -95,7 +105,7 @@ def test_exception_deadlines_are_split_per_model() -> None:
 
 def test_translation_model_outlives_two_slot_deadline() -> None:
     tiers = {**_TIERS, "fast": "kuebiko-sft:26b"}
-    between = date(2026, 12, 10)
+    between = _TWO_SLOT + timedelta(days=30)
 
     assert find_violations(tiers, {}, {}, today=between) == []
     assert find_violations(tiers, {}, {}, today=_AFTER) != []
