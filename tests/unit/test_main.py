@@ -2880,6 +2880,37 @@ class TestThinBodyGate:
         # Assert
         assert result == "thin_body"
 
+    def test_flag_on_ignores_media_keyword_in_long_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: 600 字以上の本文では決まり文句の語 (Video / Register 等) で落とさない
+        # (調整の母集団は 600 字未満。10-30 に長い技術記事が大量に落ちていた不具合の回帰固定)
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = self._TITLE + "Watch the demo video and register for the webinar. " + "x" * 700
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result is None
+
+    def test_flag_on_still_detects_media_keyword_just_under_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange: 600 字未満の告知だけの本文は従来どおり落とす
+        from src.main import _degenerate_body_reason
+
+        monkeypatch.setenv("THIN_BODY_GATE", "1")
+        body = (self._TITLE + " Listen to the full episode here. " * 16)[:599]
+
+        # Act
+        result = _degenerate_body_reason(body, title=self._TITLE, article_id="rss:1")
+
+        # Assert
+        assert result == "thin_body"
+
     def test_flag_on_keeps_healthy_long_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Arrange: 残り字数が十分あり媒体の決まり文句も無い、中身のある記事
         from src.main import _degenerate_body_reason
