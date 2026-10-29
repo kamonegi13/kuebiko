@@ -23,6 +23,9 @@ _LLM_USAGE_LOCAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("structured", "INTEGER"),
     ("output_chars", "INTEGER"),
     ("error_class", "TEXT"),
+    ("choices_present", "INTEGER"),
+    ("floor_used", "INTEGER"),
+    ("fallback", "INTEGER"),
 )
 
 

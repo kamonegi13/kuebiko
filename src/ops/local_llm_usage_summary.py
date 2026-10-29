@@ -27,16 +27,22 @@ def summarize_local_usage(rows: Iterable[Mapping[str, Any]], *, days: int) -> li
     呼び出し回数の多い順。エラー行は回数・失敗数に数えるが、時間・トークンの
     統計は成功した呼び出しだけで取る (失敗は早く終わるか timeout で歪めるため)。
     """
-    groups: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, str, str], list[Mapping[str, Any]]] = defaultdict(list)
     for r in rows:
-        groups[(str(r.get("step") or UNSPECIFIED_STEP), str(r.get("model") or ""))].append(r)
+        key = (
+            str(r.get("provider") or "ollama"),
+            str(r.get("step") or UNSPECIFIED_STEP),
+            str(r.get("model") or ""),
+        )
+        groups[key].append(r)
     out: list[dict[str, Any]] = []
-    for (step, model), items in groups.items():
+    for (provider, step, model), items in groups.items():
         ok = [r for r in items if not r.get("error_class")]
         durations = sorted(int(r["duration_ms"]) for r in ok)
         calls = len(items)
         out.append(
             {
+                "provider": provider,
                 "step": step,
                 "model": model,
                 "calls": calls,
@@ -54,6 +60,31 @@ def summarize_local_usage(rows: Iterable[Mapping[str, Any]], *, days: int) -> li
                 )
                 if ok
                 else 0.0,
+                "fallback_calls": sum(1 for r in items if r.get("fallback")),
+                # logprob 経路: floor で補った率 / 選択肢が top_logprobs に無く判定できなかった率
+                "floor_used_rate": _flag_rate(ok, "floor_used"),
+                "choices_missing_rate": _missing_rate(ok),
             }
         )
     return sorted(out, key=lambda g: (-int(g["calls"]), str(g["step"])))
+
+
+def _probe_rows(rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return [r for r in rows if r.get("choices_present") is not None]
+
+
+def _flag_rate(rows: list[Mapping[str, Any]], key: str) -> float | None:
+    """logprob 経路の行だけで key が真の率 (logprob 経路でなければ None)。"""
+    probes = _probe_rows(rows)
+    if not probes:
+        return None
+    return round(sum(1 for r in probes if r.get(key)) / len(probes), _RATE_DIGITS)
+
+
+def _missing_rate(rows: list[Mapping[str, Any]]) -> float | None:
+    """選択肢が 1 つも見つからなかった (choices_present も floor_used も偽) 率。"""
+    probes = _probe_rows(rows)
+    if not probes:
+        return None
+    missing = sum(1 for r in probes if not r.get("choices_present") and not r.get("floor_used"))
+    return round(missing / len(probes), _RATE_DIGITS)

@@ -642,7 +642,7 @@ def _build_client_for_ref(
     from src.tools.llm_client import LLMError, OllamaClient  # 遅延 import (循環回避)
     from src.tools.local_usage import make_local_recorder  # 遅延 import (循環回避)
 
-    def _local(model: str | None = None) -> OllamaClient:
+    def _local(model: str | None = None, *, is_fallback: bool = False) -> OllamaClient:
         return OllamaClient(
             base_url=config.ollama_base_url,
             model=model or local_fallback or BUILTIN_MODEL_TIERS[spec.tier.value],
@@ -650,6 +650,7 @@ def _build_client_for_ref(
             num_ctx=TIER_NUM_CTX.get(spec.tier),
             step=step.value if step is not None else None,
             usage_recorder=make_local_recorder() if step is not None else None,
+            is_fallback=is_fallback,
         )
 
     ep_ref = _endpoint_ref(model_ref)
@@ -704,14 +705,14 @@ def _build_client_for_ref(
                 tier=spec.tier.value,
                 error=str(e)[:200],
             )
-            return _local()
+            return _local(is_fallback=True)
         raise
 
     if not _local_fallback_enabled():
         return primary
     from src.tools.llm_fallback import FallbackLLMClient  # 遅延 import (循環回避)
 
-    return FallbackLLMClient(primary=primary, fallback=_local())
+    return FallbackLLMClient(primary=primary, fallback=_local(is_fallback=True))
 
 
 def load_model_tiers(*, db_path: Path | None = None) -> dict[str, str]:

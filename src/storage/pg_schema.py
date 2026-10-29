@@ -722,6 +722,9 @@ ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS hit_token_cap INTEGER;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS structured INTEGER;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS output_chars INTEGER;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS error_class TEXT;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS choices_present INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS floor_used INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS fallback INTEGER;
 CREATE INDEX IF NOT EXISTS idx_llm_usage_ts ON llm_usage(ts);
 
 -- アクター辞書 Phase1 F7 (2026-07-26): アクター行動史の月次期間行 (決定論蒸留)。

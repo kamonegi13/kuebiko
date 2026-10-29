@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import httpx
 import ollama
 import pytest
 
+from src.config_loader import AppConfig
 from src.ops import write_failures
 from src.ops.local_llm_usage_summary import summarize_local_usage
 from src.storage.run_history import RunHistoryRepository
@@ -244,3 +246,203 @@ class TestSummary:
         ]
 
         assert summarize_local_usage(rows, days=1)[0]["step"] == "(unspecified)"
+
+
+# ---------- 追加 (P0-16 レビュー対応) ----------
+
+
+class _SpyBuffer(LocalUsageBuffer):
+    def __init__(self) -> None:
+        super().__init__(lambda _b: None, flush_size=10_000, flush_interval=3600)
+        self.seen: list[LocalUsageRecord] = []
+
+    def add(self, record: LocalUsageRecord) -> None:
+        self.seen.append(record)
+
+
+class TestProbeRecording:
+    @pytest.fixture(autouse=True)
+    def _env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.tools.model_tiers import invalidate_model_tiers_cache
+
+        monkeypatch.setenv("MODEL_TIERS_CONFIG_DB", "0")
+        monkeypatch.setenv("LLM_USAGE_LOCAL", "1")
+        invalidate_model_tiers_cache()
+
+    def _run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        top: list[tuple[str, float]],
+        *,
+        status: int = 200,
+    ) -> list[LocalUsageRecord]:
+        import asyncio
+
+        import src.tools.local_usage as lu
+        from src.tools.decision_probe import probe_choice
+        from src.tools.model_tiers import Step
+
+        spy = _SpyBuffer()
+        monkeypatch.setattr(lu, "_BUFFER", spy)
+        monkeypatch.setattr(lu, "_install_sigterm_flush", lambda _b: None)
+
+        def handler(_r: httpx.Request) -> httpx.Response:
+            if status != 200:
+                return httpx.Response(status, json={"error": "x"})
+            return httpx.Response(
+                200,
+                json={
+                    "model": _MODEL,
+                    "created_at": "2026-10-29T00:00:00Z",
+                    "message": {"role": "assistant", "content": "Yes"},
+                    "done": True,
+                    "prompt_eval_count": 40,
+                    "eval_count": 1,
+                    "logprobs": [
+                        {
+                            "token": top[0][0],
+                            "logprob": top[0][1],
+                            "top_logprobs": [{"token": t, "logprob": lp} for t, lp in top],
+                        }
+                    ],
+                },
+            )
+
+        client = ollama.AsyncClient(
+            host="http://localhost:11434", transport=httpx.MockTransport(handler)
+        )
+
+        class _Cfg:
+            ollama_base_url = "http://localhost:11434"
+
+        asyncio.run(
+            probe_choice(
+                Step.TRIAGE,
+                "q",
+                ("Yes", "No"),
+                config=cast(AppConfig, _Cfg()),
+                client=client,
+            )
+        )
+        return spy.seen
+
+    def test_both_choices_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen = self._run(monkeypatch, [("Yes", -0.1), ("No", -2.5)])
+
+        assert len(seen) == 1
+        assert seen[0].provider == "ollama-probe"
+        assert seen[0].choices_present is True
+        assert seen[0].floor_used is False
+        assert seen[0].input_tokens == 40
+
+    def test_one_choice_missing_uses_floor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen = self._run(monkeypatch, [("Yes", -0.1), ("maybe", -3.0)])
+
+        assert seen[0].choices_present is False
+        assert seen[0].floor_used is True
+
+    def test_error_is_recorded_with_class(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen = self._run(monkeypatch, [("Yes", -0.1)], status=500)
+
+        assert len(seen) == 1
+        assert seen[0].error_class == "ResponseError"
+
+
+class TestFlushBehaviour:
+    @pytest.mark.asyncio
+    async def test_flush_inside_event_loop_runs_in_another_thread(self) -> None:
+        import asyncio
+        import threading
+
+        threads: list[str] = []
+        done = threading.Event()
+
+        def writer(_b: Sequence[LocalUsageRecord]) -> None:
+            threads.append(threading.current_thread().name)
+            done.set()
+
+        buf = LocalUsageBuffer(writer, flush_size=1)
+
+        buf.add(_rec())
+        for _ in range(100):
+            if done.is_set():
+                break
+            await asyncio.sleep(0.01)
+
+        assert threads
+        assert threads[0] != threading.main_thread().name
+
+    def test_defaults_are_ten_records_or_ten_seconds(self) -> None:
+        from src.tools.local_usage import FLUSH_INTERVAL_SECONDS, FLUSH_SIZE
+
+        assert (FLUSH_SIZE, FLUSH_INTERVAL_SECONDS) == (10, 10.0)
+
+    def test_sigterm_flushes_buffer_then_chains_previous_handler(self) -> None:
+        import signal
+
+        import src.tools.local_usage as lu
+
+        chained: list[int] = []
+        original = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, lambda signum, _f: chained.append(signum))
+        batches: list[Sequence[LocalUsageRecord]] = []
+        buf = LocalUsageBuffer(batches.append, flush_size=100, flush_interval=3600)
+        lu._sigterm_installed = False  # noqa: SLF001
+        try:
+            lu._install_sigterm_flush(buf)  # noqa: SLF001
+            buf.add(_rec())
+            handler = signal.getsignal(signal.SIGTERM)
+            assert callable(handler)
+            handler(signal.SIGTERM, None)
+        finally:
+            signal.signal(signal.SIGTERM, original)
+            lu._sigterm_installed = False  # noqa: SLF001
+
+        assert [len(b) for b in batches] == [1]
+        assert chained == [signal.SIGTERM]
+
+    def test_recorder_respects_flag_default_off_in_tests(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import os
+
+        assert os.environ["LLM_USAGE_LOCAL"] == "0"  # tests/conftest.py
+        batches: list[Sequence[LocalUsageRecord]] = []
+        buf = LocalUsageBuffer(batches.append, flush_size=1)
+        make_local_recorder(buf)(_rec())
+        assert batches == []
+        monkeypatch.setenv("LLM_USAGE_LOCAL", "1")
+        make_local_recorder(buf)(_rec())
+        assert len(batches) == 1
+
+
+class TestFallbackAndProbeColumns:
+    def test_roundtrip_new_columns_and_summary(self, tmp_path: Path) -> None:
+        repo = RunHistoryRepository(db_path=tmp_path / "p.db")
+        repo.record_local_llm_usage_batch(
+            [
+                _rec(fallback=True),
+                _rec(
+                    step="triage",
+                    provider="ollama-probe",
+                    choices_present=False,
+                    floor_used=True,
+                ),
+                _rec(
+                    step="triage",
+                    provider="ollama-probe",
+                    choices_present=False,
+                    floor_used=False,
+                ),
+            ]
+        )
+
+        rows = repo.list_local_llm_usage(days=1)
+        out = {(g["provider"], g["step"]): g for g in summarize_local_usage(rows, days=1)}
+
+        assert out[("ollama", "article_summary")]["fallback_calls"] == 1
+        probe = out[("ollama-probe", "triage")]
+        assert probe["floor_used_rate"] == 0.5
+        assert probe["choices_missing_rate"] == 0.5
+        assert out[("ollama", "article_summary")]["floor_used_rate"] is None
+        assert set(repo.llm_usage_summary()) == set()

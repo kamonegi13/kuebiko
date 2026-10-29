@@ -23,6 +23,7 @@ data/eval/s1_report.md) の本番移植。最初の用途は薄い本文の 2 �
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,7 @@ import ollama
 
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMForbiddenModelError, validate_model_name
+from src.tools.local_usage import record_probe_usage
 from src.tools.model_tiers import STEP_REGISTRY, Step, is_external_model, resolve_step_model
 from src.tools.task_prefix import PREFIX_TRAINED_MODELS, is_prefix_trained
 
@@ -115,6 +117,12 @@ def _choice_for_token(token: str, choices: tuple[str, ...]) -> str | None:
     return matched[0] if len(matched) == 1 else None
 
 
+def _count_choices_found(candidates: list[tuple[str, float]], choices: tuple[str, ...]) -> int:
+    """top_logprobs の候補に実際に在った選択肢の数 (floor で補う前、P0-16 の記録用)。"""
+    found = {c for token, _ in candidates if (c := _choice_for_token(token, choices)) is not None}
+    return len(found)
+
+
 def _extract_choice_probabilities(
     candidates: list[tuple[str, float]], choices: tuple[str, ...]
 ) -> dict[str, float] | None:
@@ -182,6 +190,13 @@ async def probe_choice(
         else ollama.AsyncClient(host=config.ollama_base_url, timeout=spec.timeout_seconds)
     )
     response: ollama.GenerateResponse | ollama.ChatResponse
+    started = time.monotonic()
+
+    def _emit_error(exc: Exception) -> None:
+        record_probe_usage(
+            step=step.value, model=model, started_monotonic=started, error_class=type(exc).__name__
+        )
+
     try:
         if _is_json_biased(model):
             response = await active_client.generate(
@@ -202,14 +217,17 @@ async def probe_choice(
                 options={"num_predict": 1, "temperature": 0},
             )
     except ollama.ResponseError as e:
+        _emit_error(e)
         _log.warning(
             "decision_probe_response_error", step=step.value, model=model, error=str(e)[:200]
         )
         return None
     except (TimeoutError, httpx.TimeoutException) as e:
+        _emit_error(e)
         _log.warning("decision_probe_timeout", step=step.value, model=model, error=str(e)[:200])
         return None
     except (httpx.ConnectError, ConnectionError) as e:
+        _emit_error(e)
         # ollama 公式 SDK は httpx.ConnectError を組み込み ConnectionError に変換して
         # 再 raise するため両方拾う (src/tools/llm_client.py:_chat と同じ流儀)。
         _log.warning(
@@ -217,6 +235,7 @@ async def probe_choice(
         )
         return None
     except httpx.RequestError as e:
+        _emit_error(e)
         _log.warning(
             "decision_probe_request_error", step=step.value, model=model, error=str(e)[:200]
         )
@@ -227,8 +246,19 @@ async def probe_choice(
             await active_client.close()  # type: ignore[no-untyped-call]
 
     logprobs = response.logprobs
+    in_tokens = int(getattr(response, "prompt_eval_count", None) or 0)
+    out_tokens = int(getattr(response, "eval_count", None) or 0)
     if not logprobs:
         # サーバ/モデルが logprobs を返さない (未対応バージョン等)。安全側で None。
+        record_probe_usage(
+            step=step.value,
+            model=model,
+            started_monotonic=started,
+            input_tokens=in_tokens,
+            output_tokens=out_tokens,
+            choices_present=False,
+            floor_used=False,
+        )
         return None
     entry = logprobs[0]
     candidates: list[tuple[str, float]] = [(t.token, t.logprob) for t in (entry.top_logprobs or ())]
@@ -236,4 +266,14 @@ async def probe_choice(
         # 温度 0 なので通常は argmax = top_logprobs の先頭に含まれるが、念のため補う。
         candidates.append((entry.token, entry.logprob))
 
+    found = _count_choices_found(candidates, choices)
+    record_probe_usage(
+        step=step.value,
+        model=model,
+        started_monotonic=started,
+        input_tokens=in_tokens,
+        output_tokens=out_tokens,
+        choices_present=found == len(choices),
+        floor_used=0 < found < len(choices),
+    )
     return _extract_choice_probabilities(candidates, choices)

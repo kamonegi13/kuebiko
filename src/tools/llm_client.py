@@ -302,11 +302,14 @@ class OllamaClient(LLMClient):
         num_ctx: int | None = None,
         step: str | None = None,
         usage_recorder: LocalUsageRecorder | None = None,
+        is_fallback: bool = False,
     ) -> None:
         validate_model_name(model)
         # P0-16: step 別の使用量記録 (None なら記録しない = テスト・直接構築の既定)
         self._step = step
         self._usage_recorder = usage_recorder
+        # 外部 → ローカルの受け皿として構築された client か (llm_usage.fallback)
+        self._is_fallback = is_fallback
         self._base_url = base_url
         self._model = model
         self._timeout_seconds = timeout_seconds
@@ -464,6 +467,7 @@ class OllamaClient(LLMClient):
                     structured=format_schema is not None,
                     output_chars=0,
                     error_class=type(e).__name__,
+                    fallback=self._is_fallback,
                 )
             )
             raise
@@ -567,6 +571,7 @@ class OllamaClient(LLMClient):
                 hit_token_cap=hit_cap,
                 structured=format_schema is not None,
                 output_chars=len(text),
+                fallback=self._is_fallback,
             )
         )
         return LLMResponse(

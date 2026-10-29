@@ -562,7 +562,11 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     hit_token_cap INTEGER,
     structured    INTEGER,
     output_chars  INTEGER,
-    error_class   TEXT
+    error_class   TEXT,
+    -- logprob 経路 (provider='ollama-probe') の選択肢の有無 / floor で補ったか、受け皿に落ちた回
+    choices_present INTEGER,
+    floor_used    INTEGER,
+    fallback      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_llm_usage_provider_ts
     ON llm_usage(provider, ts DESC);

@@ -27,6 +27,14 @@ _JST = ZoneInfo("Asia/Tokyo")
 _RETENTION_DAYS = 90
 
 
+def _opt_flag(value: bool | None) -> int | None:
+    return None if value is None else int(value)
+
+
+def _opt_bool(value: Any) -> bool | None:
+    return None if value is None else bool(value)
+
+
 class LlmUsageMixin(RunHistoryRepositoryBase):
     """llm_usage テーブルの読み書き。"""
 
@@ -59,15 +67,13 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
 
     def record_local_llm_usage_batch(self, batch: Sequence[LocalUsageRecord]) -> None:
         """ローカル (Ollama) 呼び出しの step 別の記録をまとめて書く (P0-16)。"""
-        from src.tools.local_usage import LOCAL_PROVIDER
-
         if not batch:
             return
         ts = datetime.now(UTC).isoformat()
         rows = [
             (
                 ts,
-                LOCAL_PROVIDER,
+                r.provider[:40],
                 r.model[:80],
                 max(0, r.input_tokens),
                 max(0, r.output_tokens),
@@ -78,6 +84,9 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                 int(r.structured),
                 max(0, r.output_chars),
                 (r.error_class or "")[:80] or None,
+                _opt_flag(r.choices_present),
+                _opt_flag(r.floor_used),
+                int(r.fallback),
             )
             for r in batch
         ]
@@ -85,24 +94,26 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
             conn.executemany(
                 "INSERT INTO llm_usage (ts, provider, model, input_tokens, output_tokens,"
                 " duration_ms, step, max_tokens, hit_token_cap, structured, output_chars,"
-                " error_class) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " error_class, choices_present, floor_used, fallback)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
 
     def list_local_llm_usage(self, *, days: int) -> list[dict[str, Any]]:
         """直近 ``days`` 日のローカル呼び出しの行 (集計は呼び出し側の純関数)。"""
-        from src.tools.local_usage import LOCAL_PROVIDER
+        from src.tools.local_usage import LOCAL_PROVIDER, PROBE_PROVIDER
 
         since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             rows: list[Any] = conn.execute(
-                "SELECT step, model, duration_ms, input_tokens, output_tokens,"
-                " hit_token_cap, error_class FROM llm_usage"
-                " WHERE provider = ? AND ts >= ?",
-                (LOCAL_PROVIDER, since),
+                "SELECT provider, step, model, duration_ms, input_tokens, output_tokens,"
+                " hit_token_cap, error_class, choices_present, floor_used, fallback"
+                " FROM llm_usage WHERE provider IN (?, ?) AND ts >= ?",
+                (LOCAL_PROVIDER, PROBE_PROVIDER, since),
             ).fetchall()
         return [
             {
+                "provider": r["provider"],
                 "step": r["step"],
                 "model": r["model"],
                 "duration_ms": int(r["duration_ms"] or 0),
@@ -110,6 +121,9 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                 "output_tokens": int(r["output_tokens"] or 0),
                 "hit_token_cap": bool(r["hit_token_cap"]),
                 "error_class": r["error_class"],
+                "choices_present": _opt_bool(r["choices_present"]),
+                "floor_used": _opt_bool(r["floor_used"]),
+                "fallback": bool(r["fallback"]),
             }
             for r in rows
         ]
@@ -122,7 +136,7 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
         cost_usd_equivalent を持つ — 旧 bridge usage payload と同形にして
         UI (モデルタブ Claude Code カード / 接続先パネル) の表示を共通化する。
         """
-        from src.tools.local_usage import LOCAL_PROVIDER
+        from src.tools.local_usage import LOCAL_PROVIDER, PROBE_PROVIDER
 
         now = datetime.now(UTC)
         windows = {
@@ -140,8 +154,8 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                     "SELECT provider, COUNT(*) AS calls, SUM(input_tokens) AS itok,"
                     " SUM(output_tokens) AS otok, SUM(cache_read_tokens) AS ctok,"
                     " SUM(cost_usd) AS cost FROM llm_usage WHERE ts >= ?"
-                    " AND provider <> ? GROUP BY provider",
-                    (since, LOCAL_PROVIDER),
+                    " AND provider NOT IN (?, ?) GROUP BY provider",
+                    (since, LOCAL_PROVIDER, PROBE_PROVIDER),
                 ).fetchall()
                 for r in rows:
                     prov = str(r["provider"])
@@ -154,8 +168,8 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                     }
             last_rows: list[Any] = conn.execute(
                 "SELECT provider, MAX(ts) AS last_ts FROM llm_usage"
-                " WHERE provider <> ? GROUP BY provider",
-                (LOCAL_PROVIDER,),
+                " WHERE provider NOT IN (?, ?) GROUP BY provider",
+                (LOCAL_PROVIDER, PROBE_PROVIDER),
             ).fetchall()
             for r in last_rows:
                 prov = str(r["provider"])
