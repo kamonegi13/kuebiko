@@ -410,8 +410,8 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS llm_primary_actor_raw TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS llm_primary_confidence TEXT;
 
 -- 記事本文のオンデマンド日本語訳キャッシュ (2026-07-25 記事詳細 UI)。翻訳ボタン押下時に
--- LLM 全訳を保存し、以後は DB から返す (バッチ全訳はしない)。body と同時に 90 日
--- retention で NULL 化 (repo_dedup.purge_article_bodies_older_than)。
+-- LLM 全訳を保存し、以後は DB から返す (バッチ全訳はしない)。body と同時に NULL 化されうる
+-- (BODY_PURGE_DAYS>0 のときだけ。既定 0 = 消さない、repo_dedup.purge_article_bodies_older_than)。
 -- article_id (PK) 引きのみのため index 不要。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS body_ja TEXT;
 

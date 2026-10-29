@@ -283,7 +283,8 @@ class RunHistoryRepositoryBase:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
 
         # 記事本文のオンデマンド日本語訳キャッシュ (2026-07-25 記事詳細 UI)。
-        # body と同時に 90 日 retention で NULL 化 (purge_article_bodies_older_than)。
+        # body と同時に NULL 化されうる (purge_article_bodies_older_than)。2026-10-29 から
+        # 既定は purge しない (BODY_PURGE_DAYS=0)。
         if "body_ja" not in existing_articles:
             conn.execute("ALTER TABLE articles ADD COLUMN body_ja TEXT")
 

@@ -146,7 +146,7 @@ UA ハードコードを廃し、取得を「戦略」に格上げする。
 body_ja バックログ翻訳ジョブ ([[session-handoff-2026-07-24]]) と同型の毎時ジョブを新設。
 
 - **対象選定**: `body_source='feed_summary'` AND `extraction_failure_reason IN (retriable set)`
-  AND body が現存 (retention 90d 内)。重要度・新しさ優先。**NULL body 用の
+  AND body が現存 (既定は無期限、`BODY_PURGE_DAYS`>0 のときだけ retention 内)。重要度・新しさ優先。**NULL body 用の
   `backfill_article_bodies.py` と統合**し「body が不十分 (NULL または feed_summary)」を単一
   条件にする ([repo_articles.py:list_articles_missing_body](../src/storage/repo_articles.py#L114-L132)
   の `WHERE body IS NULL` を拡張)。
@@ -180,7 +180,7 @@ body_ja バックログ翻訳ジョブ ([[session-handoff-2026-07-24]]) と同�
 
 - 既存の切り株 (30日で ~1,200 件、マーカー付き全期間 1,732 件) を再取得キューに投入。
   GBHackers 953 件は UA 修正だけでほぼ全件救済見込み。
-- retention purge 済 (body NULL・90d 超) は summary も残っていないため再取得不能 →
+- (2026-10-29 以降は既定で purge しない。以下は過去に purge 済の分) retention purge 済 (body NULL・90d 超) は summary も残っていないため再取得不能 →
   「当時の観測記録」として受容 (§2.4 の二段階と整合)。
 
 ---

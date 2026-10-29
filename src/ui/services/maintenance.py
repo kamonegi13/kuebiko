@@ -7,6 +7,7 @@ retention も止まる。深夜の日次 cron で purge 一式を回す (READ_ON
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -17,12 +18,30 @@ if TYPE_CHECKING:
 
 _log = get_logger(__name__)
 
+
+def body_purge_days() -> int:
+    """旗 BODY_PURGE_DAYS を読む。未設定・不正値 (負・非数) は 0 (purge しない) に倒す。"""
+    raw = os.environ.get(BODY_PURGE_DAYS_ENV, "0").strip() or "0"
+    try:
+        days = int(raw)
+    except ValueError:
+        _log.warning("body_purge_days_invalid", value_type="non_integer")
+        return 0
+    if days < 0:
+        _log.warning("body_purge_days_invalid", value_type="negative")
+        return 0
+    return days
+
+
 # situation_detection_log の retention (選定台帳、設計 §3.3)
 _DETECTION_LOG_RETENTION_DAYS = 90
 # detect_bundles (束ねの記録、M2) は評価の正解づくりに使うので長めに残す
 _DETECT_BUNDLES_RETENTION_DAYS = 180
-# articles.body の retention (schema 記載の 90 日、監査 backlog 2026-07-05 で実装)
-_BODY_RETENTION_DAYS = 90
+# articles.body / body_ja / linked_context の retention。2026-10-29 に既定を「消さない」
+# (0) へ変更 (利用者判断 J1: 過去の記事を検索できるよう本文はローカル Tier2 に全て残す)。
+# 公開面 (標準・アドバンスド) が本文を持たない関門は不変 (CLAUDE.md §9)。旗
+# BODY_PURGE_DAYS: 0 = purge しない / N>0 = N 日より古い本文を GC-root つきで NULL 化。
+BODY_PURGE_DAYS_ENV = "BODY_PURGE_DAYS"
 # 認証の監査証跡 (2026-08-02)。run_logs より長い 180 日 — 不正アクセスの発覚は
 # 遅れる前提で、遡って調べられる期間を確保する。
 _ACCESS_AUDIT_RETENTION_DAYS = 180
@@ -56,7 +75,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_logs = repo.purge_old_logs()
         purged_dedup = repo.purge_old_dedup_entries(days=DEDUP_RETENTION_DAYS)
         detection_purged = _purge_detection_log(repo)
-        purged_bodies = repo.purge_article_bodies_older_than(days=_BODY_RETENTION_DAYS)
+        purged_bodies = _purge_bodies(repo)
         # 監査証跡は run_logs (30 日) より長く保つ — 事故の発覚は遅れる前提 (2026-08-02)
         purged_audit = repo.purge_old_access_audit(days=_ACCESS_AUDIT_RETENTION_DAYS)
         # ops 通知も同じ理由で access_audit と同水準の retention (2026-08-21)
@@ -113,6 +132,15 @@ def _run_subject_backfill_safety_net(repo: RunHistoryRepository) -> int:
     except Exception as e:  # noqa: BLE001 — 補完の失敗で衛生バッチを止めない
         _log.warning("subject_backfill_safety_net_failed", error=str(e))
         return 0
+
+
+def _purge_bodies(repo: RunHistoryRepository) -> int:
+    """本文の purge。旗 0 (既定) では呼ばず、スキップを 1 行ログに残す。"""
+    days = body_purge_days()
+    if days == 0:
+        _log.info("body_purge_disabled", flag=BODY_PURGE_DAYS_ENV)
+        return 0
+    return repo.purge_article_bodies_older_than(days=days)
 
 
 def _purge_detection_log(repo: RunHistoryRepository) -> int:
