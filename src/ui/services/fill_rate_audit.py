@@ -860,6 +860,19 @@ async def run_weekly_fill_rate_audit() -> None:
             rule_warn_count += int(focus_warn)
         except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
             _log.warning("focus_audit_failed", error=str(e)[:160])
+        # alert の取込遅延 p90 (計画 AT-7、2026-10-30)。速報性の監視。目標は利用者判断待ちなので WARN なし
+        try:
+            from src.storage.run_history import RunHistoryRepository
+            from src.ui.services.fill_rate_alert_latency_section import (
+                alert_latency_line,
+                collect_alert_latency,
+            )
+
+            rule_lines.append(
+                alert_latency_line(collect_alert_latency(RunHistoryRepository(), until=now))
+            )
+        except Exception as e:  # noqa: BLE001 — 検査の失敗で監査全体を落とさない
+            _log.warning("alert_latency_audit_failed", error=str(e)[:160])
         # アクター単位の汚染 (2026-09-27)。主題判定の平均精度は集中した誤りを隠す
         # (APT37 は主題 26 記事中 17 記事が無人機の記事 = 別名の衝突)
         try:
