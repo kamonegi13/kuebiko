@@ -25,6 +25,7 @@ import ollama
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.logging_config import get_logger
+from src.tools.local_usage import LocalUsageRecord, LocalUsageRecorder
 
 _log = get_logger(__name__)
 
@@ -299,8 +300,13 @@ class OllamaClient(LLMClient):
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         client: ollama.AsyncClient | None = None,
         num_ctx: int | None = None,
+        step: str | None = None,
+        usage_recorder: LocalUsageRecorder | None = None,
     ) -> None:
         validate_model_name(model)
+        # P0-16: step 別の使用量記録 (None なら記録しない = テスト・直接構築の既定)
+        self._step = step
+        self._usage_recorder = usage_recorder
         self._base_url = base_url
         self._model = model
         self._timeout_seconds = timeout_seconds
@@ -414,7 +420,55 @@ class OllamaClient(LLMClient):
         assert last_error is not None
         raise last_error
 
+    def _emit_usage(self, record: LocalUsageRecord) -> None:
+        """使用量を記録する。記録の失敗は LLM 呼び出しに伝えない (recorder は fail-safe)。"""
+        if self._usage_recorder is None:
+            return
+        try:
+            self._usage_recorder(record)
+        except Exception as e:  # noqa: BLE001 — 記録の失敗で LLM 呼び出しを壊さない
+            from src.ops.write_failures import record_failure
+
+            record_failure("local_llm_usage", e)
+
     async def _chat(
+        self,
+        *,
+        prompt: str,
+        system: str | None,
+        temperature: float,
+        max_tokens: int,
+        format_schema: dict[str, Any] | None,
+        think: bool | None = None,
+    ) -> LLMResponse:
+        start = time.monotonic()
+        try:
+            return await self._chat_once(
+                prompt=prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                format_schema=format_schema,
+                think=think,
+            )
+        except Exception as e:
+            self._emit_usage(
+                LocalUsageRecord(
+                    step=self._step,
+                    model=self._model,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                    input_tokens=0,
+                    output_tokens=0,
+                    max_tokens=max_tokens,
+                    hit_token_cap=False,
+                    structured=format_schema is not None,
+                    output_chars=0,
+                    error_class=type(e).__name__,
+                )
+            )
+            raise
+
+    async def _chat_once(
         self,
         *,
         prompt: str,
@@ -502,6 +556,19 @@ class OllamaClient(LLMClient):
                 output_chars=len(text),
             )
 
+        self._emit_usage(
+            LocalUsageRecord(
+                step=self._step,
+                model=self._model,
+                duration_ms=int(duration * 1000),
+                input_tokens=prompt_eval,
+                output_tokens=eval_count,
+                max_tokens=max_tokens,
+                hit_token_cap=hit_cap,
+                structured=format_schema is not None,
+                output_chars=len(text),
+            )
+        )
         return LLMResponse(
             text=text,
             model=self._model,
