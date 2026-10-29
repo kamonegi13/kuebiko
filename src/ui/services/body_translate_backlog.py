@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 from src.logging_config import get_logger
@@ -31,6 +32,33 @@ _log = get_logger(__name__)
 _BATCH_LIMIT = 40
 _TIME_BUDGET_SECONDS = 12 * 60
 
+#: 失敗が続く記事を選ばない (P0-24)。コード既定 1、``TRANSLATE_QUEUE_BACKOFF=0`` で従来の選び方
+TRANSLATE_QUEUE_BACKOFF_ENV = "TRANSLATE_QUEUE_BACKOFF"
+_FLAG_OFF_VALUES = frozenset({"0", "false", "off", "no"})
+_REASON_MAX_CHARS = 200
+
+
+def queue_backoff_enabled() -> bool:
+    raw = os.environ.get(TRANSLATE_QUEUE_BACKOFF_ENV, "1").strip().lower()
+    return raw not in _FLAG_OFF_VALUES
+
+
+def _record_failure(repo: RunHistoryRepository, aid: str, error: Exception) -> bool:
+    """失敗の印を付ける。印の失敗で本処理を止めず、失敗したら False (呼び手が計数)。"""
+    try:
+        repo.record_translate_failure(aid, f"{type(error).__name__}: {error}"[:_REASON_MAX_CHARS])
+    except Exception as e:  # noqa: BLE001 — 印の記録失敗で翻訳ジョブを止めない
+        _log.warning("translate_attempt_record_failed", article_id=aid, error=type(e).__name__)
+        return False
+    return True
+
+
+def _clear_attempts(repo: RunHistoryRepository, aid: str) -> None:
+    try:
+        repo.clear_translate_attempts(aid)
+    except Exception as e:  # noqa: BLE001 — 消し損ねても次の成功判定で消える
+        _log.warning("translate_attempt_clear_failed", article_id=aid, error=type(e).__name__)
+
 
 async def run_body_translate_backlog(
     repo: RunHistoryRepository | None = None,
@@ -41,6 +69,7 @@ async def run_body_translate_backlog(
 ) -> dict[str, int]:
     """未訳記事を新しい順に翻訳して body_ja に保存する。統計 dict を返す。"""
     from src.cti.body_translator import (
+        TranslationEchoError,
         TranslationGarbledError,
         is_probably_japanese,
         translate_body_resumable,
@@ -53,7 +82,9 @@ async def run_body_translate_backlog(
 
         llm = build_llm_for(Step.ARTICLE_TRANSLATE, load_app_config())
 
-    article_ids = repo.list_articles_untranslated(limit=batch_limit)
+    article_ids = repo.list_articles_untranslated(
+        limit=batch_limit, backoff=queue_backoff_enabled()
+    )
     started = time.monotonic()
     translated = 0
     failed = 0
@@ -61,6 +92,8 @@ async def run_body_translate_backlog(
     skipped_japanese = 0
     skipped_garbled = 0
     skipped_budget = 0
+    echo_failed = 0
+    record_errors = 0
     for aid in article_ids:
         remaining = time_budget_seconds - (time.monotonic() - started)
         if remaining <= 0:
@@ -101,6 +134,8 @@ async def run_body_translate_backlog(
             # 1 件の失敗でジョブを落とさない。訳せた分はチャンク保存済みのため、
             # 次周期の再試行は失敗チャンクから続く (毒薬記事の毎時全損を防ぐ)。
             failed += 1
+            echo_failed += isinstance(e, TranslationEchoError)
+            record_errors += not _record_failure(repo, aid, e)
             _log.warning("body_backlog_translate_failed", article_id=aid, error=str(e))
             continue
         if progress.text is None:
@@ -114,6 +149,7 @@ async def run_body_translate_backlog(
             continue
         repo.update_article_body_ja(aid, progress.text)
         repo.clear_body_ja_chunks(aid)
+        _clear_attempts(repo, aid)
         translated += 1
 
     stats = {
@@ -124,6 +160,8 @@ async def run_body_translate_backlog(
         "skipped_japanese": skipped_japanese,
         "skipped_garbled": skipped_garbled,
         "skipped_budget": skipped_budget,
+        "echo_failed": echo_failed,
+        "attempt_record_errors": record_errors,
         "elapsed_seconds": int(time.monotonic() - started),
     }
     _log.info("body_backlog_done", **stats)

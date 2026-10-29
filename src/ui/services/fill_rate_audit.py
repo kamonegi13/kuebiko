@@ -392,6 +392,17 @@ METRICS: tuple[FillMetric, ...] = (
         "EXISTS (SELECT 1 FROM severity_c_shadow s WHERE s.article_id = a.article_id)",
         None,
     ),
+    # 本文の訳 (body_ja、2026-10-29 P0-24)。消費者は translate_attempts のバックオフ付き
+    # 未訳キュー (list_articles_untranslated) と記事詳細の訳表示。母集団は本文のある記事 —
+    # 低下は「翻訳キューが詰まった (先頭詰まり・写しの判定の過敏化)」。日本語原文は ''
+    # (処理済) なので IS NOT NULL で数える
+    FillMetric(
+        "body_ja",
+        "本文の訳の処理",
+        "a.body_ja IS NOT NULL",
+        None,
+        population="a.body IS NOT NULL AND a.body <> ''",
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

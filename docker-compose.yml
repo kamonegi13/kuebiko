@@ -216,6 +216,8 @@ services:
       # 語 約 5 割・数字 1 割未満)。ログ translate_fidelity_garbled に blocked / 種類別件数
       # 10-12 夜: ident で有効化 (14 日の再現で消える訳 1.9%・識別子の検出 41 件すべて本物)
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-ident}
+      # 翻訳キューの先頭詰まり対策 (2026-10-29 P0-24): 失敗が続く記事を 24h・72h・7 日空けるまで選ばない。0 = 従来の選び方
+      TRANSLATE_QUEUE_BACKOFF: ${TRANSLATE_QUEUE_BACKOFF:-1}
       # 割当の判定を ML (config/models/assign_model.json) で行う (2026-09-24)。規則の候補の中で
       # 精度 75% / 回収 81% (埋込の関門のみは 67% / 86%)。モデルが無ければ埋込の関門へ退避。
       ASSIGN_ML: ${ASSIGN_ML:-0}

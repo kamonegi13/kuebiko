@@ -61,6 +61,8 @@ _TRIAGE_SHADOW_RETENTION_DAYS = 180
 _ROUTING_V2_SHADOW_RETENTION_DAYS = 180
 _ALERT_DEDUP_SHADOW_RETENTION_DAYS = 180
 _SEVERITY_C_SHADOW_RETENTION_DAYS = 180
+# 翻訳キューの失敗の印 (2026-10-29 P0-24)。最長のバックオフ (7 日) より十分長い 90 日
+_TRANSLATE_ATTEMPTS_RETENTION_DAYS = 90
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -94,6 +96,9 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_severity_c_shadow = repo.purge_severity_c_shadow(
             days=_SEVERITY_C_SHADOW_RETENTION_DAYS
         )
+        purged_translate_attempts = repo.purge_translate_attempts(
+            days=_TRANSLATE_ATTEMPTS_RETENTION_DAYS
+        )
         # 評価資産 (ラベル/評価記録/goldset) を日次で data/backups へ退避。
         # 失敗は module 内で握る (fail-open) — 衛生バッチを止めない
         from src.storage.asset_export import export_eval_assets
@@ -116,6 +121,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_routing_v2_shadow=purged_routing_v2_shadow,
             purged_alert_dedup_shadow=purged_alert_dedup_shadow,
             purged_severity_c_shadow=purged_severity_c_shadow,
+            purged_translate_attempts=purged_translate_attempts,
             subject_backfilled=backfill,
         )
     except Exception as e:  # noqa: BLE001 — 衛生バッチの失敗で scheduler を汚さない

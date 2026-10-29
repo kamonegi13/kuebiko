@@ -718,6 +718,17 @@ CREATE TABLE IF NOT EXISTS alert_dedup_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_dedup_shadow_created_at ON alert_dedup_shadow(created_at);
 
+-- 翻訳キューの失敗の印 (2026-10-29 P0-24)。同じ未訳の先頭 40 件が毎時選び直されて
+-- キューが詰まるのを防ぐ (失敗回数に応じて一定時間 list_articles_untranslated から外す)。
+-- 本文・訳文は持たない。purge は last_failed_at 基準で 90 日。
+CREATE TABLE IF NOT EXISTS translate_attempts (
+    article_id     TEXT PRIMARY KEY,
+    fail_count     INTEGER NOT NULL DEFAULT 0,
+    last_failed_at TEXT NOT NULL,             -- ISO8601 UTC
+    last_reason    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_translate_attempts_last_failed ON translate_attempts(last_failed_at);
+
 -- 深刻さ C (Jev 型の問い + ML) の影の記録 (2026-10-22)。配信・重要度は変えない (記録のみ)。
 -- 1 記事 1 行 (article_id UNIQUE)。skip_reason あり = A の決まりごとが外した記事
 -- (問いは当てていない)。
