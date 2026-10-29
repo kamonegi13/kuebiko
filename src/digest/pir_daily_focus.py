@@ -256,8 +256,17 @@ def _parse_ts(s: str) -> float:
 
 
 def _filter_meaningful_matches(matches: list[PirMatch]) -> list[PirMatch]:
-    """importance が medium/high のもののみ採用 (low は noise として除外)。"""
-    return [m for m in matches if (m.importance or "").lower() in ("high", "medium")]
+    """importance が medium/high のもののみ採用 (low は noise として除外)。
+
+    分析専用の行 (``analysis_only``、配信していない) は **配信する要点には出さない** —
+    朝のブリーフの上位記事に地政学の救済分が流れ込むのを防ぐ
+    (評価・KPI・Spotlight は別経路で数える)。
+    """
+    return [
+        m
+        for m in matches
+        if (m.importance or "").lower() in ("high", "medium") and not m.analysis_only
+    ]
 
 
 def _today_label(tz_name: str = "Asia/Tokyo") -> str:

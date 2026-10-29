@@ -306,6 +306,7 @@ class TestArticleRecording:
             "subject_actor_rationale": "候補は背景言及のため主題なし",
             "duplicate_of": "prior-article-1",
             "original_title": "Original English Title",
+            "analysis_only": "geo_rescue",
             "remediation": "patch",
             "analyst_note": "所見",
             "socio_political_rationale": "r",

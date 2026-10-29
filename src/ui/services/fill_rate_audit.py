@@ -88,6 +88,16 @@ def _entity_cond_any(*entity_types: str) -> str:
 # (CLAUDE.md §7 の規約)。
 METRICS: tuple[FillMetric, ...] = (
     FillMetric(
+        # 分析専用の行 (articles.analysis_only、2026-10-30 GEO_RESCUE_MODE=analysis) の要約。
+        # 配信しない行は要約が唯一の読み物 (PIR 評価・台帳・群化の入力) — 欠けたら分析で使えない。
+        # 消費者は PIR 評価 (evaluator) と日次の要点の除外 (pir_daily_focus)
+        "analysis_only_summary",
+        "分析専用の行の要約",
+        "a.summary IS NOT NULL AND a.summary <> ''",
+        None,
+        population="a.analysis_only IS NOT NULL",
+    ),
+    FillMetric(
         # Grok 投稿が貼った外部リンク先の本文取得 (2026-10-24 GROK_LINK_FETCH)。消費者は
         # GROK_LINK_FETCH=on のときの要約の材料と裏付けの照合範囲。母集団は参考 URL を持つ
         # Grok 投稿 — 低下は「取得が崩れた (SSRF 関門・UA ブロック・予算切れ)」

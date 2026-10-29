@@ -91,7 +91,7 @@ def collect_high_threats(
         "SELECT article_id, title, url, category, victim_country_iso, posted_channel,"
         " dedup_key, created_at, feed_title, feed_url, account_class"
         " FROM articles"
-        " WHERE status='posted' AND importance='high'"
+        " WHERE status='posted' AND analysis_only IS NULL AND importance='high'"
         " AND posted_channel NOT IN ('alert', 'vuln')"
         f" AND category IN ({placeholders})"
         " AND created_at >= ?"
@@ -225,7 +225,7 @@ def collect_other_channel_counts(
     since = end - timedelta(hours=lookback_hours)
     sql = (
         "SELECT posted_channel, COUNT(DISTINCT COALESCE(dedup_key, article_id)) AS n"
-        " FROM articles WHERE status = 'posted'"
+        " FROM articles WHERE status = 'posted' AND analysis_only IS NULL"
         f" AND posted_channel IN ({_in_clause(OTHER_CHANNELS)})"
         " AND created_at >= ? AND created_at <= ?"
         " GROUP BY posted_channel"

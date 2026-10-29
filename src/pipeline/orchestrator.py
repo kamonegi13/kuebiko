@@ -84,6 +84,8 @@ WEB_ONLY_ENV = "PIPELINE_WEB_ONLY"
 #: 投稿直前の重複判定に当たった記事を分析に残すか (2026-10-02、既定 ON)。
 #: "0" で従来の挙動 (status='skipped_duplicate' = 台帳・PIR・総括・地図から外れる) に戻る。
 KEEP_DUPLICATES_ENV = "DEDUP_KEEP_FOR_ANALYSIS"
+#: articles.analysis_only に入れる理由 (GEO_RESCUE_MODE=analysis で救った地政学の記事)
+ANALYSIS_ONLY_GEO_RESCUE = "geo_rescue"
 
 # 時間予算 (soft deadline、2026-08-01)。親 (PipelineRunner) の wallclock timeout で
 # kill されると「投稿 0・既読化 0・成果全損 → 次 run が同じ記事を再処理」の全損ループに
@@ -1120,7 +1122,7 @@ async def run_pipeline(
         if outcome is not None and art_id in analysis_only_ids:
             # 分析専用 (地政学の救済): 配信せず status='posted' / posted_channel=None で残す
             outcome["status"] = "posted"
-            outcome["failure_reason"] = "analysis_only:geo_rescue"
+            outcome["analysis_only"] = ANALYSIS_ONLY_GEO_RESCUE
             if msg.summary:
                 outcome["summary"] = msg.summary
             _register_seen(art_id)

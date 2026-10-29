@@ -3236,6 +3236,82 @@ class TestTriageRejectionsRecorded:
         assert rows[0].importance == "low"
 
 
+class TestGeoRescueAnalysisOnly:
+    """GEO_RESCUE_MODE=analysis: 救った地政学は配信せず、印をつけて分析に残す (2026-10-30)。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["analysis", "deliver"])
+    async def test_rescued_article_is_not_posted_in_analysis_mode(
+        self,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+        mode: str,
+    ) -> None:
+        from src.storage.run_history import RunHistoryRepository, RunRecord
+        from src.tools.article_triage import TriageDecision
+
+        # Arrange: triage は低・救済モデルは medium と答える
+        monkeypatch.setenv("GEO_RESCUE_MODE", mode)
+        monkeypatch.setenv("TRIAGE_GEO_RESCUE", "1")
+        repo = RunHistoryRepository(db_path=tmp_path / "geo_rescue.db")
+        from datetime import UTC, datetime
+
+        run_id = repo.start_run(
+            RunRecord(
+                started_at=datetime.now(UTC),
+                pipeline="daily-briefing",
+                triggered_by="manual",
+                dry_run=False,
+                status="running",
+            ),
+        )
+        cfg = PipelineConfig(
+            name="daily-briefing",
+            source=SourceConfig(type="rss", max_articles=10),
+            processor=ProcessorConfig(triage_enabled=True, thin_feed_triage_enabled=False),
+        )
+        triage_llm = AsyncMock()
+        triage_llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="low", reason="地政学で実害なし")
+        )
+        rescue_llm = AsyncMock()
+        rescue_llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="medium", reason="戦域の文脈")
+        )
+        publishers = _build_publishers()
+
+        # Act
+        await run_pipeline(
+            config=app_cfg,
+            pipeline=cfg,
+            source=_build_source([_article(article_id="geo-1", url="https://example.com/geo-1")]),
+            extractor=_build_extractor_with_results([_extraction_success()]),
+            llm=_build_llm_with_outputs([_summary_output(title_ja="紅海の情勢")]),
+            publishers=publishers,
+            template=template,
+            dry_run=False,
+            dedup_repo=repo,
+            run_id=run_id,
+            triage_llm=triage_llm,
+            triage_rescue_llm=rescue_llm,
+        )
+
+        # Assert
+        rec = next(r for r in repo.list_articles(run_id=run_id) if r.article_id == "geo-1")
+        assert rec.status == "posted"
+        if mode == "analysis":
+            assert rec.posted_channel is None
+            assert rec.analysis_only == "geo_rescue"
+            assert "本文の概要記述" in (rec.summary or "")
+            for ch in ("alert", "brief", "watch"):
+                _post_mock(publishers[ch]).assert_not_awaited()
+        else:
+            assert rec.analysis_only is None
+            assert rec.posted_channel is not None
+
+
 class TestRoundupExemptFromPrePostDedup:
     """まとめ記事は投稿直前の重複判定の対象にしない (2026-10-02)。"""
 

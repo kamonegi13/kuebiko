@@ -159,6 +159,9 @@ class ArticleRecord(BaseModel):
     duplicate_of: str | None = None
     # 取得時の元の見出し (2026-10-18、多くは英語)。title は要約後の見出し。None = 未記録 (旧行)。
     original_title: str | None = None
+    # 分析専用の印 (2026-10-30)。配信せず分析にだけ残した行の理由 ("geo_rescue")。
+    # None = 通常の行。「配信した/新規」の集計はこれが NULL の行に限る。
+    analysis_only: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None
     # アナリスト所見 (2026-08-18 に永続化)。Discord 投稿だけに出て DB に残らず、

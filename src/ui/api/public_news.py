@@ -154,13 +154,17 @@ def _is_duplicate_only(articles: dict[str, Any], member_ids: tuple[str, ...]) ->
 
     ``skipped_duplicate`` / ``duplicate_of`` は「既に収集済みの記事と同じ事案」という自前の
     判定 (2026-10-02 以降、重複に当たった記事は status='posted' + duplicate_of で残る)。
+    ``analysis_only`` (配信せず分析にだけ残した行、2026-10-30) も配信していない扱い — 分析専用の
+    行だけの事象は公開しない (配信した行を 1 件でも含む事象は公開する)。
     生成本文があるなら複数媒体をまとめた読み物になっているので公開してよい。
     """
     known = [articles[a] for a in member_ids if a in articles]
     if not known:
         return True
     return all(
-        getattr(a, "status", "") == "skipped_duplicate" or getattr(a, "duplicate_of", None)
+        getattr(a, "status", "") == "skipped_duplicate"
+        or getattr(a, "duplicate_of", None)
+        or getattr(a, "analysis_only", None)
         for a in known
     )
 

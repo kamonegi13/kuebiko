@@ -51,10 +51,10 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                    subject_actor_ids, subject_actor_source, subject_actor_confidence,
                    llm_primary_actor_raw, llm_primary_confidence,
                    subject_actor_rationale, duplicate_of, original_title,
-                   article_type, account_class, created_at)
+                   analysis_only, article_type, account_class, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.run_id,
@@ -108,6 +108,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     record.subject_actor_rationale,
                     record.duplicate_of,
                     record.original_title,
+                    record.analysis_only,
                     record.article_type,
                     record.account_class,
                     _to_iso(record.created_at),
@@ -1090,6 +1091,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "status = 'posted'",
             # 重複として残した記事 (配信していない) は「前報」に数えない (2026-10-02)
             "duplicate_of IS NULL",
+            "analysis_only IS NULL",
             "datetime(created_at) >= datetime('now', ?)",
         ]
         params: list[object] = [dedup_key, f"-{lookback_hours} hours"]

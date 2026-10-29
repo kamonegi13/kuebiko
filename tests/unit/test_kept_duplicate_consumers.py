@@ -50,3 +50,41 @@ def test_followup_prior_count_ignores_kept_duplicates(repo: RunHistoryRepository
 
     assert count == 1
     assert latest is not None and latest.article_id == "orig"
+
+
+def test_analysis_only_rows_feed_pir_evaluation_but_not_delivery(tmp_path: Path) -> None:
+    """分析専用の行は PIR 評価の根拠には載るが、日次の要点・前報の数え方には出ない。"""
+    from src.digest.pir_daily_focus import _filter_meaningful_matches
+    from src.pir.evaluator import PirMatch, _load_posted_rows, _to_pir_match
+
+    # Arrange
+    r = RunHistoryRepository(db_path=tmp_path / "analysis_only.db")
+    rid = r.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))
+    for aid, marker in (("ana", "geo_rescue"), ("norm", None)):
+        r.add_article(
+            ArticleRecord(
+                run_id=rid,
+                article_id=aid,
+                title="t",
+                url=f"https://kuebiko.example/{aid}",
+                status="posted",
+                posted_channel=None if marker else "watch",
+                importance="medium",
+                category="geopolitical",
+                dedup_key="geo-key",
+                analysis_only=marker,
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    # Act
+    rows, _actors = _load_posted_rows(repo=r)
+    matches = [_to_pir_match(row, ("keywords",)) for row in rows]
+    count, latest = r.count_prior_posts_by_dedup_key("geo-key", lookback_hours=24)
+
+    # Assert
+    assert {row["article_id"] for row in rows} == {"ana", "norm"}  # 評価の根拠には載る
+    by_id: dict[str, PirMatch] = {m.article_id: m for m in matches}
+    assert by_id["ana"].analysis_only is True
+    assert [m.article_id for m in _filter_meaningful_matches(matches)] == ["norm"]  # 配信側は除外
+    assert count == 1 and latest is not None and latest.article_id == "norm"

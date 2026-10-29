@@ -53,6 +53,9 @@ class PirMatch:
     # R-C (痩せた入力での生成の是正): Spotlight/DailyFocus narrative の接地用。
     # SELECT 済の summary を載せ、タイトルのみ生成 (= 捏造温床) を防ぐ。
     summary: str = ""
+    # 分析専用の行 (配信していない、2026-10-30)。評価・KPI・Spotlight の根拠には数えるが、
+    # 配信する一覧 (日次の要点の上位記事) には出さない
+    analysis_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -489,7 +492,7 @@ def _load_posted_rows(
                    posted_channel, created_at, summary, body,
                    victim_sector_canonical, victim_country_iso,
                    subject_actor_ids, subject_actor_source,
-                   category, socio_political_intent, is_ransomware
+                   category, socio_political_intent, is_ransomware, analysis_only
               FROM articles
              WHERE status='posted'
                -- 重複判定に当たり分析に残した記事 (2026-10-02) は数えない: PIR の
@@ -553,6 +556,14 @@ def evaluate_pir_matches(
     return matches
 
 
+def _is_analysis_only(row: Any) -> bool:
+    """行が分析専用か。列を持たない行 (旧 SELECT・テストの dict) は通常の行として扱う。"""
+    try:
+        return bool(row["analysis_only"])
+    except (KeyError, IndexError):
+        return False
+
+
 def _to_pir_match(row: sqlite3.Row, matched_via: tuple[str, ...]) -> PirMatch:
     return PirMatch(
         article_id=row["article_id"],
@@ -570,6 +581,7 @@ def _to_pir_match(row: sqlite3.Row, matched_via: tuple[str, ...]) -> PirMatch:
         ),
         matched_via=matched_via,
         summary=row["summary"] or "",
+        analysis_only=_is_analysis_only(row),
     )
 
 

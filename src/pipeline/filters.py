@@ -345,16 +345,15 @@ async def _filter_by_triage(
 _GEO_REASON = re.compile(r"(地政学|軍事|外交|安全保障|海軍|演習|ミサイル|防衛|国防|核)")
 _RESCUE_MARK = "[地政学の救済] "
 _GEO_RESCUE_PROMPT_ENV = "GEO_RESCUE_PROMPT"
-
-
 _GEO_RESCUE_MODE_ENV = "GEO_RESCUE_MODE"
 
 
 def geo_rescue_mode() -> str:
     """救済した地政学の記事の扱い。``deliver`` (既定 = 従来どおり配信) / ``analysis`` (分析専用)。
 
-    analysis は posted_channel=NULL の status='posted' で残す (DEDUP_KEEP_FOR_ANALYSIS と同形)。
-    地政学は PIR/SIR 評価の文脈・根拠として欲しいが、配信の high にはしない (利用者判断 10-30)。
+    analysis = 救った記事を Discord へ流さず、分析 (要約・タグ・群化・PIR 評価・台帳の根拠) にだけ
+    残す。DB では status='posted' / posted_channel=NULL / articles.analysis_only='geo_rescue'。
+    地政学は PIR/SIR 評価の文脈・根拠として欲しいが、配信はしない (利用者判断 10-30)。
     """
     raw = os.environ.get(_GEO_RESCUE_MODE_ENV, "deliver").strip().lower()
     return "analysis" if raw == "analysis" else "deliver"

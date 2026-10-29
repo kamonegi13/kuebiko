@@ -88,3 +88,70 @@ def test_theatre_hint_mode_default_is_shadow(monkeypatch: pytest.MonkeyPatch) ->
     assert geo_theatre_hint_mode() == "on"
     monkeypatch.setenv("INGEST_GEO_THEATRE_HINT", "0")
     assert geo_theatre_hint_mode() == "off"
+
+
+def test_public_news_treats_analysis_only_members_as_not_delivered() -> None:
+    from types import SimpleNamespace
+
+    from src.ui.api.public_news import _is_duplicate_only
+
+    # Arrange
+    arts: dict[str, Any] = {
+        "ana": SimpleNamespace(status="posted", duplicate_of=None, analysis_only="geo_rescue"),
+        "ok": SimpleNamespace(status="posted", duplicate_of=None, analysis_only=None),
+    }
+
+    # Act / Assert
+    assert _is_duplicate_only(arts, ("ana",)) is True
+    assert _is_duplicate_only(arts, ("ana", "ok")) is False
+
+
+@pytest.mark.asyncio
+async def test_rescue_with_force_pir_goes_through_composed_prompt_with_boundary_rules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """救済 (pir) は triage_rubric (boundary_rules 込み) を合成する経路を通り、flat は通らない。"""
+    import src.tools.article_triage as mod
+
+    # Arrange
+    monkeypatch.setenv("TRIAGE_FLAT", "1")
+    monkeypatch.setenv("PIR_DRIVEN_TRIAGE", "1")
+    calls: list[dict[str, str]] = []
+
+    def _fake(context: dict[str, str]) -> str:
+        calls.append(context)
+        return "COMPOSED"
+
+    monkeypatch.setattr(mod, "_composed_prompt", _fake)
+    monkeypatch.setattr("src.pir.integration.build_triage_high_criteria", lambda *_a, **_k: "HIGH")
+    llm: Any = AsyncMock()
+
+    # Act
+    pir_prompt = ArticleTriage(llm, force_pir=True)._build_prompt(_article())
+    flat_prompt = ArticleTriage(llm)._build_prompt(_article())
+
+    # Assert
+    assert pir_prompt == "COMPOSED" and len(calls) == 1
+    assert flat_prompt != "COMPOSED" and len(calls) == 1
+
+
+def test_mcnemar_and_strata_summary() -> None:
+    from src.eval.geo_rescue_stats import mcnemar_exact, summarize
+
+    # Arrange
+    records = [
+        {"id": "a", "flat_rescued": False, "pir_rescued": True},
+        {"id": "b", "flat_rescued": False, "pir_rescued": True},
+        {"id": "c", "flat_rescued": True, "pir_rescued": True},
+    ]
+    strata = {"a": "地政学", "b": "軍事", "c": "地政学"}
+    gold = {"a": True, "b": True, "c": True}
+
+    # Act
+    out = summarize(records, strata, gold)
+
+    # Assert
+    assert out["per_stratum"]["地政学"] == {"n": 2, "flat_rescued": 1, "pir_rescued": 2}
+    assert (out["flat_only_correct"], out["pir_only_correct"]) == (0, 2)
+    assert out["mcnemar_p"] == pytest.approx(0.5)
+    assert mcnemar_exact(0, 0) == 1.0
