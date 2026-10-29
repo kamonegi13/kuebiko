@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import warnings
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,18 +19,23 @@ _BLOCK = 512
 
 
 def resolve_roots(merged_into: Mapping[str, str | None]) -> dict[str, str]:
-    """merged_into を辿った最新の根。循環は辿り終えた時点の id で止める。"""
+    """merged_into を辿った最新の根。循環は最小 id に正規化 (全員が同じ根) して警告する。"""
     roots: dict[str, str] = {}
     for start in merged_into:
-        seen = {start}
+        path = [start]
         cur = start
         while True:
             nxt = merged_into.get(cur)
-            if not nxt or nxt in seen:
+            if not nxt:
+                roots[start] = cur
                 break
-            seen.add(nxt)
+            if nxt in path:
+                cycle = path[path.index(nxt) :]
+                roots[start] = min(cycle)
+                warnings.warn(f"merged_into cycle normalized to {min(cycle)}", stacklevel=2)
+                break
+            path.append(nxt)
             cur = nxt
-        roots[start] = cur
     return roots
 
 
@@ -91,10 +98,42 @@ def build_components(
     _union_by_key(uf, {a: v for a, v in cves.items() if a in id_set}, "cve")
     _union_by_key(uf, {a: v for a, v in victim_orgs.items() if a in id_set}, "org")
     with_vec = [a for a in ids if a in embeddings]
+    dims = {len(embeddings[a]) for a in with_vec}
+    if len(dims) > 1:
+        raise ValueError(f"embedding dimension mismatch: {sorted(dims)}")
     if len(with_vec) > 1:
         mat = np.asarray([embeddings[a] for a in with_vec], dtype=np.float32)
         _union_by_cosine(uf, with_vec, mat, cos_threshold)
     return {a: uf.find(a) for a in ids}
+
+
+MAX_COMPONENT_SHARE = 0.30
+MIN_ITEMS_FOR_SHARE_CHECK = 20
+
+
+class ComponentTooLargeError(RuntimeError):
+    """閉包が巨大すぎて分割が意味をなさない。"""
+
+
+def component_diagnostics(component_of: Mapping[str, str]) -> tuple[int, int, float]:
+    """(成分数, 最大成分の大きさ, 最大成分の占有率)。"""
+    sizes = Counter(component_of.values())
+    if not sizes:
+        return 0, 0, 0.0
+    largest = max(sizes.values())
+    return len(sizes), largest, largest / len(component_of)
+
+
+def assert_components_ok(
+    component_of: Mapping[str, str], max_share: float = MAX_COMPONENT_SHARE
+) -> None:
+    n, largest, share = component_diagnostics(component_of)
+    if len(component_of) >= MIN_ITEMS_FOR_SHARE_CHECK and share > max_share:
+        raise ComponentTooLargeError(
+            f"largest closure holds {largest}/{len(component_of)} items ({share:.1%}) "
+            f"> {max_share:.0%} across {n} components; the split would be dominated by it. "
+            "Raise the cos threshold or exclude hub CVEs/orgs (record the change in the prereg)."
+        )
 
 
 @dataclass(frozen=True)
@@ -109,8 +148,14 @@ def split_by_event_time(
     event_ts: Mapping[str, datetime],
     component_of: Mapping[str, str],
     cutoff: datetime,
+    *,
+    max_component_share: float = MAX_COMPONENT_SHARE,
 ) -> SplitResult:
-    """事象時刻 < cutoff を tune、>= cutoff を test。tune と同じ成分の test 記事は外す。"""
+    """事象時刻 < cutoff を tune、>= cutoff を test。tune と同じ成分の test 記事は外す。
+
+    最大の成分が max_component_share を超えたら ComponentTooLargeError。
+    """
+    assert_components_ok({a: component_of.get(a, a) for a in event_ts}, max_component_share)
     tune = {a for a, t in event_ts.items() if t < cutoff}
     test = {a for a, t in event_ts.items() if t >= cutoff}
     tune_components = {component_of.get(a, a) for a in tune}

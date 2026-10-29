@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -67,7 +67,8 @@ def test_event_ts_sql_uses_ssot() -> None:
 
 
 def test_resolve_roots_follows_chain_and_survives_cycle() -> None:
-    roots = c.resolve_roots({"a": "b", "b": "c", "c": None, "x": "y", "y": "x"})
+    with pytest.warns(UserWarning):
+        roots = c.resolve_roots({"a": "b", "b": "c", "c": None, "x": "y", "y": "x"})
     assert roots["a"] == "c" and roots["x"] in {"x", "y"}
 
 
@@ -98,21 +99,47 @@ def test_split_excludes_test_rows_sharing_a_closure_with_tune() -> None:
     assert res.n_excluded_components == 1
 
 
+def test_sql_guard_rejects_session_escape_and_writing_functions() -> None:
+    bad = (
+        "SELECT set_config('default_transaction_read_only','off',false)",
+        "SELECT pg_advisory_lock(1)",
+        "SELECT * INTO t FROM a",
+        "SELECT lo_import('/x')",
+        "WITH d AS (DELETE FROM a RETURNING *) SELECT * FROM d",
+        "SELECT $$x$$",
+        "SELECT 1 /* c */; SELECT 2",
+    )
+    for sql in bad:
+        with pytest.raises(c.ReadOnlyViolationError):
+            c.assert_read_only_sql(sql)
+
+
+def test_placeholder_translation_respects_literals_and_percent() -> None:
+    sql = "SELECT a FROM t WHERE x = ? AND y LIKE '%q?%' AND z LIKE ?"
+    out = c.to_psycopg_placeholders(sql)
+    assert out == "SELECT a FROM t WHERE x = %s AND y LIKE '%%q?%%' AND z LIKE %s"
+
+
 # --- gate ---------------------------------------------------------------------
+
+
+def _req(name: str, repo: Path, **kw: object) -> c.PreregRecord:
+    kw.setdefault("run_started_at", datetime.now(UTC) + timedelta(seconds=5))
+    return c.require_prereg(name, repo, **kw)  # type: ignore[arg-type]
 
 
 def test_prereg_refuses_missing_untracked_and_dirty(repo: Path) -> None:
     with pytest.raises(c.GateRefusedError, match="missing"):
-        c.require_prereg("x", repo)
+        _req("x", repo)
     p = repo / "docs/replay_prereg/x.md"
     p.write_text("v1")
     with pytest.raises(c.GateRefusedError, match="not tracked"):
-        c.require_prereg("x", repo)
+        _req("x", repo)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "prereg")
     p.write_text("v2")
     with pytest.raises(c.GateRefusedError, match="uncommitted"):
-        c.require_prereg("x", repo)
+        _req("x", repo)
 
 
 def test_prereg_records_commit_sha_and_rejects_bad_names(repo: Path) -> None:
@@ -120,12 +147,36 @@ def test_prereg_records_commit_sha_and_rejects_bad_names(repo: Path) -> None:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "prereg")
 
-    rec = c.require_prereg("x", repo)
+    rec = _req("x", repo)
 
     assert len(rec.git_sha) == 40 and rec.head_sha == rec.git_sha
     for bad in ("../x", "README", ""):
         with pytest.raises(c.GateRefusedError):
-            c.require_prereg(bad, repo)
+            _req(bad, repo)
+
+
+def test_prereg_refuses_dirty_guarded_code_and_hidden_flags(repo: Path) -> None:
+    (repo / "docs/replay_prereg/x.md").write_text("v1")
+    (repo / "scripts/replay").mkdir(parents=True)
+    (repo / "scripts/replay/a.py").write_text("1")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "p")
+    assert _req("x", repo).run_started_at
+    (repo / "scripts/replay/a.py").write_text("2")
+    with pytest.raises(c.GateRefusedError, match="uncommitted"):
+        _req("x", repo)
+    _git(repo, "checkout", "--", "scripts/replay/a.py")
+    _git(repo, "update-index", "--skip-worktree", "scripts/replay/a.py")
+    with pytest.raises(c.GateRefusedError, match="skip-worktree"):
+        _req("x", repo)
+
+
+def test_prereg_must_precede_run_start(repo: Path) -> None:
+    (repo / "docs/replay_prereg/x.md").write_text("v1")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "p")
+    with pytest.raises(c.GateRefusedError, match="strictly before"):
+        _req("x", repo, run_started_at=datetime(2000, 1, 1, tzinfo=UTC))
 
 
 # --- judge set ----------------------------------------------------------------
@@ -154,6 +205,24 @@ def test_judge_set_refused_by_path_and_by_sha(repo: Path, tmp_path: Path) -> Non
     assert ok.path == "data/fresh.jsonl" and ok.rows == 1 and len(ok.sha256) == 64
 
 
+def test_judge_set_refused_on_shared_ids_and_missing_files_warn(repo: Path) -> None:
+    (repo / "data").mkdir()
+    (repo / "data/t.jsonl").write_text('{"article_id":"A1"}\n')
+    other = repo / "data/o.jsonl"
+    other.write_text('{"article_id":"A1","x":1}\n')
+    ledger = repo / "plan.yaml"
+    ledger.write_text(
+        "gold_sets:\n  - {id: g, tainted: true, files: [data/t.jsonl, data/gone.jsonl]}\n"
+    )
+
+    with pytest.warns(UserWarning, match="not found"):
+        reg = c.load_tainted_registry(ledger, repo)
+
+    assert reg.missing == ("data/gone.jsonl",)
+    with pytest.raises(c.GateRefusedError, match="ids"):
+        c.identify_judge_set(other, reg, repo)
+
+
 # --- manifest / lock -------------------------------------------------------------
 
 
@@ -177,6 +246,19 @@ def test_manifest_written_atomically_and_rejects_body(tmp_path: Path) -> None:
         c.write_manifest(_manifest(flags={"F": "x" * 400}), tmp_path / "o3")
 
 
+def test_manifest_allowlist_rejects_types_prose_and_case_variants(tmp_path: Path) -> None:
+    for bad in (
+        {"Body": "x"},
+        {"k": "日本語の本文"},
+        {"k": "two words"},
+        {"k": b"x"},
+        {"k": {1, 2}},
+        {"k": float("nan")},
+    ):
+        with pytest.raises(c.BodyLeakError):
+            c.write_manifest(_manifest(flags=bad), tmp_path / "o")
+
+
 def test_adjudication_lock_is_exclusive(tmp_path: Path) -> None:
     path = tmp_path / "l.lock"
     with (
@@ -187,6 +269,28 @@ def test_adjudication_lock_is_exclusive(tmp_path: Path) -> None:
         pass
     with c.adjudication_lock(path, owner="c"):
         pass
+
+
+def test_cycle_is_normalized_to_min_id_and_warns() -> None:
+    with pytest.warns(UserWarning, match="cycle"):
+        roots = c.resolve_roots({"b": "c", "c": "b", "d": "b"})
+    assert roots == {"b": "b", "c": "b", "d": "b"}
+
+
+def test_giant_closure_fails_split_and_dim_mismatch_raises() -> None:
+    ids = [f"a{i:02d}" for i in range(30)]
+    ts = {a: datetime(2026, 10, 5) for a in ids}
+    giant = dict.fromkeys(ids, "k")
+    with pytest.raises(c.ComponentTooLargeError, match="largest closure"):
+        c.split_by_event_time(ts, giant, datetime(2026, 10, 1))
+    with pytest.raises(ValueError, match="dimension"):
+        c.build_components(
+            ["a", "b"],
+            root_of={},
+            cves={},
+            victim_orgs={},
+            embeddings={"a": [1.0], "b": [1.0, 0.0]},
+        )
 
 
 # --- stats --------------------------------------------------------------------
@@ -204,6 +308,7 @@ def test_mcnemar_exact_and_rule_of_three() -> None:
     assert abs(c.mcnemar_exact(0, 10) - 2 / 1024) < 1e-12
     assert c.discordant_counts([(True, False), (False, True), (True, True)]) == (1, 1)
     assert c.rule_of_three(100) == 0.03
+    assert c.rule_of_three_exact(100) < c.rule_of_three(100)
 
 
 def test_weighted_estimate_and_cluster_bootstrap() -> None:

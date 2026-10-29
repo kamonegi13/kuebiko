@@ -7,16 +7,18 @@
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from typing import Any
 
 from scripts.replay._closure import (
     COS_THRESHOLD,
     R18_VERSION,
+    ComponentTooLargeError,
     SplitResult,
+    assert_components_ok,
     assert_no_shared_component,
     build_components,
+    component_diagnostics,
     resolve_roots,
     split_by_event_time,
 )
@@ -32,6 +34,11 @@ from scripts.replay._gate import (
 )
 from scripts.replay._lock import AdjudicationLockBusyError, adjudication_lock
 from scripts.replay._manifest import BodyLeakError, Manifest, assert_no_body, write_manifest
+from scripts.replay._sqlguard import (
+    ReadOnlyViolationError,
+    assert_read_only_sql,
+    to_psycopg_placeholders,
+)
 from scripts.replay._stats import (
     Interval,
     Observation,
@@ -39,6 +46,7 @@ from scripts.replay._stats import (
     discordant_counts,
     mcnemar_exact,
     rule_of_three,
+    rule_of_three_exact,
     weighted_estimate,
     wilson_interval,
 )
@@ -49,6 +57,7 @@ __all__ = [
     "R18_VERSION",
     "AdjudicationLockBusyError",
     "BodyLeakError",
+    "ComponentTooLargeError",
     "GateRefusedError",
     "Interval",
     "JudgeSet",
@@ -57,13 +66,17 @@ __all__ = [
     "PreregRecord",
     "ReadOnlyConnection",
     "ReadOnlyViolationError",
+    "assert_read_only_sql",
+    "to_psycopg_placeholders",
     "SplitResult",
     "TaintedRegistry",
     "adjudication_lock",
+    "assert_components_ok",
     "assert_no_body",
     "assert_no_shared_component",
     "build_components",
     "cluster_bootstrap_ci",
+    "component_diagnostics",
     "discordant_counts",
     "event_ts_sql",
     "identify_judge_set",
@@ -75,36 +88,13 @@ __all__ = [
     "require_prereg",
     "resolve_roots",
     "rule_of_three",
+    "rule_of_three_exact",
     "sha256_file",
     "split_by_event_time",
     "weighted_estimate",
     "wilson_interval",
     "write_manifest",
 ]
-
-_READ_ONLY_RE = re.compile(r"^\s*\(?\s*(select|with|show|explain)\b", re.IGNORECASE)
-_WRITE_WORD_RE = re.compile(
-    r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum"
-    r"|reindex|set|reset|call|do|lock|merge)\b",
-    re.IGNORECASE,
-)
-_STRING_RE = re.compile(r"'(?:[^']|'')*'")
-
-
-class ReadOnlyViolationError(RuntimeError):
-    """書き込み (になりうる) 文を拒否した。"""
-
-
-def _assert_read_only_sql(sql: str) -> None:
-    stripped = _STRING_RE.sub("''", sql)
-    if ";" in stripped.strip().rstrip(";"):
-        raise ReadOnlyViolationError("multiple statements are refused")
-    if not _READ_ONLY_RE.match(stripped):
-        raise ReadOnlyViolationError("only SELECT/WITH/SHOW/EXPLAIN are allowed")
-    # CTE の中の書き込み (WITH ... DELETE ...) / SELECT ... FOR UPDATE も拒否する。
-    # 列名・別名に update 等を含む場合の誤拒否は許容 (replay は単純な SELECT で足りる)。
-    if _WRITE_WORD_RE.search(re.sub(r'"[^"]*"', '""', stripped)):
-        raise ReadOnlyViolationError("write keyword found in statement")
 
 
 class ReadOnlyConnection:
@@ -116,9 +106,9 @@ class ReadOnlyConnection:
 
     def execute(self, sql: str, params: Any = ()) -> Any:
         """sql は "?" プレースホルダで書く (PG では %s に置き換える)。"""
-        _assert_read_only_sql(sql)
+        assert_read_only_sql(sql)
         if self._placeholder != "?":
-            sql = sql.replace("?", self._placeholder)
+            sql = to_psycopg_placeholders(sql)
         return self._conn.execute(sql, params)
 
     def close(self) -> None:
@@ -136,7 +126,13 @@ def open_readonly(database_url: str) -> ReadOnlyConnection:
     import psycopg
     from psycopg.rows import dict_row
 
-    conn = psycopg.connect(database_url, autocommit=True, row_factory=dict_row)
+    conn = psycopg.connect(
+        database_url,
+        autocommit=True,
+        row_factory=dict_row,
+        options="-c default_transaction_read_only=on",
+    )
+    conn.read_only = True
     conn.execute("SET default_transaction_read_only = on")
     return ReadOnlyConnection(conn, placeholder="%s")
 

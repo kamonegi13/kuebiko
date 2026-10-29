@@ -37,10 +37,21 @@ def wilson_interval(successes: int, n: int, z: float = Z_95) -> Interval:
 
 
 def rule_of_three(n: int) -> float:
-    """0 件観測のときの 95% 上側限界 (約 3/n)。"""
+    """0 件観測のときの 95% 上側限界の近似 3/n。
+
+    厳密値は 1 - 0.05^(1/n) (rule_of_three_exact)。n が小さいと近似は厳密より大きい
+    (n=10 で 0.30 対 0.259)。prereg には使う方を書く。
+    """
     if n <= 0:
         raise ValueError("n must be positive")
     return min(1.0, 3.0 / n)
+
+
+def rule_of_three_exact(n: int, alpha: float = 0.05) -> float:
+    """0 件観測のときの片側 (1-alpha) 上限の厳密値 1 - alpha^(1/n)。"""
+    if n <= 0 or not 0 < alpha < 1:
+        raise ValueError("invalid n/alpha")
+    return 1.0 - math.pow(alpha, 1.0 / n)
 
 
 def mcnemar_exact(only_a: int, only_b: int) -> float:
