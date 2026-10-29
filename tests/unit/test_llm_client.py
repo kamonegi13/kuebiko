@@ -16,7 +16,6 @@ import pytest
 from pydantic import BaseModel
 
 from src.tools.llm_client import (
-    DEFAULT_MODEL,
     LLMConnectionError,
     LLMForbiddenModelError,
     LLMModelNotFoundError,
@@ -27,6 +26,8 @@ from src.tools.llm_client import (
 )
 
 # ---------- ヘルパ ----------
+
+DEFAULT_MODEL = "gemma4:26b"  # テスト用の名前 (本番の既定は持たない)
 
 
 def _build_ollama_client(

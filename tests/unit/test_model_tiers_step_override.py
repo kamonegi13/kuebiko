@@ -22,6 +22,7 @@ import pytest
 
 from src.storage.config_store import save_config
 from src.tools.llm_client import OllamaClient
+from src.tools.model_registry import RESIDENT_SLOTS
 from src.tools.model_tiers import (
     MODEL_TIERS_CONFIG_KEY,
     Step,
@@ -58,11 +59,15 @@ def db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     invalidate_model_tiers_cache()
 
 
+_S_SLOT = RESIDENT_SLOTS["S"]
+_N_SLOT = RESIDENT_SLOTS["N"]
+
+
 class TestResolveStepModel:
     def test_without_override_falls_back_to_tier(self, db_path: Path) -> None:
         # override 未設定 = 従来のティア解決 (挙動保存)
-        assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "gemma4:26b"
-        assert resolve_step_model(Step.PIR_SPOTLIGHT, db_path=db_path) == "gemma4:31b"
+        assert resolve_step_model(Step.TRIAGE, db_path=db_path) == _S_SLOT
+        assert resolve_step_model(Step.PIR_SPOTLIGHT, db_path=db_path) == _N_SLOT
 
     def test_override_wins_over_tier(self, db_path: Path) -> None:
         save_config(
@@ -74,8 +79,8 @@ class TestResolveStepModel:
         assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "kuebiko-sft:s1"
         assert resolve_step_model(Step.PIR_SPOTLIGHT, db_path=db_path) == "kuebiko-sft:26b"
         # override の無い step は同ティアでもティア割当のまま
-        assert resolve_step_model(Step.ARTICLE_SUMMARY, db_path=db_path) == "gemma4:26b"
-        assert resolve_step_model(Step.EVENT_NEWS, db_path=db_path) == "gemma4:31b"
+        assert resolve_step_model(Step.ARTICLE_SUMMARY, db_path=db_path) == _S_SLOT
+        assert resolve_step_model(Step.EVENT_NEWS, db_path=db_path) == _N_SLOT
 
     def test_pair_judge_has_own_step_and_ignores_triage_override(self, db_path: Path) -> None:
         """pair 判定が Step.TRIAGE 借用で triage の s1 上書きを黙って継承していた (2026-09-08)。
@@ -93,14 +98,14 @@ class TestResolveStepModel:
         save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": "kuebiko-sft:s1"}, db_path=db_path)
         invalidate_model_tiers_cache()
         assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "kuebiko-sft:s1"
-        assert resolve_step_model(Step.PAIR_JUDGE, db_path=db_path) == "gemma4:26b"
-        assert resolve_step_model(Step.EVENT_KIND, db_path=db_path) == "gemma4:26b"
+        assert resolve_step_model(Step.PAIR_JUDGE, db_path=db_path) == _S_SLOT
+        assert resolve_step_model(Step.EVENT_KIND, db_path=db_path) == _S_SLOT
 
     def test_empty_override_means_absent(self, db_path: Path) -> None:
         # 空文字 = 解除 (UI で消したときの表現)。ティアに戻る。
         save_config(MODEL_TIERS_CONFIG_KEY, {"step:triage": ""}, db_path=db_path)
         invalidate_model_tiers_cache()
-        assert resolve_step_model(Step.TRIAGE, db_path=db_path) == "gemma4:26b"
+        assert resolve_step_model(Step.TRIAGE, db_path=db_path) == _S_SLOT
 
 
 class TestBuildLlmForUsesOverride:
@@ -112,7 +117,7 @@ class TestBuildLlmForUsesOverride:
         assert llm.model == "kuebiko-sft:s1"
         # 同ティアの他 step は巻き込まれない
         other = build_llm_for(Step.ARTICLE_SUMMARY, _cfg(), db_path=db_path)
-        assert other.model == "gemma4:26b"
+        assert other.model == _S_SLOT
 
 
 class TestLoadStepOverrides:
@@ -169,8 +174,8 @@ class TestLocalFallbackOverride:
     def test_default_fallback_is_builtin(self, db_path: Path) -> None:
         from src.tools.model_tiers import Tier, resolve_local_fallback_model
 
-        assert resolve_local_fallback_model(Tier.NARRATIVE, db_path=db_path) == "gemma4:31b"
-        assert resolve_local_fallback_model(Tier.FAST, db_path=db_path) == "gemma4:26b"
+        assert resolve_local_fallback_model(Tier.NARRATIVE, db_path=db_path) == _N_SLOT
+        assert resolve_local_fallback_model(Tier.FAST, db_path=db_path) == _S_SLOT
 
     def test_db_key_overrides_fallback(self, db_path: Path) -> None:
         from src.tools.model_tiers import Tier, resolve_local_fallback_model
@@ -181,7 +186,7 @@ class TestLocalFallbackOverride:
         invalidate_model_tiers_cache()
         assert resolve_local_fallback_model(Tier.NARRATIVE, db_path=db_path) == "kuebiko-sft:26b"
         # 他ティアは BUILTIN のまま
-        assert resolve_local_fallback_model(Tier.REASONING, db_path=db_path) == "gemma4:31b"
+        assert resolve_local_fallback_model(Tier.REASONING, db_path=db_path) == _S_SLOT
 
     def test_external_primary_gets_configured_fallback_arm(self, db_path: Path) -> None:
         from src.tools.llm_fallback import FallbackLLMClient

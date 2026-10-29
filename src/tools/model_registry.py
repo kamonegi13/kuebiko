@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Final, Literal
@@ -114,6 +115,20 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
 #: 常駐の 2 枠のいまの中身 (s26 / n20 に替わるときはここの 1 行を変える)
 RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s24ci65", "N": "kuebiko-sft:n19"}
 
+#: 既定値 (``BUILTIN_MODEL_TIERS``) の元。fast / reasoning / dialog = S、narrative = N
+_TIER_SLOTS: Final[dict[str, Slot]] = {
+    "fast": "S",
+    "reasoning": "S",
+    "dialog": "S",
+    "narrative": "N",
+}
+
+
+def builtin_local_tiers() -> dict[str, str]:
+    """ティア名 → 常駐の枠の中身 (埋込は含まない)。"""
+    return {tier: RESIDENT_SLOTS[slot] for tier, slot in _TIER_SLOTS.items()}
+
+
 #: 緊急の受け皿 (10-29 判断 J4)。使えるのは受け皿の経路だけ。通常の割当には入れない
 EMERGENCY_FALLBACK_MODELS: Final[frozenset[str]] = frozenset({"gemma4:26b"})
 
@@ -161,3 +176,20 @@ def is_registered(model: str) -> bool:
 def registered_names() -> tuple[str, ...]:
     """登録された名前 (前方一致の系統を含む)。"""
     return tuple(c.name for c in _CAPABILITIES)
+
+
+#: 評価中の一時タグ (task_prefix と同じ環境変数、カンマ区切り)
+EVAL_TAGS_ENV: Final = "SFT_TASK_PREFIX_MODELS"
+
+
+def eval_tag_models() -> frozenset[str]:
+    return frozenset(m.strip() for m in os.environ.get(EVAL_TAGS_ENV, "").split(",") if m.strip())
+
+
+def is_override_allowed(model: str) -> bool:
+    """明示の上書き (比較・チャットの会話単位) に使ってよいローカルモデルか。
+
+    登録済み ∪ 評価中のタグ。外部 (anthropic:/claudecode:/接続先) は呼び手が先に判定する。
+    """
+    name = model.strip()
+    return is_registered(name) or name in eval_tag_models()

@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING
 
 from src.logging_config import get_logger
 from src.storage.db_backend import raise_if_infrastructure
+from src.tools.model_registry import builtin_local_tiers
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
@@ -293,14 +294,9 @@ TIER_NUM_CTX: dict[Tier, int | None] = {
 # UI で編集する (運用中に .env を触る必要はない)。fresh DB / rollback 時の bootstrap 値。
 # embedding は推奨モデルを既定に (未 pull なら _try_build_embedder が graceful degradation)。
 BUILTIN_MODEL_TIERS: dict[str, str] = {
-    Tier.REASONING.value: "gemma4:31b",
-    # narrative は reasoning から分離 (2026-07-24)。既定は同モデル (挙動保存)。DB に
-    # narrative キーが無い既存環境も BUILTIN fallback で migration 不要 (dialog 分離と同型)。
-    Tier.NARRATIVE.value: "gemma4:31b",
-    Tier.FAST.value: "gemma4:26b",
-    # dialog は fast と同モデルを既定に (2026-07-19 分離時の挙動保存。DB 未保存でも
-    # resolve_tier_model が本 BUILTIN に fallback するため既存環境で migration 不要)
-    Tier.DIALOG.value: "gemma4:26b",
+    # fast / reasoning / dialog = S 枠、narrative = N 枠 (P0-26、model_registry が SSoT)。
+    # 旧: gemma4:31b / 26b。枠の中身が替わるときは registry の 1 行だけを変える。
+    **builtin_local_tiers(),
     Tier.EMBEDDING.value: "snowflake-arctic-embed2",
 }
 
@@ -539,6 +535,16 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
     return client
 
 
+def _require_allowed_override(model_ref: str) -> None:
+    """明示の上書きは 外部 ∪ 登録済み ∪ 評価中のタグ だけ (D6、未登録は拒否)。"""
+    from src.tools.llm_client import LLMForbiddenModelError
+    from src.tools.model_registry import is_override_allowed
+
+    if is_external_model(model_ref) or is_override_allowed(model_ref):
+        return
+    raise LLMForbiddenModelError(f"未登録のモデルは上書きできません: {model_ref}")
+
+
 def build_llm_for_ref(
     model_ref: str, step: Step, config: AppConfig, *, timeout_seconds: float | None = None
 ) -> LLMClient:
@@ -565,6 +571,7 @@ def build_llm_for_ref(
         bare = bare.removeprefix(prefix)
     validate_model_name(bare)
     validate_model_name(model_ref)
+    _require_allowed_override(model_ref)
     from src.tools.task_prefix import TaskPrefixClient, prefix_for  # 遅延 import (循環回避)
 
     built = _build_client_for_ref(
@@ -715,6 +722,50 @@ def invalidate_model_tiers_cache() -> None:
     _CACHE.clear()
 
 
+_RESIDENT_ENFORCE_ENV = "MODEL_RESIDENT_ENFORCE"
+_REGISTRY_ENFORCE_ENV = "MODEL_REGISTRY_ENFORCE"
+
+
+def _flag_on(env: str) -> bool:
+    return os.environ.get(env, "0").strip() in ("1", "true", "True")
+
+
+def _resident_issue(model: str, *, allow_emergency: bool) -> tuple[str, str] | None:
+    """割当が 2 枠の方針に反するか。(旗の名前, 理由) を返す。外部・空は対象外。
+
+    ``allow_emergency`` は ``fallback:*`` だけ True (緊急の受け皿 gemma4 を通す)。
+    """
+    from datetime import date
+
+    from src.tools import model_registry as reg
+
+    name = model.strip()
+    if not name or is_external_model(name):
+        return None
+    if not reg.is_registered(name):
+        return (_REGISTRY_ENFORCE_ENV, "未登録のモデルです (model_registry に 1 行足す)")
+    if allow_emergency and name in reg.EMERGENCY_FALLBACK_MODELS:
+        return None
+    exception_until = reg.RESIDENT_EXCEPTIONS.get(name)
+    if name in reg.RESIDENT_SLOTS.values() or (
+        exception_until is not None and date.today() <= exception_until
+    ):
+        return None
+    return (_RESIDENT_ENFORCE_ENV, "常駐の枠 (S・N) の外のモデルです")
+
+
+def _check_resident(label: str, model: str, errs: list[str], *, allow_emergency: bool) -> None:
+    """旗が 1 なら拒否、0 なら警告ログだけ (11-28 までの警告期間)。"""
+    issue = _resident_issue(model, allow_emergency=allow_emergency)
+    if issue is None:
+        return
+    flag, reason = issue
+    if _flag_on(flag):
+        errs.append(f"{label}: {reason}")
+        return
+    _log.warning("model_assignment_outside_policy", label=label, model=model, flag=flag)
+
+
 def validate_model_tiers(raw: object) -> list[str]:
     """保存前検証。エラー文字列の list を返す (空 = OK)。
 
@@ -754,6 +805,8 @@ def validate_model_tiers(raw: object) -> list[str]:
             validate_model_name(value.strip())
         except LLMForbiddenModelError as e:
             errs.append(f"step override '{step_name}': {e}")
+            continue
+        _check_resident(f"step override '{step_name}'", value, errs, allow_emergency=False)
     # ローカル fallback (``fallback:<tier名>``): 外部障害時の受け皿なのでローカル限定。
     known_tiers = {t.value for t in Tier}
     for key, value in raw.items():
@@ -776,6 +829,8 @@ def validate_model_tiers(raw: object) -> list[str]:
             validate_model_name(model)
         except LLMForbiddenModelError as e:
             errs.append(f"fallback '{tier_name}': {e}")
+            continue
+        _check_resident(f"fallback '{tier_name}'", model, errs, allow_emergency=True)
     for tier in Tier:
         value = raw.get(tier.value)
         if value is None and tier is Tier.NARRATIVE:
@@ -796,4 +851,7 @@ def validate_model_tiers(raw: object) -> list[str]:
             validate_model_name(model)
         except LLMForbiddenModelError as e:
             errs.append(f"ティア '{tier.value}': {e}")
+            continue
+        if tier is not Tier.EMBEDDING:
+            _check_resident(f"ティア '{tier.value}'", model, errs, allow_emergency=False)
     return errs

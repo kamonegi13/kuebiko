@@ -15,6 +15,7 @@ import pytest
 from src.config_loader import AppConfig
 from src.storage.config_store import save_config
 from src.tools.llm_client import OllamaClient, is_model_allowed
+from src.tools.model_registry import RESIDENT_SLOTS
 from src.tools.model_tiers import (
     BUILTIN_MODEL_TIERS,
     MODEL_TIERS_CONFIG_KEY,
@@ -88,14 +89,19 @@ class TestRegistry:
         assert STEP_REGISTRY[Step.EMBED].tier is Tier.EMBEDDING
 
 
+_S_SLOT = RESIDENT_SLOTS["S"]
+_N_SLOT = RESIDENT_SLOTS["N"]
+
+
 class TestBuiltin:
     def test_builtin_has_all_tiers(self) -> None:
         assert set(BUILTIN_MODEL_TIERS.keys()) == {t.value for t in Tier}
 
     def test_builtin_values(self) -> None:
-        assert BUILTIN_MODEL_TIERS["reasoning"] == "gemma4:31b"
-        assert BUILTIN_MODEL_TIERS["fast"] == "gemma4:26b"
-        assert BUILTIN_MODEL_TIERS["dialog"] == "gemma4:26b"
+        assert BUILTIN_MODEL_TIERS["reasoning"] == _S_SLOT
+        assert BUILTIN_MODEL_TIERS["narrative"] == _N_SLOT
+        assert BUILTIN_MODEL_TIERS["fast"] == _S_SLOT
+        assert BUILTIN_MODEL_TIERS["dialog"] == _S_SLOT
         assert BUILTIN_MODEL_TIERS["embedding"] == "snowflake-arctic-embed2"
 
     def test_builtin_models_are_allowed(self) -> None:
@@ -105,8 +111,8 @@ class TestBuiltin:
 
 class TestResolve:
     def test_empty_db_falls_back_to_builtin(self, db_path: Path) -> None:
-        assert resolve_tier_model(Tier.FAST, db_path=db_path) == "gemma4:26b"
-        assert resolve_tier_model(Tier.REASONING, db_path=db_path) == "gemma4:31b"
+        assert resolve_tier_model(Tier.FAST, db_path=db_path) == _S_SLOT
+        assert resolve_tier_model(Tier.REASONING, db_path=db_path) == _S_SLOT
         assert resolve_tier_model(Tier.EMBEDDING, db_path=db_path) == "snowflake-arctic-embed2"
 
     def test_db_overrides_builtin(self, db_path: Path) -> None:
@@ -114,14 +120,14 @@ class TestResolve:
         invalidate_model_tiers_cache()
         assert resolve_tier_model(Tier.FAST, db_path=db_path) == "mistral-small3.2:24b"
         # DB 未指定ティアは BUILTIN に fallback
-        assert resolve_tier_model(Tier.REASONING, db_path=db_path) == "gemma4:31b"
+        assert resolve_tier_model(Tier.REASONING, db_path=db_path) == _S_SLOT
 
     def test_rollback_flag_ignores_db(self, db_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         save_config(MODEL_TIERS_CONFIG_KEY, {"fast": "mistral-small3.2:24b"}, db_path=db_path)
         invalidate_model_tiers_cache()
         monkeypatch.setenv("MODEL_TIERS_CONFIG_DB", "0")
         # flag=0 → DB を飛ばして BUILTIN に直行
-        assert resolve_tier_model(Tier.FAST, db_path=db_path) == "gemma4:26b"
+        assert resolve_tier_model(Tier.FAST, db_path=db_path) == _S_SLOT
 
     def test_resolve_embedding_model(self, db_path: Path) -> None:
         assert resolve_embedding_model(db_path=db_path) == "snowflake-arctic-embed2"
@@ -134,16 +140,16 @@ class TestBuildLLM:
     @pytest.mark.parametrize(
         ("step", "expected_model", "expected_timeout"),
         [
-            (Step.ARTICLE_SUMMARY, "gemma4:26b", 300.0),
-            (Step.TRIAGE, "gemma4:26b", 300.0),
-            (Step.SYNTHESIS_DETECT, "gemma4:26b", 900.0),
-            (Step.PIR_DAILY_FOCUS, "gemma4:26b", 120.0),
-            (Step.PIR_COMPILE, "gemma4:26b", 180.0),
+            (Step.ARTICLE_SUMMARY, _S_SLOT, 300.0),
+            (Step.TRIAGE, _S_SLOT, 300.0),
+            (Step.SYNTHESIS_DETECT, _S_SLOT, 900.0),
+            (Step.PIR_DAILY_FOCUS, _S_SLOT, 120.0),
+            (Step.PIR_COMPILE, _S_SLOT, 180.0),
             # spotlight は reasoning ティア (本番 31b 踏襲) だが timeout は step 固有 600s
-            (Step.PIR_SPOTLIGHT, "gemma4:31b", 600.0),
-            (Step.DIGEST_DEEP_DIVE_SELECT, "gemma4:26b", 900.0),
-            (Step.DIGEST_DEEP_DIVE, "gemma4:26b", 900.0),
-            (Step.SYNTHESIS_NARRATIVE, "gemma4:31b", 900.0),
+            (Step.PIR_SPOTLIGHT, _N_SLOT, 600.0),
+            (Step.DIGEST_DEEP_DIVE_SELECT, _S_SLOT, 900.0),
+            (Step.DIGEST_DEEP_DIVE, _S_SLOT, 900.0),
+            (Step.SYNTHESIS_NARRATIVE, _N_SLOT, 900.0),
         ],
     )
     def test_step_resolves_to_builtin_model_and_timeout(
@@ -163,7 +169,7 @@ class TestSeed:
     def test_seed_if_absent(self, db_path: Path) -> None:
         assert seed_model_tiers_if_absent(db_path=db_path) is True
         invalidate_model_tiers_cache()
-        assert resolve_tier_model(Tier.FAST, db_path=db_path) == "gemma4:26b"
+        assert resolve_tier_model(Tier.FAST, db_path=db_path) == _S_SLOT
         # 既投入なら no-op
         assert seed_model_tiers_if_absent(db_path=db_path) is False
 
@@ -456,9 +462,9 @@ class TestBuildForRef:
         from src.tools.llm_client import OllamaClient
         from src.tools.model_tiers import build_llm_for_ref
 
-        client = build_llm_for_ref("llama3.1:8b", Step.ASSISTANT_CHAT, self._cfg())
+        client = build_llm_for_ref("gemma4:26b", Step.ASSISTANT_CHAT, self._cfg())
         assert isinstance(_unwrap(client), OllamaClient)
-        assert client.model == "llama3.1:8b"
+        assert client.model == "gemma4:26b"
         assert (
             _unwrap(client)._timeout_seconds  # noqa: SLF001
             == STEP_REGISTRY[Step.ASSISTANT_CHAT].timeout_seconds
@@ -471,6 +477,20 @@ class TestBuildForRef:
         client = build_llm_for_ref("claudecode:sonnet", Step.ASSISTANT_CHAT, self._cfg())
         assert isinstance(_unwrap(client), FallbackLLMClient)
         assert client.model == "claudecode:sonnet"
+
+    def test_unregistered_local_ref_rejected(self) -> None:
+        from src.tools.llm_client import LLMForbiddenModelError
+        from src.tools.model_tiers import build_llm_for_ref
+
+        with pytest.raises(LLMForbiddenModelError):
+            build_llm_for_ref("llama3.1:8b", Step.ASSISTANT_CHAT, self._cfg())
+
+    def test_eval_tag_ref_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.tools.model_tiers import build_llm_for_ref
+
+        monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:tmp9")
+        client = build_llm_for_ref("kuebiko-sft:tmp9", Step.ASSISTANT_CHAT, self._cfg())
+        assert client.model == "kuebiko-sft:tmp9"
 
     def test_forbidden_ref_rejected(self) -> None:
         from src.tools.llm_client import LLMForbiddenModelError

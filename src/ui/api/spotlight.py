@@ -22,6 +22,7 @@ from src.spotlight.models import KeyEvent, SpotlightPeriod, SpotlightRecord
 from src.storage.run_history import RunHistoryRepository
 from src.tools.kev_client import get_kev_cve_set
 from src.tools.llm_client import LLMClient, LLMForbiddenModelError, OllamaClient
+from src.tools.model_registry import is_override_allowed
 from src.tools.model_tiers import STEP_REGISTRY, Step, build_llm_for
 
 _log = get_logger(__name__)
@@ -162,6 +163,8 @@ async def regenerate_spotlight(pir_id: str, req: RegenerateRequest) -> Spotlight
     # 既定は PIR spotlight ティア (fast)。req.model は A/B 比較用の明示 override
     # (compare_spotlight_models.py 経由)。override も whitelist を必ず通す (§4 防御)。
     if req.model:
+        if not is_override_allowed(req.model):
+            raise HTTPException(status_code=400, detail=f"未登録のモデルです: {req.model}")
         try:
             # 両分岐 (明示 override / ティア既定) が満たす共通インタフェースで受ける。
             # else 側の build_llm_for は LLMClient を返すため OllamaClient 注釈だと不一致。
