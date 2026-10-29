@@ -5,19 +5,27 @@
 項が無ければ ``None`` (fail-closed: その判定は使わず従来の決定論の経路へ戻る)。
 旧モデルの項は消さない (戻し先)。
 
-このモジュールは表の読み書きだけを持ち、既存の本番定数 (briefing / pir_daily_focus) は
-まだ参照していない (配線は切替の手順 §4.2-6 で行う)。
+本番の 3 判定 (薄い本文・PIR 要点の裏付け・組織名の同一性) は ``effective_threshold`` 経由で
+この表を読む (旗 ``PROBE_THRESHOLDS_TABLE``、既定 1。0 で従来の定数に戻る)。
+先頭が ``_`` のキー (``_calibration`` など) はしきい値として扱わない。
 """
 
 from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from src.tools.model_tiers import Step
+from src.logging_config import get_logger
+from src.tools.model_tiers import Step, resolve_step_model
+
+_log = get_logger(__name__)
+
+#: 旗。"0" で表を読まず、呼び出し側が渡す従来の定数を使う。
+PROBE_THRESHOLDS_TABLE_ENV = "PROBE_THRESHOLDS_TABLE"
 
 THRESHOLDS_PATH = (
     Path(__file__).resolve().parents[2] / "config" / "models" / "probe_thresholds.json"
@@ -64,14 +72,15 @@ def load_thresholds(path: Path | None = None) -> Thresholds:
         return {}
     out: Thresholds = {}
     for model, steps in raw.items():
-        if not isinstance(steps, dict):
+        if str(model).startswith("_") or not isinstance(steps, dict):
             continue
         for step, questions in steps.items():
-            if not isinstance(questions, dict):
+            if str(step).startswith("_") or not isinstance(questions, dict):
                 continue
             for question, value in questions.items():
                 if (
-                    isinstance(value, bool)
+                    str(question).startswith("_")
+                    or isinstance(value, bool)
                     or not isinstance(value, int | float)
                     or not math.isfinite(value)
                 ):
@@ -87,6 +96,37 @@ def probe_threshold(
 ) -> float | None:
     """解決済みモデルの項。無ければ ``None`` (呼び出し側は判定を使わない)。"""
     return load_thresholds(path).get(model.strip(), {}).get(step.value, {}).get(question)
+
+
+def table_enabled() -> bool:
+    """表を本番の判定に使うか (``PROBE_THRESHOLDS_TABLE``、既定 on。"0" で off)。"""
+    return os.environ.get(PROBE_THRESHOLDS_TABLE_ENV, "1").strip() != "0"
+
+
+def effective_threshold(
+    step: Step,
+    question: str = MAIN_QUESTION,
+    *,
+    fallback: float,
+    model: str | None = None,
+    path: Path | None = None,
+) -> float | None:
+    """本番の判定が使うしきい値。旗 off → ``fallback`` (従来の定数)。
+
+    旗 on → 判定に使う実モデル (``model`` 省略時は step の解決結果) の項。項が無い・モデルを
+    解決できないときは ``None`` (fail-closed: 呼び出し側はその判定を使わない) + 警告。
+    """
+    if not table_enabled():
+        return fallback
+    try:
+        resolved = model if model is not None else resolve_step_model(step)
+    except Exception as e:  # noqa: BLE001 — 解決の失敗で本処理を止めず、判定を使わない側に倒す
+        _log.warning("probe_threshold_resolve_failed", step=step.value, error=str(e)[:200])
+        return None
+    value = probe_threshold(resolved, step, question, path=path)
+    if value is None:
+        _log.warning("probe_threshold_missing", step=step.value, question=question, model=resolved)
+    return value
 
 
 def missing_entries(model: str, thresholds: Thresholds) -> list[str]:

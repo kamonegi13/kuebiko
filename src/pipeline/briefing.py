@@ -32,6 +32,7 @@ from src.tools.decision_probe import probe_choice
 from src.tools.discord_publisher import BriefingMessage, Source
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step
+from src.tools.probe_thresholds import effective_threshold
 from src.tools.text_sanitizer import (
     cut_json_tail,
     has_html_residue,
@@ -647,8 +648,9 @@ async def _thin_body_probe_reason(
     if probabilities is None:
         return None
     p_content = probabilities.get("Yes")
-    if p_content is None or p_content >= THIN_BODY_PROBE_THRESHOLD:
-        return None
+    threshold = effective_threshold(Step.THIN_BODY_JUDGE, fallback=THIN_BODY_PROBE_THRESHOLD)
+    if p_content is None or threshold is None or p_content >= threshold:
+        return None  # 表に項が無い (threshold None) ときはこの判定を使わない
     return "thin_body_probe"
 
 

@@ -36,6 +36,7 @@ from src.tools.discord_publisher import (
 )
 from src.tools.llm_client import LLMClient
 from src.tools.model_tiers import Step
+from src.tools.probe_thresholds import effective_threshold
 
 _log = get_logger(__name__)
 
@@ -152,13 +153,17 @@ async def _score_claim_sentences(
     """
     passed: list[str] = []
     failed: list[str] = []
+    threshold = effective_threshold(Step.PIR_FOCUS_CLAIM_JUDGE, fallback=PIR_FOCUS_CLAIM_THRESHOLD)
     for sentence in split_claim_sentences(text):
         if focus_v6.is_not_applicable(sentence):
             # v6.2 の「本 SIR には該当しない」は記事の事実の主張ではない (裏付けの判定対象外)
             passed.append(sentence)
             continue
+        if threshold is None:  # 表に項が無い: 裏付け判定を使わず通す (fail-open と同じ側)
+            passed.append(sentence)
+            continue
         score = await _claim_max_score(sentence, matches, config=config)
-        if score is not None and score < PIR_FOCUS_CLAIM_THRESHOLD:
+        if score is not None and score < threshold:
             failed.append(sentence)
         else:
             passed.append(sentence)
