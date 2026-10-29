@@ -197,6 +197,9 @@ services:
       GEOPOLITICAL_HIGH_CAP: ${GEOPOLITICAL_HIGH_CAP:-on}
       # TTP の歯止め (実在しない ID を落とす・同じ引用は 2 技術まで・12 件超は語の裏付けのある技術を優先、10-24)。保存済み 300 件で 20 件以上が 0 件・裏付けのある技術の脱落 3〜4 件
       TTP_LIMIT: ${TTP_LIMIT:-on}
+      # 記事本文 (body / body_ja / linked_context) を N 日で NULL 化する日次 purge。0 = 消さない
+      # (2026-10-29 の既定、本文はローカルに全て残す)。90 = 従来の GC-root つき 90 日 purge に戻す。
+      BODY_PURGE_DAYS: ${BODY_PURGE_DAYS:-0}
       # 薄い Grok の投稿の要約が本文に無い数字・日付を足したら作り直す (既定 shadow、3〜7 日ログを見てから on)
       GROK_SUMMARY_GROUNDING: ${GROK_SUMMARY_GROUNDING:-shadow}
       # Grok の投稿が貼った外部リンクの本文取得 (既定 shadow = 取って保存、要約には使わない、10-24)

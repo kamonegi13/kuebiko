@@ -644,6 +644,9 @@ class DedupMixin(RunHistoryRepositoryBase):
     def purge_article_bodies_older_than(self, days: int = 90) -> int:
         """N 日より古い記事の body / body_ja を NULL 化し、件数を返す。
 
+        2026-10-29: 日次の保守は既定でこれを呼ばない (旗 BODY_PURGE_DAYS=0、本文は
+        ローカルに全て残す)。保持期間を決め直すとき用に GC-root つきの本体は残す。
+
         監査 backlog 2026-07-05: schema コメントに「90 日 retention」と記載しながら
         未実装で articles.body (~3-5KB/件) が無限成長していた。基準は body_fetched_at
         (post 経路の取得時刻)、NULL の行 (旧経路) は created_at。title/summary は保持

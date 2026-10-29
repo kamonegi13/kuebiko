@@ -264,7 +264,7 @@ flowchart LR
 | morning-brief | pipeline (heavy) | 朝 06:30 帯 | 総括 + PIR focus + 高脅威 → 1 通 | status_synthesis / daily_briefs / #brief |
 | evening-brief | pipeline (heavy) | 夕 19:30 帯 | 総括 + 高脅威 (PIR なし) | 同上 |
 | ransomware-live-ingest | bespoke | 3h 毎 | 被害公表 ingest | articles (JP は #japan_watch) |
-| daily-maintenance | bespoke | 日次 (深夜帯) | retention purge (90 日) ほか DB 保守 | — |
+| daily-maintenance | bespoke | 日次 (深夜帯) | retention purge (本文は既定で消さない、`BODY_PURGE_DAYS`) ほか DB 保守 | — |
 | pir-entity-rebuild | bespoke | 日次 (深夜帯) | 記事×PIR の夜間 reconcile | article_entities (pir) |
 | ledger-deep-review | bespoke | 日次 (深夜帯) | 台帳 ACH の夜間精査 (再評価飢餓の解消) | situation_revisions |
 | actor-history-distill | bespoke | 日次 (深夜帯) | アクター行動史の月次期間行を蒸留 | actor_observed_profile |

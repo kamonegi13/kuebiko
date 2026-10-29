@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS articles (
     summary          TEXT,
     -- Phase Diamond L2: trafilatura で取得した記事本文 (~3-5KB/件)。
     -- 主用途: IoC / TTP / malware 再抽出 (article_entities backfill)。
-    -- 90 日 retention (post 経路で取得時刻記録)。
+    -- 保持はローカルのみ・既定は無期限 (BODY_PURGE_DAYS=0、2026-10-29)。>0 で N 日 retention。
     body             TEXT,
     body_fetched_at  TEXT,
     created_at       TEXT    NOT NULL,
@@ -756,7 +756,7 @@ CREATE TABLE IF NOT EXISTS tuning_labels (
     arrived_at    TEXT    NOT NULL,           -- ISO8601 UTC (正解が確定した時刻)
     provenance    TEXT    NOT NULL,           -- JSON: 由来 (producer / 根拠 id)。自由文は入れない
     superseded_by INTEGER,                    -- 後続ラベルによる置換 (NULL = 現行)
-    -- 学習テキストの凍結 (§13-3、2026-08-22): 本文は 90 日で purge されるため、
+    -- 学習テキストの凍結 (§13-3、2026-08-22): 本文は purge されうる (BODY_PURGE_DAYS>0) ため、
     -- 収穫時に (title/本文抜粋/候補/分類) を JSON で写経する — ラベルは残るのに教材が
     -- 消える「恒久資産の時限崩壊」の根治。goldset と同じ凍結原理
     snapshot      TEXT
