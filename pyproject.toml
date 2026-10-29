@@ -108,6 +108,11 @@ module = [
     "summarizer_diff_contract",
     "verify_prompt_cutover",
     "verify_summarizer_rubric",
+    "post_switch_check",
+    "pair_shift_report",
+    "pair_same_input_control",
+    "generation_length_report",
+    "readonly_conn",
 ]
 ignore_missing_imports = true
 

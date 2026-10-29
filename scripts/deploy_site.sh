@@ -39,17 +39,18 @@ set -a && [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
 # 公開 (毎時) とアドバンスド (3 時間ごと) の定期配信が重なると、組み立て用の場所を消し合い、
 # 片方の組み立て途中の中身を配信しうる。手順全体を 1 本ずつに (mkdir は原子的)。最大 40 分待つ。
 LOCK="$ROOT/data/.deploy_site.lock"
-GOT_LOCK=0
-for _ in $(seq 1 240); do
-  if mkdir "$LOCK" 2>/dev/null; then GOT_LOCK=1; break; fi
-  sleep 10
-done
-[ "$GOT_LOCK" = "1" ] || { echo "配信のロックを取れませんでした ($LOCK)" >&2; exit 1; }
-trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+# shellcheck source=lib/deploy_lock.sh
+. "$ROOT/scripts/lib/deploy_lock.sh"
+# 古いロック (持ち主の pid が死んでいる / 2 時間超) は奪う。残留で配信が止まり続けるのを防ぐ。
+acquire_lock "$LOCK" 2400 10 || { echo "配信のロックを取れませんでした ($LOCK)" >&2; exit 1; }
+trap 'release_lock "$LOCK"' EXIT
 PUBLIC_DIST="$ROOT/data/public_site_dist"
 MIRROR_DIST="$ROOT/data/mirror_dist"
 COMBINED="$ROOT/data/combined_site_dist"
 STAMP="$ROOT/data/combined_site_deployed.sha256"
+# 配信の成功の印 (成功と「変更なし」の両方で更新。外から鮮度を見る)
+OK_STAMP="$ROOT/data/deploy_site_last_ok.json"
+WRANGLER_VERSION="4.147.0"
 # Cloudflare Pages の 1 デプロイあたりファイル数上限 (20,000)。余裕を持って切る。
 MAX_FILES=20000
 
@@ -115,15 +116,24 @@ fi
 DIGEST="$(cd "$COMBINED" && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
 if [ "${1:-}" != "--force" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$DIGEST" ]; then
   echo "変更なし (sha256 ${DIGEST:0:12}) — 配信しない"
+  write_success_stamp "$OK_STAMP" "$SIDE" "$DIGEST" unchanged "$WRANGLER_VERSION"
   exit 0
 fi
 
 # wrangler は版を固定する (10-29: @latest の 4.155.0 は x64 の Node 向けの workerd を入れられず、
 # 10-22 から配信が止まった。4.147.0 は動作を確認済み)
-npx --yes wrangler@4.147.0 pages deploy "$COMBINED" \
+# 「Deployment complete」の後に終了せず 2 時間近くロックを握った事例がある。時間の上限を付け、
+# 完了の行が出ていれば成功として扱う。上限を超えて完了の行も無ければ失敗 (EXIT の trap でロックを解放)。
+WRANGLER_TIMEOUT="${WRANGLER_TIMEOUT:-900}"
+run_with_timeout "$WRANGLER_TIMEOUT" "Deployment complete" \
+  npx --yes "wrangler@${WRANGLER_VERSION}" pages deploy "$COMBINED" \
   --project-name "$CLOUDFLARE_PAGES_PROJECT" \
   --branch main \
-  --commit-dirty=true
+  --commit-dirty=true || {
+  echo "wrangler が失敗または ${WRANGLER_TIMEOUT} 秒の上限を超えました。成功の印は書きません" >&2
+  exit 1
+}
 
 echo "$DIGEST" > "$STAMP"
+write_success_stamp "$OK_STAMP" "$SIDE" "$DIGEST" deployed "$WRANGLER_VERSION"
 echo "配信しました (${FILE_COUNT} ファイル, sha256 ${DIGEST:0:12})"
