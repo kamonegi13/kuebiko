@@ -249,6 +249,62 @@ class TestMergePreservingStepOverrides:
         assert merged["fallback:narrative"] == "kuebiko-sft:26b"
 
 
+class TestRetiredSteps:
+    """退役した step の上書きは警告して読み捨てる (P0-05)。保存が詰まらないこと。"""
+
+    _RETIRED = "step:alert_law_enforcement_judge"
+
+    def test_retired_step_override_passes_validation(self) -> None:
+        raw = dict(_BASE_TIERS, **{self._RETIRED: "kuebiko-sft:s23i"})
+        assert validate_model_tiers(raw) == []
+
+    def test_unknown_non_retired_step_still_rejected(self) -> None:
+        raw = dict(_BASE_TIERS, **{"step:no_such_step": "gemma4:26b"})
+        assert any("未知の step" in e for e in validate_model_tiers(raw))
+
+    def test_retired_override_is_not_carried_over_on_merge(self) -> None:
+        from src.tools.model_tiers import merge_preserving_step_overrides
+
+        current = {self._RETIRED: "kuebiko-sft:s23i", "step:triage": "kuebiko-sft:s1"}
+        merged = merge_preserving_step_overrides(dict(_BASE_TIERS), current)
+        assert self._RETIRED not in merged
+        assert merged["step:triage"] == "kuebiko-sft:s1"
+
+    def test_retired_override_is_dropped_from_explicit_doc(self) -> None:
+        from src.tools.model_tiers import merge_preserving_step_overrides
+
+        doc = dict(_BASE_TIERS, **{self._RETIRED: "x", "step:triage": "kuebiko-sft:s1"})
+        merged = merge_preserving_step_overrides(doc, {})
+        assert self._RETIRED not in merged
+        assert merged["step:triage"] == "kuebiko-sft:s1"
+
+    def test_load_step_overrides_skips_retired(self, db_path: Path) -> None:
+        save_config(
+            MODEL_TIERS_CONFIG_KEY,
+            {self._RETIRED: "kuebiko-sft:s23i", "step:triage": "kuebiko-sft:s1"},
+            db_path=db_path,
+        )
+        invalidate_model_tiers_cache()
+        assert load_step_overrides(db_path=db_path) == {"triage": "kuebiko-sft:s1"}
+
+    def test_step_is_removed_from_registry(self) -> None:
+        assert "alert_law_enforcement_judge" not in {s.value for s in Step}
+
+    def test_resave_with_current_values_succeeds(self, db_path: Path) -> None:
+        """版 45 相当 (退役済みの上書きを含む) を GET → 同じ値で POST しても検証が通る。"""
+        from src.tools.model_tiers import merge_preserving_step_overrides
+
+        save_config(
+            MODEL_TIERS_CONFIG_KEY,
+            dict(_BASE_TIERS, **{self._RETIRED: "kuebiko-sft:s23i"}),
+            db_path=db_path,
+        )
+        invalidate_model_tiers_cache()
+        current = {f"step:{k}": v for k, v in load_step_overrides(db_path=db_path).items()}
+        doc = merge_preserving_step_overrides(dict(_BASE_TIERS), current)
+        assert validate_model_tiers(doc) == []
+
+
 _BASE_TIERS: dict[str, str] = {
     "reasoning": "gemma4:31b",
     "narrative": "gemma4:31b",

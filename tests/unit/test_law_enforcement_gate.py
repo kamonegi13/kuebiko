@@ -8,8 +8,6 @@ from src.cti.law_enforcement_gate import (
     GATE_ENV,
     has_law_enforcement_keyword,
     is_law_enforcement_gate_enabled,
-    law_enforcement_probe_question,
-    probe_law_enforcement_announcement,
 )
 
 
@@ -59,41 +57,3 @@ class TestHasLawEnforcementKeyword:
 
     def test_checks_summary_too(self) -> None:
         assert has_law_enforcement_keyword("タイトルだけでは判定不能", "本文で逮捕者が出た") is True
-
-
-class TestLawEnforcementProbeQuestion:
-    def test_includes_title_and_summary(self) -> None:
-        q = law_enforcement_probe_question("t1", "s1")
-        assert "t1" in q
-        assert "s1" in q
-        assert "摘発" in q
-
-
-class TestProbeLawEnforcementAnnouncement:
-    @pytest.mark.asyncio
-    async def test_returns_none_when_probe_choice_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        async def _fake_probe_choice(*_args: object, **_kwargs: object) -> None:
-            return None
-
-        monkeypatch.setattr("src.cti.law_enforcement_gate.probe_choice", _fake_probe_choice)
-        result = await probe_law_enforcement_announcement(
-            title="t",
-            summary="s",
-            config=object(),  # type: ignore[arg-type]
-        )
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_p_yes_from_probe_choice(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        async def _fake_probe_choice(*_args: object, **_kwargs: object) -> dict[str, float]:
-            return {"はい": 0.9, "いいえ": 0.1}
-
-        monkeypatch.setattr("src.cti.law_enforcement_gate.probe_choice", _fake_probe_choice)
-        result = await probe_law_enforcement_announcement(
-            title="t",
-            summary="s",
-            config=object(),  # type: ignore[arg-type]
-        )
-        assert result == pytest.approx(0.9)

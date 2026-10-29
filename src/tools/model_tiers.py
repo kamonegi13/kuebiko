@@ -173,10 +173,6 @@ class Step(StrEnum):
     # モデルだと誤認して step 上書きを外さないこと (供給元モデルの無断シフトを防ぐ衛生、
     # EVENT_KIND/SEVERITY_AXES と同じ理由)。既定 fast ティア (gemma4:26b 相当)。
     ASSIGN_EVIDENCE_JUDGE = "assign_evidence_judge"
-    # alert channel 候補記事が「当局 (警察・検察等) による摘発・無力化・起訴・押収・逮捕・
-    # 制裁指定の発表」が主題かどうかの logprob 判定 (R1b、2026-10-11)。P(はい) を
-    # decision_probe.probe_choice で読む。1 件=小さな bool 判定、他の judge 系と同じ fast ティア。
-    ALERT_LAW_ENFORCEMENT_JUDGE = "alert_law_enforcement_judge"
     # 群化で食い違った被害組織名の組が「同じ事案の同じ被害者 (別名・親子・運営会社)」かの
     # logprob 判定 (src/eventnews/org_identity.py、2026-10-12)。P(Yes) を 1 回の前向き計算で読む。
     # ⚠ **素の fast ティアモデル (gemma4:26b 相当) が判定役**。SFT 済みモデルは自由形式の
@@ -256,8 +252,6 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.PIR_FOCUS_CLAIM_JUDGE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (pair_judge 等) と同じ 120s。
     Step.ASSIGN_EVIDENCE_JUDGE: StepSpec(Tier.FAST, 120.0),
-    # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (thin_body_judge 等) と同じ 120s。
-    Step.ALERT_LAW_ENFORCEMENT_JUDGE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定と同じ 120s。
     Step.ORG_IDENTITY_JUDGE: StepSpec(Tier.FAST, 120.0),
     # 対話系 (dialog): user-facing・低頻度。外部 LLM を割り当てても収集系バッチ (fast) の
@@ -370,6 +364,19 @@ def resolve_embedding_model(*, db_path: Path | None = None) -> str:
 # ティア解決に fallback (挙動保存 = 既存環境で migration 不要)。
 STEP_OVERRIDE_PREFIX = "step:"
 
+#: 退役した step 名 (呼び手が無くなり ``Step`` から外したもの)。DB に古い上書きが残っていても
+#: 保存・読込を詰まらせないよう、検証・持ち越し・一覧で警告して読み捨てる。
+#: (alert_law_enforcement_judge: 本番の呼び出し 0、語の条件だけで判定する。2026-10-29)
+RETIRED_STEPS: frozenset[str] = frozenset({"alert_law_enforcement_judge"})
+
+
+def _is_retired_step_key(key: str) -> bool:
+    """``step:<退役済みの step 名>`` か。"""
+    return key.startswith(STEP_OVERRIDE_PREFIX) and (
+        key.removeprefix(STEP_OVERRIDE_PREFIX) in RETIRED_STEPS
+    )
+
+
 #: 借用を解消した step → 借り元。**借り元の step 上書きを継承する** (自分の上書きが優先)。
 #: 継承にした理由: 新 step ごとに DB へ同じ値を二重に持つと、借り元だけ差し替えたとき
 #: (例: s23i → 次の版) に片方が取り残されて、分けた意味のない食い違いが起きる。
@@ -402,8 +409,12 @@ def load_step_overrides(*, db_path: Path | None = None) -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     for key, value in _load_tier_map(db_path=db_path).items():
-        if key.startswith(STEP_OVERRIDE_PREFIX) and value:
-            out[key.removeprefix(STEP_OVERRIDE_PREFIX)] = value
+        if not (key.startswith(STEP_OVERRIDE_PREFIX) and value):
+            continue
+        if _is_retired_step_key(key):
+            _log.warning("model_tiers_retired_step_override_ignored", step=key)
+            continue
+        out[key.removeprefix(STEP_OVERRIDE_PREFIX)] = value
     return out
 
 
@@ -446,12 +457,12 @@ def merge_preserving_step_overrides(
     形式)。``load_step_overrides``/``load_local_fallbacks`` の prefix なし形式は呼び出し側で
     prefix を付けて渡す。
     """
-    merged = dict(new_doc)
+    merged = {k: v for k, v in new_doc.items() if not _is_retired_step_key(k)}
     for prefix in (STEP_OVERRIDE_PREFIX, LOCAL_FALLBACK_PREFIX):
-        if any(k.startswith(prefix) for k in new_doc):
+        if any(k.startswith(prefix) for k in merged):
             continue
         for key, model in current_overrides.items():
-            if key.startswith(prefix) and model:
+            if key.startswith(prefix) and model and not _is_retired_step_key(key):
                 merged[key] = model
     return merged
 
@@ -721,6 +732,8 @@ def validate_model_tiers(raw: object) -> list[str]:
         if not isinstance(key, str) or not key.startswith(STEP_OVERRIDE_PREFIX):
             continue
         step_name = key.removeprefix(STEP_OVERRIDE_PREFIX)
+        if step_name in RETIRED_STEPS:
+            continue  # 退役済みは通す (保存時に merge が読み捨てる)
         if step_name not in known_steps:
             errs.append(f"step override '{step_name}': 未知の step 名です")
             continue
