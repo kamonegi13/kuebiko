@@ -14,7 +14,7 @@ from src.storage.row_mappers import _to_iso
 
 DEFAULT_RETENTION_DAYS = 30
 MAX_REASON_CHARS = 100
-_MARK_COLUMNS = frozenset({"capped_notified_at", "expiry_warned_at"})
+_MARK_COLUMNS = frozenset({"expiry_warned_at"})
 
 
 @dataclass(frozen=True)
@@ -23,11 +23,10 @@ class GrokAttempt:
     received_at: str
     fail_count: int
     last_reason: str
-    capped_notified_at: str | None
     expiry_warned_at: str | None
 
 
-_COLUMNS = "email_uid, received_at, fail_count, last_reason, capped_notified_at, expiry_warned_at"
+_COLUMNS = "email_uid, received_at, fail_count, last_reason, expiry_warned_at"
 
 
 class GrokAttemptsMixin(RunHistoryRepositoryBase):
@@ -46,7 +45,6 @@ class GrokAttemptsMixin(RunHistoryRepositoryBase):
             received_at=str(r["received_at"]),
             fail_count=int(r["fail_count"]),
             last_reason=str(r["last_reason"]),
-            capped_notified_at=r["capped_notified_at"],
             expiry_warned_at=r["expiry_warned_at"],
         )
 
@@ -75,9 +73,6 @@ class GrokAttemptsMixin(RunHistoryRepositoryBase):
         if recorded is None:  # 直前に書いた行が無い = DB の異常
             raise RuntimeError("grok_fetch_attempts の書き込みが読めない")
         return recorded
-
-    def mark_grok_capped_notified(self: Any, email_uid: str, *, when: datetime) -> None:
-        self._set_grok_mark("capped_notified_at", email_uid, when)
 
     def mark_grok_expiry_warned(self: Any, email_uid: str, *, when: datetime) -> None:
         self._set_grok_mark("expiry_warned_at", email_uid, when)

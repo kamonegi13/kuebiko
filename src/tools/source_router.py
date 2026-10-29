@@ -32,7 +32,7 @@ from src.tools.grok_retry import (
     UNRENDERED_REASON,
     GrokAttemptStore,
     GrokRetryTracker,
-    grok_retry_cap,
+    grok_summary_every,
 )
 from src.tools.imap_client import EmailMessage, ImapClient
 from src.tools.source_fetch_outcome import SourceFetchOutcome
@@ -152,8 +152,6 @@ class GrokEmailSource:
         for msg in emails:
             if tracker is not None:
                 tracker.check_expiry(msg)  # 取得窓から外れる前の警告 (上限到達後も出す)
-                if tracker.should_skip(msg):
-                    continue
             got_ids, complete, unrendered = await self._fetch_email(msg, articles, max_count)
             if unrendered:
                 self._count_unrendered(msg, unrendered)
@@ -223,9 +221,9 @@ class GrokEmailSource:
             self.last_not_rendered_count += unrendered
 
     @property
-    def last_retry_gave_up_count(self) -> int:
-        """今回の run で「取り直しをやめた」ことを通知すべきメールの数 (1 通につき 1 回だけ)。"""
-        return self._retry_tracker.gave_up_count if self._retry_tracker else 0
+    def last_unrendered_summary_count(self) -> int:
+        """今回の run で「まだ取れていない」要約を出すメールの数 (N 回目ごと)。"""
+        return self._retry_tracker.summary_count if self._retry_tracker else 0
 
     @property
     def last_expiring_count(self) -> int:
@@ -568,7 +566,7 @@ def build_source(
             url_host_allowlist=source_config.grok_url_host_allowlist,
             retry_tracker=GrokRetryTracker(
                 grok_attempts,
-                cap=grok_retry_cap(),
+                summary_every=grok_summary_every(),
                 lookback_minutes=source_config.grok_lookback_minutes,
             ),
         )

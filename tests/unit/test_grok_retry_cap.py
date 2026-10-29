@@ -13,7 +13,7 @@ from src.storage.run_history import RunHistoryRepository
 from src.tools.grok_retry import (
     GROK_EXPIRY_WARN_LEAD_MINUTES,
     GrokRetryTracker,
-    grok_retry_cap,
+    grok_summary_every,
 )
 from src.tools.imap_client import EmailMessage
 from src.tools.source_router import GrokEmailSource
@@ -54,7 +54,7 @@ def _source(
     repo: RunHistoryRepository | None,
     emails: list[EmailMessage],
     *,
-    cap: int = 3,
+    every: int = 6,
     now: datetime = NOW,
     grok_result: GrokFetchResult | None = None,
 ) -> GrokEmailSource:
@@ -62,7 +62,9 @@ def _source(
     imap.fetch_unread.return_value = emails
     grok = AsyncMock()
     grok.fetch.return_value = grok_result or _unrendered()
-    tracker = GrokRetryTracker(repo, cap=cap, lookback_minutes=LOOKBACK, clock=lambda: now)
+    tracker = GrokRetryTracker(
+        repo, summary_every=every, lookback_minutes=LOOKBACK, clock=lambda: now
+    )
     return GrokEmailSource(
         imap,
         grok,
@@ -85,19 +87,27 @@ async def test_first_failure_alerts_then_repeats_are_silent(
     assert alerts == [1, 0]
 
 
-async def test_gives_up_after_cap_with_single_notice(
+async def test_never_stops_retrying_and_summarises_every_n(
     repo: RunHistoryRepository,
 ) -> None:
-    gave_up: list[int] = []
-    fetched: list[int] = []
-    for _ in range(5):
-        s = _source(repo, [_email()])
+    summaries: list[int] = []
+    alerts: list[int] = []
+    for _ in range(7):
+        s = _source(repo, [_email()], every=6)
         await s.fetch(5)
-        gave_up.append(s.last_retry_gave_up_count)
-        fetched.append(cast_calls(s))
-    # 3 回目で「取り直しをやめる」通知が 1 回だけ。4 回目以降は取りにいかない
-    assert gave_up == [0, 0, 1, 0, 0]
-    assert fetched == [1, 1, 1, 0, 0]
+        assert cast_calls(s) == 1  # 毎回取りにいく
+        summaries.append(s.last_unrendered_summary_count)
+        alerts.append(s.last_not_rendered_count)
+    # 最初の失敗で通知、6 回目で要約、それ以外は静か
+    assert alerts == [1, 0, 0, 0, 0, 0, 0]
+    assert summaries == [0, 0, 0, 0, 0, 1, 0]
+
+
+async def test_every_zero_notifies_each_time(repo: RunHistoryRepository) -> None:
+    for _ in range(3):
+        s = _source(repo, [_email()], every=0)
+        await s.fetch(5)
+        assert s.last_not_rendered_count == 1
 
 
 def cast_calls(s: GrokEmailSource) -> int:
@@ -141,17 +151,6 @@ async def test_warns_once_before_leaving_lookback(repo: RunHistoryRepository) ->
     assert s2.last_expiring_count == 0  # 二度は警告しない
 
 
-async def test_capped_email_still_gets_expiry_warning(repo: RunHistoryRepository) -> None:
-    received = NOW - timedelta(minutes=LOOKBACK - GROK_EXPIRY_WARN_LEAD_MINUTES + 10)
-    for _ in range(3):
-        await _source(repo, [_email(received=received)], cap=3).fetch(5)
-    s = _source(repo, [_email(received=received)], cap=3)
-    await s.fetch(5)
-    assert cast_calls(s) == 0
-    assert s.last_expiring_count == 0  # 3 回目の fetch で警告済み
-    assert repo.get_grok_attempt("1") is not None
-
-
 async def test_no_warning_far_from_expiry(repo: RunHistoryRepository) -> None:
     await _source(repo, [_email()]).fetch(5)
     s = _source(repo, [_email()])
@@ -174,10 +173,9 @@ def test_repo_roundtrip_and_purge(repo: RunHistoryRepository) -> None:
     a = repo.record_grok_failure("7", NOW, "report_not_rendered", when=NOW)
     b = repo.record_grok_failure("7", NOW, "report_not_rendered", when=NOW)
     assert (a.fail_count, b.fail_count) == (1, 2)
-    repo.mark_grok_capped_notified("7", when=NOW)
     repo.mark_grok_expiry_warned("7", when=NOW)
     got = repo.get_grok_attempt("7")
-    assert got is not None and got.capped_notified_at and got.expiry_warned_at
+    assert got is not None and got.expiry_warned_at
     repo.record_grok_failure("old", NOW, "x", when=datetime.now(UTC) - timedelta(days=60))
     assert repo.purge_grok_fetch_attempts(days=30) == 1
     repo.clear_grok_attempt("7")
@@ -185,9 +183,9 @@ def test_repo_roundtrip_and_purge(repo: RunHistoryRepository) -> None:
 
 
 def test_cap_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("GROK_RETRY_CAP", raising=False)
-    assert grok_retry_cap() == 3
-    monkeypatch.setenv("GROK_RETRY_CAP", "0")
-    assert grok_retry_cap() == 0
-    monkeypatch.setenv("GROK_RETRY_CAP", "abc")
-    assert grok_retry_cap() == 3
+    monkeypatch.delenv("GROK_UNRENDERED_SUMMARY_EVERY", raising=False)
+    assert grok_summary_every() == 6
+    monkeypatch.setenv("GROK_UNRENDERED_SUMMARY_EVERY", "0")
+    assert grok_summary_every() == 0
+    monkeypatch.setenv("GROK_UNRENDERED_SUMMARY_EVERY", "abc")
+    assert grok_summary_every() == 6

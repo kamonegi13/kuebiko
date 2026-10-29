@@ -689,12 +689,12 @@ async def run_pipeline(
             "メールは未読に残し、次の回で取り直す"
         )
     # 描画失敗の取り直しの上限 (2026-10-29 P0-25)。通知は 1 通につき 1 回だけ
-    _grok_gave_up = _int_attr(source, "last_retry_gave_up_count")
-    if _grok_gave_up > 0:
+    _grok_summary = _int_attr(source, "last_unrendered_summary_count")
+    if _grok_summary > 0:
         errors.append(
-            f"grok: {_grok_gave_up} 件のメールは本文が続けて描かれなかったため取り直しをやめた — "
-            "取得窓から外れると失われる。grok.com の画面 (ログイン・待ち時間・DOM) を確認し、"
-            "直ったらメールを未読に戻して取り直してください"
+            f"grok: {_grok_summary} 件のメールは本文が続けて描かれず、まだ取れていない "
+            "(毎時の取り直しは続けている) — 取得窓から外れると失われる。"
+            "回線・grok.com の画面 (ログイン・待ち時間・DOM) を確認してください"
         )
     _grok_expiring = _int_attr(source, "last_expiring_count")
     if _grok_expiring > 0:
