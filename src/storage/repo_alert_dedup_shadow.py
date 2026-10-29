@@ -14,7 +14,7 @@ from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _to_iso
 
 DEFAULT_LIST_LIMIT = 50
-DEFAULT_RETENTION_DAYS = 60
+DEFAULT_RETENTION_DAYS = 180
 
 
 @dataclass(frozen=True)

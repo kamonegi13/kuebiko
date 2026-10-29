@@ -112,7 +112,7 @@ def history_delete(request: Request, run_id: int) -> dict[str, Any]:
 
 
 @pages_api.post("/history/purge")
-def history_purge(request: Request, days: int = Form(default=30)) -> dict[str, Any]:
+def history_purge(request: Request, days: int = Form(default=180)) -> dict[str, Any]:
     """N 日より古い run_logs (ライブログ) を purge する (Phase 0 F3, non-destructive)。
 
     旧実装は delete_runs_older_than で runs を削除し articles を FK CASCADE で連鎖削除して

@@ -494,7 +494,7 @@ class RunsMixin(RunHistoryRepositoryBase):
             }
         ]
 
-    def purge_old_job_run_log(self, days: int = 30) -> int:
+    def purge_old_job_run_log(self, days: int = 180) -> int:
         """N 日より古い job_run_log を削除し件数を返す (起動時 purge)。
 
         ran_at は ISO 文字列 (TEXT) なので cutoff も ISO 文字列で渡し text<text 比較にする。

@@ -242,7 +242,7 @@ class TriageShadowMixin(RunHistoryRepositoryBase):
             for r in rows
         ]
 
-    def purge_triage_shadow(self, days: int = 60) -> int:
+    def purge_triage_shadow(self, days: int = 180) -> int:
         """``days`` 日より古い影子記録を削除する。"""
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM triage_shadow WHERE created_at < ?", (_cutoff(days),))

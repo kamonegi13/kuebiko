@@ -33,8 +33,7 @@ def body_purge_days() -> int:
     return days
 
 
-# situation_detection_log の retention (選定台帳、設計 §3.3)
-_DETECTION_LOG_RETENTION_DAYS = 90
+# situation_detection_log の retention は ledger.py と同一 SSoT (replay の材料、365 日)
 # detect_bundles (束ねの記録、M2) は評価の正解づくりに使うので長めに残す
 _DETECT_BUNDLES_RETENTION_DAYS = 180
 # articles.body / body_ja / linked_context の retention。2026-10-29 に既定を「消さない」
@@ -48,20 +47,20 @@ _ACCESS_AUDIT_RETENTION_DAYS = 180
 # ops 通知の永続化 (2026-08-21)。access_audit と同じ 180 日水準 — 運用上の警告も
 # 「後から遡って調べる」ためのものなので同じ保持期間にする。
 _OPS_NOTICES_RETENTION_DAYS = 180
-# 意味 dedup の skip 記録 (2026-08-23、docs/event_news_design.md §8b/§11)。dedup 本体
-# (article_embeddings/dedup_seen_urls) と同水準の 90 日で連動させる。
-_SEMANTIC_SKIPS_RETENTION_DAYS = 90
+# 意味 dedup の skip 記録 (2026-08-23、docs/event_news_design.md §8b/§11)。replay の
+# 材料として 365 日残す (2026-10-29、dedup 本体の 90 日とは切り離す)。
+_SEMANTIC_SKIPS_RETENTION_DAYS = 365
 # triage の落選記録 (2026-10-02)。誤った落選は発覚が遅れる (媒体を後から見直したとき)
 # ので、監査証跡と同水準の 180 日保つ。
 _TRIAGE_REJECTIONS_RETENTION_DAYS = 180
 # triage 影子記録 (2026-10-08、M4)。go/no-go 判断用の短命な観察データ (§6) なので
-# triage_rejections より短く 60 日で十分 (purge_triage_shadow の既定と合わせる)。
-_TRIAGE_SHADOW_RETENTION_DAYS = 60
+# replay の材料として 180 日残す (2026-10-29。purge_triage_shadow の既定と合わせる)。
+_TRIAGE_SHADOW_RETENTION_DAYS = 180
 # routing v2 の影子記録 (2026-10-10、M3b 段1)。triage_shadow と同じ go/no-go 用の
 # 短命な観察データなので同水準の 60 日。
-_ROUTING_V2_SHADOW_RETENTION_DAYS = 60
-_ALERT_DEDUP_SHADOW_RETENTION_DAYS = 60
-_SEVERITY_C_SHADOW_RETENTION_DAYS = 60
+_ROUTING_V2_SHADOW_RETENTION_DAYS = 180
+_ALERT_DEDUP_SHADOW_RETENTION_DAYS = 180
+_SEVERITY_C_SHADOW_RETENTION_DAYS = 180
 
 
 async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> None:
@@ -144,10 +143,11 @@ def _purge_bodies(repo: RunHistoryRepository) -> int:
 
 
 def _purge_detection_log(repo: RunHistoryRepository) -> int:
-    """situation_detection_log の 90 日 retention (台帳稼働時のみ意味を持つ)。
+    """situation_detection_log の 365 日 retention (台帳稼働時のみ意味を持つ)。
 
     detect_bundles の purge は別の try (こちらの失敗で本流の purge を止めない)。
     """
+    from src.assessment.ledger import _DETECTION_LOG_RETENTION_DAYS
     from src.assessment.situation_store import SituationStore
 
     try:

@@ -51,7 +51,7 @@ _CONF_RANK: dict[str, int] = {"low": 0, "moderate": 1, "high": 2}
 _DORMANT_AFTER_DAYS: dict[str, int] = {"cyber_incident": 14}
 _DORMANT_DEFAULT_DAYS = 30
 _CLOSE_AFTER_DORMANT_DAYS = 90
-_DETECTION_LOG_RETENTION_DAYS = 90
+_DETECTION_LOG_RETENTION_DAYS = 365
 
 
 def ledger_mode() -> Literal["off", "shadow", "on"]:

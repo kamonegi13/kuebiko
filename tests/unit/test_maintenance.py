@@ -19,8 +19,8 @@ async def test_daily_maintenance_purges_old_logs(
     db = tmp_path / "maint.db"
     repo = RunHistoryRepository(db_path=db)
     run_id = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="x", dry_run=False))
-    # 40 日前の run_logs を仕込む (既定 30 日 retention 対象)
-    old = datetime.now(UTC) - timedelta(days=40)
+    # 200 日前の run_logs を仕込む (既定 180 日 retention 対象)
+    old = datetime.now(UTC) - timedelta(days=200)
     with repo._connect() as conn:  # noqa: SLF001
         conn.execute(
             "INSERT INTO run_logs (run_id, seq, ts, stream, line) VALUES (?,?,?,?,?)",
