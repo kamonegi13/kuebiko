@@ -94,8 +94,8 @@ def test_exception_flips_exactly_at_deadline() -> None:
 
 
 def test_exception_deadlines_are_split_per_model() -> None:
-    two_slot = date(2027, 1, 10)
-    translation = date(2027, 3, 23)
+    two_slot = date(2026, 12, 30)
+    translation = date(2027, 2, 15)
 
     assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:s23i"] == two_slot
     assert reg.RESIDENT_EXCEPTIONS["kuebiko-sft:26b"] == translation

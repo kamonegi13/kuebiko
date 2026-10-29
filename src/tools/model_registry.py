@@ -68,12 +68,12 @@ _S24_UNTRAINED = frozenset(
 )
 #: 常駐の例外の終了日 = 計画の台帳の約束の日 + 14 日 (rules.exception_buffer_days)。
 #: s23i と、それと一緒に退役する gemma4:26b の step 上書き (assign / org) は
-#: 2 枠の状態 (TWO-SLOT、約束の日 2026-12-27) の 14 日後 = 2027-01-10 まで。
+#: 2 枠の状態 (TWO-SLOT、約束の日 2026-12-16) の 14 日後 = 2026-12-30 まで。
 #: 警告と CI にだけ効き、割当の挙動は変えない
-_TWO_SLOT_DEADLINE: Final = date(2027, 1, 10)
+_TWO_SLOT_DEADLINE: Final = date(2026, 12, 30)
 #: 翻訳・MITRE 同期の和訳・triage_geo_rescue が使う kuebiko-sft:26b は
-#: 終着 (END-STATE、約束の日 2027-03-09) の 14 日後 = 2027-03-23 まで
-_TRANSLATION_DEADLINE: Final = date(2027, 3, 23)
+#: 終着 (END-STATE、約束の日 2027-02-01) の 14 日後 = 2027-02-15 まで
+_TRANSLATION_DEADLINE: Final = date(2027, 2, 15)
 
 #: 登録簿。**新しいモデルはここに 1 行足すだけ** (n20 / s26 は学習が済んでから)。
 _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
