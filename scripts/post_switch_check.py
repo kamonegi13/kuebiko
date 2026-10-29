@@ -185,6 +185,8 @@ def format_report(report: Mapping[str, Any]) -> str:
 
 
 def main() -> int:
+    from readonly_conn import open_read_only
+
     from src.storage.db_backend import connect
     from src.storage.run_history import DEFAULT_DB_PATH
 
@@ -196,7 +198,7 @@ def main() -> int:
     if switch.tzinfo is None:
         switch = switch.replace(tzinfo=JST)
     window = build_window(switch, args.hours, datetime.now(UTC))
-    conn = connect(DEFAULT_DB_PATH)
+    conn = open_read_only(connect, DEFAULT_DB_PATH)
     try:
         report = run_check(conn, window)
     finally:

@@ -122,10 +122,17 @@ fi
 
 # wrangler は版を固定する (10-29: @latest の 4.155.0 は x64 の Node 向けの workerd を入れられず、
 # 10-22 から配信が止まった。4.147.0 は動作を確認済み)
-npx --yes "wrangler@${WRANGLER_VERSION}" pages deploy "$COMBINED" \
+# 「Deployment complete」の後に終了せず 2 時間近くロックを握った事例がある。時間の上限を付け、
+# 完了の行が出ていれば成功として扱う。上限を超えて完了の行も無ければ失敗 (EXIT の trap でロックを解放)。
+WRANGLER_TIMEOUT="${WRANGLER_TIMEOUT:-900}"
+run_with_timeout "$WRANGLER_TIMEOUT" "Deployment complete" \
+  npx --yes "wrangler@${WRANGLER_VERSION}" pages deploy "$COMBINED" \
   --project-name "$CLOUDFLARE_PAGES_PROJECT" \
   --branch main \
-  --commit-dirty=true
+  --commit-dirty=true || {
+  echo "wrangler が失敗または ${WRANGLER_TIMEOUT} 秒の上限を超えました。成功の印は書きません" >&2
+  exit 1
+}
 
 echo "$DIGEST" > "$STAMP"
 write_success_stamp "$OK_STAMP" "$SIDE" "$DIGEST" deployed "$WRANGLER_VERSION"

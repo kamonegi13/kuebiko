@@ -232,13 +232,15 @@ def _real_judge_factory() -> JudgeFactory:
 
 
 async def _amain(args: argparse.Namespace) -> int:
+    from readonly_conn import open_read_only
+
     from src.eventnews import pair_model
     from src.storage.db_backend import connect
     from src.storage.run_history import DEFAULT_DB_PATH
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     pairs = load_pairs(Path(args.pairs))
-    conn = connect(DEFAULT_DB_PATH)
+    conn = open_read_only(connect, DEFAULT_DB_PATH)
     try:
         texts = fetch_texts(conn, [i for p in pairs for i in (p.left_id, p.right_id)])
         usable, excluded = split_usable(pairs, texts)

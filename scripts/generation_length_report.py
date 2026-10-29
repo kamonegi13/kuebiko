@@ -152,6 +152,8 @@ def build_report(conn: Any, since: str) -> tuple[dict[str, dict[str, int]], dict
 
 
 def main() -> int:
+    from readonly_conn import open_read_only
+
     from src.storage.db_backend import connect
     from src.storage.run_history import DEFAULT_DB_PATH
 
@@ -161,7 +163,7 @@ def main() -> int:
     args = ap.parse_args()
     now = datetime.now(UTC)
     since = (now - timedelta(days=args.days)).isoformat()
-    conn = connect(DEFAULT_DB_PATH)
+    conn = open_read_only(connect, DEFAULT_DB_PATH)
     try:
         report, cap = build_report(conn, since)
     finally:

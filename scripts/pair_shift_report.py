@@ -161,6 +161,8 @@ def format_report(
 
 
 def main() -> int:
+    from readonly_conn import open_read_only
+
     from src.storage.db_backend import connect
     from src.storage.run_history import DEFAULT_DB_PATH
 
@@ -170,7 +172,7 @@ def main() -> int:
     ap.add_argument("--v-restore", type=int, required=True, help="戻した期の始めの版")
     args = ap.parse_args()
     since = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()
-    conn = connect(DEFAULT_DB_PATH)
+    conn = open_read_only(connect, DEFAULT_DB_PATH)
     try:
         starts: list[str] = []
         for version in (args.v_ci65, args.v_restore):

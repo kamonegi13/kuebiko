@@ -112,6 +112,7 @@ module = [
     "pair_shift_report",
     "pair_same_input_control",
     "generation_length_report",
+    "readonly_conn",
 ]
 ignore_missing_imports = true
 
