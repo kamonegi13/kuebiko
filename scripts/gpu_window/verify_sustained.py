@@ -146,28 +146,28 @@ class ThermalParseError(RuntimeError):
 
 
 _LOG_TS = re.compile(r"^\s*\d{4}-\d{2}-\d{2} ")
-_LIMIT = re.compile(r"CPU_(?:Speed|Scheduler)_Limit\s*=\s*(\d+)")
 
 
 def count_emergency(log_text: str) -> int:
-    """pmset -g log の Thermal Emergency (電池で動作中の行は除く)。形式が不明なら例外。"""
+    """AC 中に Thermal Emergency Sleep に入った回数。形式が不明なら例外 (fail closed)。
+
+    数えるのは "Entering Sleep state due to 'Thermal Emergency Sleep'" かつ "Using AC" の行だけ。
+    "Ignored DarkWake thermal emergency signal" は無視された信号で数えない。
+    (pmset -g thermlog は終了しないので使わない。)
+    """
     lines = log_text.splitlines()
     if not any(_LOG_TS.match(ln) for ln in lines):
         raise ThermalParseError("pmset -g log の形式を認識できない")
-    return sum(
-        1 for ln in lines if "thermal emergency" in ln.lower() and "using batt" not in ln.lower()
-    )
-
-
-def cpu_limited(thermlog_text: str) -> bool:
-    """pmset -g thermlog の CPU_*_Limit が 100 未満か。読めなければ False (補助の指標)。"""
-    return any(int(m.group(1)) < 100 for m in _LIMIT.finditer(thermlog_text))
+    count = 0
+    for ln in lines:
+        low = ln.lower()
+        if "entering sleep state due to 'thermal emergency sleep'" in low and "using ac" in low:
+            count += 1
+    return count
 
 
 def _thermal_count() -> int:
-    return count_emergency(_sh(["pmset", "-g", "log"])) + (
-        1 if cpu_limited(_sh(["pmset", "-g", "thermlog"])) else 0
-    )
+    return count_emergency(_sh(["pmset", "-g", "log"]))
 
 
 def _generate(model: str, seed: int) -> float:
@@ -201,10 +201,12 @@ def run(args: argparse.Namespace) -> int:
     power0 = parse_pmset(_sh(["pmset", "-g", "batt"]))
     closed = lid_closed(_sh(["ioreg", "-r", "-k", "AppleClamshellState", "-d", "4"]))
 
+    thermal0 = 0
+
     def thermal_now() -> int:
         try:
             return _thermal_count()
-        except ThermalParseError:
+        except (ThermalParseError, OSError, subprocess.SubprocessError):
             return thermal0
 
     def finish(code: int, reason: str, tok: Sequence[float], prod: str, end: Power) -> int:
@@ -235,8 +237,8 @@ def run(args: argparse.Namespace) -> int:
         return EXIT_OK
     try:
         thermal0 = _thermal_count()
-    except ThermalParseError as e:
-        return finish(EXIT_ERROR, str(e), [], "not checked", power0)
+    except (ThermalParseError, OSError, subprocess.SubprocessError) as e:
+        return finish(EXIT_ERROR, f"熱の判定を読めない: {e}"[:200], [], "not checked", power0)
     if not power0.on_ac or closed:
         code, why = decide(on_ac=power0.on_ac, lid_is_closed=closed, tok_s=[], battery_drop=0)
         return finish(code, why, [], "not checked", power0)

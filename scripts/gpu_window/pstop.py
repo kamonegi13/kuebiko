@@ -46,7 +46,8 @@ LEAD_MINUTES = 40
 MARKER_PATH = Path("data/eval/plan_ledger/pstop_state.json")
 IDLE_POLL_S = 30
 RESTORE_RETRIES = 3
-EXIT_OK, EXIT_ERROR, EXIT_BUSY, EXIT_STALE_MARKER = 0, 2, 3, 4
+EXIT_OK, EXIT_ERROR, EXIT_BUSY, EXIT_STALE_MARKER, EXIT_RESTORE_FAILED = 0, 2, 3, 4, 5
+STALE_MARKER_HOURS = 24
 
 
 @dataclass(frozen=True)
@@ -102,8 +103,32 @@ def write_marker(path: Path, stopped: Sequence[str], hard_stop: datetime) -> Non
     os.replace(tmp, path)  # 原子的に差し替える (途中で死んでも半端な印を残さない)
 
 
+def read_marker_payload(path: Path) -> dict[str, Any]:
+    return dict(json.loads(path.read_text(encoding="utf-8")))
+
+
 def read_marker(path: Path) -> list[str]:
-    return [str(x) for x in json.loads(path.read_text(encoding="utf-8")).get("stopped", [])]
+    return [str(x) for x in read_marker_payload(path).get("stopped", [])]
+
+
+def marker_age_hours(payload: dict[str, Any], now: datetime) -> float:
+    """印の written_at からの経過時間。読めなければ無限大 (古い扱い)。"""
+    try:
+        return (now - datetime.fromisoformat(str(payload["written_at"]))).total_seconds() / 3600
+    except (KeyError, ValueError):
+        return float("inf")
+
+
+def rewrite_marker_stopped(path: Path, stopped: Sequence[str]) -> None:
+    """written_at など他の欄を保ったまま stopped だけ差し替える。"""
+    payload = {**read_marker_payload(path), "stopped": list(stopped)}
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def is_not_found(exc: BaseException) -> bool:
+    return isinstance(exc, urllib.error.HTTPError) and exc.code == 404
 
 
 Toggle = Callable[[str, bool, bool], None]
@@ -133,6 +158,9 @@ def restore_all(
                 toggle(job_id, True, False)
                 break
             except Exception as e:  # noqa: BLE001
+                if is_not_found(e):
+                    print(f"[pstop] {job_id} は存在しない (解決済みとして扱う)", file=sys.stderr)
+                    break
                 print(f"[pstop] 戻し失敗 {job_id} ({attempt + 1}/{retries}): {e}", file=sys.stderr)
                 if attempt + 1 == retries:
                     failed.append(job_id)
@@ -164,7 +192,14 @@ def _stop_all(
             continue
         stopped.append(p.job_id)
         on_stopped()
-        toggle(p.job_id, False, p.critical)
+        try:
+            toggle(p.job_id, False, p.critical)
+        except Exception as e:  # noqa: BLE001
+            if not is_not_found(e):
+                raise
+            print(f"[pstop] {p.job_id} は存在しない。飛ばして続ける", file=sys.stderr)
+            stopped.remove(p.job_id)
+            on_stopped()
 
 
 def verify_stopped(jobs: Sequence[dict[str, Any]], stopped: Sequence[str]) -> list[str]:
@@ -202,10 +237,24 @@ def run(args: argparse.Namespace) -> int:
         if not marker.exists():
             print(f"[pstop] 印 {marker} が無い。戻すものなし")
             return EXIT_OK
-        failed = restore_all(read_marker(marker), toggle)
+        payload = read_marker_payload(marker)
+        listed = [str(x) for x in payload.get("stopped", [])]
+        age = marker_age_hours(payload, datetime.now(JST))
+        if age > STALE_MARKER_HOURS and not args.force_stale:
+            print(
+                f"[pstop] 印が {age:.0f} 時間前 (>{STALE_MARKER_HOURS}h)。再び有効にする対象: "
+                f"{restore_order(listed)}。実行するなら --force-stale",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        failed = restore_all(listed, toggle)
         if not failed:
             marker.unlink(missing_ok=True)
-        return EXIT_OK if not failed else EXIT_ERROR
+            return EXIT_OK
+        rewrite_marker_stopped(marker, list(reversed(failed)))
+        for c in manual_restore_commands(failed, api):
+            print("  " + c, file=sys.stderr)
+        return EXIT_RESTORE_FAILED
     if args.dry_run:
         print(f"[pstop] dry-run: GET {api}/api/v1/jobs のみ (変更なし)")
         print_plan(build_plan(_fetch_jobs(api)))
@@ -225,12 +274,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"[pstop] 時刻が不正: {bad}", file=sys.stderr)
         return EXIT_ERROR
     stopped: list[str] = []
-    state = {"done": False}
+    state: dict[str, bool] = {}
 
-    def cleanup(*_: object) -> None:
-        if state["done"]:
-            return
-        state["done"] = True
+    def cleanup(*_: object) -> bool:
+        """戻して成否を返す (2 回目以降は最初の結果)。"""
+        if "ok" in state:
+            return state["ok"]
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal.SIG_IGN)  # 戻しの最中は割り込ませない
         failed = restore_all(stopped, toggle)
@@ -238,40 +287,57 @@ def run(args: argparse.Namespace) -> int:
             print("[pstop] 戻せていない。手動で:", file=sys.stderr)
             for c in manual_restore_commands(failed, api):
                 print("  " + c, file=sys.stderr)
+            if marker.exists():
+                rewrite_marker_stopped(marker, list(reversed(failed)))
         else:
             marker.unlink(missing_ok=True)
+        state["ok"] = not failed
+        return not failed
 
     def on_signal(signum: int, _frame: object) -> None:
-        cleanup()
-        raise SystemExit(128 + signum)
+        ok = cleanup()
+        raise SystemExit(128 + signum if ok else EXIT_RESTORE_FAILED)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, on_signal)
+    code = EXIT_ERROR
     try:
-        while datetime.now(JST) < stop_at and datetime.now(JST) < hard_stop:
-            time.sleep(min(30.0, max(1.0, (stop_at - datetime.now(JST)).total_seconds())))
-        plan = build_plan(_fetch_jobs(api))
-        print_plan(plan)
-        _stop_all(plan, toggle, stopped, lambda: write_marker(marker, stopped, hard_stop))
-        still = verify_stopped(_fetch_jobs(api), stopped)
-        if still:
-            print(f"[pstop] 停止後も enabled のまま: {still}", file=sys.stderr)
-            return EXIT_ERROR
-        if not _wait_idle(api, min(hard_stop, slot)):
-            print("[pstop] 走っている段が締め切りまでに 0 にならない", file=sys.stderr)
-            return EXIT_BUSY
-        print(
-            f"[pstop] 停止済み {stopped}。hard stop {hard_stop:%H:%M} か release ファイルまで保持"
-        )
-        release = Path(args.release_file)
-        while datetime.now(JST) < hard_stop and not release.exists():
-            time.sleep(5)
-        return EXIT_OK
+        code = _hold(args, api, marker, toggle, stopped, stop_at, slot, hard_stop)
     except (urllib.error.URLError, OSError, KeyError, ValueError) as e:
         print(f"[pstop] エラー: {e}", file=sys.stderr)
-        return EXIT_ERROR
+        code = EXIT_ERROR
     finally:
-        cleanup()
+        restored = cleanup()
+    return code if restored else EXIT_RESTORE_FAILED
+
+
+def _hold(
+    args: argparse.Namespace,
+    api: str,
+    marker: Path,
+    toggle: Toggle,
+    stopped: list[str],
+    stop_at: datetime,
+    slot: datetime,
+    hard_stop: datetime,
+) -> int:
+    while datetime.now(JST) < stop_at and datetime.now(JST) < hard_stop:
+        time.sleep(min(30.0, max(1.0, (stop_at - datetime.now(JST)).total_seconds())))
+    plan = build_plan(_fetch_jobs(api))
+    print_plan(plan)
+    _stop_all(plan, toggle, stopped, lambda: write_marker(marker, stopped, hard_stop))
+    still = verify_stopped(_fetch_jobs(api), stopped)
+    if still:
+        print(f"[pstop] 停止後も enabled のまま: {still}", file=sys.stderr)
+        return EXIT_ERROR
+    if not _wait_idle(api, min(hard_stop, slot)):
+        print("[pstop] 走っている段が締め切りまでに 0 にならない", file=sys.stderr)
+        return EXIT_BUSY
+    print(f"[pstop] 停止済み {stopped}。hard stop {hard_stop:%H:%M} か release ファイルまで保持")
+    release = Path(args.release_file)
+    while datetime.now(JST) < hard_stop and not release.exists():
+        time.sleep(5)
+    return EXIT_OK
 
 
 def main() -> int:
@@ -283,6 +349,7 @@ def main() -> int:
     ap.add_argument("--marker", default=str(MARKER_PATH))
     ap.add_argument("--release-file", default="data/eval/plan_ledger/pstop_release")
     ap.add_argument("--restore-from-marker", action="store_true")
+    ap.add_argument("--force-stale", action="store_true", help="24 時間より古い印でも戻す")
     return run(ap.parse_args())
 
 

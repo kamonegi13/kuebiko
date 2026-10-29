@@ -234,13 +234,16 @@ def test_verify_stopped_and_validate_times() -> None:
 
 def test_thermal_parsing_fail_closed_and_ignores_battery() -> None:
     log = (
-        "2026-10-30 11:00:00 +0900 Thermal Emergency\n"
-        "2026-10-30 11:01:00 +0900 Thermal Emergency Using Batt\n"
+        "2026-10-30 11:00:00 +0900 Sleep  Entering Sleep state due to "
+        "'Thermal Emergency Sleep':TCPKeepAlive=active Using AC (Charge:80%)\n"
+        "2026-10-30 11:01:00 +0900 Sleep  Entering Sleep state due to "
+        "'Thermal Emergency Sleep':TCPKeepAlive=active Using Batt (Charge:70%)\n"
+        "2026-10-30 11:02:00 +0900 DarkWake  Ignored DarkWake thermal emergency signal"
+        " Using AC (Charge:80%)\n"
     )
     assert vs.count_emergency(log) == 1
     with pytest.raises(vs.ThermalParseError):
         vs.count_emergency("garbage")
-    assert vs.cpu_limited("CPU_Speed_Limit = 80") and not vs.cpu_limited("CPU_Speed_Limit = 100")
 
 
 def test_battery_noise_only_on_ac_throughout() -> None:
@@ -251,3 +254,75 @@ def test_battery_noise_only_on_ac_throughout() -> None:
     assert not vs.battery_drop_is_noise(
         vs.Power(True, 80, "not charging"), vs.Power(True, 78, "not charging")
     )
+
+
+def test_thermal_parse_error_still_appends_fail_closed_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    def boom() -> int:
+        raise vs.ThermalParseError("x")
+
+    monkeypatch.setattr(vs, "_sh", lambda cmd: "Now drawing from 'AC Power'\n 80%; AC attached")
+    monkeypatch.setattr(vs, "_thermal_count", boom)
+    out = tmp_path / "e.jsonl"
+    args = argparse.Namespace(
+        deadline="23:59", dry_run=False, model="m", api="http://x", out=str(out)
+    )
+    assert vs.run(args) == vs.EXIT_ERROR
+    rec = json.loads(out.read_text().strip())
+    assert rec["pass"] is False and rec["exit_code"] == 2
+
+
+def _http_error(code: int) -> Exception:
+    import urllib.error
+
+    return urllib.error.HTTPError("u", code, "m", None, None)  # type: ignore[arg-type]
+
+
+def test_404_is_resolved_on_stop_and_restore() -> None:
+    def toggle(job_id: str, enabled: bool, confirm: bool) -> None:
+        if job_id == "gone":
+            raise _http_error(404)
+
+    stopped: list[str] = []
+    plan = pstop.build_plan([_job("hourly-collect", protection="critical")])
+    plan = [pstop.PlanItem("gone", "stop", "x"), *plan]
+    pstop._stop_all(plan, toggle, stopped, lambda: None)
+    assert stopped == ["hourly-collect"]
+    assert pstop.restore_all(["gone", "hourly-collect"], toggle, sleep=lambda _: None) == []
+
+
+def test_marker_age() -> None:
+    now = datetime(2026, 11, 8, 12, tzinfo=common.JST)
+    fresh = {"written_at": datetime(2026, 11, 8, 10, tzinfo=common.JST).isoformat()}
+    assert pstop.marker_age_hours(fresh, now) == 2
+    assert pstop.marker_age_hours({}, now) == float("inf")
+
+
+def test_restore_failure_gives_distinct_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    marker = tmp_path / "m.json"
+    pstop.write_marker(marker, ["a"], datetime(2026, 11, 8, 15, tzinfo=common.JST))
+
+    def fail(api: str) -> Any:
+        def toggle(j: str, e: bool, c: bool) -> None:
+            raise OSError("down")
+
+        return toggle
+
+    monkeypatch.setattr(pstop, "make_toggle", fail)
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    args = argparse.Namespace(
+        api="http://x",
+        marker=str(marker),
+        restore_from_marker=True,
+        force_stale=False,
+        dry_run=False,
+    )
+    assert pstop.run(args) == pstop.EXIT_RESTORE_FAILED
+    assert pstop.read_marker(marker) == ["a"]
