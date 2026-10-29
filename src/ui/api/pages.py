@@ -387,6 +387,23 @@ def mobile_tunnel_clear_named_config() -> dict[str, Any]:
 # ---------- /health ----------
 
 
+def _model_end_state() -> dict[str, Any]:
+    """2 枠の終着の状態 (枠の外の割当・緊急の受け皿の発動回数)。検査の失敗は error に入れる。"""
+    from src.tools.emergency_fallback import emergency_fallback_counts
+    from src.tools.model_end_state import check_live_assignments
+
+    try:
+        violations = check_live_assignments()
+        error = None
+    except Exception as e:  # noqa: BLE001 — 検査の失敗で health を落とさない
+        violations, error = [], str(e)
+    return {
+        "violations": violations,
+        "emergency_fallbacks": emergency_fallback_counts(),
+        "error": error,
+    }
+
+
 @pages_api.get("/health-status")
 async def health_status() -> dict[str, Any]:
     """run_all_checks の結果を JSON で返す。
@@ -395,15 +412,22 @@ async def health_status() -> dict[str, Any]:
     匿名では読めない (read_only_policy の allowlist 外 = default-deny)。
     """
     failures = dict(write_failures.snapshot())
+    end_state = _model_end_state()
     try:
         config = load_app_config()
         checks = await run_all_checks(config)
     except Exception as e:  # noqa: BLE001
-        return {"load_error": str(e), "checks": [], "write_failures": failures}
+        return {
+            "load_error": str(e),
+            "checks": [],
+            "write_failures": failures,
+            "model_end_state": end_state,
+        }
     return {
         "checks": [c.model_dump() for c in checks],
         "load_error": None,
         "write_failures": failures,
+        "model_end_state": end_state,
     }
 
 

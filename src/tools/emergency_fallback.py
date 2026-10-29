@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from collections.abc import Iterable
 from datetime import date
@@ -29,6 +30,7 @@ def is_emergency_model(model: str) -> bool:
 def record_emergency_fallback(*, step: str, original: str, fallback: str, reason: str) -> None:
     """緊急の受け皿が実際に使われたことを記録する (ログ + 計数)。"""
     _counts[fallback] += 1
+    _notify_ops_once_a_day(step=step, original=original, fallback=fallback, reason=reason)
     _log.warning(
         "llm_emergency_fallback",
         step=step,
@@ -37,6 +39,30 @@ def record_emergency_fallback(*, step: str, original: str, fallback: str, reason
         reason=reason[:200],
         count=_counts[fallback],
     )
+
+
+_pending_notices: set[asyncio.Task[bool]] = set()
+
+
+def _notify_ops_once_a_day(*, step: str, original: str, fallback: str, reason: str) -> None:
+    """ops への通知は 1 日 1 回。イベントループが無い(同期)文脈では ログと計数だけ。"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if not should_notify_ops_today(date.today()):
+        return
+    from src.ui.services.ops_notify import post_ops_message
+
+    task = loop.create_task(
+        post_ops_message(
+            title="緊急の受け皿が使われました",
+            body=f"{original} -> {fallback} (step={step}): {reason[:200]}",
+            importance="medium",
+        )
+    )
+    _pending_notices.add(task)
+    task.add_done_callback(_pending_notices.discard)
 
 
 def emergency_fallback_counts() -> dict[str, int]:
@@ -66,25 +92,6 @@ def missing_resident_models(installed: Iterable[str]) -> list[str]:
     """常駐の枠 (S・N) のうち Ollama に無いモデル。"""
     names = list(installed)
     return [m for m in RESIDENT_SLOTS.values() if not _is_installed(m, names)]
-
-
-def pick_installed_or_emergency(
-    preferred: str, installed: Iterable[str], *, step: str, reason: str
-) -> str:
-    """``preferred`` が Ollama に無く、緊急の受け皿が在るときだけ受け皿を返す (記録つき)。
-
-    どちらも無ければ ``preferred`` のまま (黙って別のモデルへは落とさない)。
-    """
-    names = list(installed)
-    if _is_installed(preferred, names):
-        return preferred
-    for emergency in sorted(EMERGENCY_FALLBACK_MODELS):
-        if _is_installed(emergency, names):
-            record_emergency_fallback(
-                step=step, original=preferred, fallback=emergency, reason=reason
-            )
-            return emergency
-    return preferred
 
 
 def warn_missing_resident_models(installed: Iterable[str]) -> list[str]:

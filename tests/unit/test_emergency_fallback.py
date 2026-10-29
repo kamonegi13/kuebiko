@@ -20,29 +20,6 @@ def _reset() -> None:
     ef.reset_for_tests()
 
 
-def test_preferred_is_kept_when_installed() -> None:
-    chosen = ef.pick_installed_or_emergency(_S, [_S, _EMERGENCY], step="x", reason="r")
-
-    assert chosen == _S
-    assert ef.emergency_fallback_counts() == {}
-
-
-def test_latest_suffix_is_treated_as_installed() -> None:
-    assert ef.pick_installed_or_emergency(_S, [f"{_S}:latest"], step="x", reason="r") == _S
-
-
-def test_falls_to_emergency_only_when_preferred_missing_and_counts() -> None:
-    chosen = ef.pick_installed_or_emergency(_S, [_EMERGENCY], step="triage", reason="missing")
-
-    assert chosen == _EMERGENCY
-    assert ef.emergency_fallback_counts() == {_EMERGENCY: 1}
-
-
-def test_stays_on_preferred_when_nothing_installed() -> None:
-    assert ef.pick_installed_or_emergency(_S, [], step="x", reason="r") == _S
-    assert ef.emergency_fallback_counts() == {}
-
-
 def test_missing_resident_models_reports_absent_slots() -> None:
     assert ef.missing_resident_models([_S]) == [_N]
     assert ef.missing_resident_models([_S, _N]) == []
@@ -122,5 +99,53 @@ def test_enforce_still_accepts_resident_and_external(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("MODEL_RESIDENT_ENFORCE", "1")
     monkeypatch.setenv("MODEL_REGISTRY_ENFORCE", "1")
     tiers = _tiers(**{"dialog": "claudecode:haiku", "step:triage": _S})
+
+    assert validate_model_tiers(tiers) == []
+
+
+@pytest.mark.asyncio
+async def test_emergency_record_posts_ops_notice_once_a_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    sent: list[str] = []
+
+    async def _fake_post(*, title: str, body: str, importance: str = "low", **_: object) -> bool:
+        sent.append(title)
+        return True
+
+    monkeypatch.setattr("src.ui.services.ops_notify.post_ops_message", _fake_post)
+
+    ef.record_emergency_fallback(step="a", original="x", fallback=_EMERGENCY, reason="r")
+    ef.record_emergency_fallback(step="b", original="x", fallback=_EMERGENCY, reason="r")
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert len(sent) == 1
+    assert ef.emergency_fallback_counts() == {_EMERGENCY: 2}
+
+
+def test_eval_allow_env_permits_unregistered_override_without_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.tools.model_registry import is_override_allowed
+    from src.tools.task_prefix import is_prefix_trained
+
+    monkeypatch.setenv("MODEL_EVAL_ALLOW", "foo:eval1, bar:eval2")
+
+    assert is_override_allowed("foo:eval1")
+    assert is_override_allowed("bar:eval2")
+    assert not is_override_allowed("baz:1")
+    assert not is_prefix_trained("foo:eval1")
+
+
+def test_step_exception_allows_assign_and_org_gemma_in_validate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MODEL_RESIDENT_ENFORCE", "1")
+    tiers = _tiers(
+        **{"step:assign_evidence_judge": _EMERGENCY, "step:org_identity_judge": _EMERGENCY}
+    )
 
     assert validate_model_tiers(tiers) == []

@@ -722,41 +722,28 @@ def invalidate_model_tiers_cache() -> None:
     _CACHE.clear()
 
 
-_RESIDENT_ENFORCE_ENV = "MODEL_RESIDENT_ENFORCE"
-_REGISTRY_ENFORCE_ENV = "MODEL_REGISTRY_ENFORCE"
-
-
 def _flag_on(env: str) -> bool:
     return os.environ.get(env, "0").strip() in ("1", "true", "True")
 
 
-def _resident_issue(model: str, *, allow_emergency: bool) -> tuple[str, str] | None:
-    """割当が 2 枠の方針に反するか。(旗の名前, 理由) を返す。外部・空は対象外。
+def _check_resident(
+    label: str,
+    model: str,
+    errs: list[str],
+    *,
+    allow_emergency: bool,
+    step: str | None = None,
+) -> None:
+    """旗が 1 なら拒否、0 なら警告ログだけ (11-28 までの警告期間)。
 
-    ``allow_emergency`` は ``fallback:*`` だけ True (緊急の受け皿 gemma4 を通す)。
+    ⚠ ``MODEL_RESIDENT_ENFORCE=1`` は gemma4 と s23i の上書きを外した後に立てる
+    (順番は ``model_end_state`` の docstring)。
     """
     from datetime import date
 
-    from src.tools import model_registry as reg
+    from src.tools.model_end_state import resident_issue
 
-    name = model.strip()
-    if not name or is_external_model(name):
-        return None
-    if not reg.is_registered(name):
-        return (_REGISTRY_ENFORCE_ENV, "未登録のモデルです (model_registry に 1 行足す)")
-    if allow_emergency and name in reg.EMERGENCY_FALLBACK_MODELS:
-        return None
-    exception_until = reg.RESIDENT_EXCEPTIONS.get(name)
-    if name in reg.RESIDENT_SLOTS.values() or (
-        exception_until is not None and date.today() <= exception_until
-    ):
-        return None
-    return (_RESIDENT_ENFORCE_ENV, "常駐の枠 (S・N) の外のモデルです")
-
-
-def _check_resident(label: str, model: str, errs: list[str], *, allow_emergency: bool) -> None:
-    """旗が 1 なら拒否、0 なら警告ログだけ (11-28 までの警告期間)。"""
-    issue = _resident_issue(model, allow_emergency=allow_emergency)
+    issue = resident_issue(model, step=step, allow_emergency=allow_emergency, today=date.today())
     if issue is None:
         return
     flag, reason = issue
@@ -806,7 +793,9 @@ def validate_model_tiers(raw: object) -> list[str]:
         except LLMForbiddenModelError as e:
             errs.append(f"step override '{step_name}': {e}")
             continue
-        _check_resident(f"step override '{step_name}'", value, errs, allow_emergency=False)
+        _check_resident(
+            f"step override '{step_name}'", value, errs, allow_emergency=False, step=step_name
+        )
     # ローカル fallback (``fallback:<tier名>``): 外部障害時の受け皿なのでローカル限定。
     known_tiers = {t.value for t in Tier}
     for key, value in raw.items():

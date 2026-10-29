@@ -174,7 +174,16 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
    `.env` にモデル名を書いても効かない (上の警告を参照)
 5. **緊急の戻し**: 画面の「版履歴 (緊急の戻し)」リンク (= 設定 → 履歴・監査の key=model_tiers) から
    1 つ前の版へ戻す。API なら `POST /api/v1/config-history/model_tiers/revert` に `{"version": <戻し先>}`。
-   戻しは新しい版として残る (履歴は失われない)。この経路は遠隔 (Access 認証済み) からも使える
+   戻しは新しい版として残る (履歴は失われない)。この経路は遠隔 (Access 認証済み) からも使える。
+   ⚠ **`MODEL_TIERS_CONFIG_DB=0` での戻しと DB 未投入のときの経路は 2026-10-29 (P0-26) から変わった**:
+   コード既定 (`BUILTIN_MODEL_TIERS`) は fast/reasoning=`kuebiko-sft:s24ci65`・narrative=`kuebiko-sft:n19`
+   (`src/tools/model_registry.py` の `RESIDENT_SLOTS` から導く)。以前の gemma4:31b / 26b ではない。
+   dialog だけは緊急用の `gemma4:26b` のまま (s24ci65 が dialog の 4 step を未学習。S にするのは
+   4 step で形を確かめてから)。外部ティアの受け皿 (`fallback:<tier>` 未設定時) も同じ既定に従う。
+   緊急の受け皿 (gemma4) が使われると `llm_emergency_fallback` ログ + 計数 + ops 通知 (1 日 1 回)。
+   2 枠の終着の状態は `uv run python scripts/check_model_end_state.py` と health-status の
+   `model_end_state` で確かめる。**`MODEL_RESIDENT_ENFORCE=1` は gemma4 と s23i の上書き
+   (assign/org の例外は 11-28 まで) を外し、検査が 0 件になってから立てる** (先に立てると保存が拒否される)
 6. CLAUDE.md §2 の記述を新モデル名に同期
 7. `uv run pytest tests/unit/test_llm_client.py` でホワイトリスト検証 (中華系排除) 通過確認
 8. **Web UI の即時実行で 1 件 dry-run** し品質を目視確認 — 特に per-article main model 変更時は 1 件あたりの応答時間も計測 (40s 超なら daily-briefing が timeout する)

@@ -101,7 +101,7 @@ class TestBuiltin:
         assert BUILTIN_MODEL_TIERS["reasoning"] == _S_SLOT
         assert BUILTIN_MODEL_TIERS["narrative"] == _N_SLOT
         assert BUILTIN_MODEL_TIERS["fast"] == _S_SLOT
-        assert BUILTIN_MODEL_TIERS["dialog"] == _S_SLOT
+        assert BUILTIN_MODEL_TIERS["dialog"] == "gemma4:26b"
         assert BUILTIN_MODEL_TIERS["embedding"] == "snowflake-arctic-embed2"
 
     def test_builtin_models_are_allowed(self) -> None:
@@ -144,7 +144,7 @@ class TestBuildLLM:
             (Step.TRIAGE, _S_SLOT, 300.0),
             (Step.SYNTHESIS_DETECT, _S_SLOT, 900.0),
             (Step.PIR_DAILY_FOCUS, _S_SLOT, 120.0),
-            (Step.PIR_COMPILE, _S_SLOT, 180.0),
+            (Step.PIR_COMPILE, "gemma4:26b", 180.0),
             # spotlight は reasoning ティア (本番 31b 踏襲) だが timeout は step 固有 600s
             (Step.PIR_SPOTLIGHT, _N_SLOT, 600.0),
             (Step.DIGEST_DEEP_DIVE_SELECT, _S_SLOT, 900.0),
@@ -388,9 +388,9 @@ class TestDialogTier:
         assert STEP_REGISTRY[Step.ASSIGN_EVIDENCE_JUDGE].tier is Tier.FAST
         assert STEP_REGISTRY[Step.ASSIGN_EVIDENCE_JUDGE].timeout_seconds == 120.0
 
-    def test_dialog_builtin_matches_fast(self, db_path: Path) -> None:
-        # 分離時の挙動保存: DB 未保存 (既存環境) では従来どおり fast と同モデルに解決
-        assert resolve_tier_model(Tier.DIALOG, db_path=db_path) == BUILTIN_MODEL_TIERS["fast"]
+    def test_dialog_builtin_stays_gemma4_26b(self, db_path: Path) -> None:
+        # DB 未保存でも dialog は従来の gemma4:26b (S は dialog の 4 step 未学習)
+        assert resolve_tier_model(Tier.DIALOG, db_path=db_path) == "gemma4:26b"
 
     def test_assistant_chat_resolves_via_dialog_tier(self, db_path: Path) -> None:
         # dialog だけ差し替えても fast (収集系) は不変 — 新設の狙いそのもの

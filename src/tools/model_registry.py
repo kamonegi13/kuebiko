@@ -119,14 +119,20 @@ RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s24ci65", "N": "kueb
 _TIER_SLOTS: Final[dict[str, Slot]] = {
     "fast": "S",
     "reasoning": "S",
-    "dialog": "S",
     "narrative": "N",
 }
 
 
+#: dialog の既定・受け皿 (緊急用の gemma4:26b のまま)。s24ci65 は dialog の 4 step
+#: (分析チャット・PIR compile・precise search・selector 提案) を学習していない。
+#: TODO: S を dialog の受け皿にするのは、4 step で出力の形を確かめてからの別作業。
+DIALOG_LOCAL_DEFAULT: Final = "gemma4:26b"
+
+
 def builtin_local_tiers() -> dict[str, str]:
-    """ティア名 → 常駐の枠の中身 (埋込は含まない)。"""
-    return {tier: RESIDENT_SLOTS[slot] for tier, slot in _TIER_SLOTS.items()}
+    """ティア名 → 既定のローカルモデル (埋込は含まない)。dialog だけ緊急用のまま。"""
+    tiers = {tier: RESIDENT_SLOTS[slot] for tier, slot in _TIER_SLOTS.items()}
+    return {**tiers, "dialog": DIALOG_LOCAL_DEFAULT}
 
 
 #: 緊急の受け皿 (10-29 判断 J4)。使えるのは受け皿の経路だけ。通常の割当には入れない
@@ -135,6 +141,14 @@ EMERGENCY_FALLBACK_MODELS: Final[frozenset[str]] = frozenset({"gemma4:26b"})
 #: 常駐の例外 (名前 → 終了日)。終了日を過ぎると CI が赤くなる
 RESIDENT_EXCEPTIONS: Final[dict[str, date]] = {
     c.name: c.exception_until for c in _CAPABILITIES if c.exception_until is not None
+}
+
+
+#: step 単位の例外 ((step 値, モデル) → 終了日)。assign / org の判定は素の 26B の
+#: logprob で較正してあり、S へ移す測定が済むまで 11-28 まで置く (利用者承認)
+RESIDENT_STEP_EXCEPTIONS: Final[dict[tuple[str, str], date]] = {
+    ("assign_evidence_judge", "gemma4:26b"): _TRANSITION_DEADLINE,
+    ("org_identity_judge", "gemma4:26b"): _TRANSITION_DEADLINE,
 }
 
 
@@ -186,10 +200,19 @@ def eval_tag_models() -> frozenset[str]:
     return frozenset(m.strip() for m in os.environ.get(EVAL_TAGS_ENV, "").split(",") if m.strip())
 
 
+#: 評価で未登録のモデルをその場だけ許可する (カンマ区切り)。接頭辞は付けない
+#: (``SFT_TASK_PREFIX_MODELS`` は印も付けるので別にした)。本番の env には置かない
+EVAL_ALLOW_ENV: Final = "MODEL_EVAL_ALLOW"
+
+
+def eval_allowed_models() -> frozenset[str]:
+    return frozenset(m.strip() for m in os.environ.get(EVAL_ALLOW_ENV, "").split(",") if m.strip())
+
+
 def is_override_allowed(model: str) -> bool:
     """明示の上書き (比較・チャットの会話単位) に使ってよいローカルモデルか。
 
-    登録済み ∪ 評価中のタグ。外部 (anthropic:/claudecode:/接続先) は呼び手が先に判定する。
+    登録済み ∪ 評価中のタグ ∪ ``MODEL_EVAL_ALLOW``。外部は呼び手が先に判定する。
     """
     name = model.strip()
-    return is_registered(name) or name in eval_tag_models()
+    return is_registered(name) or name in eval_tag_models() or name in eval_allowed_models()

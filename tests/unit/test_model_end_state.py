@@ -1,82 +1,83 @@
-"""P0-26: 終着の状態の検査 (D4 §1.4)。検査 4 は 11-28 までは警告だけ (pytest は通す)。
+"""P0-26: 終着の状態の検査 (D4 §1.4)。pytest は警告だけ・静的な写しに頼らない。
 
-assigned ∪ fallback ⊆ {S 枠, N 枠, 埋込, 明示の外部, 緊急の受け皿 (fallback のみ), 例外 (期限内)}。
+本番の割当の検査は ``scripts/check_model_end_state.py`` と health-status の
+``model_end_state`` が本番の DB を相手に行う。ここは検査ロジックと既定値を固める。
 """
 
 from __future__ import annotations
 
-import json
 import warnings
 from datetime import date
-from pathlib import Path
 
 from src.tools import model_registry as reg
+from src.tools.model_end_state import find_violations
 from src.tools.model_tiers import BUILTIN_MODEL_TIERS, Tier
 
-_CURRENT = json.loads(
-    (Path(__file__).parent.parent / "fixtures" / "model_tiers_current.json").read_text()
-)
-_EXTERNAL_PREFIXES = ("anthropic:", "claudecode:")
-#: この日以後は検査 4 を失敗にする (11-28、旗の切替と同じ日)
-ENFORCE_FROM = date(2026, 11, 28)
+_S = reg.RESIDENT_SLOTS["S"]
+_N = reg.RESIDENT_SLOTS["N"]
+_BEFORE = date(2026, 11, 1)
+_AFTER = date(2026, 12, 1)
+_TIERS = {"fast": _S, "reasoning": _S, "narrative": _N, "dialog": "claudecode:haiku"}
 
 
-def _allowed_in_tiers() -> set[str]:
-    allowed = set(reg.RESIDENT_SLOTS.values())
-    allowed.update(m for m, until in reg.RESIDENT_EXCEPTIONS.items() if date.today() <= until)
-    return allowed
-
-
-def _is_exempt(model: str) -> bool:
-    return model.startswith(_EXTERNAL_PREFIXES) or model == _CURRENT["tiers"]["embedding"]
-
-
-def _violations() -> list[str]:
-    allowed = _allowed_in_tiers()
-    found: list[str] = []
-    assigned = {f"tier:{k}": v for k, v in _CURRENT["tiers"].items()}
-    assigned.update({f"step:{k}": v for k, v in _CURRENT["step_overrides"].items()})
-    for label, model in assigned.items():
-        if not _is_exempt(model) and model not in allowed:
-            found.append(f"{label}={model}")
-    emergency_ok = allowed | set(reg.EMERGENCY_FALLBACK_MODELS)
-    for label, model in _CURRENT["local_fallbacks"].items():
-        if not _is_exempt(model) and model not in emergency_ok:
-            found.append(f"fallback:{label}={model}")
-    return found
-
-
-def test_builtin_defaults_are_resident_slots_or_embedding() -> None:
-    allowed = set(reg.RESIDENT_SLOTS.values()) | {BUILTIN_MODEL_TIERS[Tier.EMBEDDING.value]}
+def test_builtin_defaults_are_slots_embedding_or_dialog_emergency() -> None:
+    allowed = set(reg.RESIDENT_SLOTS.values()) | {
+        BUILTIN_MODEL_TIERS[Tier.EMBEDDING.value],
+        reg.DIALOG_LOCAL_DEFAULT,
+    }
 
     assert set(BUILTIN_MODEL_TIERS.values()) <= allowed
 
 
-def test_builtin_maps_tiers_to_slots() -> None:
-    assert BUILTIN_MODEL_TIERS["fast"] == reg.RESIDENT_SLOTS["S"]
-    assert BUILTIN_MODEL_TIERS["reasoning"] == reg.RESIDENT_SLOTS["S"]
-    assert BUILTIN_MODEL_TIERS["dialog"] == reg.RESIDENT_SLOTS["S"]
-    assert BUILTIN_MODEL_TIERS["narrative"] == reg.RESIDENT_SLOTS["N"]
+def test_builtin_maps_tiers_to_slots_and_dialog_stays_emergency() -> None:
+    assert BUILTIN_MODEL_TIERS["fast"] == _S
+    assert BUILTIN_MODEL_TIERS["reasoning"] == _S
+    assert BUILTIN_MODEL_TIERS["narrative"] == _N
+    # TODO: s24ci65 が dialog の 4 step で形を保つと確かめてから S にする (別作業)
+    assert BUILTIN_MODEL_TIERS["dialog"] == "gemma4:26b"
+    assert BUILTIN_MODEL_TIERS["dialog"] in reg.EMERGENCY_FALLBACK_MODELS
 
 
-def test_all_assigned_models_are_registered() -> None:
-    names = list(_CURRENT["tiers"].values()) + list(_CURRENT["step_overrides"].values())
-    names += list(_CURRENT["local_fallbacks"].values())
-    unregistered = [n for n in names if not _is_exempt(n) and not reg.is_registered(n)]
+def test_dialog_fallback_is_emergency_model_not_slot() -> None:
+    from src.tools.model_tiers import resolve_local_fallback_model
 
-    assert unregistered == []
-
-
-def test_current_assignments_stay_within_end_state() -> None:
-    violations = _violations()
-    if not violations:
-        return
-    message = "2 枠の外の割当 (11-28 から失敗): " + ", ".join(sorted(violations))
-    assert date.today() < ENFORCE_FROM, message
-    warnings.warn(message, stacklevel=1)
+    assert resolve_local_fallback_model(Tier.DIALOG) == "gemma4:26b"
+    assert resolve_local_fallback_model(Tier.FAST) == _S
+    assert resolve_local_fallback_model(Tier.NARRATIVE) == _N
 
 
-def test_expired_exceptions_are_reported() -> None:
+def test_clean_assignment_has_no_violations() -> None:
+    assert find_violations(_TIERS, {"triage": _S}, {"fast": _S}, today=_BEFORE) == []
+
+
+def test_gemma_in_step_override_is_violation_except_listed_steps_until_deadline() -> None:
+    steps = {"triage": "gemma4:26b", "assign_evidence_judge": "gemma4:26b"}
+
+    found = find_violations(_TIERS, steps, {}, today=_BEFORE)
+
+    assert len(found) == 1 and found[0].startswith("step:triage=")
+
+
+def test_step_exceptions_expire() -> None:
+    steps = {"org_identity_judge": "gemma4:26b", "pair_judge": "kuebiko-sft:s23i"}
+
+    found = find_violations(_TIERS, steps, {}, today=_AFTER)
+
+    assert len(found) == 2 and all("期限切れ" in f for f in found)
+
+
+def test_emergency_model_allowed_only_in_fallback_keys() -> None:
+    assert find_violations(_TIERS, {}, {"fast": "gemma4:26b"}, today=_AFTER) == []
+    assert find_violations({**_TIERS, "fast": "gemma4:26b"}, {}, {}, today=_AFTER) != []
+
+
+def test_unregistered_model_is_violation() -> None:
+    found = find_violations(_TIERS, {"triage": "kuebiko-sft:n20"}, {}, today=_BEFORE)
+
+    assert len(found) == 1 and "未登録" in found[0]
+
+
+def test_expired_exceptions_only_warn() -> None:
     expired = [m for m, until in reg.RESIDENT_EXCEPTIONS.items() if date.today() > until]
     if expired:
         warnings.warn(f"常駐の例外が期限切れ: {expired}", stacklevel=1)
