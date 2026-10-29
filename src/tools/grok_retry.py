@@ -29,9 +29,6 @@ GROK_SUMMARY_EVERY_ENV = "GROK_UNRENDERED_SUMMARY_EVERY"
 DEFAULT_GROK_SUMMARY_EVERY = 6
 #: 取得窓から外れる何分前から警告するか (毎時の run で 2 回以上の機会を残す)
 GROK_EXPIRY_WARN_LEAD_MINUTES = 180
-#: サーバの時間帯のずれ (日付境界の前倒し) に備える余裕。SINCE は日付単位で、サーバの
-#: 日付が UTC より進んでいると境界が早まる。運用者の時間帯 (+9h) に合わせて早めに倒す
-GROK_SINCE_TZ_MARGIN_MINUTES = 540
 UNRENDERED_REASON = "report_not_rendered"
 
 
@@ -119,16 +116,16 @@ class GrokRetryTracker:
     def _warn_from(self, msg: EmailMessage) -> datetime:
         """警告を始める時刻。実際の窓は IMAP の ``SINCE`` (日付単位) で決まる。
 
-        SINCE は ``(now - lookback)`` の**日付**以降だけを返すので、受け取った日 D のメールは
-        ``now - lookback`` が D+1 の 0 時 (UTC) に達した時点で窓から外れる。サーバの時間帯の
-        ずれ分と警告の先行時間だけ早めに倒す。基準は INTERNALDATE (SINCE と同じ)、無ければ Date。
+        SINCE は ``(now - lookback)`` の**日付**以降だけを返す。サーバの時間帯が UTC より
+        遅れていても間に合う下限として、受け取った日 (UTC) の 0 時 + lookback を窓から外れる
+        最も早い時刻とし、そこから警告の先行時間を引く。基準は INTERNALDATE (SINCE と同じ)、
+        無ければ Date ヘッダ。
         """
         assert self._lookback is not None
         base = (msg.internal_date or msg.received_at).astimezone(UTC)
-        next_midnight = datetime.combine(base.date() + timedelta(days=1), datetime.min.time(), UTC)
-        exit_at = next_midnight + timedelta(minutes=self._lookback)
-        early = GROK_SINCE_TZ_MARGIN_MINUTES + GROK_EXPIRY_WARN_LEAD_MINUTES
-        return exit_at - timedelta(minutes=early)
+        day_start = datetime.combine(base.date(), datetime.min.time(), UTC)
+        exit_at = day_start + timedelta(minutes=self._lookback)
+        return exit_at - timedelta(minutes=GROK_EXPIRY_WARN_LEAD_MINUTES)
 
     def on_unrendered(self, msg: EmailMessage) -> bool:
         """描画失敗を数える。警報にすべきか (= 最初の失敗か、記録できなかったか) を返す。"""

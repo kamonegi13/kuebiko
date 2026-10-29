@@ -237,16 +237,30 @@ async def test_connection_failure_is_not_counted(
     assert repo.get_translate_attempt("a") is None
 
 
-async def test_run_where_everything_fails_is_not_counted(
+async def test_all_echo_failures_run_is_counted_and_deferred_on_third(
     repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("TRANSLATE_QUEUE_BACKOFF", "1")
     _add(repo, "a", _ENGLISH, age_minutes=1)
     _add(repo, "b", _ENGLISH + " more", age_minutes=2)
-    stats = await run_body_translate_backlog(repo, _EchoLLM())
-    assert stats["failed"] == 2
-    assert repo.get_translate_attempt("a") is None
-    assert repo.get_translate_attempt("b") is None
+    for _ in range(3):
+        stats = await run_body_translate_backlog(repo, _EchoLLM())
+        assert stats["failed"] == 2
+    for aid in ("a", "b"):
+        attempt = repo.get_translate_attempt(aid)
+        assert attempt is not None and attempt[0] == 3
+    assert repo.list_articles_untranslated(backoff=True) == []
+
+
+async def test_run_with_connection_failure_counts_nothing(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_QUEUE_BACKOFF", "1")
+    _add(repo, "echo", _ENGLISH, age_minutes=1)
+    _add(repo, "conn", "short body", age_minutes=2)
+    await run_body_translate_backlog(repo, _EchoLLM(raise_on="short body"))
+    assert repo.get_translate_attempt("echo") is None
+    assert repo.get_translate_attempt("conn") is None
 
 
 def test_exclusion_keeps_newest_first(repo: RunHistoryRepository) -> None:

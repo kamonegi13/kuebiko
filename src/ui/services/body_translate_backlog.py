@@ -54,15 +54,20 @@ def _record_failure(repo: RunHistoryRepository, aid: str, error: Exception) -> b
 
 
 def _record_content_failures(
-    repo: RunHistoryRepository, failures: list[tuple[str, Exception]], *, succeeded: int
+    repo: RunHistoryRepository, failures: list[tuple[str, Exception]], *, infra_failed: int
 ) -> int:
     """内容が原因の失敗を数える。記録に失敗した件数を返す。
 
-    1 回の実行で 1 件も訳せなかったときは、LLM 側の不調 (出力が全部壊れる等) の疑いが強いので
-    数えない (正常な記事が一斉に除外されるのを防ぐ保険)。
+    全件が写しの判定で失敗する回 (今回の詰まりそのもの) も数える。数えないのは、その回に
+    接続・timeout・Ollama の失敗が 1 件でもあったとき (LLM 側の不調で正常な記事まで
+    除外されるのを防ぐ)。
     """
-    if failures and succeeded == 0:
-        _log.warning("translate_attempts_skipped_all_failed", failures=len(failures))
+    if failures and infra_failed > 0:
+        _log.warning(
+            "translate_attempts_skipped_infra_failure",
+            content_failures=len(failures),
+            infra_failures=infra_failed,
+        )
         return 0
     return sum(not _record_failure(repo, aid, e) for aid, e in failures)
 
@@ -109,6 +114,7 @@ async def run_body_translate_backlog(
     skipped_budget = 0
     echo_failed = 0
     content_failed: list[tuple[str, Exception]] = []
+    infra_failed = 0
     for aid in article_ids:
         remaining = time_budget_seconds - (time.monotonic() - started)
         if remaining <= 0:
@@ -153,6 +159,8 @@ async def run_body_translate_backlog(
             # 失敗の印は内容が原因のものだけ。Ollama の停止・接続・timeout は数えない
             if isinstance(e, TranslationBrokenError):
                 content_failed.append((aid, e))
+            else:
+                infra_failed += 1
             _log.warning("body_backlog_translate_failed", article_id=aid, error=str(e))
             continue
         if progress.text is None:
@@ -169,7 +177,7 @@ async def run_body_translate_backlog(
         _clear_attempts(repo, aid)
         translated += 1
 
-    record_errors = _record_content_failures(repo, content_failed, succeeded=translated + partial)
+    record_errors = _record_content_failures(repo, content_failed, infra_failed=infra_failed)
     stats = {
         "picked": len(article_ids),
         "translated": translated,
