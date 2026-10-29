@@ -132,6 +132,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 > DB (config_store, key=model_tiers)**、fail-safe は `BUILTIN_MODEL_TIERS`。
 > 割当の変更は評価の後に API で行う (下の「切替手順」。UI「設定 → モデル」タブは 2026-10-24 から表示専用、2026-09-04 に本節の記述を実装へ同期)。
 
+- **(10-29 版 45) `step:pair_judge`=`kuebiko-sft:s23i` に戻した**: 10-26 の fast 切替で群化の対の判定も s24ci65 に変わり、09 月版の `pair_model.json` の入力の LLM が変わって「同じ」の率が cos の帯ごとにほぼ半減した (event_pair_shadow、切替前後)。pair_model を学び直すまでの応急。戻すなら版 44。
 - **現在の割当 (2026-10-28 版 44、DB の model_tiers で確認。SSoT は常に DB)**: fast=`kuebiko-sft:s24ci65` / narrative=`kuebiko-sft:n19` / reasoning=`kuebiko-sft:s24ci65` (10-26 に s23i から切替 = 版 42。s24ci65 は s22 と s24c の重みの 65% 補間。戻すなら版 41) / dialog=`claudecode:haiku` / embedding=`snowflake-arctic-embed2`。
   step 上書き: 深掘り・状況総括・事象ニュース・Spotlight=`kuebiko-sft:n19`、synthesis_analysis・severity_axes=`kuebiko-sft:s24ci65` (軸は 10-27 に本文入力と同時に、版 43)、thin_body_judge=`kuebiko-sft:s24ci65` (10-28 版 44、現行の閾値で回収 60→67%・誤発火 1.3→0.6%)、**s23i に固定** = synthesis_detect・detect_claim_write (s24 は detect を学習していない。10-28 に detect_goldset で ci65 を測り正しい開設 33→29・誤った開設 28→30 で不合格)・pir_focus_claim_judge (ci65 は誤発火が 2 倍、閾値の引き直しが要る)・alert_law_enforcement_judge・relevance_jp_cascade (本番は語の条件・影の記録のみで配信に効かない)、翻訳・MITRE 同期の和訳・triage_geo_rescue=`kuebiko-sft:26b`、assign_evidence_judge・org_identity_judge=`gemma4:26b`。以下の「現用」は設計時の記述で、実割当は上記
 - **fast ティア (per-article 要約・翻訳 / triage / 分類系)**: 設計時の想定は Gemma 4 26B (MoE, active 4B)
