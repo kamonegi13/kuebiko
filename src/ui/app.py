@@ -398,6 +398,20 @@ def _register_bespoke_jobs(
             )
 
 
+async def _warn_missing_resident_models() -> None:
+    """起動時、常駐の枠 (S・N) のモデルが Ollama に無ければ警告する (P0-26、失敗は記録のみ)。"""
+    from src.config_loader import load_app_config
+    from src.tools.emergency_fallback import warn_missing_resident_models
+    from src.ui.services.health import list_ollama_models
+
+    try:
+        installed = await list_ollama_models(load_app_config().ollama_base_url)
+    except Exception as e:  # noqa: BLE001 — Ollama 不達は起動を止めない
+        _log.warning("resident_model_check_skipped", error=str(e))
+        return
+    warn_missing_resident_models(installed)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """起動時に scheduler を立ち上げ、終了時に停止する。"""
@@ -492,6 +506,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # モデルティア割当を BUILTIN 既定から初回 seed。以後 DB が正 (UI「モデル」タブで編集)。
             if seed_model_tiers_if_absent():
                 _log.info("model_tiers_seeded_from_builtin")
+            await _warn_missing_resident_models()
             if seed_routing_rules_if_absent():
                 _log.info("routing_rules_seeded_from_yaml")
             if seed_source_quality_if_absent():

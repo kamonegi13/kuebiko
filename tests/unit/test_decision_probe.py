@@ -20,7 +20,7 @@ from src.tools.decision_probe import (
     _normalize_token,
     probe_choice,
 )
-from src.tools.model_tiers import Step, invalidate_model_tiers_cache
+from src.tools.model_tiers import BUILTIN_MODEL_TIERS, Step, invalidate_model_tiers_cache
 
 # ---------- fixtures / ヘルパ ----------
 
@@ -192,6 +192,11 @@ class TestJsonBiasedPrompt:
 
 
 class TestProbeChoiceDefaultModel:
+    @pytest.fixture(autouse=True)
+    def _plain_default_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # chat 経路の検査: 既定 (BUILTIN の fast) が SFT になっても素のモデルで測る
+        monkeypatch.setitem(BUILTIN_MODEL_TIERS, "fast", "gemma4:26b")
+
     @pytest.mark.asyncio
     async def test_returns_probabilities_via_chat_endpoint(self) -> None:
         logprobs = _logprobs_payload(("Yes", -0.05), [("Yes", -0.05), ("No", -3.0)])

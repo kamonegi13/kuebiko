@@ -58,7 +58,6 @@ FORBIDDEN_MODEL_PREFIXES: tuple[str, ...] = (
     "xverse",
 )
 
-DEFAULT_MODEL = "gemma4:31b"
 DEFAULT_BASE_URL = "http://localhost:11434"
 DEFAULT_TIMEOUT_SECONDS = 300.0
 DEFAULT_TEMPERATURE = 0.3
@@ -295,7 +294,8 @@ class OllamaClient(LLMClient):
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        model: str = DEFAULT_MODEL,
+        *,
+        model: str,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         client: ollama.AsyncClient | None = None,
         num_ctx: int | None = None,

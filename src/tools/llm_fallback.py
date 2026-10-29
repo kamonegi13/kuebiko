@@ -37,6 +37,7 @@ from typing import ClassVar, TypeVar
 from pydantic import BaseModel
 
 from src.logging_config import get_logger
+from src.tools.emergency_fallback import is_emergency_model, record_emergency_fallback
 from src.tools.llm_client import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
@@ -149,10 +150,21 @@ class FallbackLLMClient(LLMClient):
         until = self._cooldown_until.get(self._primary.model, 0.0)
         return time.monotonic() < until
 
+    def _note_emergency(self, error: Exception) -> None:
+        """受け皿が緊急の受け皿 (gemma4) なら、黙らせずに記録する (J4)。"""
+        if is_emergency_model(self._fallback.model):
+            record_emergency_fallback(
+                step="external_fallback",
+                original=self._primary.model,
+                fallback=self._fallback.model,
+                reason=str(error),
+            )
+
     def _enter_cooldown(self, error: Exception) -> None:
         self._cooldown_until[self._primary.model] = time.monotonic() + self._cooldown_seconds
         self._failure_streak[self._primary.model] = 0
         self._fell_back = True
+        self._note_emergency(error)
         _log.warning(
             "llm_fallback_engaged",
             primary=self._primary.model,
@@ -187,6 +199,7 @@ class FallbackLLMClient(LLMClient):
         説明できないので系統的な故障として cooldown へ移す。
         """
         self._fell_back = True
+        self._note_emergency(error)
         streak = self._failure_streak.get(self._primary.model, 0) + 1
         self._failure_streak[self._primary.model] = streak
         if streak >= FAILURE_STREAK:
