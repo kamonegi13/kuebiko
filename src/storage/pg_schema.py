@@ -715,6 +715,17 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_provider_ts
 -- 既存 DB 向けの冪等追加。
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS cache_read_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS cost_usd DOUBLE PRECISION NOT NULL DEFAULT 0;
+-- P0-16 (2026-10-29): ローカル (provider='ollama') の step 別の記録 (外部の行は NULL、本文なし)。
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS step TEXT;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS max_tokens INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS hit_token_cap INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS structured INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS output_chars INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS error_class TEXT;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS choices_present INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS floor_used INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS fallback INTEGER;
+CREATE INDEX IF NOT EXISTS idx_llm_usage_ts ON llm_usage(ts);
 
 -- アクター辞書 Phase1 F7 (2026-07-26): アクター行動史の月次期間行 (決定論蒸留)。
 -- 詳細コメントは schema_sql.py 側を参照 (両 backend で列名統一、JSON 列は PG=JSONB)。

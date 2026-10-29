@@ -784,6 +784,30 @@ def severity_c_shadow_summary(request: Request, days: int = 7, limit: int = 50) 
     return summarize(repo.list_severity_c_shadow(days=days), days=days, limit=limit)
 
 
+#: local-llm-usage summary の窓幅の上限 (行を Python で集計するため 30 日まで)。
+_LOCAL_LLM_USAGE_MAX_DAYS = 30
+
+
+@pages_api.get("/llm-usage/local-summary")
+def local_llm_usage_summary(request: Request, days: int = 7) -> dict[str, Any]:
+    """ローカル LLM の step 別の使用量 (P0-16、s26 の容量の計画用)。
+
+    (step, model) ごとの 回/日・秒/回・トークン・暴走率・失敗数と、プロセス内の
+    記録失敗の計数 (API プロセス分のみ。subprocess 側はログ ``ops_write_failed``)。
+    運用系 read API のため PUBLIC_GET_ALLOWLIST には入れない (read_only_policy.py を参照)。
+    """
+    from src.ops.local_llm_usage_summary import summarize_local_usage
+    from src.ops.write_failures import snapshot
+
+    days = max(1, min(int(days), _LOCAL_LLM_USAGE_MAX_DAYS))
+    repo: RunHistoryRepository = request.app.state.repo
+    return {
+        "days": days,
+        "by_step": summarize_local_usage(repo.list_local_llm_usage(days=days), days=days),
+        "write_failures": dict(snapshot()),
+    }
+
+
 #: alert-dedup-shadow summary の窓幅・件数の上限 (R1h、routing-v2-shadow と同じ基準)。
 _ALERT_DEDUP_SHADOW_MAX_DAYS = 60
 _ALERT_DEDUP_SHADOW_MAX_LIMIT = 200

@@ -403,6 +403,16 @@ METRICS: tuple[FillMetric, ...] = (
         None,
         population="a.body IS NOT NULL AND a.body <> ''",
     ),
+    # ローカル LLM の step 別の使用量 (2026-10-29、P0-16)。列ではないので「その日 (UTC) に
+    # step つきのローカル記録があったか」を日の代理にする。消費者は
+    # GET /api/v1/llm-usage/local-summary。監視対象は**完全な沈黙** (recorder・書き込みの断線)
+    FillMetric(
+        "local_llm_usage",
+        "ローカルLLM使用量の記録",
+        "EXISTS (SELECT 1 FROM llm_usage u WHERE u.provider = 'ollama' AND u.step IS NOT NULL"
+        " AND substr(u.ts, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

@@ -513,6 +513,7 @@ def build_llm_for(step: Step, config: AppConfig, *, db_path: Path | None = None)
         spec,
         config,
         local_fallback=resolve_local_fallback_model(spec.tier, db_path=db_path),
+        step=step,
     )
     # narrative ティアの think 方針 (外部モデル割当 + 設定 auto のときだけ ON)。
     # ローカル割当時は wrapper を掛けない = call site の think=False がそのまま効く。
@@ -575,7 +576,11 @@ def build_llm_for_ref(
     from src.tools.task_prefix import TaskPrefixClient, prefix_for  # 遅延 import (循環回避)
 
     built = _build_client_for_ref(
-        model_ref, spec, config, local_fallback=resolve_local_fallback_model(spec.tier)
+        model_ref,
+        spec,
+        config,
+        local_fallback=resolve_local_fallback_model(spec.tier),
+        step=step,
     )
     # ⭐ 明示 ref の経路 (評価・教師収穫) も本番と同じ形にする — でないと測った形と
     #    動かす形が食い違う (2026-09-22)。
@@ -621,21 +626,31 @@ def _endpoint_ref(model_ref: str) -> tuple[str, str] | None:
 
 
 def _build_client_for_ref(
-    model_ref: str, spec: StepSpec, config: AppConfig, *, local_fallback: str | None = None
+    model_ref: str,
+    spec: StepSpec,
+    config: AppConfig,
+    *,
+    local_fallback: str | None = None,
+    step: Step | None = None,
 ) -> LLMClient:
     """model ref → client 構築の共通本体 (外部 dispatch + ローカル fallback 包装)。
 
     ``local_fallback``: 外部主腕が落ちたときのローカル受け皿 (``fallback:<tier>`` の
-    解決値)。None なら BUILTIN (従来挙動)。
+    解決値)。None なら BUILTIN (従来挙動)。``step`` を渡すとローカル呼び出しを
+    step 付きで ``llm_usage`` に記録する (P0-16)。
     """
     from src.tools.llm_client import LLMError, OllamaClient  # 遅延 import (循環回避)
+    from src.tools.local_usage import make_local_recorder  # 遅延 import (循環回避)
 
-    def _local(model: str | None = None) -> OllamaClient:
+    def _local(model: str | None = None, *, is_fallback: bool = False) -> OllamaClient:
         return OllamaClient(
             base_url=config.ollama_base_url,
             model=model or local_fallback or BUILTIN_MODEL_TIERS[spec.tier.value],
             timeout_seconds=spec.timeout_seconds,
             num_ctx=TIER_NUM_CTX.get(spec.tier),
+            step=step.value if step is not None else None,
+            usage_recorder=make_local_recorder() if step is not None else None,
+            is_fallback=is_fallback,
         )
 
     ep_ref = _endpoint_ref(model_ref)
@@ -690,14 +705,14 @@ def _build_client_for_ref(
                 tier=spec.tier.value,
                 error=str(e)[:200],
             )
-            return _local()
+            return _local(is_fallback=True)
         raise
 
     if not _local_fallback_enabled():
         return primary
     from src.tools.llm_fallback import FallbackLLMClient  # 遅延 import (循環回避)
 
-    return FallbackLLMClient(primary=primary, fallback=_local())
+    return FallbackLLMClient(primary=primary, fallback=_local(is_fallback=True))
 
 
 def load_model_tiers(*, db_path: Path | None = None) -> dict[str, str]:

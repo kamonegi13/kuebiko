@@ -16,6 +16,18 @@ from typing import Any
 from src.storage.records import DEFAULT_DB_PATH
 from src.storage.schema_sql import _SCHEMA_SQL
 
+_LLM_USAGE_LOCAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("step", "TEXT"),
+    ("max_tokens", "INTEGER"),
+    ("hit_token_cap", "INTEGER"),
+    ("structured", "INTEGER"),
+    ("output_chars", "INTEGER"),
+    ("error_class", "TEXT"),
+    ("choices_present", "INTEGER"),
+    ("floor_used", "INTEGER"),
+    ("fallback", "INTEGER"),
+)
+
 
 class RunHistoryRepositoryBase:
     """SQLite ベースの run / article / live_log 履歴リポジトリ。"""
@@ -391,6 +403,11 @@ class RunHistoryRepositoryBase:
             )
         if "cost_usd" not in existing_usage:
             conn.execute("ALTER TABLE llm_usage ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
+        # P0-16 (2026-10-29): ローカル LLM の step 別の記録の列 (外部の行は NULL)
+        for col, decl in _LLM_USAGE_LOCAL_COLUMNS:
+            if col not in existing_usage:
+                conn.execute(f"ALTER TABLE llm_usage ADD COLUMN {col} {decl}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_llm_usage_ts ON llm_usage(ts)")
 
         # s23 (2026-10-08、docs/importance_relevance_redesign.md §4.1): 深刻度の軸に
         # 本文から付ける 5 欄を追加。欠測は NULL (false に既定しない)。真偽値は INTEGER (0/1)

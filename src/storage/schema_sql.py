@@ -554,10 +554,24 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     -- 消費台帳の一本化 (2026-07-26): claudecode (サブスク) も本テーブルへ記録。
     -- cache_read_tokens / cost_usd は bridge が CLI から得る自己観測値 (他 provider は 0)。
     cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd      REAL NOT NULL DEFAULT 0
+    cost_usd      REAL NOT NULL DEFAULT 0,
+    -- P0-16 (2026-10-29): ローカル (provider='ollama') の step 別の記録。外部の行は NULL。
+    -- 本文は持たない。容量の計画 (回/日 × 秒/回、hit_token_cap の率) 用。
+    step          TEXT,
+    max_tokens    INTEGER,
+    hit_token_cap INTEGER,
+    structured    INTEGER,
+    output_chars  INTEGER,
+    error_class   TEXT,
+    -- logprob 経路 (provider='ollama-probe') の選択肢の有無 / floor で補ったか、受け皿に落ちた回
+    choices_present INTEGER,
+    floor_used    INTEGER,
+    fallback      INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_llm_usage_provider_ts
     ON llm_usage(provider, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_ts
+    ON llm_usage(ts);
 
 -- アクター辞書 Phase1 F7 (2026-07-26): アクター行動史の月次期間行 (決定論蒸留)。
 -- subject 記事 (articles.subject_actor_ids、主題判定層 2026-07-17 稼働) の月次集計を

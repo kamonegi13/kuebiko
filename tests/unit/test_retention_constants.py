@@ -42,3 +42,7 @@ def test_shadow_tables_keep_180_days() -> None:
     assert maintenance._ALERT_DEDUP_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert maintenance._SEVERITY_C_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert _default_days(repo_triage_shadow.TriageShadowMixin.purge_triage_shadow) == 180
+
+
+def test_llm_usage_keeps_365_days() -> None:
+    assert maintenance._LLM_USAGE_RETENTION_DAYS == 365  # noqa: SLF001
