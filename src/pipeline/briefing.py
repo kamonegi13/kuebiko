@@ -475,6 +475,9 @@ _FEED_BOILERPLATE_RE = re.compile(
 THIN_BODY_GATE_ENV = "THIN_BODY_GATE"
 # 本文からタイトル文字列を除いた残り字数の上限 (p2_report.md §4 の `residual_chars`)。
 _THIN_BODY_RESIDUAL_MAX_CHARS = 200
+# 決まり文句 (keyword_hit) を当てる本文の上限。p2/p2b の調整と測定の母集団 (本文 600 字未満、
+# 下の THIN_BODY_PROBE_MAX_BODY_CHARS と同じ定義) の外には当てない
+_THIN_BODY_KEYWORD_MAX_BODY_CHARS = 600
 # 媒体の決まり文句 (p2_report.md §4 の `keyword_hit`)。英語は語境界つき、日本語は部分一致。
 _MEDIA_STUB_KEYWORDS_EN: tuple[str, ...] = (
     "Listen",
@@ -492,7 +495,8 @@ _MEDIA_STUB_PATTERN_EN: re.Pattern[str] = re.compile(
 )
 _MEDIA_STUB_KEYWORDS_JA: tuple[str, ...] = (
     "視聴",
-    "配信",
+    # 「配信」は外した (2026-10-30): パッチの配信・メール配信サービス等の事案の記事に当たり、
+    # 600 字未満の 15 件中 約 13 件が実在の事案・脆弱性の記事だった
     "ポッドキャスト",
     "登壇",
     "参加申込",
@@ -548,9 +552,16 @@ def _has_media_stub_keyword(body: str) -> bool:
 
 
 def _is_thin_body(body: str, title: str) -> bool:
-    """``residual<200 OR keyword_hit`` (p2_report.md §4、調整用で適合率 88.5%・回収率 69.7%)。"""
+    """``residual<200 OR keyword_hit`` (p2_report.md §4、調整用で適合率 88.5%・回収率 69.7%)。
+
+    ``keyword_hit`` は調整した母集団 (本文 600 字未満) の中でだけ当てる (2026-10-30)。
+    長さを問わず当てると、本文のどこかに Video / Listen / Register 等が 1 語あるだけの
+    長い技術記事まで落ちていた (10-01〜10-30 に 644 件中 448 件が 1500 字超)。
+    """
     if _residual_chars_after_title(body, title) < _THIN_BODY_RESIDUAL_MAX_CHARS:
         return True
+    if len(body) >= _THIN_BODY_KEYWORD_MAX_BODY_CHARS:
+        return False
     return _has_media_stub_keyword(body)
 
 
