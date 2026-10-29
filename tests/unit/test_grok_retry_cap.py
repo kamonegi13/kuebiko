@@ -142,13 +142,12 @@ async def test_no_tracker_keeps_old_behaviour(monkeypatch: pytest.MonkeyPatch) -
 
 async def test_warns_once_before_leaving_lookback(repo: RunHistoryRepository) -> None:
     received = NOW - timedelta(minutes=LOOKBACK - GROK_EXPIRY_WARN_LEAD_MINUTES + 10)
-    await _source(repo, [_email(received=received)]).fetch(5)  # 1 回失敗を記録
-    s = _source(repo, [_email(received=received)])
-    await s.fetch(5)
-    assert s.last_expiring_count == 1
-    s2 = _source(repo, [_email(received=received)])
-    await s2.fetch(5)
-    assert s2.last_expiring_count == 0  # 二度は警告しない
+    counts = []
+    for _ in range(3):
+        s = _source(repo, [_email(received=received)])
+        await s.fetch(5)
+        counts.append(s.last_expiring_count)
+    assert counts == [1, 0, 0]  # 一度だけ警告する
 
 
 async def test_no_warning_far_from_expiry(repo: RunHistoryRepository) -> None:
@@ -189,3 +188,43 @@ def test_cap_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert grok_summary_every() == 0
     monkeypatch.setenv("GROK_UNRENDERED_SUMMARY_EVERY", "abc")
     assert grok_summary_every() == 6
+
+
+async def test_dry_run_style_untracked_source_writes_nothing(repo: RunHistoryRepository) -> None:
+    """dispatch は dry-run で store を渡さない (tracker は無効) — 記録は一切増えない。"""
+    imap = AsyncMock()
+    imap.fetch_unread.return_value = [_email()]
+    grok = AsyncMock()
+    grok.fetch.return_value = _unrendered()
+    tracker = GrokRetryTracker(None, summary_every=6, lookback_minutes=LOOKBACK)
+    s = GrokEmailSource(imap, grok, MagicMock(), lookback_minutes=LOOKBACK, retry_tracker=tracker)
+    await s.fetch(5)
+    assert repo.get_grok_attempt("1") is None
+    assert s.last_not_rendered_count == 1  # 無効のときは従来どおり毎回通知
+
+
+async def test_no_expiry_warning_when_fetched_in_same_run(repo: RunHistoryRepository) -> None:
+    received = NOW - timedelta(minutes=LOOKBACK - GROK_EXPIRY_WARN_LEAD_MINUTES + 10)
+    await _source(repo, [_email(received=received)]).fetch(5)  # 失敗を記録
+    ok = GrokFetchResult(
+        url="u",
+        final_url="https://grok.com/c/x",
+        html="<html/>",
+        body_text="real report body",
+        title="t",
+        success=True,
+    )
+    s = _source(repo, [_email(received=received)], grok_result=ok)
+    assert len(await s.fetch(5)) == 1
+    assert s.last_expiring_count == 0
+
+
+async def test_expiry_uses_internaldate_and_date_granularity(
+    repo: RunHistoryRepository,
+) -> None:
+    # Date ヘッダは新しいが INTERNALDATE は前日の早朝: 窓の基準は INTERNALDATE
+    internal = datetime(2026, 10, 28, 1, 0, tzinfo=UTC)
+    msg = _email(received=NOW - timedelta(hours=1)).model_copy(update={"internal_date": internal})
+    s = _source(repo, [msg])
+    await s.fetch(5)
+    assert s.last_expiring_count == 1

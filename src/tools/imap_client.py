@@ -64,6 +64,8 @@ class EmailMessage(BaseModel):
     body_text: str
     body_html: str
     extracted_urls: list[str]
+    #: サーバが受け取った日時 (INTERNALDATE)。SINCE 検索の基準で、取れなければ None
+    internal_date: datetime | None = None
 
 
 class ImapError(Exception):
@@ -198,12 +200,13 @@ class ImapClient:
         results: list[EmailMessage] = []
         for uid in uids[:max_messages]:
             try:
-                raw = await asyncio.to_thread(self._fetch_uid, uid)
+                fetched = await asyncio.to_thread(self._fetch_uid, uid)
             except imaplib.IMAP4.error as e:
                 _log.warning("imap_fetch_failed", uid=uid, error=str(e))
                 continue
-            if raw is None:
+            if fetched is None:
                 continue
+            raw, internal_date = fetched
 
             msg = email.message_from_bytes(raw)
             sender = _decode_header(msg.get("From", ""))
@@ -226,6 +229,7 @@ class ImapClient:
                     body_text=text,
                     body_html=html,
                     extracted_urls=urls,
+                    internal_date=internal_date,
                 ),
             )
 
@@ -308,18 +312,18 @@ class ImapClient:
         decoded: list[str] = data[0].decode().split()
         return decoded
 
-    def _fetch_uid(self, uid: str) -> bytes | None:
+    def _fetch_uid(self, uid: str) -> tuple[bytes, datetime | None] | None:
         assert self._conn is not None
         # BODY.PEEK[] を使うと FETCH しても \Seen フラグが立たない。
         # RFC822 (= BODY[]) は副作用で auto-mark-as-seen するため、
         # 処理失敗時に UNSEEN search から消えて再試行できなくなる問題があった。
         # 明示的に mark するのは _mark_seen() で別途実行する。
-        typ, data = self._conn.uid("FETCH", uid, "(BODY.PEEK[])")
+        typ, data = self._conn.uid("FETCH", uid, "(INTERNALDATE BODY.PEEK[])")
         if typ != "OK" or not data:
             return None
         for chunk in data:
             if isinstance(chunk, tuple) and len(chunk) >= 2 and isinstance(chunk[1], bytes):
-                return chunk[1]
+                return chunk[1], _parse_internaldate(chunk[0])
         return None
 
     def _mark_seen(self, uid: str) -> None:
@@ -357,6 +361,25 @@ def _parse_date(raw: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt
+
+
+_INTERNALDATE_RE = re.compile(rb'INTERNALDATE "([^"]+)"')
+_INTERNALDATE_FORMAT = "%d-%b-%Y %H:%M:%S %z"
+
+
+def _parse_internaldate(header: object) -> datetime | None:
+    """FETCH 応答の INTERNALDATE を UTC の datetime にする。無い・読めなければ None。"""
+    if not isinstance(header, bytes):
+        return None
+    m = _INTERNALDATE_RE.search(header)
+    if m is None:
+        return None
+    try:
+        return datetime.strptime(
+            m.group(1).decode("ascii").strip(), _INTERNALDATE_FORMAT
+        ).astimezone(UTC)
+    except (ValueError, UnicodeDecodeError):
+        return None
 
 
 def _matches_any(haystack: str, needles: list[str] | None) -> bool:

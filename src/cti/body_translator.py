@@ -251,7 +251,14 @@ def should_block_translation(mode: str, report: GarbleReport) -> bool:
     return False
 
 
-class TranslationEchoError(LLMError):
+class TranslationBrokenError(LLMError):
+    """訳の中身が原因の失敗 (空・JSON の形・原文の写し)。接続や timeout の失敗とは別。
+
+    翻訳キューの失敗の印 (P0-24) はこの型だけを数える。
+    """
+
+
+class TranslationEchoError(TranslationBrokenError):
     """原文の写しの判定に当たった (形は長さと英字率のみ、本文は持たない)。"""
 
     def __init__(self, message: str, *, paragraph_chars: int = 0, ascii_ratio: float = 0.0) -> None:
@@ -285,12 +292,12 @@ async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -
     """
     out = await _generate_translation(llm, chunk, _TRANSLATE_TEMPERATURE)
     if not out:
-        raise LLMError(f"翻訳結果が空です (chunk {index + 1}/{total})")
+        raise TranslationBrokenError(f"翻訳結果が空です (chunk {index + 1}/{total})")
     why = broken_translation_reason(chunk, out)
     if why == ECHO_REASON:
         _raise_echo(chunk, out, index, total, llm.model)
     if why:
-        raise LLMError(
+        raise TranslationBrokenError(
             f"翻訳結果が壊れている: {why} (chunk {index + 1}/{total}, model={llm.model})"
         )
     _check_fidelity(chunk, out, index, total, llm.model)

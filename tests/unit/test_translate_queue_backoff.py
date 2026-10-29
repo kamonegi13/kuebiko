@@ -149,7 +149,8 @@ async def test_job_records_failure_and_skips_after_three(
     _add(repo, "stuck", _ENGLISH, age_minutes=1)
     _add(repo, "later", "short body", age_minutes=30)
 
-    for _ in range(3):
+    for i in range(3):
+        _add(repo, f"fresh{i}", f"short body {i}", age_minutes=60 + i)
         stats = await run_body_translate_backlog(repo, _EchoLLM(ok_on="short body"))
         assert stats["failed"] == 1
     attempt = repo.get_translate_attempt("stuck")
@@ -197,12 +198,13 @@ async def test_job_survives_record_failure(
 ) -> None:
     monkeypatch.setenv("TRANSLATE_QUEUE_BACKOFF", "1")
     _add(repo, "a", _ENGLISH)
+    _add(repo, "ok", "plain body", age_minutes=5)
 
     def _boom(*a: Any, **k: Any) -> None:
         raise RuntimeError("db down")
 
     monkeypatch.setattr(repo, "record_translate_failure", _boom)
-    stats = await run_body_translate_backlog(repo, _EchoLLM())
+    stats = await run_body_translate_backlog(repo, _EchoLLM(ok_on="plain body"))
     assert stats["failed"] == 1
     assert stats["attempt_record_errors"] == 1
 
@@ -222,3 +224,36 @@ def test_find_echo_match_none_for_translation() -> None:
 
 def test_echo_error_is_llm_error() -> None:
     assert issubclass(TranslationEchoError, LLMError)
+
+
+async def test_connection_failure_is_not_counted(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_QUEUE_BACKOFF", "1")
+    _add(repo, "a", "short body", age_minutes=1)
+    _add(repo, "b", "other body", age_minutes=2)
+    # a は接続の失敗 (内容と無関係)、b は成功
+    await run_body_translate_backlog(repo, _EchoLLM(raise_on="short body", ok_on="other body"))
+    assert repo.get_translate_attempt("a") is None
+
+
+async def test_run_where_everything_fails_is_not_counted(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATE_QUEUE_BACKOFF", "1")
+    _add(repo, "a", _ENGLISH, age_minutes=1)
+    _add(repo, "b", _ENGLISH + " more", age_minutes=2)
+    stats = await run_body_translate_backlog(repo, _EchoLLM())
+    assert stats["failed"] == 2
+    assert repo.get_translate_attempt("a") is None
+    assert repo.get_translate_attempt("b") is None
+
+
+def test_exclusion_keeps_newest_first(repo: RunHistoryRepository) -> None:
+    _add(repo, "n1", "body", age_minutes=1)
+    _add(repo, "bad", "body", age_minutes=2)
+    _add(repo, "n3", "body", age_minutes=3)
+    _add(repo, "n4", "body", age_minutes=4)
+    _fail(repo, "bad", 3, NOW)
+    got = repo.list_articles_untranslated(limit=10, backoff=True, now=NOW)
+    assert got == ["n1", "n3", "n4"]

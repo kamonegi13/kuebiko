@@ -53,6 +53,20 @@ def _record_failure(repo: RunHistoryRepository, aid: str, error: Exception) -> b
     return True
 
 
+def _record_content_failures(
+    repo: RunHistoryRepository, failures: list[tuple[str, Exception]], *, succeeded: int
+) -> int:
+    """内容が原因の失敗を数える。記録に失敗した件数を返す。
+
+    1 回の実行で 1 件も訳せなかったときは、LLM 側の不調 (出力が全部壊れる等) の疑いが強いので
+    数えない (正常な記事が一斉に除外されるのを防ぐ保険)。
+    """
+    if failures and succeeded == 0:
+        _log.warning("translate_attempts_skipped_all_failed", failures=len(failures))
+        return 0
+    return sum(not _record_failure(repo, aid, e) for aid, e in failures)
+
+
 def _clear_attempts(repo: RunHistoryRepository, aid: str) -> None:
     try:
         repo.clear_translate_attempts(aid)
@@ -69,6 +83,7 @@ async def run_body_translate_backlog(
 ) -> dict[str, int]:
     """未訳記事を新しい順に翻訳して body_ja に保存する。統計 dict を返す。"""
     from src.cti.body_translator import (
+        TranslationBrokenError,
         TranslationEchoError,
         TranslationGarbledError,
         is_probably_japanese,
@@ -93,7 +108,7 @@ async def run_body_translate_backlog(
     skipped_garbled = 0
     skipped_budget = 0
     echo_failed = 0
-    record_errors = 0
+    content_failed: list[tuple[str, Exception]] = []
     for aid in article_ids:
         remaining = time_budget_seconds - (time.monotonic() - started)
         if remaining <= 0:
@@ -135,7 +150,9 @@ async def run_body_translate_backlog(
             # 次周期の再試行は失敗チャンクから続く (毒薬記事の毎時全損を防ぐ)。
             failed += 1
             echo_failed += isinstance(e, TranslationEchoError)
-            record_errors += not _record_failure(repo, aid, e)
+            # 失敗の印は内容が原因のものだけ。Ollama の停止・接続・timeout は数えない
+            if isinstance(e, TranslationBrokenError):
+                content_failed.append((aid, e))
             _log.warning("body_backlog_translate_failed", article_id=aid, error=str(e))
             continue
         if progress.text is None:
@@ -152,6 +169,7 @@ async def run_body_translate_backlog(
         _clear_attempts(repo, aid)
         translated += 1
 
+    record_errors = _record_content_failures(repo, content_failed, succeeded=translated + partial)
     stats = {
         "picked": len(article_ids),
         "translated": translated,

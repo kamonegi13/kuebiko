@@ -150,8 +150,6 @@ class GrokEmailSource:
         pending: dict[str, tuple[str, ...]] = {}  # レポート抽出に成功したメール (既読化の候補)
         tracker = self._retry_tracker
         for msg in emails:
-            if tracker is not None:
-                tracker.check_expiry(msg)  # 取得窓から外れる前の警告 (上限到達後も出す)
             got_ids, complete, unrendered = await self._fetch_email(msg, articles, max_count)
             if unrendered:
                 self._count_unrendered(msg, unrendered)
@@ -159,6 +157,8 @@ class GrokEmailSource:
                 pending[msg.uid] = tuple(got_ids)
                 if tracker is not None:
                     tracker.on_success(msg.uid)
+            elif tracker is not None:
+                tracker.check_expiry(msg)  # 取り切れなかったメールだけ、窓から外れる前に警告
             if len(articles) >= max_count:
                 break
 
