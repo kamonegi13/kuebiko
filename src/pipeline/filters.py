@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 from src.config_loader import AppConfig
-from src.cti.ingest_relevance import ingest_relevance_hint
+from src.cti.ingest_relevance import (
+    geo_theatre_hint_mode,
+    geo_theatre_reasons,
+    ingest_relevance_hint,
+)
 from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
 from src.pipeline.grok_convert import _is_grok_article
@@ -27,7 +31,7 @@ from src.tools.text_utils import strip_html as _strip_html
 from src.tools.url_normalizer import url_hash
 
 if TYPE_CHECKING:
-    from src.tools.article_triage import TriageDecision
+    from src.tools.article_triage import ArticleTriage, TriageDecision
 
 _log = get_logger(__name__)
 
@@ -124,6 +128,18 @@ def _ingest_rule_v2_enabled() -> bool:
     return os.environ.get(_INGEST_RULE_V2_ENV, "0").strip() in ("1", "true", "yes", "on")
 
 
+def _geo_theatre_hint_fires(article: Article, triage: ArticleTriage) -> bool:
+    """戦域ヒント (INGEST_GEO_THEATRE_HINT)。shadow は記録のみで False、1 だけ True を返す。"""
+    mode = geo_theatre_hint_mode()
+    if mode == "off":
+        return False
+    hit = geo_theatre_reasons(f"{article.title or ''}\n{triage._triage_content(article)}")
+    if not hit:
+        return False
+    _log.info("geo_theatre_hint", article_id=article.id, theatres=list(hit), mode=mode)
+    return mode == "on"
+
+
 def _filter_duplicates(
     articles: list[Article],
     dedup_repo: RunHistoryRepository,
@@ -169,6 +185,7 @@ async def _filter_by_triage(
     rescue_llm: LLMClient | None = None,
     relevance_embedder: EmbeddingClient | None = None,
     relevance_cascade_llm: LLMClient | None = None,
+    analysis_only_out: set[str] | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -236,10 +253,12 @@ async def _filter_by_triage(
     triage_error_count = sum(1 for _, _, err, _ in decisions if err)
 
     rescued: set[str] = set()
+    geo_rescued: set[str] = set()
     if rescue_llm is not None and os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0":
         decisions, rescued = await _rescue_geopolitical(
             decisions, rescue_llm, keep_importance=keep_importance, think=think
         )
+        geo_rescued = set(rescued)
 
     # サイバー政策の救済 (2026-10-10)。CYBER_POLICY_RESCUE=1 で適用 / shadow で記録のみ
     policy_mode = policy_rescue_mode()
@@ -262,7 +281,9 @@ async def _filter_by_triage(
             # (日本・注視国・関連性の核 SIR) が発火すれば落とさない。TRIAGE_FLAT=1 と
             # 組み合わせて使う想定 (§6)。hint は決定論・LLM 不使用なので全件に適用して安い。
             hint_fired = False
-            if ingest_rule_v2:
+            if _geo_theatre_hint_fires(article, triage):
+                hint_fired = True
+            if ingest_rule_v2 and not hint_fired:
                 hint = ingest_relevance_hint(
                     feed=(article.feed_title or "").strip(),
                     title=(article.title or "").strip(),
@@ -288,6 +309,10 @@ async def _filter_by_triage(
         # else: 枠あふれ (評価は keep 水準) — skipped には数えるが rejected ではない
 
     kept_ids = {a.id for a in kept}
+    # GEO_RESCUE_MODE=analysis: 救済した地政学の記事は分析専用 (要約・タグ・群化・PIR 評価には
+    # 入れるが Discord へは流さない)。呼び出し側が集合を渡したときだけ記録する
+    if analysis_only_out is not None and geo_rescue_mode() == "analysis":
+        analysis_only_out.update(kept_ids & geo_rescued)
     skipped_ids = [a.id for a in triage_targets if a.id not in kept_ids]
     survivors = grok_articles + kept
 
@@ -319,6 +344,31 @@ async def _filter_by_triage(
 #: 救済の対象 = triage が地政学・軍事・外交を理由に落とした記事 (理由の欄で判定する)
 _GEO_REASON = re.compile(r"(地政学|軍事|外交|安全保障|海軍|演習|ミサイル|防衛|国防|核)")
 _RESCUE_MARK = "[地政学の救済] "
+_GEO_RESCUE_PROMPT_ENV = "GEO_RESCUE_PROMPT"
+
+
+_GEO_RESCUE_MODE_ENV = "GEO_RESCUE_MODE"
+
+
+def geo_rescue_mode() -> str:
+    """救済した地政学の記事の扱い。``deliver`` (既定 = 従来どおり配信) / ``analysis`` (分析専用)。
+
+    analysis は posted_channel=NULL の status='posted' で残す (DEDUP_KEEP_FOR_ANALYSIS と同形)。
+    地政学は PIR/SIR 評価の文脈・根拠として欲しいが、配信の high にはしない (利用者判断 10-30)。
+    """
+    raw = os.environ.get(_GEO_RESCUE_MODE_ENV, "deliver").strip().lower()
+    return "analysis" if raw == "analysis" else "deliver"
+
+
+def geo_rescue_prompt_mode() -> str:
+    """救済の prompt 選択 (2026-10-30)。``flat`` (既定、TRIAGE_FLAT に従う) / ``pir``。
+
+    TRIAGE_FLAT=1 の本番では救済も平たい rubric になり (非サイバーの政策・地政学 = low)、
+    救済率が 81% → 約 5% に落ちた。``pir`` なら救済だけ PIR-driven prompt
+    (pir_geo_* SIR + triage_rubric の境界の決まり) で判定する。medium 上限は不変。
+    """
+    raw = os.environ.get(_GEO_RESCUE_PROMPT_ENV, "flat").strip().lower()
+    return "pir" if raw == "pir" else "flat"
 
 
 async def _rescue_geopolitical(
@@ -345,7 +395,8 @@ async def _rescue_geopolitical(
     ]
     if not targets:
         return decisions, set()
-    triage = ArticleTriage(rescue_llm, think=think)
+    prompt_mode = geo_rescue_prompt_mode()
+    triage = ArticleTriage(rescue_llm, think=think, force_pir=prompt_mode == "pir")
     sem = asyncio.Semaphore(_triage_concurrency())
 
     async def _one(i: int) -> tuple[int, TriageDecision]:
@@ -360,7 +411,13 @@ async def _rescue_geopolitical(
         article = out[i][0]
         out[i] = (article, "medium", False, _RESCUE_MARK + d.reason)
         rescued.add(article.id)
-    _log.info("triage_geo_rescue", candidates=len(targets), rescued=len(rescued))
+    _log.info(
+        "triage_geo_rescue",
+        candidates=len(targets),
+        rescued=len(rescued),
+        prompt_mode=prompt_mode,
+        prompt_path=triage.prompt_path,
+    )
     return out, rescued
 
 
