@@ -54,6 +54,12 @@ LogStream = Literal["stdout", "stderr", "system"]
 TriggerSource = Literal["scheduler", "manual", "cli", "recovery"]
 
 
+#: articles.analysis_only に入れる理由の SSoT (配信せず分析にだけ残した行)。
+#: geo_rescue = 地政学の救済 (GEO_RESCUE_MODE=analysis) / thin_body_recovery = 薄い本文の回収 (予約)
+AnalysisOnlyReason = Literal["geo_rescue", "thin_body_recovery"]
+ANALYSIS_ONLY_GEO_RESCUE: AnalysisOnlyReason = "geo_rescue"
+
+
 class RunRecord(BaseModel):
     """1 回のパイプライン実行のメタデータ。"""
 
@@ -161,6 +167,7 @@ class ArticleRecord(BaseModel):
     original_title: str | None = None
     # 分析専用の印 (2026-10-30)。配信せず分析にだけ残した行の理由 ("geo_rescue")。
     # None = 通常の行。「配信した/新規」の集計はこれが NULL の行に限る。
+    # 値は AnalysisOnlyReason のいずれか。読み出しで未知の理由が来ても落とさないよう str で持つ
     analysis_only: str | None = None
     # P4: 本文に明示された対処 (パッチ/回避策) の 1 文。None=記載なし
     remediation: str | None = None

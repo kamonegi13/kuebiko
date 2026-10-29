@@ -274,6 +274,7 @@ async def _filter_by_triage(
 
     ingest_rule_v2 = _ingest_rule_v2_enabled()
     kept: list[Article] = []
+    theatre_admitted: set[str] = set()  # 戦域ヒントで取り込んだ地政学の記事 id
     rejected: list[TriageRejectionRow] = []  # importance 不足 = 評価済み・不採用 (既読化対象)
     for article, importance, _err, reason in decisions:
         if importance not in keep_importance:
@@ -283,6 +284,7 @@ async def _filter_by_triage(
             hint_fired = False
             if _geo_theatre_hint_fires(article, triage):
                 hint_fired = True
+                theatre_admitted.add(article.id)
             if ingest_rule_v2 and not hint_fired:
                 hint = ingest_relevance_hint(
                     feed=(article.feed_title or "").strip(),
@@ -312,7 +314,7 @@ async def _filter_by_triage(
     # GEO_RESCUE_MODE=analysis: 救済した地政学の記事は分析専用 (要約・タグ・群化・PIR 評価には
     # 入れるが Discord へは流さない)。呼び出し側が集合を渡したときだけ記録する
     if analysis_only_out is not None and geo_rescue_mode() == "analysis":
-        analysis_only_out.update(kept_ids & geo_rescued)
+        analysis_only_out.update(kept_ids & (geo_rescued | theatre_admitted))
     skipped_ids = [a.id for a in triage_targets if a.id not in kept_ids]
     survivors = grok_articles + kept
 

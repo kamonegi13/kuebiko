@@ -155,3 +155,53 @@ def test_mcnemar_and_strata_summary() -> None:
     assert (out["flat_only_correct"], out["pir_only_correct"]) == (0, 2)
     assert out["mcnemar_p"] == pytest.approx(0.5)
     assert mcnemar_exact(0, 0) == 1.0
+
+
+def test_public_detail_404s_for_analysis_only_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from src.ui.api import public_news
+
+    # Arrange: 生成済み (versions あり) でも、メンバーが分析専用だけなら出さない
+    ana = SimpleNamespace(status="posted", duplicate_of=None, analysis_only="geo_rescue")
+    repo = SimpleNamespace(
+        get_event_item=lambda _id: SimpleNamespace(state=SimpleNamespace(member_ids=("ana",))),
+        list_event_versions=lambda _id: [object()],
+        get_articles_by_ids=lambda _ids: {"ana": ana},
+    )
+    monkeypatch.setattr(public_news, "_repo", lambda: repo)
+    monkeypatch.setattr(public_news, "_is_public", lambda _r: True)
+    monkeypatch.setattr(public_news, "_citations", lambda _repo, _id: [{"article_id": "ana"}])
+
+    # Act / Assert
+    with pytest.raises(HTTPException) as exc:
+        public_news.get_public_news("x")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_theatre_hint_admitted_items_are_analysis_only_in_analysis_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.pipeline.filters import _filter_by_triage
+
+    # Arrange: triage は low、救済なし、戦域ヒントが 1 (取り込みに効く)
+    monkeypatch.setenv("GEO_RESCUE_MODE", "analysis")
+    monkeypatch.setenv("INGEST_GEO_THEATRE_HINT", "1")
+    monkeypatch.setenv("INGEST_RULE_V2", "0")
+    monkeypatch.setenv("CYBER_POLICY_RESCUE", "0")
+    monkeypatch.setenv("TRIAGE_SHADOW_PER_RUN", "0")
+    llm: Any = AsyncMock()
+    llm.generate_structured.return_value = TriageDecision(importance="low", reason="地政学")
+    out: set[str] = set()
+
+    # Act
+    survivors, *_ = await _filter_by_triage(
+        [_article()], llm, keep_importance={"medium", "high"}, max_keep=5, analysis_only_out=out
+    )
+
+    # Assert
+    assert [a.id for a in survivors] == ["a"]
+    assert out == {"a"}

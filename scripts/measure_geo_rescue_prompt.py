@@ -50,6 +50,7 @@ DEFAULT_N = 200
 DEFAULT_SINCE = "2026-10-12"
 SEED = 20261030
 KEEP = {"medium", "high"}
+MIN_GRADED_GOLD = 50  # 正解 60 件のうち標本に入っているべき最小件数
 
 
 def load_candidates(since: str) -> list[dict[str, Any]]:
@@ -132,6 +133,11 @@ async def run(args: argparse.Namespace) -> None:
     ]
     args.out.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
     summary = summarize(records, strata, gold)
+    if gold and summary["graded"] < MIN_GRADED_GOLD:
+        print(
+            f"WARNING: 標本に入った正解は {summary['graded']}/{len(gold)} 件 "
+            f"(< {MIN_GRADED_GOLD})。McNemar の検出力が足りない (--n を増やすか概要を足す)"
+        )
     print(f"n={len(articles)} candidates={len(cands)} -> {args.out}")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 

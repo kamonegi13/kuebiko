@@ -724,6 +724,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 SELECT * FROM articles
                  WHERE dedup_key = ?
                    AND status = 'posted'
+                   AND analysis_only IS NULL
                    AND datetime(created_at) >= datetime('now', ?)
                  ORDER BY created_at DESC
                  LIMIT 1
@@ -791,7 +792,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         since = base - timedelta(hours=within_hours)
         sql = (
             "SELECT * FROM articles"
-            " WHERE status = 'posted'"
+            " WHERE status = 'posted' AND analysis_only IS NULL"
             " AND created_at >= ?"
             " AND article_id IN ("
             "   SELECT article_id FROM article_entities"

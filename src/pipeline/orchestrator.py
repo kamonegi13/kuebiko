@@ -59,6 +59,7 @@ from src.pipeline.publish import _print_dry_run, _resolve_channel
 from src.pipeline.result import PipelineRunResult
 from src.pipeline.roundup_guard import involves_roundup, kind_classifier
 from src.pipeline.summary import DiscordChannel
+from src.storage.records import ANALYSIS_ONLY_GEO_RESCUE
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.channel_registry import fallback_map, push_map
@@ -84,8 +85,6 @@ WEB_ONLY_ENV = "PIPELINE_WEB_ONLY"
 #: 投稿直前の重複判定に当たった記事を分析に残すか (2026-10-02、既定 ON)。
 #: "0" で従来の挙動 (status='skipped_duplicate' = 台帳・PIR・総括・地図から外れる) に戻る。
 KEEP_DUPLICATES_ENV = "DEDUP_KEEP_FOR_ANALYSIS"
-#: articles.analysis_only に入れる理由 (GEO_RESCUE_MODE=analysis で救った地政学の記事)
-ANALYSIS_ONLY_GEO_RESCUE = "geo_rescue"
 
 # 時間予算 (soft deadline、2026-08-01)。親 (PipelineRunner) の wallclock timeout で
 # kill されると「投稿 0・既読化 0・成果全損 → 次 run が同じ記事を再処理」の全損ループに
@@ -1119,15 +1118,17 @@ async def run_pipeline(
     for art_id, msg in briefings:
         outcome = outcome_by_msg_id.get(id(msg))
         channel = _resolve_channel(msg, importance_map)
-        if outcome is not None and art_id in analysis_only_ids:
+        if art_id in analysis_only_ids:
             # 分析専用 (地政学の救済): 配信せず status='posted' / posted_channel=None で残す
-            outcome["status"] = "posted"
-            outcome["analysis_only"] = ANALYSIS_ONLY_GEO_RESCUE
-            if msg.summary:
-                outcome["summary"] = msg.summary
-            _register_seen(art_id)
-            _persist_grok_post_now(art_id, outcome)
-            kept_duplicate_ids.append(art_id)
+            # outcome が引けなくても配信はしない (fail-open で通常の投稿に落とさない)
+            if outcome is not None:
+                outcome["status"] = "posted"
+                outcome["analysis_only"] = ANALYSIS_ONLY_GEO_RESCUE
+                if msg.summary:
+                    outcome["summary"] = msg.summary
+                _register_seen(art_id)
+                _persist_grok_post_now(art_id, outcome)
+                kept_duplicate_ids.append(art_id)
             continue
         publisher = publishers.get(channel)
         # Phase 5K fallback: webhook 未設定の新規 ch は fallback ch に流す

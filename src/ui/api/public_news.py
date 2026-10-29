@@ -169,6 +169,12 @@ def _is_duplicate_only(articles: dict[str, Any], member_ids: tuple[str, ...]) ->
     )
 
 
+def _is_analysis_only_event(articles: dict[str, Any], member_ids: tuple[str, ...]) -> bool:
+    """既知のメンバーが 1 件以上あり、全員が分析専用 (articles.analysis_only) か。"""
+    known = [articles[a] for a in member_ids if a in articles]
+    return bool(known) and all(getattr(a, "analysis_only", None) for a in known)
+
+
 def _citations(repo: RunHistoryRepository, item_id: str) -> list[dict[str, Any]]:
     """出典 (媒体名 + 原記事 URL)。**原記事の本文・要約は含めない**。"""
     members = repo.list_event_members(item_id)
@@ -550,10 +556,12 @@ def get_public_news(item_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="not found")
 
     versions = repo.list_event_versions(item_id)
-    if not versions:
-        articles = repo.get_articles_by_ids(list(record.state.member_ids))
-        if _is_duplicate_only(articles, record.state.member_ids):
-            raise HTTPException(status_code=404, detail="not found")
+    members = repo.get_articles_by_ids(list(record.state.member_ids))
+    # 分析専用の行だけの事象は一覧と同じく生成済みでも出さない (配信した行を含めば出す)
+    if _is_analysis_only_event(members, record.state.member_ids):
+        raise HTTPException(status_code=404, detail="not found")
+    if not versions and _is_duplicate_only(members, record.state.member_ids):
+        raise HTTPException(status_code=404, detail="not found")
     latest = versions[0] if versions else None
     body = json.loads(latest.body_json) if latest and latest.body_json else {}
     revisions = _revisions(repo, versions)

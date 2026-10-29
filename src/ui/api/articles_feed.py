@@ -319,6 +319,7 @@ def list_articles_feed(  # noqa: PLR0913
                 "importance": a.importance,
                 "category": a.category,
                 "posted_channel": a.posted_channel,
+                "analysis_only": a.analysis_only,
                 "victim_sector": a.victim_sector_canonical,
                 "victim_country": a.victim_country_iso,
                 "socio_political_intent": a.socio_political_intent,

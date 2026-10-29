@@ -16,6 +16,10 @@ from src.storage.records import (
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _from_iso, _row_to_article, _to_iso
 
+#: 重複判定の比較対象から外す条件 (分析専用の行、2026-10-30)。配信していない記事が
+#: 「既出」の錨になり、後から来る配信すべき記事を黙って抑えるのを防ぐ。
+_NOT_ANALYSIS_ONLY_URL = "url NOT IN (SELECT url FROM articles WHERE analysis_only IS NOT NULL)"
+
 
 class DedupMixin(RunHistoryRepositoryBase):
     # ----- dedup_seen_urls (Phase 3a) -----
@@ -283,12 +287,13 @@ class DedupMixin(RunHistoryRepositoryBase):
                 cutoff = (datetime.now(UTC) - timedelta(hours=window_hours)).isoformat()
                 rows = conn.execute(
                     "SELECT url_hash, dim, vector FROM article_embeddings "
-                    "WHERE model = ? AND created_at >= ?",
+                    f"WHERE model = ? AND created_at >= ? AND {_NOT_ANALYSIS_ONLY_URL}",
                     (model, cutoff),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT url_hash, dim, vector FROM article_embeddings WHERE model = ?",
+                    "SELECT url_hash, dim, vector FROM article_embeddings "
+                    f"WHERE model = ? AND {_NOT_ANALYSIS_ONLY_URL}",
                     (model,),
                 ).fetchall()
         if not rows:
@@ -732,6 +737,7 @@ class DedupMixin(RunHistoryRepositoryBase):
                 SELECT * FROM articles
                  WHERE created_at >= ?
                    AND status = 'posted'
+                   AND analysis_only IS NULL
                    AND (dedup_key = ? OR dedup_key LIKE ?)
                  ORDER BY created_at DESC
                  LIMIT 1
