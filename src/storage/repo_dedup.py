@@ -622,7 +622,7 @@ class DedupMixin(RunHistoryRepositoryBase):
     def purge_old_access_audit(self, days: int = 180) -> int:
         """N 日より古い監査証跡を削除する。
 
-        retention は run_logs (30 日) より長い 180 日 — 監査は「後から遡って
+        retention は 180 日 (run_logs と同水準) — 監査は「後から遡って
         調べる」ためのもので、事故の発覚が遅れる前提で保持する必要がある。
         """
         with self._connect() as conn:

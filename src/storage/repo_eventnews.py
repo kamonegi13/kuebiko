@@ -982,7 +982,7 @@ class EventNewsMixin(RunHistoryRepositoryBase):
             )
         return len(values)
 
-    def purge_semantic_skips(self, days: int = 90) -> int:
+    def purge_semantic_skips(self, days: int = 365) -> int:
         """N 日より古い dedup_semantic_skips を削除する (§11 retention、dedup と連動)。"""
         with self._connect() as conn:
             cur = conn.execute(

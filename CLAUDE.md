@@ -518,6 +518,7 @@ kuebiko/
   | (10-24) 関与国の関門の規則 3 に例外 (`cti/involved_country_gate`、`_PARTICIPATION_CUE`): 4 件目以降で言及 3 回未満でも、その国の言及と同じ文に署名・参加・共同声明・賛同の語 (signed/signatory/joined/participat*/endorse*/co-sponsor、署名・共同声明・参加・賛同) があれば残す。広い語 (support・partner・支援・協力) は誤りが増え不採用。正解 143 件 (B4 層化、調整に使っていない側) で適合 81.8→82.1%・回収 94.2→95.7%、正解 150 件 (c2d、規則 3 を調整した標本) で適合 87.0→86.4%・回収 81.7→84.3%。救った組は正 10・誤 4 (標本が小さく差は誤差の範囲、同じ標本で語を選んだ限界あり)。**既定 on** | `INVOLVED_COUNTRY_CUE_EXCEPTION=0` |
   | (10-29) 文書の訂正のみ (挙動の変化なし): 公開面の配信ツールの版の固定と、pair 判定の版 45 の記録は済み (重ねて作業しない)。`assign_probe.py` の docstring から撤回済みの「s23i は無情報」を外した (本番の経路で s23i 0.956・gemma4:26b 0.970) | (文書のみ) |
   | (10-29) 呼び手の無い step `alert_law_enforcement_judge` を退役 (`model_tiers.RETIRED_STEPS`): `Step`・`STEP_REGISTRY`・logprob 判定を外し、DB に残る `step:alert_law_enforcement_judge` は検証・持ち越し・一覧で警告して読み捨てる (alert の法執行関門は語の条件のみで不変)。DB の上書き自体は API で空にして版を進める (§2 の切替手順) | このコミットを revert + 版 45 |
+  | (10-29) replay の材料の保持を延ばす (本文を含まない短命な表のみ): situation_detection_log 90→365 日・dedup_semantic_skips 90→365 日・job_run_log 30→180 日・run_logs 30→180 日・triage/routing_v2/alert_dedup/severity_c の shadow 表 60→180 日。situation_detection_log の保持は `assessment/ledger.py` の定数を maintenance が参照する単一 SSoT。固定は `tests/unit/test_retention_constants.py` | このコミットを revert |
   | (10-24) 深刻さ v5 の利用者判断 P1〜P7 を A (`importance_v2`、版 `2026-10-24.12`) に反映: P1 大規模な単一事業者の停止は S2 (`large_org_disruption` 撤去。これで `victim_size` 欄の消費者が無くなった = 宿題) / P2 提供者・委託先の侵害 (`scope=multi_org_or_provider`) は本文に影響を受けた組織の数 (`stated_org_count`、2 以上) があるときだけ S3 (`provider_org_count`)、無ければ S2 (`provider_unquantified`) / P5 復旧・再開だけを伝える見出し (`is_recovery_only`) は深刻さなし (`recovery_only`) / P7 `target=critical_infra` でも被害業種が NISC 外 (`nisc_sectors.NON_CI_CANONICALS`: 大学・研究機関ほか) なら重要インフラにしない。P3 (標的の確認) は軸で区別できず変更なし、P4・P6 は既存と同じ向き。正解 v5_final (境界を除く 242 件) で S3 適合 74.5→78.9%・再現 81.4→82.6% (重み付き 86.9→88.5% / 87.0→87.2%)、深刻さの一致 180→184、直近 14 日の S3 は 438→392 件 (-10.5%、主に提供者の数なし 59 件が S2 へ)。調整と測定が同じ標本 | このコミットを revert (毎時の段が古い版の記録を付け直す) |
 - **評価 (s20 等) を本番コンテナの中で回さない** (2026-09-27): GPU を取り合って RSS 取得が段の上限を超え、
   後続の段が「実行中」で 0 秒成功扱いになった。評価は使い捨てコンテナで、本番を止めるか空き時間に流す
@@ -672,7 +673,7 @@ kuebiko/
 - **SSE 配信**: 実行中は `RunRegistry` (in-process pub/sub) で接続中のクライアントに増分配信
 - **再接続耐性**: HTML5 EventSource の `Last-Event-ID` ヘッダで途中の seq から再開
 - **クラッシュ復旧**: 起動時に `status='running'` のまま残った run を `failed` に倒す
-- **retention**: 30 日より古い `run_logs` を起動時に purge
+- **retention**: 180 日より古い `run_logs` を起動時に purge
 - **行数上限**: 1 run あたり 5000 行で打ち切り、超過時は `log_truncated=1` を立てる
 - **行サイズ上限**: 8KB 超は末尾を切り詰め `... [truncated]` を付与
 - **Phase 5 への投資**: `RunRegistry` Protocol を切ることで複数ワーカー化時に Redis pub/sub 実装に差し替え可能 (今回は in-memory のみ)

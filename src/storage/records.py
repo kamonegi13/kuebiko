@@ -23,7 +23,7 @@ LOG_TRUNCATE_SUFFIX = "... [truncated]"
 MAX_LOG_LINES_PER_RUN = 5000
 
 # 既定の log retention (日)
-DEFAULT_LOG_RETENTION_DAYS = 30
+DEFAULT_LOG_RETENTION_DAYS = 180
 
 
 # ---------- Models ----------
