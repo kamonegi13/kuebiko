@@ -48,12 +48,48 @@ class ConfigVersion:
     created_at: str
 
 
+_PG_READ_ONLY_SQLSTATE = "25006"  # read_only_sql_transaction
+_SQLITE_READ_ONLY_MARKER = "readonly database"
+
+
+def is_read_only_error(exc: BaseException) -> bool:
+    """読み取り専用の接続に書き込み (DDL) を出して拒否された例外か。
+
+    PG は ``ReadOnlySqlTransaction`` (SQLSTATE 25006)、sqlite は
+    ``attempt to write a readonly database``。それ以外 (接続不能・権限・構文等) は False。
+    """
+    if getattr(exc, "sqlstate", None) == _PG_READ_ONLY_SQLSTATE:
+        return True
+    if type(exc).__name__ == "ReadOnlySqlTransaction":
+        return True
+    return isinstance(exc, sqlite3.OperationalError) and _SQLITE_READ_ONLY_MARKER in str(exc)
+
+
 def _open(db_path: Path | None) -> Any:
     conn = _backend_connect(db_path)
     if hasattr(conn, "row_factory"):
         conn.row_factory = sqlite3.Row  # PG wrapper では no-op (dict_row)
-    conn.executescript(_DDL)  # CREATE TABLE/INDEX IF NOT EXISTS (idempotent)
+    try:
+        conn.executescript(_DDL)  # CREATE TABLE/INDEX IF NOT EXISTS (idempotent)
+    except Exception as e:
+        # 読み取り専用の接続 (測定の接続等) は DDL を拒否される。表は既にある前提で
+        # 続行し、後続の SELECT に任せる (表が無ければそこで大きく落ちる)。
+        # 書き込み (save_config の INSERT) は読み取り専用なら従来どおり失敗する。
+        # それ以外の例外は握らない。
+        if not is_read_only_error(e):
+            conn.close()
+            raise
+        _log.debug("config_store_ddl_skipped_read_only")
+        _rollback_quietly(conn)
     return conn
+
+
+def _rollback_quietly(conn: Any) -> None:
+    """失敗した文の後で接続を使える状態に戻す (PG は失敗した文でトランザクションが中断する)。"""
+    try:
+        conn.rollback()
+    except Exception as e:  # noqa: BLE001 — 戻せなくても SELECT 側で表面化する
+        _log.debug("config_store_rollback_failed", error=type(e).__name__)
 
 
 def get_config(key: str, *, db_path: Path | None = None) -> Any | None:
