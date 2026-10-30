@@ -68,8 +68,9 @@ judged_rescued = flat_rescued OR (pir_rescued AND Q1 AND Q2)
 - 本番の triage は thin feed で本文を先行抽出し `body_text` の冒頭 1,500 字で判定する。落選した記事は本文が
   保存されていないため、標本の url から取り直す: `ContentExtractor.extract(url)` (本番の `_prefetch_thin_bodies`
   と同じ経路・UA)、同時 3 件・1 件ごとに 1 秒の間隔。`check_extracted_identity` は記録のみ (棄却しない、本番と同じ)
-- **敵性ホストは本文を取りに行かない**: host が `.cn` / `.ru` / `.su`、または `news-pravda.com` / `sputnikglobe.com` /
-  `sputniknews.com` / `rt.com` / `rt-english.com` / `globaltimes.cn` (の下位ドメイン) の記事は RSS 概要だけを使う
+- **敵性ホストは本文を取りに行かない**: host が `.cn` / `.ru` / `.su`、または露の国営メディア A〜E・中国の国営メディア A
+  の登録ドメイン (の下位ドメイン) の記事は RSS 概要だけを使う。具体的な host の一覧は抽出の実装
+  (`draw_sample.py`、gitignore、sha256 を manifest に記録) にだけ書く (公開リポに収集先を書かない、docs/local_overlay.md)
 - RSS 概要: 母集団の feed_url を 1 feed 1 回だけ取り直し (`direct_rss_source._fetch_one_feed`、本番の収集と同じ経路)、
   記事 id (`rss:<entry id>`) で一致した entry の概要
 - 入力の優先: 本文 (200 字以上) → RSS 概要 → どちらも無ければ標本に入れない (§3 で飛ばす)。行ごとに入力の種類
@@ -273,3 +274,8 @@ manifest の sha256 (標本・入力・正解・この文書) が判定の前後
 
 - 2026-10-30 初版 (標本・入力・正解・判定はいずれも存在しない)
 - 2026-10-30 追補 (A′・C′・入力の決まり・Q2 の文言・κ の手順)。旧正解の理由を読んだ後、判定の出力が 1 件も無い時点
+- 2026-10-30 表記のみ (内容の変更なし): §4 の敵性ホストの具体的な登録ドメインを総称 (露の国営メディア A〜E・中国の
+  国営メディア A) に置き換えた (公開リポに収集先を書かない方針、docs/local_overlay.md)。手順の中身は不変で、具体的な
+  一覧は `draw_sample.py` にある。判定 (verdict.json) の後の変更で、manifest の `prereg_sha256` は置き換え前の
+  `babea8d5dbcca0162e29bbb6e767d5b8748d12f58bf32fd4a4583c2874f313a3` のまま (置き換え後の値はこのコミットの
+  メッセージに記録。この文書自身には自分の sha256 を書けない)
