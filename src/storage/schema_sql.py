@@ -778,32 +778,39 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
 -- 地政学の救済の判定 v2 の影の記録 (2026-10-31)。本番の救済 (flat) は変えない (記録のみ)。
--- 救済の候補 1 件 = 1 行。判定が見た入力 (題・本文プレビュー) を正解付けのために持つ
--- (ローカルのみ、
--- 公開面の書き出しは読まない・集計 API は件数だけ)。retention 180 日。
+-- 救済の候補 1 件 = 1 行。triage の時点で写し (pending)、毎時保守チェーンの段で判定する。
+-- 判定が見た入力 (題・本文プレビュー) を正解付けのために持つ (ローカルのみ。公開面の書き出しは
+-- 読まない・集計 API は件数だけ)。retention 180 日。
 CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    article_id    TEXT    NOT NULL,
-    created_at    TEXT    NOT NULL,       -- ISO8601 UTC
-    flat          TEXT    NOT NULL,       -- 本番の救済の判定 (high/medium/low/error)
-    pir           TEXT,                   -- pir の判定 (問わなかったら NULL)
-    status        TEXT    NOT NULL,       -- ok / cap_skipped / budget_skipped / error
-    cue_types     TEXT    NOT NULL,       -- 手掛かりの種類のカンマ区切り (空 = 手掛かりなし)
-    p_qw          REAL,
-    p_qc          REAL,
-    p_qd          REAL,
-    judged        INTEGER,                -- 0/1 (status=ok のときだけ)
-    model         TEXT,
-    model_digest  TEXT,
-    flat_error    INTEGER NOT NULL,
-    pir_error     INTEGER NOT NULL,
-    judge_failed  INTEGER NOT NULL,
-    input_kind    TEXT,                   -- body / summary
-    input_sha256  TEXT,                   -- 題 + 本文プレビューの sha256
-    title         TEXT,                   -- 判定が見た題 (ローカルのみ。公開面・ログに出さない)
-    input_text    TEXT                    -- 判定が見た本文プレビュー (≤ 1,500 字)
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id          TEXT    NOT NULL,
+    created_at          TEXT    NOT NULL,       -- ISO8601 UTC (triage の時点で写した時刻)
+    flat                TEXT    NOT NULL,       -- 本番の救済の判定 (high/medium/low/error)
+    prompt_mode         TEXT    NOT NULL,       -- 本番の救済の prompt の選択 (flat / pir)
+    pir                 TEXT,                   -- pir の判定 (判定の段で埋める)
+    status              TEXT    NOT NULL,       -- pending / ok / error / expired
+    cue_types           TEXT    NOT NULL,       -- 手掛かりの種類のカンマ区切り (空 = 手掛かりなし)
+    p_qw                REAL,
+    p_qc                REAL,
+    p_qd                REAL,
+    judged              INTEGER,                -- 0/1 (status=ok のときだけ)
+    model               TEXT,                   -- pir の判定のモデル
+    model_digest        TEXT,
+    judge_model         TEXT,                   -- 問いのモデル (Step.GEO_RESCUE_JUDGE の解決先)
+    judge_model_digest  TEXT,
+    flat_error          INTEGER NOT NULL,
+    pir_error           INTEGER NOT NULL,
+    judge_failed        INTEGER NOT NULL,
+    input_kind          TEXT,                   -- body / summary
+    input_sha256        TEXT,                   -- 題 + 本文プレビューの sha256
+    title               TEXT,                   -- 判定が見た題 (ローカルのみ。公開面・ログ不可)
+    input_text          TEXT,                   -- 判定が見た本文プレビュー (≤ 1,500 字)
+    feed_title          TEXT,
+    url                 TEXT,
+    judged_at           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_status ON geo_rescue_shadow(status, created_at);
 
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した

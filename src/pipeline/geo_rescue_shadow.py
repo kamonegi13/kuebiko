@@ -1,20 +1,22 @@
 # ruff: noqa: E501  (日本語の文は幅 2 で数えられ長く見える)
 """地政学の救済の判定 v2 の影の記録 (``GEO_RESCUE_JUDGED_SHADOW=1``、2026-10-31)。
 
-本番の救済 (flat) は**変えない**。毎時の triage の地政学の救済で、救済の候補 (triage が地政学を理由に
-low にした記事) ごとに、本番の flat の判定に加えて pir の判定・語の関門の手掛かり・QW/QC/QD の確率を
-取り、v2 の最終判定 (``geo_rescue_judge.judged_rescued``) と並べて ``geo_rescue_shadow`` に 1 行残す。
-後で盲検の標本と比べる (事前登録 ``docs/replay_prereg/geo_rescue_shadow.md``)。
+本番の救済 (flat) は**変えない**。2 段に分ける (毎時の収集の時間の予算を食わないため):
 
-- 追加の LLM の負荷は 1 回の上限の件数 (``GEO_RESCUE_SHADOW_PER_RUN``、既定 30) と時間の予算
-  (``GEO_RESCUE_SHADOW_BUDGET_SECONDS``、既定 180 秒) で抑える。超えた候補は状態だけ記録する
-  (``cap_skipped`` / ``budget_skipped``) — 標本の枠から外した行を数えるため
-- 失敗は triage に一切影響しない (例外は握って状態 ``error`` / 記録の失敗はログだけ)
-- 救済のモデルは本番の救済と同じ client (``step:triage_geo_rescue``)、問いは ``Step.GEO_RESCUE_JUDGE``
-  (救済の割当を継承)。モデルの digest は Ollama の ``/api/tags`` を 1 回の実行につき 1 度だけ読む
-- 問いは本番の v2 と同じ候補 (flat が救わず pir が救い、手掛かりのある記事) にだけ当てる。ほかの候補は
-  pir の判定と手掛かりだけ (負荷と判定を本番の v2 と同じにする)
-- 判定が見た入力 (題と本文プレビュー) と種類・sha256 を DB にだけ残す (正解付けの入力。ログには出さない)
+1. **triage の時点で写すだけ** (``pending_rows``): 救済の候補 (triage が地政学を理由に low にした記事) ごとに、
+   本番の flat の判定・語の関門の手掛かりの種類 (決定論)・判定の入力 (題と本文プレビュー)・その sha256・
+   救済の prompt の選択を ``pending`` の行にする。**LLM は呼ばない** (DB への書き込みは数 ms)
+2. **毎時保守チェーンの段で判定する** (``judge_pending``、``ui/services/geo_rescue_shadow_job``):
+   古い順に上限の件数・時間の予算まで、pir の判定と QW/QC/QD を取り、v2 の最終判定
+   (``geo_rescue_judge.judged_rescued``) を書き込む。72 時間を過ぎた ``pending`` は ``expired``
+
+- 救済の prompt が既に pir (``GEO_RESCUE_PROMPT=pir``) なら、本番の判定がそのまま pir の判定なので
+  pir の生成を繰り返さない
+- 問いは本番の v2 と同じ候補 (flat が救わず、pir が救い、手掛かりのある記事) にだけ当てる
+- pir の判定のモデルは ``Step.TRIAGE_GEO_RESCUE``、問いのモデルは ``Step.GEO_RESCUE_JUDGE`` の解決先
+  (救済の割当を継承) を、それぞれ記録する。digest は Ollama の ``/api/tags`` を 1 回の段につき 1 度だけ読む
+- 判定の入力 (題・本文プレビュー) は DB にだけ残す (正解付けの入力)。**ログには出さない**
+- 失敗は triage にも保守チェーンの他の段にも影響しない
 """
 
 from __future__ import annotations
@@ -23,17 +25,17 @@ import asyncio
 import hashlib
 import os
 import time
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, cast
 
 from src.logging_config import get_logger
 from src.pipeline.geo_rescue_cues import geo_cue_reasons
 from src.pipeline.geo_rescue_judge import GeoJudgeResult, judge_geo_rescue, judged_rescued
 from src.storage.repo_geo_rescue_shadow import (
-    STATUS_BUDGET,
-    STATUS_CAP,
     STATUS_ERROR,
     STATUS_OK,
+    STATUS_PENDING,
     GeoRescueShadowRow,
 )
 
@@ -48,7 +50,9 @@ SHADOW_ENV = "GEO_RESCUE_JUDGED_SHADOW"
 PER_RUN_ENV = "GEO_RESCUE_SHADOW_PER_RUN"
 BUDGET_ENV = "GEO_RESCUE_SHADOW_BUDGET_SECONDS"
 DEFAULT_PER_RUN = 30
-DEFAULT_BUDGET_SECONDS = 180.0
+DEFAULT_BUDGET_SECONDS = 150.0
+#: ``pending`` のまま この時間を過ぎた行は判定しない (``expired``)。積み残しが際限なく増えないように
+EXPIRE_HOURS = 72.0
 #: 救済の判定が medium 以上なら救う (本番の救済と同じ)
 KEEP = frozenset({"medium", "high"})
 #: ``/api/tags`` を読む timeout (失敗は digest なしで続ける)
@@ -91,23 +95,70 @@ def input_sha256(title: str, text: str) -> str:
     return hashlib.sha256(f"{title}\n\n{text}".encode()).hexdigest()
 
 
-def _skipped(
-    c: GeoRescueCandidate, status: str, model: str | None, digest: str | None
-) -> GeoRescueShadowRow:
-    return GeoRescueShadowRow(
-        article_id=c.article.id,
-        flat=c.flat,
-        status=status,
-        model=model,
-        model_digest=digest,
-        flat_error=c.flat == "error",
+# ---- 1. triage の時点: 写すだけ (LLM なし) ----
+
+
+def pending_rows(
+    candidates: list[GeoRescueCandidate], *, prompt_mode: str
+) -> list[GeoRescueShadowRow]:
+    """候補を ``pending`` の行にする (決定論・LLM なし)。入力は triage と同じ本文プレビュー。"""
+    from src.tools.article_triage import ArticleTriage
+
+    preview = ArticleTriage(cast(Any, _NoLlm()))._triage_content
+    rows: list[GeoRescueShadowRow] = []
+    for c in candidates:
+        title = c.article.title or ""
+        text = preview(c.article)
+        rows.append(
+            GeoRescueShadowRow(
+                article_id=c.article.id,
+                flat=c.flat,
+                status=STATUS_PENDING,
+                prompt_mode=prompt_mode,
+                cue_types=cue_types(geo_cue_reasons(title, text)),
+                flat_error=c.flat == "error",
+                input_kind="body" if c.article.body_text else "summary",
+                input_sha256=input_sha256(title, text),
+                title=title,
+                input_text=text,
+                feed_title=c.article.feed_title or "",
+                url=c.article.url,
+            )
+        )
+    return rows
+
+
+class _NoLlm:
+    """本文プレビューを作るだけの ``ArticleTriage`` に渡す空の client (呼ばれない)。"""
+
+    model = ""
+
+
+# ---- 2. 保守チェーンの段: 判定 ----
+
+
+def article_from_row(row: GeoRescueShadowRow) -> Article:
+    """記録の行から判定に渡す記事を組み直す (題・フィード名・本文プレビュー)。"""
+    from src.tools.article_model import Article
+
+    return Article(
+        id=row.article_id,
+        url=row.url or "https://invalid.example/",
+        title=row.title or "",
+        summary_html="",
+        body_text=row.input_text or None,
+        published=datetime.now(UTC),
+        feed_title=row.feed_title or "",
+        feed_url="",
     )
 
 
-async def model_digest(base_url: str, model: str | None) -> str | None:
-    """Ollama の ``/api/tags`` から ``model`` の digest (読めなければ None)。"""
-    if not model:
-        return None
+async def model_digests(base_url: str, models: list[str | None]) -> dict[str, str | None]:
+    """Ollama の ``/api/tags`` から各モデルの digest (読めなければ None)。"""
+    names = {m for m in models if m}
+    out: dict[str, str | None] = dict.fromkeys(names)
+    if not names:
+        return out
     try:
         import httpx
 
@@ -115,130 +166,107 @@ async def model_digest(base_url: str, model: str | None) -> str | None:
             resp = await client.get(base_url.rstrip("/") + "/api/tags")
             resp.raise_for_status()
             for m in resp.json().get("models", []):
-                if m.get("name") == model:
-                    return str(m.get("digest") or "") or None
-    except Exception as e:  # noqa: BLE001 — digest が読めなくても記録は続ける
-        _log.debug("geo_rescue_shadow_digest_failed", error=str(e)[:120])
-    return None
+                if m.get("name") in names:
+                    out[str(m["name"])] = str(m.get("digest") or "") or None
+    except Exception as e:  # noqa: BLE001 — digest が読めなくても判定は続ける
+        _log.debug("geo_rescue_shadow_digest_failed", error=type(e).__name__)
+    return out
 
 
-async def judge_candidate(
-    c: GeoRescueCandidate,
-    *,
-    rescue_llm: LLMClient,
-    config: AppConfig,
-    think: bool,
-    model: str | None,
-    digest: str | None,
-) -> GeoRescueShadowRow:
-    """1 候補に pir の判定と v2 の判定を当てる (本番と同じ式・同じ問い)。"""
+@dataclass(frozen=True)
+class JudgeContext:
+    rescue_llm: LLMClient
+    config: AppConfig
+    think: bool
+    model: str | None
+    model_digest: str | None
+    judge_model: str | None
+    judge_model_digest: str | None
+
+
+async def judge_row(row: GeoRescueShadowRow, ctx: JudgeContext) -> GeoRescueShadowRow:
+    """1 行に pir の判定と v2 の判定を当てる (本番と同じ式・同じ問い)。"""
     from src.tools.article_triage import ArticleTriage
 
-    pir_t = ArticleTriage(rescue_llm, think=think, force_pir=True)
-    p = await pir_t.triage(c.article)
-    pir = "error" if p.error else p.importance
-    text = pir_t._triage_content(c.article)
-    title = c.article.title or ""
+    article = article_from_row(row)
+    title, text = row.title or "", row.input_text or ""
+    if row.prompt_mode == "pir":
+        pir = row.flat  # 本番の救済が既に pir の prompt で判定している (生成を繰り返さない)
+    else:
+        p = await ArticleTriage(ctx.rescue_llm, think=ctx.think, force_pir=True).triage(article)
+        pir = "error" if p.error else p.importance
     pir_error = pir == "error"
-    flat_rescued, pir_rescued = c.flat in KEEP, pir in KEEP
+    flat_rescued, pir_rescued = row.flat in KEEP, pir in KEEP
     if flat_rescued or not pir_rescued:
-        # 本番の v2 が問いを当てない候補 (flat が救う / pir が救わない)。手掛かりだけ記録し
-        # 問いは当てない (負荷を本番の v2 と同じにする)。判定は式どおり flat の結果
+        # 本番の v2 が問いを当てない候補。手掛かりだけで、判定は式どおり flat の結果
         judge = GeoJudgeResult(
             cues=geo_cue_reasons(title, text), p_watched_action=None, p_allied_response=None
         )
         failed = False
     else:
-        judge = await judge_geo_rescue(title, text, config=config)
+        judge = await judge_geo_rescue(title, text, config=ctx.config)
         failed = judge.failed
     status = STATUS_ERROR if pir_error or failed else STATUS_OK
-    judged = None
-    if status == STATUS_OK:
-        judged = judged_rescued(flat_rescued=flat_rescued, pir_rescued=pir_rescued, judge=judge)
-    return GeoRescueShadowRow(
-        article_id=c.article.id,
-        flat=c.flat,
+    judged = (
+        judged_rescued(flat_rescued=flat_rescued, pir_rescued=pir_rescued, judge=judge)
+        if status == STATUS_OK
+        else None
+    )
+    return replace(
+        row,
         pir=pir,
         status=status,
-        cue_types=cue_types(judge.cues),
         p_qw=judge.p_watched_action,
         p_qc=judge.p_allied_response,
         p_qd=judge.p_cyber_geo,
         judged=judged,
-        model=model,
-        model_digest=digest,
-        flat_error=c.flat == "error",
+        model=ctx.model,
+        model_digest=ctx.model_digest,
+        judge_model=ctx.judge_model,
+        judge_model_digest=ctx.judge_model_digest,
         pir_error=pir_error,
         judge_failed=failed,
-        input_kind="body" if c.article.body_text else "summary",
-        input_sha256=input_sha256(title, text),
-        title=title,
-        input_text=text,
     )
 
 
-async def run_geo_rescue_shadow(
-    candidates: list[GeoRescueCandidate],
-    *,
-    rescue_llm: LLMClient,
-    config: AppConfig,
-    think: bool = False,
-) -> list[GeoRescueShadowRow]:
-    """候補を順に (1 件ずつ) 判定する。上限の件数・時間の予算を超えた候補は状態だけ。
+async def judge_pending(repo: Any, ctx: JudgeContext) -> dict[str, int]:
+    """``pending`` を古い順に上限の件数・時間の予算まで判定する。残りは次の回へ持ち越す。
 
-    例外は外へ出さない (1 候補の失敗は ``error``、予期しない失敗は空の結果)。
+    先に 72 時間を過ぎた ``pending`` を ``expired`` にする。1 行の失敗は ``error`` (例外は外へ出さない)。
     """
-    if not candidates:
-        return []
+    expired = repo.expire_geo_rescue_shadow(older_than_hours=EXPIRE_HOURS)
     per_run = _env_int(PER_RUN_ENV, DEFAULT_PER_RUN)
     deadline = time.monotonic() + _env_float(BUDGET_ENV, DEFAULT_BUDGET_SECONDS)
-    model = getattr(rescue_llm, "model", None)
-    model = str(model) if model else None
-    digest = await model_digest(config.ollama_base_url, model)
-    rows: list[GeoRescueShadowRow] = []
-    for i, c in enumerate(candidates):
-        if i >= per_run:
-            rows.append(_skipped(c, STATUS_CAP, model, digest))
-            continue
+    todo = repo.list_pending_geo_rescue_shadow(limit=per_run)
+    counts = {"pending": len(todo), "ok": 0, "error": 0, "left": 0, "expired": expired}
+    for row in todo:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            rows.append(_skipped(c, STATUS_BUDGET, model, digest))
+            counts["left"] += 1
             continue
         try:
-            rows.append(
-                await asyncio.wait_for(
-                    judge_candidate(
-                        c,
-                        rescue_llm=rescue_llm,
-                        config=config,
-                        think=think,
-                        model=model,
-                        digest=digest,
-                    ),
-                    timeout=remaining,
-                )
-            )
+            done = await asyncio.wait_for(judge_row(row, ctx), timeout=remaining)
         except TimeoutError:
-            rows.append(_skipped(c, STATUS_BUDGET, model, digest))
-        except Exception as e:  # noqa: BLE001 — 影の記録の失敗は triage に影響させない
-            _log.warning("geo_rescue_shadow_candidate_failed", error=type(e).__name__)
-            rows.append(_skipped(c, STATUS_ERROR, model, digest))
-    _log.info(
-        "geo_rescue_shadow",
-        candidates=len(candidates),
-        judged=sum(1 for r in rows if r.status == STATUS_OK),
-        judged_yes=sum(1 for r in rows if r.judged),
-        skipped=sum(1 for r in rows if r.status in (STATUS_CAP, STATUS_BUDGET)),
-        errors=sum(1 for r in rows if r.status == STATUS_ERROR),
-    )
-    return rows
+            counts["left"] += 1  # 予算切れ。pending のまま次の回へ
+            continue
+        except Exception as e:  # noqa: BLE001 — 影の記録の失敗は他の段に影響させない
+            _log.warning("geo_rescue_shadow_row_failed", error=type(e).__name__)
+            done = replace(row, status=STATUS_ERROR, model=ctx.model, judge_model=ctx.judge_model)
+        repo.update_geo_rescue_judgement(done)
+        counts["ok" if done.status == STATUS_OK else "error"] += 1
+    _log.info("geo_rescue_shadow_judged", **counts)
+    return counts
 
 
 __all__ = [
     "SHADOW_ENV",
     "GeoRescueCandidate",
+    "JudgeContext",
+    "article_from_row",
     "cue_types",
     "input_sha256",
     "is_geo_rescue_shadow_enabled",
-    "run_geo_rescue_shadow",
+    "judge_pending",
+    "judge_row",
+    "pending_rows",
 ]

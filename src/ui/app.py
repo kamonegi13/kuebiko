@@ -282,6 +282,7 @@ def _register_bespoke_jobs(
     from src.ui.services.eventnews_hourly_job import run_eventnews_hourly
     from src.ui.services.eventnews_merge_job import run_eventnews_merge_hourly
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
+    from src.ui.services.geo_rescue_shadow_job import run_geo_rescue_shadow_hourly
     from src.ui.services.ledger_reassess_job import run_ledger_reassess_hourly
     from src.ui.services.maintenance import run_daily_maintenance
     from src.ui.services.prompt_governance import run_weekly_prompt_governance
@@ -304,6 +305,7 @@ def _register_bespoke_jobs(
         "eventnews-merge": run_eventnews_merge_hourly,
         "ledger-reassess-hourly": run_ledger_reassess_hourly,
         "severity-axes-hourly": run_severity_axes_hourly,
+        "geo-rescue-shadow-hourly": run_geo_rescue_shadow_hourly,
         "public-reachability": run_public_reachability_check,
         "body-translate-backlog": run_body_translate_backlog,
         "body-refetch-backlog": run_body_refetch_backlog,

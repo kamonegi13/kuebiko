@@ -10,7 +10,7 @@ from collections import Counter
 from typing import Any
 
 from src.pipeline.geo_rescue_shadow import KEEP
-from src.storage.repo_geo_rescue_shadow import STATUS_OK, STATUSES, GeoRescueShadowRow
+from src.storage.repo_geo_rescue_shadow import STATUS_ERROR, STATUS_OK, STATUSES, GeoRescueShadowRow
 
 #: 判定の組の名前 (flat の救済 / pir の救済 / v2 の判定)
 DECISION_KEYS = (
@@ -32,10 +32,15 @@ def _decision(r: GeoRescueShadowRow) -> str:
 def summarize_geo_rescue_shadow(rows: list[GeoRescueShadowRow], *, days: int) -> dict[str, Any]:
     ok = [r for r in rows if r.status == STATUS_OK]
     by_status = Counter(r.status for r in rows)
+    attempted = by_status.get(STATUS_OK, 0) + by_status.get(STATUS_ERROR, 0)
     cue_kinds: Counter[str] = Counter()
     for r in ok:
         cue_kinds.update(r.cue_types or ("none",))
-    digests = Counter((r.model or "", r.model_digest or "") for r in rows)
+    digests = Counter(
+        (r.model or "", r.model_digest or "", r.judge_model or "", r.judge_model_digest or "")
+        for r in rows
+        if r.status != "pending"
+    )
     return {
         "days": days,
         "total": len(rows),
@@ -44,12 +49,21 @@ def summarize_geo_rescue_shadow(rows: list[GeoRescueShadowRow], *, days: int) ->
         "judged_yes": sum(1 for r in ok if r.judged),
         "judged_no": sum(1 for r in ok if r.judged is False),
         "judge_failed": sum(1 for r in rows if r.judge_failed),
-        "error_rate": round(by_status.get("error", 0) / len(rows), 4) if rows else None,
+        # 失敗の率の分母 = 判定の段が手を付けた行 (status が ok か error)。
+        # pending・expired は含めない
+        "error_rate": round(by_status.get("error", 0) / attempted, 4) if attempted else None,
+        "prompt_mode": dict(Counter(r.prompt_mode for r in rows)),
         "cue_kinds": dict(cue_kinds),
         "input_kind": dict(Counter(r.input_kind or "?" for r in ok)),
         "models": [
-            {"model": m, "digest": d[:12] if d else None, "rows": n}
-            for (m, d), n in sorted(digests.items())
+            {
+                "model": m,
+                "digest": d[:19] if d else None,
+                "judge_model": jm,
+                "judge_digest": jd[:19] if jd else None,
+                "rows": n,
+            }
+            for (m, d, jm, jd), n in sorted(digests.items())
         ],
     }
 

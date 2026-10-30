@@ -42,7 +42,7 @@ from src.pipeline.filters import (
 from src.pipeline.geo_rescue_shadow import (
     GeoRescueCandidate,
     is_geo_rescue_shadow_enabled,
-    run_geo_rescue_shadow,
+    pending_rows,
 )
 from src.pipeline.grok_convert import (
     _grok_article_to_briefings,
@@ -128,28 +128,22 @@ _ARTICLE_CONCURRENCY_DEFAULT = 1
 _ARTICLE_CONCURRENCY_MAX = 8
 
 
-async def _record_geo_rescue_shadow(
-    candidates: list[GeoRescueCandidate],
-    *,
-    rescue_llm: LLMClient,
-    config: AppConfig,
-    think: bool,
-    repo: RunHistoryRepository,
+def _record_geo_rescue_pending(
+    candidates: list[GeoRescueCandidate], *, repo: RunHistoryRepository
 ) -> None:
-    """地政学の救済の判定 v2 の影の記録 (``GEO_RESCUE_JUDGED_SHADOW=1``)。
+    """地政学の救済の判定 v2 の影の記録の 1 段目 (``GEO_RESCUE_JUDGED_SHADOW=1``)。
 
-    本番の判定は変えない。
-
-    上限の件数・時間の予算は ``run_geo_rescue_shadow`` が持つ。失敗はログだけ
-    (triage に影響させない)。
+    救済の候補を ``pending`` の行として写すだけ (LLM なし、数 ms)。判定は毎時保守チェーンの段
+    (``ui/services/geo_rescue_shadow_job``) が行う。本番の判定は変えない。失敗はログだけ。
     """
     try:
-        rows = await run_geo_rescue_shadow(
-            candidates, rescue_llm=rescue_llm, config=config, think=think
+        from src.pipeline.filters import geo_rescue_prompt_mode
+
+        repo.record_geo_rescue_shadow(
+            pending_rows(candidates, prompt_mode=geo_rescue_prompt_mode())
         )
-        repo.record_geo_rescue_shadow(rows)
     except Exception as e:  # noqa: BLE001 — 影の記録の失敗は本処理を止めない
-        _log.warning("geo_rescue_shadow_record_failed", error=str(e)[:200])
+        _log.warning("geo_rescue_shadow_record_failed", error=type(e).__name__)
 
 
 def _article_concurrency() -> int:
@@ -645,19 +639,8 @@ async def run_pipeline(
             analysis_only_out=analysis_only_ids,
             geo_shadow_out=geo_shadow_candidates,
         )
-        if (
-            not dry_run
-            and dedup_repo is not None
-            and triage_rescue_llm is not None
-            and geo_shadow_candidates
-        ):
-            await _record_geo_rescue_shadow(
-                geo_shadow_candidates,
-                rescue_llm=triage_rescue_llm,
-                config=config,
-                think=pipeline.processor.think_enabled,
-                repo=dedup_repo,
-            )
+        if not dry_run and dedup_repo is not None and geo_shadow_candidates:
+            _record_geo_rescue_pending(geo_shadow_candidates, repo=dedup_repo)
         # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。triage_rejections
         # と同じ dry-run gate (手動プレビューで go/no-go の集計を汚さない)。
         if not dry_run and dedup_repo is not None and shadow_triage:
