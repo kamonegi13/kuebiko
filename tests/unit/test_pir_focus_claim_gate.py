@@ -25,6 +25,12 @@ from src.pir.models import PirConfig
 from tests.unit.test_pir_daily_focus import _make_match, _make_pir
 
 
+@pytest.fixture(autouse=True)
+def _constant_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """配線のテストは従来の定数のしきい値で行う (表の引きは別テスト)。"""
+    monkeypatch.setenv("PROBE_THRESHOLDS_TABLE", "0")
+
+
 def _cfg(base_url: str = "http://localhost:11434") -> Any:
     class _Cfg:
         ollama_base_url = base_url
