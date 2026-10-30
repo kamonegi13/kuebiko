@@ -9,9 +9,17 @@
 入力 (JSONL、1 行 1 組): ``{"left_id": "<記事 id>", "right_id": "<記事 id>"}``
 (事象 id の組は、代表記事の id へ先に写してから渡す)
 
-使い方 (評価の夜):
-    uv run python scripts/pair_same_input_control.py --pairs <pairs.jsonl> \
+入力の作り方 (118 組): scripts/gpu_window/build_pair_input.py。
+出力: ``data/eval/pair_control/<stamp>.json`` (率・一致率) と ``<stamp>_pairs.jsonl``
+(組ごと・モデルごとの llm_same / ml_joined。id のみ。McNemar 用)。
+
+使い方 (評価の夜)。**使い捨てのコンテナで** (ホストの uv は DATABASE_URL が無く SQLite に落ちる。
+Ollama は host.docker.internal 経由。本番のコンテナの中では回さない — CLAUDE.md §7):
+    docker compose run --rm --no-deps -T kuebiko python scripts/gpu_window/build_pair_input.py
+    docker compose run --rm --no-deps -T kuebiko python scripts/pair_same_input_control.py \
+        --pairs data/eval/pair_control/pairs_s23i.jsonl \
         --models kuebiko-sft:s23i,kuebiko-sft:s24ci65,gemma4:26b
+DB は ``readonly_conn.open_read_only`` で読み取り専用 (SELECT のみ)。
 """
 
 from __future__ import annotations
@@ -213,6 +221,31 @@ def summarize(
     }
 
 
+def per_pair_records(
+    models: Sequence[str],
+    pairs: Sequence[PairInput],
+    verdicts: Mapping[str, Sequence[bool | None]],
+    ml: Mapping[str, Sequence[bool | None]],
+) -> list[dict[str, Any]]:
+    """組ごと・モデルごとの判定 (McNemar 用)。**id と判定だけ** — 本文・要約は持たない。"""
+    return [
+        {
+            "left_id": p.left_id,
+            "right_id": p.right_id,
+            "llm_same": {m: verdicts[m][i] for m in models},
+            "ml_joined": {m: ml[m][i] for m in models},
+        }
+        for i, p in enumerate(pairs)
+    ]
+
+
+def write_per_pair(path: Path, records: Sequence[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
+    )
+
+
 def _real_judge_factory() -> JudgeFactory:
     from src.config_loader import load_app_config
     from src.eventnews.pair_judge import judge_pair
@@ -262,6 +295,7 @@ async def _amain(args: argparse.Namespace) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
     (OUT_DIR / f"{stamp}.json").write_text(text, encoding="utf-8")
+    write_per_pair(OUT_DIR / f"{stamp}_pairs.jsonl", per_pair_records(models, usable, verdicts, ml))
     return 0
 
 
