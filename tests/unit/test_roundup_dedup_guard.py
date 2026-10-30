@@ -107,3 +107,40 @@ async def test_classifier_failure_keeps_dedup(repo: RunHistoryRepository) -> Non
     )
 
     assert hit is False
+
+
+def _models(repo: RunHistoryRepository, ids: list[str]) -> dict[str, str]:
+    with repo._connect() as conn:  # noqa: SLF001 — model 列の確認のみ
+        rows = conn.execute("SELECT article_id, model FROM article_kinds").fetchall()
+    return {str(r[0]): str(r[1]) for r in rows if str(r[0]) in ids}
+
+
+@pytest.mark.asyncio
+async def test_records_real_model_name_not_caller_name(repo: RunHistoryRepository) -> None:
+    class Fake:
+        model = "kuebiko-sft:test"
+
+        async def __call__(self, _t: str, _s: str) -> str:
+            return "other"
+
+    await involves_roundup(
+        repo, Fake(), article_id="cur", title="t", summary="", prior_article_id=None
+    )
+
+    assert _models(repo, ["cur"]) == {"cur": "kuebiko-sft:test"}
+
+
+@pytest.mark.asyncio
+async def test_records_unknown_when_classifier_has_no_model(repo: RunHistoryRepository) -> None:
+    await involves_roundup(
+        repo, _classifier({}, []), article_id="cur", title="t", summary="", prior_article_id=None
+    )
+
+    assert _models(repo, ["cur"]) == {"cur": "unknown"}
+
+
+def test_kind_classifier_model_empty_until_llm_built() -> None:
+    from src.pipeline.roundup_guard import KindClassifier, model_label_of
+
+    assert KindClassifier(object()).model == ""
+    assert model_label_of(KindClassifier(object())) == "unknown"
