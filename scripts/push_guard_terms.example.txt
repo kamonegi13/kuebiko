@@ -1,0 +1,5 @@
+# check_unpushed_private_terms.sh の語の一覧の形式の例。
+# 実物は gitignore 済みの config/local/push_guard_terms.txt に置く (このファイルには実在の語を書かない)。
+# 1 行 1 語。# 始まりと空行は無視。大文字小文字は区別しない。部分一致。
+operator-domain.kuebiko.example
+affiliation-phrase-placeholder
