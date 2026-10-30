@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 from collections import deque
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
@@ -49,6 +50,17 @@ DEFAULT_CONCURRENT_FEEDS = 8
 # dedup 記憶 purge 後の恒常掲載 URL 再出現を防ぐ (P0 収集飢餓修正の安全弁)。
 DEFAULT_UNSEEN_MAX_AGE_DAYS = 14
 
+# 公平枠の feed 巡回順 (環境変数 RSS_FAIR_ORDER)。
+#   rotate (既定) = feed 名順の開始位置を run の時刻 (epoch 時) で max_count ずつ回す
+#   oldest        = 未見の最古 published が古い feed から
+#   name          = 旧挙動 (feed 名順固定。未見 feed が max_count を超えると末尾が飢餓する)
+FAIR_ORDER_ENV = "RSS_FAIR_ORDER"
+FAIR_ORDER_ROTATE = "rotate"
+FAIR_ORDER_OLDEST = "oldest"
+FAIR_ORDER_NAME = "name"
+_FAIR_ORDERS = frozenset({FAIR_ORDER_ROTATE, FAIR_ORDER_OLDEST, FAIR_ORDER_NAME})
+_SECONDS_PER_HOUR = 3600
+
 # seen 済み url_hash の集合を返すバルク照合 (P0: 未見選別を切り詰めの前に行うための DI。
 # tools/ 層は DB 非依存を保ち、呼び出し側が dedup repo のメソッドを注入する)。
 SeenHashFilter = Callable[[Sequence[str]], AbstractSet[str]]
@@ -71,6 +83,42 @@ class FeedsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     feeds: list[FeedDef] = Field(default_factory=list)
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def fair_order_from_env() -> str:
+    """``RSS_FAIR_ORDER`` を読む。未設定・不正値は既定 (rotate)。"""
+    raw = os.environ.get(FAIR_ORDER_ENV, "").strip().lower()
+    return raw if raw in _FAIR_ORDERS else FAIR_ORDER_ROTATE
+
+
+def order_feeds_for_selection(
+    by_feed: dict[str, list[Article]],
+    *,
+    mode: str,
+    max_count: int,
+    now: datetime,
+) -> list[str]:
+    """公平枠 round-robin の feed 巡回順を決定論に返す (各 feed の list は新しい順)。
+
+    feed 数が max_count を超える (キャッチアップ時) と先頭 max_count feed だけが
+    1 周目で枠を取り切るため、固定の名前順だと末尾 feed が恒常的に 0 件になる。
+    ``rotate`` は開始位置を epoch 時 × max_count で進め、1 周ごとに別の feed 群が先頭に来る
+    (状態不要・同じ時刻なら同じ順)。``oldest`` は最古の未見が古い feed を先頭にするが、
+    feed 内は新しい順に取るため最古の未見が残り続け、同じ feed が居座る病理がある
+    (2026-10-31 の再現で rotate より悪化)。
+    """
+    names = sorted(by_feed)
+    if mode == FAIR_ORDER_NAME or not names:
+        return names
+    if mode == FAIR_ORDER_OLDEST:
+        return sorted(names, key=lambda n: (min(_aware(a.published) for a in by_feed[n]), n))
+    hour_index = int(now.timestamp() // _SECONDS_PER_HOUR)
+    offset = (hour_index * max_count) % len(names)
+    return names[offset:] + names[:offset]
 
 
 def load_feeds_config(path: Path | None = None) -> FeedsConfig:
@@ -300,19 +348,26 @@ class DirectRssSource:
         ]
 
     def _select_unseen_fair(
-        self, pool: list[Article], max_count: int
+        self,
+        pool: list[Article],
+        max_count: int,
+        *,
+        now: datetime | None = None,
+        order_mode: str | None = None,
     ) -> tuple[list[Article], dict[str, int]]:
         """未見選別 → 鮮度ガード → per-feed 公平枠 (round-robin) の決定論選抜。
 
         公平枠: 未見数が max_count を超えるキャッチアップ時も、feed ごとに新しい順で
         1 件ずつ round-robin 採用する。単一の高頻度 feed が枠を独占して他 feed を
         飢餓させない (バースト時も全 feed に代表権)。選外の未見記事は seen 登録されない
-        ため次 run で再候補になる (恒久ロストしない)。
+        ため次 run で再候補になる (恒久ロストしない)。feed の巡回順は
+        ``order_feeds_for_selection`` (RSS_FAIR_ORDER、既定 rotate)。
         """
         assert self._seen_filter is not None
         hashes = [url_hash(a.url) for a in pool]
         seen = self._seen_filter(hashes) if hashes else frozenset()
-        cutoff = datetime.now(UTC) - self._unseen_max_age
+        now = now or datetime.now(UTC)
+        cutoff = now - self._unseen_max_age
 
         batch: set[str] = set()
         fresh_unseen: list[Article] = []
@@ -338,7 +393,9 @@ class DirectRssSource:
             lst.sort(key=lambda a: a.published, reverse=True)
 
         selected: list[Article] = []
-        queues = deque(sorted(by_feed.items()))  # feed 名順 = 決定論
+        mode = order_mode or fair_order_from_env()
+        feed_order = order_feeds_for_selection(by_feed, mode=mode, max_count=max_count, now=now)
+        queues = deque((n, by_feed[n]) for n in feed_order)  # 決定論
         while queues and len(selected) < max_count:
             name, lst = queues.popleft()
             selected.append(lst.pop(0))
