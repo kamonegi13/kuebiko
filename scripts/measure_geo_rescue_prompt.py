@@ -123,7 +123,9 @@ async def run(args: argparse.Namespace) -> None:
     expected = os.environ.get("GEO_MEASURE_EXPECT_MODEL", "kuebiko-sft:26b")
     got = getattr(llm, "model", None)
     if got != expected:
-        raise SystemExit(f"救済のモデルが想定と違う: want={expected} got={got} (DB の割当を読めていない可能性)")
+        raise SystemExit(
+            f"救済のモデルが想定と違う: want={expected} got={got} (DB の割当を読めていない可能性)"
+        )
     results: dict[str, dict[str, str]] = {}
     for mode in ("flat", "pir"):
         triage = ArticleTriage(llm, force_pir=mode == "pir")
