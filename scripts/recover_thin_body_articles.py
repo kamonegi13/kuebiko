@@ -14,6 +14,10 @@ prompts のマウントを本番と揃えるため、イメージだけ差し替
 (2026-10-30 以降は articles.analysis_only 列が配信・dedup・公開・PIR の朝の要点から除くので、
 通常の取り込みと競合しても配信へは漏れない。旧版は 48h 空けていた)。
 本文 600 字未満は既定で対象外 (--include-short で含める)。どちらも今の関門が最終判定する。
+600 字未満の行には本番と同じ 2 段目 (THIN_BODY_PROBE の logprob 判定、GPU) もかかる。
+dry-run は 2 段目を走らせず 1 段目 (決定論) の件数だけを出す。2 段目は --apply の中で行ごとに
+走る。書かずに 2 段目の結果だけ見るなら --probe-only (GPU を使う。DB は書かない)。
+2 段目は THIN_BODY_PROBE が有効なときだけ効く (本番と同じ。compose の環境変数で走らせること)。
 
 既定は dry-run。--apply は LLM を呼び DB を更新する。冪等 (status='extract_failed' の
 行だけが対象で、回収後は status='posted' / analysis_only='thin_body_recovery')。
@@ -32,12 +36,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.config_loader import load_app_config, load_llm_enrichment  # noqa: E402
+from src.config_loader import AppConfig, load_app_config, load_llm_enrichment  # noqa: E402
 from src.logging_config import configure_logging, get_logger  # noqa: E402
 from src.pipeline.dispatch import _load_template  # noqa: E402
 from src.pipeline.thin_body_recovery import (  # noqa: E402
     MIN_BODY_CHARS,
+    RecoveryCandidate,
     effective_until,
+    probe_stage_reason,
     recover_one,
     select_candidates,
 )
@@ -54,12 +60,24 @@ def _parse_since(v: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+async def _probe_filter(
+    candidates: list[RecoveryCandidate], by_id: dict[str, dict[str, object]], cfg: AppConfig
+) -> tuple[list[RecoveryCandidate], int]:
+    """2 段目 (GPU) を全候補にかけ、通る候補と落ちた件数を返す (--probe-only 用)。"""
+    kept: list[RecoveryCandidate] = []
+    for cand in candidates:
+        if await probe_stage_reason(by_id[cand.article_id], cfg) is None:
+            kept.append(cand)
+    return kept, len(candidates) - len(kept)
+
+
 async def _run(
     apply: bool,
     limit: int | None,
     since: datetime | None,
     until: datetime | None,
     min_body_chars: int,
+    probe_only: bool = False,
 ) -> int:
     repo = RunHistoryRepository()
     rows = repo.list_thin_body_extract_failed(since=since, until=until)
@@ -68,21 +86,31 @@ async def _run(
         f"extract_failed(thin_body): {len(rows)} 記事 / 今の関門を通る: "
         f"{len(candidates)} / 今回の上限: {limit or '無し'}"
     )
-    if not apply:
-        print("dry-run (--apply で再要約して回収する)")
-        return 0
     by_id = {str(r["article_id"]): r for r in rows}
     cfg = load_app_config()
+    if probe_only:
+        kept, dropped = await _probe_filter(candidates, by_id, cfg)
+        print(f"probe-only: 2 段目を通る {len(kept)} / 2 段目で落ちる {dropped} (DB は書かない)")
+        return 0
+    if not apply:
+        print(
+            "dry-run: 上は 1 段目 (決定論) の件数。600 字未満の行は --apply で 2 段目 "
+            "(logprob 判定、GPU) も通ったものだけ回収する (--probe-only で書かずに確認できる)"
+        )
+        return 0
     llm = build_llm_for(Step.ARTICLE_SUMMARY, cfg)
     enrichment = load_llm_enrichment()
     template = _load_template()
-    ok = failed = 0
+    ok = failed = probe_dropped = 0
     started = time.monotonic()
     # --limit は「成功した件数」の上限。失敗した記事はこの実行では飛ばして次へ進む
     # (固定のリストを順に走るので、恒常的に失敗する記事が先頭を塞がない)。
     for i, cand in enumerate(candidates, 1):
         if limit is not None and ok >= limit:
             break
+        if await probe_stage_reason(by_id[cand.article_id], cfg) is not None:
+            probe_dropped += 1
+            continue
         try:
             done = await recover_one(
                 repo, by_id[cand.article_id], llm=llm, template=template, enrichment=enrichment
@@ -102,7 +130,10 @@ async def _run(
                 f"progress {i}/{len(candidates)} ok={ok} failed={failed} "
                 f"elapsed={int(time.monotonic() - started)}s"
             )
-    print(f"done ok={ok} failed={failed} elapsed={int(time.monotonic() - started)}s")
+    print(
+        f"done ok={ok} failed={failed} probe_dropped={probe_dropped} "
+        f"elapsed={int(time.monotonic() - started)}s"
+    )
     return 0 if failed == 0 else 1
 
 
@@ -123,6 +154,11 @@ def main() -> int:
         default=0.0,
         help="この時間より新しい created_at を除く (既定 0 = 直近も含める)",
     )
+    ap.add_argument(
+        "--probe-only",
+        action="store_true",
+        help="2 段目 (logprob 判定、GPU) だけ走らせて件数を出す。DB は書かない",
+    )
     ap.add_argument("--since", default=None, help="この日付 (YYYY-MM-DD) 以降の created_at のみ")
     args = ap.parse_args()
     return asyncio.run(
@@ -132,6 +168,7 @@ def main() -> int:
             _parse_since(args.since),
             effective_until(_parse_since(args.until), args.min_age_hours),
             0 if args.include_short else MIN_BODY_CHARS,
+            args.probe_only,
         )
     )
 

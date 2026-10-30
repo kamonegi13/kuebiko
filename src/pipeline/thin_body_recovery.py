@@ -11,6 +11,9 @@ failure_reason='analysis_only:thin_body_recovery' も併せて残す (列を足�
 - Discord には流さない (本モジュールは publisher を一切持たない)。
 - ``articles.created_at`` は触らない: 日次ブリーフ等の「直近 24h」窓に過去分が入らない。
 - 選定は「今の関門を通る本文」だけ (関門の再判定で落ちるものは回収しない)。
+  1 段目 = 決定論 (``passes_current_gate``)、2 段目 = 短い本文の logprob 判定
+  (``probe_stage_reason``、
+  --apply / --probe-only のときだけ。600 字以上は 2 段目の対象外で従来どおり)。
 """
 
 from __future__ import annotations
@@ -20,8 +23,14 @@ from datetime import UTC, datetime, timedelta
 
 import jinja2
 
+from src.config_loader import AppConfig
 from src.logging_config import get_logger
-from src.pipeline.briefing import _degenerate_body_reason, _is_thin_body, _summarize_and_build
+from src.pipeline.briefing import (
+    _degenerate_body_reason,
+    _is_thin_body,
+    _summarize_and_build,
+    _thin_body_probe_reason,
+)
 from src.pipeline.reprocess import reenrich_stored_article
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
@@ -46,6 +55,22 @@ def passes_current_gate(body: str, title: str, article_id: str) -> bool:
     if _degenerate_body_reason(text, title=title, article_id=article_id) is not None:
         return False
     return not _is_thin_body(text, title)
+
+
+async def probe_stage_reason(row: dict[str, object], config: AppConfig) -> str | None:
+    """本番の 2 段目 (THIN_BODY_PROBE の logprob 判定) を保存済み本文にかける。
+
+    本番の取り込みが使う ``briefing._thin_body_probe_reason`` をそのまま呼ぶ (重複実装しない)。
+    なので対象 (本文 600 字未満・Grok 以外)・旗 (THIN_BODY_PROBE)・しきい値 (probe_thresholds.json)
+    ・失敗時の素通りも本番と同一。落とすべき行なら理由 (``thin_body_probe``)、通すなら None。
+    GPU (Ollama) を使う。
+    """
+    return await _thin_body_probe_reason(
+        str(row.get("body") or ""),
+        title=str(row.get("title") or ""),
+        article_id=str(row.get("article_id") or ""),
+        config=config,
+    )
 
 
 def _as_datetime(v: object) -> datetime | None:

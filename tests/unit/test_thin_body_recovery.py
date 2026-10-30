@@ -202,3 +202,91 @@ def test_list_until_is_exclusive_upper_bound(tmp_path: Path) -> None:
     now = datetime.now(UTC)
     assert repo.list_thin_body_extract_failed(until=now - timedelta(hours=1)) == []
     assert len(repo.list_thin_body_extract_failed(until=now + timedelta(hours=1))) == 1
+
+
+_SHORT_ROW: dict[str, object] = {
+    "article_id": "rss:s",
+    "title": "t",
+    "body": "A normal sentence about an incident with enough words. " * 6,
+}
+
+
+def _probe_cfg() -> object:
+    from unittest.mock import MagicMock
+
+    return MagicMock()
+
+
+@pytest.mark.parametrize(
+    ("p_content", "expected"),
+    [(0.01, "thin_body_probe"), (0.9, None)],
+)
+def test_probe_stage_reuses_production_probe(
+    monkeypatch: pytest.MonkeyPatch, p_content: float, expected: str | None
+) -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from src.pipeline.thin_body_recovery import probe_stage_reason
+
+    monkeypatch.setenv("THIN_BODY_PROBE", "1")
+    probe = AsyncMock(return_value={"Yes": p_content, "No": 1 - p_content})
+    monkeypatch.setattr("src.pipeline.briefing.probe_choice", probe)
+    got = asyncio.run(probe_stage_reason(_SHORT_ROW, _probe_cfg()))  # type: ignore[arg-type]
+    assert got == expected
+    probe.assert_awaited_once()
+
+
+def test_probe_stage_skips_long_body_and_disabled_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from src.pipeline.thin_body_recovery import probe_stage_reason
+
+    probe = AsyncMock(return_value={"Yes": 0.0, "No": 1.0})
+    monkeypatch.setattr("src.pipeline.briefing.probe_choice", probe)
+    long_row = {**_SHORT_ROW, "body": _LONG_BODY}
+    monkeypatch.setenv("THIN_BODY_PROBE", "1")
+    assert asyncio.run(probe_stage_reason(long_row, _probe_cfg())) is None  # type: ignore[arg-type]
+    monkeypatch.setenv("THIN_BODY_PROBE", "0")
+    assert asyncio.run(probe_stage_reason(_SHORT_ROW, _probe_cfg())) is None  # type: ignore[arg-type]
+    probe.assert_not_awaited()
+
+
+def test_script_probe_only_reports_without_writing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import asyncio
+    import importlib.util
+    from unittest.mock import AsyncMock, MagicMock
+
+    spec = importlib.util.spec_from_file_location(
+        "recover_script",
+        Path(__file__).resolve().parents[2] / "scripts/recover_thin_body_articles.py",
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    rows = [
+        {**_SHORT_ROW, "article_id": "rss:keep", "id": 1},
+        {**_SHORT_ROW, "article_id": "rss:drop", "id": 2},
+    ]
+    repo = MagicMock()
+    repo.list_thin_body_extract_failed.return_value = rows
+    monkeypatch.setattr(mod, "RunHistoryRepository", lambda: repo)
+    monkeypatch.setattr(mod, "load_app_config", lambda: MagicMock())
+    monkeypatch.setattr(
+        mod,
+        "probe_stage_reason",
+        AsyncMock(side_effect=lambda row, cfg: "thin_body_probe" if row["id"] == 2 else None),
+    )
+    promote = AsyncMock()
+    monkeypatch.setattr(mod, "recover_one", promote)
+
+    rc = asyncio.run(mod._run(False, None, None, None, 0, True))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "通る 1 / 2 段目で落ちる 1" in out
+    promote.assert_not_awaited()
+    repo.promote_recovered_thin_body.assert_not_called()
