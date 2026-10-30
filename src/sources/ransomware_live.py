@@ -26,12 +26,13 @@ import httpx
 
 from src.cti.taxonomy_normalizer import TaxonomyNormalizer, load_normalizer
 from src.logging_config import get_logger
+from src.tools.user_agent import bot_user_agent
 
 _log = get_logger(__name__)
 
 _API_BASE = "https://api.ransomware.live/v2"
 _TIMEOUT_SECONDS = 30.0
-_USER_AGENT = "kuebiko-bot"
+_USER_AGENT = bot_user_agent("ransomware-live")  # 中立 UA (SSoT = user_agent.py)
 
 
 @dataclass(frozen=True)

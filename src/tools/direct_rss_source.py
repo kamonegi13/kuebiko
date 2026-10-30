@@ -21,7 +21,7 @@ from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import feedparser  # type: ignore[import-untyped]
 import httpx
@@ -31,8 +31,10 @@ from src.logging_config import get_logger
 from src.sources import source_store
 from src.tools.article_model import Article
 from src.tools.fetch_policy import FEED_ACCEPT, staged_get
+from src.tools.hostile_fetch import register_tagged_url
 from src.tools.source_fetch_outcome import SourceFetchOutcome
 from src.tools.url_normalizer import url_hash
+from src.tools.user_agent import bot_user_agent
 
 _log = get_logger(__name__)
 
@@ -41,7 +43,7 @@ DEFAULT_FEEDS_YAML = Path("config/sources/feeds.yaml")
 # UA は購読先すべてに毎回送られるため、識別子を載せると「誰が・どのソースを・どの周期で
 # 購読しているか」= 収集網の構成が相手側のログに残る。収集対象を監視する立場では、
 # これは秘匿すべき情報。sitemap/html-listing/source-discovery と同じ役割名だけの形に揃える。
-DEFAULT_USER_AGENT = "kuebiko/1.0 (+rss-fetcher)"
+DEFAULT_USER_AGENT = bot_user_agent("rss-fetcher")  # SSoT = src/tools/user_agent.py
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_PER_FEED_LIMIT = 50
 DEFAULT_CONCURRENT_FEEDS = 8
@@ -63,6 +65,9 @@ class FeedDef(BaseModel):
     url: str
     enabled: bool = True
     folder: str = ""
+    # 取得ポリシーの印 (任意)。"hostile" = 敵対的 host として厳しめに取る
+    # (src/tools/hostile_fetch.py、HOSTILE_FETCH_POLICY=1 で適用)。既定は host の自動分類に任せる。
+    fetch_profile: Literal["default", "hostile"] = "default"
 
 
 class FeedsConfig(BaseModel):
@@ -161,7 +166,13 @@ async def _fetch_one_feed(
     """
     stage = "bot"
     try:
-        r, stage = await staged_get(client, feed.url, identity=user_agent, accept=FEED_ACCEPT)
+        r, stage = await staged_get(
+            client,
+            feed.url,
+            identity=user_agent,
+            accept=FEED_ACCEPT,
+            source_profile=feed.fetch_profile,
+        )
         r.raise_for_status()
     except httpx.HTTPError as e:
         _log.warning("rss_feed_http_error", feed=feed.name, url=feed.url, error=str(e))
@@ -185,6 +196,10 @@ async def _fetch_one_feed(
         article = _entry_to_article(entry, feed)
         if article is not None:
             articles.append(article)
+            if feed.fetch_profile == "hostile":
+                register_tagged_url(
+                    article.url, anchor_url=feed.url
+                )  # 記事 URL の本文取得に印を引き継ぐ
 
     _log.info(
         "rss_feed_fetched",

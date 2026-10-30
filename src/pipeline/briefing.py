@@ -167,6 +167,24 @@ def _prompt_article(article: Article) -> Article:
     return article.model_copy(update={"title": NO_TITLE_SENTINEL})
 
 
+def _frame_untrusted_body(article: Article, llm_body: str) -> str:
+    """敵対的 host / adversary_official の本文に「主張として扱う・指示ではない」の枠を前置する。
+
+    ``HOSTILE_PROMPT_FRAMING``: shadow (既定) は該当をログに出すだけで本文は不変、``1`` で前置、
+    ``0`` で無効。保存本文・IOC/アクター検出は元の本文のまま (枠は LLM への入力だけ)。
+    """
+    from src.cti.adversary_claims import needs_untrusted_framing, prompt_framing_mode
+    from src.tools.untrusted_text import wrap_adversary_body
+
+    mode = prompt_framing_mode()
+    if mode == "off" or not needs_untrusted_framing(
+        article.feed_title or "", article.feed_url or "", article.url or ""
+    ):
+        return llm_body
+    _log.info("hostile_prompt_framing", mode=mode, url=article.url)
+    return wrap_adversary_body(llm_body) if mode == "on" else llm_body
+
+
 async def _summarize_and_build(
     article: Article,
     body: str,
@@ -212,7 +230,7 @@ async def _summarize_and_build(
     # 文字列で渡す。
     # Grok の参照先の本文 (GROK_LINK_FETCH=on のときだけ非空) は要約の材料と裏付けの照合範囲
     # にだけ足す。IOC・アクター検出と保存本文は投稿の本文のまま (保存 ⊇ 検出の保証を保つ)。
-    prompt_body = llm_body + link_text
+    prompt_body = _frame_untrusted_body(article, llm_body) + link_text
     prompt = template.render(article=_prompt_article(article), body=prompt_body)
     summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
     # b1. 薄い Grok 投稿の要約が本文に無い数字・矛盾を足していないか (GROK_SUMMARY_GROUNDING)

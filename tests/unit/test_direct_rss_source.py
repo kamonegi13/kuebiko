@@ -21,6 +21,7 @@ from src.tools.direct_rss_source import (
     _entry_to_article,
     load_feeds_config,
 )
+from src.tools.user_agent import NEUTRAL_BOT_UA
 
 
 class TestFeedsConfigLoading:
@@ -368,7 +369,7 @@ class TestFetchOneFeedEscalation:
         def handler(request: httpx.Request) -> httpx.Response:
             ua = request.headers.get("User-Agent", "")
             ua_log.append(ua)
-            if ua.startswith("kuebiko/"):
+            if ua == NEUTRAL_BOT_UA:
                 if bot_status != 200:
                     return httpx.Response(bot_status, text="blocked")
                 return httpx.Response(200, text=self.RSS_BODY)
@@ -383,11 +384,11 @@ class TestFetchOneFeedEscalation:
         ua_log: list[str] = []
         feed = FeedDef(name="Blocked Feed", url="https://x.test/feed.xml")
         async with httpx.AsyncClient(transport=self._transport(403, ua_log)) as client:
-            result = await _fetch_one_feed(client, feed, user_agent="kuebiko/1.0 (+test)")
+            result = await _fetch_one_feed(client, feed, user_agent=NEUTRAL_BOT_UA)
         assert result.error is None
         assert len(result.articles) == 1
         assert result.stage == "browser"
-        assert len(ua_log) == 2 and not ua_log[1].startswith("kuebiko/")
+        assert len(ua_log) == 2 and ua_log[1] != NEUTRAL_BOT_UA
 
     @pytest.mark.asyncio
     async def test_healthy_feed_stays_on_bot_ua(self) -> None:
@@ -396,10 +397,10 @@ class TestFetchOneFeedEscalation:
         ua_log: list[str] = []
         feed = FeedDef(name="Healthy Feed", url="https://x.test/feed.xml")
         async with httpx.AsyncClient(transport=self._transport(200, ua_log)) as client:
-            result = await _fetch_one_feed(client, feed, user_agent="kuebiko/1.0 (+test)")
+            result = await _fetch_one_feed(client, feed, user_agent=NEUTRAL_BOT_UA)
         assert result.error is None
         assert result.stage == "bot"
-        assert ua_log == ["kuebiko/1.0 (+test)"]  # 礼儀正しい既定のまま 1 回のみ
+        assert ua_log == [NEUTRAL_BOT_UA]  # 礼儀正しい既定のまま 1 回のみ
 
     @pytest.mark.asyncio
     async def test_non_block_error_is_reported_without_escalation(self) -> None:
@@ -408,6 +409,6 @@ class TestFetchOneFeedEscalation:
         ua_log: list[str] = []
         feed = FeedDef(name="Gone Feed", url="https://x.test/feed.xml")
         async with httpx.AsyncClient(transport=self._transport(404, ua_log)) as client:
-            result = await _fetch_one_feed(client, feed, user_agent="kuebiko/1.0 (+test)")
+            result = await _fetch_one_feed(client, feed, user_agent=NEUTRAL_BOT_UA)
         assert result.error is not None and "404" in result.error
         assert len(ua_log) == 1  # 404 は UA の問題ではないのでエスカレーションしない

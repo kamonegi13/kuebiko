@@ -345,7 +345,7 @@ class TestReliabilityOverride:
     ) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setattr(sb, "_OVERRIDES_PATH", tmp_path / "ov.yaml")
+        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
         sb.invalidate_reliability_cache()
         url = "https://bleepingcomputer.com/x"
         assert sb.classify_source_tier("BleepingComputer", url) == "news"  # pattern default
@@ -361,7 +361,7 @@ class TestReliabilityOverride:
     ) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setattr(sb, "_OVERRIDES_PATH", tmp_path / "ov.yaml")
+        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
         sb.invalidate_reliability_cache()
         url = "https://bleepingcomputer.com/x"
         sb.set_source_reliability_override(url, "research")
@@ -371,6 +371,6 @@ class TestReliabilityOverride:
     def test_empty_key_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setattr(sb, "_OVERRIDES_PATH", tmp_path / "ov.yaml")
+        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
         with pytest.raises(ValueError):
             sb.set_source_reliability_override("  ", "research")

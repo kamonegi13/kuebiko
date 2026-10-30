@@ -26,12 +26,15 @@ from urllib.parse import urlparse
 
 import yaml
 
+from src.local_overlay import local_path
 from src.logging_config import get_logger
 from src.storage.run_history import RunHistoryRepository
 
 _log = get_logger(__name__)
 
-SourceTier = Literal["official", "research", "news", "social", "state_media", "unknown"]
+SourceTier = Literal[
+    "official", "research", "news", "social", "state_media", "adversary_official", "unknown"
+]
 Confidence = Literal["high", "medium", "low"]
 
 # S4 (cross-source 検証): corroboration に使う entity 種別。
@@ -149,9 +152,20 @@ def _title_match(title: str, kws: tuple[str, ...]) -> bool:
 # その host/title を **追加マージ** する (実 feed 群を網羅。news catch-all 誤分類の是正)。
 _CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
 _RELIABILITY_CONFIG_PATH = _CONFIG_DIR / "sources/source_reliability.yaml"
+# 運用者ローカルの追加分 (config/local/、gitignore、2026-10-30)。同じ形式で和集合に重ねる。
+# 敵対国の公式な発信 (adversary_official) の実際の host など、公開リポに置くと収集先・
+# 分類先が読める一覧はこちらに書く (docs/local_overlay.md)。
+LOCAL_RELIABILITY_NAME = "source_reliability.yaml"
 # per-source 上書き (UI 専用・機械管理)。手編集せず SubscriptionsPage から編集する。
 # patterns (curated default、コメント付き) と分離し、こちらは comment 無しで安全に rewrite。
-_OVERRIDES_PATH = _CONFIG_DIR / "sources/source_reliability_overrides.yaml"
+# key が feed URL (= 購読先そのもの) なので **ローカル層に置く** (2026-10-30 に
+# config/sources/ の追跡ファイルから移した。UI の保存で公開リポの追跡ファイルが変わらない)。
+LOCAL_OVERRIDES_NAME = "source_reliability_overrides.yaml"
+
+
+def _overrides_path() -> Path:
+    return local_path(LOCAL_OVERRIDES_NAME)
+
 
 # UI で選べる明示ティア (override 値の検証用)。
 ASSIGNABLE_TIERS: tuple[SourceTier, ...] = (
@@ -160,6 +174,7 @@ ASSIGNABLE_TIERS: tuple[SourceTier, ...] = (
     "news",
     "social",
     "state_media",
+    "adversary_official",
 )
 
 
@@ -173,6 +188,8 @@ class _ReliabilityPatterns:
     social_titles: tuple[str, ...]
     state_media_hosts: tuple[str, ...]
     state_media_titles: tuple[str, ...]
+    adversary_official_hosts: tuple[str, ...]
+    adversary_official_titles: tuple[str, ...]
     overrides: dict[str, str]  # source key (feed_url or title) -> tier (UI 上書き)
 
 
@@ -196,18 +213,24 @@ def load_reliability_patterns(*, force_reload: bool = False) -> _ReliabilityPatt
     if _patterns_cache is not None and not force_reload:
         return _patterns_cache
 
-    cfg: dict[str, object] = {}
-    try:
-        if _RELIABILITY_CONFIG_PATH.exists():
-            loaded = yaml.safe_load(_RELIABILITY_CONFIG_PATH.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                cfg = loaded
-    except (OSError, yaml.YAMLError) as e:  # config 不正でも built-in default で動作継続
-        _log.warning("source_reliability_config_load_failed", error=str(e))
+    cfg = _read_reliability_yaml(_RELIABILITY_CONFIG_PATH, layer="generic")
+    local_file = local_path(LOCAL_RELIABILITY_NAME)
+    local_cfg = _read_reliability_yaml(local_file, layer="local") if local_file.exists() else {}
+    # どちらの層で動いているかだけ出す (host 名は出さない)
+    _log.info(
+        "source_reliability_loaded",
+        source="generic+local" if local_cfg else "generic",
+        local_tiers=len(local_cfg),
+    )
 
     def _tier(name: str, field: str) -> object:
-        tier = cfg.get(name)
-        return tier.get(field) if isinstance(tier, dict) else None
+        values: list[object] = []
+        for layer in (cfg, local_cfg):
+            tier = layer.get(name)
+            got = tier.get(field) if isinstance(tier, dict) else None
+            if isinstance(got, list):
+                values.extend(got)
+        return values
 
     _patterns_cache = _ReliabilityPatterns(
         official_hosts=_merge(_OFFICIAL_HOSTS, _tier("official", "hosts")),
@@ -218,17 +241,33 @@ def load_reliability_patterns(*, force_reload: bool = False) -> _ReliabilityPatt
         social_titles=_merge(_SOCIAL_TITLE, _tier("social", "titles")),
         state_media_hosts=_merge(_STATE_MEDIA_HOSTS, _tier("state_media", "hosts")),
         state_media_titles=_merge(_STATE_MEDIA_TITLE, _tier("state_media", "titles")),
+        # 敵対国の公式な発信 (D1): 組み込みの既定は持たず config のみ
+        adversary_official_hosts=_merge((), _tier("adversary_official", "hosts")),
+        adversary_official_titles=_merge((), _tier("adversary_official", "titles")),
         overrides=_load_overrides(),
     )
     return _patterns_cache
 
 
+def _read_reliability_yaml(path: Path, *, layer: str) -> dict[str, object]:
+    """信頼度の yaml を読む。欠落・不正は空 (built-in default で動作継続)。"""
+    try:
+        if not path.exists():
+            return {}
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as e:
+        _log.warning("source_reliability_config_load_failed", layer=layer, error=type(e).__name__)
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _load_overrides() -> dict[str, str]:
     """per-source 上書き (UI 管理) を読む。key=feed_url or title、value=tier。"""
     try:
-        if not _OVERRIDES_PATH.exists():
+        path = _overrides_path()
+        if not path.exists():
             return {}
-        loaded = yaml.safe_load(_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         raw = loaded.get("overrides") if isinstance(loaded, dict) else None
         if not isinstance(raw, dict):
             return {}
@@ -255,12 +294,13 @@ def _write_overrides(overrides: dict[str, str]) -> None:
         "overrides": dict(sorted(overrides.items())),
     }
     text = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
-    _OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(_OVERRIDES_PATH.parent), suffix=".tmp")
+    path = _overrides_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
-        os.replace(tmp, _OVERRIDES_PATH)
+        os.replace(tmp, path)
     except OSError:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -298,6 +338,8 @@ _TIER_RANK: dict[SourceTier, int] = {
     "social": 1,
     # 国営/影響工作は framing 不信頼ゆえ低 rank (best_tier=最権威 source に昇格させない)。
     "state_media": 1,
+    # 敵対国の公式な主張は事実の足場にしない (state_media と同格の低 rank)。
+    "adversary_official": 1,
     "unknown": 0,
 }
 
@@ -313,6 +355,7 @@ _TIER_LABEL: dict[SourceTier, str] = {
     "news": "ニュース",
     "social": "SNS",
     "state_media": "国営",
+    "adversary_official": "主張",
     "unknown": "不明",
 }
 
@@ -332,9 +375,51 @@ ACCOUNT_CLASS_TIER: dict[str, SourceTier] = {
 }
 
 
-#: 朝の通読で出典の信頼度を一目で見せる目印 (SNS=未裏取り / 一次=公式)。
+#: 朝の通読で出典の信頼度を一目で見せる目印 (SNS=未裏取り / 一次=公式 / 敵対国の公式=主張)。
 #: PIR Daily Focus と高脅威の一覧が同じ作法で付ける (複製しない)。
-SOURCE_TIER_MARKER: dict[str, str] = {"social": " ⚠SNS(要裏取り)", "official": " ✓一次"}
+SOURCE_TIER_MARKER: dict[str, str] = {
+    "social": " ⚠SNS(要裏取り)",
+    "official": " ✓一次",
+    "adversary_official": " ⚠主張(事実ではない)",
+}
+
+
+ENV_ADVERSARY_TIER = "ADVERSARY_TIER"
+_adversary_shadow_logged: set[str] = set()
+
+
+def adversary_tier_mode() -> Literal["off", "shadow", "on"]:
+    """``ADVERSARY_TIER``: 1 = 実効ティアにする / shadow (既定) = ログのみ / 0 = 無効。"""
+    raw = (os.environ.get(ENV_ADVERSARY_TIER) or "shadow").strip().lower()
+    if raw in ("0", "off", "false"):
+        return "off"
+    if raw in ("1", "on", "true"):
+        return "on"
+    return "shadow"
+
+
+def _adversary_pattern_match(title: str, host: str, p: _ReliabilityPatterns) -> bool:
+    return _title_match(title, p.adversary_official_titles) or _host_match(
+        host, p.adversary_official_hosts
+    )
+
+
+def _log_adversary_shadow(key: str) -> None:
+    """shadow: 一致した source を 1 プロセスにつき 1 回だけログに出す (呼出頻度が高いため)。"""
+    if key in _adversary_shadow_logged:
+        return
+    _adversary_shadow_logged.add(key)
+    _log.info("adversary_tier_shadow", source=key, effective_tier_unchanged=True)
+
+
+def adversary_official_matches(feed_title: str, feed_url: str) -> bool:
+    """ADVERSARY_TIER の旗に関わらず、config の hosts / titles に一致するか (IOC 関門の判定用)。"""
+    p = load_reliability_patterns()
+    try:
+        host = (urlparse(feed_url or "").hostname or "").lower()
+    except ValueError:
+        host = ""
+    return _adversary_pattern_match((feed_title or "").lower(), host, p)
 
 
 def classify_source_tier(feed_title: str, feed_url: str, *, account_class: str = "") -> SourceTier:
@@ -362,6 +447,14 @@ def classify_source_tier(feed_title: str, feed_url: str, *, account_class: str =
         host = (urlparse(feed_url).hostname or "").lower()
     except ValueError:
         host = ""
+    # 敵対国の公式な発信は「事実」でなく「主張」(D1)。official/research より先に判定する。
+    # ADVERSARY_TIER=1 のときだけ実効ティアにする (shadow = ログのみで従来の判定のまま)。
+    if _adversary_pattern_match(title, host, p):
+        mode = adversary_tier_mode()
+        if mode == "on":
+            return "adversary_official"
+        if mode == "shadow":
+            _log_adversary_shadow(host or title)
     if _title_match(title, p.social_titles) or _host_match(host, p.social_hosts):
         return "social"
     if _title_match(title, p.official_titles) or _host_match(host, p.official_hosts):

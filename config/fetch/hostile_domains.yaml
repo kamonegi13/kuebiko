@@ -1,0 +1,28 @@
+# 敵対的 host の分類 (取得ポリシーの対象) — **汎用の規則だけ** (公開リポ)。
+# src/tools/hostile_hosts.py が読む。判定は host の suffix 一致 (example.com は www.example.com にも当たる)。
+#
+# 実際に hostile と扱う登録ドメインの一覧は **運用者ローカルの config/local/hostile_domains.yaml**
+# (gitignore) に置く。同じ形式で、ここに和集合で重なる。ローカルが無ければ ccTLD だけで動く
+# (起動時のログ hostile_domains_loaded の source=generic / generic+local で分かる。件数のみ)。
+# **ここに実在のドメインを書かない** (収集先・分類先が公開リポから読めてしまう)。
+# tests/unit/test_local_overlay_guard.py が placeholder 以外の記載を落とす。手順は docs/local_overlay.md。
+#
+# 編集後は再起動で反映 (プロセス内キャッシュ)。
+
+# ccTLD (host の末尾ラベル)。punycode は xn-- の形で書く (xn--p1ai = .рф)。
+cctlds:
+  - cn
+  - ru
+  - su
+  - xn--p1ai
+  - by
+  - kp
+  - ir
+
+# 形式の例 (placeholder のみ)。origin: report = 机上調査の目録由来 / added = 指示などで追加。
+# ref / note は任意の注記 (判定には使わない)。
+# 例 (ローカルの config/local/hostile_domains.yaml に書く形):
+#   domains:
+#     - {domain: state-media.kuebiko.example, origin: added, note: 国営系の媒体}
+#     - {domain: ministry.kuebiko.example, origin: report, ref: X1}
+domains: []

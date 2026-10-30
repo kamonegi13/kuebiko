@@ -206,6 +206,8 @@ social:
 #    判定原則 = **国籍でなく国家統制/出資**で分類する。独立系の敵国発ソース
 #    (The Insider=反クレムリン調査報道 / NK News=独立 NK ウォッチャー 等) は **含めない**。
 #    SubscriptionsPage の tier ピッカーから随時 追加/解除できる (ここは seed)。
+#    ⚠ 2026-10-30 以降に足す host / title は config/local/source_reliability.yaml (gitignore) へ。
+#    下の既存分は公開済みのため残す (消しても公開の履歴からは消えない)。
 state_media:
   hosts:
     - rt.com
@@ -228,3 +230,19 @@ state_media:
     - xinhua
     - cgtn
     - china daily
+
+# ── 敵対国の公式な発信 (D1、2026-10-30)。**事実ではなく「主張」として扱う**印。
+#    state_media (framing の割引) とは別: こちらは当事国の政府・軍・情報機関の公式な発表そのもの。
+#    台帳・事象ニュース・要約では「〜と主張した」の足場にだけ使い、そこから取れた IOC は
+#    事実として自動昇格させない (ADVERSARY_IOC_GATE)。国営メディア (state_media) とベンダーの
+#    報告 (research) はここに入れない。迷う source は UI の tier ピッカーで個別に指定する。
+#    **実際の host は運用者ローカルの config/local/source_reliability.yaml に書く** (gitignore、
+#    同じ形式でここに和集合で重なる)。当事国の機関の一覧は収集先・分類先を示すため公開リポに置かない
+#    (docs/local_overlay.md)。ここは形式の例 (placeholder) だけ:
+#      adversary_official:
+#        hosts:
+#          - ministry.kuebiko.example
+#        titles: []
+adversary_official:
+  hosts: []
+  titles: []

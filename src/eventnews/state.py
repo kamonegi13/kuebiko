@@ -28,6 +28,7 @@ _BEST_TIER_RANK: dict[SourceTier, int] = {
     "news": 3,
     "social": 2,
     "state_media": 1,
+    "adversary_official": 1,
     "unknown": 0,
 }
 

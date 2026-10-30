@@ -25,6 +25,12 @@ from src.storage.row_mappers import _row_to_article, _to_iso
 _DISPLAY_ROW_ORDER = "CASE WHEN status='skipped_duplicate' THEN 1 ELSE 0 END ASC, created_at DESC"
 
 
+# 方針による見送り (hostile_fetch)。再取得の試行回数を消費しない失敗理由。
+DEFERRED_REFETCH_REASONS: frozenset[str | None] = frozenset(
+    {"hostile_throttle_deferred", "hostile_paused"}
+)
+
+
 class ArticlesMixin(RunHistoryRepositoryBase):
     # ----- articles -----
 
@@ -193,14 +199,17 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         reason 一致では救えない WAF/timeout の無限リトライを止める。再取得キュー対象
         (body NULL or feed_summary) のみ更新し、full_extract を誤って触らない。
         """
+        # 方針による見送り (敵対的 host の間隔待ち・停止中) は取得に失敗したわけではないので、
+        # 試行回数を消費しない (次の周期でもう一度拾われる)。
+        increment = 0 if reason in DEFERRED_REFETCH_REASONS else 1
         with self._connect() as conn:
             cur = conn.execute(
                 """UPDATE articles
-                   SET refetch_attempts = refetch_attempts + 1,
+                   SET refetch_attempts = refetch_attempts + ?,
                        extraction_failure_reason = ?
                    WHERE article_id = ?
                      AND (body IS NULL OR body_source = 'feed_summary')""",
-                (reason, article_id),
+                (increment, reason, article_id),
             )
             return int(cur.rowcount or 0)
 
@@ -589,6 +598,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         ),
         max_attempts: int = 3,
         retention_days: int = 90,
+        deferred_max_age_days: int = 3,
     ) -> list[tuple[str, str]]:
         """全文再取得すべき記事 (article_id, url) を返す (2026-07-27, A4)。
 
@@ -605,10 +615,15 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         得ない、を使って前者だけを対象に戻す。
         """
         perm_ph = ",".join("?" for _ in permanent_reasons)
+        # 方針による見送り (hostile_*) は backlog の末尾に回し、一定日数を過ぎたら対象から外す
+        # (見送りが LIMIT を占有して通常の再取得を飢えさせない)。理由は固定の定数のみ (注入なし)。
+        deferred_in = ",".join(f"'{r}'" for r in sorted(r for r in DEFERRED_REFETCH_REASONS if r))
         sql = (
             # MAX(CASE ...) で高 importance 優先 (PG は MAX(boolean) 不可のため CASE で整数化)。
             "SELECT article_id, MIN(url) AS url, "
             "MAX(CASE WHEN importance='high' THEN 1 ELSE 0 END) AS is_high, "
+            "MAX(CASE WHEN extraction_failure_reason IN "  # noqa: S608
+            f"({deferred_in}) THEN 1 ELSE 0 END) AS is_deferred, "
             "MAX(created_at) AS latest FROM articles "
             "WHERE url IS NOT NULL AND url <> '' "
             # grok/ransomware.live は URL 直取得しない (grok=JSONL / ransomware=構造化 API)。
@@ -617,6 +632,9 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             "AND (feed_title IS NULL OR LOWER(feed_title) NOT IN ('grok','ransomware.live')) "
             # B3b: 試行回数上限に達した恒久失敗を除外 (WAF/timeout の無限 churn 停止)。
             "AND refetch_attempts < ? "
+            "AND (extraction_failure_reason IS NULL "  # noqa: S608
+            f"OR extraction_failure_reason NOT IN ({deferred_in}) "
+            "OR datetime(created_at) >= datetime('now', ?)) "
             "AND ("
             # NULL body = 未取得。blocked (WAF/bot 壁) は再取得しない。
             "  (body IS NULL AND (body_source IS NULL OR body_source <> 'blocked') "
@@ -628,13 +646,14 @@ class ArticlesMixin(RunHistoryRepositoryBase):
             f"       OR extraction_failure_reason NOT IN ({perm_ph})"  # noqa: S608
             "  ))"
             ") "
-            "GROUP BY article_id ORDER BY is_high DESC, latest DESC LIMIT ?"
+            "GROUP BY article_id ORDER BY is_deferred ASC, is_high DESC, latest DESC LIMIT ?"
         )
         with self._connect() as conn:
             rows = conn.execute(
                 sql,
                 (
                     int(max_attempts),
+                    f"-{int(deferred_max_age_days)} days",
                     f"-{int(retention_days)} days",
                     *permanent_reasons,
                     int(limit),

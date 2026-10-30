@@ -19,6 +19,12 @@ from src.ui.services.file_catalog import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+# gitignore の生成物 (開発機にだけある。.gitignore の config/cti/actor_aliases.*.yaml)
+_GITIGNORED_GENERATED_CONFIG = frozenset(
+    {"config/cti/actor_aliases.enriched.yaml", "config/cti/actor_aliases.translated.yaml"}
+)
+
+
 class TestCatalogCompleteness:
     def test_every_prompt_file_is_cataloged(self) -> None:
         # rglob 格上げ (2026-08-16): 区分サブディレクトリ (briefing/ 等) 配下も網羅する。
@@ -27,6 +33,8 @@ class TestCatalogCompleteness:
         actual = {
             f"prompts/{p.relative_to(_REPO_ROOT / 'prompts').as_posix()}"
             for p in (_REPO_ROOT / "prompts").rglob("*.j2")
+            # 運用者ローカルのペルソナ (gitignore) は開発機にだけあるので数えない
+            if p.name != "_persona_local.j2"
         }
         # +status_synthesis_skeleton (層分け 2 本目 2026-08-20)
         # +weekly_recap_skeleton / pir_daily_focus_skeleton / deep_dive_rubric_skeleton /
@@ -38,7 +46,8 @@ class TestCatalogCompleteness:
         # +synthesis/detect_new_v2.j2 / detect_ml_select.j2 (detect の A/B 実験用、2026-09-19)。
         # **本番経路では使わない** (replay ハーネスが --mode prompt / select で明示指定する)。
         # +synthesis/detect_cluster_claim.j2 (DETECT_DECOMPOSE の塊 → claim、既定 off、2026-10-16)。
-        assert len(actual) == 30
+        # (_persona_local.j2 を数えない形に 2026-10-30 変更。旧 30 はそれを含む開発機の数)
+        assert len(actual) == 29
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
@@ -46,7 +55,9 @@ class TestCatalogCompleteness:
         actual = {
             f"config/{p.relative_to(_REPO_ROOT / 'config').as_posix()}"
             for p in (_REPO_ROOT / "config").rglob("*.yaml")
-        }
+            # 運用者ローカルの上書き層 (gitignore) は開発機にだけあるので数えない
+            if p.relative_to(_REPO_ROOT / "config").parts[0] != "local"
+        } - _GITIGNORED_GENERATED_CONFIG
         # +status_synthesis_rubric seed (層分け 2 本目 2026-08-20)
         # +weekly_recap_rubric / pir_daily_focus_rubric / deep_dive_rubric /
         # pir_spotlight_rubric seed (層分け 3 本目 2026-08-20)
@@ -58,13 +69,17 @@ class TestCatalogCompleteness:
         # +triage_rubric seed (group 4 の 3 本目・最終、python_block kind、2026-08-21)
         # +ttp_evidence / non_adversary_operations (TTP の関門・campaign の整理、2026-09-27)
         # +pir_daily_focus_rubric_v6_2 / summarizer_rubric_v8r4 (s24c 切替用の写し、2026-10-22)
-        assert len(actual) == 35
+        # +fetch/hostile_domains (公開版の規則) / -source_reliability_overrides (ローカル層へ移動) /
+        # 生成物 (gitignore) とローカル層を数えない形に (2026-10-30。旧 35 は開発機の生成物 2 本を含む数)
+        assert len(actual) == 34
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 
     def test_catalog_has_no_ghost_entries(self) -> None:
         # 削除済みファイルのカタログ残骸を検出 (_persona_local は gitignore のため任意)
-        optional = {"prompts/_persona_local.j2"}
+        optional = {"prompts/_persona_local.j2"} | _GITIGNORED_GENERATED_CONFIG | {
+            k for k in CONFIG_CATALOG if k.startswith("config/local/")
+        }
         for key in list(PROMPT_CATALOG) + list(CONFIG_CATALOG):
             if key in optional:
                 continue

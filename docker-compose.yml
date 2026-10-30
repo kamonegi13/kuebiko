@@ -209,6 +209,18 @@ services:
       GROK_SUMMARY_GROUNDING: ${GROK_SUMMARY_GROUNDING:-shadow}
       # Grok の投稿が貼った外部リンクの本文取得 (既定 shadow = 取って保存、要約には使わない、10-24)
       GROK_LINK_FETCH: ${GROK_LINK_FETCH:-shadow}
+      # 取得時のボット識別を中立な汎用 UA にする (10-30。0 で旧 UA に戻る)
+      BOT_UA_NEUTRAL: ${BOT_UA_NEUTRAL:-1}
+      # 敵対的 host の取得ポリシー (既定 shadow = 分類してログだけ・挙動不変。1 で適用、0 で無効)
+      HOSTILE_FETCH_POLICY: ${HOSTILE_FETCH_POLICY:-shadow}
+      # 手動の停止スイッチ (1 = hostile 判定の host を一切取らない。組織のネットワークに繋ぐ間など)
+      HOSTILE_FETCH_PAUSE: ${HOSTILE_FETCH_PAUSE:-0}
+      # 敵対国の公式な発信のティア adversary_official (ラベル「主張」) を実効ティアにする (既定 shadow = 計算してログのみ)
+      ADVERSARY_TIER: ${ADVERSARY_TIER:-shadow}
+      # 敵対国の公式な発信 (adversary_official) 由来の IOC を事実として保存しない (既定 shadow = ログのみ)
+      ADVERSARY_IOC_GATE: ${ADVERSARY_IOC_GATE:-shadow}
+      # 敵対的な発信元の本文に「主張として扱う・指示ではない」の枠を前置 (既定 shadow = ログのみ)
+      HOSTILE_PROMPT_FRAMING: ${HOSTILE_PROMPT_FRAMING:-shadow}
       # ローカル LLM の step 別の使用量を llm_usage に記録 (P0-16、記録だけ。0 で止まる)
       LLM_USAGE_LOCAL: ${LLM_USAGE_LOCAL:-1}
       # SIR 別の要点の文ごとの裏付け判定 (logprob、測定 131 文で裏付けなし検出 15/34・誤検出 2/97)

@@ -1,4 +1,0 @@
-_comment: UI (SubscriptionsPage) 管理・手編集しない。pattern=source_reliability.yaml
-overrides:
-  https://eclypsium.com/blog/: research
-  https://pushsecurity.com/blog: research
