@@ -130,6 +130,9 @@ services:
       # 決定論 67% → 83%、誤結合 33 → 14。LLM が落ちても 85% を保つ
       # (欠測を「不明」として学習済み)。0 で決定論へ戻る。
       EVENTNEWS_PAIR_ML: ${EVENTNEWS_PAIR_ML:-0}
+      # pair 判定の LLM (step:pair_judge)。0 で LLM を呼ばず pair_model の threshold_llm_off で判定
+      # (ML は動く)。既定 1 = 従来どおり LLM あり。
+      EVENTNEWS_PAIR_LLM: ${EVENTNEWS_PAIR_LLM:-1}
       # 被害組織名の法人格・Holdings・グループの付け外しを畳んで群化の entity を照合する (2026-10-12)。
       # 照合規則 30/30 (別標本 30/30)、alert の重複の回収 14→22/52 (再現)、新しい辺の適合 39/45
       EVENTNEWS_ORG_NORM: ${EVENTNEWS_ORG_NORM:-1}

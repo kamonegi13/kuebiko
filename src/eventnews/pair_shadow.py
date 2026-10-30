@@ -138,11 +138,14 @@ async def judge_pairs(
     pairs: Sequence[tuple[MemberArticle, MemberArticle]],
     vectors: dict[str, np.ndarray],
     *,
-    llm: LLMClient,
+    llm: LLMClient | None,
     embed_summary: Callable[[Sequence[MemberArticle]], Awaitable[dict[str, np.ndarray]]],
     kinds: Mapping[str, str] | None = None,
 ) -> list[PairVerdict]:
     """**明示したペア**を評価する。ペアの選び方は呼び手が決める。
+
+    ``llm=None`` (旗 EVENTNEWS_PAIR_LLM=0) は LLM を呼ばず ``llm_same=None`` (不明) として
+    ML を ``threshold_llm_off`` で判定する。
 
     ⚠ 判定の実装はここ 1 か所だけ。毎時の群化と遡及統合が別々に持つと必ずずれる
     (2026-08-31 に遡及側が自前の条件を持っていたため本番のガードが効かなかった。
@@ -170,16 +173,20 @@ async def judge_pairs(
         )
         feats = pair_features(left, right)
         shared = tuple(sorted(left.entities & right.entities))
-        same = await judge_pair(
-            llm,
-            build_prompt(
-                left.title,
-                cand.summary,
-                left.feed_title,
-                right.title,
-                member.summary,
-                right.feed_title,
-            ),
+        same = (
+            None
+            if llm is None
+            else await judge_pair(
+                llm,
+                build_prompt(
+                    left.title,
+                    cand.summary,
+                    left.feed_title,
+                    right.title,
+                    member.summary,
+                    right.feed_title,
+                ),
+            )
         )
         proba = joined = None
         if model is not None:
