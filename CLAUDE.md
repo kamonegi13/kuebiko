@@ -183,7 +183,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
    緊急の受け皿 (gemma4) が使われると `llm_emergency_fallback` ログ + 計数 + ops 通知 (1 日 1 回)。
    2 枠の終着の状態は `uv run python scripts/check_model_end_state.py` と health-status の
    `model_end_state` で確かめる。**`MODEL_RESIDENT_ENFORCE=1` は gemma4 と s23i の上書き
-   (s23i と assign/org の例外は 12-02 まで、kuebiko-sft:26b は 12-20 まで) を外し、検査が 0 件になってから立てる** (先に立てると保存が拒否される)
+   (s23i と assign/org の例外は 2026-12-30 まで、kuebiko-sft:26b は 2027-02-15 まで。SSoT は `model_registry` の 2 定数) を外し、検査が 0 件になってから立てる** (先に立てると保存が拒否される)
 6. CLAUDE.md §2 の記述を新モデル名に同期
 7. `uv run pytest tests/unit/test_llm_client.py` でホワイトリスト検証 (中華系排除) 通過確認
 8. **Web UI の即時実行で 1 件 dry-run** し品質を目視確認 — 特に per-article main model 変更時は 1 件あたりの応答時間も計測 (40s 超なら daily-briefing が timeout する)
