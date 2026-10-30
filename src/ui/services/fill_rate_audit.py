@@ -393,6 +393,18 @@ METRICS: tuple[FillMetric, ...] = (
         " AND substr(d.generated_at, 1, 10) = substr(a.created_at, 1, 10))",
         None,
     ),
+    # 地政学の救済の判定 v2 の影の記録 (2026-10-31、GEO_RESCUE_JUDGED_SHADOW=1)。救済の候補は
+    # 落選した記事 (articles に無い) が主なので、記事単位ではなく「その日 (UTC) に記録が 1 件でも
+    # あるか」を日の代理にする (daily_brief_discord_text と同じ形)。消費者は
+    # GET /api/v1/geo-rescue-shadow/summary。監視対象は**完全な沈黙** (記録の経路の断線)。
+    # 旗が 0 の間は 0% が正常
+    FillMetric(
+        "geo_rescue_shadow",
+        "地政学の救済v2影の記録",
+        "EXISTS (SELECT 1 FROM geo_rescue_shadow g"
+        " WHERE substr(g.created_at, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
     # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
     # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
     # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常

@@ -777,6 +777,30 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
+-- 地政学の救済の判定 v2 の影の記録 (2026-10-31)。本番の救済 (flat) は変えない (記録のみ)。
+-- 救済の候補 1 件 = 1 行。本文・題は持たない (判定の入力は種類と sha256 だけ)。retention 180 日。
+CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id    TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL,       -- ISO8601 UTC
+    flat          TEXT    NOT NULL,       -- 本番の救済の判定 (high/medium/low/error)
+    pir           TEXT,                   -- pir の判定 (問わなかったら NULL)
+    status        TEXT    NOT NULL,       -- ok / cap_skipped / budget_skipped / error
+    cue_types     TEXT    NOT NULL,       -- 手掛かりの種類のカンマ区切り (空 = 手掛かりなし)
+    p_qw          REAL,
+    p_qc          REAL,
+    p_qd          REAL,
+    judged        INTEGER,                -- 0/1 (status=ok のときだけ)
+    model         TEXT,
+    model_digest  TEXT,
+    flat_error    INTEGER NOT NULL,
+    pir_error     INTEGER NOT NULL,
+    judge_failed  INTEGER NOT NULL,
+    input_kind    TEXT,                   -- body / summary
+    input_sha256  TEXT                    -- 題 + 本文プレビューの sha256
+);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

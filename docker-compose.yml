@@ -280,6 +280,11 @@ services:
       # prompt: flat=TRIAGE_FLAT に従う / pir=救済だけ PIR 駆動 prompt。mode: deliver=配信 / analysis=分析専用
       GEO_RESCUE_PROMPT: ${GEO_RESCUE_PROMPT:-flat}
       GEO_RESCUE_MODE: ${GEO_RESCUE_MODE:-deliver}
+      # 地政学の救済の判定 v2 の影の記録 (2026-10-31、CLAUDE.md §7 の 10-31 の行)。本番の救済は変えない。
+      # 1=救済の候補ごとに pir・手掛かり・QW/QC/QD を geo_rescue_shadow に記録 / 0=止める (コードの既定 0)
+      GEO_RESCUE_JUDGED_SHADOW: ${GEO_RESCUE_JUDGED_SHADOW:-1}
+      GEO_RESCUE_SHADOW_PER_RUN: ${GEO_RESCUE_SHADOW_PER_RUN:-30}
+      GEO_RESCUE_SHADOW_BUDGET_SECONDS: ${GEO_RESCUE_SHADOW_BUDGET_SECONDS:-180}
       # 戦域 (紅海・ホルムズ等) の取り込みヒント。shadow=ログのみ / 1=取り込みに効かせる / 0=止める
       INGEST_GEO_THEATRE_HINT: ${INGEST_GEO_THEATRE_HINT:-shadow}
 

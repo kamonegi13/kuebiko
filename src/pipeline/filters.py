@@ -18,6 +18,7 @@ from src.cti.ingest_relevance import (
 )
 from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
+from src.pipeline.geo_rescue_shadow import GeoRescueCandidate
 from src.pipeline.grok_convert import _is_grok_article
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
 from src.storage.repo_triage_rejections import TriageRejectionRow
@@ -186,6 +187,7 @@ async def _filter_by_triage(
     relevance_embedder: EmbeddingClient | None = None,
     relevance_cascade_llm: LLMClient | None = None,
     analysis_only_out: set[str] | None = None,
+    geo_shadow_out: list[GeoRescueCandidate] | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -256,7 +258,11 @@ async def _filter_by_triage(
     geo_rescued: set[str] = set()
     if rescue_llm is not None and os.environ.get("TRIAGE_GEO_RESCUE", "1") != "0":
         decisions, rescued = await _rescue_geopolitical(
-            decisions, rescue_llm, keep_importance=keep_importance, think=think
+            decisions,
+            rescue_llm,
+            keep_importance=keep_importance,
+            think=think,
+            shadow_out=geo_shadow_out,
         )
         geo_rescued = set(rescued)
 
@@ -378,8 +384,12 @@ async def _rescue_geopolitical(
     *,
     keep_importance: set[str],
     think: bool,
+    shadow_out: list[GeoRescueCandidate] | None = None,
 ) -> tuple[list[tuple[Article, str, bool, str]], set[str]]:
     """地政学を理由に落ちた記事を、救済用のモデルで同じ基準のまま判定し直す (2026-10-02)。
+
+    ``shadow_out`` (2026-10-31、``GEO_RESCUE_JUDGED_SHADOW``): 渡されたら、救済の候補と本番の
+    flat の判定を追記する (追加の LLM 呼び出しはしない。v2 の判定は呼び出し側が後で影で取る)。
 
     triage の SFT モデル (s21) は「一般地政学 = low」を学習しており、地政学の SIR
     (サイバー以外) を足しても癖が判定基準より強く効く。実測: 落ちた注視国の地政学 60 件で
@@ -407,6 +417,10 @@ async def _rescue_geopolitical(
     out = list(decisions)
     rescued: set[str] = set()
     for i, d in await asyncio.gather(*(_one(i) for i in targets)):
+        if shadow_out is not None:
+            shadow_out.append(
+                GeoRescueCandidate(article=out[i][0], flat="error" if d.error else d.importance)
+            )
         if d.error or d.importance not in keep_importance:
             continue
         article = out[i][0]

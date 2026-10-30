@@ -8,6 +8,7 @@ from src.assessment import ledger
 from src.storage import (
     repo_alert_dedup_shadow,
     repo_eventnews,
+    repo_geo_rescue_shadow,
     repo_routing_v2_shadow,
     repo_runs,
     repo_severity_c_shadow,
@@ -37,10 +38,12 @@ def test_shadow_tables_keep_180_days() -> None:
     assert repo_alert_dedup_shadow.DEFAULT_RETENTION_DAYS == 180
     assert repo_routing_v2_shadow.DEFAULT_RETENTION_DAYS == 180
     assert repo_severity_c_shadow.DEFAULT_RETENTION_DAYS == 180
+    assert repo_geo_rescue_shadow.DEFAULT_RETENTION_DAYS == 180
     assert maintenance._TRIAGE_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert maintenance._ROUTING_V2_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert maintenance._ALERT_DEDUP_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert maintenance._SEVERITY_C_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
+    assert maintenance._GEO_RESCUE_SHADOW_RETENTION_DAYS == 180  # noqa: SLF001
     assert _default_days(repo_triage_shadow.TriageShadowMixin.purge_triage_shadow) == 180
 
 
