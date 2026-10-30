@@ -774,6 +774,10 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS duplicate_of TEXT;
 -- 元の見出し (多くは英語) が渡るため、教師・評価の入力を本番と揃える目的で保存する。index なし。
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS original_title TEXT;
 
+-- 分析専用の印 (2026-10-30): 配信せず分析 (PIR 評価・台帳・群化) にだけ残した行の理由
+-- (geo_rescue = 地政学の救済 GEO_RESCUE_MODE=analysis)。NULL = 通常の行。index なし。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS analysis_only TEXT;
+
 -- 本文日本語訳のチャンク単位キャッシュ (2026-08-06 resumable 翻訳)。
 -- 詳細コメントは schema_sql.py の同表を参照 (SQLite と対)。
 CREATE TABLE IF NOT EXISTS body_ja_chunks (

@@ -219,6 +219,7 @@ def _row_to_article(row: sqlite3.Row) -> ArticleRecord:
         subject_actor_rationale=_opt_text("subject_actor_rationale"),
         duplicate_of=_opt_text("duplicate_of"),
         original_title=_opt_text("original_title"),
+        analysis_only=_opt_text("analysis_only"),
         # 本文完全性 (2026-07-27): body の由来 + 全文取得失敗理由 (NULL=保存開始前 or heuristic 前)
         body_source=_opt_text("body_source"),
         extraction_failure_reason=_opt_text("extraction_failure_reason"),

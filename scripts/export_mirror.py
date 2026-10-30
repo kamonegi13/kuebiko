@@ -496,6 +496,8 @@ def _fetch_articles(client: httpx.Client, days: int, cap: int) -> list[dict[str,
             break
         for a in batch:
             aid = str(a.get("article_id") or "")
+            if a.get("analysis_only"):
+                continue  # 配信していない分析専用の行は写さない (公開の方針)
             if aid and aid not in seen:
                 seen.add(aid)
                 out.append(a)

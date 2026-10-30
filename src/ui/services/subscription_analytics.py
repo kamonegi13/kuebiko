@@ -54,6 +54,8 @@ class FeedStats:
     # 例: Indo-Pacific Defense Forum — feed 200 / 記事レコードあり / extract_failed 15 件
     # が「要対処 (記事なし)」に潰れて、壊れた層 (本文取得) が読めなかった。
     extract_failed_count: int = 0
+    # 分析専用 (articles.analysis_only 非 NULL) の件数。posted_count には含めない
+    analysis_only_count: int = 0
     # triage の落選件数 (2026-10-02)。落選は articles に行を作らないため、全部落ちた媒体が
     # 「記事なし」(= 壊れている) に見えていた。取得の成立と内容の不採用を区別する観測点。
     triage_rejected: int = 0
@@ -199,8 +201,12 @@ def fetch_all_feed_stats(
                 {_skey} AS feed_title,
                 -- 重複判定に当たり分析に残した記事 (duplicate_of あり、2026-10-02) は
                 -- 「新規に届けた」には数えず重複に数える (媒体の独自性の指標を変えない)
-                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL THEN 1 ELSE 0 END)
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL
+                    AND analysis_only IS NULL THEN 1 ELSE 0 END)
                     AS posted_count,
+                -- 分析専用 (配信せず分析にだけ残した行、2026-10-30) は別に数える
+                SUM(CASE WHEN analysis_only IS NOT NULL THEN 1 ELSE 0 END)
+                    AS analysis_only_count,
                 SUM(CASE WHEN status = 'skipped_duplicate' OR duplicate_of IS NOT NULL
                     THEN 1 ELSE 0 END) AS dup_skipped,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'alert' THEN 1 ELSE 0 END)
@@ -211,13 +217,16 @@ def fetch_all_feed_stats(
                     AS watch_count,
                 SUM(CASE WHEN status = 'posted' AND posted_channel = 'vuln' THEN 1 ELSE 0 END)
                     AS vuln_count,
-                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'high'
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND analysis_only IS NULL
+                    AND importance = 'high'
                     THEN 1 ELSE 0 END)
                     AS high_count,
-                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'medium'
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND analysis_only IS NULL
+                    AND importance = 'medium'
                     THEN 1 ELSE 0 END)
                     AS medium_count,
-                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND importance = 'low'
+                SUM(CASE WHEN status = 'posted' AND duplicate_of IS NULL AND analysis_only IS NULL
+                    AND importance = 'low'
                     THEN 1 ELSE 0 END)
                     AS low_count,
                 SUM(CASE WHEN body_source IN
@@ -239,7 +248,7 @@ def fetch_all_feed_stats(
         )
         SELECT
             r.feed_title AS feed_title,
-            r.posted_count, r.dup_skipped,
+            r.posted_count, r.dup_skipped, r.analysis_only_count,
             r.alert_count, r.brief_count, r.watch_count, r.vuln_count,
             r.high_count, r.medium_count, r.low_count,
             r.full_body_count, r.stump_count, r.extract_failed_count,
@@ -272,6 +281,7 @@ def fetch_all_feed_stats(
             feed_title=title,
             posted_count=int(r["posted_count"] or 0),
             dup_skipped=int(r["dup_skipped"] or 0),
+            analysis_only_count=int(r["analysis_only_count"] or 0),
             alert_count=int(r["alert_count"] or 0),
             brief_count=int(r["brief_count"] or 0),
             watch_count=int(r["watch_count"] or 0),

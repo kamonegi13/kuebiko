@@ -20,6 +20,7 @@ s23 (平たい triage、``TRIAGE_FLAT=1``) は日本・SIR・注視国で重要�
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -276,6 +277,46 @@ def _core_sir_reasons(text_lower: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+#: pir_geo_* の戦域 (サイバー以外の地政学) の語。RELEVANCE_CORE_SIRS (importance_v2 にも効く)
+#: には触れず、取り込みの保険としてだけ使う別の語彙 (2026-10-30)。語境界は keyword_in_text。
+GEO_THEATRE_TERMS: dict[str, tuple[str, ...]] = {
+    "red_sea": ("houthi", "red sea", "bab el-mandeb", "フーシ", "紅海"),
+    "hormuz": ("strait of hormuz", "hormuz", "ホルムズ"),
+    "israel_iran": (
+        "israel iran",
+        "israeli strike on iran",
+        "iran israel",
+        "イスラエルとイラン",
+        "イラン・イスラエル",
+    ),
+    "ukraine_aid": ("aid to ukraine", "ukraine aid", "ウクライナ支援", "対ウクライナ支援"),
+    "taiwan_strait": ("taiwan strait", "台湾海峡", "台湾有事"),
+    "senkaku": ("senkaku", "diaoyu", "尖閣"),
+    "south_china_sea": ("south china sea", "scarborough shoal", "南シナ海"),
+    "korean_peninsula": ("korean peninsula", "朝鮮半島"),
+}
+
+_GEO_THEATRE_ENV = "INGEST_GEO_THEATRE_HINT"
+
+
+def geo_theatre_hint_mode() -> str:
+    """``off`` (0、既定外) / ``shadow`` (既定、記録のみ) / ``on`` (1、取り込みに効かせる)。"""
+    raw = os.environ.get(_GEO_THEATRE_ENV, "shadow").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return "on"
+    return "off" if raw in ("0", "false", "no", "off") else "shadow"
+
+
+def geo_theatre_reasons(text: str) -> tuple[str, ...]:
+    """題+概要に当たる戦域名 (``theatre:<name>``) を返す。決定論・LLM 不使用。"""
+    lower = text.lower()
+    return tuple(
+        f"theatre:{name}"
+        for name, terms in GEO_THEATRE_TERMS.items()
+        if any(keyword_in_text(t, lower) for t in terms)
+    )
+
+
 def ingest_relevance_hint(*, feed: str, title: str, summary_preview: str) -> RelevanceHint:
     """タイトル + 概要から関連性ヒントを判定する (title+preview のみ、本文は見ない)。
 
@@ -301,6 +342,9 @@ def ingest_relevance_hint(*, feed: str, title: str, summary_preview: str) -> Rel
 
 
 __all__ = [
+    "GEO_THEATRE_TERMS",
+    "geo_theatre_hint_mode",
+    "geo_theatre_reasons",
     "JAPAN_ISO",
     "WATCHED_NATIONS",
     "RelevanceHint",

@@ -109,6 +109,7 @@ def _fetch_articles(
           FROM articles
          WHERE created_at >= ? AND created_at < ?
            AND status = 'posted'
+           AND analysis_only IS NULL
          ORDER BY created_at DESC
     """
     with _connect(db_path) as con:

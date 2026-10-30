@@ -232,6 +232,9 @@ def _persist_article_outcomes(
                     duplicate_of=(
                         str(outcome["duplicate_of"]) if outcome.get("duplicate_of") else None
                     ),
+                    analysis_only=(
+                        str(outcome["analysis_only"]) if outcome.get("analysis_only") else None
+                    ),
                     original_title=original_title_val,
                     dedup_key=dedup_key_val,
                     discord_message_id=(

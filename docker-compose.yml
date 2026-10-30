@@ -271,6 +271,12 @@ services:
       # 過去 30 日の再現でも日本 0。保存される importance は要約の段が付けるので下流は不変
       TRIAGE_FLAT: ${TRIAGE_FLAT:-1}
       INGEST_RULE_V2: ${INGEST_RULE_V2:-1}
+      # 地政学の救済 (2026-10-30、CLAUDE.md §7 の 10-30 の行)。既定はいずれも従来の挙動。
+      # prompt: flat=TRIAGE_FLAT に従う / pir=救済だけ PIR 駆動 prompt。mode: deliver=配信 / analysis=分析専用
+      GEO_RESCUE_PROMPT: ${GEO_RESCUE_PROMPT:-flat}
+      GEO_RESCUE_MODE: ${GEO_RESCUE_MODE:-deliver}
+      # 戦域 (紅海・ホルムズ等) の取り込みヒント。shadow=ログのみ / 1=取り込みに効かせる / 0=止める
+      INGEST_GEO_THEATRE_HINT: ${INGEST_GEO_THEATRE_HINT:-shadow}
 
     # 設定・プロンプト・データを bind mount で共有
     # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する

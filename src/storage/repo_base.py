@@ -290,6 +290,9 @@ class RunHistoryRepositoryBase:
             "duplicate_of",
             # 取得時の元の見出し (2026-10-18)。title は要約後の日本語見出し
             "original_title",
+            # 分析専用の印 (2026-10-30)。配信せず分析にだけ残した行の理由 (geo_rescue 等)。
+            # NULL = 通常の行。duplicate_of (重複で残した行) とは別の軸
+            "analysis_only",
         ):
             if col not in existing_articles:
                 conn.execute(f"ALTER TABLE articles ADD COLUMN {col} TEXT")
