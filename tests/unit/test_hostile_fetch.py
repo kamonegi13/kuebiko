@@ -194,6 +194,10 @@ class TestUserAgentNeutrality:
             "src/sources/ransomware_live.py",
         ):
             text = (Path(__file__).resolve().parents[2] / rel).read_text(encoding="utf-8")
+            # BOT_UA_NEUTRAL=0 の戻し先 (中立化前の値) の定数 1 行だけは許す
+            text = "\n".join(
+                line for line in text.splitlines() if not line.startswith("_LEGACY_USER_AGENT")
+            )
             assert "kuebiko/1.0" not in text, rel
             assert '"kuebiko-bot"' not in text, rel
 

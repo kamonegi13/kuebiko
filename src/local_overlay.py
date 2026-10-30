@@ -18,7 +18,9 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+from typing import Any
 
 ENV_LOCAL_CONFIG_DIR = "KUEBIKO_LOCAL_CONFIG_DIR"
 
@@ -41,3 +43,21 @@ def local_path(name: str) -> Path:
     if rel.is_absolute() or ".." in rel.parts or not rel.parts:
         raise ValueError(f"local overlay の名前が不正です: {name!r}")
     return local_config_dir() / rel
+
+
+def is_test_environment() -> bool:
+    """pytest の中か (ローカル層が無いのが正常な環境)。本番での欠落警告を出し分ける。"""
+    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+
+def log_layers_loaded(logger: Any, event: str, *, local_used: bool, **counts: int) -> None:
+    """どちらの層で動いているかを件数だけログに出す (ドメイン名等の中身は出さない)。
+
+    ローカル層が無いとき、本番 (テスト以外) では warning にする: 取得ポリシーの対象が
+    ccTLD だけに狭まる/``adversary_official`` が空になるため、置き忘れに気付けるように。
+    """
+    source = "generic+local" if local_used else "generic"
+    if local_used or is_test_environment():
+        logger.info(event, source=source, **counts)
+        return
+    logger.warning(event, source=source, local_missing=True, **counts)

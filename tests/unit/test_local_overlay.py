@@ -134,7 +134,11 @@ class TestReliabilityOverlay:
         assert loaded and loaded[0]["source"] == "generic+local"
         assert "kuebiko.example" not in repr(logs)
 
-    def test_ui_override_is_written_to_the_local_layer(self, local_dir: Path) -> None:
+    def test_ui_override_flag_off_is_written_to_the_local_layer(
+        self, local_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 通常は DB (test_source_basis)。rollback flag のときだけローカル層のファイルへ書く
+        monkeypatch.setenv("SOURCE_RELIABILITY_OVERRIDES_DB", "0")
         url = "https://feeds.kuebiko.example/rss"
         assert sb.set_source_reliability_override(url, "research") == "research"
         written = local_dir / sb.LOCAL_OVERRIDES_NAME

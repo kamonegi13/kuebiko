@@ -24,15 +24,17 @@ readonly instance は `:ro` で同じものを読む)。
 |---|---|---|---|
 | `hostile_domains.yaml` | 敵対的と扱う登録ドメイン (任意で ccTLD の追加) | `config/fetch/hostile_domains.yaml` (ccTLD の規則と形式の例) | `src/tools/hostile_hosts.py` |
 | `source_reliability.yaml` | 信頼度ティアの追加分 (例: `adversary_official` の host) | `config/sources/source_reliability.yaml` | `src/cti/source_basis.py` |
-| `source_reliability_overrides.yaml` | per-source の信頼度上書き (UI の購読ソース画面が書く。key は feed URL) | なし (旧 `config/sources/` の追跡ファイルから移した) | `src/cti/source_basis.py` |
+| `source_reliability_overrides.yaml` | **初回 seed 元のみ** (§6)。per-source の信頼度上書きの runtime SSoT は DB | 旧 `config/sources/source_reliability_overrides.yaml` (非推奨・seed 専用) | `src/cti/source_basis.py` |
 
 - 形式は公開版と同じ。**和集合**で重なる (ローカルで公開版の規則を消すことはしない)。
-- 読み込みはプロセス内でキャッシュされる。編集したら再起動で反映 (overrides は UI の保存で即時)。
+- 読み込みはプロセス内でキャッシュされる。編集したら再起動で反映 (overrides は DB で、UI の保存で即時)。
 - どちらの層で動いているかは起動後のログで分かる。**件数だけで、ドメイン名は出さない**:
   - `hostile_domains_loaded` … `source=generic` / `generic+local`、`cctlds` / `domains` の件数
   - `source_reliability_loaded` … `source=generic` / `generic+local`、`local_tiers` の件数
   - ローカルが壊れているときは `hostile_domains_local_invalid` / `source_reliability_config_load_failed`
     (layer=local) を出し、汎用の規則だけで動く
+- **本番 (テスト以外) でローカル層が無いと、上の 2 つのログは warning** (`local_missing=true`)。
+  置き忘れ・復元漏れに気付くため。テストでは info。
 - ローカル層が無いと、敵対的 host の判定は ccTLD (と、ソースの `fetch_profile: hostile` の印) だけになり、
   `adversary_official` は空になる。動作は止まらないが、**取得ポリシーの対象が狭くなる**ので
   本番ではログの `source=generic+local` を確かめる。
@@ -64,7 +66,50 @@ readonly instance は `:ro` で同じものを読む)。
 - 新しい機械に置くときも同じ。ファイルが無い間は汎用の規則で動く (止まらない)。
 - `git status` に `config/local/` が出ないこと (ignore 済み) を確かめてからコミットする。
 
-## 5. 関連
+## 5. ログに出るもの (ドメイン名の扱い)
+
+「ドメイン名を出さない」は**ローダーのログ** (`hostile_domains_loaded` / `source_reliability_loaded` /
+`*_local_invalid`) だけの約束で、中身の一覧は出さず件数だけ。**取得ごとのログ**
+(`hostile_host_policy`、`ua_health_hostile_canary`) は判定した host 名を含む。これは運用者ローカルの
+運用ログで、`run_logs` (DB) と `docker logs`・日次 `pg_dump` に残るが、公開面には出ない:
+
+- 標準面: `scripts/export_public_site.py` は事象ニュースを書き出すだけで、実行ログを持たない
+  (`_FORBIDDEN_KEYS` は body 系の検査)。
+- アドバンスド (`/app`): `scripts/export_mirror.py` の `_final_gate` は資格情報・本文・notes の項目名を
+  弾き、`/api/v1/subscriptions` 等を書き出さない。`dashboard/summary` の `recent_runs` / `next_run_at` は
+  書き出しから外している。実行ログ (`/api/v1/runs/*`) の書き出しは無い。
+- 公開 instance: `src/ui/read_only_policy.py` の匿名 GET は `PUBLIC_GET_ALLOWLIST` (default-deny、
+  `/api/health`・`runtime-flags`・`vocabularies`・`public/news` のみ)。実行ログは認証済み (Tier1) のみ。
+  なお旧名 `READ_ONLY_GET_DENYLIST` は 2026-08-25 に allowlist 方式へ反転済みで、コメント中に残る名前は旧称。
+
+per-source 信頼度上書き (キー = 購読先 URL) は DB (config_store) にあり、公開リポにも出ない。
+
+## 6. 信頼度の上書きは DB (2026-10-30)
+
+購読先 URL が key のため、per-source 上書きの runtime SSoT は **DB** (config_store、
+key=`source_reliability_overrides`)。版履歴が残り、設定の履歴画面 / `POST /api/v1/config-history/
+source_reliability_overrides/revert` で戻せる (`config_history._KNOWN_KEYS` に登録済み)。
+
+- **seed**: DB に key が無いときの最初の読みで、`config/local/source_reliability_overrides.yaml`
+  (無ければ旧追跡の `config/sources/source_reliability_overrides.yaml`) を version 1 として取り込む
+  (`source_store.seed_all_if_absent` と同型。読み取り専用 instance で書けなければ保存せず seed の値で動く)。
+  以後 DB が SSoT で、ファイルを変えても反映されない。UI (`POST /subscriptions/reliability`) の保存は
+  DB にだけ書く。この POST は `REMOTE_WRITE_ALLOWLIST` に無く、遠隔 (Tier1) からは書けない (従来どおり)。
+- **rollback**: `SOURCE_RELIABILITY_OVERRIDES_DB=0` でファイル (ローカル層) の直読み/直書きに戻る
+  (`SOURCES_CONFIG_DB` の最小版)。
+- **旧追跡ファイル**: `config/sources/source_reliability_overrides.yaml` は**非推奨・seed 専用**として
+  残す。新コードは DB を読み、旧コードは再ビルドまでこのファイルを読むため、マージで消えると
+  デプロイの途中で上書きが空になる。**後続の別コミットで削除する** (DB への seed 済みを本番で確かめた後。
+  同時に `file_catalog` の項目と `test_file_catalog` の件数 35 → 34 を更新)。
+
+デプロイ手順 (app service 限定、CLAUDE.md §7 の安全帯で):
+1. マージ後 `docker compose up -d --build kuebiko readonly`。
+2. 初回の読みで seed される (full instance)。`GET /api/v1/config-history` で
+   `source_reliability_overrides` の version 1 を確かめる。
+3. ローカル層のファイル `config/local/source_reliability_overrides.yaml` は seed 後は不要
+   (退避だけ残して消してよい)。
+
+## 7. 関連
 
 - 取得ポリシー: [fetch_escalation_policy.md](fetch_escalation_policy.md) §6
 - 運用者ローカルの他のファイル: `CLAUDE.local.md`、`prompts/_persona_local.j2`、`.env`

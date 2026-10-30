@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from src.local_overlay import local_path
+from src.local_overlay import local_path, log_layers_loaded
 from src.logging_config import get_logger
 
 _log = get_logger(__name__)
@@ -158,9 +158,10 @@ def _load_layers(path: Path, local: Path | None) -> tuple[HostileLists, bool]:
 
 def _log_loaded(lists: HostileLists, *, local_used: bool) -> None:
     """どちらの一覧で動いているかを件数だけ出す (ドメイン名は出さない)。"""
-    _log.info(
+    log_layers_loaded(
+        _log,
         "hostile_domains_loaded",
-        source="generic+local" if local_used else "generic",
+        local_used=local_used,
         cctlds=len(lists.cctlds),
         domains=len(lists.domains),
     )

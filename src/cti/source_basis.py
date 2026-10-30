@@ -26,8 +26,9 @@ from urllib.parse import urlparse
 
 import yaml
 
-from src.local_overlay import local_path
+from src.local_overlay import local_path, log_layers_loaded
 from src.logging_config import get_logger
+from src.storage.db_backend import raise_if_infrastructure
 from src.storage.run_history import RunHistoryRepository
 
 _log = get_logger(__name__)
@@ -156,15 +157,25 @@ _RELIABILITY_CONFIG_PATH = _CONFIG_DIR / "sources/source_reliability.yaml"
 # 敵対国の公式な発信 (adversary_official) の実際の host など、公開リポに置くと収集先・
 # 分類先が読める一覧はこちらに書く (docs/local_overlay.md)。
 LOCAL_RELIABILITY_NAME = "source_reliability.yaml"
-# per-source 上書き (UI 専用・機械管理)。手編集せず SubscriptionsPage から編集する。
-# patterns (curated default、コメント付き) と分離し、こちらは comment 無しで安全に rewrite。
-# key が feed URL (= 購読先そのもの) なので **ローカル層に置く** (2026-10-30 に
-# config/sources/ の追跡ファイルから移した。UI の保存で公開リポの追跡ファイルが変わらない)。
+# per-source 上書き (UI 専用・機械管理)。key が feed URL (= 購読先そのもの) なので
+# **runtime SSoT は DB (config_store, key=source_reliability_overrides、版履歴 + revert)**。
+# ファイルは初回 seed 専用 (2026-10-30): 運用者ローカル層 → 旧追跡ファイルの順で取り込む。
+# DB は公開リポの外なので、購読先の一覧が公開されない。
+# ``SOURCE_RELIABILITY_OVERRIDES_DB=0`` で旧来のファイル直読み/直書き (ローカル層) へ即時 rollback。
 LOCAL_OVERRIDES_NAME = "source_reliability_overrides.yaml"
+OVERRIDES_CONFIG_KEY = "source_reliability_overrides"
+_OVERRIDES_ENV_FLAG = "SOURCE_RELIABILITY_OVERRIDES_DB"
+# 旧追跡ファイル (seed 専用・非推奨。後続の別コミットで削除する — docs/local_overlay.md §6)
+_LEGACY_OVERRIDES_PATH = _CONFIG_DIR / "sources/source_reliability_overrides.yaml"
 
 
 def _overrides_path() -> Path:
     return local_path(LOCAL_OVERRIDES_NAME)
+
+
+def is_overrides_db_mode() -> bool:
+    """overrides の SSoT を DB にするか (既定 ON)。``=0`` でファイル (ローカル層) 旧挙動。"""
+    return os.environ.get(_OVERRIDES_ENV_FLAG, "1") != "0"
 
 
 # UI で選べる明示ティア (override 値の検証用)。
@@ -217,10 +228,8 @@ def load_reliability_patterns(*, force_reload: bool = False) -> _ReliabilityPatt
     local_file = local_path(LOCAL_RELIABILITY_NAME)
     local_cfg = _read_reliability_yaml(local_file, layer="local") if local_file.exists() else {}
     # どちらの層で動いているかだけ出す (host 名は出さない)
-    _log.info(
-        "source_reliability_loaded",
-        source="generic+local" if local_cfg else "generic",
-        local_tiers=len(local_cfg),
+    log_layers_loaded(
+        _log, "source_reliability_loaded", local_used=bool(local_cfg), local_tiers=len(local_cfg)
     )
 
     def _tier(name: str, field: str) -> object:
@@ -261,24 +270,65 @@ def _read_reliability_yaml(path: Path, *, layer: str) -> dict[str, object]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _load_overrides() -> dict[str, str]:
-    """per-source 上書き (UI 管理) を読む。key=feed_url or title、value=tier。"""
+def _clean_overrides(raw: object) -> dict[str, str]:
+    """{key: tier} を検証して返す (不正な tier は捨てる)。"""
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): str(v).strip().lower()
+        for k, v in raw.items()
+        if str(v).strip().lower() in ASSIGNABLE_TIERS
+    }
+
+
+def _read_overrides_file(path: Path) -> dict[str, str]:
+    """overrides yaml を読む。欠落・不正は空。"""
     try:
-        path = _overrides_path()
         if not path.exists():
             return {}
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-        raw = loaded.get("overrides") if isinstance(loaded, dict) else None
-        if not isinstance(raw, dict):
-            return {}
-        return {
-            str(k): str(v).strip().lower()
-            for k, v in raw.items()
-            if str(v).strip().lower() in ASSIGNABLE_TIERS
-        }
     except (OSError, yaml.YAMLError) as e:
-        _log.warning("source_reliability_overrides_load_failed", error=str(e))
+        _log.warning("source_reliability_overrides_load_failed", error=type(e).__name__)
         return {}
+    return _clean_overrides(loaded.get("overrides") if isinstance(loaded, dict) else None)
+
+
+def _read_seed_overrides() -> tuple[dict[str, str], str]:
+    """seed 元を返す: ローカル層 → 旧追跡ファイル。(値, 元の名前)。"""
+    local = _overrides_path()
+    if local.exists():
+        return _read_overrides_file(local), "local"
+    return _read_overrides_file(_LEGACY_OVERRIDES_PATH), "legacy"
+
+
+def _load_overrides() -> dict[str, str]:
+    """per-source 上書きを読む。key=feed_url or title、value=tier。
+
+    DB mode: config_store の現在値。未投入なら seed (ローカル層 → 旧追跡ファイル) を
+    version 1 として取り込む (``seed_all_if_absent`` と同型)。基盤の失敗 (DB 未達) は
+    seed へ degrade せず再送出する。flag OFF: ローカル層のファイル (無ければ旧追跡ファイル)。
+    """
+    if not is_overrides_db_mode():
+        return _read_seed_overrides()[0]
+    from src.storage.config_store import get_config, seed_config_if_absent
+
+    try:
+        val = get_config(OVERRIDES_CONFIG_KEY)
+    except Exception as e:  # noqa: BLE001
+        raise_if_infrastructure(e, context="source_reliability_overrides")
+        _log.warning("source_reliability_overrides_db_read_failed", error=type(e).__name__)
+        return _read_seed_overrides()[0]
+    if val is not None:
+        return _clean_overrides(val)
+    seed, origin = _read_seed_overrides()
+    try:
+        seed_config_if_absent(
+            OVERRIDES_CONFIG_KEY, dict(sorted(seed.items())), note=f"初期 seed ({origin} file)"
+        )
+    except Exception as e:  # noqa: BLE001 — 読み取り専用 instance 等。保存せず seed の値で動く
+        raise_if_infrastructure(e, context="source_reliability_overrides")
+        _log.warning("source_reliability_overrides_seed_failed", error=type(e).__name__)
+    return seed
 
 
 def invalidate_reliability_cache() -> None:
@@ -287,8 +337,8 @@ def invalidate_reliability_cache() -> None:
     _patterns_cache = None
 
 
-def _write_overrides(overrides: dict[str, str]) -> None:
-    """overrides を atomic write (tempfile → os.replace)。機械管理ファイル。"""
+def _write_overrides_file(overrides: dict[str, str]) -> None:
+    """overrides を atomic write (tempfile → os.replace)。flag OFF 時のみ。"""
     payload = {
         "_comment": "UI (SubscriptionsPage) 管理・手編集しない。pattern=source_reliability.yaml",
         "overrides": dict(sorted(overrides.items())),
@@ -305,6 +355,16 @@ def _write_overrides(overrides: dict[str, str]) -> None:
         if os.path.exists(tmp):
             os.unlink(tmp)
         raise
+
+
+def _write_overrides(overrides: dict[str, str], *, note: str) -> None:
+    """DB mode は config_store に新 version として保存 (履歴 + revert)、OFF はファイル。"""
+    if not is_overrides_db_mode():
+        _write_overrides_file(overrides)
+        return
+    from src.storage.config_store import save_config
+
+    save_config(OVERRIDES_CONFIG_KEY, dict(sorted(overrides.items())), note=note)
 
 
 def set_source_reliability_override(key: str, tier: str | None) -> str:
@@ -325,7 +385,7 @@ def set_source_reliability_override(key: str, tier: str | None) -> str:
     else:
         current.pop(key, None)
         result = "auto"
-    _write_overrides(current)
+    _write_overrides(current, note=f"UI: {result}")
     invalidate_reliability_cache()
     return result
 

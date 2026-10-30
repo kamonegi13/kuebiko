@@ -63,6 +63,34 @@ def _candidate_uas(current_ua: str) -> list[str]:
     return out
 
 
+def exclude_hostile_canaries(urls: list[str]) -> list[str]:
+    """敵対的 host の canary を、適用中 (policy=on) / 停止中 (PAUSE) なら外す。
+
+    この job は UA を替えて複数回 probe するため、敵対的 host には「ボット UA を含む UA の
+    総当たり」になる。適用中・停止中は probe しない。それ以外 (shadow / 0) は従来どおり
+    probe するが、hostile の canary は毎回ログ ``ua_health_hostile_canary`` に残す。
+    """
+    from src.tools import hostile_fetch
+
+    kept: list[str] = []
+    for url in urls:
+        plan = hostile_fetch.plan_for(url)
+        if not plan.hostile:
+            kept.append(url)
+            continue
+        excluded = plan.enforce or plan.paused
+        _log.info(
+            "ua_health_hostile_canary",
+            host=plan.verdict.host,
+            mode=plan.mode,
+            paused=plan.paused,
+            action="excluded" if excluded else "would_exclude",
+        )
+        if not excluded:
+            kept.append(url)
+    return kept
+
+
 async def _probe_success_ratio(client: httpx.AsyncClient, ua: str, urls: list[str]) -> float:
     """指定 UA で canary URL 群を GET し、200 の割合を返す (rotation 無しの純 probe)。"""
     if not urls:
@@ -87,7 +115,7 @@ async def run_ua_health_check(
     """UA 健全性を canary で検証し、劣化時は検証済みの新 UA に自己修復する。統計 dict を返す。"""
     repo = repo or RunHistoryRepository()
     current = browser_user_agent()
-    canaries = repo.sample_healthy_source_urls(limit=canary_limit)
+    canaries = exclude_hostile_canaries(repo.sample_healthy_source_urls(limit=canary_limit))
     if not canaries:
         _log.info("ua_health_no_canaries")
         return {"status": "no_canaries", "canaries": 0}

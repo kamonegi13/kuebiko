@@ -26,13 +26,20 @@ import httpx
 
 from src.cti.taxonomy_normalizer import TaxonomyNormalizer, load_normalizer
 from src.logging_config import get_logger
-from src.tools.user_agent import bot_user_agent
+from src.tools.user_agent import bot_ua_neutral_enabled, bot_user_agent
 
 _log = get_logger(__name__)
 
 _API_BASE = "https://api.ransomware.live/v2"
 _TIMEOUT_SECONDS = 30.0
-_USER_AGENT = bot_user_agent("ransomware-live")  # 中立 UA (SSoT = user_agent.py)
+_LEGACY_USER_AGENT = "kuebiko-bot"  # BOT_UA_NEUTRAL=0 の戻し先 (中立化前の値そのまま)
+
+
+def _user_agent() -> str:
+    """中立 UA (SSoT = user_agent.py)。``BOT_UA_NEUTRAL=0`` は中立化前の値に戻す。"""
+    if bot_ua_neutral_enabled():
+        return bot_user_agent("ransomware-live")
+    return _LEGACY_USER_AGENT
 
 
 @dataclass(frozen=True)
@@ -121,7 +128,7 @@ def _fetch_json(path: str, client: httpx.Client | None = None) -> list[dict[str,
     """API から JSON リストを取得 (失敗時は空リストに fail-safe)。"""
     url = f"{_API_BASE}{path}"
     owns = client is None
-    cli = client or httpx.Client(timeout=_TIMEOUT_SECONDS, headers={"user-agent": _USER_AGENT})
+    cli = client or httpx.Client(timeout=_TIMEOUT_SECONDS, headers={"user-agent": _user_agent()})
     try:
         resp = cli.get(url, headers={"accept": "application/json"})
         resp.raise_for_status()

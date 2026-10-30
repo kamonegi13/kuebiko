@@ -298,7 +298,13 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
     "config/local/source_reliability_overrides.yaml": FileInfo(
         "情報源",
         "ソース信頼度の上書き",
-        "個別ソースの信頼度を運用判断で上書きする層 (UI 管理・gitignore のローカル層)",
+        "初回 seed 元 (ローカル層、gitignore)。runtime の上書きは DB (config_store) が SSoT",
+    ),
+    "config/sources/source_reliability_overrides.yaml": FileInfo(
+        "情報源",
+        "ソース信頼度の上書き (旧・seed 専用)",
+        "非推奨。runtime は DB (config_store) で、DB 未投入の初回 seed 元としてだけ読む。"
+        "後続コミットで削除予定",
     ),
     "config/pipelines.yaml": FileInfo(
         "パイプライン",

@@ -1,0 +1,8 @@
+# 非推奨・seed 専用 (2026-10-30): runtime SSoT は DB (config_store, key=source_reliability_overrides)。
+# 新しい上書きをここに足さない (UI が DB へ書く)。DB 未投入のときの初回 seed 元 (ローカル層
+# config/local/ が無い場合のみ) と、旧コードが再ビルドまで読む用に残す。後続の別コミットで削除する
+# (docs/local_overlay.md §6)。
+_comment: UI (SubscriptionsPage) 管理・手編集しない。pattern=source_reliability.yaml
+overrides:
+  https://eclypsium.com/blog/: research
+  https://pushsecurity.com/blog: research

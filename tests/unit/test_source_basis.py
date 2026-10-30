@@ -330,23 +330,36 @@ class TestCrossSourceCorroboration:
 
 
 class TestReliabilityOverride:
-    """S3: per-source 信頼度ティアの UI 上書き (raw YAML 不要・override→pattern)。"""
+    """S3: per-source 信頼度ティアの UI 上書き (raw YAML 不要・override→pattern)。
+
+    runtime SSoT は DB (config_store, key=source_reliability_overrides)。tmp の data/ に
+    sqlite を作って検証する。
+    """
 
     @pytest.fixture(autouse=True)
-    def _clean_cache(self) -> object:
+    def _env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
         from src.cti import source_basis as sb
 
+        (tmp_path / "data").mkdir()
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("SOURCE_RELIABILITY_OVERRIDES_DB", raising=False)
+        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path / "local"))
+        monkeypatch.setattr(sb, "_LEGACY_OVERRIDES_PATH", tmp_path / "legacy.yaml")
         sb.invalidate_reliability_cache()
         yield
         sb.invalidate_reliability_cache()
 
-    def test_override_set_overrides_pattern(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @staticmethod
+    def _write(path: Path, overrides: dict[str, str]) -> None:
+        import yaml
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump({"overrides": overrides}), encoding="utf-8")
+
+    def test_override_set_overrides_pattern(self) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
-        sb.invalidate_reliability_cache()
         url = "https://bleepingcomputer.com/x"
         assert sb.classify_source_tier("BleepingComputer", url) == "news"  # pattern default
 
@@ -356,21 +369,114 @@ class TestReliabilityOverride:
         assert sb.set_source_reliability_override(url, "auto") == "auto"  # 解除
         assert sb.classify_source_tier("BleepingComputer", url) == "news"  # pattern に復帰
 
-    def test_invalid_tier_is_treated_as_clear(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_invalid_tier_is_treated_as_clear(self) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
-        sb.invalidate_reliability_cache()
         url = "https://bleepingcomputer.com/x"
         sb.set_source_reliability_override(url, "research")
         assert sb.set_source_reliability_override(url, "bogus") == "auto"  # 不正値は解除
         assert sb.classify_source_tier("BleepingComputer", url) == "news"
 
-    def test_empty_key_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_empty_key_raises(self) -> None:
         from src.cti import source_basis as sb
 
-        monkeypatch.setenv("KUEBIKO_LOCAL_CONFIG_DIR", str(tmp_path))
         with pytest.raises(ValueError):
             sb.set_source_reliability_override("  ", "research")
+
+    def test_seeds_from_local_file_as_version_1(self, tmp_path: Path) -> None:
+        from src.cti import source_basis as sb
+        from src.storage import config_store
+
+        self._write(
+            tmp_path / "local" / sb.LOCAL_OVERRIDES_NAME, {"https://a.example/f": "official"}
+        )
+        self._write(tmp_path / "legacy.yaml", {"https://b.example/f": "social"})
+
+        assert sb._load_overrides() == {"https://a.example/f": "official"}  # local 優先
+        hist = config_store.list_history(sb.OVERRIDES_CONFIG_KEY)
+        assert [h.version for h in hist] == [1]
+        assert config_store.get_config(sb.OVERRIDES_CONFIG_KEY) == {
+            "https://a.example/f": "official"
+        }
+
+    def test_seeds_from_legacy_when_no_local(self, tmp_path: Path) -> None:
+        from src.cti import source_basis as sb
+        from src.storage import config_store
+
+        self._write(tmp_path / "legacy.yaml", {"https://b.example/f": "research"})
+
+        assert sb._load_overrides() == {"https://b.example/f": "research"}
+        assert config_store.get_config(sb.OVERRIDES_CONFIG_KEY) == {
+            "https://b.example/f": "research"
+        }
+
+    def test_db_is_ssot_after_seed(self, tmp_path: Path) -> None:
+        from src.cti import source_basis as sb
+
+        self._write(tmp_path / "legacy.yaml", {"https://b.example/f": "research"})
+        sb._load_overrides()
+        # seed 後にファイルを変えても DB が優先
+        self._write(tmp_path / "legacy.yaml", {"https://c.example/f": "social"})
+        assert sb._load_overrides() == {"https://b.example/f": "research"}
+
+    def test_write_creates_version_and_leaves_files_untouched(self, tmp_path: Path) -> None:
+        from src.cti import source_basis as sb
+        from src.storage import config_store
+
+        sb.set_source_reliability_override("https://a.example/f", "research")
+        sb.set_source_reliability_override("https://a.example/g", "social")
+
+        # v1 = 初回 seed (空)、v2/v3 = UI の保存
+        versions = [h.version for h in config_store.list_history(sb.OVERRIDES_CONFIG_KEY)]
+        assert versions == [3, 2, 1]
+        assert not (tmp_path / "local" / sb.LOCAL_OVERRIDES_NAME).exists()
+
+    def test_revert_restores_previous_version(self) -> None:
+        from src.cti import source_basis as sb
+        from src.storage import config_store
+
+        sb.set_source_reliability_override("https://a.example/f", "research")
+        prev = config_store.list_history(sb.OVERRIDES_CONFIG_KEY)[0].version
+        sb.set_source_reliability_override("https://a.example/g", "social")
+        old = config_store.get_config_version(sb.OVERRIDES_CONFIG_KEY, prev)
+        config_store.save_config(sb.OVERRIDES_CONFIG_KEY, old, note="revert")
+        sb.invalidate_reliability_cache()
+
+        assert sb._load_overrides() == {"https://a.example/f": "research"}
+
+    def test_config_history_knows_the_key_and_invalidates(self) -> None:
+        from src.cti import source_basis as sb
+        from src.ui.api import config_history as ch
+
+        assert sb.OVERRIDES_CONFIG_KEY in ch._KNOWN_KEYS
+        sb.load_reliability_patterns()
+        ch._invalidate(sb.OVERRIDES_CONFIG_KEY)
+        assert sb._patterns_cache is None
+
+    def test_flag_off_uses_local_file_and_writes_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.cti import source_basis as sb
+        from src.storage import config_store
+
+        monkeypatch.setenv("SOURCE_RELIABILITY_OVERRIDES_DB", "0")
+        self._write(
+            tmp_path / "local" / sb.LOCAL_OVERRIDES_NAME, {"https://a.example/f": "official"}
+        )
+        assert sb._load_overrides() == {"https://a.example/f": "official"}
+
+        sb.set_source_reliability_override("https://a.example/g", "social")
+        assert sb._load_overrides() == {
+            "https://a.example/f": "official",
+            "https://a.example/g": "social",
+        }
+        assert config_store.get_config(sb.OVERRIDES_CONFIG_KEY) is None  # DB は触らない
+
+    def test_flag_off_falls_back_to_legacy_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.cti import source_basis as sb
+
+        monkeypatch.setenv("SOURCE_RELIABILITY_OVERRIDES_DB", "0")
+        self._write(tmp_path / "legacy.yaml", {"https://b.example/f": "research"})
+        assert sb._load_overrides() == {"https://b.example/f": "research"}

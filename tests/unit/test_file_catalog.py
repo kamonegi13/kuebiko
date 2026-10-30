@@ -69,17 +69,20 @@ class TestCatalogCompleteness:
         # +triage_rubric seed (group 4 の 3 本目・最終、python_block kind、2026-08-21)
         # +ttp_evidence / non_adversary_operations (TTP の関門・campaign の整理、2026-09-27)
         # +pir_daily_focus_rubric_v6_2 / summarizer_rubric_v8r4 (s24c 切替用の写し、2026-10-22)
-        # +fetch/hostile_domains (公開版の規則) / -source_reliability_overrides (ローカル層へ移動) /
-        # 生成物 (gitignore) とローカル層を数えない形に (2026-10-30。旧 35 は開発機の生成物 2 本を含む数)
-        assert len(actual) == 34
+        # +fetch/hostile_domains (公開版の規則)。source_reliability_overrides は seed 専用の非推奨
+        # として残す (DB へ移行、削除は後続コミット)。生成物 (gitignore) とローカル層を数えない形に
+        # (2026-10-30。旧 35 は開発機の生成物 2 本を含む数)
+        assert len(actual) == 35
         missing = actual - set(CONFIG_CATALOG)
         assert not missing, f"カタログ未登録の設定ファイル: {sorted(missing)}"
 
     def test_catalog_has_no_ghost_entries(self) -> None:
         # 削除済みファイルのカタログ残骸を検出 (_persona_local は gitignore のため任意)
-        optional = {"prompts/_persona_local.j2"} | _GITIGNORED_GENERATED_CONFIG | {
-            k for k in CONFIG_CATALOG if k.startswith("config/local/")
-        }
+        optional = (
+            {"prompts/_persona_local.j2"}
+            | _GITIGNORED_GENERATED_CONFIG
+            | {k for k in CONFIG_CATALOG if k.startswith("config/local/")}
+        )
         for key in list(PROMPT_CATALOG) + list(CONFIG_CATALOG):
             if key in optional:
                 continue
