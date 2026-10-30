@@ -326,6 +326,9 @@ def _load_tier_map(*, db_path: Path | None) -> dict[str, str]:
         # 走った結果が永久に保存されるため (2026-08-25)
         raise_if_infrastructure(e, context="model_tiers")
         _log.warning("model_tiers_db_load_failed", error=str(e))
+        from src.tools.tier_load_alarm import record_tier_load_failure
+
+        record_tier_load_failure(f"{type(e).__name__}: {e}")
         raw = None
     if isinstance(raw, dict):
         for k, v in raw.items():

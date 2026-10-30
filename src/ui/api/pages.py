@@ -391,6 +391,7 @@ def _model_end_state() -> dict[str, Any]:
     """2 枠の終着の状態 (枠の外の割当・緊急の受け皿の発動回数)。検査の失敗は error に入れる。"""
     from src.tools.emergency_fallback import emergency_fallback_counts
     from src.tools.model_end_state import check_live_assignments
+    from src.tools.tier_load_alarm import tier_load_failure_state
 
     try:
         violations = check_live_assignments()
@@ -400,6 +401,7 @@ def _model_end_state() -> dict[str, Any]:
     return {
         "violations": violations,
         "emergency_fallbacks": emergency_fallback_counts(),
+        "tier_load_failures": tier_load_failure_state(),
         "error": error,
     }
 
