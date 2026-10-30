@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
@@ -123,3 +124,10 @@ async def test_async_failure_posts_ops_once(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert len(calls) == 1
     assert tier_load_alarm.tier_load_failure_state()["count"] == 2
+
+
+def test_invalidate_clears_failure_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存の後の invalidate は失敗の待ちも捨て、すぐ DB を読み直す。"""
+    model_tiers._FAILED_AT["None"] = time.monotonic()
+    model_tiers.invalidate_model_tiers_cache()
+    assert model_tiers._FAILED_AT == {}

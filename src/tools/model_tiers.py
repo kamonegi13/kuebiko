@@ -749,6 +749,8 @@ def seed_model_tiers_if_absent(*, db_path: Path | None = None) -> bool:
 def invalidate_model_tiers_cache() -> None:
     """UI 保存後などにキャッシュを破棄する (次回 resolve で DB を読み直す)。"""
     _CACHE.clear()
+    # 失敗の待ち (_FAILURE_RETRY_SECONDS) も捨てる — 保存の直後に BUILTIN を返さない
+    _FAILED_AT.clear()
 
 
 def _flag_on(env: str) -> bool:
