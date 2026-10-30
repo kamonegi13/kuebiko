@@ -505,3 +505,13 @@ class TestFairFeedOrder:
         assert fair_order_from_env() == "name"
         monkeypatch.setenv("RSS_FAIR_ORDER", "bogus")
         assert fair_order_from_env() == "rotate"
+
+
+def test_rotate_reaches_every_feed_when_gcd_is_large() -> None:
+    """n=60・max=45 (gcd 15) でも毎時 ceil(n/max) 回の窓で全 feed に届く (10-31 レビュー)。"""
+    n, m = 60, 45
+    reached: set[int] = set()
+    for hour in range(2):
+        start = (hour * m) % n
+        reached.update((start + i) % n for i in range(m))
+    assert reached == set(range(n))

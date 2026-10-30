@@ -27,6 +27,9 @@ _log = get_logger(__name__)
 SHADOW_SAFETY_MARGIN_SECONDS = 60.0
 #: 使える時間がこれ未満なら影の記録を飛ばす (20 件を 3 並列で回すと約 28 秒)
 SHADOW_MIN_USABLE_SECONDS = 30.0
+#: 中の予算 (LLM 呼び出しの開始前の確認) を外の打ち切りより短くする幅。1 件は 4〜10 秒なので、
+#: 中の確認で先に止まり、終わった分の行を捨てずに保存できる
+_INNER_BUDGET_SLACK_SECONDS = 20.0
 
 
 class _ShadowRepo(Protocol):
@@ -78,7 +81,10 @@ async def run_deferred_triage_shadow(
                 think=think,
                 relevance_embedder=relevance_embedder,
                 relevance_cascade_llm=relevance_cascade_llm,
-                budget_seconds=usable,
+                # 中の予算を外の打ち切りより短くし、中の確認で先に止める (終わった分を保存する)
+                budget_seconds=(
+                    None if usable is None else max(usable - _INNER_BUDGET_SLACK_SECONDS, 1.0)
+                ),
             ),
             timeout=usable,
         )

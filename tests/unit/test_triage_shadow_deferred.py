@@ -11,6 +11,7 @@ import pytest
 
 from src.pipeline.filters import _filter_by_triage
 from src.pipeline.triage_shadow_deferred import (
+    _INNER_BUDGET_SLACK_SECONDS,
     SHADOW_MIN_USABLE_SECONDS,
     SHADOW_SAFETY_MARGIN_SECONDS,
     remaining_budget_seconds,
@@ -123,7 +124,9 @@ async def test_records_rows_when_budget_is_ample(monkeypatch: pytest.MonkeyPatch
     repo.record_triage_shadow.assert_called_once()
     assert fake.await_args is not None
     budget = fake.await_args.kwargs["budget_seconds"]
-    assert budget == pytest.approx(_AMPLE - SHADOW_SAFETY_MARGIN_SECONDS)
+    assert budget == pytest.approx(
+        _AMPLE - SHADOW_SAFETY_MARGIN_SECONDS - _INNER_BUDGET_SLACK_SECONDS
+    )
 
 
 @pytest.mark.asyncio
