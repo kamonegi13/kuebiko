@@ -168,9 +168,9 @@ RSS / html_scraper / sitemap が同じ形で死活を残す (SSoT:
 
 コード: [`src/tools/hostile_hosts.py`](../src/tools/hostile_hosts.py) (純粋な分類器) /
 [`src/tools/hostile_fetch.py`](../src/tools/hostile_fetch.py) (全接続への適用)。
-設定: `config/fetch/hostile_domains.yaml` (公開版 = ccTLD の規則と形式の例) +
-`config/local/hostile_domains.yaml` (運用者ローカル = 実際の登録ドメインの一覧、gitignore。
-和集合で重なり、無ければ ccTLD だけで動く — [local_overlay.md](local_overlay.md))。
+設定: `config/fetch/hostile_domains.yaml` (公開版 = ccTLD の規則と登録ドメインの一覧、**SSoT**) +
+任意の `config/local/hostile_domains.yaml` (運用者の私的な追加分、gitignore、和集合 —
+[local_overlay.md](local_overlay.md))。
 背景: 利用者判断 (10-30) — 識別できる UA は出さない / 敵対的 host を分類して厳しめに取る /
 直接取得 (プロキシ必須にしない) は許容。
 
@@ -180,7 +180,7 @@ RSS / html_scraper / sitemap が同じ形で死活を残す (SSoT:
 |---|---|
 | (a) ソース設定の `fetch_profile: hostile` | feeds / watchers / scrapers の任意欄 (DB の config_store が runtime SSoT、yaml は seed。既定 `default`)。印は取得時に host ごとプロセス内へ登録され、そのソースの記事 URL の本文取得に引き継ぐ |
 | (b) ccTLD が `cn ru su xn--p1ai(рф) by kp ir` | `hostile_domains.yaml` の `cctlds` |
-| (c) 登録ドメインの suffix 一致 | `domains` (実際の一覧はローカル層)。`origin: report` = 机上調査の候補目録 (C1-C27 / R1-R22) 由来、`origin: added` = 指示などで追加 |
+| (c) 登録ドメインの suffix 一致 | `domains` (公開版が SSoT、私的な追加はローカル層)。`origin: report` = 机上調査の候補目録 (C1-C27 / R1-R22) 由来、`origin: added` = 指示などで追加 |
 | (d) 解決先 IP の国 (CN/RU/BY/KP/IR) | `HOSTILE_GEOIP_DB` に MaxMind 形式の DB を置き `maxminddb` が入っている環境だけ。**依存は足さない**。ローカルで名前を引くため、プロキシ越しに秘匿する運用では使わない |
 
 解釈できない host (空・IDNA 変換不能) は hostile。理由は `reasons` で返りログに残る。
@@ -238,8 +238,8 @@ RSS / html_scraper / sitemap が同じ形で死活を残す (SSoT:
 
 ### 6.5 信頼度と LLM 入力 (関連)
 
-- 信頼度ティア `adversary_official` (形式は `config/sources/source_reliability.yaml`、実際の host は
-  ローカル層 `config/local/source_reliability.yaml`、ラベル「主張」):
+- 信頼度ティア `adversary_official` (host は公開版 `config/sources/source_reliability.yaml` が SSoT、
+  私的な追加は任意のローカル層 `config/local/source_reliability.yaml`、ラベル「主張」):
   当事国の政府・軍・情報機関の公式発信。`state_media` (国営メディアの framing 割引) とは別。
   best_tier の序列では `state_media` と同格の最下位、corroboration には数えない。
   **`ADVERSARY_TIER` (既定 shadow)**: config の hosts / titles に一致しても実効ティアは変えず、

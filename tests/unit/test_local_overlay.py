@@ -65,7 +65,8 @@ class TestHostileOverlay:
 
     def test_local_absent_uses_generic_rules_only(self, local_dir: Path) -> None:
         lists = hh.default_lists()
-        assert lists.domains == frozenset()
+        assert lists.domains == hh.load_lists().domains  # 公開版 (SSoT) だけ
+        assert lists.domains
         assert {"cn", "ru", "su", "xn--p1ai", "by", "kp", "ir"} <= lists.cctlds
         assert not hh.classify_host("https://www.ministry.kuebiko.example/").hostile
         assert hh.classify_host("https://news.example.cn/").hostile
@@ -81,7 +82,7 @@ class TestHostileOverlay:
         (local_dir / hh.LOCAL_FILE_NAME).write_text("domains: just-a-string\n", encoding="utf-8")
         with structlog.testing.capture_logs() as logs:
             lists = hh.default_lists()
-        assert lists.domains == frozenset()
+        assert lists.domains == hh.load_lists().domains
         assert "ru" in lists.cctlds
         assert any(e["event"] == "hostile_domains_local_invalid" for e in logs)
 
@@ -104,7 +105,8 @@ class TestHostileOverlay:
         loaded = [e for e in logs if e["event"] == "hostile_domains_loaded"]
         assert len(loaded) == 1
         assert loaded[0]["source"] == source
-        assert loaded[0]["domains"] == (3 if present else 0)
+        shipped = len(hh.load_lists().domains)
+        assert loaded[0]["domains"] == (shipped + 3 if present else shipped)
         assert "kuebiko.example" not in repr(logs)
 
 
@@ -118,9 +120,9 @@ class TestReliabilityOverlay:
         # 汎用の分類は残る
         assert sb.classify_source_tier("CISA", "https://www.cisa.gov/feed") == "official"
 
-    def test_local_absent_keeps_generic_and_no_adversary_hosts(self, local_dir: Path) -> None:
+    def test_local_absent_keeps_the_shipped_adversary_hosts(self, local_dir: Path) -> None:
         p = sb.load_reliability_patterns(force_reload=True)
-        assert p.adversary_official_hosts == ()
+        assert p.adversary_official_hosts  # 公開版が SSoT
         assert sb.classify_source_tier("X", "https://www.state.kuebiko.example/") == "news"
 
     def test_load_log_says_which_layer(self, local_dir: Path) -> None:

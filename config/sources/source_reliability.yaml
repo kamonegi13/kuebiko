@@ -236,13 +236,20 @@ state_media:
 #    台帳・事象ニュース・要約では「〜と主張した」の足場にだけ使い、そこから取れた IOC は
 #    事実として自動昇格させない (ADVERSARY_IOC_GATE)。国営メディア (state_media) とベンダーの
 #    報告 (research) はここに入れない。迷う source は UI の tier ピッカーで個別に指定する。
-#    **実際の host は運用者ローカルの config/local/source_reliability.yaml に書く** (gitignore、
-#    同じ形式でここに和集合で重なる)。当事国の機関の一覧は収集先・分類先を示すため公開リポに置かない
-#    (docs/local_overlay.md)。ここは形式の例 (placeholder) だけ:
-#      adversary_official:
-#        hosts:
-#          - ministry.kuebiko.example
-#        titles: []
+#    SSoT はこの追跡ファイル。運用者固有の追加分は任意の config/local/source_reliability.yaml
+#    (gitignore、同じ形式で和集合)。docs/local_overlay.md。
 adversary_official:
-  hosts: []
+  hosts:
+    - mfa.gov.cn
+    - mod.gov.cn
+    - mps.gov.cn
+    - cverc.org.cn
+    - cert.org.cn
+    - china-embassy.gov.cn
+    - mid.ru
+    - kremlin.ru
+    - mil.ru
+    - fsb.ru
+    - scrf.gov.ru
+    - safe-surf.ru
   titles: []

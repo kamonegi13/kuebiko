@@ -187,7 +187,7 @@ class TestLegacyRansomwareUa:
 
 
 class TestMissingOverlayLogLevel:
-    def test_levels(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_layer_is_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[tuple[str, str, dict[str, object]]] = []
 
         class _Logger:
@@ -203,6 +203,6 @@ class TestMissingOverlayLogLevel:
         monkeypatch.setattr(local_overlay, "is_test_environment", lambda: True)
         local_overlay.log_layers_loaded(_Logger(), "e", local_used=False, n=3)
 
-        assert [c[0] for c in calls] == ["warning", "info", "info"]
-        assert calls[0][2]["local_missing"] is True
+        assert [c[0] for c in calls] == ["info", "info", "info"]
         assert calls[0][2]["source"] == "generic"
+        assert "local_missing" not in calls[0][2]

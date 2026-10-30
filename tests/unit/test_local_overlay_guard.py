@@ -1,8 +1,8 @@
-"""公開リポに収集先・分類先の実在ドメインを書かない関門 (2026-10-30、docs/local_overlay.md)。
+"""公開の一覧が SSoT であることと、ローカル層の取り扱いの関門 (docs/local_overlay.md)。
 
-実際の一覧は運用者ローカルの ``config/local/`` (gitignore) に置く。公開版の設定には
-汎用の規則 (ccTLD) と RFC 2606 の予約名 (``*.example`` / ``*.test`` / ``*.invalid``) の
-placeholder だけを許す。
+敵対国の政府・国営媒体・軍の発信元の一覧は公開してよい (2026-10-30 利用者判断)。公開しないのは
+運用者の帰属・識別につながるもの・資格情報・実インシデントの詳細で、``config/local/`` は
+gitignore のまま追跡されないことだけを固定する。
 """
 
 from __future__ import annotations
@@ -28,31 +28,29 @@ def _load(rel: str) -> dict[str, object]:
     return loaded
 
 
-def test_committed_hostile_list_has_only_placeholders() -> None:
+def test_committed_hostile_list_is_the_source_of_truth() -> None:
     cfg = _load("config/fetch/hostile_domains.yaml")
     entries = cfg.get("domains") or []
     assert isinstance(entries, list)
     names = [e.get("domain") if isinstance(e, dict) else e for e in entries]
-    real = [n for n in names if not (isinstance(n, str) and _is_placeholder(n))]
-    assert not real, "公開版の hostile_domains.yaml に実在のドメイン (config/local/ へ移す)"
+    # 公開版が SSoT (2026-10-30 利用者判断)。形式だけ確かめる (空でなく、host の形)
+    assert names
+    assert all(isinstance(n, str) and "." in n and n == n.lower() for n in names)
 
 
 def test_committed_hostile_cctlds_are_the_generic_rule() -> None:
     cfg = _load("config/fetch/hostile_domains.yaml")
     cctlds = cfg.get("cctlds")
     assert isinstance(cctlds, list)
-    # ccTLD は汎用の規則として公開してよい (国の単位で、個別の収集先を示さない)
     assert all(isinstance(c, str) and "." not in c for c in cctlds)
 
 
-def test_committed_adversary_official_has_only_placeholders() -> None:
+def test_committed_adversary_official_hosts_are_listed() -> None:
     tier = _load("config/sources/source_reliability.yaml").get("adversary_official")
     assert isinstance(tier, dict)
     hosts = tier.get("hosts") or []
-    assert isinstance(hosts, list)
-    assert all(isinstance(h, str) and _is_placeholder(h) for h in hosts)
-    # title は部分一致で実名になりやすいので公開版では空に保つ
-    assert not (tier.get("titles") or [])
+    assert isinstance(hosts, list) and hosts
+    assert all(isinstance(h, str) and "." in h for h in hosts)
 
 
 @pytest.mark.parametrize(

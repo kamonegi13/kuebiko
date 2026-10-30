@@ -1,58 +1,52 @@
 # 運用者ローカルの上書き層 (`config/local/`)
 
-2026-10-30 導入。公開リポ (MIT) には**汎用の規則と形式の例だけ**を置き、運用者が実際に
-何を集め・何をどう分類しているかが読める一覧は、gitignore したローカルのファイルに置く。
-`CLAUDE.local.md` / `prompts/_persona_local.j2` と同じ考え方で、**ファイルがあれば読み、
-無ければ汎用の規則だけで動く**。
+2026-10-30 導入、同日に方針改訂 (§1)。一覧の SSoT は追跡された公開版で、`config/local/` は
+gitignore した**任意の追加層** (`CLAUDE.local.md` / `prompts/_persona_local.j2` と同じ型)。
+**ファイルがあれば和集合で重ね、無ければ公開版だけで動く**。
 
-## 1. なぜ分けるか
+## 1. 方針 (2026-10-30 利用者判断で改訂)
 
-- 収集先 (購読ソース) と「敵対的と扱う取得先」の一覧は、それ自体が運用の関心を示す。
-  公開リポに置くと誰でも読める。
-- 購読ソースそのものは DB (config_store の `feeds` / `watchers` / `scrapers`) が runtime の
-  SSoT で、UI / sources API で足した購読は git に入らない (`src/sources/source_store.py`)。
-  `config/sources/*.yaml` は**初回の seed 専用**。新しい購読を seed の yaml に足さない。
-- 残っていた「git に入る一覧」が本書の対象。
+- **敵対国の政府・国営媒体・軍の発信元を収集するのは周知の CTI 実務**。その登録ドメインの一覧
+  (`config/fetch/hostile_domains.yaml` の `domains`、`config/sources/source_reliability.yaml` の
+  `adversary_official`) は**公開してよい。SSoT は追跡された公開版**。
+- **公開しない (ローカルのみ)**: 運用者の帰属・識別につながるもの (`CLAUDE.local.md`・運用者ペルソナ
+  `prompts/_persona_local.j2`・実運用ドメイン。コード/docs 上は `kuebiko.example` に置換)、資格情報 (`.env`)、
+  実インシデントの詳細 (被害組織名等)。
+- 本書の `config/local/` は、運用者が**私的な追加**をしたいときの任意の層 (和集合)。無くて通常。
+  最初の導入時 (同日) はこの一覧自体をローカルへ移していたが、上の判断で公開版へ戻した。
+- 購読ソースそのものは DB (config_store の `feeds` / `watchers` / `scrapers`) が runtime の SSoT で、
+  `config/sources/*.yaml` は初回の seed 専用 (`src/sources/source_store.py`)。
 
-## 2. ローカル層のファイル
+## 2. ローカル層のファイル (任意)
 
 置き場所は `<repo>/config/local/` (`.gitignore` の `/config/local/`、`.dockerignore` でも除外)。
-コンテナには `./config:/app/config` の bind mount でそのまま渡る (image には焼かない。
-readonly instance は `:ro` で同じものを読む)。
+コンテナには `./config:/app/config` の bind mount でそのまま渡る (readonly instance は `:ro`)。
 
-| ファイル | 中身 | 重なる公開版 | 読み手 |
+| ファイル | 中身 | 重なる公開版 (SSoT) | 読み手 |
 |---|---|---|---|
-| `hostile_domains.yaml` | 敵対的と扱う登録ドメイン (任意で ccTLD の追加) | `config/fetch/hostile_domains.yaml` (ccTLD の規則と形式の例) | `src/tools/hostile_hosts.py` |
-| `source_reliability.yaml` | 信頼度ティアの追加分 (例: `adversary_official` の host) | `config/sources/source_reliability.yaml` | `src/cti/source_basis.py` |
-| `source_reliability_overrides.yaml` | **初回 seed 元のみ** (§6)。per-source の信頼度上書きの runtime SSoT は DB | 旧 `config/sources/source_reliability_overrides.yaml` (非推奨・seed 専用) | `src/cti/source_basis.py` |
+| `hostile_domains.yaml` | 私的に足す敵対的 host (任意で ccTLD) | `config/fetch/hostile_domains.yaml` | `src/tools/hostile_hosts.py` |
+| `source_reliability.yaml` | 信頼度ティアの私的な追加分 | `config/sources/source_reliability.yaml` | `src/cti/source_basis.py` |
+| `source_reliability_overrides.yaml` | **初回 seed 元のみ** (§6)。per-source 上書きの runtime SSoT は DB | 旧 `config/sources/source_reliability_overrides.yaml` (非推奨・seed 専用) | `src/cti/source_basis.py` |
 
-- 形式は公開版と同じ。**和集合**で重なる (ローカルで公開版の規則を消すことはしない)。
-- 読み込みはプロセス内でキャッシュされる。編集したら再起動で反映 (overrides は DB で、UI の保存で即時)。
-- どちらの層で動いているかは起動後のログで分かる。**件数だけで、ドメイン名は出さない**:
-  - `hostile_domains_loaded` … `source=generic` / `generic+local`、`cctlds` / `domains` の件数
-  - `source_reliability_loaded` … `source=generic` / `generic+local`、`local_tiers` の件数
-  - ローカルが壊れているときは `hostile_domains_local_invalid` / `source_reliability_config_load_failed`
-    (layer=local) を出し、汎用の規則だけで動く
-- **本番 (テスト以外) でローカル層が無いと、上の 2 つのログは warning** (`local_missing=true`)。
-  置き忘れ・復元漏れに気付くため。テストでは info。
-- ローカル層が無いと、敵対的 host の判定は ccTLD (と、ソースの `fetch_profile: hostile` の印) だけになり、
-  `adversary_official` は空になる。動作は止まらないが、**取得ポリシーの対象が狭くなる**ので
-  本番ではログの `source=generic+local` を確かめる。
-- 置き場所は環境変数 `KUEBIKO_LOCAL_CONFIG_DIR` で差し替えられる (主にテスト用。
-  `tests/conftest.py` が存在しない一時ディレクトリへ向け、開発機の実ファイルに左右されないようにしている)。
+- 形式は公開版と同じ。**和集合**で重なる。公開版と同じ項目をローカルにも書いても重複は無害 (no-op)。
+- 読み込みはプロセス内でキャッシュ。編集したら再起動で反映 (overrides は DB で、UI の保存で即時)。
+- 起動後のログ (件数のみ、ドメイン名は出さない): `hostile_domains_loaded` / `source_reliability_loaded`
+  (`source=generic` または `generic+local`)。**ローカルが無いのは正常**なので常に info。
+  壊れているときは `hostile_domains_local_invalid` / `source_reliability_config_load_failed` (layer=local) を出し、
+  公開版だけで動く。
+- 置き場所は環境変数 `KUEBIKO_LOCAL_CONFIG_DIR` で差し替えられる (主にテスト用。`tests/conftest.py` が
+  存在しない一時ディレクトリへ向け、開発機の実ファイルに左右されないようにしている)。
 
-## 3. 公開版に書いてよいもの
+## 3. 公開版に書いてよいもの / 書かないもの
 
-- ccTLD の規則 (国の単位。個別の取得先を示さない)
-- RFC 2606 の予約名 (`*.example` / `*.test` / `*.invalid`) の placeholder。例: `state-media.kuebiko.example`
-- 既に公開済みの分 (`state_media` の既存の host / title 等) はそのまま残す — 消しても公開の履歴からは
-  消えず、公開版の利用者の分類だけが変わるため。**2026-10-30 以降の追加はローカル層へ**。
+- 書いてよい: ccTLD の規則、敵対国の政府・国営媒体・軍の登録ドメイン、`state_media` 等の host / title。
+- 書かない: 運用者の帰属・識別を示す語、実運用のドメイン、資格情報、実インシデントの詳細。
+  テスト・コメント・コミットメッセージ・docs の fixture には `*.kuebiko.example` か example のサブドメインを使う。
 
-関門: `tests/unit/test_local_overlay_guard.py` が、公開版の `hostile_domains.yaml` の `domains` と
-`source_reliability.yaml` の `adversary_official` に placeholder 以外が入ったら落とす。
-`.gitignore` / `.dockerignore` の行と、`config/local/` が git に追跡されていないことも確かめる。
-テスト・コメント・コミットメッセージ・docs にも実在の取得先を書かない (fixture は `*.kuebiko.example` か
-`news.example.ru` のような example のサブドメイン)。
+関門: `tests/unit/test_local_overlay_guard.py` は公開版の一覧が空でなく host の形であること、
+`.gitignore` / `.dockerignore` の行、`config/local/` が git に追跡されていないことを確かめる。
+push 前の確認は `scripts/check_unpushed_private_terms.sh` (未 push の追加行とコミットメッセージに、
+gitignore 済みの `config/local/push_guard_terms.txt` の語が無いか。出力は件数のみ)。
 
 ## 4. バックアップと復元
 

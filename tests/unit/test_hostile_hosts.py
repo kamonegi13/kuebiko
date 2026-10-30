@@ -79,11 +79,11 @@ def test_normalize_host_lowercases_and_strips_port() -> None:
 
 
 class TestShippedConfig:
-    def test_shipped_generic_config_has_cctlds_and_no_domains(self) -> None:
-        # 公開版は ccTLD の規則だけ。実際の登録ドメインはローカル層 (config/local/) にある
+    def test_shipped_config_has_cctlds_and_domains(self) -> None:
+        # 公開版 (SSoT) は ccTLD の規則と登録ドメインの一覧
         lists = load_lists()
         assert {"cn", "ru", "su", "xn--p1ai", "by", "kp", "ir"} <= lists.cctlds
-        assert lists.domains == frozenset()
+        assert lists.domains
 
     def test_missing_config_falls_back_to_builtin_cctlds(self, tmp_path: Path) -> None:
         lists = load_lists(tmp_path / "nope.yaml")

@@ -1,11 +1,11 @@
-# 敵対的 host の分類 (取得ポリシーの対象) — **汎用の規則だけ** (公開リポ)。
+# 敵対的 host の分類 (取得ポリシーの対象)。
 # src/tools/hostile_hosts.py が読む。判定は host の suffix 一致 (example.com は www.example.com にも当たる)。
 #
-# 実際に hostile と扱う登録ドメインの一覧は **運用者ローカルの config/local/hostile_domains.yaml**
-# (gitignore) に置く。同じ形式で、ここに和集合で重なる。ローカルが無ければ ccTLD だけで動く
-# (起動時のログ hostile_domains_loaded の source=generic / generic+local で分かる。件数のみ)。
-# **ここに実在のドメインを書かない** (収集先・分類先が公開リポから読めてしまう)。
-# tests/unit/test_local_overlay_guard.py が placeholder 以外の記載を落とす。手順は docs/local_overlay.md。
+# 公開の規則と一覧 (2026-10-30 利用者判断: 敵対国の政府・国営メディア・軍の発信元を収集するのは
+# 周知の CTI 実務で、ドメインの一覧は公開してよい)。**SSoT はこの追跡ファイル**。
+# 運用者固有の追加分は任意の config/local/hostile_domains.yaml (gitignore、同じ形式、和集合) に置く。
+# 公開しないのは運用者の帰属・識別につながるもの (CLAUDE.local.md・ペルソナ・実運用ドメイン)・資格情報・
+# 実インシデントの詳細。手順は docs/local_overlay.md。
 #
 # 編集後は再起動で反映 (プロセス内キャッシュ)。
 
@@ -19,10 +19,80 @@ cctlds:
   - kp
   - ir
 
-# 形式の例 (placeholder のみ)。origin: report = 机上調査の目録由来 / added = 指示などで追加。
-# ref / note は任意の注記 (判定には使わない)。
-# 例 (ローカルの config/local/hostile_domains.yaml に書く形):
-#   domains:
-#     - {domain: state-media.kuebiko.example, origin: added, note: 国営系の媒体}
-#     - {domain: ministry.kuebiko.example, origin: report, ref: X1}
-domains: []
+# origin: report = 机上調査の目録由来 / added = 指示などで追加。ref / note は任意の注記 (判定には使わない)。
+domains:
+  # 中国 (C1-C27)
+  - {domain: mfa.gov.cn, origin: report, ref: C1}
+  - {domain: fmprc.gov.cn, origin: report, ref: C1}
+  - {domain: china-embassy.gov.cn, origin: report, ref: C2}
+  - {domain: mod.gov.cn, origin: report, ref: C3}
+  - {domain: mps.gov.cn, origin: report, ref: C5}
+  - {domain: cac.gov.cn, origin: report, ref: C6}
+  - {domain: cverc.org.cn, origin: report, ref: C7}
+  - {domain: cert.org.cn, origin: report, ref: C8}
+  - {domain: cnvd.org.cn, origin: report, ref: C9}
+  - {domain: cnnvd.org.cn, origin: report, ref: C10}
+  - {domain: tc260.org.cn, origin: report, ref: C12}
+  - {domain: news.cn, origin: report, ref: C13}
+  - {domain: xinhuanet.com, origin: report, ref: C13}
+  - {domain: people.cn, origin: report, ref: C14}
+  - {domain: people.com.cn, origin: report, ref: C14}
+  - {domain: globaltimes.cn, origin: report, ref: C15}
+  - {domain: cgtn.com, origin: report, ref: C16}
+  - {domain: chinadaily.com.cn, origin: report, ref: C17}
+  - {domain: cri.cn, origin: report, ref: C18}
+  - {domain: chinamil.com.cn, origin: report, ref: C19}
+  - {domain: 360.net, origin: report, ref: C20}
+  - {domain: 360.cn, origin: report, ref: C20}
+  - {domain: qianxin.com, origin: report, ref: C21}
+  - {domain: antiy.cn, origin: report, ref: C22}
+  - {domain: antiy.net, origin: report, ref: C22}
+  - {domain: nsfocus.net, origin: report, ref: C23}
+  - {domain: nsfocusglobal.com, origin: report, ref: C23}
+  - {domain: tencent.com, origin: report, ref: C24}
+  - {domain: threatbook.io, origin: report, ref: C25}
+  - {domain: seebug.org, origin: report, ref: C25}
+  - {domain: secrss.com, origin: report, ref: C26}
+  - {domain: freebuf.com, origin: report, ref: C26}
+  - {domain: 4hou.com, origin: report, ref: C26}
+  - {domain: cicir.ac.cn, origin: report, ref: C27}
+  - {domain: ciis.org.cn, origin: report, ref: C27}
+  - {domain: siis.org.cn, origin: report, ref: C27}
+  # ロシア (R1-R22)
+  - {domain: mid.ru, origin: report, ref: R1}
+  - {domain: kremlin.ru, origin: report, ref: R2}
+  - {domain: mil.ru, origin: report, ref: R3}
+  - {domain: scrf.gov.ru, origin: report, ref: R4}
+  - {domain: fsb.ru, origin: report, ref: R5}
+  - {domain: safe-surf.ru, origin: report, ref: R6}
+  - {domain: gossopka.ru, origin: report, ref: R7}
+  - {domain: fstec.ru, origin: report, ref: R8}
+  - {domain: rkn.gov.ru, origin: report, ref: R9}
+  - {domain: digital.gov.ru, origin: report, ref: R10}
+  - {domain: tass.com, origin: report, ref: R11}
+  - {domain: tass.ru, origin: report, ref: R11}
+  - {domain: ria.ru, origin: report, ref: R12}
+  - {domain: rt.com, origin: report, ref: R13}
+  - {domain: interfax.ru, origin: report, ref: R14}
+  - {domain: interfax.com, origin: report, ref: R14}
+  - {domain: sputniknews.jp, origin: report, ref: R15}
+  - {domain: sputniknews.com, origin: report, ref: R15}
+  - {domain: sputnikglobe.com, origin: report, ref: R15}
+  - {domain: kaspersky.com, origin: report, ref: R16}
+  - {domain: securelist.com, origin: report, ref: R16}
+  - {domain: ptsecurity.com, origin: report, ref: R17}
+  - {domain: bi.zone, origin: report, ref: R18}
+  - {domain: f6.ru, origin: report, ref: R19}
+  - {domain: rt-solar.ru, origin: report, ref: R20}
+  - {domain: securitylab.ru, origin: report, ref: R21}
+  - {domain: russiancouncil.ru, origin: report, ref: R22}
+  - {domain: valdaiclub.com, origin: report, ref: R22}
+  - {domain: pircenter.org, origin: report, ref: R22}
+  # 目録の外から追加
+  - {domain: redstar.ru, origin: added, note: 国防省系の新聞}
+  - {domain: tvzvezda.ru, origin: added, note: 国防省系の放送}
+  - {domain: solar.rt.ru, origin: added, note: Solar (ロステレコム) の別ホスト表記}
+  - {domain: facct.ru, origin: added, note: F.A.C.C.T. の表記違い (目録の R19 は f6.ru)}
+  - {domain: f-a-c-c-t.ru, origin: added, note: F.A.C.C.T. の表記違い}
+  - {domain: group-ib.ru, origin: added, note: 旧 Group-IB のロシア部門}
+  - {domain: pravda.ru, origin: added, note: 国営系の媒体 (framing の観測対象)}

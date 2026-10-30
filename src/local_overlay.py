@@ -1,9 +1,9 @@
 """運用者ローカルの上書き層 (``config/local/``、gitignore 済み、2026-10-30)。
 
-公開リポには汎用の規則と例 (``*.example`` の placeholder) だけを置き、運用者固有の
-一覧 (収集先・敵対的と分類する登録ドメイン・per-source の信頼度上書き等) は
-``config/local/`` に置く。``CLAUDE.local.md`` / ``prompts/_persona_local.j2`` と同じ型で、
-**ファイルがあれば読み、無ければ汎用の規則だけで動く**。
+公開リポの追跡ファイルが SSoT (敵対国の政府・国営媒体・軍の発信元の一覧を含む。周知の
+CTI 実務で公開してよい)。``config/local/`` は運用者固有の**任意の追加分**を和集合で重ねる層。
+``CLAUDE.local.md`` / ``prompts/_persona_local.j2`` と同じ型で、**ファイルがあれば読み、
+無ければ公開版だけで動く**。
 
 - 置き場所の既定は ``<repo>/config/local``。コンテナでは ``./config:/app/config`` の
   bind mount にそのまま乗る (image には焼かない — ``.dockerignore`` で除外)。
@@ -53,11 +53,7 @@ def is_test_environment() -> bool:
 def log_layers_loaded(logger: Any, event: str, *, local_used: bool, **counts: int) -> None:
     """どちらの層で動いているかを件数だけログに出す (ドメイン名等の中身は出さない)。
 
-    ローカル層が無いとき、本番 (テスト以外) では warning にする: 取得ポリシーの対象が
-    ccTLD だけに狭まる/``adversary_official`` が空になるため、置き忘れに気付けるように。
+    ローカル層は任意の追加分で、無いのが通常 (SSoT は追跡された公開版)。常に info。
     """
     source = "generic+local" if local_used else "generic"
-    if local_used or is_test_environment():
-        logger.info(event, source=source, **counts)
-        return
-    logger.warning(event, source=source, local_missing=True, **counts)
+    logger.info(event, source=source, **counts)
