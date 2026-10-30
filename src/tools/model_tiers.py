@@ -35,6 +35,7 @@ whitelist の位置づけ: 中華系 denylist は **コード所有のセキュ�
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -302,6 +303,11 @@ BUILTIN_MODEL_TIERS: dict[str, str] = {
 
 # load 結果のプロセス内キャッシュ (db_path 別、product_routing と同パターン)。
 _CACHE: dict[str, dict[str, str]] = {}
+# 読み込みに失敗した db_path の失敗時刻 (monotonic)。失敗は ``_CACHE`` に入れず、
+# 一時的な障害から自然に戻れるよう ``_FAILURE_RETRY_SECONDS`` 後に読み直す
+# (解決のたびに DB を叩いてログと通知が溢れないよう、その間だけ BUILTIN を返す)。
+_FAILED_AT: dict[str, float] = {}
+_FAILURE_RETRY_SECONDS = 60.0
 
 
 def _db_enabled() -> bool:
@@ -315,6 +321,9 @@ def _load_tier_map(*, db_path: Path | None) -> dict[str, str]:
     cached = _CACHE.get(cache_key)
     if cached is not None:
         return cached
+    failed_at = _FAILED_AT.get(cache_key)
+    if failed_at is not None and time.monotonic() - failed_at < _FAILURE_RETRY_SECONDS:
+        return {}
 
     result: dict[str, str] = {}
     try:
@@ -328,8 +337,10 @@ def _load_tier_map(*, db_path: Path | None) -> dict[str, str]:
         _log.warning("model_tiers_db_load_failed", error=str(e))
         from src.tools.tier_load_alarm import record_tier_load_failure
 
-        record_tier_load_failure(f"{type(e).__name__}: {e}")
-        raw = None
+        record_tier_load_failure(type(e).__name__)
+        _FAILED_AT[cache_key] = time.monotonic()
+        return {}
+    _FAILED_AT.pop(cache_key, None)
     if isinstance(raw, dict):
         for k, v in raw.items():
             if isinstance(k, str) and isinstance(v, str):
