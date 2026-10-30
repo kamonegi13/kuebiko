@@ -405,6 +405,16 @@ METRICS: tuple[FillMetric, ...] = (
         " WHERE substr(g.created_at, 1, 10) = substr(a.created_at, 1, 10))",
         None,
     ),
+    # 同じ影の記録の、判定のある行 (status='ok') に判定の入力 (本文プレビュー) が保存されているか
+    # (正解付けの入力の断線の検知)。日の代理は上と同じ。上より低ければ入力の保存が欠けている
+    FillMetric(
+        "geo_rescue_shadow_input",
+        "地政学の救済v2影の入力の保存",
+        "EXISTS (SELECT 1 FROM geo_rescue_shadow g"
+        " WHERE substr(g.created_at, 1, 10) = substr(a.created_at, 1, 10)"
+        " AND g.status = 'ok' AND COALESCE(g.input_text, '') <> '')",
+        None,
+    ),
     # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
     # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
     # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常

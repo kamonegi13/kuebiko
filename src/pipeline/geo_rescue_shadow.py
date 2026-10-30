@@ -14,7 +14,7 @@ low にした記事) ごとに、本番の flat の判定に加えて pir の判
   (救済の割当を継承)。モデルの digest は Ollama の ``/api/tags`` を 1 回の実行につき 1 度だけ読む
 - 問いは本番の v2 と同じ候補 (flat が救わず pir が救い、手掛かりのある記事) にだけ当てる。ほかの候補は
   pir の判定と手掛かりだけ (負荷と判定を本番の v2 と同じにする)
-- 本文・題は記録しない。判定の入力は種類 (``body`` / ``summary``) と sha256 (題 + 本文プレビュー) だけ
+- 判定が見た入力 (題と本文プレビュー) と種類・sha256 を DB にだけ残す (正解付けの入力。ログには出さない)
 """
 
 from __future__ import annotations
@@ -172,6 +172,8 @@ async def judge_candidate(
         judge_failed=failed,
         input_kind="body" if c.article.body_text else "summary",
         input_sha256=input_sha256(title, text),
+        title=title,
+        input_text=text,
     )
 
 

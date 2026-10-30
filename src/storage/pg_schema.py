@@ -947,7 +947,9 @@ CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
     pir_error     SMALLINT         NOT NULL,
     judge_failed  SMALLINT         NOT NULL,
     input_kind    TEXT,
-    input_sha256  TEXT
+    input_sha256  TEXT,
+    title         TEXT,
+    input_text    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
 

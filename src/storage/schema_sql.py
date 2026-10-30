@@ -778,7 +778,9 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
 -- 地政学の救済の判定 v2 の影の記録 (2026-10-31)。本番の救済 (flat) は変えない (記録のみ)。
--- 救済の候補 1 件 = 1 行。本文・題は持たない (判定の入力は種類と sha256 だけ)。retention 180 日。
+-- 救済の候補 1 件 = 1 行。判定が見た入力 (題・本文プレビュー) を正解付けのために持つ
+-- (ローカルのみ、
+-- 公開面の書き出しは読まない・集計 API は件数だけ)。retention 180 日。
 CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     article_id    TEXT    NOT NULL,
@@ -797,7 +799,9 @@ CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
     pir_error     INTEGER NOT NULL,
     judge_failed  INTEGER NOT NULL,
     input_kind    TEXT,                   -- body / summary
-    input_sha256  TEXT                    -- 題 + 本文プレビューの sha256
+    input_sha256  TEXT,                   -- 題 + 本文プレビューの sha256
+    title         TEXT,                   -- 判定が見た題 (ローカルのみ。公開面・ログに出さない)
+    input_text    TEXT                    -- 判定が見た本文プレビュー (≤ 1,500 字)
 );
 CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
 

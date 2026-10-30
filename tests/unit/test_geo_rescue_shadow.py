@@ -352,3 +352,61 @@ async def test_orchestrator_helper_records_and_swallows_errors(
         think=False,
         repo=repo,
     )
+
+
+# ---- 判定の入力の保存 (2026-10-31 の決定): DB にだけ置き、公開面・API・ログに出さない ----
+
+
+@pytest.mark.asyncio
+async def test_rows_store_judge_input_and_logs_never_contain_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret_body = "UNIQUE-BODY-MARKER " * 20
+    _spy_triage(monkeypatch, {("pir", "y"): "medium"})
+    _spy_judge(monkeypatch, {"y": _YES})
+    logged: list[str] = []
+
+    class _Rec:
+        def info(self, *a: Any, **k: Any) -> None:
+            logged.append(repr((a, k)))
+
+        warning = debug = info
+
+    monkeypatch.setattr(gs, "_log", _Rec())
+    cands = [GeoRescueCandidate(_article("y", body=secret_body), "low")]
+
+    rows = await run_geo_rescue_shadow(
+        cands, rescue_llm=cast(Any, _Llm()), config=cast(Any, _Cfg())
+    )
+
+    (row,) = rows
+    assert row.title == "title y"
+    assert row.input_text is not None and row.input_text.startswith("UNIQUE-BODY-MARKER")
+    assert len(row.input_text) <= 1500
+    assert row.input_sha256 == input_sha256("title y", row.input_text)
+    assert logged and not any("UNIQUE-BODY-MARKER" in x or "title y" in x for x in logged)
+
+
+def test_repo_truncates_and_round_trips_input(tmp_path: Path) -> None:
+    repo = RunHistoryRepository(db_path=tmp_path / "t.db")
+    repo.record_geo_rescue_shadow([_row("a", title="t" * 900, input_text="x" * 2000)])
+    (got,) = repo.list_geo_rescue_shadow(days=7)
+    assert got.title is not None and len(got.title) == 500
+    assert got.input_text == "x" * 1500
+
+
+def test_summary_returns_counts_only_never_text() -> None:
+    rows = [_row("1", pir="medium", judged=True, title="SECRET-TITLE", input_text="SECRET-TEXT")]
+    out = summarize_geo_rescue_shadow(rows, days=7)
+    dumped = repr(out)
+    assert "SECRET-TITLE" not in dumped and "SECRET-TEXT" not in dumped
+
+
+def test_public_exports_never_read_the_table_and_forbid_the_key() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for name in ("export_public_site.py", "export_mirror.py"):
+        src = (root / "scripts" / name).read_text(encoding="utf-8")
+        assert "FROM geo_rescue_shadow" not in src  # 表を読まない
+        assert "list_geo_rescue_shadow" not in src
+        assert "geo-rescue-shadow" not in src  # 集計 API も写さない
+        assert '"input_text"' in src  # 万一の経路に対する禁止のキー

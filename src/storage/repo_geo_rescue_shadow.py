@@ -4,7 +4,12 @@
 本番の救済 (flat) は変えない。救済の候補 1 件 = 1 行で、flat (本番の判定)・pir・語の関門の手掛かりの
 種類・QW/QC/QD の確率・v2 の最終判定を並べて残す。後で盲検の標本と比べる材料
 (事前登録 ``docs/replay_prereg/geo_rescue_shadow.md``)。``alert_dedup_shadow`` と同じ append-only +
-retention の形。**本文・題は持たない** (判定の入力は種類と sha256 だけ)。
+retention の形。
+
+**判定が見た入力 (題と本文プレビュー ≤ 1,500 字) を持つ** (正解付けの入力に使う。2026-10-31 の決定)。
+落選した記事は本文がどこにも保存されないため。ローカル (Tier2) の DB にだけ置く: 公開面の書き出し
+(``scripts/export_public_site.py`` / ``scripts/export_mirror.py``) はこの表を読まず、集計 API は件数だけを返し
+(本文を返さない)、公開の GET の許可リストにも入れない。**ログには出さない**。
 """
 
 from __future__ import annotations
@@ -19,6 +24,10 @@ from src.storage.row_mappers import _to_iso
 
 DEFAULT_RETENTION_DAYS = 180
 DEFAULT_LIST_LIMIT = 50
+#: 本文プレビューの上限 (triage の本文プレビューと同じ 1,500 字。念のため保存の側でも切る)
+INPUT_TEXT_MAX = 1500
+#: 題の上限
+TITLE_MAX = 500
 
 #: 行の状態。``ok`` 以外は v2 の判定が無い (``judged`` は None)
 STATUS_OK = "ok"
@@ -48,6 +57,8 @@ class GeoRescueShadowRow:
     judge_failed: bool = False
     input_kind: str | None = None  # body / summary (判定の入力の種類)
     input_sha256: str | None = None  # 題 + 本文プレビューの sha256 (正解付けの入力の照合用)
+    title: str | None = None  # 判定が見た題 (ローカルの DB にだけ。ログに出さない)
+    input_text: str | None = None  # 判定が見た本文プレビュー (≤ INPUT_TEXT_MAX 字)
     created_at: str = ""
 
 
@@ -69,7 +80,7 @@ def _opt_bool(v: Any) -> bool | None:
 
 _COLUMNS = (
     "article_id, created_at, flat, pir, status, cue_types, p_qw, p_qc, p_qd, judged, model,"
-    " model_digest, flat_error, pir_error, judge_failed, input_kind, input_sha256"
+    " model_digest, flat_error, pir_error, judge_failed, input_kind, input_sha256, title, input_text"
 )
 
 
@@ -93,6 +104,8 @@ def _to_row(r: Any) -> GeoRescueShadowRow:
         judge_failed=bool(r["judge_failed"]),
         input_kind=None if r["input_kind"] is None else str(r["input_kind"]),
         input_sha256=None if r["input_sha256"] is None else str(r["input_sha256"]),
+        title=None if r["title"] is None else str(r["title"]),
+        input_text=None if r["input_text"] is None else str(r["input_text"]),
     )
 
 
@@ -123,10 +136,12 @@ class GeoRescueShadowMixin(RunHistoryRepositoryBase):
                 int(r.judge_failed),
                 r.input_kind,
                 r.input_sha256,
+                None if r.title is None else r.title[:TITLE_MAX],
+                None if r.input_text is None else r.input_text[:INPUT_TEXT_MAX],
             )
             for r in rows
         ]
-        marks = ", ".join("?" for _ in range(17))
+        marks = ", ".join("?" for _ in range(19))
         with self._connect() as conn:
             conn.executemany(f"INSERT INTO geo_rescue_shadow ({_COLUMNS}) VALUES ({marks})", values)
         return len(values)
@@ -152,6 +167,7 @@ class GeoRescueShadowMixin(RunHistoryRepositoryBase):
 __all__ = [
     "DEFAULT_LIST_LIMIT",
     "DEFAULT_RETENTION_DAYS",
+    "INPUT_TEXT_MAX",
     "STATUSES",
     "STATUS_BUDGET",
     "STATUS_CAP",
