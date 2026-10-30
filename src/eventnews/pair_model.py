@@ -30,6 +30,15 @@ DEFAULT_MODEL_PATH = Path("config/models/pair_model.json")
 #: "off" = 照合しない。
 PAIR_MODEL_CHECK_ENV = "PAIR_MODEL_CHECK"
 
+#: pair の LLM 判定の旗。"1" (既定) = 従来どおり LLM を呼ぶ。"0" = 呼ばず、``llm_same`` /
+#: ``llm_known`` を欠け (0, 0) にして ``threshold_llm_off`` で判定する (ML は動く)。
+PAIR_LLM_ENV = "EVENTNEWS_PAIR_LLM"
+
+
+def is_llm_enabled() -> bool:
+    """旗が "0" のときだけ False。未設定・他の値は従来どおり (LLM あり)。"""
+    return os.environ.get(PAIR_LLM_ENV, "1").strip() != "0"
+
 
 @dataclass(frozen=True)
 class PairModel:
@@ -72,6 +81,8 @@ def pair_llm_mismatch(model: PairModel, actual: str) -> bool:
 def warn_on_pair_llm_mismatch(model: PairModel) -> None:
     """``step:pair_judge`` の実モデルとの食い違いを警告する。判定は変えない (warn のみ)。"""
     if os.environ.get(PAIR_MODEL_CHECK_ENV, "warn").strip().lower() == "off":
+        return
+    if not is_llm_enabled():  # LLM を使わない構成では pair_judge の実モデルは判定に効かない
         return
     from src.tools.model_tiers import Step, resolve_step_model
 

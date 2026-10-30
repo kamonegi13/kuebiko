@@ -23,6 +23,15 @@ _log = get_logger(__name__)
 Classify = Callable[[str, str], Awaitable[str]]
 
 
+#: 分類器がモデル名を持たないとき (テストの代役等) の印
+UNKNOWN_MODEL_LABEL = "unknown"
+
+
+def model_label_of(classify: Classify) -> str:
+    """分類器が実際に使ったモデル名 (``KindClassifier.model``)。取れなければ ``unknown``。"""
+    return str(getattr(classify, "model", "") or UNKNOWN_MODEL_LABEL)
+
+
 async def _kind_of(
     repo: RunHistoryRepository,
     classify: Classify,
@@ -34,7 +43,8 @@ async def _kind_of(
     if article_id in cached:
         return cached[article_id]
     kind = await classify(title, summary)
-    repo.set_article_kind(article_id, kind, "roundup_guard")
+    # 実際に分類したモデル名を残す (P0-23)。過去の "roundup_guard" はモデル不明の印として残す
+    repo.set_article_kind(article_id, kind, model_label_of(classify))
     return kind
 
 
@@ -67,23 +77,39 @@ async def involves_roundup(
         return False
 
 
-def kind_classifier(config: Any) -> Classify:
+class KindClassifier:
     """本番の分類器 (Step.EVENT_KIND のモデル)。LLM は最初に使うときに作る。
 
     作れなければ呼び出しで例外 → ``involves_roundup`` が「免除しない」に倒す。
+    ``model`` は分類に使った実モデル名 (まだ作っていなければ空)。
     """
-    from src.eventnews import event_kind
-    from src.tools.model_tiers import Step, build_llm_for
 
-    llm: Any = None
+    def __init__(self, config: Any) -> None:
+        self._config = config
+        self._llm: Any = None
 
-    async def classify(title: str, summary: str) -> str:
-        nonlocal llm
-        if llm is None:
-            llm = build_llm_for(Step.EVENT_KIND, config)
-        return await event_kind.classify(llm, title, summary)
+    @property
+    def model(self) -> str:
+        return str(getattr(self._llm, "model", "") or "")
 
-    return classify
+    async def __call__(self, title: str, summary: str) -> str:
+        from src.eventnews import event_kind
+        from src.tools.model_tiers import Step, build_llm_for
+
+        if self._llm is None:
+            self._llm = build_llm_for(Step.EVENT_KIND, self._config)
+        return await event_kind.classify(self._llm, title, summary)
 
 
-__all__ = ["Classify", "involves_roundup", "kind_classifier"]
+def kind_classifier(config: Any) -> Classify:
+    """本番の分類器を返す (``KindClassifier``)。"""
+    return KindClassifier(config)
+
+
+__all__ = [
+    "Classify",
+    "KindClassifier",
+    "involves_roundup",
+    "kind_classifier",
+    "model_label_of",
+]

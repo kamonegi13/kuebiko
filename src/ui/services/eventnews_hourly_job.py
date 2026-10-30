@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 
 from src.config_loader import AppConfig, load_app_config
-from src.eventnews import pair_shadow
+from src.eventnews import pair_model, pair_shadow
 from src.eventnews.generator import select_members
 from src.eventnews.grouping import build_join_entities, join_entity_key
 from src.eventnews.hourly import hydrate_open_items, run_hourly
@@ -189,6 +189,13 @@ async def run_eventnews_hourly() -> dict[str, object]:
 
 #: 毎時の群化で新たに種別を分類する上限 (1 件 1-2 秒。段の上限 25 分の大半は記事の生成)
 _KIND_CLASSIFY_PER_RUN = 120
+
+
+def _pair_llm(config: AppConfig) -> LLMClient | None:
+    """pair 判定の LLM。旗 EVENTNEWS_PAIR_LLM=0 なら作らない (None = LLM を呼ばない)。"""
+    if not pair_model.is_llm_enabled():
+        return None
+    return build_llm_for(Step.PAIR_JUDGE, config)
 
 
 async def _resolve_kinds(
@@ -402,7 +409,8 @@ async def run_eventnews_window(*, lookback_hours: int, generate: bool = True) ->
                 # ⭐ 判定は fast ティア既定 (base 26B)。31B は 4 倍遅く、外部は枠を食う
                 #    (2026-08-31 実測)。Step.TRIAGE 借用は triage の S 族上書きを黙って
                 #    継承するため専用 step に分離 (2026-09-08、SYNTHESIS.md §25)
-                llm=build_llm_for(Step.PAIR_JUDGE, config),
+                #    旗 EVENTNEWS_PAIR_LLM=0 は LLM を作らず呼ばない (llm_off の閾値で判定)
+                llm=_pair_llm(config),
                 embed_summary=lambda arts: _embed_summaries(config, arts),
                 kinds=kinds,
             )
