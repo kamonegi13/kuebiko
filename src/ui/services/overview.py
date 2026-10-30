@@ -278,6 +278,7 @@ def _japan_targeted_count(con: Any, since: datetime, until: datetime) -> int:
     """
     sql = (
         "SELECT COUNT(*) AS n FROM articles WHERE status='posted' "
+        "AND analysis_only IS NULL "
         "AND importance IN ('high','medium') "
         f"AND {JAPAN_TARGETED_SQL_FRAGMENT} "
         "AND datetime(created_at) >= datetime(?) AND datetime(created_at) < datetime(?)"
@@ -302,7 +303,7 @@ def _actionable_count(con: Any, since: datetime, until: datetime, kev_set: Abstr
         "ae.value AS cve FROM articles a "
         "LEFT JOIN article_entities ae "
         "ON ae.article_id = a.article_id AND ae.entity_type='cve' "
-        "WHERE a.status='posted' "
+        "WHERE a.status='posted' AND a.analysis_only IS NULL "
         "AND datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)"
     )
     rows = con.execute(sql, (since.isoformat(), until.isoformat())).fetchall()

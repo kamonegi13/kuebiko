@@ -508,7 +508,18 @@ class EventNewsMixin(RunHistoryRepositoryBase):
                 " SELECT 1 FROM event_item_members dm"
                 " JOIN articles da ON da.article_id = dm.article_id"
                 " WHERE dm.item_id = event_items.id AND da.status <> 'skipped_duplicate'"
-                " AND da.duplicate_of IS NULL))"
+                " AND da.duplicate_of IS NULL"
+                " AND da.analysis_only IS NULL))"
+            )
+            # 分析専用の行 (articles.analysis_only、配信していない) だけの事象は、生成済みでも
+            # 公開しない。配信した行を 1 件でも含む事象は公開する (2026-10-30)
+            clauses.append(
+                "NOT (EXISTS (SELECT 1 FROM event_item_members am"
+                " JOIN articles aa ON aa.article_id = am.article_id"
+                " WHERE am.item_id = event_items.id AND aa.analysis_only IS NOT NULL)"
+                " AND NOT EXISTS (SELECT 1 FROM event_item_members nm"
+                " JOIN articles na ON na.article_id = nm.article_id"
+                " WHERE nm.item_id = event_items.id AND na.analysis_only IS NULL))"
             )
         if member_article_ids is not None:
             # 記事側の絞り込み (pivot / category / 検索 等) を事象へ持ち上げる。

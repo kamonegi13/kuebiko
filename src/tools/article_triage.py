@@ -62,6 +62,20 @@ class TriageDecision(BaseModel):
         return trim_reason_logged(v, owner="TriageDecision")
 
 
+def resolve_prompt_path(*, force_pir: bool = False) -> str:
+    """triage の prompt 経路を返す純関数。
+
+    ``flat`` = 平たい rubric (TRIAGE_FLAT=1 かつ force_pir でない) /
+    ``pir`` = PIR-driven (DB の triage_rubric 境界の決まり込み) /
+    ``legacy`` = PIR_DRIVEN_TRIAGE=0 の hardcoded 経路。
+    """
+    if _is_flat_triage_enabled() and not force_pir:
+        return "flat"
+    from src.pir.integration import is_pir_driven_triage_enabled
+
+    return "pir" if is_pir_driven_triage_enabled() else "legacy"
+
+
 class ArticleTriage:
     """記事の重要度を判定する軽量 triage クラス。"""
 
@@ -71,10 +85,19 @@ class ArticleTriage:
         *,
         body_preview_chars: int = 1500,
         think: bool = False,
+        force_pir: bool = False,
     ) -> None:
         self._llm = llm
         self._body_preview_chars = body_preview_chars
         self._think = think
+        # True なら TRIAGE_FLAT に関わらず PIR-driven (境界の決まり込み) の prompt を使う
+        # (地政学の救済用、GEO_RESCUE_PROMPT=pir)。
+        self._force_pir = force_pir
+
+    @property
+    def prompt_path(self) -> str:
+        """この triage が使う prompt 経路: ``flat`` / ``pir`` / ``legacy`` (テスト・ログ用)。"""
+        return resolve_prompt_path(force_pir=self._force_pir)
 
     async def triage(self, article: Article) -> TriageDecision:
         """1 記事を重要度判定する。失敗時は medium で graceful degradation。"""
@@ -150,7 +173,7 @@ class ArticleTriage:
         """
         # s23: 平たい (関連性なし) prompt (TRIAGE_FLAT=1)。PIR-driven / legacy の分岐より先に
         # 判定する — 既定 (0) なら素通りして以下の既存分岐のみが効く (挙動不変)。
-        if _is_flat_triage_enabled():
+        if self.prompt_path == "flat":
             return self._build_prompt_flat(article)
 
         # Lazy import で循環依存 + テスト時の副作用を回避

@@ -212,6 +212,50 @@ class TestEventItemCRUD:
         assert {"has-posted", "dup-but-generated"} <= kept
         assert len(repo.list_event_items()) == 3  # 既定は落とさない
 
+    def test_exclude_duplicate_only_also_drops_analysis_only_events(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        """分析専用の行だけの事象は、生成済みでも公開面から外す。配信した行を含む事象は残す。"""
+        # Arrange
+        now = _NOW.isoformat()
+        with repo._connect() as conn:  # noqa: SLF001
+            conn.execute(
+                "INSERT INTO runs (id, started_at, pipeline, dry_run, status)"
+                " VALUES (1, ?, 'eventnews', 0, 'done')",
+                (now,),
+            )
+            for aid, marker in (("art-ana", "geo_rescue"), ("art-ok", None)):
+                conn.execute(
+                    "INSERT INTO articles (run_id, article_id, url, title, status, analysis_only,"
+                    " created_at) VALUES (?,?,?,?,?,?,?)",
+                    (1, aid, f"https://kuebiko.example/{aid}", aid, "posted", marker, now),
+                )
+            conn.commit()
+        for item_id, aids in (("ana-only", ["art-ana"]), ("mixed", ["art-ana", "art-ok"])):
+            repo.create_event_item(
+                item_id=item_id,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="high",
+            )
+            repo.update_event_item(item_id, {"current_version": 1})
+            for aid in aids:
+                repo.add_event_member(
+                    item_id=item_id,
+                    article_id=aid,
+                    joined_at=_NOW,
+                    contributed_new_facts=0,
+                    join_signal="seed",
+                )
+
+        # Act
+        kept = {i.state.item_id for i in repo.list_event_items(exclude_duplicate_only=True)}
+
+        # Assert
+        assert kept == {"mixed"}
+        assert len(repo.list_event_items()) == 2  # 既定は落とさない
+
     def test_list_event_items_can_order_by_corroboration(self, repo: RunHistoryRepository) -> None:
         """独立媒体数の多い順に並べられる (公開面の「注目」枠)。
 

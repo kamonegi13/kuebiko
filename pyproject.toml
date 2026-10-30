@@ -113,6 +113,11 @@ module = [
     "pair_same_input_control",
     "generation_length_report",
     "readonly_conn",
+    "build_pair_input",
+    "day0_triage",
+    "gpu_window_common",
+    "pstop",
+    "verify_sustained",
 ]
 ignore_missing_imports = true
 

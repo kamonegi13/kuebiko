@@ -74,6 +74,7 @@ def _fetch_watch_articles_in_range(
         FROM articles a
         WHERE a.created_at >= ? AND a.created_at < ?
           AND a.status = 'posted'
+          AND a.analysis_only IS NULL
           AND a.posted_channel IN ('watch', 'vuln')
         GROUP BY a.article_id, a.title, a.url, a.feed_title,
                  a.importance, a.category, a.posted_channel,
@@ -129,6 +130,7 @@ def fetch_recent_brief_titles(
         SELECT title FROM articles
          WHERE created_at >= ? AND created_at < ?
            AND status = 'posted'
+           AND analysis_only IS NULL
            AND posted_channel IN ('brief', 'alert', 'vuln')
          ORDER BY created_at DESC
          LIMIT ?

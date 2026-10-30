@@ -59,6 +59,7 @@ from src.pipeline.publish import _print_dry_run, _resolve_channel
 from src.pipeline.result import PipelineRunResult
 from src.pipeline.roundup_guard import involves_roundup, kind_classifier
 from src.pipeline.summary import DiscordChannel
+from src.storage.records import ANALYSIS_ONLY_GEO_RESCUE
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.channel_registry import fallback_map, push_map
@@ -422,6 +423,9 @@ async def run_pipeline(
         max_articles=effective_max,
     )
 
+    # GEO_RESCUE_MODE=analysis で救った地政学の記事 id (配信せず分析にだけ残す)
+    analysis_only_ids: set[str] = set()
+
     # 時間予算 → soft deadline (詳細はモジュール先頭コメント)。予算未指定なら無効。
     soft_deadline = _compute_soft_deadline(time_budget_seconds)
     deferred_count = 0
@@ -605,6 +609,7 @@ async def run_pipeline(
             rescue_llm=triage_rescue_llm,
             relevance_embedder=embedder,
             relevance_cascade_llm=relevance_jp_cascade_llm,
+            analysis_only_out=analysis_only_ids,
         )
         # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。triage_rejections
         # と同じ dry-run gate (手動プレビューで go/no-go の集計を汚さない)。
@@ -1113,6 +1118,18 @@ async def run_pipeline(
     for art_id, msg in briefings:
         outcome = outcome_by_msg_id.get(id(msg))
         channel = _resolve_channel(msg, importance_map)
+        if art_id in analysis_only_ids:
+            # 分析専用 (地政学の救済): 配信せず status='posted' / posted_channel=None で残す
+            # outcome が引けなくても配信はしない (fail-open で通常の投稿に落とさない)
+            if outcome is not None:
+                outcome["status"] = "posted"
+                outcome["analysis_only"] = ANALYSIS_ONLY_GEO_RESCUE
+                if msg.summary:
+                    outcome["summary"] = msg.summary
+                _register_seen(art_id)
+                _persist_grok_post_now(art_id, outcome)
+                kept_duplicate_ids.append(art_id)
+            continue
         publisher = publishers.get(channel)
         # Phase 5K fallback: webhook 未設定の新規 ch は fallback ch に流す
         if publisher is None and channel in channel_fallbacks:

@@ -33,6 +33,7 @@ from src.cti.org_normalizer import org_match_key
 from src.logging_config import get_logger
 from src.tools.decision_probe import probe_choice
 from src.tools.model_tiers import Step, resolve_step_model
+from src.tools.probe_thresholds import effective_threshold
 from src.tools.task_prefix import is_prefix_trained
 
 if TYPE_CHECKING:
@@ -283,7 +284,15 @@ async def judge_name_pair(
     )
     if org is None:
         return None
-    return min(event - EVENT_MIN_LOGIT, org - ORG_MIN_LOGIT)
+    event_min = effective_threshold(
+        Step.ORG_IDENTITY_JUDGE, "event_logit", fallback=EVENT_MIN_LOGIT, model=model
+    )
+    org_min = effective_threshold(
+        Step.ORG_IDENTITY_JUDGE, "org_logit", fallback=ORG_MIN_LOGIT, model=model
+    )
+    if event_min is None or org_min is None:
+        return None  # 表に項が無い: 判定しない (何も畳まない)
+    return min(event - event_min, org - org_min)
 
 
 @dataclass(frozen=True)
