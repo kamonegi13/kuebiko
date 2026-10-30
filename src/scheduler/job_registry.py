@@ -353,6 +353,29 @@ def default_jobs() -> list[JobDef]:
             upkeep=True,
         ),
         JobDef(
+            id="geo-rescue-shadow-hourly",
+            enabled=False,  # 毎時保守チェーンの最後の段として実行 (単独発火は既定 OFF)
+            kind="bespoke",
+            title="地政学の救済 v2 の影の判定 (毎時)",
+            description=(
+                "triage の時点で写した地政学の救済の候補 (pending) に、pir の判定と v2 の問い "
+                "(QW/QC/QD) を古い順に 30 件・150 秒まで当て、geo_rescue_shadow に書く。"
+                "本番の救済は"
+                "変えない (記録のみ、2026-10-31)。72 時間を過ぎた候補は判定せず expired にする。"
+                "GEO_RESCUE_JUDGED_SHADOW=0 で停止。"
+            ),
+            disable_impact=(
+                "影の記録の候補が判定されず、72 時間で expired になる (本番の救済は不変)。"
+            ),
+            protection="optional",
+            schedule_type="interval",
+            interval_minutes=60,
+            # 単独発火の時刻 — 毎時チェーンの段なので、チェーンを無効にした rollback 時だけ使う
+            offset_minutes=55,
+            max_runtime_minutes=4,  # 予算 150 秒 + モデルの読み込み (26b) の余裕
+            upkeep=True,
+        ),
+        JobDef(
             id="public-reachability",
             enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
@@ -741,7 +764,9 @@ def default_jobs() -> list[JobDef]:
                 "本文の翻訳バックログ → 本文の再取得 → 深刻度の軸 (40 件/時) → 台帳の増分再評価 "
                 "(6 件/時) → NVD CVSS 補充 "
                 "→ "
-                "公開 URL の到達性を 1 本で直列実行 (fast ティアと I/O のみ)。収集チェーンの後半 "
+                "公開 URL の到達性 → 地政学の救済 v2 の影の判定 (最後、150 秒まで) "
+                "を 1 本で直列実行 "
+                "(fast ティアと I/O のみ)。収集チェーンの後半 "
                 "(:30) に置く。"
             ),
             disable_impact="翻訳・再取得・CVSS・到達性監視が止まる。",
@@ -750,7 +775,9 @@ def default_jobs() -> list[JobDef]:
             schedule_type="interval",
             interval_minutes=60,
             offset_minutes=30,
-            max_runtime_minutes=25,
+            # 段の実測 (10-23〜30) は合計の中央 15 分・p90 21 分。
+            # 最後の影の判定 (最大 4 分) を足した値
+            max_runtime_minutes=29,
             steps=(
                 "body-translate-backlog",
                 "body-refetch-backlog",
@@ -758,6 +785,8 @@ def default_jobs() -> list[JobDef]:
                 "ledger-reassess-hourly",
                 "nvd-cvss-refresh",
                 "public-reachability",
+                # 影の記録の判定は最後 (他の段の時間を食わない。予算 150 秒、2026-10-31)
+                "geo-rescue-shadow-hourly",
             ),
         ),
     ]

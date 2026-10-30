@@ -61,6 +61,7 @@ _TRIAGE_SHADOW_RETENTION_DAYS = 180
 _ROUTING_V2_SHADOW_RETENTION_DAYS = 180
 _ALERT_DEDUP_SHADOW_RETENTION_DAYS = 180
 _SEVERITY_C_SHADOW_RETENTION_DAYS = 180
+_GEO_RESCUE_SHADOW_RETENTION_DAYS = 180
 # 翻訳キューの失敗の印 (2026-10-29 P0-24)。最長のバックオフ (7 日) より十分長い 90 日
 _TRANSLATE_ATTEMPTS_RETENTION_DAYS = 90
 # Grok の取り直しの記録 (2026-10-29 P0-25)。取得窓 (24h) より十分長い 30 日
@@ -101,6 +102,9 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
         purged_severity_c_shadow = repo.purge_severity_c_shadow(
             days=_SEVERITY_C_SHADOW_RETENTION_DAYS
         )
+        purged_geo_rescue_shadow = repo.purge_geo_rescue_shadow(
+            days=_GEO_RESCUE_SHADOW_RETENTION_DAYS
+        )
         purged_translate_attempts = repo.purge_translate_attempts(
             days=_TRANSLATE_ATTEMPTS_RETENTION_DAYS
         )
@@ -128,6 +132,7 @@ async def run_daily_maintenance(repo: RunHistoryRepository | None = None) -> Non
             purged_routing_v2_shadow=purged_routing_v2_shadow,
             purged_alert_dedup_shadow=purged_alert_dedup_shadow,
             purged_severity_c_shadow=purged_severity_c_shadow,
+            purged_geo_rescue_shadow=purged_geo_rescue_shadow,
             purged_translate_attempts=purged_translate_attempts,
             purged_grok_attempts=purged_grok_attempts,
             purged_llm_usage=purged_llm_usage,

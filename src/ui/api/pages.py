@@ -810,6 +810,24 @@ def local_llm_usage_summary(request: Request, days: int = 7) -> dict[str, Any]:
     }
 
 
+#: geo-rescue-shadow summary の窓幅の上限 (retention と同じ 180 日)
+_GEO_RESCUE_SHADOW_MAX_DAYS = 180
+
+
+@pages_api.get("/geo-rescue-shadow/summary")
+def geo_rescue_shadow_summary(request: Request, days: int = 7) -> dict[str, Any]:
+    """地政学の救済の判定 v2 の影の記録の集計 (状態別・判定別の件数・モデルの digest)。
+
+    本番の救済は変えない観察データ。運用系 read API のため PUBLIC_GET_ALLOWLIST には入れない
+    (src/ui/read_only_policy.py を参照)。
+    """
+    from src.ui.services.geo_rescue_shadow_summary import summarize_geo_rescue_shadow
+
+    days = max(1, min(int(days), _GEO_RESCUE_SHADOW_MAX_DAYS))
+    repo: RunHistoryRepository = request.app.state.repo
+    return summarize_geo_rescue_shadow(repo.list_geo_rescue_shadow(days=days), days=days)
+
+
 #: alert-dedup-shadow summary の窓幅・件数の上限 (R1h、routing-v2-shadow と同じ基準)。
 _ALERT_DEDUP_SHADOW_MAX_DAYS = 60
 _ALERT_DEDUP_SHADOW_MAX_LIMIT = 200

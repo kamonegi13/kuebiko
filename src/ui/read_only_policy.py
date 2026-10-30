@@ -78,6 +78,9 @@ PUBLIC_GET_ALLOWLIST: tuple[str, ...] = (
 # GET /api/v1/severity-c-shadow/summary (2026-10-22) も同様に追加しない。
 # 記事 id と深刻さの判定の食い違いを含む運用系の観察データのため (default-deny)。
 #
+# GET /api/v1/geo-rescue-shadow/summary (2026-10-31) も同様に追加しない。
+# 救済の候補の判定の食い違い・モデルの digest を含む運用系の観察データのため (default-deny)。
+#
 # GET /api/v1/llm-usage/local-summary (2026-10-29、P0-16) も同様に追加しない。
 # step 別のモデル割当・負荷を含む運用系の観察データのため (default-deny)。
 

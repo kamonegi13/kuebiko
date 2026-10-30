@@ -133,6 +133,12 @@ class Step(StrEnum):
     # 設計時は素の 26B を想定したが、本番の割当は ``kuebiko-sft:26b`` = N1 (n 系の初版) で、
     # 素の 26B (``gemma4:26b``) ではない)
     TRIAGE_GEO_RESCUE = "triage_geo_rescue"
+    # 地政学の救済の意味の判定 (GEO-RESCUE-JUDGED v2)。影の記録 ``GEO_RESCUE_JUDGED_SHADOW=1`` で
+    # pir が救った記事のうち語の関門の手掛かりがある記事にだけ、手掛かりの種類に応じた問い
+    # (QW 注視国の行動 / QC 同盟国の対応 / QD サイバーと地政学の連関) を logprob で読み、
+    # どれかが Yes なら通す (src/pipeline/geo_rescue_judge.py)。
+    # **救済と同じモデルで判定する**ため STEP_INHERITS で TRIAGE_GEO_RESCUE の上書きを継承する
+    GEO_RESCUE_JUDGE = "geo_rescue_judge"
     # cluster 帯 dedup の最終確認 (duplicate/different/unclear)。以前は Step.TRIAGE 借用で、
     # triage 専用の印 ([task: triage]) が別の問いに付いていた。学習していない問いなので印なし。
     DEDUP_CLUSTER_JUDGE = "dedup_cluster_judge"
@@ -224,6 +230,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.JUDGMENT_CLASSIFY: StepSpec(Tier.FAST, 300.0),  # 旧 ARTICLE_SUMMARY 借用と同じ
     Step.TRIAGE: StepSpec(Tier.FAST, 300.0),
     Step.TRIAGE_GEO_RESCUE: StepSpec(Tier.FAST, 300.0),
+    # logprob を 1 回読むだけ (num_predict=1)。他の小さな判定 (thin_body_judge 等) と同じ 120s。
+    Step.GEO_RESCUE_JUDGE: StepSpec(Tier.FAST, 120.0),
     Step.DEDUP_CLUSTER_JUDGE: StepSpec(Tier.FAST, 300.0),  # 旧 TRIAGE 借用と同じ解決先・timeout
     # pair 判定は 1 呼出 = 小さな関係判定 (max_tokens 300)。専用 step の理由: 以前は
     # Step.TRIAGE を借用しており、triage の step 上書きを黙って継承していた (借用禁止の衛生)。
@@ -400,6 +408,10 @@ STEP_INHERITS: dict[Step, Step] = {
     Step.JUDGMENT_CLASSIFY: Step.ARTICLE_SUMMARY,
     Step.DETECT_CLAIM_WRITE: Step.SYNTHESIS_DETECT,
     Step.LEDGER_ACH_AUX: Step.SYNTHESIS_ANALYSIS,
+    # 借用の解消ではなく「救済と同じモデルで判定する」ための継承 (timeout は判定用に短い。
+    # 課題の印も持たない — 救済の step も印を持たない)。
+    # tests/unit/test_borrowed_steps.py が別枠で固定
+    Step.GEO_RESCUE_JUDGE: Step.TRIAGE_GEO_RESCUE,
 }
 
 

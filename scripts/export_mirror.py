@@ -286,7 +286,9 @@ _EXCLUDED_ENDPOINTS = (
 #: 値に関わらず弾く **項目名**。本文 (body/body_ja) は再配布禁止、notes は個人の
 #: 作業メモ。credential 判定 (`_CREDENTIAL_KEY`) とは別の関門として持つ
 #: (本文判定は値の形で判定できないため、項目名で守るしかない)。
-_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes")
+#: input_text = 地政学の救済の影の記録 (geo_rescue_shadow) が持つ判定の入力
+#: (この表は書き出さない。万一の経路に対する安全網)
+_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes", "input_text")
 
 
 #: 資格情報らしい **フィールド名**。語を含むだけでは弾かない — アクター名に

@@ -65,8 +65,12 @@ def db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     invalidate_model_tiers_cache()
 
 
+#: 借用の解消ではない継承 (同じモデルで判定するため。timeout・印は借り元と同じでなくてよい)
+SAME_MODEL_PAIRS = [(Step.GEO_RESCUE_JUDGE, Step.TRIAGE_GEO_RESCUE)]
+
+
 def test_inherit_table_covers_exactly_the_pairs() -> None:
-    assert dict(PAIRS) == STEP_INHERITS
+    assert dict(PAIRS) | dict(SAME_MODEL_PAIRS) == STEP_INHERITS
 
 
 @pytest.mark.parametrize(("new", "old"), PAIRS)

@@ -928,6 +928,38 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
+-- 地政学の救済の判定 v2 の影の記録 (2026-10-31、SQLite _SCHEMA と対)。詳細は schema_sql.py。
+CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
+    id                  BIGSERIAL        PRIMARY KEY,
+    article_id          TEXT             NOT NULL,
+    created_at          TEXT             NOT NULL,
+    flat                TEXT             NOT NULL,
+    prompt_mode         TEXT             NOT NULL,
+    pir                 TEXT,
+    status              TEXT             NOT NULL,
+    cue_types           TEXT             NOT NULL,
+    p_qw                DOUBLE PRECISION,
+    p_qc                DOUBLE PRECISION,
+    p_qd                DOUBLE PRECISION,
+    judged              SMALLINT,
+    model               TEXT,
+    model_digest        TEXT,
+    judge_model         TEXT,
+    judge_model_digest  TEXT,
+    flat_error          SMALLINT         NOT NULL,
+    pir_error           SMALLINT         NOT NULL,
+    judge_failed        SMALLINT         NOT NULL,
+    input_kind          TEXT,
+    input_sha256        TEXT,
+    title               TEXT,
+    input_text          TEXT,
+    feed_title          TEXT,
+    url                 TEXT,
+    judged_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_status ON geo_rescue_shadow(status, created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (
