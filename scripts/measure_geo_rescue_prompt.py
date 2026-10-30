@@ -39,6 +39,12 @@ import src.storage.db_backend as _db  # noqa: E402
 
 _db.ensure_pg_schema = lambda *a, **k: None
 
+import src.storage.config_store as _cs  # noqa: E402
+
+# 読み取り専用の接続では config_store の CREATE TABLE IF NOT EXISTS が失敗し、DB の割当を
+# 読めずにコード既定のモデルへ黙って落ちる (10-30 の測定で s24ci65 が使われた原因)。DDL を飛ばす
+_cs._DDL = ""
+
 from src.config_loader import load_app_config  # noqa: E402
 from src.eval.geo_rescue_stats import summarize  # noqa: E402
 from src.pipeline.filters import _GEO_REASON  # noqa: E402
@@ -114,6 +120,10 @@ async def run(args: argparse.Namespace) -> None:
     gold = {o["id"]: bool(o["rescue"]) for o in load_jsonl(args.gold)} if args.gold else {}
     articles = [to_article(r, summaries[r["id"]]) for r in sample]
     llm = build_llm_for(Step.TRIAGE_GEO_RESCUE, load_app_config())
+    expected = os.environ.get("GEO_MEASURE_EXPECT_MODEL", "kuebiko-sft:26b")
+    got = getattr(llm, "model", None)
+    if got != expected:
+        raise SystemExit(f"救済のモデルが想定と違う: want={expected} got={got} (DB の割当を読めていない可能性)")
     results: dict[str, dict[str, str]] = {}
     for mode in ("flat", "pir"):
         triage = ArticleTriage(llm, force_pir=mode == "pir")
