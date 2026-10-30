@@ -22,9 +22,11 @@ from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
 from src.pipeline.briefing import _summarize_and_build, body_source_for_extraction
 from src.pipeline.persistence import _persist_article_entities
 from src.pipeline.summary import ungrounded_title_tokens
+from src.storage.records import ArticleRecord
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor
+from src.tools.discord_publisher import BriefingMessage
 from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
@@ -140,6 +142,23 @@ async def reprocess_article_body(
     # 2) body_ja 無効化 (再翻訳キューへ)。
     repo.clear_article_body_ja(article_id)
 
+    reenrich_stored_article(repo, article_id, row, msg)
+
+    _log.info("reprocess_refetched_full", article_id=article_id, body_len=len(body), source=source)
+    return "refetched_full"
+
+
+def reenrich_stored_article(
+    repo: RunHistoryRepository,
+    article_id: str,
+    row: ArticleRecord,
+    msg: BriefingMessage,
+) -> None:
+    """要約結果 ``msg`` から 主題 → entity (replace) → 分析列 を既存記事へ書き戻す。
+
+    本文の差し替え (全文再取得) と切り離した共通部。保存済み本文のまま再要約する経路
+    (薄い本文の関門の誤落ち回収) も使う。Discord 投稿・routing・dedup は触らない。
+    """
     # 3) 主題判定を再導出 (全文 + 新 named_primary_actor)。
     registry = _load_registry()
     rf = msg.metadata.get("routing_flags")
@@ -182,9 +201,6 @@ async def reprocess_article_body(
 
     # 5) 分析列を上書き (要約の幻覚是正含む)。allowlist 検証は repo 側。
     repo.update_article_enrichment(article_id, _enrichment_fields(msg, rf))
-
-    _log.info("reprocess_refetched_full", article_id=article_id, body_len=len(body), source=source)
-    return "refetched_full"
 
 
 def _load_registry() -> ActorAliasRegistry:
