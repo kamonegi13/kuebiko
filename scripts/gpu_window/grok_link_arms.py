@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import grok_link_sample as gls  # noqa: E402
 
 PREREG_NAME = "grok_link_fetch"
-PREREG_COMMIT = "39de1c8f"  # prereg の最終コミット (§5.1 の訂正。生成の経路は fbb9a0e8 から不変)
+PREREG_COMMIT = "76068603"  # prereg の最終コミット (文書のみの訂正。生成の経路は fbb9a0e8 から不変)
 GENERATION_BASE = "fbb9a0e8"  # 封をしたコミット。生成の経路はここから変えない (§6.4)
 EXPECTED_MODEL = "kuebiko-sft:s24ci65"
 EXPECTED_DIGEST = "56d89a8cee6e6a15aa8b83fb1f264691c251f1ce61edb389a7b12c6d59c5f315"
@@ -62,6 +62,9 @@ GENERATION_PATH = (
     "src/pipeline/summary_runaway.py",
     "src/pipeline/dispatch.py",
     "src/pipeline/body_limits.py",
+    "src/pipeline/grok_convert.py",
+    "src/pipeline/summary.py",
+    "src/tools/task_prefix.py",
     "src/prompts/rubric_store.py",
     "prompts/briefing/summarizer.j2",
     "prompts/_persona.j2",
@@ -202,21 +205,57 @@ def stability_invalidations(start: Mapping[str, str], end: Mapping[str, str]) ->
 # ---- 証明書 (ホスト側。git だけ) ----------------------------------------------------------
 
 
-def generation_path_changes(repo_root: Path) -> list[str]:
-    """``git diff --quiet GENERATION_BASE HEAD -- <生成の経路>`` が差分を示すファイル。"""
+def _git_show(repo_root: Path, rel: str) -> str | None:
     import subprocess
 
-    changed: list[str] = []
-    for rel in GENERATION_PATH:
-        proc = subprocess.run(  # noqa: S603
-            ["git", "diff", "--quiet", GENERATION_BASE, "HEAD", "--", rel],  # noqa: S607
-            cwd=repo_root,
-            check=False,
-            capture_output=True,
-        )
-        if proc.returncode != 0:
-            changed.append(rel)
-    return changed
+    proc = subprocess.run(  # noqa: S603
+        ["git", "show", f"{GENERATION_BASE}:{rel}"],  # noqa: S607
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    return proc.stdout.decode("utf-8") if proc.returncode == 0 else None
+
+
+def _differs_from_base(repo_root: Path, rel: str) -> bool:
+    """封と作業ツリーのファイルを比べる。.py は AST (コメント無視)、他はバイト。"""
+    import ast
+    import subprocess
+
+    f = repo_root / rel
+    if not f.is_file():
+        return True
+    if rel.endswith(".py"):
+        base = _git_show(repo_root, rel)
+        if base is None:
+            return True
+        try:
+            return ast.dump(ast.parse(base)) != ast.dump(ast.parse(f.read_text("utf-8")))
+        except SyntaxError:
+            return True
+    proc = subprocess.run(  # noqa: S603
+        ["git", "diff", "--quiet", GENERATION_BASE, "--", rel],  # noqa: S607
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    return proc.returncode != 0
+
+
+def generation_path_changes(repo_root: Path) -> list[str]:
+    """封から変わった生成の経路のファイル (作業ツリー基準 + 未コミットの変更があるファイル)。"""
+    import subprocess
+
+    changed = [rel for rel in GENERATION_PATH if _differs_from_base(repo_root, rel)]
+    status = subprocess.run(  # noqa: S603
+        ["git", "status", "--porcelain", "--", *GENERATION_PATH],  # noqa: S607
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    dirty = [ln[3:] for ln in status.splitlines() if ln.strip()]
+    return changed + [f"{d} (uncommitted)" for d in dirty]
 
 
 def attest(repo_root: Path, out: Path) -> dict[str, Any]:

@@ -205,7 +205,7 @@ def test_generation_shas_missing_file_is_empty(tmp_path: Path) -> None:
     assert set(arms.generation_shas(tmp_path).values()) == {""}
 
 
-def test_generation_path_changes_detects_diff(tmp_path: Path) -> None:
+def _init_repo(tmp_path: Path) -> str:
     import subprocess
 
     def git(*a: str) -> str:
@@ -222,18 +222,57 @@ def test_generation_path_changes_detects_diff(tmp_path: Path) -> None:
     for rel in arms.GENERATION_PATH:
         f = tmp_path / rel
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text("v1")
+        f.write_text("x = 1\n" if rel.endswith(".py") else "v1")
     git("add", "-A")
     git("commit", "-qm", "base")
     base = git("rev-parse", "HEAD")
-    (tmp_path / "src/grok/link_relevance.py").write_text("v2")
-    git("commit", "-qam", "change")
-    orig = arms.GENERATION_BASE
-    arms.GENERATION_BASE = base
-    try:
-        assert arms.generation_path_changes(tmp_path) == ["src/grok/link_relevance.py"]
-    finally:
-        arms.GENERATION_BASE = orig
+    arms_git[0] = git
+    return base
+
+
+arms_git: list[object] = [None]
+
+
+def _with_base(monkeypatch: pytest.MonkeyPatch, base: str) -> None:
+    monkeypatch.setattr(arms, "GENERATION_BASE", base)
+
+
+def test_generation_path_comment_only_change_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = _init_repo(tmp_path)
+    (tmp_path / "src/pipeline/briefing.py").write_text("# note\nx = 1  # c\n")
+    arms_git[0]("commit", "-qam", "comment")  # type: ignore[operator]
+    _with_base(monkeypatch, base)
+    assert arms.generation_path_changes(tmp_path) == []
+
+
+def test_generation_path_code_change_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    base = _init_repo(tmp_path)
+    (tmp_path / "src/grok/link_relevance.py").write_text("x = 2\n")
+    (tmp_path / "prompts/briefing/summarizer.j2").write_text("v2")
+    arms_git[0]("commit", "-qam", "change")  # type: ignore[operator]
+    _with_base(monkeypatch, base)
+    assert arms.generation_path_changes(tmp_path) == [
+        "src/grok/link_relevance.py",
+        "prompts/briefing/summarizer.j2",
+    ]
+
+
+def test_generation_path_uncommitted_edit_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = _init_repo(tmp_path)
+    (tmp_path / "src/grok/link_fetch.py").write_text("x = 3\n")
+    (tmp_path / "prompts/briefing/summarizer.j2").write_text("v3")
+    _with_base(monkeypatch, base)
+    got = arms.generation_path_changes(tmp_path)
+    assert "src/grok/link_fetch.py" in got and "prompts/briefing/summarizer.j2" in got
+    assert any("(uncommitted)" in g for g in got)
+    # コメントだけの未コミット編集も「未コミット」で止まる
+    arms_git[0]("checkout", "--", ".")  # type: ignore[operator]
+    (tmp_path / "src/pipeline/briefing.py").write_text("x = 1  # c\n")
+    assert arms.generation_path_changes(tmp_path) == ["src/pipeline/briefing.py (uncommitted)"]
 
 
 def test_check_attestation_refuses_changed_generation_file(tmp_path: Path) -> None:
