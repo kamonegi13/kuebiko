@@ -80,3 +80,29 @@ def test_main_without_database_url_fails(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(SystemExit):
         wrc.main([])
+
+
+def test_share_band_ignores_uniform_volume_growth() -> None:
+    # 全チャンネルが同じ比率で増えた週は割合が変わらないので帯の外に出ない
+    base = {"watch": 500, "alert": 20, "vuln": 12}
+    cur = {k: v * 2 for k, v in base.items()}
+    assert wrc.outside_shares(wrc.compare_shares(base, cur)) == []
+
+
+def test_share_band_flags_channel_whose_share_moved() -> None:
+    base = {"watch": 900, "alert": 100}
+    cur = {"watch": 800, "alert": 200}  # alert の割合 10% → 20%
+    flagged = {r.channel for r in wrc.outside_shares(wrc.compare_shares(base, cur))}
+    assert flagged == {"alert", "watch"}
+
+
+def test_share_band_width_uses_baseline_rate_and_current_total() -> None:
+    rows = {r.channel: r for r in wrc.compare_shares({"a": 50, "b": 50}, {"a": 50, "b": 50})}
+    # p0 = 0.5、N1 = 100 → 半幅 2 * sqrt(0.25 / 100) = 0.1
+    assert rows["a"].low == pytest.approx(0.4)
+    assert rows["a"].high == pytest.approx(0.6)
+
+
+def test_share_band_channel_absent_in_baseline_is_outside_when_present_now() -> None:
+    rows = {r.channel: r for r in wrc.compare_shares({"watch": 10}, {"watch": 10, "new": 1})}
+    assert rows["new"].is_outside

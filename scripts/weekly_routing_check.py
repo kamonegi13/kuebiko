@@ -79,6 +79,60 @@ def outside_channels(rows: Sequence[BandRow]) -> list[BandRow]:
     return [r for r in rows if r.is_outside]
 
 
+@dataclass(frozen=True)
+class ShareRow:
+    channel: str
+    baseline_share: float
+    current_share: float
+    low: float
+    high: float
+    is_outside: bool
+
+
+def _shares(counts: Mapping[str, int]) -> tuple[dict[str, float], int]:
+    total = sum(counts.values())
+    if total <= 0:
+        return {}, 0
+    return {k: v / total for k, v in counts.items()}, total
+
+
+def compare_shares(baseline: Mapping[str, int], current: Mapping[str, int]) -> list[ShareRow]:
+    """チャンネルの割合を比べる (判定に使う、2026-10-31 利用者承認)。
+
+    帯 = ベースラインの割合 p0 ± 2√(p0(1−p0)/N1) (N1 = 今週の総数)。収集量が全体に
+    増減しただけの週は割合が変わらないので帯の外に出ない
+    (件数の帯は量の変化で全チャンネルが外に出る)。
+    """
+    base_share, _ = _shares(baseline)
+    cur_share, cur_total = _shares(current)
+    rows: list[ShareRow] = []
+    for channel in sorted(set(baseline) | set(current)):
+        p0 = base_share.get(channel, 0.0)
+        p1 = cur_share.get(channel, 0.0)
+        half = BAND_SIGMA * math.sqrt(p0 * (1 - p0) / cur_total) if cur_total else 0.0
+        low, high = max(p0 - half, 0.0), min(p0 + half, 1.0)
+        rows.append(ShareRow(channel, p0, p1, low, high, is_outside=not (low <= p1 <= high)))
+    return rows
+
+
+def outside_shares(rows: Sequence[ShareRow]) -> list[ShareRow]:
+    return [r for r in rows if r.is_outside]
+
+
+def format_share_table(title: str, rows: Sequence[ShareRow]) -> str:
+    lines = [
+        f"## {title} — 割合 (判定)",
+        f"{'channel':<14}{'baseline':>9}{'current':>9}  {'band':<16}verdict",
+    ]
+    for r in rows:
+        band = f"{r.low:.3f}-{r.high:.3f}"
+        verdict = "外" if r.is_outside else "内"
+        lines.append(
+            f"{r.channel:<14}{r.baseline_share:>9.3f}{r.current_share:>9.3f}  {band:<16}{verdict}"
+        )
+    return "\n".join(lines)
+
+
 def require_nonempty_baseline(counts: Mapping[str, int], label: str) -> None:
     """ベースラインの週が空なら失敗 (空の帯で全件が帯の外になるのを防ぐ)。"""
     if sum(counts.values()) == 0:
@@ -249,8 +303,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_nonempty_baseline(base_posted, "articles.posted_channel")
         base_shadow = fetch_shadow(conn, BASELINE_START, BASELINE_END, run_ids)
         require_nonempty_baseline(base_shadow, "routing_v2_shadow.new_channel")
-        posted = compare_counts(base_posted, fetch_posted(conn, cur_start, cur_end, run_ids))
-        shadow = compare_counts(base_shadow, fetch_shadow(conn, cur_start, cur_end, run_ids))
+        cur_posted = fetch_posted(conn, cur_start, cur_end, run_ids)
+        cur_shadow = fetch_shadow(conn, cur_start, cur_end, run_ids)
+        posted = compare_counts(base_posted, cur_posted)
+        shadow = compare_counts(base_shadow, cur_shadow)
+        posted_share = compare_shares(base_posted, cur_posted)
+        shadow_share = compare_shares(base_shadow, cur_shadow)
         grok_base = fetch_grok(conn, BASELINE_START, BASELINE_END)
         grok_cur = fetch_grok(conn, cur_start, cur_end)
         config = fetch_config_changes(conn, cur_start, cur_end)
@@ -263,6 +321,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"ベースライン: {BASELINE_START:%Y-%m-%d} - {BASELINE_END:%Y-%m-%d} JST"
         f" (Grok と取り直し {len(run_ids)} run を除外)"
     )
+    print(format_share_table("articles.posted_channel (status=posted)", posted_share))
+    print(format_share_table("routing_v2_shadow.new_channel", shadow_share))
+    print("(以下の件数の ±2√n の帯は参考。収集量の増減でも外に出るので判定に使わない)")
     print(format_table("articles.posted_channel (status=posted)", posted))
     print(format_table("routing_v2_shadow.new_channel", shadow))
     print(format_grok(grok_base, grok_cur))
