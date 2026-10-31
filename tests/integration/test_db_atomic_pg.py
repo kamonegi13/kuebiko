@@ -168,3 +168,127 @@ def test_severity_axes_replace_failure_keeps_old_rows_on_pg(repo: RunHistoryRepo
         row = conn.execute("SELECT model FROM article_severity_axes WHERE article_id='a1'")
         assert row.fetchone()["model"] == "old-model"
     assert _count(repo, "article_importance_v2") == 1
+
+
+def test_real_rebuild_pir_entities_on_pg_never_shows_empty_to_readers(
+    repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """本物の ``rebuild_pir_entities`` (atomic + advisory lock) で、読み手が 0 件を見ない。
+
+    記事の読み込みと照合だけ差し替える (空 DB に全 schema が作れないため)。
+    """
+    from src.pir import persist
+    from src.pir.models import Pir, PirConfig, StrongSignals
+
+    cfg = PirConfig(
+        priorities=[Pir(id="p1", title="T", strong_signals=StrongSignals(keywords=["x"]))]
+    )
+    rows = [{"article_id": f"a{i}"} for i in range(300)]
+    monkeypatch.setattr(persist, "get_pir_config", lambda *a, **k: cfg)
+    monkeypatch.setattr(persist, "_load_posted_rows", lambda **k: (rows, {}))
+    monkeypatch.setattr(persist, "pir_match_signals", lambda *a, **k: True)
+    repo.add_article_entities("seed", [("pir", "p0")])
+    seen_empty = threading.Event()
+    stop = threading.Event()
+
+    def reader() -> None:
+        r = RunHistoryRepository()
+        while not stop.is_set():
+            with r._connect() as conn:  # noqa: SLF001
+                n = conn.execute(
+                    "SELECT COUNT(*) AS c FROM article_entities WHERE entity_type='pir'"
+                ).fetchone()["c"]
+            if n == 0:
+                seen_empty.set()
+                return
+
+    t = threading.Thread(target=reader)
+    t.start()
+    try:
+        for _ in range(3):
+            stats = persist.rebuild_pir_entities(repo=repo)
+    finally:
+        stop.set()
+        t.join(timeout=30)
+
+    assert stats["pir_links"] == 300
+    assert not seen_empty.is_set()
+    assert _count(repo, "article_entities") == 300
+
+
+def test_other_thread_on_same_repo_instance_does_not_see_uncommitted_rows(
+    repo: RunHistoryRepository,
+) -> None:
+    seen: dict[str, int] = {}
+    inside = threading.Event()
+    done = threading.Event()
+
+    def other() -> None:
+        inside.wait(10)
+        with repo._connect() as conn:  # noqa: SLF001 — 同じ repo インスタンス、別スレッド
+            seen["n"] = conn.execute("SELECT COUNT(*) AS c FROM atomic_t").fetchone()["c"]
+        done.set()
+
+    t = threading.Thread(target=other)
+    t.start()
+    with repo.atomic():
+        with repo._connect() as conn:  # noqa: SLF001
+            conn.execute("INSERT INTO atomic_t VALUES (1)")
+        inside.set()
+        assert done.wait(10)  # 他スレッドの読みが終わるまで未コミットのまま
+    t.join(timeout=10)
+
+    assert seen["n"] == 0
+    assert _count(repo, "atomic_t") == 1
+
+
+def test_concurrent_rebuild_writer_waits_instead_of_erroring(repo: RunHistoryRepository) -> None:
+    """同じ advisory lock の 2 つ目のトランザクションはエラーでなく、1 つ目の COMMIT まで待つ。"""
+    import time
+
+    from src.pir.persist import PIR_REBUILD_LOCK_KEY
+
+    holding = threading.Event()
+    waited: dict[str, float] = {}
+    errors: list[BaseException] = []
+
+    def first() -> None:
+        r = RunHistoryRepository()
+        with r.atomic(), r._connect() as conn:  # noqa: SLF001
+            conn.execute("SELECT pg_advisory_xact_lock(?)", (PIR_REBUILD_LOCK_KEY,))
+            holding.set()
+            time.sleep(1.0)
+
+    def second() -> None:
+        holding.wait(10)
+        try:
+            r = RunHistoryRepository()
+            start = time.monotonic()
+            with r.atomic(), r._connect() as conn:  # noqa: SLF001
+                conn.execute("SELECT pg_advisory_xact_lock(?)", (PIR_REBUILD_LOCK_KEY,))
+                waited["s"] = time.monotonic() - start
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    ts = [threading.Thread(target=first), threading.Thread(target=second)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(timeout=30)
+
+    assert errors == []
+    assert waited["s"] >= 0.5
+
+
+def test_failed_lastval_inside_atomic_does_not_abort_the_transaction(
+    repo: RunHistoryRepository,
+) -> None:
+    conn: Any = db_backend.connect()
+    try:
+        with db_backend.atomic(conn):
+            cur = conn.execute("INSERT INTO atomic_t VALUES (1)")  # 列に sequence 無し
+            assert cur.lastrowid is None  # LASTVAL は失敗するが SAVEPOINT で吸収
+            conn.execute("INSERT INTO atomic_t VALUES (2)")
+    finally:
+        conn.close()
+    assert _count(repo, "atomic_t") == 2

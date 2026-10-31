@@ -257,3 +257,75 @@ class TestUndoMergeAtomically:
         monkeypatch.undo()  # 再実行で完了する (収束)
         res = undo_merge(repo, "ev-b", reason="x", now=_NOW, load_members=_fake_loader)
         assert res.status == "restored"
+
+
+class TestGroupFailureIsolation:
+    async def test_one_failing_group_does_not_stop_others_or_regeneration(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for iid in ("i1", "i2", "i3", "i4"):
+            repo.create_event_item(
+                item_id=iid,
+                origin="live",
+                first_reported_at=_NOW,
+                last_reported_at=_NOW,
+                importance="low",
+                when=_NOW,
+            )
+            repo.update_event_item(iid, {"current_version": 1})
+        bad = MergeGroup(target="i1", absorbed=("i2",))
+        good = MergeGroup(target="i3", absorbed=("i4",))
+        plan = job.MergePlan(groups=(bad, good), inputs=_inputs())
+
+        async def fake_prepare(*_a: object, **_k: object) -> tuple[None, int]:
+            return None, 0
+
+        regen_calls: list[int] = []
+
+        async def fake_regen(*_a: object, **_k: object) -> tuple[Any, int]:
+            regen_calls.append(1)
+            stats = type("S", (), {"generated": 0, "failed": 0, "skipped": 0, "attempted": 0})()
+            return stats, 0
+
+        def fake_apply(repo_: Any, plan_: Any, group: Any, now: Any, *, run_kind: str) -> Any:
+            if group is bad:
+                with repo_.atomic():
+                    repo_.update_event_item("i2", {"merged_into": "i1"})
+                    raise _BoomError("group failed")
+            with repo_.atomic():
+                repo_.update_event_item("i4", {"merged_into": "i3"})
+            return 1, 0
+
+        monkeypatch.setattr(job, "_prepare_inputs", fake_prepare)
+        monkeypatch.setattr(job, "plan_for", lambda *_a, **_k: plan)
+        monkeypatch.setattr(job, "regenerate_pending", fake_regen)
+        monkeypatch.setattr(job, "apply_group_atomically", fake_apply)
+
+        outcome = await job.merge_and_regenerate(repo, apply=True, regen_limit=1)
+
+        assert outcome.applied_groups == 1
+        assert outcome.extra["merge_groups_failed"] == 1
+        assert regen_calls == [1]
+        i2, i4 = repo.get_event_item("i2"), repo.get_event_item("i4")
+        assert i2 is not None and i4 is not None
+        assert i2.merged_into is None  # 失敗した群は触られていない
+        assert i4.merged_into == "i3"
+
+
+class TestAtomicBoundToTask:
+    async def test_other_task_on_same_thread_gets_its_own_connection(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        import asyncio
+
+        seen: dict[str, Any] = {}
+        with repo.atomic(), repo._connect() as owner:  # noqa: SLF001
+            owner.execute("CREATE TABLE IF NOT EXISTS tt (v INTEGER)")
+
+            async def other() -> None:
+                with repo._connect() as conn:  # noqa: SLF001
+                    seen["same"] = conn is owner
+
+            await asyncio.create_task(other())
+
+        assert seen["same"] is False

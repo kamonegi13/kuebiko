@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -28,6 +29,14 @@ _LLM_USAGE_LOCAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("floor_used", "INTEGER"),
     ("fallback", "INTEGER"),
 )
+
+
+def _current_task() -> object | None:
+    """実行中の asyncio タスク (ループが無ければ None)。atomic の束縛キー。"""
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
 
 
 class _SharedConnection:
@@ -81,25 +90,37 @@ class RunHistoryRepositoryBase:
     def atomic(self) -> Iterator[None]:
         """このブロック内の repo メソッドの書き込みを 1 接続・1 トランザクションにする。
 
-        ブロック中は同じスレッドの ``_connect()`` が同じ接続を返す (各メソッドの
-        commit/close は無効)。入れ子は外側に合流する。長い処理 (LLM 等) を挟まないこと。
+        ブロック中は **同じスレッドかつ同じ asyncio タスク** の ``_connect()`` が同じ接続を
+        返す (各メソッドの commit/close は無効)。別スレッド・別タスクは独自の接続を使う
+        (未確定の行は見えない)。入れ子は外側に合流する。
+        ⚠ ブロックの中で ``await`` しない・長い処理 (LLM 等) を挟まない (接続とロックを
+        握り続ける)。ブロック内で DB エラーを捕まえて続行することも非対応。
         """
         from src.storage.db_backend import atomic as db_atomic
 
-        local = self.__dict__.setdefault("_tx_local", threading.local())
-        if getattr(local, "conn", None) is not None:
+        bound = self._tx_bound()
+        key = _current_task()
+        if key in bound:
             yield
             return
         with self._connect() as conn, db_atomic(conn):
-            local.conn = _SharedConnection(conn)
+            bound[key] = _SharedConnection(conn)
             try:
                 yield
             finally:
-                local.conn = None
+                bound.pop(key, None)
+
+    def _tx_bound(self) -> dict[object, _SharedConnection]:
+        """このスレッドで ``atomic()`` に束ねた接続 (キーは asyncio タスク、無ければ None)。"""
+        local = self.__dict__.setdefault("_tx_local", threading.local())
+        if not hasattr(local, "bound"):
+            local.bound = {}
+        bound: dict[object, _SharedConnection] = local.bound
+        return bound
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:
-        shared = getattr(self.__dict__.get("_tx_local"), "conn", None)
+        shared = self._tx_bound().get(_current_task())
         if shared is not None:
             yield shared
             return

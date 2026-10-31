@@ -287,6 +287,18 @@ class _PgRow:
 # ===== PG Cursor wrapper (sqlite3.Cursor 互換) =====
 
 
+def _in_transaction(cur: Any) -> bool:
+    """明示の BEGIN 中か (autocommit 接続でも ``atomic()`` の間は INTRANS)。"""
+    try:
+        return bool(int(cur.connection.info.transaction_status) == _TX_INTRANS)
+    except Exception:  # noqa: BLE001 (状態が読めなければ従来どおり)
+        return False
+
+
+#: psycopg.pq.TransactionStatus.INTRANS
+_TX_INTRANS = 2
+
+
 class _PgCursor:
     """psycopg cursor を sqlite3.Cursor 互換 API で包む。"""
 
@@ -338,14 +350,22 @@ class _PgCursor:
         Note: SERIAL/IDENTITY 列を持たない table への INSERT 後では
         ``no value in current session`` で例外、その場合は None。
         """
+        in_tx = _in_transaction(self._cur)
+        if in_tx:
+            # 失敗した SELECT が外側のトランザクションを abort しないよう SAVEPOINT で囲む
+            self._cur.execute("SAVEPOINT kuebiko_lastval")
         try:
             self._cur.execute("SELECT LASTVAL() AS lv")
             row = self._cur.fetchone()
+            if in_tx:
+                self._cur.execute("RELEASE SAVEPOINT kuebiko_lastval")
             if row is None:
                 return None
             # dict_row なので lv key
             return int(row["lv"]) if "lv" in row else int(list(row.values())[0])
         except Exception:  # noqa: BLE001 (LASTVAL 未設定など)
+            if in_tx:
+                self._cur.execute("ROLLBACK TO SAVEPOINT kuebiko_lastval")
             return None
 
     @property

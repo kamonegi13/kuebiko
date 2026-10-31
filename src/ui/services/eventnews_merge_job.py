@@ -125,7 +125,7 @@ __all__ = [
     "max_gap",
     "merge_flag_snapshot",
     "real_kind_enabled",
-    "record_decisions",
+    "decision_rows",
     "record_vetoes",
     "merge_and_regenerate",
     "merge_enabled",
@@ -662,23 +662,6 @@ def decision_rows(plan: MergePlan, *, run_kind: str) -> list[MergeDecisionRow]:
     return enrich_decision_rows(rows, _members_of(inputs), plan.org_alias)
 
 
-def record_decisions(
-    repo: RunHistoryRepository, plan: MergePlan, now: datetime, *, run_kind: str
-) -> int:
-    """適用した群の判断を記録する (まとめて)。記録の失敗で統合は戻さないが握りつぶさない。
-
-    毎時の本線は ``apply_group_atomically`` が群ごとに同じトランザクションで記録する。
-    """
-    rows = decision_rows(plan, run_kind=run_kind)
-    if not rows:
-        return 0
-    try:
-        return repo.record_merge_decisions(rows, decided_at=now)
-    except Exception as e:  # noqa: BLE001 — 統合は適用済み。記録の失敗は大きく残して続行
-        _log.error("eventnews_merge_decisions_record_failed", rows=len(rows), error=str(e)[:200])
-        return 0
-
-
 def apply_group_atomically(
     repo: RunHistoryRepository, plan: MergePlan, group: MergeGroup, now: datetime, *, run_kind: str
 ) -> tuple[int, int]:
@@ -717,14 +700,23 @@ async def merge_and_regenerate(
     if not apply:
         return MergeOutcome(plan=plan, elapsed_seconds=round(time.monotonic() - started, 1))
 
-    applied = absorbed = 0
+    applied = absorbed = group_failures = 0
     if plan.inputs is not None:
         now = datetime.now(UTC)
         recorded = 0
         for group in plan.groups:
-            n_absorbed, n_recorded = apply_group_atomically(
-                repo, plan, group, now, run_kind=run_kind
-            )
+            try:
+                n_absorbed, n_recorded = apply_group_atomically(
+                    repo, plan, group, now, run_kind=run_kind
+                )
+            except Exception as e:  # noqa: BLE001 — 1 群の失敗で残りと本文再生成を止めない
+                group_failures += 1
+                _log.error(
+                    "eventnews_merge_group_failed",
+                    group_size=1 + len(group.absorbed),
+                    error_type=type(e).__name__,
+                )
+                continue
             absorbed += n_absorbed
             recorded += n_recorded
             applied += 1
@@ -751,6 +743,7 @@ async def merge_and_regenerate(
         regen_pending=max(0, pending_total - stats.attempted),
         elapsed_seconds=round(time.monotonic() - started, 1),
         extra={
+            "merge_groups_failed": group_failures,
             "regen_failed": stats.failed,
             "regen_skipped": stats.skipped,
             "decisions_recorded": recorded,
