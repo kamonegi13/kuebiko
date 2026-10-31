@@ -287,8 +287,12 @@ async def _summarize_and_build(
             }
         )
 
-    # b3. M3b 段1 (2026-10-10): 重要度の再設計の軸を inline で先取りする (shadow 専用、
-    # 本番の投稿先は変えない)。対象は毎時の段 (severity_axes_job) と同じ importance 帯に
+    # b3. M3b 段1 (2026-10-10): 重要度の再設計の軸を inline で先取りする。この軸は
+    # shadow 専用ではなく配信の入力そのもの: 下の _build_briefing の severity_axes=inline_axes
+    # → decide_channel → _enrich_signals_v2 → build_importance_v2_inline で signals.severity
+    # に入り、V2 の alert/vuln の規則 (S3) が使う。ROUTING_V2_INLINE_AXES=0 だとここで軸が
+    # 付かず、配信の時点で深刻さが無いので alert/vuln の S3 が出なくなる (毎時の段の軸は
+    # 配信の後で間に合わない)。対象は毎時の段 (severity_axes_job) と同じ importance 帯に
     # 深刻さを導出しうるカテゴリの絞りを加えたもの (src/cti/importance_v2_inline.py)。
     from src.cti.importance_v2_inline import classify_axes_inline
 
