@@ -11,10 +11,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from src.logging_config import get_logger
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _to_iso
 
 #: 問いの版。``org_identity`` の問いかしきい値を変えたらここも上げる。
+_log = get_logger(__name__)
+
 FORM_VERSION = "and_event12_org-4_v2"
 _KEY_MAX = 200
 
@@ -78,17 +81,16 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
     def replace_org_alias_dict(self, mapping: Mapping[str, str], *, source: str) -> int:
         """``source`` の行を ``mapping`` に置き換える (他の source の行は触らない・奪わない)。
 
-        1 トランザクション (SQLite は明示 BEGIN/COMMIT、失敗で ROLLBACK。PG は接続の
-        コミットが成功時のみ)。他 source が持つ alias_key は DO UPDATE の WHERE で弾き、
-        取り込まない (戻り値は渡した行数で、弾いた行も含む)。
+        **両バックエンドで明示の BEGIN/COMMIT の 1 トランザクション**。PG の接続は
+        autocommit (``db_backend.connect``) なので、ラッパーの commit/rollback は効かず、
+        BEGIN を自分で発行しないと DELETE と各 INSERT が個別に確定してしまう。失敗時は ROLLBACK
+        して元の例外を送出する (ROLLBACK 自体が失敗してもログに残し元の例外を優先)。
+        他 source が持つ alias_key は DO UPDATE の WHERE で弾き取り込まない。
+        戻り値は渡した行数 (弾いた行も含む)。
         """
-        from src.storage.db_backend import is_pg_enabled
-
         ts = _to_iso(datetime.now(UTC))
-        is_sqlite = not is_pg_enabled()
         with self._connect() as conn:
-            if is_sqlite:
-                conn.execute("BEGIN")
+            conn.execute("BEGIN")
             try:
                 conn.execute("DELETE FROM org_alias_dict WHERE source = ?", (source,))
                 for alias_key, canonical_key in mapping.items():
@@ -100,11 +102,12 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
                         " WHERE org_alias_dict.source = excluded.source",
                         (alias_key[:_KEY_MAX], canonical_key[:_KEY_MAX], source, ts),
                     )
-                if is_sqlite:
-                    conn.execute("COMMIT")
+                conn.execute("COMMIT")
             except BaseException:
-                if is_sqlite:
+                try:
                     conn.execute("ROLLBACK")
+                except Exception as rollback_error:  # noqa: BLE001 — 元の例外を優先する
+                    _log.error("org_alias_dict_rollback_failed", error=str(rollback_error)[:160])
                 raise
         return len(mapping)
 
