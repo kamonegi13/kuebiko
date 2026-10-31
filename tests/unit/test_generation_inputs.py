@@ -201,3 +201,277 @@ async def test_deep_dive_output_unchanged_on_write_failure(
     again = await _run_digest(monkeypatch)
     assert again == baseline
     assert write_failures.snapshot()["generation_inputs"] >= 1
+
+
+# --- 残りの生成サイト (Spotlight / 旧 synthesis / PIR 日次要点 / 事象ニュース) ----------------
+
+
+def _use_spy_or_raiser(monkeypatch: pytest.MonkeyPatch, *, fail: bool) -> _Spy:
+    monkeypatch.delenv("GENERATION_INPUT_RECORD", raising=False)
+    spy = _Spy()
+    if fail:
+        monkeypatch.setattr(RunHistoryRepository, "record_generation_input", _raiser)
+    else:
+        spy.install(monkeypatch)
+    return spy
+
+
+@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.asyncio
+async def test_pir_daily_focus_records_prompt_and_survives_failure(
+    monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from src.digest import pir_daily_focus as mod
+    from src.pir.models import Pir, SpotlightConfig, StrongSignals
+
+    spy = _use_spy_or_raiser(monkeypatch, fail=fail)
+    pir = Pir(
+        id="pir_test",
+        title="テスト",
+        description="d",
+        enabled=True,
+        strong_signals=StrongSignals(keywords=["t"]),
+        spotlight=SpotlightConfig(enabled=False),
+    )
+    llm = AsyncMock()
+    llm.model = "m"
+    llm.generate = AsyncMock(return_value=type("R", (), {"text": "既知の手口が続いた。"})())
+    out = await mod._generate_llm_summary(llm, pir, [])
+    assert out == "既知の手口が続いた。"
+    sent = llm.generate.await_args.kwargs["prompt"]
+    if fail:
+        assert write_failures.snapshot()["generation_inputs"] >= 1
+    else:
+        assert [c["prompt_text"] for c in spy.calls] == [sent]
+        assert spy.calls[0]["product_kind"] == "pir_daily_focus"
+
+
+@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.asyncio
+async def test_legacy_synthesis_records_prompt_and_survives_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fail: bool
+) -> None:
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from src.storage.run_history import ArticleRecord, RunRecord
+    from src.synthesis import generator as syn
+    from src.synthesis.generator import generate_synthesis
+    from src.tools.llm_client import LLMClient, LLMResponse
+
+    monkeypatch.setenv("SYNTHESIS_GROUNDED", "0")
+    spy = _use_spy_or_raiser(monkeypatch, fail=fail)
+    # 入力データの組み立ては本テストの関心外 (既定 DB を読むため固定する)
+    monkeypatch.setattr(syn, "_build_axes_data", lambda **k: [{"total_current": 3}])
+    monkeypatch.setattr(syn, "_build_trend_clusters_data", lambda **k: [])
+    monkeypatch.setattr(syn, "_build_high_importance_cross_axis", lambda **k: [])
+    monkeypatch.setattr(syn, "_load_previous_synthesis", lambda **k: None)
+    monkeypatch.setattr(syn, "_render_prompt", lambda *a, **k: "SYN PROMPT")
+    repo = RunHistoryRepository(db_path=tmp_path / "s.db")
+    run_id = repo.start_run(
+        RunRecord(started_at=datetime(2026, 10, 31, tzinfo=UTC), pipeline="x", dry_run=False)
+    )
+    repo.add_article(
+        ArticleRecord(
+            run_id=run_id,
+            article_id="a",
+            title="Sample",
+            url="https://kuebiko.example/a",
+            status="posted",
+            pmesii_m=True,
+            pmesii_i_cyber=True,
+        )
+    )
+    llm = AsyncMock(spec=LLMClient)
+    llm.model = "m"
+    llm.generate = AsyncMock(return_value=LLMResponse(text='{"headline": "x"}', model="m"))
+    result = await generate_synthesis(llm=llm, period_type="daily", db_path=repo._db_path)
+    assert result.record is None  # 必須欄不足 = 出力は記録の有無に依らず同じ
+    assert result.error is not None
+    assert "no articles" not in result.error
+    # 必須欄不足で 1 回だけ書き直す = 送った prompt 2 本が両方記録される
+    assert llm.generate.await_count == 2
+    sent = [c.kwargs["prompt"] for c in llm.generate.await_args_list]
+    if fail:
+        assert write_failures.snapshot()["generation_inputs"] >= 2
+    else:
+        assert [c["prompt_text"] for c in spy.calls] == sent
+        assert spy.calls[0]["product_kind"] == "synthesis"
+        assert spy.calls[1]["product_id"].endswith(":retry1")
+
+
+@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.asyncio
+async def test_spotlight_records_prompt_and_survives_failure(
+    monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    from datetime import UTC, datetime
+
+    from src.spotlight import generator as gen
+    from src.spotlight.generator import generate_spotlight
+    from tests.unit.test_spotlight_identifier_gate import _FakeLLM, _FakeMatch, _FakePir
+
+    spy = _use_spy_or_raiser(monkeypatch, fail=fail)
+    matches = [_FakeMatch(article_id=f"a{i}") for i in range(6)]
+    monkeypatch.setattr(gen, "evaluate_pir_matches", lambda *a, **k: matches)
+    monkeypatch.setattr(gen, "_build_prompt", lambda *a, **k: "SPOT PROMPT")
+    monkeypatch.setattr(gen, "_load_previous_spotlight", lambda **k: None)
+    monkeypatch.setattr(gen, "_build_ledger_context", lambda *a, **k: [])
+
+    class _Repo:
+        def entities_for_articles(self, *a: Any, **k: Any) -> dict[str, list[str]]:
+            return {}
+
+    monkeypatch.setattr(gen, "RunHistoryRepository", _Repo)
+    monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "0")
+    monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "0")
+    llm = _FakeLLM()
+    record = await generate_spotlight(
+        _FakePir(),  # type: ignore[arg-type]
+        llm=llm,  # type: ignore[arg-type]
+        assessment=object(),  # type: ignore[arg-type]
+        now=datetime(2026, 9, 6, tzinfo=UTC),
+    )
+    assert record is not None
+    if fail:
+        assert write_failures.snapshot()["generation_inputs"] >= 1
+    else:
+        assert [c["prompt_text"] for c in spy.calls] == [llm.prompts[0]]
+        assert spy.calls[0]["product_kind"] == "spotlight"
+
+
+@pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.asyncio
+async def test_eventnews_records_base_prompt_and_survives_failure(
+    monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from src.eventnews import generator as gen
+    from src.eventnews import identifier_gate, quantities
+    from src.eventnews import runner as rn
+    from src.eventnews.models import EventNewsDraft, GateResult
+
+    spy = _use_spy_or_raiser(monkeypatch, fail=fail)
+    member = SimpleNamespace(body="本文")
+    draft = EventNewsDraft(headline="見出し", bluf="要旨")
+    gate = GateResult(
+        draft=draft, dropped_lines=0, repaired_ids=0, substituted_ids=0, verified=True
+    )
+
+    async def fake_draft(*a: Any, **k: Any) -> EventNewsDraft:
+        return draft
+
+    monkeypatch.setattr(gen, "select_members", lambda m: (list(m), []))
+    monkeypatch.setattr(gen, "build_prompt", lambda *a, **k: "BASE PROMPT")
+    monkeypatch.setattr(gen, "generate_draft", fake_draft)
+    monkeypatch.setattr(rn, "_should_generate", lambda *a, **k: True)
+    monkeypatch.setattr(rn, "_allowed_identifiers_text", lambda *a, **k: "")
+    monkeypatch.setattr(rn, "_rewrite_hints", lambda *a, **k: [])
+    monkeypatch.setattr(identifier_gate, "verify_draft", lambda *a, **k: gate)
+    monkeypatch.setattr(identifier_gate, "build_member_catalog", lambda *a, **k: {})
+    monkeypatch.setattr(quantities, "supporting_texts", lambda *a, **k: [])
+
+    stored: list[dict[str, Any]] = []
+
+    class _EventRepo:
+        def record_event_version(self, **kwargs: Any) -> None:
+            stored.append(kwargs)
+
+        def record_generation_input(self, **kwargs: Any) -> None:
+            if fail:
+                raise RuntimeError("db down")
+            spy.calls.append(kwargs)
+
+    item = SimpleNamespace(
+        members=[member],
+        snapshot=SimpleNamespace(item_id="ev1", current_version=0, importance="high"),
+    )
+    llm = SimpleNamespace(model="m")
+    out_gate, _ = await rn._generate_version(
+        _EventRepo(),  # type: ignore[arg-type]
+        item,  # type: ignore[arg-type]
+        llm,  # type: ignore[arg-type]
+        datetime(2026, 10, 31, tzinfo=UTC),
+        "[]",
+    )
+    assert out_gate is gate  # 出力は記録の成否に依らない
+    assert stored[0]["prompt_text"] == "BASE PROMPT"
+    if fail:
+        assert write_failures.snapshot()["generation_inputs"] >= 1
+    else:
+        assert [c["prompt_text"] for c in spy.calls] == ["BASE PROMPT"]
+        assert spy.calls[0]["product_id"] == "ev1:v1"
+
+
+def test_counts_return_only_kind_counts_not_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GENERATION_INPUT_RECORD", raising=False)
+    repo = RunHistoryRepository(db_path=tmp_path / "c.db")
+    _record(repo)
+    _record(repo)
+    counts = repo.generation_inputs_counts(days=1)
+    assert counts == {"eventnews": 2}
+    assert PROMPT not in json.dumps(counts, ensure_ascii=False)
+
+
+def test_default_repo_is_reused() -> None:
+    generation_inputs.reset_for_tests()
+    assert generation_inputs._default_repo() is generation_inputs._default_repo()
+    generation_inputs.reset_for_tests()
+
+
+def test_conftest_disables_recording_by_default() -> None:
+    import os
+
+    assert os.environ.get("GENERATION_INPUT_RECORD") == "0"
+
+
+@pytest.mark.asyncio
+async def test_deep_dive_retry_prompt_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.digest import llm_digest as mod
+    from src.digest.db_filter import DigestCandidate
+    from src.digest.recap_render import RecapOutput, RecapSection
+
+    monkeypatch.delenv("GENERATION_INPUT_RECORD", raising=False)
+    spy = _Spy()
+    spy.install(monkeypatch)
+    sent: list[str] = []
+
+    async def fake(llm: Any, prompt: str, *, max_tokens: int, think: Any) -> RecapOutput:
+        sent.append(prompt)
+        ids = ["a1"] if len(sent) == 1 else ["a1", "a2"]
+        return RecapOutput(sections=[RecapSection(heading="節", body="あ" * 600, article_ids=ids)])
+
+    monkeypatch.setattr(mod, "_generate_sections", fake)
+    monkeypatch.setattr(mod, "_render_prompt", lambda *a, **k: "DIGEST PROMPT")
+
+    def cand(i: str) -> DigestCandidate:
+        return DigestCandidate(
+            article_id=i,
+            title="題",
+            url=f"https://kuebiko.example/{i}",
+            feed_title="F",
+            summary="要約",
+            importance="high",
+            category="apt",
+            posted_channel="watch",
+            dedup_key=None,
+            created_at="2026-09-20T00:00:00Z",
+            discord_channel_id=None,
+            discord_message_id=None,
+        )
+
+    await mod.generate_digest(
+        llm=object(),  # type: ignore[arg-type]
+        candidates=[cand("a1"), cand("a2")],
+        template_name="digest/weekly_recap.j2",
+        period_label="P",
+    )
+    assert len(sent) == 2
+    assert [c["prompt_text"] for c in spy.calls] == sent
+    assert spy.calls[1]["product_id"].endswith(":retry1")

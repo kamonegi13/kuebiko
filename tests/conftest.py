@@ -13,3 +13,5 @@ def _disable_local_llm_usage_recording(monkeypatch: pytest.MonkeyPatch) -> None:
     統計に混ざる。記録そのものを試すテストは自分で ``setenv("LLM_USAGE_LOCAL", "1")`` する。
     """
     monkeypatch.setenv("LLM_USAGE_LOCAL", "0")
+    # 生成物の入力 (P0-18) も同様。記録を試すテストは自分で delenv / setenv する
+    monkeypatch.setenv("GENERATION_INPUT_RECORD", "0")

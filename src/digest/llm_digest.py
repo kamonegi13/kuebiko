@@ -194,9 +194,17 @@ async def generate_digest(
         # ⚠ **前回の出力を見せてから直させる**。1 度これを忘れて「次の主題は本文が
         #   短すぎます: ○○」とだけ渡し、モデルはその主題を知らないまま作り直して
         #   見出しも本文も空の節を返した (2026-09-20)。
+        retry_prompt = prompt + _previous_output(out) + _rewrite_hint(missing, thin, sources)
+        record_generation_input(
+            step="digest_deep_dive",
+            model=str(getattr(llm, "model", "")),
+            product_kind="deep_dive",
+            product_id=f"{template_name}:{period_label}:retry1",
+            prompt_text=retry_prompt,
+        )
         retry = await _generate_sections(
             llm,
-            prompt + _previous_output(out) + _rewrite_hint(missing, thin, sources),
+            retry_prompt,
             max_tokens=max_tokens,
             think=think,
         )

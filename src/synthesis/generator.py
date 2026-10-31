@@ -744,6 +744,13 @@ async def generate_synthesis(
                 "(P/M/E/S/I-infra/I-cyber/P-env/T) すべての key を含むこと。"
             )
         )
+        record_generation_input(
+            step="synthesis_narrative",
+            model=llm.model,
+            product_kind="synthesis",
+            product_id=f"{period_type}:{start.isoformat()}:retry1",
+            prompt_text=retry_prompt,
+        )
         try:
             response2 = await llm.generate(
                 prompt=retry_prompt,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from typing import Any
 
 from src.ops.write_failures import record_failure
@@ -18,6 +19,28 @@ from src.ops.write_failures import record_failure
 GENERATION_INPUT_RECORD_ENV = "GENERATION_INPUT_RECORD"
 COMPONENT = "generation_inputs"
 _OFF_VALUES = frozenset({"0", "false", "off", "no", ""})
+
+
+_repo_lock = threading.Lock()
+_cached_repo: Any | None = None
+
+
+def _default_repo() -> Any:
+    """呼ぶたびに作らず、遅延生成した 1 つを使い回す。"""
+    global _cached_repo  # noqa: PLW0603
+    with _repo_lock:
+        if _cached_repo is None:
+            from src.storage.run_history import RunHistoryRepository
+
+            _cached_repo = RunHistoryRepository()
+        return _cached_repo
+
+
+def reset_for_tests() -> None:
+    """テスト専用: 使い回しの repo を捨てる。"""
+    global _cached_repo  # noqa: PLW0603
+    with _repo_lock:
+        _cached_repo = None
 
 
 def is_enabled() -> bool:
@@ -44,11 +67,8 @@ def record_generation_input(
     if not is_enabled() or not prompt_text:
         return
     try:
-        if repo is None:
-            from src.storage.run_history import RunHistoryRepository
-
-            repo = RunHistoryRepository()
-        repo.record_generation_input(
+        target = repo if repo is not None else _default_repo()
+        target.record_generation_input(
             step=step,
             model=model,
             product_kind=product_kind,
