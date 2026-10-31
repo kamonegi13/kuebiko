@@ -87,7 +87,7 @@ async def test_in_flight_article_finishes_before_hard_limit() -> None:
 def test_non_rss_sources_keep_legacy_300s_reserve(
     monkeypatch: pytest.MonkeyPatch, source_type: str
 ) -> None:
-    # env で予備を縮めても rss 以外は 300 秒のまま (Grok は 1 投稿約 230 秒・投稿単位の timeout 無し)
+    # env で予備を縮めても rss 以外は 300 秒のまま (Grok は 1 投稿が約 230 秒)
     monkeypatch.setenv(orch._DEADLINE_RESERVE_ENV, "150")
     before = time.monotonic()
     deadline = orch._compute_soft_deadline(1185.0, source_type)
