@@ -449,3 +449,48 @@ def test_judging_step_is_last_in_hourly_upkeep_and_off_alone() -> None:
     assert upkeep.steps[-1] == "geo-rescue-shadow-hourly"
     step = jobs["geo-rescue-shadow-hourly"]
     assert step.enabled is False and step.max_runtime_minutes <= 5
+
+
+def test_record_keeps_one_row_per_article(tmp_path: Path) -> None:
+    repo = RunHistoryRepository(db_path=tmp_path / "t.db")
+
+    first = repo.record_geo_rescue_shadow([_pending("a"), _pending("b")])
+    again = repo.record_geo_rescue_shadow([_pending("a"), _pending("c")])  # 繰越の再捕捉
+
+    rows = repo.list_geo_rescue_shadow(days=1)
+    assert (first, again) == (2, 1)
+    assert sorted(r.article_id for r in rows) == ["a", "b", "c"]
+
+
+def test_migration_dedupes_existing_rows_keeping_earliest(tmp_path: Path) -> None:
+    import sqlite3
+
+    from src.storage.schema_sql import _SCHEMA_SQL  # noqa: PLC2701
+
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    # 旧スキーマ (一意制約なし) に重複を作ってから、現行スキーマを当てる
+    old = _SCHEMA_SQL.split("DELETE FROM geo_rescue_shadow")[0]
+    con.executescript(old)
+    cols = (
+        "article_id, created_at, flat, prompt_mode, status, cue_types,"
+        " flat_error, pir_error, judge_failed"
+    )
+    ins = (
+        f"INSERT INTO geo_rescue_shadow ({cols})"
+        " VALUES (?, ?, 'low', 'flat', 'pending', '', 0, 0, 0)"
+    )
+    for ts in ["2026-10-31T01:00", "2026-10-31T02:00", "2026-10-31T03:00"]:
+        con.execute(ins, ("dup", ts))
+    con.execute(ins, ("solo", "2026-10-31T01:00"))
+    con.commit()
+    con.close()
+
+    repo = RunHistoryRepository(db_path=db)  # 起動時に移行
+    RunHistoryRepository(db_path=db)  # 2 回目も安全 (idempotent)
+
+    rows = repo.list_geo_rescue_shadow(days=3650)
+    assert sorted((r.article_id, r.created_at) for r in rows) == [
+        ("dup", "2026-10-31T01:00"),
+        ("solo", "2026-10-31T01:00"),
+    ]

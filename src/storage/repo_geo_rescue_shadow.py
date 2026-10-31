@@ -166,15 +166,25 @@ class GeoRescueShadowMixin(RunHistoryRepositoryBase):
     """``geo_rescue_shadow`` テーブルの読み書き。"""
 
     def record_geo_rescue_shadow(self: Any, rows: Sequence[GeoRescueShadowRow]) -> int:
-        """記録をまとめて追記する (append-only。triage の時点の ``pending`` もこれで書く)。空入力は 0。"""
+        """記録をまとめて追記する (triage の時点の ``pending`` もこれで書く)。空入力は 0。
+
+        **記事ごとに 1 行** (``article_id`` の一意制約 + ON CONFLICT DO NOTHING)。繰り越した救済の
+        候補は毎時 triage に戻るが、既に行がある記事は書かない (標本の単位を独立に保つ)。
+        戻り値は実際に追加した件数。
+        """
         if not rows:
             return 0
         ts = _to_iso(datetime.now(UTC))
         values = [_values(r, ts) for r in rows]
         marks = ", ".join("?" for _ in range(len(values[0])))
         with self._connect() as conn:
-            conn.executemany(f"INSERT INTO geo_rescue_shadow ({_COLUMNS}) VALUES ({marks})", values)
-        return len(values)
+            cur = conn.executemany(
+                f"INSERT INTO geo_rescue_shadow ({_COLUMNS}) VALUES ({marks})"
+                " ON CONFLICT(article_id) DO NOTHING",
+                values,
+            )
+            inserted = getattr(cur, "rowcount", -1)
+        return len(values) if inserted is None or inserted < 0 else int(inserted)
 
     def list_geo_rescue_shadow(self: Any, *, days: int) -> list[GeoRescueShadowRow]:
         """直近 ``days`` 日の記録を古い順に返す (集計・標本の枠に使う)。"""
