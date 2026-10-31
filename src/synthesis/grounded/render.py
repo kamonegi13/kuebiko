@@ -19,6 +19,7 @@ from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.storage.run_history import StatusSynthesisRecord
 from src.synthesis.grounded.estimate import (
     STRONG_ATTRIBUTION,
@@ -691,6 +692,13 @@ async def render_sections(
     head, mode, ranked = plan.head, plan.mode, list(plan.ranked)
     schema: type[_WireSections] | type[_WireSectionsCoT] = (
         _WireSectionsCoT if cot else _WireSections
+    )
+    record_generation_input(
+        step="synthesis_render",
+        model=getattr(llm, "model", ""),
+        product_kind="synthesis_grounded_render",
+        product_id=f"{est.period_type}:{period_label}:render",
+        prompt_text=plan.prompt,
     )
     raw = await llm.generate_structured(
         plan.prompt,

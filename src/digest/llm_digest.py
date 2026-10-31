@@ -24,6 +24,7 @@ from src.digest.recap_render import (
     uncited_articles,
 )
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
@@ -165,6 +166,13 @@ async def generate_digest(
     selected_ids = [c.article_id for c in candidates]
     prompt = _render_prompt(template_name, candidates=candidates, period_label=period_label)
     max_tokens = _digest_max_tokens(len(candidates))
+    record_generation_input(
+        step="digest_deep_dive",
+        model=str(getattr(llm, "model", "")),
+        product_kind="deep_dive",
+        product_id=f"{template_name}:{period_label}",
+        prompt_text=prompt,
+    )
     _log.info(
         "digest_llm_request",
         template=template_name,
