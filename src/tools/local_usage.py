@@ -63,6 +63,10 @@ class LocalUsageRecord:
     floor_used: bool | None = None
     # 外部 → ローカルの受け皿 (緊急の受け皿を含む) に落ちた呼び出しか
     fallback: bool = False
+    # Ollama の時間の内訳 (ms)。欠け (ストリーミング・エラー・古い版) は None
+    load_ms: int | None = None
+    prompt_eval_ms: int | None = None
+    eval_ms: int | None = None
 
 
 LocalUsageRecorder = Callable[[LocalUsageRecord], None]
@@ -233,6 +237,9 @@ def record_probe_usage(
     choices_present: bool | None = None,
     floor_used: bool | None = None,
     error_class: str | None = None,
+    load_ms: int | None = None,
+    prompt_eval_ms: int | None = None,
+    eval_ms: int | None = None,
 ) -> None:
     """logprob 判定 (``decision_probe``) 1 回分を記録する。fail-safe。"""
     try:
@@ -251,6 +258,9 @@ def record_probe_usage(
                 provider=PROBE_PROVIDER,
                 choices_present=choices_present,
                 floor_used=floor_used,
+                load_ms=load_ms,
+                prompt_eval_ms=prompt_eval_ms,
+                eval_ms=eval_ms,
             )
         )
     except Exception as e:  # noqa: BLE001 — 記録の失敗で判定を壊さない

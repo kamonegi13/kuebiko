@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.logging_config import get_logger
 from src.tools.local_usage import LocalUsageRecord, LocalUsageRecorder
+from src.tools.ollama_timing import extract_timing, timing_log_fields
 
 _log = get_logger(__name__)
 
@@ -536,6 +537,7 @@ class OllamaClient(LLMClient):
         text = _resp_message_content(response)
         prompt_eval = int(_get(response, "prompt_eval_count") or 0)
         eval_count = int(_get(response, "eval_count") or 0)
+        timing = extract_timing(response)
 
         # ⭐ 上限に張り付いた生成 = 暴走の signal (2026-09-19)。凍結評価で n17c の暴走率が
         #    11% (対 n17m30 5%) と分かったが、**本番で何 % 起きているかを測る術が無かった**。
@@ -551,6 +553,7 @@ class OllamaClient(LLMClient):
             structured=format_schema is not None,
             max_tokens=max_tokens,
             hit_token_cap=hit_cap,
+            **timing_log_fields(timing, input_tokens=prompt_eval, output_tokens=eval_count),
         )
         if hit_cap:
             _log.warning(
@@ -572,6 +575,9 @@ class OllamaClient(LLMClient):
                 structured=format_schema is not None,
                 output_chars=len(text),
                 fallback=self._is_fallback,
+                load_ms=timing.load_ms,
+                prompt_eval_ms=timing.prompt_eval_ms,
+                eval_ms=timing.eval_ms,
             )
         )
         return LLMResponse(

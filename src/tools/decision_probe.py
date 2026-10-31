@@ -34,6 +34,7 @@ from src.logging_config import get_logger
 from src.tools.llm_client import LLMForbiddenModelError, validate_model_name
 from src.tools.local_usage import record_probe_usage
 from src.tools.model_tiers import STEP_REGISTRY, Step, is_external_model, resolve_step_model
+from src.tools.ollama_timing import extract_timing
 from src.tools.task_prefix import PREFIX_TRAINED_MODELS, is_prefix_trained
 
 if TYPE_CHECKING:
@@ -248,6 +249,7 @@ async def probe_choice(
     logprobs = response.logprobs
     in_tokens = int(getattr(response, "prompt_eval_count", None) or 0)
     out_tokens = int(getattr(response, "eval_count", None) or 0)
+    timing = extract_timing(response)
     if not logprobs:
         # サーバ/モデルが logprobs を返さない (未対応バージョン等)。安全側で None。
         record_probe_usage(
@@ -258,6 +260,9 @@ async def probe_choice(
             output_tokens=out_tokens,
             choices_present=False,
             floor_used=False,
+            load_ms=timing.load_ms,
+            prompt_eval_ms=timing.prompt_eval_ms,
+            eval_ms=timing.eval_ms,
         )
         return None
     entry = logprobs[0]
@@ -275,5 +280,8 @@ async def probe_choice(
         output_tokens=out_tokens,
         choices_present=found == len(choices),
         floor_used=0 < found < len(choices),
+        load_ms=timing.load_ms,
+        prompt_eval_ms=timing.prompt_eval_ms,
+        eval_ms=timing.eval_ms,
     )
     return _extract_choice_probabilities(candidates, choices)

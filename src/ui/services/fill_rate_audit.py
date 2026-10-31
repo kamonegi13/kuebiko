@@ -445,6 +445,15 @@ METRICS: tuple[FillMetric, ...] = (
         " AND substr(u.ts, 1, 10) = substr(a.created_at, 1, 10))",
         None,
     ),
+    # Ollama の時間の内訳 (2026-10-30)。消費者は local-summary の median_eval_tok_s 等。
+    # 監視対象は「応答の欄を読む経路の断線」(その日 eval_ms つきのローカル記録があったか)
+    FillMetric(
+        "ollama_timing",
+        "Ollama時間内訳の記録",
+        "EXISTS (SELECT 1 FROM llm_usage u WHERE u.provider = 'ollama' AND u.eval_ms IS NOT NULL"
+        " AND substr(u.ts, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

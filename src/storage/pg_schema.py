@@ -725,6 +725,10 @@ ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS error_class TEXT;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS choices_present INTEGER;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS floor_used INTEGER;
 ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS fallback INTEGER;
+-- Ollama の時間の内訳 (ms、2026-10-30)
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS load_ms INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS prompt_eval_ms INTEGER;
+ALTER TABLE llm_usage ADD COLUMN IF NOT EXISTS eval_ms INTEGER;
 CREATE INDEX IF NOT EXISTS idx_llm_usage_ts ON llm_usage(ts);
 
 -- アクター辞書 Phase1 F7 (2026-07-26): アクター行動史の月次期間行 (決定論蒸留)。

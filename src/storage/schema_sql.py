@@ -566,7 +566,11 @@ CREATE TABLE IF NOT EXISTS llm_usage (
     -- logprob 経路 (provider='ollama-probe') の選択肢の有無 / floor で補ったか、受け皿に落ちた回
     choices_present INTEGER,
     floor_used    INTEGER,
-    fallback      INTEGER
+    fallback      INTEGER,
+    -- Ollama の時間の内訳 (ms、2026-10-30)。prefill / decode / load を分けて速度低下を診断する
+    load_ms       INTEGER,
+    prompt_eval_ms INTEGER,
+    eval_ms       INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_llm_usage_provider_ts
     ON llm_usage(provider, ts DESC);
