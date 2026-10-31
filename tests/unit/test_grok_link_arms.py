@@ -1,10 +1,10 @@
-"""scripts/gpu_window/grok_link_arms.py の純粋部分 (標本の抽出・腕・無効の判定)。LLM・DB は使わない。"""
-
-# ruff: noqa: E501 (日本語の説明行は幅 2 で数えられる)
+"""scripts/gpu_window/grok_link_arms.py の純粋部分
+(標本の抽出・腕・無効の判定)。LLM・DB は使わない。"""
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -135,6 +135,12 @@ def test_reconstruct_gate_post() -> None:
     assert arms.reconstruct_gate_post("TEXT") == "TEXT\n"
 
 
+def test_reconstruct_gate_post_with_empty_post_text() -> None:
+    # 投稿の本文が空: body は "[引用] Q" で始まる。関門へ渡した "\nQ" に戻る
+    assert arms.reconstruct_gate_post("[引用] Q") == "\nQ"
+    assert arms.reconstruct_gate_post("[引用] Q\n参考 URL: https://a") == "\nQ"
+
+
 def test_gate_mismatch_flags_stored_skip_the_gate_would_not_set() -> None:
     # 取得失敗のページは関門の対象外 -> 当て直しは skip なし。保存が off_topic なら食い違い
     stale = _page("https://e.example/a", "", ok=False, skip="off_topic")
@@ -159,9 +165,9 @@ def test_model_and_stability_invalidations() -> None:
     assert arms.model_invalidations(arms.EXPECTED_MODEL, good, good) == []
     bad = {arms.EXPECTED_MODEL: "deadbeef"}
     assert len(arms.model_invalidations("other", good, bad)) == 2
-    assert arms.stability_invalidations({"head_sha": "a"}, {"head_sha": "a"}) == []
-    assert arms.stability_invalidations({"head_sha": "a"}, {"head_sha": "b"}) == [
-        "head_sha_changed"
+    assert arms.stability_invalidations({"template_sha256": "a"}, {"template_sha256": "a"}) == []
+    assert arms.stability_invalidations({"generation_files": "a"}, {"generation_files": "b"}) == [
+        "generation_files_changed"
     ]
 
 
@@ -172,7 +178,11 @@ def test_check_attestation_requires_matching_tools(tmp_path: Path) -> None:
     p.write_text(json.dumps({"tools": {"x": "y"}}))
     with pytest.raises(SystemExit):
         arms.check_attestation(p)
-    p.write_text(json.dumps({"tools": arms.tool_shas(), "head_sha": "h"}))
+    p.write_text(json.dumps({"tools": arms.tool_shas(), "generation_files": {"x": "y"}}))
+    with pytest.raises(SystemExit):
+        arms.check_attestation(p)
+    good = {"tools": arms.tool_shas(), "generation_files": arms.generation_shas()}
+    p.write_text(json.dumps({**good, "head_sha": "h"}))
     assert arms.check_attestation(p)["head_sha"] == "h"
 
 
@@ -182,3 +192,137 @@ def test_dry_run_prints_plan(capsys: pytest.CaptureFixture[str], tmp_path: Path)
     assert arms.dry_run(argparse.Namespace(out_dir=str(tmp_path))) == 0
     out = capsys.readouterr().out
     assert "160 要約" in out and arms.EXPECTED_MODEL in out
+
+
+def test_generation_path_files_exist_and_are_hashed() -> None:
+    shas = arms.generation_shas()
+    assert set(shas) == set(arms.GENERATION_PATH)
+    assert all(len(v) == 64 for v in shas.values())  # 無いファイルは空文字になる
+    assert {"src/grok/link_fetch.py", "prompts/briefing/summarizer.j2"} <= set(shas)
+
+
+def test_generation_shas_missing_file_is_empty(tmp_path: Path) -> None:
+    assert set(arms.generation_shas(tmp_path).values()) == {""}
+
+
+def test_generation_path_changes_detects_diff(tmp_path: Path) -> None:
+    import subprocess
+
+    def git(*a: str) -> str:
+        r = subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *a],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout.strip()
+
+    git("init", "-q")
+    for rel in arms.GENERATION_PATH:
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("v1")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    (tmp_path / "src/grok/link_relevance.py").write_text("v2")
+    git("commit", "-qam", "change")
+    orig = arms.GENERATION_BASE
+    arms.GENERATION_BASE = base
+    try:
+        assert arms.generation_path_changes(tmp_path) == ["src/grok/link_relevance.py"]
+    finally:
+        arms.GENERATION_BASE = orig
+
+
+def test_check_attestation_refuses_changed_generation_file(tmp_path: Path) -> None:
+    shas = dict(arms.generation_shas())
+    shas["src/grok/link_fetch.py"] = "0" * 64
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"tools": arms.tool_shas(), "generation_files": shas}))
+    with pytest.raises(SystemExit):
+        arms.check_attestation(p)
+
+
+def test_run_step_disables_local_usage_before_anything_else(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import argparse
+
+    monkeypatch.setenv("LLM_USAGE_LOCAL", "1")
+    args = argparse.Namespace(
+        attestation=str(tmp_path / "none.json"), out_dir=str(tmp_path), allow_early_for_test=False
+    )
+    with pytest.raises(SystemExit):  # 証明書が無いので LLM に到達する前に止まる
+        arms.run_step(args)
+    assert os.environ["LLM_USAGE_LOCAL"] == "0"
+
+
+def test_probe_article_carries_feed_title_and_template_renders_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a = arms.probe_article("1", feed_title="Some Author (@handle)")
+    assert a.feed_title == "Some Author (@handle)"
+    assert arms.probe_article("1").feed_title == "probe"  # 指紋用の固定値は不変
+    from src.pipeline.briefing import _prompt_article
+    from src.pipeline.dispatch import _load_template
+
+    # DB を使わず legacy .j2 に落とす
+    monkeypatch.setattr("src.prompts.rubric_store.build_summarizer_template", lambda _path: None)
+    tpl = _load_template()
+    out = tpl.render(article=_prompt_article(a), body="BODY")
+    assert "Some Author (@handle)" in out
+
+
+def test_fetch_post_rows_selects_feed_title_and_carries_it() -> None:
+    class Conn:
+        sql = ""
+
+        def execute(self, sql: str, params: tuple[str, ...]) -> Conn:
+            self.sql = sql
+            return self
+
+        def fetchall(self) -> list[dict[str, str]]:
+            return [
+                {
+                    "status_id": "5",
+                    "article_id": "a5",
+                    "url": "u",
+                    "body": "b",
+                    "linked_context": "[]",
+                    "feed_title": "Author (@h)",
+                }
+            ]
+
+    conn = Conn()
+    rows = arms.fetch_post_rows(conn, [{"status_id": "5", "article_id": "a5"}])
+    assert "feed_title" in conn.sql and rows[0]["feed_title"] == "Author (@h)"
+
+
+def test_verify_gold44_rejects_changed_file(tmp_path: Path) -> None:
+    p = tmp_path / "sample.json"
+    p.write_text("[]")
+    with pytest.raises(SystemExit):
+        arms.verify_gold44(p)
+
+
+def test_draw_output_path_separates_early_test(tmp_path: Path) -> None:
+    out = tmp_path / "grok_link_judge_1107"
+    assert arms.draw_output_path(out, False) == out / "sample.json"
+    early = arms.draw_output_path(out, True)
+    assert early.parent != out and early.name == "sample.json"
+
+
+def test_draw_early_test_refuses_existing_early_sample(tmp_path: Path) -> None:
+    import argparse
+
+    out = tmp_path / "judge"
+    early = arms.draw_output_path(out, True)
+    early.parent.mkdir(parents=True)
+    early.write_text("{}")
+    args = argparse.Namespace(
+        out_dir=str(out), attestation=str(tmp_path / "x.json"), allow_early_for_test=True
+    )
+    with pytest.raises(SystemExit, match="既にある"):
+        arms.draw_step(args)

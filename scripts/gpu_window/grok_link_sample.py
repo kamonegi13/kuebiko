@@ -1,10 +1,9 @@
-"""GROK-LINK-JUDGE の標本の定義 (純粋部分 + DB 読み出し)。仕様は docs/replay_prereg/grok_link_fetch.md。
+"""GROK-LINK-JUDGE の標本の定義 (純粋部分 + DB 読み出し)。
+仕様は docs/replay_prereg/grok_link_fetch.md。
 
 - 母集団 (§2.2 の SQL)・除外の段ごとの件数 (§2.3)・R18 の閉包 (§7)・seed 20261107 の 40 件抽出 (§4)
 - DB は SELECT のみ (読み取り専用接続)。記事本文はこのモジュールから書き出さない
 """
-
-# ruff: noqa: E501 (日本語の説明行は幅 2 で数えられる)
 
 from __future__ import annotations
 
