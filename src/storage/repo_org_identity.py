@@ -76,19 +76,43 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
         return {str(r["alias_key"]): str(r["canonical_key"]) for r in rows}
 
     def replace_org_alias_dict(self, mapping: Mapping[str, str], *, source: str) -> int:
-        """``source`` の行を ``mapping`` に置き換える (他の source の行は触らない)。
+        """``source`` の行を ``mapping`` に置き換える (他の source の行は触らない・奪わない)。
 
-        1 トランザクションで消して入れ直す。戻り値は書いた行数。
+        1 トランザクション (SQLite は明示 BEGIN/COMMIT、失敗で ROLLBACK。PG は接続の
+        コミットが成功時のみ)。他 source が持つ alias_key は DO UPDATE の WHERE で弾き、
+        取り込まない (戻り値は渡した行数で、弾いた行も含む)。
         """
+        from src.storage.db_backend import is_pg_enabled
+
         ts = _to_iso(datetime.now(UTC))
+        is_sqlite = not is_pg_enabled()
         with self._connect() as conn:
-            conn.execute("DELETE FROM org_alias_dict WHERE source = ?", (source,))
-            for alias_key, canonical_key in mapping.items():
-                conn.execute(
-                    "INSERT INTO org_alias_dict (alias_key, canonical_key, source, updated_at)"
-                    " VALUES (?, ?, ?, ?)"
-                    " ON CONFLICT(alias_key) DO UPDATE SET canonical_key = excluded.canonical_key,"
-                    " source = excluded.source, updated_at = excluded.updated_at",
-                    (alias_key[:_KEY_MAX], canonical_key[:_KEY_MAX], source, ts),
-                )
+            if is_sqlite:
+                conn.execute("BEGIN")
+            try:
+                conn.execute("DELETE FROM org_alias_dict WHERE source = ?", (source,))
+                for alias_key, canonical_key in mapping.items():
+                    conn.execute(
+                        "INSERT INTO org_alias_dict (alias_key, canonical_key, source, updated_at)"
+                        " VALUES (?, ?, ?, ?)"
+                        " ON CONFLICT(alias_key) DO UPDATE SET"
+                        " canonical_key = excluded.canonical_key, updated_at = excluded.updated_at"
+                        " WHERE org_alias_dict.source = excluded.source",
+                        (alias_key[:_KEY_MAX], canonical_key[:_KEY_MAX], source, ts),
+                    )
+                if is_sqlite:
+                    conn.execute("COMMIT")
+            except BaseException:
+                if is_sqlite:
+                    conn.execute("ROLLBACK")
+                raise
         return len(mapping)
+
+    def org_alias_dict_stats(self, *, source: str) -> tuple[int, str | None]:
+        """(``source`` の行数, 最新の updated_at)。鮮度の監査用。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*), MAX(updated_at) FROM org_alias_dict WHERE source = ?",
+                (source,),
+            ).fetchone()
+        return int(row[0]), (str(row[1]) if row[1] is not None else None)
