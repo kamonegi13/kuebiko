@@ -31,6 +31,14 @@ def _opt_flag(value: bool | None) -> int | None:
     return None if value is None else int(value)
 
 
+def _opt_ms(value: int | None) -> int | None:
+    return None if value is None else max(0, int(value))
+
+
+def _opt_int(value: Any) -> int | None:
+    return None if value is None else int(value)
+
+
 def _opt_bool(value: Any) -> bool | None:
     return None if value is None else bool(value)
 
@@ -87,6 +95,9 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                 _opt_flag(r.choices_present),
                 _opt_flag(r.floor_used),
                 int(r.fallback),
+                _opt_ms(r.load_ms),
+                _opt_ms(r.prompt_eval_ms),
+                _opt_ms(r.eval_ms),
             )
             for r in batch
         ]
@@ -94,8 +105,9 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
             conn.executemany(
                 "INSERT INTO llm_usage (ts, provider, model, input_tokens, output_tokens,"
                 " duration_ms, step, max_tokens, hit_token_cap, structured, output_chars,"
-                " error_class, choices_present, floor_used, fallback)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " error_class, choices_present, floor_used, fallback,"
+                " load_ms, prompt_eval_ms, eval_ms)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
 
@@ -107,7 +119,8 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
         with self._connect() as conn:
             rows: list[Any] = conn.execute(
                 "SELECT provider, step, model, duration_ms, input_tokens, output_tokens,"
-                " hit_token_cap, error_class, choices_present, floor_used, fallback"
+                " hit_token_cap, error_class, choices_present, floor_used, fallback,"
+                " load_ms, prompt_eval_ms, eval_ms"
                 " FROM llm_usage WHERE provider IN (?, ?) AND ts >= ?",
                 (LOCAL_PROVIDER, PROBE_PROVIDER, since),
             ).fetchall()
@@ -124,6 +137,9 @@ class LlmUsageMixin(RunHistoryRepositoryBase):
                 "choices_present": _opt_bool(r["choices_present"]),
                 "floor_used": _opt_bool(r["floor_used"]),
                 "fallback": bool(r["fallback"]),
+                "load_ms": _opt_int(r["load_ms"]),
+                "prompt_eval_ms": _opt_int(r["prompt_eval_ms"]),
+                "eval_ms": _opt_int(r["eval_ms"]),
             }
             for r in rows
         ]

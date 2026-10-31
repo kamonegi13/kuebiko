@@ -298,6 +298,9 @@ class TestProbeRecording:
                     "done": True,
                     "prompt_eval_count": 40,
                     "eval_count": 1,
+                    "load_duration": 3_000_000,
+                    "prompt_eval_duration": 40_000_000,
+                    "eval_duration": 10_000_000,
                     "logprobs": [
                         {
                             "token": top[0][0],
@@ -334,6 +337,7 @@ class TestProbeRecording:
         assert seen[0].choices_present is True
         assert seen[0].floor_used is False
         assert seen[0].input_tokens == 40
+        assert (seen[0].load_ms, seen[0].prompt_eval_ms, seen[0].eval_ms) == (3, 40, 10)
 
     def test_one_choice_missing_uses_floor(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen = self._run(monkeypatch, [("Yes", -0.1), ("maybe", -3.0)])

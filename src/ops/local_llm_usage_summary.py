@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import math
+import statistics
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+from src.tools.ollama_timing import tokens_per_second
 
 UNSPECIFIED_STEP = "(unspecified)"
 _P90 = 0.9
 _MS_PER_SECOND = 1000.0
 _RATE_DIGITS = 4
+_SECONDS_DIGITS = 3
+_TOK_S_DIGITS = 1
 
 
 def _percentile(sorted_values: list[int], q: float) -> int:
@@ -64,6 +69,11 @@ def summarize_local_usage(rows: Iterable[Mapping[str, Any]], *, days: int) -> li
                 # logprob 経路: floor で補った率 / 選択肢が top_logprobs に無く判定できなかった率
                 "floor_used_rate": _flag_rate(ok, "floor_used"),
                 "choices_missing_rate": _missing_rate(ok),
+                # Ollama の時間の内訳 (中央値)。欠けた行は除く。測れた行が無ければ None
+                "median_load_s": _median_load_s(ok),
+                "median_prompt_tok_s": _median_rate(ok, "input_tokens", "prompt_eval_ms"),
+                "median_eval_tok_s": _median_rate(ok, "output_tokens", "eval_ms"),
+                "timing_rows": sum(1 for r in ok if r.get("eval_ms") is not None),
             }
         )
     return sorted(out, key=lambda g: (-int(g["calls"]), str(g["step"])))
@@ -88,3 +98,23 @@ def _missing_rate(rows: list[Mapping[str, Any]]) -> float | None:
         return None
     missing = sum(1 for r in probes if not r.get("choices_present") and not r.get("floor_used"))
     return round(missing / len(probes), _RATE_DIGITS)
+
+
+def _median_load_s(rows: list[Mapping[str, Any]]) -> float | None:
+    values = [int(r["load_ms"]) for r in rows if r.get("load_ms") is not None]
+    if not values:
+        return None
+    return round(statistics.median(values) / _MS_PER_SECOND, _SECONDS_DIGITS)
+
+
+def _median_rate(rows: list[Mapping[str, Any]], tokens_key: str, ms_key: str) -> float | None:
+    """tok/s の中央値 (時間かトークンが 0 以下の行は測れていないので除く)。"""
+    rates = [
+        tokens_per_second(int(r.get(tokens_key) or 0), int(r[ms_key]))
+        for r in rows
+        if r.get(ms_key) is not None
+    ]
+    valid = [x for x in rates if x is not None]
+    if not valid:
+        return None
+    return round(statistics.median(valid), _TOK_S_DIGITS)
