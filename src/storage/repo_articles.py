@@ -14,7 +14,7 @@ from src.storage.importance_level_sql import (
     order_by_level_then_recency,
     severity_relevance_sql,
 )
-from src.storage.records import ArticleRecord
+from src.storage.records import ANALYSIS_ONLY_THIN_BODY_RECOVERY, ArticleRecord
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _row_to_article, _to_iso
 
@@ -574,6 +574,86 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 (article_id,),
             ).fetchall()
         return [(str(r["entity_type"]), str(r["value"])) for r in rows]
+
+    #: 薄い本文の関門の誤落ちで extract_failed になった行の failure_reason。
+    THIN_BODY_FAILURE_REASON = "degenerate_body: thin_body"
+    #: 回収済みの印 (failure_reason)。分析専用かどうかの判定は列 ``articles.analysis_only`` が
+    #: 担う (配信・dedup・公開・PIR の朝の要点はこの列を見る)。この文字列は列を足す前に
+    #: 回収した 497 行との連続性のためだけに残す (旧経路は failure_reason で除外していた)。
+    THIN_BODY_RECOVERED_REASON = "analysis_only:thin_body_recovery"
+
+    def list_thin_body_extract_failed(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, object]]:
+        """薄い本文の関門 (thin_body) で extract_failed になった記事を article_id 単位で返す。
+
+        1 件 = {id, article_id, url, title, feed_title, feed_url, published_at, created_at,
+        body, body_source}。本文を持たない行 (取得自体の失敗) は含めない。同一 article_id が
+        複数行ある場合は最新行を採る。新しい順。判定 (今の関門を通るか) は呼び出し側。
+        """
+        sql = (
+            "SELECT id, article_id, url, title, feed_title, feed_url, "
+            "published_at, created_at, body, body_source FROM articles "
+            "WHERE status='extract_failed' AND failure_reason = ? "
+            "AND body IS NOT NULL AND body <> '' "
+        )
+        params: list[object] = [self.THIN_BODY_FAILURE_REASON]
+        if since is not None:
+            sql += "AND created_at >= ? "
+            params.append(_to_iso(since))
+        if until is not None:
+            sql += "AND created_at < ? "
+            params.append(_to_iso(until))
+        sql += "ORDER BY created_at DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        # 同一 article_id は最新行だけ (SQLite 互換のため DISTINCT ON を使わない)
+        latest: dict[str, dict[str, object]] = {}
+        for r in rows:
+            latest.setdefault(str(r["article_id"]), dict(r))
+        out = list(latest.values())
+        return out[:limit] if limit else out
+
+    def promote_recovered_thin_body(
+        self, row_id: int, *, importance: str | None, category: str | None
+    ) -> int:
+        """要約した本文の行 (articles.id) だけを 'posted' (posted_channel=NULL) へ進める。
+
+        同じ article_id の他の extract_failed 行は触らない (要約していない行を posted に
+        しない。残りは次の実行でも選定対象外: 選定は article_id ごとに最新行だけ)。
+        Discord には流していない。created_at も触らない。routing_reason は failure_reason と
+        別に 'recovered:thin_body_gate_fix' を残す。WHERE に status='extract_failed' を入れる
+        ため再実行しても二重に動かない。
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE articles SET status='posted', posted_channel=NULL, "
+                "importance=?, category=?, failure_reason=?, routing_reason=?, analysis_only=? "
+                "WHERE id=? AND status='extract_failed' AND failure_reason = ?",
+                (
+                    importance,
+                    category,
+                    self.THIN_BODY_RECOVERED_REASON,
+                    "recovered:thin_body_gate_fix",
+                    ANALYSIS_ONLY_THIN_BODY_RECOVERY,
+                    int(row_id),
+                    self.THIN_BODY_FAILURE_REASON,
+                ),
+            )
+            promoted = int(cur.rowcount or 0)
+            if promoted:
+                # 同じ article_id の要約していない行は superseded にして次回の選定から外す
+                conn.execute(
+                    "UPDATE articles SET failure_reason='superseded: thin_body_recovered' "
+                    "WHERE article_id=(SELECT article_id FROM articles WHERE id=?) "
+                    "AND id<>? AND status='extract_failed' AND failure_reason = ?",
+                    (int(row_id), int(row_id), self.THIN_BODY_FAILURE_REASON),
+                )
+            return promoted
 
     def list_articles_needing_refetch(
         self,

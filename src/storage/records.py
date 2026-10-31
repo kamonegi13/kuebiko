@@ -55,9 +55,11 @@ TriggerSource = Literal["scheduler", "manual", "cli", "recovery"]
 
 
 #: articles.analysis_only に入れる理由の SSoT (配信せず分析にだけ残した行)。
-#: geo_rescue = 地政学の救済 (GEO_RESCUE_MODE=analysis) / thin_body_recovery = 薄い本文の回収 (予約)
+#: geo_rescue = 地政学の救済 (GEO_RESCUE_MODE=analysis) /
+#: thin_body_recovery = 薄い本文の関門の誤落ちの回収
 AnalysisOnlyReason = Literal["geo_rescue", "thin_body_recovery"]
 ANALYSIS_ONLY_GEO_RESCUE: AnalysisOnlyReason = "geo_rescue"
+ANALYSIS_ONLY_THIN_BODY_RECOVERY: AnalysisOnlyReason = "thin_body_recovery"
 
 
 class RunRecord(BaseModel):
