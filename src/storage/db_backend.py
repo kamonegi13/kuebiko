@@ -457,15 +457,37 @@ def connect(
 
 
 @contextmanager
-def transaction() -> Iterator[Any]:
-    """新規 connection を開き、commit/rollback を保証する context manager。"""
-    conn = connect()
+def atomic(conn: Any) -> Iterator[Any]:
+    """``conn`` 1 本の上の複数文を 1 トランザクションにする context manager。
+
+    ``connect()`` は PG を autocommit、SQLite を ``isolation_level=None`` で開くため、
+    ``commit()`` / ``rollback()`` は効かず、明示の BEGIN が無いと各文が個別に確定する。
+    ここで BEGIN (SQLite は BEGIN IMMEDIATE) / COMMIT / ROLLBACK を発行する。
+    ブロックの文は**同じ ``conn``** で実行すること (別の接続の文は含まれない)。
+    失敗時は ROLLBACK し元の例外を送出する。ROLLBACK 自体が失敗してもログに残して
+    元の例外を優先する。入れ子は不可 (内側の BEGIN は警告になり原子性が崩れる) —
+    入れ子を許す場合は ``RunHistoryRepositoryBase.atomic`` を使う。
+    グローバルの autocommit 挙動は変えない。
+    """
+    conn.execute("BEGIN" if is_pg_enabled() else "BEGIN IMMEDIATE")
     try:
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        conn.execute("COMMIT")
+    except BaseException:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception as rollback_error:  # noqa: BLE001 — 元の例外を優先する
+            _log.error("atomic_rollback_failed", error=str(rollback_error)[:160])
         raise
+
+
+@contextmanager
+def transaction() -> Iterator[Any]:
+    """新規 connection を開き、``atomic`` で 1 トランザクションにする context manager。"""
+    conn = connect()
+    try:
+        with atomic(conn):
+            yield conn
     finally:
         conn.close()
 
@@ -487,6 +509,7 @@ def ensure_pg_schema() -> None:
 
 
 __all__ = [
+    "atomic",
     "close_pool",
     "connect",
     "ensure_pg_schema",

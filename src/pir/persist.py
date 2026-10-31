@@ -68,10 +68,13 @@ def rebuild_pir_entities(
     links = sum(len(v) for v in by_article.values())
     if not dry_run:
         # full replace: 既存 pir entity を全削除してから再投入 (idempotent な日次 rebuild)。
-        with repo_inst._connect() as conn:  # noqa: SLF001 (intra-package)
-            conn.execute("DELETE FROM article_entities WHERE entity_type='pir'")
-        for aid, pir_ids in by_article.items():
-            repo_inst.add_article_entities(aid, [("pir", pid) for pid in sorted(pir_ids)])
+        # 1 トランザクション: 読み手 (評価・KPI・画面) が 0 件/一部の PIR 対応を見ない。
+        # 途中で落ちれば旧い対応がそのまま残る。
+        with repo_inst.atomic():
+            with repo_inst._connect() as conn:  # noqa: SLF001 (intra-package)
+                conn.execute("DELETE FROM article_entities WHERE entity_type='pir'")
+            for aid, pir_ids in by_article.items():
+                repo_inst.add_article_entities(aid, [("pir", pid) for pid in sorted(pir_ids)])
 
     result = {
         "pirs": len(pirs),

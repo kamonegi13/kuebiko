@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,29 @@ _LLM_USAGE_LOCAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("floor_used", "INTEGER"),
     ("fallback", "INTEGER"),
 )
+
+
+class _SharedConnection:
+    """``atomic()`` 中に各 repo メソッドへ渡す接続の薄い被せ物。
+
+    メソッド側の ``commit()`` / ``rollback()`` / ``close()`` は外側のトランザクションを
+    壊す (SQLite の ``commit()`` は BEGIN を確定してしまう) ので無効化する。
+    """
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
 
 
 class RunHistoryRepositoryBase:
@@ -54,7 +78,31 @@ class RunHistoryRepositoryBase:
         return self._db_path
 
     @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """このブロック内の repo メソッドの書き込みを 1 接続・1 トランザクションにする。
+
+        ブロック中は同じスレッドの ``_connect()`` が同じ接続を返す (各メソッドの
+        commit/close は無効)。入れ子は外側に合流する。長い処理 (LLM 等) を挟まないこと。
+        """
+        from src.storage.db_backend import atomic as db_atomic
+
+        local = self.__dict__.setdefault("_tx_local", threading.local())
+        if getattr(local, "conn", None) is not None:
+            yield
+            return
+        with self._connect() as conn, db_atomic(conn):
+            local.conn = _SharedConnection(conn)
+            try:
+                yield
+            finally:
+                local.conn = None
+
+    @contextmanager
     def _connect(self) -> Iterator[Any]:
+        shared = getattr(self.__dict__.get("_tx_local"), "conn", None)
+        if shared is not None:
+            yield shared
+            return
         # Phase Y-3: DATABASE_URL set なら PG 接続、 未設定なら SQLite
         from src.storage.db_backend import connect as backend_connect
         from src.storage.db_backend import is_pg_enabled
