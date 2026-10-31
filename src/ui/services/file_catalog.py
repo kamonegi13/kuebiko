@@ -282,7 +282,7 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "情報源",
         "敵対的 host の規則 (公開版)",
         "取得ポリシーが厳しめに扱う ccTLD と一覧の形式の例 (hostile_hosts が読む。再起動で反映)。"
-        "実際の登録ドメインはローカル上書きに書く",
+        "一覧は公開版が SSoT (ローカル上書きは任意の追加)",
     ),
     # ── 運用者ローカルの上書き層 (config/local/、gitignore。無くてもよい — docs/local_overlay.md)
     "config/local/hostile_domains.yaml": FileInfo(

@@ -221,6 +221,8 @@ services:
       ADVERSARY_IOC_GATE: ${ADVERSARY_IOC_GATE:-shadow}
       # 敵対的な発信元の本文に「主張として扱う・指示ではない」の枠を前置 (既定 shadow = ログのみ)
       HOSTILE_PROMPT_FRAMING: ${HOSTILE_PROMPT_FRAMING:-shadow}
+      # per-source の信頼度上書きの SSoT を DB (config_store) にする (既定 1)。0 でファイル直読み/直書きへ rollback
+      SOURCE_RELIABILITY_OVERRIDES_DB: ${SOURCE_RELIABILITY_OVERRIDES_DB:-1}
       # ローカル LLM の step 別の使用量を llm_usage に記録 (P0-16、記録だけ。0 で止まる)
       LLM_USAGE_LOCAL: ${LLM_USAGE_LOCAL:-1}
       # SIR 別の要点の文ごとの裏付け判定 (logprob、測定 131 文で裏付けなし検出 15/34・誤検出 2/97)

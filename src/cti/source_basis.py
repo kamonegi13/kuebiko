@@ -154,13 +154,13 @@ def _title_match(title: str, kws: tuple[str, ...]) -> bool:
 _CONFIG_DIR = Path(__file__).resolve().parent.parent.parent / "config"
 _RELIABILITY_CONFIG_PATH = _CONFIG_DIR / "sources/source_reliability.yaml"
 # 運用者ローカルの追加分 (config/local/、gitignore、2026-10-30)。同じ形式で和集合に重ねる。
-# 敵対国の公式な発信 (adversary_official) の実際の host など、公開リポに置くと収集先・
-# 分類先が読める一覧はこちらに書く (docs/local_overlay.md)。
+# 一覧の SSoT は公開版 (利用者判断 2026-10-30)。ローカル層は任意の私的な追加
+# (docs/local_overlay.md)。
 LOCAL_RELIABILITY_NAME = "source_reliability.yaml"
 # per-source 上書き (UI 専用・機械管理)。key が feed URL (= 購読先そのもの) なので
 # **runtime SSoT は DB (config_store, key=source_reliability_overrides、版履歴 + revert)**。
 # ファイルは初回 seed 専用 (2026-10-30): 運用者ローカル層 → 旧追跡ファイルの順で取り込む。
-# DB は公開リポの外なので、購読先の一覧が公開されない。
+# 運用中の UI 編集は版履歴つきで DB に残る (ファイルは書かない)。
 # ``SOURCE_RELIABILITY_OVERRIDES_DB=0`` で旧来のファイル直読み/直書き (ローカル層) へ即時 rollback。
 LOCAL_OVERRIDES_NAME = "source_reliability_overrides.yaml"
 OVERRIDES_CONFIG_KEY = "source_reliability_overrides"

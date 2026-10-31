@@ -206,8 +206,8 @@ social:
 #    判定原則 = **国籍でなく国家統制/出資**で分類する。独立系の敵国発ソース
 #    (The Insider=反クレムリン調査報道 / NK News=独立 NK ウォッチャー 等) は **含めない**。
 #    SubscriptionsPage の tier ピッカーから随時 追加/解除できる (ここは seed)。
-#    ⚠ 2026-10-30 以降に足す host / title は config/local/source_reliability.yaml (gitignore) へ。
-#    下の既存分は公開済みのため残す (消しても公開の履歴からは消えない)。
+#    一覧は公開版 (このファイル) が SSoT (利用者判断 2026-10-30)。config/local/source_reliability.yaml
+#    (gitignore) は任意の私的な追加層で、読み手は和集合を取る。
 state_media:
   hosts:
     - rt.com
