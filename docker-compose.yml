@@ -202,6 +202,10 @@ services:
       GEOPOLITICAL_HIGH_CAP: ${GEOPOLITICAL_HIGH_CAP:-on}
       # TTP の歯止め (実在しない ID を落とす・同じ引用は 2 技術まで・12 件超は語の裏付けのある技術を優先、10-24)。保存済み 300 件で 20 件以上が 0 件・裏付けのある技術の脱落 3〜4 件
       TTP_LIMIT: ${TTP_LIMIT:-on}
+      # 取得の公平枠の feed 巡回順 (10-31、rotate=時刻で開始位置を回す / name=旧挙動 / oldest)。戻すなら .env に RSS_FAIR_ORDER=name を書き kuebiko を再作成
+      RSS_FAIR_ORDER: ${RSS_FAIR_ORDER:-rotate}
+      # triage の影の記録の 1 回あたりの件数 (0 で止める、10-31 から run の最後で回す)
+      TRIAGE_SHADOW_PER_RUN: ${TRIAGE_SHADOW_PER_RUN:-20}
       # 記事本文 (body / body_ja / linked_context) を N 日で NULL 化する日次 purge。0 = 消さない
       # (2026-10-29 の既定、本文はローカルに全て残す)。90 = 従来の GC-root つき 90 日 purge に戻す。
       BODY_PURGE_DAYS: ${BODY_PURGE_DAYS:-0}

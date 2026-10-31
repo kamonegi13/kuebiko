@@ -3455,3 +3455,132 @@ class TestRoundupExemptFromPrePostDedup:
         assert rec.duplicate_of is None
         assert rec.status == "posted"
         assert rec.posted_channel is not None
+
+
+class TestTriageShadowDeferred:
+    """triage の影の記録は記事処理・永続化の後に回す (2026-10-31)。出力は変えない。"""
+
+    def _cfg(self) -> PipelineConfig:
+        return PipelineConfig(
+            name="daily-briefing",
+            source=SourceConfig(type="rss", max_articles=10),
+            processor=ProcessorConfig(triage_enabled=True, thin_feed_triage_enabled=False),
+        )
+
+    async def _run(
+        self,
+        *,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+        name: str,
+        time_budget_seconds: float | None = None,
+    ) -> tuple[Any, int, list[tuple[Any, ...]]]:
+        from src.storage.run_history import RunHistoryRepository, RunRecord
+        from src.tools.article_triage import TriageDecision
+
+        repo = RunHistoryRepository(db_path=tmp_path / f"{name}.db")
+        run_id = repo.start_run(
+            RunRecord(
+                started_at=datetime.now(UTC),
+                pipeline="daily-briefing",
+                triggered_by="manual",
+                dry_run=False,
+                status="running",
+            ),
+        )
+        triage_llm = AsyncMock()
+        triage_llm.generate_structured = AsyncMock(
+            return_value=TriageDecision(importance="medium", reason="実害あり")
+        )
+        await run_pipeline(
+            config=app_cfg,
+            pipeline=self._cfg(),
+            source=_build_source([_article(article_id="sh-1", url="https://example.com/sh-1")]),
+            extractor=_build_extractor_with_results([_extraction_success()]),
+            llm=_build_llm_with_outputs([_summary_output(title_ja="影の記録の確認")]),
+            publishers=_build_publishers(),
+            template=template,
+            dry_run=False,
+            dedup_repo=repo,
+            run_id=run_id,
+            triage_llm=triage_llm,
+            time_budget_seconds=time_budget_seconds,
+        )
+        outputs = [
+            (r.article_id, r.status, r.posted_channel) for r in repo.list_articles(run_id=run_id)
+        ]
+        return repo, repo.summarize_triage_shadow(days=1).total, outputs
+
+    @pytest.mark.asyncio
+    async def test_shadow_runs_after_articles_are_persisted(
+        self,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange: 影の記録の呼び出し時点で DB に何があるかを捕まえる
+        monkeypatch.setenv("TRIAGE_SHADOW_PER_RUN", "20")
+        seen_at_call: dict[str, Any] = {}
+
+        async def _spy(decisions: Any, **kw: Any) -> int:
+            seen_at_call["decisions"] = [a.id for a, _i, _k in decisions]
+            seen_at_call["persisted"] = [r.article_id for r in kw["repo"].list_articles(run_id=1)]
+            return 0
+
+        monkeypatch.setattr("src.pipeline.orchestrator.run_deferred_triage_shadow", _spy)
+
+        # Act
+        await self._run(template=template, app_cfg=app_cfg, tmp_path=tmp_path, name="order")
+
+        # Assert: 影の入力は triage の判定から渡り、呼ばれた時点で記事は永続化済み
+        assert seen_at_call["decisions"] == ["sh-1"]
+        assert seen_at_call["persisted"] == ["sh-1"]
+
+    @pytest.mark.asyncio
+    async def test_output_is_unchanged_and_shadow_recorded(
+        self,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange / Act: 影の記録あり (既定 20) と無し (0) で同じ入力を流す
+        monkeypatch.setenv("TRIAGE_SHADOW_PER_RUN", "0")
+        _r0, total_off, out_off = await self._run(
+            template=template, app_cfg=app_cfg, tmp_path=tmp_path, name="off"
+        )
+        monkeypatch.setenv("TRIAGE_SHADOW_PER_RUN", "20")
+        _r1, total_on, out_on = await self._run(
+            template=template, app_cfg=app_cfg, tmp_path=tmp_path, name="on"
+        )
+
+        # Assert: 配信・保存の出力は同じ。影の記録は有効時だけ 1 行
+        assert out_on == out_off
+        assert out_on and out_on[0][1] == "posted"
+        assert (total_off, total_on) == (0, 1)
+
+    @pytest.mark.asyncio
+    async def test_shadow_is_skipped_when_budget_is_low(
+        self,
+        template: jinja2.Template,
+        app_cfg: Any,
+        tmp_path: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange: 親の timeout までの残りが余白 (60 秒) + 下限 (30 秒) に満たない
+        monkeypatch.setenv("TRIAGE_SHADOW_PER_RUN", "20")
+
+        # Act
+        _repo, total, outputs = await self._run(
+            template=template,
+            app_cfg=app_cfg,
+            tmp_path=tmp_path,
+            name="low",
+            time_budget_seconds=70.0,
+        )
+
+        # Assert: 影の記録は飛ばされるが、本番の出力は変わらない
+        assert total == 0
+        assert outputs and outputs[0][1] == "posted"

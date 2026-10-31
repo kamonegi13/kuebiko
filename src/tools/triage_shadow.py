@@ -131,6 +131,7 @@ async def run_triage_shadow(
     think: bool = False,
     relevance_embedder: EmbeddingClient | None = None,
     relevance_cascade_llm: LLMClient | None = None,
+    budget_seconds: float | None = None,
 ) -> list[TriageShadowRow]:
     """最大 N 件を平たい triage + 取り込みヒントで判定し直し、影子記録を組み立てる。
 
@@ -141,6 +142,9 @@ async def run_triage_shadow(
     ``relevance_embedder`` / ``relevance_cascade_llm`` (M4、2026-10-08): 指定時のみ
     日本関連性 ML カスケード (案 D) を併走し ``jp_prob`` / ``jp_ml_fired`` / ``jp_cascade`` /
     ``new_kept_v2`` を記録する。未指定・モデル不在ならこれらは ``None`` (従来挙動と同じ)。
+
+    ``budget_seconds`` (2026-10-31): 時間予算の上書き (未指定は環境変数 → 既定 180 秒)。
+    run 末尾へ後ろ倒しした呼び出し側が、親の timeout までの残り時間で絞るために使う。
     """
     n = shadow_sample_size()
     if n <= 0 or not decisions:
@@ -148,7 +152,7 @@ async def run_triage_shadow(
 
     targets = list(decisions)[:n]
     triage = ArticleTriage(llm, think=think)
-    budget = _budget_seconds()
+    budget = budget_seconds if budget_seconds is not None else _budget_seconds()
     start = time.monotonic()
     sem = asyncio.Semaphore(_CONCURRENCY)
     jp_model = load_relevance_jp_model() if relevance_embedder is not None else None

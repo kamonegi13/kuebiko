@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -411,3 +411,107 @@ class TestFetchOneFeedEscalation:
             result = await _fetch_one_feed(client, feed, user_agent="kuebiko/1.0 (+test)")
         assert result.error is not None and "404" in result.error
         assert len(ua_log) == 1  # 404 は UA の問題ではないのでエスカレーションしない
+
+
+class TestFairFeedOrder:
+    """公平枠の feed 巡回順 (RSS_FAIR_ORDER)。未見 feed 数 > max_count でも末尾が飢餓しない。"""
+
+    _FEED_COUNT = 12
+    _MAX_COUNT = 5
+    _ITEMS_PER_FEED = 3
+
+    def _source(self) -> DirectRssSource:
+        return DirectRssSource(feeds=[], seen_hash_filter=lambda h: set())
+
+    def _pool(self) -> list[Article]:
+        return [
+            _art(f"feed{i:02d}", f"s{j}", days_ago=1 + j + i * 0.01)
+            for i in range(self._FEED_COUNT)
+            for j in range(self._ITEMS_PER_FEED)
+        ]
+
+    def _hour(self, k: int) -> datetime:
+        return datetime(2026, 10, 31, tzinfo=UTC) + timedelta(hours=k)
+
+    def test_no_feed_starves_across_simulated_runs(self) -> None:
+        source = self._source()
+        selected_feeds: set[str] = set()
+        runs = -(-self._FEED_COUNT // self._MAX_COUNT)  # ceil
+        for k in range(runs):
+            picked, _ = source._select_unseen_fair(
+                self._pool(), self._MAX_COUNT, now=self._hour(k), order_mode="rotate"
+            )
+            selected_feeds |= {a.feed_title for a in picked}
+        assert len(selected_feeds) == self._FEED_COUNT
+
+    def test_name_mode_reproduces_starvation(self) -> None:
+        source = self._source()
+        picked_feeds: set[str] = set()
+        for k in range(10):
+            picked, _ = source._select_unseen_fair(
+                self._pool(), self._MAX_COUNT, now=self._hour(k), order_mode="name"
+            )
+            picked_feeds |= {a.feed_title for a in picked}
+        assert len(picked_feeds) == self._MAX_COUNT
+
+    @pytest.mark.parametrize("mode", ["rotate", "oldest", "name"])
+    def test_selection_is_deterministic(self, mode: str) -> None:
+        source = self._source()
+        now = self._hour(7)
+        first, _ = source._select_unseen_fair(
+            self._pool(), self._MAX_COUNT, now=now, order_mode=mode
+        )
+        second, _ = source._select_unseen_fair(
+            list(reversed(self._pool())), self._MAX_COUNT, now=now, order_mode=mode
+        )
+        assert [a.id for a in first] == [a.id for a in second]
+
+    @pytest.mark.parametrize("mode", ["rotate", "oldest", "name"])
+    def test_max_count_respected_and_newest_first_within_feed(self, mode: str) -> None:
+        source = self._source()
+        # 1 feed に未見が多数あっても、1 周目は各 feed 最新 1 件 (feed 内は新しい順)
+        picked, _ = source._select_unseen_fair(
+            self._pool(), self._MAX_COUNT, now=self._hour(3), order_mode=mode
+        )
+        assert len(picked) == self._MAX_COUNT
+        assert all(a.id.endswith(":s0") for a in picked)  # 各 feed の最新 (s0) だけ
+
+    def test_wide_cap_takes_per_feed_newest_before_older(self) -> None:
+        source = self._source()
+        cap = self._FEED_COUNT + 2
+        picked, _ = source._select_unseen_fair(
+            self._pool(), cap, now=self._hour(0), order_mode="rotate"
+        )
+        by_feed: dict[str, list[str]] = {}
+        for a in picked:
+            by_feed.setdefault(a.feed_title, []).append(a.id.rsplit(":", 1)[1])
+        assert all("s0" in v for v in by_feed.values())
+        assert sum(len(v) for v in by_feed.values()) == cap
+
+    def test_oldest_mode_puts_feed_with_oldest_unseen_first(self) -> None:
+        source = self._source()
+        pool = [_art("zzz", "old", days_ago=12)] + [
+            _art(f"a{i}", "x", days_ago=1) for i in range(6)
+        ]
+        picked, _ = source._select_unseen_fair(pool, 3, now=self._hour(0), order_mode="oldest")
+        assert "zzz" in {a.feed_title for a in picked}
+
+    def test_env_flag_selects_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.tools.direct_rss_source import fair_order_from_env
+
+        monkeypatch.delenv("RSS_FAIR_ORDER", raising=False)
+        assert fair_order_from_env() == "rotate"
+        monkeypatch.setenv("RSS_FAIR_ORDER", "name")
+        assert fair_order_from_env() == "name"
+        monkeypatch.setenv("RSS_FAIR_ORDER", "bogus")
+        assert fair_order_from_env() == "rotate"
+
+
+def test_rotate_reaches_every_feed_when_gcd_is_large() -> None:
+    """n=60・max=45 (gcd 15) でも毎時 ceil(n/max) 回の窓で全 feed に届く (10-31 レビュー)。"""
+    n, m = 60, 45
+    reached: set[int] = set()
+    for hour in range(2):
+        start = (hour * m) % n
+        reached.update((start + i) % n for i in range(m))
+    assert reached == set(range(n))

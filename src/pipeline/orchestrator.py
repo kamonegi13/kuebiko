@@ -64,6 +64,10 @@ from src.pipeline.publish import _print_dry_run, _resolve_channel
 from src.pipeline.result import PipelineRunResult
 from src.pipeline.roundup_guard import involves_roundup, kind_classifier
 from src.pipeline.summary import DiscordChannel
+from src.pipeline.triage_shadow_deferred import (
+    remaining_budget_seconds,
+    run_deferred_triage_shadow,
+)
 from src.storage.records import ANALYSIS_ONLY_GEO_RESCUE
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
@@ -452,6 +456,16 @@ async def run_pipeline(
     # 時間予算 → soft deadline (詳細はモジュール先頭コメント)。予算未指定なら無効。
     soft_deadline = _compute_soft_deadline(time_budget_seconds)
     deferred_count = 0
+    # 親の timeout (time_budget_seconds) までの期限。影の記録を末尾へ後ろ倒しした分の
+    # 残り時間の計算に使う (予算未指定なら None = 無制限、影の記録自身の上限だけが効く)。
+    hard_deadline = (
+        time.monotonic() + time_budget_seconds
+        if time_budget_seconds is not None and time_budget_seconds > 0
+        else None
+    )
+    # triage の影の記録の入力 (判定を終えたあとに末尾で回す、2026-10-31)
+    triage_shadow_pending: list[tuple[Article, str, bool]] = []
+    effective_triage_llm: LLMClient | None = None
 
     # 1. 記事取得 (source 種別に依存しない)
     try:
@@ -626,7 +640,7 @@ async def run_pipeline(
             skipped_triage_ids,
             triage_error_count,
             rejected_triage,
-            shadow_triage,
+            _shadow_inline,
         ) = await _filter_by_triage(
             articles,
             effective_triage_llm,
@@ -638,16 +652,13 @@ async def run_pipeline(
             relevance_cascade_llm=relevance_jp_cascade_llm,
             analysis_only_out=analysis_only_ids,
             geo_shadow_out=geo_shadow_candidates,
+            shadow_defer_out=triage_shadow_pending,
         )
         if not dry_run and dedup_repo is not None and geo_shadow_candidates:
             _record_geo_rescue_pending(geo_shadow_candidates, repo=dedup_repo)
-        # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。triage_rejections
-        # と同じ dry-run gate (手動プレビューで go/no-go の集計を汚さない)。
-        if not dry_run and dedup_repo is not None and shadow_triage:
-            try:
-                dedup_repo.record_triage_shadow(shadow_triage)
-            except Exception as e:  # noqa: BLE001
-                _log.warning("triage_shadow_record_failed", error=str(e)[:200])
+        # M4 影子記録 (2026-10-08): 本番判定・配信には影響しない記録のみ。2026-10-31 から
+        # 影の LLM 呼び出しと保存は run 末尾 (記事処理・永続化の後) で回す
+        # (``run_deferred_triage_shadow``。dry-run・repo 無しでは回さない)。
         skipped_for_mark_read.extend(skipped_triage_ids)
         # 評価済み・不採用 (importance 不足) は URL 既読化する — 「既読」の状態機械に
         # 欠けていた終端状態 (2026-07-12 根治)。旧経路の「skip→既読化」が Phase X-1
@@ -1490,5 +1501,18 @@ async def run_pipeline(
                 "synthesis_auto_trigger_unexpected_error",
                 error=f"{type(e).__name__}: {e}",
             )
+
+    # triage の影の記録 (2026-10-31): 出力に効かないので最後に回す。残り時間が少なければ飛ばす
+    if not dry_run and triage_shadow_pending and effective_triage_llm is not None:
+        await run_deferred_triage_shadow(
+            triage_shadow_pending,
+            llm=effective_triage_llm,
+            keep_importance=set(pipeline.processor.triage_keep_importance),
+            think=pipeline.processor.think_enabled,
+            relevance_embedder=embedder,
+            relevance_cascade_llm=relevance_jp_cascade_llm,
+            repo=dedup_repo,
+            remaining_seconds=remaining_budget_seconds(hard_deadline),
+        )
 
     return result

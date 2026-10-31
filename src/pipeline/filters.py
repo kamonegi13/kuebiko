@@ -188,6 +188,7 @@ async def _filter_by_triage(
     relevance_cascade_llm: LLMClient | None = None,
     analysis_only_out: set[str] | None = None,
     geo_shadow_out: list[GeoRescueCandidate] | None = None,
+    shadow_defer_out: list[tuple[Article, str, bool]] | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -327,14 +328,20 @@ async def _filter_by_triage(
     # M4 影子記録 (2026-10-08): 現行判定 (importance in keep_importance、max_keep の
     # 枠あふれは数えない) と平たい triage + 取り込みヒントを並べて記録する安全網。
     # TRIAGE_SHADOW_PER_RUN=0 または対象無しなら no-op (shadow_rows=[])。
+    # ``shadow_defer_out`` を渡されたら (2026-10-31) 判定の入力だけ渡して**ここでは回さない**:
+    # 影の LLM 呼び出し (約 28 秒/run) は出力に効かないので、記事処理と永続化の後ろへ
+    # 呼び出し側が回す (``pipeline.triage_shadow_deferred``)。
     shadow_rows: list[TriageShadowRow] = []
+    shadow_decisions = [
+        (article, importance, importance in keep_importance)
+        for article, importance, _err, _reason in decisions
+    ]
+    if shadow_defer_out is not None:
+        shadow_defer_out.extend(shadow_decisions)
+        return survivors, len(skipped_ids), skipped_ids, triage_error_count, rejected, shadow_rows
     try:
         from src.tools.triage_shadow import run_triage_shadow
 
-        shadow_decisions = [
-            (article, importance, importance in keep_importance)
-            for article, importance, _err, _reason in decisions
-        ]
         shadow_rows = await run_triage_shadow(
             shadow_decisions,
             llm=llm,
