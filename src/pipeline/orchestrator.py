@@ -100,7 +100,23 @@ KEEP_DUPLICATES_ENV = "DEDUP_KEEP_FOR_ANALYSIS"
 # なる (run 3520: backlog + LLM 低速化で 1800s kill)。子は予算から投稿/永続化/通知に
 # 使う予備を差し引いた soft deadline を持ち、記事処理ループを途中で打ち切って処理済み分
 # だけ確定させる。打ち切られた記事は既読化しない = 次 run の RSS 窓でリトライ権を保持。
-_DEADLINE_RESERVE_SECONDS = 300.0
+#
+# 予備の既定は 2026-10-31 に 300 → 150 秒へ縮めた。実測 (direct-rss-fetch、持ち時間 705 秒) で
+# ループ後の後処理 (stix・discord・永続化・通知) は p99 5 秒・最大 5 秒で、300 秒の予備のうち
+# 毎 run 約 280 秒が未使用のまま 20〜27 件の記事を繰り越していた。残る 150 秒の内訳:
+# 着手済み記事の完走 (soft deadline 超過分は p50 11 秒・p90 47 秒・p99 198 秒) +
+# 後処理 5 秒 + triage の影の記録 28 秒 + 余白。p99 の暴走は下の
+# _POST_LOOP_RESERVE_SECONDS で記事の timeout を詰めて持ち時間内に収める。
+# 09-30 の「成果の全損」は予備の長さではなく、段 (720 秒) と子の持ち時間 (1800 秒) の
+# 食い違いが原因で、9dfd9fc8 で段の締め切りを子の持ち時間に渡して解消済み。
+# env PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS で override (戻すなら 300)。
+_DEADLINE_RESERVE_SECONDS = 150.0
+_DEADLINE_RESERVE_ENV = "PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS"
+# ループの後に必ず要る時間 (後処理 5 秒 + triage の影の記録 28 秒 + 余白)。着手済みの記事は
+# 持ち時間の残りからこれを引いた時刻までしか待たない (超えたら transient で次 run へ)。
+_POST_LOOP_RESERVE_SECONDS = 90.0
+# 残りが少なくても記事の timeout がこれを下回らないようにする下限
+_MIN_ARTICLE_TIMEOUT_SECONDS = 30.0
 # 予算が予備より短い場合でも処理時間がゼロにならないための下限比率
 _MIN_PROCESSING_BUDGET_RATIO = 0.5
 
@@ -262,12 +278,38 @@ def _per_article_timeout_seconds() -> float | None:
     return _PER_ARTICLE_TIMEOUT_SECONDS_DEFAULT
 
 
+def _deadline_reserve_seconds() -> float:
+    """soft deadline の予備秒。env 未設定・不正・負は既定、0 は予備なし。"""
+    raw = os.environ.get(_DEADLINE_RESERVE_ENV, "").strip()
+    if not raw:
+        return _DEADLINE_RESERVE_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEADLINE_RESERVE_SECONDS
+    return value if value >= 0 else _DEADLINE_RESERVE_SECONDS
+
+
+def _article_timeout_within_budget(
+    base: float | None, remaining_budget: float | None
+) -> float | None:
+    """記事 1 本の timeout を、持ち時間の残りから後処理の分を引いた秒数で頭打ちにする。
+
+    予備を縮めた分、着手済みの記事が暴走しても持ち時間 (= 段の上限) を越えないための歯止め。
+    予算未指定 (remaining_budget=None) なら base のまま。
+    """
+    if remaining_budget is None:
+        return base
+    allowed = max(_MIN_ARTICLE_TIMEOUT_SECONDS, remaining_budget - _POST_LOOP_RESERVE_SECONDS)
+    return allowed if base is None else min(base, allowed)
+
+
 def _compute_soft_deadline(time_budget_seconds: float | None) -> float | None:
     """時間予算から記事処理ループの soft deadline (monotonic 秒) を計算する。"""
     if time_budget_seconds is None or time_budget_seconds <= 0:
         return None
     processing_budget = max(
-        time_budget_seconds - _DEADLINE_RESERVE_SECONDS,
+        time_budget_seconds - _deadline_reserve_seconds(),
         time_budget_seconds * _MIN_PROCESSING_BUDGET_RATIO,
     )
     return time.monotonic() + processing_budget
@@ -907,8 +949,11 @@ async def run_pipeline(
                     brief_count_24h=brief_count_24h_snapshot,
                     config=config,
                 )
-                if article_timeout is not None:
-                    briefing = await asyncio.wait_for(process_coro, timeout=article_timeout)
+                effective_timeout = _article_timeout_within_budget(
+                    article_timeout, remaining_budget_seconds(hard_deadline)
+                )
+                if effective_timeout is not None:
+                    briefing = await asyncio.wait_for(process_coro, timeout=effective_timeout)
                 else:
                     briefing = await process_coro
                 briefings.append((article.id, briefing))
