@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.assessment.context import AssessmentContext, build_assessment_context
 from src.cti.source_basis import classify_source_tier
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.pir.evaluator import evaluate_pir_matches
 from src.pir.models import Pir
 from src.spotlight.models import KeyEvent, SpotlightPeriod, SpotlightRecord
@@ -431,6 +432,13 @@ async def generate_spotlight(
         except Exception as e:  # noqa: BLE001
             _log.warning("spotlight_graph_context_failed", pir_id=pir.id, error=str(e))
 
+    record_generation_input(
+        step="pir_spotlight",
+        model=llm.model,
+        product_kind="spotlight",
+        product_id=f"{pir.id}:{period_type}:{start.isoformat()}",
+        prompt_text=prompt,
+    )
     _log.info(
         "spotlight_llm_call_start",
         pir_id=pir.id,

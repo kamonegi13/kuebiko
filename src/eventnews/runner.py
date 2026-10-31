@@ -39,6 +39,7 @@ from src.eventnews.models import (
 )
 from src.eventnews.tail_gate import looks_truncated, tail_all_empty
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.storage.repo_eventnews import EventNewsMixin
 from src.tools.identifier_catalog import IdentifierCatalog
 from src.tools.llm_client import LLMClient, LLMError
@@ -449,6 +450,14 @@ async def _generate_version(
         dropped_lines=gate.dropped_lines,
         repaired_ids=gate.repaired_ids,
         prompt_text=prompt_text,
+    )
+    record_generation_input(
+        step="eventnews",
+        model=llm.model,
+        product_kind="eventnews",
+        product_id=f"{item.snapshot.item_id}:v{version}",
+        prompt_text=prompt_text,
+        repo=repo,
     )
     if rejected_json is not None:
         # ⭐ 関門に落ちた草稿と書き直し理由を捨てない (2026-09-03)。同じ入力の

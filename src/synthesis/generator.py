@@ -24,6 +24,7 @@ import jinja2
 from src.assessment.context import build_assessment_context
 from src.digest.trend_aggregator import aggregate_trends
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.storage.run_history import StatusSynthesisRecord
 from src.tools.llm_client import LLMClient, LLMResponse
 from src.ui.services.intel_graph_analytics import (
@@ -671,6 +672,13 @@ async def generate_synthesis(
         nation_window_days=nation_window_days,
         freshness=assessment.freshness,
         previous_synthesis=previous_synthesis,
+    )
+    record_generation_input(
+        step="synthesis_narrative",
+        model=llm.model,
+        product_kind="synthesis",
+        product_id=f"{period_type}:{start.isoformat()}",
+        prompt_text=prompt,
     )
     _log.info(
         "synthesis_llm_request",

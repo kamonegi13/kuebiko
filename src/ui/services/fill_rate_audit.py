@@ -454,6 +454,15 @@ METRICS: tuple[FillMetric, ...] = (
         " AND substr(u.ts, 1, 10) = substr(a.created_at, 1, 10))",
         None,
     ),
+    # 生成物の入力 (P0-18、2026-10-31)。消費者は local-summary の generation_inputs (件数)。
+    # 監視対象は完全な沈黙 (その日 prompt が 1 件でも記録されたか)。本文は持ち出さない
+    FillMetric(
+        "generation_inputs",
+        "生成物の入力の記録",
+        "EXISTS (SELECT 1 FROM generation_inputs g"
+        " WHERE substr(g.recorded_at, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
 )
 
 # heartbeat 用の番兵 (今回の H1/H2 と同型の沈黙断線を 1 日で露見させる)

@@ -1261,6 +1261,23 @@ CREATE TABLE IF NOT EXISTS dedup_semantic_skips (
 );
 CREATE INDEX IF NOT EXISTS idx_dedup_semantic_skips_ts ON dedup_semantic_skips(ts);
 CREATE INDEX IF NOT EXISTS idx_event_pair_shadow_observed ON event_pair_shadow(observed_at);
+
+-- 生成物の入力 (P0-18): prompt 本文を含む。ローカル専用・年齢による削除はしない。
+CREATE TABLE IF NOT EXISTS generation_inputs (
+    id            BIGSERIAL PRIMARY KEY,
+    recorded_at   TEXT NOT NULL,
+    step          TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    product_kind  TEXT NOT NULL,
+    product_id    TEXT NOT NULL,
+    prompt_sha256 TEXT NOT NULL,
+    prompt_chars  INTEGER NOT NULL,
+    prompt_text   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_generation_inputs_product
+    ON generation_inputs(product_kind, product_id);
+CREATE INDEX IF NOT EXISTS idx_generation_inputs_recorded
+    ON generation_inputs(recorded_at);
 """
 
 
