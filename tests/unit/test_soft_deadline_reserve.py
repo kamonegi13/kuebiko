@@ -81,3 +81,30 @@ async def test_in_flight_article_finishes_before_hard_limit() -> None:
     finished_at = (began - start) + (time.monotonic() - began)
     post_loop = orch._POST_LOOP_RESERVE_SECONDS * scale
     assert soft_at + finished_at <= hard_limit - post_loop + 0.05
+
+
+@pytest.mark.parametrize("source_type", ["grok_email", "web_scraper_cluster"])
+def test_non_rss_sources_keep_legacy_300s_reserve(
+    monkeypatch: pytest.MonkeyPatch, source_type: str
+) -> None:
+    # env で予備を縮めても rss 以外は 300 秒のまま (Grok は 1 投稿約 230 秒・投稿単位の timeout 無し)
+    monkeypatch.setenv(orch._DEADLINE_RESERVE_ENV, "150")
+    before = time.monotonic()
+    deadline = orch._compute_soft_deadline(1185.0, source_type)
+    assert deadline is not None
+    assert deadline - before == pytest.approx(885.0, abs=1.0)
+
+
+def test_rss_source_uses_short_reserve(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(orch._DEADLINE_RESERVE_ENV, raising=False)
+    before = time.monotonic()
+    deadline = orch._compute_soft_deadline(705.0, "rss")
+    assert deadline is not None
+    assert deadline - before == pytest.approx(555.0, abs=1.0)
+
+
+def test_budget_cap_flag_off_keeps_base_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(orch._ARTICLE_TIMEOUT_BUDGET_CAP_ENV, "0")
+    assert orch._article_timeout_within_budget(600.0, 150.0) == 600.0
+    monkeypatch.setenv(orch._ARTICLE_TIMEOUT_BUDGET_CAP_ENV, "1")
+    assert orch._article_timeout_within_budget(600.0, 150.0) == 60.0
