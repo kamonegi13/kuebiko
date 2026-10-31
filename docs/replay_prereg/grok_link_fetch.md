@@ -129,7 +129,7 @@ WHERE posted_at >= '2026-10-24 15:00+00'      -- 2026-10-25 00:00 JST
   を当て直し、`skip_reason` が保存と一致することを生成の前に確かめる (一致しなければ §6.4 の無効)
 - プロンプト: 本番の `dispatch._load_template()` (DB の `summarizer_rubric` から合成した版、失敗時は legacy .j2) を
   `article` = 題を `NO_TITLE_SENTINEL` にした記事 (`has_title=False`、Grok の本番と同じ)、`body = prompt_body` で
-  `render` したもの。テンプレートが参照する記事の欄は題だけ。合成した版の `summarizer_rubric` の版番号 (作成時点 7) と
+  `render` したもの。テンプレートが参照する記事の欄は題と `feed_title` (`prompts/briefing/summarizer.j2:9`、Grok の本番では `"{author_name} ({handle})"` または handle — `grok_convert.py`)。`feed_title` は畳んだ行の値をそのまま渡す (両腕で同じ)。合成した版の `summarizer_rubric` の版番号 (作成時点 7) と
   描画前のテンプレートの sha256 を manifest に残す
 - 呼び出し: `_summarize_without_runaway` (暴走時の作り直し 1 回を含む本番の関数) → `_ensure_grounded_summary`
   (`GROK_SUMMARY_GROUNDING=shadow` に固定。照合範囲はその腕の `prompt_body`。違反は記録だけで出力を変えない)
@@ -250,3 +250,4 @@ WHERE posted_at >= '2026-10-24 15:00+00'      -- 2026-10-25 00:00 JST
 ## 10. 変更履歴
 
 - 2026-10-31 下書き (標本・要約・判定は未作成)
+- 2026-11-01 (結果を見る前・標本の選び出しの前): §5.1 の「テンプレートが参照する記事の欄は題だけ」は誤り。テンプレートは `feed_title` も描画する (道具の独立レビューで判明、道具は `feed_title="probe"` 固定で本番と違う prompt になっていた)。`feed_title` は畳んだ行の値を両腕で同じに渡すと訂正。腕の違い (リンクの有無だけ) と合否の線は不変
