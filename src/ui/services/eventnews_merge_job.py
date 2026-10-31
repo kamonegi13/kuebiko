@@ -66,7 +66,6 @@ from src.ui.services.eventnews_focus_job import (
     build_link_veto,
     enrich_decision_rows,
     focus_gate_mode,
-    load_org_alias,
     run_focus_record,
 )
 from src.ui.services.eventnews_hourly_job import (
@@ -78,6 +77,7 @@ from src.ui.services.eventnews_hourly_job import (
     regenerate_pending,
 )
 from src.ui.services.eventnews_merge_decisions import RUN_KIND_HOURLY, build_decision_rows
+from src.ui.services.eventnews_org_alias import load_org_alias
 
 _log = get_logger(__name__)
 

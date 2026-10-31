@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from src.storage.repo_base import RunHistoryRepositoryBase
@@ -67,3 +68,27 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
                 (form, float(min_logit)),
             ).fetchall()
         return [(str(r["key_a"]), str(r["key_b"])) for r in rows]
+
+    def load_org_alias_dict(self) -> dict[str, str]:
+        """別名辞書 (org_alias_dict) の写像 (照合キー → 代表キー)。"""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT alias_key, canonical_key FROM org_alias_dict").fetchall()
+        return {str(r["alias_key"]): str(r["canonical_key"]) for r in rows}
+
+    def replace_org_alias_dict(self, mapping: Mapping[str, str], *, source: str) -> int:
+        """``source`` の行を ``mapping`` に置き換える (他の source の行は触らない)。
+
+        1 トランザクションで消して入れ直す。戻り値は書いた行数。
+        """
+        ts = _to_iso(datetime.now(UTC))
+        with self._connect() as conn:
+            conn.execute("DELETE FROM org_alias_dict WHERE source = ?", (source,))
+            for alias_key, canonical_key in mapping.items():
+                conn.execute(
+                    "INSERT INTO org_alias_dict (alias_key, canonical_key, source, updated_at)"
+                    " VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(alias_key) DO UPDATE SET canonical_key = excluded.canonical_key,"
+                    " source = excluded.source, updated_at = excluded.updated_at",
+                    (alias_key[:_KEY_MAX], canonical_key[:_KEY_MAX], source, ts),
+                )
+        return len(mapping)

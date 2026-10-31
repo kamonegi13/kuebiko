@@ -415,6 +415,16 @@ METRICS: tuple[FillMetric, ...] = (
         " AND g.status = 'ok' AND COALESCE(g.input_text, '') <> '')",
         None,
     ),
+    # 被害組織名の別名辞書 (2026-10-31 ORG-D-IMPL、EVENTNEWS_ORG_ALIAS_SOURCE=dict の読み先)。
+    # 辞書は scripts/build_org_alias_dict.py で作る静的な表なので日次の書き込みは無い —
+    # 「表が空でない日」を日の代理にする (満たす/満たさないは全日同じ)。消費者は統合の焦点の関門
+    # と毎時の群化 (eventnews_org_alias.load_org_alias)。既定 pairs の間・未構築の間は 0% が正常
+    FillMetric(
+        "org_alias_dict",
+        "被害組織名の別名辞書",
+        "EXISTS (SELECT 1 FROM org_alias_dict d)",
+        None,
+    ),
     # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
     # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
     # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常

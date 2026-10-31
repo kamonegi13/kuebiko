@@ -18,6 +18,7 @@ from src.eventnews.models import ItemState, MemberArticle
 from src.logging_config import get_logger
 from src.storage.repo_org_identity import FORM_VERSION
 from src.storage.run_history import RunHistoryRepository
+from src.ui.services.eventnews_org_alias import SOURCE_DICT, load_org_alias, org_alias_source
 
 _log = get_logger(__name__)
 
@@ -62,6 +63,24 @@ def _victim_names(repo: RunHistoryRepository, article_ids: Sequence[str]) -> dic
     return names
 
 
+def _apply_dict_alias(
+    repo: RunHistoryRepository,
+    candidates: Sequence[MemberArticle],
+    existing: Existing,
+    mode: str,
+    unchanged: tuple[list[MemberArticle], list[tuple[ItemState, list[MemberArticle]]]],
+) -> tuple[list[MemberArticle], list[tuple[ItemState, list[MemberArticle]]]]:
+    """``EVENTNEWS_ORG_ALIAS_SOURCE=dict``: 辞書の写像だけで畳む (新しい LLM 判定はしない)。
+
+    判定は辞書を作る側 (scripts/build_org_alias_dict.py) の仕事。shadow は従来どおり畳まない。
+    """
+    alias = oi.AliasMap(load_org_alias(repo))
+    _log.info("org_identity_dict", mode=mode, alias_keys=len(alias.mapping))
+    if mode == "shadow" or not alias:
+        return unchanged
+    return oi.apply_alias(candidates, existing, alias)
+
+
 async def resolve_org_identity(
     repo: RunHistoryRepository,
     config: AppConfig,
@@ -80,6 +99,8 @@ async def resolve_org_identity(
     if not org_norm_enabled():
         _log.warning("org_identity_needs_org_norm")  # 照合キーの作り方がずれるので何もしない
         return unchanged
+    if org_alias_source() == SOURCE_DICT:
+        return _apply_dict_alias(repo, candidates, existing, mode, unchanged)
     try:
         members = [m for _, ms in existing for m in ms]
         pool_ids = list({a.article_id for a in (*candidates, *members)})

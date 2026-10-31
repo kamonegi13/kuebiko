@@ -34,7 +34,6 @@ from src.eventnews.identity.focus import (
 )
 from src.eventnews.merge import LinkVerdict
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
-from src.eventnews.org_identity import build_alias_map
 from src.logging_config import get_logger
 from src.storage.repo_event_focus import StoredFocus
 from src.storage.repo_merge_decisions import MergeDecisionRow
@@ -78,18 +77,6 @@ def focus_gate_mode() -> str:
     if raw in ("off", "0", "false"):
         return GATE_OFF
     return GATE_SHADOW
-
-
-def load_org_alias(repo: RunHistoryRepository) -> dict[str, str]:
-    """被害組織の別名判定 (shadow の「同一」) の写像。conflict を消す方向だけに使う。
-
-    読めなくても照合は動く (別名なし = conflict が少し多めに出る側) ので、失敗は警告で続行する。
-    """
-    try:
-        return dict(build_alias_map(repo.list_org_identity_same_pairs()).mapping)
-    except Exception as e:  # noqa: BLE001 — 補助。別名が無くても照合は成り立つ
-        _log.warning("eventnews_focus_org_alias_failed", error=str(e)[:160])
-        return {}
 
 
 def build_link_veto(

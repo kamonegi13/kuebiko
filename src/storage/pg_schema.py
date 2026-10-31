@@ -833,6 +833,14 @@ CREATE TABLE IF NOT EXISTS org_identity_pairs (
     PRIMARY KEY (key_a, key_b, form)
 );
 
+-- 被害組織名の別名辞書 (2026-10-31、ORG-D-IMPL、SQLite _SCHEMA と対)。詳細は schema_sql.py の同表。
+CREATE TABLE IF NOT EXISTS org_alias_dict (
+    alias_key     TEXT NOT NULL PRIMARY KEY,
+    canonical_key TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
 -- triage 影子記録 (2026-10-08、M4、SQLite _SCHEMA と対)。詳細コメントは schema_sql.py の同表。
 CREATE TABLE IF NOT EXISTS triage_shadow (
     id                  BIGSERIAL PRIMARY KEY,
