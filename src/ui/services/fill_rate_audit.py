@@ -372,16 +372,6 @@ METRICS: tuple[FillMetric, ...] = (
         "EXISTS (SELECT 1 FROM triage_shadow s WHERE s.article_id = a.article_id)",
         None,
     ),
-    # 重複 alert の ML の影の記録 (2026-10-11、R1h)。alert で posted になった記事のうち
-    # 先行 alert が見つかった分にだけ付く (被覆率そのものは低くて正常)。監視対象は
-    # **完全な沈黙** (記録の経路が断線したこと)。
-    FillMetric(
-        "alert_dedup_shadow",
-        "重複alert影の記録",
-        "EXISTS (SELECT 1 FROM alert_dedup_shadow s WHERE s.article_id = a.article_id)",
-        None,
-        population="a.posted_channel = 'alert'",
-    ),
     # Discord に投稿した本文の保存 (2026-10-22)。daily_briefs.discord_text は記事単位の
     # 列ではないので「その日 (UTC) に本文つきのブリーフが保存されたか」を日の代理にする。
     # 消費者は GET /api/v1/daily-briefs (discord_text)。監視対象は**完全な沈黙**
