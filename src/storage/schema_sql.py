@@ -815,6 +815,12 @@ CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_created_at ON geo_rescue_shadow(created_at);
 CREATE INDEX IF NOT EXISTS idx_geo_rescue_shadow_status ON geo_rescue_shadow(status, created_at);
+-- 記事ごとに 1 行 (2026-10-31)。繰り越した救済の候補が毎時 pending で積み増されていたため、
+-- 既存の重複は**最も古い行 (最小 id) を残して**後ろを削除し (idempotent。重複が無ければ 0 件)、
+-- そのうえで一意制約を張る。書き込み側は ON CONFLICT DO NOTHING (record_geo_rescue_shadow)。
+DELETE FROM geo_rescue_shadow
+ WHERE id NOT IN (SELECT MIN(id) FROM geo_rescue_shadow GROUP BY article_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_rescue_shadow_article ON geo_rescue_shadow(article_id);
 
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
