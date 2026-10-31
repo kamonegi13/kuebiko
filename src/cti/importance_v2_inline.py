@@ -1,7 +1,10 @@
 """M3b 段1: routing 時点 (``_build_briefing``) で ``ImportanceV2`` を即座に導く (2026-10-10)。
 
-本番の投稿先は変えない — ``src/cti/routing_v2.py`` の ``M3B_RULES`` を使った shadow 記録
-(``routing_v2_shadow``) 専用の材料を作る。
+ここで作る ``ImportanceV2`` (severity / jp / relevant) は shadow 専用ではなく配信の入力:
+``_build_briefing`` → ``decide_channel`` → ``_enrich_signals_v2`` → ``build_importance_v2_inline``
+で ``signals.severity`` に入り、V2 の alert/vuln の規則 (S3) が使う。``ROUTING_V2_INLINE_AXES=0``
+だと配信の時点で軸が付かず、alert/vuln の S3 が出なくなる。止まるのはこの先取りの LLM 呼び出し
+と ``M3B_RULES`` の ``routing_v2_shadow`` 記録の材料 (``src/cti/routing_v2.py``) の両方。
 
 深刻度の軸 (``src/cti/severity_axes.py``) はこの段で LLM を呼んで先取りする (毎時の段
 ``src/ui/services/severity_axes_job.py`` の前倒し)。対象は毎時の段と同じ importance 帯
@@ -12,7 +15,7 @@ importance 自体は毎時の段の絞り込みと同一の帯を使う) に加�
 毎時の段 (``severity_axes_job.py``) 自体はカテゴリで絞っていない (posted + importance
 high/medium のみ) が、ここでの追加のカテゴリ絞りは inline 版だけが支払う LLM コストを
 減らすための最適化であり、対象記事の集合を変えるものではない (非サイバーの記事は
-どのみち軸があっても severity=None になるので、shadow の結果は変わらない)。
+どのみち軸があっても severity=None になるので、結果は変わらない)。
 """
 
 from __future__ import annotations
