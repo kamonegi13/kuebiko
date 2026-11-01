@@ -378,3 +378,40 @@ def test_explicit_small_org_count_still_flags_for_b2() -> None:
         "confirmed_by": "被害者",
     }
     assert flags_consistency(j, null_count_as_lt2=False) == ("ii",)
+
+
+def test_second_pass_grouping_does_not_depend_on_response_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """1 回目の結果の dict の順 (= Opus の応答が返った順) が違っても、2 回目の組み分けは同じ。"""
+    import scripts.s26_imp.protocol as proto
+
+    items = [{"id": f"id{k}", "title": f"t{k}", "feed": "f", "body": "b"} for k in range(12)]
+    verdict = {
+        "importance": "high",
+        "criterion": "high-2",
+        "reason": "r",
+        "confirmed_victim_orgs": 3,
+        "confirmed_by": "被害者",
+        "article_form": "分析",
+    }
+
+    def run(reverse: bool) -> list[list[str]]:
+        seen: list[list[str]] = []
+
+        async def fake_judge_items(groups, *, pass_no, judge, verdict_attr="items"):  # type: ignore[no-untyped-def]
+            flat = [it["id"] for g in groups for it in g]
+            if pass_no == 2:
+                seen.extend([[it["id"] for it in g] for g in groups])
+            order = list(reversed(flat)) if reverse else flat
+            # 3 件目ごとだけ 2 回目に回る (needs_second_pass が一部だけ当たる)
+            return {
+                i: {**verdict, "criterion": "high-2" if int(i[2:]) % 3 == 0 else "high-1"}
+                for i in order
+            }, []
+
+        monkeypatch.setattr(proto, "judge_items", fake_judge_items)
+        asyncio.run(proto.run_teacher_protocol(items, lambda *_a: None))
+        return seen
+
+    assert run(False) == run(True)
