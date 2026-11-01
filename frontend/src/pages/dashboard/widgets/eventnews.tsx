@@ -130,9 +130,10 @@ export function EventNewsWidget({ config, mobile }: WidgetProps) {
       {isError ? <WidgetError /> : !data ? <Loading /> : items.length === 0 ? (
         <Empty>まだ事象がありません。</Empty>
       ) : (
-        <ul className="space-y-2">
+        // 区切り線と余白は記事フィード (articles.tsx) と揃える (11-02 利用者指摘)
+        <ul className="divide-y divide-border-subtle">
           {items.map((it) => (
-            <li key={it.id} className="leading-snug">
+            <li key={it.id} className="py-2.5 first:pt-0 leading-snug">
               <button
                 onClick={() => setOpenId(it.id)}
                 className="block w-full text-left text-[14.5px] font-semibold leading-[1.55] text-fg hover:text-accent hover:underline"
