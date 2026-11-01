@@ -38,8 +38,13 @@ def high_criteria_numbers(criterion: str) -> set[int]:
     return {int(m) for m in _HIGH_TOKEN.findall(criterion or "")}
 
 
-def flags_consistency(j: Judgment) -> tuple[str, ...]:
-    """§3.2 の一貫性の検査 (決定論)。当たった検査の名前 ("i" / "ii")。"""
+def flags_consistency(j: Judgment, *, null_count_as_lt2: bool = True) -> tuple[str, ...]:
+    """§3.2 の一貫性の検査 (決定論)。当たった検査の名前 ("i" / "ii")。
+
+    ``null_count_as_lt2``: (ii) で ``confirmed_victim_orgs`` が null を「2 未満」に数えるか。
+    2 回目の対象の選択 (§3.1) は実行どおり True のまま、§6-B の B2 の数え方は False
+    (null = 数え切れない規模を含む「不明」で、矛盾に数えない。prereg §12、11-02 の結果の後の変更)。
+    """
     out: list[str] = []
     orgs = j.get("confirmed_victim_orgs")
     by = j.get("confirmed_by")
@@ -54,7 +59,11 @@ def flags_consistency(j: Judgment) -> tuple[str, ...]:
     if (
         is_high(imp)
         and 2 in high_criteria_numbers(str(j.get("criterion", "")))
-        and ((orgs is None or orgs < MIN_CONFIRMED_ORGS) or by == "主張のみ")
+        and (
+            (orgs is None and null_count_as_lt2)
+            or (orgs is not None and orgs < MIN_CONFIRMED_ORGS)
+            or by == "主張のみ"
+        )
     ):
         out.append("ii")
     return tuple(out)
@@ -195,7 +204,7 @@ async def run_teacher_protocol(
             label=v.label,
             boundary=v.boundary,
             flags_first=flags_first[i],
-            flags_final=flags_consistency(rep),
+            flags_final=flags_consistency(rep, null_count_as_lt2=False),
         )
     result.failed = sorted(failed_set | (set(by_id) - set(result.rows)))
     return result
