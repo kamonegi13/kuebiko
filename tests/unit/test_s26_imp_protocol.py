@@ -351,3 +351,30 @@ def test_judge_items_marks_failures_after_retries() -> None:
     groups = [[{"id": "a", "title": "t", "feed": "f", "body": "b"}]]
     got, failed = asyncio.run(judge_items(groups, pass_no=1, judge=never))
     assert got == {} and failed == ["a"]
+
+
+def test_null_org_count_flags_for_second_pass_but_not_for_b2() -> None:
+    """(ii) で数が null の high-2 は、2 回目の選択では当たり、B2 の数え方では当たらない (prereg §12)。"""
+    from scripts.s26_imp.protocol import flags_consistency
+
+    j = {
+        "importance": "high",
+        "criterion": "high-2",
+        "confirmed_victim_orgs": None,
+        "confirmed_by": "独立研究者",
+    }
+    assert flags_consistency(j) == ("ii",)
+    assert flags_consistency(j, null_count_as_lt2=False) == ()
+
+
+def test_explicit_small_org_count_still_flags_for_b2() -> None:
+    """数が 1 と書かれた high-2 は B2 でも矛盾に数える。"""
+    from scripts.s26_imp.protocol import flags_consistency
+
+    j = {
+        "importance": "high",
+        "criterion": "high-2",
+        "confirmed_victim_orgs": 1,
+        "confirmed_by": "被害者",
+    }
+    assert flags_consistency(j, null_count_as_lt2=False) == ("ii",)
