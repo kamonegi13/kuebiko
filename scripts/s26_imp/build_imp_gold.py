@@ -14,6 +14,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -22,6 +23,7 @@ from scripts.replay._common import assert_no_body, model_tiers_version  # noqa: 
 from scripts.s26_imp import closure  # noqa: E402
 from scripts.s26_imp.common import (  # noqa: E402
     DATA_ROOT,
+    DATASET_DRY_REL,
     PREREG,
     SEED_GOLD,
     event_ts_expr,
@@ -35,16 +37,69 @@ from scripts.s26_imp.common import (  # noqa: E402
 OUT = DATA_ROOT / "data/eval/imp_precheck_s26"
 
 
+def sweep(c: Any, rp9: Any, s24mod: Any, ev: str, args: argparse.Namespace) -> int:
+    """窓の開始日ごとの R18 の後の層の件数 (eligibility は記事ごとなので最も広い窓で 1 回だけ閉包を作る)。"""
+    starts = sorted(args.window_start)
+    pools = {s: closure.fetch_pool(c, ev, closure.window_from(s)) for s in starts}
+    widest = pools[starts[0]][0]
+    res = closure.compute_eligible(c, rp9, s24mod, widest, ev)
+    elig = set(res.eligible)
+    table: dict[str, Any] = {}
+    for s, (pool, counts) in pools.items():
+        strata = {
+            k: {
+                "pool": sum(r["importance"] == k for r in pool.values()),
+                "after_union_exclusion_r18": sum(
+                    r["importance"] == k and a in elig for a, r in pool.items()
+                ),
+            }
+            for k in ("high", "medium", "low")
+        }
+        table[s] = {
+            "population": counts["population"],
+            "eligible_after_r18": sum(a in elig for a in pool),
+            "strata": strata,
+        }
+    out: dict[str, Any] = {
+        "window_end_exclusive": closure.WINDOW[1],
+        "largest_component_share": res.diagnostics["largest_share"],
+        "largest_component": res.diagnostics["largest_component"],
+        "excluded_by_source_widest_window": res.excluded_by_source,
+        "windows": table,
+    }
+    if args.teacher_event_range:
+        out["teacher_event_time"] = closure.teacher_event_times(c, ev, DATA_ROOT / DATASET_DRY_REL)
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--window-start",
+        nargs="+",
+        default=[closure.WINDOW[0][:10]],
+        help="事象時刻の窓の開始日 (JST, YYYY-MM-DD)。既定 = prereg の 10-20。終端は 11-02 00:00 排他で固定。"
+        "複数指定は --dry-run だけ (窓ごとの層の件数の表)",
+    )
+    ap.add_argument(
+        "--teacher-event-range",
+        action="store_true",
+        help="--dry-run: 教師の記事の事象時刻の範囲も出す",
+    )
     args = ap.parse_args()
+    if len(args.window_start) > 1 and not args.dry_run:
+        ap.error("窓の開始日が複数なのは --dry-run だけ")
     started = datetime.now(UTC)
     rec = run_gate(Path(__file__), dry_run=args.dry_run, out_dir=None if args.dry_run else OUT)
 
     rp9, s24mod = closure.load_modules()
     ev = event_ts_expr()
     c = open_db()
+    if args.dry_run and (len(args.window_start) > 1 or args.teacher_event_range):
+        return sweep(c, rp9, s24mod, ev, args)
+    closure.WINDOW = closure.window_from(args.window_start[0])  # prereg 既定なら同じ値
     pool, pool_counts = closure.fetch_pool(c, ev)
     res = closure.compute_eligible(c, rp9, s24mod, pool, ev)
     imp = {a: pool[a]["importance"] for a in pool}

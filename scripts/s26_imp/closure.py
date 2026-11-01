@@ -64,14 +64,21 @@ def collapse_latest(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return pool
 
 
-def fetch_pool(c: Any, ev: str) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+def window_from(start_date: str) -> tuple[str, str]:
+    """開始日 (YYYY-MM-DD, JST) → 窓。終端は prereg と同じ 11-02 00:00 (排他)。"""
+    return (f"{start_date}T00:00:00+09:00", WINDOW[1])
+
+
+def fetch_pool(
+    c: Any, ev: str, window: tuple[str, str] = WINDOW
+) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
     """窓内・posted・duplicate_of IS NULL の最新 1 行 (本文 100 字以上)。"""
     rows = c.execute(
         "SELECT a.article_id, a.title, a.original_title, a.url, a.feed_title, a.importance,"
         f" a.category, a.body, a.created_at, {ev} AS ev FROM articles a"
         f" WHERE a.status = 'posted' AND a.duplicate_of IS NULL AND {ev} >= ? AND {ev} < ?"
         " ORDER BY a.created_at",
-        WINDOW,
+        window,
     ).fetchall()
     latest = collapse_latest(rows)
     pool = {a: r for a, r in latest.items() if len(r["body"] or "") >= BODY_MIN_CHARS}
@@ -265,3 +272,44 @@ def stratified_sample(
         "sampled": 0,
     }
     return picked, counts
+
+
+def teacher_event_times(c: Any, ev: str, dataset: Path) -> dict[str, Any]:
+    """s26 の要約の教師の記事の事象時刻 (見出しで DB の記事に引く。引けない行は件数の差で分かる)。"""
+    import statistics
+    from datetime import datetime
+
+    titles: set[str] = set()
+    n_rows = 0
+    for split in ("train", "valid"):
+        for r in read_jsonl(dataset / f"{split}.jsonl"):
+            if "[task: summary]" not in r["messages"][0]["content"]:
+                continue
+            n_rows += 1
+            m = re.search(
+                r"【記事タイトル】\n(.*?)\n\n【記事 ソース】", r["messages"][-2]["content"], re.S
+            )
+            if m:
+                titles.add(m.group(1))
+    rows = c.execute(
+        f"SELECT a.article_id, {ev} AS ev FROM articles a WHERE a.title = ANY(?)", (sorted(titles),)
+    ).fetchall()
+    by_id = {r["article_id"]: r["ev"] for r in rows}
+    stamps = sorted(
+        v if isinstance(v, datetime) else datetime.fromisoformat(str(v)) for v in by_id.values()
+    )
+    out: dict[str, Any] = {
+        "summary_rows": n_rows,
+        "distinct_titles": len(titles),
+        "matched_articles": len(stamps),
+    }
+    if stamps:
+        out |= {
+            "min": stamps[0].isoformat(),
+            "median": statistics.median_low(stamps).isoformat(),
+            "max": stamps[-1].isoformat(),
+        }
+        for d in ("2026-10-01", "2026-10-06", "2026-10-13", "2026-10-20"):
+            cut = datetime.fromisoformat(f"{d}T00:00:00+09:00")
+            out[f"share_on_or_after_{d}"] = round(sum(s >= cut for s in stamps) / len(stamps), 4)
+    return out
