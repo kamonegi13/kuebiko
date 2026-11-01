@@ -411,7 +411,7 @@ def test_second_pass_grouping_does_not_depend_on_response_order(
             }, []
 
         monkeypatch.setattr(proto, "judge_items", fake_judge_items)
-        asyncio.run(proto.run_teacher_protocol(items, lambda *_a: None))
+        asyncio.run(proto.run_teacher_protocol(items, lambda *_a: None))  # type: ignore[arg-type]  # judge_items を差し替えるので判定役は呼ばれない
         return seen
 
     assert run(False) == run(True)
