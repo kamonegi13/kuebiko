@@ -178,7 +178,9 @@ async def run_teacher_protocol(
     judgments: dict[str, list[dict[str, Any]]] = {i: [j] for i, j in first.items()}
     flags_first = {i: flags_consistency(j) for i, j in first.items()}
 
-    second_ids = [i for i, j in first.items() if needs_second_pass(j)]
+    # 元の行の順で選ぶ (first は Opus の応答が返った順 = 実行ごとに変わる。そのまま shuffle すると
+    # 同じ乱数種でも組み分けが変わりキャッシュに当たらない — 11-02 の 2 回目の実行で 72 回呼び直した)
+    second_ids = [i for i in by_id if i in first and needs_second_pass(first[i])]
     if second_ids:
         second = await _run_pass([by_id[i] for i in second_ids], 2, seeds[1], judge, result)
         for i, j in second.items():
