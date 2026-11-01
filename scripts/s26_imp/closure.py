@@ -27,7 +27,10 @@ from scripts.s26_imp.common import (
     read_jsonl,
 )
 
-WINDOW = ("2026-10-20T00:00:00+09:00", "2026-11-02T00:00:00+09:00")
+WINDOW = (
+    "2026-10-13T00:00:00+09:00",
+    "2026-11-02T00:00:00+09:00",
+)  # prereg §12 (11-02) で 10-20 → 10-13
 UNIVERSE_FROM = "2026-09-01T00:00:00+09:00"
 BODY_MIN_CHARS = 100
 TITLE_MIN = 8

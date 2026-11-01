@@ -80,7 +80,7 @@ def main() -> int:
         "--window-start",
         nargs="+",
         default=[closure.WINDOW[0][:10]],
-        help="事象時刻の窓の開始日 (JST, YYYY-MM-DD)。既定 = prereg の 10-20。終端は 11-02 00:00 排他で固定。"
+        help="事象時刻の窓の開始日 (JST, YYYY-MM-DD)。既定 = prereg の 10-13 (§12 の変更)。終端は 11-02 00:00 排他で固定。"
         "複数指定は --dry-run だけ (窓ごとの層の件数の表)",
     )
     ap.add_argument(
