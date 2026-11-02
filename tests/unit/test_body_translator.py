@@ -18,6 +18,7 @@ from src.cti.body_translator import (
     broken_translation_reason,
     fidelity_gate_mode,
     is_probably_japanese,
+    retainable_head_kind,
     split_for_translation,
     translate_body,
     translate_body_resumable,
@@ -311,6 +312,53 @@ def test_source_echo_is_broken() -> None:
 def test_proper_translation_passes() -> None:
     out = "南アフリカの Air Traffic and Navigation Services (ATNS) が深刻なサイバー攻撃を受けた。"
     assert broken_translation_reason(_SRC, out) is None
+
+
+_URL_LINE = "https://example.com/news/20261015/no-subject-for-talk-on-ukraine-with-e3--russian-deputy-foreign-minister-1124883645.html"
+
+
+def test_retained_url_line_trips_echo_by_default() -> None:
+    """既定 (旗 off) は従来どおり: 正しく訳しても URL 行の保持で『写し』と判定される。"""
+    src = _URL_LINE + "\n" + _SRC
+    out = (
+        _URL_LINE
+        + "\n南アフリカの Air Traffic and Navigation Services (ATNS) が深刻なサイバー攻撃を受けた。"
+    )
+    assert broken_translation_reason(src, out) == "原文がそのまま写っている"
+
+
+def test_retained_url_line_is_exempt_when_flag_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_ECHO_EXEMPT_RETAINABLE", "1")
+    src = _URL_LINE + "\n" + _SRC
+    out = (
+        _URL_LINE
+        + "\n南アフリカの Air Traffic and Navigation Services (ATNS) が深刻なサイバー攻撃を受けた。"
+    )
+    assert broken_translation_reason(src, out) is None
+
+
+def test_prose_echo_still_caught_when_flag_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATE_ECHO_EXEMPT_RETAINABLE", "1")
+    out = _URL_LINE + "\n" + _SRC
+    assert broken_translation_reason(_URL_LINE + "\n" + _SRC, out) == "原文がそのまま写っている"
+
+
+@pytest.mark.parametrize(
+    ("head", "kind"),
+    [
+        (
+            "#CyberSecurity #ThreatIntel #Ransomware #Lockbit #TelecomSecurity #Malaysia #InfoSec",
+            "hashtags",
+        ),
+        (
+            "参考 URL: https://www.example.com/a/b?utm_source=x&utm_medium=y&utm_campaign=z&id=1",
+            "url",
+        ),
+        ("Attackers can exploit critical vulnerabilities in Splunk Enterprise to escalate", None),
+    ],
+)
+def test_retainable_head_kind(head: str, kind: str | None) -> None:
+    assert retainable_head_kind(head) == kind
 
 
 async def test_broken_output_raises_instead_of_caching() -> None:

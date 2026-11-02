@@ -111,6 +111,7 @@ module = [
     "eval_goldset",
     "export_mirror",
     "m3b_routing_replay",
+    "sft_gate_n20_schemas",
     "sft_quality_gate",
     "summarizer_diff_contract",
     "verify_prompt_cutover",
