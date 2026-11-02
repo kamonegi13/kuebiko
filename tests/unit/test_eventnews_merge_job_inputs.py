@@ -237,7 +237,8 @@ class TestRecordDecisions:
         repo = RunHistoryRepository(db_path=tmp_path / "d.db")
         now = datetime(2026, 10, 22, tzinfo=UTC)
 
-        n = job.record_decisions(repo, _plan_with_one_group(), now, run_kind="manual")
+        rows = job.decision_rows(_plan_with_one_group(), run_kind="manual")
+        n = repo.record_merge_decisions(rows, decided_at=now)
 
         assert n == 1
         (row,) = repo.list_merge_decisions()
@@ -247,22 +248,5 @@ class TestRecordDecisions:
         probas = {(e["a"], e["b"]): e["proba"] for e in json.loads(row.edges_json)}
         assert probas == {("a1", "b1"): 0.9, ("a2", "b1"): None}
 
-    def test_a_recording_failure_does_not_raise(self) -> None:
-        from datetime import UTC, datetime
-
-        class _Broken:
-            def record_merge_decisions(self, *_a: object, **_k: object) -> int:
-                raise RuntimeError("db down")
-
-        now = datetime(2026, 10, 22, tzinfo=UTC)
-
-        n = job.record_decisions(cast(Any, _Broken()), _plan_with_one_group(), now, run_kind="x")
-
-        assert n == 0
-
     def test_nothing_to_record_without_groups(self) -> None:
-        from datetime import UTC, datetime
-
-        now = datetime(2026, 10, 22, tzinfo=UTC)
-
-        assert job.record_decisions(cast(Any, None), job.MergePlan(), now, run_kind="x") == 0
+        assert job.decision_rows(job.MergePlan(), run_kind="x") == []

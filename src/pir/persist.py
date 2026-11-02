@@ -20,11 +20,14 @@ from src.pir.evaluator import (
     pir_match_signals,
 )
 from src.pir.integration import get_pir_config
+from src.storage.db_backend import is_pg_enabled
 from src.storage.run_history import RunHistoryRepository
 
 _log = get_logger(__name__)
 
 # rebuild が対象にする窓 (地図/KPI は ≤90d なので 90d を rolling rebuild)。
+#: PIR 作り直し専用の advisory lock の鍵 (int64、``assessment/ledger_lock.py`` と同じ作法)
+PIR_REBUILD_LOCK_KEY = 0x6B75_6562_7069_7272  # "kuebpirr"
 DEFAULT_WINDOW_DAYS = 90
 _LIMIT = 20000
 
@@ -68,10 +71,16 @@ def rebuild_pir_entities(
     links = sum(len(v) for v in by_article.values())
     if not dry_run:
         # full replace: 既存 pir entity を全削除してから再投入 (idempotent な日次 rebuild)。
-        with repo_inst._connect() as conn:  # noqa: SLF001 (intra-package)
-            conn.execute("DELETE FROM article_entities WHERE entity_type='pir'")
-        for aid, pir_ids in by_article.items():
-            repo_inst.add_article_entities(aid, [("pir", pid) for pid in sorted(pir_ids)])
+        # 1 トランザクション: 読み手 (評価・KPI・画面) が 0 件/一部の PIR 対応を見ない。
+        # 途中で落ちれば旧い対応がそのまま残る。
+        with repo_inst.atomic():
+            with repo_inst._connect() as conn:  # noqa: SLF001 (intra-package)
+                if is_pg_enabled():
+                    # 並行する作り直しを直列にする (トランザクションの終わりで自動解放)
+                    conn.execute("SELECT pg_advisory_xact_lock(?)", (PIR_REBUILD_LOCK_KEY,))
+                conn.execute("DELETE FROM article_entities WHERE entity_type='pir'")
+            for aid, pir_ids in by_article.items():
+                repo_inst.add_article_entities(aid, [("pir", pid) for pid in sorted(pir_ids)])
 
     result = {
         "pirs": len(pirs),

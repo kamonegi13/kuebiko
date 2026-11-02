@@ -92,9 +92,9 @@ class SeverityAxesMixin:
     ) -> int:
         """軸を付け直す (モデル・入力を替えたときの取り込み、D1 手順書 §5)。
 
-        1 つのトランザクションで、該当記事の既存の軸と ``article_importance_v2`` を消してから
-        新しい軸を書く。importance_v2 は毎時の段 (``record_importance_v2``) が新しい軸で
-        導出し直す。戻り値は書いた件数。
+        塊 (``_CHUNK`` 件) ごとに 1 つのトランザクションで、該当記事の既存の軸と
+        ``article_importance_v2`` を消してから新しい軸を書く。
+        importance_v2 は毎時の段 (``record_importance_v2``) が導出し直す。戻り値は書いた件数。
         """
         cols = (*STORED_FIELDS, *EXTRA_FIELDS, "model", "created_at")
         now = datetime.now(UTC).isoformat()
@@ -108,20 +108,21 @@ class SeverityAxesMixin:
             )
             for aid, axes in rows
         ]
-        ids = [r[0] for r in records]
-        with self._connect() as conn:
-            for i in range(0, len(ids), _CHUNK):
-                chunk = ids[i : i + _CHUNK]
-                ph = ",".join("?" * len(chunk))
+        for i in range(0, len(records), _CHUNK):
+            chunk_records = records[i : i + _CHUNK]
+            chunk = [r[0] for r in chunk_records]
+            ph = ",".join("?" * len(chunk))
+            # 塊ごとに 1 トランザクション: 読み手が DELETE と INSERT の間の「軸なし」を見ない
+            with self.atomic(), self._connect() as conn:
                 for table in ("article_severity_axes", "article_importance_v2"):
                     conn.execute(
                         f"DELETE FROM {table} WHERE article_id IN ({ph})",  # noqa: S608
                         tuple(chunk),
                     )
-            for rec in records:
-                conn.execute(
-                    f"INSERT INTO article_severity_axes (article_id, {', '.join(cols)}) "  # noqa: S608
-                    f"VALUES (?, {', '.join('?' * len(cols))})",
-                    rec,
-                )
+                for rec in chunk_records:
+                    conn.execute(
+                        f"INSERT INTO article_severity_axes (article_id, {', '.join(cols)}) "  # noqa: S608
+                        f"VALUES (?, {', '.join('?' * len(cols))})",
+                        rec,
+                    )
         return len(records)

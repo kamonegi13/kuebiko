@@ -59,6 +59,7 @@ from src.eventnews.runner import _max_importance
 from src.eventnews.state import compute_source_breakdown
 from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventItemRecord
+from src.storage.repo_merge_decisions import MergeDecisionRow
 from src.storage.run_history import RunHistoryRepository
 from src.ui.services.eventnews_focus_job import (
     GATE_OFF,
@@ -124,7 +125,7 @@ __all__ = [
     "max_gap",
     "merge_flag_snapshot",
     "real_kind_enabled",
-    "record_decisions",
+    "decision_rows",
     "record_vetoes",
     "merge_and_regenerate",
     "merge_enabled",
@@ -639,13 +640,11 @@ def record_vetoes(repo: RunHistoryRepository, plan: MergePlan, now: datetime) ->
         return 0
 
 
-def record_decisions(
-    repo: RunHistoryRepository, plan: MergePlan, now: datetime, *, run_kind: str
-) -> int:
-    """適用した群の判断 (辺・確率・設定) を記録する。記録の失敗で統合は戻さないが握りつぶさない。"""
+def decision_rows(plan: MergePlan, *, run_kind: str) -> list[MergeDecisionRow]:
+    """``plan`` の群の判断 (辺・確率・設定) を記録用の行にする。"""
     inputs = plan.inputs
     if inputs is None or not plan.groups:
-        return 0
+        return []
     vectors = inputs.vectors
 
     def cos_of(a: str, b: str) -> float:
@@ -660,13 +659,24 @@ def record_decisions(
         flags=merge_flag_snapshot(),
         run_kind=run_kind,
     )
+    return enrich_decision_rows(rows, _members_of(inputs), plan.org_alias)
 
-    rows = enrich_decision_rows(rows, _members_of(inputs), plan.org_alias)
-    try:
-        return repo.record_merge_decisions(rows, decided_at=now)
-    except Exception as e:  # noqa: BLE001 — 統合は適用済み。記録の失敗は大きく残して続行
-        _log.error("eventnews_merge_decisions_record_failed", rows=len(rows), error=str(e)[:200])
-        return 0
+
+def apply_group_atomically(
+    repo: RunHistoryRepository, plan: MergePlan, group: MergeGroup, now: datetime, *, run_kind: str
+) -> tuple[int, int]:
+    """1 群の統合と判断の記録を **1 トランザクション** で書く。戻り値は (吸収した数, 記録した行数)。
+
+    途中で落ちれば統合ごと戻る (重複した事象・version 0 の本文空・記録のない統合 =
+    undo できない状態を残さない)。記録の失敗も統合を戻す (次の毎時で再計画される)。
+    """
+    assert plan.inputs is not None
+    rows = decision_rows(replace(plan, groups=(group,)), run_kind=run_kind)
+    with repo.atomic():
+        absorbed = apply_merge_group(repo, group, plan.inputs, now)
+        if rows:
+            repo.record_merge_decisions(rows, decided_at=now)
+    return absorbed, len(rows)
 
 
 async def merge_and_regenerate(
@@ -690,13 +700,26 @@ async def merge_and_regenerate(
     if not apply:
         return MergeOutcome(plan=plan, elapsed_seconds=round(time.monotonic() - started, 1))
 
-    applied = absorbed = 0
+    applied = absorbed = group_failures = 0
     if plan.inputs is not None:
         now = datetime.now(UTC)
+        recorded = 0
         for group in plan.groups:
-            absorbed += apply_merge_group(repo, group, plan.inputs, now)
+            try:
+                n_absorbed, n_recorded = apply_group_atomically(
+                    repo, plan, group, now, run_kind=run_kind
+                )
+            except Exception as e:  # noqa: BLE001 — 1 群の失敗で残りと本文再生成を止めない
+                group_failures += 1
+                _log.error(
+                    "eventnews_merge_group_failed",
+                    group_size=1 + len(group.absorbed),
+                    error_type=type(e).__name__,
+                )
+                continue
+            absorbed += n_absorbed
+            recorded += n_recorded
             applied += 1
-        recorded = record_decisions(repo, plan, now, run_kind=run_kind)
         vetoes_recorded = record_vetoes(repo, plan, now)
     else:
         recorded = vetoes_recorded = 0
@@ -720,6 +743,7 @@ async def merge_and_regenerate(
         regen_pending=max(0, pending_total - stats.attempted),
         elapsed_seconds=round(time.monotonic() - started, 1),
         extra={
+            "merge_groups_failed": group_failures,
             "regen_failed": stats.failed,
             "regen_skipped": stats.skipped,
             "decisions_recorded": recorded,

@@ -80,6 +80,8 @@
 
 (結果を見る前の変更も、ここに日時・項目・前後・理由を書く)
 
+- 2026-11-01 (E の学習の前・E を判定集に当てる前): E の分類器の中身を固定 (本書は「article_kinds で学習した埋込の分類器」としか書いていなかった)。E = 要約埋込 (`summary_embedding_text(title, summary)`、embedding ティアのモデル = 作成時点 `snowflake-arctic-embed2`) の多項ロジスティック回帰、`class_weight=balanced`。教師 = `article_kinds` の `model` が `kuebiko-sft:s` で始まる行 (作成時点の件数: s21 4,779・s23i 2,995・s24ci65 1,182・s17 1,091・s16 211・s1 190。`gemma4:26b`・`roundup_guard`・`kuebiko-sft:i58` は使わない)。学習から外す: 判定集 `gold:event_kind_fresh` の記事 id と、その記事と最新の事象の根を共有する記事 (§3)。CVE・被害組織・cos の閉包は学習側には当てない (§3 の文言どおり事象の根まで)。成果物 `config/models/kind_emb_model.json` に学習の設定・判定集の sha256・外した件数を書く。道具は `scripts/train_kind_emb_model.py` (KIND-EMB、ブランチ feat/kind-emb)。§10 の線は不変
+
 ## 10. RP-5-1 の判定 (台帳の stats の写し。RP-5-1 が E を当てる前に詳しくする)
 
 - 重み: 層の抜き出し率の逆数で母集団の正解率。種別ごとの macro-F1・roundup の回収は層の中の数で重みなし
