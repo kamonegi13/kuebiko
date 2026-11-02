@@ -180,7 +180,12 @@ def prefix_for(step: Step, model: str | None = None) -> str:
         for model_prefix, markers in MODEL_STEP_MARKERS.items():
             if name.startswith(model_prefix) and step in markers:
                 return markers[step]
-    if model is None and not _trained_only_active(step):
+    only = STEP_TRAINED_ONLY.get(step)
+    if only is not None and not (
+        _trained_only_active(step)
+        if model is None
+        else str(model.strip()) in only and is_prefix_trained(model)
+    ):
         # n20 専用の印は、n20 を環境変数で有効化していない本番では「印なし」と同じ扱いにする
         # (``build_llm_for`` は prefix_for(step) の真偽で wrapper を掛ける。既定の経路を変えない)。
         return ""
