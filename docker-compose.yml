@@ -292,6 +292,14 @@ services:
       GEO_RESCUE_SHADOW_BUDGET_SECONDS: ${GEO_RESCUE_SHADOW_BUDGET_SECONDS:-150}
       # 戦域 (紅海・ホルムズ等) の取り込みヒント。shadow=ログのみ / 1=取り込みに効かせる / 0=止める
       INGEST_GEO_THEATRE_HINT: ${INGEST_GEO_THEATRE_HINT:-shadow}
+      # n20 T5 の構造変更 (2026-11-02、CLAUDE.md §7 の 11-02 の行)。既定 0 = いまの出力と同一。
+      # 0=off / shadow=旧で配信し新しい形を別に生成して件数を log (LLM 呼び出しが増える) / 1=on
+      FACT_ANCHOR: ${FACT_ANCHOR:-0}
+      SLOT_RENDER: ${SLOT_RENDER:-0}
+      SPOTLIGHT_STAGED: ${SPOTLIGHT_STAGED:-0}
+      DEEP_DIVE_SLOT_RENDER: ${DEEP_DIVE_SLOT_RENDER:-0}
+      # 多段 Spotlight の全体の上限 (秒)。空 = STEP_REGISTRY の PIR_SPOTLIGHT (600 秒)。設計 D は 3,000 秒 (未決)
+      SPOTLIGHT_STAGED_TIMEOUT_SECONDS: ${SPOTLIGHT_STAGED_TIMEOUT_SECONDS:-}
 
     # 設定・プロンプト・データを bind mount で共有
     # .env のみ ro だが UI の設定編集 API は別途 atomic write で更新する
