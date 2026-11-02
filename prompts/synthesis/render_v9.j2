@@ -1,0 +1,101 @@
+{# 状況総括の render v9 (n20 T5、旗 SLOT_RENDER=on / shadow のときだけ使う。本番の rubric は変えない)。
+   v8 (render.j2) との差 (利用者判断 U-B): LLM は判定ごとの「世界の文」と「含意の文」、見出しの 1 文、
+   注視点の文だけを書く。確度語・検証の反証・対立仮説・節の並び・連鎖・SIR 対応はコードが描く
+   (src/synthesis/grounded/slot_render.py)。入力の節は render.j2 と同じ。
+#}
+{% include ["_persona_local.j2", "_persona.j2"] %}
+下記は本期間 ({{ period_label }}) の**確定した情勢評価
+(estimate)** です。各判定について、読者向けの文の**部品**を書いてください。
+節の組み立て・確度の言い方・反証や対立仮説の記述は、こちら (コード) が台帳の値から付けます。
+
+**厳守 — これは射影であって再分析ではない**:
+- estimate に書かれた判定・変化 (delta)・含意のみを使う。**新しい主張・帰属・断定を足さない**。
+- 変化の理由は delta_note に書かれた事実のみを使う (時系列から因果を創作しない)。
+
+{% if headline_view %}
+【headline 対象判定 (コード指名 — この判定の変化を見出しにする)】
+[{{ headline_id }}] {{ headline_view.claim }}
+  変化: {{ headline_view.delta_ja }}{% if headline_view.delta_note %} ({{ headline_view.delta_note }}){% endif %} / 見立て: {{ headline_view.leading_label }} / 確度: {{ headline_view.confidence_ja }}
+{% endif %}
+
+【変化した判定】(salience 順。delta = 新規/見立て転換/強化/後退/拡大/再燃/更新)
+{% for j in moved %}
+[{{ j.id }}]【{{ j.delta_ja }}】{{ j.claim }}
+  見立て: {{ j.leading_label }} / 確度: {{ j.confidence_ja }}{% if j.adversarial_refuted %} (検証で反証あり){% endif %}{% if j.delta_note %} / 変化の内容: {{ j.delta_note }}{% endif %}
+  根拠(要点): {% for e in j.evidence_excerpts %}「{{ e }}」 {% endfor %}
+  {% if j.implication %}含意: {{ j.implication }}{% endif %}
+  {% if j.counter %}対立: {{ j.counter }}{% endif %}
+  {% if j.missing %}欠落証拠: {{ j.missing }}{% endif %}
+  {% if j.fired_indicators %}発火した監視指標: {{ j.fired_indicators|join('; ') }}{% endif %}
+{% else %}
+(本期間に変化した判定なし)
+{% endfor %}
+{% if moved_list is defined and moved_list %}
+【そのほかの動き (一覧)】(salience 下位。1 行 = 1 判定・根拠は載せない — 分析は上の変化セクションに集中する)
+{% for j in moved_list %}
+- [{{ j.id }}]【{{ j.delta_ja }}】{{ j.claim }} — {{ j.leading_label }} / {{ j.confidence_ja }}
+{% endfor %}
+{% endif %}
+{% if moved_omitted is defined and moved_omitted %}
+(ほかに変化した判定が {{ moved_omitted }} 件あるが、salience 下位のため本文では扱わない
+ — 台帳には記録済み。SIR に紐づくものは下の SIR 対応に含まれる)
+{% endif %}
+
+【継続中の判定】(変化なし・要注視の standing)
+{% for j in standing %}
+[{{ j.id }}]【継続】{{ j.claim }} — {{ j.leading_label }} / {{ j.confidence_ja }}{% if j.implication %} / 含意: {{ j.implication }}{% endif %}
+{% else %}
+(継続判定なし)
+{% endfor %}
+{% if standing_omitted is defined and standing_omitted %}
+(ほかに継続中の判定が {{ standing_omitted }} 件あるが、重要度下位のため本文では扱わない
+ — 台帳には記録済み。SIR に紐づくものは下の SIR 対応に含まれる)
+{% endif %}
+
+【判定間の関係】(共有アクター/作戦/国家からの決定論導出 — 因果は主張していない)
+{% for r in relation_lines %}
+- {{ r }}
+{% else %}
+(検出された関係なし)
+{% endfor %}
+
+【開いている監視指標】(今後観測されれば判定が変わる)
+{% for j in moved + standing %}{% for i in j.indicators %}- [{{ j.id }}] {{ i }}
+{% endfor %}{% endfor %}
+
+【SIR 対応 (決定論ロールアップ)】
+{% for p in pir_rollup %}
+- {{ p.pir_title }}: {% for it in p.entries %}{% if it.id is defined and it.id %}[{{ it.id }}]{% endif %}{% if it.claim %}「{{ it.claim }}」{% endif %}({{ it.confidence_ja }}){% if it.implication %} — {{ it.implication }}{% endif %} {% endfor %}
+{% else %}
+(SIR に紐づく判定なし)
+{% endfor %}
+
+次の部品を日本語で書いてください。
+
+- items: 上の【変化した判定】と【継続中の判定】に挙げた判定の**全件**を、上に並んだ順で 1 件ずつ。
+  (【そのほかの動き (一覧)】の判定は items に入れない — 件数はこちらで数える)
+  - judgment_id: `[ ]` の中の id をそのまま写す (作らない・変えない)
+  - world_clause: その判定について**世界側で何が起きたか / 何が続いているか**を 1-2 文
+    (actor / 標的 / 手段の固有名詞を含める)。台帳の操作 (「claim を改訂した」「見立て転換が
+    行われた」) は書かない。delta_note が操作の記録なら、その理由にあたる世界側の事実を書く
+  - implication_clause: その判定の含意を 1 文 (必須。上に供給された含意・変化の内容の範囲内。
+    含意が供給されていない判定は、変化の内容から言える範囲の「だから何か」に留める)
+- headline_clause: 見出し対象判定 (コード指名) の**世界側の変化**を 1 文 (actor / 標的 / 手段)。
+{% if headline_mode is not defined or headline_mode == "moved" %}
+  変化の種別が分かる自然な日本語にする (「〜が新たに報告された」「動きが拡大している」等)。
+{% elif headline_mode == "quiet" %}
+  本期間は大きな変化がないことを前提に、継続中の最重要判定の要点を書く (変化を創作しない)。
+{% else %}
+  要点 (actor / 標的 / 手段) だけを書き、変化 (新規 / 拡大 等) には言及しない。
+{% endif %}
+- watch_clause: 開いている監視指標から、今後の注視点を 1-2 文。
+
+**書かないもの (コードが付ける。書くとその文は台帳の値で置き換えられる)**:
+- 確度の言い方: 「可能性が高い」「可能性がある」「とみられる」「確証」「否定できない」「確度」
+- 断定の強調: 「確実に」「間違いなく」「明らかに」「必ず」
+- 「反証」「対立仮説」の記述 (検証の反証・対立仮説はこちらで付ける)
+- delta_note に無い因果の接続: 「を受けて」「これに対し」「その結果」
+
+出力 JSON (これ以外を出さない):
+{"headline_clause": "...", "items": [{"judgment_id": "...", "world_clause": "...", "implication_clause": "..."}],
+ "watch_clause": "..."}
