@@ -93,3 +93,9 @@ def choose_sample(
     fixed = [k for k in pool if k in must_include]
     rest = [k for k in pool if k not in must_include]
     return fixed + sample_pairs(rest, max(0, n - len(fixed)), seed)
+
+
+def supplement_pool(relaxed_kept: Sequence[str], original: Iterable[str]) -> list[str]:
+    """除外を緩めた適格のうち、元の標本に無い組 (昇順)。"""
+    seen = set(original)
+    return sorted(k for k in set(relaxed_kept) if k not in seen)

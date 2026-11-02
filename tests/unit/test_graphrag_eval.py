@@ -238,3 +238,9 @@ def test_choose_sample_takes_all_when_small_and_keeps_must_include() -> None:
 def test_pick_members_head_and_tail() -> None:
     assert pick_members(list("abcdefgh"), 6) == list("abcfgh")
     assert pick_members(list("ab"), 6) == ["a", "b"]
+
+
+def test_supplement_pool_excludes_original_pairs() -> None:
+    from scripts.graphrag_eval.sampling import supplement_pool
+
+    assert supplement_pool(["b|c", "a|b", "a|b"], ["a|b"]) == ["b|c"]

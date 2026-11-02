@@ -26,10 +26,12 @@ from scripts.graphrag_eval.sampling import (
     pair_key,
     pick_members,
     resolve_root,
+    supplement_pool,
 )
 
 SEED = 20261102
 N_PER_TYPE = 60
+SUPPLEMENT_MAX = 17  # prereg §9 (2026-11-02): 元の数えで除外 4 に当たった incident の数
 WINDOW_DAYS = 60  # 本番の relations.WINDOW_DAYS と同じ
 MAX_MEMBERS = 6
 SUMMARY_MAX = 600
@@ -223,6 +225,11 @@ def main() -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--root", type=Path, default=Path("."))
     ap.add_argument("--count-only", action="store_true")
+    ap.add_argument(
+        "--supplement-incident",
+        type=Path,
+        help="元の sample.jsonl。incident だけ保護の記事の除外を外し、元に無い組を最大 17 組 (prereg §9 2026-11-02)",
+    )
     args = ap.parse_args()
     repo = _repo()
     info, pops = derive_populations(repo)
@@ -275,13 +282,37 @@ def main() -> int:
     )
     if args.count_only:
         return 0
-    sample: dict[str, list[str]] = {
-        "same_actor": choose_sample(excl["same_actor"].kept, N_PER_TYPE, SEED),
-        "incident": choose_sample(excl["incident"].kept, N_PER_TYPE, SEED),
-        "lineage": choose_sample(
-            excl["lineage"].kept, N_PER_TYPE, SEED, must_include=frozenset(focus)
-        ),
-    }
+    if args.supplement_incident is not None:
+        relaxed = exclude_pairs(
+            pops["incident"],
+            excluded_pairs=prior_pairs,
+            excluded_events=prior_events,
+            excluded_roots=prior_roots,
+            root_of=roots,
+            guarded_events=frozenset(),
+        )
+        original = {
+            json.loads(x)["pair_key"]
+            for x in args.supplement_incident.read_text("utf-8").splitlines()
+            if x.strip()
+        }
+        pool = supplement_pool(relaxed.kept, original)
+        sample = {"incident": choose_sample(pool, SUPPLEMENT_MAX, SEED)}
+        counts["supplement"] = {
+            "relaxed_eligible": len(relaxed.kept),
+            "relaxed_dropped": relaxed.dropped,
+            "original_incident_still_present": len(original & set(relaxed.kept)),
+            "pool": len(pool),
+            "max": SUPPLEMENT_MAX,
+        }
+    else:
+        sample = {
+            "same_actor": choose_sample(excl["same_actor"].kept, N_PER_TYPE, SEED),
+            "incident": choose_sample(excl["incident"].kept, N_PER_TYPE, SEED),
+            "lineage": choose_sample(
+                excl["lineage"].kept, N_PER_TYPE, SEED, must_include=frozenset(focus)
+            ),
+        }
     chosen = sorted({k for v in sample.values() for k in v})
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out / "sample.jsonl").open("w", encoding="utf-8") as fh:
