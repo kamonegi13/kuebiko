@@ -104,6 +104,7 @@ ignore_missing_imports = true
 module = [
     "audit_triage_calibration",
     "backfill_intent",
+    "backfill_summary_embeddings",
     "backfill_axes",
     "build_public_downloads",
     "build_sft_teacher_synthesis",

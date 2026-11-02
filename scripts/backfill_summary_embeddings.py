@@ -12,6 +12,9 @@
 中断しても保存済みは残るので、再実行すれば続きから進む。
 
     docker exec kuebiko python scripts/backfill_summary_embeddings.py --limit 20000
+
+``--ids-file`` を渡すと、事象のメンバーではなくファイルの記事 id (1 行 1 件) を対象にする
+(2026-11-03、KIND-EMB の学習・付け直しの記事の欠けを埋めるため)。
 """
 
 from __future__ import annotations
@@ -38,16 +41,27 @@ from src.ui.services.eventnews_hourly_job import (  # noqa: E402
 _BATCH = 200
 
 
+def read_ids(path: Path) -> list[str]:
+    """1 行 1 件の記事 id を読む (空行・前後の空白を除き、順序を保って重複を外す)。"""
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return list(dict.fromkeys(line for line in lines if line))
+
+
 async def main_async(args: argparse.Namespace) -> int:
     repo = RunHistoryRepository()
     cfg = load_app_config()
-    records = [r for r in repo.list_event_items(origin="live", limit=40000) if not r.merged_into]
-    ids = list(dict.fromkeys(a for r in records for a in r.state.member_ids))[: args.limit]
+    if args.ids_file:
+        ids = read_ids(Path(args.ids_file))[: args.limit]
+        source = f"ファイル {len(ids)} 件"
+    else:
+        records = [
+            r for r in repo.list_event_items(origin="live", limit=40000) if not r.merged_into
+        ]
+        ids = list(dict.fromkeys(a for r in records for a in r.state.member_ids))[: args.limit]
+        source = f"事象 {len(records)} / メンバー記事 {len(ids)}"
     have = set(repo.load_summary_embeddings(ids))
     todo = [a for a in ids if a not in have]
-    print(
-        f"事象 {len(records)} / メンバー記事 {len(ids)} / 保存済み {len(have)} / 未作成 {len(todo)}"
-    )
+    print(f"{source} / 保存済み {len(have)} / 未作成 {len(todo)}")
     if not todo:
         print("作るものがありません")
         return 0
@@ -75,6 +89,9 @@ async def main_async(args: argparse.Namespace) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--limit", type=int, default=40000)
+    p.add_argument(
+        "--ids-file", default=None, help="対象の記事 id (1 行 1 件)。無ければ事象のメンバー"
+    )
     return asyncio.run(main_async(p.parse_args()))
 
 
