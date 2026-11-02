@@ -130,17 +130,20 @@ def undo_merge(
             absorbed_id, STATUS_DRY_RUN, ancestors, len(articles), removed_rows=removable
         )
 
+    # DB だけの書き込み (本文の再生成 = LLM は current_version=0 を見て別途走る) なので全体を
+    # 1 トランザクションにする。途中で落ちれば merged_into も残り、再実行で最初からやり直せる。
     removed = 0
-    for anc in ancestors:
-        removed += repo.delete_event_members(anc, articles, only_join_signal=JOIN_SIGNAL)
-    repo.update_event_item(absorbed_id, {"merged_into": None, "updated_at": now})
-    loader = load_members or _default_loader
-    for anc in ancestors:
-        ids = [m.article_id for m in repo.list_event_members(anc)]
-        members = list(loader(repo, ids, {}).values())
-        if members:
-            refresh_item_state(repo, anc, members, now=now, clear_merged_into=False)
-    repo.mark_merge_decisions_undone(absorbed_id, reason=reason, undone_at=now)
+    with repo.atomic():
+        for anc in ancestors:
+            removed += repo.delete_event_members(anc, articles, only_join_signal=JOIN_SIGNAL)
+        repo.update_event_item(absorbed_id, {"merged_into": None, "updated_at": now})
+        loader = load_members or _default_loader
+        for anc in ancestors:
+            ids = [m.article_id for m in repo.list_event_members(anc)]
+            members = list(loader(repo, ids, {}).values())
+            if members:
+                refresh_item_state(repo, anc, members, now=now, clear_merged_into=False)
+        repo.mark_merge_decisions_undone(absorbed_id, reason=reason, undone_at=now)
     _log.info(
         "eventnews_merge_undone",
         absorbed_id=absorbed_id,
