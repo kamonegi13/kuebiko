@@ -78,6 +78,8 @@ ignore = []
 # 日本語の docstring / 長い説明文を持つ prereg 実行の道具 (全角は 2 幅で数えられる)
 "scripts/s26_imp/*.py" = ["E501"]
 "tests/unit/test_s26_imp_*.py" = ["E501"]
+"scripts/graphrag_eval/*.py" = ["E501"]
+"tests/unit/test_graphrag_eval.py" = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
