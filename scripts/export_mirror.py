@@ -288,7 +288,7 @@ _EXCLUDED_ENDPOINTS = (
 #: (本文判定は値の形で判定できないため、項目名で守るしかない)。
 #: input_text = 地政学の救済の影の記録 (geo_rescue_shadow) が持つ判定の入力
 #: (この表は書き出さない。万一の経路に対する安全網)
-_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes", "input_text", "prompt_text")
+_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes", "input_text", "prompt_text", "input_json")
 
 
 #: 資格情報らしい **フィールド名**。語を含むだけでは弾かない — アクター名に

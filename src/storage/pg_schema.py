@@ -1272,8 +1272,10 @@ CREATE TABLE IF NOT EXISTS generation_inputs (
     product_id    TEXT NOT NULL,
     prompt_sha256 TEXT NOT NULL,
     prompt_chars  INTEGER NOT NULL,
-    prompt_text   TEXT NOT NULL
+    prompt_text   TEXT NOT NULL,
+    input_json    TEXT
 );
+ALTER TABLE generation_inputs ADD COLUMN IF NOT EXISTS input_json TEXT;
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_product
     ON generation_inputs(product_kind, product_id);
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_recorded

@@ -10,6 +10,7 @@ LLM プロンプト (prompts/digest/weekly_recap.j2 等) は
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import jinja2
 
@@ -166,12 +167,24 @@ async def generate_digest(
     selected_ids = [c.article_id for c in candidates]
     prompt = _render_prompt(template_name, candidates=candidates, period_label=period_label)
     max_tokens = _digest_max_tokens(len(candidates))
+
+    def _input_data() -> dict[str, Any]:
+        return {
+            "template_name": template_name,
+            "period_label": period_label,
+            "max_tokens": max_tokens,
+            "think": think,
+            "selected_ids": selected_ids,
+            "candidates": candidates,
+        }
+
     record_generation_input(
         step="digest_deep_dive",
         model=str(getattr(llm, "model", "")),
         product_kind="deep_dive",
         product_id=f"{template_name}:{period_label}",
         prompt_text=prompt,
+        input_data=_input_data,
     )
     _log.info(
         "digest_llm_request",
@@ -201,6 +214,12 @@ async def generate_digest(
             product_kind="deep_dive",
             product_id=f"{template_name}:{period_label}:retry1",
             prompt_text=retry_prompt,
+            input_data=lambda: {
+                **_input_data(),
+                "retry_uncited_ids": [str(m) for m in missing],
+                "retry_thin_sections": [str(t) for t in thin],
+                "retry_previous_output": out.model_dump(),
+            },
         )
         retry = await _generate_sections(
             llm,

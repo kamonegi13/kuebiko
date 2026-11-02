@@ -24,12 +24,13 @@ class GenerationInputsMixin(RunHistoryRepositoryBase):
         product_id: str,
         prompt_sha256: str,
         prompt_text: str,
+        input_json: str | None = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO generation_inputs (recorded_at, step, model, product_kind,"
-                " product_id, prompt_sha256, prompt_chars, prompt_text)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " product_id, prompt_sha256, prompt_chars, prompt_text, input_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     datetime.now(UTC).isoformat(),
                     step[:80],
@@ -39,6 +40,7 @@ class GenerationInputsMixin(RunHistoryRepositoryBase):
                     prompt_sha256,
                     len(prompt_text),
                     prompt_text,
+                    input_json,
                 ),
             )
 

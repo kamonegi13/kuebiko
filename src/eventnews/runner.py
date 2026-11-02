@@ -15,6 +15,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
 
@@ -317,6 +318,43 @@ def rewrite_regressed(*, before: EventNewsDraft, after: EventNewsDraft) -> bool:
     return not tail_all_empty(before) and tail_all_empty(after) and looks_truncated(after)
 
 
+def _generation_input_data(
+    item: _LiveItem, selected: list[MemberArticle], version: int
+) -> dict[str, Any]:
+    """prompt の元になった入力 (P0-18 の input_json)。本文そのものは持たず長さとハッシュだけ。"""
+    snap = item.snapshot
+    chosen = {m.article_id for m in selected}
+    return {
+        "item_id": snap.item_id,
+        "version": version,
+        "prompt_version": _PROMPT_VERSION,
+        "importance": snap.importance,
+        "status": snap.status,
+        "first_reported_at": snap.first_reported_at,
+        "last_reported_at": snap.last_reported_at,
+        "member_ids": list(snap.member_ids),
+        "omitted_ids": [m.article_id for m in item.members if m.article_id not in chosen],
+        "members": [
+            {
+                "n": index,
+                "article_id": m.article_id,
+                "title": m.title,
+                "url": m.url,
+                "feed_title": m.feed_title,
+                "importance": m.importance,
+                "category": m.category,
+                "kind": m.kind,
+                "account_class": m.account_class,
+                "anchor_ts": m.anchor_ts,
+                "summary": m.summary,
+                "body_chars": len(m.body or ""),
+                "body_sha256": hashlib.sha256((m.body or "").encode("utf-8")).hexdigest(),
+            }
+            for index, m in enumerate(selected, start=1)
+        ],
+    }
+
+
 async def _generate_version(
     repo: EventNewsMixin,
     item: _LiveItem,
@@ -458,6 +496,7 @@ async def _generate_version(
         product_id=f"{item.snapshot.item_id}:v{version}",
         prompt_text=prompt_text,
         repo=repo,
+        input_data=lambda: _generation_input_data(item, selected, version),
     )
     if rejected_json is not None:
         # ⭐ 関門に落ちた草稿と書き直し理由を捨てない (2026-09-03)。同じ入力の

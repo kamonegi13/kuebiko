@@ -171,6 +171,10 @@ class RunHistoryRepositoryBase:
         existing_labels = {row["name"] for row in conn.execute("PRAGMA table_info(tuning_labels)")}
         if existing_labels and "snapshot" not in existing_labels:
             conn.execute("ALTER TABLE tuning_labels ADD COLUMN snapshot TEXT")
+        # 生成物の入力 (P0-18) の構造化入力列。表は新しいが、列追加前の dev DB を救う
+        existing_gen = {row["name"] for row in conn.execute("PRAGMA table_info(generation_inputs)")}
+        if existing_gen and "input_json" not in existing_gen:
+            conn.execute("ALTER TABLE generation_inputs ADD COLUMN input_json TEXT")
         existing_articles = {row["name"] for row in conn.execute("PRAGMA table_info(articles)")}
         if "dedup_key" not in existing_articles:
             conn.execute("ALTER TABLE articles ADD COLUMN dedup_key TEXT")

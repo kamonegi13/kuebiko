@@ -673,12 +673,30 @@ async def generate_synthesis(
         freshness=assessment.freshness,
         previous_synthesis=previous_synthesis,
     )
+
+    def _input_data() -> dict[str, Any]:
+        return {
+            "period_type": period_type,
+            "period_label": label,
+            "period_start": start,
+            "period_end": end,
+            "lookback_hours": lookback_hours,
+            "baseline_weeks": baseline_weeks,
+            "nation_window_days": nation_window_days,
+            "axes_data": axes_data,
+            "trend_clusters": trend_clusters,
+            "high_importance_articles": high_importance,
+            "freshness": assessment.freshness,
+            "previous_synthesis": previous_synthesis,
+        }
+
     record_generation_input(
         step="synthesis_narrative",
         model=llm.model,
         product_kind="synthesis",
         product_id=f"{period_type}:{start.isoformat()}",
         prompt_text=prompt,
+        input_data=_input_data,
     )
     _log.info(
         "synthesis_llm_request",
@@ -750,6 +768,7 @@ async def generate_synthesis(
             product_kind="synthesis",
             product_id=f"{period_type}:{start.isoformat()}:retry1",
             prompt_text=retry_prompt,
+            input_data=lambda: {**_input_data(), "retry_missing": list(missing)},
         )
         try:
             response2 = await llm.generate(

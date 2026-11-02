@@ -699,6 +699,18 @@ async def render_sections(
         product_kind="synthesis_grounded_render",
         product_id=f"{est.period_type}:{period_label}:render",
         prompt_text=plan.prompt,
+        input_data=lambda: {
+            "estimate": estimate_to_dict(est),
+            "period_label": period_label,
+            "prev_headline_judgment_id": prev_headline_judgment_id,
+            "cot_notes": cot,
+            "mode": mode,
+            "head_id": head.id if head is not None else None,
+            "ranked_ids": [j.id for j in ranked],
+            "body_count": plan.body_count,
+            "listed_count": plan.listed_count,
+            "omitted_count": plan.omitted_count,
+        },
     )
     raw = await llm.generate_structured(
         plan.prompt,

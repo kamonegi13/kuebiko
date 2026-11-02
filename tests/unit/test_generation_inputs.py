@@ -153,6 +153,10 @@ async def test_grounded_render_records_prompt(monkeypatch: pytest.MonkeyPatch) -
     await _run_render()
     assert len(spy.calls) == 1
     assert spy.calls[0]["product_kind"] == "synthesis_grounded_render"
+    data = json.loads(spy.calls[0]["input_json"])
+    assert data["estimate"]["period_type"]
+    assert data["period_label"] == "L"
+    assert data["ranked_ids"]
     assert (
         spy.calls[0]["prompt_sha256"]
         == hashlib.sha256(spy.calls[0]["prompt_text"].encode()).hexdigest()
@@ -189,6 +193,9 @@ async def test_deep_dive_records_prompt(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(spy.calls) == 1
     assert spy.calls[0]["product_kind"] == "deep_dive"
     assert spy.calls[0]["prompt_text"] == "DIGEST PROMPT"
+    data = json.loads(spy.calls[0]["input_json"])
+    assert data["selected_ids"] == ["a1"]
+    assert data["candidates"][0]["summary"] == "要約"
 
 
 @pytest.mark.asyncio
@@ -246,6 +253,9 @@ async def test_pir_daily_focus_records_prompt_and_survives_failure(
     else:
         assert [c["prompt_text"] for c in spy.calls] == [sent]
         assert spy.calls[0]["product_kind"] == "pir_daily_focus"
+        data = json.loads(spy.calls[0]["input_json"])
+        assert data["pir_id"] == "pir_test"
+        assert data["matches"] == []
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -300,6 +310,12 @@ async def test_legacy_synthesis_records_prompt_and_survives_failure(
         assert [c["prompt_text"] for c in spy.calls] == sent
         assert spy.calls[0]["product_kind"] == "synthesis"
         assert spy.calls[1]["product_id"].endswith(":retry1")
+        first = json.loads(spy.calls[0]["input_json"])
+        retry = json.loads(spy.calls[1]["input_json"])
+        assert first["period_type"] == "daily"
+        assert first["axes_data"] == [{"total_current": 3}]
+        assert retry["retry_missing"]
+        assert {k: v for k, v in retry.items() if k != "retry_missing"} == first
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -308,6 +324,7 @@ async def test_spotlight_records_prompt_and_survives_failure(
     monkeypatch: pytest.MonkeyPatch, fail: bool
 ) -> None:
     from datetime import UTC, datetime
+    from types import SimpleNamespace
 
     from src.spotlight import generator as gen
     from src.spotlight.generator import generate_spotlight
@@ -331,7 +348,7 @@ async def test_spotlight_records_prompt_and_survives_failure(
     record = await generate_spotlight(
         _FakePir(),  # type: ignore[arg-type]
         llm=llm,  # type: ignore[arg-type]
-        assessment=object(),  # type: ignore[arg-type]
+        assessment=SimpleNamespace(freshness={"lag_hours": 3}),  # type: ignore[arg-type]
         now=datetime(2026, 9, 6, tzinfo=UTC),
     )
     assert record is not None
@@ -340,6 +357,11 @@ async def test_spotlight_records_prompt_and_survives_failure(
     else:
         assert [c["prompt_text"] for c in spy.calls] == [llm.prompts[0]]
         assert spy.calls[0]["product_kind"] == "spotlight"
+        data = json.loads(spy.calls[0]["input_json"])
+        assert data["period_type"] == "weekly"
+        assert [c["article_id"] for c in data["candidates"]] == [f"a{i}" for i in range(6)]
+        assert data["graph_context"] == ""
+        assert data["freshness"] == {"lag_hours": 3}
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -356,7 +378,19 @@ async def test_eventnews_records_base_prompt_and_survives_failure(
     from src.eventnews.models import EventNewsDraft, GateResult
 
     spy = _use_spy_or_raiser(monkeypatch, fail=fail)
-    member = SimpleNamespace(body="本文")
+    member = SimpleNamespace(
+        article_id="m1",
+        title="題",
+        url="https://kuebiko.example/m1",
+        feed_title="F",
+        importance="high",
+        category="apt",
+        kind="",
+        account_class="",
+        anchor_ts=datetime(2026, 10, 30, tzinfo=UTC),
+        summary="要約",
+        body="本文",
+    )
     draft = EventNewsDraft(headline="見出し", bluf="要旨")
     gate = GateResult(
         draft=draft, dropped_lines=0, repaired_ids=0, substituted_ids=0, verified=True
@@ -388,7 +422,15 @@ async def test_eventnews_records_base_prompt_and_survives_failure(
 
     item = SimpleNamespace(
         members=[member],
-        snapshot=SimpleNamespace(item_id="ev1", current_version=0, importance="high"),
+        snapshot=SimpleNamespace(
+            item_id="ev1",
+            current_version=0,
+            importance="high",
+            status="new",
+            first_reported_at=datetime(2026, 10, 30, tzinfo=UTC),
+            last_reported_at=datetime(2026, 10, 31, tzinfo=UTC),
+            member_ids=(member.article_id,),
+        ),
     )
     llm = SimpleNamespace(model="m")
     out_gate, _ = await rn._generate_version(
@@ -405,6 +447,12 @@ async def test_eventnews_records_base_prompt_and_survives_failure(
     else:
         assert [c["prompt_text"] for c in spy.calls] == ["BASE PROMPT"]
         assert spy.calls[0]["product_id"] == "ev1:v1"
+        data = json.loads(spy.calls[0]["input_json"])
+        assert data["item_id"] == "ev1"
+        assert data["version"] == 1
+        assert [m["article_id"] for m in data["members"]] == [member.article_id]
+        assert data["omitted_ids"] == []
+        assert "body" not in data["members"][0]
 
 
 def test_counts_return_only_kind_counts_not_bodies(
@@ -475,3 +523,161 @@ async def test_deep_dive_retry_prompt_is_recorded(monkeypatch: pytest.MonkeyPatc
     assert len(sent) == 2
     assert [c["prompt_text"] for c in spy.calls] == sent
     assert spy.calls[1]["product_id"].endswith(":retry1")
+    retry = json.loads(spy.calls[1]["input_json"])
+    assert retry["retry_uncited_ids"] == ["a2"]
+    assert retry["retry_previous_output"]["sections"]
+    assert "retry_uncited_ids" not in json.loads(spy.calls[0]["input_json"])
+
+
+# --- input_json (U-E): 直列化・上限・保存・移行 ---------------------------------------------
+
+
+def test_serialize_input_handles_dataclass_datetime_set() -> None:
+    import dataclasses
+    from datetime import UTC, datetime
+
+    @dataclasses.dataclass(frozen=True)
+    class Row:
+        n: int
+
+    text = generation_inputs.serialize_input(
+        {
+            "when": datetime(2026, 11, 2, tzinfo=UTC),
+            "rows": (Row(1),),
+            "ids": frozenset({"b", "a"}),
+            "ja": "日本語",
+        }
+    )
+    assert json.loads(text) == {
+        "when": "2026-11-02T00:00:00+00:00",
+        "rows": [{"n": 1}],
+        "ids": ["a", "b"],
+        "ja": "日本語",
+    }
+    assert "日本語" in text  # ensure_ascii=False
+
+
+def test_serialize_input_is_bounded_by_dropping_largest_fields() -> None:
+    data = {"small": [1, 2], "big": "x" * 5000, "mid": "y" * 500}
+    text = generation_inputs.serialize_input(data, limit=1000)
+    out = json.loads(text)
+    assert len(text) <= 1000
+    assert out["_truncated"] is True
+    assert out["big"] == {
+        "_dropped_chars": len(json.dumps({"big": "x" * 5000}, separators=(",", ":")))
+    }
+    assert out["small"] == [1, 2]
+    assert out["mid"] == "y" * 500
+
+
+def test_serialize_input_small_payload_has_no_truncated_mark() -> None:
+    assert "_truncated" not in generation_inputs.serialize_input({"a": 1})
+
+
+def test_input_json_is_stored_and_null_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GENERATION_INPUT_RECORD", raising=False)
+    repo = RunHistoryRepository(db_path=tmp_path / "g.db")
+    generation_inputs.record_generation_input(
+        step="s",
+        model="m",
+        product_kind="k",
+        product_id="1",
+        prompt_text=PROMPT,
+        repo=repo,
+        input_data=lambda: {"ids": ["a1", "a2"]},
+    )
+    _record(repo)
+    rows = _rows(repo)
+    assert json.loads(rows[0]["input_json"]) == {"ids": ["a1", "a2"]}
+    assert rows[1]["input_json"] is None
+
+
+def test_input_data_failure_keeps_prompt_row_and_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GENERATION_INPUT_RECORD", raising=False)
+    repo = RunHistoryRepository(db_path=tmp_path / "g.db")
+
+    def boom() -> dict[str, Any]:
+        raise KeyError("x")
+
+    generation_inputs.record_generation_input(
+        step="s",
+        model="m",
+        product_kind="k",
+        product_id="1",
+        prompt_text=PROMPT,
+        repo=repo,
+        input_data=boom,
+    )
+    rows = _rows(repo)
+    assert len(rows) == 1 and rows[0]["input_json"] is None
+    assert write_failures.snapshot()["generation_inputs"] == 1
+
+
+def test_input_data_not_built_when_flag_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENERATION_INPUT_RECORD", "0")
+    called: list[int] = []
+
+    def build() -> dict[str, Any]:
+        called.append(1)
+        return {}
+
+    generation_inputs.record_generation_input(
+        step="s",
+        model="m",
+        product_kind="k",
+        product_id="1",
+        prompt_text=PROMPT,
+        input_data=build,
+    )
+    assert called == []
+
+
+def test_sqlite_migration_adds_input_json_idempotently(tmp_path: Path) -> None:
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.execute(
+        "CREATE TABLE generation_inputs (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " recorded_at TEXT NOT NULL, step TEXT NOT NULL, model TEXT NOT NULL,"
+        " product_kind TEXT NOT NULL, product_id TEXT NOT NULL, prompt_sha256 TEXT NOT NULL,"
+        " prompt_chars INTEGER NOT NULL, prompt_text TEXT NOT NULL)"
+    )
+    con.commit()
+    con.close()
+    RunHistoryRepository(db_path=db)
+    RunHistoryRepository(db_path=db)  # 2 回目も落ちない
+    con = sqlite3.connect(db)
+    cols = [r[1] for r in con.execute("PRAGMA table_info(generation_inputs)")]
+    con.close()
+    assert cols.count("input_json") == 1
+
+
+def test_pg_schema_has_idempotent_input_json_migration() -> None:
+    from src.storage import pg_schema, schema_sql
+
+    assert (
+        "ALTER TABLE generation_inputs ADD COLUMN IF NOT EXISTS input_json TEXT"
+        in pg_schema.PG_SCHEMA_SQL
+    )
+    assert "input_json" in schema_sql._SCHEMA_SQL
+
+
+def test_insert_translates_for_pg() -> None:
+    from src.storage.db_backend import translate_sql
+
+    sql = (
+        "INSERT INTO generation_inputs (recorded_at, step, model, product_kind,"
+        " product_id, prompt_sha256, prompt_chars, prompt_text, input_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    out = translate_sql(sql)
+    assert out.count("%s") == 9 and "?" not in out
+
+
+def test_public_exports_forbid_input_json() -> None:
+    assert "input_json" in export_public_site._FORBIDDEN_KEYS

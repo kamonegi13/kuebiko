@@ -422,12 +422,14 @@ async def generate_spotlight(
         insert_after_candidates,
     )
 
+    graph_block = ""
     if graph_context_enabled():
         try:
             block = build_graph_context(
                 RunHistoryRepository(), [c["article_id"] for c in candidate_articles], end
             )
             prompt = insert_after_candidates(prompt, block)
+            graph_block = block
             _log.info("spotlight_graph_context", pir_id=pir.id, lines=block.count("\n- "))
         except Exception as e:  # noqa: BLE001
             _log.warning("spotlight_graph_context_failed", pir_id=pir.id, error=str(e))
@@ -438,6 +440,20 @@ async def generate_spotlight(
         product_kind="spotlight",
         product_id=f"{pir.id}:{period_type}:{start.isoformat()}",
         prompt_text=prompt,
+        input_data=lambda: {
+            "pir_id": pir.id,
+            "period_type": period_type,
+            "period_label": period_label,
+            "period_start": start,
+            "period_end": end,
+            "lookback_hours": lookback_hours,
+            "candidate_limit": candidate_limit,
+            "candidates": candidate_articles,
+            "ledger_situations": ledger_situations,
+            "previous_spotlight": previous_spotlight,
+            "freshness": assessment.freshness,
+            "graph_context": graph_block,
+        },
     )
     _log.info(
         "spotlight_llm_call_start",

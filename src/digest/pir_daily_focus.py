@@ -349,6 +349,11 @@ async def _generate_llm_summary(
         product_kind="pir_daily_focus",
         product_id=f"{pir.id}:{datetime.now(ZoneInfo('Asia/Tokyo')).date().isoformat()}",
         prompt_text=prompt,
+        input_data=lambda: {
+            "pir_id": pir.id,
+            "v6": v6_prompt is not None,
+            "matches": matches,
+        },
     )
     gate_on = fidelity_gate_enabled()
     max_attempts = _FIDELITY_GATE_MAX_ATTEMPTS if gate_on else 1

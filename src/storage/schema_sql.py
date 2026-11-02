@@ -1135,7 +1135,9 @@ CREATE TABLE IF NOT EXISTS generation_inputs (
     product_id    TEXT NOT NULL,
     prompt_sha256 TEXT NOT NULL,
     prompt_chars  INTEGER NOT NULL,
-    prompt_text   TEXT NOT NULL
+    prompt_text   TEXT NOT NULL,
+    -- prompt の元の構造化入力 (id・欄の JSON、上限あり、NULL 可)。本文を含むため公開しない
+    input_json    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_product
     ON generation_inputs(product_kind, product_id);
