@@ -254,8 +254,7 @@ def hedge_rewrite_hint(result: AnchorGateResult) -> str:
     return (
         "次の行は、anchor (原文) が留保・伝聞の語"
         " (allegedly / reportedly / とされる / 可能性 等) を含むのに、text が断定になっています。"
-        "text に留保・帰属の語を残してください: "
-        + ", ".join(where)
+        "text に留保・帰属の語を残してください: " + ", ".join(where)
     )
 
 

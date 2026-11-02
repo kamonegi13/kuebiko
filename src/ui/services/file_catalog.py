@@ -233,6 +233,30 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "DB 所有でプロンプトタブから編集 (層分け 3 本目 2026-08-20)。"
         "seed 合成 = legacy .j2 と byte 一致が golden 不変量",
     ),
+    "prompts/eventnews/refine_v7.j2": FileInfo(
+        "事象ニュース",
+        "事象ニュース精製 v7 (anchor つき)",
+        "n20 T5。facts・caveats・discrepancies に出典の原文の逐語 anchor を足した版。"
+        "旗 FACT_ANCHOR=on / shadow のときだけ使う (既定 off、src/eventnews/fact_anchor.py)",
+    ),
+    "prompts/synthesis/render_v9.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "narrative 射影 v9 (節の部品)",
+        "n20 T5 (U-B)。判定ごとの world/implication の文だけを書かせ、確度語・反証・対立仮説は"
+        "コードが描く。旗 SLOT_RENDER=on / shadow のときだけ使う (既定 off、slot_render.py)",
+    ),
+    "prompts/spotlight/pir_spotlight_staged_v7.j2": FileInfo(
+        "Spotlight",
+        "PIR Spotlight 多段 v7",
+        "n20 T5 (U-A)。主要事象 → 但し書き・未解明点 → 観点 a・b の 3 段。(c) は対応表、"
+        "(d) なし。旗 SPOTLIGHT_STAGED=on / shadow のときだけ使う (既定 off、staged.py)",
+    ),
+    "prompts/digest/weekly_recap_v3.j2": FileInfo(
+        "ダイジェスト",
+        "週次リキャップ v3 (要点の構造)",
+        "n20 T5。節を要点 {text, article_ids} の並びで書かせ、本文はコードが組む。"
+        "旗 DEEP_DIVE_SLOT_RENDER=on / shadow のときだけ使う (既定 off、recap_points.py)",
+    ),
     "prompts/eventnews/refine.j2": FileInfo(
         "事象ニュース",
         "事象ニュース精製",
