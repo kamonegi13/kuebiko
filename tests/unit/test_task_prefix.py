@@ -222,6 +222,30 @@ def test_i58_gets_every_marker_including_pir_focus_and_axes() -> None:
     assert with_task_prefix("本文", Step.TRIAGE, "kuebiko-sft:i58") == "[task: triage]\n本文"
 
 
+def test_translate_markers_only_for_models_trained_on_them(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """翻訳・MITRE 和訳の印は n20 だけ (2026-10-18)。他の印つきモデルに足しても付かない。"""
+    monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
+    for step in (Step.ARTICLE_TRANSLATE, Step.ACTOR_SYNC):
+        for model in ("kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58", "kuebiko-sft:s23i"):
+            assert with_task_prefix("本文", step, model) == "本文"
+    # n20 は評価中の新モデル: 環境変数で足したときだけ付く (本番投入で PREFIX_TRAINED_MODELS へ足す)
+    assert with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:n20") == "本文"
+    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:n20")
+    assert (
+        with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:n20")
+        == "[task: translate]\n本文"
+    )
+    assert (
+        with_task_prefix("本文", Step.ACTOR_SYNC, "kuebiko-sft:n20") == "[task: actor_sync]\n本文"
+    )
+
+
+def test_translate_marker_not_added_to_unregistered_model_even_if_enabled(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s24")
+    assert with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:s24") == "本文"
+    assert with_task_prefix("本文", Step.TRIAGE, "kuebiko-sft:s24") == "[task: triage]\n本文"
+
+
 def test_s24_family_gets_markers_for_trained_steps_and_none_for_untrained() -> None:
     """s24 / s24b とその補間タグ (前方一致) は印つき。未学習の step には印を付けない。"""
     from src.tools.task_prefix import task_prefix_enabled, with_task_prefix
@@ -275,3 +299,15 @@ def test_s24b_aux_markers_follow_s24b_family_only() -> None:
     assert with_task_prefix("本文", Step.IOC_LLM_VERIFY, s23i) == "[task: summary]\n本文"
     assert with_task_prefix("本文", Step.LEDGER_ACH_AUX, s23i) == "[task: ach]\n本文"
     assert with_task_prefix("本文", Step.DEDUP_CLUSTER_JUDGE, "kuebiko-sft:s23i") == "本文"
+
+
+def test_trained_only_steps_have_no_factory_prefix_by_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """既定 (n20 を有効化していない本番) では翻訳・和訳に wrapper を掛けない = 従来と同じ。"""
+    from src.tools.task_prefix import prefix_for
+
+    monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
+    for step in (Step.ARTICLE_TRANSLATE, Step.ACTOR_SYNC):
+        assert prefix_for(step) == ""
+    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:n20")
+    assert prefix_for(Step.ARTICLE_TRANSLATE) == "[task: translate]\n"
+    assert prefix_for(Step.TRIAGE) != ""  # 制限のない step は不変

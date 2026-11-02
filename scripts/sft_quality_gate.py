@@ -30,7 +30,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from sft_gate_schemas import SCHEMA_CHECKS, _summary_contract  # noqa: E402
+from sft_gate_schemas import INPUT_AWARE_CHECKS, SCHEMA_CHECKS, _summary_contract  # noqa: E402
 
 from src.pipeline.summary_runaway import _is_runaway_text  # noqa: E402
 
@@ -60,7 +60,8 @@ HASH_RE = re.compile(
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2}) \d{2}:\d{2} 〜")
 
-FREE_TEXT_TASKS = frozenset({"pir_focus", "none"})
+#: translate / actor_sync は n20 の自由文の課題 (訳文だけ。JSON にしない)
+FREE_TEXT_TASKS = frozenset({"pir_focus", "none", "translate", "actor_sync"})
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +253,12 @@ def _free_text_errors(out: str) -> list[str]:
     return []
 
 
+def _structured_errors(r: Row, j: Any) -> list[str]:
+    if r.task in INPUT_AWARE_CHECKS:
+        return INPUT_AWARE_CHECKS[r.task](j, r.user)
+    return SCHEMA_CHECKS[r.task](j)
+
+
 def check_schema(rows: list[Row]) -> CheckResult:
     res = CheckResult("2_output_schema")
     reasons: dict[str, Counter[str]] = defaultdict(Counter)
@@ -261,9 +268,9 @@ def check_schema(rows: list[Row]) -> CheckResult:
             nonempty_extra.update(_nonempty_extra_keys(r))
         if r.task in FREE_TEXT_TASKS:
             errs = _free_text_errors(r.out)
-        elif r.task in SCHEMA_CHECKS:
+        elif r.task in SCHEMA_CHECKS or r.task in INPUT_AWARE_CHECKS:
             j = _try_json(r.out)
-            errs = ["not_json"] if j is None else SCHEMA_CHECKS[r.task](j)
+            errs = ["not_json"] if j is None else _structured_errors(r, j)
         else:
             res.uninspectable[r.task] = res.uninspectable.get(r.task, 0) + 1
             continue

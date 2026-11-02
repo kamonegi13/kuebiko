@@ -178,6 +178,48 @@ _JSON_MAPPING_RE = re.compile(r'\{\s*"[^"\n]{1,400}"\s*:\s*"')
 #: 原文がそのまま写っているとみなす長さ (英字の連続した一節)
 _ECHO_MIN_CHARS = 80
 
+#: 「原文の写し」判定から、正しく訳しても原文のまま残る行 (URL・タグ等) を除く旗 (既定 off)。
+#: 本番のプロンプトは URL・IoC・コードを「そのまま維持」させるので、そうした行を含む記事は
+#: **正しい訳でも**判定が発火する (2026-10-18: 失敗 65 chunk のうち 62 は保持すべき行を含み、
+#: 散文だけの chunk の失敗は 1/164。data/eval/N20C_report.md)。
+ECHO_EXEMPT_ENV = "TRANSLATE_ECHO_EXEMPT_RETAINABLE"
+
+_RETAIN_URL_RE = re.compile(r"https?://|hxxps?://|www\.", re.IGNORECASE)
+_RETAIN_HASH_RE = re.compile(r"\b[0-9a-f]{32,}\b", re.IGNORECASE)
+_RETAIN_CODE_RE = re.compile(r"[{}<>\\]|\w\([^)]*\)\s*;")
+_RETAIN_CVE_RE = re.compile(r"CVE-\d{4}-\d+")
+_RETAIN_MIN_TITLE_WORDS = 6
+
+
+def retainable_head_kind(head: str) -> str | None:
+    """段落の先頭 80 字が、正しく訳しても原文のまま残る種類なら名前、そうでなければ None。"""
+    if _RETAIN_URL_RE.search(head):
+        return "url"
+    if _RETAIN_HASH_RE.search(head):
+        return "hash"
+    if head.count("#") >= 3:
+        return "hashtags"
+    if _RETAIN_CODE_RE.search(head):
+        return "code"
+    if head.count(" ") / max(1, len(head)) < 0.08:
+        return "token_like"
+    if head[:1] in "-*" and _RETAIN_CVE_RE.search(head):
+        return "cve_list"
+    letters = [c for c in head if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) / len(letters) > 0.7:
+        return "allcaps"
+    words = re.findall(r"[A-Za-z][A-Za-z'&-]*", head)
+    if (
+        len(words) >= _RETAIN_MIN_TITLE_WORDS
+        and sum(w[0].isupper() for w in words) / len(words) >= 0.8
+    ):
+        return "titlecase_label"
+    return None
+
+
+def _echo_exempt_enabled() -> bool:
+    return os.environ.get(ECHO_EXEMPT_ENV, "0").strip().lower() in ("1", "true", "on")
+
 
 ECHO_REASON = "原文がそのまま写っている"
 
@@ -197,11 +239,14 @@ def find_echo_match(source: str, output: str) -> EchoMatch | None:
     判定条件は ``broken_translation_reason`` が使うもの (2026-10-29 P0-24 では緩めない)。
     返すのは長さと英字率だけで、緩めるかの判断材料 (製品名の並び・コード・URL か否か) に使う。
     """
+    exempt = _echo_exempt_enabled()
     paragraphs = (p.strip() for p in source.split("\n") if p.strip())
     for index, para in enumerate(paragraphs):
         head = para[:_ECHO_MIN_CHARS]
         letters = sum(c.isascii() and c.isalpha() for c in head)
         if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
+            if exempt and retainable_head_kind(head):
+                continue
             ascii_letters = sum(c.isascii() and c.isalpha() for c in para)
             return EchoMatch(index, len(para), round(ascii_letters / len(para), 3))
     return None
@@ -213,6 +258,9 @@ def broken_translation_reason(source: str, output: str) -> str | None:
     ⚠ 2026-10-02: 翻訳の担当を s21 (JSON で答える課題を学習) にした 09-29 から、訳文に
     ``{"原文": "訳文"}`` の形と英語の原文の写しが混ざり、ほぼ全件が壊れていた。関門で弾いて
     保存させない (壊れた訳がキャッシュされ続けるのを防ぐ)。
+
+    ``TRANSLATE_ECHO_EXEMPT_RETAINABLE=1`` のとき、原文の写しの判定は URL・ハッシュタグ・コード等の
+    「そのまま維持すべき行」を見ない (既定 off。理由は ``ECHO_EXEMPT_ENV``)。
     """
     if _JSON_MAPPING_RE.search(output):
         return "JSON の形が混ざっている"
