@@ -121,6 +121,8 @@ module = [
     "build_pair_input",
     "day0_triage",
     "gpu_window_common",
+    "grok_link_arms",
+    "grok_link_sample",
     "pstop",
     "verify_sustained",
 ]
