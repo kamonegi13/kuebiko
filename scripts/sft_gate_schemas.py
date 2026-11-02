@@ -14,6 +14,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sft_gate_n20_schemas import INPUT_AWARE_CHECKS  # noqa: E402,F401  (再公開)
+
 from src.pipeline.summary import SummaryEvidenceOutput  # noqa: E402
 
 KINDS = ("advisory", "exploitation", "breach", "stats", "roundup", "other")
