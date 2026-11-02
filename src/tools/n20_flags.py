@@ -1,13 +1,16 @@
 """n20 の本番の構造変更 (契約 T5) の旗。すべて既定 off = いまの出力と同一。
 
-契約: data/eval/n20_contract_2026_11_02.md §3 T5・§4 U-A/U-B。設計: n20_s26_design_2026_10_29.md §2.2。
+契約: data/eval/n20_contract_2026_11_02.md §3 T5・§4 U-A/U-B。
+設計: data/eval/n20_s26_design_2026_10_29.md §2.2。
 
-| 旗 | 対象 | off (既定) | shadow | on |
-|---|---|---|---|---|
-| ``FACT_ANCHOR`` | 事象ニュース | eventnews-v6 | v6 で配信 + v7 (anchor つき) を別に生成して関門の数だけ log | v7 + anchor の関門 |
-| ``SLOT_RENDER`` | 状況総括の render | render.j2 | 旧で配信 + v9 (節の部品) を別に生成して log | v9 + 確度語・反証・対立仮説をコードが描く |
-| ``SPOTLIGHT_STAGED`` | Spotlight | 1 段の生成 | 1 段で配信 + 多段を別に生成して所要と数を log | 多段 (a・b を LLM、(c) は対応表、(d) なし) |
-| ``DEEP_DIVE_SLOT_RENDER`` | 深掘りの本文 | 節の散文 | 散文で配信 + 要点の形を別に生成して log | 要点の構造 → 文はコードが組む |
+- ``FACT_ANCHOR`` (事象ニュース): off = eventnews-v6 / shadow = v6 で配信し、v7 (anchor つき) を
+  別に生成して関門の件数だけ log / on = v7 + anchor の関門
+- ``SLOT_RENDER`` (状況総括の render): off = render.j2 / shadow = 旧で配信し、v9 (節の部品) を別に
+  生成して log / on = v9 + 確度語・反証・対立仮説をコードが描く (U-B)
+- ``SPOTLIGHT_STAGED`` (Spotlight): off = 1 段の生成 / shadow = 1 段で配信し、多段を別に生成して
+  所要と件数を log / on = 多段 (観点 a・b を LLM、(c) は対応表、(d) なし — U-A)
+- ``DEEP_DIVE_SLOT_RENDER`` (深掘りの本文): off = 節の散文 / shadow = 散文で配信し、要点の形を別に
+  生成して log / on = 要点の構造 → 文はコードが組む
 
 値は ``0`` / ``off`` (既定)・``shadow``・``1`` / ``on``。**未知の値は off** (本番の挙動に倒す)。
 shadow は LLM の呼び出しが増える (配信は変わらない)。旗を on にする切替は SW-N20 の側で行う。

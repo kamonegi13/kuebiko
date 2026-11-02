@@ -28,6 +28,8 @@ _log = structlog.get_logger(__name__)
 EVENT_NEWS_MAX_TOKENS = 6144
 
 _PROMPT_TEMPLATE = "eventnews/refine.j2"
+#: n20 T5 (旗 FACT_ANCHOR=on): facts・caveats・discrepancies に anchor を足した版
+_PROMPT_TEMPLATE_V7 = "eventnews/refine_v7.j2"
 _PROMPTS_DIR = Path("prompts")
 
 # member 1 件あたり title/feed_title の切詰め上限
@@ -132,20 +134,9 @@ def _prompt_env() -> jinja2.Environment:
     )
 
 
-def build_prompt(
-    members: Sequence[MemberArticle],
-    allowed_identifiers_text: str,
-    *,
-    rewrite_hint: str = "",
-) -> str:
-    """``prompts/eventnews/refine.j2`` を render する (§9)。
-
-    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** ``body_cap``
-    字で切詰め、本文が無ければ要約) / 省略件数 / 使ってよい識別子一覧 (呼び手が整形済み)。
-    """
-    selected, omitted = select_members(members)
+def _numbered_members(selected: Sequence[MemberArticle]) -> list[dict[str, object]]:
     cap = body_cap(len(selected))
-    numbered = [
+    return [
         {
             "index": i,
             "title": m.title[:_MEMBER_FIELD_CHAR_CAP],
@@ -155,8 +146,37 @@ def build_prompt(
         }
         for i, m in enumerate(selected, start=1)
     ]
-    template = _prompt_env().get_template(_PROMPT_TEMPLATE)
-    return template.render(
+
+
+def prompt_member_texts(selected: Sequence[MemberArticle]) -> dict[int, str]:
+    """[N] → プロンプトで見せた本文 (anchor の照合範囲。見せていない部分は照合しない)。"""
+    return {int(str(m["index"])): str(m["summary"]) for m in _numbered_members(selected)}
+
+
+def _template_name() -> str:
+    """旗 ``FACT_ANCHOR=on`` のときだけ eventnews-v7 (anchor つき)。既定は v6 (refine.j2)。"""
+    from src.tools.n20_flags import fact_anchor_mode
+
+    return _PROMPT_TEMPLATE_V7 if fact_anchor_mode() == "on" else _PROMPT_TEMPLATE
+
+
+def build_prompt(
+    members: Sequence[MemberArticle],
+    allowed_identifiers_text: str,
+    *,
+    rewrite_hint: str = "",
+    template: str | None = None,
+) -> str:
+    """``prompts/eventnews/refine.j2`` を render する (§9)。
+
+    渡すコンテキスト: 番号付きメンバー (title/feed_title/anchor/**本文** ``body_cap``
+    字で切詰め、本文が無ければ要約) / 省略件数 / 使ってよい識別子一覧 (呼び手が整形済み)。
+    ``template`` 未指定は旗に従う (既定 refine.j2 = eventnews-v6)。
+    """
+    selected, omitted = select_members(members)
+    numbered = _numbered_members(selected)
+    tmpl = _prompt_env().get_template(template or _template_name())
+    return tmpl.render(
         members=numbered,
         omitted=omitted,
         # 単独報は「統合」ではなく 1 記事の再構成。節ごとの要約で読み物にする
@@ -181,6 +201,14 @@ async def generate_draft(
     ``llm`` は呼出側が ``model_tiers.build_llm_for(Step.EVENT_NEWS, config)`` 等で
     組み立てて渡す — モデル名をここでハードコードしない。
     """
+    from src.tools.n20_flags import fact_anchor_mode
+
+    if fact_anchor_mode() == "on":
+        from src.eventnews.anchored_generator import generate_anchored_draft
+
+        return await generate_anchored_draft(
+            members, allowed_identifiers_text, llm, rewrite_hint=rewrite_hint
+        )
     prompt = build_prompt(members, allowed_identifiers_text, rewrite_hint=rewrite_hint)
     draft: EventNewsDraft = await llm.generate_structured(
         prompt=prompt,

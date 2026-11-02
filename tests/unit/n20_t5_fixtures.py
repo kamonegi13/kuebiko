@@ -64,7 +64,9 @@ def judgment(
         confidence=confidence,  # type: ignore[arg-type]
         confidence_basis="ACH",
         hypotheses=tuple(hyps),
-        evidence=(EvidenceItem("a1", "research", "vendor_report", "侵入が観測された", "supports"),),
+        evidence=(
+            EvidenceItem("a1", "research", "vendor_confirmed", "侵入が観測された", "supports"),
+        ),
         indicators=("同種の侵入の再発",),
         adversarial_refuted=refuted,
         adversarial_note="標的の偏りは偶然の可能性" if refuted else "",
