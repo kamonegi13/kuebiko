@@ -774,6 +774,7 @@ def event_news_relations(item_id: str) -> dict[str, Any]:
     以後 30 分キャッシュ)。
     """
     from src.eventnews.relations import RELATION_LABELS, relations_by_event
+    from src.graph.edge_tiers import tier_for_rel_type
 
     repo = _repo()
     rels = relations_by_event(repo).get(item_id, [])
@@ -788,6 +789,8 @@ def event_news_relations(item_id: str) -> dict[str, Any]:
                 "headline": v.headline if v is not None else _first_member_title(repo, other),
                 "rel_type": r.rel_type,
                 "label": RELATION_LABELS.get(r.rel_type, r.rel_type),
+                # 用途の範囲 (定数 src/graph/edge_tiers.py から。表の行は読まない)
+                "tier": tier_for_rel_type(r.rel_type),
                 # 向き: この事象が先 (a) か後 (b) か。包含は a = まとめの側
                 "role": "a" if r.a == item_id else "b",
                 "basis": [_basis_label(b) for b in r.basis],

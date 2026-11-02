@@ -283,6 +283,7 @@ def _register_bespoke_jobs(
     from src.ui.services.eventnews_merge_job import run_eventnews_merge_hourly
     from src.ui.services.fill_rate_audit import run_weekly_fill_rate_audit
     from src.ui.services.geo_rescue_shadow_job import run_geo_rescue_shadow_hourly
+    from src.ui.services.graph_edges_daily import run_graph_edges_daily
     from src.ui.services.ledger_reassess_job import run_ledger_reassess_hourly
     from src.ui.services.maintenance import run_daily_maintenance
     from src.ui.services.prompt_governance import run_weekly_prompt_governance
@@ -312,6 +313,7 @@ def _register_bespoke_jobs(
         "ua-health-check": run_ua_health_check,
         "nvd-cvss-refresh": run_cvss_refresh,
         "daily-maintenance": run_daily_maintenance,
+        "graph-edges-daily": run_graph_edges_daily,
         "daily-heartbeat": run_daily_heartbeat,
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,
