@@ -19,7 +19,12 @@ from collections.abc import Callable, Mapping
 from datetime import date, datetime
 from typing import Any
 
+from pydantic import BaseModel
+
+from src.logging_config import get_logger
 from src.ops.write_failures import record_failure
+
+_log = get_logger(__name__)
 
 GENERATION_INPUT_RECORD_ENV = "GENERATION_INPUT_RECORD"
 COMPONENT = "generation_inputs"
@@ -64,6 +69,8 @@ def prompt_sha256(prompt_text: str) -> str:
 def _json_default(obj: Any) -> Any:
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, (set, frozenset)):
@@ -82,13 +89,33 @@ def serialize_input(data: Mapping[str, Any], *, limit: int = MAX_INPUT_JSON_CHAR
     if len(text) <= limit:
         return text
     current: dict[str, Any] = {**data, "_truncated": True}
+    # 各欄の直列化サイズは 1 回だけ測り、置換後の全体サイズは差分で更新する (O(欄数))
     sizes = {k: len(_dumps({k: v})) for k, v in data.items()}
+    total = len(text) + len(',"_truncated":true')
     for key in sorted(sizes, key=lambda k: sizes[k], reverse=True):
-        current = {**current, key: {"_dropped_chars": sizes[key]}}
-        text = _dumps(current)
-        if len(text) <= limit:
-            return text
-    return text
+        placeholder = {"_dropped_chars": sizes[key]}
+        total += len(_dumps({key: placeholder})) - sizes[key]
+        current = {**current, key: placeholder}
+        if total <= limit:
+            return _dumps(current)
+    return _dumps(current)
+
+
+# 表の列幅 (repo 側の切り詰めと同じ値)。切り詰めたら本文なしで警告する
+_FIELD_LIMITS = {"step": 80, "model": 120, "product_kind": 40, "product_id": 200}
+
+
+def _clip_identifiers(**fields: str) -> dict[str, str]:
+    clipped: dict[str, str] = {}
+    for name, value in fields.items():
+        limit = _FIELD_LIMITS[name]
+        if len(value) > limit:
+            _log.warning(
+                "generation_input_field_truncated", field=name, chars=len(value), limit=limit
+            )
+            value = value[:limit]
+        clipped[name] = value
+    return clipped
 
 
 def record_generation_input(
@@ -118,10 +145,9 @@ def record_generation_input(
     try:
         target = repo if repo is not None else _default_repo()
         target.record_generation_input(
-            step=step,
-            model=model,
-            product_kind=product_kind,
-            product_id=product_id,
+            **_clip_identifiers(
+                step=step, model=model, product_kind=product_kind, product_id=product_id
+            ),
             prompt_sha256=prompt_sha256(prompt_text),
             prompt_text=prompt_text,
             input_json=input_json,

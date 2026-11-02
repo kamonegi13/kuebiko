@@ -681,3 +681,43 @@ def test_insert_translates_for_pg() -> None:
 
 def test_public_exports_forbid_input_json() -> None:
     assert "input_json" in export_public_site._FORBIDDEN_KEYS
+
+
+def test_serialize_input_dumps_pydantic_model_as_dict() -> None:
+    from pydantic import BaseModel
+
+    class M(BaseModel):
+        a: int
+        b: list[str]
+
+    out = json.loads(generation_inputs.serialize_input({"m": M(a=1, b=["x"])}))
+    assert out["m"] == {"a": 1, "b": ["x"]}
+
+
+def test_serialize_input_truncation_is_within_limit_and_fast() -> None:
+    import time
+
+    data = {f"f{i}": "あ" * 20_000 for i in range(40)}  # 約 80 万字
+    start = time.perf_counter()
+    text = generation_inputs.serialize_input(data)
+    elapsed = time.perf_counter() - start
+    assert len(text) <= generation_inputs.MAX_INPUT_JSON_CHARS
+    assert json.loads(text)["_truncated"] is True
+    assert elapsed < 1.0  # 実測は数十 ms。同期呼び出しで許容できる目安
+
+
+def test_identifier_truncation_logs_without_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GENERATION_INPUT_RECORD", "1")
+    repo = RunHistoryRepository(db_path=tmp_path / "t.db")
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        generation_inputs._log, "warning", lambda event, **kw: seen.append({"event": event, **kw})
+    )
+    generation_inputs.record_generation_input(
+        step="s", model="m", product_kind="k", product_id="secret" * 100, prompt_text="p", repo=repo
+    )
+    assert seen and seen[0]["event"] == "generation_input_field_truncated"
+    assert seen[0]["field"] == "product_id"
+    assert "secret" not in repr(seen[0])
