@@ -14,7 +14,7 @@ from typing import Any
 from scripts.graphrag_eval.sampling import pair_key
 
 SEED = 20261105
-WINDOW_DAYS = 14
+WINDOW_DAYS = 28
 #: (層, n_k)。合計 55
 LAYERS: tuple[tuple[str, int], ...] = (
     ("C1", 8),
