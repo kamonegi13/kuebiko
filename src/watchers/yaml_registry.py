@@ -44,6 +44,9 @@ class WatcherDef(BaseModel):
     feed_title: str
     max_posts_per_run: int = 10
     folder: str = ""  # organizational 分類軸 (全 transport 共通、非 behavioral)
+    # 取得ポリシーの印 (任意)。"hostile" = 敵対的 host として厳しめに取る
+    # (src/tools/hostile_fetch.py、HOSTILE_FETCH_POLICY=1 で適用)。既定は host の自動分類に任せる。
+    fetch_profile: Literal["default", "hostile"] = "default"
 
 
 class WatchersConfig(BaseModel):
@@ -83,6 +86,7 @@ def build_sitemap_watcher(d: WatcherDef, state_dir: Path = DEFAULT_STATE_DIR) ->
         state_file=_state_file_for(d.name, state_dir),
         feed_title=d.feed_title,
         max_posts_per_run=d.max_posts_per_run,
+        fetch_profile=d.fetch_profile,
     )
 
 

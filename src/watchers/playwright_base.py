@@ -48,6 +48,7 @@ from pydantic import BaseModel, ConfigDict
 
 from src.logging_config import get_logger
 from src.tools.article_model import Article
+from src.tools.hostile_fetch import should_skip_playwright
 from src.tools.user_agent import browser_user_agent
 
 _log = get_logger(__name__)
@@ -126,6 +127,9 @@ class PlaywrightWatcher:
         """Playwright で ``target_url`` にアクセスし、``link_selector`` 経由で
         href 属性を収集する。Cloudflare wait + stealth init を含む。
         """
+        # 敵対的 host では JS を実行しない (hostile_fetch。stealth の初期化も当てない)
+        if should_skip_playwright(self.target_url):
+            return []
         playwright: Playwright | None = None
         browser: Browser | None = None
         context: BrowserContext | None = None

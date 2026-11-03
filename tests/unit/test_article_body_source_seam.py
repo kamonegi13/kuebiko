@@ -253,3 +253,20 @@ def test_refetch_queue_excludes_blocked(tmp_path: Path) -> None:
 
     ids = [a for a, _ in repo.list_articles_needing_refetch()]
     assert "blk:1" not in ids
+
+
+def test_policy_deferral_does_not_consume_refetch_attempts(tmp_path: Path) -> None:
+    """敵対的 host の見送り (間隔待ち・停止中) は試行回数を消費せず、次の周期でも拾われる。"""
+    repo = _make_repo(tmp_path)
+    _seed_article(repo, "defer:1")
+
+    for _ in range(5):
+        repo.record_refetch_failure("defer:1", reason="hostile_throttle_deferred")
+    repo.record_refetch_failure("defer:1", reason="hostile_paused")
+
+    rec = repo.get_article("defer:1")
+    assert rec is not None
+    assert rec.refetch_attempts == 0
+    assert rec.extraction_failure_reason == "hostile_paused"
+    ids = [a for a, _ in repo.list_articles_needing_refetch(max_attempts=3)]
+    assert "defer:1" in ids

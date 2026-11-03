@@ -1,0 +1,59 @@
+"""運用者ローカルの上書き層 (``config/local/``、gitignore 済み、2026-10-30)。
+
+公開リポの追跡ファイルが SSoT (敵対国の政府・国営媒体・軍の発信元の一覧を含む。周知の
+CTI 実務で公開してよい)。``config/local/`` は運用者固有の**任意の追加分**を和集合で重ねる層。
+``CLAUDE.local.md`` / ``prompts/_persona_local.j2`` と同じ型で、**ファイルがあれば読み、
+無ければ公開版だけで動く**。
+
+- 置き場所の既定は ``<repo>/config/local``。コンテナでは ``./config:/app/config`` の
+  bind mount にそのまま乗る (image には焼かない — ``.dockerignore`` で除外)。
+- ``KUEBIKO_LOCAL_CONFIG_DIR`` で置き場所を差し替えられる (テストは conftest が
+  存在しない一時ディレクトリへ向け、開発機の実ファイルに左右されないようにする)。
+- 読み手 (``hostile_hosts`` / ``source_basis``) は、どちらを使ったかを件数だけログに出す。
+  **一覧の中身 (ドメイン名等) はログに出さない**。
+
+詳細と復元手順は docs/local_overlay.md。
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+ENV_LOCAL_CONFIG_DIR = "KUEBIKO_LOCAL_CONFIG_DIR"
+
+_DEFAULT_DIR = Path(__file__).resolve().parent.parent / "config" / "local"
+
+
+def local_config_dir() -> Path:
+    """ローカル上書き層のディレクトリ (呼ぶたびに env を見る)。"""
+    raw = (os.environ.get(ENV_LOCAL_CONFIG_DIR) or "").strip()
+    return Path(raw) if raw else _DEFAULT_DIR
+
+
+def local_path(name: str) -> Path:
+    """ローカル上書き層のファイルの path (存在するとは限らない)。
+
+    ``name`` は ``config/local/`` からの相対名 (例: ``hostile_domains.yaml``)。
+    外へ出る名前 (絶対 path・``..``) は拒否する。
+    """
+    rel = Path(name)
+    if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+        raise ValueError(f"local overlay の名前が不正です: {name!r}")
+    return local_config_dir() / rel
+
+
+def is_test_environment() -> bool:
+    """pytest の中か (ローカル層が無いのが正常な環境)。本番での欠落警告を出し分ける。"""
+    return "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+
+def log_layers_loaded(logger: Any, event: str, *, local_used: bool, **counts: int) -> None:
+    """どちらの層で動いているかを件数だけログに出す (ドメイン名等の中身は出さない)。
+
+    ローカル層は任意の追加分で、無いのが通常 (SSoT は追跡された公開版)。常に info。
+    """
+    source = "generic+local" if local_used else "generic"
+    logger.info(event, source=source, **counts)

@@ -50,7 +50,7 @@ from src.ui.api._source_models import (
     UpdateSourceRequest,
     UpdateSourceResponse,
 )
-from src.ui.api._source_proxy import build_proxy_html
+from src.ui.api._source_proxy import PickerBlockedError, build_proxy_html
 from src.ui.api._source_writer import register_source, unregister_source
 
 _log = get_logger(__name__)
@@ -134,6 +134,8 @@ async def proxy_page(url: str, render: str = "auto") -> HTMLResponse:
         html = await build_proxy_html(url, render_mode=render)
     except UnsafeUrlError as e:
         raise HTTPException(status_code=400, detail=f"危険な URL です: {e}") from e
+    except PickerBlockedError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001
         _log.warning("proxy_page_failed", url=url, error=str(e))
         raise HTTPException(status_code=502, detail="サイトの取得に失敗しました") from e

@@ -305,6 +305,7 @@ def _persist_article_outcomes(
                 article_id=article_id,
                 msg=msg,
                 feed_title=article.feed_title or "",
+                feed_url=article.feed_url or "",
                 subject_actor_ids=subject_ids_val,
                 subject_actor_source=subject_source_val,
             )
@@ -502,12 +503,28 @@ def _append_pir_entities(
         _log.debug("inline_pir_tag_failed", error=str(e))
 
 
+def _hold_adversary_ioc(feed_title: str, feed_url: str, kind: str, article_id: str) -> bool:
+    """敵対国の公式な発信 (adversary_official) 由来の IOC を事実として保存しないか。
+
+    ``ADVERSARY_IOC_GATE``: shadow (既定) は該当件数のログだけ、``1`` で保存を止める。
+    IOC は照合・関連付けの根拠になるため、当事国の「主張」から取れた値を事実の辺にしない。
+    """
+    from src.cti.adversary_claims import ioc_gate_mode, is_adversary_official
+
+    mode = ioc_gate_mode()
+    if mode == "off" or not is_adversary_official(feed_title, feed_url):
+        return False
+    _log.info("adversary_ioc_gate", mode=mode, kind=kind, article_id=article_id)
+    return mode == "on"
+
+
 def _persist_article_entities(
     *,
     dedup_repo: RunHistoryRepository,
     article_id: str,
     msg: BriefingMessage | None,
     feed_title: str = "",
+    feed_url: str = "",
     subject_actor_ids: str | None = None,
     subject_actor_source: str | None = None,
 ) -> None:
@@ -565,6 +582,8 @@ def _persist_article_entities(
             v, article_url=msg.sources[0].url if msg.sources else None
         ):
             _log.info("ioc_source_reference_filtered", kind=kind, value=v)
+            continue
+        if _hold_adversary_ioc(feed_title, feed_url, kind, article_id):
             continue
         entities.append((kind, v))
 

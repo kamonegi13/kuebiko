@@ -29,3 +29,5 @@ CLAUDE.md
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+# 運用者ローカルの上書き層は image に焼かない (bind mount ./config:/app/config で渡る、docs/local_overlay.md)
+config/local/
