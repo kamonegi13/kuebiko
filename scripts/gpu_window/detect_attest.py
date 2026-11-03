@@ -6,12 +6,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from detect_common import CODE_FILES, PREREG_NAME, file_shas  # noqa: E402
+from detect_common import CODE_FILES, PREREG_NAME, file_shas, runtime_flags  # noqa: E402
 
 TOOL_FILES = ("detect_common.py", "detect_attest.py", "detect_snapshot.py", "detect_arms.py")
 ATTESTATION_NAME = "prereg_attestation.json"
@@ -19,6 +20,23 @@ ATTESTATION_NAME = "prereg_attestation.json"
 
 def tool_shas() -> dict[str, str]:
     return file_shas(Path(__file__).resolve().parent, TOOL_FILES)
+
+
+PROD_CONTAINER = "kuebiko"
+
+
+def production_flags(container: str = PROD_CONTAINER) -> dict[str, str]:
+    """本番コンテナの環境変数のうち、結果に効く旗 (ホストで docker inspect)。取れなければ中止。"""
+    res = subprocess.run(  # noqa: S603 - 引数リスト・shell なし
+        ["docker", "inspect", container, "--format", "{{json .Config.Env}}"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        raise SystemExit(f"本番コンテナ {container} の環境を読めない: {res.stderr.strip()[:200]}")
+    env = dict(e.split("=", 1) for e in json.loads(res.stdout) if "=" in e)
+    return runtime_flags(env)
 
 
 def attest(repo_root: Path, out: Path) -> dict[str, Any]:
@@ -39,6 +57,7 @@ def attest(repo_root: Path, out: Path) -> dict[str, Any]:
         "head_sha": rec.head_sha,
         "prereg_commit_time": rec.commit_time,
         "attested_at": rec.run_started_at,
+        "prod_flags": production_flags(),
         "tools": tool_shas(),
         "code_files": file_shas(repo_root, CODE_FILES),
     }

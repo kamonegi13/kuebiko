@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -274,3 +274,108 @@ def verify_inputs(out_dir: Path) -> str:
     if got != want:
         raise SystemExit("inputs.json が固定後に変わっている (sha256 不一致)")
     return got
+
+
+# ---- 実行時の検査・本番の旗との突き合わせ・P3 の集計 ----------------------------------------
+
+#: 本番と実行環境で一致していなければならない旗 (manifest にも値を残す)
+FLAG_KEYS = ("ASSIGN_EMBED_GATE", "DETECT_ML_PREFILTER", "DETECT_SCOPE_NARROW", "LLM_USAGE_LOCAL")
+FLAG_PREFIXES = ("EVENTNEWS_", "DETECT_", "ASSIGN_")
+#: 本番の値と食い違ってよい旗 (腕ごとに固定する・試験の旗)
+FLAG_EXEMPT = frozenset({"DETECT_DECOMPOSE", "LLM_USAGE_LOCAL"})
+READ_ONLY_URL_ENV = "REPLAY_DATABASE_URL"  # scripts/replay/create_readonly_role.sql の専用ロール
+
+
+def runtime_flags(env: Mapping[str, str]) -> dict[str, str]:
+    """検査・記録の対象の旗の値 (未設定は空文字)。"""
+    keys = set(FLAG_KEYS) | {k for k in env if k.startswith(FLAG_PREFIXES)}
+    return {k: env.get(k, "") for k in sorted(keys)}
+
+
+def flag_mismatches(prod: Mapping[str, str], local: Mapping[str, str]) -> list[str]:
+    """本番コンテナの旗と実行環境の旗の食い違い (免除の旗を除く)。"""
+    out = []
+    for k in sorted(set(prod) | set(local)):
+        if k in FLAG_EXEMPT:
+            continue
+        if prod.get(k, "") != local.get(k, ""):
+            out.append(f"{k}: prod={prod.get(k, '')!r} local={local.get(k, '')!r}")
+    return out
+
+
+def unit_timeout(run_timeout_s: float, seconds_left: float | None) -> float:
+    """§deadline を 1 単位の中でも効かせる: min(単位の上限, 締め切りまでの残り)。"""
+    return run_timeout_s if seconds_left is None else min(run_timeout_s, seconds_left)
+
+
+def prefer_read_only_role(env: MutableMapping[str, str]) -> str:
+    """専用の読み取りロールの URL があれば DATABASE_URL をそれに替える。使った経路名を返す。"""
+    dedicated = env.get(READ_ONLY_URL_ENV, "")
+    if dedicated:
+        env["DATABASE_URL"] = dedicated
+        return "dedicated_role"
+    return "owner_role_with_read_only_session"
+
+
+def verify_read_only_runtime(raw_connect: Any, patched_connect: Any) -> dict[str, str]:
+    """実行時に、素の接続 (PGOPTIONS) と差し替えた接続の両方が read-only かを確かめる。"""
+
+    def show(connect: Any) -> str:
+        conn = connect()
+        try:
+            row = conn.execute("SHOW default_transaction_read_only").fetchone()
+            return str(next(iter(row.values())) if hasattr(row, "values") else row[0])
+        finally:
+            conn.close()
+
+    raw, patched = show(raw_connect), show(patched_connect)
+    assert_read_only_setting(raw)
+    assert_read_only_setting(patched)
+    return {"raw_connect": raw, "patched_connect": patched}
+
+
+def p3_gate_share(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """P3 (11-03 改訂): 出荷腕の関門で止めた claim / (開いた + 止めた)。分母 30 未満は判定不能。
+
+    フォールバックした run は分けた形を通っていないので分子・分母から除く。
+    参考として開いた claim の違反率 (check_grounding) も返す。
+    """
+    ship = [r for r in records if r.get("arm") == "ship" and r.get("ok") and not r.get("fallback")]
+    blocked = sum(int(r.get("n_gate_blocked", 0)) for r in ship)
+    opened = sum(int(r.get("n_opened", 0)) for r in ship)
+    denom = blocked + opened
+    violating = sum(int(r.get("n_violating", 0)) for r in ship)
+    return {
+        "runs": len(ship),
+        "blocked": blocked,
+        "opened": opened,
+        "denominator": denom,
+        "share": blocked / denom if denom else None,
+        "undetermined": denom < P3_MIN_DENOMINATOR,
+        "opened_violation_rate": violating / opened if opened else None,
+    }
+
+
+P3_MIN_DENOMINATOR = 30
+P3_MAX_SHARE = 0.20
+
+
+class LogSpy:
+    """構造化ログの warning/error を捕まえる代役 (握りつぶされた失敗を run の記録に出す)。"""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def _add(self, event: str, *_a: Any, **_kw: Any) -> None:
+        self.events.append(str(event))
+
+    warning = error = exception = critical = _add
+
+    def info(self, *_a: Any, **_kw: Any) -> None:
+        return None
+
+    debug = info
+
+    def failures(self) -> list[str]:
+        """失敗・タイムアウトを示すイベント名 (重複あり)。"""
+        return [e for e in self.events if "failed" in e or "timeout" in e]

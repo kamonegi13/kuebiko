@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, replace
@@ -30,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import detect_attest  # noqa: E402
 import detect_common as dc  # noqa: E402
+
+dc.install_read_only_env()  # 以降の import が接続しても read-only (PGOPTIONS)
 
 POOL_LIMIT = 500  # stateful._STATEFUL_POOL_LIMIT / _DETECT_INPUT_MAX と同値
 _AXIS_COLS = (
@@ -61,6 +64,7 @@ def open_repo() -> tuple[Any, Any]:
 
     if not db_backend.is_pg_enabled():
         raise SystemExit("DATABASE_URL が無く SQLite に落ちる。使い捨てのコンテナで実行する")
+    dc.prefer_read_only_role(os.environ)  # 専用の読み取りロールがあればそれで繋ぐ
     dc.install_read_only_connect()
     repo = RunHistoryRepository.__new__(RunHistoryRepository)
     repo._db_path = Path(DEFAULT_DB_PATH)  # noqa: SLF001
