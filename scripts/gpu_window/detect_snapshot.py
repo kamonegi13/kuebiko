@@ -381,6 +381,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument(
         "--attest", action="store_true", help="ホストで prereg の証明書を書く (git のみ)"
     )
+    ap.add_argument("--max-windows", type=int, default=0, help="試験用: 先頭 N 窓だけ凍結")
     ap.add_argument(
         "--dry-run", action="store_true", help="窓の計画だけ (書き出さない・埋込を使わない)"
     )
