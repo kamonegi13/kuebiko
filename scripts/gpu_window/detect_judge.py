@@ -2,6 +2,9 @@
 """DETECT-JUDGE の Opus 裁定と採点 (GPU-B の 2 腕の出力を対にして合否を出す)。
 
 仕様は docs/replay_prereg/detect_decompose.md (§5.2・§5.3・§6 と変更履歴)。本番 DB は触らない。
+``DETECT_GPU_PROFILE=rejudge`` なら docs/replay_prereg/detect_decompose_rejudge.md
+(乱数種 20261105・
+入力 data/eval/detect_rejudge/・出力 judge/・閉包は closure_plan.json の汚染記事で読む)。
 
     python scripts/gpu_window/detect_judge.py plan         # 単位・R18 の直接検査・抽出 (Opus なし)
     python scripts/gpu_window/detect_judge.py adjudicate   # Opus 裁定 (キャッシュで再開できる)
@@ -26,17 +29,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detect_judge_core as jc  # noqa: E402
 
 MAIN_ROOT = Path("/Users/juzo1192/git/auto-post")
-EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_decompose"
-ARMS_NAME = "arms_20261104T022916Z.jsonl"
-OLD_JUDGE_DIR = EVAL_DIR / "judge"  # 11-04 の簡略 R18 の裁定 (参考、消さない)
-JUDGE_DIR = EVAL_DIR / "judge_r18"
-CLOSURE_PATH = JUDGE_DIR / "closure.json"
+IS_REJUDGE = jc.PROFILE_NAME == "rejudge"
 LEDGER = MAIN_ROOT / "data" / "eval" / "adjudication_ledger.jsonl"
 GOLDSET = MAIN_ROOT / "data" / "mlx" / "detect_goldset.jsonl"
 TEACHER_GLOB = "detect*.jsonl"
-ITEM = "DETECT-JUDGE-R18"
-RUBRIC = "detect-judge-v1"
-RUBRIC_P2 = "detect-judge-v1-p2"
+if IS_REJUDGE:
+    # docs/replay_prereg/detect_decompose_rejudge.md (§4・§7.2・§8・§11)
+    PREREG_PATH = "docs/replay_prereg/detect_decompose_rejudge.md"
+    EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_rejudge"
+    ARMS_NAME = ""  # arms_*.jsonl のうち最新 (--arms で指定もできる)
+    JUDGE_DIR = EVAL_DIR / "judge"
+    CLOSURE_PATH = EVAL_DIR / "closure_plan.json"
+    ITEM = "DETECT-REJUDGE"
+    RUBRIC = "detect-rejudge-v1"
+    RUBRIC_P2 = "detect-rejudge-v1-p2"
+    GOLD_ID = "gold:detect_rejudge_past"
+    # 判定にしてはならない集合 (前回の裁定、§8)
+    FORBIDDEN_JUDGE_DIRS = (
+        MAIN_ROOT / "data" / "eval" / "detect_decompose" / "judge",
+        MAIN_ROOT / "data" / "eval" / "detect_decompose" / "judge_r18",
+    )
+else:
+    PREREG_PATH = "docs/replay_prereg/detect_decompose.md"
+    EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_decompose"
+    ARMS_NAME = "arms_20261104T022916Z.jsonl"
+    JUDGE_DIR = EVAL_DIR / "judge_r18"
+    CLOSURE_PATH = JUDGE_DIR / "closure.json"
+    ITEM = "DETECT-JUDGE-R18"
+    RUBRIC = "detect-judge-v1"
+    RUBRIC_P2 = "detect-judge-v1-p2"
+    GOLD_ID = "gold:detect_fresh_1027"
+    FORBIDDEN_JUDGE_DIRS = ()
+OLD_JUDGE_DIR = EVAL_DIR / "judge"  # decompose: 11-04 の簡略 R18 の裁定 (参考、消さない)
 BUDGET_ESTIMATE = 300
 CALL_CAP = 390  # 見積もりの 1.3 倍
 CONCURRENCY = 2
@@ -97,10 +121,47 @@ def build_inputs(window: Mapping[str, Any], unit: jc.Unit) -> dict[str, Any]:
     }
 
 
-def load_closure_excluded() -> tuple[set[str], dict[str, Any]]:
-    """detect_r18.py が書いた closure.json (学習側と同じ成分に入る単位)。"""
+ARMS_OVERRIDE: dict[str, str] = {}
+
+
+def arms_path(plan: Mapping[str, Any] | None = None) -> Path:
+    """2 腕の出力: --arms、plan の記録、なければ (rejudge) 最新の arms_*.jsonl。"""
+    name = ARMS_OVERRIDE.get("name") or (plan or {}).get("arms_name") or ARMS_NAME
+    if name:
+        return EVAL_DIR / str(name)
+    found = sorted(EVAL_DIR.glob("arms_*.jsonl"))
+    if not found:
+        raise SystemExit(f"{EVAL_DIR} に arms_*.jsonl が無い (--arms で指定)")
+    return found[-1]
+
+
+def load_closure_excluded(
+    units: Mapping[str, jc.Unit],
+) -> tuple[set[str], dict[str, Any]]:
+    """除く単位と閉包の記録。
+
+    decompose: detect_r18.py が書いた closure.json (学習側と同じ成分に入る単位)。
+    rejudge: 凍結時に固定した closure_plan.json の汚染記事の集合で読む (R18 を計算し直さない)。
+    """
     closure = json.loads(CLOSURE_PATH.read_text(encoding="utf-8"))
-    return set(closure["excluded"]), closure
+    if not IS_REJUDGE:
+        return set(closure["excluded"]), closure
+    if closure.get("chosen_step") is None:
+        raise SystemExit("closure_plan.json に選んだ段が無い (判定不能、裁定に進まない)")
+    excluded = jc.excluded_by_closure_plan(
+        units,
+        frozenset(closure["contaminated_articles"]),
+        frozenset(closure["frozen_universe"]),
+    )
+    closure = {**closure, "r18_version": closure.get("r18_version", "R18.2")}
+    return excluded, closure
+
+
+def check_not_forbidden() -> None:
+    """§8: 出力先が前回の裁定の置き場と同じでないこと。"""
+    for bad in FORBIDDEN_JUDGE_DIRS:
+        if JUDGE_DIR.resolve() == bad.resolve():
+            raise SystemExit(f"出力先が前回の裁定 {bad} と同じ")
 
 
 def excluded_layer(units: Mapping[str, jc.Unit], excluded: set[str]) -> dict[str, Any]:
@@ -121,9 +182,11 @@ def jc_count(units: Mapping[str, jc.Unit], uids: set[str]) -> dict[str, int]:
 
 
 def cmd_plan(_: argparse.Namespace) -> int:
-    records = read_jsonl(EVAL_DIR / ARMS_NAME)
+    check_not_forbidden()
+    arms_file = arms_path()
+    records = read_jsonl(arms_file)
     units = jc.collect_units(records)
-    excluded, closure = load_closure_excluded()
+    excluded, closure = load_closure_excluded(units)
     kept = {k: v for k, v in units.items() if k not in excluded}
     sampled, weights = jc.sample_units(kept)
     second = jc.pick_second(sampled)
@@ -133,7 +196,7 @@ def cmd_plan(_: argparse.Namespace) -> int:
         "n_r18_excluded": len(excluded),
         "r18_excluded_by_stratum": jc_count(units, excluded),
         "r18_version": closure["r18_version"],
-        "r18_excluded_layer": excluded_layer(units, excluded),
+        "r18_excluded_layer": excluded_layer(units, excluded) if not IS_REJUDGE else {},
         "closure_sha256": sha256_file(CLOSURE_PATH),
         "n_units_kept": len(kept),
         "strata": {s: sum(1 for u in kept.values() if u.stratum == s) for s in sorted(weights)},
@@ -141,9 +204,18 @@ def cmd_plan(_: argparse.Namespace) -> int:
         "sampled": jc.shuffled_order(sampled),
         "second": second,
         "excluded_r18": sorted(excluded),
-        "arms_sha256": sha256_file(EVAL_DIR / ARMS_NAME),
+        "arms_sha256": sha256_file(arms_file),
         "inputs_sha256": sha256_file(EVAL_DIR / "inputs.json"),
         "seed": jc.SEED,
+        **(
+            {
+                "arms_name": arms_file.name,
+                "profile": jc.PROFILE_NAME,
+                "closure_chosen_step": closure.get("chosen_step"),
+            }
+            if IS_REJUDGE
+            else {}
+        ),
     }
     (JUDGE_DIR / "plan.json").write_text(
         json.dumps(plan, indent=2, sort_keys=True), encoding="utf-8"
@@ -253,7 +325,7 @@ def cmd_adjudicate(_: argparse.Namespace) -> int:
     import adjudication_cache as ac
 
     plan = json.loads((JUDGE_DIR / "plan.json").read_text(encoding="utf-8"))
-    records = read_jsonl(EVAL_DIR / ARMS_NAME)
+    records = read_jsonl(arms_path(plan))
     units = jc.collect_units(records)
     _wl, windows, _raw = load_inputs()
     budget = CallBudget(CALL_CAP)
@@ -295,7 +367,7 @@ def load_labels(path: Path) -> dict[str, dict[str, Any]]:
 
 def cmd_score(_: argparse.Namespace) -> int:
     plan = json.loads((JUDGE_DIR / "plan.json").read_text(encoding="utf-8"))
-    records = read_jsonl(EVAL_DIR / ARMS_NAME)
+    records = read_jsonl(arms_path(plan))
     units = jc.collect_units(records)
     p1 = load_labels(JUDGE_DIR / "verdicts.jsonl")
     p2 = load_labels(JUDGE_DIR / "verdicts_pass2.jsonl")
@@ -308,7 +380,18 @@ def cmd_score(_: argparse.Namespace) -> int:
     share = determinable / len(plan["sampled"]) if plan["sampled"] else 0.0
     p3, p4, p5 = jc.p3_share(records), jc.p4_share(records), jc.p5_ratio(records)
     decision = (
-        jc.decide(stats, p3, p4, p5, share)
+        jc.decide(
+            stats,
+            p3,
+            p4,
+            p5,
+            share,
+            excluded_share=(
+                plan["n_r18_excluded"] / plan["n_units_total"]
+                if IS_REJUDGE and plan["n_units_total"]
+                else None
+            ),
+        )
         if stats.get("n_windows")
         else {"verdict": "undetermined"}
     )
@@ -360,7 +443,7 @@ def cmd_score(_: argparse.Namespace) -> int:
         json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8"
     )
     manifest = {
-        "prereg_path": "docs/replay_prereg/detect_decompose.md",
+        "prereg_path": PREREG_PATH,
         "arms_sha256": plan["arms_sha256"],
         "inputs_sha256": plan["inputs_sha256"],
         "plan_sha256": sha256_file(JUDGE_DIR / "plan.json"),
@@ -371,7 +454,7 @@ def cmd_score(_: argparse.Namespace) -> int:
         "rubric": [RUBRIC, RUBRIC_P2],
         "seed": jc.SEED,
         "scored_at": datetime.now(UTC).isoformat(),
-        "gold_id": "gold:detect_fresh_1027",
+        "gold_id": GOLD_ID,
         "r18_version": plan["r18_version"],
         "closure_sha256": plan["closure_sha256"],
     }
@@ -386,8 +469,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("plan", cmd_plan), ("adjudicate", cmd_adjudicate), ("score", cmd_score)):
-        sub.add_parser(name).set_defaults(fn=fn)
+        sp = sub.add_parser(name)
+        sp.add_argument("--arms", default="", help="arms_*.jsonl のファイル名 (plan のとき)")
+        sp.set_defaults(fn=fn)
     args = ap.parse_args(argv)
+    if args.arms:
+        ARMS_OVERRIDE["name"] = args.arms
     return int(args.fn(args))
 
 

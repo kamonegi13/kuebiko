@@ -7,13 +7,21 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import random
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-SEED = 20261104
+PROFILE_ENV = "DETECT_GPU_PROFILE"
+#: 前回 (decompose) の乱数種と、再判定 (rejudge、prereg §4) の乱数種
+SEEDS = {"decompose": 20261104, "rejudge": 20261105}
+PROFILE_NAME = os.environ.get(PROFILE_ENV, "decompose").strip() or "decompose"
+if PROFILE_NAME not in SEEDS:
+    raise SystemExit(f"{PROFILE_ENV}={PROFILE_NAME!r} は未知 (decompose / rejudge)")
+SEED = SEEDS[PROFILE_NAME]
+MAX_EXCLUDED_SHARE = 0.50  # rejudge §6: R18 で外れる単位が U のこれを超えたら判定不能
 SAMPLE_TOTAL = 260
 SECOND_TOTAL = 40
 BOOTSTRAP_ITERATIONS = 2000
@@ -76,6 +84,20 @@ def collect_units(records: Sequence[Mapping[str, Any]]) -> dict[str, Unit]:
     return {
         uid: Unit(uid, meta[uid][0], meta[uid][1], meta[uid][2], tuple(sorted(arms)))
         for uid, arms in arms_of.items()
+    }
+
+
+def excluded_by_closure_plan(
+    units: Mapping[str, Unit], contaminated: frozenset[str], universe: frozenset[str]
+) -> set[str]:
+    """rejudge §7.2: 汚染記事を含む単位、または凍結の母集合の外の記事を含む単位 (保守側) を除く。
+
+    閉包は凍結時に closure_plan.json へ固定済みで、ここでは計算し直さない。
+    """
+    return {
+        uid
+        for uid, u in units.items()
+        if any(a in contaminated or a not in universe for a in u.article_ids)
     }
 
 
@@ -334,6 +356,9 @@ def p3_share(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "opened": opened,
         "denominator": den,
         "share": blocked / den if den else None,
+        # 参考 (判定に使わない、rejudge §6 P3): 書き手の直し・単発の塊で止めた分
+        "fidelity_blocked": sum(int(r.get("n_fidelity_blocked", 0)) for r in ship),
+        "one_off_skipped": sum(int(r.get("n_one_off_skipped", 0)) for r in ship),
     }
 
 
@@ -355,9 +380,16 @@ def decide(
     p4: Mapping[str, Any],
     p5: Mapping[str, Any],
     determinable_share: float,
+    *,
+    excluded_share: float | None = None,
 ) -> dict[str, Any]:
-    """§6 の合否。判定不能の条件を先に見る。"""
+    """§6 の合否。判定不能の条件を先に見る。
+
+    excluded_share (R18 で外した単位 / U) は rejudge だけが渡す (50% 超で判定不能)。
+    """
     reasons: list[str] = []
+    if excluded_share is not None and excluded_share > MAX_EXCLUDED_SHARE:
+        reasons.append("R18 で外れる単位が U の 50% 超")
     if stats.get("n_windows", 0) < MIN_WINDOWS:
         reasons.append("窓が 18 未満")
     if p3["denominator"] < MIN_P3_DENOMINATOR:
