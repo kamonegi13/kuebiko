@@ -78,6 +78,13 @@ class GroundingSources:
 
     text: str
     attribution: str = ""
+    #: 記事ごとの (見出し, 要約)。``headline`` と単発の事案の判定 (claim_fidelity) が使う
+    members: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def headline(self) -> str:
+        """見出し + 要約だけの連結 (本文冒頭を含まない)。members が無ければ空。"""
+        return "\n".join(f"{t} {s}" for t, s in self.members)
 
 
 @dataclass(frozen=True)

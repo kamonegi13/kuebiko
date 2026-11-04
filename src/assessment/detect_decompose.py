@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, field_validator
 
 from src.assessment.claim_bundle import split_clusters
+from src.assessment.claim_fidelity import check_fidelity, one_off_reason
 from src.assessment.claim_grounding import GroundingSources, check_grounding
 from src.assessment.detect_bundle_log import (
     ORIGIN_DECOMPOSE,
@@ -49,6 +50,7 @@ _log = get_logger(__name__)
 
 DecomposeMode = Literal["0", "shadow", "1"]
 _MODE_ENV = "DETECT_DECOMPOSE"
+_WRITER_GATES_ENV = "DETECT_WRITER_GATES"
 _TEMPLATE = "synthesis/detect_cluster_claim.j2"
 #: claim の最大字数 (プロンプトの「最大 200 字」。超過は契約で落とさず後段で切り詰める)
 CLAIM_MAX_CHARS = 200
@@ -84,6 +86,21 @@ _DOMAINS = frozenset(
 def decompose_mode() -> DecomposeMode:
     """未知の値は ``0`` (何もしない側) に倒す。"""
     raw = os.environ.get(_MODE_ENV, "0").strip().lower()
+    if raw == "shadow":
+        return "shadow"
+    if raw == "1":
+        return "1"
+    return "0"
+
+
+def writer_gates_mode() -> DecomposeMode:
+    """``DETECT_WRITER_GATES`` (DETECT-WRITER-FIX、既定 ``0``)。
+
+    ``shadow`` = claim の忠実さの違反と単発の事案の印を ``ClusterOutcome.fidelity`` に記録するだけ・
+    プロンプトは従来のまま。``1`` = 書き手のプロンプトに追加規則を足し、違反の claim と単発の事案の
+    塊は開設しない (``enforce_grounding`` のときだけ。分けた形の shadow では記録のみ)。
+    """
+    raw = os.environ.get(_WRITER_GATES_ENV, "0").strip().lower()
     if raw == "shadow":
         return "shadow"
     if raw == "1":
@@ -139,6 +156,7 @@ class ClusterOutcome:
     probability: float | None = None
     violations: tuple[str, ...] = ()  # claim の固有名詞で塊の見出し・要約・本文冒頭に無いもの
     attributions: tuple[str, ...] = ()  # 出典欄 (媒体名・投稿者名) にだけある語 (違反に数えない)
+    fidelity: tuple[str, ...] = ()  # DETECT_WRITER_GATES の違反・単発の印 (claim_fidelity)
 
 
 @dataclass(frozen=True)
@@ -206,9 +224,32 @@ async def decompose_candidates(
             overflow += 1
             outcomes.append(ClusterOutcome(cluster=ids, action="skip", reason="開設の上限"))
             continue
-        written += 1
         text = grounding_text(ids) if grounding_text is not None else None
-        outcomes.append(await _write_one(ids, write_claim, text, enforce_grounding))
+        gates = writer_gates_mode()
+        one_off = (
+            one_off_reason(_as_sources(text).members) if gates != "0" and text is not None else None
+        )
+        if one_off and gates == "1" and enforce_grounding:
+            outcomes.append(
+                ClusterOutcome(
+                    cluster=ids,
+                    action="skip",
+                    reason=f"単発の事案 ({one_off})",
+                    fidelity=(f"one_off:{one_off}",),
+                )
+            )
+            continue
+        written += 1
+        outcomes.append(
+            await _write_one(
+                ids,
+                write_claim,
+                text,
+                enforce_grounding,
+                gates,
+                (f"one_off:{one_off}",) if one_off else (),
+            )
+        )
     if overflow:
         _log.warning("detect_decompose_overflow", skipped=overflow, cap=max_claims)
     return DecomposeResult(outcomes=tuple(outcomes), overflow=overflow)
@@ -219,6 +260,8 @@ async def _write_one(
     write_claim: WriteFn,
     sources: GroundingSources | str | None,
     enforce_grounding: bool,
+    gates: DecomposeMode = "0",
+    preflags: tuple[str, ...] = (),
 ) -> ClusterOutcome:
     try:
         res = await write_claim(ids)
@@ -233,16 +276,28 @@ async def _write_one(
     report = check_grounding(claim, _as_sources(sources)) if sources is not None else None
     violations = report.violations if report else ()
     attributions = report.attributions if report else ()
+    fidelity = preflags
+    if gates != "0" and sources is not None:
+        fidelity = (*check_fidelity(claim, _as_sources(sources)), *preflags)
+    if gates == "1" and enforce_grounding and fidelity and not violations:
+        return ClusterOutcome(
+            cluster=ids,
+            action="skip",
+            reason=f"claim が根拠どおりでない: {', '.join(fidelity)}"[:200],
+            fidelity=fidelity,
+        )
     if violations and enforce_grounding:
         return ClusterOutcome(
             cluster=ids,
             action="skip",
             reason=f"claim の固有名詞が記事に無い: {', '.join(violations)}"[:200],
             violations=violations,
+            fidelity=fidelity,
         )
     return ClusterOutcome(
         cluster=ids,
         action="open",
+        fidelity=fidelity,
         claim=claim,
         domain=domain if domain in _DOMAINS else "unclassified",
         violations=violations,
@@ -361,6 +416,7 @@ async def write_cluster_claim(
         active_titles=active_titles,
         pir_context=pir_context,
         period_label=period_label,
+        strict_rules=writer_gates_mode() == "1",
     )
     r = await llm.generate_structured(
         prompt, ClusterClaimWire, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
@@ -444,6 +500,7 @@ def _grounding_sources(
     プールの記事は要約・本文を持たないので DB から引いた分を足す。
     """
     members = [a for a in cluster if a in by_id]
+    pairs = tuple((str(by_id[a].get("title", "")), summaries.get(a, "")) for a in members)
     text = "\n".join(
         " ".join(
             (
@@ -455,7 +512,7 @@ def _grounding_sources(
         for a in members
     )
     attribution = "\n".join(feed_titles.get(a, "") for a in members)
-    return GroundingSources(text=text, attribution=attribution)
+    return GroundingSources(text=text, attribution=attribution, members=pairs)
 
 
 async def run_decompose(
