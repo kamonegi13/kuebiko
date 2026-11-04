@@ -290,7 +290,7 @@ async def _write_one(
         return ClusterOutcome(
             cluster=ids,
             action="skip",
-            reason=f"claim の固有名詞が記事に無い: {', '.join(violations)}"[:200],
+            reason=(f"claim の固有名詞が記事に無い: {', '.join((*violations, *fidelity))}")[:200],
             violations=violations,
             fidelity=fidelity,
         )

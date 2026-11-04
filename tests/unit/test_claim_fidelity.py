@@ -147,3 +147,42 @@ class TestModeWiring:
 
         assert got == ["skip"]  # 書き手は呼ばれない
         assert fidelity == ("one_off:law_enforcement",)
+
+    def test_on_does_not_block_without_enforcement_for_one_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 旗 1 でも enforce_grounding=False (DETECT_DECOMPOSE=shadow) では止めず記録だけ
+        monkeypatch.setenv("DETECT_WRITER_GATES", "1")
+        src = _src("警察が基盤を阻止", title="ボットネットを摘発")
+        got, fidelity = _run(src, "警察がボットネットを摘発した", enforce=False)
+
+        assert got == ["open", "w"]
+        assert fidelity == ("one_off:law_enforcement",)
+
+
+class TestDateNormalisation:
+    @pytest.mark.parametrize(
+        "evidence",
+        [
+            "Published Nov 3 by the vendor",
+            "November 3rd update",
+            "3 November 2026",
+            "2026-11-03",
+            "11/3",
+        ],
+    )
+    def test_equivalent_date_notations_in_sources_pass(self, evidence: str) -> None:
+        assert check_fidelity("H社が11月3日に公表した", _src(evidence)) == ()
+
+    def test_different_date_is_still_flagged(self) -> None:
+        got = check_fidelity("H社が11月4日に公表した", _src("Published Nov 3"))
+        assert got == ("date:11月4日",)
+
+
+class TestSentenceBreak:
+    def test_period_before_closing_bracket_is_not_a_break(self) -> None:
+        claim = "H社は「侵害を確認した。」と述べたと報じられている。"
+        assert "multi_sentence" not in check_fidelity(claim, _src("H社が侵害を確認"))
+
+    def test_period_followed_by_text_is_a_break(self) -> None:
+        assert "multi_sentence" in check_fidelity("甲が起きた。乙も起きた。", _src("甲 乙"))

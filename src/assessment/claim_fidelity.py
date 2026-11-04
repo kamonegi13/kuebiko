@@ -28,8 +28,31 @@ from src.assessment.claim_grounding import GroundingSources
 from src.cti.law_enforcement_gate import has_law_enforcement_keyword
 from src.cti.roundup_detector import is_roundup
 
-_SENTENCE_BREAK = re.compile(r"。\s*\S")
+#: 「。」の直後が閉じ括弧・引用符のものは文の区切りにしない (「…した。」と述べた)
+_SENTENCE_BREAK = re.compile("。\\s*[^\\s」』）)］】〉》”’\"']")
 _MONTH_DAY = re.compile(r"(\d{1,2})月(\d{1,2})日")
+_SLASH_DATE = re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?![\d/])")
+_ISO_DATE = re.compile(r"\b\d{4}[-/](\d{1,2})[-/](\d{1,2})\b")
+_MONTH_NAMES = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
+_MONTH_ALT = "|".join(f"{m}|{m[:3]}" for m in _MONTH_NAMES)
+_EN_MONTH_DAY = re.compile(rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b", re.IGNORECASE)
+_EN_DAY_MONTH = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({_MONTH_ALT})\b", re.IGNORECASE
+)
+_MAX_MONTH, _MAX_DAY = 12, 31
 #: 根拠に無ければ付け足しとみなす語 (言い換えの余地が小さい語だけ)
 _UNSUPPORTED_MARKERS: tuple[str, ...] = ("再浮上", "再燃")
 _MIN_NAME_CHARS = 4
@@ -45,9 +68,20 @@ def _fold(s: str) -> str:
     return "".join(ch for ch in folded if ch.isalnum() or "ぁ" <= ch <= "ヿ")
 
 
+def _month_number(name: str) -> int:
+    key = name.casefold()[:3]
+    return next(i + 1 for i, m in enumerate(_MONTH_NAMES) if m.startswith(key))
+
+
 def _month_days(s: str) -> frozenset[tuple[int, int]]:
+    """文中の日付を (月, 日) にそろえる (M月D日・M/D・ISO・Nov 3・3 November)。"""
     text = unicodedata.normalize("NFKC", s)
-    return frozenset((int(m), int(d)) for m, d in _MONTH_DAY.findall(text))
+    found: list[tuple[int, int]] = []
+    for pat in (_MONTH_DAY, _SLASH_DATE, _ISO_DATE):
+        found.extend((int(m), int(d)) for m, d in pat.findall(text))
+    found.extend((_month_number(m), int(d)) for m, d in _EN_MONTH_DAY.findall(text))
+    found.extend((_month_number(m), int(d)) for d, m in _EN_DAY_MONTH.findall(text))
+    return frozenset((m, d) for m, d in found if 1 <= m <= _MAX_MONTH and 1 <= d <= _MAX_DAY)
 
 
 def _outlet_names(attribution: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
