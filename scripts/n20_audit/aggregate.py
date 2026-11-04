@@ -82,13 +82,41 @@ def self_agreement(
             f1 |= {(i, n) for n in flagged_claims(pass1[i], cl, heavy_only=heavy)}
             f2 |= {(i, n) for n in flagged_claims(pass2[i], cl, heavy_only=heavy)}
         rep[label] = reproduction(f1, f2)
+    claim = claim_level_kappa(items, pass1, pass2, ids)
     heavy_k = per.get("重い指摘あり", {}).get("kappa")
+    # 長い出力では「重い指摘あり」が全件 yes に張り付き事例単位の κ が定義できない。
+    # そのときは主張 (文) 単位の κ で判定する (契約 §1 の「主張単位」の物差しに合わせる)。
+    gate = heavy_k if heavy_k is not None else claim["重い"]
     return {
         "n": len(ids),
         "criteria": per,
+        "claim_level": claim,
         "finding_reproduction": rep,
-        "judged_by_rubric": heavy_k is not None and heavy_k >= KAPPA_MIN,
+        "kappa_for_gate": gate,
+        "judged_by_rubric": gate is not None and gate >= KAPPA_MIN,
     }
+
+
+def claim_level_kappa(
+    items: Mapping[str, Mapping[str, Any]],
+    pass1: Mapping[str, Mapping[str, Any]],
+    pass2: Mapping[str, Mapping[str, Any]],
+    ids: Sequence[str],
+) -> dict[str, float | None]:
+    """全事例の全主張を 1 列に並べ、文ごとの「指摘あり」の 2 回の一致の κ (重い / すべて)。"""
+    out: dict[str, float | None] = {}
+    for label, heavy in (("重い", True), ("すべて", False)):
+        a: list[bool] = []
+        b: list[bool] = []
+        for i in ids:
+            cl = items[i]["claims"]
+            f1 = flagged_claims(pass1[i], cl, heavy_only=heavy)
+            f2 = flagged_claims(pass2[i], cl, heavy_only=heavy)
+            a.extend(n in f1 for n in range(len(cl)))
+            b.extend(n in f2 for n in range(len(cl)))
+        k = cohen_kappa(a, b)
+        out[label] = None if k is None else round(k, 3)
+    return out
 
 
 def baseline(

@@ -279,3 +279,17 @@ def test_heavy_to_confirm_keeps_only_verified_heavy_quotes() -> None:
 def test_psql_json_rejects_non_select() -> None:
     with pytest.raises(ValueError):
         psql_json("delete from articles")
+
+
+def test_self_agreement_falls_back_to_claim_level_when_item_kappa_undefined() -> None:
+    # Arrange: どの事例も両方の回で重い指摘あり (事例単位の κ は未定義)、文は同じ
+    items = _items(3)
+    p = {k: {"findings": [_finding("被害は 300 万件")]} for k in items}
+
+    # Act
+    res = ag.self_agreement(items, p, p)
+
+    # Assert
+    assert res["criteria"]["重い指摘あり"]["kappa"] is None
+    assert res["claim_level"]["重い"] == 1.0
+    assert res["judged_by_rubric"] is True
