@@ -214,6 +214,11 @@ def main() -> int:
     on = arm_joins(model, main_pairs, llm_off=False)
     off = arm_joins(model, main_pairs, llm_off=True)
     result["main"] = metrics(main_pairs, on, off)
+    # 探索的 (結果を見た後の追加): 閉包の最大成分が上限を超えたため、全 118 組と直接の重なりも併記
+    result["exploratory_all_pairs"] = metrics(
+        pairs, arm_joins(model, pairs, llm_off=False), arm_joins(model, pairs, llm_off=True)
+    )
+    result["exploratory_direct_overlap_pairs"] = sum(1 for p in pairs if set(ids[p.f3_id]) & train)
     if held:
         result["r18_excluded_layer"] = metrics(
             held, arm_joins(model, held, llm_off=False), arm_joins(model, held, llm_off=True)
