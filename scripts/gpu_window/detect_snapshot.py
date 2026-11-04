@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""GPU-B (DETECT-JUDGE) の入力の固定: 両腕が共有する 20 窓の入力を inputs.json に凍結する。
+"""GPU-B / GPU-A2 の detect の入力の固定: 両腕が共有する 20 窓の入力を inputs.json に凍結する。
 
-仕様は docs/replay_prereg/detect_decompose.md (§2.1・§4・§9)。**DB は読み取り専用** (接続を
+仕様は docs/replay_prereg/detect_decompose.md (§2.1・§4・§9)。``DETECT_GPU_PROFILE=rejudge`` なら
+docs/replay_prereg/detect_decompose_rejudge.md (§2.1〜2.3・§4・§9、区間の開始時点の台帳を再構成)。
+**DB は読み取り専用** (接続を
 read-only セッションにし、SHOW で確かめる)。LLM は呼ばない (題名の埋込だけ Ollama を使う)。
 
     python scripts/gpu_window/detect_snapshot.py --attest          # ホスト: git の検査 + 証明書
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from collections.abc import Sequence
@@ -125,15 +128,100 @@ def pool_for_bin(repo: Any, b: dc.Bin) -> list[dict[str, Any]]:
     return out
 
 
-def situations_as_of(store: Any, b: dc.Bin) -> list[Any]:
-    """区間の開始より前に開き、その時点で閉じていなかった情勢 (``select_active_as_of`` の型)。"""
+def open_at(rows: Sequence[Any], start: str) -> list[Any]:
+    """区間の開始より前に開き、その時点で閉じていなかった情勢 (今の status では絞らない)。"""
+    return [r for r in rows if r.opened_at < start and (r.closed_at is None or r.closed_at > start)]
+
+
+def dormant_after_days(domain: str) -> int:
+    """本番の休眠の日数 (``ledger._sweep_lifecycle`` と同じ表)。"""
+    from src.assessment import ledger
+
+    table: dict[str, int] = ledger._DORMANT_AFTER_DAYS  # noqa: SLF001
+    default: int = ledger._DORMANT_DEFAULT_DAYS  # noqa: SLF001
+    return table.get(domain, default)
+
+
+def as_of_status(*, kind: str, domain: str, last_evidence_iso: str, start: datetime) -> str:
+    """区間の開始時点の active / dormant (rejudge §2.3)。standing は休眠しない。"""
+    if kind == "standing":
+        return "active"
+    try:
+        last = datetime.fromisoformat(last_evidence_iso)
+    except ValueError:
+        return "active"
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    idle_days = (start - last).total_seconds() / 86400
+    return "dormant" if idle_days >= dormant_after_days(domain) else "active"
+
+
+def as_of_title(current: str, revision: Any) -> str:
+    """区間の開始時刻以前の最新 revision の claim (空なら今の題名)。"""
+    claim = str(getattr(revision, "claim", "") or "").strip() if revision is not None else ""
+    return claim or current
+
+
+def last_evidence_before(repo: Any, start: str) -> dict[str, str]:
+    """情勢ごとの、区間の開始より前の最後の証拠時刻。"""
+    with repo._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(
+            "SELECT situation_id, MAX(added_at) AS last FROM situation_evidence"
+            " WHERE added_at < ? GROUP BY situation_id",
+            (start,),
+        ).fetchall()
+    return {str(r["situation_id"]): str(r["last"]) for r in rows}
+
+
+def situations_as_of(
+    repo: Any, store: Any, b: dc.Bin
+) -> tuple[list[Any], dict[str, Any], dict[str, int]]:
+    """(区間の開始時点の情勢, situation_id → 開始時刻以前の最新 revision, 再構成の計数)。
+
+    decompose (前回) は今の題名のまま全件を active にする。rejudge は §2.3 の再構成
+    (題名 = 開始時刻以前の最新 revision の claim、休眠 = 開始前の最後の証拠からの経過日数)。
+    """
     start = b.start.isoformat()
-    rows = store.load_situations(("active", "dormant", "closed"))
-    return [
-        replace(r, status="active")
-        for r in rows
-        if r.opened_at < start and (r.closed_at is None or r.closed_at > start)
-    ]
+    rows = open_at(store.load_situations(("active", "dormant", "closed")), start)
+    revs = {
+        r.situation_id: store.latest_revision_before(r.situation_id, until_iso=start) for r in rows
+    }
+    if not dc.PROFILE.as_of_strict:
+        return [replace(r, status="active") for r in rows], revs, {}
+    last = last_evidence_before(repo, start)
+    out: list[Any] = []
+    counts = {"no_revision": 0, "retitled": 0, "dormant": 0}
+    for r in rows:
+        rev = revs[r.situation_id]
+        title = as_of_title(r.title, rev)
+        status = as_of_status(
+            kind=r.kind,
+            domain=r.domain,
+            last_evidence_iso=last.get(r.situation_id, r.opened_at),
+            start=b.start,
+        )
+        counts["no_revision"] += int(rev is None)
+        counts["retitled"] += int(title != r.title)
+        counts["dormant"] += int(status == "dormant")
+        out.append(replace(r, title=title, status=status))
+    return out, revs, counts
+
+
+CURRENT_AXES_TAG = "s24ci65"
+
+
+def axes_reannotated(repo: Any, ids: Sequence[str]) -> int:
+    """深刻度の軸が今のモデル (s24ci65) で付いている記事の数 (rejudge §10 の偏り 2)。"""
+    if not ids:
+        return 0
+    ph = ",".join("?" for _ in ids)
+    sql = (
+        f"SELECT COUNT(*) AS n FROM article_severity_axes WHERE article_id IN ({ph})"  # noqa: S608
+        " AND model LIKE ?"
+    )
+    with repo._connect() as conn:  # noqa: SLF001
+        row = conn.execute(sql, (*ids, f"%{CURRENT_AXES_TAG}%")).fetchone()
+    return int(first_value(row) or 0)
 
 
 def stage1(repo: Any, store: Any, b: dc.Bin) -> dict[str, Any]:
@@ -144,10 +232,10 @@ def stage1(repo: Any, store: Any, b: dc.Bin) -> dict[str, Any]:
     pool = pool_for_bin(repo, b)
     ids = [str(a["article_id"]) for a in pool]
     entities = repo.entity_keys_for_articles(ids)
-    sits = situations_as_of(store, b)
+    sits, revs, as_of_counts = situations_as_of(repo, store, b)
     sit_keys = []
     for r in sits:
-        rev = store.latest_revision_before(r.situation_id, until_iso=b.start.isoformat())
+        rev = revs.get(r.situation_id)
         sit_keys.append(
             build_situation_keys(r, claim_type=rev.claim_type if rev and rev.claim_type else "")
         )
@@ -207,19 +295,37 @@ def stage1(repo: Any, store: Any, b: dc.Bin) -> dict[str, Any]:
             "unassigned": len(unassigned),
             "candidates": len(llm_input),
             "situations_as_of": len(sits),
+            "active_as_of": sum(1 for r in sits if r.status == "active"),
+            "detect_input": len(detect_input),
             "missing_kinds": missing_kinds,
             "rollup_dropped": len(rollup),
             "top_k": top_k if scores else 0,
+            "axes_reannotated": axes_reannotated(repo, dids) if dc.PROFILE.as_of_strict else None,
+            **{f"as_of_{k}": v for k, v in as_of_counts.items()},
         },
     }
 
 
-def eligibility(stats: dict[str, Any]) -> str | None:
-    """§2.1 の除外 (1)(2)。適格なら None。(3) 読めない窓は凍結時に検出する。"""
+#: rejudge §2.2 (4)(5) の上限
+MAX_NO_REVISION_SHARE = 0.10
+MAX_MISSING_KIND_SHARE = 0.25
+
+
+def eligibility(stats: dict[str, Any], *, strict: bool | None = None) -> str | None:
+    """§2.1 の除外 (1)(2) (+ rejudge の (4)(5))。適格なら None。(3) は凍結時に検出する。"""
+    strict = dc.PROFILE.as_of_strict if strict is None else strict
     if stats["candidates"] < dc.MIN_CANDIDATES:
         return "candidates_lt5"
-    if stats["situations_as_of"] == 0:
+    if stats.get("active_as_of", stats["situations_as_of"]) == 0:
         return "no_active_situations"
+    if not strict:
+        return None
+    n_sits = stats["situations_as_of"]
+    if n_sits and stats.get("as_of_no_revision", 0) / n_sits > MAX_NO_REVISION_SHARE:
+        return "as_of_title_unrecoverable"
+    n_in = stats.get("detect_input", 0)
+    if n_in and stats.get("missing_kinds", 0) / n_in > MAX_MISSING_KIND_SHARE:
+        return "missing_kinds"
     return None
 
 
@@ -299,6 +405,27 @@ def build_window(b: dc.Bin, index: int, s1: dict[str, Any], s2: dict[str, Any]) 
     }
 
 
+FREEZE_ATTESTATION_NAME = "freeze_attestation.json"
+
+
+def deviations() -> list[str]:
+    """本番との差 (manifest に残す)。"""
+    base = [
+        "assign gate not applied",
+        "seed centroid evidence read from current ledger",
+        "kinds/axes from stored values only",
+    ]
+    if not dc.PROFILE.as_of_strict:
+        return base
+    return [
+        *base,
+        "situation title = latest revision claim at window start (rejudge 2.3)",
+        "dormancy from last evidence before window start (rejudge 2.3)",
+        "already-assigned exclusion not applied",
+        "reopen / later evidence edits not reconstructed",
+    ]
+
+
 def pir_context() -> list[dict[str, str]]:
     try:
         from src.pir.integration import build_synthesis_pir_context, get_pir_config
@@ -310,7 +437,12 @@ def pir_context() -> list[dict[str, str]]:
 
 def plan(repo: Any, store: Any) -> tuple[list[tuple[dc.Bin, dict[str, Any]]], dict[str, int]]:
     """全 32 区間の段 1 と適格の判定。除外の件数を数える。"""
-    excluded = {"candidates_lt5": 0, "no_active_situations": 0}
+    excluded = {
+        "candidates_lt5": 0,
+        "no_active_situations": 0,
+        "as_of_title_unrecoverable": 0,
+        "missing_kinds": 0,
+    }
     bins: list[tuple[dc.Bin, dict[str, Any]]] = []
     for b in dc.build_bins():
         s1 = stage1(repo, store, b)
@@ -335,12 +467,20 @@ def run(args: argparse.Namespace) -> int:
         st = by_key[b.key]["stats"]
         print(
             f"  {b.key} プール {st['pool']} 候補 {st['candidates']} 情勢 {st['situations_as_of']}"
+            f" (active {st['active_as_of']}) 種別欠け {st['missing_kinds']}/{st['detect_input']}"
+            f" 軸の付け直し {st['axes_reannotated']} 題名の戻し {st.get('as_of_retitled', '-')}"
         )
     print(f"  抽出 {len(picked)} 窓 (乱数種 {dc.SEED}、同じ日は最大 {dc.MAX_PER_DAY})")
     if args.dry_run:
         print("[detect-snapshot] dry-run: 書き出しなし")
         return 0
     cert = detect_attest.check_attestation(Path(args.attestation))
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # 凍結の時点の証明書を残す (実行の直前に取り直すため、prereg §9)
+    (out_dir / FREEZE_ATTESTATION_NAME).write_text(
+        json.dumps(cert, indent=2, sort_keys=True), encoding="utf-8"
+    )
     windows = []
     unreadable = 0
     for i, b in enumerate(sorted(picked, key=lambda x: x.start)):
@@ -358,11 +498,9 @@ def run(args: argparse.Namespace) -> int:
             "detect_model_sha256": dc.DETECT_MODEL_SHA256,
             "frozen_at": datetime.now(UTC).isoformat(),
             "excluded": {**excluded, "unreadable": unreadable},
-            "deviations": [
-                "assign gate not applied",
-                "seed centroid evidence read from current ledger",
-                "kinds/axes from stored values only",
-            ],
+            "profile": dc.PROFILE.name,
+            "range": [dc.RANGE_START.isoformat(), dc.RANGE_END.isoformat()],
+            "deviations": deviations(),
         },
         "pir_context": pir_context(),
         "windows": windows,

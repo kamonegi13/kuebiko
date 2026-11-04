@@ -41,6 +41,8 @@ from gpu_window_common import JST, next_clock  # noqa: E402
 
 RUN_TIMEOUT_S = 1500.0  # 1 (窓, run, 腕) の上限 (shadow の予算 120 秒を含む)
 GATE_REASON_PREFIX = "claim の固有名詞が記事に無い"
+FIDELITY_REASON_PREFIX = "claim が根拠どおりでない"  # detect_decompose (DETECT_WRITER_GATES)
+ONE_OFF_PREFIX = "単発の事案"
 
 
 # ---- 純粋部分: 凍結入力 → 本番の部品への入力 ----------------------------------------------
@@ -145,6 +147,15 @@ def summarize_decision(
         "n_skipped_clusters": sum(1 for r in records if r.outcome == "skipped"),
         "n_gate_blocked": sum(
             1 for r in records if r.outcome == "skipped" and r.reason.startswith(GATE_REASON_PREFIX)
+        ),
+        # 書き手の直し (DETECT_WRITER_GATES=1) で止めた claim・塊 (rejudge P3 の参考)
+        "n_fidelity_blocked": sum(
+            1
+            for r in records
+            if r.outcome == "skipped" and r.reason.startswith(FIDELITY_REASON_PREFIX)
+        ),
+        "n_one_off_skipped": sum(
+            1 for r in records if r.outcome == "skipped" and r.reason.startswith(ONE_OFF_PREFIX)
         ),
         "overflow": decision.detected.overflow,
         "shadow": {
@@ -285,6 +296,19 @@ def preflight(cert: Mapping[str, Any]) -> dict[str, Any]:
     return {"db_route": route, "read_only_checks": checks, "flags": flags, "prod_flags": prod}
 
 
+def resolved_ship_model() -> str:
+    """S = step の上書きを外した先 (synthesis_detect のティアの今の割当)。"""
+    from src.tools.model_tiers import STEP_REGISTRY, Step, resolve_tier_model
+
+    return resolve_tier_model(STEP_REGISTRY[Step.SYNTHESIS_DETECT].tier)
+
+
+def check_ship_model(resolved: str, ship: dc.Arm, *, required: bool) -> None:
+    """rejudge §5.1: S の解決先が出荷腕のモデルでなければ実行しない。"""
+    if required and resolved != ship.model:
+        raise SystemExit(f"S の解決先 {resolved!r} が出荷腕 {ship.model!r} と違う (実行しない)")
+
+
 def model_tiers_version() -> int | None:
     import src.storage.db_backend as backend
 
@@ -336,6 +360,7 @@ def run_all(args: argparse.Namespace, cert: Mapping[str, Any]) -> int:
     from src.tools.model_tiers import Step, build_llm_for_ref
 
     pre = preflight(cert)
+    check_ship_model(resolved_ship_model(), dc.SHIP_ARM, required=dc.PROFILE.check_ship_resolution)
     inputs_sha = dc.verify_inputs(Path(args.inputs_dir))
     payload = json.loads((Path(args.inputs_dir) / dc.INPUTS_NAME).read_text(encoding="utf-8"))
     windows = {str(w["window_id"]): w for w in payload["windows"]}
@@ -395,7 +420,9 @@ def base_manifest(
         "model_tiers_version": model_tiers_version(),
         "tools_sha256": detect_attest.tool_shas(),
         "code_files_sha256": dc.file_shas(Path("."), dc.CODE_FILES),
-        "arms": {a.name: {"model": a.model, "DETECT_DECOMPOSE": a.decompose_mode} for a in dc.ARMS},
+        "profile": dc.PROFILE.name,
+        "arms": {a.name: {"model": a.model, **dc.arm_env(a)} for a in dc.ARMS},
+        "ship_model_resolved": resolved_ship_model(),
         "digests_start": {a.model: tags_before.get(a.model, "") for a in dc.ARMS},
         "flags": pre["flags"],
         "prod_flags": pre["prod_flags"],
