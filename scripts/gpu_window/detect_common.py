@@ -1,4 +1,10 @@
-"""GPU-B (DETECT-JUDGE) の共通部品。仕様は docs/replay_prereg/detect_decompose.md (変更しない)。
+"""GPU-B (DETECT-JUDGE) / GPU-A2 (DETECT-REJUDGE) の共通部品。
+
+仕様は prereg ごと (プロファイル、環境変数 ``DETECT_GPU_PROFILE``):
+
+- ``decompose`` (既定): docs/replay_prereg/detect_decompose.md (変更しない)
+- ``rejudge``: docs/replay_prereg/detect_decompose_rejudge.md
+  (過去の窓・書き手の直し・as-of の再構成)
 
 純粋部分 (窓の列挙・抽出・腕の定義・順序・書き込みの封) と、凍結した入力から本番の部品へ
 渡すための読み取り専用の代役 (``FrozenRepo``)。標準ライブラリ + numpy。
@@ -18,10 +24,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-PREREG_NAME = "detect_decompose"
-SEED = 20261104
-RANGE_START = datetime(2026, 10, 27, tzinfo=UTC)
-RANGE_END = datetime(2026, 11, 4, tzinfo=UTC)
 BIN_HOURS = 6
 MAX_PER_DAY = 3
 N_WINDOWS = 20
@@ -29,12 +31,11 @@ RUNS_PER_ARM = 3
 MIN_CANDIDATES = 5  # §2.1 (1) 候補が 5 件未満の窓は除外
 DETECT_MODEL_SHA256 = "9a0a644f0e8b6a52f3440da317dc06c59de8c0555b2a87996ed2869c075a8ff0"
 DETECT_MODEL_PATH = Path("config/models/detect_model.json")
-OUT_DIR = Path("data/eval/detect_decompose")
 INPUTS_NAME = "inputs.json"
 INPUTS_SHA_NAME = "inputs.sha256.json"
 BODY_PREFIX_CHARS = 1000  # claim の照合に使う本文冒頭 (detect_decompose.BODY_PREFIX_CHARS と同値)
 #: 本番コードのうち結果に効くファイル (manifest に sha256 を残す。claim_grounding を含む)
-CODE_FILES = (
+_CODE_FILES_DECOMPOSE = (
     "src/assessment/detect_decompose.py",
     "src/assessment/detect_step.py",
     "src/assessment/claim_grounding.py",
@@ -58,11 +59,77 @@ class Arm:
     model: str
     decompose_mode: str  # DETECT_DECOMPOSE の値 ('shadow' | '1')
     expected_variant: str  # 採用する開設の variant (§5.1)
+    writer_gates: str = ""  # DETECT_WRITER_GATES の値 ('' = 触らない。rejudge は '0' | '1')
 
 
-CURRENT_ARM = Arm("current", "kuebiko-sft:s23i", "shadow", "current")
-SHIP_ARM = Arm("ship", "kuebiko-sft:s24ci65", "1", "decompose")
-ARMS = (CURRENT_ARM, SHIP_ARM)
+@dataclass(frozen=True)
+class Profile:
+    """prereg ごとの固定値 (窓の範囲・乱数種・腕・出力先・as-of の再構成の厳しさ)。"""
+
+    name: str
+    prereg_name: str
+    seed: int
+    range_start: datetime
+    range_end: datetime
+    out_dir: Path
+    arms: tuple[Arm, ...]
+    code_files: tuple[str, ...]
+    as_of_strict: bool  # 題名・休眠を区間の開始時点に戻す (rejudge §2.3)
+    check_ship_resolution: bool = False  # S の解決先が出荷腕のモデルか実行前に確かめる
+
+
+PROFILE_ENV = "DETECT_GPU_PROFILE"
+
+PROFILES: dict[str, Profile] = {
+    "decompose": Profile(
+        name="decompose",
+        prereg_name="detect_decompose",
+        seed=20261104,
+        range_start=datetime(2026, 10, 27, tzinfo=UTC),
+        range_end=datetime(2026, 11, 4, tzinfo=UTC),
+        out_dir=Path("data/eval/detect_decompose"),
+        arms=(
+            Arm("current", "kuebiko-sft:s23i", "shadow", "current"),
+            Arm("ship", "kuebiko-sft:s24ci65", "1", "decompose"),
+        ),
+        code_files=_CODE_FILES_DECOMPOSE,
+        as_of_strict=False,
+    ),
+    "rejudge": Profile(
+        name="rejudge",
+        prereg_name="detect_decompose_rejudge",
+        seed=20261105,
+        range_start=datetime(2026, 9, 24, tzinfo=UTC),
+        range_end=datetime(2026, 10, 26, 12, tzinfo=UTC),
+        out_dir=Path("data/eval/detect_rejudge"),
+        arms=(
+            Arm("current", "kuebiko-sft:s23i", "shadow", "current", writer_gates="0"),
+            Arm("ship", "kuebiko-sft:s24ci65", "1", "decompose", writer_gates="1"),
+        ),
+        code_files=(*_CODE_FILES_DECOMPOSE, "src/assessment/claim_fidelity.py"),
+        as_of_strict=True,
+        check_ship_resolution=True,
+    ),
+}
+
+
+def profile_named(name: str) -> Profile:
+    """プロファイル名 → 固定値。未知の名前は中止 (黙って既定に落とさない)。"""
+    key = (name or "decompose").strip()
+    if key not in PROFILES:
+        raise SystemExit(f"{PROFILE_ENV}={name!r} は未知 (decompose / rejudge)")
+    return PROFILES[key]
+
+
+PROFILE = profile_named(os.environ.get(PROFILE_ENV, "decompose"))
+PREREG_NAME = PROFILE.prereg_name
+SEED = PROFILE.seed
+RANGE_START = PROFILE.range_start
+RANGE_END = PROFILE.range_end
+OUT_DIR = PROFILE.out_dir
+CODE_FILES = PROFILE.code_files
+ARMS = PROFILE.arms
+CURRENT_ARM, SHIP_ARM = ARMS
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -153,7 +220,10 @@ def plan_units(window_ids: Sequence[str], runs: int = RUNS_PER_ARM) -> list[tupl
 
 def arm_env(arm: Arm) -> dict[str, str]:
     """腕ごとに固定する環境変数 (他の旗は本番の値のまま)。"""
-    return {"DETECT_DECOMPOSE": arm.decompose_mode, "LLM_USAGE_LOCAL": "0"}
+    env = {"DETECT_DECOMPOSE": arm.decompose_mode, "LLM_USAGE_LOCAL": "0"}
+    if arm.writer_gates:
+        env["DETECT_WRITER_GATES"] = arm.writer_gates
+    return env
 
 
 # ---- 書き込みの封 -------------------------------------------------------------------------
@@ -282,7 +352,9 @@ def verify_inputs(out_dir: Path) -> str:
 FLAG_KEYS = ("ASSIGN_EMBED_GATE", "DETECT_ML_PREFILTER", "DETECT_SCOPE_NARROW", "LLM_USAGE_LOCAL")
 FLAG_PREFIXES = ("EVENTNEWS_", "DETECT_", "ASSIGN_")
 #: 本番の値と食い違ってよい旗 (腕ごとに固定する・試験の旗)
-FLAG_EXEMPT = frozenset({"DETECT_DECOMPOSE", "LLM_USAGE_LOCAL"})
+FLAG_EXEMPT = frozenset(
+    {"DETECT_DECOMPOSE", "DETECT_WRITER_GATES", "DETECT_GPU_PROFILE", "LLM_USAGE_LOCAL"}
+)
 READ_ONLY_URL_ENV = "REPLAY_DATABASE_URL"  # scripts/replay/create_readonly_role.sql の専用ロール
 
 

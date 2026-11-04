@@ -14,7 +14,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from detect_common import CODE_FILES, PREREG_NAME, file_shas, runtime_flags  # noqa: E402
 
-TOOL_FILES = ("detect_common.py", "detect_attest.py", "detect_snapshot.py", "detect_arms.py")
+TOOL_FILES = (
+    "detect_common.py",
+    "detect_attest.py",
+    "detect_snapshot.py",
+    "detect_arms.py",
+    "detect_closure_core.py",
+    "detect_rejudge_closure.py",
+)
 ATTESTATION_NAME = "prereg_attestation.json"
 
 
