@@ -183,3 +183,10 @@
   7. **Wilcoxon**: 引き分け (d_w=0) を除き、同順位は平均順位、厳密分布 (順位を 2 倍した整数の DP) の両側 p。scipy は使わない
   8. **P3 の分母**: 出荷腕の全 run の n_opened + n_gate_blocked (arms の記録から再計算し、manifest の p3 と一致を確かめる)
   9. **Opus の上限**: 見積もり 300 の 1.3 倍 = 390 回 (キャッシュ当たりは数えない。失敗は数える)。枠切れ (LimitReached) で止まり、キャッシュから再開する
+- 2026-11-04 (**結果を見た後の変更**。11-04 の裁定の結果 = P1〜P5 すべて合格、を見た後。利用者判断「時間がかかっても正しい方法で」): 336a9b27 の項目 6 (R18 を学習側との直接の重なりだけに簡略化) を**撤回**し、§7 の元の定義に戻す。理由: 同時期に作った THIN-GOLD (thin_body_s) で同じ閉包が母集団の 30% (117/390) を外し、直接の重なり 0 では汚染を否定できないため。決まり:
+  1. 閉包は §7 どおり。学習側 = `detect_goldset.jsonl` ∪ `data/mlx/teacher/detect*.jsonl` (候補 id・本文中の記事 id) ∪ `train_detect_ml.py` の入力 (`detect_goldset.jsonl`・`detect_gold_kinds.jsonl`・`detect_heldout_kinds.jsonl`・`detect_labels.json`)。辺 = 事象の根 ∪ CVE・被害組織の共有 ∪ 要約埋込 cos ≥ 0.80 (`scripts/replay/_closure.py`、`R18_VERSION` を manifest に)。`FOCUS_CVE_MAX=3` を超える欄は鍵にしない (cve・victim_org とも)。`max_component_share = 0.30` (超えれば中止)
+  2. 学習側と同じ成分に入る単位を、Opus の抽出の**前**に U から除く。除いた単位数を層 (現行のみ / 出荷のみ / 両腕) ごとに報告し、除いた単位は別の層として同じ指標を出す (11-04 の裁定があるものだけ)
+  3. 残りの U から §4 と 336a9b27 で固定した抽出方法・乱数種 (20261104)・2 回目の 40 単位の規則で抽出し直す
+  4. 裁定は adjudication_cache を通す (同じ単位・同じ材料はキャッシュに当たり Opus を使わない)。新規呼び出しの上限は 390
+  5. 合否の線 P1〜P5 は不変。判断可能な単位が抽出の 80% 未満なら判定不能 (代わりの案は置かない)
+  6. 11-04 の裁定 (judge/、pass) は**参考**として残す。正式な判定はやり直し (judge_r18/) の方
