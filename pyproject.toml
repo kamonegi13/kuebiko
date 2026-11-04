@@ -108,6 +108,8 @@ module = [
     "detect_arms",
     "detect_judge",
     "detect_judge_core",
+    "detect_r18",
+    "detect_r18_core",
     "adjudication_cache",
     "b5_opus_confirm",
     "detect_attest",
