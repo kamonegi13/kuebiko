@@ -321,13 +321,13 @@ def summary_rows(path: Path) -> list[str]:
 
 
 def main() -> int:
-    from scripts.graphrag_eval.common import ROOT, require_prereg
+    from scripts.graphrag_eval.common import require_prereg
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", choices=("sample", "judge"), required=True)
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
-    gate = require_prereg(PREREG, Path(__file__), args.out if args.out.exists() else ROOT)
+    gate = require_prereg(PREREG, Path(__file__), args.out)
     print(json.dumps(gate, ensure_ascii=False))
     if args.phase == "sample":
         return phase_sample(args.out, gate)
