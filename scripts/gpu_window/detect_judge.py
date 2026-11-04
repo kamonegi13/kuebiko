@@ -28,11 +28,13 @@ import detect_judge_core as jc  # noqa: E402
 MAIN_ROOT = Path("/Users/juzo1192/git/auto-post")
 EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_decompose"
 ARMS_NAME = "arms_20261104T022916Z.jsonl"
-JUDGE_DIR = EVAL_DIR / "judge"
+OLD_JUDGE_DIR = EVAL_DIR / "judge"  # 11-04 の簡略 R18 の裁定 (参考、消さない)
+JUDGE_DIR = EVAL_DIR / "judge_r18"
+CLOSURE_PATH = JUDGE_DIR / "closure.json"
 LEDGER = MAIN_ROOT / "data" / "eval" / "adjudication_ledger.jsonl"
 GOLDSET = MAIN_ROOT / "data" / "mlx" / "detect_goldset.jsonl"
 TEACHER_GLOB = "detect*.jsonl"
-ITEM = "DETECT-JUDGE"
+ITEM = "DETECT-JUDGE-R18"
 RUBRIC = "detect-judge-v1"
 RUBRIC_P2 = "detect-judge-v1-p2"
 BUDGET_ESTIMATE = 300
@@ -95,28 +97,44 @@ def build_inputs(window: Mapping[str, Any], unit: jc.Unit) -> dict[str, Any]:
     }
 
 
-def learning_side_overlap(units: Mapping[str, jc.Unit]) -> set[str]:
-    """R18 の直接検査: 単位の記事 id が学習・調整側の記事 id と重なる単位 (閉包は計算しない)。"""
-    texts = [GOLDSET.read_text(encoding="utf-8")]
-    texts += [
-        p.read_text(encoding="utf-8")
-        for p in sorted((MAIN_ROOT / "data/mlx/teacher").glob(TEACHER_GLOB))
-    ]
-    blob = "\n".join(texts)
-    return {uid for uid, u in units.items() if any(f'"{a}"' in blob for a in u.article_ids)}
+def load_closure_excluded() -> tuple[set[str], dict[str, Any]]:
+    """detect_r18.py が書いた closure.json (学習側と同じ成分に入る単位)。"""
+    closure = json.loads(CLOSURE_PATH.read_text(encoding="utf-8"))
+    return set(closure["excluded"]), closure
+
+
+def excluded_layer(units: Mapping[str, jc.Unit], excluded: set[str]) -> dict[str, Any]:
+    """除いた単位のうち 11-04 の裁定 (参考) があるものの内訳 (別の層)。"""
+    old = load_labels(OLD_JUDGE_DIR / "verdicts.jsonl")
+    out: dict[str, dict[str, int]] = {}
+    for uid in sorted(excluded & set(old)):
+        for arm in units[uid].arms:
+            c = out.setdefault(arm, {jc.CORRECT: 0, jc.WRONG: 0, jc.UNDECIDED: 0})
+            c[old[uid]["label"]] += 1
+    return {"n_with_old_verdict": len(excluded & set(old)), "label_counts_by_arm": out}
+
+
+def jc_count(units: Mapping[str, jc.Unit], uids: set[str]) -> dict[str, int]:
+    import detect_r18_core as rc
+
+    return rc.count_by_stratum(units, uids)
 
 
 def cmd_plan(_: argparse.Namespace) -> int:
     records = read_jsonl(EVAL_DIR / ARMS_NAME)
     units = jc.collect_units(records)
-    excluded = learning_side_overlap(units)
+    excluded, closure = load_closure_excluded()
     kept = {k: v for k, v in units.items() if k not in excluded}
     sampled, weights = jc.sample_units(kept)
     second = jc.pick_second(sampled)
     JUDGE_DIR.mkdir(parents=True, exist_ok=True)
     plan = {
         "n_units_total": len(units),
-        "n_r18_direct_excluded": len(excluded),
+        "n_r18_excluded": len(excluded),
+        "r18_excluded_by_stratum": jc_count(units, excluded),
+        "r18_version": closure["r18_version"],
+        "r18_excluded_layer": excluded_layer(units, excluded),
+        "closure_sha256": sha256_file(CLOSURE_PATH),
         "n_units_kept": len(kept),
         "strata": {s: sum(1 for u in kept.values() if u.stratum == s) for s in sorted(weights)},
         "weights": weights,
@@ -318,7 +336,10 @@ def cmd_score(_: argparse.Namespace) -> int:
         "n_sampled": len(plan["sampled"]),
         "n_judged": len(p1),
         "n_units_total": plan["n_units_total"],
-        "n_r18_direct_excluded": plan["n_r18_direct_excluded"],
+        "n_r18_excluded": plan["n_r18_excluded"],
+        "r18_excluded_by_stratum": plan["r18_excluded_by_stratum"],
+        "r18_excluded_layer": plan["r18_excluded_layer"],
+        "r18_version": plan["r18_version"],
         "arm_rates_correct_wrong": {a: list(r) for a, r in rates.items()},
         "second_pass": {
             "n": len(both),
@@ -351,6 +372,8 @@ def cmd_score(_: argparse.Namespace) -> int:
         "seed": jc.SEED,
         "scored_at": datetime.now(UTC).isoformat(),
         "gold_id": "gold:detect_fresh_1027",
+        "r18_version": plan["r18_version"],
+        "closure_sha256": plan["closure_sha256"],
     }
     (JUDGE_DIR / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
