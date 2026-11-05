@@ -36,6 +36,9 @@ CATEGORIES: tuple[str, ...] = (
     "vulnerability",
 )
 TIERS: tuple[str, ...] = ("news", "official", "research", "social", "state_media")
+#: 学習済みの特徴ベクトルを変えないための写像。新しいティア adversary_official は
+#: 学習時に存在しなかったので、最も近い state_media の列に載せる (one-hot が全 0 にならない)。
+_ML_TIER_ALIAS: dict[str, str] = {"adversary_official": "state_media"}
 ENTITY_TYPES: tuple[str, ...] = (
     "actor",
     "actor_provisional",
@@ -152,7 +155,7 @@ def base_feature_vector(a: DetectArticle) -> list[float]:
         [IMPORTANCE_ORD.get(a.importance, 0.0)]
         + _one_hot(a.kind if a.kind in KINDS else "other", KINDS)
         + _one_hot(a.category, CATEGORIES)
-        + _one_hot(a.tier, TIERS)
+        + _one_hot(_ML_TIER_ALIAS.get(a.tier, a.tier), TIERS)
         + counts
         + nations
         + actor_nations

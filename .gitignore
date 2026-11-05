@@ -129,6 +129,9 @@ config/cti/actor_aliases.translated.yaml
 # 運用者ローカルの私的コンテキスト (公開リポに含めない)
 CLAUDE.local.md
 prompts/_persona_local.j2*
+# 運用者ローカルの上書き層 (収集先・敵対的と分類する登録ドメイン・per-source の信頼度上書き。
+# 公開版は汎用の規則と placeholder の例だけ — docs/local_overlay.md)
+/config/local/
 
 # 公開サイトの静的書き出し (生成物。リポジトリに入れない — §9 の再配布境界と
 # 履歴の肥大を避ける。配信は wrangler で直接アップロードする)

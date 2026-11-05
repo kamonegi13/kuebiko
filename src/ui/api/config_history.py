@@ -38,6 +38,7 @@ _KNOWN_KEYS: dict[str, str] = {
     "scrapers": "ソース: html scraper",
     "model_tiers": "LLM モデル割当 (推論/軽量/埋込ティア)",
     "llm_endpoints": "LLM 接続先 (OpenAI 互換エンドポイント)",
+    "source_reliability_overrides": "ソース信頼度の上書き (購読ごと)",
     "jp_ci_operators": "重要インフラ 指定事業者名簿",
     "dashboard_layout": "ダッシュボード レイアウト (widget 配置 + 共有既定 config)",
     "grok_tasks": "Grok タスク定義 (外部 Grok 側設定の写し)",
@@ -104,6 +105,10 @@ def _invalidate(key: str) -> None:
 
         transport = {"feeds": "rss", "watchers": "sitemap", "scrapers": "html_scraper"}[key]
         invalidate_caches(transport)  # type: ignore[arg-type]
+    elif key == "source_reliability_overrides":
+        from src.cti.source_basis import invalidate_reliability_cache
+
+        invalidate_reliability_cache()
     elif key == "jp_ci_operators":
         from src.cti.ci_operator_roster import invalidate_operators_cache
 

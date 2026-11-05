@@ -20,8 +20,9 @@ from src.tools.url_guard import (
     assert_safe_public_url,
     redirect_guard_hooks,
 )
+from src.tools.user_agent import bot_user_agent
 
-DEFAULT_USER_AGENT = "kuebiko/1.0 (+source-discovery)"
+DEFAULT_USER_AGENT = bot_user_agent("source-discovery")  # SSoT = src/tools/user_agent.py
 DEFAULT_HTTP_TIMEOUT = 20.0
 # ソース追加ウィザード等のインタラクティブ経路用 (短め)。bot 対策で tarpit される
 # サイトを長時間待たず早期に fail させる。

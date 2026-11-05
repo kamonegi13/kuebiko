@@ -28,6 +28,7 @@ import trafilatura
 from pydantic import BaseModel, ConfigDict
 
 from src.logging_config import get_logger
+from src.tools import hostile_fetch
 from src.tools.fetch_policy import BLOCK_ESCALATION_STATUSES, looks_like_js_challenge
 from src.tools.pdf_text import extract_pdf_text, looks_like_pdf
 from src.tools.text_sanitizer import dominant_script, title_similarity
@@ -299,6 +300,9 @@ class ContentExtractor:
         # 1. fetch (403/429/503 は代替 UA で再試行 = WAF の UA fingerprint ブロック救済)
         try:
             resp = await self._get_with_ua_rotation(url)
+        except hostile_fetch.HostileFetchSkipped as e:
+            # 敵対的 host へのポリシーによる見送り (ネットワーク失敗ではない)
+            return self._fail(url, f"hostile_{e.reason}")
         except httpx.TimeoutException as e:
             return self._fail(url, "timeout", error=str(e))
         except UnsafeUrlError as e:
@@ -314,7 +318,7 @@ class ContentExtractor:
             # Playwright 経路が一度も発火せず本文抽出が 1 か月無音全滅した。
             is_challenge = looks_like_js_challenge(resp.text)
             if resp.status_code in _RETRIABLE_BLOCK_STATUSES or is_challenge:
-                pw_result = await self._playwright_within_cap(url)
+                pw_result = await self._playwright_within_cap(url, str(resp.url))
                 if pw_result is not None:
                     return pw_result
             if is_challenge:
@@ -353,7 +357,7 @@ class ContentExtractor:
         if not text or len(text) < self._min_content_length:
             # trafilatura で取れなかった / 短すぎる → Playwright fallback
             # (Cloudflare interstitial HTML や JS-rendered content への対応)
-            pw_result = await self._playwright_within_cap(url)
+            pw_result = await self._playwright_within_cap(url, str(resp.url))
             if pw_result is not None:
                 return pw_result
             if not text:
@@ -410,6 +414,31 @@ class ContentExtractor:
         )
         return result
 
+    async def _get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        """GET 1 回。``HOSTILE_FETCH_POLICY=1`` ではリダイレクトを 1 ホップずつ再判定して追う。
+
+        hostile host は間隔・添付拒否を適用し、停止中 (``HOSTILE_FETCH_PAUSE``) なら取らない。
+        client 既定のヘッダはブラウザ相当 UA のみ (ボット識別は持たない)。
+        """
+        if hostile_fetch.policy_mode() == "on":
+            # 記事本文は fetch スロットを握ったまま長く待たない: 待ちが inline 上限を超えるなら
+            # 見送り (hostile_throttle_deferred)、再取得 backlog が次の周期で拾う。
+            resp, _plan = await hostile_fetch.enforced_get_async(
+                self._client,
+                url,
+                headers_for_hop=lambda _plan: headers,
+                max_wait=hostile_fetch.inline_wait_seconds(),
+            )
+            return resp
+        plan = await hostile_fetch.aplan_for(url)
+        if plan.hostile and plan.paused:
+            hostile_fetch.log_plan(plan, "skip", reason="paused")
+            raise hostile_fetch.HostileFetchSkipped("paused", url)
+        hostile_fetch.log_plan(plan, "observe")
+        resp = await (self._client.get(url, headers=headers) if headers else self._client.get(url))
+        hostile_fetch.observe_redirect_history(resp)
+        return resp
+
     async def _get_with_ua_rotation(self, url: str) -> httpx.Response:
         """URL を GET。403/429/503 なら代替 UA (現行 Chrome/Firefox/Safari) で順に再試行する。
 
@@ -417,8 +446,15 @@ class ContentExtractor:
         Chrome/126=200)。プライマリ UA で block されたら代替 UA を試し、最後の応答を返す。
         200 が得られた時点で即座に返す。例外 (timeout/connection) は呼出側で捕捉する。
         """
-        resp = await self._client.get(url)
+        resp = await self._get(url)
         if resp.status_code not in _RETRIABLE_BLOCK_STATUSES:
+            return resp
+        # 敵対的 host (適用中) は UA を替えて試し直さない: 最初のブロックで止める
+        # (UA ローテは WAF への追加の接触であり、間隔の取り決めとも噛み合わない)。
+        if hostile_fetch.policy_mode() == "on" and hostile_fetch.plan_for(str(resp.url)).hostile:
+            hostile_fetch.log_plan(
+                hostile_fetch.plan_for(str(resp.url)), "skip_ua_rotation", status=resp.status_code
+            )
             return resp
         for alt_ua in _rotation_uas(self._user_agent):
             if alt_ua == self._user_agent:
@@ -430,7 +466,9 @@ class ContentExtractor:
                 retry_ua=alt_ua.split(") ", 1)[-1][:24],
             )
             try:
-                retry = await self._client.get(url, headers={"User-Agent": alt_ua})
+                retry = await self._get(url, {"User-Agent": alt_ua})
+            except hostile_fetch.HostileFetchSkipped:
+                raise
             except (httpx.TimeoutException, httpx.RequestError):
                 continue
             if retry.status_code == 200:
@@ -467,7 +505,9 @@ class ContentExtractor:
             _log.warning("playwright_browser_start_failed", error=str(e))
             return False
 
-    async def _playwright_within_cap(self, url: str) -> ExtractionResult | None:
+    async def _playwright_within_cap(
+        self, url: str, final_url: str | None = None
+    ) -> ExtractionResult | None:
         """Playwright fallback を per-run cap の範囲内で試行する。
 
         cap 到達後は None (呼出側が通常の failure 経路へ)。cap は成功/失敗を問わず
@@ -476,6 +516,11 @@ class ContentExtractor:
         """
         if not self._enable_playwright:
             return None
+        # 敵対的 host (要求 URL と最終 URL のどちらでも) では JS を実行しない
+        # (stealth の初期化スクリプトを当てるのも含め、対象に能動的な指紋を返さない)。
+        for candidate in (url, final_url):
+            if candidate and hostile_fetch.should_skip_playwright(candidate):
+                return None
         if self._playwright_cap > 0 and self._playwright_attempts >= self._playwright_cap:
             _log.info("playwright_fallback_cap_reached", url=url, cap=self._playwright_cap)
             return None

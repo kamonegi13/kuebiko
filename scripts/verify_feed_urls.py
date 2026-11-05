@@ -32,7 +32,9 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-USER_AGENT = "kuebiko/1.0 (+feed-verifier)"
+from src.tools.user_agent import bot_user_agent  # noqa: E402
+
+USER_AGENT = bot_user_agent("feed-verifier")
 HTTP_TIMEOUT_SECONDS = 30.0
 STALE_THRESHOLD_DAYS = 180  # 6 ヶ月以上更新なしを warning
 MAX_BYTES_TO_DOWNLOAD = 20 * 1024 * 1024  # 20MB 上限 (Project Zero は 13MB)

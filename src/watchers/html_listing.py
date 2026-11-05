@@ -32,11 +32,12 @@ from src.logging_config import get_logger
 from src.tools.article_model import Article
 from src.tools.fetch_policy import HTML_ACCEPT, staged_get
 from src.tools.source_fetch_outcome import FetchObservation, SourceFetchOutcome
+from src.tools.user_agent import bot_user_agent
 from src.watchers.sitemap_base import WatcherState
 
 _log = get_logger(__name__)
 
-DEFAULT_USER_AGENT = "kuebiko/1.0 (+html-listing-watcher)"
+DEFAULT_USER_AGENT = bot_user_agent("html-listing-watcher")  # SSoT = src/tools/user_agent.py
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_MAX_POSTS_PER_RUN = 8
 
@@ -72,6 +73,8 @@ class HtmlListingWatcher:
     url_rewrite_replacement: str = ""
     user_agent: str = DEFAULT_USER_AGENT
     http_timeout: float = DEFAULT_HTTP_TIMEOUT
+    # ソース設定の取得ポリシー印 ("hostile" / "" = 自動分類のみ)。hostile_fetch を参照
+    fetch_profile: str = ""
     # 死活観測 (2026-08-02)。frozen dataclass だが中身は可変ホルダなので記録できる。
     # 「新着 0 件」と「取得が壊れた」を区別する唯一の手段 — 成果ではなく行為を残す。
     observation: FetchObservation = field(
@@ -92,7 +95,11 @@ class HtmlListingWatcher:
             ) as client:
                 # fetch_policy: bot UA → WAF ブロック時のみブラウザ UA (プレビューと同一)
                 resp, _stage = await staged_get(
-                    client, self.listing_url, identity=self.user_agent, accept=HTML_ACCEPT
+                    client,
+                    self.listing_url,
+                    identity=self.user_agent,
+                    accept=HTML_ACCEPT,
+                    source_profile=self.fetch_profile,
                 )
         except httpx.HTTPError as e:
             _log.warning("html_listing_fetch_failed", watcher=self.name, error=str(e))

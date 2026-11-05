@@ -7,7 +7,7 @@
 
 en + ja ラベルを索引するので英語名・日本語名どちらでも解決可。名前衝突は first-wins。
 
-Usage:
+Usage (WIKIDATA_USER_AGENT="<連絡先つきの UA>" を必ず指定する。Wikidata の UA ポリシー):
     uv run python scripts/ingest_wikidata_orgs.py            # dry-run (取得のみ)
     uv run python scripts/ingest_wikidata_orgs.py --apply    # geo_orgs に投入
 """
@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -25,9 +26,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.storage.db_backend import connect  # noqa: E402
+from src.tools.user_agent import bot_user_agent  # noqa: E402
 
 _ENDPOINT = "https://query.wikidata.org/sparql"
-_UA = "kuebiko-geo/1.0 (offline gazetteer build; research)"
+# Wikidata の UA ポリシーは連絡先を求める。手動実行のこのスクリプトは WIKIDATA_USER_AGENT に
+# 連絡先つきの UA を明示して実行すること (既定の中立 UA は連絡先を持たない)。
+_UA = os.environ.get("WIKIDATA_USER_AGENT", "").strip() or bot_user_agent("gazetteer-build")
 
 # CTI 被害として頻出する組織 type (QID)。subclass walk は遅いので P31 直指定。
 _TYPES: list[tuple[str, str]] = [

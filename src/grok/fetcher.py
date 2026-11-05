@@ -35,6 +35,7 @@ from playwright.async_api import (
 from pydantic import BaseModel, ConfigDict
 
 from src.logging_config import get_logger
+from src.tools.hostile_hosts import classify_host
 from src.tools.user_agent import browser_user_agent
 
 _log = get_logger(__name__)
@@ -208,6 +209,14 @@ class GrokFetcher:
 
     async def _fetch_locked(self, url: str) -> GrokFetchResult:
         assert self._browser is not None
+        # Grok の取得先は grok.com / x.com だけ。敵対的 host が来たら取らない
+        # (Playwright + stealth を敵対的 host に当てない不変条件を、ここでも固定する)。
+        try:
+            is_hostile = classify_host(url).hostile
+        except Exception:  # noqa: BLE001 — 分類不能は hostile 扱い (拒否に倒す)
+            is_hostile = True
+        if is_hostile:
+            raise GrokFetchError("hostile host には Playwright で接続しない")
         # Playwright の new_context は kwargs を多数受け取るため、Any 経由で渡す
         # (mypy の精密な kwargs 型推論を回避)。
         from typing import Any as _Any

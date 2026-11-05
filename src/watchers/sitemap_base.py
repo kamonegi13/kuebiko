@@ -50,10 +50,11 @@ from src.tools.url_guard import (
     assert_safe_public_url,
     redirect_guard_hooks_async,
 )
+from src.tools.user_agent import bot_user_agent
 
 _log = get_logger(__name__)
 
-DEFAULT_USER_AGENT = "kuebiko/1.0 (+sitemap-watcher)"
+DEFAULT_USER_AGENT = bot_user_agent("sitemap-watcher")  # SSoT = src/tools/user_agent.py
 DEFAULT_HTTP_TIMEOUT = 30.0
 DEFAULT_MAX_POSTS_PER_RUN = 10
 DEFAULT_UNSEEN_MAX_AGE_DAYS = 14
@@ -147,6 +148,8 @@ class SitemapWatcher:
     max_posts_per_run: int = DEFAULT_MAX_POSTS_PER_RUN
     user_agent: str = DEFAULT_USER_AGENT
     http_timeout: float = DEFAULT_HTTP_TIMEOUT
+    # ソース設定の取得ポリシー印 ("hostile" / "" = 自動分類のみ)。hostile_fetch を参照
+    fetch_profile: str = ""
     # 未見でも lastmod がこれより古い URL は取り込まない (direct_rss_source と同じ安全弁)。
     # 新規ソース登録時に sitemap 全件 (数千件・数年分) が「新着」として流入するのを防ぐ。
     # ⚠ init_seen() は bespoke watcher からしか呼ばれず、UI 登録経路では走らないため
@@ -179,7 +182,11 @@ class SitemapWatcher:
         try:
             # fetch_policy: bot UA → WAF ブロック時のみブラウザ UA (プレビューと同一ポリシー)
             resp, _stage = await staged_get(
-                client, url, identity=self.user_agent, accept=XML_ACCEPT
+                client,
+                url,
+                identity=self.user_agent,
+                accept=XML_ACCEPT,
+                source_profile=self.fetch_profile,
             )
         except (httpx.HTTPError, UnsafeUrlError) as e:
             _log.warning("sitemap_fetch_failed", watcher=self.name, url=url, error=str(e))

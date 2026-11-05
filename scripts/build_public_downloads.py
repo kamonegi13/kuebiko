@@ -1,8 +1,9 @@
-"""公開サイトに配布物 (PDF) を置き、URL で直接ダウンロードできるようにする。
+"""公開サイトに配布物 (PDF・zip) を置き、URL で直接ダウンロードできるようにする。
 
 配布物は **リポジトリに入れない** (公開リポジトリに運用者の資料を載せない・容量も
-大きい)。git 管理外の置き場 (既定 ``data/public_downloads/``) に置いた PDF を、
-公開サイトの配信物の ``downloads/`` へコピーする → ``https://<公開サイト>/downloads/<名前>.pdf``。
+大きい)。git 管理外の置き場 (既定 ``data/public_downloads/``) に置いた PDF・zip を、
+公開サイトの配信物の ``downloads/`` へコピーする → ``https://<公開サイト>/downloads/<名前>``。
+運用者の資料を zip で配るときは暗号化 zip (AES-256) にし、パスワードは別経路で渡す (2026-11-03)。
 画面からの導線は作らない (URL を渡して配る)。
 
 ⚠ 置き場に置いたものは **匿名で誰でも取得できる**。置く前に中身を確認すること。
@@ -19,7 +20,7 @@ from pathlib import Path
 #: Cloudflare Pages の 1 ファイルの上限 (25 MiB)。超えると配信全体が失敗する
 PAGES_FILE_LIMIT = 25 * 1024 * 1024
 #: 名前は URL にそのまま出るので、ASCII の安全な文字に限る
-_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$")
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.(pdf|zip)$")
 
 
 class DownloadsError(ValueError):
@@ -37,7 +38,7 @@ def build(src: Path, out: Path) -> list[str]:
     files = sorted(p for p in src.iterdir() if p.is_file() and not p.name.startswith("."))
     for p in files:
         if not _SAFE_NAME.match(p.name):
-            raise DownloadsError(f"名前は英数字と . _ - の .pdf のみ: {p.name!r}")
+            raise DownloadsError(f"名前は英数字と . _ - の .pdf / .zip のみ: {p.name!r}")
         size = p.stat().st_size
         if size > PAGES_FILE_LIMIT:
             raise DownloadsError(f"{p.name} が Pages の上限 25 MiB を超える ({size} bytes)")

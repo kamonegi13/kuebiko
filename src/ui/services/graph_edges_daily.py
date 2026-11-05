@@ -5,6 +5,8 @@
 
 - 旗 ``EVENT_EDGES_RECORD`` (コードの既定 0、1 で書く)。戻し = 0 (記録が止まるだけ)
 - 同じ UTC 日の再実行は行を置き換える (冪等)
+- 記録するのは ``index_relations`` の上限 (1 事象あたり same_actor 5・incident 10) の
+  **後** の線 (上限で落ちた線は写らない)
 """
 
 from __future__ import annotations
@@ -98,8 +100,9 @@ async def run_graph_edges_daily(repo: RunHistoryRepository | None = None) -> dic
     derived_at = now.date().isoformat()
     # 初回は全事象を読む同期処理 (数十秒) — イベントループを止めない
     index = await asyncio.to_thread(relations_by_event, repo)
-    rows = build_records(repo, derived_at=derived_at, now=now, index=index)
-    written = repo.replace_event_edge_records(derived_at, rows)
+    # 同期の DB 処理 (判断記録の読み・約 6,000 行の書き込み) もイベントループの外で
+    rows = await asyncio.to_thread(build_records, repo, derived_at=derived_at, now=now, index=index)
+    written = await asyncio.to_thread(repo.replace_event_edge_records, derived_at, rows)
     stats = repo.edge_record_stats(derived_at)
     _log.info("graph_edges_daily_done", derived_at=derived_at, written=written, by_type=stats)
     return {"derived_at": derived_at, "written": written, **stats}

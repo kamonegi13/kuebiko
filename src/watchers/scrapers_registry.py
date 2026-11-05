@@ -7,6 +7,7 @@ yaml_registry を踏襲し、 source_router._resolve_scraper から透過利用�
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +44,9 @@ class ScraperDef(BaseModel):
     url_rewrite_pattern: str = ""
     url_rewrite_replacement: str = ""
     folder: str = ""  # organizational 分類軸 (全 transport 共通、非 behavioral)
+    # 取得ポリシーの印 (任意)。"hostile" = 敵対的 host として厳しめに取る
+    # (src/tools/hostile_fetch.py、HOSTILE_FETCH_POLICY=1 で適用)。既定は host の自動分類に任せる。
+    fetch_profile: Literal["default", "hostile"] = "default"
 
 
 class ScrapersConfig(BaseModel):
@@ -83,6 +87,7 @@ def build_html_listing_watcher(
         url_exclude_pattern=d.url_exclude_pattern,
         url_rewrite_pattern=d.url_rewrite_pattern,
         url_rewrite_replacement=d.url_rewrite_replacement,
+        fetch_profile=d.fetch_profile,
     )
 
 

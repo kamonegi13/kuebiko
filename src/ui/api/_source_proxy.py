@@ -134,6 +134,36 @@ def sanitize_and_inject(html: str, page_url: str, picker_js: str) -> str:
     return str(soup)
 
 
+class PickerBlockedError(RuntimeError):
+    """取得ポリシー (hostile host) により picker の取得/描画を行わなかった。
+
+    ``str()`` がそのまま UI 向けの日本語メッセージ。
+    """
+
+
+_MSG_PAUSED = "取得の停止スイッチ (HOSTILE_FETCH_PAUSE) が有効なため、この取得先は取得しません。"
+_MSG_NO_JS = (
+    "この取得先は取得ポリシーによりブラウザ描画 (JavaScript 実行) を行いません。"
+    "静的 HTML で取得できるページか、RSS / sitemap の URL を指定してください。"
+)
+
+
+def _assert_picker_allowed(url: str, *, js: bool) -> None:
+    """hostile host への picker 取得を取得ポリシーに通す。
+
+    停止スイッチ: 取得自体を行わない。適用 (policy=on): JS 描画 (Playwright) のみ禁止。
+    既定 (shadow/0): 挙動は不変で、shadow のときだけ ``would_skip_playwright`` を記録する。
+    """
+    from src.tools import hostile_fetch
+
+    plan = hostile_fetch.plan_for(url)
+    if plan.hostile and plan.paused:
+        hostile_fetch.log_plan(plan, "skip", reason="paused", via="picker")
+        raise PickerBlockedError(_MSG_PAUSED)
+    if js and hostile_fetch.should_skip_playwright(url):
+        raise PickerBlockedError(_MSG_NO_JS)
+
+
 async def build_proxy_html(url: str, render_mode: str = "auto") -> str:
     """url を取得・無害化し、picker 注入済みの same-origin HTML を返す。
 
@@ -144,6 +174,7 @@ async def build_proxy_html(url: str, render_mode: str = "auto") -> str:
 
     assert_safe_public_url(url)
     mode = render_mode if render_mode in ("static", "js", "auto") else "auto"
+    _assert_picker_allowed(url, js=False)
 
     html = ""
     if mode in ("static", "auto"):
@@ -153,6 +184,7 @@ async def build_proxy_html(url: str, render_mode: str = "auto") -> str:
 
     needs_js = mode == "js" or (mode == "auto" and (not html or looks_like_js_shell(html)))
     if needs_js:
+        _assert_picker_allowed(url, js=True)
         from src.tools.page_renderer import render_html
 
         html = await render_html(url)

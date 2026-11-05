@@ -22,6 +22,8 @@ import time
 
 from src.logging_config import get_logger
 from src.tools.fetch_policy import looks_like_js_challenge
+from src.tools.hostile_fetch import should_skip_playwright
+from src.tools.user_agent import browser_user_agent
 
 _log = get_logger(__name__)
 
@@ -58,7 +60,14 @@ async def fetch_text_via_playwright(
     nav_timeout_ms: int = _DEFAULT_NAV_TIMEOUT_MS,
     post_load_wait_ms: int = _DEFAULT_POST_LOAD_WAIT_MS,
 ) -> str | None:
-    """URL の raw text を Playwright 経由で取得する。失敗/cap 超過は None。"""
+    """URL の raw text を Playwright 経由で取得する。失敗/cap 超過は None。
+
+    敵対的 host (``hostile_fetch``) では JS を実行しない。また Chromium に渡す UA は常に
+    ブラウザ相当 (呼出側が渡すボット識別は使わない — 実ブラウザがボット UA を名乗る不整合を避ける)。
+    """
+    if should_skip_playwright(url):
+        return None
+    user_agent = browser_user_agent()
     if not _within_cap():
         _log.info("playwright_listing_cap_reached", url=url, cap=_cap_from_env())
         return None

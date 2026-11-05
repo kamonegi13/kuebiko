@@ -74,31 +74,36 @@ class EventEdgeRecordsMixin(RunHistoryRepositoryBase):
     def replace_event_edge_records(self: Any, derived_at: str, rows: Sequence[_RecordLike]) -> int:
         """``derived_at`` の行を全部消して ``rows`` を入れ直す (同じ日の再実行は置き換え)。"""
         now = _to_iso(datetime.now(UTC))
-        with self._connect() as conn:
+        params = [
+            (
+                derived_at,
+                r.edge_key,
+                r.item_a,
+                r.item_b,
+                r.root_a,
+                r.root_b,
+                r.edge_type,
+                r.rel_type,
+                r.source,
+                r.basis_json,
+                r.score,
+                r.rule_version,
+                r.model_sha,
+                r.tier,
+                now,
+            )
+            for r in rows
+        ]
+        # DELETE→INSERT を 1 トランザクションにする (途中の失敗で前回の分を残す)
+        with self.atomic(), self._connect() as conn:
             conn.execute("DELETE FROM event_edge_records WHERE derived_at = ?", (derived_at,))
-            for r in rows:
-                conn.execute(
+            if params:
+                conn.executemany(
                     "INSERT INTO event_edge_records (derived_at, edge_key, item_a, item_b,"
                     " root_a, root_b, edge_type, rel_type, source, basis_json, score,"
                     " rule_version, model_sha, tier, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        derived_at,
-                        r.edge_key,
-                        r.item_a,
-                        r.item_b,
-                        r.root_a,
-                        r.root_b,
-                        r.edge_type,
-                        r.rel_type,
-                        r.source,
-                        r.basis_json,
-                        r.score,
-                        r.rule_version,
-                        r.model_sha,
-                        r.tier,
-                        now,
-                    ),
+                    params,
                 )
         return len(rows)
 

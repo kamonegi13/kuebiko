@@ -80,6 +80,31 @@ def test_replace_is_idempotent_for_same_day(repo: RunHistoryRepository) -> None:
     assert sum(repo.edge_record_stats("2026-11-01").values()) == 2
 
 
+def test_same_pair_with_multiple_rel_types_does_not_violate_unique(
+    repo: RunHistoryRepository,
+) -> None:
+    rels = [
+        DerivedRelation("e1", "e2", "follow_up", ("victim:x",), {"p": "0.9"}),
+        DerivedRelation("e2", "e1", "side", ("victim:x",), {"p": "0.8"}),
+        DerivedRelation("e1", "e2", "contains", ("victim:x",), {"p": "0.7"}),
+    ]
+    rows = records_from_relations(rels, derived_at=DAY, model_sha="")
+    assert repo.replace_event_edge_records(DAY, rows) == 1
+    assert repo.edge_record_stats(DAY) == {"incident": 1}
+
+
+def test_replace_rolls_back_and_keeps_previous_rows_on_error(
+    repo: RunHistoryRepository,
+) -> None:
+    good = records_from_relations(_rels(), derived_at=DAY, model_sha="")
+    repo.replace_event_edge_records(DAY, good)
+    # 同じ edge_key を 2 行にして UNIQUE 違反を INSERT の途中で起こす
+    dup = [good[0], good[0]]
+    with pytest.raises(Exception):  # noqa: B017, PT011 (sqlite3 / psycopg の違反)
+        repo.replace_event_edge_records(DAY, dup)
+    assert sum(repo.edge_record_stats(DAY).values()) == len(good)
+
+
 def test_purge_drops_only_old_days(repo: RunHistoryRepository) -> None:
     old = (datetime.now(UTC) - timedelta(days=200)).date().isoformat()
     new = datetime.now(UTC).date().isoformat()
