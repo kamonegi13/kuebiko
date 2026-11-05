@@ -28,6 +28,7 @@ from src.main import PipelineRunResult, run_default
 from src.storage.records import TriggerSource  # SSoT (2026-09-27 に recovery を追加)
 from src.storage.run_history import RunHistoryRepository, RunRecord, RunStatus
 from src.ui.services.run_registry import LogEvent, RunRegistry
+from src.ui.services.sleep_aware_timeout import resolve_mode, wait_with_jump_allowance
 from src.ui.ws.realtime import broadcast as ws_broadcast
 
 # subprocess の structlog event → app-wide WebSocket event 名のマッピング。
@@ -421,10 +422,20 @@ class PipelineRunner:
             try:
                 # 絶対 timeout で全体を wrap。LLM hang (Ollama が chunk を送り続けて
                 # client の idle timeout が発火しないケース) もここで確実に救う。
-                returncode = await asyncio.wait_for(
-                    _consume_stdout(),
-                    timeout=timeout_seconds,
-                )
+                # スリープ (時計の飛び) を持ち時間から除く経路は旗で選ぶ (既定 off = 従来)。
+                sleep_mode = resolve_mode()
+                if sleep_mode == "off":
+                    returncode = await asyncio.wait_for(
+                        _consume_stdout(),
+                        timeout=timeout_seconds,
+                    )
+                else:
+                    returncode = await wait_with_jump_allowance(
+                        asyncio.ensure_future(_consume_stdout()),
+                        timeout=timeout_seconds,
+                        mode=sleep_mode,
+                        run_id=run_id,
+                    )
             except TimeoutError:
                 # subprocess 全体 timeout: SIGTERM → 5s grace → SIGKILL
                 _log.warning(

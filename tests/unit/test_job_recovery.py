@@ -182,3 +182,36 @@ class TestHeavyConflict:
         target = _daily("morning-brief")
         now_jst = datetime(2026, 7, 19, 12, 5)  # 日曜 — mon の heavy は非 active
         assert heavy_window_conflict(target, [target, heavy], now_jst) is False
+
+
+class TestTimeoutRetry:
+    """timeout で失敗した当日の日次ジョブは、昨日の成功があっても再実行する (11-05)。"""
+
+    def _kw(self, **over: object) -> dict[str, object]:
+        kw = _base_kwargs()
+        kw["last_success_at"] = NOW - timedelta(hours=20)  # 昨日の成功 = 従来は healthy
+        kw.update(over)
+        return kw
+
+    def test_default_ignores_timeout_failure(self) -> None:
+        assert decide(_daily(), **self._kw()).action == "healthy"  # type: ignore[arg-type]
+
+    def test_timeout_failure_triggers_retry(self) -> None:
+        kw = self._kw(timeout_failed_since_success=True)
+        assert decide(_daily(), **kw).action == "retry"  # type: ignore[arg-type]
+
+    def test_does_not_retry_when_busy_or_recent_attempt(self) -> None:
+        busy = self._kw(timeout_failed_since_success=True, busy=True)
+        assert decide(_daily(), **busy).action == "defer"  # type: ignore[arg-type]
+        recent = self._kw(
+            timeout_failed_since_success=True, last_attempt_at=NOW - timedelta(minutes=10)
+        )
+        assert decide(_daily(), **recent).action == "defer"  # type: ignore[arg-type]
+
+    def test_weekly_unaffected(self) -> None:
+        kw = self._kw(timeout_failed_since_success=True, last_success_at=NOW - timedelta(days=2))
+        assert decide(_weekly(), **kw).action == "healthy"  # type: ignore[arg-type]
+
+    def test_cap_still_applies(self) -> None:
+        kw = self._kw(timeout_failed_since_success=True, attempts_in_window=RECOVERY_MAX_ATTEMPTS)
+        assert decide(_daily(), **kw).action == "give_up"  # type: ignore[arg-type]
