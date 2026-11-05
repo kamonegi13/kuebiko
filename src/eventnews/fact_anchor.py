@@ -159,7 +159,30 @@ _NUMBER_WORDS: dict[str, int] = {
     "hundred": 100,
     "dozen": 12,
 }
+_TENS_WORDS = "twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+_ONES_WORDS = "one|two|three|four|five|six|seven|eight|nine"
+#: 複合 (twenty-five / three hundred / two hundred and fifty) を単語より先に畳む
+_COMPOUND_NUMBER_RE = re.compile(
+    rf"\b(?:(?P<tens>{_TENS_WORDS})[-\s](?P<ones>{_ONES_WORDS})"
+    rf"|(?P<mult>{_ONES_WORDS}|ten|eleven|twelve)\s+hundred(?:\s+(?:and\s+)?(?P<rest>(?:{_TENS_WORDS})(?:[-\s](?:{_ONES_WORDS}))?|{_ONES_WORDS}|ten|eleven|twelve))?)\b",
+    re.IGNORECASE,
+)
 _NUMBER_WORD_RE = re.compile(r"\b(" + "|".join(_NUMBER_WORDS) + r")\b", re.IGNORECASE)
+
+
+def _word_value(phrase: str) -> int:
+    return sum(_NUMBER_WORDS[w.lower()] for w in re.split(r"[-\s]+", phrase.strip()) if w)
+
+
+def _fold_compound(m: re.Match[str]) -> str:
+    if m.group("tens"):
+        return str(_NUMBER_WORDS[m.group("tens").lower()] + _NUMBER_WORDS[m.group("ones").lower()])
+    value = _NUMBER_WORDS[m.group("mult").lower()] * 100
+    if m.group("rest"):
+        value += _word_value(m.group("rest"))
+    return str(value)
+
+
 #: これ未満の桁の整数は照合しない (「3 件」「5 日」は表記の揺れが大きく照合に向かない)
 _NUMBER_MIN_DIGITS = 2
 
@@ -168,6 +191,7 @@ def _fold_number_text(text: str) -> str:
     """照合の前の正規化: NFKC・識別子の番号を除く・英語の月名と数詞を数字へ。"""
     folded = unicodedata.normalize("NFKC", _ID_TOKEN.sub(" ", text or ""))
     folded = _MONTH_RE.sub(lambda m: f" {_MONTHS[m.group(1).lower()]} ", folded)
+    folded = _COMPOUND_NUMBER_RE.sub(_fold_compound, folded)
     return _NUMBER_WORD_RE.sub(lambda m: str(_NUMBER_WORDS[m.group(1).lower()]), folded)
 
 

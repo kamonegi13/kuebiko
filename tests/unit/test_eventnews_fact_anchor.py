@@ -277,3 +277,12 @@ class TestAnchoredCompletion:
         tmpl = Path("prompts/eventnews/refine_v7.j2").read_text(encoding="utf-8")
         rows = [ln for ln in tmpl.splitlines() if '"anchor": "出典' in ln]
         assert rows and all('"paragraph"' in ln and '"section"' in ln for ln in rows)
+
+
+def test_fold_number_text_compound_numerals() -> None:
+    from src.eventnews.fact_anchor import _fold_number_text as fold
+
+    assert fold("twenty-five users") == "25 users"
+    assert fold("three hundred") == "300"
+    assert fold("two hundred and fifty") == "250"
+    assert "20-5" not in fold("twenty-five") and "3 100" not in fold("three hundred")
