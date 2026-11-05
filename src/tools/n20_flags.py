@@ -61,11 +61,14 @@ def deep_dive_slot_render_mode() -> FlagMode:
     return _mode(DEEP_DIVE_SLOT_RENDER_ENV)
 
 
-def spotlight_staged_timeout_seconds() -> float:
-    """多段 Spotlight の全体の上限。未設定・不正・0 以下は本番の step の上限。"""
-    from src.tools.model_tiers import STEP_REGISTRY, Step
+#: 多段 Spotlight の全体の上限の既定 (秒)。設計 D:140・263 の 3,000 秒 (H5、11-05 利用者判断)。
+#: 1 段の step の上限 (STEP_REGISTRY の 600 秒) とは別 — 多段は 3 段 + 関門の再生成を含む。
+SPOTLIGHT_STAGED_TIMEOUT_DEFAULT_SECONDS = 3000.0
 
-    default = STEP_REGISTRY[Step.PIR_SPOTLIGHT].timeout_seconds
+
+def spotlight_staged_timeout_seconds() -> float:
+    """多段 Spotlight の全体の上限。未設定・不正・0 以下は既定の 3,000 秒。"""
+    default = SPOTLIGHT_STAGED_TIMEOUT_DEFAULT_SECONDS
     raw = os.environ.get(SPOTLIGHT_STAGED_TIMEOUT_ENV, "").strip()
     try:
         value = float(raw) if raw else default

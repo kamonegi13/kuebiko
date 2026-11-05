@@ -152,7 +152,15 @@ class TestCheckAndRender:
 
 
 @dataclass
+class _FakeSignals:
+    actors: list[str] = field(default_factory=list)
+    sectors: list[str] = field(default_factory=list)
+    countries: list[str] = field(default_factory=list)
+
+
+@dataclass
 class _FakePir:
+    strong_signals: _FakeSignals = field(default_factory=_FakeSignals)
     id: str = "pir_test"
     title: str = "test"
     description: str = "desc"
@@ -286,14 +294,154 @@ async def test_shadow_keeps_legacy_and_logs_elapsed(monkeypatch: pytest.MonkeyPa
     assert llm.schemas == ["_LLMSpotlightOutput", "_StageEvents", "_StageNotes", "_StageOutlook"]
     assert record.outlook == "旧の見通し"
     shadow = [kw for e, kw in seen if e == "spotlight_staged_shadow"]
-    assert shadow and "elapsed_s" in shadow[0] and shadow[0]["timeout_s"] == 600.0
+    assert shadow and "elapsed_s" in shadow[0] and shadow[0]["timeout_s"] == 3000.0
 
 
-def test_timeout_default_is_the_step_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_timeout_default_is_3000_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
     from src.tools.n20_flags import spotlight_staged_timeout_seconds
 
     for raw in ("", "abc", "-5", "0"):
         monkeypatch.setenv("SPOTLIGHT_STAGED_TIMEOUT_SECONDS", raw)
-        assert spotlight_staged_timeout_seconds() == 600.0
-    monkeypatch.setenv("SPOTLIGHT_STAGED_TIMEOUT_SECONDS", "3000")
-    assert spotlight_staged_timeout_seconds() == 3000.0
+        assert spotlight_staged_timeout_seconds() == 3000.0
+    monkeypatch.setenv("SPOTLIGHT_STAGED_TIMEOUT_SECONDS", "900")
+    assert spotlight_staged_timeout_seconds() == 900.0
+
+
+class _SeqLLM:
+    """段ごとに応答の列を返す fake (尽きたら最後を繰り返す)。"""
+
+    model = "fake"
+
+    def __init__(self, replies: dict[str, list[Any]]) -> None:
+        self.replies = replies
+        self.calls: list[tuple[str, str]] = []
+
+    async def generate_structured(self, prompt: str, *, schema: Any, **_kw: Any) -> Any:
+        self.calls.append((schema.__name__, prompt))
+        seq = self.replies[schema.__name__]
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+
+
+def _ctx() -> dict[str, Any]:
+    return {
+        "pir": _FakePir(),
+        "period_label": "p",
+        "candidate_articles": _cands(),
+        "ledger_situations": [],
+    }
+
+
+def _stage_replies(**over: list[Any]) -> dict[str, list[Any]]:
+    m = _merged()
+    base: dict[str, list[Any]] = {
+        "_StageEvents": [staged._StageEvents(headline=m.headline, key_events=m.key_events)],
+        "_StageNotes": [staged._StageNotes(event_notes=m.event_notes)],
+        "_StageOutlook": [staged._StageOutlook(outlook_points=m.outlook_points)],
+    }
+    base.update(over)
+    return base
+
+
+class TestStagedGates:
+    @pytest.mark.asyncio
+    async def test_tail_gate_resamples_notes_and_takes_the_fuller(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "1")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "0")
+        full = staged._StageNotes(
+            event_notes=[
+                StagedNote(index=1, kind="caveat", text="範囲は限定的とされる。", anchor=ANCHOR_1),
+                StagedNote(index=2, kind="unknown", text="侵入経路は不明。", anchor=ANCHOR_2),
+                StagedNote(index=1, kind="unknown", text="被害件数は未確認。", anchor=ANCHOR_1),
+            ]
+        )
+        llm = _SeqLLM(_stage_replies(_StageNotes=[staged._StageNotes(), full]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        assert [c for c, _ in llm.calls].count("_StageNotes") == 2
+        assert len(res.unknowns) == 2 and len(res.caveats) >= 2
+        assert res.counts["tail_resamples"] == 1 and res.counts["tail_unmet"] == 0
+
+    @pytest.mark.asyncio
+    async def test_tail_gate_off_does_not_resample(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "0")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "0")
+        llm = _SeqLLM(_stage_replies(_StageNotes=[staged._StageNotes()]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        assert [c for c, _ in llm.calls] == ["_StageEvents", "_StageNotes", "_StageOutlook"]
+        assert res.counts["tail_resamples"] == 0
+
+    @pytest.mark.asyncio
+    async def test_identifier_gate_rewrites_only_the_offending_stage(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "0")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "1")
+        bad = staged._StageOutlook(
+            outlook_points=[OutlookPoint(aspect="a", text="CVE-2026-9999 の悪用が続く [1]。")]
+        )
+        good = staged._StageOutlook(
+            outlook_points=[OutlookPoint(aspect="a", text="CVE-2026-0001 の悪用が続く [1]。")]
+        )
+        llm = _SeqLLM(_stage_replies(_StageOutlook=[bad, good]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        names = [c for c, _ in llm.calls]
+        assert names == ["_StageEvents", "_StageNotes", "_StageOutlook", "_StageOutlook"]
+        assert "CVE-2026-9999" in llm.calls[-1][1]  # 書き直しのヒントが具体値を示す
+        assert "9999" not in res.outlook and "CVE-2026-0001" in res.outlook
+        assert res.counts["identifier_retry"] == 1 and res.counts["identifier_unverified"] == 0
+
+    @pytest.mark.asyncio
+    async def test_identifier_rewrite_of_events_keeps_the_selection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "0")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "1")
+        m = _merged()
+        bad = staged._StageEvents(headline="CVE-2026-8888 の悪用", key_events=m.key_events)
+        retry = staged._StageEvents(
+            headline="VPN の欠陥の悪用", key_events=[StagedKeyEvent(index=3, rationale="r")]
+        )
+        llm = _SeqLLM(_stage_replies(_StageEvents=[bad, retry]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        assert res.headline == "VPN の欠陥の悪用"
+        assert res.key_event_indexes == (1, 2)
+
+
+class TestStagedPromptRestoredContext:
+    def test_each_stage_carries_the_production_context(self) -> None:
+        pir = _FakePir(strong_signals=_FakeSignals(["APT-X"], ["energy"], ["JP"]))
+        cands = [
+            dict(c, article_id=f"id{i}", url=f"https://kuebiko.example/{i}")
+            for i, c in enumerate(_cands())
+        ]
+        prev = {"period_label": "前期", "headline": "前期の見出し", "outlook": "前期の見通し"}
+        fresh = {"dated": 10, "retrospective": 4, "retrospective_pct": 40}
+        for stage in ("events", "notes", "outlook"):
+            p = staged.build_stage_prompt(
+                stage,
+                pir=pir,
+                period_label="p",
+                candidate_articles=cands,
+                ledger_situations=[],
+                previous_spotlight=prev,
+                freshness=fresh,
+            )
+            for needle in (
+                "APT-X",
+                "article_id: id0",
+                "url: https://kuebiko.example/0",
+                "前期の見出し",
+                "振り返り報道",
+                "観測技術」に挙がったものだけ",
+                "Admiralty",
+            ):
+                assert needle in p, (stage, needle)
+        events = staged.build_stage_prompt(
+            "events", pir=pir, period_label="p", candidate_articles=cands, ledger_situations=[]
+        )
+        assert "importance=high の事象を **優先的に**" in events and "1 件に集約" in events
+        notes = staged.build_stage_prompt(
+            "notes", pir=pir, period_label="p", candidate_articles=cands, ledger_situations=[]
+        )
+        assert "初期侵入経路" in notes and "数値の出所" in notes

@@ -445,6 +445,8 @@ async def generate_spotlight(
     # ここは安全既定 False (ローカル gemma thinking 空応答前歴)。
     # n20 T5 (旗 SPOTLIGHT_STAGED、U-A): on = 多段 (a・b を LLM、(c) は対応表、(d) なし)。
     # 上限超過・失敗は旧の 1 段へ倒す。既定 off は旧の 1 段のみ (呼び出しは不変)。
+    # 多段の尾部・識別子の関門は staged.generate_staged が段ごとに当てる (下の 1 段用の関門は
+    # 1 段の出力の再生成なので staged の結果には当てない)。
     from src.spotlight import staged as staged_mod
     from src.tools.n20_flags import spotlight_staged_mode, spotlight_staged_timeout_seconds
 
@@ -454,6 +456,9 @@ async def generate_spotlight(
         "period_label": period_label,
         "candidate_articles": candidate_articles,
         "ledger_situations": ledger_situations,
+        # H5: 本番の 1 段と同じ前期の見立て・鮮度を各段に渡す
+        "previous_spotlight": previous_spotlight,
+        "freshness": getattr(assessment, "freshness", None) or {},
     }
     staged = (
         await staged_mod.run_with_timeout(

@@ -8,6 +8,13 @@
 コードの検査: index の範囲と重複 / anchor の逐語実在 (主要事象は記録のみ、但し書きは落とす) /
 観点の値・件数 / 確度を強める語 (要点を落とす)。
 
+本番の 1 段と同じ関門を多段にも当てる (H5、11-05):
+- 尾部の最小件数 (``tail_gate``): 合成後の caveats / unknowns が足りなければ段 2 (notes) を
+  同じプロンプトで再サンプルし、最も充足した候補を採る (上限 ``tail_gate.MAX_RESAMPLES``)
+- 識別子 (``identifier_check``、厳密文法の kind): 段ごとに生成文の識別子をその段のプロンプトと
+  照合し、無いものがあればその段を 1 回だけ書き直させる。残れば記録のみ (保存は止めない)。
+  段 1 の書き直しは見出しだけを採る (主要事象の選定は段 2・3 の前提なので変えない)
+
 ⚠ 未実装 (T5 の未決事項): 前期の監視指標の「観測 / 未観測」の定型文 (設計 D の 4 段目)。前期の
 指標が構造で保存されておらず (outlook は自由文)、何をもって「当たる記事」とするかが決まっていない。
 """
@@ -15,6 +22,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -207,10 +215,102 @@ async def _call(llm: LLMClient, prompt: str, schema: type[BaseModel]) -> Any:
     )
 
 
+@dataclass
+class _Tail:
+    caveats: list[str]
+    unknowns: list[str]
+
+
+def _merge(events: _StageEvents, notes: _StageNotes, outlook: _StageOutlook) -> StagedSpotlight:
+    return StagedSpotlight(
+        headline=events.headline,
+        key_events=events.key_events,
+        event_notes=notes.event_notes,
+        outlook_points=outlook.outlook_points,
+    )
+
+
+async def _notes_with_tail_gate(
+    llm: LLMClient,
+    prompt: str,
+    events: _StageEvents,
+    notes: _StageNotes,
+    candidates: Sequence[dict[str, Any]],
+    counts: dict[str, int],
+) -> _StageNotes:
+    """尾部の最小件数の関門 (本番の 1 段と同じ下限・回数)。段 2 だけを再サンプルする。"""
+    from src.spotlight import tail_gate
+
+    if not tail_gate.gate_enabled():
+        return notes
+
+    def tail(n: _StageNotes) -> _Tail:
+        r = check_and_render(_merge(events, n, _StageOutlook()), candidates)
+        return _Tail(caveats=list(r.caveats), unknowns=list(r.unknowns))
+
+    best, best_tail = notes, tail(notes)
+    for _ in range(tail_gate.MAX_RESAMPLES):
+        if not tail_gate.tail_deficit(best_tail):
+            break
+        counts["tail_resamples"] += 1
+        cand: _StageNotes = await _call(llm, prompt, _StageNotes)
+        cand_tail = tail(cand)
+        if tail_gate.tail_score(cand_tail) > tail_gate.tail_score(best_tail):
+            best, best_tail = cand, cand_tail
+    counts["tail_unmet"] = int(bool(tail_gate.tail_deficit(best_tail)))
+    return best
+
+
+def _stage_text(stage: str, out: BaseModel) -> str:
+    if isinstance(out, _StageEvents):
+        return "\n".join([out.headline, *(e.rationale for e in out.key_events)])
+    if isinstance(out, _StageNotes):
+        return "\n".join(n.text for n in out.event_notes)
+    if isinstance(out, _StageOutlook):
+        return "\n".join(p.text for p in out.outlook_points)
+    raise TypeError(stage)
+
+
+async def _identifier_gate(
+    llm: LLMClient,
+    prompts: dict[str, str],
+    outs: dict[str, BaseModel],
+    counts: dict[str, int],
+) -> dict[str, BaseModel]:
+    """段ごとに、生成文の厳密文法の識別子がその段のプロンプトに在るかを見る (本番と同じ判定)。"""
+    from src.spotlight.identifier_check import (
+        find_unsupported_identifiers,
+        gate_enabled,
+        render_identifier_feedback,
+    )
+
+    if not gate_enabled():
+        return outs
+    fixed = dict(outs)
+    for stage, out in outs.items():
+        unsupported = find_unsupported_identifiers(_stage_text(stage, out), prompts[stage])
+        if not unsupported:
+            continue
+        counts["identifier_retry"] += 1
+        again = await _call(
+            llm, prompts[stage] + render_identifier_feedback(unsupported), type(out)
+        )
+        if isinstance(again, _StageEvents) and isinstance(out, _StageEvents):
+            again = out.model_copy(update={"headline": again.headline})  # 選定は変えない
+        fixed[stage] = again
+        if find_unsupported_identifiers(_stage_text(stage, again), prompts[stage]):
+            counts["identifier_unverified"] += 1
+    return fixed
+
+
 async def generate_staged(llm: LLMClient, **ctx: Any) -> StagedResult:
-    """3 段を順に呼ぶ (上限は呼び手が ``run_with_timeout`` で掛ける)。"""
+    """3 段を順に呼び、尾部と識別子の関門を当てる (上限は呼び手の ``run_with_timeout``)。"""
     candidates: list[dict[str, Any]] = list(ctx["candidate_articles"])
-    events: _StageEvents = await _call(llm, build_stage_prompt("events", **ctx), _StageEvents)
+    gate_counts = dict.fromkeys(
+        ("tail_resamples", "tail_unmet", "identifier_retry", "identifier_unverified"), 0
+    )
+    prompts = {"events": build_stage_prompt("events", **ctx)}
+    events: _StageEvents = await _call(llm, prompts["events"], _StageEvents)
     chosen = [
         {
             "index": e.index,
@@ -220,19 +320,29 @@ async def generate_staged(llm: LLMClient, **ctx: Any) -> StagedResult:
         for e in events.key_events
         if 1 <= e.index <= len(candidates)
     ]
-    notes: _StageNotes = await _call(
-        llm, build_stage_prompt("notes", chosen=chosen, **ctx), _StageNotes
+    prompts["notes"] = build_stage_prompt("notes", chosen=chosen, **ctx)
+    notes: _StageNotes = await _call(llm, prompts["notes"], _StageNotes)
+    notes = await _notes_with_tail_gate(
+        llm, prompts["notes"], events, notes, candidates, gate_counts
     )
-    outlook: _StageOutlook = await _call(
-        llm, build_stage_prompt("outlook", chosen=chosen, **ctx), _StageOutlook
+    prompts["outlook"] = build_stage_prompt("outlook", chosen=chosen, **ctx)
+    outlook: _StageOutlook = await _call(llm, prompts["outlook"], _StageOutlook)
+    outs = await _identifier_gate(
+        llm, prompts, {"events": events, "notes": notes, "outlook": outlook}, gate_counts
     )
-    merged = StagedSpotlight(
-        headline=events.headline,
-        key_events=events.key_events,
-        event_notes=notes.event_notes,
-        outlook_points=outlook.outlook_points,
+    merged = _merge(
+        _as(outs["events"], _StageEvents),
+        _as(outs["notes"], _StageNotes),
+        _as(outs["outlook"], _StageOutlook),
     )
-    return check_and_render(merged, candidates)
+    result = check_and_render(merged, candidates)
+    return dataclasses.replace(result, counts={**result.counts, **gate_counts})
+
+
+def _as[M: BaseModel](out: BaseModel, cls: type[M]) -> M:
+    if not isinstance(out, cls):
+        raise TypeError(f"{type(out).__name__} is not {cls.__name__}")
+    return out
 
 
 async def run_with_timeout(
