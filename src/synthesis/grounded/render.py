@@ -80,7 +80,11 @@ def _source_caveat(est: Estimate) -> str:
     if not evidence:
         return f"本評価は接地証拠が乏しく、確度は保守的に較正した{unassessed_note}。"
     strong_tier = sum(1 for e in evidence if e.source_tier in ("official", "research"))
-    weak_tier = sum(1 for e in evidence if e.source_tier in ("social", "state_media", "unknown"))
+    weak_tier = sum(
+        1
+        for e in evidence
+        if e.source_tier in ("social", "state_media", "adversary_official", "unknown")
+    )
     # 報道 tier でなく帰属根拠が強い証拠 (確度上限を一段引上げる根拠)。
     strong_attr = sum(
         1

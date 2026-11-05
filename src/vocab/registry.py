@@ -138,6 +138,7 @@ _REGISTRY: dict[str, Vocabulary] = {
             "news": "ニュース",
             "social": "SNS",
             "state_media": "国営",
+            "adversary_official": "主張",
             "unknown": "不明",
         },
     ),

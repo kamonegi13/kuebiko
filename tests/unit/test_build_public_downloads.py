@@ -57,3 +57,17 @@ def test_rejects_file_over_pages_limit(tmp_path: Path) -> None:
 
     with pytest.raises(DownloadsError, match="25 MiB"):
         build(src, tmp_path / "out")
+
+
+def test_copies_zip_into_downloads(tmp_path: Path) -> None:
+    # Arrange
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "document.zip").write_bytes(b"PK\x03\x04")
+
+    # Act
+    names = build(src, tmp_path / "out")
+
+    # Assert
+    assert names == ["document.zip"]
+    assert (tmp_path / "out" / "downloads" / "document.zip").read_bytes() == b"PK\x03\x04"

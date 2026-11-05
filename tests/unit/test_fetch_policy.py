@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import re
-
 import httpx
 import pytest
 
@@ -22,8 +20,9 @@ from src.tools.fetch_policy import (
     staged_get,
     staged_get_sync,
 )
+from src.tools.user_agent import NEUTRAL_BOT_UA
 
-BOT_IDENTITY = "kuebiko/1.0 (+test)"
+BOT_IDENTITY = NEUTRAL_BOT_UA
 
 
 class TestPolicy:
@@ -222,7 +221,8 @@ class TestBotIdentityDoesNotLeakOperator:
             for forbidden in ("http://", "https://", "github.com", "@"):
                 assert forbidden not in ua, f"{path} の bot UA に {forbidden!r} が含まれる: {ua}"
 
-    def test_bot_user_agent_is_role_only(self) -> None:
-        # 形式: "kuebiko/1.0 (+<役割>)" — 役割は英小文字/数字/ハイフンのみ。
+    def test_bot_user_agent_is_the_neutral_ssot_without_project_name(self) -> None:
+        # 全経路が user_agent.py の中立 UA 1 本を使う (プロジェクト名・URL・役割名を含まない)
         for path, ua in self._bot_user_agents().items():
-            assert re.fullmatch(r"kuebiko/1\.0 \(\+[a-z0-9-]+\)", ua), f"{path}: {ua}"
+            assert ua == NEUTRAL_BOT_UA, f"{path}: {ua}"
+            assert "kuebiko" not in ua.lower(), f"{path}: {ua}"

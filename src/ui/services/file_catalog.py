@@ -302,10 +302,33 @@ CONFIG_CATALOG: dict[str, FileInfo] = {
         "ソース信頼度 (出典バッジ)",
         "出典の信頼度分類 (ICD 203 系バッジの根拠、source_basis が参照)",
     ),
-    "config/sources/source_reliability_overrides.yaml": FileInfo(
+    "config/fetch/hostile_domains.yaml": FileInfo(
+        "情報源",
+        "敵対的 host の規則 (公開版)",
+        "取得ポリシーが厳しめに扱う ccTLD と一覧の形式の例 (hostile_hosts が読む。再起動で反映)。"
+        "一覧は公開版が SSoT (ローカル上書きは任意の追加)",
+    ),
+    # ── 運用者ローカルの上書き層 (config/local/、gitignore。無くてもよい — docs/local_overlay.md)
+    "config/local/hostile_domains.yaml": FileInfo(
+        "情報源",
+        "敵対的 host の一覧 (ローカル上書き)",
+        "運用者ローカルの登録ドメイン一覧 (gitignore、公開版に和集合で重なる。再起動で反映)",
+    ),
+    "config/local/source_reliability.yaml": FileInfo(
+        "情報源",
+        "ソース信頼度 (ローカル上書き)",
+        "運用者ローカルの信頼度分類の追加分 (gitignore、公開版に和集合で重なる)",
+    ),
+    "config/local/source_reliability_overrides.yaml": FileInfo(
         "情報源",
         "ソース信頼度の上書き",
-        "個別ソースの信頼度を運用判断で上書きする層",
+        "初回 seed 元 (ローカル層、gitignore)。runtime の上書きは DB (config_store) が SSoT",
+    ),
+    "config/sources/source_reliability_overrides.yaml": FileInfo(
+        "情報源",
+        "ソース信頼度の上書き (旧・seed 専用)",
+        "非推奨。runtime は DB (config_store) で、DB 未投入の初回 seed 元としてだけ読む。"
+        "後続コミットで削除予定",
     ),
     "config/pipelines.yaml": FileInfo(
         "パイプライン",

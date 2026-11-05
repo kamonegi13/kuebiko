@@ -27,7 +27,9 @@ from typing import Literal
 
 import httpx
 
-from src.tools.user_agent import BROWSER_HEADERS, browser_user_agent
+from src.tools import hostile_fetch
+from src.tools.hostile_fetch import HostilePlan
+from src.tools.user_agent import BROWSER_HEADERS, browser_user_agent, resolve_bot_identity
 
 # エスカレーションを発火させる HTTP status (WAF / bot ブロックの署名)。
 # 403/429/503: 典型的な WAF ブロック応答。202: 一部 WAF のチャレンジ応答。
@@ -47,8 +49,8 @@ FetchStage = Literal["bot", "browser"]
 
 
 def bot_headers(identity: str, *, accept: str) -> dict[str, str]:
-    """第 1 段: 礼儀正しい bot 識別のヘッダ (identity は経路ごとの kuebiko/1.0 系)。"""
-    return {"User-Agent": identity, "Accept": accept}
+    """第 1 段: bot 識別のヘッダ (identity は ``user_agent.bot_user_agent()`` の中立 UA)。"""
+    return {"User-Agent": resolve_bot_identity(identity), "Accept": accept}
 
 
 def escalated_browser_headers() -> dict[str, str]:
@@ -105,20 +107,56 @@ def _pick_final(
     return bot_resp, "bot"
 
 
+def _hostile_hop_headers(accept: str) -> dict[str, str]:
+    """hostile host 用: ブラウザ相当 UA のみ (ボット識別は出さない)。Accept は経路のものを使う。"""
+    return {**escalated_browser_headers(), "Accept": accept}
+
+
+def _headers_for_hop_factory(
+    identity: str, accept: str, *, escalated: bool
+) -> hostile_fetch.HeadersForHop:
+    def headers_for_hop(plan: HostilePlan) -> dict[str, str]:
+        if plan.hostile or escalated:
+            return _hostile_hop_headers(accept) if plan.hostile else escalated_browser_headers()
+        return bot_headers(identity, accept=accept)
+
+    return headers_for_hop
+
+
+def _legacy_precheck(url: str, source_profile: str | None) -> None:
+    """適用しないモード (off / shadow) の事前確認: 停止中なら取らない、shadow は分類を記録する。"""
+    if source_profile == "hostile":
+        hostile_fetch.register_tagged_url(url)
+    plan = hostile_fetch.plan_for(url, source_profile=source_profile)
+    if plan.hostile and plan.paused:
+        hostile_fetch.log_plan(plan, "skip", reason="paused")
+        raise hostile_fetch.HostileFetchSkipped("paused", url)
+    hostile_fetch.log_plan(plan, "observe")
+
+
 async def staged_get(
     client: httpx.AsyncClient,
     url: str,
     *,
     identity: str,
     accept: str,
+    source_profile: str | None = None,
 ) -> tuple[httpx.Response, FetchStage]:
     """bot UA → (ブロック時のみ) ブラウザ UA の段階取得 (async)。
 
     ネットワーク例外は bot 段では素通し (呼出側の既存ハンドリングへ)、
     browser 段では握って bot 応答に fallback する (エスカレーションは best-effort)。
     redirect 追従や SSRF guard は client 側の設定に従う。
+
+    ``source_profile="hostile"`` はソース設定の印。``HOSTILE_FETCH_POLICY=1`` のときだけ
+    hostile host へ厳しい取り方 (ブラウザ UA のみ・間隔・添付拒否・ホップごとの再判定) を適用する
+    (``hostile_fetch``)。それ以外のモードでは従来どおり。
     """
+    if hostile_fetch.policy_mode() == "on":
+        return await _staged_get_enforced(client, url, identity, accept, source_profile)
+    _legacy_precheck(url, source_profile)
     bot_resp = await client.get(url, headers=bot_headers(identity, accept=accept))
+    hostile_fetch.observe_redirect_history(bot_resp, source_profile=source_profile)
     if not should_escalate(bot_resp.status_code):
         return bot_resp, "bot"
     try:
@@ -130,15 +168,51 @@ async def staged_get(
     return _pick_final(bot_resp, browser_resp)
 
 
+async def _staged_get_enforced(
+    client: httpx.AsyncClient,
+    url: str,
+    identity: str,
+    accept: str,
+    source_profile: str | None,
+) -> tuple[httpx.Response, FetchStage]:
+    if source_profile == "hostile":
+        hostile_fetch.register_tagged_url(url)
+    first, plan = await hostile_fetch.enforced_get_async(
+        client,
+        url,
+        headers_for_hop=_headers_for_hop_factory(identity, accept, escalated=False),
+        source_profile=source_profile,
+    )
+    if plan.hostile:
+        return first, "browser"  # hostile は 1 段のみ (段を上げ下げしない)
+    if not should_escalate(first.status_code):
+        return first, "bot"
+    try:
+        second, _ = await hostile_fetch.enforced_get_async(
+            client,
+            url,
+            headers_for_hop=_headers_for_hop_factory(identity, accept, escalated=True),
+            source_profile=source_profile,
+        )
+    except httpx.HTTPError:
+        second = None
+    return _pick_final(first, second)
+
+
 def staged_get_sync(
     client: httpx.Client,
     url: str,
     *,
     identity: str,
     accept: str,
+    source_profile: str | None = None,
 ) -> tuple[httpx.Response, FetchStage]:
     """``staged_get`` の sync 版 (ソース追加 / ライブプレビュー経路が使う)。"""
+    if hostile_fetch.policy_mode() == "on":
+        return _staged_get_sync_enforced(client, url, identity, accept, source_profile)
+    _legacy_precheck(url, source_profile)
     bot_resp = client.get(url, headers=bot_headers(identity, accept=accept))
+    hostile_fetch.observe_redirect_history(bot_resp, source_profile=source_profile)
     if not should_escalate(bot_resp.status_code):
         return bot_resp, "bot"
     try:
@@ -146,3 +220,34 @@ def staged_get_sync(
     except httpx.HTTPError:
         browser_resp = None
     return _pick_final(bot_resp, browser_resp)
+
+
+def _staged_get_sync_enforced(
+    client: httpx.Client,
+    url: str,
+    identity: str,
+    accept: str,
+    source_profile: str | None,
+) -> tuple[httpx.Response, FetchStage]:
+    if source_profile == "hostile":
+        hostile_fetch.register_tagged_url(url)
+    first, plan = hostile_fetch.enforced_get_sync(
+        client,
+        url,
+        headers_for_hop=_headers_for_hop_factory(identity, accept, escalated=False),
+        source_profile=source_profile,
+    )
+    if plan.hostile:
+        return first, "browser"
+    if not should_escalate(first.status_code):
+        return first, "bot"
+    try:
+        second, _ = hostile_fetch.enforced_get_sync(
+            client,
+            url,
+            headers_for_hop=_headers_for_hop_factory(identity, accept, escalated=True),
+            source_profile=source_profile,
+        )
+    except httpx.HTTPError:
+        second = None
+    return _pick_final(first, second)

@@ -21,6 +21,8 @@ from src.tools.llm_client import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from claude_code_bridge import (  # noqa: E402
+    CLI_ISOLATION_ARGS,
+    detect_screen_notice,
     parse_cli_output,
     summarize_usage,
     validate_bridge_model,
@@ -277,3 +279,27 @@ def test_bridge_accepts_only_known_effort_levels() -> None:
     assert GenerateRequest(prompt="p").effort is None
     with pytest.raises(ValidationError):
         GenerateRequest(prompt="p", effort="--dangerous")
+
+
+def test_bridge_cli_args_skip_all_mcp_servers() -> None:
+    assert "--strict-mcp-config" in CLI_ISOLATION_ARGS
+    assert "--mcp-config" not in CLI_ISOLATION_ARGS
+
+
+def test_detect_screen_notice_flags_mcp_auth_banner_and_tags() -> None:
+    banner = (
+        "claude.ai Gmail と claude.ai Google Calendar の MCP サーバーは認証が必要です。非対話型"
+    )
+    assert detect_screen_notice(banner)
+    assert detect_screen_notice("本文<system-reminder>x</system-reminder>")
+    assert detect_screen_notice("<task-notification>x")
+    assert not detect_screen_notice("Gmail のフィッシング報告。認証情報が盗まれた。")
+
+
+def test_parse_cli_output_marks_suspected_notice_without_dropping_text() -> None:
+    out = parse_cli_output(
+        json.dumps({"result": "ok <system-reminder>x</system-reminder>", "usage": {}})
+    )
+    assert out["screen_notice_suspected"] is True
+    assert "system-reminder" in out["text"]
+    assert parse_cli_output(json.dumps({"result": "ok"}))["screen_notice_suspected"] is False
