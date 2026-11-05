@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 import numpy as np
 
 from src.eventnews import (
+    anchored_generator,
     coverage,
     grouping,
     identifier_gate,
@@ -42,6 +43,7 @@ from src.logging_config import get_logger
 from src.storage.repo_eventnews import EventNewsMixin
 from src.tools.identifier_catalog import IdentifierCatalog
 from src.tools.llm_client import LLMClient, LLMError
+from src.tools.n20_flags import fact_anchor_mode
 
 _log = get_logger(__name__)
 
@@ -54,6 +56,13 @@ _IMPORTANCE_RANK = {"low": 0, "medium": 1, "high": 2}
 # 比較ができたのは版が分かれていたからで、当日の複数回の変更はすべて v4 の
 # ままだった (分量の下限を落とした影響を切り分けられなくなる寸前だった)。
 _PROMPT_VERSION = "eventnews-v6"
+
+
+def _prompt_version() -> str:
+    """版に記録するプロンプトの版。旗 ``FACT_ANCHOR=on`` のときだけ eventnews-v7。"""
+    return anchored_generator.PROMPT_VERSION_V7 if fact_anchor_mode() == "on" else _PROMPT_VERSION
+
+
 # これ以上の事実行があるのに節が 1 種類なら、割り当てが効いていないとみなす
 _SECTION_SPREAD_MIN_FACTS = 6
 
@@ -441,7 +450,7 @@ async def _generate_version(
         version=version,
         generated_at=now,
         model=llm.model,
-        prompt_version=_PROMPT_VERSION,
+        prompt_version=_prompt_version(),
         headline=gate.draft.headline,
         body_json=body_json,
         new_facts_json=new_facts_json,
@@ -450,6 +459,10 @@ async def _generate_version(
         repaired_ids=gate.repaired_ids,
         prompt_text=prompt_text,
     )
+    if fact_anchor_mode() == "shadow":
+        await anchored_generator.shadow_measure(
+            selected, allowed, llm, item_id=item.snapshot.item_id
+        )
     if rejected_json is not None:
         # ⭐ 関門に落ちた草稿と書き直し理由を捨てない (2026-09-03)。同じ入力の
         #    「落ちた版 → 通った版」は客観基準でラベル済みの選好対で、DPO の材料。

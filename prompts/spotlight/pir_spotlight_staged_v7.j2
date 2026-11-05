@@ -1,0 +1,137 @@
+{# SIR Spotlight 多段 v7 (n20 T5、旗 SPOTLIGHT_STAGED=on / shadow のときだけ使う。本番の rubric は変えない)。
+
+   利用者判断 U-A (2026-11-02): 見通しの観点は (a) 今期のパターン・(b) 来週の指標 だけを LLM が書く。
+   (c) 推奨はコードの対応表で描く。(d) 上位の文脈は外す。前期の見立ての断定 (「不発」等) を求めない。
+   段 (stage): events = 見出し + 主要事象 / notes = 主要事象ごとの但し書き・未解明点 /
+   outlook = 観点 a・b の要点 (最大 3)。出力の検査と描画は src/spotlight/staged.py。
+
+   入力 context: pir / period_label / candidate_articles / ledger_situations / stage /
+   previous_spotlight / freshness (本番の 1 段と同じ値) /
+   chosen (notes・outlook の段で、選ばれた主要事象 [{index, title, rationale}])
+   H5 (11-05): 本番の 1 段 (pir_spotlight.j2) にあった strong_signals・article_id/url・前期の見立て・
+   鮮度・観測技術だけの ID・Admiralty の較正・high 優先と重複の集約・但し書き/未解明点の点検観点を
+   各段に戻した。識別子の関門と尾部の最小件数の関門は staged.py がコードで当てる。
+#}
+
+{% include ["_persona_local.j2", "_persona.j2"] %}
+**ある特定の SIR (収集要求)** に絞り込んだ縦断の Spotlight を、段に分けて作ります。
+いまは **{% if stage == "events" %}段 1 (見出しと主要事象){% elif stage == "notes" %}段 2 (主要事象ごとの但し書き・未解明点){% else %}段 3 (見通しの要点){% endif %}** です。
+**候補の記事に書かれていないことを書かない** (材料の外の知識・推奨・上位の文脈を足さない)。
+
+## 対象 SIR
+
+- ID: {{ pir.id }}
+- Title: {{ pir.title }}
+- Description:
+{{ pir.description }}
+{%- if pir.strong_signals.actors %}
+- 主要 actors: {{ pir.strong_signals.actors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.sectors %}
+- 対象 sectors: {{ pir.strong_signals.sectors | join(", ") }}
+{%- endif %}
+{%- if pir.strong_signals.countries %}
+- 対象 countries: {{ pir.strong_signals.countries | join(", ") }}
+{%- endif %}
+
+## 期間
+{{ period_label }}
+
+## この SIR にマッチした直近の article ({{ candidate_articles | length }} 件)
+
+{% for art in candidate_articles -%}
+[{{ loop.index }}] **{{ art.title }}** ({{ art.feed_title }}, importance={{ art.importance }}, 信頼度={{ art.reliability }}, {{ art.created_at_jst }})
+  article_id: {{ art.article_id }}
+  url: {{ art.url }}
+  {%- if art.summary %}
+  summary: {{ art.summary[:300] }}
+  {%- endif %}
+  {%- if art.ttps %}
+  観測技術 (MITRE ATT&CK, この記事から抽出済): {{ art.ttps | join(", ") }}
+  {%- endif %}
+
+{% endfor %}
+{% if previous_spotlight %}
+## 前期 ({{ previous_spotlight.period_label }}) のこの SIR の見立て
+
+- headline: {{ previous_spotlight.headline }}
+{%- if previous_spotlight.key_event_titles %}
+- 前期の key events: {{ previous_spotlight.key_event_titles | join(" / ") }}
+{%- endif %}
+- outlook(抜粋): {{ previous_spotlight.outlook }}
+
+事象は過去・未来に連なる。今期が前期からの **継続 / 変化 / エスカレーション / 沈静化** のどれに
+当たるかは候補の記事から読み取れる範囲で扱う (報道が無いことを「不発」の証拠にしない)。
+{% endif %}
+{% if freshness and freshness.dated %}
+## 鮮度 (報道時刻 vs 発生時刻)
+
+当期 dated {{ freshness.dated }} 件中、振り返り報道 (発生から 30 日超) {{ freshness.retrospective }} 件 ({{ freshness.retrospective_pct }}%)。
+**報道急増 ≠ 新規活動増** の可能性 (収集網が過去を掘り起こす)。新規 campaign と再報道を区別すること。
+{% endif %}
+{% if ledger_situations %}
+## 情勢台帳の確定判定 (この SIR に紐づく追跡中の情勢)
+{% for s in ledger_situations %}
+- 「{{ s.claim }}」 見立て={{ s.leading_hypothesis }} / 確度={{ s.confidence }} / 直近の変化={{ s.delta_type }}{% if s.delta_note %} ({{ s.delta_note }}){% endif %}
+{% endfor %}
+台帳と矛盾させない。台帳より高い確度で断定しない。
+{% endif %}
+{% if chosen %}
+## 選ばれた主要事象 (段 1 の結果)
+{% for k in chosen %}
+- [{{ k.index }}] {{ k.title }} — {{ k.rationale }}
+{% endfor %}
+{% endif %}
+
+## 共通の決まり
+
+- **MITRE ATT&CK の technique ID (T####/T####.###) は、各記事の「観測技術」に挙がったものだけ引用する**。
+  自分の知識から ID を作ったり補完したりしない。観測技術が無い記事は ID を付けず手口を自然語で書く
+- CVE・IP・ドメイン・ハッシュ等の識別子は候補の記事に書かれた値だけ使う (書き写しを誤らない)
+- **情報の確度・信頼度の較正 (NATO Admiralty Code 準拠)**: 記号 (A1/B2) は書かず自然語で表す。
+  - 信頼度は各候補の `信頼度=` を使う (自力で推測しない): 一次 / 研究 = 高 / ニュース = 中 /
+    SNS = 低 (未裏取り) / 国営 = framing 割引 / 不明 = 中扱いで慎重に
+  - 確度: 高 = 複数 source 一致・公式 CVE/KEV あり / 中 = 単一 source / 低 = 技術的に非現実的・誇張疑い
+  - 断定は信頼度・確度ともに高いときだけ。単一・未裏取りの主張はヘッジする (確定口調にしない)
+
+## 出力
+{% if stage == "events" %}
+- headline: この SIR 領域の今期の要点を 1-2 文 (150-280 字)。actor / 手口 / 標的は、**候補の記事が
+  述べている組み合わせに限って**書く (別々の記事のものを結ばない)
+- key_events: 重要な事象を **5-8 件** (候補が 5 件未満なら候補の件数まで)。
+  - importance=high の事象を **優先的に**選ぶ (high が 3 件以上あれば最低 3 件は high)。low/medium でも重要なら採ってよい
+  - **重複を避ける**: 同じ事象を別の source が報じているなら 1 件に集約する
+  - index: 候補一覧の [N] 番号 (作らない・重複させない。article_id ではなく番号で指定)
+  - rationale: なぜ重要かを 1 文
+  - anchor: その記事の title か summary から **20〜120 字をそのまま写す** (言い換えない)
+
+JSON: {"headline": "...", "key_events": [{"index": 1, "rationale": "...", "anchor": "..."}]}
+{% elif stage == "notes" %}
+- event_notes: 選ばれた主要事象ごとに、記事が自ら付けた**但し書き** (kind=caveat: 範囲の限定・
+  未確認の断り) と、記事が**まだ分かっていないと書いていること** (kind=unknown) を書く。無ければ書かない。
+  - caveat の点検観点 (各主要事象について、該当するものをすべて): ①帰属の確度 (研究者の評価か公式帰属か)
+    ②数値の出所 (自称・推計・実測の別) ③重要な主張の裏取り状況 (攻撃者の自称・リークサイトの主張・
+    ベンダ単独か、政府確認・複数社の裏取りか)
+  - unknown の点検観点: 初期侵入経路 / 実被害の範囲・件数の確認状況 / 帰属の根拠 / 日本組織への露出 /
+    対策の実効性。分かっていることを混ぜない
+  - **件数を揃えない** — 点検して該当が多ければ多く、無ければ書かない (定型的に埋めるのは過確信より悪い)
+  - index: 主要事象の [N] 番号 (上の一覧にあるものだけ)
+  - kind: "caveat" か "unknown"
+  - text: 1 文
+  - anchor: その記事の title か summary から 20〜120 字をそのまま写す
+  - 情報源の信頼度 (SNS・国営メディア等) の注記は書かない (こちらで付ける)
+
+JSON: {"event_notes": [{"index": 1, "kind": "caveat", "text": "...", "anchor": "..."}]}
+{% else %}
+- outlook_points: 見通しの要点を **最大 3 つ**。各要点は観点 (aspect) を 1 つ持つ:
+  - "a" 今期のパターン: 選ばれた主要事象から読み取れる共通の動き。文の中で根拠の [N] を示す
+  - "b" 来週の指標: 次の期間に観測されれば見立てが変わる兆候 (台帳の判定・候補の記事に根拠のあるもの)
+  - 推奨 (何をすべきか) と、材料の外の上位の文脈 (軍事・経済安保等) は書かない (こちらで扱う)
+  - 確度を強める語 (「確実に」「明らかに」「必ず」等) を使わない
+  - 前期の見立てが「不発だった」とは書かない (報道が無いことは不発の証拠ではない)
+  - 具体的な actor 名・手口・標的セクター・国を、候補の記事に書かれた範囲で明示する (generic な
+    「活動活発化」は書かない)
+
+JSON: {"outlook_points": [{"aspect": "a", "text": "..."}]}
+{% endif %}
+出力は JSON のみ。

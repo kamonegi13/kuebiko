@@ -450,6 +450,11 @@ class RenderPlan:
     body_count: int = 0
     listed_count: int = 0
     omitted_count: int = 0
+    #: 節の組み立てをコードが行う形 (SLOT_RENDER) が使う、各層の判定 id と関係の行
+    moved_ids: tuple[str, ...] = ()
+    listed_ids: tuple[str, ...] = ()
+    standing_ids: tuple[str, ...] = ()
+    relation_lines: tuple[str, ...] = ()
 
 
 def _anchor_relations_enabled() -> bool:
@@ -548,7 +553,11 @@ def _split_moved(
 
 
 def build_render_plan(
-    *, est: Estimate, period_label: str, cot_notes: bool | None = None
+    *,
+    est: Estimate,
+    period_label: str,
+    cot_notes: bool | None = None,
+    template: str = "synthesis/render.j2",
 ) -> RenderPlan:
     """Estimate から render プロンプトを組む (LLM 呼出なし)。
 
@@ -598,7 +607,7 @@ def build_render_plan(
     ][:8]
     mode = _headline_mode(head)
     prompt = _render(
-        "synthesis/render.j2",
+        template,
         period_label=period_label,
         headline_id=head.id if head else "",
         headline_view=_judgment_view(head) if head else None,
@@ -627,6 +636,10 @@ def build_render_plan(
         body_count=len(moved),
         listed_count=len(moved_list),
         omitted_count=moved_omitted,
+        moved_ids=tuple(j.id for j in moved),
+        listed_ids=tuple(j.id for j in moved_list),
+        standing_ids=tuple(j.id for j in standing),
+        relation_lines=tuple(relation_lines),
     )
 
 
@@ -674,6 +687,27 @@ def _collapse_runaway(sections: _WireSections, *, period_label: str) -> _WireSec
     return sections.model_copy(update=update) if update else sections
 
 
+async def _llm_sections(
+    llm: LLMClient, plan: RenderPlan, est: Estimate, *, cot: bool
+) -> _WireSections:
+    schema: type[_WireSections] | type[_WireSectionsCoT] = (
+        _WireSectionsCoT if cot else _WireSections
+    )
+    raw = await llm.generate_structured(
+        plan.prompt,
+        schema,
+        temperature=_TEMPERATURE,
+        max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
+        think=False,
+    )
+    if isinstance(raw, _WireSectionsCoT):
+        # 下流 (射影・保存・表示) は CoT 欄を知らない。長さだけ観測に残す
+        # (「欄は作ったが空だった」を後から数えられるようにする)。
+        _log.info("synthesis_cot_notes", chars=len(raw.analysis_notes.strip()))
+        return _WireSections.model_validate(raw.model_dump())
+    return raw
+
+
 async def render_sections(
     *,
     llm: LLMClient,
@@ -690,26 +724,13 @@ async def render_sections(
     """
     if not est.judgments:
         return _WireSections(headline="本期間に確度ある主要判定は得られなかった。")
+    from src.synthesis.grounded.slot_render import choose_sections  # n20 T5 (SLOT_RENDER)
+
     cot = cot_notes_enabled()
     plan = build_render_plan(est=est, period_label=period_label, cot_notes=cot)
     head, mode, ranked = plan.head, plan.mode, list(plan.ranked)
-    schema: type[_WireSections] | type[_WireSectionsCoT] = (
-        _WireSectionsCoT if cot else _WireSections
-    )
-    raw = await llm.generate_structured(
-        plan.prompt,
-        schema,
-        temperature=_TEMPERATURE,
-        max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
-        think=False,
-    )
-    if isinstance(raw, _WireSectionsCoT):
-        # 下流 (射影・保存・表示) は CoT 欄を知らない。長さだけ観測に残す
-        # (「欄は作ったが空だった」を後から数えられるようにする)。
-        _log.info("synthesis_cot_notes", chars=len(raw.analysis_notes.strip()))
-        sections = _WireSections.model_validate(raw.model_dump())
-    else:
-        sections = raw
+    legacy = lambda: _llm_sections(llm, plan, est, cot=cot)  # noqa: E731
+    sections = await choose_sections(llm=llm, est=est, period_label=period_label, legacy=legacy)
     sections = _collapse_runaway(sections, period_label=period_label)
     sections = _guard_headline(sections, head, mode)
     # 反復抑制 (2026-08-07): daily の quiet 日に前日と同一の standing 判定が headline へ

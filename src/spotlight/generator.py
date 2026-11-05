@@ -443,13 +443,51 @@ async def generate_spotlight(
     # 余裕を持って 6144 設定。think 方針は factory (model_tiers) が一元所有 — narrative
     # ティアの外部モデル割当時のみ ThinkOnClient が True に上書きする (A/B 2026-07-24)。
     # ここは安全既定 False (ローカル gemma thinking 空応答前歴)。
-    output: _LLMSpotlightOutput = await llm.generate_structured(
-        prompt=prompt,
-        schema=_LLMSpotlightOutput,
-        temperature=0.3,
-        max_tokens=6144,
-        think=False,
+    # n20 T5 (旗 SPOTLIGHT_STAGED、U-A): on = 多段 (a・b を LLM、(c) は対応表、(d) なし)。
+    # 上限超過・失敗は旧の 1 段へ倒す。既定 off は旧の 1 段のみ (呼び出しは不変)。
+    # 多段の尾部・識別子の関門は staged.generate_staged が段ごとに当てる (下の 1 段用の関門は
+    # 1 段の出力の再生成なので staged の結果には当てない)。
+    from src.spotlight import staged as staged_mod
+    from src.tools.n20_flags import spotlight_staged_mode, spotlight_staged_timeout_seconds
+
+    staged_mode = spotlight_staged_mode()
+    staged_ctx: dict[str, Any] = {
+        "pir": pir,
+        "period_label": period_label,
+        "candidate_articles": candidate_articles,
+        "ledger_situations": ledger_situations,
+        # H5: 本番の 1 段と同じ前期の見立て・鮮度を各段に渡す
+        "previous_spotlight": previous_spotlight,
+        "freshness": getattr(assessment, "freshness", None) or {},
+    }
+    staged = (
+        await staged_mod.run_with_timeout(
+            llm,
+            timeout_seconds=spotlight_staged_timeout_seconds(),
+            pir_id=pir.id,
+            shadow=False,
+            **staged_ctx,
+        )
+        if staged_mode == "on"
+        else None
     )
+    output: _LLMSpotlightOutput
+    if staged is not None:
+        output = _LLMSpotlightOutput(
+            headline=staged.headline,
+            key_events=[_LLMKeyEvent(index=i) for i in staged.key_event_indexes],
+            outlook=staged.outlook,
+            caveats=list(staged.caveats),
+            unknowns=list(staged.unknowns),
+        )
+    else:
+        output = await llm.generate_structured(
+            prompt=prompt,
+            schema=_LLMSpotlightOutput,
+            temperature=0.3,
+            max_tokens=6144,
+            think=False,
+        )
 
     # 尾部最小件数関門 (2026-09-11)。蒸留モデルは caveats / unknowns を系統的に
     # under-produce する (教師はゼロ件なし)。指示では埋まらないため同一プロンプトで
@@ -457,7 +495,7 @@ async def generate_spotlight(
     from src.spotlight.tail_gate import MAX_RESAMPLES, tail_deficit, tail_score
     from src.spotlight.tail_gate import gate_enabled as tail_gate_enabled
 
-    if tail_gate_enabled():
+    if tail_gate_enabled() and staged is None:
         best = output
         for attempt in range(MAX_RESAMPLES):
             deficit = tail_deficit(best)
@@ -499,7 +537,7 @@ async def generate_spotlight(
         render_identifier_feedback,
     )
 
-    if gate_enabled():
+    if gate_enabled() and staged is None:
         generated_text = "\n".join(
             [output.headline, output.outlook, *output.caveats, *output.unknowns]
         )
@@ -592,6 +630,15 @@ async def generate_spotlight(
         llm_model=llm.model,
         generated_at=datetime.now(UTC),
     )
+
+    if staged_mode == "shadow":
+        await staged_mod.run_with_timeout(
+            llm,
+            timeout_seconds=spotlight_staged_timeout_seconds(),
+            pir_id=pir.id,
+            shadow=True,
+            **staged_ctx,
+        )
 
     _log.info(
         "spotlight_generated",

@@ -47,7 +47,9 @@ class TestCatalogCompleteness:
         # **本番経路では使わない** (replay ハーネスが --mode prompt / select で明示指定する)。
         # +synthesis/detect_cluster_claim.j2 (DETECT_DECOMPOSE の塊 → claim、既定 off、2026-10-16)。
         # (_persona_local.j2 を数えない形に 2026-10-30 変更。旧 30 はそれを含む開発機の数)
-        assert len(actual) == 29
+        # +eventnews/refine_v7.j2 / synthesis/render_v9.j2 / spotlight/pir_spotlight_staged_v7.j2 /
+        # digest/weekly_recap_v3.j2 (n20 T5、旗の下だけで使う、既定 off、2026-11-02)。
+        assert len(actual) == 33
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 

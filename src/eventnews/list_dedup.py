@@ -53,17 +53,22 @@ def _is_near_dup(key: str, kept_keys: Sequence[str]) -> bool:
     return False
 
 
-def dedup_items[T: (str, FactItem)](items: Sequence[T]) -> list[T]:
-    """同文と近傍重複 (長文・類似度 NEAR_DUP_RATIO 以上・数字差なし) を先頭 1 件に畳む。"""
+def dedup_indices(texts: Sequence[str]) -> list[int]:
+    """``dedup_items`` が残す位置 (text だけを見る。anchor つきの行にも同じ判定を当てる用)。"""
     kept_keys: list[str] = []
-    kept: list[T] = []
-    for item in items:
-        key = _key(item)
+    kept: list[int] = []
+    for i, text in enumerate(texts):
+        key = " ".join(text.split())
         if key in kept_keys or _is_near_dup(key, kept_keys):
             continue
         kept_keys.append(key)
-        kept.append(item)
+        kept.append(i)
     return kept
+
+
+def dedup_items[T: (str, FactItem)](items: Sequence[T]) -> list[T]:
+    """同文と近傍重複 (長文・類似度 NEAR_DUP_RATIO 以上・数字差なし) を先頭 1 件に畳む。"""
+    return [items[i] for i in dedup_indices([_key(item) for item in items])]
 
 
 def dedup_draft(draft: EventNewsDraft) -> tuple[EventNewsDraft, dict[str, int]]:
