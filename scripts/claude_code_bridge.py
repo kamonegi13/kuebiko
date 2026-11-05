@@ -153,6 +153,27 @@ def validate_bridge_model(model: str) -> str:
     return m
 
 
+# 画面向けのお知らせ (MCP コネクタの認証要求・system-reminder 等) が応答本文に混ざる事故
+# (2026-11 翻訳教師・裁定キャッシュに混入) の検知。本文は削らず印だけ付ける。
+_NOTICE_MARKERS = ("<system-reminder", "<task-notification")
+_NOTICE_MCP_WORDS = ("claude.ai gmail", "claude.ai google", "mcp")
+_NOTICE_AUTH_WORDS = ("認証", "authenticat", "非対話", "non-interactive")
+
+
+def detect_screen_notice(text: str) -> bool:
+    """応答本文に CLI の画面向けお知らせが混入していそうなら True (純関数)。"""
+    low = text.lower()
+    if any(m in low for m in _NOTICE_MARKERS):
+        return True
+    has_mcp = any(w in low for w in _NOTICE_MCP_WORDS)
+    return has_mcp and any(w in low for w in _NOTICE_AUTH_WORDS) and "claude.ai" in low
+
+
+# MCP サーバーを一切読まない旗 (--mcp-config を渡さない = 空)。claude.ai コネクタ
+# (Gmail 等の未認証) のお知らせが応答に混ざるのを防ぐ。
+CLI_ISOLATION_ARGS = ["--strict-mcp-config"]
+
+
 def parse_cli_output(stdout: str) -> dict[str, Any]:
     """``claude -p --output-format json`` の出力を整形する。
 
@@ -169,8 +190,10 @@ def parse_cli_output(stdout: str) -> dict[str, Any]:
     if data.get("is_error"):
         raise ValueError(f"CLI がエラーを返しました: {str(data.get('result'))[:200]}")
     usage = data.get("usage") or {}
+    text = str(data.get("result") or "")
     return {
-        "text": str(data.get("result") or ""),
+        "text": text,
+        "screen_notice_suspected": detect_screen_notice(text),
         "input_tokens": int(usage.get("input_tokens") or 0),
         "output_tokens": int(usage.get("output_tokens") or 0),
         "cache_read_tokens": int(usage.get("cache_read_input_tokens") or 0),
@@ -410,6 +433,7 @@ async def generate(req: GenerateRequest) -> dict[str, Any]:
         "1",
         "--tools",
         "",
+        *CLI_ISOLATION_ARGS,
     ]
     if req.system:
         args += ["--append-system-prompt", req.system]
@@ -454,6 +478,8 @@ async def generate(req: GenerateRequest) -> dict[str, Any]:
         parsed = parse_cli_output(stdout.decode("utf-8", "replace"))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    if parsed["screen_notice_suspected"]:
+        _log("bridge_screen_notice_suspected", model=model, text_chars=len(parsed["text"]))
     _record_usage(model, parsed, duration)
     return {**parsed, "duration_seconds": round(duration, 3), "model": model}
 
