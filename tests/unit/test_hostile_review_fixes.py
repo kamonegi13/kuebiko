@@ -346,3 +346,59 @@ class TestNeutralTokenAndRefetchOrder:
             conn.execute("UPDATE articles SET created_at=? WHERE article_id='d:deferred'", (old,))
         ids2 = [a for a, _ in repo.list_articles_needing_refetch()]
         assert "d:deferred" not in ids2
+
+
+class TestHostileSkipReachesRefetchBacklog:
+    """間隔待ちで見送った記事は feed 抜粋で保存され、試行回数を消費せず backlog に乗る。"""
+
+    def test_skipped_extraction_is_saved_as_feed_summary_and_listed(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime
+
+        from src.pipeline.briefing import _resolve_body
+        from src.storage.records import ArticleRecord, RunRecord
+        from src.storage.run_history import RunHistoryRepository
+        from src.tools.article_model import Article
+        from src.tools.content_extractor import ExtractionResult
+
+        # Arrange: 見送りの抽出結果 (ContentExtractor._fail が作るもの)
+        skipped = ExtractionResult(
+            url="https://h.example.com/a",
+            success=False,
+            failure_reason="hostile_throttle_deferred",
+        )
+        article = Article(
+            id="rss:h1",
+            title="t",
+            url="https://h.example.com/a",
+            summary_html="<p>feed excerpt</p>",
+            published=datetime.now(UTC),
+            feed_title="f",
+            feed_url="https://h.example.com/feed",
+        )
+
+        # Act
+        body, source, reason = _resolve_body(article, skipped)
+        repo = RunHistoryRepository(tmp_path / "rh.db")
+        run_id = repo.start_run(
+            RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=False)
+        )
+        repo.add_article(
+            ArticleRecord(
+                run_id=run_id,
+                article_id="rss:h1",
+                title="t",
+                url=article.url,
+                feed_title="f",
+                status="posted",
+            )
+        )
+        repo.update_article_body("rss:h1", body, source=source, failure_reason=reason)
+        repo.record_refetch_failure("rss:h1", reason=reason)
+        repo.record_refetch_failure("rss:h1", reason=reason)
+        repo.record_refetch_failure("rss:h1", reason=reason)
+        repo.record_refetch_failure("rss:h1", reason=reason)
+
+        # Assert
+        assert source == "feed_summary"
+        assert reason == "hostile_throttle_deferred"
+        assert [a for a, _ in repo.list_articles_needing_refetch()] == ["rss:h1"]
