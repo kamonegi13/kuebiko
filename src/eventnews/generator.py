@@ -8,6 +8,7 @@ runner が ``generate_draft`` の戻り値に対して関門を適用し ``GateR
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -151,6 +152,25 @@ def _numbered_members(selected: Sequence[MemberArticle]) -> list[dict[str, objec
 def prompt_member_texts(selected: Sequence[MemberArticle]) -> dict[int, str]:
     """[N] → プロンプトで見せた本文 (anchor の照合範囲。見せていない部分は照合しない)。"""
     return {int(str(m["index"])): str(m["summary"]) for m in _numbered_members(selected)}
+
+
+_PROMPT_MEMBER_HEAD = re.compile(r"^\[(\d+)\] \*\*.*$", re.M)
+_PROMPT_MEMBERS_END = "\n## 識別子カタログ"
+
+
+def parse_prompt_member_texts(prompt: str) -> dict[int, str]:
+    """描画済みのプロンプト (v6/v7) から [N] → 見せた本文を読み戻す (``prompt_member_texts`` の逆)。
+
+    プロンプトしか持たない学習の形の検査 (scripts/sft_gate_n20_schemas.py) が、本番の
+    anchor の関門 (``fact_anchor.line_issues``) に同じ照合範囲を渡すために使う。
+    """
+    body = prompt.split(_PROMPT_MEMBERS_END, 1)[0]
+    heads = list(_PROMPT_MEMBER_HEAD.finditer(body))
+    out: dict[int, str] = {}
+    for k, h in enumerate(heads):
+        end = heads[k + 1].start() if k + 1 < len(heads) else len(body)
+        out[int(h.group(1))] = body[h.end() : end].strip()
+    return out
 
 
 def _template_name() -> str:

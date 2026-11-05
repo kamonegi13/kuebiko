@@ -63,14 +63,21 @@ class TestToRecap:
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        from src.digest import llm_digest
+        from src.digest.recap_points import TEMPLATE_V3
+
+        user = llm_digest._render_prompt(
+            TEMPLATE_V3, candidates=[_cand("a1"), _cand("a2")], period_label="p"
+        )
         good = RecapPointsOutput(
             sections=[
                 RecapPointSection(
-                    heading="見出し", points=[RecapPoint(text="要点", article_ids=["a1"])]
+                    heading="見出し",
+                    points=[RecapPoint(text="要点の本文。" * 80, article_ids=["a1", "a2"])],
                 )
             ]
         )
-        assert mod.schema_errors_deep_dive(json.loads(good.model_dump_json()), "a1 a2") == []
+        assert mod.schema_errors_deep_dive(json.loads(good.model_dump_json()), user) == []
 
 
 def _cand(article_id: str) -> Any:

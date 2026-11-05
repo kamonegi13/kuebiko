@@ -12,6 +12,7 @@ delta_note に無い因果の接続語 (「を受けて」等) を書いてい�
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
@@ -123,6 +124,33 @@ def _sentence(text: str) -> str:
     return t if t.endswith(("。", "！", "？", ".")) else t + "。"
 
 
+_PROMPT_SECTION = re.compile(r"【変化した判定】(.*?)【判定間の関係】", re.S)
+_PROMPT_JUDGMENT = re.compile(r"^\[([^\]\s]+)\]【[^】]*】", re.M)
+_PROMPT_DELTA_NOTE = re.compile(r"^\[([^\]\s]+)\]【[^】]*】.*\n.*?/ 変化の内容: (.*)$", re.M)
+
+
+def prompt_wanted_ids(prompt: str) -> list[str]:
+    """v9 のプロンプトから items に書かせる判定 id (変化した判定 + 継続中の判定) を順に読む。
+
+    ``assemble_sections`` の ``wanted`` (= ``plan.moved_ids + plan.standing_ids``) と同じ列。
+    プロンプトしか持たない学習の形の検査 (scripts/sft_gate_n20_schemas.py) が使う。
+    「そのほかの動き (一覧)」(``- [id]``) と見出し対象は含まない。
+    """
+    m = _PROMPT_SECTION.search(prompt)
+    return _PROMPT_JUDGMENT.findall(m.group(1)) if m else []
+
+
+def prompt_delta_notes(prompt: str) -> dict[str, str]:
+    """v9 のプロンプトの判定 id → 変化の内容 (delta_note。因果の接続語の照合範囲)。"""
+    m = _PROMPT_SECTION.search(prompt)
+    return dict(_PROMPT_DELTA_NOTE.findall(m.group(1))) if m else {}
+
+
+def causal_unsupported(world: str, delta_note: str) -> bool:
+    """材料 (delta_note) に無い因果の接続語を world が持つか (``_checked_clauses`` と同じ判定)。"""
+    return any(c in world and c not in delta_note for c in CAUSAL_CONNECTORS)
+
+
 def has_banned(text: str) -> bool:
     return any(w in text for w in BANNED_IN_CLAUSE)
 
@@ -162,7 +190,7 @@ def _checked_clauses(
     if not world or has_banned(world):
         counts["banned_replaced"] += bool(world)
         world = j.claim
-    elif any(c in world and c not in j.delta_note for c in CAUSAL_CONNECTORS):
+    elif causal_unsupported(world, j.delta_note):
         counts["causal_replaced"] += 1
         world = j.claim
     if not implication or has_banned(implication):

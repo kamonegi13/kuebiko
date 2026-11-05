@@ -11,6 +11,8 @@ n20 T5、旗 ``DEEP_DIVE_SLOT_RENDER`` (既定 off)。
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
@@ -100,3 +102,14 @@ def dropped_points(out: RecapPointsOutput, *, known_ids: frozenset[str]) -> int:
         for p in sec.points
         if not p.text.strip() or not any(a in known_ids for a in p.article_ids)
     )
+
+
+_PROMPT_ARTICLE_ID = re.compile(r"^- article_id: (\S+)\s*$", re.M)
+
+
+def prompt_article_ids(prompt: str) -> list[str]:
+    """描画済みの v3 のプロンプトから入力記事の id を順に読み戻す (= 本番の ``selected_ids``)。
+
+    プロンプトしか持たない学習の形の検査が ``uncited_articles`` に同じ母集団を渡すため。
+    """
+    return list(dict.fromkeys(_PROMPT_ARTICLE_ID.findall(prompt)))

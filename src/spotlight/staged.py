@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -40,6 +41,7 @@ from src.tools.llm_client import LLMClient
 _log = get_logger(__name__)
 
 TEMPLATE = "spotlight/pir_spotlight_staged_v7.j2"
+KEY_EVENTS_MIN = 5
 KEY_EVENTS_MAX = 8
 EVENT_NOTES_MAX = 16
 OUTLOOK_POINTS_MAX = 3
@@ -193,6 +195,46 @@ def check_and_render(merged: StagedSpotlight, candidates: Sequence[dict[str, Any
         merged=merged,
         counts=counts,
     )
+
+
+_PROMPT_CANDIDATE = re.compile(r"^\[(\d+)\] \*\*(.*)\*\* \(.*$", re.M)
+_PROMPT_SUMMARY = re.compile(r"^  summary: (.*)$", re.M)
+_PROMPT_CHOSEN = re.compile(r"^- \[(\d+)\] ", re.M)
+_PROMPT_CHOSEN_HEAD = "## 選ばれた主要事象"
+
+
+def prompt_candidates(prompt: str) -> list[dict[str, str]]:
+    """描画済みの段のプロンプトから候補 (title と見せた summary) を [N] の順に読み戻す。
+
+    プロンプトしか持たない学習の形の検査が、本番の ``_anchor_ok`` に同じ照合範囲を渡すため。
+    """
+    body = prompt.split(_PROMPT_CHOSEN_HEAD, 1)[0]
+    heads = list(_PROMPT_CANDIDATE.finditer(body))
+    out: list[dict[str, str]] = []
+    for k, h in enumerate(heads):
+        end = heads[k + 1].start() if k + 1 < len(heads) else len(body)
+        summary = _PROMPT_SUMMARY.search(body, h.end(), end)
+        out.append({"title": h.group(2), "summary": summary.group(1) if summary else ""})
+    return out
+
+
+def prompt_chosen_indexes(prompt: str) -> list[int]:
+    """notes・outlook の段のプロンプトに載せた主要事象 (段 1 の結果) の [N]。"""
+    if _PROMPT_CHOSEN_HEAD not in prompt:
+        return []
+    tail = prompt.split(_PROMPT_CHOSEN_HEAD, 1)[1].split("\n## ", 1)[0]
+    return [int(x) for x in _PROMPT_CHOSEN.findall(tail)]
+
+
+def key_events_range(n_candidates: int) -> tuple[int, int]:
+    """主要事象の件数の範囲: 5〜8、候補が 5 件未満なら候補の件数まで (1 件以上)。"""
+    low = max(1, min(KEY_EVENTS_MIN, n_candidates))
+    return low, KEY_EVENTS_MAX
+
+
+def anchor_ok(anchor: str, candidate: dict[str, Any]) -> bool:
+    """anchor (strip 後 20〜120 字) が候補の title か summary に逐語で在るか (正規化後)。"""
+    return _anchor_ok(anchor, candidate)
 
 
 def _template() -> jinja2.Template:
