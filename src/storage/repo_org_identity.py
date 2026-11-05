@@ -8,12 +8,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from src.logging_config import get_logger
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _to_iso
 
 #: 問いの版。``org_identity`` の問いかしきい値を変えたらここも上げる。
+_log = get_logger(__name__)
+
 FORM_VERSION = "and_event12_org-4_v2"
 _KEY_MAX = 200
 
@@ -67,3 +71,51 @@ class OrgIdentityMixin(RunHistoryRepositoryBase):
                 (form, float(min_logit)),
             ).fetchall()
         return [(str(r["key_a"]), str(r["key_b"])) for r in rows]
+
+    def load_org_alias_dict(self) -> dict[str, str]:
+        """別名辞書 (org_alias_dict) の写像 (照合キー → 代表キー)。"""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT alias_key, canonical_key FROM org_alias_dict").fetchall()
+        return {str(r["alias_key"]): str(r["canonical_key"]) for r in rows}
+
+    def replace_org_alias_dict(self, mapping: Mapping[str, str], *, source: str) -> int:
+        """``source`` の行を ``mapping`` に置き換える (他の source の行は触らない・奪わない)。
+
+        **両バックエンドで明示の BEGIN/COMMIT の 1 トランザクション**。PG の接続は
+        autocommit (``db_backend.connect``) なので、ラッパーの commit/rollback は効かず、
+        BEGIN を自分で発行しないと DELETE と各 INSERT が個別に確定してしまう。失敗時は ROLLBACK
+        して元の例外を送出する (ROLLBACK 自体が失敗してもログに残し元の例外を優先)。
+        他 source が持つ alias_key は DO UPDATE の WHERE で弾き取り込まない。
+        戻り値は渡した行数 (弾いた行も含む)。
+        """
+        ts = _to_iso(datetime.now(UTC))
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            try:
+                conn.execute("DELETE FROM org_alias_dict WHERE source = ?", (source,))
+                for alias_key, canonical_key in mapping.items():
+                    conn.execute(
+                        "INSERT INTO org_alias_dict (alias_key, canonical_key, source, updated_at)"
+                        " VALUES (?, ?, ?, ?)"
+                        " ON CONFLICT(alias_key) DO UPDATE SET"
+                        " canonical_key = excluded.canonical_key, updated_at = excluded.updated_at"
+                        " WHERE org_alias_dict.source = excluded.source",
+                        (alias_key[:_KEY_MAX], canonical_key[:_KEY_MAX], source, ts),
+                    )
+                conn.execute("COMMIT")
+            except BaseException:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception as rollback_error:  # noqa: BLE001 — 元の例外を優先する
+                    _log.error("org_alias_dict_rollback_failed", error=str(rollback_error)[:160])
+                raise
+        return len(mapping)
+
+    def org_alias_dict_stats(self, *, source: str) -> tuple[int, str | None]:
+        """(``source`` の行数, 最新の updated_at)。鮮度の監査用。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*), MAX(updated_at) FROM org_alias_dict WHERE source = ?",
+                (source,),
+            ).fetchone()
+        return int(row[0]), (str(row[1]) if row[1] is not None else None)

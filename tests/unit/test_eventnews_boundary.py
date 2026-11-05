@@ -27,6 +27,8 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # hourly_job の一部を切り出したもので、群化の入力 (entity のキー) を置き換えるだけ。
         # 生成物 (版・本文) は読まず、他層へ渡さない
         "src/ui/services/eventnews_org_identity.py",
+        "src/ui/services/eventnews_org_alias.py",
+        "src/ui/services/fill_rate_org_alias_section.py",
         # 2026-09-21: 事象どうしの統合 (毎時の段)。判定は src/eventnews/merge.py、
         # ここは DB の出入りと本文の再生成のみ。生成物を他層へ渡さない
         "src/ui/services/eventnews_merge_job.py",
