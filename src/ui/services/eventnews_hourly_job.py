@@ -198,6 +198,16 @@ def _pair_llm(config: AppConfig) -> LLMClient | None:
     return build_llm_for(Step.PAIR_JUDGE, config)
 
 
+def _record_subject_kind_hits(repo: RunHistoryRepository, kinds: dict[str, str]) -> None:
+    """SUBJECT-KIND-SHADOW: 種別が決まった時点で C4 を記録 (失敗は群化を止めない)。"""
+    from src.cti import subject_kind_gate
+
+    try:
+        subject_kind_gate.record_hits(repo, kinds)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("subject_kind_gate_failed", error=str(e))
+
+
 async def _resolve_kinds(
     repo: RunHistoryRepository,
     config: AppConfig,
@@ -226,6 +236,7 @@ async def _resolve_kinds(
             kinds[a.article_id] = kind
             repo.set_article_kind(a.article_id, kind, getattr(llm, "model", ""))
         _log.info("event_kind_classified", articles=len(missing))
+        _record_subject_kind_hits(repo, {a.article_id: kinds[a.article_id] for a in missing})
     return kinds
 
 
