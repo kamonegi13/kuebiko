@@ -272,6 +272,21 @@ def _merge(events: _StageEvents, notes: _StageNotes, outlook: _StageOutlook) -> 
     )
 
 
+def _tail_of(
+    events: _StageEvents, notes: _StageNotes, candidates: Sequence[dict[str, Any]]
+) -> _Tail:
+    r = check_and_render(_merge(events, notes, _StageOutlook()), candidates)
+    return _Tail(caveats=list(r.caveats), unknowns=list(r.unknowns))
+
+
+def _tail_worse(new: _Tail, old: _Tail) -> bool:
+    from src.spotlight import tail_gate
+
+    if not tail_gate.gate_enabled():
+        return False
+    return len(tail_gate.tail_deficit(new)) > len(tail_gate.tail_deficit(old))
+
+
 async def _notes_with_tail_gate(
     llm: LLMClient,
     prompt: str,
@@ -295,7 +310,11 @@ async def _notes_with_tail_gate(
         if not tail_gate.tail_deficit(best_tail):
             break
         counts["tail_resamples"] += 1
-        cand: _StageNotes = await _call(llm, prompt, _StageNotes)
+        try:
+            cand: _StageNotes = await _call(llm, prompt, _StageNotes)
+        except Exception as e:  # noqa: BLE001 - 手元の最良 (有効な 1 回目) を捨てない
+            _log.warning("spotlight_staged_tail_resample_failed", error_type=type(e).__name__)
+            break
         cand_tail = tail(cand)
         if tail_gate.tail_score(cand_tail) > tail_gate.tail_score(best_tail):
             best, best_tail = cand, cand_tail
@@ -318,6 +337,7 @@ async def _identifier_gate(
     prompts: dict[str, str],
     outs: dict[str, BaseModel],
     counts: dict[str, int],
+    candidates: Sequence[dict[str, Any]],
 ) -> dict[str, BaseModel]:
     """段ごとに、生成文の厳密文法の識別子がその段のプロンプトに在るかを見る (本番と同じ判定)。"""
     from src.spotlight.identifier_check import (
@@ -339,6 +359,16 @@ async def _identifier_gate(
         )
         if isinstance(again, _StageEvents) and isinstance(out, _StageEvents):
             again = out.model_copy(update={"headline": again.headline})  # 選定は変えない
+        if (
+            isinstance(again, _StageNotes)
+            and isinstance(out, _StageNotes)
+            and _tail_worse(
+                _tail_of(_as(outs["events"], _StageEvents), again, candidates),
+                _tail_of(_as(outs["events"], _StageEvents), out, candidates),
+            )
+        ):
+            counts["identifier_unverified"] += 1  # 尾部が悪化する書き直しは採らず、違反が残る扱い
+            continue
         fixed[stage] = again
         if find_unsupported_identifiers(_stage_text(stage, again), prompts[stage]):
             counts["identifier_unverified"] += 1
@@ -370,7 +400,11 @@ async def generate_staged(llm: LLMClient, **ctx: Any) -> StagedResult:
     prompts["outlook"] = build_stage_prompt("outlook", chosen=chosen, **ctx)
     outlook: _StageOutlook = await _call(llm, prompts["outlook"], _StageOutlook)
     outs = await _identifier_gate(
-        llm, prompts, {"events": events, "notes": notes, "outlook": outlook}, gate_counts
+        llm,
+        prompts,
+        {"events": events, "notes": notes, "outlook": outlook},
+        gate_counts,
+        candidates,
     )
     merged = _merge(
         _as(outs["events"], _StageEvents),

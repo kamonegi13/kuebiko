@@ -392,6 +392,48 @@ class TestStagedGates:
         assert res.counts["identifier_retry"] == 1 and res.counts["identifier_unverified"] == 0
 
     @pytest.mark.asyncio
+    async def test_identifier_rewrite_that_empties_the_tail_is_not_adopted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "1")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "1")
+        full = staged._StageNotes(
+            event_notes=[
+                StagedNote(index=1, kind="caveat", text="範囲は限定的とされる。", anchor=ANCHOR_1),
+                StagedNote(
+                    index=2, kind="unknown", text="CVE-2026-7777 の経路は不明。", anchor=ANCHOR_2
+                ),
+                StagedNote(index=1, kind="unknown", text="被害件数は未確認。", anchor=ANCHOR_1),
+            ]
+        )
+        llm = _SeqLLM(_stage_replies(_StageNotes=[full, staged._StageNotes()]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        assert len(res.unknowns) == 2 and len(res.caveats) >= 2  # 書き直し前を残す
+        assert res.counts["identifier_retry"] == 1 and res.counts["identifier_unverified"] == 1
+
+    @pytest.mark.asyncio
+    async def test_tail_resample_exception_keeps_best_so_far(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SPOTLIGHT_TAIL_GATE", "1")
+        monkeypatch.setenv("SPOTLIGHT_IDENTIFIER_GATE", "0")
+
+        class _Boom(_SeqLLM):
+            async def generate_structured(self, prompt: str, *, schema: Any, **kw: Any) -> Any:
+                if (
+                    schema.__name__ == "_StageNotes"
+                    and self.calls
+                    and any(c == "_StageNotes" for c, _ in self.calls)
+                ):
+                    raise RuntimeError("secret body text")
+                return await super().generate_structured(prompt, schema=schema, **kw)
+
+        llm = _Boom(_stage_replies(_StageNotes=[staged._StageNotes()]))
+        res = await staged.generate_staged(llm, **_ctx())  # type: ignore[arg-type]
+        assert res.counts["tail_resamples"] == 1 and res.counts["tail_unmet"] == 1
+        assert res.headline
+
+    @pytest.mark.asyncio
     async def test_identifier_rewrite_of_events_keeps_the_selection(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

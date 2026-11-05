@@ -44,6 +44,21 @@ def test_flag_modes_are_off(flags_off: str) -> None:
     assert n20_flags.deep_dive_slot_render_mode() == "off"
 
 
+@pytest.fixture(autouse=True)
+def public_persona_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """運用者の私的な persona の有無に依らず公開版 _persona.j2 で描画する。"""
+    import jinja2
+
+    original = jinja2.FileSystemLoader.get_source
+
+    def get_source(self: jinja2.FileSystemLoader, environment: Any, template: str) -> Any:
+        if template.endswith("_persona_local.j2"):
+            raise jinja2.TemplateNotFound(template)
+        return original(self, environment, template)
+
+    monkeypatch.setattr(jinja2.FileSystemLoader, "get_source", get_source)
+
+
 def test_eventnews_prompt_is_byte_identical(flags_off: str) -> None:
     from src.eventnews.generator import build_prompt
 
@@ -110,3 +125,41 @@ async def test_render_sections_uses_legacy_schema_once(flags_off: str) -> None:
     plan = build_render_plan(est=estimate(), period_label="2026-10-20 (daily)")
     assert llm.calls[0][0] == plan.prompt
     assert out.weight_section == "w" and out.pir_section == "p"
+
+
+@pytest.mark.asyncio
+async def test_spotlight_off_calls_single_stage_once(
+    flags_off: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.unit import test_spotlight_staged as t
+
+    t._patch(monkeypatch)
+    llm = t._StagedLLM()
+    record = await t._run(llm)
+    assert llm.schemas == ["_LLMSpotlightOutput"]
+    assert record.outlook == "旧の見通し"
+
+
+def test_dedup_items_matches_legacy_implementation() -> None:
+    from collections.abc import Sequence
+
+    from src.eventnews.list_dedup import _is_near_dup, _key, dedup_items
+    from src.eventnews.models import FactItem
+
+    def legacy[T: (str, FactItem)](items: Sequence[T]) -> list[T]:
+        kept_keys: list[str] = []
+        kept: list[T] = []
+        for item in items:
+            key = _key(item)
+            if key in kept_keys or _is_near_dup(key, kept_keys):
+                continue
+            kept_keys.append(key)
+            kept.append(item)
+        return kept
+
+    long_a = "The vendor confirmed that the intrusion affected the VPN appliance in the field."
+    long_b = "The vendor confirmed that the intrusion affected the VPN appliances in the field."
+    strs = ["a  b", "a b", "c", long_a, long_b, "被害は 80 組織", "被害は 80 組織超"]
+    assert dedup_items(strs) == legacy(strs)
+    facts = [FactItem(text=t, source_index=1) for t in strs]
+    assert dedup_items(facts) == legacy(facts)
