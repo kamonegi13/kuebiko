@@ -312,7 +312,7 @@ services:
       SLOT_RENDER: ${SLOT_RENDER:-0}
       SPOTLIGHT_STAGED: ${SPOTLIGHT_STAGED:-0}
       DEEP_DIVE_SLOT_RENDER: ${DEEP_DIVE_SLOT_RENDER:-0}
-      # 多段 Spotlight の全体の上限 (秒)。空 = STEP_REGISTRY の PIR_SPOTLIGHT (600 秒)。設計 D は 3,000 秒 (未決)
+      # 多段 Spotlight の全体の上限 (秒)。空 = 3,000 秒 (設計 D、11-05 利用者判断)
       SPOTLIGHT_STAGED_TIMEOUT_SECONDS: ${SPOTLIGHT_STAGED_TIMEOUT_SECONDS:-}
 
     # 設定・プロンプト・データを bind mount で共有
