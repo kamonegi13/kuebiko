@@ -262,9 +262,14 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
         except Exception:  # noqa: BLE001 — 未登録 job は yield 判定なしで進む
             next_fire = None
 
-        timeout_failed = timeout_mode != "off" and _timeout_failed_since_success(
-            job, db_path, now=now, last_success=last_success
-        )
+        timeout_failed = False
+        if timeout_mode != "off":
+            try:
+                timeout_failed = _timeout_failed_since_success(
+                    job, db_path, now=now, last_success=last_success
+                )
+            except Exception as e:  # noqa: BLE001 — 補助の判定。失敗しても従来の判定で続行
+                _log.warning("job_recovery_timeout_check_failed", job_id=job.id, error=str(e)[:160])
         if timeout_failed and timeout_mode == "shadow":
             _log.warning("job_recovery_timeout_retry_shadow", job_id=job.id)
         d = decide(
