@@ -273,6 +273,7 @@ services:
       SYNTHESIS_COT_NOTES: ${SYNTHESIS_COT_NOTES:-0}
       # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
       DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
+      DEDUP_PERIODIC_EXEMPT: ${DEDUP_PERIODIC_EXEMPT:-shadow}
       # --- s24c 切替の旗 (2026-10-22、data/eval/S24c_switch_runbook.md)。**既定はすべて現行 (s23i) の挙動**。
       # モデル割当 (UI「設定 → モデル」) と同時に揃える。片方だけ上げた状態は避ける
       # 深刻度の軸を本文入力 + 公開日つきの v10 に (s24 系で学習。detect ML の差し替えと同時)
