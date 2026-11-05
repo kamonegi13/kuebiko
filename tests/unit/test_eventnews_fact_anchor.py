@@ -19,7 +19,7 @@ ANCHOR_RANGE = "versions up to 9.1 are affected and released a patch"
 
 
 def _row(text: str, anchor: str, *, idx: int = 1) -> AnchoredFactItem:
-    return AnchoredFactItem(text=text, source_index=idx, anchor=anchor)
+    return AnchoredFactItem(text=text, source_index=idx, paragraph=1, section="what", anchor=anchor)
 
 
 def _draft(**over: Any) -> AnchoredEventNewsDraft:
@@ -71,15 +71,46 @@ class TestLineIssues:
         assert not fact_anchor.has_hedge("released in May 2026")
         assert fact_anchor.has_hedge("the flaw may be exploited")
 
-    def test_number_not_in_anchor_is_flagged(self) -> None:
-        # 版の上限 9.1 を 9.2 と書いた (取り違え)
+    def test_number_not_in_source_is_flagged(self) -> None:
+        # 版の上限 9.1 を 9.2 と書いた (取り違え) — 本文のどこにも無い
         assert fact_anchor.line_issues(_row("9.2 までの版が影響。", ANCHOR_RANGE), TEXTS) == [
             "number_unsupported"
         ]
 
-    def test_identifier_tokens_and_scaled_numbers_are_not_checked(self) -> None:
-        assert fact_anchor.unsupported_numbers("{I12} は 120万台に影響", ANCHOR_RANGE) == set()
-        assert fact_anchor.unsupported_numbers("3 件の版", ANCHOR_RANGE) == set()
+    def test_number_elsewhere_in_same_source_passes(self) -> None:
+        # H3 (a): anchor の外でも、同じ記事の本文に在る数値は通す (1,200 台)
+        row = _row("9.1 までの版が影響し、約 1200 台が露出していた。", ANCHOR_RANGE)
+        assert fact_anchor.line_issues(row, TEXTS) == []
+
+    def test_number_from_another_source_is_flagged_for_facts(self) -> None:
+        # [2] の記事の行に [1] の数値 (1,200) を書いた — 出典ずれの数値は落とす
+        row = _row(
+            "同機関は約 1200 台に影響したと述べた。", "linked the intrusion to a known group", idx=2
+        )
+        assert fact_anchor.line_issues(row, TEXTS) == ["number_unsupported"]
+
+    def test_discrepancy_may_cite_the_other_sides_number(self) -> None:
+        row = _row(
+            "[2] は台数に触れず、[1] は 1200 台とする。",
+            "linked the intrusion to a known group",
+            idx=2,
+        )
+        assert fact_anchor.line_issues(row, TEXTS, section="discrepancies") == []
+        bad = _row("[2] は 3400 台とする。", "linked the intrusion to a known group", idx=2)
+        assert fact_anchor.line_issues(bad, TEXTS, section="discrepancies") == [
+            "number_unsupported"
+        ]
+
+    def test_scale_words_months_and_number_words_are_normalized(self) -> None:
+        src = "About 1.2 million users were hit on October 15, 2026; twelve agencies responded."
+        assert fact_anchor.unsupported_numbers("120万人が 2026年10月15日 に被害。", src) == set()
+        assert fact_anchor.unsupported_numbers("12 機関が対応した。", src) == set()
+        assert fact_anchor.unsupported_numbers("130万人が被害。", src) == {"1300000"}
+        assert fact_anchor.unsupported_numbers("2026年11月に公表。", src) == {"11"}
+
+    def test_identifier_tokens_and_single_digits_are_not_checked(self) -> None:
+        assert fact_anchor.unsupported_numbers("{I12} は 9.1 まで", BODY_1) == set()
+        assert fact_anchor.unsupported_numbers("3 件の版", BODY_1) == set()
 
 
 class TestApplyGate:
@@ -97,6 +128,9 @@ class TestApplyGate:
         assert len(res.draft.caveats) == 1
         assert res.dropped == 1
         assert "anchor" not in json.loads(res.draft.model_dump_json())["facts"][0]
+        # 教師用: 同じ行を anchor つきで持つ
+        assert [f.anchor for f in res.anchored.facts] == [ANCHOR_RANGE]
+        assert len(res.anchored.caveats) == 1
 
     def test_no_drop_keeps_rows_but_reports(self) -> None:
         draft = _draft(facts=[_row("x", "nope nope nope nope nope nope")])
@@ -107,7 +141,7 @@ class TestApplyGate:
     def test_schema_requires_anchor(self) -> None:
         schema = AnchoredEventNewsDraft.model_json_schema()
         item = schema["$defs"]["AnchoredFactItem"]
-        assert "anchor" in item["required"]
+        assert set(item["required"]) == {"text", "source_index", "paragraph", "section", "anchor"}
         assert set(schema["required"]) >= {"facts", "caveats", "discrepancies"}
 
 
@@ -208,3 +242,38 @@ def test_v7_output_passes_the_n20_training_gate_shape() -> None:
     user = build_prompt(members(), ALLOWED, template="eventnews/refine_v7.j2")
     out = json.loads(_draft().model_dump_json())
     assert mod.schema_errors_event_news(out, user) == []
+
+
+class TestAnchoredCompletion:
+    def test_keeps_anchor_after_both_gates_and_resolves_identifiers_in_text_only(self) -> None:
+        from src.eventnews.anchored_completion import anchored_completion
+
+        raw = _draft(
+            facts=[
+                _row("{I1} の 9.1 までの版が影響を受ける。", ANCHOR_RANGE),
+                _row("出典なしの行", ANCHOR_RANGE, idx=0),  # 識別子関門が facts から落とす
+                _row("9.2 までの版", ANCHOR_RANGE),  # anchor の関門が落とす
+            ],
+            caveats=[_row("攻撃者は悪用したとされる。", ANCHOR_HEDGED)],
+        )
+        out = anchored_completion(raw, members())
+        assert out is not None
+        assert [f.anchor for f in out.facts] == [ANCHOR_RANGE]
+        # 識別子関門は text にだけ当たる (カタログに無い番号は置換)、anchor は原文のまま
+        assert "{I1}" not in out.facts[0].text
+        assert [c.anchor for c in out.caveats] == [ANCHOR_HEDGED]
+        canon = json.loads(fact_anchor.completion_json(out))
+        assert list(canon["facts"][0]) == ["text", "source_index", "paragraph", "section", "anchor"]
+
+    def test_none_when_no_fact_survives(self) -> None:
+        from src.eventnews.anchored_completion import anchored_completion
+
+        raw = _draft(facts=[_row("t", "not in any source text at all")])
+        assert anchored_completion(raw, members()) is None
+
+    def test_template_example_rows_carry_all_fields(self) -> None:
+        from pathlib import Path
+
+        tmpl = Path("prompts/eventnews/refine_v7.j2").read_text(encoding="utf-8")
+        rows = [ln for ln in tmpl.splitlines() if '"anchor": "出典' in ln]
+        assert rows and all('"paragraph"' in ln and '"section"' in ln for ln in rows)

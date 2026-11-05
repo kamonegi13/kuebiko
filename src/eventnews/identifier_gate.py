@@ -105,6 +105,11 @@ def missing_important_identifiers(
     return tuple(found)
 
 
+def fact_row_kept(item: FactItem, n_members: int) -> bool:
+    """facts の行を残すか (0 / 範囲外 / 創作番号 / 線 [G#] の内容は行ごと落とす)。"""
+    return 1 <= item.source_index <= n_members and not _has_graph_citation(item.text)
+
+
 def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> GateResult:
     """structured 出力の識別子解決 + [N] 関門を通す。"""
     catalog = build_member_catalog(members)
@@ -114,7 +119,7 @@ def verify_draft(draft: EventNewsDraft, members: Sequence[MemberArticle]) -> Gat
     facts: list[FactItem] = []
     dropped = 0
     for item in draft.facts:
-        if not (1 <= item.source_index <= n_members) or _has_graph_citation(item.text):
+        if not fact_row_kept(item, n_members):
             dropped += 1  # 0 / 範囲外 / 創作番号 / 線 [G#] の内容は行ごと落とす
             continue
         text, st = resolve_text(item.text, catalog, cited_member=item.source_index)
