@@ -243,6 +243,9 @@ services:
       # 当局の摘発発表を alert から watch に下げる (語の条件のみ、正解 185 件で精度 10/11・回収 10/10)。
       # 2026-10-12 有効化 (v13 の配信を本番と同じ関数の再現で確認した後)
       ALERT_EXCLUDE_LAW_ENFORCEMENT: ${ALERT_EXCLUDE_LAW_ENFORCEMENT:-1}
+      # 重複 alert の影の記録 (alert_dedup_shadow)。2026-11-06 に .env の 0 で止めた (SHADOW-STOP)。
+      # 以前は compose が渡しておらず .env の値がコンテナに届かなかった (コードの既定 1 のまま)
+      ALERT_DEDUP_SHADOW: ${ALERT_DEDUP_SHADOW:-1}
       # 翻訳の化け (固有名詞・識別子・数字) を検出したら訳を保存せず原文を出す (2026-10-12)。
       # on = 語・識別子・数字のどれでも / ident = 識別子 (CVE・ハッシュ・IP 等) の化けだけ
       # (語・数字は log のみ) / shadow = 全部 log のみ / off。修復はしない。既定 shadow:
