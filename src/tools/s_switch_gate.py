@@ -6,6 +6,8 @@
 未測定は不合格と同じ扱い (fail-closed): 測っていない指標で通さない。
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import re
@@ -37,6 +39,8 @@ class GateResult:
     model: str
     status: str  # PASS / FAIL / UNMEASURED
     detail: str
+    #: 合否には効かない注意 (交絡など)。空でなければ表示する
+    warning: str = ""
 
 
 def _num(m: Mapping[str, Any], key: str) -> float | None:
@@ -44,37 +48,92 @@ def _num(m: Mapping[str, Any], key: str) -> float | None:
     return float(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
 
 
+#: 手でしか測れない指標の取り方 (未測定の表示に添える)
+MANUAL_HINTS: Final[Mapping[str, str]] = {
+    "new_only_opens": "D1 の digest (data/mlx/d1_detect_compare.py digest) を人が審判して数える",
+    "current_only_opens": "同上 (現行だけが開設した記事の審判済みの件数)",
+    "control_only_opens": "同上 (対照だけが開設した記事の審判済みの件数)",
+}
+
+#: detect のメトリクスの 3 腕の形 (新 vs 対照が合否、対照 vs 現行は参考)
+DETECT_NEW_VS_CONTROL: Final = "new_vs_control"
+DETECT_CONTROL_VS_CURRENT: Final = "control_vs_current"
+CONFOUNDED_WARNING: Final = (
+    "対照腕なし: 新 vs 現行の差に「S の変更」と「種別の欠け (goldset 840 件が other) の解消」が"
+    "混ざる。relabel を現行の S で回し train --control-s で対照を作って 3 腕で比べる"
+)
+
+
 def _missing(model: str, keys: list[str]) -> GateResult:
-    return GateResult(model, UNMEASURED, "未測定: " + ", ".join(keys))
+    hints = [f"{k} = {MANUAL_HINTS[k]}" for k in keys if k in MANUAL_HINTS]
+    detail = "未測定: " + ", ".join(keys)
+    return GateResult(model, UNMEASURED, detail + (" (" + "; ".join(hints) + ")" if hints else ""))
 
 
-def gate_detect(m: Mapping[str, Any]) -> GateResult:
+def _gate_detect_pair(
+    m: Mapping[str, Any], *, other_only_key: str, other_label: str, warning: str = ""
+) -> GateResult:
+    """新 vs 比べる相手 (現行 or 対照) の合否。``m`` は 4 指標の辞書。"""
     lower, p_worse = _num(m, "auc_diff_ci_lower"), _num(m, "p_worse")
-    new_only, cur_only = _num(m, "new_only_opens"), _num(m, "current_only_opens")
+    new_only, other_only = _num(m, "new_only_opens"), _num(m, other_only_key)
     absent = [
         k
         for k, v in (
             ("auc_diff_ci_lower", lower),
             ("p_worse", p_worse),
             ("new_only_opens", new_only),
-            ("current_only_opens", cur_only),
+            (other_only_key, other_only),
         )
         if v is None
     ]
-    if absent or lower is None or p_worse is None or new_only is None or cur_only is None:
-        return _missing("detect", absent)
+    if absent or lower is None or p_worse is None or new_only is None or other_only is None:
+        res = _missing("detect", absent)
+        return GateResult(res.model, res.status, res.detail, warning)
     reasons = []
     if lower <= DETECT_AUC_LOWER_FLOOR:
         reasons.append(f"AUC 差の下限 {lower:+.3f} <= {DETECT_AUC_LOWER_FLOOR}")
     if p_worse >= DETECT_P_WORSE_MAX:
         reasons.append(f"P(悪い) {p_worse:.2f} >= {DETECT_P_WORSE_MAX}")
-    if new_only < cur_only:
-        reasons.append(f"新だけの開設 {new_only:.0f} < 現行だけ {cur_only:.0f}")
-    detail = (
-        "; ".join(reasons)
-        or f"AUC 差下限 {lower:+.3f}・P(悪い) {p_worse:.2f}・開設 {new_only:.0f}>={cur_only:.0f}"
+    if new_only < other_only:
+        reasons.append(f"新だけの開設 {new_only:.0f} < {other_label}だけ {other_only:.0f}")
+    detail = "; ".join(reasons) or (
+        f"AUC 差下限 {lower:+.3f}・P(悪い) {p_worse:.2f}"
+        f"・開設 {new_only:.0f}>={other_only:.0f} (新 vs {other_label})"
     )
-    return GateResult("detect", FAIL if reasons else PASS, detail)
+    return GateResult("detect", FAIL if reasons else PASS, detail, warning)
+
+
+def _control_info(m: Mapping[str, Any]) -> str:
+    """対照 vs 現行 (種別の欠けを埋めた効果)。合否に使わず表示だけ。"""
+    lower, p_worse, mean = (
+        _num(m, "auc_diff_ci_lower"),
+        _num(m, "p_worse"),
+        _num(m, "mean_diff"),
+    )
+    if lower is None or p_worse is None:
+        return "参考 (対照 vs 現行 = 欠けを埋めた効果): 未測定"
+    avg = f"平均差 {mean:+.3f}・" if mean is not None else ""
+    return f"参考 (対照 vs 現行 = 欠けを埋めた効果、合否に使わない): {avg}下限 {lower:+.3f}・P(悪い) {p_worse:.2f}"
+
+
+def gate_detect(m: Mapping[str, Any]) -> GateResult:
+    """3 腕 (``new_vs_control`` あり) は新 vs 対照で合否、対照 vs 現行は参考。
+
+    対照なしの従来の形 (4 指標が平ら) は新 vs 現行で判定するが、交絡の警告を付ける。
+    """
+    arm = m.get(DETECT_NEW_VS_CONTROL)
+    if not isinstance(arm, Mapping):
+        return _gate_detect_pair(
+            m, other_only_key="current_only_opens", other_label="現行", warning=CONFOUNDED_WARNING
+        )
+    res = _gate_detect_pair(arm, other_only_key="control_only_opens", other_label="対照")
+    info = m.get(DETECT_CONTROL_VS_CURRENT)
+    return GateResult(
+        res.model,
+        res.status,
+        res.detail,
+        _control_info(info if isinstance(info, Mapping) else {}),
+    )
 
 
 def gate_severity_s3(

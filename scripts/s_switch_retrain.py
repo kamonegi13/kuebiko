@@ -6,7 +6,9 @@
     uv run python scripts/s_switch_retrain.py plan [--s <新しい S>]
     uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --dry-run     # 対象件数だけ
     uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --what kind
-    uv run python scripts/s_switch_retrain.py train --s <新しい S> [--dry-run]    # staging へ
+    uv run python scripts/s_switch_retrain.py relabel --s <現行の S> --what kind  # detect の対照腕の種別
+    uv run python scripts/s_switch_retrain.py train --s <新しい S> [--control-s <現行の S>] [--dry-run]
+    uv run --with scikit-learn python scripts/s_switch_retrain.py measure --s <新しい S> [--control-s <現行の S>]
     uv run python scripts/s_switch_retrain.py gate --metrics <json>
     uv run python scripts/s_switch_retrain.py swap | revert                         # 手順の表示のみ
 
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib
 import json
 import os
 import subprocess
@@ -45,6 +48,7 @@ from src.tools.s_switch_gate import (  # noqa: E402
     parse_relation_stdout,
     parse_severity_stdout,
 )
+from src.tools.s_switch_measure import merge_metrics  # noqa: E402
 
 MODELS_DIR = ROOT / "config/models"
 MLX = ROOT / "data/mlx"
@@ -304,6 +308,29 @@ def build_train_jobs(
     ]
 
 
+def build_control_job(control_s: str, control_kinds: Path) -> tuple[str, list[str], Path, Any]:
+    """detect の対照腕 (現行の S で付け直した種別 + DB の軸)。種別の欠けを埋めた効果だけを持つ。
+
+    新 vs 対照が S の効果、対照 vs 現行が欠けの解消の効果 (参考)。軸は DB (現行の S) のまま。
+    """
+    return (
+        "detect_control",
+        ["scripts/train_detect_ml.py", "--kinds", str(control_kinds), "--kinds-model", control_s],
+        MODELS_DIR / "detect_model.json.staging_control",
+        None,
+    )
+
+
+def _write_metrics(computed: dict[str, Any]) -> None:
+    """train_metrics.json へ重ねる。手で足した値 (開設の件数など) は計算値が None なら守る。"""
+    path = STAGING_DIR / "train_metrics.json"
+    existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    path.write_text(
+        json.dumps(merge_metrics(existing, computed), ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
+
+
 def cmd_train(args: argparse.Namespace) -> int:
     """5 本を staging へ (付け直した入力を引数で渡す)。**本番の config は書かない**。"""
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
@@ -316,8 +343,20 @@ def cmd_train(args: argparse.Namespace) -> int:
         if not args.dry_run:
             print("先に relabel (と GPU の段) を済ませる", file=sys.stderr)
             return 2
+    jobs = build_train_jobs(args.s, paths, pair_model=args.pair_model)
+    if args.control_s:
+        control_kinds = staging_paths(args.control_s)["kinds"]
+        if not control_kinds.exists():
+            print(f"対照の種別が未作成: {control_kinds}")
+            print(f"  → relabel --s {args.control_s} --what kind (現行の S で付け直す)")
+            if not args.dry_run:
+                return 2
+            missing = [*missing, "control_kinds"]
+        jobs.append(build_control_job(args.control_s, control_kinds))
+    else:
+        print("⚠ 対照腕なし (--control-s 無し): detect の新 vs 現行は交絡する。gate が警告する")
     metrics: dict[str, dict[str, float]] = {}
-    for name, argv, out, parse in build_train_jobs(args.s, paths, pair_model=args.pair_model):
+    for name, argv, out, parse in jobs:
         dry = ["--dry-run"] if args.dry_run and name != "deep_dive" else []
         cmd = [sys.executable, *argv, "--out", str(out), *dry]
         print("$", " ".join(cmd))
@@ -330,11 +369,82 @@ def cmd_train(args: argparse.Namespace) -> int:
             print(proc.stderr[-800:], file=sys.stderr)
             return proc.returncode
         if parse:
-            metrics[name] = parse(proc.stdout)
-    (STAGING_DIR / "train_metrics.json").write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
-    )
+            parsed = parse(proc.stdout)
+            if name == "severity_s3":
+                # trainer の値は「回収 90%」の閾値での値。関門は固定の 0.50 (measure が測る) なので別の名前で残す
+                parsed = {f"{k}_at_train_threshold": v for k, v in parsed.items()}
+            metrics[name] = parsed
+    _write_metrics(metrics)
     return 0
+
+
+MEASURE_SECTIONS = ("severity_s3", "relation", "pair", "detect")
+
+
+def cmd_measure(args: argparse.Namespace) -> int:
+    """staging のモデルと既存の評価データから関門の指標を計算し train_metrics.json へ重ねる。
+
+    GPU・Ollama・DB への書き込みは無い (detect・relation は DB の読み取り)。手で足した値は守る。
+    開設の件数 (審判が要る) は None のまま = gate が未測定として止め、測り方を表示する。
+    """
+    # sklearn が要るので遅延 import (plan/gate/relabel は不要)
+    sm: Any = importlib.import_module("scripts.s_switch_measure")
+
+    paths = staging_paths(args.s)
+    if args.axes_file:
+        paths = {**paths, "axes": Path(args.axes_file)}
+    control = staging_paths(args.control_s)["kinds"] if args.control_s else None
+    wanted = args.only or list(MEASURE_SECTIONS)
+    computed: dict[str, Any] = {}
+    failed: list[str] = []
+    for name in wanted:
+        try:
+            if name == "severity_s3":
+                computed[name] = sm.measure_severity(
+                    items_path=SEVC_ITEMS,
+                    probe_file=paths["probes"],
+                    probe_model=args.s,
+                    kinds_path=paths["kinds"],
+                    max_missing=SEVC_MAX_MISSING,
+                )
+            elif name == "relation":
+                computed[name] = sm.measure_relation(
+                    gold=MLX / "event_relations_goldset_v3.jsonl", kinds_path=paths["kinds"]
+                )
+            elif name == "pair":
+                computed[name] = sm.measure_pair(
+                    current_model=MODELS_DIR / "pair_model.json",
+                    staging_model=MODELS_DIR / "pair_model.json.staging",
+                    labels=ROOT / "data/eval/labels_verified.json",
+                    samples=list(PAIR_SAMPLES),
+                    features=ROOT / "data/eval/features_v3.json",
+                    current_kinds=ROOT / "data/eval/event_kind.json",
+                    new_kinds=paths["kinds"],
+                    new_llm_scores=paths["pair_llm"] if paths["pair_llm"].exists() else None,
+                )
+            else:
+                computed[name] = sm.measure_detect(
+                    gold_path=DETECT_GOLD,
+                    current_kind_files=KIND_FILES,
+                    new_kinds=paths["kinds"],
+                    new_axes=paths["axes"],
+                    axes_model=args.s,
+                    control_kinds=control if control is not None and control.exists() else None,
+                )
+                if control is None or not control.exists():
+                    print(
+                        "⚠ 対照腕なし: detect の新 vs 現行は交絡する (relabel --s <現行の S> で対照を作る)"
+                    )
+        except (FileNotFoundError, SystemExit) as e:
+            print(f"  {name}: 測れない ({type(e).__name__}: {e})", file=sys.stderr)
+            failed.append(name)
+            continue
+        print(f"  {name}: {json.dumps(computed[name], ensure_ascii=False)}")
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    _write_metrics(computed)
+    print(f"-> {STAGING_DIR / 'train_metrics.json'} (測れなかった: {failed or 'なし'})")
+    print("手で測る: detect の new_only_opens / control_only_opens (D1 の digest の審判)")
+    return 1 if failed else 0
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -345,6 +455,8 @@ def cmd_gate(args: argparse.Namespace) -> int:
     ok, results = evaluate_gates(metrics, current_deep_dive_corr=cur)
     for r in results:
         print(f"  {r.model:12s} {r.status:10s} {r.detail}")
+        if r.warning:
+            print(f"  {'':12s} ⚠ {r.warning}")
     print("全体:", "合格 (組で切替可)" if ok else "不合格・未測定あり — 5 本とも出さない")
     return 0 if ok else 1
 
@@ -380,7 +492,15 @@ def main() -> int:
     p.add_argument(
         "--axes-file", default="", help="付け直した軸の jsonl (既定は staging の axes_<S>)"
     )
+    p.add_argument(
+        "--control-s", default="", help="detect の対照腕 (現行の S。kinds_<S>.jsonl を先に relabel)"
+    )
     p.add_argument("--dry-run", action="store_true")
+    p = sub.add_parser("measure")
+    p.add_argument("--s", required=True)
+    p.add_argument("--control-s", default="", help="detect の対照腕 (現行の S)")
+    p.add_argument("--axes-file", default="", help="付け直した軸の jsonl")
+    p.add_argument("--only", nargs="+", choices=MEASURE_SECTIONS, help="測る節 (既定は全部)")
     p = sub.add_parser("gate")
     p.add_argument("--metrics", required=True)
     sub.add_parser("swap")
@@ -392,9 +512,14 @@ def main() -> int:
     if args.cmd == "revert":
         print(REVERT_STEPS)
         return 0
-    return {"plan": cmd_plan, "relabel": cmd_relabel, "train": cmd_train, "gate": cmd_gate}[
-        args.cmd
-    ](args)
+    handlers = {
+        "plan": cmd_plan,
+        "relabel": cmd_relabel,
+        "train": cmd_train,
+        "measure": cmd_measure,
+        "gate": cmd_gate,
+    }
+    return handlers[args.cmd](args)
 
 
 if __name__ == "__main__":
