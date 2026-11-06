@@ -13,18 +13,18 @@
 
 | ML (`config/models/`) | 強い S 由来 (種別・軸・確率・対の判定) | 弱い S 由来 (要約の派生) | 学習時の S の記録 | 学習スクリプト |
 |---|---|---|---|---|
-| detect_model.json | event_kind、severity_axes (`axis_*`) | importance・category・件数 | `axes_model` | `scripts/train_detect_ml.py` |
-| severity_s3_model.json | severity_axes の問いの確率 (`p.*`)、event_kind | cat・type | `probe_model` | `scripts/train_severity_s3_model.py` |
-| deep_dive_model.json | event_kind | importance・category | なし | `scripts/train_deep_dive_ml.py` |
-| relation_model.json | event_kind (`kinds_*`) | 被害組織・国・業種の件数 | なし | `scripts/train_relation_model.py` |
-| pair_model.json | pair_judge (`llm_same`/`llm_known`)、event_kind | cos_summary 等 | `trained_llm_models` (現在 `[]`) | `scripts/train_pair_model.py` |
+| detect_model.json | event_kind、severity_axes (`axis_*`) | importance・category・件数 | `axes_model`・`kinds_model` | `scripts/train_detect_ml.py` |
+| severity_s3_model.json | severity_axes の問いの確率 (`p.*`)、event_kind | cat・type | `probe_model`・`kinds_model` | `scripts/train_severity_s3_model.py` |
+| deep_dive_model.json | event_kind | importance・category | `kinds_model` (既定 null) | `scripts/train_deep_dive_ml.py` |
+| relation_model.json | event_kind (`kinds_*`) | 被害組織・国・業種の件数 | `kinds_model` | `scripts/train_relation_model.py` |
+| pair_model.json | pair_judge (`llm_same`/`llm_known`)、event_kind | cos_summary 等 | `trained_llm_models` (現在 `[]`)・`kinds_model` (種別を渡したとき) | `scripts/train_pair_model.py` |
 
 対象外 (理由は `NOT_RETRAINED`): assign_model(.json/_probe) は gemma4:26b・s23i 固定、relevance_jp は埋込のみ、
 alert_dedup は pair_model の確率 (`p_pair`) を弱い特徴にするので **pair_model を学び直したら影響を見る**。
 
-学習時の S を記録する欄があるのは detect・severity_s3・pair だけ。他は `unrecorded` 警告になる
-(合否は記録の有無でなく測定で決める)。学び直しの出力 JSON には、使った S を必ず欄に書く
-(deep_dive・relation・pair にも欄を足すのは宿題、下記)。
+学習時の S の欄 `kinds_model` (種別を付けた S。DB・既存ファイル・混在なら null) を 4 本 (+ pair) の JSON に足した。
+`--kinds-model <S>` で明示、省略時は `--kinds` の jsonl の `model` 欄が 1 種類ならそれ。null・欄なしは `unrecorded` 警告
+(合否は記録の有無でなく測定で決める)。本番の loader は欄を読まず、有無で計算は変わらない。学び直しの出力 JSON には使った S を必ず書く。
 
 ## 2. 特徴の付け直し (新しい S で、staging の表またはファイルに。本番の列は書かない)
 
@@ -40,6 +40,11 @@ alert_dedup は pair_model の確率 (`p_pair`) を弱い特徴にするので *
 
 CPU だけの段 (学習・比較) は GPU 不要。
 
+**detect の対照腕**: detect の学習 goldset 1,882 件のうち 840 件は現行の種別ファイルに無く `other` で学ばれている。
+`relabel --what kind` は全件を付けるので、新 S と現行を比べると「S の変更」と「欠けの解消」が混ざる。
+`relabel --s <現行 S> --what kind` (出力 `kinds_<現行S>.jsonl`) で現行 S の対照の種別を作り、`train --control-s <現行 S>` で
+`detect_model.json.staging_control` (軸は DB のまま) を学ぶ。合否は新 vs 対照 (S の効果)、対照 vs 現行は参考表示。
+
 ## 3. 5 本を同時に staging へ学び直す
 
 各学習スクリプトの `--out` に `config/models/<名前>.json.staging` を渡す (本番の読み手はこの名前を読まない。
@@ -50,7 +55,9 @@ pair は `scripts/train_pair_model.py` (旧 `data/eval/train_v5.py`、CPU のみ
 detect = `--kinds --axes --axes-model`、severity_s3 = `--items --probe-file --max-missing --kinds`、
 relation = `--kinds`、pair = `--kinds --llm-scores --llm-model`、deep_dive = 付け直しの入力なし
 (本番の選抜が種別を渡さないため)。`scripts/s_switch_retrain.py train` がこれらを組んで staging へ出す。
-引数を省くと従来と同一。手順の詳細は運用者ローカルの `data/eval/s_switch_retrain_procedure.md`。
+引数を省くと従来と同一。`measure` (`uv run --with scikit-learn python scripts/s_switch_retrain.py measure --s <新 S> [--control-s <現行 S>]`)
+が severity の AUC・適合・回収 (固定閾値 0.50)、relation の現行の回収、pair の cos 帯ごとの same 率のずれ、detect の AUC 差の下限と P(悪い)
+を計算して `train_metrics.json` へ重ねる。手で足すのは detect の開設件数 (審判) だけ。手順の詳細は運用者ローカルの `data/eval/s_switch_retrain_procedure.md`。
 
 ## 4. 合否の関門 (staging の JSON で測る。D1 の値を基準にする)
 
@@ -86,6 +93,6 @@ relation = `--kinds`、pair = `--kinds --llm-scores --llm-model`、deep_dive = �
 ## 6. 記録と宿題
 
 - 切替の記録: 割当の版番号・5 本の JSON の sha・退避のパス・付け直しの jsonl のパスを CLAUDE.md §2 の「現在の割当」に追記する。
-- 宿題: (a) pair の学習スクリプトを `scripts/` に置く (b) deep_dive・relation・pair に学習時の S の欄を足し `unrecorded` をなくす
+- 宿題: (a) pair の学習スクリプトを `scripts/` に置く (b) (済) `kinds_model` を足した
   (c) alert_dedup は pair 学び直しの後に p_pair の分布を確認する。
 - 最初の使い手: SW-S26 (S26-ML-RETRAIN が detect・severity_s3、pair・deep_dive・relation は判定して必要なら)。

@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.eventnews.event_kind import kind_pair_features  # noqa: E402
 from src.eventnews.pair_features import FEATURE_NAMES  # noqa: E402
+from src.tools.staging_inputs import resolve_kinds_model  # noqa: E402
 
 D = Path("data/eval")
 DEFAULT_OUT = Path("config/models/pair_model.json")
@@ -116,10 +117,11 @@ def assemble_model(
     proba: np.ndarray,
     trained_at: str,
     trained_llm_models: list[str],
+    kinds_model: str | None = None,
 ) -> dict[str, Any]:
     """本番の ``pair_model.json`` と同じ欄・同じ並びで組む (欄の SSoT は pair_model.py の読み側)。"""
     ref = range(min(N_REFERENCE_POINTS, len(xf)))
-    return {
+    out: dict[str, Any] = {
         "version": MODEL_VERSION,
         "trained_llm_models": trained_llm_models,
         "trained_at": trained_at,
@@ -134,6 +136,9 @@ def assemble_model(
         },
         "trees": trees,
     }
+    if kinds_model is not None:  # 付け直した種別の S (既定の入力では欄を足さず従来と同一)
+        out["kinds_model"] = kinds_model
+    return out
 
 
 def _load_json(path: Path) -> Any:
@@ -166,6 +171,11 @@ def main() -> int:
     ap.add_argument("--features", type=Path, default=D / "features_v3.json")
     ap.add_argument("--llm-scores", type=Path, default=None, help="新しい判定器の対の判定 (jsonl)")
     ap.add_argument("--llm-model", default="", help="対の判定に使ったモデル (trained_llm_models)")
+    ap.add_argument(
+        "--kinds-model",
+        default=None,
+        help="--kinds の S の名前 (JSON の kinds_model)。既定の event_kind.json では記録しない",
+    )
     ap.add_argument("--trained-at", default="2026-09-03")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--dry-run", action="store_true")
@@ -199,6 +209,9 @@ def main() -> int:
         proba=model.predict_proba(xf)[:, 1],
         trained_at=args.trained_at,
         trained_llm_models=[args.llm_model] if args.llm_model else [],
+        kinds_model=resolve_kinds_model(
+            args.kinds_model, args.kinds if args.kinds != D / "event_kind.json" else None
+        ),
     )
     print(
         f"特徴 {len(out['feature_names'])} / 木 {len(out['trees'])} / "

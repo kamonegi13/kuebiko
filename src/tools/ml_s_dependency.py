@@ -142,7 +142,7 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
                 DET,
             ),
         ),
-        {"severity_axes": "axes_model"},
+        {"severity_axes": "axes_model", "event_kind": "kinds_model"},
     ),
     MlSpec(
         "deep_dive_model.json",
@@ -162,7 +162,7 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
                 DET,
             ),
         ),
-        {},
+        {"event_kind": "kinds_model"},
     ),
     MlSpec(
         "severity_s3_model.json",
@@ -174,7 +174,7 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
             _r(r"^type=", "judgment_classify", WEAK),
             _r(r"^(kev|cvss|cvss_ge9|log_loss|n_cves)$", "det", DET),
         ),
-        {"severity_axes": "probe_model"},
+        {"severity_axes": "probe_model", "event_kind": "kinds_model"},
     ),
     MlSpec(
         "pair_model.json",
@@ -190,7 +190,7 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
                 DET,
             ),
         ),
-        {"pair_judge": "trained_llm_models"},
+        {"pair_judge": "trained_llm_models", "event_kind": "kinds_model"},
     ),
     MlSpec(
         "relation_model.json",
@@ -204,7 +204,7 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
                 DET,
             ),
         ),
-        {},
+        {"event_kind": "kinds_model"},
     ),
     # 対象外の ML も特徴の振り分けは持つ (新しい特徴の見落とし検査のため)
     MlSpec(

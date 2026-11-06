@@ -44,7 +44,7 @@ from src.digest.deep_dive_features import (  # noqa: E402
 )
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.synthesis.grounded.detect_ml import build_detect_articles  # noqa: E402
-from src.tools.staging_inputs import overlay_if_given  # noqa: E402
+from src.tools.staging_inputs import overlay_if_given, resolve_kinds_model  # noqa: E402
 
 DEFAULT_MODEL_PATH = Path("config/models/deep_dive_model.json")
 _ALPHA = 1.0
@@ -129,6 +129,11 @@ def main() -> int:
     # 本番の選抜 (deep_dive_selector) は種別を渡さない (kinds={} = 全て other) ので、既定のまま
     # 学ぶのが本番と合う。--kinds は本番側も種別を渡すように変えるときだけ使う
     ap.add_argument("--kinds", type=Path, default=None, help="種別の jsonl (本番と食い違う: 注意)")
+    ap.add_argument(
+        "--kinds-model",
+        default=None,
+        help="--kinds の S の名前 (JSON の kinds_model)。省略時は jsonl の model 欄から推定",
+    )
     args = ap.parse_args()
 
     rows = load_labels(Path(args.labels))
@@ -176,6 +181,8 @@ def main() -> int:
         "scale": [float(v) for v in scaler.scale_],
         "coef": [float(v) for v in model.coef_],
         "intercept": float(model.intercept_),
+        # 種別 (kind=*) を付けた S。本番の選抜は種別を渡さない (全て other) ので既定は null
+        "kinds_model": resolve_kinds_model(args.kinds_model, args.kinds),
         "trained_windows": len(windows) - len(test_w),
         "holdout_corr": corr,
     }
