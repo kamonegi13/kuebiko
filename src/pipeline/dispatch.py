@@ -46,6 +46,8 @@ _log = get_logger(__name__)
 
 DEFAULT_TEMPLATE_PATH = Path("prompts/briefing/summarizer.j2")
 DEFAULT_PIPELINE_NAME = "daily-briefing"
+#: 日本関連性カスケードの LLM の段 (P0-21)。"0" で組まない、既定 1 = 従来どおり
+RELEVANCE_JP_CASCADE_LLM_ENV = "RELEVANCE_JP_CASCADE_LLM"
 
 RUN_RESULTS_DIR = Path("data/run_results")
 
@@ -163,8 +165,12 @@ async def run_default(
             else None
         )
         # 日本関連性 ML カスケード (M4、2026-10-08)。影子記録専用、本番判定は変えない。
-        relevance_jp_cascade_llm: LLMClient | None = build_llm_for(
-            Step.RELEVANCE_JP_CASCADE, config
+        # RELEVANCE_JP_CASCADE_LLM=0 で LLM の段を組まない (P0-21)。None なら影の記録は
+        # ML だけで続く (triage_shadow がカスケードを飛ばす)
+        relevance_jp_cascade_llm: LLMClient | None = (
+            build_llm_for(Step.RELEVANCE_JP_CASCADE, config)
+            if os.environ.get(RELEVANCE_JP_CASCADE_LLM_ENV, "1").strip() != "0"
+            else None
         )
 
         # Phase 2: Grok email source の場合のみ IMAP / Playwright を立ち上げる

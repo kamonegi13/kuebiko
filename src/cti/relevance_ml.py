@@ -22,18 +22,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
 from src.logging_config import get_logger
 from src.tools.embedding_client import EmbeddingClient
 from src.tools.llm_client import LLMClient
-from src.tools.model_tiers import Step, build_llm_for, resolve_embedding_model
+from src.tools.model_tiers import resolve_embedding_model
 from src.tools.reason_trim import trim_reason_logged
-
-if TYPE_CHECKING:
-    from src.config_loader import AppConfig
 
 _log = get_logger(__name__)
 
@@ -209,11 +205,6 @@ async def cascade_japan_involved(
         return None
 
 
-def build_relevance_jp_cascade_llm(config: AppConfig) -> LLMClient:
-    """カスケード判定用 LLMClient (Step.RELEVANCE_JP_CASCADE、fast ティア)。"""
-    return build_llm_for(Step.RELEVANCE_JP_CASCADE, config)
-
-
 __all__ = [
     "DEFAULT_MODEL_PATH",
     "RelevanceJpModel",
@@ -224,6 +215,5 @@ __all__ = [
     "ml_fired",
     "in_uncertain_band",
     "cascade_japan_involved",
-    "build_relevance_jp_cascade_llm",
     "resolve_embedding_model",
 ]
