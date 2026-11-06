@@ -254,7 +254,8 @@ class TestApi:
         assert is_read_only_blocked_get("/api/v1/alert-dedup-shadow/summary") is True
 
 
-def test_fill_rate_metric_registered() -> None:
+def test_fill_rate_metric_removed_with_shadow_stop() -> None:
+    """影の記録を止めるのと同時に生存の監視の指標も外す (SHADOW-STOP と FILLRATE-ADS)。"""
     from src.ui.services.fill_rate_audit import METRICS
 
-    assert "alert_dedup_shadow" in {m.key for m in METRICS}
+    assert "alert_dedup_shadow" not in {m.key for m in METRICS}
