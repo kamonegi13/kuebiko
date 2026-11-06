@@ -44,6 +44,7 @@ from src.digest.deep_dive_features import (  # noqa: E402
 )
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.synthesis.grounded.detect_ml import build_detect_articles  # noqa: E402
+from src.tools.staging_inputs import overlay_if_given  # noqa: E402
 
 DEFAULT_MODEL_PATH = Path("config/models/deep_dive_model.json")
 _ALPHA = 1.0
@@ -56,10 +57,12 @@ def load_labels(path: Path) -> list[dict[str, Any]]:
 
 
 def build_matrix(
-    rows: list[dict[str, Any]], repo: RunHistoryRepository
+    rows: list[dict[str, Any]],
+    repo: RunHistoryRepository,
+    kinds: dict[str, str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
     ids = [r["article_id"] for r in rows]
-    arts = build_detect_articles(repo, ids, {})
+    arts = build_detect_articles(repo, ids, kinds or {})
     meta = _fetch_meta(repo, ids)
     xs: list[list[float]] = []
     ys: list[float] = []
@@ -123,14 +126,19 @@ def main() -> int:
     ap.add_argument("--labels", default="data/mlx/deep_dive_labels.jsonl")
     ap.add_argument("--out", default=str(DEFAULT_MODEL_PATH))
     ap.add_argument("--holdout-windows", type=int, default=3, help="新しい側を検証に回す窓数")
+    # 本番の選抜 (deep_dive_selector) は種別を渡さない (kinds={} = 全て other) ので、既定のまま
+    # 学ぶのが本番と合う。--kinds は本番側も種別を渡すように変えるときだけ使う
+    ap.add_argument("--kinds", type=Path, default=None, help="種別の jsonl (本番と食い違う: 注意)")
     args = ap.parse_args()
 
     rows = load_labels(Path(args.labels))
     if not rows:
         print("教師がありません")
         return 1
-    repo = RunHistoryRepository()
-    x, y, kept = build_matrix(rows, repo)
+    repo, staged_kinds = overlay_if_given(
+        RunHistoryRepository(), kinds_path=args.kinds, axes_path=None
+    )
+    x, y, kept = build_matrix(rows, repo, staged_kinds)
     print(f"教師 {len(rows)} 行 → 特徴量が組めた {len(kept)} 行 / 列 {x.shape[1]}")
 
     # ⭐ **時系列分割**。無作為に割ると同じ窓の記事が両側に入り、成績が水増しされる。

@@ -103,3 +103,18 @@ def test_real_models_all_retrain_targets_have_a_dependency_row() -> None:
     files = {d.file for d in report.s_derived()}
     assert set(RETRAIN_TARGETS) <= files
     assert not report.unmapped
+
+
+def test_train_jobs_pass_staging_inputs_and_keep_deep_dive_plain() -> None:
+    from pathlib import Path
+
+    from scripts.s_switch_retrain import build_train_jobs
+
+    paths = {k: Path(f"/x/{k}") for k in ("kinds", "axes", "probes", "pair_llm")}
+    jobs = {n: argv for n, argv, _, _ in build_train_jobs("s:new", paths, pair_model="s:j")}
+    assert set(jobs) == {"detect", "severity_s3", "deep_dive", "relation", "pair"}
+    assert "--kinds" not in jobs["deep_dive"]  # 本番の選抜は種別を渡さない
+    assert jobs["detect"][jobs["detect"].index("--axes-model") + 1] == "s:new"
+    assert jobs["severity_s3"][jobs["severity_s3"].index("--max-missing") + 1] == "2"
+    assert "--llm-scores" in jobs["pair"] and "s:j" in jobs["pair"]
+    assert all("--out" not in argv for argv in jobs.values())  # 出力先は train が staging で足す

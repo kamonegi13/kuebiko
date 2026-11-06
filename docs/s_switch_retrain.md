@@ -17,7 +17,7 @@
 | severity_s3_model.json | severity_axes の問いの確率 (`p.*`)、event_kind | cat・type | `probe_model` | `scripts/train_severity_s3_model.py` |
 | deep_dive_model.json | event_kind | importance・category | なし | `scripts/train_deep_dive_ml.py` |
 | relation_model.json | event_kind (`kinds_*`) | 被害組織・国・業種の件数 | なし | `scripts/train_relation_model.py` |
-| pair_model.json | pair_judge (`llm_same`/`llm_known`)、event_kind | cos_summary 等 | `trained_llm_models` (現在 `[]`) | **repo に無い** (`data/mlx` の実験コード) |
+| pair_model.json | pair_judge (`llm_same`/`llm_known`)、event_kind | cos_summary 等 | `trained_llm_models` (現在 `[]`) | `scripts/train_pair_model.py` |
 
 対象外 (理由は `NOT_RETRAINED`): assign_model(.json/_probe) は gemma4:26b・s23i 固定、relevance_jp は埋込のみ、
 alert_dedup は pair_model の確率 (`p_pair`) を弱い特徴にするので **pair_model を学び直したら影響を見る**。
@@ -46,7 +46,11 @@ CPU だけの段 (学習・比較) は GPU 不要。
 `--dry-run` で先に確認)。**5 本とも同じ新しい S の特徴で学ぶ**。1 本だけ替えると、旧 S の分布で学んだ ML
 と新 S の入力が混ざる (D1 §6 の「片方だけの状態は避ける」と同じ理由)。出力 JSON の
 学習時の S の欄 (`axes_model`/`probe_model`/`trained_llm_models`) を新しい S にする。
-pair は repo 内に学習スクリプトが無い。最初の使い手 (SW-S26) の前に、学習を `scripts/` に置くか手順を固定する。
+pair は `scripts/train_pair_model.py` (旧 `data/eval/train_v5.py`、CPU のみ)。付け直しの入力は各 trainer の引数で渡す:
+detect = `--kinds --axes --axes-model`、severity_s3 = `--items --probe-file --max-missing --kinds`、
+relation = `--kinds`、pair = `--kinds --llm-scores --llm-model`、deep_dive = 付け直しの入力なし
+(本番の選抜が種別を渡さないため)。`scripts/s_switch_retrain.py train` がこれらを組んで staging へ出す。
+引数を省くと従来と同一。手順の詳細は運用者ローカルの `data/eval/s_switch_retrain_procedure.md`。
 
 ## 4. 合否の関門 (staging の JSON で測る。D1 の値を基準にする)
 

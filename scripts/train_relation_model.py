@@ -35,6 +35,7 @@ from src.eventnews.relation_pair_features import (  # noqa: E402
 )
 from src.eventnews.relations import _INDEXED, INCIDENT_TYPES, WINDOW_DAYS, _df  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
+from src.tools.staging_inputs import overlay_if_given  # noqa: E402
 
 GOLD = Path("data/mlx/event_relations_goldset_v3.jsonl")
 N_TREES = 300
@@ -111,8 +112,13 @@ def main() -> int:
     ap.add_argument("--min-precision", type=float, default=0.8)
     ap.add_argument("--out", type=Path, default=DEFAULT_MODEL_PATH)
     ap.add_argument("--dry-run", action="store_true")
+    # S 切替の付け直し (staging)。省けば従来どおり (種別 = DB の article_kinds)
+    ap.add_argument("--kinds", type=Path, default=None, help="種別の jsonl (article_id, kind)")
     args = ap.parse_args()
-    x, y = build_xy(RunHistoryRepository(), args.gold)
+    repo, _ = overlay_if_given(RunHistoryRepository(), kinds_path=args.kinds, axes_path=None)
+    x, y = build_xy(repo, args.gold)
+    if args.kinds is not None:
+        print(f"staging の種別 被覆: 欠け {repo.misses['kinds']} 件 (欠けは種別なしとして学ぶ)")
     if len(y) == 0:
         print("⚠ 組 0 件 — DATABASE_URL 無し (空 SQLite) を疑う", file=sys.stderr)
         return 1

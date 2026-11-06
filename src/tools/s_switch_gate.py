@@ -22,6 +22,8 @@ DETECT_AUC_LOWER_FLOOR: Final = -0.01
 DETECT_P_WORSE_MAX: Final = 0.2
 #: 深刻さ C の現行 (CLAUDE.md §7 10-28: 分割外 AUC 0.916・適合 0.69・回収 0.83)
 SEVC_BASELINE: Final[Mapping[str, float]] = {"auc": 0.916, "precision": 0.69, "recall": 0.83}
+#: ⚠ 暫定値の注記 (pair のずれ 0.10・relation の「回収が現行以上」): D1 に相当する既存の閾値が無く
+#: 置いた仮の値。**最初の切替 (SW-S26) で実測してから確定する** (確定までは判定の参考値)。
 #: relation の適合率の下限 (train_relation_model.py の --min-precision 既定)
 RELATION_MIN_PRECISION: Final = 0.8
 #: pair の 'same' 率の許容ずれ (cos の帯ごと、絶対値。10-29 版 45 の教訓: 半減は不可)

@@ -91,7 +91,7 @@ RETRAIN_PLAN: Final[tuple[RetrainStep, ...]] = (
     ),
     RetrainStep(
         "pair_model.json",
-        None,
+        "scripts/train_pair_model.py",
         ("pair_judge", "event_kind"),
         "同じ入力の対で 'same' 率が cos の帯ごとに現行から大きくずれない (10-29 版 45 の教訓) "
         "かつ正解集の適合率が現行を下回らない",

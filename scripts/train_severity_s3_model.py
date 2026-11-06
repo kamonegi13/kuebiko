@@ -38,6 +38,7 @@ from train_relation_model import export  # noqa: E402
 
 from src.cti import severity_c as sc  # noqa: E402
 from src.eval.severity_gold_marks import gold_exclusion  # noqa: E402
+from src.tools.staging_inputs import load_kinds_jsonl  # noqa: E402
 
 ITEMS = ROOT / "data/eval/sevcmp/items.jsonl"
 SEVDIR = ROOT / "data/eval/sevcmp"
@@ -50,10 +51,18 @@ REPEATS = 5
 TARGET_RECALL = 0.90
 
 
-def load_probes(model: str) -> dict[str, dict[str, float | None]]:
-    path = SEVDIR / f"probe_{model.replace(':', '_').replace('/', '_')}.jsonl"
+def load_probes(
+    model: str, path: Path | None = None, *, max_missing: int | None = None
+) -> dict[str, dict[str, float | None]]:
+    """``path`` 省略時は従来どおり ``SEVDIR/probe_<model>.jsonl``。``max_missing`` 指定時は
+    欠けた問いがそれを超える行を除く (学習集合 604 件は 2、``sevc_v5_train.MAX_MISSING``)。"""
+    path = path or SEVDIR / f"probe_{model.replace(':', '_').replace('/', '_')}.jsonl"
     rows = [json.loads(x) for x in path.open(encoding="utf-8") if x.strip()]
-    return {r["article_id"]: r["p_yes"] for r in rows}
+    return {
+        r["article_id"]: r["p_yes"]
+        for r in rows
+        if max_missing is None or int(r.get("missing", 0)) <= max_missing
+    }
 
 
 def feature_names(items: list[dict[str, Any]]) -> list[str]:
@@ -106,10 +115,23 @@ def main() -> int:
     ap.add_argument("--model", required=True, help="問いを当てたモデル (本番の fast ティアの割当)")
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--dry-run", action="store_true")
+    # S 切替の付け直し (staging)。省けば従来どおり (評価用 203 件 = sevcmp)。
+    # 本番モデルの学習集合 604 件は --items data/eval/sevc_v5/items.jsonl (--max-missing 2)
+    ap.add_argument("--items", type=Path, default=ITEMS, help="正解つき記事の jsonl")
+    ap.add_argument("--probe-file", type=Path, default=None, help="問いの確率の jsonl")
+    ap.add_argument(
+        "--max-missing", type=int, default=None, help="欠けた問いの上限 (超える行は除く)"
+    )
+    ap.add_argument(
+        "--kinds", type=Path, default=None, help="種別の jsonl (items の event_kind を置換)"
+    )
     args = ap.parse_args()
 
-    probes = load_probes(args.model)
-    all_items = [json.loads(x) for x in ITEMS.open(encoding="utf-8") if x.strip()]
+    probes = load_probes(args.model, args.probe_file, max_missing=args.max_missing)
+    all_items = [json.loads(x) for x in args.items.open(encoding="utf-8") if x.strip()]
+    if args.kinds is not None:
+        staged = load_kinds_jsonl(args.kinds)
+        all_items = [{**r, "event_kind": staged.get(r["article_id"], "")} for r in all_items]
     items = [
         r
         for r in all_items

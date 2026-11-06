@@ -59,7 +59,14 @@ RELABEL_STEPS = (
     "judgment_classify",
 )
 KIND_FILES = (MLX / "detect_gold_kinds.jsonl", MLX / "detect_heldout_kinds.jsonl")
-SEVC_ITEMS = ROOT / "data/eval/sevcmp/items.jsonl"
+#: 深刻さ C の学習集合 604 件 (10-28 に sevc_ci65_probe.py で当て直した集合)。
+#: 評価用の 203 件 (data/eval/sevcmp/items.jsonl、train_severity_s3_model.py の既定) とは別
+SEVC_ITEMS = ROOT / "data/eval/sevc_v5/items.jsonl"
+SEVC_MAX_MISSING = 2  # sevc_v5_train.MAX_MISSING と同じ
+MODEL_NAMES = ("detect", "severity_s3", "deep_dive", "relation", "pair")
+PAIR_SAMPLES = tuple(
+    ROOT / f"data/eval/{n}" for n in ("eval_sample.json", "eval_sample2.json", "eval_sample3.json")
+)
 DETECT_GOLD = MLX / "detect_goldset.jsonl"
 PROBE_TIMEOUT_S = 5
 
@@ -111,16 +118,37 @@ def cmd_plan(args: argparse.Namespace) -> int:
     return 1 if report.unmapped or report.unknown_files else 0
 
 
-def relabel_targets() -> dict[str, int]:
-    """付け直しの対象件数 (ファイルから。DB の読みは --dry-run でも要らない)。"""
-    kind_ids = {str(r["article_id"]) for f in KIND_FILES for r in _jsonl(f)}
-    sevc = _jsonl(SEVC_ITEMS)
-    gold = _jsonl(DETECT_GOLD)
+def _ids(rows: list[dict[str, Any]]) -> set[str]:
+    return {str(r["article_id"]) for r in rows}
+
+
+def relabel_targets() -> dict[str, set[str] | list[tuple[str, str]]]:
+    """付け直しの対象 (ファイルから。DB は要らない)。値は記事 id の集合、pair は対の一覧。
+
+    detect の学習 = 審判 ``detect_goldset`` (学習) + held-out (閾値)。深刻さ C の学習集合 = 604 件
+    (``data/eval/sevc_v5/items.jsonl``、10-28 に ``sevc_ci65_probe.py`` で当て直した集合)。
+    評価用の 203 件 (``data/eval/sevcmp``) は付け直しの対象に含めない (別の用途)。
+    relation の種別は DB の窓内の記事で決まり、ここでは数えない (DB が要る)。
+    """
+    gold = _ids(_jsonl(DETECT_GOLD))
+    heldout = _ids(_jsonl(KIND_FILES[1]))
+    sevc = _ids(_jsonl(SEVC_ITEMS))
+    pairs = [(str(p["a"]), str(p["b"])) for f in PAIR_SAMPLES for p in json.loads(f.read_text())]
     return {
-        "kind (detect の学習・held-out の記事)": len(kind_ids),
-        "kind (深刻さ C の正解集の記事)": len(sevc),
-        "axes (detect の学習集合)": len(gold),
-        "probes (深刻さ C の記事 × 問い 9)": len(sevc),
+        "kind": gold | heldout | sevc | {x for ab in pairs for x in ab},
+        "axes": gold | heldout,
+        "probes": sevc,
+        "pair_judge": pairs,
+    }
+
+
+def staging_paths(s: str) -> dict[str, Path]:
+    tag = s.replace(":", "_").replace("/", "_")
+    return {
+        "kinds": STAGING_DIR / f"kinds_{tag}.jsonl",
+        "axes": STAGING_DIR / f"axes_{tag}.jsonl",
+        "probes": ROOT / f"data/eval/sevc_v5/probe_{tag}.jsonl",
+        "pair_llm": STAGING_DIR / f"pair_llm_{tag}.jsonl",
     }
 
 
@@ -152,11 +180,51 @@ async def _relabel_kinds(model: str, ids: list[str], out: Path) -> int:
     return n
 
 
+async def _relabel_pairs(model: str, pairs: list[tuple[str, str]], out: Path) -> int:
+    """正解対の同一判定を新しい判定器で当て直す (``{"a","b","same": bool|null,"model"}``)。再開可。"""
+    from src.config_loader import load_app_config
+    from src.eventnews.pair_judge import build_prompt, judge_pair
+    from src.storage.run_history import RunHistoryRepository
+    from src.tools.model_tiers import Step, build_llm_for_ref
+
+    done = {(str(r["a"]), str(r["b"])) for r in _jsonl(out)}
+    todo = [p for p in pairs if p not in done]
+    arts = RunHistoryRepository().get_articles_by_ids(sorted({x for p in todo for x in p}))
+    llm = build_llm_for_ref(model, Step.PAIR_JUDGE, load_app_config())
+    out.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with out.open("a", encoding="utf-8") as fh:
+        for a_id, b_id in todo:
+            a, b = arts.get(a_id), arts.get(b_id)
+            if a is None or b is None:
+                continue
+            prompt = build_prompt(
+                a.title,
+                a.summary or "",
+                a.feed_title or "",
+                b.title,
+                b.summary or "",
+                b.feed_title or "",
+            )
+            same = await judge_pair(llm, prompt)
+            row = {"a": a_id, "b": b_id, "same": same, "model": model}
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            n += 1
+    return n
+
+
 def cmd_relabel(args: argparse.Namespace) -> int:
     targets = relabel_targets()
-    print(f"対象件数 (S={args.s}, 出力先 {STAGING_DIR}):")
-    for k, v in targets.items():
-        print(f"  {k}: {v}")
+    paths = staging_paths(args.s)
+    print(f"対象件数 (S={args.s}):")
+    print(
+        f"  kind (detect 学習+held-out・深刻さ C 604・pair の対の記事の和集合): {len(targets['kind'])}"
+    )
+    print(f"  axes (detect の学習集合 + held-out、本文入力の GPU 段): {len(targets['axes'])}")
+    print(f"  probes (深刻さ C の学習集合 604 件 × 問い 9 = {len(targets['probes']) * 9} 回)")
+    print(f"  pair_judge (正解対): {len(targets['pair_judge'])}")
+    print("  (relation の種別は DB の窓内の記事で決まる。deep_dive は本番が種別を使わない)")
+    print("出力先: " + ", ".join(f"{k}={v}" for k, v in paths.items()))
     if args.dry_run:
         print("--dry-run: LLM は呼ばない")
         return 0
@@ -166,61 +234,95 @@ def cmd_relabel(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    tag = args.s.replace(":", "_")
     if args.what in ("kind", "all"):
-        ids = sorted(
-            {str(r["article_id"]) for f in KIND_FILES for r in _jsonl(f)}
-            | {str(r["article_id"]) for r in _jsonl(SEVC_ITEMS)}
-        )
-        n = asyncio.run(_relabel_kinds(args.s, ids, STAGING_DIR / f"kinds_{tag}.jsonl"))
+        n = asyncio.run(_relabel_kinds(args.s, sorted(targets["kind"]), paths["kinds"]))  # type: ignore[arg-type]
         print(f"kind: {n} 件を書いた")
+    if args.what in ("pair", "all"):
+        model = args.pair_model or args.s
+        n = asyncio.run(_relabel_pairs(model, targets["pair_judge"], paths["pair_llm"]))  # type: ignore[arg-type]
+        print(f"pair_judge ({model}): {n} 件を書いた")
     if args.what in ("axes", "all"):
-        print(
-            "axes: GPU の段。D1 の型で  uv run python data/mlx/axes_body_backfill.py (出力は jsonl、本番の列は書かない)"
-        )
+        print("axes: GPU の段。D1 の型 data/mlx/axes_body_backfill.py の出力を")
+        print(f"      {paths['axes']} に置く (または train --axes-file)。本番の列は書かない")
     if args.what in ("probes", "all"):
         print(
-            f"probes: GPU の段。  uv run python data/mlx/sevcmp_probe.py {args.s}  -> data/eval/sevcmp/probe_{tag}.jsonl"
+            f"probes: GPU の段。sevc_ci65_probe.py の型で学習集合 604 件に当て直し -> {paths['probes']}"
         )
     return 0
 
 
-def cmd_train(args: argparse.Namespace) -> int:
-    """5 本 (pair 除く) を staging へ。pair は repo に学習スクリプトが無いので手順書の宿題。"""
-    STAGING_DIR.mkdir(parents=True, exist_ok=True)
-    metrics: dict[str, dict[str, float]] = {}
-    jobs = (
-        ("detect", ["scripts/train_detect_ml.py"], MODELS_DIR / "detect_model.json.staging", None),
+def build_train_jobs(
+    s: str, paths: dict[str, Path], *, pair_model: str | None
+) -> list[tuple[str, list[str], Path, Any]]:
+    """各 trainer の (名前, argv, staging の出力先, 標準出力の解析)。入力は staging の付け直し。"""
+    out = {n: MODELS_DIR / f"{n}_model.json.staging" for n in MODEL_NAMES}
+    pair_args = ["--kinds", str(paths["kinds"]), "--llm-scores", str(paths["pair_llm"])]
+    if pair_model:
+        pair_args += ["--llm-model", pair_model]
+    return [
+        (
+            "detect",
+            [
+                "scripts/train_detect_ml.py",
+                "--kinds",
+                str(paths["kinds"]),
+                "--axes",
+                str(paths["axes"]),
+                "--axes-model",
+                s,
+            ],
+            out["detect"],
+            None,
+        ),
         (
             "severity_s3",
-            ["scripts/train_severity_s3_model.py", "--model", args.s],
-            MODELS_DIR / "severity_s3_model.json.staging",
+            [
+                "scripts/train_severity_s3_model.py",
+                "--model",
+                s,
+                "--items",
+                str(SEVC_ITEMS),
+                "--probe-file",
+                str(paths["probes"]),
+                "--max-missing",
+                str(SEVC_MAX_MISSING),
+                "--kinds",
+                str(paths["kinds"]),
+            ],
+            out["severity_s3"],
             parse_severity_stdout,
         ),
-        (
-            "deep_dive",
-            ["scripts/train_deep_dive_ml.py"],
-            MODELS_DIR / "deep_dive_model.json.staging",
-            parse_deep_dive_stdout,
-        ),
+        # deep_dive: 本番の選抜は種別を渡さない (全て other) ので付け直しの入力は無い。DB から再学習
+        ("deep_dive", ["scripts/train_deep_dive_ml.py"], out["deep_dive"], parse_deep_dive_stdout),
         (
             "relation",
-            ["scripts/train_relation_model.py"],
-            MODELS_DIR / "relation_model.json.staging",
+            ["scripts/train_relation_model.py", "--kinds", str(paths["kinds"])],
+            out["relation"],
             parse_relation_stdout,
         ),
-    )
-    for name, argv, out, parse in jobs:
-        cmd = [
-            sys.executable,
-            *argv,
-            "--out",
-            str(out),
-            *(["--dry-run"] if args.dry_run and name != "deep_dive" else []),
-        ]
+        ("pair", ["scripts/train_pair_model.py", *pair_args], out["pair"], None),
+    ]
+
+
+def cmd_train(args: argparse.Namespace) -> int:
+    """5 本を staging へ (付け直した入力を引数で渡す)。**本番の config は書かない**。"""
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    paths = staging_paths(args.s)
+    if args.axes_file:
+        paths = {**paths, "axes": Path(args.axes_file)}
+    missing = [k for k, p in paths.items() if not p.exists()]
+    if missing:
+        print(f"付け直しの入力が未作成: {', '.join(f'{k}={paths[k]}' for k in missing)}")
+        if not args.dry_run:
+            print("先に relabel (と GPU の段) を済ませる", file=sys.stderr)
+            return 2
+    metrics: dict[str, dict[str, float]] = {}
+    for name, argv, out, parse in build_train_jobs(args.s, paths, pair_model=args.pair_model):
+        dry = ["--dry-run"] if args.dry_run and name != "deep_dive" else []
+        cmd = [sys.executable, *argv, "--out", str(out), *dry]
         print("$", " ".join(cmd))
-        if args.dry_run and name == "deep_dive":
-            print("  (deep_dive は --dry-run が無いので実行しない)")
+        if args.dry_run and (missing or name == "deep_dive"):
+            print("  (dry-run: 入力が未作成 / --dry-run が無いので実行しない)")
             continue
         proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)  # noqa: S603
         print(proc.stdout[-1500:])
@@ -229,7 +331,6 @@ def cmd_train(args: argparse.Namespace) -> int:
             return proc.returncode
         if parse:
             metrics[name] = parse(proc.stdout)
-    print("pair: 学習スクリプトが repo に無い (手順書 §3 の宿題)。staging は作らない")
     (STAGING_DIR / "train_metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
     )
@@ -270,10 +371,15 @@ def main() -> int:
     p.add_argument("--s", default="")
     p = sub.add_parser("relabel")
     p.add_argument("--s", required=True)
-    p.add_argument("--what", choices=("kind", "axes", "probes", "all"), default="all")
+    p.add_argument("--what", choices=("kind", "axes", "probes", "pair", "all"), default="all")
+    p.add_argument("--pair-model", default="", help="pair の判定器 (既定 = --s。現行は s23i 固定)")
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("train")
     p.add_argument("--s", required=True)
+    p.add_argument("--pair-model", default="", help="pair の判定器 (trained_llm_models に残す)")
+    p.add_argument(
+        "--axes-file", default="", help="付け直した軸の jsonl (既定は staging の axes_<S>)"
+    )
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("gate")
     p.add_argument("--metrics", required=True)
