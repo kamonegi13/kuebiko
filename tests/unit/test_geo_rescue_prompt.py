@@ -81,6 +81,18 @@ def test_theatre_reasons_match_en_and_ja() -> None:
     assert geo_theatre_reasons("Quarterly earnings beat expectations") == ()
 
 
+def test_theatre_reasons_match_plural_houthis() -> None:
+    assert "theatre:red_sea" in geo_theatre_reasons("Houthis claim new drone strike")
+    assert "theatre:red_sea" in geo_theatre_reasons("The Houthi's statement")
+
+
+def test_tehran_resolves_to_iran() -> None:
+    from src.cti.nation_gazetteer import nations_in_text
+
+    assert "IR" in nations_in_text("Tehran denies involvement")
+    assert "IR" in nations_in_text("テヘランが関与を否定")
+
+
 def test_theatre_hint_mode_default_is_shadow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("INGEST_GEO_THEATRE_HINT", raising=False)
     assert geo_theatre_hint_mode() == "shadow"

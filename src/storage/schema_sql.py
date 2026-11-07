@@ -673,6 +673,17 @@ CREATE TABLE IF NOT EXISTS org_identity_pairs (
     PRIMARY KEY (key_a, key_b, form)
 );
 
+-- 被害組織名の別名辞書 (2026-10-31、ORG-D-IMPL、PG _SCHEMA と対)。
+-- org_identity_pairs の「同一」判定を連結した写像 (照合キー → 代表キー) を実体化したもの。
+-- EVENTNEWS_ORG_ALIAS_SOURCE=dict のときだけ読まれる (既定 pairs では未使用)。
+-- source='pairs' は build_org_alias_dict.py が作る行。
+CREATE TABLE IF NOT EXISTS org_alias_dict (
+    alias_key     TEXT NOT NULL PRIMARY KEY,
+    canonical_key TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    updated_at    TEXT NOT NULL                 -- ISO8601 UTC
+);
+
 -- triage 影子記録 (2026-10-08、M4、docs/importance_relevance_redesign.md §6)。s23 投入前に
 -- 「平たい triage (TRIAGE_FLAT) + 取り込み時ヒント (src.cti.ingest_relevance)」の新しい
 -- 取り込み判定を、本番 (現行 triage) の判定と並べて記録する安全網。本番の判定は変えない

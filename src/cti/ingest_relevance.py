@@ -278,9 +278,10 @@ def _core_sir_reasons(text_lower: str) -> tuple[str, ...]:
 
 
 #: pir_geo_* の戦域 (サイバー以外の地政学) の語。RELEVANCE_CORE_SIRS (importance_v2 にも効く)
-#: には触れず、取り込みの保険としてだけ使う別の語彙 (2026-10-30)。語境界は keyword_in_text。
+#: には触れず、取り込みの保険としてだけ使う別の語彙 (2026-10-30)。語境界は keyword_in_text
+#: (語尾の複数形 s は別語扱いなので、複数形がよく出る語は複数形も並べる)。
 GEO_THEATRE_TERMS: dict[str, tuple[str, ...]] = {
-    "red_sea": ("houthi", "red sea", "bab el-mandeb", "フーシ", "紅海"),
+    "red_sea": ("houthi", "houthis", "red sea", "bab el-mandeb", "フーシ", "紅海"),
     "hormuz": ("strait of hormuz", "hormuz", "ホルムズ"),
     "israel_iran": (
         "israel iran",

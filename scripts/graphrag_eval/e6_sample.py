@@ -217,7 +217,7 @@ def c4_units(repo: Any, start: datetime) -> list[Unit]:
 def c6_units(repo: Any, times: dict[str, datetime], start: datetime) -> tuple[list[Unit], int]:
     """同じ統合先に吸収された 2 事象の焦点が conflict の組。(conflict の組, 窓内の組の総数)。"""
     from src.eventnews.identity.focus import CLASS_CONFLICT, focus_from_dict, match_focus
-    from src.ui.services.eventnews_focus_job import load_org_alias
+    from src.ui.services.eventnews_org_alias import load_org_alias
 
     with repo._connect() as conn:  # noqa: SLF001
         rows = conn.execute(

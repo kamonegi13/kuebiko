@@ -141,6 +141,9 @@ services:
       # 10-22 利用者判断: shadow のまま運用 (確認用で誤同一視 0/62 だが Opus 確認待ち)。既定を .env の値に揃えた。
       # 判定役は素の fast ティア (step org_identity_judge)。src/eventnews/org_identity.py
       EVENTNEWS_ORG_IDENTITY: ${EVENTNEWS_ORG_IDENTITY:-shadow}
+      # 別名の写像の読み元 (ORG-D-IMPL)。pairs=org_identity_pairs から毎回作る (従来) / dict=org_alias_dict を読む。
+      # dict の群化は EVENTNEWS_ORG_IDENTITY=1 のときだけ。辞書の更新は scripts/build_org_alias_dict.py のみ
+      EVENTNEWS_ORG_ALIAS_SOURCE: ${EVENTNEWS_ORG_ALIAS_SOURCE:-pairs}
       # 統合で、両事象が主題の CVE を持ち共有ゼロなら結ばない (2026-10-12)。統合 40 組で適合 75%→85%
       EVENTNEWS_MERGE_CVE_GATE: ${EVENTNEWS_MERGE_CVE_GATE:-1}
       # 伏字 (*) を含む被害組織名を群化・統合の結合から外す (2026-10-15)。14 日で 3 件止め、Opus 裁定で誤り 0/3
@@ -165,6 +168,12 @@ services:
       # detect の判断を部品に分けた形を記録だけする (2026-10-16、0=off / shadow / 1=置換)。shadow は本番の開設の後に
       # 予算 120 秒・書き手 6 件までで動き、結果は detect_bundles (variant=decompose_shadow) に残る
       DETECT_DECOMPOSE: ${DETECT_DECOMPOSE:-shadow}
+      # 分けた形の書き手の関門 (DETECT-WRITER-FIX、0=従来 / shadow=違反の印だけ記録 / 1=追加規則と開設の関門)
+      DETECT_WRITER_GATES: ${DETECT_WRITER_GATES:-0}
+      # スリープ復帰の時計の飛びを timeout の持ち時間から除く。off=従来 / shadow=飛びの検知をログに出すだけ(打ち切りは従来どおり) / on=延長
+      PIPELINE_TIMEOUT_SLEEP_AWARE: ${PIPELINE_TIMEOUT_SLEEP_AWARE:-shadow}
+      # timeout で失敗した当日の日次ジョブの自動再実行。0=off / shadow=該当をログに出すだけ(再実行しない) / 1=再実行
+      JOB_RECOVERY_TIMEOUT_RETRY: ${JOB_RECOVERY_TIMEOUT_RETRY:-shadow}
       # 台帳の割当に埋込の確認を課す (2026-09-24)。規則の「同じ情勢」率は anchor 31% /
       # token 4% (Opus 盲検 362 組) で、類似度 0.6 の確認で精度 28% → 67%・同じ情勢の 86% を残す。
       # off / shadow (落ちるはずの割当をログに出すだけ) / on (落ちた記事を未割当へ戻す)。

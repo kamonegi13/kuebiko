@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -43,6 +44,12 @@ NATURAL_FIRE_YIELD = timedelta(minutes=60)
 # 数時間オフライン」で 3 回使い切っても、12h 経てば自動で再挑戦が復活する
 # (週次/月次が次周期まで放置される穴を塞ぐ。壊れたジョブでも最大 3 回/12h に留まる)。
 ATTEMPT_DECAY = timedelta(hours=12)
+
+# timeout で失敗した当日の日次ジョブを、周期の stale 待ち (27h) を待たず再実行する窓。
+# 日次の「直近周期に成功あり」は昨日の成功でも満たされるため、今朝の失敗が放置される
+# (2026-11-05 朝ブリーフ)。窓内の失敗 + それ以後の成功なし、のときだけ対象にする。
+TIMEOUT_RETRY_WINDOW = timedelta(hours=12)
+TIMEOUT_NOTE_PREFIX = "timeout exceeded"
 
 _PERIOD: dict[Cadence, timedelta] = {
     "daily": timedelta(days=1),
@@ -86,6 +93,7 @@ def decide(
     busy: bool,
     next_fire_at: datetime | None,
     heavy_conflict: bool,
+    timeout_failed_since_success: bool = False,
 ) -> RecoveryDecision:
     """1 ジョブの回復判定 (純関数、テスト対象)。"""
     cadence = job_cadence(job)
@@ -97,7 +105,8 @@ def decide(
         return RecoveryDecision(job.id, "skip", "実行実績なし (新設ジョブは対象外)")
 
     stale_after = _PERIOD[cadence] + _GRACE[cadence]
-    if last_success_at is not None and now - last_success_at < stale_after:
+    timeout_retry = timeout_failed_since_success and cadence == "daily"
+    if not timeout_retry and last_success_at is not None and now - last_success_at < stale_after:
         return RecoveryDecision(job.id, "healthy", "直近周期に成功あり")
 
     # ここから「直近周期の成功が無い」= 回復候補
@@ -115,6 +124,8 @@ def decide(
         return RecoveryDecision(job.id, "defer", "heavy ジョブ帯と重複 (次 tick で再判定)")
     if last_attempt_at is not None and now - last_attempt_at < RETRY_SPACING:
         return RecoveryDecision(job.id, "defer", "前回試行から間隔不足")
+    if timeout_retry:
+        return RecoveryDecision(job.id, "retry", "timeout で失敗し以後の成功なし → 自動再実行")
     return RecoveryDecision(job.id, "retry", f"直近 {cadence} 周期に成功なし → 自動再実行")
 
 
@@ -186,6 +197,34 @@ def _job_history(job: JobDef, db_path: Any) -> tuple[datetime | None, bool, date
         conn.close()
 
 
+def _timeout_failed_since_success(
+    job: JobDef, db_path: Any, *, now: datetime, last_success: datetime | None
+) -> bool:
+    """窓内に timeout で失敗した run があり、それ以後に成功が無いか (pipeline のみ)。"""
+    if job.kind != "pipeline":
+        return False
+    from src.storage.db_backend import connect
+
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT started_at FROM runs WHERE pipeline = ? AND status = 'failed'"
+            " AND note LIKE ? ORDER BY started_at DESC LIMIT 1",
+            (job.id, f"{TIMEOUT_NOTE_PREFIX}%"),
+        ).fetchone()
+    finally:
+        conn.close()
+    failed_at = _parse_ts(row["started_at"]) if row else None
+    if failed_at is None or now - failed_at > TIMEOUT_RETRY_WINDOW:
+        return False
+    return last_success is None or last_success < failed_at
+
+
+def _timeout_retry_mode() -> str:
+    raw = os.environ.get("JOB_RECOVERY_TIMEOUT_RETRY", "0").strip().lower()
+    return "shadow" if raw == "shadow" else ("on" if raw in ("1", "on", "true") else "off")
+
+
 def _count_running(db_path: Any) -> int:
     from src.storage.db_backend import connect
 
@@ -204,6 +243,7 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
     jobs = load_jobs()
     busy = _count_running(db_path) > 0
     decisions: list[RecoveryDecision] = []
+    timeout_mode = _timeout_retry_mode()
 
     for job in jobs:
         if job_cadence(job) is None:
@@ -222,6 +262,16 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
         except Exception:  # noqa: BLE001 — 未登録 job は yield 判定なしで進む
             next_fire = None
 
+        timeout_failed = False
+        if timeout_mode != "off":
+            try:
+                timeout_failed = _timeout_failed_since_success(
+                    job, db_path, now=now, last_success=last_success
+                )
+            except Exception as e:  # noqa: BLE001 — 補助の判定。失敗しても従来の判定で続行
+                _log.warning("job_recovery_timeout_check_failed", job_id=job.id, error=str(e)[:160])
+        if timeout_failed and timeout_mode == "shadow":
+            _log.warning("job_recovery_timeout_retry_shadow", job_id=job.id)
         d = decide(
             job,
             now=now,
@@ -233,6 +283,7 @@ async def run_job_recovery(scheduler: Any, db_path: Any) -> list[RecoveryDecisio
             busy=busy or is_running(job.id),
             next_fire_at=next_fire,
             heavy_conflict=heavy_window_conflict(job, jobs, now_jst),
+            timeout_failed_since_success=timeout_failed and timeout_mode == "on",
         )
         decisions.append(d)
 
