@@ -3118,6 +3118,67 @@ class TestRunPipelineTimeBudget:
         assert cast(AsyncMock, llm.generate_structured).call_count == 0
 
     @pytest.mark.asyncio
+    async def test_budget_capped_article_is_deferred_not_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Any,
+        template: jinja2.Template,
+        pipeline_cfg: PipelineConfig,
+        app_cfg: Any,
+    ) -> None:
+        """持ち時間の頭打ちで切れた記事は errors に入れず繰越に数え、既読化しない (2026-10-31)。"""
+        import asyncio as _asyncio
+
+        from src.pipeline import orchestrator as orch
+        from src.storage.run_history import RunHistoryRepository, RunRecord
+        from src.tools.url_normalizer import url_hash
+
+        # Arrange: 予算 1 秒・後処理の確保 0.9 秒 -> 記事の timeout は下限 0.05 秒
+        monkeypatch.setenv(orch._ARTICLE_TIMEOUT_BUDGET_CAP_ENV, "1")
+        monkeypatch.setattr(orch, "_POST_LOOP_RESERVE_SECONDS", 0.9)
+        monkeypatch.setattr(orch, "_MIN_ARTICLE_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setenv(orch._DEADLINE_RESERVE_ENV, "0")
+        url = "https://x.com/slow"
+        articles = [_article(article_id="slow-1", url=url)]
+
+        async def _slow_extract(*_a: object, **_k: object) -> ExtractionResult:
+            await _asyncio.sleep(5)
+            return _extraction_success()
+
+        extractor = AsyncMock()
+        extractor.extract.side_effect = _slow_extract
+        llm = _build_llm_with_outputs([_summary_output()])
+        publishers = _build_publishers()
+        repo = RunHistoryRepository(db_path=tmp_path / "cap.db")
+        run_id = repo.start_run(
+            RunRecord(started_at=datetime.now(UTC), pipeline="direct-rss-fetch", dry_run=False)
+        )
+
+        # Act
+        started = _asyncio.get_running_loop().time()
+        result = await run_pipeline(
+            config=app_cfg,
+            pipeline=pipeline_cfg,
+            source=_build_source(articles),
+            extractor=extractor,
+            llm=llm,
+            publishers=publishers,
+            template=template,
+            dedup_repo=repo,
+            run_id=run_id,
+            time_budget_seconds=1.0,
+        )
+        elapsed = _asyncio.get_running_loop().time() - started
+
+        # Assert: 頭打ちで切れた (5 秒待たない)・errors なし・繰越に数える・未既読で再処理される
+        assert elapsed < 3.0
+        assert result.errors == []
+        assert result.deferred_count == 1
+        assert result.posted == 0
+        assert not repo.is_url_seen(url_hash(url))
+        assert "@here" not in str(_post_mock(publishers["ops"]).call_args_list)
+
+    @pytest.mark.asyncio
     async def test_generous_budget_processes_all(
         self,
         template: jinja2.Template,

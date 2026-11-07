@@ -93,3 +93,32 @@ async def test_triage_client_is_built_from_triage_step(captured: dict[str, Any])
     assert summary_llm.step is Step.ARTICLE_SUMMARY
     # 要約用を使い回していないこと (以前の欠陥はここが同一インスタンスだった)
     assert triage_llm is not summary_llm
+
+
+@pytest.mark.asyncio
+async def test_relevance_cascade_llm_built_by_default(
+    captured: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RELEVANCE_JP_CASCADE_LLM", raising=False)
+
+    await dispatch.run_default(dry_run=True)
+
+    assert Step.RELEVANCE_JP_CASCADE in captured["steps"]
+    cascade = captured["kwargs"]["relevance_jp_cascade_llm"]
+    assert isinstance(cascade, _StubLLM)
+    assert cascade.step is Step.RELEVANCE_JP_CASCADE
+
+
+@pytest.mark.asyncio
+async def test_relevance_cascade_llm_not_built_when_flag_off(
+    captured: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P0-21: 旗 0 では run_default の経路で Step.RELEVANCE_JP_CASCADE の client を組まない。"""
+    monkeypatch.setenv("RELEVANCE_JP_CASCADE_LLM", "0")
+
+    await dispatch.run_default(dry_run=True)
+
+    assert Step.RELEVANCE_JP_CASCADE not in captured["steps"]
+    assert captured["kwargs"]["relevance_jp_cascade_llm"] is None
+    # triage 本体は影響を受けない
+    assert Step.TRIAGE in captured["steps"]

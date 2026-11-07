@@ -204,6 +204,10 @@ services:
       TTP_LIMIT: ${TTP_LIMIT:-on}
       # 取得の公平枠の feed 巡回順 (10-31、rotate=時刻で開始位置を回す / name=旧挙動 / oldest)。戻すなら .env に RSS_FAIR_ORDER=name を書き kuebiko を再作成
       RSS_FAIR_ORDER: ${RSS_FAIR_ORDER:-rotate}
+      # 収集 run の soft deadline の予備秒 (10-31 に 300 → 150。後処理は実測 5 秒。**source.type=rss のみ**、grok_email・web_scraper_cluster は 300 のまま)。戻すなら .env に PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS=300 を書き kuebiko を再作成
+      PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS: ${PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS:-150}
+      # 着手済み記事の timeout を持ち時間の残り − 90 秒で頭打ちにする (1=有効 / 0=従来の 600 秒固定)。切れた記事は errors でなく繰越
+      ARTICLE_TIMEOUT_BUDGET_CAP: ${ARTICLE_TIMEOUT_BUDGET_CAP:-1}
       # triage の影の記録の 1 回あたりの件数 (0 で止める、10-31 から run の最後で回す)
       TRIAGE_SHADOW_PER_RUN: ${TRIAGE_SHADOW_PER_RUN:-20}
       # 記事本文 (body / body_ja / linked_context) を N 日で NULL 化する日次 purge。0 = 消さない
@@ -237,6 +241,8 @@ services:
       # 重複 alert の影の記録 (alert_dedup_shadow)。2026-11-06 に .env の 0 で止めた (SHADOW-STOP)。
       # 以前は compose が渡しておらず .env の値がコンテナに届かなかった (コードの既定 1 のまま)
       ALERT_DEDUP_SHADOW: ${ALERT_DEDUP_SHADOW:-1}
+      # 日本関連性カスケードの LLM の段 (影の記録 triage_shadow 専用、配信に効かない)。0 で組まない (P0-21、2026-11-07)
+      RELEVANCE_JP_CASCADE_LLM: ${RELEVANCE_JP_CASCADE_LLM:-1}
       # 翻訳の化け (固有名詞・識別子・数字) を検出したら訳を保存せず原文を出す (2026-10-12)。
       # on = 語・識別子・数字のどれでも / ident = 識別子 (CVE・ハッシュ・IP 等) の化けだけ
       # (語・数字は log のみ) / shadow = 全部 log のみ / off。修復はしない。既定 shadow:
