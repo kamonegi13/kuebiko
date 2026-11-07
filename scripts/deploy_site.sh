@@ -90,6 +90,12 @@ rm -rf "$COMBINED"
 mkdir -p "$COMBINED/adv"
 cp -R "$PUBLIC_DIST/." "$COMBINED/"
 cp -R "$MIRROR_DIST/." "$COMBINED/adv/"
+# 配布用の添付ファイル (任意)。data/public_files/ (gitignore) にあれば /files/ にそのまま載せる。
+# Pages は 1 ファイル 25 MiB まで — 大きいものは分けてから置く
+if [ -d "$ROOT/data/public_files" ]; then
+  mkdir -p "$COMBINED/files"
+  cp -R "$ROOT/data/public_files/." "$COMBINED/files/"
+fi
 # アドバンスドの静的ファイルは /adv/、画面の URL は /app/…。/app/ の下には実在のファイルを置かない
 # (/app/* の書き換えは実在のファイルより先に当たり、置くと資産まで HTML に化ける — 2026-10-05 本番で確認)。
 
