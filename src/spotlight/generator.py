@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.assessment.context import AssessmentContext, build_assessment_context
 from src.cti.source_basis import classify_source_tier
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.pir.evaluator import evaluate_pir_matches
 from src.pir.models import Pir
 from src.spotlight.models import KeyEvent, SpotlightPeriod, SpotlightRecord
@@ -421,16 +422,39 @@ async def generate_spotlight(
         insert_after_candidates,
     )
 
+    graph_block = ""
     if graph_context_enabled():
         try:
             block = build_graph_context(
                 RunHistoryRepository(), [c["article_id"] for c in candidate_articles], end
             )
             prompt = insert_after_candidates(prompt, block)
+            graph_block = block
             _log.info("spotlight_graph_context", pir_id=pir.id, lines=block.count("\n- "))
         except Exception as e:  # noqa: BLE001
             _log.warning("spotlight_graph_context_failed", pir_id=pir.id, error=str(e))
 
+    record_generation_input(
+        step="pir_spotlight",
+        model=llm.model,
+        product_kind="spotlight",
+        product_id=f"{pir.id}:{period_type}:{start.isoformat()}",
+        prompt_text=prompt,
+        input_data=lambda: {
+            "pir_id": pir.id,
+            "period_type": period_type,
+            "period_label": period_label,
+            "period_start": start,
+            "period_end": end,
+            "lookback_hours": lookback_hours,
+            "candidate_limit": candidate_limit,
+            "candidates": candidate_articles,
+            "ledger_situations": ledger_situations,
+            "previous_spotlight": previous_spotlight,
+            "freshness": assessment.freshness,
+            "graph_context": graph_block,
+        },
+    )
     _log.info(
         "spotlight_llm_call_start",
         pir_id=pir.id,

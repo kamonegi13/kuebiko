@@ -10,6 +10,7 @@ LLM プロンプト (prompts/digest/weekly_recap.j2 等) は
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import jinja2
 
@@ -24,6 +25,7 @@ from src.digest.recap_render import (
     uncited_articles,
 )
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
@@ -165,6 +167,25 @@ async def generate_digest(
     selected_ids = [c.article_id for c in candidates]
     prompt = _render_prompt(template_name, candidates=candidates, period_label=period_label)
     max_tokens = _digest_max_tokens(len(candidates))
+
+    def _input_data() -> dict[str, Any]:
+        return {
+            "template_name": template_name,
+            "period_label": period_label,
+            "max_tokens": max_tokens,
+            "think": think,
+            "selected_ids": selected_ids,
+            "candidates": candidates,
+        }
+
+    record_generation_input(
+        step="digest_deep_dive",
+        model=str(getattr(llm, "model", "")),
+        product_kind="deep_dive",
+        product_id=f"{template_name}:{period_label}",
+        prompt_text=prompt,
+        input_data=_input_data,
+    )
     _log.info(
         "digest_llm_request",
         template=template_name,
@@ -186,9 +207,23 @@ async def generate_digest(
         # ⚠ **前回の出力を見せてから直させる**。1 度これを忘れて「次の主題は本文が
         #   短すぎます: ○○」とだけ渡し、モデルはその主題を知らないまま作り直して
         #   見出しも本文も空の節を返した (2026-09-20)。
+        retry_prompt = prompt + _previous_output(out) + _rewrite_hint(missing, thin, sources)
+        record_generation_input(
+            step="digest_deep_dive",
+            model=str(getattr(llm, "model", "")),
+            product_kind="deep_dive",
+            product_id=f"{template_name}:{period_label}:retry1",
+            prompt_text=retry_prompt,
+            input_data=lambda: {
+                **_input_data(),
+                "retry_uncited_ids": [str(m) for m in missing],
+                "retry_thin_sections": [str(t) for t in thin],
+                "retry_previous_output": out.model_dump(),
+            },
+        )
         retry = await _generate_sections(
             llm,
-            prompt + _previous_output(out) + _rewrite_hint(missing, thin, sources),
+            retry_prompt,
             max_tokens=max_tokens,
             think=think,
         )

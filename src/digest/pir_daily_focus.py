@@ -21,6 +21,7 @@ import jinja2
 from src.config_loader import AppConfig, DiscordChannel, PipelineConfig
 from src.digest import focus_v6
 from src.logging_config import get_logger
+from src.ops.generation_inputs import record_generation_input
 from src.pir.evaluator import PirMatch, evaluate_pir_matches
 
 # PIR 定義は DB が正本 (yaml は初回の種)。2026-09-29 まで yaml を読んでいて、DB で削除した
@@ -342,6 +343,18 @@ async def _generate_llm_summary(
         _log.warning("daily_focus_v6_prompt_unavailable_fallback", pir_id=pir.id)
     prompt = v6_prompt if v6_prompt is not None else _build_prompt(pir, matches)
     max_tokens = focus_v6.MAX_TOKENS if v6_prompt is not None else _LLM_MAX_TOKENS
+    record_generation_input(
+        step="pir_daily_focus",
+        model=str(getattr(llm, "model", "")),
+        product_kind="pir_daily_focus",
+        product_id=f"{pir.id}:{datetime.now(ZoneInfo('Asia/Tokyo')).date().isoformat()}",
+        prompt_text=prompt,
+        input_data=lambda: {
+            "pir_id": pir.id,
+            "v6": v6_prompt is not None,
+            "matches": matches,
+        },
+    )
     gate_on = fidelity_gate_enabled()
     max_attempts = _FIDELITY_GATE_MAX_ATTEMPTS if gate_on else 1
 
