@@ -39,8 +39,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import grok_link_sample as gls  # noqa: E402
 
 PREREG_NAME = "grok_link_fetch"
-PREREG_COMMIT = "76068603"  # prereg の最終コミット (文書のみの訂正。生成の経路は fbb9a0e8 から不変)
-GENERATION_BASE = "fbb9a0e8"  # 封をしたコミット。生成の経路はここから変えない (§6.4)
+PREREG_COMMIT = "84efeabb"  # prereg の最終コミット (11-09 封の移動の記録。経路の中身は不変)
+GENERATION_BASE = "3eac54a8"  # 封 (11-09 に fbb9a0e8 から移動、prereg §10)。生成の経路はここから変えない (§6.4)
 EXPECTED_MODEL = "kuebiko-sft:s24ci65"
 EXPECTED_DIGEST = "56d89a8cee6e6a15aa8b83fb1f264691c251f1ce61edb389a7b12c6d59c5f315"
 OUT_DIR = Path("data/eval/grok_link_judge_1107")
