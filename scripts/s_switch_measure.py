@@ -49,14 +49,34 @@ def measure_severity(
     probe_model: str,
     kinds_path: Path | None,
     max_missing: int,
-) -> dict[str, float]:
-    """分割外の確率 (trainer と同じ分割・反復) から AUC と、固定の閾値 0.50 での適合・回収。"""
+    current_probe_file: Path | None = None,
+    current_probe_model: str | None = None,
+) -> dict[str, Any]:
+    """分割外の確率 (trainer と同じ分割・反復) から AUC と、固定の閾値 0.50 での適合・回収。
+
+    ``current_probe_file`` を渡すと、現行の入力 (現行の S の確率 + items の種別) を**同じ手順**で
+    測った値を ``current`` に入れる。関門はこれを基準にする (CLAUDE.md §7 の 0.916 / 0.69 / 0.83 は
+    丸めた値で、同じ手順の現行は 0.9158 / 0.686 / 0.831 = 適合で現行そのものが定数を下回る。11-10 実測)。
+    ``kinds_missing`` = 付け直しの種別に無い学習記事の数 (種別が空になり分布が変わる。0 であること)。
+    """
     sev = importlib.import_module("scripts.train_severity_s3_model")
-    probes = sev.load_probes(probe_model, probe_file, max_missing=max_missing)
     items = _jsonl(items_path)
+    result: dict[str, Any] = {}
+    if current_probe_file is not None and current_probe_model:
+        result["current"] = _severity_metrics(
+            sev,
+            items,
+            sev.load_probes(current_probe_model, current_probe_file, max_missing=max_missing),
+        )
     if kinds_path is not None:
         staged = load_kinds_jsonl(kinds_path)
+        result["kinds_missing"] = float(sum(r["article_id"] not in staged for r in items))
         items = [{**r, "event_kind": staged.get(r["article_id"], "")} for r in items]
+    probes = sev.load_probes(probe_model, probe_file, max_missing=max_missing)
+    return {**_severity_metrics(sev, items, probes), **result}
+
+
+def _severity_metrics(sev: Any, items: list[dict[str, Any]], probes: Any) -> dict[str, float]:
     _, _, x, y = sev.build_dataset(items, probes)
     p = sev.oof_probabilities(x, y)
     precision, recall = precision_recall_at(y, p, SEVC_FIXED_THRESHOLD)
@@ -201,6 +221,8 @@ def measure_detect(
     new_axes: Path,
     axes_model: str,
     control_kinds: Path | None,
+    control_axes: Path | None = None,
+    control_axes_model: str | None = None,
 ) -> dict[str, Any]:
     """goldset の同じ記事・同じ y・同じ fold で 現行 / 対照 / 新 の AUC を比べる。
 
@@ -208,6 +230,9 @@ def measure_detect(
     解消) + DB の軸 / 新 = 新 S の種別 + 新 S の軸。新 vs 対照が S の効果、対照 vs 現行が欠けを埋めた
     効果 (参考)。対照が無ければ新 vs 現行だけ (交絡あり、ゲートが警告する)。
     開設の件数は審判が要るので None (手で足す)。
+    ``control_axes`` (現行の S で付け直した軸) を渡すと対照の軸も付け直しの値にする。新の軸は
+    付け直し (本文入力・今の prompt) なので、対照が DB の軸のままだと「S の効果」に付け直しの
+    揺れ (同じ S でも 7 欄中 1 欄が変わる例あり、11-10 試走) が混ざる。
     """
     from src.storage.run_history import RunHistoryRepository
     from src.tools.staging_inputs import load_axes_jsonl
@@ -219,11 +244,14 @@ def measure_detect(
     }
     new_k = load_kinds_jsonl(new_kinds)
     ctrl_k = load_kinds_jsonl(control_kinds) if control_kinds else None
+    ctrl_axes = load_axes_jsonl(control_axes, control_axes_model) if control_axes else None
     axes = load_axes_jsonl(new_axes, axes_model)
     have_db = plain.get_severity_axes(sorted(gold))
     ids = sorted(a for a in gold if a in axes and a in have_db and a in new_k)
     if ctrl_k is not None:
         ids = [a for a in ids if a in ctrl_k]
+    if ctrl_axes is not None:
+        ids = [a for a in ids if a in ctrl_axes]
     if not ids:
         raise SystemExit("記事 0 件 — DATABASE_URL か staging の軸・種別を疑う")
     y = np.array([int(bool(gold[a]["gold_open"])) for a in ids])
@@ -239,7 +267,8 @@ def measure_detect(
         result.update(_diff_summary(auc_cur, auc_new))
         result.update({"new_only_opens": None, "current_only_opens": None})
         return result
-    x_ctrl = _arm_matrix(StagingOverlayRepo(plain, kinds=ctrl_k), ids, ctrl_k)
+    x_ctrl = _arm_matrix(StagingOverlayRepo(plain, kinds=ctrl_k, axes=ctrl_axes), ids, ctrl_k)
+    result["control_axes"] = "relabeled" if ctrl_axes is not None else "db"
     auc_ctrl = _fold_aucs(x_ctrl, y)
     result["mean_auc_control"] = float(np.mean(auc_ctrl))
     result["new_vs_control"] = {

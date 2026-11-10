@@ -232,9 +232,18 @@ def scope_skip_reason(basis: str, event_kind: str) -> str | None:
 
 
 async def probe_questions(
-    *, title: str, published: str | None, body: str, config: Any, client: Any
+    *,
+    title: str,
+    published: str | None,
+    body: str,
+    config: Any,
+    client: Any,
+    model: str | None = None,
 ) -> dict[str, float | None]:
-    """9 問の P(はい)。失敗した問いは None (``decision_probe`` が握って None を返す)。"""
+    """9 問の P(はい)。失敗した問いは None (``decision_probe`` が握って None を返す)。
+
+    ``model`` は S の切替前の付け直し用 (省略 = ``Step.SEVERITY_AXES`` の割当、本番の経路)。
+    """
     from src.tools.decision_probe import probe_choice
     from src.tools.model_tiers import Step
 
@@ -246,6 +255,7 @@ async def probe_questions(
             CHOICES,
             config=config,
             client=client,
+            model=model,
         )
         out[qid] = None if probs is None else probs[CHOICES[0]]
     return out

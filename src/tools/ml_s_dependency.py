@@ -46,7 +46,10 @@ NOT_RETRAINED: Final[Mapping[str, str]] = {
     "assign_model.json": "S 由来は synthesis_detect (s23i 固定) の弱い特徴のみ。S では動かない",
     "assign_model_probe.json": "logprob は gemma4:26b 固定 (assign_evidence_judge)。S では動かない",
     "relevance_jp_model.json": "埋込ティアのみ (S ではない)",
-    "alert_dedup_model.json": "p_pair (pair_model の確率) と要約由来の弱い特徴。pair 後に確認",
+    "alert_dedup_model.json": (
+        "p_pair (pair_model の確率) と要約由来の弱い特徴。pair 後に確認"
+        " (11-06 SHADOW-STOP で記録を止め、ALERT_DEDUP_EVENT も off = 今は消費者なし)"
+    ),
 }
 
 

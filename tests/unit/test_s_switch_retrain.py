@@ -118,3 +118,47 @@ def test_train_jobs_pass_staging_inputs_and_keep_deep_dive_plain() -> None:
     assert jobs["severity_s3"][jobs["severity_s3"].index("--max-missing") + 1] == "2"
     assert "--llm-scores" in jobs["pair"] and "s:j" in jobs["pair"]
     assert all("--out" not in argv for argv in jobs.values())  # 出力先は train が staging で足す
+
+
+def test_severity_gate_prefers_current_measured_with_same_procedure() -> None:
+    # 同じ手順で測った現行 (定数より低い) を基準にすると、現行と同等の新は合格する
+    current = {"auc": 0.9158, "precision": 0.686, "recall": 0.831}
+    res = gate_severity_s3({**current, "current": current})
+    assert res.status == PASS
+    assert "同じ手順" in res.detail and res.warning == ""
+    worse = gate_severity_s3({"auc": 0.90, "precision": 0.686, "recall": 0.84, "current": current})
+    assert worse.status == FAIL
+
+
+def test_severity_gate_unmeasured_when_kinds_do_not_cover_training_items() -> None:
+    m = {"auc": 0.92, "precision": 0.7, "recall": 0.9, "kinds_missing": 165.0}
+    assert gate_severity_s3(m).status == UNMEASURED
+
+
+def test_severity_gate_without_current_uses_constants_and_warns() -> None:
+    res = gate_severity_s3({"auc": 0.9158, "precision": 0.686, "recall": 0.831})
+    assert res.status == FAIL  # 同じ手順の現行は適合で定数 0.69 に届かない
+    assert res.warning
+
+
+def test_control_job_uses_relabeled_axes_when_given() -> None:
+    from pathlib import Path
+
+    from scripts.s_switch_retrain import build_control_job
+
+    _, argv_db, out, _ = build_control_job("s:cur", Path("/x/kinds"))
+    assert "--axes" not in argv_db
+    assert out.name == "detect_model.json.staging_control"
+    _, argv, _, _ = build_control_job("s:cur", Path("/x/kinds"), Path("/x/axes"))
+    assert argv[argv.index("--axes") + 1] == "/x/axes"
+    assert argv[argv.index("--axes-model") + 1] == "s:cur"
+
+
+def test_staging_paths_out_dir_redirects_all_four() -> None:
+    from pathlib import Path
+
+    from scripts.s_switch_retrain import staging_paths
+
+    paths = staging_paths("kuebiko-sft:s26", Path("/tmp/trial"))
+    assert all(p.parent == Path("/tmp/trial") for p in paths.values())
+    assert paths["probes"].name == "probe_kuebiko-sft_s26.jsonl"

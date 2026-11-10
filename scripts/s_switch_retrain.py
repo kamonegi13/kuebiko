@@ -7,12 +7,15 @@
     uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --dry-run     # 対象件数だけ
     uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --what kind
     uv run python scripts/s_switch_retrain.py relabel --s <現行の S> --what kind  # detect の対照腕の種別
+    uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --what axes    # 軸 (本文入力、GPU)
+    uv run python scripts/s_switch_retrain.py relabel --s <新しい S> --what probes  # 深刻さ C の 9 問 (GPU)
+    # 試走: --limit 3 --max-seconds 50 --out-dir <scratch> (Ollama を長く占有しない)
     uv run python scripts/s_switch_retrain.py train --s <新しい S> [--control-s <現行の S>] [--dry-run]
     uv run --with scikit-learn python scripts/s_switch_retrain.py measure --s <新しい S> [--control-s <現行の S>]
     uv run python scripts/s_switch_retrain.py gate --metrics <json>
     uv run python scripts/s_switch_retrain.py swap | revert                         # 手順の表示のみ
 
-読みは ``DATABASE_URL`` (読み取り) 経由。LLM を呼ぶ段 (relabel の kind・pair) は GPU/Ollama を使うので
+読みは ``DATABASE_URL`` (読み取り) 経由。LLM を呼ぶ段 (relabel の kind・axes・probes・pair) は GPU/Ollama を使うので
 本番コンテナの外・空き時間に流す (CLAUDE.md §7)。``LLM_USAGE_LOCAL=0`` を強制する。
 """
 
@@ -146,14 +149,84 @@ def relabel_targets() -> dict[str, set[str] | list[tuple[str, str]]]:
     }
 
 
-def staging_paths(s: str) -> dict[str, Path]:
+def staging_paths(s: str, out_dir: Path | None = None) -> dict[str, Path]:
+    """付け直しの出力先。``out_dir`` (試走用) を渡すと 4 本ともその下に置く。"""
     tag = s.replace(":", "_").replace("/", "_")
+    base = out_dir or STAGING_DIR
     return {
-        "kinds": STAGING_DIR / f"kinds_{tag}.jsonl",
-        "axes": STAGING_DIR / f"axes_{tag}.jsonl",
-        "probes": ROOT / f"data/eval/sevc_v5/probe_{tag}.jsonl",
-        "pair_llm": STAGING_DIR / f"pair_llm_{tag}.jsonl",
+        "kinds": base / f"kinds_{tag}.jsonl",
+        "axes": base / f"axes_{tag}.jsonl",
+        "probes": (out_dir or ROOT / "data/eval/sevc_v5") / f"probe_{tag}.jsonl",
+        "pair_llm": base / f"pair_llm_{tag}.jsonl",
     }
+
+
+def _load_axes_items(ids: list[str]) -> list[Any]:
+    """軸の付け直しの入力 (DB の読み取りのみ。本文・公開日は本番の読み手 fetch_bodies を流用)。"""
+    from src.cti.severity_axes import fetch_bodies, fetch_published
+    from src.storage.run_history import RunHistoryRepository
+    from src.tools.s_switch_relabel import RelabelItem
+
+    os.environ["AXES_FROM_BODY"] = "1"  # 本文入力 (D1 以降の本番と同じ prompt)。このプロセスだけ
+    repo = RunHistoryRepository()
+    arts = repo.get_articles_by_ids(ids)
+    bodies, published = fetch_bodies(repo, ids), fetch_published(repo, ids)
+    return [
+        RelabelItem(
+            a, arts[a].title or "", arts[a].summary or "", bodies.get(a, ""), published.get(a)
+        )
+        for a in ids
+        if a in arts
+    ]
+
+
+async def _relabel_axes(model: str, ids: list[str], out: Path, limit: int, max_s: float) -> Any:
+    from src.config_loader import load_app_config
+    from src.cti.severity_axes import classify_axes
+    from src.tools.model_tiers import Step, build_llm_for_ref
+    from src.tools.s_switch_relabel import relabel_axes
+
+    items = _load_axes_items(ids)
+    llm = build_llm_for_ref(model, Step.SEVERITY_AXES, load_app_config())
+
+    async def classify(title: str, summary: str, body: str, pub: str | None) -> Any:
+        axes = await classify_axes(llm, title, summary, body, pub)
+        return None if axes is None else axes.model_dump()
+
+    return await relabel_axes(
+        items, model=model, out=out, classify=classify, limit=limit, max_seconds=max_s
+    )
+
+
+async def _relabel_probes(model: str, out: Path, limit: int, max_s: float) -> Any:
+    """深刻さ C の学習集合 604 件 (items.jsonl に本文込み、DB 不要) に新しい S で 9 問を当てる。"""
+    import ollama
+
+    from src.config_loader import load_app_config
+    from src.cti.severity_c import QUESTION_IDS, probe_questions
+    from src.tools.model_tiers import STEP_REGISTRY, Step
+    from src.tools.s_switch_relabel import items_from_sevc_rows, relabel_probes
+
+    config = load_app_config()
+    host = os.environ.get("OLLAMA_BASE_URL") or config.ollama_base_url
+    timeout = STEP_REGISTRY[Step.SEVERITY_AXES].timeout_seconds
+    client = ollama.AsyncClient(host=host, timeout=timeout)
+
+    async def probe(title: str, pub: str | None, body: str) -> Any:
+        return await probe_questions(
+            title=title, published=pub, body=body, config=config, client=client, model=model
+        )
+
+    items = items_from_sevc_rows(_jsonl(SEVC_ITEMS))
+    return await relabel_probes(
+        items,
+        model=model,
+        out=out,
+        probe=probe,
+        question_ids=QUESTION_IDS,
+        limit=limit,
+        max_seconds=max_s,
+    )
 
 
 async def _relabel_kinds(model: str, ids: list[str], out: Path) -> int:
@@ -219,7 +292,8 @@ async def _relabel_pairs(model: str, pairs: list[tuple[str, str]], out: Path) ->
 
 def cmd_relabel(args: argparse.Namespace) -> int:
     targets = relabel_targets()
-    paths = staging_paths(args.s)
+    paths = staging_paths(args.s, Path(args.out_dir) if args.out_dir else None)
+    lim, max_s = args.limit, args.max_seconds
     print(f"対象件数 (S={args.s}):")
     print(
         f"  kind (detect 学習+held-out・深刻さ C 604・pair の対の記事の和集合): {len(targets['kind'])}"
@@ -232,26 +306,28 @@ def cmd_relabel(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("--dry-run: LLM は呼ばない")
         return 0
-    if not os.environ.get("DATABASE_URL"):
+    # probes は items.jsonl に本文込みで DB を読まない。他の段は記事を DB から読む
+    if args.what != "probes" and not os.environ.get("DATABASE_URL"):
         print(
             "⚠ DATABASE_URL が無い (空 SQLite を読むことになる)。読み取りの接続を設定する",
             file=sys.stderr,
         )
         return 1
     if args.what in ("kind", "all"):
-        n = asyncio.run(_relabel_kinds(args.s, sorted(targets["kind"]), paths["kinds"]))  # type: ignore[arg-type]
+        kind_ids = sorted(str(x) for x in targets["kind"])
+        n = asyncio.run(_relabel_kinds(args.s, kind_ids[:lim] if lim else kind_ids, paths["kinds"]))
         print(f"kind: {n} 件を書いた")
     if args.what in ("pair", "all"):
         model = args.pair_model or args.s
-        n = asyncio.run(_relabel_pairs(model, targets["pair_judge"], paths["pair_llm"]))  # type: ignore[arg-type]
+        pairs = list(targets["pair_judge"])
+        n = asyncio.run(_relabel_pairs(model, pairs[:lim] if lim else pairs, paths["pair_llm"]))  # type: ignore[arg-type]
         print(f"pair_judge ({model}): {n} 件を書いた")
     if args.what in ("axes", "all"):
-        print("axes: GPU の段。D1 の型 data/mlx/axes_body_backfill.py の出力を")
-        print(f"      {paths['axes']} に置く (または train --axes-file)。本番の列は書かない")
+        r = asyncio.run(_relabel_axes(args.s, sorted(targets["axes"]), paths["axes"], lim, max_s))  # type: ignore[arg-type]
+        print(f"axes (本文入力): {r} -> {paths['axes']}")
     if args.what in ("probes", "all"):
-        print(
-            f"probes: GPU の段。sevc_ci65_probe.py の型で学習集合 604 件に当て直し -> {paths['probes']}"
-        )
+        r = asyncio.run(_relabel_probes(args.s, paths["probes"], lim, max_s))
+        print(f"probes: {r} -> {paths['probes']}")
     return 0
 
 
@@ -308,17 +384,42 @@ def build_train_jobs(
     ]
 
 
-def build_control_job(control_s: str, control_kinds: Path) -> tuple[str, list[str], Path, Any]:
-    """detect の対照腕 (現行の S で付け直した種別 + DB の軸)。種別の欠けを埋めた効果だけを持つ。
+def build_control_job(
+    control_s: str, control_kinds: Path, control_axes: Path | None = None
+) -> tuple[str, list[str], Path, Any]:
+    """detect の対照腕 (現行の S で付け直した種別 + 軸)。
 
-    新 vs 対照が S の効果、対照 vs 現行が欠けの解消の効果 (参考)。軸は DB (現行の S) のまま。
+    新 vs 対照が S の効果、対照 vs 現行が付け直しの効果 (欠けの解消・揺れ、参考)。
+    ``control_axes`` (``relabel --s <現行の S> --what axes`` の出力) が無ければ軸は DB のまま
+    (この場合の新 vs 対照には、軸の付け直しの揺れが S の効果に混ざる)。
     """
-    return (
-        "detect_control",
-        ["scripts/train_detect_ml.py", "--kinds", str(control_kinds), "--kinds-model", control_s],
-        MODELS_DIR / "detect_model.json.staging_control",
-        None,
+    argv = ["scripts/train_detect_ml.py", "--kinds", str(control_kinds), "--kinds-model", control_s]
+    if control_axes is not None:
+        argv += ["--axes", str(control_axes), "--axes-model", control_s]
+    return ("detect_control", argv, MODELS_DIR / "detect_model.json.staging_control", None)
+
+
+def _control_axes(control_s: str) -> Path | None:
+    """対照の軸 (現行の S の付け直し) があればそのパス。無ければ None と警告。"""
+    path = staging_paths(control_s)["axes"]
+    if path.exists():
+        return path
+    print(f"⚠ 対照の軸が無い ({path}): 対照は DB の軸。軸の付け直しの揺れが新 vs 対照に混ざる")
+    return None
+
+
+def current_severity_probes() -> tuple[str | None, Path | None]:
+    """現行の深刻さ C が学んだ確率のファイル (``severity_s3_model.json`` の ``probe_model`` から)。
+
+    関門の基準を「同じ手順で測った現行」にするため。無ければ (None, None) = 定数の基準。
+    """
+    model = json.loads((MODELS_DIR / "severity_s3_model.json").read_text(encoding="utf-8")).get(
+        "probe_model"
     )
+    if not model:
+        return None, None
+    path = staging_paths(str(model))["probes"]
+    return (str(model), path) if path.exists() else (None, None)
 
 
 def _write_metrics(computed: dict[str, Any]) -> None:
@@ -352,7 +453,7 @@ def cmd_train(args: argparse.Namespace) -> int:
             if not args.dry_run:
                 return 2
             missing = [*missing, "control_kinds"]
-        jobs.append(build_control_job(args.control_s, control_kinds))
+        jobs.append(build_control_job(args.control_s, control_kinds, _control_axes(args.control_s)))
     else:
         print("⚠ 対照腕なし (--control-s 無し): detect の新 vs 現行は交絡する。gate が警告する")
     metrics: dict[str, dict[str, float]] = {}
@@ -400,12 +501,15 @@ def cmd_measure(args: argparse.Namespace) -> int:
     for name in wanted:
         try:
             if name == "severity_s3":
+                cur_model, cur_probes = current_severity_probes()
                 computed[name] = sm.measure_severity(
                     items_path=SEVC_ITEMS,
                     probe_file=paths["probes"],
                     probe_model=args.s,
                     kinds_path=paths["kinds"],
                     max_missing=SEVC_MAX_MISSING,
+                    current_probe_file=cur_probes,
+                    current_probe_model=cur_model,
                 )
             elif name == "relation":
                 computed[name] = sm.measure_relation(
@@ -430,6 +534,8 @@ def cmd_measure(args: argparse.Namespace) -> int:
                     new_axes=paths["axes"],
                     axes_model=args.s,
                     control_kinds=control if control is not None and control.exists() else None,
+                    control_axes=_control_axes(args.control_s) if args.control_s else None,
+                    control_axes_model=args.control_s or None,
                 )
                 if control is None or not control.exists():
                     print(
@@ -486,6 +592,13 @@ def main() -> int:
     p.add_argument("--what", choices=("kind", "axes", "probes", "pair", "all"), default="all")
     p.add_argument("--pair-model", default="", help="pair の判定器 (既定 = --s。現行は s23i 固定)")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--limit", type=int, default=0, help="段ごとに当てる件数の上限 (試走用、0 = 全部)"
+    )
+    p.add_argument(
+        "--max-seconds", type=float, default=0.0, help="軸・確率の段の時間の上限 (試走用、0 = なし)"
+    )
+    p.add_argument("--out-dir", default="", help="出力先 (試走用。既定は staging)")
     p = sub.add_parser("train")
     p.add_argument("--s", required=True)
     p.add_argument("--pair-model", default="", help="pair の判定器 (trained_llm_models に残す)")

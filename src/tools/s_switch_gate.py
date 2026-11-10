@@ -24,6 +24,9 @@ DETECT_AUC_LOWER_FLOOR: Final = -0.01
 DETECT_P_WORSE_MAX: Final = 0.2
 #: 深刻さ C の現行 (CLAUDE.md §7 10-28: 分割外 AUC 0.916・適合 0.69・回収 0.83)
 SEVC_BASELINE: Final[Mapping[str, float]] = {"auc": 0.916, "precision": 0.69, "recall": 0.83}
+SEVC_CONSTANT_WARNING: Final = (
+    "基準が定数 (別の分割の値)。measure に現行の確率を渡して同じ手順の現行を基準にする"
+)
 #: ⚠ 暫定値の注記 (pair のずれ 0.10・relation の「回収が現行以上」): D1 に相当する既存の閾値が無く
 #: 置いた仮の値。**最初の切替 (SW-S26) で実測してから確定する** (確定までは判定の参考値)。
 #: relation の適合率の下限 (train_relation_model.py の --min-precision 既定)
@@ -139,14 +142,32 @@ def gate_detect(m: Mapping[str, Any]) -> GateResult:
 def gate_severity_s3(
     m: Mapping[str, Any], baseline: Mapping[str, float] = SEVC_BASELINE
 ) -> GateResult:
+    """新が現行を下回らないか。``m["current"]`` (同じ手順で測った現行) があればそれを基準にする。
+
+    無ければ定数 ``SEVC_BASELINE`` (CLAUDE.md §7 10-28 の値)。定数は丸めた値で、同じ手順の現行
+    (11-10: AUC 0.9158・適合 0.686・回収 0.831) は適合で定数を下回るので、警告を付ける。
+    種別の付け直しが学習記事を覆っていない (``kinds_missing`` > 0) ときは未測定にする。
+    """
     keys = ("auc", "precision", "recall")
     vals = {k: _num(m, k) for k in keys}
     absent = [k for k, v in vals.items() if v is None]
     if absent:
         return _missing("severity_s3", absent)
-    bad = [f"{k} {vals[k]:.3f} < {baseline[k]:.3f}" for k in keys if (vals[k] or 0.0) < baseline[k]]
+    if (_num(m, "kinds_missing") or 0.0) > 0:
+        return GateResult(
+            "severity_s3",
+            UNMEASURED,
+            f"種別の付け直しに無い学習記事 {_num(m, 'kinds_missing'):.0f} 件 (relabel --what kind を全件)",
+        )
+    raw = m.get("current")
+    cur: Mapping[str, Any] = raw if isinstance(raw, Mapping) else {}
+    measured = all(_num(cur, k) is not None for k in keys)
+    base = {k: float(_num(cur, k) or 0.0) for k in keys} if measured else dict(baseline)
+    bad = [f"{k} {vals[k]:.3f} < {base[k]:.3f}" for k in keys if (vals[k] or 0.0) < base[k]]
     detail = "; ".join(bad) or "AUC・適合・回収とも現行以上"
-    return GateResult("severity_s3", FAIL if bad else PASS, detail)
+    detail += " (基準 = 同じ手順で測った現行)" if measured else " (基準 = 定数)"
+    warning = "" if measured else SEVC_CONSTANT_WARNING
+    return GateResult("severity_s3", FAIL if bad else PASS, detail, warning)
 
 
 def gate_deep_dive(m: Mapping[str, Any], current_corr: float | None) -> GateResult:
