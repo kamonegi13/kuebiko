@@ -50,9 +50,16 @@ def test_v2_arms_fix_recall_flags() -> None:
     assert dc.resolve_arm_flags(raw, V2) == {"current": OFF, "ship": ON}
 
 
+def test_v2_accepts_ship_only_form_unspecified_is_zero() -> None:
+    raw = ",".join(f"ship:{k}=1" for k in dc.ARM_FLAG_KEYS)
+    assert dc.resolve_arm_flags(raw, V2) == {"current": OFF, "ship": ON}
+
+
 def test_v2_rejects_flags_that_differ_from_prereg() -> None:
     with pytest.raises(SystemExit):
         dc.resolve_arm_flags("ship:DETECT_CLAIM_SALVAGE=1", V2)
+    with pytest.raises(SystemExit):
+        dc.resolve_arm_flags("current:DETECT_CLAIM_SALVAGE=1", V2)
 
 
 def test_other_profiles_keep_env_driven_flags() -> None:
