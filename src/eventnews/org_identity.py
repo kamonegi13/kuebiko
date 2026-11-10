@@ -34,7 +34,7 @@ from src.logging_config import get_logger
 from src.tools.decision_probe import probe_choice
 from src.tools.model_tiers import Step, resolve_step_model
 from src.tools.probe_thresholds import effective_threshold
-from src.tools.task_prefix import is_prefix_trained
+from src.tools.task_prefix import is_prefix_trained, prefix_for
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -47,6 +47,17 @@ if TYPE_CHECKING:
 _log = get_logger(__name__)
 
 ORG_IDENTITY_ENV = "EVENTNEWS_ORG_IDENTITY"
+#: 1 のとき、org_identity を学習したモデル (s26 系統、``task_prefix.STEP_TRAINED_ONLY_FAMILIES``) に
+#: 限り判定役に使う (既定 0 = SFT は拒否)。切替 (SW-S26) で 1 にする。
+SFT_JUDGE_ENV = "ORG_IDENTITY_SFT_JUDGE"
+#: 1 のとき、org の問いを Opus の基準 (親会社と子会社・運営会社とサービス名も同じ組織) の文面にする
+#: (既定 0 = 文面不変)。教師 (org_identity_s26) のラベルの基準に問いを合わせる。SW-S26 で 1 にする。
+ORG_QUESTION_V2_ENV = "ORG_IDENTITY_ORG_QUESTION_V2"
+#: Opus の判定の rubric (org-alias-d-v1) の「同じ組織」の定義。org の問い v2 の文面の SSoT。
+OPUS_SAME_ORG_CRITERIA = (
+    "表記違い・略称・翻訳・旧社名・運営会社とそのサービス名・親会社と子会社は同じ組織"
+)
+_LEGACY_SAME_ORG_CRITERIA = "表記違い・略称・翻訳・旧社名は同じ組織"
 Mode = Literal["off", "shadow", "on"]
 
 #: 本文の cos がこれ以上の記事の組だけ名前を調べる (30 日の実測: 1 時間あたり 5〜6 組)。
@@ -77,6 +88,15 @@ _STUB_EXTRA_CHARS = 8
 MAX_CONTEXTS_PER_NAME_PAIR = 3
 _CHOICES = ("Yes", "No")
 _SENTENCE_SPLIT = re.compile(r"(?<=[。.!?！？\n])\s*")
+
+
+def _flag_on(name: str) -> bool:
+    return os.environ.get(name, "0").strip() == "1"
+
+
+def sft_judge_allowed(model: str) -> bool:
+    """SFT の判定役を通すか: 旗が 1 で、そのモデルが org_identity の印つきで学習した系統のとき。"""
+    return _flag_on(SFT_JUDGE_ENV) and bool(prefix_for(Step.ORG_IDENTITY_JUDGE, model))
 
 
 def org_identity_mode() -> Mode:
@@ -211,11 +231,20 @@ def same_event_question(name_a: str, ctx_a: str, name_b: str, ctx_b: str) -> str
     )
 
 
-def same_org_question(name_a: str, ctx_a: str, name_b: str, ctx_b: str) -> str:
-    """問い 2: 同じ組織か (表記違い・略称・翻訳・旧社名は同じ、似た名前の別法人は違う)。"""
+def same_org_question(
+    name_a: str, ctx_a: str, name_b: str, ctx_b: str, *, v2: bool | None = None
+) -> str:
+    """問い 2: 同じ組織か (表記違い・略称・翻訳・旧社名は同じ、似た名前の別法人は違う)。
+
+    ``v2`` (None = 旗 ``ORG_IDENTITY_ORG_QUESTION_V2``) が真なら、同じ組織の定義を Opus の基準
+    (``OPUS_SAME_ORG_CRITERIA``: 運営会社とサービス名・親会社と子会社を足す) にする。
+    """
+    use_v2 = _flag_on(ORG_QUESTION_V2_ENV) if v2 is None else v2
+    criteria = OPUS_SAME_ORG_CRITERIA if use_v2 else _LEGACY_SAME_ORG_CRITERIA
     return (
-        "次の2つの組織名が、同じ組織を指しているか判定してください。表記違い・略称・翻訳・"
-        "旧社名は同じ組織、別の組織(似た名前の別法人・同業他社・同時期に似た被害に遭った別法人を"
+        "次の2つの組織名が、同じ組織を指しているか判定してください。"
+        + criteria
+        + "、別の組織(似た名前の別法人・同業他社・同時期に似た被害に遭った別法人を"
         "含む)は違います。\n"
         + _CAUTION
         + _NAMES_AND_CONTEXTS.format(name_a=name_a, ctx_a=ctx_a, name_b=name_b, ctx_b=ctx_b)
@@ -260,12 +289,15 @@ async def judge_name_pair(
     """名前の組が同じ組織を指す余裕 (``SAME_MARGIN`` 以上で同一)。判定できなければ None
     (呼び手は何も畳まない)。2 つの問いを 1 回ずつ読み、小さい方の余裕を返す。
 
-    ⚠ 判定役が SFT 済みモデル (s23i 等) のときは**判定しない**。自由形式の yes/no に常に Yes と
-    答える偏りがあり (10-11 実測)、全組が「同一」になって被害者の違う別事象を群化が束ねてしまう。
+    ⚠ 判定役が SFT 済みモデル (s23i 等) のときは**判定しない**。ただし旗
+    ``ORG_IDENTITY_SFT_JUDGE=1`` で、org_identity を学習した系統 (s26) に限り通す
+    (しきい値の行が無ければ判定せず何も畳まない)。
+    s23i 等は自由形式の yes/no に常に Yes と答える偏りがあり (10-11 実測)、全組が「同一」になって
+    被害者の違う別事象を群化が束ねてしまう。
     fast ティアが SFT のとき、素の 26B は step 上書き ``step:org_identity_judge`` で明示する。
     """
     model = resolve_step_model(Step.ORG_IDENTITY_JUDGE, db_path=db_path)
-    if is_prefix_trained(model):
+    if is_prefix_trained(model) and not sft_judge_allowed(model):
         _log.warning("org_identity_judge_is_sft", model=model)
         return None
     event = await _probe_logit(

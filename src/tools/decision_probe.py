@@ -35,7 +35,7 @@ from src.tools.llm_client import LLMForbiddenModelError, validate_model_name
 from src.tools.local_usage import record_probe_usage
 from src.tools.model_tiers import STEP_REGISTRY, Step, is_external_model, resolve_step_model
 from src.tools.ollama_timing import extract_timing
-from src.tools.task_prefix import PREFIX_TRAINED_MODELS, is_prefix_trained
+from src.tools.task_prefix import PREFIX_TRAINED_MODELS, is_prefix_trained, prefix_for
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
@@ -86,14 +86,14 @@ def _question_with_choices(question: str, choices: tuple[str, ...]) -> str:
     return f"{question}\n\n1語だけで答えてください ({choices_str})。"
 
 
-def _json_biased_prompt(question: str, choices: tuple[str, ...]) -> str:
+def _json_biased_prompt(question: str, choices: tuple[str, ...], task_marker: str = "") -> str:
     """JSON 課題で学習した SFT モデル向け raw プロンプト (Gemma chat テンプレート手組み)。
 
     Ollama 自身のテンプレート適用を経由せず、chat ターンを手組みし、さらにアシスタント
     側の返答を ``_JSON_ANSWER_PREFIX`` まで前置して続きを読む (素の 1 語応答だと最初の
     トークンが ``{"`` に寄ってしまうのを避ける対策、s1_common.py 踏襲)。
     """
-    body = _question_with_choices(question, choices)
+    body = task_marker + _question_with_choices(question, choices)
     return f"<start_of_turn>user\n{body}<end_of_turn>\n<start_of_turn>model\n{_JSON_ANSWER_PREFIX}"
 
 
@@ -202,7 +202,7 @@ async def probe_choice(
         if _is_json_biased(model):
             response = await active_client.generate(
                 model=model,
-                prompt=_json_biased_prompt(question, choices),
+                prompt=_json_biased_prompt(question, choices, prefix_for(step, model)),
                 raw=True,
                 logprobs=True,
                 top_logprobs=top_logprobs,

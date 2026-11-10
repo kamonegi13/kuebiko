@@ -367,3 +367,19 @@ def test_gate_check_schema_inspects_n20_tasks_and_translation_non_json() -> None
     res = gate.check_schema(rows)
     assert res.uninspectable == {}
     assert res.violations == 2  # 空 bluf の event_news と JSON の和訳
+
+
+@pytest.mark.parametrize(
+    ("payload", "ok"),
+    [
+        ({"answer": "Yes"}, True),
+        ({"answer": "No"}, True),
+        ({"answer": "yes"}, False),
+        ({"answer": "Yes", "reason": "x"}, False),
+        ({}, False),
+        ("Yes", False),
+    ],
+)
+def test_org_identity_schema(payload: Any, ok: bool) -> None:
+    errs = gate.SCHEMA_CHECKS["org_identity"](payload)
+    assert (errs == []) is ok

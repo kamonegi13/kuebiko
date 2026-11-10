@@ -141,6 +141,9 @@ services:
       # 10-22 利用者判断: shadow のまま運用 (確認用で誤同一視 0/62 だが Opus 確認待ち)。既定を .env の値に揃えた。
       # 判定役は素の fast ティア (step org_identity_judge)。src/eventnews/org_identity.py
       EVENTNEWS_ORG_IDENTITY: ${EVENTNEWS_ORG_IDENTITY:-shadow}
+      # s26 の org_identity 学習を使う旗 (SW-S26 で両方 1、片方だけにしない。docs/org_identity_s26_switch.md)
+      ORG_IDENTITY_SFT_JUDGE: ${ORG_IDENTITY_SFT_JUDGE:-0}
+      ORG_IDENTITY_ORG_QUESTION_V2: ${ORG_IDENTITY_ORG_QUESTION_V2:-0}
       # 別名の写像の読み元 (ORG-D-IMPL)。pairs=org_identity_pairs から毎回作る (従来) / dict=org_alias_dict を読む。
       # dict の群化は EVENTNEWS_ORG_IDENTITY=1 のときだけ。辞書の更新は scripts/build_org_alias_dict.py のみ
       EVENTNEWS_ORG_ALIAS_SOURCE: ${EVENTNEWS_ORG_ALIAS_SOURCE:-pairs}
