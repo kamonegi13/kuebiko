@@ -162,8 +162,8 @@ services:
       EVENTNEWS_MERGE_REPORT_PERIOD_GATE: ${EVENTNEWS_MERGE_REPORT_PERIOD_GATE:-1}
       # 事象の焦点を毎時の群化・統合の後に記録する (2026-10-24 F0、記録だけで判断には使わない)。0 で止まる
       EVENTNEWS_FOCUS_RECORD: ${EVENTNEWS_FOCUS_RECORD:-1}
-      # 導いた事象の線の日次の写し (2026-11-02 GRAPH-G0、記録だけ)。GRAPH-G0-SHIP まで 0。1 で書く
-      EVENT_EDGES_RECORD: ${EVENT_EDGES_RECORD:-0}
+      # 導いた事象の線の日次の写し (2026-11-02 GRAPH-G0、記録だけ・LLM なし)。GRAPH-G0-SHIP (11-14) で 1。0 で止まる
+      EVENT_EDGES_RECORD: ${EVENT_EDGES_RECORD:-1}
       # 統合の判断で、事象の焦点の照合が conflict の組を結ばない (2026-10-24 F2)。on / shadow (記録だけ) / off。
       # 新標本 31 組で止めた組の本当に別 84% (区間 67〜93%)、30 日の再現で 37 件。docs/eventnews_focus_redesign.md §9.4
       EVENTNEWS_MERGE_FOCUS_GATE: ${EVENTNEWS_MERGE_FOCUS_GATE:-on}
