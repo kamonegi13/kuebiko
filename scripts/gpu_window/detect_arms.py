@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -398,6 +399,21 @@ def run_all(args: argparse.Namespace, cert: Mapping[str, Any]) -> int:
     return 0 if n_ok == len(units) and not hit else 1
 
 
+def inputs_meta_for_manifest(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """inputs の meta を manifest の関門 (短い id・数字だけ) に通る形にする。
+
+    本番との差の説明文は 64 字を超えうる (11-09 の GPU-A2 で 69 字で止まった)。文は凍結済みの
+    inputs の meta に残っているので、manifest には件数と sha256 だけを書いて照合できるようにする。
+    """
+    devs = list(meta.get("deviations") or [])
+    blob = json.dumps(devs, ensure_ascii=False).encode("utf-8")
+    return {
+        **{k: meta.get(k) for k in ("seed", "frozen_at", "excluded")},
+        "deviations_count": len(devs),
+        "deviations_sha256": hashlib.sha256(blob).hexdigest(),
+    }
+
+
 def base_manifest(
     cert: Mapping[str, Any],
     inputs_sha: str,
@@ -416,7 +432,7 @@ def base_manifest(
         "prereg_blob_sha256": cert["prereg_blob_sha256"],
         "head_sha": cert["head_sha"],
         "inputs_sha256": inputs_sha,
-        "inputs_meta": {k: meta.get(k) for k in ("seed", "frozen_at", "excluded", "deviations")},
+        "inputs_meta": inputs_meta_for_manifest(meta),
         "r18": {"version": R18_VERSION, "occupancy": None, "note": "道具は閉包を計算しない (別段)"},
         "detect_model_sha256": dc.verify_detect_model(),
         "model_tiers_version": model_tiers_version(),
