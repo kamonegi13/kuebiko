@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import sys
@@ -412,6 +413,9 @@ async def test_eventnews_records_base_prompt_and_survives_failure(
     stored: list[dict[str, Any]] = []
 
     class _EventRepo:
+        def atomic(self) -> Any:  # PG-ATOMIC-FIX (runner が版の記録を 1 トランザクションにした) に合わせる
+            return contextlib.nullcontext()
+
         def record_event_version(self, **kwargs: Any) -> None:
             stored.append(kwargs)
 
