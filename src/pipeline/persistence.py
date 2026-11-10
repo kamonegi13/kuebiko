@@ -527,8 +527,12 @@ def _persist_article_entities(
     feed_url: str = "",
     subject_actor_ids: str | None = None,
     subject_actor_source: str | None = None,
+    raise_on_error: bool = False,
 ) -> None:
     """Phase Diamond: 1 article の Diamond Model entities を永続化。
+
+    ``raise_on_error=True`` なら保存の失敗を握らず再送出する (呼び出し側の
+    ``repo.atomic()`` をロールバックさせる用。既定は従来どおり警告ログのみ)。
 
     保存対象:
         - **Adversary**: actor (canonical id、detected_actor_ids 由来。Phase 0 F2)
@@ -768,6 +772,8 @@ def _persist_article_entities(
             article_id=article_id,
             error=str(e),
         )
+        if raise_on_error:
+            raise
 
 
 # CVE-YYYY-NNNN[N] (1999-2099 想定、ioc_extractor._CVE_RE と整合)

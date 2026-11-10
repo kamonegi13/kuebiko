@@ -58,7 +58,7 @@ class ActorProfileMixin(RunHistoryRepositoryBase):
     ) -> int:
         """指定月の行を全置換する (決定論射影の再蒸留に対応)。返り値は書込行数。"""
         now_iso = _to_iso(datetime.now(UTC))
-        with self._connect() as conn:
+        with self.atomic(), self._connect() as conn:
             conn.execute("DELETE FROM actor_observed_profile WHERE month = ?", (month,))
             for p in profiles:
                 conn.execute(

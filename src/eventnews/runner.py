@@ -331,8 +331,13 @@ async def _generate_version(
     llm: LLMClient,
     now: datetime,
     new_facts_json: str,
+    *,
+    bump_current_version_at: datetime | None = None,
 ) -> tuple[GateResult | None, str | None]:
     """生成 + 関門 + 版記録。失敗は fail-open (None を返す)。
+
+    ``bump_current_version_at`` を渡すと、版の記録と current_version の更新を 1 つの
+    トランザクションにする (途中の失敗で「版だけ増えた/番号だけ進んだ」を残さない)。
 
     関門の照合対象は build_prompt が番号を振ったのと同一の選抜列 (select_members は
     決定論 + 安定 sort なので、selected を渡せば番号と照合対象が一致する)。
@@ -445,20 +450,26 @@ async def _generate_version(
             sources=len(selected),
             facts=len(gate.draft.facts),
         )
-    repo.record_event_version(
-        item_id=item.snapshot.item_id,
-        version=version,
-        generated_at=now,
-        model=llm.model,
-        prompt_version=_prompt_version(),
-        headline=gate.draft.headline,
-        body_json=body_json,
-        new_facts_json=new_facts_json,
-        verified_at=now if gate.verified else None,
-        dropped_lines=gate.dropped_lines,
-        repaired_ids=gate.repaired_ids,
-        prompt_text=prompt_text,
-    )
+    with repo.atomic():
+        repo.record_event_version(
+            item_id=item.snapshot.item_id,
+            version=version,
+            generated_at=now,
+            model=llm.model,
+            prompt_version=_prompt_version(),
+            headline=gate.draft.headline,
+            body_json=body_json,
+            new_facts_json=new_facts_json,
+            verified_at=now if gate.verified else None,
+            dropped_lines=gate.dropped_lines,
+            repaired_ids=gate.repaired_ids,
+            prompt_text=prompt_text,
+        )
+        if bump_current_version_at is not None:
+            repo.update_event_item(
+                item.snapshot.item_id,
+                {"current_version": version, "updated_at": bump_current_version_at},
+            )
     if fact_anchor_mode() == "shadow":
         await anchored_generator.shadow_measure(
             selected, allowed, llm, item_id=item.snapshot.item_id
@@ -547,25 +558,26 @@ async def process_candidates(
                 member_ids=(cand.article_id,),
             )
             items[item_id] = _LiveItem(snapshot=snap, members=[cand], breakdown=breakdown)
-            repo.create_event_item(
-                item_id=item_id,
-                origin=origin,
-                first_reported_at=cand.anchor_ts,
-                last_reported_at=cand.anchor_ts,
-                importance=cand.importance,
-                best_source_tier=breakdown.best_tier,
-                independent_sources=breakdown.independent,
-                state_media_count=breakdown.state_media,
-                unclassified_sources=breakdown.unclassified,
-                when=now,
-            )
-            repo.add_event_member(
-                item_id=item_id,
-                article_id=cand.article_id,
-                joined_at=now,
-                contributed_new_facts=1,
-                join_signal="seed",
-            )
+            with repo.atomic():
+                repo.create_event_item(
+                    item_id=item_id,
+                    origin=origin,
+                    first_reported_at=cand.anchor_ts,
+                    last_reported_at=cand.anchor_ts,
+                    importance=cand.importance,
+                    best_source_tier=breakdown.best_tier,
+                    independent_sources=breakdown.independent,
+                    state_media_count=breakdown.state_media,
+                    unclassified_sources=breakdown.unclassified,
+                    when=now,
+                )
+                repo.add_event_member(
+                    item_id=item_id,
+                    article_id=cand.article_id,
+                    joined_at=now,
+                    contributed_new_facts=1,
+                    join_signal="seed",
+                )
             stats["created"] += 1
             continue
 
@@ -707,7 +719,7 @@ async def generate_pending(
         # 253 件が全部同じ generated_at になる (2026-08-25 の遡及で実際にそうなった)。
         # 「いつ書いたか」を全件同じ値にすると、生成の進み方が事後に追えない。
         now = datetime.now(UTC)
-        gate, _ = await _generate_version(repo, item, llm, now, "[]")
+        gate, _ = await _generate_version(repo, item, llm, now, "[]", bump_current_version_at=now)
         if gate is None:
             # 対象外 (skipped) と生成失敗 (failed) の区別は **_should_generate 一箇所**で
             # 決める。ここに条件を複製すると、対象の定義を変えたときに集計だけずれる。
@@ -718,8 +730,4 @@ async def generate_pending(
                 skipped += 1
             continue
         generated += 1
-        repo.update_event_item(
-            snapshot.item_id,
-            {"current_version": snapshot.current_version + 1, "updated_at": now},
-        )
     return BackfillStats(attempted=attempted, generated=generated, skipped=skipped, failed=failed)

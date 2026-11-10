@@ -168,7 +168,7 @@ class SituationStore(SituationMarksMixin):
         if dup_id == into_id:
             raise ValueError("統合元と統合先が同じです")
         moved = 0
-        with self._repo._connect() as conn:  # noqa: SLF001
+        with self._repo.atomic(), self._repo._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
                 "SELECT article_id FROM situation_evidence WHERE situation_id=?", (dup_id,)
             ).fetchall()
@@ -185,9 +185,9 @@ class SituationStore(SituationMarksMixin):
                 " WHERE situation_id=?",
                 (into_id, now_iso, dup_id),
             )
-        self.add_relation(
-            a_id=into_id, b_id=dup_id, rel_type="merged_into", basis=basis, now_iso=now_iso
-        )
+            self.add_relation(
+                a_id=into_id, b_id=dup_id, rel_type="merged_into", basis=basis, now_iso=now_iso
+            )
         return moved
 
     def merge_target_of(self, situation_id: str) -> str:
