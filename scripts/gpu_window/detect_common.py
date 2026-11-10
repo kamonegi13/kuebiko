@@ -507,7 +507,9 @@ READ_ONLY_URL_ENV = "REPLAY_DATABASE_URL"  # scripts/replay/create_readonly_role
 
 def runtime_flags(env: Mapping[str, str]) -> dict[str, str]:
     """検査・記録の対象の旗の値 (未設定は空文字)。"""
-    keys = set(FLAG_KEYS) | {k for k in env if k.startswith(FLAG_PREFIXES)}
+    # DETECT_ARM_FLAGS は腕の指定の文字列 (腕ごとの値は arm_env が別に記録する)。旗ではないので
+    # 記録に入れない — 入れると manifest の本文の関門 (id/時刻/列挙/パスのみ) に当たる (11-10 2 回目の停止)
+    keys = (set(FLAG_KEYS) | {k for k in env if k.startswith(FLAG_PREFIXES)}) - {ARM_FLAGS_ENV}
     return {k: env.get(k, "") for k in sorted(keys)}
 
 
