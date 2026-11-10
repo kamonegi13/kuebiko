@@ -154,6 +154,8 @@ def summarize_decision(
             for r in records
             if r.outcome == "skipped" and r.reason.startswith(FIDELITY_REASON_PREFIX)
         ),
+        # DETECT_CLAIM_SALVAGE で削って開設した claim (reason に "salvaged:" が残る)
+        "n_salvaged": sum(1 for r in records if "salvaged:" in r.reason),
         "n_one_off_skipped": sum(
             1 for r in records if r.outcome == "skipped" and r.reason.startswith(ONE_OFF_PREFIX)
         ),

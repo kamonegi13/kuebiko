@@ -99,6 +99,18 @@ def _outlet_names(attribution: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return tuple(dict.fromkeys(fulls)), tuple(dict.fromkeys(words))
 
 
+def first_sentence(claim: str) -> str:
+    """claim の 1 文目 (句点を含む)。2 文以上でなければ前後の空白を除いた claim そのまま。"""
+    text = claim.strip()
+    m = _SENTENCE_BREAK.search(text)
+    return text[: m.start() + 1] if m else text
+
+
+def fold_text(s: str) -> str:
+    """照合用の正規化形 (NFKC・小文字化・記号除去)。出典名の照合を関門と同じ形にそろえる。"""
+    return _fold(s)
+
+
 def check_fidelity(claim: str, sources: GroundingSources) -> tuple[str, ...]:
     """claim の忠実さの違反。
 

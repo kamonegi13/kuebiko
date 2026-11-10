@@ -218,11 +218,52 @@ def plan_units(window_ids: Sequence[str], runs: int = RUNS_PER_ARM) -> list[tupl
     return out
 
 
-def arm_env(arm: Arm) -> dict[str, str]:
-    """腕ごとに固定する環境変数 (他の旗は本番の値のまま)。"""
+ARM_FLAGS_ENV = "DETECT_ARM_FLAGS"
+#: 腕ごとに渡せる回収率の旗 (src/assessment/detect_recall_flags.py の名簿。値は 0 / 1 のみ)
+ARM_FLAG_KEYS = (
+    "DETECT_CLAIM_SALVAGE",
+    "DETECT_WRITER_INPUT_V2",
+    "DETECT_WRITER_CAP_REFILL",
+    "DETECT_MERGE_CONFLICT_GATE",
+)
+_ARM_FLAG_VALUES = frozenset({"0", "1"})
+
+
+def parse_arm_flags(raw: str, arm_names: Sequence[str]) -> dict[str, dict[str, str]]:
+    """``DETECT_ARM_FLAGS`` (例 ``ship:DETECT_CLAIM_SALVAGE=1,ship:DETECT_MERGE_CONFLICT_GATE=1``)
+    → ``{腕名: {旗: 値}}``。未知の腕・旗・値は中止 (黙って落とさない)。空文字は何も渡さない。
+    """
+    out: dict[str, dict[str, str]] = {}
+    for item in (x.strip() for x in raw.split(",") if x.strip()):
+        arm, sep, rest = item.partition(":")
+        key, eq, value = rest.partition("=")
+        if not (sep and eq) or arm not in arm_names:
+            raise SystemExit(f"{ARM_FLAGS_ENV}: {item!r} は <腕>:<旗>=<値> の形ではない/未知の腕")
+        if key not in ARM_FLAG_KEYS or value not in _ARM_FLAG_VALUES:
+            raise SystemExit(f"{ARM_FLAGS_ENV}: {item!r} の旗か値が不正 ({ARM_FLAG_KEYS} / 0|1)")
+        out.setdefault(arm, {})[key] = value
+    return out
+
+
+def arm_env(
+    arm: Arm, *, arm_flags: Mapping[str, Mapping[str, str]] | None = None
+) -> dict[str, str]:
+    """腕ごとに固定する環境変数 (他の旗は本番の値のまま)。
+
+    ``DETECT_ARM_FLAGS`` を指定したときは、**全腕に 4 つの回収率の旗をすべて明示する** (指定の無い
+    旗は ``0``)。``os.environ.update`` は腕をまたいで残る (片方の腕だけに書くと漏れる)。
+    """
     env = {"DETECT_DECOMPOSE": arm.decompose_mode, "LLM_USAGE_LOCAL": "0"}
     if arm.writer_gates:
         env["DETECT_WRITER_GATES"] = arm.writer_gates
+    flags = (
+        arm_flags
+        if arm_flags is not None
+        else parse_arm_flags(os.environ.get(ARM_FLAGS_ENV, ""), [a.name for a in ARMS])
+    )
+    if flags:
+        for key in ARM_FLAG_KEYS:
+            env[key] = flags.get(arm.name, {}).get(key, "0")
     return env
 
 
@@ -354,6 +395,8 @@ FLAG_PREFIXES = ("EVENTNEWS_", "DETECT_", "ASSIGN_")
 #: 本番の値と食い違ってよい旗 (腕ごとに固定する・試験の旗)
 FLAG_EXEMPT = frozenset(
     {"DETECT_DECOMPOSE", "DETECT_WRITER_GATES", "DETECT_GPU_PROFILE", "LLM_USAGE_LOCAL"}
+    | set(ARM_FLAG_KEYS)
+    | {ARM_FLAGS_ENV}
 )
 READ_ONLY_URL_ENV = "REPLAY_DATABASE_URL"  # scripts/replay/create_readonly_role.sql の専用ロール
 

@@ -15,8 +15,9 @@ LLM は選択も束ねも棄却もせず (棄却は「追跡中と同一」「�
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, field_validator
@@ -24,12 +25,21 @@ from pydantic import BaseModel, field_validator
 from src.assessment.claim_bundle import split_clusters
 from src.assessment.claim_fidelity import check_fidelity, one_off_reason
 from src.assessment.claim_grounding import GroundingSources, check_grounding
+from src.assessment.claim_salvage import salvage_claim
 from src.assessment.detect_bundle_log import (
     ORIGIN_DECOMPOSE,
     BundleRecord,
     Outcome,
     Variant,
     make_claim_id,
+)
+from src.assessment.detect_merge_gate import MergeConflictGate
+from src.assessment.detect_recall_flags import (
+    WRITER_CAP_REFILL_MAX,
+    claim_salvage_enabled,
+    merge_conflict_gate_enabled,
+    writer_cap_refill_enabled,
+    writer_input_v2_enabled,
 )
 from src.logging_config import get_logger
 from src.synthesis.grounded.incremental import (
@@ -157,12 +167,14 @@ class ClusterOutcome:
     violations: tuple[str, ...] = ()  # claim の固有名詞で塊の見出し・要約・本文冒頭に無いもの
     attributions: tuple[str, ...] = ()  # 出典欄 (媒体名・投稿者名) にだけある語 (違反に数えない)
     fidelity: tuple[str, ...] = ()  # DETECT_WRITER_GATES の違反・単発の印 (claim_fidelity)
+    salvaged: tuple[str, ...] = ()  # DETECT_CLAIM_SALVAGE で削った節の型 (空 = 削っていない)
 
 
 @dataclass(frozen=True)
 class DecomposeResult:
     outcomes: tuple[ClusterOutcome, ...]
     overflow: int  # 書き手の上限で claim を書かなかった塊の数
+    merge_blocked: int = 0  # DETECT_MERGE_CONFLICT_GATE で合流を止めた塊の数
 
     def opened(self) -> tuple[ClusterOutcome, ...]:
         return tuple(o for o in self.outcomes if o.action == "open")
@@ -205,7 +217,7 @@ async def decompose_candidates(
     )
     ranked = sorted(clusters, key=lambda g: (-max(ml_scores.get(a, 0.0) for a in g), -len(g), g[0]))
     outcomes: list[ClusterOutcome] = []
-    written = overflow = 0
+    written = overflow = wasted = 0
     for cluster in ranked:
         ids = tuple(cluster)
         verdict = merge_for(ids)
@@ -220,7 +232,7 @@ async def decompose_candidates(
                 )
             )
             continue
-        if written >= max_claims:
+        if written >= writer_call_limit(max_claims, wasted):
             overflow += 1
             outcomes.append(ClusterOutcome(cluster=ids, action="skip", reason="開設の上限"))
             continue
@@ -240,19 +252,30 @@ async def decompose_candidates(
             )
             continue
         written += 1
-        outcomes.append(
-            await _write_one(
-                ids,
-                write_claim,
-                text,
-                enforce_grounding,
-                gates,
-                (f"one_off:{one_off}",) if one_off else (),
-            )
+        outcome = await _write_one(
+            ids,
+            write_claim,
+            text,
+            enforce_grounding,
+            gates,
+            (f"one_off:{one_off}",) if one_off else (),
         )
+        wasted += outcome.action != "open"
+        outcomes.append(outcome)
     if overflow:
         _log.warning("detect_decompose_overflow", skipped=overflow, cap=max_claims)
     return DecomposeResult(outcomes=tuple(outcomes), overflow=overflow)
+
+
+def writer_call_limit(max_claims: int, wasted: int) -> int:
+    """書き手を呼んでよい回数。``DETECT_WRITER_CAP_REFILL`` なら止まった・見送った回の分だけ増える。
+
+    開設の上限 (``max_claims``) は変わらない: 呼出が ``max_claims + min(wasted, 3)`` 回までで、
+    そのうち ``wasted`` 回は開設に至らないので、開設は多くても ``max_claims`` 件。
+    """
+    if not writer_cap_refill_enabled():
+        return max_claims
+    return max_claims + min(wasted, WRITER_CAP_REFILL_MAX)
 
 
 async def _write_one(
@@ -279,7 +302,14 @@ async def _write_one(
     fidelity = preflags
     if gates != "0" and sources is not None:
         fidelity = (*check_fidelity(claim, _as_sources(sources)), *preflags)
-    if gates == "1" and enforce_grounding and fidelity and not violations:
+    salvaged: tuple[str, ...] = ()
+    if gates == "1" and fidelity and sources is not None and claim_salvage_enabled():
+        fixed = salvage_claim(claim, _as_sources(sources))
+        if fixed is not None:
+            claim, salvaged = fixed.claim, fixed.removed
+            report = check_grounding(claim, _as_sources(sources))
+            violations, attributions = report.violations, report.attributions
+    if gates == "1" and enforce_grounding and fidelity and not violations and not salvaged:
         return ClusterOutcome(
             cluster=ids,
             action="skip",
@@ -302,6 +332,7 @@ async def _write_one(
         domain=domain if domain in _DOMAINS else "unclassified",
         violations=violations,
         attributions=attributions,
+        salvaged=salvaged,
     )
 
 
@@ -349,6 +380,8 @@ def to_records(
             if o.attributions:
                 names = ", ".join(o.attributions)
                 reason = f"{reason} / 出典名 {len(o.attributions)} 件 ({names})"[:260]
+        if o.action == "open" and o.salvaged:
+            reason = f"{reason} / salvaged: {', '.join(o.salvaged)}".strip(" /")[:260]
         records.append(
             BundleRecord(
                 run_at=run_at,
@@ -417,6 +450,7 @@ async def write_cluster_claim(
         pir_context=pir_context,
         period_label=period_label,
         strict_rules=writer_gates_mode() == "1",
+        input_v2=writer_input_v2_enabled(),
     )
     r = await llm.generate_structured(
         prompt, ClusterClaimWire, temperature=_TEMPERATURE, max_tokens=_MAX_TOKENS, think=False
@@ -427,6 +461,44 @@ async def write_cluster_claim(
         domain=r.domain,
         skip_reason=r.skip_reason.strip(),
     )
+
+
+_RESURFACED = re.compile("・?再浮上")
+
+
+def writer_articles_v2(
+    articles: Sequence[Mapping[str, object]], summaries: Mapping[str, str]
+) -> list[dict[str, object]]:
+    """``DETECT_WRITER_INPUT_V2``: 書き手に渡す記事の行から付帯情報を外し要約を足す (新しい list)。
+
+    媒体名 (``feed_title``) は外す (書き手が「〜が報じた」と写す)。時系列の「再浮上」の印は
+    外す (「再浮上」を claim に写す)。要約は DB の欄をそのまま足す (字数で切らない)。
+    """
+    out: list[dict[str, object]] = []
+    for a in articles:
+        chrono = _RESURFACED.sub("", str(a.get("chronology") or ""))
+        row = {k: v for k, v in a.items() if k != "feed_title"}
+        row["chronology"] = chrono
+        row["summary"] = summaries.get(str(a.get("article_id", "")), "").strip()
+        out.append(row)
+    return out
+
+
+def merge_conflict_gate(inp: DecomposeInputs, org_alias: Mapping[str, str]) -> MergeConflictGate:
+    """追跡中の情勢の anchors と題名を引ける関門 (``DETECT_MERGE_CONFLICT_GATE``)。"""
+    return MergeConflictGate(
+        entities_by_id=inp.entities_by_id,
+        anchors_by_sid={k.row.situation_id: k.row.anchors for k in inp.situation_keys},
+        titles_by_sid={k.row.situation_id: k.row.title for k in inp.situation_keys},
+        org_alias=org_alias,
+    )
+
+
+def _load_org_alias(repo: RunHistoryRepository) -> dict[str, str]:
+    """被害組織の別名判定 (失敗は空 = 別名なしで照合。``load_org_alias`` が警告を出す)。"""
+    from src.ui.services.eventnews_org_alias import load_org_alias
+
+    return load_org_alias(repo)
 
 
 async def score_merge_pairs(
@@ -553,16 +625,33 @@ async def run_decompose(
             save_fresh=persist,
         )
 
+    gate = (
+        merge_conflict_gate(inp, _load_org_alias(inp.repo))
+        if merge_enabled and merge_conflict_gate_enabled()
+        else None
+    )
+    blocked_clusters: list[tuple[str, ...]] = []
+
+    def merge_for(cluster: Sequence[str]) -> MergeVerdict | None:
+        verdict = pick_merge(cluster, scores, sids)
+        if gate is None or verdict is None or gate.conflict(cluster, verdict.situation_id) is None:
+            return verdict
+        blocked_clusters.append(tuple(cluster))
+        return pick_merge(cluster, scores, gate.allowed(cluster, sids))
+
     async def write(cluster: Sequence[str]) -> WrittenClaim | None:
+        articles = [by_id[a] for a in cluster if a in by_id]
+        if writer_input_v2_enabled():
+            articles = writer_articles_v2(articles, summaries)
         return await write_cluster_claim(
             llm=inp.llm,
-            articles=[by_id[a] for a in cluster if a in by_id],
+            articles=articles,
             active_titles=inp.active_titles,
             pir_context=inp.pir_context,
             period_label=inp.period_label,
         )
 
-    return await decompose_candidates(
+    result = await decompose_candidates(
         candidate_ids=ids,
         ml_scores=inp.ml_scores,
         strong_by_aid={
@@ -570,7 +659,7 @@ async def run_decompose(
         },
         items_by_aid=inp.repo.event_item_ids_by_article(ids),
         vec_by_aid=stateful._unit_vectors(inp.repo.load_summary_embeddings(ids)),  # noqa: SLF001
-        merge_for=lambda cluster: pick_merge(cluster, scores, sids),
+        merge_for=merge_for,
         write_claim=write,
         max_claims=max_claims,
         grounding_text=lambda cluster: _grounding_sources(
@@ -578,6 +667,9 @@ async def run_decompose(
         ),
         enforce_grounding=enforce_grounding,
     )
+    if blocked_clusters:
+        _log.info("detect_merge_conflict_blocked", clusters=len(blocked_clusters))
+    return replace(result, merge_blocked=len(blocked_clusters))
 
 
 def merged_assignments(result: DecomposeResult) -> dict[str, list[str]]:

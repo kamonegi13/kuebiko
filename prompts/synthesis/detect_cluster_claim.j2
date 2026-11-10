@@ -30,10 +30,20 @@
    - {{ p.title }}
 {% endfor %}
 
+{% if input_v2 is defined and input_v2 -%}
+【塊の記事】(行末: 重要度 / 時系列。次の行: 記事の要約。claim は見出しと要約に書かれたことだけで書く):
+{% for a in articles %}
+- {{ a.title|truncate(90) }} (id: {{ a.article_id }}) 〔{{ a.importance }}{% if a.chronology is defined and a.chronology %} / {{ a.chronology }}{% endif %}〕
+{%- if a.summary is defined and a.summary %}
+  要約: {{ a.summary }}
+{%- endif %}
+{% endfor %}
+{%- else -%}
 【塊の記事】(行末: 重要度 / 時系列):
 {% for a in articles %}
 - [{{ (a.feed_title or "?")|truncate(18) }}] {{ a.title|truncate(90) }} (id: {{ a.article_id }}) 〔{{ a.importance }}{% if a.chronology is defined and a.chronology %} / {{ a.chronology }}{% endif %}〕
 {% endfor %}
+{%- endif %}
 
 出力 JSON (これ以外を出さない):
 {"claim": "<1文 or 空>", "domain": "<political|military|economic|social|infrastructure|information|cyber_incident|geopolitical|tech>", "skip_reason": "<空 or 1行>"}
