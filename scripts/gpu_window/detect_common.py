@@ -309,9 +309,18 @@ def resolve_arm_flags(raw: str, profile: Profile) -> dict[str, dict[str, str]]:
     fixed = fixed_flags(profile)
     if not fixed:
         return given
-    if given and given != fixed:
+    if given and _complete(given, profile) != _complete(fixed, profile):
         raise SystemExit(f"{ARM_FLAGS_ENV} がプロファイル {profile.name} の固定値と違う")
     return fixed
+
+
+def _complete(
+    flags: Mapping[str, Mapping[str, str]], profile: Profile
+) -> dict[str, dict[str, str]]:
+    """全腕 × 4 旗に埋める (指定の無い旗は ``0`` = ``arm_env`` と同じ読み方)。"""
+    return {
+        a.name: {k: flags.get(a.name, {}).get(k, "0") for k in ARM_FLAG_KEYS} for a in profile.arms
+    }
 
 
 def arm_env(
