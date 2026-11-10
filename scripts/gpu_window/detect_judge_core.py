@@ -16,10 +16,10 @@ from typing import Any
 
 PROFILE_ENV = "DETECT_GPU_PROFILE"
 #: 前回 (decompose) の乱数種と、再判定 (rejudge、prereg §4) の乱数種
-SEEDS = {"decompose": 20261104, "rejudge": 20261105}
+SEEDS = {"decompose": 20261104, "rejudge": 20261105, "rejudge2": 20261110}
 PROFILE_NAME = os.environ.get(PROFILE_ENV, "decompose").strip() or "decompose"
 if PROFILE_NAME not in SEEDS:
-    raise SystemExit(f"{PROFILE_ENV}={PROFILE_NAME!r} は未知 (decompose / rejudge)")
+    raise SystemExit(f"{PROFILE_ENV}={PROFILE_NAME!r} は未知 ({' / '.join(SEEDS)})")
 SEED = SEEDS[PROFILE_NAME]
 MAX_EXCLUDED_SHARE = 0.50  # rejudge §6: R18 で外れる単位が U のこれを超えたら判定不能
 SAMPLE_TOTAL = 260

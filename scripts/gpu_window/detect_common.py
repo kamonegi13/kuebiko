@@ -5,6 +5,8 @@
 - ``decompose`` (既定): docs/replay_prereg/detect_decompose.md (変更しない)
 - ``rejudge``: docs/replay_prereg/detect_decompose_rejudge.md
   (過去の窓・書き手の直し・as-of の再構成)
+- ``rejudge2``: docs/replay_prereg/detect_rejudge_v2.md
+  (新しい窓 11-04〜11-10・回収率の 4 旗を出荷腕に固定・別名の写像を凍結)
 
 純粋部分 (窓の列挙・抽出・腕の定義・順序・書き込みの封) と、凍結した入力から本番の部品へ
 渡すための読み取り専用の代役 (``FrozenRepo``)。標準ライブラリ + numpy。
@@ -25,7 +27,6 @@ from types import SimpleNamespace
 from typing import Any
 
 BIN_HOURS = 6
-MAX_PER_DAY = 3
 N_WINDOWS = 20
 RUNS_PER_ARM = 3
 MIN_CANDIDATES = 5  # §2.1 (1) 候補が 5 件未満の窓は除外
@@ -76,6 +77,10 @@ class Profile:
     code_files: tuple[str, ...]
     as_of_strict: bool  # 題名・休眠を区間の開始時点に戻す (rejudge §2.3)
     check_ship_resolution: bool = False  # S の解決先が出荷腕のモデルか実行前に確かめる
+    max_per_day: int = 3  # §4 同じ UTC 日から取る窓の上限
+    #: 腕ごとに固定する回収率の旗 (空 = 固定しない。DETECT_ARM_FLAGS を渡すなら同じ値でなければ中止)
+    fixed_arm_flags: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
+    freeze_org_alias: bool = False  # 被害組織の別名の写像を凍結して FrozenRepo から返す
 
 
 PROFILE_ENV = "DETECT_GPU_PROFILE"
@@ -110,6 +115,49 @@ PROFILES: dict[str, Profile] = {
         as_of_strict=True,
         check_ship_resolution=True,
     ),
+    "rejudge2": Profile(
+        name="rejudge2",
+        prereg_name="detect_rejudge_v2",
+        seed=20261110,
+        range_start=datetime(2026, 11, 4, 12, tzinfo=UTC),
+        range_end=datetime(2026, 11, 10, 6, tzinfo=UTC),
+        out_dir=Path("data/eval/detect_rejudge_v2"),
+        arms=(
+            Arm("current", "kuebiko-sft:s23i", "shadow", "current", writer_gates="0"),
+            Arm("ship", "kuebiko-sft:s24ci65", "1", "decompose", writer_gates="1"),
+        ),
+        code_files=(
+            *_CODE_FILES_DECOMPOSE,
+            "src/assessment/claim_fidelity.py",
+            "src/assessment/claim_salvage.py",
+            "src/assessment/detect_merge_gate.py",
+            "src/assessment/detect_recall_flags.py",
+        ),
+        as_of_strict=True,
+        check_ship_resolution=True,
+        max_per_day=4,
+        fixed_arm_flags=(
+            (
+                "current",
+                (
+                    ("DETECT_CLAIM_SALVAGE", "0"),
+                    ("DETECT_WRITER_INPUT_V2", "0"),
+                    ("DETECT_WRITER_CAP_REFILL", "0"),
+                    ("DETECT_MERGE_CONFLICT_GATE", "0"),
+                ),
+            ),
+            (
+                "ship",
+                (
+                    ("DETECT_CLAIM_SALVAGE", "1"),
+                    ("DETECT_WRITER_INPUT_V2", "1"),
+                    ("DETECT_WRITER_CAP_REFILL", "1"),
+                    ("DETECT_MERGE_CONFLICT_GATE", "1"),
+                ),
+            ),
+        ),
+        freeze_org_alias=True,
+    ),
 }
 
 
@@ -117,7 +165,7 @@ def profile_named(name: str) -> Profile:
     """プロファイル名 → 固定値。未知の名前は中止 (黙って既定に落とさない)。"""
     key = (name or "decompose").strip()
     if key not in PROFILES:
-        raise SystemExit(f"{PROFILE_ENV}={name!r} は未知 (decompose / rejudge)")
+        raise SystemExit(f"{PROFILE_ENV}={name!r} は未知 ({' / '.join(PROFILES)})")
     return PROFILES[key]
 
 
@@ -130,6 +178,7 @@ OUT_DIR = PROFILE.out_dir
 CODE_FILES = PROFILE.code_files
 ARMS = PROFILE.arms
 CURRENT_ARM, SHIP_ARM = ARMS
+MAX_PER_DAY = PROFILE.max_per_day
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -218,11 +267,81 @@ def plan_units(window_ids: Sequence[str], runs: int = RUNS_PER_ARM) -> list[tupl
     return out
 
 
-def arm_env(arm: Arm) -> dict[str, str]:
-    """腕ごとに固定する環境変数 (他の旗は本番の値のまま)。"""
+ARM_FLAGS_ENV = "DETECT_ARM_FLAGS"
+#: 腕ごとに渡せる回収率の旗 (src/assessment/detect_recall_flags.py の名簿。値は 0 / 1 のみ)
+ARM_FLAG_KEYS = (
+    "DETECT_CLAIM_SALVAGE",
+    "DETECT_WRITER_INPUT_V2",
+    "DETECT_WRITER_CAP_REFILL",
+    "DETECT_MERGE_CONFLICT_GATE",
+)
+_ARM_FLAG_VALUES = frozenset({"0", "1"})
+
+
+def parse_arm_flags(raw: str, arm_names: Sequence[str]) -> dict[str, dict[str, str]]:
+    """``DETECT_ARM_FLAGS`` (例 ``ship:DETECT_CLAIM_SALVAGE=1,ship:DETECT_MERGE_CONFLICT_GATE=1``)
+    → ``{腕名: {旗: 値}}``。未知の腕・旗・値は中止 (黙って落とさない)。空文字は何も渡さない。
+    """
+    out: dict[str, dict[str, str]] = {}
+    for item in (x.strip() for x in raw.split(",") if x.strip()):
+        arm, sep, rest = item.partition(":")
+        key, eq, value = rest.partition("=")
+        if not (sep and eq) or arm not in arm_names:
+            raise SystemExit(f"{ARM_FLAGS_ENV}: {item!r} は <腕>:<旗>=<値> の形ではない/未知の腕")
+        if key not in ARM_FLAG_KEYS or value not in _ARM_FLAG_VALUES:
+            raise SystemExit(f"{ARM_FLAGS_ENV}: {item!r} の旗か値が不正 ({ARM_FLAG_KEYS} / 0|1)")
+        out.setdefault(arm, {})[key] = value
+    return out
+
+
+def fixed_flags(profile: Profile) -> dict[str, dict[str, str]]:
+    """プロファイルが固定する腕ごとの旗 (空 = 固定しない)。"""
+    return {arm: dict(kv) for arm, kv in profile.fixed_arm_flags}
+
+
+def resolve_arm_flags(raw: str, profile: Profile) -> dict[str, dict[str, str]]:
+    """``DETECT_ARM_FLAGS`` とプロファイルの固定値を突き合わせる。
+
+    固定があるプロファイルでは、渡された値が固定と食い違えば中止 (事前登録の腕を黙って変えない)。
+    渡されなければ固定値を使う。
+    """
+    given = parse_arm_flags(raw, [a.name for a in profile.arms])
+    fixed = fixed_flags(profile)
+    if not fixed:
+        return given
+    if given and _complete(given, profile) != _complete(fixed, profile):
+        raise SystemExit(f"{ARM_FLAGS_ENV} がプロファイル {profile.name} の固定値と違う")
+    return fixed
+
+
+def _complete(
+    flags: Mapping[str, Mapping[str, str]], profile: Profile
+) -> dict[str, dict[str, str]]:
+    """全腕 × 4 旗に埋める (指定の無い旗は ``0`` = ``arm_env`` と同じ読み方)。"""
+    return {
+        a.name: {k: flags.get(a.name, {}).get(k, "0") for k in ARM_FLAG_KEYS} for a in profile.arms
+    }
+
+
+def arm_env(
+    arm: Arm, *, arm_flags: Mapping[str, Mapping[str, str]] | None = None
+) -> dict[str, str]:
+    """腕ごとに固定する環境変数 (他の旗は本番の値のまま)。
+
+    ``DETECT_ARM_FLAGS`` を指定したときは、**全腕に 4 つの回収率の旗をすべて明示する** (指定の無い
+    旗は ``0``)。``os.environ.update`` は腕をまたいで残る (片方の腕だけに書くと漏れる)。
+    """
     env = {"DETECT_DECOMPOSE": arm.decompose_mode, "LLM_USAGE_LOCAL": "0"}
     if arm.writer_gates:
         env["DETECT_WRITER_GATES"] = arm.writer_gates
+    flags = (
+        arm_flags
+        if arm_flags is not None
+        else resolve_arm_flags(os.environ.get(ARM_FLAGS_ENV, ""), PROFILE)
+    )
+    if flags:
+        for key in ARM_FLAG_KEYS:
+            env[key] = flags.get(arm.name, {}).get(key, "0")
     return env
 
 
@@ -312,6 +431,32 @@ class FrozenRepo:
         emb = self._f["embeddings"]
         return {a: decode_vec(emb[a]) for a in article_ids if a in emb}
 
+    # 被害組織の別名 (``load_org_alias`` が引く 2 口)。凍結していなければ従来どおり失敗させる
+    # (呼び手は警告して空の写像で続ける)。
+    def _org_alias(self) -> Mapping[str, Any]:
+        frozen = self._f.get(ORG_ALIAS_KEY)
+        if frozen is None:
+            raise RuntimeError("org alias is not frozen")
+        return dict(frozen)
+
+    def list_org_identity_same_pairs(self, **_kw: Any) -> list[tuple[str, str]]:
+        return [(str(a), str(b)) for a, b in self._org_alias().get("pairs", [])]
+
+    def load_org_alias_dict(self) -> dict[str, str]:
+        return {str(k): str(v) for k, v in dict(self._org_alias().get("dict", {})).items()}
+
+
+ORG_ALIAS_KEY = "org_alias"
+
+
+def with_org_alias(
+    window: Mapping[str, Any], org_alias: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """窓の辞書に凍結した別名の写像を添えた新しい辞書 (元の辞書は変えない)。"""
+    if org_alias is None:
+        return dict(window)
+    return {**window, ORG_ALIAS_KEY: org_alias}
+
 
 def merge_scores_from_frozen(
     frozen: Mapping[str, Any],
@@ -354,6 +499,8 @@ FLAG_PREFIXES = ("EVENTNEWS_", "DETECT_", "ASSIGN_")
 #: 本番の値と食い違ってよい旗 (腕ごとに固定する・試験の旗)
 FLAG_EXEMPT = frozenset(
     {"DETECT_DECOMPOSE", "DETECT_WRITER_GATES", "DETECT_GPU_PROFILE", "LLM_USAGE_LOCAL"}
+    | set(ARM_FLAG_KEYS)
+    | {ARM_FLAGS_ENV}
 )
 READ_ONLY_URL_ENV = "REPLAY_DATABASE_URL"  # scripts/replay/create_readonly_role.sql の専用ロール
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -154,6 +155,8 @@ def summarize_decision(
             for r in records
             if r.outcome == "skipped" and r.reason.startswith(FIDELITY_REASON_PREFIX)
         ),
+        # DETECT_CLAIM_SALVAGE で削って開設した claim (reason に "salvaged:" が残る)
+        "n_salvaged": sum(1 for r in records if "salvaged:" in r.reason),
         "n_one_off_skipped": sum(
             1 for r in records if r.outcome == "skipped" and r.reason.startswith(ONE_OFF_PREFIX)
         ),
@@ -363,7 +366,8 @@ def run_all(args: argparse.Namespace, cert: Mapping[str, Any]) -> int:
     check_ship_model(resolved_ship_model(), dc.SHIP_ARM, required=dc.PROFILE.check_ship_resolution)
     inputs_sha = dc.verify_inputs(Path(args.inputs_dir))
     payload = json.loads((Path(args.inputs_dir) / dc.INPUTS_NAME).read_text(encoding="utf-8"))
-    windows = {str(w["window_id"]): w for w in payload["windows"]}
+    alias = payload.get(dc.ORG_ALIAS_KEY)  # rejudge2: 凍結した別名の写像 (無ければ従来どおり)
+    windows = {str(w["window_id"]): dc.with_org_alias(w, alias) for w in payload["windows"]}
     units = select_units(payload["windows"], args.runs, args.limit, args.window_ids)
     cfg = load_app_config()
     llms = {
@@ -396,6 +400,21 @@ def run_all(args: argparse.Namespace, cert: Mapping[str, Any]) -> int:
     return 0 if n_ok == len(units) and not hit else 1
 
 
+def inputs_meta_for_manifest(meta: Mapping[str, Any]) -> dict[str, Any]:
+    """inputs の meta を manifest の関門 (短い id・数字だけ) に通る形にする。
+
+    本番との差の説明文は 64 字を超えうる (11-09 の GPU-A2 で 69 字で止まった)。文は凍結済みの
+    inputs の meta に残っているので、manifest には件数と sha256 だけを書いて照合できるようにする。
+    """
+    devs = list(meta.get("deviations") or [])
+    blob = json.dumps(devs, ensure_ascii=False).encode("utf-8")
+    return {
+        **{k: meta.get(k) for k in ("seed", "frozen_at", "excluded")},
+        "deviations_count": len(devs),
+        "deviations_sha256": hashlib.sha256(blob).hexdigest(),
+    }
+
+
 def base_manifest(
     cert: Mapping[str, Any],
     inputs_sha: str,
@@ -414,7 +433,7 @@ def base_manifest(
         "prereg_blob_sha256": cert["prereg_blob_sha256"],
         "head_sha": cert["head_sha"],
         "inputs_sha256": inputs_sha,
-        "inputs_meta": {k: meta.get(k) for k in ("seed", "frozen_at", "excluded", "deviations")},
+        "inputs_meta": inputs_meta_for_manifest(meta),
         "r18": {"version": R18_VERSION, "occupancy": None, "note": "道具は閉包を計算しない (別段)"},
         "detect_model_sha256": dc.verify_detect_model(),
         "model_tiers_version": model_tiers_version(),

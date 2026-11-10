@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -34,6 +35,14 @@ from scripts.replay._closure import (  # noqa: E402
 EMBED_MODEL = "snowflake-arctic-embed2"
 PLAN_NAME = "closure_plan.json"
 PRIOR_ARMS = Path("data/eval/detect_decompose/arms_20261104T022916Z.jsonl")
+#: rejudge2 (docs/replay_prereg/detect_rejudge_v2.md §7.1): 前々回・前回の判定の 2 腕の出力と、
+#: 4 旗の調整 (取りこぼしの分解) に使った前回の凍結入力の候補も調整側に入れる
+PRIOR_ARMS_V2 = (
+    PRIOR_ARMS,
+    Path("data/eval/detect_rejudge/arms_20261110T044350Z.jsonl"),
+)
+PRIOR_INPUTS_V2 = (Path("data/eval/detect_rejudge/inputs.json"),)
+IS_V2 = os.environ.get("DETECT_GPU_PROFILE", "").strip() == "rejudge2"
 TRAIN_FILES = (
     Path("data/mlx/detect_goldset.jsonl"),
     Path("data/mlx/detect_gold_kinds.jsonl"),
@@ -99,12 +108,27 @@ def train_side(main_root: Path, known: set[str]) -> tuple[set[str], dict[str, in
         per_source[f.name] = len(ids)
         found |= ids
     prior: set[str] = set()
-    for line in (main_root / PRIOR_ARMS).read_text(encoding="utf-8").splitlines():
+    for arms in PRIOR_ARMS_V2 if IS_V2 else (PRIOR_ARMS,):
+        ids = opened_ids(main_root / arms)
+        per_source[f"prior_judge_units:{arms.parent.name}/{arms.name}"] = len(ids & known)
+        prior |= ids
+    if IS_V2:
+        for inp in PRIOR_INPUTS_V2:
+            data = json.loads((main_root / inp).read_text(encoding="utf-8"))
+            ids = {str(a) for w in data["windows"] for a in w["llm_input_ids"]}
+            per_source[f"prior_candidates:{inp.parent.name}/{inp.name}"] = len(ids & known)
+            prior |= ids
+    return found | (prior & known), per_source
+
+
+def opened_ids(path: Path) -> set[str]:
+    """2 腕の出力が開いた全単位の記事 (両腕・全 run)。"""
+    out: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
         rec = json.loads(line) if line.strip() else {}
         for o in rec.get("opened", []) or []:
-            prior |= {str(a) for a in o.get("article_ids", [])}
-    per_source["prior_judge_units(10-27..11-04)"] = len(prior & known)
-    return found | (prior & known), per_source
+            out |= {str(a) for a in o.get("article_ids", [])}
+    return out
 
 
 def entity_values() -> dict[str, dict[str, frozenset[str]]]:

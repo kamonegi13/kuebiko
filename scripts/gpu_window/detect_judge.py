@@ -29,11 +29,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detect_judge_core as jc  # noqa: E402
 
 MAIN_ROOT = Path("/Users/juzo1192/git/auto-post")
-IS_REJUDGE = jc.PROFILE_NAME == "rejudge"
+IS_REJUDGE = jc.PROFILE_NAME in ("rejudge", "rejudge2")  # 閉包は closure_plan.json で読む
+IS_V2 = jc.PROFILE_NAME == "rejudge2"
 LEDGER = MAIN_ROOT / "data" / "eval" / "adjudication_ledger.jsonl"
 GOLDSET = MAIN_ROOT / "data" / "mlx" / "detect_goldset.jsonl"
 TEACHER_GLOB = "detect*.jsonl"
-if IS_REJUDGE:
+if IS_V2:
+    # docs/replay_prereg/detect_rejudge_v2.md (§4・§7・§8・§11)
+    PREREG_PATH = "docs/replay_prereg/detect_rejudge_v2.md"
+    EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_rejudge_v2"
+    ARMS_NAME = ""
+    JUDGE_DIR = EVAL_DIR / "judge"
+    CLOSURE_PATH = EVAL_DIR / "closure_plan.json"
+    ITEM = "DETECT-REJUDGE-2"
+    RUBRIC = "detect-rejudge-v2"
+    RUBRIC_P2 = "detect-rejudge-v2-p2"
+    GOLD_ID = "gold:detect_rejudge_v2"
+    FORBIDDEN_JUDGE_DIRS: tuple[Path, ...] = (
+        MAIN_ROOT / "data" / "eval" / "detect_decompose" / "judge",
+        MAIN_ROOT / "data" / "eval" / "detect_decompose" / "judge_r18",
+        MAIN_ROOT / "data" / "eval" / "detect_rejudge" / "judge",
+    )
+elif IS_REJUDGE:
     # docs/replay_prereg/detect_decompose_rejudge.md (§4・§7.2・§8・§11)
     PREREG_PATH = "docs/replay_prereg/detect_decompose_rejudge.md"
     EVAL_DIR = MAIN_ROOT / "data" / "eval" / "detect_rejudge"
@@ -62,7 +79,8 @@ else:
     FORBIDDEN_JUDGE_DIRS = ()
 OLD_JUDGE_DIR = EVAL_DIR / "judge"  # decompose: 11-04 の簡略 R18 の裁定 (参考、消さない)
 BUDGET_ESTIMATE = 300
-CALL_CAP = 390  # 見積もりの 1.3 倍
+# rejudge2 §11: 前回の実回数 300 の 1.2 倍 / それ以前は見積もりの 1.3 倍
+CALL_CAP = 360 if IS_V2 else 390
 CONCURRENCY = 2
 
 QUESTION = (
@@ -365,6 +383,28 @@ def load_labels(path: Path) -> dict[str, dict[str, Any]]:
     return {r["unit_id"]: r for r in read_jsonl(path)} if path.is_file() else {}
 
 
+REFERENCE_KEYS = (
+    "n_opened",
+    "n_gate_blocked",
+    "n_fidelity_blocked",
+    "n_salvaged",
+    "n_one_off_skipped",
+    "n_merged_articles",
+)
+
+
+def reference_arm_counts(records: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, int]]:
+    """rejudge2 §6 の参考 (判定に使わない): 腕ごとの開設・止め・削って救った数 (ok の run)。"""
+    out: dict[str, dict[str, int]] = {}
+    for r in records:
+        if not r.get("ok"):
+            continue
+        acc = out.setdefault(str(r.get("arm")), dict.fromkeys(REFERENCE_KEYS, 0))
+        for k in REFERENCE_KEYS:
+            acc[k] += int(r.get(k, 0) or 0)
+    return out
+
+
 def cmd_score(_: argparse.Namespace) -> int:
     plan = json.loads((JUDGE_DIR / "plan.json").read_text(encoding="utf-8"))
     records = read_jsonl(arms_path(plan))
@@ -439,6 +479,8 @@ def cmd_score(_: argparse.Namespace) -> int:
             for a in ("current", "ship")
         },
     }
+    if IS_V2:
+        summary["reference_arm_counts"] = reference_arm_counts(records)
     (JUDGE_DIR / "summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8"
     )
