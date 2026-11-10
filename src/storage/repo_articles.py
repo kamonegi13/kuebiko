@@ -638,7 +638,7 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         別に 'recovered:thin_body_gate_fix' を残す。WHERE に status='extract_failed' を入れる
         ため再実行しても二重に動かない。
         """
-        with self._connect() as conn:
+        with self.atomic(), self._connect() as conn:
             cur = conn.execute(
                 "UPDATE articles SET status='posted', posted_channel=NULL, "
                 "importance=?, category=?, failure_reason=?, routing_reason=?, analysis_only=? "

@@ -162,6 +162,8 @@ services:
       EVENTNEWS_MERGE_REPORT_PERIOD_GATE: ${EVENTNEWS_MERGE_REPORT_PERIOD_GATE:-1}
       # 事象の焦点を毎時の群化・統合の後に記録する (2026-10-24 F0、記録だけで判断には使わない)。0 で止まる
       EVENTNEWS_FOCUS_RECORD: ${EVENTNEWS_FOCUS_RECORD:-1}
+      # 導いた事象の線の日次の写し (2026-11-02 GRAPH-G0、記録だけ・LLM なし)。GRAPH-G0-SHIP (11-14) で 1。0 で止まる
+      EVENT_EDGES_RECORD: ${EVENT_EDGES_RECORD:-1}
       # 統合の判断で、事象の焦点の照合が conflict の組を結ばない (2026-10-24 F2)。on / shadow (記録だけ) / off。
       # 新標本 31 組で止めた組の本当に別 84% (区間 67〜93%)、30 日の再現で 37 件。docs/eventnews_focus_redesign.md §9.4
       EVENTNEWS_MERGE_FOCUS_GATE: ${EVENTNEWS_MERGE_FOCUS_GATE:-on}
@@ -224,6 +226,7 @@ services:
       BODY_PURGE_DAYS: ${BODY_PURGE_DAYS:-0}
       # 薄い Grok の投稿の要約が本文に無い数字・日付を足したら作り直す (既定 shadow、3〜7 日ログを見てから on)
       GROK_SUMMARY_GROUNDING: ${GROK_SUMMARY_GROUNDING:-shadow}
+      SUBJECT_KIND_GATE: ${SUBJECT_KIND_GATE:-shadow}
       # Grok の投稿が貼った外部リンクの本文取得 (既定 shadow = 取って保存、要約には使わない、10-24)
       GROK_LINK_FETCH: ${GROK_LINK_FETCH:-shadow}
       # 取得時のボット識別を中立な汎用 UA にする (10-30。0 で旧 UA に戻る)
@@ -271,6 +274,7 @@ services:
       SYNTHESIS_COT_NOTES: ${SYNTHESIS_COT_NOTES:-0}
       # cluster 帯 dedup の救済網 (実測 10.2% の誤 dedup を取込へ倒す)。既定 off
       DEDUP_CLUSTER_JUDGE: ${DEDUP_CLUSTER_JUDGE:-0}
+      DEDUP_PERIODIC_EXEMPT: ${DEDUP_PERIODIC_EXEMPT:-shadow}
       # --- s24c 切替の旗 (2026-10-22、data/eval/S24c_switch_runbook.md)。**既定はすべて現行 (s23i) の挙動**。
       # モデル割当 (UI「設定 → モデル」) と同時に揃える。片方だけ上げた状態は避ける
       # 深刻度の軸を本文入力 + 公開日つきの v10 に (s24 系で学習。detect ML の差し替えと同時)

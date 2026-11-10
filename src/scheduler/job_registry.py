@@ -620,6 +620,24 @@ def default_jobs() -> list[JobDef]:
             minute=10,
         ),
         JobDef(
+            id="graph-edges-daily",
+            kind="bespoke",
+            title="事象の線の日次の写し",
+            description=(
+                "導いた事象どうしの線 (同じアクター・同じ出来事の系統・焦点の lineage) を"
+                " event_edge_records に出どころ・tier つきで写す (記録だけ。LLM 不使用。"
+                "旗 EVENT_EDGES_RECORD=1 のときだけ書く)。"
+            ),
+            disable_impact="線の日次の観測が止まる (画面・配信への影響なし)。",
+            protection="optional",
+            schedule_type="cron",
+            # 深夜帯 03:20 JST: 毎日 00:10 の保守・00:25 の PIR 再構築の後、04:30 の
+            # pir-spotlight (heavy) の前。毎時の :50 mirror とも重ならない。導出は数十秒
+            hour=3,
+            minute=20,
+            max_runtime_minutes=5,
+        ),
+        JobDef(
             id="daily-heartbeat",
             kind="bespoke",
             title="死活ハートビート",

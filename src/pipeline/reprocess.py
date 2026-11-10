@@ -188,19 +188,22 @@ def reenrich_stored_article(
     except Exception as e:  # noqa: BLE001 — 主題判定失敗で再処理を止めない
         _log.warning("reprocess_subject_failed", article_id=article_id, error=str(e))
 
-    # 4) entity を replace (delete → 再抽出)。切り株由来の痩せた/誤 entity を残さない。
-    repo.delete_article_entities(article_id, _REPLACE_ENTITY_TYPES)
-    _persist_article_entities(
-        dedup_repo=repo,
-        article_id=article_id,
-        msg=msg,
-        feed_title=row.feed_title or "",
-        subject_actor_ids=subject_ids_csv,
-        subject_actor_source=subject_source,
-    )
-
-    # 5) 分析列を上書き (要約の幻覚是正含む)。allowlist 検証は repo 側。
-    repo.update_article_enrichment(article_id, _enrichment_fields(msg, rf))
+    # 4) entity を replace (delete → 再抽出) + 5) 分析列を上書き (要約の幻覚是正含む)。
+    #    切り株由来の痩せた/誤 entity を残さないための置換なので、途中失敗で
+    #    「消えただけ」にならないよう 1 トランザクションにする (永続化失敗は再送出)。
+    #    allowlist 検証は repo 側。
+    with repo.atomic():
+        repo.delete_article_entities(article_id, _REPLACE_ENTITY_TYPES)
+        _persist_article_entities(
+            dedup_repo=repo,
+            article_id=article_id,
+            msg=msg,
+            feed_title=row.feed_title or "",
+            subject_actor_ids=subject_ids_csv,
+            subject_actor_source=subject_source,
+            raise_on_error=True,
+        )
+        repo.update_article_enrichment(article_id, _enrichment_fields(msg, rf))
 
 
 def _load_registry() -> ActorAliasRegistry:

@@ -18,6 +18,7 @@ from src.cti.ingest_relevance import (
 )
 from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
+from src.pipeline import dedup_periodic
 from src.pipeline.geo_rescue_shadow import GeoRescueCandidate
 from src.pipeline.grok_convert import _is_grok_article
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
@@ -536,6 +537,7 @@ async def _filter_semantic_duplicates(
 
     batch_units: list[Any] = []
     batch_ids: list[str] = []
+    periodic_mode = dedup_periodic.periodic_mode()
 
     for article in articles:
         # Grok のレポート本体は意味の重複判定に掛けない (2026-10-29、run 8740)。毎回別の
@@ -576,6 +578,14 @@ async def _filter_semantic_duplicates(
             threshold=threshold_hard,
             window_hours=window_hours_hard,
         )
+        periodic_exempted = False
+        if match_hard is not None and periodic_mode != "0":
+            periodic_reason = _periodic_exempt_reason(
+                dedup_repo, article, match_hard[0], mode=periodic_mode, similarity=match_hard[1]
+            )
+            if periodic_reason is not None and periodic_mode == "1":
+                match_hard = None
+                periodic_exempted = True
         if match_hard is not None:
             matched_hash, similarity = match_hard
             skipped_ids.append(article.id)
@@ -599,7 +609,9 @@ async def _filter_semantic_duplicates(
         # 7 件全件 skip、月 35-50 incident 失損)。Grok 経路は hard tier のみで判定し
         # cluster tier を bypass する (真の content コピーは hard 0.92 で捕捉)。
         # incident 単位 dedup (案 C) は data 分析で追加価値が薄いと判定済。
-        if _is_grok_article(article):
+        if periodic_exempted:
+            pass  # 定期の発表の別の号は cluster 層でも落とさない (同じ類似度で捕まるため)
+        elif _is_grok_article(article):
             _log.info(
                 "dedup_skipped_semantic_cluster_bypass_grok",
                 article_id=article.id,
@@ -687,6 +699,31 @@ async def _filter_semantic_duplicates(
             batch_ids.append(article.id)
 
     return survivors, len(skipped_ids), embeddings_to_persist, skipped_ids, skip_records
+
+
+def _periodic_exempt_reason(
+    dedup_repo: Any,
+    article: Article,
+    matched_hash: str,
+    *,
+    mode: str,
+    similarity: float,
+) -> str | None:
+    """hard 一致の相手の見出しを引き、定期の発表の別の号なら理由を返す (ログも出す)。"""
+    seen = dedup_repo.get_seen_url(matched_hash)
+    if seen is None or not seen[0]:
+        return None
+    reason = dedup_periodic.periodic_exempt_reason(article.title, seen[0])
+    if reason is not None:
+        _log.info(
+            "dedup_periodic_exempt",
+            article_id=article.id,
+            similar_to=matched_hash,
+            similarity=round(similarity, 4),
+            reason=reason,
+            mode=mode,
+        )
+    return reason
 
 
 def _embedding_input_text(article: Article) -> str:

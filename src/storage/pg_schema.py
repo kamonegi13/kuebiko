@@ -940,6 +940,31 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
+-- 事象どうしの導いた線の日次の観測の写し (2026-11-02 GRAPH-G0)。
+-- SQLite _SCHEMA と対、詳細は schema_sql.py。
+CREATE TABLE IF NOT EXISTS event_edge_records (
+    id            BIGSERIAL        PRIMARY KEY,
+    derived_at    TEXT             NOT NULL,
+    edge_key      TEXT             NOT NULL,
+    item_a        TEXT             NOT NULL,
+    item_b        TEXT             NOT NULL,
+    root_a        TEXT             NOT NULL,
+    root_b        TEXT             NOT NULL,
+    edge_type     TEXT             NOT NULL,
+    rel_type      TEXT             NOT NULL DEFAULT '',
+    source        TEXT             NOT NULL DEFAULT '',
+    basis_json    TEXT             NOT NULL DEFAULT '[]',
+    score         DOUBLE PRECISION,
+    rule_version  TEXT             NOT NULL DEFAULT '',
+    model_sha     TEXT             NOT NULL DEFAULT '',
+    tier          TEXT             NOT NULL DEFAULT 'check',
+    created_at    TEXT             NOT NULL,
+    UNIQUE (derived_at, edge_key)
+);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_derived ON event_edge_records(derived_at);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_item_a ON event_edge_records(item_a);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_item_b ON event_edge_records(item_b);
+
 -- 地政学の救済の判定 v2 の影の記録 (2026-10-31、SQLite _SCHEMA と対)。詳細は schema_sql.py。
 CREATE TABLE IF NOT EXISTS geo_rescue_shadow (
     id                  BIGSERIAL        PRIMARY KEY,

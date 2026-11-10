@@ -7,6 +7,7 @@ import inspect
 from src.assessment import ledger
 from src.storage import (
     repo_alert_dedup_shadow,
+    repo_event_edge_records,
     repo_eventnews,
     repo_geo_rescue_shadow,
     repo_routing_v2_shadow,
@@ -49,3 +50,11 @@ def test_shadow_tables_keep_180_days() -> None:
 
 def test_llm_usage_keeps_365_days() -> None:
     assert maintenance._LLM_USAGE_RETENTION_DAYS == 365  # noqa: SLF001
+
+
+def test_event_edge_records_keep_180_days() -> None:
+    assert repo_event_edge_records.DEFAULT_RETENTION_DAYS == 180
+    assert maintenance._EVENT_EDGE_RECORDS_RETENTION_DAYS == 180  # noqa: SLF001
+    assert (
+        _default_days(repo_event_edge_records.EventEdgeRecordsMixin.purge_event_edge_records) == 180
+    )

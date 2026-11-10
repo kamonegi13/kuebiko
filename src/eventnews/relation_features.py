@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from src.cti.subject_kind_gate import effective_subjects
 from src.eventnews.relations import EventFeatures
 
 if TYPE_CHECKING:
@@ -157,7 +158,9 @@ def load_event_features(
         e["victims"] |= {normalize_for_match(v) for v in ent.get("victim_org", set()) if v}
         art = art_by_id.get(aid)
         if art is not None:
-            e["subjects"] |= _trusted_subjects(art, is_group)
+            e["subjects"] |= effective_subjects(
+                kinds.get(aid, ""), _trusted_subjects(art, is_group)
+            )
             if art.get("victim_sector_canonical") not in (None, "", "uncategorized", "other"):
                 e["sectors"].add(str(art["victim_sector_canonical"]))
             if art.get("victim_country_iso"):

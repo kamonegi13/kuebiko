@@ -348,7 +348,7 @@ class KnowledgeMixin(RunHistoryRepositoryBase):
         提案承認で辞書化したとき、歴史記事の帰属も確定 actor に昇格させる。新規確定行数を返す。
         """
         now_iso = _to_iso(datetime.now(UTC))
-        with self._connect() as conn:
+        with self.atomic(), self._connect() as conn:
             rows = conn.execute(
                 "SELECT DISTINCT article_id FROM article_entities "
                 "WHERE entity_type='actor_provisional' AND value=?",
