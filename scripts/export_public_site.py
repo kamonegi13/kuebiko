@@ -59,7 +59,7 @@ _INDEX_FIELDS = (
 )
 #: 書き出しに入ってはいけないキー (原文・翻訳・地政学の救済の影の記録が持つ判定の入力)。
 #: 万一の経路増加に対する検査。
-_FORBIDDEN_KEYS = ("body", "body_ja", "input_text")
+_FORBIDDEN_KEYS = ("body", "body_ja", "input_text", "prompt_text", "input_json")
 
 
 def _ids(page: dict[str, Any]) -> set[str]:

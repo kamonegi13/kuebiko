@@ -1132,4 +1132,26 @@ CREATE TABLE IF NOT EXISTS dedup_semantic_skips (
     ts            TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dedup_semantic_skips_ts ON dedup_semantic_skips(ts);
+
+-- 生成物の入力 (P0-18、2026-10-31): 物語系の生成物 (事象ニュース・Spotlight・状況総括・
+-- PIR 日次要点) の LLM に渡した prompt 本文を残す。**本文を含む**ためローカル (Tier2) 専用、
+-- 公開面の書き出しは prompt_text を禁止キーで止める (§9)。**年齢による削除はしない**
+-- (purge 関数・保持日数の定数を置かない — 利用者判断)。記録は GENERATION_INPUT_RECORD=0 で止まる。
+CREATE TABLE IF NOT EXISTS generation_inputs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at   TEXT NOT NULL,
+    step          TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    product_kind  TEXT NOT NULL,
+    product_id    TEXT NOT NULL,
+    prompt_sha256 TEXT NOT NULL,
+    prompt_chars  INTEGER NOT NULL,
+    prompt_text   TEXT NOT NULL,
+    -- prompt の元の構造化入力 (id・欄の JSON、上限あり、NULL 可)。本文を含むため公開しない
+    input_json    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_generation_inputs_product
+    ON generation_inputs(product_kind, product_id);
+CREATE INDEX IF NOT EXISTS idx_generation_inputs_recorded
+    ON generation_inputs(recorded_at);
 """

@@ -807,6 +807,8 @@ def local_llm_usage_summary(request: Request, days: int = 7) -> dict[str, Any]:
         "days": days,
         "by_step": summarize_local_usage(repo.list_local_llm_usage(days=days), days=days),
         "write_failures": dict(snapshot()),
+        # 生成物の入力 (P0-18) の product_kind 別の件数。本文は返さない
+        "generation_inputs": repo.generation_inputs_counts(days=days),
     }
 
 
