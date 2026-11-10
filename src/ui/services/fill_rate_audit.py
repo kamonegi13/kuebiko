@@ -414,6 +414,33 @@ METRICS: tuple[FillMetric, ...] = (
         "EXISTS (SELECT 1 FROM severity_c_shadow s WHERE s.article_id = a.article_id)",
         None,
     ),
+    # 導いた事象の線の日次の写し (2026-11-02 GRAPH-G0、EVENT_EDGES_RECORD=1)。列ではないので
+    # 「その日 (UTC) の写しが 1 件でもあるか」を日の代理にする。消費者は線の tier の定数
+    # (graph/edge_tiers) と G1 の点検。監視対象は**完全な沈黙** (日次の段の断線)。
+    # 旗が 0 の間は 0% が正常
+    FillMetric(
+        "event_edge_records",
+        "事象の線の日次の写し",
+        "EXISTS (SELECT 1 FROM event_edge_records r"
+        " WHERE r.derived_at = substr(a.created_at, 1, 10))",
+        None,
+    ),
+    # 生きた事象 (吸収されていない) のうち、その日の写しで線を 1 本以上持つ割合。事象単位なので
+    # 構成記事経由 (記事 → event_item_members → event_items) で数える。母集団は生きた事象の構成記事
+    FillMetric(
+        "event_edge_coverage",
+        "生きた事象の線の被覆",
+        "EXISTS (SELECT 1 FROM event_item_members m JOIN event_items i ON i.id = m.item_id"
+        " JOIN event_edge_records r ON r.derived_at = substr(a.created_at, 1, 10)"
+        " AND (r.item_a = i.id OR r.item_b = i.id)"
+        " WHERE m.article_id = a.article_id)",
+        None,
+        population=(
+            "EXISTS (SELECT 1 FROM event_item_members m JOIN event_items i ON i.id = m.item_id"
+            " WHERE m.article_id = a.article_id AND i.origin = 'live'"
+            " AND (i.merged_into IS NULL OR i.merged_into = ''))"
+        ),
+    ),
     # 本文の訳 (body_ja、2026-10-29 P0-24)。消費者は translate_attempts のバックオフ付き
     # 未訳キュー (list_articles_untranslated) と記事詳細の訳表示。母集団は本文のある記事 —
     # 低下は「翻訳キューが詰まった (先頭詰まり・写しの判定の過敏化)」。日本語原文は ''

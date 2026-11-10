@@ -792,6 +792,32 @@ CREATE TABLE IF NOT EXISTS severity_c_shadow (
 );
 CREATE INDEX IF NOT EXISTS idx_severity_c_shadow_created_at ON severity_c_shadow(created_at);
 
+-- 事象どうしの導いた線の日次の観測の写し (2026-11-02 GRAPH-G0)。導出 (relations.py・焦点の
+-- 照合) が SSoT で、これは作り直せる写し。1 日 1 回、同じ日の再実行は derived_at の行を置き換える。
+-- 記録だけ (EVENT_EDGES_RECORD)。本文は持たない。retention 180 日。
+CREATE TABLE IF NOT EXISTS event_edge_records (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    derived_at    TEXT    NOT NULL,       -- 写した日 (UTC, YYYY-MM-DD)
+    edge_key      TEXT    NOT NULL,       -- min(a,b)|max(a,b)|edge_type|rule_version
+    item_a        TEXT    NOT NULL,
+    item_b        TEXT    NOT NULL,
+    root_a        TEXT    NOT NULL,       -- merged_into をたどった根
+    root_b        TEXT    NOT NULL,
+    edge_type     TEXT    NOT NULL,       -- same_actor / incident / lineage
+    rel_type      TEXT    NOT NULL DEFAULT '',  -- 導出の元の種類 (follow_up / side / contains 等)
+    source        TEXT    NOT NULL DEFAULT '',  -- derived / veto / decision
+    basis_json    TEXT    NOT NULL DEFAULT '[]',
+    score         REAL,                   -- incident=確率 / same_actor=cos / lineage=NULL
+    rule_version  TEXT    NOT NULL DEFAULT '',
+    model_sha     TEXT    NOT NULL DEFAULT '',
+    tier          TEXT    NOT NULL DEFAULT 'check',  -- 写した時点の edge_tiers の値
+    created_at    TEXT    NOT NULL,
+    UNIQUE (derived_at, edge_key)
+);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_derived ON event_edge_records(derived_at);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_item_a ON event_edge_records(item_a);
+CREATE INDEX IF NOT EXISTS idx_event_edge_records_item_b ON event_edge_records(item_b);
+
 -- 地政学の救済の判定 v2 の影の記録 (2026-10-31)。本番の救済 (flat) は変えない (記録のみ)。
 -- 救済の候補 1 件 = 1 行。triage の時点で写し (pending)、毎時保守チェーンの段で判定する。
 -- 判定が見た入力 (題・本文プレビュー) を正解付けのために持つ (ローカルのみ。公開面の書き出しは

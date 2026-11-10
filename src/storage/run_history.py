@@ -52,6 +52,7 @@ from src.storage.repo_alert_dedup_shadow import AlertDedupShadowMixin
 from src.storage.repo_articles import ArticlesMixin
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.repo_dedup import DedupMixin
+from src.storage.repo_event_edge_records import EventEdgeRecordsMixin
 from src.storage.repo_event_focus import EventFocusMixin
 from src.storage.repo_eventnews import EventNewsMixin
 from src.storage.repo_geo_rescue_shadow import GeoRescueShadowMixin
@@ -119,6 +120,7 @@ class RunHistoryRepository(
     AlertDedupShadowMixin,
     GeoRescueShadowMixin,
     SeverityCShadowMixin,
+    EventEdgeRecordsMixin,
     TranslateAttemptsMixin,
     GrokAttemptsMixin,
     RunHistoryRepositoryBase,
