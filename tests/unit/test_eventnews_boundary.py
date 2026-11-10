@@ -68,6 +68,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 2026-11-02 GRAPH-G0: 導いた線の日次の写し (記録だけ。relations の導出を写す)
         "src/graph/edge_records.py",
         "src/ui/services/graph_edges_daily.py",
+        # 2026-11-14 SUBJECT-KIND-SHADOW: 種別が決まった時点で C4 を記録 (relation_features の
+        # 信頼できる主題の判定を遅延 import で再利用、記録だけ)
+        "src/cti/subject_kind_gate.py",
         # 2026-10-09: 領域をまたぐ線の試作 (読み取りのみ、本番の配線なし)
         "src/graph/crossdomain_load.py",
         # 2026-10-10: 線の偶然水準を測る帰無モデル (試作、読み取りのみ)。参照するのは線の型
