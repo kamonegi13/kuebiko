@@ -366,7 +366,8 @@ def run_all(args: argparse.Namespace, cert: Mapping[str, Any]) -> int:
     check_ship_model(resolved_ship_model(), dc.SHIP_ARM, required=dc.PROFILE.check_ship_resolution)
     inputs_sha = dc.verify_inputs(Path(args.inputs_dir))
     payload = json.loads((Path(args.inputs_dir) / dc.INPUTS_NAME).read_text(encoding="utf-8"))
-    windows = {str(w["window_id"]): w for w in payload["windows"]}
+    alias = payload.get(dc.ORG_ALIAS_KEY)  # rejudge2: 凍結した別名の写像 (無ければ従来どおり)
+    windows = {str(w["window_id"]): dc.with_org_alias(w, alias) for w in payload["windows"]}
     units = select_units(payload["windows"], args.runs, args.limit, args.window_ids)
     cfg = load_app_config()
     llms = {

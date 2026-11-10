@@ -417,13 +417,36 @@ def deviations() -> list[str]:
     ]
     if not dc.PROFILE.as_of_strict:
         return base
+    extra = (
+        ["org alias frozen at freeze time (not as of window start)"]
+        if dc.PROFILE.freeze_org_alias
+        else []
+    )
     return [
         *base,
+        *extra,
         "situation title = latest revision claim at window start (rejudge 2.3)",
         "dormancy from last evidence before window start (rejudge 2.3)",
         "already-assigned exclusion not applied",
         "reopen / later evidence edits not reconstructed",
     ]
+
+
+def org_alias_frozen(repo: Any) -> dict[str, Any] | None:
+    """rejudge2: 本番の ``load_org_alias`` が引く 2 口の値を凍結する (読み取りのみ)。
+
+    どちらの口を使うかは実行時の ``EVENTNEWS_ORG_ALIAS_SOURCE`` (本番と同じ値) が決めるので、
+    両方残す。
+    """
+    if not dc.PROFILE.freeze_org_alias:
+        return None
+    from src.ui.services.eventnews_org_alias import org_alias_source
+
+    return {
+        "source_at_freeze": org_alias_source(),
+        "pairs": [list(p) for p in repo.list_org_identity_same_pairs()],
+        "dict": repo.load_org_alias_dict(),
+    }
 
 
 def pir_context() -> list[dict[str, str]]:
@@ -505,6 +528,9 @@ def run(args: argparse.Namespace) -> int:
         "pir_context": pir_context(),
         "windows": windows,
     }
+    alias = org_alias_frozen(repo)
+    if alias is not None:
+        payload[dc.ORG_ALIAS_KEY] = alias
     hashes = dc.write_json_with_sha(Path(args.out_dir), dc.INPUTS_NAME, dc.INPUTS_SHA_NAME, payload)
     print(
         f"[detect-snapshot] {len(windows)} 窓 -> {args.out_dir}"
