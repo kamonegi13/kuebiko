@@ -5,7 +5,7 @@
 | 旗 | 効果 |
 |---|---|
 | `ORG_IDENTITY_SFT_JUDGE=1` | `judge_name_pair` が SFT の判定役を拒否せず、org_identity を学習した系統 (`task_prefix.STEP_TRAINED_ONLY_FAMILIES` の `kuebiko-sft:s26`、前方一致) に限り通す |
-| `ORG_IDENTITY_ORG_QUESTION_V2=1` | org の問いの「同じ組織」の定義を Opus の基準 (`org_identity.OPUS_SAME_ORG_CRITERIA` = rubric org-alias-d-v1 と同じ。運営会社とサービス名・親会社と子会社を足す) にする。教師のラベルの基準と問いの文面を揃える |
+| `ORG_IDENTITY_ORG_QUESTION_V2=1` | org の問いの「同じ組織」の定義と、両問いの注意書きの最後の文 (`_CAUTION_V2`) を Opus の基準 (`org_identity.OPUS_SAME_ORG_CRITERIA` = rubric org-alias-d-v1 と同じ。運営会社とサービス名・親会社と子会社を足す) にする。教師のラベルの基準と問いの文面を揃える |
 
 課題の印 `[task: org_identity]` は `TASK_MARKERS` に足し、`STEP_TRAINED_ONLY_FAMILIES` で s26 系統に限る。
 `decision_probe` の SFT 経路 (raw) が user ターンの先頭へ付ける (学習の入力と同じ形)。

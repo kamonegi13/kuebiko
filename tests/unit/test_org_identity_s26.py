@@ -16,6 +16,7 @@ S26 = "kuebiko-sft:s26"
 MARKER = "[task: org_identity]\n"
 #: 旗を足す前の main (8968701b) の same_org_question の sha256 (固定入力)
 GOLDEN_ORG_QUESTION = "19cfe68fdeb0858371bc87fe14da6ca3fea1770c8eaa2cd8d9f029fa122b228b"
+GOLDEN_EVENT_QUESTION = "0e51da59d70b0281daf7e94bbe2f55ad76a65e360416bd5a7d8b8c26ed078322"
 _ARGS = ("名A", "文A。", "名B", "文B。")
 
 
@@ -42,10 +43,20 @@ class TestOrgQuestionFlag:
         assert "親会社と子会社" in q and "別の組織" in q
         assert q != oi.same_org_question(*_ARGS, v2=False)
 
-    def test_event_question_is_not_affected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        before = oi.same_event_question(*_ARGS)
+    def test_event_question_default_unchanged(self) -> None:
+        assert (
+            hashlib.sha256(oi.same_event_question(*_ARGS).encode()).hexdigest()
+            == GOLDEN_EVENT_QUESTION
+        )
+
+    def test_v2_caution_matches_opus_criteria_for_both_questions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv(oi.ORG_QUESTION_V2_ENV, "1")
-        assert oi.same_event_question(*_ARGS) == before
+        for q in (oi.same_event_question(*_ARGS), oi.same_org_question(*_ARGS)):
+            assert "名前そのものが同じ組織を指す" not in q
+            assert "親会社・子会社・運営会社とそのサービス名" in q
+            assert "別々の被害者" in q
 
 
 class TestMarker:

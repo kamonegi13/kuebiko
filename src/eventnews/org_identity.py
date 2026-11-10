@@ -219,13 +219,32 @@ _CAUTION = (
 )
 
 
-def same_event_question(name_a: str, ctx_a: str, name_b: str, ctx_b: str) -> str:
-    """問い 1: 同じ事案の同じ被害者か (親会社・子会社・運営会社・サービス名まで含める)。"""
+#: 旗 ``ORG_IDENTITY_ORG_QUESTION_V2`` が 1 のときの注意書き。最後の文を Opus の基準
+#: (親子・運営会社とサービス名も同じ組織) と食い違わない形にする (他の文は ``_CAUTION`` と同一)。
+_CAUTION_V2 = _CAUTION.replace(
+    "名前そのものが同じ組織を指すと言える場合だけ「はい」にしてください。",
+    "名前が同じ組織(またはその親会社・子会社・運営会社とそのサービス名)を指すと言える場合だけ"
+    "「はい」にしてください。",
+)
+
+
+def _caution(use_v2: bool) -> str:
+    return _CAUTION_V2 if use_v2 else _CAUTION
+
+
+def same_event_question(
+    name_a: str, ctx_a: str, name_b: str, ctx_b: str, *, v2: bool | None = None
+) -> str:
+    """問い 1: 同じ事案の同じ被害者か (親会社・子会社・運営会社・サービス名まで含める)。
+
+    ``v2`` (None = 旗) が真なら注意書きだけ ``_CAUTION_V2`` にする。
+    """
+    use_v2 = _flag_on(ORG_QUESTION_V2_ENV) if v2 is None else v2
     return (
         "2つの記事が同じサイバー事案を報じているかを調べています。次の2つの名前が、その事案の"
         "同じ被害者(同一組織、またはその親会社・子会社・運営会社・サービス名)を指すか判定して"
         "ください。\n"
-        + _CAUTION
+        + _caution(use_v2)
         + _NAMES_AND_CONTEXTS.format(name_a=name_a, ctx_a=ctx_a, name_b=name_b, ctx_b=ctx_b)
         + "同じ事案の同じ被害者を指していますか?"
     )
@@ -246,7 +265,7 @@ def same_org_question(
         + criteria
         + "、別の組織(似た名前の別法人・同業他社・同時期に似た被害に遭った別法人を"
         "含む)は違います。\n"
-        + _CAUTION
+        + _caution(use_v2)
         + _NAMES_AND_CONTEXTS.format(name_a=name_a, ctx_a=ctx_a, name_b=name_b, ctx_b=ctx_b)
         + "名前1と名前2は同じ組織ですか?"
     )
