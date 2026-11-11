@@ -28,6 +28,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from out_manifest import FetchVerifyError, fetch_run  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[2]
 CODE = Path(__file__).resolve().parent
 LOCAL_RUNS = REPO / "data" / "cloud-runs"
@@ -127,7 +130,7 @@ def cmd_upload(a: argparse.Namespace) -> None:
         if src.exists():
             c.upload_file(str(src), b, f"runs/{a.run_id}/data/{name}")
             print(f"送信 {name} ({src.stat().st_size / 1e6:.1f}MB)")
-    for name in ("train_lora.py", "pod_run.sh"):
+    for name in ("train_lora.py", "pod_run.sh", "out_manifest.py"):
         c.upload_file(str(CODE / name), b, f"runs/{a.run_id}/code/{name}")
     print("送信 コード")
 
@@ -284,20 +287,11 @@ def cmd_fetch(a: argparse.Namespace) -> None:
     c = s3(e)
     b = e["RUNPOD_VOLUME_ID"]
     dest = LOCAL_RUNS / a.run_id
-    prefix = f"runs/{a.run_id}/"
-    keys = []
-    for page in c.get_paginator("list_objects_v2").paginate(Bucket=b, Prefix=prefix):
-        keys += [(o["Key"], o["Size"]) for o in page.get("Contents", [])]
-    for key, size in keys:
-        rel = key[len(prefix) :]
-        if rel.startswith(("data/", "code/", "out/adapter-last/")):
-            continue
-        local = dest / rel
-        if local.exists() and local.stat().st_size == size:
-            continue  # 取得済み (途中で切れたら、残りだけを取り直す)
-        local.parent.mkdir(parents=True, exist_ok=True)
-        print(f"取得 {rel} ({size / 1e6:.0f}MB)", flush=True)
-        c.download_file(b, key, str(local), Config=_TRANSFER)
+    try:
+        fetch_run(c, b, a.run_id, dest, _TRANSFER)
+    except FetchVerifyError as exc:
+        print(f"✗ 取り出し失敗: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
     print(f"取り出し完了 → {dest}")
 
 

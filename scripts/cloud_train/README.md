@@ -71,6 +71,7 @@ rm -rf data/cloud-merged/$RUN; data/mlx/venv/bin/python data/mlx/prune_ollama_or
 | 学習例 0 件のまま「完了」 | train_lora.py が 0 件なら異常終了する |
 | 学習と本番の入力の形のずれ | train_lora.py は Ollama の `RENDERER gemma4` (空の思考欄なし) と同じ形で組み立てる |
 | 持ち帰りに GPU の課金 | 持ち帰りは S3 API (サーバ不要)。途中で切れても残りだけ取り直す |
+| 取り出したファイルの欠け・破損 | サーバが成果の sha256 一覧 `out/SHA256SUMS.json` を作って送る (`out_manifest.py`)。送った後は head_object で大きさを確認し食い違えば送り直す。手元の `fetch` は全ファイルを sha256 で照合し (大きさだけで「取得済み」にしない)、合わなければ消して 3 回まで取り直し、それでも合わなければ該当ファイルを示して終了コード 2 で止まる。safetensors はヘッダも読む。最後に「全ファイル照合 OK」と出る。一覧の無い古い run は大きさだけで判定し警告 |
 
 ## 確認済み (手元の CPU・極小モデル)
 
@@ -86,3 +87,16 @@ rm -rf data/cloud-merged/$RUN; data/mlx/venv/bin/python data/mlx/prune_ollama_or
 - `DEFAULT_IMAGE` の PyTorch イメージのタグが現存するか
 - MLX との違い: HF の専門家は gate と up が 1 本なので LoRA を共有する (MLX は別々)。初回は s20 と同じ
   データ・設定で学習し、**基盤の違いの較正** として s20 と比べる
+
+## 予備の複製 (/workspace/backup) からの救出
+
+`pod_run.sh` は書き出しの前に `/workspace/backup/<run>` へ `cp -r` で予備を置くが、これは
+**保存領域へ直接書いた大きなファイル**で、S3 の窓口からは読めなくなる型である (照合値の計算が
+約 100 秒を超えて Cloudflare が 524 を返す。n19b の 7.9GB、2026-09-29)。したがって予備は
+**S3 の `fetch` では取り出せない**。救出が要るときは次の手順にする:
+
+1. 保存領域と**同じデータセンター**に、安い CPU の pod を保存領域つきで立てる (GPU 不要)
+2. pod 内で `/workspace/backup/<run>` を `python out_manifest.py` の `upload_out` 相当
+   (boto3 の `upload_file`、64MB の multipart、窓口の endpoint 経由) で別のキー
+   (例 `runs/<run>/out/`) へ**送り直す**。窓口経由で書けば照合値が保存され、手元から読める
+3. 手元で `runpod_ctl.py fetch <run>` (sha256 で照合される)。終わったら CPU pod を削除する

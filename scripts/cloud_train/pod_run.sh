@@ -92,26 +92,10 @@ say "学習 完了 → S3 の窓口経由で書き出し"
 # 予備に入れると保存領域を 4GB 余計に食う (s25 が QuotaExceeded、2026-10-28) ので外す
 rm -rf "$OUT/adapter-last"
 mkdir -p "/workspace/backup/$RUN_ID" && cp -r "$OUT/." "/workspace/backup/$RUN_ID/" || say "⚠ 予備の複製に失敗 (続行)"
+# 成果の sha256 一覧 (SHA256SUMS.json) を作り、成果と一緒に送る。送った後に head_object で
+# 大きさを確かめ、食い違えば送り直す (out_manifest.py。手元の fetch が sha256 で照合する)
 upload() {
-python - <<'PY'
-import os, boto3
-from boto3.s3.transfer import TransferConfig
-dc = os.environ["DATACENTER"]
-c = boto3.client("s3", endpoint_url=f"https://s3api-{dc.lower()}.runpod.io/", region_name=dc,
-    aws_access_key_id=os.environ["S3_KEY"], aws_secret_access_key=os.environ["S3_SECRET"])
-cfg = TransferConfig(max_concurrency=8, multipart_chunksize=64 * 1024 * 1024)
-out, run = "/root/out", os.environ["RUN_ID"]
-for root, _, files in os.walk(out):
-    for f in files:
-        path = os.path.join(root, f)
-        rel = os.path.relpath(path, out)
-        if rel.startswith("adapter-last/"):
-            continue
-        c.upload_file(path, os.environ["VOLUME_ID"], f"runs/{run}/out/{rel}", Config=cfg)
-        print("書き出し", rel, flush=True)
-# 完了の印は最後に書く (手元の watch はこれを見て取り出しを始める)
-c.upload_file(f"{out}/DONE.json", os.environ["VOLUME_ID"], f"runs/{run}/DONE.json")
-PY
+  python "$RUN_DIR/code/out_manifest.py" pod-upload
 }
 pip install -q boto3 || true
 ok=0
