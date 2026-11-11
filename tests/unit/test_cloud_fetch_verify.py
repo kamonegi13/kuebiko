@@ -197,3 +197,13 @@ def test_upload_fails_when_size_never_matches(tmp_path: Path) -> None:
     c.short_uploads["k"] = 99
     with pytest.raises(RuntimeError, match="大きさが合わない"):
         om.upload_file_verified(c, BUCKET, f, "k", log=lambda _: None)
+
+
+def test_build_manifest_excludes_done_marker(tmp_path: Path) -> None:
+    (tmp_path / "DONE.json").write_text("{}")
+    (tmp_path / "a.bin").write_bytes(b"x")
+
+    files = om.build_manifest(tmp_path)["files"]
+
+    assert "DONE.json" not in files
+    assert "a.bin" in files

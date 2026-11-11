@@ -52,7 +52,9 @@ def build_manifest(out_dir: Path) -> dict[str, Any]:
     files: dict[str, dict[str, Any]] = {}
     for path in sorted(p for p in out_dir.rglob("*") if p.is_file()):
         rel = path.relative_to(out_dir).as_posix()
-        if rel == MANIFEST_NAME or rel.startswith(EXCLUDE_PREFIXES):
+        # DONE.json は out/ ではなく runs/<id>/DONE.json に別に送る完了の印 (一覧に入れると
+        # 取り出しが out/DONE.json を探して「保存領域に無い」で必ず失敗する — 2026-11-11 実機試験)
+        if rel in (MANIFEST_NAME, "DONE.json") or rel.startswith(EXCLUDE_PREFIXES):
             continue
         files[rel] = {"sha256": sha256_file(path), "size": path.stat().st_size}
     return {"version": MANIFEST_VERSION, "files": files}
@@ -125,7 +127,7 @@ def upload_out(
     """成果 + SHA256SUMS を送り、最後に完了の印 (DONE.json) を送る。"""
     manifest = write_manifest(out_dir)
     done = out_dir / "DONE.json"
-    names = [MANIFEST_NAME, *(r for r in manifest["files"] if r != "DONE.json")]
+    names = [MANIFEST_NAME, *manifest["files"]]
     for rel in names:
         upload_file_verified(c, bucket, out_dir / rel, f"runs/{run_id}/out/{rel}", config, log)
         log(f"書き出し {rel}")
