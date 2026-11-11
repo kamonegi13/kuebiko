@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import replace
 
-from src.eventnews.merge import MergeGroup, MergeLink
+from src.eventnews.merge import MergeGroup, MergeLink, VetoedLink
 from src.storage.repo_merge_decisions import MergeDecisionRow
 
 #: 辺の出どころの SSoT。通常の共有名の辺 / 頻出の名前の共有で足した辺
@@ -80,3 +81,33 @@ def build_decision_rows(
                 )
             )
     return rows
+
+
+#: 判断記録の flags_json に残す、勧告のハブの関門 (shadow) の印のキー
+HUB_SPLIT_FLAG_KEY = "hub_split_flag"
+
+
+def mark_hub_split(
+    rows: Sequence[MergeDecisionRow], flagged: Sequence[VetoedLink]
+) -> list[MergeDecisionRow]:
+    """勧告のハブの関門 (shadow) が止める対象とした組に触れる行の flags_json に理由を足す。
+
+    吸収された事象が止める対象の組の片端なら、その行に ``hub_split_flag`` = 理由を書く
+    (確かめの事前登録 docs/replay_prereg/merge_hub_split.md の「止める組」はこの印で数える)。
+    shadow の判断を event_merge_vetoes に書かないのは、同じ組の焦点の照合の行を上書きしないため。
+    """
+    if not flagged:
+        return list(rows)
+    reason_of: dict[str, str] = {}
+    for v in flagged:
+        for item in (v.item_a, v.item_b):
+            reason_of.setdefault(item, v.detail)
+    out: list[MergeDecisionRow] = []
+    for row in rows:
+        reason = reason_of.get(row.absorbed_id)
+        if reason is None:
+            out.append(row)
+            continue
+        flags = {**json.loads(row.flags_json or "{}"), HUB_SPLIT_FLAG_KEY: reason}
+        out.append(replace(row, flags_json=json.dumps(flags, ensure_ascii=False, sort_keys=True)))
+    return out

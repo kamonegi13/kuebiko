@@ -43,6 +43,7 @@ import numpy as np
 from src.cti.roundup_detector import report_period
 from src.eventnews import pair_model, pair_shadow
 from src.eventnews.grouping import build_join_entities
+from src.eventnews.hub_split import build_hub_split_check
 from src.eventnews.merge import (
     MIN_EDGES_BETWEEN_ITEMS,
     MergeGroup,
@@ -77,7 +78,11 @@ from src.ui.services.eventnews_hourly_job import (
     _load_vectors,
     regenerate_pending,
 )
-from src.ui.services.eventnews_merge_decisions import RUN_KIND_HOURLY, build_decision_rows
+from src.ui.services.eventnews_merge_decisions import (
+    RUN_KIND_HOURLY,
+    build_decision_rows,
+    mark_hub_split,
+)
 from src.ui.services.eventnews_org_alias import load_org_alias
 
 _log = get_logger(__name__)
@@ -181,6 +186,8 @@ class MergePlan:
     vetoes: tuple[VetoedLink, ...] = ()
     #: この計画の焦点の照合の別名の写像 (判断記録の照合を判断と揃えるため)
     org_alias: Mapping[str, str] = field(default_factory=dict)
+    #: 勧告のハブの関門が止める対象とした組 (shadow は結んだうえで判断記録に印、1 は結ばない)
+    hub_splits: tuple[VetoedLink, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -347,6 +354,23 @@ def bulletin_bridge_gate_enabled() -> bool:
     return os.environ.get("EVENTNEWS_MERGE_BULLETIN_BRIDGE_GATE", "0") == "1"
 
 
+#: 勧告のハブへの吸収の関門 (2026-11-11、``eventnews.hub_split``)。0 / shadow (既定) / 1
+HUB_SPLIT_FLAG = "EVENTNEWS_MERGE_HUB_SPLIT"
+HUB_SPLIT_OFF = "0"
+HUB_SPLIT_SHADOW = "shadow"
+HUB_SPLIT_ON = "1"
+
+
+def hub_split_mode() -> str:
+    """``EVENTNEWS_MERGE_HUB_SPLIT`` の解釈。未設定・読めない値は shadow (止めない側)。"""
+    raw = os.environ.get(HUB_SPLIT_FLAG, HUB_SPLIT_SHADOW).strip().lower()
+    if raw in ("1", "on", "true"):
+        return HUB_SPLIT_ON
+    if raw in ("0", "off", "false"):
+        return HUB_SPLIT_OFF
+    return HUB_SPLIT_SHADOW
+
+
 def hub_gate_enabled() -> bool:
     """ハブ事象の主題でない CVE を橋にしない (EVENTNEWS_MERGE_HUB_GATE=1)。"""
     return os.environ.get("EVENTNEWS_MERGE_HUB_GATE", "0") == "1"
@@ -411,6 +435,7 @@ def merge_flag_snapshot() -> dict[str, object]:
         "max_gap_days": None if gap is None else gap.days,
         "min_edges": MIN_EDGES_BETWEEN_ITEMS,
         "focus_gate": focus_gate_mode(),
+        "hub_split": hub_split_mode(),
     }
 
 
@@ -523,6 +548,8 @@ def plan_for(
     gate_mode = focus_gate_mode()
     org_alias = load_org_alias(repo) if gate_mode != GATE_OFF else {}
     vetoed: list[VetoedLink] = []
+    split_mode = hub_split_mode()
+    splits: list[VetoedLink] = []
     groups = plan_merges(
         item_of=inputs.item_of,
         first_seen=inputs.first_seen,
@@ -542,6 +569,11 @@ def plan_for(
         ),
         veto_enforce=gate_mode == GATE_ON,
         vetoed_out=vetoed,
+        hub_split=(
+            None if split_mode == HUB_SPLIT_OFF else build_hub_split_check(_members_of(inputs))
+        ),
+        hub_split_enforce=split_mode == HUB_SPLIT_ON,
+        hub_split_out=splits,
     )
     return MergePlan(
         groups=tuple(groups),
@@ -552,6 +584,7 @@ def plan_for(
         frequent_pairs=frozenset((a, b) if a <= b else (b, a) for a, b in extra),
         vetoes=tuple(vetoed),
         org_alias=org_alias,
+        hub_splits=tuple(splits),
     )
 
 
@@ -629,14 +662,27 @@ async def _prepare_inputs(
 
 def record_vetoes(repo: RunHistoryRepository, plan: MergePlan, now: datetime) -> int:
     """焦点の照合で止めた組を記録する。記録の失敗は大きく残すが統合は止めない。"""
+    recorded = _record_hub_split_blocks(repo, plan, now)
     if not plan.vetoes:
-        return 0
+        return recorded
     try:
-        return repo.record_merge_vetoes(plan.vetoes, seen_at=now, mode=focus_gate_mode())
+        return recorded + repo.record_merge_vetoes(plan.vetoes, seen_at=now, mode=focus_gate_mode())
     except Exception as e:  # noqa: BLE001 — 補助の記録。統合の成否を巻き込まない
         _log.error(
             "eventnews_merge_vetoes_record_failed", rows=len(plan.vetoes), error=str(e)[:200]
         )
+        return 0
+
+
+def _record_hub_split_blocks(repo: RunHistoryRepository, plan: MergePlan, now: datetime) -> int:
+    """勧告のハブの関門で結ばなかった組を残す (旗 1 のときだけ。shadow は判断記録の印)。"""
+    blocked = [v for v in plan.hub_splits if v.enforced]
+    if not blocked:
+        return 0
+    try:
+        return repo.record_merge_vetoes(blocked, seen_at=now, mode=hub_split_mode())
+    except Exception as e:  # noqa: BLE001 — 補助の記録。統合の成否を巻き込まない
+        _log.error("eventnews_merge_hub_split_record_failed", rows=len(blocked), error=str(e)[:200])
         return 0
 
 
@@ -659,6 +705,7 @@ def decision_rows(plan: MergePlan, *, run_kind: str) -> list[MergeDecisionRow]:
         flags=merge_flag_snapshot(),
         run_kind=run_kind,
     )
+    rows = mark_hub_split(rows, [v for v in plan.hub_splits if not v.enforced])
     return enrich_decision_rows(rows, _members_of(inputs), plan.org_alias)
 
 
