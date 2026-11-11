@@ -167,6 +167,9 @@ services:
       # 統合の判断で、事象の焦点の照合が conflict の組を結ばない (2026-10-24 F2)。on / shadow (記録だけ) / off。
       # 新標本 31 組で止めた組の本当に別 84% (区間 67〜93%)、30 日の再現で 37 件。docs/eventnews_focus_redesign.md §9.4
       EVENTNEWS_MERGE_FOCUS_GATE: ${EVENTNEWS_MERGE_FOCUS_GATE:-on}
+      # 勧告 (修正) を seed にした記事 8 件以上の事象 (ハブ) に、seed が勧告以外の事象・辺 1 本の救済の
+      # 勧告を結ばない (2026-11-11)。0 / shadow (判断記録の flags_json に hub_split_flag、既定) / 1 (結ばない)
+      EVENTNEWS_MERGE_HUB_SPLIT: ${EVENTNEWS_MERGE_HUB_SPLIT:-shadow}
       # detect の判断を部品に分けた形を記録だけする (2026-10-16、0=off / shadow / 1=置換)。shadow は本番の開設の後に
       # 予算 120 秒・書き手 6 件までで動き、結果は detect_bundles (variant=decompose_shadow) に残る
       DETECT_DECOMPOSE: ${DETECT_DECOMPOSE:-shadow}

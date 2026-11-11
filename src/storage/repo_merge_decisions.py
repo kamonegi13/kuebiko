@@ -41,6 +41,11 @@ _CHUNK = 400
 ACTION_BLOCKED = "blocked"
 ACTION_SHADOW = "shadow"
 ACTION_RELATION_CANDIDATE = "relation_candidate"
+#: 勧告のハブの関門 (EVENTNEWS_MERGE_HUB_SPLIT=1、2026-11-11) で結ばなかった組。
+#: 焦点の関門の抽出 (blocked / shadow) と混ざらないよう別の action にする。
+#: 関係 (系統) の候補でもある。shadow の判断は event_merge_decisions の flags_json
+#: (``hub_split_flag``) に残す (同じ組の焦点の行を上書きしないため、この表に書かない)
+ACTION_HUB_SPLIT_BLOCKED = "hub_split_blocked"
 #: 吸収の連鎖 (A→B→C…) をたどる上限。循環の保険でもある
 MAX_ROOT_HOPS = 8
 
@@ -83,6 +88,8 @@ class MergeVetoRow:
 
 
 def _veto_action(veto: _VetoLike) -> str:
+    if veto.klass == "hub_split":
+        return ACTION_HUB_SPLIT_BLOCKED
     if veto.enforced:
         return ACTION_BLOCKED
     return ACTION_SHADOW if veto.klass == "conflict" else ACTION_RELATION_CANDIDATE

@@ -29,7 +29,7 @@ from src.graph.edge_records import (
     records_from_relations,
 )
 from src.logging_config import get_logger
-from src.storage.repo_merge_decisions import ACTION_RELATION_CANDIDATE
+from src.storage.repo_merge_decisions import ACTION_HUB_SPLIT_BLOCKED, ACTION_RELATION_CANDIDATE
 from src.storage.run_history import RunHistoryRepository
 
 _log = get_logger(__name__)
@@ -58,11 +58,16 @@ def flatten_relations(index: dict[str, list[DerivedRelation]]) -> list[DerivedRe
 
 
 def collect_lineage_pairs(repo: Any, *, now: datetime) -> list[tuple[str, str, str]]:
-    """焦点の lineage の組 ``(a, b, source)``: 統合を止めた関係の候補 + 統合の判断記録。"""
+    """焦点の lineage の組 ``(a, b, source)``: 統合を止めた関係の候補 + 統合の判断記録。
+
+    勧告のハブの関門 (EVENTNEWS_MERGE_HUB_SPLIT=1) で結ばなかった組も系統の候補として読む。
+    """
     since = now - timedelta(days=LINEAGE_WINDOW_DAYS)
     pairs: list[tuple[str, str, str]] = []
     for v in repo.list_merge_vetoes(
-        since=since, actions=[ACTION_RELATION_CANDIDATE], limit=_LINEAGE_LIMIT
+        since=since,
+        actions=[ACTION_RELATION_CANDIDATE, ACTION_HUB_SPLIT_BLOCKED],
+        limit=_LINEAGE_LIMIT,
     ):
         pairs.append((v.item_a, v.item_b, SOURCE_VETO))
     for d in repo.list_merge_decisions(limit=_LINEAGE_LIMIT):

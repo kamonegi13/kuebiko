@@ -49,6 +49,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from src.eventnews.grouping import blocked_by_different_victims, edge_is_allowed
+from src.eventnews.hub_split import HUB_SPLIT_CLASS, HubSplitCheck
 from src.eventnews.models import FOCAL_CVE_MAX, FREQ_CAP_EXEMPT_TYPES, MemberArticle
 
 #: 事象どうしを結ぶのに要る辺の本数。**1 本では結ばない**。
@@ -330,6 +331,9 @@ def plan_merges(
     link_veto: LinkVeto | None = None,
     veto_enforce: bool = True,
     vetoed_out: list[VetoedLink] | None = None,
+    hub_split: HubSplitCheck | None = None,
+    hub_split_enforce: bool = False,
+    hub_split_out: list[VetoedLink] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -363,6 +367,9 @@ def plan_merges(
             conflict は結ばない (``veto_enforce`` が False なら記録だけ)。lineage は止めず記録だけ。
             照合は組ごとに独立 (A-B と B-C が通れば A-C が食い違っても推移で結ばれる)
         vetoed_out: 照合が conflict / lineage を返した組の記録の出力先 (呼び手が空の list を渡す)
+        hub_split: 勧告のハブへの吸収の関門 (``hub_split.build_hub_split_check``、2026-11-11)。
+            焦点の照合より前に当てる。``hub_split_enforce`` が False なら止める対象の組を
+            ``hub_split_out`` に記録するだけで結ぶ (shadow)。True なら結ばず、焦点の照合も当てない
     """
     pairs = candidate_pairs_by_entity(entities, vectors=vectors, hub_cap=hub_cap)
     focal = focal_cves_by_item(item_of, entities) if cve_disjoint_gate else {}
@@ -421,6 +428,10 @@ def plan_merges(
         is_rescued = (ia, ib) in rescued and n < min_edges
         if n < min_edges and not is_rescued:
             continue
+        if hub_split is not None and _hub_split(
+            hub_split, ia, ib, n, is_rescued, enforce=hub_split_enforce, out=hub_split_out
+        ):
+            continue
         if link_veto is not None and _vetoed(
             link_veto, ia, ib, n, veto_enforce=veto_enforce, out=vetoed_out
         ):
@@ -449,6 +460,25 @@ def plan_merges(
             )
         )
     return out
+
+
+def _hub_split(
+    check: HubSplitCheck,
+    item_a: str,
+    item_b: str,
+    edge_count: int,
+    rescued: bool,
+    *,
+    enforce: bool,
+    out: list[VetoedLink] | None,
+) -> bool:
+    """勧告のハブの関門で組を結ばないなら True。止める対象の組は ``out`` に残す。"""
+    reason = check(item_a, item_b, rescued)
+    if not reason:
+        return False
+    if out is not None:
+        out.append(VetoedLink(item_a, item_b, HUB_SPLIT_CLASS, reason, edge_count, enforce))
+    return enforce
 
 
 def _vetoed(
