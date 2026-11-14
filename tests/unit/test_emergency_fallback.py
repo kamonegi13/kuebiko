@@ -90,7 +90,7 @@ def test_warning_mode_accepts_out_of_slot_models(monkeypatch: pytest.MonkeyPatch
 def test_registry_enforce_rejects_unregistered(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MODEL_REGISTRY_ENFORCE", "1")
 
-    errs = validate_model_tiers(_tiers(**{"step:triage": "kuebiko-sft:n20"}))
+    errs = validate_model_tiers(_tiers(**{"step:triage": "kuebiko-sft:n21"}))
 
     assert any("未登録" in e for e in errs)
 
