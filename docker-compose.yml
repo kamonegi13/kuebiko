@@ -273,6 +273,7 @@ services:
       # 語 約 5 割・数字 1 割未満)。ログ translate_fidelity_garbled に blocked / 種類別件数
       # 10-12 夜: ident で有効化 (14 日の再現で消える訳 1.9%・識別子の検出 41 件すべて本物)
       TRANSLATE_FIDELITY_GATE: ${TRANSLATE_FIDELITY_GATE:-ident}
+      TRANSLATE_ECHO_EXEMPT_RETAINABLE: ${TRANSLATE_ECHO_EXEMPT_RETAINABLE:-0}
       # 翻訳キューの先頭詰まり対策 (2026-10-29 P0-24): 失敗が続く記事を 24h・72h・7 日空けるまで選ばない。0 = 従来の選び方
       TRANSLATE_QUEUE_BACKOFF: ${TRANSLATE_QUEUE_BACKOFF:-1}
       # Grok の描画されなかったレポートの通知の間引き (2026-10-29 P0-25): 取り直しは毎時続け、通知は最初と N 回目ごとだけ。0 = 毎回通知

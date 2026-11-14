@@ -228,9 +228,7 @@ def test_translate_markers_only_for_models_trained_on_them(monkeypatch) -> None:
     for step in (Step.ARTICLE_TRANSLATE, Step.ACTOR_SYNC):
         for model in ("kuebiko-sft:s21", "kuebiko-sft:n19", "kuebiko-sft:i58", "kuebiko-sft:s23i"):
             assert with_task_prefix("本文", step, model) == "本文"
-    # n20 は評価中の新モデル: 環境変数で足したときだけ付く (本番投入で PREFIX_TRAINED_MODELS へ足す)
-    assert with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:n20") == "本文"
-    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:n20")
+    # n20 は登録簿に入った (11-14、翻訳・和訳から本番投入): 環境変数なしで付く
     assert (
         with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:n20")
         == "[task: translate]\n本文"
@@ -302,12 +300,11 @@ def test_s24b_aux_markers_follow_s24b_family_only() -> None:
 
 
 def test_trained_only_steps_have_no_factory_prefix_by_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """既定 (n20 を有効化していない本番) では翻訳・和訳に wrapper を掛けない = 従来と同じ。"""
+    """n20 を登録した後 (11-14) は、環境変数なしでも翻訳・和訳の印が有効 (付くのは n20 だけ)。"""
     from src.tools.task_prefix import prefix_for
 
     monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
-    for step in (Step.ARTICLE_TRANSLATE, Step.ACTOR_SYNC):
-        assert prefix_for(step) == ""
-    monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:n20")
     assert prefix_for(Step.ARTICLE_TRANSLATE) == "[task: translate]\n"
+    # 印を学習していないモデルには付かない
+    assert prefix_for(Step.ARTICLE_TRANSLATE, "kuebiko-sft:26b") == ""
     assert prefix_for(Step.TRIAGE) != ""  # 制限のない step は不変

@@ -32,7 +32,8 @@ def test_assigned_local_model_is_registered(model: str) -> None:
 
 
 def test_unregistered_model_is_reported() -> None:
-    assert not reg.is_registered("kuebiko-sft:n20")
+    assert reg.is_registered("kuebiko-sft:n20")  # 11-14 に登録 (翻訳・和訳)
+    assert not reg.is_registered("kuebiko-sft:n21")
     assert not reg.is_registered("kuebiko-sft:s26")
 
 
