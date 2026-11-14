@@ -373,8 +373,55 @@ def build_body_prompt(title: str, body: str, published: str | None = None) -> st
     )
 
 
+_RECOV_FIX_FLAG = "AXES_RECOVERABILITY_FIX"
+#: 被害なしを表す impact (これ以外で recoverability=not_applicable は矛盾)
+_NO_DAMAGE_IMPACTS = frozenset({"none", "attempted"})
+
+
+def recoverability_fix_mode() -> Literal["0", "shadow", "1"]:
+    """``AXES_RECOVERABILITY_FIX``: 0 / shadow (既定) / 1。未知の値は shadow。"""
+    raw = os.environ.get(_RECOV_FIX_FLAG, "shadow").strip().lower()
+    if raw == "0":
+        return "0"
+    if raw == "1":
+        return "1"
+    return "shadow"
+
+
+def normalize_recoverability(axes: SeverityAxes) -> tuple[SeverityAxes, bool]:
+    """被害あり (impact が none/attempted 以外) なのに recoverability=not_applicable (被害なし)
+    という矛盾を unknown (記載なし) に直した複製を返す。(新しい軸, 変えたか)。"""
+    if axes.impact in _NO_DAMAGE_IMPACTS or axes.recoverability != "not_applicable":
+        return axes, False
+    return axes.model_copy(update={"recoverability": "unknown"}), True
+
+
+def apply_recoverability_fix(
+    axes: SeverityAxes | None, article_id: str | None = None
+) -> SeverityAxes | None:
+    """旗に従って矛盾を扱う。shadow = ログのみ (出力不変) / 1 = 適用 / 0 = 何もしない。"""
+    mode = recoverability_fix_mode()
+    if axes is None or mode == "0":
+        return axes
+    fixed, changed = normalize_recoverability(axes)
+    if not changed:
+        return axes
+    _log.info(
+        "axes_recoverability_inconsistent",
+        article_id=article_id,
+        impact=axes.impact,
+        mode=mode,
+    )
+    return fixed if mode == "1" else axes
+
+
 async def classify_axes(
-    llm: LLMClient, title: str, summary: str, body: str = "", published: str | None = None
+    llm: LLMClient,
+    title: str,
+    summary: str,
+    body: str = "",
+    published: str | None = None,
+    article_id: str | None = None,
 ) -> SeverityAxes | None:
     """記事 1 本の軸。失敗は None (呼び手を止めない。欠測は特徴量で全 0 になる)。
 
@@ -386,13 +433,14 @@ async def classify_axes(
     prompt = build_body_prompt(title, body, published) if use_body else build_prompt(title, summary)
     max_tokens = _BODY_MAX_TOKENS if use_body else _MAX_TOKENS
     try:
-        return await llm.generate_structured(
+        result = await llm.generate_structured(
             prompt,
             SeverityAxes,
             temperature=0.0,
             max_tokens=max_tokens,
             think=False,
         )
+        return apply_recoverability_fix(result, article_id)
     except Exception as exc:  # noqa: BLE001 — 軸の失敗で detect / 毎時の段を止めない
         _log.warning("severity_axes_classify_failed", error=type(exc).__name__)
         return None
