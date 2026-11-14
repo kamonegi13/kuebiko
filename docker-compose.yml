@@ -237,6 +237,7 @@ services:
       BODY_PURGE_DAYS: ${BODY_PURGE_DAYS:-0}
       # 薄い Grok の投稿の要約が本文に無い数字・日付を足したら作り直す (既定 shadow、3〜7 日ログを見てから on)
       GROK_SUMMARY_GROUNDING: ${GROK_SUMMARY_GROUNDING:-shadow}
+      SUMMARY_REPETITION_GUARD: ${SUMMARY_REPETITION_GUARD:-shadow}
       SUBJECT_KIND_GATE: ${SUBJECT_KIND_GATE:-shadow}
       # Grok の投稿が貼った外部リンクの本文取得 (既定 shadow = 取って保存、要約には使わない、10-24)
       GROK_LINK_FETCH: ${GROK_LINK_FETCH:-shadow}

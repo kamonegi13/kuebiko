@@ -233,6 +233,7 @@ async def _summarize_and_build(
     prompt_body = _frame_untrusted_body(article, llm_body) + link_text
     prompt = template.render(article=_prompt_article(article), body=prompt_body)
     summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
+    summary = await _guard_repetition(summary, llm, prompt, think=think, article_id=article.id)
     # b1. 薄い Grok 投稿の要約が本文に無い数字・矛盾を足していないか (GROK_SUMMARY_GROUNDING)
     summary = await _ensure_grounded_summary(
         summary,
@@ -842,6 +843,31 @@ async def _summarize_without_runaway(
         return retried
     _log.warning("summary_runaway_repaired", url=url, reasons=still)
     return repair(retried)
+
+
+async def _guard_repetition(
+    summary: SummaryOutput, llm: LLMClient, prompt: str, *, think: bool, article_id: str | None
+) -> SummaryOutput:
+    """自由文欄の同じ文の繰り返しの関門 (SUMMARY_REPETITION_GUARD、既定 shadow)。"""
+    from src.pipeline.summary import summary_schema_for
+    from src.pipeline.summary_repetition import guard_summary_repetition
+    from src.tools.llm_client import DEFAULT_TEMPERATURE
+
+    schema = summary_schema_for(getattr(llm, "model", ""))
+
+    async def _regenerate(temperature: float) -> SummaryOutput:
+        out: SummaryOutput = await llm.generate_structured(
+            prompt, schema=schema, think=think, temperature=temperature
+        )
+        return out
+
+    return await guard_summary_repetition(
+        summary,
+        _regenerate,
+        base_temperature=DEFAULT_TEMPERATURE,
+        article_id=article_id,
+        model=getattr(llm, "model", ""),
+    )
 
 
 class UngroundedSummaryError(Exception):
