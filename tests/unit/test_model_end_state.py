@@ -74,7 +74,7 @@ def test_emergency_model_allowed_only_in_fallback_keys() -> None:
 
 
 def test_unregistered_model_is_violation() -> None:
-    found = find_violations(_TIERS, {"triage": "kuebiko-sft:n20"}, {}, today=_BEFORE)
+    found = find_violations(_TIERS, {"triage": "kuebiko-sft:n21"}, {}, today=_BEFORE)
 
     assert len(found) == 1 and "未登録" in found[0]
 
