@@ -13,7 +13,9 @@ SRC = {
     "a1": PointSource("Acme Corp suffers data theft by ZetaGroup\nZetaGroup stole 19 databases."),
     "a2": PointSource("ミラージュ社への侵入\nマサビスイッチの欠陥 CVE-2026-1111 が悪用された。"),
     "a3": PointSource("Beta Ltd outage\nNothing else.", attribution="Example Daily"),
+    "a4": PointSource("OmegaGang ransomware hits Gamma Inc\nOmegaGang demanded payment."),
 }
+CORPUS = [s.text for s in SRC.values()]
 
 
 def _out(*points: RecapPoint) -> RecapPointsOutput:
@@ -46,6 +48,32 @@ class TestPointViolations:
     def test_katakana_only_terms_not_checked(self) -> None:
         assert point_violations("ウォレットの権限を確認する", [SRC["a1"]]) == ()
 
+    def test_corpus_name_from_other_case_is_violation(self) -> None:
+        # OmegaGang は a4 の事案の名前: a1 の要点へ移すと取り違え
+        got = point_violations("OmegaGang が Acme Corp を攻撃した", [SRC["a1"]], corpus=CORPUS)
+        assert "OmegaGang" in got
+
+    def test_generic_term_absent_from_corpus_not_checked(self) -> None:
+        # CloudTrail はどの記事にも無い一般の技術語 → 移植になりえず落とさない
+        got = point_violations("ZetaGroup は CloudTrail を調べた", [SRC["a1"]], corpus=CORPUS)
+        assert got == ()
+
+    def test_term_in_many_articles_is_generic(self) -> None:
+        many = [f"Article {i} mentions ISC advisory" for i in range(4)]
+        got = point_violations("ZetaGroup と ISC", [SRC["a1"]], corpus=[*CORPUS, *many])
+        assert got == ()
+
+    def test_known_actor_name_is_checked_even_if_absent_from_corpus(self) -> None:
+        from src.cti.actor_normalizer import ActorAlias, ActorAliasRegistry
+
+        reg = ActorAliasRegistry(actors=(ActorAlias(id="x", canonical="Volt Typhoon"),))
+        got = point_violations("Volt Typhoon が攻撃した", [SRC["a1"]], corpus=CORPUS, actors=reg)
+        assert "Typhoon" in got or "Volt" in got
+
+    def test_identifier_and_number_still_checked_with_corpus(self) -> None:
+        assert point_violations("CVE-2026-9999 が悪用された", [SRC["a2"]], corpus=CORPUS) != ()
+        assert "42" in point_violations("ZetaGroup は 42 組織", [SRC["a1"]], corpus=CORPUS)
+
     def test_no_material_fails_open(self) -> None:
         assert point_violations("OmegaGang が攻撃した", [PointSource("  ")]) == ()
 
@@ -53,7 +81,7 @@ class TestPointViolations:
 class TestGroundPoints:
     def _transplant(self) -> RecapPointsOutput:
         return _out(
-            RecapPoint(text="OmegaGang が 42 組織を攻撃した。", article_ids=["a1"]),
+            RecapPoint(text="OmegaGang が Acme Corp を攻撃した。", article_ids=["a1"]),
             RecapPoint(text="ZetaGroup が Acme Corp を攻撃した。", article_ids=["a1"]),
         )
 
