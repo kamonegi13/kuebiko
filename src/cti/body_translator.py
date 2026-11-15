@@ -33,6 +33,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from src.cti.translate_passthrough import (
+    PASSTHROUGH_SYSTEM_SUFFIX,
+    ProtectedChunk,
+    RestoreResult,
+    count_lost_in_output,
+    passthrough_mode,
+    protect_chunk,
+    restore_chunk,
+)
 from src.cti.translation_fidelity import GarbleReport, detect_garbling
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient, LLMError
@@ -322,10 +331,15 @@ class TranslationGarbledError(LLMError):
     """
 
 
-async def _generate_translation(llm: LLMClient, chunk: str, temperature: float) -> str:
+async def _generate_translation(
+    llm: LLMClient,
+    chunk: str,
+    temperature: float,
+    system: str = BODY_TRANSLATE_SYSTEM_PROMPT,
+) -> str:
     resp = await llm.generate(
         prompt=f"次の記事本文を日本語に翻訳してください:\n\n{chunk}",
-        system=BODY_TRANSLATE_SYSTEM_PROMPT,
+        system=system,
         temperature=temperature,
         max_tokens=_TRANSLATE_MAX_TOKENS,
         think=False,  # 翻訳は単純タスク。thinking ブロックで本文圧迫されるのを防ぐ
@@ -334,7 +348,70 @@ async def _generate_translation(llm: LLMClient, chunk: str, temperature: float) 
 
 
 async def _translate_chunk(llm: LLMClient, chunk: str, index: int, total: int) -> str:
-    """1 チャンクを翻訳する。空・壊れた訳は ``LLMError``、化けは ``TranslationGarbledError``。
+    """1 チャンクを翻訳する。``TRANSLATE_RETAIN_PASSTHROUGH`` で経路を選ぶ。"""
+    mode = passthrough_mode()
+    if mode == "0":
+        return await _translate_chunk_plain(llm, chunk, index, total)
+    protected = protect_chunk(chunk)
+    if mode == "1" and protected.has_tokens:
+        return await _translate_protected(llm, chunk, protected, index, total)
+    try:
+        out = await _translate_chunk_plain(llm, chunk, index, total)
+    except LLMError:
+        _log_passthrough("shadow", protected, None, None)
+        raise
+    _log_passthrough("shadow", protected, out, None)
+    return out
+
+
+def _log_passthrough(
+    mode: str, protected: ProtectedChunk, old_out: str | None, restored: RestoreResult | None
+) -> None:
+    """件数だけのログ (本文・URL は出さない)。shadow は旧経路の出力で「落ちた数」を数える。"""
+    lost_runs, lost_urls = (
+        count_lost_in_output(protected, old_out) if old_out is not None else (None, None)
+    )
+    _log.info(
+        "translate_retain_passthrough",
+        mode=mode,
+        kept_lines=protected.kept_lines,
+        runs=len(protected.runs),
+        inline_urls=len(protected.inline_urls),
+        would_skip_llm=protected.should_skip_llm,
+        old_lost_runs=lost_runs,
+        old_lost_urls=lost_urls,
+        missing_tokens_restored=restored.restored_runs if restored else 0,
+        missing_inline_url=restored.missing_urls if restored else 0,
+    )
+
+
+async def _translate_protected(
+    llm: LLMClient, chunk: str, protected: ProtectedChunk, index: int, total: int
+) -> str:
+    """保持行・URL をトークンにして訳し、原文のまま戻す (mode 1)。"""
+    if protected.should_skip_llm:
+        _log_passthrough("1", protected, None, RestoreResult(chunk, 0, 0))
+        return chunk  # 散文がほぼ無い窓は訳さず原文のまま (LLM に創作させない)
+    system = BODY_TRANSLATE_SYSTEM_PROMPT + PASSTHROUGH_SYSTEM_SUFFIX
+    out = await _generate_translation(llm, protected.text, _TRANSLATE_TEMPERATURE, system)
+    if not out:
+        raise TranslationBrokenError(f"翻訳結果が空です (chunk {index + 1}/{total})")
+    # 写し・JSON の判定はトークン入りの原文に対して行う (戻した原文の行を写しと誤認しない)
+    why = broken_translation_reason(protected.text, out)
+    if why == ECHO_REASON:
+        _raise_echo(protected.text, out, index, total, llm.model)
+    if why:
+        raise TranslationBrokenError(
+            f"翻訳結果が壊れている: {why} (chunk {index + 1}/{total}, model={llm.model})"
+        )
+    restored = restore_chunk(protected, out)
+    _log_passthrough("1", protected, None, restored)
+    _check_fidelity(chunk, restored.text, index, total, llm.model)
+    return restored.text
+
+
+async def _translate_chunk_plain(llm: LLMClient, chunk: str, index: int, total: int) -> str:
+    """従来の経路。空・壊れた訳は ``LLMError``、化けは ``TranslationGarbledError``。
 
     決定論関門 (``TRANSLATE_FIDELITY_GATE``) は化けの検出のみ (修復・再試行なし)。
     """
