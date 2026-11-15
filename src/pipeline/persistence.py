@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from src.cti.ioc_source_filter import is_source_reference
+from src.cti.ioc_victim_filter import is_victim_own_host, victim_filter_mode
 from src.cti.subject_actor import (  # noqa: PLC0414 — `as` 形式 = mypy 明示 re-export
     _CYBER_CATEGORIES as _CYBER_CATEGORIES,  # facade re-export (main.py / 既存テスト互換)
 )
@@ -503,6 +504,22 @@ def _append_pir_entities(
         _log.debug("inline_pir_tag_failed", error=str(e))
 
 
+def _is_victim_host_dropped(value: str, kind: str, article_id: str, msg: BriefingMessage) -> bool:
+    """被害組織自身の正規 host を IOC として保存しないか (``IOC_VICTIM_HOST_FILTER``)。
+
+    shadow (既定) は該当をログに残すだけ、``1`` で保存を止める。ログは値 (ドメイン) のみで
+    記事本文・組織名は出さない。
+    """
+    mode = victim_filter_mode()
+    if mode == "off":
+        return False
+    orgs = [str(o).strip() for o in msg.metadata.get("victim_orgs", []) or []]
+    if not is_victim_own_host(value, victim_orgs=orgs, context_texts=(msg.title, msg.summary)):
+        return False
+    _log.info("ioc_victim_host_filtered", kind=kind, article_id=article_id, mode=mode, value=value)
+    return mode == "on"
+
+
 def _hold_adversary_ioc(feed_title: str, feed_url: str, kind: str, article_id: str) -> bool:
     """敵対国の公式な発信 (adversary_official) 由来の IOC を事実として保存しないか。
 
@@ -586,6 +603,8 @@ def _persist_article_entities(
             v, article_url=msg.sources[0].url if msg.sources else None
         ):
             _log.info("ioc_source_reference_filtered", kind=kind, value=v)
+            continue
+        if kind in ("ioc_domain", "ioc_url") and _is_victim_host_dropped(v, kind, article_id, msg):
             continue
         if _hold_adversary_ioc(feed_title, feed_url, kind, article_id):
             continue

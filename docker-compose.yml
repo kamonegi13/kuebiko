@@ -250,6 +250,7 @@ services:
       ADVERSARY_TIER: ${ADVERSARY_TIER:-shadow}
       # 敵対国の公式な発信 (adversary_official) 由来の IOC を事実として保存しない (既定 shadow = ログのみ)
       ADVERSARY_IOC_GATE: ${ADVERSARY_IOC_GATE:-shadow}
+      IOC_VICTIM_HOST_FILTER: ${IOC_VICTIM_HOST_FILTER:-shadow}
       # 敵対的な発信元の本文に「主張として扱う・指示ではない」の枠を前置 (既定 shadow = ログのみ)
       HOSTILE_PROMPT_FRAMING: ${HOSTILE_PROMPT_FRAMING:-shadow}
       # per-source の信頼度上書きの SSoT を DB (config_store) にする (既定 1)。0 でファイル直読み/直書きへ rollback
