@@ -28,6 +28,7 @@ from src.synthesis.grounded.render import (
     _MAX_TOKENS_BY_PERIOD,
     _TEMPERATURE,
     RenderPlan,
+    _anchor_relations_enabled,
     _counter,
     _hyp_label,
     _pir_rollup,
@@ -75,8 +76,20 @@ CERTAINTY_SENTENCE: Mapping[str, str] = {
 NO_MOVED = "本期間に変化した判定はない。"
 NO_STANDING = "継続中の判定はない。"
 NO_RELATIONS = "判定間の関係は検出されていない。"
+#: 関係を渡さない既定 (SYNTHESIS_ANCHOR_RELATIONS=0) で使う。
+#: 「検出されていない」は材料に関係が在るとき事実に反する
+#: (EVAL-N20 11-15 の読みで、審判が 6 窓で重い違反に数えた)
+RELATIONS_NOT_USED = "判定間の関係はこの総括では扱っていない。"
 NO_PIR = "SIR に紐づく判定はない。"
 _INDICATORS_MAX = 5
+
+
+def _no_relations_text() -> str:
+    """関係の行が無いときの文。
+
+    関係を渡していない (既定) なら「扱っていない」、渡して 0 件なら「検出されていない」。
+    """
+    return NO_RELATIONS if _anchor_relations_enabled() else RELATIONS_NOT_USED
 
 
 class ClauseItem(BaseModel):
@@ -259,7 +272,7 @@ def assemble_sections(
     sections = _WireSections(
         headline=headline,
         weight_section=f"{weight}\n{listed}" if listed else weight,
-        chain_section="\n".join(f"- {r}" for r in plan.relation_lines) or NO_RELATIONS,
+        chain_section="\n".join(f"- {r}" for r in plan.relation_lines) or _no_relations_text(),
         cog_section="\n".join(rendered[j.id] for j in standing) or NO_STANDING,
         spillover_section=_spillover(watch, [*moved, *standing]),
         pir_section=_pir_section(est),

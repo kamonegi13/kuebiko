@@ -72,8 +72,18 @@ class TestAssemble:
         assert "侵入が続いている。" in sections.cog_section
         assert "可能性が高い" in sections.headline  # 指名判定 (high) の確度をコードが付ける
         assert "発火した監視指標: 同種の侵入の再発" in sections.spillover_section
-        assert sections.chain_section == slot_render.NO_RELATIONS
+        assert sections.chain_section == slot_render.RELATIONS_NOT_USED  # 既定は関係を渡さない
         assert stats == slot_render.SlotStats()
+
+    def test_no_relations_text_follows_relations_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SYNTHESIS_ANCHOR_RELATIONS", "1")
+        sections, _ = slot_render.assemble_sections(_clauses(), est=estimate(), plan=_plan())
+        assert sections.chain_section == slot_render.NO_RELATIONS
+        monkeypatch.setenv("SYNTHESIS_ANCHOR_RELATIONS", "0")
+        sections, _ = slot_render.assemble_sections(_clauses(), est=estimate(), plan=_plan())
+        assert sections.chain_section == slot_render.RELATIONS_NOT_USED
 
     def test_uncovered_judgment_falls_back_to_claim(self) -> None:
         clauses = _clauses(items=[ClauseItem(judgment_id="s-aaa", world_clause="w")])
