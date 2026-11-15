@@ -199,8 +199,32 @@ def _append_missing_urls(text: str, protected: ProtectedChunk) -> tuple[str, int
     return "".join(paras), missing
 
 
+# モデルが崩したトークン ([K1]・【K1】・⟦ K1 ⟧・全角の Ｋ１ 等) を正しい形へ戻すための照合
+_MANGLED_TOKEN_RE = re.compile(r"[\[【〚⟦<{（(]\s*([KUＫＵ])\s*([0-9０-９]+)\s*[\]】〛⟧>}）)]")
+
+
+def normalize_mangled_tokens(text: str, runs: int, urls: int) -> str:
+    """崩れたトークンを ``⟦K{n}⟧`` / ``⟦U{n}⟧`` に直す。
+
+    番号が実在の範囲のものだけ直す (原文の [K1] 等の誤爆を避ける)。
+    """
+
+    def repl(m: re.Match[str]) -> str:
+        kind = "K" if m.group(1) in "KＫ" else "U"
+        n = int(m.group(2).translate(str.maketrans("０１２３４５６７８９", "0123456789")))
+        limit = runs if kind == "K" else urls
+        if m.group(0) == f"⟦{kind}{n}⟧" or not 1 <= n <= limit:
+            return m.group(0)
+        return f"⟦{kind}{n}⟧"
+
+    return _MANGLED_TOKEN_RE.sub(repl, text)
+
+
 def restore_chunk(protected: ProtectedChunk, translated: str) -> RestoreResult:
     """訳文のトークンを原文へ戻す。落ちた保持行は必ず戻し、落ちた URL は段落末尾へ足す。"""
+    translated = normalize_mangled_tokens(
+        translated, len(protected.runs), len(protected.inline_urls)
+    )
     lines, restored = _insert_missing_run_tokens(translated.split("\n"), len(protected.runs))
     text = "\n".join(lines)
     for n, run in enumerate(protected.runs, start=1):

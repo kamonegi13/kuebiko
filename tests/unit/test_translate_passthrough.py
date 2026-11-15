@@ -146,3 +146,22 @@ async def test_shadow_keeps_old_output_and_prompt(monkeypatch: pytest.MonkeyPatc
     out = await translate_body(llm, source)
     assert out == "訳のみ"
     assert llm.prompts == [f"次の記事本文を日本語に翻訳してください:\n\n{source}"]
+
+
+def test_mangled_run_token_is_restored_without_leftover() -> None:
+    """モデルが ⟦K1⟧ を [K1] / 【Ｋ１】 に崩しても、原文の行が 1 回だけ戻り崩れた記号は残らない。"""
+    chunk = "Intro sentence here.\nhttps://example.com/a\nMore text here.\nhttps://example.com/b"
+    protected = protect_chunk(chunk)
+    result = restore_chunk(protected, "導入文。\n[K1]\nさらに本文。\n【Ｋ２】")
+    assert result.text.count("https://example.com/a") == 1
+    assert result.text.count("https://example.com/b") == 1
+    assert "[K1]" not in result.text
+    assert "Ｋ２" not in result.text
+    assert result.restored_runs == 0
+
+
+def test_bracketed_text_outside_token_range_is_left_alone() -> None:
+    """番号が実在の範囲外の [K9] は原文の語として残す。"""
+    protected = protect_chunk("Intro.\nhttps://example.com/a")
+    result = restore_chunk(protected, "導入。[K9]\n⟦K1⟧")
+    assert "[K9]" in result.text
