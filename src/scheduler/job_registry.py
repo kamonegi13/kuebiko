@@ -126,6 +126,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="grok-briefing",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="pipeline",
             title="Grok レポート取込",
@@ -251,7 +252,7 @@ def default_jobs() -> list[JobDef]:
             id="pir-spotlight",
             kind="pipeline",
             heavy=True,
-            max_runtime_minutes=50,  # 対象 17 件で 30 分超 (10-28、pipeline の上限 3000s と揃える)
+            max_runtime_minutes=100,  # 多段 Spotlight 19 PIR × 300 秒。04:30→06:10
             title="PIR スポットライト",
             description=(
                 "PIR 縦断の narrative を毎日 04:30 に直近 7 日窓で更新 (Intel Graph の Spotlight)。"
@@ -333,6 +334,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="pir-judge-hourly",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="PIR 主題判定 毎時増分",
@@ -354,6 +356,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="geo-rescue-shadow-hourly",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 毎時保守チェーンの最後の段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="地政学の救済 v2 の影の判定 (毎時)",
@@ -400,6 +403,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="embedding-backfill",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="埋込の取りこぼし補完",
@@ -423,6 +427,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="eventnews-hourly",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 2026-09-15: 毎時チェーンの段として実行 (単独発火は既定 OFF)
             max_runtime_minutes=25,  # 実測 18.6 分 (30 層モデルで 4 件生成、2026-09-15)
             kind="bespoke",
@@ -497,6 +502,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="eventnews-merge",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 毎時収集チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="事象ニュース 事象どうしの統合 (毎時)",
@@ -520,6 +526,7 @@ def default_jobs() -> list[JobDef]:
         ),
         JobDef(
             id="severity-axes-hourly",
+            respects_analysis_window=True,  # pir-spotlight 帯の間は止める (11-15)
             enabled=False,  # 毎時保守チェーンの段として実行 (単独発火は既定 OFF)
             kind="bespoke",
             title="深刻度の軸 (毎時)",

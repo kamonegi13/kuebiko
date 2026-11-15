@@ -167,6 +167,37 @@ class TestDynamicCollectionSuppression:
             is True
         )
 
+    def test_pir_spotlight_band_quiets_llm_jobs_until_0610(self, db: Path) -> None:
+        jr.seed_jobs_if_absent(db_path=db)
+        spot = jr.get_job("pir-spotlight", db_path=db)
+        assert spot is not None and spot.heavy and spot.max_runtime_minutes == 100
+        llm_steps = [
+            "direct-rss-fetch",
+            "web-scraper-watchers",
+            "grok-briefing",
+            "embedding-backfill",
+            "pir-judge-hourly",
+            "eventnews-hourly",
+            "eventnews-merge",
+            "body-translate-backlog",
+            "body-refetch-backlog",
+            "severity-axes-hourly",
+            "ledger-reassess-hourly",
+            "geo-rescue-shadow-hourly",
+        ]
+
+        def sup(job: str, minute: int) -> bool:
+            return jr.is_collection_suppressed(
+                job, now_minute_jst=minute, weekday="wed", day_of_month=15, db_path=db
+            )
+
+        for job in llm_steps:
+            assert sup(job, 5 * 60) is True, job  # 帯の中
+        # 帯の外 (06:10 以降に始まる 5 分の段) は走る
+        assert sup("web-scraper-watchers", 6 * 60 + 10 + 5 - 5 + 1) is False
+        # 朝ブリーフ (cron, フラグなし) 自身は抑止されない
+        assert sup("morning-brief", 5 * 60) is False
+
     def test_suppressed_by_pre_margin(self, db: Path) -> None:
         jr.seed_jobs_if_absent(db_path=db)
         # 06:20 発火 (C=12 → 06:32) は morning-brief 06:30 開始に食い込む → 抑止
@@ -238,10 +269,10 @@ class TestDynamicCollectionSuppression:
         by_id = {j.id: j for j in jr.default_jobs()}
         weekly = by_id["weekly-status-synthesis"].max_runtime_minutes
         mitre = by_id["mitre-actor-sync"].max_runtime_minutes
-        # 帯幅で差が付く (weekly > mitre)。全体最長は goldset 切替評価
-        # (90分、土曜深夜。3×86 件の LLM 実行 — 較正格子 P2)。
+        # 帯幅で差が付く (weekly > mitre)。全体最長は pir-spotlight (100 分、11-15 の多段化。
+        # 次点は goldset 切替評価 90 分)。
         assert weekly > mitre
-        assert by_id["weekly-goldset-eval"].max_runtime_minutes == max(
+        assert by_id["pir-spotlight"].max_runtime_minutes == max(
             j.max_runtime_minutes for j in jr.default_jobs()
         )
 

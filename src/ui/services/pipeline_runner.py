@@ -61,7 +61,9 @@ _PIPELINE_TIMEOUT_OVERRIDES: dict[str, float] = {
     # 対象が 17 件に増えて 1800s を超え、末尾の PIR が毎回時間切れになった (2026-10-28)。
     # 1 件ずつ保存し古い順に作るので打ち切りでも済んだ分は残るが、毎日「失敗」になる。
     # 50 分なら 05:20 に終わり、06:30 の朝のブリーフにかからない。
-    "pir-spotlight": 3000.0,
+    # 11-15: 多段 Spotlight (PIR ごと上限 300 秒) に合わせ 100 分 (04:30 → 06:10)。
+    # job_registry の max_runtime_minutes=100 (heavy 帯の幅) と揃える。
+    "pir-spotlight": 6000.0,
 }
 # shutdown 時、in-flight な subprocess の自然完了を待つ秒数。これを超えたら cancel に切り替え。
 # 朝 07:30 JST の synthesis 直後にリビルドしても、ほぼ完了寸前なら救える程度を狙う。

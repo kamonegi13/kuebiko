@@ -354,13 +354,24 @@ def _register_bespoke_jobs(
 
         return _step
 
+    def _heavy_aware(sid: str, fn: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[Any]]:
+        """bespoke 段も pipeline 段と同じ heavy 帯の抑止に従う (Ollama 競合回避)。"""
+
+        async def _step() -> Any:
+            if _collection_suppressed_now(sid):
+                _log.info("collection_suppressed_heavy_overlap", pipeline=sid, kind="chain_step")
+                return {"skipped": "suppressed_heavy_overlap"}
+            return await fn()
+
+        return _step
+
     def _chain_runner(chain: JobDef) -> Callable[[], Awaitable[Any]]:
         steps: list[ChainStep] = []
         for sid in chain.steps:
             sd = jobs_by_id.get(sid)
             timeout = float((sd.max_runtime_minutes if sd else 5) * 60)
             if sid in callables:
-                steps.append(ChainStep(sid, callables[sid], timeout))
+                steps.append(ChainStep(sid, _heavy_aware(sid, callables[sid]), timeout))
             else:
                 steps.append(ChainStep(sid, _pipeline_step(sid, timeout), timeout))
 
