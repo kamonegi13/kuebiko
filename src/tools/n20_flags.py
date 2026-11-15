@@ -27,6 +27,8 @@ FACT_ANCHOR_ENV = "FACT_ANCHOR"
 SLOT_RENDER_ENV = "SLOT_RENDER"
 SPOTLIGHT_STAGED_ENV = "SPOTLIGHT_STAGED"
 DEEP_DIVE_SLOT_RENDER_ENV = "DEEP_DIVE_SLOT_RENDER"
+#: 深掘りの要点ごとの裏付け関門 (DEEP_DIVE_SLOT_RENDER=on のときだけ効く)。既定 on (= 1)
+DEEP_DIVE_POINT_GROUNDING_ENV = "DEEP_DIVE_POINT_GROUNDING"
 #: 多段 Spotlight の全体の上限 (秒)。未設定なら本番の step の上限 (STEP_REGISTRY の
 #: PIR_SPOTLIGHT = 600 秒) と同じ。⚠ 未決: 設計 D は 3,000 秒、本番は 600 秒 (契約 §5-10)。
 #: shadow の実測 (log ``spotlight_staged_shadow`` の elapsed_s) を見て決める。
@@ -36,8 +38,8 @@ _ON = frozenset({"1", "on", "true"})
 _SHADOW = frozenset({"shadow"})
 
 
-def _mode(env: str) -> FlagMode:
-    raw = os.environ.get(env, "0").strip().lower()
+def _mode(env: str, default: str = "0") -> FlagMode:
+    raw = os.environ.get(env, default).strip().lower()
     if raw in _ON:
         return "on"
     if raw in _SHADOW:
@@ -59,6 +61,11 @@ def spotlight_staged_mode() -> FlagMode:
 
 def deep_dive_slot_render_mode() -> FlagMode:
     return _mode(DEEP_DIVE_SLOT_RENDER_ENV)
+
+
+def deep_dive_point_grounding_mode() -> FlagMode:
+    """未設定は on。未知の値は off (他の旗と同じ)。"""
+    return _mode(DEEP_DIVE_POINT_GROUNDING_ENV, default="1")
 
 
 #: 多段 Spotlight の全体の上限の既定 (秒)。設計 D:140・263 の 3,000 秒 (H5、11-05 利用者判断)。

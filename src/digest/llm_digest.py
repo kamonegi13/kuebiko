@@ -9,6 +9,7 @@ LLM プロンプト (prompts/digest/weekly_recap.j2 等) は
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ import jinja2
 
 from src.config_loader import load_app_config
 from src.digest.db_filter import DigestCandidate
+from src.digest.point_grounding import PointSource, ground_points
 from src.digest.recap_points import (
     TEMPLATE_V2,
     TEMPLATE_V3,
@@ -34,7 +36,7 @@ from src.digest.recap_render import (
 from src.logging_config import get_logger
 from src.ops.generation_inputs import record_generation_input
 from src.tools.llm_client import LLMClient
-from src.tools.n20_flags import deep_dive_slot_render_mode
+from src.tools.n20_flags import deep_dive_point_grounding_mode, deep_dive_slot_render_mode
 
 _log = get_logger(__name__)
 
@@ -176,6 +178,7 @@ async def generate_digest(
     # n20 T5 (旗 DEEP_DIVE_SLOT_RENDER): on = 要点の構造 (v3) → 文はコードが組む。既定 off は不変。
     slot_mode = deep_dive_slot_render_mode() if template_name == TEMPLATE_V2 else "off"
     points_ids = frozenset(selected_ids) if slot_mode == "on" else None
+    point_sources = _point_sources(candidates)
     if slot_mode == "on":
         template_name = TEMPLATE_V3
     prompt = _render_prompt(template_name, candidates=candidates, period_label=period_label)
@@ -207,7 +210,14 @@ async def generate_digest(
         max_tokens=max_tokens,
     )
 
-    out = await _sections(llm, prompt, max_tokens=max_tokens, think=think, points_ids=points_ids)
+    out = await _sections(
+        llm,
+        prompt,
+        max_tokens=max_tokens,
+        think=think,
+        points_ids=points_ids,
+        point_sources=point_sources,
+    )
     missing = uncited_articles(out, selected_ids=selected_ids)
     thin = thin_sections(out)
     if missing or thin:
@@ -240,6 +250,7 @@ async def generate_digest(
             max_tokens=max_tokens,
             think=think,
             points_ids=points_ids,
+            point_sources=point_sources,
         )
         # ⭐ **良くなったときだけ採る**。書き直しは悪化しうる (実測で網羅 3 件漏れ →
         #   7 件漏れに退行した)。指示を足せば良くなるとは限らない。
@@ -304,17 +315,29 @@ async def _sections(
     max_tokens: int,
     think: bool | None,
     points_ids: frozenset[str] | None,
+    point_sources: Mapping[str, PointSource] | None = None,
 ) -> RecapOutput:
     """旗 off (points_ids=None) は旧の ``_generate_sections`` だけを呼ぶ。"""
     if points_ids is None:
         return await _generate_sections(llm, prompt, max_tokens=max_tokens, think=think)
     return await _generate_point_sections(
-        llm, prompt, max_tokens=max_tokens, think=think, known_ids=points_ids
+        llm,
+        prompt,
+        max_tokens=max_tokens,
+        think=think,
+        known_ids=points_ids,
+        point_sources=point_sources or {},
     )
 
 
 async def _generate_point_sections(
-    llm: LLMClient, prompt: str, *, max_tokens: int, think: bool | None, known_ids: frozenset[str]
+    llm: LLMClient,
+    prompt: str,
+    *,
+    max_tokens: int,
+    think: bool | None,
+    known_ids: frozenset[str],
+    point_sources: Mapping[str, PointSource],
 ) -> RecapOutput:
     """n20 T5: 要点の構造 (v3) を書かせ、旧の形へ写す。"""
     points: RecapPointsOutput = await llm.generate_structured(
@@ -327,6 +350,11 @@ async def _generate_point_sections(
     dropped = dropped_points(points, known_ids=known_ids)
     if dropped:
         _log.warning("digest_recap_points_dropped", dropped=dropped)
+    # 要点ごとの裏付け関門。⚠ 出典の照合 (mismatched_citations) より前 — 取り違えた要点を先に
+    # 落とさないと、本文が主語を誤った節で正しい記事の出典だけが黙って外れて誤りが隠れる。
+    grounding = deep_dive_point_grounding_mode()
+    if grounding != "off":
+        points = ground_points(points, sources=point_sources, apply=grounding == "on")
     return to_recap(points, known_ids=known_ids)
 
 
@@ -344,6 +372,13 @@ async def _generate_sections(
     return result
 
 
+def _point_sources(candidates: list[DigestCandidate]) -> dict[str, PointSource]:
+    """要点ごとの裏付け関門の照合の材料 (見出し + 要約。DigestCandidate に本文は無い)。"""
+    return {
+        c.article_id: PointSource(f"{c.title}\n{c.summary or ''}", c.feed_title) for c in candidates
+    }
+
+
 async def _shadow_points(
     llm: LLMClient,
     candidates: list[DigestCandidate],
@@ -357,7 +392,12 @@ async def _shadow_points(
     try:
         prompt = _render_prompt(TEMPLATE_V3, candidates=candidates, period_label=period_label)
         out = await _generate_point_sections(
-            llm, prompt, max_tokens=max_tokens, think=think, known_ids=frozenset(ids)
+            llm,
+            prompt,
+            max_tokens=max_tokens,
+            think=think,
+            known_ids=frozenset(ids),
+            point_sources=_point_sources(candidates),
         )
     except Exception as e:  # noqa: BLE001 — shadow は配信に影響させない
         _log.warning("digest_recap_points_shadow_failed", error=str(e)[:160])
