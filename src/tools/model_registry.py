@@ -115,6 +115,9 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
     # n20 系 (11-14 に n20r = 教師の全件点検の後の学び直しを kuebiko-sft:n20 の名で取り込み)。
     # 本番は翻訳・MITRE 和訳から (n20c_translate.md §14)。物語系は 11-16 の評価の後
     ModelCapability("kuebiko-sft:n20", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),
+    # n20rd = n20r + 翻訳規模の DPO (digest 82b9648eb89d、11-15)。n20 と同じ課題・印で学習。
+    # 完全一致の登録 (n20 の前方一致にはしない: 別の一時タグを意図せず巻き込まない)
+    ModelCapability("kuebiko-sft:n20rd", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),
     # --- 学習した課題の印を持たないモデル (割当は登録済みでなければならない) ---
     ModelCapability("kuebiko-sft:26b", exception_until=_TRANSLATION_DEADLINE),
     ModelCapability("gemma4:26b"),

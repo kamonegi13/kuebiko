@@ -96,10 +96,10 @@ TASK_MARKERS: dict[Step, str] = {
 #: 翻訳・MITRE 和訳は n20 が初めて印つきで学習する課題で、s19〜s23i / n19 は学習していない
 #: (自由文の課題に未学習の印が届くと、翻訳が JSON に崩れた前例がある)。**将来のモデルを
 #: PREFIX_TRAINED_MODELS に足しても、ここに名前を足さない限り翻訳には印が付かない**。
-#: n20 の本番投入のとき、PREFIX_TRAINED_MODELS とここの両方へ ``kuebiko-sft:n20`` を足す。
+#: n20 / n20rd の本番投入のとき、PREFIX_TRAINED_MODELS (登録簿) とここの両方へ足す。
 STEP_TRAINED_ONLY: dict[Step, frozenset[str]] = {
-    Step.ARTICLE_TRANSLATE: frozenset({"kuebiko-sft:n20"}),
-    Step.ACTOR_SYNC: frozenset({"kuebiko-sft:n20"}),
+    Step.ARTICLE_TRANSLATE: frozenset({"kuebiko-sft:n20", "kuebiko-sft:n20rd"}),
+    Step.ACTOR_SYNC: frozenset({"kuebiko-sft:n20", "kuebiko-sft:n20rd"}),
 }
 
 #: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。

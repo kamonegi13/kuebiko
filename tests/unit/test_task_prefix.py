@@ -238,6 +238,24 @@ def test_translate_markers_only_for_models_trained_on_them(monkeypatch) -> None:
     )
 
 
+def test_n20rd_gets_translate_and_narrative_markers(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """n20rd (n20r + 翻訳規模の DPO) は n20 と同じ印を環境変数なしで受ける。深掘りも学習済み。"""
+    monkeypatch.delenv("SFT_TASK_PREFIX_MODELS", raising=False)
+    model = "kuebiko-sft:n20rd"
+    expected = {
+        Step.ARTICLE_TRANSLATE: "[task: translate]\n",
+        Step.ACTOR_SYNC: "[task: actor_sync]\n",
+        Step.EVENT_NEWS: "[task: event_news]\n",
+        Step.PIR_SPOTLIGHT: "[task: spotlight]\n",
+        Step.SYNTHESIS_NARRATIVE: "[task: synthesis]\n",
+        Step.DIGEST_DEEP_DIVE: "[task: deep_dive]\n",
+    }
+    for step, marker in expected.items():
+        assert with_task_prefix("本文", step, model) == marker + "本文"
+    # n20 の前方一致にはならない: 登録外の一時タグには付かない
+    assert with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:n20rdx") == "本文"
+
+
 def test_translate_marker_not_added_to_unregistered_model_even_if_enabled(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("SFT_TASK_PREFIX_MODELS", "kuebiko-sft:s24")
     assert with_task_prefix("本文", Step.ARTICLE_TRANSLATE, "kuebiko-sft:s24") == "本文"
