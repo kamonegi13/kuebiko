@@ -224,6 +224,8 @@ services:
       GEOPOLITICAL_HIGH_CAP: ${GEOPOLITICAL_HIGH_CAP:-on}
       # TTP の歯止め (実在しない ID を落とす・同じ引用は 2 技術まで・12 件超は語の裏付けのある技術を優先、10-24)。保存済み 300 件で 20 件以上が 0 件・裏付けのある技術の脱落 3〜4 件
       TTP_LIMIT: ${TTP_LIMIT:-on}
+      # 深刻度の軸の矛盾 (impact が被害あり なのに recoverability=not_applicable) の扱い。shadow=ログのみ (既定) / 1=unknown に直す / 0=無効
+      AXES_RECOVERABILITY_FIX: ${AXES_RECOVERABILITY_FIX:-shadow}
       # 取得の公平枠の feed 巡回順 (10-31、rotate=時刻で開始位置を回す / name=旧挙動 / oldest)。戻すなら .env に RSS_FAIR_ORDER=name を書き kuebiko を再作成
       RSS_FAIR_ORDER: ${RSS_FAIR_ORDER:-rotate}
       # 収集 run の soft deadline の予備秒 (10-31 に 300 → 150。後処理は実測 5 秒。**source.type=rss のみ**、grok_email・web_scraper_cluster は 300 のまま)。戻すなら .env に PIPELINE_SOFT_DEADLINE_RESERVE_SECONDS=300 を書き kuebiko を再作成
