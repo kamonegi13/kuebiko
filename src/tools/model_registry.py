@@ -111,6 +111,17 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
         focus_v6=True,
         new_task_markers=True,
     ),
+    # s26r (11-14 採用判断 = s26_eval §23、学び直し rb5)。s25 と同じ課題・印に加え
+    # kind・pair・org_identity・detect_claim を学習。前方一致 (s26r2 も含む)。
+    # 評価は §28 で印をそろえて測り直す。常駐の枠はまだ (SW-S26)
+    ModelCapability(
+        "kuebiko-sft:s26r",
+        match="prefix",
+        task_prefix=True,
+        evidence_fields=True,
+        focus_v6=True,
+        new_task_markers=True,
+    ),
     # n20 系 (11-14 に n20r = 教師の全件点検の後の学び直しを kuebiko-sft:n20 の名で取り込み)。
     # 本番は翻訳・MITRE 和訳から (n20c_translate.md §14)。物語系は 11-16 の評価の後
     ModelCapability("kuebiko-sft:n20", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),

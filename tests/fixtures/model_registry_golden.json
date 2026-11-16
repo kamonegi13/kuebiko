@@ -327,7 +327,8 @@
  "__constants__": {
   "EVIDENCE_FAMILIES": [
    "kuebiko-sft:s24",
-   "kuebiko-sft:s25"
+   "kuebiko-sft:s25",
+   "kuebiko-sft:s26r"
   ],
   "EVIDENCE_MODELS": [
    "kuebiko-sft:i58",
@@ -355,7 +356,8 @@
   },
   "PREFIX_TRAINED_FAMILIES": [
    "kuebiko-sft:s24",
-   "kuebiko-sft:s25"
+   "kuebiko-sft:s25",
+   "kuebiko-sft:s26r"
   ],
   "PREFIX_TRAINED_MODELS": [
    "kuebiko-sft:i58",
@@ -369,7 +371,8 @@
   "S24_NEW_TASK_FAMILIES": [
    "kuebiko-sft:s24b",
    "kuebiko-sft:s24c",
-   "kuebiko-sft:s25"
+   "kuebiko-sft:s25",
+   "kuebiko-sft:s26r"
   ],
   "UNTRAINED_STEPS": {
    "kuebiko-sft:n19": [
@@ -408,7 +411,8 @@
   },
   "V6_MODEL_FAMILIES": [
    "kuebiko-sft:s24c",
-   "kuebiko-sft:s25"
+   "kuebiko-sft:s25",
+   "kuebiko-sft:s26r"
   ]
  },
  "anthropic:claude-x": {
