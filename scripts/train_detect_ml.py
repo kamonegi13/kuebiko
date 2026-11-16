@@ -33,6 +33,7 @@ from sklearn.preprocessing import StandardScaler  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
 from src.synthesis.grounded.detect_features import FEATURE_NAMES, feature_vector  # noqa: E402
 from src.synthesis.grounded.detect_ml import DEFAULT_MODEL_PATH, build_detect_articles  # noqa: E402
+from src.tools.staging_inputs import overlay_if_given, resolve_kinds_model  # noqa: E402
 
 D = Path("data/mlx")
 GOLD = D / "detect_goldset.jsonl"
@@ -56,9 +57,17 @@ def choose_threshold(probs: np.ndarray, *, days: int, target_per_day: float) -> 
     return float(np.sort(probs)[::-1][want - 1])
 
 
-def export(scaler: Any, clf: Any, threshold: float, axes_model: str = "") -> dict[str, Any]:
+def export(
+    scaler: Any,
+    clf: Any,
+    threshold: float,
+    axes_model: str = "",
+    kinds_model: str | None = None,
+) -> dict[str, Any]:
     return {
         "axes_model": axes_model,
+        # 種別 (kind=*) を付けた S。DB・既存ファイルの混在・過去値なら null (= 記録なし)
+        "kinds_model": kinds_model,
         "feature_names": list(FEATURE_NAMES),
         "mean": [float(v) for v in scaler.mean_],
         "scale": [float(v) for v in scaler.scale_],
@@ -73,14 +82,34 @@ def main() -> int:
     ap.add_argument("--target-per-day", type=float, default=6.0)
     ap.add_argument("--out", type=Path, default=DEFAULT_MODEL_PATH)
     ap.add_argument("--dry-run", action="store_true")
+    # S 切替の付け直し (staging)。省けば従来どおり (種別 = KIND_FILES、軸 = DB)
+    ap.add_argument("--kinds", type=Path, default=None, help="種別の jsonl (article_id, kind)")
+    ap.add_argument(
+        "--axes", type=Path, default=None, help="軸の jsonl (axes_body_backfill の出力)"
+    )
+    ap.add_argument("--axes-model", default=None, help="--axes のうちこのモデルの行だけ使う")
+    ap.add_argument(
+        "--kinds-model",
+        default=None,
+        help="--kinds の S の名前 (JSON の kinds_model)。省略時は jsonl の model 欄から推定",
+    )
     args = ap.parse_args()
 
     gold = {str(g["article_id"]): g for g in _jsonl(GOLD)}
-    kinds = {str(r["article_id"]): str(r["kind"]) for f in KIND_FILES for r in _jsonl(f)}
+    repo, staged_kinds = overlay_if_given(
+        RunHistoryRepository(),
+        kinds_path=args.kinds,
+        axes_path=args.axes,
+        axes_model=args.axes_model,
+    )
+    kinds = (
+        staged_kinds
+        if staged_kinds is not None
+        else {str(r["article_id"]): str(r["kind"]) for f in KIND_FILES for r in _jsonl(f)}
+    )
     labels: list[dict[str, Any]] = json.loads(LABELS.read_text(encoding="utf-8"))
     labels.sort(key=lambda r: str(r["run_at"]))
     held_out = labels[int(len(labels) * _HELD_OUT_RATIO) :]
-    repo = RunHistoryRepository()
     train_ids = sorted(gold)
     arts = build_detect_articles(repo, train_ids, kinds)
     ids = [a for a in train_ids if a in arts]
@@ -91,6 +120,10 @@ def main() -> int:
     axes_models = Counter(m["model"] for m in repo.get_severity_axes(ids).values())
     axes_model = axes_models.most_common(1)[0][0] if axes_models else ""
     print(f"軸あり {sum(axes_models.values())}/{len(ids)} 件 / 付けたモデル {dict(axes_models)}")
+    if args.axes is not None:  # staging の軸の被覆 (欠けは軸なし = one-hot 全 0 で学ぶ)
+        print(
+            f"staging の軸 被覆: 欠け {repo.misses['axes']} 件 (学習 {len(ids)} 件の読みで数えた)"
+        )
     x = np.array([feature_vector(arts[a]) for a in ids], dtype=float)
     y = np.array([int(bool(gold[a]["gold_open"])) for a in ids])
     scaler = StandardScaler().fit(x)
@@ -118,9 +151,13 @@ def main() -> int:
     print("係数 (標準化後) 上位: " + ", ".join(f"{n} {v:+.2f}" for n, v in top))
     if args.dry_run:
         return 0
+    kinds_model = resolve_kinds_model(args.kinds_model, args.kinds)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
-        json.dumps(export(scaler, clf, threshold, axes_model), ensure_ascii=False, indent=1) + "\n",
+        json.dumps(
+            export(scaler, clf, threshold, axes_model, kinds_model), ensure_ascii=False, indent=1
+        )
+        + "\n",
         encoding="utf-8",
     )
     print(f"書込: {args.out}")

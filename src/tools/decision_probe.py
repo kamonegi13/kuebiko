@@ -162,17 +162,21 @@ async def probe_choice(
     db_path: Path | None = None,
     top_logprobs: int = DEFAULT_TOP_LOGPROBS,
     client: ollama.AsyncClient | None = None,
+    model: str | None = None,
 ) -> dict[str, float] | None:
     """``(question, choices)`` → 選択肢ごとの確率。生成せず 1 回の前向き計算で読む。
 
     モデルは ``step`` から解決する (model_tiers、CLAUDE.md §4 の denylist 検証込み)。
+    ``model`` を渡すとその名前を使う (S の切替前に新しい S で特徴を付け直す道具
+    ``scripts/s_switch_retrain.py`` 用。本番の呼び手は渡さない。denylist の検証は同じに掛かる)。
     外部 LLM 割当時・denylist 抵触時・応答に選択肢が無い時・通信失敗時はすべて ``None``
     (呼び出し側は従来の決定的な経路にそのまま戻ること — この関数は補強であって必須経路ではない)。
     """
     if not choices:
         raise ValueError("choices は 1 件以上必要です")
 
-    model = resolve_step_model(step, db_path=db_path)
+    if model is None:
+        model = resolve_step_model(step, db_path=db_path)
     if is_external_model(model):
         # logprob を読む口を持たない (Anthropic/Claude Code/ユーザ定義接続先)。
         return None

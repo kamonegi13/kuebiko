@@ -415,3 +415,57 @@ def test_production_alias_s23i_uses_json_prefix() -> None:
     assert decision_probe._is_json_biased("kuebiko-sft:s23i")
     assert decision_probe._is_json_biased("kuebiko-sft:i58")
     assert not decision_probe._is_json_biased("gemma4:26b")
+
+
+class TestProbeChoiceModelOverride:
+    """``model`` 引数 (S の切替前の付け直し用、S-SWITCH-RETRAIN)。
+
+    省略時は従来どおり step から解決。
+    """
+
+    @pytest.mark.asyncio
+    async def test_explicit_model_skips_step_resolution(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _fail(step: Step, db_path: object = None) -> str:
+            raise AssertionError("model を渡したら割当を解決しない")
+
+        monkeypatch.setattr("src.tools.decision_probe.resolve_step_model", _fail)
+        seen: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json as _json
+
+            seen.append(_json.loads(request.content)["model"])
+            return _chat_response_handler(
+                _logprobs_payload(("Yes", -0.05), [("Yes", -0.05), ("No", -3.0)])
+            )(request)
+
+        result = await probe_choice(
+            Step.SEVERITY_AXES,
+            "質問",
+            ("Yes", "No"),
+            config=_cfg(),
+            client=_build_client(handler),
+            model="gemma4:26b",
+        )
+        assert result is not None
+        assert seen == ["gemma4:26b"]
+
+    @pytest.mark.asyncio
+    async def test_explicit_forbidden_model_still_rejected(self) -> None:
+        result = await probe_choice(
+            Step.SEVERITY_AXES, "質問", ("Yes", "No"), config=_cfg(), model="qwen3:7b"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_external_model_returns_none(self) -> None:
+        result = await probe_choice(
+            Step.SEVERITY_AXES,
+            "質問",
+            ("Yes", "No"),
+            config=_cfg(),
+            model="anthropic:claude-sonnet-5",
+        )
+        assert result is None

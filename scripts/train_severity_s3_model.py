@@ -38,6 +38,7 @@ from train_relation_model import export  # noqa: E402
 
 from src.cti import severity_c as sc  # noqa: E402
 from src.eval.severity_gold_marks import gold_exclusion  # noqa: E402
+from src.tools.staging_inputs import load_kinds_jsonl, resolve_kinds_model  # noqa: E402
 
 ITEMS = ROOT / "data/eval/sevcmp/items.jsonl"
 SEVDIR = ROOT / "data/eval/sevcmp"
@@ -50,10 +51,18 @@ REPEATS = 5
 TARGET_RECALL = 0.90
 
 
-def load_probes(model: str) -> dict[str, dict[str, float | None]]:
-    path = SEVDIR / f"probe_{model.replace(':', '_').replace('/', '_')}.jsonl"
+def load_probes(
+    model: str, path: Path | None = None, *, max_missing: int | None = None
+) -> dict[str, dict[str, float | None]]:
+    """``path`` 省略時は従来どおり ``SEVDIR/probe_<model>.jsonl``。``max_missing`` 指定時は
+    欠けた問いがそれを超える行を除く (学習集合 604 件は 2、``sevc_v5_train.MAX_MISSING``)。"""
+    path = path or SEVDIR / f"probe_{model.replace(':', '_').replace('/', '_')}.jsonl"
     rows = [json.loads(x) for x in path.open(encoding="utf-8") if x.strip()]
-    return {r["article_id"]: r["p_yes"] for r in rows}
+    return {
+        r["article_id"]: r["p_yes"]
+        for r in rows
+        if max_missing is None or int(r.get("missing", 0)) <= max_missing
+    }
 
 
 def feature_names(items: list[dict[str, Any]]) -> list[str]:
@@ -101,15 +110,19 @@ def mk(seed: int = 0) -> Any:
     )
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--model", required=True, help="問いを当てたモデル (本番の fast ティアの割当)")
-    ap.add_argument("--out", type=Path, default=OUT)
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+def oof_probabilities(x: Any, y: Any) -> Any:
+    """層化 5 分割 × 5 反復の分割外の確率 (閾値の決定と、関門の AUC・適合・回収が共有する)。"""
+    p = np.zeros(len(y))
+    for rep in range(REPEATS):
+        for tr, te in StratifiedKFold(FOLDS, shuffle=True, random_state=rep).split(x, y):
+            p[te] += mk(rep).fit(x[tr], y[tr]).predict_proba(x[te])[:, 1] / REPEATS
+    return p
 
-    probes = load_probes(args.model)
-    all_items = [json.loads(x) for x in ITEMS.open(encoding="utf-8") if x.strip()]
+
+def build_dataset(
+    all_items: list[dict[str, Any]], probes: dict[str, dict[str, float | None]]
+) -> tuple[list[dict[str, Any]], list[str], Any, Any]:
+    """まとめ記事等を外した (items, 特徴名, X, y)。学習と測定で同じ組み方を使う。"""
     items = [
         r
         for r in all_items
@@ -122,12 +135,40 @@ def main() -> int:
         dtype=np.float32,
     )
     y = np.array([int(r["gold_severity"] == "S3") for r in items])
+    return items, names, x, y
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--model", required=True, help="問いを当てたモデル (本番の fast ティアの割当)")
+    ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--dry-run", action="store_true")
+    # S 切替の付け直し (staging)。省けば従来どおり (評価用 203 件 = sevcmp)。
+    # 本番モデルの学習集合 604 件は --items data/eval/sevc_v5/items.jsonl (--max-missing 2)
+    ap.add_argument("--items", type=Path, default=ITEMS, help="正解つき記事の jsonl")
+    ap.add_argument("--probe-file", type=Path, default=None, help="問いの確率の jsonl")
+    ap.add_argument(
+        "--max-missing", type=int, default=None, help="欠けた問いの上限 (超える行は除く)"
+    )
+    ap.add_argument(
+        "--kinds", type=Path, default=None, help="種別の jsonl (items の event_kind を置換)"
+    )
+    ap.add_argument(
+        "--kinds-model",
+        default=None,
+        help="--kinds の S の名前 (JSON の kinds_model)。省略時は jsonl の model 欄から推定",
+    )
+    args = ap.parse_args()
+
+    probes = load_probes(args.model, args.probe_file, max_missing=args.max_missing)
+    all_items = [json.loads(x) for x in args.items.open(encoding="utf-8") if x.strip()]
+    if args.kinds is not None:
+        staged = load_kinds_jsonl(args.kinds)
+        all_items = [{**r, "event_kind": staged.get(r["article_id"], "")} for r in all_items]
+    items, names, x, y = build_dataset(all_items, probes)
     print(f"正解 {len(all_items)} 件 → まとめ記事等を外して {len(items)} 件 / S3 {int(y.sum())} 件")
 
-    p = np.zeros(len(y))
-    for rep in range(REPEATS):
-        for tr, te in StratifiedKFold(FOLDS, shuffle=True, random_state=rep).split(x, y):
-            p[te] += mk(rep).fit(x[tr], y[tr]).predict_proba(x[te])[:, 1] / REPEATS
+    p = oof_probabilities(x, y)
     t, rec, prec, n_sel = choose_threshold(p, y, recall=TARGET_RECALL)
     print(
         f"閾値 {t:.2f} (分割外: 回収 {100 * rec:.0f}% 適合率 {100 * prec:.0f}% S3 を付けた数 {n_sel})"
@@ -140,6 +181,8 @@ def main() -> int:
             "feature_names": names,
             "model_version": MODEL_VERSION,
             "probe_model": args.model,
+            # 種別 (kind=*) を付けた S。items の種別が DB 由来・混在なら null (= 記録なし)
+            "kinds_model": resolve_kinds_model(args.kinds_model, args.kinds),
             "question_ids": list(sc.QUESTION_IDS),
             "target_recall": TARGET_RECALL,
             "n_positive": int(y.sum()),

@@ -35,6 +35,7 @@ from src.eventnews.relation_pair_features import (  # noqa: E402
 )
 from src.eventnews.relations import _INDEXED, INCIDENT_TYPES, WINDOW_DAYS, _df  # noqa: E402
 from src.storage.run_history import RunHistoryRepository  # noqa: E402
+from src.tools.staging_inputs import overlay_if_given, resolve_kinds_model  # noqa: E402
 
 GOLD = Path("data/mlx/event_relations_goldset_v3.jsonl")
 N_TREES = 300
@@ -78,7 +79,21 @@ def choose_threshold(p: Any, y: Any, *, min_precision: float) -> tuple[float, fl
     return best
 
 
-def export(model: Any, threshold: float, n: int) -> dict[str, Any]:
+def make_forest(seed: int = 0) -> Any:
+    return RandomForestClassifier(
+        N_TREES, min_samples_leaf=MIN_LEAF, class_weight="balanced", random_state=seed
+    )
+
+
+def cv_probabilities(x: Any, y: Any) -> Any:
+    """層化 5 分割の分割外の確率 (閾値の決定と、関門の適合・回収・現行の回収が共有する)。"""
+    p = np.zeros(len(y))
+    for tr, te in StratifiedKFold(5, shuffle=True, random_state=0).split(x, y):
+        p[te] = make_forest().fit(x[tr], y[tr]).predict_proba(x[te])[:, 1]
+    return p
+
+
+def export(model: Any, threshold: float, n: int, kinds_model: str | None = None) -> dict[str, Any]:
     trees = []
     for est in model.estimators_:
         t = est.tree_
@@ -96,6 +111,8 @@ def export(model: Any, threshold: float, n: int) -> dict[str, Any]:
         )
     return {
         "version": 1,
+        # 種別 (kinds_*) を付けた S。DB の article_kinds (混在・過去値) なら null
+        "kinds_model": kinds_model,
         "n_samples": n,
         "positive": sorted(INCIDENT_TYPES),
         "feature_names": list(FEATURE_NAMES),
@@ -111,25 +128,28 @@ def main() -> int:
     ap.add_argument("--min-precision", type=float, default=0.8)
     ap.add_argument("--out", type=Path, default=DEFAULT_MODEL_PATH)
     ap.add_argument("--dry-run", action="store_true")
+    # S 切替の付け直し (staging)。省けば従来どおり (種別 = DB の article_kinds)
+    ap.add_argument("--kinds", type=Path, default=None, help="種別の jsonl (article_id, kind)")
+    ap.add_argument(
+        "--kinds-model",
+        default=None,
+        help="--kinds の S の名前 (JSON の kinds_model)。省略時は jsonl の model 欄から推定",
+    )
     args = ap.parse_args()
-    x, y = build_xy(RunHistoryRepository(), args.gold)
+    repo, _ = overlay_if_given(RunHistoryRepository(), kinds_path=args.kinds, axes_path=None)
+    x, y = build_xy(repo, args.gold)
+    if args.kinds is not None:
+        print(f"staging の種別 被覆: 欠け {repo.misses['kinds']} 件 (欠けは種別なしとして学ぶ)")
     if len(y) == 0:
         print("⚠ 組 0 件 — DATABASE_URL 無し (空 SQLite) を疑う", file=sys.stderr)
         return 1
 
-    def mk(seed: int = 0) -> Any:
-        return RandomForestClassifier(
-            N_TREES, min_samples_leaf=MIN_LEAF, class_weight="balanced", random_state=seed
-        )
-
-    p = np.zeros(len(y))
-    for tr, te in StratifiedKFold(5, shuffle=True, random_state=0).split(x, y):
-        p[te] = mk().fit(x[tr], y[tr]).predict_proba(x[te])[:, 1]
+    p = cv_probabilities(x, y)
     t, prec, rec = choose_threshold(p, y, min_precision=args.min_precision)
     print(f"組 {len(y)} / 同じ出来事の系統 {int(y.sum())}")
     print(f"閾値 {t:.2f} (交差検証: 精度 {100 * prec:.0f}% 回収 {100 * rec:.0f}%)")
-    model = mk().fit(x, y)
-    out = export(model, t, len(y))
+    model = make_forest().fit(x, y)
+    out = export(model, t, len(y), resolve_kinds_model(args.kinds_model, args.kinds))
     mine = RelationModel(
         feature_names=tuple(out["feature_names"]), threshold=t, _trees=tuple(out["trees"])
     )
