@@ -33,6 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from src.cti.indian_units import indian_units_mode, shadow_check_indian_units
 from src.cti.translate_passthrough import (
     PASSTHROUGH_SYSTEM_SUFFIX,
     ProtectedChunk,
@@ -499,7 +500,10 @@ async def translate_body(llm: LLMClient, text: str) -> str:
         output_chars=sum(len(p) for p in parts),
         model=llm.model,
     )
-    return "\n\n".join(parts)
+    result = "\n\n".join(parts)
+    if indian_units_mode() == "shadow":
+        shadow_check_indian_units(text, result, model=llm.model)
+    return result
 
 
 async def translate_body_resumable(
@@ -559,6 +563,8 @@ async def translate_body_resumable(
         output_chars=len(partial_text),
         model=llm.model,
     )
+    if indian_units_mode() == "shadow":
+        shadow_check_indian_units(text, partial_text, article_id=article_id, model=llm.model)
     return TranslationProgress(
         text=partial_text,
         partial_text=partial_text,
