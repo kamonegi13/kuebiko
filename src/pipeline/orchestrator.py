@@ -314,6 +314,13 @@ def _article_timeout_within_budget(
     return allowed if base is None else min(base, allowed)
 
 
+def _remaining_until(deadline: float | None) -> Callable[[], float | None] | None:
+    """monotonic の期限までの残り秒を返す関数 (期限なしは None = 無制限)。"""
+    if deadline is None:
+        return None
+    return lambda: deadline - time.monotonic()
+
+
 def _compute_soft_deadline(
     time_budget_seconds: float | None, source_type: str = "rss"
 ) -> float | None:
@@ -715,6 +722,8 @@ async def run_pipeline(
             analysis_only_out=analysis_only_ids,
             geo_shadow_out=geo_shadow_candidates,
             shadow_defer_out=triage_shadow_pending,
+            geo_v2_config=config,
+            geo_v2_remaining=_remaining_until(soft_deadline),
         )
         if not dry_run and dedup_repo is not None and geo_shadow_candidates:
             _record_geo_rescue_pending(geo_shadow_candidates, repo=dedup_repo)

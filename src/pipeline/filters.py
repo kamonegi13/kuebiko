@@ -20,6 +20,8 @@ from src.grok.report_url import is_grok_report_url
 from src.logging_config import get_logger
 from src.pipeline import dedup_periodic
 from src.pipeline.geo_rescue_shadow import GeoRescueCandidate
+from src.pipeline.geo_rescue_v2 import V2Outcome, decide_v2, geo_rescue_v2_mode
+from src.pipeline.geo_rescue_v2 import log_outcome as log_v2_outcome
 from src.pipeline.grok_convert import _is_grok_article
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
 from src.storage.repo_triage_rejections import TriageRejectionRow
@@ -190,6 +192,8 @@ async def _filter_by_triage(
     analysis_only_out: set[str] | None = None,
     geo_shadow_out: list[GeoRescueCandidate] | None = None,
     shadow_defer_out: list[tuple[Article, str, bool]] | None = None,
+    geo_v2_config: AppConfig | None = None,
+    geo_v2_remaining: Callable[[], float | None] | None = None,
 ) -> tuple[list[Article], int, list[str], int, list[TriageRejectionRow], list[TriageShadowRow]]:
     """軽量 LLM で重要度判定し、threshold 以上の記事のみ通す (Phase 3.1)。
 
@@ -265,6 +269,8 @@ async def _filter_by_triage(
             keep_importance=keep_importance,
             think=think,
             shadow_out=geo_shadow_out,
+            v2_config=geo_v2_config,
+            v2_remaining=geo_v2_remaining,
         )
         geo_rescued = set(rescued)
 
@@ -393,6 +399,8 @@ async def _rescue_geopolitical(
     keep_importance: set[str],
     think: bool,
     shadow_out: list[GeoRescueCandidate] | None = None,
+    v2_config: AppConfig | None = None,
+    v2_remaining: Callable[[], float | None] | None = None,
 ) -> tuple[list[tuple[Article, str, bool, str]], set[str]]:
     """地政学を理由に落ちた記事を、救済用のモデルで同じ基準のまま判定し直す (2026-10-02)。
 
@@ -418,21 +426,44 @@ async def _rescue_geopolitical(
     triage = ArticleTriage(rescue_llm, think=think, force_pir=prompt_mode == "pir")
     sem = asyncio.Semaphore(_triage_concurrency())
 
-    async def _one(i: int) -> tuple[int, TriageDecision]:
+    v2_mode = geo_rescue_v2_mode() if v2_config is not None else "0"
+
+    async def _one(i: int) -> tuple[int, TriageDecision, V2Outcome | None]:
         async with sem:
-            return i, await triage.triage(decisions[i][0])
+            article = decisions[i][0]
+            d = await triage.triage(article)
+            if v2_mode == "0" or v2_config is None:
+                return i, d, None
+            outcome = await decide_v2(
+                article,
+                d,
+                preview=triage._triage_content(article),
+                prompt_mode=prompt_mode,
+                rescue_llm=rescue_llm,
+                think=think,
+                config=v2_config,
+                keep=keep_importance,
+                remaining=v2_remaining,
+            )
+            return i, d, outcome
 
     out = list(decisions)
     rescued: set[str] = set()
-    for i, d in await asyncio.gather(*(_one(i) for i in targets)):
+    for i, d, outcome in await asyncio.gather(*(_one(i) for i in targets)):
+        article = out[i][0]
         if shadow_out is not None:
             shadow_out.append(
-                GeoRescueCandidate(article=out[i][0], flat="error" if d.error else d.importance)
+                GeoRescueCandidate(article=article, flat="error" if d.error else d.importance)
             )
-        if d.error or d.importance not in keep_importance:
+        reason = d.reason
+        keep_it = not d.error and d.importance in keep_importance
+        if outcome is not None:
+            log_v2_outcome(article.id, outcome, mode=v2_mode)
+            if v2_mode == "1" and outcome.fallback is None:
+                keep_it, reason = outcome.rescued, outcome.reason_text
+        if not keep_it:
             continue
-        article = out[i][0]
-        out[i] = (article, "medium", False, _RESCUE_MARK + d.reason)
+        out[i] = (article, "medium", False, _RESCUE_MARK + reason)
         rescued.add(article.id)
     _log.info(
         "triage_geo_rescue",

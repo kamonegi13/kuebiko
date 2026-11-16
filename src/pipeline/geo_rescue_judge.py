@@ -172,6 +172,17 @@ def judged_rescued(*, flat_rescued: bool, pir_rescued: bool, judge: GeoJudgeResu
     return flat_rescued or (pir_rescued and judge.passed)
 
 
+def judged_rescued_gated(*, flat_rescued: bool, pir_rescued: bool, judge: GeoJudgeResult) -> bool:
+    """v2 に追加の関門 (11-16、GEO_RESCUE_V2=1) を足した最終判定。
+
+    ``judged_rescued`` との違いは flat が救った行にも手掛かりを求めること: A〜C の手掛かりが無ければ
+    救わない。ただし D の手掛かりがあり QD が Yes なら救う (= ``judge.passed``)。
+    flat が救わず pir が救った行は従来の式 (``judge.passed``) のまま。
+    """
+    flat_ok = flat_rescued and (judge.has_geo_cue or judge.passed)
+    return flat_ok or (pir_rescued and judge.passed)
+
+
 def judge_prompt(title: str, text: str, question: str) -> str:
     """判定の入力 = 題 + triage と同じ本文プレビュー (呼び出し側が冒頭 1,500 字に切る) + 問い。"""
     return f"タイトル: {title}\n\n本文:\n{text}\n\n{question}"
@@ -250,5 +261,6 @@ __all__ = [
     "judge_geo_rescue",
     "judge_prompt",
     "judged_rescued",
+    "judged_rescued_gated",
     "unusable_body_reason",
 ]

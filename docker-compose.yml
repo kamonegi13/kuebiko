@@ -334,6 +334,9 @@ services:
       # prompt: flat=TRIAGE_FLAT に従う / pir=救済だけ PIR 駆動 prompt。mode: deliver=配信 / analysis=分析専用
       GEO_RESCUE_PROMPT: ${GEO_RESCUE_PROMPT:-flat}
       GEO_RESCUE_MODE: ${GEO_RESCUE_MODE:-deliver}
+      # 地政学の救済 v2 を本番の救済へ組み込む (2026-11-16、CLAUDE.md §7 の 11-16 の行)。
+      # 0=従来 / shadow=計算してログ geo_rescue_v2_shadow だけ / 1=v2 の式 + 追加の関門 (analysis と組み合わせる)
+      GEO_RESCUE_V2: ${GEO_RESCUE_V2:-0}
       # 地政学の救済の判定 v2 の影の記録 (2026-10-31、CLAUDE.md §7 の 10-31 の行)。本番の救済は変えない。
       # 1=triage の時点で候補を写し (LLM なし)、毎時保守チェーンの最後の段で pir・QW/QC/QD を判定して
       # geo_rescue_shadow に記録 / 0=止める (コードの既定 0)。件数・予算は判定の段の 1 回あたり
