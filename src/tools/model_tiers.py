@@ -243,8 +243,10 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.EVENT_KIND: StepSpec(Tier.FAST, 120.0),
     # 軸は 1 記事 = 7 欄の選択 (max_tokens 400)。実測 ~3 秒/件 (s17)。
     Step.SEVERITY_AXES: StepSpec(Tier.FAST, 120.0),
-    Step.DIGEST_DEEP_DIVE_SELECT: StepSpec(Tier.FAST, 900.0),
-    Step.DIGEST_DEEP_DIVE: StepSpec(Tier.FAST, 900.0),
+    # 深掘り (選定・本文) は長い散文 = N 枠の仕事。2026-11-16 に fast → narrative
+    # (n20rd で学習済み。以前は step 上書きで N 枠のモデルに向けていた)
+    Step.DIGEST_DEEP_DIVE_SELECT: StepSpec(Tier.NARRATIVE, 900.0),
+    Step.DIGEST_DEEP_DIVE: StepSpec(Tier.NARRATIVE, 900.0),
     Step.SYNTHESIS_DETECT: StepSpec(Tier.FAST, 900.0),
     Step.DETECT_CLAIM_WRITE: StepSpec(Tier.FAST, 900.0),
     Step.PIR_DAILY_FOCUS: StepSpec(Tier.FAST, 120.0),
@@ -252,6 +254,8 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.PIR_LLM_JUDGE: StepSpec(Tier.FAST, 120.0),
     # spotlight は PIR 縦断 narrative (散文生成)。timeout は step 固有 600s。
     Step.PIR_SPOTLIGHT: StepSpec(Tier.NARRATIVE, 600.0),
+    # MITRE の和訳は fast のまま step 上書きで N 枠のモデルへ
+    # (翻訳と同じ理由、下の ARTICLE_TRANSLATE)
     Step.ACTOR_SYNC: StepSpec(Tier.FAST, 300.0),
     # 1 件 = タイトル+概要の小さな bool 判定 (max_tokens 200)。triage と同じ fast ティア。
     Step.RELEVANCE_JP_CASCADE: StepSpec(Tier.FAST, 120.0),
@@ -274,6 +278,9 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.ASSISTANT_CHAT: StepSpec(Tier.DIALOG, 300.0),
     # 本文翻訳 (オンデマンド + バックログ)。timeout は 1 チャンク (≤5k 字) あたり。
     # 長文は body_translator がチャンク分割して複数回呼ぶ。
+    # 翻訳は N 枠 (n20 系) で学習したが、ティアは fast のまま step 上書きで向ける (2026-11-16 判断):
+    # narrative は外部モデルを割り当てうるティアで、移すとバックログの翻訳 (量が多い・本文) が
+    # 黙って外部へ流れる。fast はローカル専用の運用 (test_article_translate_is_fast_tier)
     Step.ARTICLE_TRANSLATE: StepSpec(Tier.FAST, 300.0),
     Step.SYNTHESIS_NARRATIVE: StepSpec(Tier.NARRATIVE, 900.0),
     # 事象ニュース精製 (§14b)。実測 65 秒/回 (31B)。毎時 0.25 回なので timeout は 600s で足りる。

@@ -83,6 +83,9 @@ class TestRegistry:
             # 事象ニュース (2026-08-23): fast(26B) では日本語破損が出たため narrative へ
             # (同一入力の A/B で 26B 3件/5事象 → 31B 0件。docs/event_news_design.md §14b)
             Step.EVENT_NEWS,
+            # 2026-11-16: 深掘り (長い散文、週 1 回) は N 枠の仕事として fast → narrative
+            Step.DIGEST_DEEP_DIVE_SELECT,
+            Step.DIGEST_DEEP_DIVE,
         }
 
     def test_embed_is_embedding_tier(self) -> None:
@@ -147,8 +150,8 @@ class TestBuildLLM:
             (Step.PIR_COMPILE, "gemma4:26b", 180.0),
             # spotlight は reasoning ティア (本番 31b 踏襲) だが timeout は step 固有 600s
             (Step.PIR_SPOTLIGHT, _N_SLOT, 600.0),
-            (Step.DIGEST_DEEP_DIVE_SELECT, _S_SLOT, 900.0),
-            (Step.DIGEST_DEEP_DIVE, _S_SLOT, 900.0),
+            (Step.DIGEST_DEEP_DIVE_SELECT, _N_SLOT, 900.0),
+            (Step.DIGEST_DEEP_DIVE, _N_SLOT, 900.0),
             (Step.SYNTHESIS_NARRATIVE, _N_SLOT, 900.0),
         ],
     )
