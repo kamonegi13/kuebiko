@@ -81,7 +81,6 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
     ModelCapability("kuebiko-sft:s21", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),
     ModelCapability(
         "kuebiko-sft:n19",
-        slot="N",
         task_prefix=True,
         untrained_steps=_DEEP_DIVE | _PIR_FOCUS_AXES,
     ),
@@ -117,7 +116,10 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
     ModelCapability("kuebiko-sft:n20", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),
     # n20rd = n20r + 翻訳規模の DPO (digest 82b9648eb89d、11-15)。n20 と同じ課題・印で学習。
     # 完全一致の登録 (n20 の前方一致にはしない: 別の一時タグを意図せず巻き込まない)
-    ModelCapability("kuebiko-sft:n20rd", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES),
+    # 11-16 に物語系・翻訳の 7 step と narrative ティアを n20rd へ (版 52・53)。N 枠の中身
+    ModelCapability(
+        "kuebiko-sft:n20rd", slot="N", task_prefix=True, untrained_steps=_PIR_FOCUS_AXES
+    ),
     # --- 学習した課題の印を持たないモデル (割当は登録済みでなければならない) ---
     ModelCapability("kuebiko-sft:26b", exception_until=_TRANSLATION_DEADLINE),
     ModelCapability("gemma4:26b"),
@@ -125,7 +127,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
 )
 
 #: 常駐の 2 枠のいまの中身 (s26 / n20 に替わるときはここの 1 行を変える)
-RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s24ci65", "N": "kuebiko-sft:n19"}
+RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s24ci65", "N": "kuebiko-sft:n20rd"}
 
 #: 既定値 (``BUILTIN_MODEL_TIERS``) の元。fast / reasoning / dialog = S、narrative = N
 _TIER_SLOTS: Final[dict[str, Slot]] = {

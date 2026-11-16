@@ -132,6 +132,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
 > DB (config_store, key=model_tiers)**、fail-safe は `BUILTIN_MODEL_TIERS`。
 > 割当の変更は評価の後に API で行う (下の「切替手順」。UI「設定 → モデル」タブは 2026-10-24 から表示専用、2026-09-04 に本節の記述を実装へ同期)。
 
+- **(11-16 版 52〜56) 物語系・翻訳を n20rd へ**: 版 52 で事象ニュース・状況総括・Spotlight・深掘りと選定・翻訳・MITRE 和訳を `kuebiko-sft:n20rd` に上書き (`data/eval/shadow_stop_1106/deploy_n20rd.sh`、4 旗 = FACT_ANCHOR / SLOT_RENDER / SPOTLIGHT_STAGED / DEEP_DIVE_SLOT_RENDER を 1、`SPOTLIGHT_STAGED_TIMEOUT_SECONDS=300`、pir-spotlight は 02:00・上限 100 分)。版 53 で **narrative ティアも n20rd** にし、版 56 で narrative の 3 step (event_news / synthesis_narrative / pir_spotlight) の上書きを外した (ティアから継承、実効は同じ)。深掘り 2 step・翻訳・MITRE 和訳は fast ティアの step なので上書きのまま。常駐の N 枠 (`model_registry.RESIDENT_SLOTS`) も n20rd に。戻すなら `deploy_n20rd.sh revert` (版 51 へ) か版履歴。
 - **(11-01 版 47) `fallback:dialog`=`gemma4:26b` を明示した**: dialog は外部 (`claudecode:haiku`) なので、外部が使えないときのローカルの受け皿をコードの既定 (`BUILTIN_MODEL_TIERS` の dialog = gemma4:26b) 任せから DB の明示に移した。実効の受け皿は前後で同じ (出力は不変)。ティアと処理別の上書きは版 46 と同じ。戻すなら版 46。
 - **(10-29 版 45) `step:pair_judge`=`kuebiko-sft:s23i` に戻した**: 10-26 の fast 切替で群化の対の判定も s24ci65 に変わり、09 月版の `pair_model.json` の入力の LLM が変わって「同じ」の率が cos の帯ごとにほぼ半減した (event_pair_shadow、切替前後)。pair_model を学び直すまでの応急。戻すなら版 44。
 - **現在の割当 (2026-10-28 版 44、DB の model_tiers で確認。SSoT は常に DB)**: fast=`kuebiko-sft:s24ci65` / narrative=`kuebiko-sft:n19` / reasoning=`kuebiko-sft:s24ci65` (10-26 に s23i から切替 = 版 42。s24ci65 は s22 と s24c の重みの 65% 補間。戻すなら版 41) / dialog=`claudecode:haiku` / embedding=`snowflake-arctic-embed2`。
@@ -170,7 +171,7 @@ CrewAI 化 (エージェント協調) は現要件で明確な ROI がないた�
    `curl -s http://127.0.0.1:8001/api/v1/model-tiers` で現値 (`tiers` / `step_overrides`) を読み、
    `POST /api/v1/model-tiers` に `{"tiers": {...}}` を送る (ティアは `fast` / `narrative` / `reasoning` /
    `dialog` / `embedding`、処理別の上書きは `step:<step名>` キー、外部主腕のローカル受け皿は
-   `fallback:<tier名>`。**基本の 5 ティア (`fast` / `narrative` / `reasoning` / `dialog` / `embedding`) は毎回すべて送る** (欠けると「モデル名 (文字列) が必要です」で拒否、2026-11-01 確認)。**`step:` / `fallback:` の族は含めなければ現値を持ち越す**。禁止 denylist は保存時にも検証される)。
+   `fallback:<tier名>`。**基本の 5 ティア (`fast` / `narrative` / `reasoning` / `dialog` / `embedding`) は毎回すべて送る** (欠けると「モデル名 (文字列) が必要です」で拒否、2026-11-01 確認)。**`step:` / `fallback:` の族は含めなければ現値を持ち越す**。⚠ **族を 1 キーでも送ると、その族はまるごと置き換わる** (送らなかった上書きは消える。2026-11-16 に 3 つだけ外すつもりで `step:` を 3 キー送り、他の 11 個が消えた → 版の revert で戻した)。上書きを足す・外すときは、**残す上書きを全部** `step:<名>` で送る (外すものは送らない)。禁止 denylist は保存時にも検証される)。
    保存は DB (config_store, key=model_tiers) に版保存され、次回の実行から反映。
    `.env` にモデル名を書いても効かない (上の警告を参照)
 5. **緊急の戻し**: 画面の「版履歴 (緊急の戻し)」リンク (= 設定 → 履歴・監査の key=model_tiers) から
