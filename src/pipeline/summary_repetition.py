@@ -40,6 +40,8 @@ FREE_TEXT_FIELDS = ("summary", "bluf", "analyst_note", "remediation", "title_ja"
 
 #: 文 = 区切り記号 (。！？.!? ・改行) までの塊。終端の記号は文に含める (改行は含めない)
 _SENTENCE = re.compile(r"[^。！？.!?\n]+(?:[。！？.!?]+|(?=\n)|$)")
+#: 他の生成物 (Spotlight 等) の関門が同じ文区切りを使うための公開名
+SENTENCE_PATTERN = _SENTENCE
 
 
 @dataclasses.dataclass(frozen=True)

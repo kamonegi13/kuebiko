@@ -336,6 +336,13 @@ def _resolve_event_match(
 # ----- 主 generate entry point -----
 
 
+def _guard(text: str, field: str, pir_id: str) -> str:
+    """同じ文の繰り返しの関門 (SPOTLIGHT_REPETITION_GUARD)。多段・1 段の両方の出口に当てる。"""
+    from src.spotlight.repetition_guard import guard_spotlight_text
+
+    return guard_spotlight_text(text, field=field, pir_id=pir_id)
+
+
 async def generate_spotlight(
     pir: Pir,
     *,
@@ -645,11 +652,19 @@ async def generate_spotlight(
         period_type=period_type,
         period_start=start,
         period_end=end,
-        headline=output.headline.strip(),
-        outlook=output.outlook.strip(),
+        headline=_guard(output.headline.strip(), "headline", pir.id),
+        outlook=_guard(output.outlook.strip(), "outlook", pir.id),
         key_events=key_events,
-        caveats=[c.strip() for c in output.caveats if isinstance(c, str) and c.strip()][:6],
-        unknowns=[u.strip() for u in output.unknowns if isinstance(u, str) and u.strip()][:6],
+        caveats=[
+            _guard(c.strip(), "caveats", pir.id)
+            for c in output.caveats
+            if isinstance(c, str) and c.strip()
+        ][:6],
+        unknowns=[
+            _guard(u.strip(), "unknowns", pir.id)
+            for u in output.unknowns
+            if isinstance(u, str) and u.strip()
+        ][:6],
         article_count=len(matches),
         llm_model=llm.model,
         generated_at=datetime.now(UTC),
