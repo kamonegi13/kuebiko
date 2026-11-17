@@ -814,6 +814,28 @@ class SituationStore(SituationMarksMixin):
             ).fetchall()
         return [{"polarity": str(r["polarity"]), "excerpt": str(r["excerpt"])} for r in rows]
 
+    def evidence_bases(self, situation_id: str) -> list[tuple[str, str, str, str]]:
+        """評価済み・非 weak の証拠の (article_id, attribution_basis, polarity, source_tier)。
+
+        発生の確度 (LEDGER_OCCURRENCE_FLOOR) が既存の証拠も見るための読み出し。
+        """
+        with self._repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                "SELECT article_id, attribution_basis, polarity, source_tier"  # noqa: S608 — 定数
+                " FROM situation_evidence"
+                f" WHERE situation_id=? AND assessed_at IS NOT NULL AND {_NOT_WEAK}",
+                (situation_id,),
+            ).fetchall()
+        return [
+            (
+                str(r["article_id"]),
+                str(r["attribution_basis"]),
+                str(r["polarity"]),
+                str(r["source_tier"] or ""),
+            )
+            for r in rows
+        ]
+
     def assigned_article_ids(self) -> set[str]:
         """いずれかの Situation に証拠として割当済みの article_id 全集合。"""
         with self._repo._connect() as conn:  # noqa: SLF001
