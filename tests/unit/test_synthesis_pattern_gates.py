@@ -5,16 +5,17 @@ from __future__ import annotations
 from src.synthesis.grounded.pattern_fallback import (
     QUIET_HEADLINE,
     fallback_headline,
+    fallback_notable_text,
     fallback_pattern_text,
 )
 from src.synthesis.grounded.pattern_gates import (
     GateStats,
     gate_patterns,
-    mark_violation,
     split_sentences,
+    wording_violation,
 )
 from src.synthesis.grounded.patterns import PatternPlan, build_patterns
-from tests.unit.synthesis_pattern_fixtures import BREACH, JP, attrs, j
+from tests.unit.synthesis_pattern_fixtures import BREACH, EXPLOIT, JP, attrs, j
 
 
 def _plan() -> PatternPlan:
@@ -25,7 +26,7 @@ def _plan() -> PatternPlan:
     ]
     at = {
         "s-1": attrs(countries=JP, kinds=BREACH, s3=True),
-        "s-2": attrs(countries=JP, kinds=BREACH, provider=True),
+        "s-2": attrs(countries=JP, kinds=BREACH),
         "s-3": attrs(countries=JP, kinds=BREACH),
     }
     return build_patterns(js, at)
@@ -87,39 +88,95 @@ def test_over_300_chars_even_after_trim_falls_back() -> None:
     assert stats.length_replaced == 1
 
 
-def test_provider_wording_on_case_without_mark_is_rejected() -> None:
+def test_route_wording_on_case_whose_claim_lacks_it_is_rejected() -> None:
     plan = _plan()
-    bad = "アルファ証券と、委託先経由のベータ銀行で漏えいがあった。"  # アルファ証券は印なし
+    # アルファ証券の claim に委託先は無い
+    bad = "アルファ証券と、委託先経由のベータ銀行で漏えいがあった。"
     texts, _, stats = _gate(plan, items=[("P1", bad)])
     assert texts["P1"] == fallback_pattern_text(plan.patterns[0])
-    assert stats.mark_replaced == 1
+    assert stats.wording_replaced == 1
 
 
-def test_provider_wording_on_marked_case_only_passes() -> None:
+def test_route_wording_in_the_named_claim_passes() -> None:
     plan = _plan()
-    ok = "ベータ銀行は委託先経由の漏えいだった。アルファ証券とは経路が異なる。"
+    ok = "ベータ銀行は委託先のシステム経由の漏えいだった。アルファ証券とは経路が異なる。"
     texts, _, stats = _gate(plan, items=[("P1", ok)])
-    assert texts["P1"] == ok and stats.mark_replaced == 0
+    assert texts["P1"] == ok and stats.wording_replaced == 0
 
 
-def test_provider_over_generalization_is_rejected() -> None:
+def test_route_wording_over_generalization_is_rejected() -> None:
     plan = _plan()
     texts, _, stats = _gate(plan, items=[("P1", "3 件はいずれも委託先経由の漏えいである。")])
     assert texts["P1"] == fallback_pattern_text(plan.patterns[0])
-    assert stats.mark_replaced == 1
+    assert stats.wording_replaced == 1
 
 
-def test_provider_wording_when_no_case_has_mark() -> None:
+def test_route_wording_with_no_claim_saying_it() -> None:
     js = [j("s-1", "アルファ証券で漏えい。"), j("s-2", "ガンマ商事で侵害。")]
     plan = build_patterns(js, {k: attrs(kinds=BREACH) for k in ("s-1", "s-2")})
-    assert mark_violation("提供者経由の動きが相次ぐ。", plan.patterns[0].cases)
+    assert wording_violation("提供者経由の動きが相次ぐ。", plan.patterns[0].cases)
+    assert wording_violation("サードパーティ経由の動き。", plan.patterns[0].cases)
+    assert not wording_violation("動きが相次ぐ。", plan.patterns[0].cases)
 
 
-def test_headline_naming_unmarked_case_with_provider_wording_is_rejected() -> None:
+def test_headline_naming_case_without_route_in_claim_is_rejected() -> None:
     plan = _plan()
     _, head, stats = _gate(plan, headline="アルファ証券など委託先経由の漏えいが相次ぐ。")
     assert head == fallback_headline(plan)
     assert stats.headline_replaced
+
+
+def test_watch_may_use_standing_claims_for_grounding() -> None:
+    js = [
+        j("s-1", "アルファ証券で顧客情報が漏えいした。"),
+        j("s-2", "ガンマ商事で侵害が確認された。"),
+        j("s-9", "デルタ運輸の基幹システムが停止した。", delta="no_change"),
+    ]
+    plan = build_patterns(js, {k: attrs(kinds=BREACH) for k in ("s-1", "s-2")})
+    gated, stats = gate_patterns(
+        headline="", pattern_items=[], watch="デルタ運輸の復旧を注視する。", plan=plan
+    )
+    assert gated.watch == "デルタ運輸の復旧を注視する。" and not stats.watch_dropped
+    gated, stats = gate_patterns(
+        headline="", pattern_items=[], watch="イプシロン社の動向を注視する。", plan=plan
+    )
+    assert gated.watch == "" and stats.watch_dropped
+
+
+def _notable_plan() -> PatternPlan:
+    js = [
+        j("s-1", "アルファ証券で顧客情報が漏えいした。"),
+        j("s-2", "ガンマ商事で侵害が確認された。"),
+        j("s-3", "ゼータ取引所で大規模な不正流出が発生し、利用者資産が失われた。"),
+    ]
+    at = {
+        "s-1": attrs(kinds=BREACH),
+        "s-2": attrs(kinds=BREACH),
+        "s-3": attrs(kinds=EXPLOIT, s3=True),
+    }
+    return build_patterns(js, at)
+
+
+def test_notable_item_is_gated_like_patterns_with_fallback() -> None:
+    plan = _notable_plan()
+    ok = "ゼータ取引所で不正流出が発生した。"
+    texts, _, stats = _gate(plan, items=[("P1", GOOD2), ("S1", ok)])
+    assert texts["S1"] == ok and stats.fields_total == 3
+    texts, _, stats = _gate(plan, items=[("P1", GOOD2), ("S1", "デルタ社でも不正流出があった。")])
+    assert texts["S1"] == fallback_notable_text(plan.notable[0])
+    assert texts["S1"] == "ゼータ取引所で大規模な不正流出が発生し、利用者資産が失われた。"
+    texts, _, stats = _gate(plan, items=[("P1", GOOD2)])
+    assert texts["S1"] == fallback_notable_text(plan.notable[0]) and stats.missing == 1
+
+
+GOOD2 = "アルファ証券とガンマ商事で侵害が確認された。"
+
+
+def test_fallback_headline_names_cases_and_notable() -> None:
+    plan = _notable_plan()
+    head = fallback_headline(plan)
+    assert "アルファ証券で顧客情報が漏えいした" in head
+    assert "注目の単独事案: ゼータ取引所で大規模な不正流出が発生し" in head
 
 
 def test_ungrounded_proper_noun_and_number_are_rejected() -> None:
@@ -151,7 +208,7 @@ def test_watch_dropped_when_banned_else_kept() -> None:
 def test_fallback_text_shape() -> None:
     p = _plan().patterns[0]
     text = fallback_pattern_text(p)
-    assert text.startswith("日本の侵害・情報漏えい: 3 件 (うち S3 1・提供者経由 1)。")
+    assert text.startswith("日本の侵害・情報漏えい: 3 件 (うち S3 1)。")
     assert "アルファ証券で顧客情報が漏えいした" in text
 
 

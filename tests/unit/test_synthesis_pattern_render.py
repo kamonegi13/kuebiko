@@ -31,7 +31,7 @@ def _est() -> Estimate:
 def _attrs() -> dict[str, JudgmentAttrs]:
     return {
         "s-1": attrs(countries=JP, kinds=BREACH, s3=True),
-        "s-2": attrs(countries=JP, kinds=BREACH, provider=True),
+        "s-2": attrs(countries=JP, kinds=BREACH),
         "s-3": attrs(countries=JP, kinds=BREACH),
     }
 
@@ -76,11 +76,9 @@ def test_prompt_has_patterns_marks_and_json_contract() -> None:
 
     plan = build_patterns(_est().judgments, _attrs())
     prompt = pattern_render.build_prompt(plan, LABEL)
-    assert (
-        "パターン P1: 日本の侵害・情報漏えい (3 件、深刻度 S3 1 件、提供者・委託先経由 1 件)"
-        in prompt
-    )
-    assert "提供者/委託先経由] ベータ銀行" in prompt
+    assert "パターン P1: 日本の侵害・情報漏えい (3 件、深刻度 S3 1 件)" in prompt
+    assert "提供者・委託先経由" not in prompt
+    assert "[新規・中確度] ベータ銀行で委託先のシステム経由の漏えいがあった" in prompt
     assert '"patterns": [{"pattern_id"' in prompt
 
 
@@ -109,10 +107,7 @@ async def test_on_renders_patterns_sections(monkeypatch: pytest.MonkeyPatch) -> 
     assert llm.schemas == [WirePatterns]
     assert "日本の侵害が 3 件動いた" in out.headline
     assert "【日本の侵害・情報漏えい】アルファ証券は S3" in out.weight_section
-    assert (
-        "- ベータ銀行で委託先のシステム経由の漏えいがあった (新規・中確度・提供者/委託先経由)"
-        in (out.weight_section)
-    )
+    assert "- ベータ銀行で委託先のシステム経由の漏えいがあった (新規・中確度)" in out.weight_section
     assert "継続中の評価の文" in out.cog_section
     assert "漏えいの続報を注視する" in out.spillover_section
     assert out.pir_section == "SIR に紐づく判定はない。"
@@ -126,7 +121,7 @@ async def test_on_falls_back_to_deterministic_text_when_gate_fails(
     monkeypatch.setenv("SYNTHESIS_PATTERNS", "1")
     bad = WirePatterns(headline="確実に拡大", patterns=[PatternItem(pattern_id="P9", text="x")])
     out = await _render(_LLM(bad))
-    assert "日本の侵害・情報漏えいが 3 件 (うち S3 1・提供者経由 1) 動いた。" in out.headline
+    assert "日本の侵害・情報漏えいが 3 件 (うち S3 1) 動いた。主な事案:" in out.headline
     assert "日本の侵害・情報漏えい: 3 件" in out.weight_section
 
 
@@ -179,3 +174,36 @@ async def test_generation_input_recorded(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     await _render(_LLM())
     assert kinds == ["synthesis_pattern_render"]
+
+
+@pytest.mark.asyncio
+async def test_notable_singleton_is_prompted_and_shown_after_patterns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    monkeypatch.setenv("SYNTHESIS_PATTERNS", "1")
+    est = _est()
+    est = replace(
+        est, judgments=(*est.judgments, j("s-5", "ゼータ取引所で大規模な不正流出が発生した。"))
+    )
+    a = {**_attrs(), "s-5": attrs(kinds=frozenset({"exploitation"}), s3=True)}
+    out_llm = WirePatterns(
+        headline="日本の侵害が 3 件動いた。ゼータ取引所の不正流出にも注意する。",
+        patterns=[
+            PatternItem(pattern_id="P1", text="アルファ証券は S3 で、ガンマ商事は確認段階だった。"),
+            PatternItem(pattern_id="S1", text="ゼータ取引所で不正流出が発生した。"),
+        ],
+    )
+    out = await render_sections(
+        llm=_LLM(out_llm),  # type: ignore[arg-type]
+        est=est,
+        period_label=LABEL,
+        attrs=a,
+    )
+    assert "【注目の単独事案】ゼータ取引所で不正流出が発生した。" in out.weight_section
+    assert out.weight_section.index("【日本の侵害") < out.weight_section.index("【注目の単独事案】")
+    from src.synthesis.grounded.patterns import build_patterns
+
+    prompt = pattern_render.build_prompt(build_patterns(est.judgments, a), LABEL)
+    assert "注目の単独事案 S1" in prompt

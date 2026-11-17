@@ -24,13 +24,11 @@ def attrs(
     countries: frozenset[str] = frozenset(),
     kinds: frozenset[str] = frozenset(),
     s3: bool = False,
-    provider: bool = False,
     roots: tuple[str, ...] = (),
 ) -> JudgmentAttrs:
     return JudgmentAttrs(
         countries=countries,
         kinds=kinds,
-        scopes=frozenset({"multi_org_or_provider"}) if provider else frozenset(),
         severities=frozenset({"S3"}) if s3 else frozenset(),
         event_roots=frozenset(roots),
     )

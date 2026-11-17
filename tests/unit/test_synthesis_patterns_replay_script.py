@@ -68,3 +68,17 @@ def test_summarize_counts_days_with_and_without_patterns(script: ModuleType) -> 
         "patterns_per_day_max": 2,
     }
     assert script.summarize([])["days"] == 0
+
+
+def test_judge_input_lists_claims_and_up_to_three_excerpts(script: ModuleType) -> None:
+    from dataclasses import replace
+
+    from src.synthesis.grounded.estimate import EvidenceItem
+
+    est = estimate()
+    first = est.judgments[0]
+    ev = tuple(EvidenceItem(f"a{n}", "t", "vendor_confirmed", f"抜粋{n}") for n in range(5))
+    est = replace(est, judgments=(replace(first, evidence=ev), *est.judgments[1:]))
+    text = script.judge_input(est)
+    assert f"[{first.id}] {first.claim}" in text
+    assert "  - 根拠の抜粋: 抜粋2" in text and "抜粋3" not in text

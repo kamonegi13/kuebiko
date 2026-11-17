@@ -27,8 +27,7 @@ _CONF_JA = {"high": "高確度", "moderate": "中確度", "low": "低確度"}
 def _case_line(c: PatternCase) -> str:
     delta = _DELTA_JA.get(c.delta_type, c.delta_type)
     conf = _CONF_JA.get(c.confidence, c.confidence)
-    prov = "・提供者/委託先経由" if c.is_provider else ""
-    return f"- {c.title.strip().rstrip('。')} ({delta}・{conf}{prov})"
+    return f"- {c.title.strip().rstrip('。')} ({delta}・{conf})"
 
 
 def _pattern_block(p: Pattern, text: str) -> str:
@@ -38,6 +37,8 @@ def _pattern_block(p: Pattern, text: str) -> str:
 
 def weight_section(plan: PatternPlan, gated: GatedTexts) -> str:
     blocks = [_pattern_block(p, gated.pattern_texts[p.pattern_id]) for p in plan.patterns]
+    for n in plan.notable:
+        blocks.append(f"【注目の単独事案】{gated.pattern_texts[n.item_id]}\n{_case_line(n.case)}")
     if plan.rest:
         blocks.append("\n".join(["そのほかの動き:", *(_case_line(c) for c in plan.rest)]))
     return "\n\n".join(blocks) or NO_PATTERN_WEIGHT
@@ -46,10 +47,7 @@ def weight_section(plan: PatternPlan, gated: GatedTexts) -> str:
 def chain_section(patterns: Sequence[Pattern]) -> str:
     """パターンどうしの共有の印だけを述べる (関係・因果は創作しない)。無ければ「扱っていない」。"""
     lines: list[str] = []
-    for label, counts in (
-        ("提供者・委託先経由の事案を含む", [p.provider_count for p in patterns]),
-        ("深刻度 S3 の事案を含む", [p.s3_count for p in patterns]),
-    ):
+    for label, counts in (("深刻度 S3 の事案を含む", [p.s3_count for p in patterns]),):
         sharing = [(p, n) for p, n in zip(patterns, counts, strict=True) if n > 0]
         if len(sharing) >= 2:
             detail = "、".join(f"{p.region}の{p.kind_label} {n} 件" for p, n in sharing)
@@ -77,7 +75,8 @@ def pir_counts_section(est: Estimate) -> str:
 
 def _shown(est: Estimate, plan: PatternPlan) -> list[KeyJudgment]:
     ids = {i for p in plan.patterns for c in p.cases for i in c.judgment_ids}
-    ids |= {i for c in plan.rest for i in c.judgment_ids} | {j.id for j in plan.standing}
+    ids |= {i for c in plan.rest for i in c.judgment_ids}
+    ids |= {i for n in plan.notable for i in n.case.judgment_ids} | {j.id for j in plan.standing}
     return [j for j in est.judgments if j.id in ids]
 
 

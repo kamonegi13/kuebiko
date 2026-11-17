@@ -69,12 +69,6 @@ def test_collects_attributes_from_assessed_recent_evidence(repo: RunHistoryRepos
         _article(conn, "a1", "JP", "breach")
         _evidence(conn, "s1", "a1")
         conn.execute(
-            "INSERT INTO article_severity_axes (article_id, scope, impact, confirmation, magnitude,"
-            " exploitation, actor, target, model, created_at)"
-            " VALUES ('a1', 'multi_org_or_provider', 'x', 'x', 'x', 'x', 'x', 'x', 'm', ?)",
-            (NEW,),
-        )
-        conn.execute(
             "INSERT INTO article_importance_v2 (article_id, severity, severity_basis, jp, nations,"
             " sir_ids, relevant, rule_version, created_at)"
             " VALUES ('a1', 'S3', 'b', 'j', 'n', 's', 1, 'v', ?)",
@@ -86,7 +80,6 @@ def test_collects_attributes_from_assessed_recent_evidence(repo: RunHistoryRepos
         "s1": JudgmentAttrs(
             countries=frozenset({"JP"}),
             kinds=frozenset({"breach"}),
-            scopes=frozenset({"multi_org_or_provider"}),
             severities=frozenset({"S3"}),
             event_roots=frozenset({"ev-root"}),
         )

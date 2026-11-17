@@ -16,7 +16,7 @@ def _jp_breaches() -> tuple[list[KeyJudgment], dict[str, JudgmentAttrs]]:
     ]
     at = {
         "s-1": attrs(countries=JP, kinds=BREACH, s3=True),
-        "s-2": attrs(countries=JP, kinds=BREACH, provider=True),
+        "s-2": attrs(countries=JP, kinds=BREACH),
         "s-3": attrs(countries=JP, kinds=BREACH),
     }
     return js, at
@@ -28,9 +28,8 @@ def test_groups_by_region_and_kind_with_marks() -> None:
     assert len(plan.patterns) == 1
     p = plan.patterns[0]
     assert (p.pattern_id, p.region, p.kind, p.count) == ("P1", "日本", "breach", 3)
-    assert (p.s3_count, p.provider_count, p.weight) == (1, 1, 5)
+    assert (p.s3_count, p.weight) == (1, 5)
     assert dict(p.delta_counts) == {"opened": 3}
-    assert not p.provider_majority
     assert plan.rest == ()
 
 
@@ -108,3 +107,39 @@ def test_no_change_judgments_are_standing_not_patterned() -> None:
 def test_deterministic_regardless_of_input_order() -> None:
     js, at = _jp_breaches()
     assert build_patterns(js, at) == build_patterns(list(reversed(js)), at)
+
+
+def test_short_title_cuts_at_comma_after_min_chars_and_caps() -> None:
+    from src.synthesis.grounded.patterns import short_title
+
+    assert short_title("短い題。続き。") == "短い題"
+    assert short_title("あ" * 20 + "、" + "い" * 10 + "、う。") == "あ" * 20 + "、" + "い" * 10
+    assert short_title("あ" * 24 + "、い、う。") == "あ" * 24 + "、い"  # 25 字以降の最初の「、」
+    assert short_title("あ" * 70 + "。") == "あ" * 59 + "…"
+    assert short_title("あ" * 30 + "、後半。") == "あ" * 30
+
+
+def test_s3_singleton_becomes_notable_and_leaves_rest() -> None:
+    js = [
+        j("s-1", "事案一。"),
+        j("s-2", "事案二。"),
+        j("s-3", "重大な単独事案。"),
+        j("s-4", "軽い動き。"),
+    ]
+    at = {
+        "s-1": attrs(kinds=BREACH),
+        "s-2": attrs(kinds=BREACH),
+        "s-3": attrs(kinds=EXPLOIT, s3=True),
+        "s-4": attrs(),
+    }
+    plan = build_patterns(js, at)
+    assert [(n.item_id, n.case.judgment_ids) for n in plan.notable] == [("S1", ("s-3",))]
+    assert [c.judgment_ids for c in plan.rest] == [("s-4",)]
+
+
+def test_notable_is_capped_at_two() -> None:
+    js = [j(f"s-{n}", f"単独{n}。") for n in range(4)]
+    at = {f"s-{n}": attrs(s3=True) for n in range(4)}
+    plan = build_patterns(js, at)
+    assert [n.item_id for n in plan.notable] == ["S1", "S2"]
+    assert len(plan.rest) == 2

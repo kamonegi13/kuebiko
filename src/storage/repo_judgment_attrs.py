@@ -5,7 +5,7 @@
 (属性が混ざる) ため、種別が roundup の記事は属性にも事象の根にも使わない。
 
 使う列 (SSoT): ``articles.victim_country_iso`` / ``article_kinds.kind`` /
-``article_severity_axes.scope`` / ``article_importance_v2.severity`` /
+``article_importance_v2.severity`` /
 ``event_item_members`` → 根 (``COALESCE(event_items.merged_into, item_id)``、live の事象だけ)。
 SQLite (dev / tests) と PostgreSQL の両方で動くよう、DISTINCT ON などは使わず Python 側で畳む。
 """
@@ -24,12 +24,11 @@ EXCLUDED_KIND = "roundup"
 _LIVE_ORIGIN = "live"
 
 _SQL = """
-SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, x.scope, v.severity,
+SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, v.severity,
        COALESCE(i.merged_into, m.item_id) AS root, i.origin
 FROM situation_evidence se
 LEFT JOIN articles ar ON ar.article_id = se.article_id
 LEFT JOIN article_kinds k ON k.article_id = se.article_id
-LEFT JOIN article_severity_axes x ON x.article_id = se.article_id
 LEFT JOIN article_importance_v2 v ON v.article_id = se.article_id
 LEFT JOIN event_item_members m ON m.article_id = se.article_id
 LEFT JOIN event_items i ON i.id = m.item_id
@@ -44,7 +43,6 @@ class JudgmentAttrs:
 
     countries: frozenset[str] = frozenset()
     kinds: frozenset[str] = frozenset()
-    scopes: frozenset[str] = frozenset()
     severities: frozenset[str] = frozenset()
     event_roots: frozenset[str] = frozenset()
 
@@ -61,14 +59,13 @@ def since_iso(ts: datetime) -> str:
 def _fold(rows: Sequence[Any]) -> dict[str, JudgmentAttrs]:
     acc: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     for r in rows:
-        sid, _article, country, kind, scope, severity, root, origin = tuple(r)
+        sid, _article, country, kind, severity, root, origin = tuple(r)
         if kind == EXCLUDED_KIND:
             continue
         slots = acc[str(sid)]
         for name, value in (
             ("countries", country),
             ("kinds", kind),
-            ("scopes", scope),
             ("severities", severity),
         ):
             if value:

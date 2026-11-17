@@ -2,7 +2,7 @@
 
 LLM が書いた欄 (見出し・パターンごとの文・注視点) を次の順に通し、通らなければ欄ごと決定論の文に
 置き換えて件数を残す: 空 → 禁止語 → 長さ (3 文・300 字、超えたら先頭 2 文) →
-印との照合 (提供者・委託先の語) → 固有名詞・数値の裏付け (``claim_grounding``)。
+委託先等の語の照合 (claim に在るときだけ) → 固有名詞・数値の裏付け (``claim_grounding``)。
 ID の関門 (渡した ``pattern_id`` 以外を捨てる・欠けは決定論の文) は ``gate_patterns``。
 """
 
@@ -14,15 +14,24 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from src.assessment.claim_grounding import GroundingSources, check_grounding
-from src.synthesis.grounded.pattern_fallback import fallback_headline, fallback_pattern_text
+from src.synthesis.grounded.pattern_fallback import (
+    fallback_headline,
+    fallback_notable_text,
+    fallback_pattern_text,
+)
 from src.synthesis.grounded.patterns import Pattern, PatternCase, PatternPlan
 
 MAX_SENTENCES = 3
 MAX_CHARS = 300
 KEEP_SENTENCES = 2
 HEADLINE_MAX_SENTENCES = 2
-PROVIDER_WORDS: tuple[str, ...] = (
+#: 経路の主張になる語。文に書いてよいのは、名指しした事案 (無ければ範囲の事案) の claim 自身が
+#: その語を持つときだけ。印 (``article_severity_axes.scope``) は「複数組織・提供者に被害」の意味で
+#: 委託先経由の根拠にならないため使わない (2026-11-17)
+ROUTE_WORDS: tuple[str, ...] = (
     "委託先",
+    "外部委託",
+    "提供者経由",
     "提供者",
     "サードパーティ",
     "第三者",
@@ -45,7 +54,7 @@ class GateStats:
     banned: int = 0
     length_trimmed: int = 0
     length_replaced: int = 0
-    mark_replaced: int = 0
+    wording_replaced: int = 0
     grounding_replaced: int = 0
     headline_replaced: bool = False
     watch_dropped: bool = False
@@ -97,19 +106,33 @@ def _case_names(case: PatternCase) -> tuple[str, ...]:
     return (*subject, *extract_terms(case.title))
 
 
-def mark_violation(text: str, cases: Sequence[PatternCase]) -> bool:
-    """提供者・委託先の語が、その印の無い事案・パターンに掛かっていないか (True = 違反)。"""
+def wording_violation(
+    text: str, cases: Sequence[PatternCase], extra_claims: Sequence[str] = ()
+) -> bool:
+    """委託先等の語を、claim に無い事案に掛けていれば True。
+
+    文が名指しした事案があれば、そのすべての claim 群が語を持つこと。名指しが無ければ範囲の
+    claim のどれかが持つこと。全称語 (いずれも等) があれば範囲のすべての事案が持つこと。
+    """
     for sentence in split_sentences(text):
-        if not any(w in sentence for w in PROVIDER_WORDS):
-            continue
-        named = [c for c in cases if any(n and n in sentence for n in _case_names(c))]
-        if any(not c.is_provider for c in named):
-            return True
-        if not any(c.is_provider for c in cases):
-            return True
-        if any(u in sentence for u in UNIVERSAL_WORDS) and not all(c.is_provider for c in cases):
-            return True
+        for word in (w for w in ROUTE_WORDS if w in sentence):
+            named = [c for c in cases if any(n and n in sentence for n in _case_names(c))]
+            if named:
+                if not all(_case_says(c, word) for c in named):
+                    return True
+            elif not (
+                any(_case_says(c, word) for c in cases) or any(word in x for x in extra_claims)
+            ):
+                return True
+            if any(u in sentence for u in UNIVERSAL_WORDS) and not all(
+                _case_says(c, word) for c in cases
+            ):
+                return True
     return False
+
+
+def _case_says(case: PatternCase, word: str) -> bool:
+    return any(word in claim for claim in case.claims)
 
 
 def _numbers(text: str) -> set[str]:
@@ -128,7 +151,7 @@ def grounding_violation(text: str, source_claims: Sequence[str], mark_numbers: s
 def _mark_numbers(patterns: Sequence[Pattern], extra: Sequence[int] = ()) -> set[str]:
     nums: set[int] = set(extra)
     for p in patterns:
-        nums |= {p.count, p.s3_count, p.provider_count}
+        nums |= {p.count, p.s3_count}
         nums |= {n for _, n in p.delta_counts} | {n for _, n in p.confidence_counts}
     return {str(n) for n in nums}
 
@@ -141,7 +164,13 @@ def _trim(text: str, max_sentences: int) -> tuple[str, bool]:
     return "".join(sentences[:KEEP_SENTENCES]), True
 
 
-_COUNT_KEYS = ("banned", "length_trimmed", "length_replaced", "mark_replaced", "grounding_replaced")
+_COUNT_KEYS = (
+    "banned",
+    "length_trimmed",
+    "length_replaced",
+    "wording_replaced",
+    "grounding_replaced",
+)
 
 
 def _gate_field(
@@ -152,6 +181,7 @@ def _gate_field(
     max_sentences: int,
     counts: dict[str, int],
     extra_numbers: Sequence[int] = (),
+    extra_claims: Sequence[str] = (),
 ) -> str | None:
     """1 欄を関門に通す。通ればその文、落とすなら None (呼び手が決定論の文に置き換える)。"""
     text = raw.strip()
@@ -165,10 +195,10 @@ def _gate_field(
     if len(text) > MAX_CHARS:
         counts["length_replaced"] += 1
         return None
-    if mark_violation(text, cases):
-        counts["mark_replaced"] += 1
+    if wording_violation(text, cases, extra_claims):
+        counts["wording_replaced"] += 1
         return None
-    claims = [c for case in cases for c in case.claims]
+    claims = [c for case in cases for c in case.claims] + list(extra_claims)
     if grounding_violation(text, claims, _mark_numbers(patterns, extra_numbers)):
         counts["grounding_replaced"] += 1
         return None
@@ -178,27 +208,37 @@ def _gate_field(
 def _gate_pattern_texts(
     pattern_items: Sequence[tuple[str, str]], plan: PatternPlan, counts: dict[str, int]
 ) -> tuple[dict[str, str], int, int, int]:
-    """パターンごとの文を ID・本文の関門に通す。(pid → 文, 未知 id 数, 欠け数, 置換数)。"""
-    by_id = {p.pattern_id: p for p in plan.patterns}
+    """パターン (P*) と注目の単独事案 (S*) の文を ID・本文の関門に通す。
+
+    (id → 文, 未知 id 数, 欠け数, 置換数)。
+    """
+    items: dict[str, tuple[Sequence[PatternCase], list[Pattern], str]] = {
+        p.pattern_id: (p.cases, [p], fallback_pattern_text(p)) for p in plan.patterns
+    }
+    items.update({n.item_id: ([n.case], [], fallback_notable_text(n)) for n in plan.notable})
     got: dict[str, str] = {}
     unknown = 0
     for pid, text in pattern_items:
-        if pid not in by_id:
+        if pid not in items:
             unknown += 1
         elif pid not in got:
             got[pid] = text
     texts: dict[str, str] = {}
     missing = replaced = 0
-    for pid, p in by_id.items():
+    for pid, (cases, patterns, fallback) in items.items():
         gated = None
         if pid in got:
             gated = _gate_field(
-                got[pid], cases=p.cases, patterns=[p], max_sentences=MAX_SENTENCES, counts=counts
+                got[pid],
+                cases=cases,
+                patterns=patterns,
+                max_sentences=MAX_SENTENCES,
+                counts=counts,
             )
         else:
             missing += 1
         replaced += gated is None
-        texts[pid] = gated if gated is not None else fallback_pattern_text(p)
+        texts[pid] = gated if gated is not None else fallback
     return texts, unknown, missing, replaced
 
 
@@ -213,7 +253,8 @@ def gate_patterns(
     """LLM の出力 (見出し・(pattern_id, text)・注視点) を関門に通して決定論の文で埋める。"""
     counts = dict.fromkeys(_COUNT_KEYS, 0)
     texts, unknown, missing, replaced = _gate_pattern_texts(pattern_items, plan, counts)
-    universe = [c for p in plan.patterns for c in p.cases] + list(plan.rest)
+    universe = [c for p in plan.patterns for c in p.cases]
+    universe += [n.case for n in plan.notable] + list(plan.rest)
     shared = {
         "cases": universe,
         "patterns": plan.patterns,
@@ -222,13 +263,15 @@ def gate_patterns(
     }
     head = _gate_field(headline, max_sentences=HEADLINE_MAX_SENTENCES, **shared)  # type: ignore[arg-type]
     has_watch = bool(watch.strip())
-    w = _gate_field(watch, max_sentences=MAX_SENTENCES, **shared)  # type: ignore[arg-type]
+    # 注視点はプロンプトで継続中の評価も渡しているので、その claim も照合範囲に入れる
+    standing = [j.claim for j in plan.standing]
+    w = _gate_field(watch, max_sentences=MAX_SENTENCES, extra_claims=standing, **shared)  # type: ignore[arg-type]
     stats = GateStats(
         unknown_ids=unknown,
         missing=missing,
         headline_replaced=head is None,
         watch_dropped=w is None and has_watch,
-        fields_total=len(plan.patterns) + 1 + has_watch,
+        fields_total=len(plan.patterns) + len(plan.notable) + 1 + has_watch,
         fields_replaced=replaced + (head is None) + (w is None and has_watch),
         **counts,
     )

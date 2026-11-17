@@ -77,7 +77,6 @@ def _case_view(c: PatternCase) -> dict[str, object]:
         "title": c.title,
         "delta_ja": _DELTA_JA.get(c.delta_type, c.delta_type),
         "confidence_ja": _CONF_JA.get(c.confidence, c.confidence),
-        "is_provider": c.is_provider,
     }
 
 
@@ -89,7 +88,6 @@ def build_prompt(plan: PatternPlan, period_label: str) -> str:
             "kind_label": p.kind_label,
             "count": p.count,
             "s3": p.s3_count,
-            "provider": p.provider_count,
             "cases": [_case_view(c) for c in p.cases],
         }
         for p in plan.patterns
@@ -105,6 +103,10 @@ def build_prompt(plan: PatternPlan, period_label: str) -> str:
         TEMPLATE_V10,
         period_label=period_label,
         patterns=patterns,
+        notable=[
+            {**_case_view(n.case), "id": n.item_id, "claim": first_sentence(n.case.claims[0])}
+            for n in plan.notable
+        ],
         rest=[_case_view(c) for c in plan.rest],
         standing=standing,
     )
@@ -123,7 +125,7 @@ async def generate_gated(
     period_label: str,
     moved_questions: Sequence[str],
 ) -> tuple[GatedTexts, GateStats | None]:
-    if not plan.patterns:
+    if not plan.patterns and not plan.notable:
         return _deterministic(plan, moved_questions), None
     prompt = build_prompt(plan, period_label)
     record_generation_input(
@@ -136,6 +138,7 @@ async def generate_gated(
             "period_label": period_label,
             "pattern_ids": [p.pattern_id for p in plan.patterns],
             "judgment_ids": [i for p in plan.patterns for c in p.cases for i in c.judgment_ids],
+            "notable_ids": [i for n in plan.notable for i in n.case.judgment_ids],
             "rest_ids": [i for c in plan.rest for i in c.judgment_ids],
         },
     )
@@ -161,6 +164,7 @@ def _log_stats(event: str, period_label: str, plan: PatternPlan, stats: GateStat
         period=period_label,
         patterns=len(plan.patterns),
         rest=len(plan.rest),
+        notable=len(plan.notable),
         moved=plan.moved_count,
         llm_called=stats is not None,
         **(stats.__dict__ if stats else {}),

@@ -39,6 +39,8 @@ DEFAULT_MODEL = "kuebiko-sft:n20rd"
 DEFAULT_LAST = 30
 #: 窓の一覧を引く上限 (--ids は新しい順にこの範囲から探す)
 LIST_LIMIT = 400
+#: judge_input に載せる、判定あたりの根拠の抜粋の上限
+EXCERPTS_PER_JUDGMENT = 3
 JST = ZoneInfo("Asia/Tokyo")
 
 
@@ -63,6 +65,19 @@ def load_attrs(repo: RunHistoryRepository, est: Estimate) -> dict[str, JudgmentA
     )
 
 
+def judge_input(est: Estimate) -> str:
+    """審判の公平のための入力 = 全判定の claim と、保存された根拠の抜粋 (判定あたり最大 3 件)。
+
+    A (本番の出力) は根拠の抜粋も見て書かれているので、審判が判定の文だけを事実の源にすると
+    A の誤りが過大になる。
+    """
+    lines: list[str] = []
+    for j in est.judgments:
+        lines.append(f"[{j.id}] {j.claim}")
+        lines.extend(f"  - 根拠の抜粋: {e.excerpt}" for e in j.evidence[:EXCERPTS_PER_JUDGMENT])
+    return "\n".join(lines)
+
+
 def count_row(rec: StatusSynthesisRecord, est: Estimate, plan: PatternPlan) -> dict[str, Any]:
     return {
         "id": rec.id,
@@ -72,6 +87,7 @@ def count_row(rec: StatusSynthesisRecord, est: Estimate, plan: PatternPlan) -> d
         "patterns": len(plan.patterns),
         "pattern_sizes": [p.count for p in plan.patterns],
         "rest": len(plan.rest),
+        "notable": len(plan.notable),
         "has_pattern": bool(plan.patterns),
     }
 
@@ -111,6 +127,7 @@ async def render_row(
         "model": getattr(llm, "model", ""),
         "gate_stats": stats.__dict__ if stats else None,
         "sections": sections.model_dump(),
+        "judge_input": judge_input(est),
         "stored": {"headline": rec.headline, "weight_section": rec.weight_section},
     }
 
