@@ -90,6 +90,8 @@ TASK_MARKERS: dict[Step, str] = {
     # n20 から学習 (2026-10-18、N20C)。**n20 以外のモデルには付けない** (STEP_TRAINED_ONLY)
     Step.ARTICLE_TRANSLATE: "[task: translate]\n",
     Step.ACTOR_SYNC: "[task: actor_sync]\n",
+    # s26 から学習 (組織名の別名の判定、SW-S26)。s26 系統のみ (STEP_TRAINED_ONLY_FAMILIES)
+    Step.ORG_IDENTITY_JUDGE: "[task: org_identity]\n",
 }
 
 #: その step の印を付けてよいモデル (指定の無い step は PREFIX_TRAINED_MODELS のどれでもよい)。
@@ -100,6 +102,14 @@ TASK_MARKERS: dict[Step, str] = {
 STEP_TRAINED_ONLY: dict[Step, frozenset[str]] = {
     Step.ARTICLE_TRANSLATE: frozenset({"kuebiko-sft:n20", "kuebiko-sft:n20rd"}),
     Step.ACTOR_SYNC: frozenset({"kuebiko-sft:n20", "kuebiko-sft:n20rd"}),
+}
+
+#: ``STEP_TRAINED_ONLY`` の前方一致版 (補間・一時タグ ``kuebiko-sft:s26i65`` 等にも効く系統)。
+#: 組織名の別名の判定は s26 が初めて印つきで学習する課題で、s24 系以前は学習していない。
+#: s26 を本番へ入れるとき (SW-S26) は model_registry の登録 (task_prefix=True、前方一致) も足す。
+#: 登録するまで ``prefix_for(Step.ORG_IDENTITY_JUDGE)`` は空 = 今と同一。
+STEP_TRAINED_ONLY_FAMILIES: dict[Step, tuple[str, ...]] = {
+    Step.ORG_IDENTITY_JUDGE: ("kuebiko-sft:s26",),
 }
 
 #: s24b 以降の新しい課題 (判断の分類器・IOC 検証・ACH 補助・重複判定) を専用の印で学習した系統。
@@ -180,11 +190,10 @@ def prefix_for(step: Step, model: str | None = None) -> str:
         for model_prefix, markers in MODEL_STEP_MARKERS.items():
             if name.startswith(model_prefix) and step in markers:
                 return markers[step]
-    only = STEP_TRAINED_ONLY.get(step)
-    if only is not None and not (
+    if is_trained_only_step(step) and not (
         _trained_only_active(step)
         if model is None
-        else str(model.strip()) in only and is_prefix_trained(model)
+        else _model_matches_only(step, str(model.strip())) and is_prefix_trained(model)
     ):
         # n20 専用の印は、n20 を環境変数で有効化していない本番では「印なし」と同じ扱いにする
         # (``build_llm_for`` は prefix_for(step) の真偽で wrapper を掛ける。既定の経路を変えない)。
@@ -192,24 +201,35 @@ def prefix_for(step: Step, model: str | None = None) -> str:
     return TASK_MARKERS.get(step, "")
 
 
+def is_trained_only_step(step: Step) -> bool:
+    """その step の印は、学習したモデルだけに付くか。"""
+    return step in STEP_TRAINED_ONLY or step in STEP_TRAINED_ONLY_FAMILIES
+
+
+def _model_matches_only(step: Step, name: str) -> bool:
+    """``name`` は、その step を学習したモデル (完全一致または系統の前方一致) か。"""
+    if name in STEP_TRAINED_ONLY.get(step, frozenset()):
+        return True
+    return name.startswith(STEP_TRAINED_ONLY_FAMILIES.get(step, ()))
+
+
 def _trained_only_active(step: Step) -> bool:
     """``STEP_TRAINED_ONLY`` の step で、対象モデルが ``SFT_TASK_PREFIX_MODELS`` で有効化済みか。
 
     対象外の step (制限なし) は常に True。既定 (環境変数なし) では専用 step は False。
     """
-    only = STEP_TRAINED_ONLY.get(step)
-    if only is None:
+    if not is_trained_only_step(step):
         return True
     extra = {m.strip() for m in os.environ.get(_EXTRA_MODELS_ENV, "").split(",") if m.strip()}
-    return bool(only & (extra | PREFIX_TRAINED_MODELS))
+    registered = extra | PREFIX_TRAINED_MODELS | set(PREFIX_TRAINED_FAMILIES)
+    return any(_model_matches_only(step, name) for name in registered)
 
 
 def with_task_prefix(prompt: str, step: Step, model: str) -> str:
     """プロンプトの先頭へ課題の印を付ける (二重付与はしない)。"""
     if not task_prefix_enabled(model) or step in untrained_steps_for(model):
         return prompt
-    only = STEP_TRAINED_ONLY.get(step)
-    if only is not None and model.strip() not in only:
+    if is_trained_only_step(step) and not _model_matches_only(step, model.strip()):
         return prompt
     marker = prefix_for(step, model)
     if not marker or prompt.startswith(marker):

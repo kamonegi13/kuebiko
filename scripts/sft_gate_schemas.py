@@ -117,6 +117,19 @@ def schema_errors_pair(j: Any) -> list[str]:
     return _model_errors(PairVerdict, j) if isinstance(j, dict) else ["not_object"]
 
 
+ORG_IDENTITY_ANSWERS = ("Yes", "No")
+
+
+def schema_errors_org_identity(j: Any) -> list[str]:
+    """組織名の別名の判定: ``{"answer": "Yes"|"No"}`` だけ (decision_probe の SFT 経路の形)。"""
+    if not isinstance(j, dict):
+        return ["not_object"]
+    errs = [f"extra_key:{k}" for k in j if k != "answer"]
+    if j.get("answer") not in ORG_IDENTITY_ANSWERS:
+        errs.append(f"answer_out_of_range:{j.get('answer')}")
+    return errs
+
+
 def schema_errors_kind(j: Any) -> list[str]:
     from src.eventnews.event_kind import KindVerdict
 
@@ -217,4 +230,5 @@ SCHEMA_CHECKS: dict[str, Callable[[Any], list[str]]] = {
     "ioc_verify": schema_errors_ioc_verify,
     "ach_aux": schema_errors_ach_aux,
     "dedup_judge": schema_errors_dedup_judge,
+    "org_identity": schema_errors_org_identity,
 }
