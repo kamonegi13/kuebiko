@@ -157,6 +157,7 @@ def test_loads_event_headline_entities_magnitude_and_last_evidence(
             )
         _version(conn, "ev-1", 1, "旧い見出し", OLD)
         _version(conn, "ev-1", 2, "最新の見出し", NEW)
+        _version(conn, "ev-1", 3, "窓より後の版の見出し", "2026-11-19T00:00:00+00:00")
         conn.execute(
             "INSERT INTO situations (situation_id, title, domain, status, anchors, pir_ids,"
             " opened_at, last_evidence_at) VALUES ('s1', 't', 'd', 'open', '[]', '[]', ?, ?)",
@@ -164,7 +165,7 @@ def test_loads_event_headline_entities_magnitude_and_last_evidence(
         )
     got = repo.get_judgment_attrs(["s1"], since=SINCE, until=UNTIL)["s1"]
     assert got.large_magnitude
-    assert got.links == frozenset({"cve:CVE-2026-0001", "affected_product:VPN-X"})
+    assert got.links == frozenset({"cve:CVE-2026-0001"})  # 製品はつながりに使わない
     assert (got.techniques, got.products) == (frozenset({"T1566"}), frozenset({"VPN-X"}))
     assert [(h.root, h.articles, h.headline) for h in got.event_headlines] == [
         ("ev-1", 2, "最新の見出し")

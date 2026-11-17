@@ -91,17 +91,17 @@ def test_count_row_reports_titles_subjects_and_marks(script: ModuleType) -> None
     from tests.unit.synthesis_pattern_fixtures import BREACH, attrs, j
 
     est = estimate()
-    js = (j("s-1", "甲社で侵害。"), j("s-2", "乙社で侵害。"))
+    js = (j("s-1", "ゼータ運輸で侵害。"), j("s-2", "乙社で侵害。"))
     est = replace_judgments(est, js)
-    head = (EventHeadline("ev-1", 1, "2026-11-17T00:00:00", "甲社の不正アクセス"),)
+    head = (EventHeadline("ev-1", 1, "2026-11-17T00:00:00", "ゼータ運輸の不正アクセス"),)
     at = {"s-1": attrs(kinds=BREACH, headlines=head), "s-2": attrs(kinds=BREACH)}
     plan = make_plan(est, at)
     row = script.count_row(_record(""), est, plan)
     assert {t["title"]: t["from_event"] for t in row["titles"]} == {
-        "甲社の不正アクセス": True,
+        "ゼータ運輸の不正アクセス": True,
         "乙社で侵害": False,
     }
-    assert row["headline_subjects"][0]["title"] in {"甲社の不正アクセス", "乙社で侵害"}
+    assert row["headline_subjects"][0]["title"] in {"ゼータ運輸の不正アクセス", "乙社で侵害"}
     assert row["common_marks"] == {"P1": []}
 
 

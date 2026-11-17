@@ -11,8 +11,9 @@
 5. 見出しの主語 (パターンの事案と注目の単独事案のうち最も重い 1 件) をコードが指名する。
    2 番目に重い S3 の注目の単独事案は、見出しに無ければ決定論で後ろに添える (``headline_extra``)。
 6. 継続中 (動いていない) の判定は全件を 1 行 (題・確度・最後に動いた日) の材料にする。
-7. 事案どうしのつながりは、共通の実体 (被害組織・製品・マルウェア・キャンペーン・アクター・CVE)
-   を持つ組だけを決定論で出す (``RELATIONS_MAX`` 件まで)。事象の根を共有する判定は事案に畳み済み。
+7. 事案どうしのつながりは、共通の実体 (被害組織・マルウェア・キャンペーン・アクター・CVE。
+   一般語・国名は除く) を持つ組だけを決定論で出す (``RELATIONS_MAX`` 件まで)。
+   事象の根を共有する判定は事案に畳み済み。
 パターンの重さ = 件数 + 事案の重さの合計。日本を先に。**記事の件数・言及量は使わない** (§7)。
 """
 
@@ -25,8 +26,9 @@ from datetime import datetime
 from itertools import combinations
 from zoneinfo import ZoneInfo
 
+from src.assessment.name_relevance import entity_names
 from src.assessment.salience import rank_judgments
-from src.storage.repo_judgment_attrs import JudgmentAttrs
+from src.storage.repo_judgment_attrs import LINK_ENTITY_TYPES, JudgmentAttrs
 from src.synthesis.grounded.estimate import KeyJudgment
 from src.synthesis.grounded.pattern_case import (
     PatternCase,
@@ -322,7 +324,11 @@ def _case_links(cases: Sequence[PatternCase]) -> tuple[CaseLink, ...]:
     """共通の実体の数が多い組から ``RELATIONS_MAX`` 件 (同数は salience 順)。"""
     found = []
     for a, b in combinations(sorted(cases, key=lambda c: c.rank), 2):
-        shared = sorted(_link_value(k) for k in a.links & b.links)
+        shared = sorted(
+            _link_value(k)
+            for k in a.links & b.links
+            if k.split(":", 1)[0] in LINK_ENTITY_TYPES and entity_names([k])
+        )
         if shared:
             found.append(CaseLink(a, b, tuple(shared)))
     found.sort(key=lambda link: -len(link.shared))  # 安定ソート: 同数は salience 順のまま

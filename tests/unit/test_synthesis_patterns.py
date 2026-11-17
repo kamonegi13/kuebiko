@@ -110,21 +110,35 @@ def test_deterministic_regardless_of_input_order() -> None:
 
 
 def test_title_is_event_headline_with_most_articles_then_newest() -> None:
-    js = [j("s-1", "一つ目の事案。"), j("s-2", "二つ目の事案。")]
+    js = [j("s-1", "アルファ証券の一つ目の事案。"), j("s-2", "二つ目の事案。")]
     at = {
         "s-1": attrs(
             kinds=BREACH,
             headlines=(
-                EventHeadline("ev-a", 1, "2026-11-17T01:00:00", "古い事象の見出し"),
-                EventHeadline("ev-b", 3, "2026-11-17T02:00:00", "記事の多い事象の見出し"),
+                EventHeadline("ev-a", 1, "2026-11-17T01:00:00", "アルファ証券の古い事象の見出し"),
+                EventHeadline(
+                    "ev-b", 3, "2026-11-17T02:00:00", "アルファ証券の記事の多い事象の見出し"
+                ),
             ),
         ),
         "s-2": attrs(kinds=BREACH),
     }
     cases = build_patterns(js, at).patterns[0].cases
     by_id = {c.judgment_ids[0]: c for c in cases}
-    assert by_id["s-1"].title == "記事の多い事象の見出し" and by_id["s-1"].title_from_event
+    assert (
+        by_id["s-1"].title == "アルファ証券の記事の多い事象の見出し"
+        and by_id["s-1"].title_from_event
+    )
     assert by_id["s-2"].title == "二つ目の事案" and not by_id["s-2"].title_from_event
+
+
+def test_event_headline_unrelated_to_the_claim_is_not_used_as_title() -> None:
+    js = [j("s-1", "アルファ証券で侵害。"), j("s-2", "ガンマ商事で侵害。")]
+    other = (EventHeadline("ev-x", 5, "2026-11-17T00:00:00", "デルタ運輸の別件の事象"),)
+    at = {"s-1": attrs(kinds=BREACH, headlines=other), "s-2": attrs(kinds=BREACH)}
+    cases = build_patterns(js, at).patterns[0].cases
+    first = next(c for c in cases if c.judgment_ids == ("s-1",))
+    assert first.title == "アルファ証券で侵害" and not first.title_from_event
 
 
 def test_title_without_event_is_full_first_sentence_never_truncated() -> None:
@@ -190,15 +204,15 @@ def test_single_headline_subject_is_heaviest_case_overall() -> None:
 def test_links_need_shared_entities_sorted_by_count_and_capped() -> None:
     js = [j(f"s-{n}", f"事案{n}。") for n in range(5)]
     links = {
-        "s-0": frozenset({"victim_org:甲社", "cve:CVE-2026-1"}),
-        "s-1": frozenset({"victim_org:甲社", "cve:CVE-2026-1"}),
+        "s-0": frozenset({"victim_org:ベータ運輸", "cve:CVE-2026-1"}),
+        "s-1": frozenset({"victim_org:ベータ運輸", "cve:CVE-2026-1"}),
         "s-2": frozenset({"cve:CVE-2026-1"}),
         "s-3": frozenset({"cve:CVE-2026-1"}),
         "s-4": frozenset({"malware_family:X"}),
     }
     at = {k: attrs(kinds=BREACH, links=v) for k, v in links.items()}
     plan = build_patterns(js, at)
-    assert plan.links[0].shared == ("CVE-2026-1", "甲社") and len(plan.links) == 3
+    assert plan.links[0].shared == ("CVE-2026-1", "ベータ運輸") and len(plan.links) == 3
     assert all("X" not in link.shared for link in plan.links)
     assert build_patterns(js, {k: attrs(kinds=BREACH) for k in links}).links == ()
 
@@ -253,3 +267,18 @@ def test_notable_is_capped_at_two() -> None:
     plan = build_patterns(js, at)
     assert [n.item_id for n in plan.notable] == ["S1", "S2"]
     assert len(plan.rest) == 2
+
+
+def test_links_drop_products_generic_words_and_short_names() -> None:
+    js = [j("s-1", "事案一。"), j("s-2", "事案二。")]
+    shared = frozenset(
+        {
+            "affected_product:VPN-Alpha",  # 製品は使わない
+            "victim_org:ab",  # 短すぎる
+            "actor:不正アクセス",  # 一般語
+            "campaign:ShadowOps",
+        }
+    )
+    at = {k: attrs(kinds=BREACH, links=shared) for k in ("s-1", "s-2")}
+    links = build_patterns(js, at).links
+    assert [link.shared for link in links] == [("ShadowOps",)]

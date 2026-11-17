@@ -263,10 +263,10 @@ async def test_shared_entities_become_deterministic_relations(
     monkeypatch.setenv("SYNTHESIS_PATTERNS", "1")
     a = {
         "s-1": attrs(
-            countries=JP, kinds=BREACH, links=frozenset({"cve:CVE-2026-0001", "actor:G1"})
+            countries=JP, kinds=BREACH, links=frozenset({"cve:CVE-2026-0001", "actor:ShadowGroup"})
         ),
         "s-2": attrs(
-            countries=JP, kinds=BREACH, links=frozenset({"cve:CVE-2026-0001", "actor:G1"})
+            countries=JP, kinds=BREACH, links=frozenset({"cve:CVE-2026-0001", "actor:ShadowGroup"})
         ),
         "s-3": attrs(countries=JP, kinds=BREACH, links=frozenset({"cve:CVE-2026-0001"})),
     }
@@ -274,7 +274,7 @@ async def test_shared_entities_become_deterministic_relations(
     lines = out.chain_section.splitlines()
     assert lines[0] == (
         "- アルファ証券で顧客情報が漏えいした と ベータ銀行で委託先のシステム経由の漏えいがあった:"
-        " 共通 = CVE-2026-0001、G1"
+        " 共通 = CVE-2026-0001、ShadowGroup"
     )
     assert len(lines) == 3 and all("共通 = CVE-2026-0001" in x for x in lines)  # 上限 3 件
 
@@ -321,7 +321,7 @@ async def test_relation_lines_name_cases_by_event_headline_when_available(
     from src.storage.repo_judgment_attrs import EventHeadline
 
     monkeypatch.setenv("SYNTHESIS_PATTERNS", "1")
-    link = frozenset({"victim_org:共通組織"})
+    link = frozenset({"victim_org:ベータ運輸"})
     head = (EventHeadline("ev-1", 2, "2026-11-17T00:00:00", "アルファ証券の不正アクセス事案"),)
     a = {
         "s-1": attrs(countries=JP, kinds=BREACH, links=link, headlines=head),
@@ -331,5 +331,5 @@ async def test_relation_lines_name_cases_by_event_headline_when_available(
     out = await _render(_LLM(GOOD), a)
     assert out.chain_section == (
         "- アルファ証券の不正アクセス事案 と ベータ銀行で委託先のシステム経由の漏えいがあった:"
-        " 共通 = 共通組織"
+        " 共通 = ベータ運輸"
     )

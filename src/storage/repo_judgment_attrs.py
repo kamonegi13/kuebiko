@@ -12,6 +12,8 @@ SQLite (dev / tests) と PostgreSQL の両方で動くよう、DISTINCT ON な�
 追加 (2026-11-17): 事象ニュースの見出し (``event_item_versions`` の最新版、事案の題)・手口の手がかり
 (``article_entities`` の ``ttp`` = 本文の裏付けを通した ATT&CK 手法 / ``affected_product``)・
 状況の最後に根拠が足された時刻 (``situations.last_evidence_at``) も引く (追加の問い合わせは 3 本)。
+事象の見出しは ``until`` (= 期間の終わり) 以前に生成された最新版だけ
+(窓より後の版の事実を入れない)。
 """
 
 from __future__ import annotations
@@ -29,8 +31,9 @@ _LIVE_ORIGIN = "live"
 LARGE_MAGNITUDE_BASIS = "large_magnitude"
 TECHNIQUE_ENTITY = "ttp"
 PRODUCT_ENTITY = "affected_product"
-#: 事案どうしの「つながり」(共通の実体) に使う実体の種類。手法 (ttp) は共通の手口の印で別に扱う
-LINK_ENTITY_TYPES = ("victim_org", "affected_product", "malware_family", "campaign", "actor", "cve")
+#: 事案どうしの「つながり」(共通の実体) に使う実体の種類。製品名は偶然の一致が多いので使わない
+#: (2026-11-17)。手法 (ttp) と製品は共通の手口の印で別に扱う
+LINK_ENTITY_TYPES = ("victim_org", "malware_family", "campaign", "actor", "cve")
 
 _SQL = """
 SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, v.severity, v.severity_basis,
@@ -51,8 +54,11 @@ _ENTITY_SQL = (
 )
 _HEADLINE_SQL = """
 SELECT v.item_id, v.headline, v.generated_at FROM event_item_versions v
-WHERE v.item_id IN ({ph})
-  AND v.version = (SELECT MAX(w.version) FROM event_item_versions w WHERE w.item_id = v.item_id)
+WHERE v.item_id IN ({ph}) AND v.generated_at <= ?
+  AND v.version = (
+      SELECT MAX(w.version) FROM event_item_versions w
+      WHERE w.item_id = v.item_id AND w.generated_at <= ?
+  )
 """  # noqa: S608
 _LAST_EVIDENCE_SQL = (
     "SELECT situation_id, last_evidence_at FROM situations "  # noqa: S608
@@ -193,7 +199,8 @@ class JudgmentAttrsMixin:
             articles = {x for a in acc.values() for x in a.articles}
             roots = {r for a in acc.values() for r in a.root_articles}
             entities = _entities_by_article(_chunked(conn, _ENTITY_SQL, articles))
-            headlines = _headlines(_chunked(conn, _HEADLINE_SQL, roots))
+            upper = since_iso(until)
+            headlines = _headlines(_chunked(conn, _HEADLINE_SQL, roots, (upper, upper)))
             last = {
                 str(sid): str(at or "")
                 for sid, at in (tuple(r) for r in _chunked(conn, _LAST_EVIDENCE_SQL, ids))

@@ -1,6 +1,7 @@
 """横断パターンの「事案」(同じ事象の判定を畳んだ 1 件) の部品 (決定論・純粋関数)。
 
-- 題: 根拠記事の事象ニュースの見出し (最新版、根拠記事が最も多い事象。同数なら新しい版)。
+- 題: 根拠記事の事象ニュースの見出し (窓の終わり以前の最新版、根拠記事が最も多い事象。同数なら
+  新しい版)。ただし見出しの固有名が判定の claim に出るものだけ (``name_relevance``)。
   事象が無い判定だけ claim の第 1 文を **切らずに** 使う (「…」で切らない、2026-11-17)。
 - 名前: 事案を名指ししているかの照合語 (題・claim の主語と固有名詞候補)。見出しの関門と
   委託先等の語の関門が共有する。
@@ -17,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from src.assessment.claim_grounding import extract_terms
+from src.assessment.name_relevance import is_relevant, title_names
 from src.cti.importance_v2 import stated_victim_count
 from src.storage.repo_judgment_attrs import EventHeadline, JudgmentAttrs
 from src.synthesis.grounded.estimate import KeyJudgment
@@ -118,6 +120,20 @@ def best_event_headline(headlines: Sequence[EventHeadline]) -> str:
     return max(per_root.values(), key=lambda v: (v[0], v[1]))[2]
 
 
+def relevant_headlines(
+    headlines: Sequence[EventHeadline], claims: Sequence[str]
+) -> list[EventHeadline]:
+    """見出しの固有名が判定の claim に出るものだけ (``name_relevance``)。
+
+    判定の根拠に別事案の記事が混ざると、その事象の見出しが題になってしまう (4 回目の不合格)。
+    """
+    return [
+        h
+        for h in headlines
+        if (names := title_names(h.headline)) and any(is_relevant(names, c) for c in claims)
+    ]
+
+
 def make_case(
     members: Sequence[KeyJudgment], attrs: Mapping[str, JudgmentAttrs], rank: int
 ) -> tuple[PatternCase, str | None]:
@@ -126,9 +142,9 @@ def make_case(
 
     rep = members[0]  # ranked 順の先頭 = 最も重い判定
     merged = merged_attrs(members, attrs)
-    event_title = best_event_headline(merged.event_headlines)
-    title = event_title or first_full_sentence(rep.claim)
     claims = tuple(j.claim for j in members)
+    event_title = best_event_headline(relevant_headlines(merged.event_headlines, claims))
+    title = event_title or first_full_sentence(rep.claim)
     case = PatternCase(
         judgment_ids=tuple(j.id for j in members),
         title=title,
