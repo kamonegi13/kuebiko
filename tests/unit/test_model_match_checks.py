@@ -185,9 +185,10 @@ class TestPairLlmCheck:
         monkeypatch.setenv("PAIR_MODEL_CHECK", "off")
         pair_model.warn_on_pair_llm_mismatch(_pair(("x",)))
 
-    def test_real_pair_json_declares_unknown(self) -> None:
-        """本物の JSON: 宣言は空 (不明) のまま、既存の読み込みが壊れていない。"""
+    def test_real_pair_json_declares_its_judge(self) -> None:
+        """本物の JSON: 11-17 の S 切替から、特徴量を作った判定器を宣言する。"""
         pair_model.load_model.cache_clear()
         model = pair_model.load_model()
         assert model is not None
-        assert model.trained_llm_models == ()
+        assert len(model.trained_llm_models) == 1
+        assert not pair_model.pair_llm_mismatch(model, model.trained_llm_models[0])

@@ -74,9 +74,19 @@ def test_write_guard_rejects_non_read_only_session() -> None:
         dc.assert_read_only_setting("off")
 
 
-def test_detect_model_sha_matches_prereg() -> None:
-    root = Path(__file__).resolve().parents[2]
-    assert dc.verify_detect_model(root / dc.DETECT_MODEL_PATH) == dc.DETECT_MODEL_SHA256
+def test_verify_detect_model_accepts_only_the_prereg_sha(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 本物の config/models/detect_model.json は 11-17 の S 切替 (s26r) で学び直した版に替わった。
+    # GPU-B の事前登録のモデルは data/model_backups/detect_model.json.bak_s24ci65_20261117 に残る。
+    # ここでは照合の関数の振る舞いだけを固定する
+    f = tmp_path / "detect_model.json"
+    f.write_bytes(b"{}")
+    monkeypatch.setattr(dc, "DETECT_MODEL_SHA256", dc.sha256_bytes(b"{}"))
+    assert dc.verify_detect_model(f) == dc.sha256_bytes(b"{}")
+    f.write_bytes(b'{"changed": true}')
+    with pytest.raises(SystemExit):
+        dc.verify_detect_model(f)
 
 
 def test_frozen_repo_reads_only_frozen_values() -> None:

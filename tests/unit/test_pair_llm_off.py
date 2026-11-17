@@ -110,10 +110,9 @@ def test_pair_llm_builder_is_not_called_when_flag_is_off(monkeypatch: pytest.Mon
 
 
 def test_model_check_passes_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """trained_llm_models が空 (現行モデル) なら LLM なしでも警告しない (旗 0 は照合を飛ばす)。"""
+    """LLM なし (旗 0) では宣言と実モデルが食い違っても照合を飛ばす (警告も例外も無い)。"""
     model = pair_model.load_model()
     assert model is not None
-    assert model.trained_llm_models == ()
-    assert not pair_model.pair_llm_mismatch(model, "anything")
+    assert pair_model.pair_llm_mismatch(model, "some-other-judge")  # 宣言があるので食い違う
     monkeypatch.setenv("EVENTNEWS_PAIR_LLM", "0")
     pair_model.warn_on_pair_llm_mismatch(model)  # 例外なし
