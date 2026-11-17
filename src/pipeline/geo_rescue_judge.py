@@ -53,13 +53,18 @@ from typing import TYPE_CHECKING
 
 from src.pipeline.geo_rescue_cues import geo_cue_reasons, is_cyber_geo_cue
 from src.tools.decision_probe import probe_choice
-from src.tools.model_tiers import Step
+from src.tools.model_tiers import Step, resolve_step_model
 
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
 
-#: 3 問とも P(Yes) がこの値以上で Yes (事前登録で固定、標本で調整しない)
+#: 3 問とも P(Yes) がこの値以上で Yes (事前登録で固定、標本で調整しない)。26b 等の既定
 GEO_JUDGE_THRESHOLD = 0.5
+#: 判定のモデル (前方一致) ごとのしきい値。s26r は 0.5 だと回収が 0.599 (26b 0.763) に落ちるため
+#: 0.3 (回収 0.746・誤救済 14.4%)。**正解 429 行を見て選んだ事後の値**
+#: (data/eval/geo_rescue_shadow_2026_11_15/s26r_replay/IMPROVE.md)。新しい標本での確かめは宿題
+#: (2026-11-17 利用者判断で 2 本体制のため採用)
+GEO_JUDGE_THRESHOLD_BY_MODEL: dict[str, float] = {"kuebiko-sft:s26r": 0.3}
 #: 選択肢 (各 1 トークンの英語の語。日本語の「いいえ」は複数トークンに分かれる)
 GEO_JUDGE_CHOICES: tuple[str, str] = ("Yes", "No")
 _YES = GEO_JUDGE_CHOICES[0]
@@ -123,6 +128,8 @@ class GeoJudgeResult:
     p_watched_action: float | None
     p_allied_response: float | None
     p_cyber_geo: float | None = None
+    #: この判定に使うしきい値 (判定のモデルで決まる。``threshold_for_model``)
+    threshold: float = GEO_JUDGE_THRESHOLD
 
     @property
     def has_cue(self) -> bool:
@@ -140,15 +147,15 @@ class GeoJudgeResult:
 
     @property
     def watched_action(self) -> bool:
-        return _is_yes(self.p_watched_action)
+        return _is_yes(self.p_watched_action, self.threshold)
 
     @property
     def allied_response(self) -> bool:
-        return _is_yes(self.p_allied_response)
+        return _is_yes(self.p_allied_response, self.threshold)
 
     @property
     def cyber_geo(self) -> bool:
-        return _is_yes(self.p_cyber_geo)
+        return _is_yes(self.p_cyber_geo, self.threshold)
 
     @property
     def passed(self) -> bool:
@@ -163,8 +170,17 @@ class GeoJudgeResult:
         return geo or (self.has_cyber_geo_cue and self.p_cyber_geo is None)
 
 
-def _is_yes(p: float | None) -> bool:
-    return p is not None and p >= GEO_JUDGE_THRESHOLD
+def _is_yes(p: float | None, threshold: float = GEO_JUDGE_THRESHOLD) -> bool:
+    return p is not None and p >= threshold
+
+
+def threshold_for_model(model: str) -> float:
+    """判定のモデル (前方一致) のしきい値。登録の無いモデルは ``GEO_JUDGE_THRESHOLD``。"""
+    name = model.strip()
+    for prefix, value in GEO_JUDGE_THRESHOLD_BY_MODEL.items():
+        if name.startswith(prefix):
+            return value
+    return GEO_JUDGE_THRESHOLD
 
 
 def judged_rescued(*, flat_rescued: bool, pir_rescued: bool, judge: GeoJudgeResult) -> bool:
@@ -215,7 +231,13 @@ async def judge_geo_rescue(
         _maybe(geo, title, text, Q_ALLIED_RESPONSE, config),
         _maybe(cyber, title, text, Q_CYBER_GEO, config),
     )
-    return GeoJudgeResult(cues=cues, p_watched_action=pw, p_allied_response=pa, p_cyber_geo=pd)
+    try:
+        threshold = threshold_for_model(resolve_step_model(Step.GEO_RESCUE_JUDGE))
+    except Exception:  # noqa: BLE001 — 割当を読めなければ従来の既定 (判定は止めない)
+        threshold = GEO_JUDGE_THRESHOLD
+    return GeoJudgeResult(
+        cues=cues, p_watched_action=pw, p_allied_response=pa, p_cyber_geo=pd, threshold=threshold
+    )
 
 
 def unusable_body_reason(body: str | None) -> str | None:

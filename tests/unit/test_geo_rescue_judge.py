@@ -234,8 +234,12 @@ async def test_judge_geo_rescue_skips_llm_without_cue(monkeypatch: pytest.Monkey
     r = await judge_geo_rescue("Navy orders patrol boats", "a contract", config=object())  # type: ignore[arg-type]
 
     assert asked == []
-    assert r == GeoJudgeResult(
-        cues=(), p_watched_action=None, p_allied_response=None, p_cyber_geo=None
+    # しきい値は割当のモデルで決まる (geo_rescue_judge.threshold_for_model) ので比べない
+    assert (r.cues, r.p_watched_action, r.p_allied_response, r.p_cyber_geo) == (
+        (),
+        None,
+        None,
+        None,
     )
     assert r.passed is False
 
