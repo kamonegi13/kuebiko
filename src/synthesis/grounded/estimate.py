@@ -7,7 +7,7 @@ Estimate は「証拠接地 → ACH → 敵対的検証」を経た期間の情�
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from typing import Any, Literal
@@ -275,15 +275,25 @@ _BASIS_LABEL = {"victim_disclosed": "被害組織の公表", "govt_confirmed": "
 
 
 def occurrence_floor(
-    claim_type: str, evidence: tuple[EvidenceItem, ...]
+    claim_type: str,
+    evidence: tuple[EvidenceItem, ...],
+    *,
+    relevant: Collection[str] | None = None,
 ) -> tuple[Confidence, str] | None:
     """発生の確度の下限 (moderate、独立 2 記事以上で high) と ``confidence_basis`` に足す印。
 
     discrete_event 以外・一次の根拠なしは None。帰属の確度 (final_confidence) には触れない。
+    ``relevant`` を渡すと、その article_id の公表・確認だけを数える (見出しの固有の名前が状況の
+    claim と共通する記事だけ。独立 2 記事の high 判定も同じ集合で数える)。
     """
     if claim_type not in OCCURRENCE_CLAIM_TYPES:
         return None
-    hits = [e for e in evidence if e.attribution_basis in OCCURRENCE_BASES]
+    hits = [
+        e
+        for e in evidence
+        if e.attribution_basis in OCCURRENCE_BASES
+        and (relevant is None or e.article_id in relevant)
+    ]
     if not hits:
         return None
     labels = "・".join(dict.fromkeys(_BASIS_LABEL[e.attribution_basis] for e in hits))

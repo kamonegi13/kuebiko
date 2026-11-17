@@ -95,7 +95,7 @@ def check_revision(
     )
     out: list[tuple[str, str, str, str]] = []
     for s in split_sentences(rev.implication):
-        for v in find_violations(s, ctx, check_numbers=True):
+        for v in find_violations(s, ctx, check_terms=True):
             out.append(("implication", v.kind, v.token, s[:60]))
         m = JP_IMPLICATION_RE.search(s)
         if m and not ctx.has_japan_link:
@@ -128,6 +128,7 @@ def dump_adjudication(
     anchors_by_sid: dict[str, set[str]],
 ) -> None:
     """直近 days 日の全版を検査し、裁定用の JSONL を書く (読み取りのみ)。"""
+    from src.assessment.occurrence_floor import _relevant_ids  # noqa: PLC0415
     from src.synthesis.grounded.estimate import EvidenceItem, occurrence_floor
 
     out.mkdir(parents=True, exist_ok=True)
@@ -159,7 +160,7 @@ def dump_adjudication(
         ctx = GateContext(sid, own, owners, link)
         base = {"situation_id": sid, "rev": rev.rev, "situation_title": titles.get(sid, "")}
         for field, text in _items(rev):
-            vs = find_violations(text, ctx, check_numbers=field == "implication")
+            vs = find_violations(text, ctx, check_terms=field == "implication")
             checked[field] = checked.get(field, 0) + 1
             if vs:
                 hits[field] = hits.get(field, 0) + 1
@@ -209,7 +210,8 @@ def dump_adjudication(
             )  # type: ignore[arg-type]
             for r in rows
         )
-        floor = occurrence_floor(rev.claim_type, ev)
+        relevant = _relevant_ids(ev, rev.claim, repo)
+        floor = occurrence_floor(rev.claim_type, ev, relevant=relevant)
         if floor is None:
             continue
         seen: set[str] = set()
@@ -218,6 +220,7 @@ def dump_adjudication(
             aid = str(r["article_id"])
             if (
                 str(r["attribution_basis"]) in ("victim_disclosed", "govt_confirmed")
+                and aid in relevant
                 and aid not in seen
             ):
                 seen.add(aid)

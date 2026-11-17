@@ -55,12 +55,9 @@ from src.assessment.ledger import (
 from src.assessment.occurrence_floor import apply_occurrence_floor
 from src.assessment.question_store import hypotheses_for_standing
 from src.assessment.revision_grounding import (
-    apply_revision_gates,
-    build_gate_context,
-    has_japan_link,
-    impl_grounding_mode,
-    jp_implication_mode,
-    subject_owner_index,
+    build_gate_owners,
+    gate_analysis,
+    no_japan_link,
 )
 from src.assessment.situation_store import (
     DeltaType,
@@ -1548,8 +1545,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 hypotheses_override=hyp_override,
                 question=_standing_question(sid, row.title),
                 aggregate_signal=agg_signal,
-                no_japan_link=jp_implication_mode() == "1"
-                and not has_japan_link(
+                no_japan_link=no_japan_link(
                     claim=prev.claim,
                     anchors=row.anchors,
                     entity_keys={k for a in new_aids for k in entities_by_id.get(a, set())},
@@ -1689,26 +1685,25 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     # ---- 4. 確度較正 → KeyJudgment 化 → adversarial → 永続化 ----
     judgments: list[KeyJudgment] = []
     meta_by_id: dict[str, dict[str, Any]] = {}
-    gate_owners = subject_owner_index(situations) if impl_grounding_mode() != "0" else {}
+    gate_owners = build_gate_owners(situations)
+    gate_article_cache: dict[str, dict[str, Any] | None] = {}
     for p in pending:
         analysis = p["analysis"]
         sid = p["sid"]
         # 含意・指標・欠けている証拠の関門 (LEDGER_IMPL_GROUNDING / LEDGER_JP_IMPLICATION)
-        if impl_grounding_mode() != "0" or jp_implication_mode() != "0":
-            analysis = apply_revision_gates(
-                analysis,
-                build_gate_context(
-                    repo=repo,
-                    store=store,
-                    situation_id=sid,
-                    row=row_by_sid.get(sid) if sid else None,
-                    claim=str(p["claim"]),
-                    read_aids=p["read_aids"],
-                    entities_by_id=entities_by_id,
-                    owners=gate_owners,
-                ),
-                p.get("prev") or latest_revs.get(sid or ""),
-            )
+        analysis = gate_analysis(
+            analysis,
+            prev=p.get("prev") or latest_revs.get(sid or ""),
+            repo=repo,
+            store=store,
+            situation_id=sid,
+            row=row_by_sid.get(sid) if sid else None,
+            claim=str(p["claim"]),
+            read_aids=p["read_aids"],
+            entities_by_id=entities_by_id,
+            owners=gate_owners,
+            article_cache=gate_article_cache,
+        )
         prior_aids = store.evidence_ids_by_situation([sid]).get(sid, set()) if sid else set()
         basis_ids = list({*prior_aids, *p["new_aids"]})
         sb = compute_source_basis(repo, basis_ids, kev_set=kev_set)
@@ -1755,7 +1750,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             )
         )
         # 発生の確度 (LEDGER_OCCURRENCE_FLOOR、旗 0 は同じ object)
-        judgments[-1] = apply_occurrence_floor(judgments[-1])
+        judgments[-1] = apply_occurrence_floor(judgments[-1], repo=repo, store=store)
         meta_by_id[jid] = p
 
     if judgments:
