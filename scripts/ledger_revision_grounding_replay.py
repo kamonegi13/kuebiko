@@ -108,6 +108,149 @@ def check_revision(
     return out
 
 
+def _items(rev: RevisionRow) -> list[tuple[str, str]]:
+    out = [("implication", s) for s in split_sentences(rev.implication)]
+    for field, raw in (("indicators", rev.indicators_json), ("missing", rev.missing_json)):
+        out += [(field, str(i)) for i in json.loads(raw or "[]")]
+    return out
+
+
+def _write(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    print(f"{path.name}: {len(rows)} 行")
+
+
+def dump_adjudication(
+    repo: RunHistoryRepository,
+    out: Path,
+    days: int,
+    owners: dict[str, frozenset[str]],
+    anchors_by_sid: dict[str, set[str]],
+) -> None:
+    """直近 days 日の全版を検査し、裁定用の JSONL を書く (読み取りのみ)。"""
+    from src.synthesis.grounded.estimate import EvidenceItem, occurrence_floor
+
+    out.mkdir(parents=True, exist_ok=True)
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+    titles = {
+        str(r["situation_id"]): str(r["title"])
+        for r in _q(repo, "SELECT situation_id, title FROM situations", [])
+    }
+    revs = [
+        SituationStore._row_to_revision(r)  # noqa: SLF001
+        for r in _q(
+            repo,
+            "SELECT * FROM situation_revisions WHERE created_at >= ? ORDER BY situation_id, rev",
+            [since],
+        )
+    ]
+    fired: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    clean: dict[tuple[str, str, str], dict[str, Any]] = {}
+    jp: dict[tuple[str, str], dict[str, Any]] = {}
+    checked: dict[str, int] = {}
+    hits: dict[str, int] = {}
+    for rev in revs:
+        sid = rev.situation_id
+        anchors = anchors_by_sid.get(sid, set())
+        own, ttl, _ = _material(repo, sid, rev.created_at, rev.claim, anchors)
+        link = has_japan_link(
+            claim=rev.claim, anchors=anchors, entity_keys=set(anchors), evidence_text=ttl
+        )
+        ctx = GateContext(sid, own, owners, link)
+        base = {"situation_id": sid, "rev": rev.rev, "situation_title": titles.get(sid, "")}
+        for field, text in _items(rev):
+            vs = find_violations(text, ctx, check_numbers=field == "implication")
+            checked[field] = checked.get(field, 0) + 1
+            if vs:
+                hits[field] = hits.get(field, 0) + 1
+                for v in vs:
+                    fired.setdefault(
+                        (sid, field, text, v.kind, v.token),
+                        {
+                            **base,
+                            "field": field,
+                            "item": text,
+                            "violation": v.kind,
+                            "token": v.token,
+                        },
+                    )
+            else:
+                clean.setdefault((sid, field, text), {**base, "field": field, "item": text})
+            m = JP_IMPLICATION_RE.search(text) if field == "implication" else None
+            if m and not link:
+                jp.setdefault(
+                    (sid, text),
+                    {
+                        **base,
+                        "sentence": text,
+                        "token": m.group(0),
+                        "why": "証拠・anchor・claim に日本との接点なし",
+                    },
+                )
+    occ: list[dict[str, Any]] = []
+    since14 = (datetime.now(UTC) - timedelta(days=14)).isoformat()
+    for rev in revs:
+        if rev.rev != 1 or rev.created_at < since14:
+            continue
+        rows = _q(
+            repo,
+            "SELECT e.article_id, e.attribution_basis, e.source_tier, e.polarity, a.title"
+            " FROM situation_evidence e LEFT JOIN articles a ON a.article_id=e.article_id"
+            " WHERE e.situation_id=? AND e.assessed_at IS NOT NULL",
+            [rev.situation_id],
+        )
+        ev = tuple(
+            EvidenceItem(
+                str(r["article_id"]),
+                str(r["source_tier"] or ""),
+                str(r["attribution_basis"]),
+                "",
+                str(r["polarity"]),
+            )  # type: ignore[arg-type]
+            for r in rows
+        )
+        floor = occurrence_floor(rev.claim_type, ev)
+        if floor is None:
+            continue
+        seen: set[str] = set()
+        basis_rows = []
+        for r in rows:
+            aid = str(r["article_id"])
+            if (
+                str(r["attribution_basis"]) in ("victim_disclosed", "govt_confirmed")
+                and aid not in seen
+            ):
+                seen.add(aid)
+                basis_rows.append(
+                    {
+                        "article_id": aid,
+                        "attribution_basis": str(r["attribution_basis"]),
+                        "polarity": str(r["polarity"]),
+                        "title": str(r["title"] or ""),
+                    }
+                )
+        occ.append(
+            {
+                "situation_id": rev.situation_id,
+                "situation_title": titles.get(rev.situation_id, ""),
+                "claim": rev.claim,
+                "claim_type": rev.claim_type,
+                "current_confidence": rev.confidence,
+                "leading_hypothesis": rev.leading_hypothesis,
+                "occurrence_confidence": floor[0],
+                "basis": floor[1],
+                "evidence": basis_rows,
+            }
+        )
+    _write(out / "impl_fired.jsonl", list(fired.values()))
+    _write(out / "impl_not_fired.jsonl", list(clean.values()))
+    _write(out / "jp_fired.jsonl", list(jp.values()))
+    _write(out / "occurrence.jsonl", occ)
+    print(f"版 {len(revs)} 件 / 対象 {days} 日")
+    for f, n in checked.items():
+        print(f"  {f}: 検査 {n} 件 / 発火 {hits.get(f, 0)} 件 ({hits.get(f, 0) / n:.1%})")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sid", action="append", default=[])
@@ -115,6 +258,9 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=0)
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--known", action="store_true")
+    ap.add_argument(
+        "--adjudicate", default="", help="出力ディレクトリ (直近 --days 日の全版を JSONL へ)"
+    )
     args = ap.parse_args()
 
     repo = RunHistoryRepository()
@@ -133,6 +279,9 @@ def main() -> None:
         since = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()
         for sid, lst in store.revisions_since(since).items():
             targets += [(sid, r.rev) for r in lst[-3:]][: args.limit]
+    if args.adjudicate:
+        dump_adjudication(repo, Path(args.adjudicate), args.days or 30, owners, anchors_by_sid)
+        return
     detected: dict[str, int] = {}
     for sid, rev_no in targets[: max(args.limit, len(targets) if args.known else 0)]:
         rows = _q(
