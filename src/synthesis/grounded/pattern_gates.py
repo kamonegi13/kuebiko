@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from src.assessment.claim_grounding import GroundingSources, check_grounding
 from src.synthesis.grounded.pattern_fallback import fallback_headline, fallback_pattern_text
 from src.synthesis.grounded.patterns import Pattern, PatternCase, PatternPlan
-from src.synthesis.grounded.slot_render import has_banned
 
 MAX_SENTENCES = 3
 MAX_CHARS = 300
@@ -64,6 +63,25 @@ class GatedTexts:
     headline: str
     pattern_texts: dict[str, str] = field(default_factory=dict)
     watch: str = ""
+
+
+#: パターンの文で禁じる語 = 断定の言い過ぎだけ (2026-11-17)。slot render の ``BANNED_IN_CLAUSE`` は
+#: 確度語・反証・対立仮説も禁じる (あちらは確度の定型文をコードが付けるため) が、パターンの文は
+#: 「漏えいした可能性があると公表」のような事実の引用や、入力に付けた確度の印 (低確度 等) を書く。
+#: 流用すると 12 窓のほぼ全欄が落ちた (11-17 の P2 の 1 回目、無効の記録は設計書 §6 の追記)。
+PATTERN_BANNED: tuple[str, ...] = (
+    "確実に",
+    "間違いなく",
+    "疑いなく",
+    "疑いの余地",
+    "断言",
+    "必ず",
+    "明らかに",
+)
+
+
+def has_banned(text: str) -> bool:
+    return any(w in text for w in PATTERN_BANNED)
 
 
 def split_sentences(text: str) -> list[str]:

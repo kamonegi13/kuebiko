@@ -165,3 +165,11 @@ def test_quiet_day_headline() -> None:
 
 def test_split_sentences() -> None:
     assert split_sentences("あ。い。う") == ["あ。", "い。", "う"]
+
+
+def test_quoted_possibility_and_confidence_labels_are_allowed() -> None:
+    """事実の引用 (可能性があると公表) と確度の印は禁止語ではない (11-17 P2 1 回目)。"""
+    plan = _plan()
+    text = "アルファ証券は漏えいの可能性があると公表し、評価は低確度にとどまる。"
+    texts, _, stats = _gate(plan, items=[("P1", text)])
+    assert stats.banned == 0
