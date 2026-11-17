@@ -678,6 +678,10 @@ async def run_decompose(
     return replace(result, merge_blocked=len(blocked_clusters))
 
 
+def _candidate_titles(inp: DecomposeInputs) -> dict[str, str]:
+    return {str(a.get("article_id", "")): str(a.get("title", "")) for a in inp.candidates}
+
+
 def _rescue_verdict(inp: DecomposeInputs, cluster: Sequence[str]) -> MergeVerdict | None:
     """``LEDGER_DUP_RESCUE=1``: 強い手がかりと事象の根が一致する既存の情勢へ合流させる。"""
     from src.assessment.dup_rescue import try_rescue
@@ -686,6 +690,7 @@ def _rescue_verdict(inp: DecomposeInputs, cluster: Sequence[str]) -> MergeVerdic
         store=inp.store,
         sit_keys=inp.situation_keys,
         entities_by_id=inp.entities_by_id,
+        titles_by_id=_candidate_titles(inp),
         article_ids=cluster,
         claim="",
     )

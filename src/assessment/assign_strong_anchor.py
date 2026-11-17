@@ -11,11 +11,16 @@ docs/ledger_upstream_fixes_2026_11_17.md §3。``assignment._score`` の ``natio
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
+from typing import TYPE_CHECKING
 
 from src.assessment.assignment import ArticleKeys, SituationKeys
 from src.assessment.ledger_flags import assign_strong_anchor_mode
+from src.assessment.name_relevance import article_names, is_relevant
 from src.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from src.assessment.situation_store import SituationStore
 
 _log = get_logger(__name__)
 
@@ -40,9 +45,15 @@ def strong_anchor_blocks(
     matched: tuple[SituationKeys, str] | None,
     art: ArticleKeys,
     *,
+    entity_keys: Iterable[str] = (),
+    store: SituationStore | None = None,
     ml_prob: float | None = None,
 ) -> bool:
-    """``match_situation`` の結果を旗に従って落とすか。shadow は log だけして False を返す。"""
+    """``match_situation`` の結果を旗に従って落とすか。shadow は log だけして False を返す。
+
+    強い手がかりの共有が無くても、記事の固有の名前 (entity + 題の固有語、漢字名を含む) が
+    状況の題・最新の判定文に出れば関係ありとして落とさない (§8、2 回目)。
+    """
     mode = assign_strong_anchor_mode()
     if mode == "off" or matched is None:
         return False
@@ -50,6 +61,8 @@ def strong_anchor_blocks(
     if not should_drop_assignment(
         rule=rule, domain=sit.row.domain, shared_strong=art.strong & sit.strong
     ):
+        return False
+    if _is_relevant_to_situation(art, sit, entity_keys, store):
         return False
     _log.info(
         "ledger_assign_strong_anchor_shadow",
@@ -60,3 +73,19 @@ def strong_anchor_blocks(
         ml_prob=None if ml_prob is None else round(ml_prob, 3),
     )
     return mode == "on"
+
+
+def _is_relevant_to_situation(
+    art: ArticleKeys,
+    sit: SituationKeys,
+    entity_keys: Iterable[str],
+    store: SituationStore | None,
+) -> bool:
+    """記事の固有の名前が状況の題・最新の判定文に出るか (判定文は必要になった時だけ引く)。"""
+    names = article_names(art.title, [*entity_keys, *art.strong])
+    if is_relevant(names, sit.row.title):
+        return True
+    if store is None:
+        return False
+    rev = store.latest_revision(sit.row.situation_id)
+    return rev is not None and is_relevant(names, rev.claim)

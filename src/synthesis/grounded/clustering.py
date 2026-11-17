@@ -12,6 +12,7 @@ import re
 from collections.abc import Mapping
 
 from src.assessment.ledger_flags import seed_strict_mode
+from src.assessment.name_relevance import GENERIC_WORDS, article_names, is_relevant
 from src.cti.roundup_detector import is_roundup_article
 from src.logging_config import get_logger
 
@@ -58,16 +59,7 @@ _STOP: frozenset[str] = frozenset(
 
 #: seed 拡張の strict 規則で「弁別力が低い」とみなす一般語 (日本語 + 英語、小文字)。
 #: 侵害の報道に毎回出る語で、これだけの重なりは無関係な他社の記事でも起きる。
-GENERIC_SEED_TOKENS: frozenset[str] = frozenset(
-    {
-        "不正アクセス", "不正", "アクセス", "情報", "漏洩", "漏えい", "流出", "個人情報", "公表",
-        "発表", "攻撃", "被害", "可能性", "顧客", "侵害", "サイバー", "セキュリティ", "システム",
-        "サーバ", "サーバー", "サービス", "お知らせ", "お詫び", "調査", "対応", "影響", "報告",
-        "data", "breach", "hack", "hacked", "leak", "leaked", "attack", "attacks", "cyber",
-        "security", "system", "systems", "incident", "access", "unauthorized", "customer",
-        "customers", "information", "personal", "report", "reports", "company", "users",
-    }
-)  # fmt: skip
+GENERIC_SEED_TOKENS: frozenset[str] = GENERIC_WORDS
 #: これ以上の被害組織を挙げる記事は seed 拡張の候補にしない (複数事案の束)
 MAX_VICTIM_ORGS_PER_CANDIDATE = 3
 _MIN_STRICT_SHARED_TOKENS = 2
@@ -149,6 +141,7 @@ def expand_claim_sources(
     for sid in seed_ids:
         claim_tok |= _tokens(title_by_id.get(sid, ""))
 
+    situation_text = " ".join([claim_text, *(title_by_id.get(sid, "") for sid in seed_ids)])
     scored: list[tuple[int, str]] = []
     strict_scored: list[tuple[int, str]] = []
     for a in pool:
@@ -160,7 +153,11 @@ def expand_claim_sources(
         tok_share = len(shared)
         if ent_share >= 1 or tok_share >= 2:
             scored.append((ent_share * 3 + tok_share, aid))
-        if mode != "off" and _strict_keeps(a, aid, ent_share, shared, entities_by_id, kind_by_id):
+        if (
+            mode != "off"
+            and (ent_share >= 1 or tok_share >= 2)
+            and _strict_keeps(a, aid, ent_share, shared, entities_by_id, kind_by_id, situation_text)
+        ):
             strict_scored.append((ent_share * 3 + tok_share, aid))
     # score 降順 → 同点は id 昇順で決定論。
     scored.sort(key=lambda x: (-x[0], x[1]))
@@ -192,8 +189,16 @@ def _strict_keeps(
     shared: set[str],
     entities_by_id: Mapping[str, set[str]],
     kind_by_id: Mapping[str, str] | None,
+    situation_text: str = "",
 ) -> bool:
-    """strict 規則で候補に残すか (純粋関数)。まとめ記事・多数の被害組織の記事は外す。"""
+    """strict 規則で候補に残すか (純粋関数)。
+
+    1. 記事の固有の名前が状況の題・判定文に出れば残す (**まとめ記事・多数の被害組織の除外より先**)。
+    2. そうでなければ、まとめ記事・多数の被害組織の記事は外し、一般語を除いた語の規則を当てる。
+    """
+    names = article_names(str(article.get("title", "")), entities_by_id.get(aid, set()))
+    if situation_text and is_relevant(names, situation_text):
+        return True
     category = str(article.get("category") or "")
     kind = (kind_by_id or {}).get(aid)
     if is_roundup_article(str(article.get("title", "")), kind=kind, category=category):

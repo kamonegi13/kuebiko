@@ -27,7 +27,13 @@ from typing import Any
 
 from src.assessment.assign_strong_anchor import CYBER_DOMAINS, should_drop_assignment
 from src.assessment.assignment import split_anchor_keys
-from src.assessment.dup_rescue import RescueCandidate, decide_dup_rescue, rescue_anchors
+from src.assessment.dup_rescue import (
+    RescueCandidate,
+    cluster_names,
+    decide_dup_rescue,
+    roundup_roots,
+)
+from src.assessment.name_relevance import article_names, is_relevant, matched_names
 from src.assessment.situation_store import SituationStore
 from src.synthesis.grounded.clustering import _strict_keeps, _tokens, anchor_entities
 
@@ -80,7 +86,27 @@ def _roots(store: SituationStore, ids: list[str]) -> dict[str, set[str]]:
     return out
 
 
-def replay_seed(store: SituationStore, cutoff: str) -> list[dict[str, Any]]:
+def _claims(store: SituationStore) -> dict[str, list[tuple[str, str]]]:
+    """情勢 → [(created_at, claim)] (rev 昇順)。"""
+    out: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for r in _rows(
+        store,
+        "SELECT situation_id, created_at, claim FROM situation_revisions"
+        " ORDER BY situation_id, rev",
+        [],
+    ):
+        out[str(r["situation_id"])].append((str(r["created_at"]), str(r["claim"] or "")))
+    return out
+
+
+def _claim_until(claims: list[tuple[str, str]], until: str | None = None) -> str:
+    rows = [c for t, c in claims if until is None or t <= until]
+    return rows[-1] if rows else ""
+
+
+def replay_seed(
+    store: SituationStore, cutoff: str, claims: dict[str, list[tuple[str, str]]]
+) -> list[dict[str, Any]]:
     ev = _rows(
         store,
         "SELECT e.situation_id AS sid, e.article_id AS aid, e.added_at AS at, s.title AS st"
@@ -107,7 +133,8 @@ def replay_seed(store: SituationStore, cutoff: str) -> list[dict[str, Any]]:
             if not (ent_share >= 1 or len(shared) >= 2):
                 continue  # 従来の規則でも拡張されない行は対象外
             art = {"title": title, "category": cat}
-            if not _strict_keeps(art, aid, ent_share, shared, ents, kinds):
+            sit_text = f"{rows[0]['st']} {_claim_until(claims.get(sid, []))}"
+            if not _strict_keeps(art, aid, ent_share, shared, ents, kinds, sit_text):
                 out.append(
                     {
                         "flag": "SEED_STRICT",
@@ -122,7 +149,9 @@ def replay_seed(store: SituationStore, cutoff: str) -> list[dict[str, Any]]:
     return out
 
 
-def replay_dup_rescue(store: SituationStore, cutoff: str) -> list[dict[str, Any]]:
+def replay_dup_rescue(
+    store: SituationStore, cutoff: str, claims: dict[str, list[tuple[str, str]]]
+) -> list[dict[str, Any]]:
     sits = _rows(
         store,
         "SELECT situation_id, title, opened_at, closed_at FROM situations"
@@ -137,11 +166,13 @@ def replay_dup_rescue(store: SituationStore, cutoff: str) -> list[dict[str, Any]
     ev = _rows(
         store,
         "SELECT situation_id AS sid, article_id AS aid, added_at AS at, assigned_by AS by,"
-        " assessed_at AS ass, weak_at AS weak FROM situation_evidence",
+        " assessed_at AS ass, weak_at AS weak, polarity AS pol FROM situation_evidence",
         [],
     )
     ids = sorted({str(r["aid"]) for r in ev})
     ents, roots = _entities(store, ids), _roots(store, ids)
+    tit = {a: t for a, (t, _) in _titles(store, ids).items()}
+    bad_roots = roundup_roots(store, sorted({x for v in roots.values() for x in v}))
     ev_by: dict[str, list[Any]] = defaultdict(list)
     for r in ev:
         ev_by[str(r["sid"])].append(r)
@@ -151,8 +182,8 @@ def replay_dup_rescue(store: SituationStore, cutoff: str) -> list[dict[str, Any]
         seeds = [str(r["aid"]) for r in ev_by[sid] if str(r["at"]) <= opened and r["by"] == "seed"]
         if not seeds:
             seeds = [str(r["aid"]) for r in ev_by[sid] if str(r["at"]) <= opened]
-        c_anchors = rescue_anchors(k for a in seeds for k in ents.get(a, set()))
-        c_roots = {x for a in seeds for x in roots.get(a, set())}
+        names = cluster_names(seeds, ents, tit)
+        c_roots = {x for a in seeds for x in roots.get(a, set())} - bad_roots
         cands = []
         for o in pool:
             oid = str(o["situation_id"])
@@ -160,16 +191,17 @@ def replay_dup_rescue(store: SituationStore, cutoff: str) -> list[dict[str, Any]
                 continue
             if o["closed_at"] and str(o["closed_at"]) <= opened:
                 continue
-            before = [r for r in ev_by[oid] if str(r["at"]) < opened]
-            anchors = rescue_anchors(k for r in before for k in ents.get(str(r["aid"]), set()))
+            text = f"{o['title']} {_claim_until(claims.get(oid, []), opened)}"
+            if len(matched_names(names, text)) < 2:
+                continue
             rts = {
                 x
-                for r in before
-                if r["ass"] and not r["weak"]
+                for r in ev_by[oid]
+                if str(r["at"]) < opened and r["ass"] and not r["weak"] and r["pol"] == "supports"
                 for x in roots.get(str(r["aid"]), set())
-            }
-            cands.append(RescueCandidate(oid, anchors, frozenset(rts)))
-        v = decide_dup_rescue(c_anchors, c_roots, cands)
+            } - bad_roots
+            cands.append(RescueCandidate(oid, text, frozenset(rts)))
+        v = decide_dup_rescue(names, c_roots, cands)
         if v is not None:
             tgt = next(o for o in pool if str(o["situation_id"]) == v.situation_id)
             out.append(
@@ -177,16 +209,19 @@ def replay_dup_rescue(store: SituationStore, cutoff: str) -> list[dict[str, Any]
                     "flag": "DUP_RESCUE",
                     "new_situation_id": sid,
                     "new_title": str(s["title"]),
+                    "new_article_ids": seeds,
                     "target_situation_id": v.situation_id,
                     "target_title": str(tgt["title"]),
-                    "shared_anchors": list(v.shared_anchors),
+                    "shared_names": list(v.shared_names),
                     "shared_roots": list(v.shared_roots),
                 }
             )
     return out
 
 
-def replay_assign(store: SituationStore, cutoff: str) -> tuple[list[dict[str, Any]], Counter[str]]:
+def replay_assign(
+    store: SituationStore, cutoff: str, claims: dict[str, list[tuple[str, str]]]
+) -> tuple[list[dict[str, Any]], Counter[str]]:
     rows = _rows(
         store,
         "SELECT e.situation_id AS sid, e.article_id AS aid, e.assigned_by AS rule,"
@@ -206,7 +241,14 @@ def replay_assign(store: SituationStore, cutoff: str) -> tuple[list[dict[str, An
             split_anchor_keys(frozenset(ents.get(str(r["aid"]), set())))[0]
             & (split_anchor_keys(anc)[0])
         )
-        drop = should_drop_assignment(rule=str(r["rule"]), domain=dom, shared_strong=shared)
+        rule = str(r["rule"])
+        drop = should_drop_assignment(rule=rule, domain=dom, shared_strong=shared)
+        if drop:  # 固有の名前が状況の題・最新の判定文に出れば関係あり (本番と同じ規則)
+            names = article_names(
+                tit.get(str(r["aid"]), ("", ""))[0], ents.get(str(r["aid"]), set())
+            )
+            sit_text = f"{r['st']} {_claim_until(claims.get(str(r['sid']), []))}"
+            drop = not is_relevant(names, sit_text)
         stats[f"total:{dom}"] += 1
         if drop:
             stats[f"drop:{dom}"] += 1
@@ -226,17 +268,18 @@ def replay_assign(store: SituationStore, cutoff: str) -> tuple[list[dict[str, An
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default="data/eval/ledger_fix_1117")
+    ap.add_argument("--out", default="data/eval/ledger_fix_1117/round2")
     ap.add_argument("--days", type=int, default=30)
     args = ap.parse_args()
     cutoff = (datetime.now(UTC) - timedelta(days=args.days)).isoformat()
     store = SituationStore()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    assign, stats = replay_assign(store, cutoff)
+    claims = _claims(store)
+    assign, stats = replay_assign(store, cutoff, claims)
     results = {
-        "seed_strict": replay_seed(store, cutoff),
-        "dup_rescue": replay_dup_rescue(store, cutoff),
+        "seed_strict": replay_seed(store, cutoff, claims),
+        "dup_rescue": replay_dup_rescue(store, cutoff, claims),
         "assign_strong_anchor": assign,
     }
     for name, rows in results.items():

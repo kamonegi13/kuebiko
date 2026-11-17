@@ -919,7 +919,9 @@ def refresh_ledger_assignments(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
-        if strong_anchor_blocks(matched, art):
+        if strong_anchor_blocks(
+            matched, art, entity_keys=entities_by_id.get(aid, set()), store=store
+        ):
             matched = None
         if matched is None:
             continue
@@ -1230,7 +1232,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         )
         art_keys_by_id[aid] = art
         matched = match_situation(art, sit_keys)
-        if strong_anchor_blocks(matched, art):
+        if strong_anchor_blocks(
+            matched, art, entity_keys=entities_by_id.get(aid, set()), store=store
+        ):
             matched = None
         if matched is None:
             unassigned.append(a)
@@ -1609,6 +1613,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 store=store,
                 sit_keys=sit_keys,
                 entities_by_id=entities_by_id,
+                titles_by_id=title_by_id,
                 article_ids=c.article_ids,
                 claim=c.claim,
                 run_at=now_iso,

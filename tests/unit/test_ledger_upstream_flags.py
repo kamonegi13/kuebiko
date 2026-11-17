@@ -6,12 +6,13 @@ import pytest
 
 from src.assessment.assign_strong_anchor import should_drop_assignment, strong_anchor_blocks
 from src.assessment.assignment import ArticleKeys, SituationKeys
-from src.assessment.dup_rescue import RescueCandidate, decide_dup_rescue, rescue_anchors
+from src.assessment.dup_rescue import RescueCandidate, decide_dup_rescue
 from src.assessment.ledger_flags import (
     assign_strong_anchor_mode,
     dup_rescue_mode,
     seed_strict_mode,
 )
+from src.assessment.name_relevance import article_names, is_relevant, matched_names, normalize_name
 from src.assessment.situation_store import SituationRow
 from src.cti.roundup_detector import is_roundup_article
 from src.synthesis.grounded.clustering import (
@@ -104,28 +105,25 @@ def test_seed_strict_excludes_many_victim_orgs(monkeypatch: pytest.MonkeyPatch) 
 
 
 class TestDupRescue:
-    def test_needs_two_anchors_and_shared_root(self) -> None:
-        cands = [RescueCandidate("s1", frozenset({"cve:C1", "victim_org:a"}), frozenset({"r1"}))]
-        anchors = {"cve:C1", "victim_org:a"}
-        assert decide_dup_rescue(anchors, {"r1"}, cands) is not None
-        assert decide_dup_rescue(anchors, {"r2"}, cands) is None  # 根が違う
-        assert decide_dup_rescue({"cve:C1"}, {"r1"}, cands) is None  # 手がかり 1 つ
-        assert decide_dup_rescue({"actor:x", "malware_family:y"}, {"r1"}, cands) is None
+    def test_needs_two_names_and_shared_root(self) -> None:
+        cands = [RescueCandidate("s1", "アララ社 不正アクセス cve20261", frozenset({"r1"}))]
+        names = {"アララ社", "cve20261"}
+        assert decide_dup_rescue(names, {"r1"}, cands) is not None
+        assert decide_dup_rescue(names, {"r2"}, cands) is None  # 根が違う
+        assert decide_dup_rescue({"アララ社"}, {"r1"}, cands) is None  # 名前 1 つ
+        assert decide_dup_rescue({"zzz999", "yyy888"}, {"r1"}, cands) is None  # 題に出ない
 
     def test_best_candidate_and_tiebreak(self) -> None:
-        a = frozenset({"cve:C1", "victim_org:a", "victim_org:b"})
+        names = {"aaa", "bbb", "ccc"}
         cands = [
-            RescueCandidate("s2", frozenset({"cve:C1", "victim_org:a"}), frozenset({"r"})),
-            RescueCandidate("s3", a, frozenset({"r"})),
-            RescueCandidate("s1", frozenset({"cve:C1", "victim_org:a"}), frozenset({"r"})),
+            RescueCandidate("s2", "aaa bbb", frozenset({"r"})),
+            RescueCandidate("s3", "aaa bbb ccc", frozenset({"r"})),
+            RescueCandidate("s1", "aaa bbb", frozenset({"r"})),
         ]
-        v = decide_dup_rescue(a, {"r"}, cands)
+        v = decide_dup_rescue(names, {"r"}, cands)
         assert v is not None and v.situation_id == "s3"
-        v2 = decide_dup_rescue({"cve:C1", "victim_org:a"}, {"r"}, cands[:1] + cands[2:])
+        v2 = decide_dup_rescue(names, {"r"}, [cands[0], cands[2]])
         assert v2 is not None and v2.situation_id == "s1"
-
-    def test_rescue_anchors_filters_types(self) -> None:
-        assert rescue_anchors(["cve:C", "actor:x", "victim_org:o"]) == {"cve:C", "victim_org:o"}
 
     def test_try_rescue_off_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from typing import Any, cast
@@ -135,10 +133,33 @@ class TestDupRescue:
         monkeypatch.setenv("LEDGER_DUP_RESCUE", "0")
         assert (
             try_rescue(
-                store=cast(Any, None), sit_keys=[], entities_by_id={}, article_ids=["a"], claim=""
+                store=cast(Any, None),
+                sit_keys=[],
+                entities_by_id={},
+                titles_by_id={},
+                article_ids=["a"],
+                claim="",
             )
             is None
         )
+
+
+class TestNameRelevance:
+    def test_kanji_org_and_product_match(self) -> None:
+        names = article_names("日本学術振興会で不正アクセス", {"victim_org:日本学術振興会"})
+        assert is_relevant(names, "日本学術振興会 のサーバに侵入")
+
+    def test_corp_suffix_and_width_normalized(self) -> None:
+        assert normalize_name("Acme Corp. （株）") == normalize_name("ACME")
+        names = article_names("", {"victim_org:Acme Inc."})
+        assert is_relevant(names, "ＡＣＭＥ で漏えい")
+
+    def test_generic_and_short_names_ignored(self) -> None:
+        names = article_names("不正アクセス 情報 漏洩", {"victim_org:ab", "actor:Japan"})
+        assert names == frozenset()
+
+    def test_matched_names_drops_substrings(self) -> None:
+        assert matched_names({"apt41", "apt"}, "apt41 campaign") == ("apt41",)
 
 
 def _sit(domain: str, strong: frozenset[str] = frozenset()) -> SituationKeys:
@@ -188,3 +209,44 @@ class TestStrongAnchor:
         assert strong_anchor_blocks(matched, _art())
         assert not strong_anchor_blocks((_sit("geopolitical"), "nation"), _art())
         assert not strong_anchor_blocks(None, _art())
+
+    def test_relevant_by_name_not_dropped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LEDGER_ASSIGN_STRONG_ANCHOR", "1")
+        art = ArticleKeys(
+            article_id="a1",
+            title="WordPress プラグインの脆弱性",
+            strong=frozenset(),
+            nations=frozenset(),
+            tokens=frozenset(),
+        )
+        row = _sit("cyber_incident").row
+        sit = SituationKeys(
+            row=SituationRow(**{**row.__dict__, "title": "WordPress の侵害"}),
+            strong=frozenset(),
+            nations=frozenset(),
+            tokens=frozenset(),
+        )
+        assert not strong_anchor_blocks(
+            (sit, "token"), art, entity_keys=["affected_product:WordPress"]
+        )
+        assert strong_anchor_blocks((_sit("cyber_incident"), "token"), art)
+
+
+def test_seed_relevance_before_roundup_exclusion(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LEDGER_SEED_STRICT", "1")
+    pool: list[dict[str, object]] = [
+        {"article_id": "s", "title": "アララ で不正アクセス"},
+        {"article_id": "m", "title": "週刊ダイジェスト アララ 大阪市"},
+    ]
+    ents = {
+        "s": {"victim_org:アララ"},
+        "m": {"victim_org:アララ", "victim_org:大阪市", "victim_org:新潟市"},
+    }
+    out = expand_claim_sources(
+        claim_text="アララで不正アクセス",
+        seed_ids=("s",),
+        pool=pool,
+        entities_by_id=ents,
+        max_sources=5,
+    )
+    assert "m" in out  # 固有名の一致を、まとめ・多数の被害組織の除外より先に見る

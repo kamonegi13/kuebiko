@@ -367,7 +367,9 @@ def _assign_pool(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
-        if strong_anchor_blocks(matched, art):
+        if strong_anchor_blocks(
+            matched, art, entity_keys=entities_by_id.get(aid, set()), store=store
+        ):
             matched = None
         if matched is None:
             # 監査台帳は high のみ行を残す (recall 監査対象、medium はカウントのみ = ログ肥大防止)
