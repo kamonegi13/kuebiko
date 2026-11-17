@@ -29,7 +29,16 @@ DET: Final = "det"  # 決定論 (LLM を通らない)
 #: embed (埋込ティア)・assign_evidence_judge (gemma4 固定)・
 #: synthesis_detect (s23i 固定) は S ではない。
 S_DERIVED_STEPS: Final[frozenset[str]] = frozenset(
-    {"event_kind", "severity_axes", "pair_judge", "judgment_classify", "article_summary"}
+    {
+        "event_kind",
+        "severity_axes",
+        "pair_judge",
+        "judgment_classify",
+        "article_summary",
+        # 11-17: 地政学の救済も S (上書きなし)
+        "triage_geo_rescue",
+        "geo_rescue_judge",
+    }
 )
 
 #: 学び直しの対象 (S の切替で学び直す ML)。それ以外は ``NOT_RETRAINED`` に理由つきで置く
@@ -39,6 +48,7 @@ RETRAIN_TARGETS: Final[tuple[str, ...]] = (
     "severity_s3_model.json",
     "pair_model.json",
     "relation_model.json",
+    "geo_rescue_model.json",
 )
 
 #: 対象外の ML と理由 (S 由来の特徴を持たないか、持っても別の経路で扱う)
@@ -46,10 +56,6 @@ NOT_RETRAINED: Final[Mapping[str, str]] = {
     "assign_model.json": "S 由来は synthesis_detect (s23i 固定) の弱い特徴のみ。S では動かない",
     "assign_model_probe.json": "logprob は gemma4:26b 固定 (assign_evidence_judge)。S では動かない",
     "relevance_jp_model.json": "埋込ティアのみ (S ではない)",
-    "geo_rescue_model.json": (
-        "S 由来 (pir/flat の判定・問いの確率) を持つが shadow のみ (GEO_RESCUE_LEARNED)。学習時の S は"
-        " probe_model に記録し、記録の側で probe_model_match を照合する。1 (適用) の前に学び直しの対象へ移す"
-    ),
     "alert_dedup_model.json": (
         "p_pair (pair_model の確率) と要約由来の弱い特徴。pair 後に確認"
         " (11-06 SHADOW-STOP で記録を止め、ALERT_DEDUP_EVENT も off = 今は消費者なし)"
@@ -102,6 +108,14 @@ RETRAIN_PLAN: Final[tuple[RetrainStep, ...]] = (
         ("pair_judge", "event_kind"),
         "同じ入力の対で 'same' 率が cos の帯ごとに現行から大きくずれない (10-29 版 45 の教訓) "
         "かつ正解集の適合率が現行を下回らない",
+    ),
+    RetrainStep(
+        "geo_rescue_model.json",
+        "scripts/train_geo_rescue_model.py",
+        ("triage_geo_rescue", "geo_rescue_judge"),
+        "Opus の正解 (data/eval/geo_rescue_shadow_2026_11_15) の交差検証で"
+        "回収・誤救済が現行を下回らない (11-17 の初版: 回収 0.853・誤救済 15.4%)。"
+        "shadow のみの間は記録の probe_model_match で照合",
     ),
 )
 
@@ -212,6 +226,16 @@ ML_SPECS: Final[tuple[MlSpec, ...]] = (
             ),
         ),
         {"event_kind": "kinds_model"},
+    ),
+    MlSpec(
+        "geo_rescue_model.json",
+        "src/pipeline/geo_rescue_learned.py",
+        (
+            _r(r"^(pir|flat)$", "triage_geo_rescue", STRONG),
+            _r(r"^(qw|qc|qd)$", "geo_rescue_judge", STRONG),
+            _r(r"^(n_cues|has_cyber_geo_cue|cue_|is_summary)", "det", DET),
+        ),
+        {"triage_geo_rescue": "probe_model", "geo_rescue_judge": "probe_model"},
     ),
     # 対象外の ML も特徴の振り分けは持つ (新しい特徴の見落とし検査のため)
     MlSpec(
