@@ -91,7 +91,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
         evidence_fields=True,
         exception_until=_TWO_SLOT_DEADLINE,
     ),
-    # s24 系 (補間タグ ``s24i25`` / ``s24ci65`` 等を含む前方一致)。S 枠の中身 (s24ci65) もここ
+    # s24 系 (補間タグ ``s24i25`` / ``s24ci65`` 等を含む前方一致)。11-17 まで S 枠の中身 (s24ci65)
     ModelCapability(
         "kuebiko-sft:s24",
         match="prefix",
@@ -117,6 +117,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
     ModelCapability(
         "kuebiko-sft:s26r",
         match="prefix",
+        slot="S",
         task_prefix=True,
         evidence_fields=True,
         focus_v6=True,
@@ -138,7 +139,7 @@ _CAPABILITIES: Final[tuple[ModelCapability, ...]] = (
 )
 
 #: 常駐の 2 枠のいまの中身 (s26 / n20 に替わるときはここの 1 行を変える)
-RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s24ci65", "N": "kuebiko-sft:n20rd"}
+RESIDENT_SLOTS: Final[dict[Slot, str]] = {"S": "kuebiko-sft:s26r", "N": "kuebiko-sft:n20rd"}
 
 #: 既定値 (``BUILTIN_MODEL_TIERS``) の元。fast / reasoning / dialog = S、narrative = N
 _TIER_SLOTS: Final[dict[str, Slot]] = {

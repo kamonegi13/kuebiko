@@ -36,5 +36,10 @@
     "thin_body_judge": {
       "main": 0.075
     }
+  },
+  "kuebiko-sft:s26r": {
+    "thin_body_judge": {
+      "main": 0.4073334000459302
+    }
   }
 }
