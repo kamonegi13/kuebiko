@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
-from src.assessment.assign_strong_anchor import strong_anchor_blocks
+from src.assessment.assign_strong_anchor import StrongAnchorRun, strong_anchor_blocks
 from src.assessment.assignment import (
     ArticleKeys,
     SituationKeys,
@@ -57,6 +57,7 @@ from src.assessment.ledger import (
 from src.assessment.ledger_flags import seed_strict_mode
 from src.assessment.question_store import hypotheses_for_standing
 from src.assessment.situation_store import (
+    AssignedBy,
     DeltaType,
     RevisionRow,
     SituationRow,
@@ -465,6 +466,17 @@ async def _claim_dup_confirmed(claim: str, situation_title: str) -> bool:
 
 #: 関門で落ちた割当をログに出す上限 (1 run あたり。全件の数は集計ログに出す)
 _ASSIGN_GATE_LOG_MAX = 40
+
+
+def _load_seed_kinds(repo: RunHistoryRepository, pool_ids: Sequence[str]) -> dict[str, str] | None:
+    """LEDGER_SEED_STRICT 用の記事の種別。旗 off は引かず、失敗は None (従来) に倒す。"""
+    if seed_strict_mode() == "off":
+        return None
+    try:
+        return repo.get_article_kinds(pool_ids)
+    except Exception as e:  # noqa: BLE001 — 旗の材料の失敗で台帳の run を止めない
+        _log.warning("ledger_seed_strict_shadow_failed", error=type(e).__name__, stage="kinds")
+        return None
 
 
 async def _apply_assign_gate(
@@ -909,6 +921,7 @@ def refresh_ledger_assignments(
     already = store.assigned_article_ids()
     assigned = 0
     reopened_seen: set[str] = set()
+    anchor_run = StrongAnchorRun(store)
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -920,7 +933,7 @@ def refresh_ledger_assignments(
         )
         matched = match_situation(art, sit_keys)
         if strong_anchor_blocks(
-            matched, art, entity_keys=entities_by_id.get(aid, set()), store=store
+            matched, art, entity_keys=entities_by_id.get(aid, set()), run=anchor_run
         ):
             matched = None
         if matched is None:
@@ -1221,6 +1234,11 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     assigned_by_aid: dict[str, str] = {}
     unassigned: list[dict[str, object]] = []
     art_keys_by_id: dict[str, ArticleKeys] = {}
+    anchor_run = StrongAnchorRun(
+        store,
+        {sid: rev.claim for sid, rev in latest_revs.items()}
+        | {r.situation_id: "" for r in situations if r.situation_id not in latest_revs},
+    )
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -1233,7 +1251,11 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         art_keys_by_id[aid] = art
         matched = match_situation(art, sit_keys)
         if strong_anchor_blocks(
-            matched, art, entity_keys=entities_by_id.get(aid, set()), store=store
+            matched,
+            art,
+            entity_keys=entities_by_id.get(aid, set()),
+            run=anchor_run,
+            defer_shadow_log=True,
         ):
             matched = None
         if matched is None:
@@ -1254,6 +1276,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         sit_keys={k.row.situation_id: k for k in sit_keys},
         store=store,
     )
+    anchor_run.flush_shadow(
+        new_by_sid
+    )  # 関門を通って残る割当だけを shadow log (確率は関門内で閉じる)
 
     # ---- 1a. standing (常設情報要求) の開設 + 専用収穫 (段A: 評価には回さない) ----
     if standing_enabled():
@@ -1579,7 +1604,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     opened_count = 0
     bundle_outcomes: dict[str, tuple[Outcome, str | None, str]] = {}
     # LEDGER_SEED_STRICT: まとめ記事 (article_kinds) の判定に使う種別 (旗が off なら引かない)
-    seed_kinds = repo.get_article_kinds(pool_ids) if seed_strict_mode() != "off" else None
+    seed_kinds = _load_seed_kinds(repo, pool_ids)
     for c in detected.open:
         cid = _safe_claim_id(now_iso, bundle_variant, c.article_ids, c.claim)
         # 重複ガード: 既存 Situation に照合したら開設せず割当扱い (NetNut 型重複の根治)
@@ -1621,9 +1646,10 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             dup_target = (rescued.situation_id, "dup_rescue") if rescued else None
         if dup_target is not None:
             sid = dup_target[0]
+            dup_by: AssignedBy = "dup_rescue" if dup_target[1] == "dup_rescue" else "token"
             for aid in c.article_ids:
                 store.record_assignment(
-                    situation_id=sid, article_id=aid, added_at=now_iso, assigned_by="token"
+                    situation_id=sid, article_id=aid, added_at=now_iso, assigned_by=dup_by
                 )
             store.touch_situation(sid, last_evidence_at=now_iso, status="active")
             store.log_detection(

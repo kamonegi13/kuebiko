@@ -144,6 +144,7 @@ def expand_claim_sources(
     situation_text = " ".join([claim_text, *(title_by_id.get(sid, "") for sid in seed_ids)])
     scored: list[tuple[int, str]] = []
     strict_scored: list[tuple[int, str]] = []
+    strict_failed = False
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in seed_set:
@@ -153,23 +154,30 @@ def expand_claim_sources(
         tok_share = len(shared)
         if ent_share >= 1 or tok_share >= 2:
             scored.append((ent_share * 3 + tok_share, aid))
-        if (
-            mode != "off"
-            and (ent_share >= 1 or tok_share >= 2)
-            and _strict_keeps(a, aid, ent_share, shared, entities_by_id, kind_by_id, situation_text)
-        ):
-            strict_scored.append((ent_share * 3 + tok_share, aid))
+        if mode != "off" and not strict_failed and (ent_share >= 1 or tok_share >= 2):
+            try:
+                keeps = _strict_keeps(
+                    a, aid, ent_share, shared, entities_by_id, kind_by_id, situation_text
+                )
+            except Exception as e:  # noqa: BLE001 — 旗の計算の失敗で台帳の run を止めない
+                _log.warning("ledger_seed_strict_shadow_failed", error=type(e).__name__)
+                strict_failed = True
+                continue
+            if keeps:
+                strict_scored.append((ent_share * 3 + tok_share, aid))
     # score 降順 → 同点は id 昇順で決定論。
     scored.sort(key=lambda x: (-x[0], x[1]))
     extra = [aid for _, aid in scored]
     current = (seed_order + extra)[:max_sources]
-    if mode == "off":
-        return current
+    if mode == "off" or strict_failed:
+        return current  # strict の計算が失敗したら (旗 1 でも) 従来の候補に倒す
     strict_scored.sort(key=lambda x: (-x[0], x[1]))
     strict = (seed_order + [aid for _, aid in strict_scored])[:max_sources]
     if mode == "on":
         return strict
     kept, dropped = set(current) & set(strict), set(current) - set(strict)
+    if not dropped:
+        return current
     _log.info(
         "ledger_seed_strict_shadow",
         situation=situation_ref,

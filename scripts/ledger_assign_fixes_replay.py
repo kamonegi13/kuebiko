@@ -25,7 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from src.assessment.assign_strong_anchor import CYBER_DOMAINS, should_drop_assignment
+from src.assessment.assign_strong_anchor import should_drop_assignment
 from src.assessment.assignment import split_anchor_keys
 from src.assessment.dup_rescue import (
     RescueCandidate,
@@ -36,6 +36,7 @@ from src.assessment.dup_rescue import (
 from src.assessment.name_relevance import article_names, is_relevant, matched_names
 from src.assessment.situation_store import SituationStore
 from src.synthesis.grounded.clustering import _strict_keeps, _tokens, anchor_entities
+from src.synthesis.grounded.hypotheses import is_cyber_domain
 
 CHUNK = 400
 
@@ -288,7 +289,7 @@ def main() -> None:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
         print(f"{name}: {len(rows)} rows")
     non_cyber_dropped = sum(
-        v for k, v in stats.items() if k.startswith("drop:") and k[5:] not in CYBER_DOMAINS
+        v for k, v in stats.items() if k.startswith("drop:") and not is_cyber_domain(k[5:])
     )
     print("assign by domain:", dict(sorted(stats.items())))
     print("non-cyber domains dropped (must be 0):", non_cyber_dropped)

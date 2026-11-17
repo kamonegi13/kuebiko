@@ -250,3 +250,99 @@ def test_seed_relevance_before_roundup_exclusion(monkeypatch: pytest.MonkeyPatch
         max_sources=5,
     )
     assert "m" in out  # 固有名の一致を、まとめ・多数の被害組織の除外より先に見る
+
+
+class TestShadowFailuresNeverRaise:
+    """レビュー H1/M2/M3/L1/L2: 旗の経路は台帳の run を落とさない。"""
+
+    def test_strong_anchor_failure_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import MagicMock
+
+        store = MagicMock()
+        store.latest_revision.side_effect = RuntimeError("db down")
+        for mode in ("shadow", "1"):
+            monkeypatch.setenv("LEDGER_ASSIGN_STRONG_ANCHOR", mode)
+            assert not strong_anchor_blocks((_sit("cyber_incident"), "token"), _art(), store=store)
+
+    def test_claim_cached_per_situation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import MagicMock
+
+        from src.assessment.assign_strong_anchor import StrongAnchorRun
+
+        monkeypatch.setenv("LEDGER_ASSIGN_STRONG_ANCHOR", "shadow")
+        store = MagicMock()
+        store.latest_revision.return_value = None
+        run = StrongAnchorRun(store)
+        for _ in range(3):
+            strong_anchor_blocks((_sit("cyber_incident"), "token"), _art(), run=run)
+        assert store.latest_revision.call_count == 1
+        provided = StrongAnchorRun(store, {"s1": "x"})
+        provided.claim("s1")
+        assert store.latest_revision.call_count == 1
+
+    def test_shadow_log_after_gate_and_deduped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from unittest.mock import patch
+
+        from src.assessment.assign_strong_anchor import StrongAnchorRun
+
+        monkeypatch.setenv("LEDGER_ASSIGN_STRONG_ANCHOR", "shadow")
+        sit = _sit("cyber_incident")
+        sid = sit.row.situation_id
+        run = StrongAnchorRun(None, {sid: ""})
+        with patch("src.assessment.assign_strong_anchor._log") as log:
+            for _ in range(2):
+                strong_anchor_blocks((sit, "token"), _art(), run=run, defer_shadow_log=True)
+            assert not log.info.called  # 関門の前は出さない
+            run.flush_shadow({sid: ["a1"]})
+            run.flush_shadow({sid: ["a1"]})
+            assert log.info.call_count == 1
+        run2 = StrongAnchorRun(None, {sid: ""})
+        with patch("src.assessment.assign_strong_anchor._log") as log:
+            strong_anchor_blocks((sit, "token"), _art(), run=run2, defer_shadow_log=True)
+            run2.flush_shadow({sid: []})  # 関門で落ちた
+            assert not log.info.called
+
+    def test_cyber_domain_ssot(self) -> None:
+        from src.synthesis.grounded.hypotheses import is_cyber_domain
+
+        assert is_cyber_domain("technology") and is_cyber_domain("information")
+        assert is_cyber_domain("cyber_ops") and not is_cyber_domain("military")
+        assert should_drop_assignment(rule="token", domain="technology", shared_strong=())
+
+    def test_seed_strict_failure_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import src.synthesis.grounded.clustering as c
+
+        def boom(*_a: object, **_k: object) -> bool:
+            raise RuntimeError("x")
+
+        monkeypatch.setattr(c, "_strict_keeps", boom)
+        off = _expand(None, monkeypatch)
+        monkeypatch.setattr(c, "_strict_keeps", boom)
+        for mode in ("shadow", "1"):
+            assert _expand(mode, monkeypatch) == off
+
+    def test_seed_strict_shadow_log_only_when_dropped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import patch
+
+        with patch("src.synthesis.grounded.clustering._log") as log:
+            _expand("shadow", monkeypatch)  # r が落ちる
+            assert log.info.called
+        with patch("src.synthesis.grounded.clustering._log") as log:
+            monkeypatch.setenv("LEDGER_SEED_STRICT", "shadow")
+            expand_claim_sources(
+                claim_text="x",
+                seed_ids=("s",),
+                pool=[{"article_id": "s", "title": "a"}],
+                entities_by_id={},
+                max_sources=3,
+            )
+            assert not log.info.called
+
+
+def test_roundup_kind_single_source() -> None:
+    from src.cti import roundup_detector
+    from src.eventnews.models import ROUNDUP_KIND
+
+    assert roundup_detector.is_roundup_article("x", kind=ROUNDUP_KIND)

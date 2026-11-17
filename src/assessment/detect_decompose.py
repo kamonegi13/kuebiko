@@ -643,7 +643,15 @@ async def run_decompose(
             verdict = pick_merge(cluster, scores, gate.allowed(cluster, sids))
         if verdict is not None:
             return verdict
-        return _rescue_verdict(inp, cluster)  # LEDGER_DUP_RESCUE (off / shadow は None)
+        rescued = _rescue_verdict(inp, cluster)  # LEDGER_DUP_RESCUE (off / shadow は None)
+        if (
+            rescued is not None
+            and gate is not None
+            and gate.conflict(cluster, rescued.situation_id) is not None
+        ):
+            blocked_clusters.append(tuple(cluster))  # 合流の矛盾関門は救済の合流先にも当てる
+            return None
+        return rescued
 
     async def write(cluster: Sequence[str]) -> WrittenClaim | None:
         articles = [by_id[a] for a in cluster if a in by_id]
