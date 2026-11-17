@@ -246,7 +246,7 @@ async def run_learned_shadow(
     すべて当てる (本番の v2 は pir が救った行にしか問わないので、LLM の呼び出しが増える)。
     失敗は握ってログ (``geo_rescue_learned_failed``、型名のみ・本文なし) だけ。
     """
-    if gl.learned_mode() != "shadow" or row.status != STATUS_OK:
+    if not gl.records_shadow() or row.status != STATUS_OK:
         return None
     model = gl.load_model()
     if model is None:
@@ -361,7 +361,7 @@ async def judge_pending(repo: Any, ctx: JudgeContext) -> dict[str, int]:
             done = replace(row, status=STATUS_ERROR, model=ctx.model, judge_model=ctx.judge_model)
         repo.update_geo_rescue_judgement(done)
         counts["ok" if done.status == STATUS_OK else "error"] += 1
-        if gl.learned_mode() == "shadow":
+        if gl.records_shadow():
             await _learned_within_budget(done, repo, ctx, deadline, counts)
     _log.info("geo_rescue_shadow_judged", **counts)
     return counts

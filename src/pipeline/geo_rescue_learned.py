@@ -55,8 +55,17 @@ MODEL_VERSION = 1
 
 
 def learned_mode() -> str:
-    """``GEO_RESCUE_LEARNED``: ``"shadow"`` だけを受け付け、他 (未設定・0・1) は ``"0"``。"""
-    return "shadow" if os.environ.get(FLAG_ENV, "0").strip().lower() == "shadow" else "0"
+    """``GEO_RESCUE_LEARNED``: ``shadow`` (記録だけ) / ``union`` (本番の救済 = v2 ∨ 学習版、記録も続ける)。
+
+    他 (未設定・0・1) は ``"0"``。union は 11-17 利用者判断 (判定の期日 11-24 までの回収を落とさない)。
+    """
+    raw = os.environ.get(FLAG_ENV, "0").strip().lower()
+    return raw if raw in ("shadow", "union") else "0"
+
+
+def records_shadow() -> bool:
+    """影の記録 (``geo_rescue_learned_shadow``) を書くか。shadow と union の両方で書く。"""
+    return learned_mode() in ("shadow", "union")
 
 
 def embedding_input(title: str | None, text: str | None) -> str:
