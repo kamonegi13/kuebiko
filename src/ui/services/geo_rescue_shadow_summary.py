@@ -10,6 +10,7 @@ from collections import Counter
 from typing import Any
 
 from src.pipeline.geo_rescue_shadow import KEEP
+from src.storage.repo_geo_rescue_learned import GeoRescueLearnedRow
 from src.storage.repo_geo_rescue_shadow import STATUS_ERROR, STATUS_OK, STATUSES, GeoRescueShadowRow
 
 #: 判定の組の名前 (flat の救済 / pir の救済 / v2 の判定)
@@ -68,4 +69,24 @@ def summarize_geo_rescue_shadow(rows: list[GeoRescueShadowRow], *, days: int) ->
     }
 
 
-__all__ = ["DECISION_KEYS", "summarize_geo_rescue_shadow"]
+def summarize_geo_rescue_learned(rows: list[GeoRescueLearnedRow]) -> dict[str, Any]:
+    """学習版 (GEO_RESCUE_LEARNED=shadow) の記録の集計。件数だけ (記事 id・本文は出さない)。
+
+    ``agreement`` = ML の判定と本番の v2 の判定 (読めた行だけ) の組の件数。
+    """
+    pairs = Counter(
+        f"ml_{'yes' if r.ml_rescued else 'no'}__v2_{'yes' if r.v2_judged else 'no'}"
+        for r in rows
+        if r.v2_judged is not None
+    )
+    return {
+        "total": len(rows),
+        "ml_rescued": sum(1 for r in rows if r.ml_rescued),
+        "v2_judged_yes": sum(1 for r in rows if r.v2_judged),
+        "agreement": dict(pairs),
+        "probe_model_mismatch": sum(1 for r in rows if not r.probe_model_match),
+        "thresholds": sorted({round(r.threshold, 4) for r in rows}),
+    }
+
+
+__all__ = ["DECISION_KEYS", "summarize_geo_rescue_learned", "summarize_geo_rescue_shadow"]

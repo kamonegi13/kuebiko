@@ -56,6 +56,7 @@ from src.storage.repo_event_edge_records import EventEdgeRecordsMixin
 from src.storage.repo_event_focus import EventFocusMixin
 from src.storage.repo_eventnews import EventNewsMixin
 from src.storage.repo_generation_inputs import GenerationInputsMixin
+from src.storage.repo_geo_rescue_learned import GeoRescueLearnedMixin
 from src.storage.repo_geo_rescue_shadow import GeoRescueShadowMixin
 from src.storage.repo_grok_attempts import GrokAttemptsMixin
 from src.storage.repo_importance_v2 import ImportanceV2Mixin
@@ -121,6 +122,7 @@ class RunHistoryRepository(
     RoutingV2ShadowMixin,
     AlertDedupShadowMixin,
     GeoRescueShadowMixin,
+    GeoRescueLearnedMixin,
     SeverityCShadowMixin,
     EventEdgeRecordsMixin,
     TranslateAttemptsMixin,

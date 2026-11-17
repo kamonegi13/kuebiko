@@ -823,11 +823,17 @@ def geo_rescue_shadow_summary(request: Request, days: int = 7) -> dict[str, Any]
     本番の救済は変えない観察データ。運用系 read API のため PUBLIC_GET_ALLOWLIST には入れない
     (src/ui/read_only_policy.py を参照)。
     """
-    from src.ui.services.geo_rescue_shadow_summary import summarize_geo_rescue_shadow
+    from src.ui.services.geo_rescue_shadow_summary import (
+        summarize_geo_rescue_learned,
+        summarize_geo_rescue_shadow,
+    )
 
     days = max(1, min(int(days), _GEO_RESCUE_SHADOW_MAX_DAYS))
     repo: RunHistoryRepository = request.app.state.repo
-    return summarize_geo_rescue_shadow(repo.list_geo_rescue_shadow(days=days), days=days)
+    out = summarize_geo_rescue_shadow(repo.list_geo_rescue_shadow(days=days), days=days)
+    # 学習版 (GEO_RESCUE_LEARNED=shadow) の記録。旗が 0 の間は total=0
+    out["learned"] = summarize_geo_rescue_learned(repo.list_geo_rescue_learned_shadow(days=days))
+    return out
 
 
 #: alert-dedup-shadow summary の窓幅・件数の上限 (R1h、routing-v2-shadow と同じ基準)。
