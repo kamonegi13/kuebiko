@@ -38,6 +38,16 @@ def _cfg(base_url: str = "http://localhost:11434") -> Any:
 # ---------- _thin_body_probe_reason ----------
 
 
+def _threshold() -> float:
+    """本番と同じ解決 (モデルごとの表、無ければ定数)。常駐の S が替わってもテストが境界を当てる。"""
+    from src.tools.model_tiers import Step
+    from src.tools.probe_thresholds import effective_threshold
+
+    th = effective_threshold(Step.THIN_BODY_JUDGE, fallback=THIN_BODY_PROBE_THRESHOLD)
+    assert th is not None
+    return th
+
+
 class TestThinBodyProbeReason:
     def test_flag_unset_defaults_to_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("THIN_BODY_PROBE", raising=False)
@@ -117,7 +127,8 @@ class TestThinBodyProbeReason:
 
     def test_fires_when_p_content_below_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("THIN_BODY_PROBE", "1")
-        probe = AsyncMock(return_value={"Yes": THIN_BODY_PROBE_THRESHOLD - 0.01, "No": 1 - 0.065})
+        th = _threshold()
+        probe = AsyncMock(return_value={"Yes": th - 0.01, "No": 1 - th + 0.01})
         monkeypatch.setattr("src.pipeline.briefing.probe_choice", probe)
 
         result = _run(
@@ -130,7 +141,8 @@ class TestThinBodyProbeReason:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("THIN_BODY_PROBE", "1")
-        probe = AsyncMock(return_value={"Yes": THIN_BODY_PROBE_THRESHOLD, "No": 1 - 0.075})
+        th = _threshold()
+        probe = AsyncMock(return_value={"Yes": th, "No": 1 - th})
         monkeypatch.setattr("src.pipeline.briefing.probe_choice", probe)
 
         result = _run(
