@@ -267,10 +267,9 @@ def final_confidence(
 OCCURRENCE_BASES: frozenset[str] = frozenset({"victim_disclosed", "govt_confirmed"})
 #: 発生を「確認済」と見なす事案の型 (継続活動・構造は対象外)
 OCCURRENCE_CLAIM_TYPES: frozenset[str] = frozenset({"discrete_event"})
-#: この数以上の別記事が一次の根拠になっていれば high
-OCCURRENCE_HIGH_MIN_SOURCES = 2
+#: 発生の確度の上限 (high は付けない: 「可能性」「未確認」の題や当事者 1 本でも付けすぎた)
+OCCURRENCE_MAX_CONFIDENCE: Confidence = "moderate"
 OCCURRENCE_MARK = "発生: 確認済"
-_OCCURRENCE_MULTI = "複数ソース"
 _BASIS_LABEL = {"victim_disclosed": "被害組織の公表", "govt_confirmed": "政府の確認"}
 
 
@@ -280,11 +279,11 @@ def occurrence_floor(
     *,
     relevant: Collection[str] | None = None,
 ) -> tuple[Confidence, str] | None:
-    """発生の確度の下限 (moderate、独立 2 記事以上で high) と ``confidence_basis`` に足す印。
+    """発生の確度の下限 (``OCCURRENCE_MAX_CONFIDENCE`` = moderate が上限) と印。
 
     discrete_event 以外・一次の根拠なしは None。帰属の確度 (final_confidence) には触れない。
     ``relevant`` を渡すと、その article_id の公表・確認だけを数える (見出しの固有の名前が状況の
-    claim と共通する記事だけ。独立 2 記事の high 判定も同じ集合で数える)。
+    claim と共通し、攻撃者側の主張でない記事だけ)。
     """
     if claim_type not in OCCURRENCE_CLAIM_TYPES:
         return None
@@ -297,17 +296,14 @@ def occurrence_floor(
     if not hits:
         return None
     labels = "・".join(dict.fromkeys(_BASIS_LABEL[e.attribution_basis] for e in hits))
-    sources = {e.article_id for e in hits}
-    if len(sources) >= OCCURRENCE_HIGH_MIN_SOURCES:
-        return "high", f"{OCCURRENCE_MARK} ({labels}・{_OCCURRENCE_MULTI})"
-    return "moderate", f"{OCCURRENCE_MARK} ({labels})"
+    return OCCURRENCE_MAX_CONFIDENCE, f"{OCCURRENCE_MARK} ({labels})"
 
 
 def occurrence_from_basis(confidence_basis: str) -> str:
     """``confidence_basis`` の発生の印から発生の確度を復元する (無ければ空)。"""
     if OCCURRENCE_MARK not in confidence_basis:
         return ""
-    return "high" if _OCCURRENCE_MULTI in confidence_basis else "moderate"
+    return OCCURRENCE_MAX_CONFIDENCE
 
 
 def _dataclass_kwargs(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:

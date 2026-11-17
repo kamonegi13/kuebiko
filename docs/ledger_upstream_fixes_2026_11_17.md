@@ -87,3 +87,4 @@
 - **LEDGER_IMPL_GROUNDING 2 回目** (絞り込みの後、発火から無作為 40 + 非発火 20、Opus 盲検): 発火 40 件中 正しい 38 (誤り 5%、線 10% 未満 ○)。非発火 20 件中 取り除くべき 3 件 (見逃し)。正しい発火の大半 (36/38) は台帳内部の文「新着ソースは…」。
   既知 4 件 (絞り込み後・JP は 0 の構成): wp2shell = 台帳内部の文で検出 (本物の誤り)、TraderTraitor = 一般の略語「VASP」で発火しただけで本物の誤り (別事案の帰属の混入) は捉えていない、ShinyHunters = JP の検出でしか捉えられず ×、APT41 = ×。**本物の誤りの回収は 1/4 で §7 の線 (3/4) を満たさない**。
   結論: 語の照合で取れるのは「台帳内部の文」と「別の状況の主題の混入」まで。文脈の取り違え・因果の誇張・日本への過剰な拡張は意味を読む照合 (根拠と突き合わせる LLM の判定) が要る = 別の設計。IMPL_GROUNDING は「台帳内部の文を読者に出さない」関門 (適合 95%) として on を利用者に提案する。
+- **LEDGER_OCCURRENCE_FLOOR 3 回目の直し** (裁定前): 発生の確度は moderate 上限 (`OCCURRENCE_MAX_CONFIDENCE`、high は付けない)。攻撃者側の主張 (`assessment/attacker_claim.is_attacker_claim`: 流出サイト source = ransomware.live 等 / 題に リークサイト・犯行声明・犯行を主張・に掲載・leak site・claims responsibility・listed/posted on leak 等) の記事は根拠に数えない。名前の一致は維持。過去 30 日の当て直しで対象 126 件 (旧 129) を `data/eval/ledger_fix_1117/revision3/occurrence.jsonl` に出力。3 回目は 1・2 回目の標本を除く無作為 40 件で Opus 盲検。
