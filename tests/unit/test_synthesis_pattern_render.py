@@ -272,7 +272,10 @@ async def test_shared_entities_become_deterministic_relations(
     }
     out = await _render(_LLM(GOOD), a)
     lines = out.chain_section.splitlines()
-    assert lines[0] == "- アルファ証券 と ベータ銀行: 共通 = CVE-2026-0001、G1"
+    assert lines[0] == (
+        "- アルファ証券で顧客情報が漏えいした と ベータ銀行で委託先のシステム経由の漏えいがあった:"
+        " 共通 = CVE-2026-0001、G1"
+    )
     assert len(lines) == 3 and all("共通 = CVE-2026-0001" in x for x in lines)  # 上限 3 件
 
 
@@ -309,3 +312,24 @@ async def test_notable_shown_with_s_id_and_model_answer_by_c_id_is_accepted(
         attrs=a,
     )
     assert "【注目の単独事案】ゼータ取引所で不正流出が発生した。" in out.weight_section
+
+
+@pytest.mark.asyncio
+async def test_relation_lines_name_cases_by_event_headline_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.storage.repo_judgment_attrs import EventHeadline
+
+    monkeypatch.setenv("SYNTHESIS_PATTERNS", "1")
+    link = frozenset({"victim_org:共通組織"})
+    head = (EventHeadline("ev-1", 2, "2026-11-17T00:00:00", "アルファ証券の不正アクセス事案"),)
+    a = {
+        "s-1": attrs(countries=JP, kinds=BREACH, links=link, headlines=head),
+        "s-2": attrs(countries=JP, kinds=BREACH, links=link),
+        "s-3": attrs(countries=JP, kinds=BREACH),
+    }
+    out = await _render(_LLM(GOOD), a)
+    assert out.chain_section == (
+        "- アルファ証券の不正アクセス事案 と ベータ銀行で委託先のシステム経由の漏えいがあった:"
+        " 共通 = 共通組織"
+    )

@@ -50,7 +50,7 @@ def chain_section(plan: PatternPlan) -> str:
     決定論だけ。因果・関係は創作しない。無ければ「扱っていない」。
     """
     lines = [
-        f"- {link.a.short_name} と {link.b.short_name}: 共通 = {'、'.join(link.shared)}"
+        f"- {link.a.title} と {link.b.title}: 共通 = {'、'.join(link.shared)}"
         for link in plan.links
     ]
     sharing = [(p, p.s3_count) for p in plan.patterns if p.s3_count > 0]

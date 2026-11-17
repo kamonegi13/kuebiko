@@ -70,11 +70,6 @@ class PatternCase:
     links: frozenset[str] = frozenset()
 
     @property
-    def short_name(self) -> str:
-        """一覧・つながりの行で使う短い名前 (題・claim の主語。無ければ題)。"""
-        return self.names[0] if self.names else self.title
-
-    @property
     def weight(self) -> int:
         return (
             S3_WEIGHT * self.is_s3

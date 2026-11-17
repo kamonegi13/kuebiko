@@ -99,7 +99,7 @@ def count_row(rec: StatusSynthesisRecord, est: Estimate, plan: PatternPlan) -> d
             {"case_id": c.case_id, "title": c.title} for c in plan.headline_subjects
         ],
         "links": [
-            {"a": link.a.short_name, "b": link.b.short_name, "shared": list(link.shared)}
+            {"a": link.a.title, "b": link.b.title, "shared": list(link.shared)}
             for link in plan.links
         ],
         "headline_extra": plan.headline_extra.title if plan.headline_extra else None,
@@ -143,7 +143,7 @@ async def render_row(
         "model": getattr(llm, "model", ""),
         "gate_stats": stats.__dict__ if stats else None,
         "links": [
-            {"a": link.a.short_name, "b": link.b.short_name, "shared": list(link.shared)}
+            {"a": link.a.title, "b": link.b.title, "shared": list(link.shared)}
             for link in plan.links
         ],
         "sections": sections.model_dump(),
