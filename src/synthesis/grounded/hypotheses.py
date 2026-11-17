@@ -369,6 +369,12 @@ _GEO_DOMAINS: frozenset[str] = frozenset(
 )
 
 
+def is_cyber_domain(domain: str) -> bool:
+    """domain がサイバー側か (_CYBER_DOMAINS + "cyber" を含む名前が SSoT)。"""
+    d = domain.strip().lower()
+    return d in _CYBER_DOMAINS or "cyber" in d
+
+
 def is_geo_domain(domain: str) -> bool:
     """domain が地政学・政策側か (_GEO_DOMAINS が SSoT)。
 
@@ -385,7 +391,7 @@ def hypotheses_for_domain(domain: str) -> tuple[Hypothesis, ...]:
     (LLM が applicable を選択)。部分一致でも判定 ("cyber" を含む等)。
     """
     d = domain.strip().lower()
-    if d in _CYBER_DOMAINS or "cyber" in d:
+    if is_cyber_domain(d):
         return CYBER_HYPOTHESES
     if d in _GEO_DOMAINS or "geo" in d:
         return GEO_HYPOTHESES

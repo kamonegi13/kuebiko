@@ -11,21 +11,20 @@ docs/ledger_upstream_fixes_2026_11_17.md §3。``assignment._score`` の ``natio
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from src.assessment.assignment import ArticleKeys, SituationKeys
 from src.assessment.ledger_flags import assign_strong_anchor_mode
 from src.assessment.name_relevance import article_names, is_relevant
 from src.logging_config import get_logger
+from src.synthesis.grounded.hypotheses import is_cyber_domain
 
 if TYPE_CHECKING:
     from src.assessment.situation_store import SituationStore
 
 _log = get_logger(__name__)
 
-#: サイバー事案とみなす situations.domain (これ以外の地政学・軍事・政治・経済等は対象外)
-CYBER_DOMAINS: frozenset[str] = frozenset({"cyber_incident", "tech", "infrastructure"})
 #: 強い手がかり無しで付きうる規則 (anchor 規則は強い手がかりの共通を要求するので対象外)
 _WEAK_RULES: frozenset[str] = frozenset({"nation", "token"})
 
@@ -35,10 +34,64 @@ def should_drop_assignment(
     rule: str,
     domain: str,
     shared_strong: Collection[str],
-    cyber_domains: Collection[str] = CYBER_DOMAINS,
 ) -> bool:
-    """この割当を落とすか (純粋関数)。サイバー事案 ∧ nation/token 規則 ∧ 強い手がかりの共通なし。"""
-    return domain in cyber_domains and rule in _WEAK_RULES and not shared_strong
+    """この割当を落とすか (純粋関数)。サイバー事案 ∧ nation/token 規則 ∧ 強い手がかりの共通なし。
+
+    サイバー事案の判定は ``hypotheses.is_cyber_domain`` (SSoT)。
+    """
+    return is_cyber_domain(domain) and rule in _WEAK_RULES and not shared_strong
+
+
+class StrongAnchorRun:
+    """1 run の状態: 判定文の cache (N+1 回避)・関門後に log する保留・log 済みの組。"""
+
+    def __init__(
+        self,
+        store: SituationStore | None = None,
+        claim_by_sid: Mapping[str, str] | None = None,
+    ) -> None:
+        self._store = store
+        self._claims: dict[str, str] = dict(claim_by_sid or {})
+        self._pending: dict[tuple[str, str], str] = {}
+        self._logged: set[tuple[str, str]] = set()
+
+    def claim(self, situation_id: str) -> str:
+        if situation_id not in self._claims:
+            rev = self._store.latest_revision(situation_id) if self._store is not None else None
+            self._claims[situation_id] = rev.claim if rev is not None else ""
+        return self._claims[situation_id]
+
+    def record_shadow(self, situation_id: str, article_id: str, rule: str, *, defer: bool) -> None:
+        key = (situation_id, article_id)
+        if key in self._logged:
+            return
+        if defer:
+            self._pending[key] = rule
+            return
+        self._emit(key, rule, None)
+
+    def flush_shadow(
+        self,
+        kept_by_sid: Mapping[str, Collection[str]],
+        ml_prob: Mapping[tuple[str, str], float | None] | None = None,
+    ) -> None:
+        """割当の関門を通って実際に残る割当だけを log する (落ちた割当は数えない)。"""
+        for key, rule in list(self._pending.items()):
+            sid, aid = key
+            if aid in kept_by_sid.get(sid, ()):
+                self._emit(key, rule, (ml_prob or {}).get(key))
+        self._pending.clear()
+
+    def _emit(self, key: tuple[str, str], rule: str, ml_prob: float | None) -> None:
+        self._logged.add(key)
+        _log.info(
+            "ledger_assign_strong_anchor_shadow",
+            mode="shadow",
+            situation_id=key[0],
+            article_id=key[1],
+            rule=rule,
+            ml_prob=None if ml_prob is None else round(ml_prob, 3),
+        )
 
 
 def strong_anchor_blocks(
@@ -47,45 +100,51 @@ def strong_anchor_blocks(
     *,
     entity_keys: Iterable[str] = (),
     store: SituationStore | None = None,
-    ml_prob: float | None = None,
+    run: StrongAnchorRun | None = None,
+    defer_shadow_log: bool = False,
 ) -> bool:
-    """``match_situation`` の結果を旗に従って落とすか。shadow は log だけして False を返す。
+    """``match_situation`` の結果を旗に従って落とすか。shadow は記録だけして False を返す。
 
     強い手がかりの共有が無くても、記事の固有の名前 (entity + 題の固有語、漢字名を含む) が
     状況の題・最新の判定文に出れば関係ありとして落とさない (§8、2 回目)。
+    ``defer_shadow_log=True`` なら shadow の log は ``run.flush_shadow`` まで保留する。
+    どの旗でも失敗は握り、従来どおり (落とさない) に倒す。
     """
     mode = assign_strong_anchor_mode()
     if mode == "off" or matched is None:
         return False
+    run = run if run is not None else StrongAnchorRun(store)
     sit, rule = matched
-    if not should_drop_assignment(
-        rule=rule, domain=sit.row.domain, shared_strong=art.strong & sit.strong
-    ):
+    try:
+        if not should_drop_assignment(
+            rule=rule, domain=sit.row.domain, shared_strong=art.strong & sit.strong
+        ):
+            return False
+        if _is_relevant_to_situation(art, sit, entity_keys, run):
+            return False
+    except Exception as e:  # noqa: BLE001 — 旗の判定の失敗で台帳の run を止めない
+        _log.warning("ledger_assign_strong_anchor_shadow_failed", error=type(e).__name__, mode=mode)
         return False
-    if _is_relevant_to_situation(art, sit, entity_keys, store):
-        return False
-    _log.info(
-        "ledger_assign_strong_anchor_shadow",
-        mode=mode,
-        situation_id=sit.row.situation_id,
-        article_id=art.article_id,
-        rule=rule,
-        ml_prob=None if ml_prob is None else round(ml_prob, 3),
-    )
-    return mode == "on"
+    if mode == "on":
+        _log.info(
+            "ledger_assign_strong_anchor_dropped",
+            situation_id=sit.row.situation_id,
+            article_id=art.article_id,
+            rule=rule,
+        )
+        return True
+    run.record_shadow(sit.row.situation_id, art.article_id, rule, defer=defer_shadow_log)
+    return False
 
 
 def _is_relevant_to_situation(
     art: ArticleKeys,
     sit: SituationKeys,
     entity_keys: Iterable[str],
-    store: SituationStore | None,
+    run: StrongAnchorRun,
 ) -> bool:
     """記事の固有の名前が状況の題・最新の判定文に出るか (判定文は必要になった時だけ引く)。"""
     names = article_names(art.title, [*entity_keys, *art.strong])
     if is_relevant(names, sit.row.title):
         return True
-    if store is None:
-        return False
-    rev = store.latest_revision(sit.row.situation_id)
-    return rev is not None and is_relevant(names, rev.claim)
+    return is_relevant(names, run.claim(sit.row.situation_id))

@@ -57,6 +57,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 参照するのは群化の「被害組織の食い違い」判定 (blocked_by_different_victims) と
         # 別名の写像のみで、事象ニュースの生成物 (版・本文) は読まず、他層へ渡さない
         "src/assessment/detect_merge_gate.py",
+        # 2026-11-17: まとめ記事の判定 (roundup_detector) は ROUNDUP_KIND の定数だけを参照する
+        # (値の複製をやめる)。生成物 (版・本文) は読まない
+        "src/cti/roundup_detector.py",
         # 2026-09-26: 週次監査の 1 行 (固有情報の網羅率の週平均、src/eventnews/fidelity.py)。
         # 版の本文とプロンプトから率を数えて ops へ 1 行出すだけで、生成物の中身を他層へ渡さない
         # 2026-09-27: fill_rate_audit から fill_rate_sections へ移動

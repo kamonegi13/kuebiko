@@ -23,7 +23,7 @@ from src.storage.run_history import RunHistoryRepository
 _log = get_logger(__name__)
 
 #: 採点し直す割当の種類 (規則)。seed / standing / standing_declarative は対象外
-RULE_KINDS: tuple[str, ...] = ("anchor", "nation", "token")
+RULE_KINDS: tuple[str, ...] = ("anchor", "nation", "token", "dup_rescue")
 
 
 @dataclass(frozen=True)

@@ -387,11 +387,21 @@ _REGISTRY: dict[str, Vocabulary] = {
             "standing": "常設",
             "standing_declarative": "常設 (宣言条件)",
             "token": "語句一致",
+            "dup_rescue": "重複の救済 (名前 + 事象の根)",
             "seed": "初期登録",
             "llm": "LLM 判定",
         },
         canonical=frozenset(
-            {"anchor", "nation", "standing", "standing_declarative", "token", "seed", "llm"}
+            {
+                "anchor",
+                "nation",
+                "standing",
+                "standing_declarative",
+                "token",
+                "seed",
+                "llm",
+                "dup_rescue",
+            }
         ),
     ),
     "forecast_scope": _vocab(
