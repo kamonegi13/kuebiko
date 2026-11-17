@@ -6,8 +6,13 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-from scripts import train_relation_model as rel  # noqa: E402
+import importlib  # noqa: E402
+from typing import Any  # noqa: E402
+
 from src.eventnews.relations import WINDOW_DAYS  # noqa: E402
+
+# scripts を静的 import すると mypy が scripts 側の型を辿る — 動的に読む
+rel: Any = importlib.import_module("scripts.train_relation_model")
 
 
 def test_default_is_inference_window(monkeypatch: pytest.MonkeyPatch) -> None:
