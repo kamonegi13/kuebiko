@@ -60,6 +60,7 @@ from src.storage.repo_geo_rescue_learned import GeoRescueLearnedMixin
 from src.storage.repo_geo_rescue_shadow import GeoRescueShadowMixin
 from src.storage.repo_grok_attempts import GrokAttemptsMixin
 from src.storage.repo_importance_v2 import ImportanceV2Mixin
+from src.storage.repo_judgment_attrs import JudgmentAttrsMixin
 from src.storage.repo_knowledge import KnowledgeMixin
 from src.storage.repo_llm_usage import LlmUsageMixin
 from src.storage.repo_merge_decisions import MergeDecisionsMixin
@@ -118,6 +119,7 @@ class RunHistoryRepository(
     EventFocusMixin,
     SummaryEmbeddingMixin,
     SeverityAxesMixin,
+    JudgmentAttrsMixin,
     ImportanceV2Mixin,
     RoutingV2ShadowMixin,
     AlertDedupShadowMixin,

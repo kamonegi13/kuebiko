@@ -1,0 +1,70 @@
+"""scripts/synthesis_patterns_replay.py の純粋部分 (計数の要約・estimate の取り出し)。"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from datetime import timedelta
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+from src.storage.records import StatusSynthesisRecord
+from src.synthesis.grounded.estimate import estimate_to_dict
+from tests.unit.n20_t5_fixtures import BASE_TS, estimate
+
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "synthesis_patterns_replay.py"
+
+
+@pytest.fixture(scope="module")
+def script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("synthesis_patterns_replay", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _record(tradecraft: str) -> StatusSynthesisRecord:
+    return StatusSynthesisRecord(
+        period_type="daily",
+        period_start=BASE_TS,
+        period_end=BASE_TS + timedelta(days=1),
+        headline="h",
+        weight_section="w",
+        chain_section="c",
+        cog_section="g",
+        spillover_section="s",
+        pir_section="p",
+        axes_evidence="{}",
+        tradecraft=tradecraft,
+    )
+
+
+def test_estimate_of_reads_grounded_estimate(script: ModuleType) -> None:
+    est = estimate()
+    rec = _record(json.dumps({"grounded_estimate": estimate_to_dict(est)}))
+    assert script.estimate_of(rec) == est
+
+
+@pytest.mark.parametrize("tradecraft", ["", "not json", "{}", '{"grounded_estimate": 3}'])
+def test_estimate_of_returns_none_for_missing_or_broken(
+    script: ModuleType, tradecraft: str
+) -> None:
+    try:
+        assert script.estimate_of(_record(tradecraft)) is None
+    except json.JSONDecodeError:
+        pytest.fail("broken JSON must not raise")
+
+
+def test_summarize_counts_days_with_and_without_patterns(script: ModuleType) -> None:
+    rows = [{"has_pattern": True, "patterns": 2}, {"has_pattern": False, "patterns": 0}]
+    assert script.summarize(rows) == {
+        "days": 2,
+        "days_with_pattern": 1,
+        "days_without_pattern": 1,
+        "patterns_per_day_mean": 1.0,
+        "patterns_per_day_max": 2,
+    }
+    assert script.summarize([])["days"] == 0

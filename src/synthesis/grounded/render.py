@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -20,6 +21,7 @@ from pydantic_core import CoreSchema
 
 from src.logging_config import get_logger
 from src.ops.generation_inputs import record_generation_input
+from src.storage.repo_judgment_attrs import JudgmentAttrs
 from src.storage.run_history import StatusSynthesisRecord
 from src.synthesis.grounded.estimate import (
     STRONG_ATTRIBUTION,
@@ -709,12 +711,62 @@ async def _llm_sections(
     return raw
 
 
+async def _pattern_sections_if_on(
+    *,
+    llm: LLMClient,
+    est: Estimate,
+    period_label: str,
+    attrs: Mapping[str, JudgmentAttrs] | None,
+    moved_questions: Sequence[str],
+) -> _WireSections | None:
+    """旗 ``SYNTHESIS_PATTERNS=1`` かつ属性ありのときだけパターン版を作る。失敗は None。"""
+    from src.tools.n20_flags import synthesis_patterns_mode
+
+    if attrs is None or synthesis_patterns_mode() != "on":
+        return None
+    from src.synthesis.grounded.pattern_render import render_pattern_sections
+
+    try:
+        return await render_pattern_sections(
+            llm=llm,
+            est=est,
+            period_label=period_label,
+            attrs=attrs,
+            moved_questions=moved_questions,
+        )
+    except Exception as e:  # noqa: BLE001 — パターン版の失敗は現行の描き方に倒す
+        _log.warning("synthesis_pattern_render_failed", error=str(e)[:160])
+        return None
+
+
+async def _pattern_shadow(
+    *,
+    llm: LLMClient,
+    est: Estimate,
+    period_label: str,
+    attrs: Mapping[str, JudgmentAttrs] | None,
+    moved_questions: Sequence[str],
+) -> None:
+    """旗 shadow: 現行で配信する節が決まった後に、パターン版を別に作って件数を記録する。"""
+    from src.tools.n20_flags import synthesis_patterns_mode
+
+    if attrs is None or synthesis_patterns_mode() != "shadow":
+        return
+    from src.synthesis.grounded.pattern_render import shadow_patterns
+
+    await shadow_patterns(
+        llm=llm, est=est, period_label=period_label, attrs=attrs, moved_questions=moved_questions
+    )
+
+
 async def render_sections(
     *,
     llm: LLMClient,
     est: Estimate,
     period_label: str,
     prev_headline_judgment_id: str | None = None,
+    attrs: Mapping[str, JudgmentAttrs] | None = None,
+    moved_questions: Sequence[str] = (),
 ) -> _WireSections:
     """Estimate のみを入力に、制約付きで narrative セクションを LLM render する。
 
@@ -750,6 +802,12 @@ async def render_sections(
         },
     )
     legacy = lambda: _llm_sections(llm, plan, est, cot=cot)  # noqa: E731
+    patterned = await _pattern_sections_if_on(
+        llm=llm, est=est, period_label=period_label, attrs=attrs, moved_questions=moved_questions
+    )
+    if patterned is not None:
+        # パターン版の見出しは横断の文。単独判定の見出しの関門 (_guard_headline) は掛けない
+        return _collapse_runaway(patterned, period_label=period_label)
     sections = await choose_sections(llm=llm, est=est, period_label=period_label, legacy=legacy)
     sections = _collapse_runaway(sections, period_label=period_label)
     sections = _guard_headline(sections, head, mode)
@@ -770,6 +828,9 @@ async def render_sections(
                 )
             }
         )
+    await _pattern_shadow(
+        llm=llm, est=est, period_label=period_label, attrs=attrs, moved_questions=moved_questions
+    )
     return sections
 
 
@@ -781,6 +842,8 @@ async def render_record(
     article_count: int = 0,
     forecast_ctx: dict[str, Any] | None = None,
     prev_headline_judgment_id: str | None = None,
+    attrs: Mapping[str, JudgmentAttrs] | None = None,
+    moved_questions: Sequence[str] = (),
 ) -> StatusSynthesisRecord:
     """Estimate を StatusSynthesisRecord に射影 (後方互換のため既存スキーマに乗せる)。
 
@@ -794,6 +857,8 @@ async def render_record(
         est=est,
         period_label=period_label,
         prev_headline_judgment_id=prev_headline_judgment_id,
+        attrs=attrs,
+        moved_questions=moved_questions,
     )
     tradecraft = project_tradecraft(est, forecast_ctx=forecast_ctx)
     # canonical estimate を tradecraft に埋め込む (schema 変更回避。段7 UI が ACH/証拠を表示)。

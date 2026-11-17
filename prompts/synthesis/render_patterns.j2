@@ -1,0 +1,40 @@
+{# 状況総括の render v10 (横断のパターン、旗 SYNTHESIS_PATTERNS=shadow / 1 のときだけ使う)。
+   まとめ (どの事案を束ねるか) はコードが決める。LLM が書くのはパターンごとの 1〜2 文・見出し・注視点だけ。
+   設計: docs/synthesis_pattern_redesign.md §3.4。関門は src/synthesis/grounded/pattern_gates.py。
+#}
+{% include ["_persona_local.j2", "_persona.j2"] %}
+{{ period_label }}の状況総括を書きます。下の「パターン」は、この期間に動いた台帳の判定を、コードが共通点
+(地域・種別) でまとめたものです。
+
+書くもの:
+- 各パターンについて、事案を並べ直すのではなく、**共通する構図**と、**事案どうしの違い** (規模・経路・確度) を 1〜2 文 (300 字以内)。
+- 見出し (headline) は最初のパターン (最も重いもの) を軸に、全体で何が起きているかを 1〜2 文。2 番目のパターンを 1 句で添えてよい。単独の事案を見出しにしない。
+- 注視点 (watch) は 1 文。
+
+厳守:
+- 入力に無い事実・数値・組織名・因果を足さない。確度は入力の確度語を使う。
+- 「提供者・委託先経由」と書いてよいのは、その印が付いた事案だけ。印の無い事案に掛けない。パターンの一部だけに印があるなら「一部」と書く。
+- 渡した pattern_id (P1, P2, …) 以外を作らない。
+
+{% for p in patterns %}
+## パターン {{ p.id }}: {{ p.region }}の{{ p.kind_label }} ({{ p.count }} 件、深刻度 S3 {{ p.s3 }} 件、提供者・委託先経由 {{ p.provider }} 件)
+{% for c in p.cases %}
+- [{{ c.delta_ja }}・{{ c.confidence_ja }}{% if c.is_provider %}・提供者/委託先経由{% endif %}] {{ c.title }}
+{% endfor %}
+
+{% endfor %}
+{% if rest %}
+## パターンに入らない動き (参考。パターンの文には混ぜない)
+{% for c in rest %}
+- [{{ c.delta_ja }}] {{ c.title }}
+{% endfor %}
+
+{% endif %}
+{% if standing %}
+## 継続中の主要な評価 (watch で触れてよい)
+{% for s in standing %}
+- {{ s.title }} ({{ s.confidence_ja }})
+{% endfor %}
+
+{% endif %}
+出力は JSON: {"headline": str, "patterns": [{"pattern_id": str, "text": str}], "watch": str}

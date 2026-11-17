@@ -49,7 +49,8 @@ class TestCatalogCompleteness:
         # (_persona_local.j2 を数えない形に 2026-10-30 変更。旧 30 はそれを含む開発機の数)
         # +eventnews/refine_v7.j2 / synthesis/render_v9.j2 / spotlight/pir_spotlight_staged_v7.j2 /
         # digest/weekly_recap_v3.j2 (n20 T5、旗の下だけで使う、既定 off、2026-11-02)。
-        assert len(actual) == 33
+        # +synthesis/render_patterns.j2 (SYNTHESIS_PATTERNS の下だけ、既定 off、2026-11-17)。
+        assert len(actual) == 34
         missing = actual - set(PROMPT_CATALOG)
         assert not missing, f"カタログ未登録のプロンプト: {sorted(missing)}"
 
