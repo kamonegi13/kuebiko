@@ -39,3 +39,12 @@
 | LEDGER_IMPL_GROUNDING | 発火 40 文 + 非発火 20 文 | 発火の誤り 10% 未満、既知の 4 件 (APT41 rev9・ShinyHunters rev31・TraderTraitor rev23〜28・wp2shell rev39〜40) のうち 3 件以上を検出 (過去の版に当てる再現) |
 | LEDGER_JP_IMPLICATION | 発火 30 件 | 誤り 10% 未満 |
 | LEDGER_OCCURRENCE_FLOOR | 対象 40 件 | 「発生は確定」の適合率 90% 以上 |
+
+## 7 の追記 (11-17、利用者「過去データで検証で良いのでは」、結果を見る前)
+- on の判断は **過去データの当て直し** で行う (§7 の標本・線は同じ)。3 日の shadow は待たない。
+  - SEED_STRICT: 過去 30 日の seed 行に strict の規則を当て、外れる行から無作為 40 件。
+  - DUP_RESCUE: 過去 30 日の新規開設ごとに、開設時刻より前の根拠・anchor で救済の判定を再現し、合流する組から無作為 30 組。
+  - ASSIGN_STRONG_ANCHOR: 過去 30 日の nation/token の割当のうち落ちるものから無作為 40 件 (地政学の状況は対象外を確認)。
+  - IMPL_GROUNDING / JP_IMPLICATION: 過去 30 日の改訂の全版に当てる (既知 4 件の回収 + 発火・非発火の標本)。
+  - OCCURRENCE_FLOOR: 過去 14 日の新規開設のうち対象になる全件から無作為 40 件。
+- 再現できないもの (台帳の育ち方・detect の負荷・実行時間) は、本番の shadow 1 日で実行時間・エラー・件数の桁だけ確かめる (判断の材料にしない)。
