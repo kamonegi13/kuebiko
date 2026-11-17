@@ -225,7 +225,7 @@ services:
       # 改訂の含意・指標・欠けている証拠の関門 (2026-11-17、docs/ledger_upstream_fixes_2026_11_17.md §4)。
       # shadow=ログ ledger_impl_ungrounded / ledger_jp_implication_shadow のみ。1=違反の文を落とす。0=従来
       LEDGER_IMPL_GROUNDING: ${LEDGER_IMPL_GROUNDING:-shadow}
-      LEDGER_JP_IMPLICATION: ${LEDGER_JP_IMPLICATION:-shadow}
+      LEDGER_JP_IMPLICATION: ${LEDGER_JP_IMPLICATION:-0}  # 11-17 当て直しで誤発火 30/30 (docs/ledger_upstream_fixes_2026_11_17.md §10)
       # 発生の確度 (被害組織の公表・政府の確認、設計 §5)。shadow=ログ ledger_occurrence_floor_shadow のみ
       LEDGER_OCCURRENCE_FLOOR: ${LEDGER_OCCURRENCE_FLOOR:-shadow}
       # まとめ記事 (複数の独立した事案の束) は重要度の上限を medium にする (2026-10-19 title)。
