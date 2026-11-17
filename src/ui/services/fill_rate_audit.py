@@ -405,6 +405,16 @@ METRICS: tuple[FillMetric, ...] = (
         " AND g.status = 'ok' AND COALESCE(g.input_text, '') <> '')",
         None,
     ),
+    # 地政学の救済の学習版の影の記録 (2026-11-17、GEO_RESCUE_LEARNED=shadow)。日の代理は上と同じ。
+    # 消費者は GET /api/v1/geo-rescue-shadow/summary の learned。監視対象は**完全な沈黙**
+    # (問い・埋め込み・モデル JSON の断線)。旗が 0 の間は 0% が正常
+    FillMetric(
+        "geo_rescue_learned_shadow",
+        "地政学の救済学習版影の記録",
+        "EXISTS (SELECT 1 FROM geo_rescue_learned_shadow g"
+        " WHERE substr(g.created_at, 1, 10) = substr(a.created_at, 1, 10))",
+        None,
+    ),
     # 深刻さ C の影の記録 (2026-10-22)。配信済みの記事に毎時付く (外す記事は理由だけ)。
     # 消費者は GET /api/v1/severity-c-shadow/summary。監視対象は**完全な沈黙**
     # (問いの段・モデルの断線)。モデル JSON が無い間は 0% が正常

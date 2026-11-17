@@ -322,6 +322,10 @@ services:
       GEO_RESCUE_JUDGED_SHADOW: ${GEO_RESCUE_JUDGED_SHADOW:-1}
       GEO_RESCUE_SHADOW_PER_RUN: ${GEO_RESCUE_SHADOW_PER_RUN:-30}
       GEO_RESCUE_SHADOW_BUDGET_SECONDS: ${GEO_RESCUE_SHADOW_BUDGET_SECONDS:-150}
+      # 地政学の救済の学習版 (2026-11-17、CLAUDE.md §7 の 11-17 の行)。shadow = 判定の段で埋め込み + 問い 3 問 +
+      # LR (config/models/geo_rescue_model.json) の判定を geo_rescue_learned_shadow に記録だけ。本番の救済は変えない。
+      # 0=止める (コードの既定 0)。LLM (logprob の問い) と埋め込みの呼び出しが増える
+      GEO_RESCUE_LEARNED: ${GEO_RESCUE_LEARNED:-shadow}
       # 戦域 (紅海・ホルムズ等) の取り込みヒント。shadow=ログのみ / 1=取り込みに効かせる / 0=止める
       INGEST_GEO_THEATRE_HINT: ${INGEST_GEO_THEATRE_HINT:-shadow}
       # n20 T5 の構造変更 (2026-11-02、CLAUDE.md §7 の 11-02 の行)。既定 0 = いまの出力と同一。

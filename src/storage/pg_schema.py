@@ -978,6 +978,25 @@ DELETE FROM geo_rescue_shadow
  WHERE id NOT IN (SELECT MIN(id) FROM geo_rescue_shadow GROUP BY article_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_rescue_shadow_article ON geo_rescue_shadow(article_id);
 
+-- 地政学の救済の学習版 (GEO_RESCUE_LEARNED=shadow、2026-11-17)。ML の確率・判定と本番の v2 の判定を
+-- 記事ごとに 1 行。本文・題は持たない (入力は geo_rescue_shadow)。
+-- 本番の救済は変えない。retention 180 日。
+CREATE TABLE IF NOT EXISTS geo_rescue_learned_shadow (
+    id                BIGSERIAL PRIMARY KEY,
+    article_id        TEXT    NOT NULL UNIQUE,
+    created_at        TEXT    NOT NULL,
+    p_ml              DOUBLE PRECISION    NOT NULL,
+    ml_rescued        SMALLINT NOT NULL,
+    v2_judged         SMALLINT,
+    flat              TEXT    NOT NULL,
+    pir               TEXT,
+    threshold         DOUBLE PRECISION    NOT NULL,
+    probe_model       TEXT,
+    probe_model_match SMALLINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_learned_ts
+    ON geo_rescue_learned_shadow(created_at);
+
 -- 遅延正解ラベル = 凍結資産 (2026-08-21 導入・08-22 producer 撤収、SQLite _SCHEMA と対)。
 -- 詳細コメントは schema_sql.py の同表を参照。
 CREATE TABLE IF NOT EXISTS tuning_labels (

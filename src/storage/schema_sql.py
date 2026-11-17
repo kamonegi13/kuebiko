@@ -833,6 +833,25 @@ DELETE FROM geo_rescue_shadow
  WHERE id NOT IN (SELECT MIN(id) FROM geo_rescue_shadow GROUP BY article_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_geo_rescue_shadow_article ON geo_rescue_shadow(article_id);
 
+-- 地政学の救済の学習版 (GEO_RESCUE_LEARNED=shadow、2026-11-17)。ML の確率・判定と本番の v2 の判定を
+-- 記事ごとに 1 行。本文・題は持たない (入力は geo_rescue_shadow)。
+-- 本番の救済は変えない。retention 180 日。
+CREATE TABLE IF NOT EXISTS geo_rescue_learned_shadow (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id        TEXT    NOT NULL UNIQUE,
+    created_at        TEXT    NOT NULL,
+    p_ml              REAL    NOT NULL,
+    ml_rescued        INTEGER NOT NULL,
+    v2_judged         INTEGER,
+    flat              TEXT    NOT NULL,
+    pir               TEXT,
+    threshold         REAL    NOT NULL,
+    probe_model       TEXT,
+    probe_model_match INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_geo_rescue_learned_ts
+    ON geo_rescue_learned_shadow(created_at);
+
 -- 遅延正解ラベル = **凍結資産** (2026-08-21 導入、2026-08-22 に producer 撤収)。
 -- 「当時の判定 vs 後日確定した事実」の突合結果を証拠源層 (source=E0..E3) 付きで蓄積した
 -- 78 件。新規収穫は行われない — 供給が構造的に不足していた (独立ラベル 8 件/65 日・

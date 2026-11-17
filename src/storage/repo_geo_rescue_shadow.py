@@ -249,6 +249,10 @@ class GeoRescueShadowMixin(RunHistoryRepositoryBase):
             cur = conn.execute(
                 "DELETE FROM geo_rescue_shadow WHERE created_at < ?", (_cutoff(days),)
             )
+            # 学習版の影の記録 (repo_geo_rescue_learned) も同じ保持期間で消す
+            conn.execute(
+                "DELETE FROM geo_rescue_learned_shadow WHERE created_at < ?", (_cutoff(days),)
+            )
             return int(cur.rowcount or 0)
 
 

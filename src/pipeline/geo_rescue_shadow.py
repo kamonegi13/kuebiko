@@ -29,9 +29,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
+import src.pipeline.geo_rescue_learned as gl
 from src.logging_config import get_logger
 from src.pipeline.geo_rescue_cues import geo_cue_reasons
 from src.pipeline.geo_rescue_judge import GeoJudgeResult, judge_geo_rescue, judged_rescued
+from src.storage.repo_geo_rescue_learned import GeoRescueLearnedRow
 from src.storage.repo_geo_rescue_shadow import (
     STATUS_ERROR,
     STATUS_OK,
@@ -42,6 +44,7 @@ from src.storage.repo_geo_rescue_shadow import (
 if TYPE_CHECKING:
     from src.config_loader import AppConfig
     from src.tools.article_model import Article
+    from src.tools.embedding_client import EmbeddingClient
     from src.tools.llm_client import LLMClient
 
 _log = get_logger(__name__)
@@ -229,6 +232,110 @@ async def judge_row(row: GeoRescueShadowRow, ctx: JudgeContext) -> GeoRescueShad
     )
 
 
+async def run_learned_shadow(
+    row: GeoRescueShadowRow,
+    repo: Any,
+    ctx: JudgeContext,
+    *,
+    embedder: EmbeddingClient | None = None,
+) -> GeoRescueLearnedRow | None:
+    """判定済みの行に学習版 (``geo_rescue_learned``) の判定を当てて ``geo_rescue_learned_shadow`` に残す。
+
+    **本番の行・判定・配信は変えない** (行は読むだけ)。旗 ``GEO_RESCUE_LEARNED`` が shadow 以外・モデルの
+    JSON が無い・本番の判定が ok でない行は何もしない。手掛かりのある行は問い 3 問を (学習時と同じく)
+    すべて当てる (本番の v2 は pir が救った行にしか問わないので、LLM の呼び出しが増える)。
+    失敗は握ってログ (``geo_rescue_learned_failed``、型名のみ・本文なし) だけ。
+    """
+    if gl.learned_mode() != "shadow" or row.status != STATUS_OK:
+        return None
+    model = gl.load_model()
+    if model is None:
+        return None
+    try:
+        out = await _learned_row(row, ctx, model, embedder)
+        if out is None:
+            return None
+        repo.record_geo_rescue_learned([out])
+    except Exception as e:  # noqa: BLE001 — 影の記録の失敗は他の段に影響させない
+        _log.warning("geo_rescue_learned_failed", error=type(e).__name__)
+        return None
+    _log.info(
+        "geo_rescue_learned_shadow",
+        article_id=out.article_id,
+        p_ml=round(out.p_ml, 4),
+        ml_rescued=out.ml_rescued,
+        v2_judged=out.v2_judged,
+        flat=out.flat,
+        pir=out.pir,
+        probe_model_match=out.probe_model_match,
+    )
+    return out
+
+
+async def _learned_row(
+    row: GeoRescueShadowRow,
+    ctx: JudgeContext,
+    model: gl.LearnedModel,
+    embedder: EmbeddingClient | None,
+) -> GeoRescueLearnedRow | None:
+    title, text = row.title or "", row.input_text or ""
+    cues = geo_cue_reasons(title, text)
+    qs: tuple[float | None, float | None, float | None] = (None, None, None)
+    if cues:
+        qs = (row.p_qw, row.p_qc, row.p_qd)
+        if any(q is None for q in qs):  # 学習時は手掛かりのある行に 3 問とも当てている
+            j = await judge_geo_rescue(title, text, config=ctx.config, probe_all=True)
+            qs = (j.p_watched_action, j.p_allied_response, j.p_cyber_geo)
+        if any(q is None for q in qs):
+            _log.warning("geo_rescue_learned_probe_unreadable", article_id=row.article_id)
+            return None
+    if embedder is None:
+        from src.tools.embedding_client import OllamaEmbeddingClient
+
+        embedder = OllamaEmbeddingClient(
+            base_url=ctx.config.ollama_base_url, model=model.embedding_model
+        )
+    emb = await embedder.embed(gl.embedding_input(title, text), kind="document")
+    feats = gl.build_features(
+        pir=row.pir,
+        flat=row.flat,
+        cues=cues,
+        p_qw=qs[0],
+        p_qc=qs[1],
+        p_qd=qs[2],
+        is_summary=row.input_kind == "summary",
+    )
+    p = gl.predict_proba(model, emb.vector, feats)
+    return GeoRescueLearnedRow(
+        article_id=row.article_id,
+        p_ml=p,
+        ml_rescued=p >= model.threshold,
+        v2_judged=row.judged,
+        flat=row.flat,
+        pir=row.pir,
+        threshold=model.threshold,
+        probe_model=ctx.judge_model,
+        probe_model_match=ctx.judge_model == model.probe_model,
+    )
+
+
+async def _learned_within_budget(
+    row: GeoRescueShadowRow, repo: Any, ctx: JudgeContext, deadline: float, counts: dict[str, int]
+) -> None:
+    """学習版の影の記録を段の残りの予算の中で当てる (切れたら何も書かない。本番の行には影響しない)。"""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        counts["learned_skipped"] = counts.get("learned_skipped", 0) + 1
+        return
+    try:
+        out = await asyncio.wait_for(run_learned_shadow(row, repo, ctx), timeout=remaining)
+    except TimeoutError:
+        counts["learned_skipped"] = counts.get("learned_skipped", 0) + 1
+        return
+    if out is not None:
+        counts["learned"] = counts.get("learned", 0) + 1
+
+
 async def judge_pending(repo: Any, ctx: JudgeContext) -> dict[str, int]:
     """``pending`` を古い順に上限の件数・時間の予算まで判定する。残りは次の回へ持ち越す。
 
@@ -254,6 +361,8 @@ async def judge_pending(repo: Any, ctx: JudgeContext) -> dict[str, int]:
             done = replace(row, status=STATUS_ERROR, model=ctx.model, judge_model=ctx.judge_model)
         repo.update_geo_rescue_judgement(done)
         counts["ok" if done.status == STATUS_OK else "error"] += 1
+        if gl.learned_mode() == "shadow":
+            await _learned_within_budget(done, repo, ctx, deadline, counts)
     _log.info("geo_rescue_shadow_judged", **counts)
     return counts
 
@@ -269,4 +378,5 @@ __all__ = [
     "judge_pending",
     "judge_row",
     "pending_rows",
+    "run_learned_shadow",
 ]
