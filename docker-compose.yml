@@ -360,6 +360,12 @@ services:
       # 0=off / shadow=旧で配信し新しい形を別に生成して件数を log (LLM 呼び出しが増える) / 1=on
       FACT_ANCHOR: ${FACT_ANCHOR:-0}
       SLOT_RENDER: ${SLOT_RENDER:-0}
+      # 状況総括 slot render の読みやすさ補助 (SLOT_RENDER=1 のときだけ効く)。0 / 1
+      # DEDUP=見出し・含意が世界側の文の言い換えなら含意を落とす / PIR_COMPACT=SIR 節を上位 3 件の第 1 文に /
+      # CHAIN_GROUPING=関係が無いとき共有 SIR・共有根拠の件数だけの連鎖節 (関係は創作しない)
+      SLOT_RENDER_DEDUP: ${SLOT_RENDER_DEDUP:-1}
+      SLOT_PIR_COMPACT: ${SLOT_PIR_COMPACT:-1}
+      SLOT_CHAIN_GROUPING: ${SLOT_CHAIN_GROUPING:-1}
       SPOTLIGHT_STAGED: ${SPOTLIGHT_STAGED:-0}
       DEEP_DIVE_SLOT_RENDER: ${DEEP_DIVE_SLOT_RENDER:-0}
       # 深掘りの要点ごとの裏付け関門 (DEEP_DIVE_SLOT_RENDER が on のときだけ効く)。0 / shadow / 1
