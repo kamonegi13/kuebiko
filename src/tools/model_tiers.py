@@ -220,6 +220,10 @@ class StepSpec:
 
     tier: Tier
     timeout_seconds: float
+    #: ローカルだけで動く step。ティアや上書きが外部モデル (claudecode: / anthropic: 等) を指しても
+    #: そのティアのローカルの受け皿 (``fallback:<tier>`` → BUILTIN) を使う (翻訳・MITRE 和訳 =
+    #: 本文の量が多く、利用者が物語系に外部を割り当てても黙って外部へ流さない。2026-11-17)
+    local_only: bool = False
 
 
 # step → (tier, timeout)。散在していた 120/180/300/600/900 の magic number を集約。
@@ -256,7 +260,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     Step.PIR_SPOTLIGHT: StepSpec(Tier.NARRATIVE, 600.0),
     # MITRE の和訳は fast のまま step 上書きで N 枠のモデルへ
     # (翻訳と同じ理由、下の ARTICLE_TRANSLATE)
-    Step.ACTOR_SYNC: StepSpec(Tier.FAST, 300.0),
+    Step.ACTOR_SYNC: StepSpec(Tier.NARRATIVE, 300.0, local_only=True),
     # 1 件 = タイトル+概要の小さな bool 判定 (max_tokens 200)。triage と同じ fast ティア。
     Step.RELEVANCE_JP_CASCADE: StepSpec(Tier.FAST, 120.0),
     # logprob を 1 回読むだけ (num_predict=1)。生成系 step より短くて良いが、他の小さな
@@ -281,7 +285,7 @@ STEP_REGISTRY: dict[Step, StepSpec] = {
     # 翻訳は N 枠 (n20 系) で学習したが、ティアは fast のまま step 上書きで向ける (2026-11-16 判断):
     # narrative は外部モデルを割り当てうるティアで、移すとバックログの翻訳 (量が多い・本文) が
     # 黙って外部へ流れる。fast はローカル専用の運用 (test_article_translate_is_fast_tier)
-    Step.ARTICLE_TRANSLATE: StepSpec(Tier.FAST, 300.0),
+    Step.ARTICLE_TRANSLATE: StepSpec(Tier.NARRATIVE, 300.0, local_only=True),
     Step.SYNTHESIS_NARRATIVE: StepSpec(Tier.NARRATIVE, 900.0),
     # 事象ニュース精製 (§14b)。実測 65 秒/回 (31B)。毎時 0.25 回なので timeout は 600s で足りる。
     Step.EVENT_NEWS: StepSpec(Tier.NARRATIVE, 600.0),
@@ -431,8 +435,15 @@ def resolve_step_model(step: Step, *, db_path: Path | None = None) -> str:
         for candidate in chain:
             override = tier_map.get(f"{STEP_OVERRIDE_PREFIX}{candidate.value}", "")
             if override:
-                return override
-    return resolve_tier_model(spec.tier, db_path=db_path)
+                return _keep_local(spec, override, db_path=db_path)
+    return _keep_local(spec, resolve_tier_model(spec.tier, db_path=db_path), db_path=db_path)
+
+
+def _keep_local(spec: StepSpec, model: str, *, db_path: Path | None) -> str:
+    """``local_only`` の step で外部モデルに解決したら、ティアのローカルの受け皿に替える。"""
+    if not spec.local_only or not is_external_model(model):
+        return model
+    return resolve_local_fallback_model(spec.tier, db_path=db_path)
 
 
 def load_step_overrides(*, db_path: Path | None = None) -> dict[str, str]:

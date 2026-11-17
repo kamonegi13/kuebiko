@@ -86,6 +86,10 @@ class TestRegistry:
             # 2026-11-16: 深掘り (長い散文、週 1 回) は N 枠の仕事として fast → narrative
             Step.DIGEST_DEEP_DIVE_SELECT,
             Step.DIGEST_DEEP_DIVE,
+            # 2026-11-17: 翻訳・MITRE 和訳は N 枠 (n20 系が学習) の仕事として fast → narrative。
+            # 外部へ流さないよう local_only (tests/unit/test_local_only_steps.py)
+            Step.ARTICLE_TRANSLATE,
+            Step.ACTOR_SYNC,
         }
 
     def test_embed_is_embedding_tier(self) -> None:
@@ -375,10 +379,13 @@ class TestDialogTier:
             Step.ASSISTANT_CHAT,
         }
 
-    def test_article_translate_is_fast_tier(self) -> None:
-        # 2026-07-25 品質比較: ローカル 26B ≥ haiku → 翻訳は fast (ローカル既定)。
-        # dialog に置くと外部モデル割当時にバックログ翻訳が外部消費になるため。
-        assert STEP_REGISTRY[Step.ARTICLE_TRANSLATE].tier is Tier.FAST
+    def test_article_translate_is_local_only_narrative(self) -> None:
+        # 2026-07-25: 外部モデル割当時にバックログ翻訳が外部消費にならないよう fast に置いていた。
+        # 2026-11-17: 翻訳は N 枠 (n20 系) の仕事なので narrative へ。外部へ流さない約束は
+        # ティアの置き場所でなく local_only で守る (tests/unit/test_local_only_steps.py)。
+        spec = STEP_REGISTRY[Step.ARTICLE_TRANSLATE]
+        assert spec.tier is Tier.NARRATIVE
+        assert spec.local_only is True
 
     def test_pir_focus_claim_judge_is_fast_tier(self) -> None:
         # S6 (2026-10-11): PIR daily focus 要点の文単位裏付け判定。logprob を 1 回読むだけの

@@ -60,9 +60,13 @@ class TestOrgQuestionFlag:
 
 
 class TestMarker:
-    def test_marker_is_empty_until_s26_is_enabled(self) -> None:
-        for model in (None, S26, "kuebiko-sft:s24ci65", "kuebiko-sft:s23i", "gemma4:26b"):
+    def test_marker_is_empty_for_models_not_trained_on_it(self) -> None:
+        for model in ("kuebiko-sft:s24ci65", "kuebiko-sft:s23i", "gemma4:26b"):
             assert prefix_for(Step.ORG_IDENTITY_JUDGE, model) == ""
+
+    def test_marker_applies_to_registered_s26r(self) -> None:
+        # 11-17 に s26r を登録 (前方一致) — 学習時と同じ印が付く
+        assert prefix_for(Step.ORG_IDENTITY_JUDGE, "kuebiko-sft:s26r") == MARKER
 
     def test_marker_applies_only_to_s26_family_once_enabled(
         self, monkeypatch: pytest.MonkeyPatch

@@ -38,6 +38,16 @@
     }
   },
   "kuebiko-sft:s26r": {
+    "assign_evidence_judge": {
+      "main": 0.9241418220680101
+    },
+    "org_identity_judge": {
+      "event_logit": 0.0,
+      "org_logit": 0.0
+    },
+    "pir_focus_claim_judge": {
+      "main": 0.7310585786300049
+    },
     "thin_body_judge": {
       "main": 0.4073334000459302
     }
