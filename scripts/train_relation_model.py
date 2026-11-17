@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -42,13 +43,24 @@ N_TREES = 300
 MIN_LEAF = 3
 
 
+def train_window_days() -> int:
+    """学習・測定で事象を集める窓 (日)。既定は推論と同じ ``WINDOW_DAYS``。
+
+    正解集 (v3) の事象が推論の窓 (60 日) の外へ出ると、作れる組が数件に減って学習・測定が
+    成り立たない (11-17 に 411 組中 13 組)。``RELATION_TRAIN_WINDOW_DAYS`` で学習・測定の窓だけを
+    延ばす (推論の窓 ``window_days`` は変えない)。
+    """
+    raw = os.environ.get("RELATION_TRAIN_WINDOW_DAYS", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else WINDOW_DAYS
+
+
 def build_xy(repo: RunHistoryRepository, gold: Path) -> tuple[Any, Any]:
     labels = {}
     for line in gold.read_text(encoding="utf-8").splitlines():
         if line.strip():
             r = json.loads(line)
             labels[r["key"]] = r["label"]
-    events = load_event_features(repo, days=WINDOW_DAYS)
+    events = load_event_features(repo, days=train_window_days())
     by_id = {e.item_id: e for e in events}
     df = {attr: _df(events, attr) for attr in _INDEXED}
     wanted = [by_id[i] for k in labels for i in k.split("|") if i in by_id]
@@ -117,6 +129,7 @@ def export(model: Any, threshold: float, n: int, kinds_model: str | None = None)
         "positive": sorted(INCIDENT_TYPES),
         "feature_names": list(FEATURE_NAMES),
         "window_days": WINDOW_DAYS,
+        "train_window_days": train_window_days(),
         "threshold": threshold,
         "trees": trees,
     }
