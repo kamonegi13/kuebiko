@@ -9,6 +9,13 @@ nominate は 150 タイトルを 1 回で読むため各 claim に 1-4 記事し
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+
+from src.assessment.ledger_flags import seed_strict_mode
+from src.cti.roundup_detector import is_roundup_article
+from src.logging_config import get_logger
+
+_log = get_logger(__name__)
 
 # 同一「事案」を強く示す entity (共有 = 同一インシデントの可能性大)。
 # involved_country / sector は広すぎ (over-cluster) なので anchor に含めない。
@@ -49,6 +56,53 @@ _STOP: frozenset[str] = frozenset(
 )
 
 
+#: seed 拡張の strict 規則で「弁別力が低い」とみなす一般語 (日本語 + 英語、小文字)。
+#: 侵害の報道に毎回出る語で、これだけの重なりは無関係な他社の記事でも起きる。
+GENERIC_SEED_TOKENS: frozenset[str] = frozenset(
+    {
+        "不正アクセス", "不正", "アクセス", "情報", "漏洩", "漏えい", "流出", "個人情報", "公表",
+        "発表", "攻撃", "被害", "可能性", "顧客", "侵害", "サイバー", "セキュリティ", "システム",
+        "サーバ", "サーバー", "サービス", "お知らせ", "お詫び", "調査", "対応", "影響", "報告",
+        "data", "breach", "hack", "hacked", "leak", "leaked", "attack", "attacks", "cyber",
+        "security", "system", "systems", "incident", "access", "unauthorized", "customer",
+        "customers", "information", "personal", "report", "reports", "company", "users",
+    }
+)  # fmt: skip
+#: これ以上の被害組織を挙げる記事は seed 拡張の候補にしない (複数事案の束)
+MAX_VICTIM_ORGS_PER_CANDIDATE = 3
+_MIN_STRICT_SHARED_TOKENS = 2
+_MIN_PROPER_ASCII_LEN = 3
+_MIN_PROPER_KATAKANA_LEN = 3
+_ASCII_ALNUM_RE = re.compile(r"[0-9a-z]+")
+_KATAKANA_RE = re.compile(r"[ァ-ヶー]+")
+
+
+def is_proper_token(token: str) -> bool:
+    """固有名らしい語か (英数字 3 字以上 / カタカナ語 3 字以上)。CVE 番号は英数字語に含まれる。"""
+    if _ASCII_ALNUM_RE.fullmatch(token):
+        return len(token) >= _MIN_PROPER_ASCII_LEN
+    if _KATAKANA_RE.fullmatch(token):
+        return len(token) >= _MIN_PROPER_KATAKANA_LEN
+    return False
+
+
+def strict_token_match(shared: frozenset[str] | set[str]) -> bool:
+    """strict 規則: 共有語 (従来の重なり) から一般語を除き、2 つ以上 or 固有名を含むとき採用。
+
+    従来の重なりが 2 未満なら不採用 (strict は従来より狭めるだけ)。
+    """
+    if len(shared) < _MIN_STRICT_SHARED_TOKENS:
+        return False
+    specific = {t for t in shared if t not in GENERIC_SEED_TOKENS}
+    if len(specific) >= _MIN_STRICT_SHARED_TOKENS:
+        return True
+    return any(is_proper_token(t) for t in specific)
+
+
+def _victim_org_count(entities: set[str]) -> int:
+    return sum(1 for e in entities if e.startswith("victim_org:"))
+
+
 def _tokens(text: str) -> set[str]:
     return {t for t in _TOKEN_RE.findall((text or "").lower()) if t not in _STOP}
 
@@ -74,13 +128,19 @@ def expand_claim_sources(
     pool: list[dict[str, object]],
     entities_by_id: dict[str, set[str]],
     max_sources: int,
+    kind_by_id: Mapping[str, str] | None = None,
+    situation_ref: str = "",
 ) -> list[str]:
     """claim の seed 記事に、プールの関連記事 (entity/keyword 一致) を足して返す (seed 優先・上限)。
 
     - 強 entity (cve/victim_org/malware/actor) を 1 つでも共有 → 採用 (同一事案)。
     - entity が乏しい claim (地政学等) は claim/seed タイトルとのトークン重なり >= 2 で採用。
     - ランクは entity 一致を優先し、上限 max_sources で打ち切る (over-cluster を cap で抑える)。
+    - ``LEDGER_SEED_STRICT`` (docs/ledger_upstream_fixes_2026_11_17.md §1): 0 = 上のまま /
+      shadow = 上のままで strict の結果を log (``ledger_seed_strict_shadow``) / 1 = strict
+      (一般語を除いた語の重なり + まとめ記事・多数の被害組織を挙げる記事を候補から外す)。
     """
+    mode = seed_strict_mode()
     seed_order = list(seed_ids)
     seed_set = set(seed_ids)
     anchors = anchor_entities(entities_by_id, seed_ids)
@@ -90,15 +150,54 @@ def expand_claim_sources(
         claim_tok |= _tokens(title_by_id.get(sid, ""))
 
     scored: list[tuple[int, str]] = []
+    strict_scored: list[tuple[int, str]] = []
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in seed_set:
             continue
         ent_share = sum(1 for e in entities_by_id.get(aid, set()) if e in anchors)
-        tok_share = len(_tokens(str(a.get("title", ""))) & claim_tok)
+        shared = _tokens(str(a.get("title", ""))) & claim_tok
+        tok_share = len(shared)
         if ent_share >= 1 or tok_share >= 2:
             scored.append((ent_share * 3 + tok_share, aid))
+        if mode != "off" and _strict_keeps(a, aid, ent_share, shared, entities_by_id, kind_by_id):
+            strict_scored.append((ent_share * 3 + tok_share, aid))
     # score 降順 → 同点は id 昇順で決定論。
     scored.sort(key=lambda x: (-x[0], x[1]))
     extra = [aid for _, aid in scored]
-    return (seed_order + extra)[:max_sources]
+    current = (seed_order + extra)[:max_sources]
+    if mode == "off":
+        return current
+    strict_scored.sort(key=lambda x: (-x[0], x[1]))
+    strict = (seed_order + [aid for _, aid in strict_scored])[:max_sources]
+    if mode == "on":
+        return strict
+    kept, dropped = set(current) & set(strict), set(current) - set(strict)
+    _log.info(
+        "ledger_seed_strict_shadow",
+        situation=situation_ref,
+        seeds=len(seed_order),
+        current=len(current),
+        kept=len(kept),
+        dropped=len(dropped),
+        dropped_ids=sorted(dropped)[:20],
+    )
+    return current
+
+
+def _strict_keeps(
+    article: Mapping[str, object],
+    aid: str,
+    ent_share: int,
+    shared: set[str],
+    entities_by_id: Mapping[str, set[str]],
+    kind_by_id: Mapping[str, str] | None,
+) -> bool:
+    """strict 規則で候補に残すか (純粋関数)。まとめ記事・多数の被害組織の記事は外す。"""
+    category = str(article.get("category") or "")
+    kind = (kind_by_id or {}).get(aid)
+    if is_roundup_article(str(article.get("title", "")), kind=kind, category=category):
+        return False
+    if _victim_org_count(set(entities_by_id.get(aid, set()))) >= MAX_VICTIM_ORGS_PER_CANDIDATE:
+        return False
+    return ent_share >= 1 or strict_token_match(shared)

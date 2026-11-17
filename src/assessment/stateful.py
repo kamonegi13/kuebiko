@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+from src.assessment.assign_strong_anchor import strong_anchor_blocks
 from src.assessment.assignment import (
     ArticleKeys,
     SituationKeys,
@@ -44,6 +45,7 @@ from src.assessment.claim_guard import (
 from src.assessment.detect_bundle_log import Outcome, make_claim_id, resolve_outcomes
 from src.assessment.detect_scope import relevant_titles_by_embedding
 from src.assessment.detect_step import DetectContext, decide_detect, shadow_records
+from src.assessment.dup_rescue import try_rescue
 from src.assessment.ledger import (
     _judgment_pir_ids,
     _pir_ids_for_articles,
@@ -52,6 +54,7 @@ from src.assessment.ledger import (
     _sweep_lifecycle,
     compute_delta_type,
 )
+from src.assessment.ledger_flags import seed_strict_mode
 from src.assessment.question_store import hypotheses_for_standing
 from src.assessment.situation_store import (
     DeltaType,
@@ -916,6 +919,8 @@ def refresh_ledger_assignments(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(matched, art):
+            matched = None
         if matched is None:
             continue
         sit, by = matched
@@ -1225,6 +1230,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         )
         art_keys_by_id[aid] = art
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(matched, art):
+            matched = None
         if matched is None:
             unassigned.append(a)
         else:
@@ -1567,6 +1574,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
 
     opened_count = 0
     bundle_outcomes: dict[str, tuple[Outcome, str | None, str]] = {}
+    # LEDGER_SEED_STRICT: まとめ記事 (article_kinds) の判定に使う種別 (旗が off なら引かない)
+    seed_kinds = repo.get_article_kinds(pool_ids) if seed_strict_mode() != "off" else None
     for c in detected.open:
         cid = _safe_claim_id(now_iso, bundle_variant, c.article_ids, c.claim)
         # 重複ガード: 既存 Situation に照合したら開設せず割当扱い (NetNut 型重複の根治)
@@ -1592,8 +1601,21 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 rule=dup[1],
             )
             dup = None
-        if dup is not None:
-            sid = dup[0].row.situation_id
+        dup_target: tuple[str, str] | None = (
+            (dup[0].row.situation_id, dup[1]) if dup is not None else None
+        )
+        if dup_target is None:  # LEDGER_DUP_RESCUE: 同じ事案の既存情勢へ (旗 on のときだけ返る)
+            rescued = try_rescue(
+                store=store,
+                sit_keys=sit_keys,
+                entities_by_id=entities_by_id,
+                article_ids=c.article_ids,
+                claim=c.claim,
+                run_at=now_iso,
+            )
+            dup_target = (rescued.situation_id, "dup_rescue") if rescued else None
+        if dup_target is not None:
+            sid = dup_target[0]
             for aid in c.article_ids:
                 store.record_assignment(
                     situation_id=sid, article_id=aid, added_at=now_iso, assigned_by="token"
@@ -1606,7 +1628,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 reason=f"開設候補が既存に照合: {c.claim[:60]}",
                 situation_id=sid,
             )
-            bundle_outcomes[cid] = ("merged", sid, f"既存に照合 ({dup[1]})")
+            bundle_outcomes[cid] = ("merged", sid, f"既存に照合 ({dup_target[1]})")
             continue
         # フル接地 (裏取りクラスタ拡張 + 過去文脈 — 初回接地にのみ歴史窓を使う)
         expanded = expand_claim_sources(
@@ -1615,6 +1637,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             pool=pool,
             entities_by_id=entities_by_id,
             max_sources=_MAX_NEW_SOURCES_PER_UPDATE,
+            kind_by_id=seed_kinds,
+            situation_ref=cid,
         )
         anchors_hist = anchor_entities(entities_by_id, tuple(expanded))
         hist_ids = (

@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+from src.assessment.assign_strong_anchor import strong_anchor_blocks
 from src.assessment.assignment import (
     ArticleKeys,
     SituationKeys,
@@ -366,6 +367,8 @@ def _assign_pool(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(matched, art):
+            matched = None
         if matched is None:
             # 監査台帳は high のみ行を残す (recall 監査対象、medium はカウントのみ = ログ肥大防止)
             importance = str(a.get("importance", "") or "")

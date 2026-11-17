@@ -111,6 +111,29 @@ def is_roundup(
     return roundup_basis(title, llm_article_type=llm_article_type, category=category) is not None
 
 
+#: 記事の種別 (article_kinds) でまとめ記事を表す値 (``eventnews.models.ROUNDUP_KIND`` と同値)
+_ROUNDUP_KIND_VALUE = "roundup"
+#: category がまとめ記事を表す値
+_ROUNDUP_CATEGORY_VALUE = "recap"
+
+
+def is_roundup_article(
+    title: str,
+    *,
+    kind: str | None = None,
+    category: str | None = None,
+) -> bool:
+    """まとめ記事かの**共通の判定 (SSoT)**: 見出しの語 / article_kinds の roundup / category=recap。
+
+    いずれか 1 つで True。LLM の article_type は信用しない (適合率が低い) ので渡さない。
+    """
+    if (kind or "").strip().lower() == _ROUNDUP_KIND_VALUE:
+        return True
+    if (category or "").strip().lower() == _ROUNDUP_CATEGORY_VALUE:
+        return True
+    return roundup_basis(title) == BASIS_TITLE
+
+
 # ---------- 重要度の上限 (まとめ記事は記事全体として high にしない) ----------
 
 CAP_ENV = "ROUNDUP_IMPORTANCE_CAP"
