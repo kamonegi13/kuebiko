@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from src.assessment.occurrence_floor import occurrence_floor_mode
 from src.logging_config import get_logger
 from src.synthesis.grounded.estimate import KeyJudgment
 
@@ -99,6 +100,10 @@ _REFUTED_FACTOR = 0.6
 def epistemic_weight(j: KeyJudgment) -> float:
     """判定の認識論的重み (0..1]: 較正確度 × 仮説クラス × 反証の積。"""
     weight = _CONF_EPISTEMIC.get(j.confidence, _CONF_EPISTEMIC_DEFAULT)
+    if occurrence_floor_mode() == "1" and j.occurrence_confirmed:
+        # LEDGER_OCCURRENCE_FLOOR=1: 見出し・並びは「発生の確度」と帰属の確度の高い方で測る
+        # (被害組織の公表があるのに帰属が未確定で低確度のまま埋もれるのを避ける)。
+        weight = max(weight, _CONF_EPISTEMIC.get(j.occurrence_confidence, weight))
     if j.leading_hypothesis in _CLAIM_VERACITY_HYPOTHESES:
         weight *= _RUMOR_CLASS_FACTOR
     if j.adversarial_refuted:
