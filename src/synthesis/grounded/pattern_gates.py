@@ -58,9 +58,7 @@ class GateStats:
     wording_replaced: int = 0
     method_replaced: int = 0
     subject_replaced: bool = False
-    relations_proposed: int = 0
-    relations_accepted: int = 0
-    relations_rejected: int = 0
+    extra_appended: bool = False
     grounding_replaced: int = 0
     headline_replaced: bool = False
     watch_dropped: bool = False
@@ -74,20 +72,10 @@ class GateStats:
 
 
 @dataclass(frozen=True)
-class AcceptedRelation:
-    """関門を通した「事案どうしのつながり」。``shared`` は両事案の claim か根拠の抜粋にある語。"""
-
-    case_ids: tuple[str, str]
-    shared: str
-    text: str
-
-
-@dataclass(frozen=True)
 class GatedTexts:
     headline: str
     pattern_texts: dict[str, str] = field(default_factory=dict)
     watch: str = ""
-    relations: tuple[AcceptedRelation, ...] = ()
 
 
 #: パターンの文で禁じる語 = 断定の言い過ぎだけ (2026-11-17)。slot render の ``BANNED_IN_CLAUSE`` は
@@ -254,9 +242,12 @@ def _gate_pattern_texts(
         p.pattern_id: (p.cases, [p], fallback_pattern_text(p)) for p in plan.patterns
     }
     items.update({n.item_id: ([n.case], [], fallback_notable_text(n)) for n in plan.notable})
+    # モデルが注目の単独事案を C 番号で答えても S 番号として受ける (同じ事案の別名)
+    alias = {n.case.case_id: n.item_id for n in plan.notable if n.case.case_id}
     got: dict[str, str] = {}
     unknown = 0
-    for pid, text in pattern_items:
+    for raw_id, text in pattern_items:
+        pid = alias.get(raw_id, raw_id)
         if pid not in items:
             unknown += 1
         elif pid not in got:
@@ -308,11 +299,16 @@ def gate_patterns(
     subject_missing = head is not None and subjects_missing(head, plan.headline_subjects)
     if subject_missing:
         head = None
+    extra = plan.headline_extra
+    appended = head is not None and extra is not None and subjects_missing(head, (extra,))
+    if head is not None and extra is not None and appended:
+        head = f"{head}注目: {extra.title.strip().rstrip('。')}。"
     stats = GateStats(
         unknown_ids=unknown,
         missing=missing,
         headline_replaced=head is None,
         subject_replaced=subject_missing,
+        extra_appended=appended,
         watch_dropped=w is None and has_watch,
         fields_total=len(plan.patterns) + len(plan.notable) + 1 + has_watch,
         fields_replaced=replaced + (head is None) + (w is None and has_watch),

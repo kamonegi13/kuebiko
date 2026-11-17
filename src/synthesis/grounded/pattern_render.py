@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
@@ -26,7 +25,6 @@ from src.synthesis.grounded.passes import _render
 from src.synthesis.grounded.pattern_case import PatternCase, first_full_sentence
 from src.synthesis.grounded.pattern_fallback import fallback_headline
 from src.synthesis.grounded.pattern_gates import GatedTexts, GateStats, gate_patterns
-from src.synthesis.grounded.pattern_relations import gate_relations
 from src.synthesis.grounded.pattern_sections import assemble_pattern_sections
 from src.synthesis.grounded.patterns import STANDING_MAX, PatternPlan, build_patterns
 from src.synthesis.grounded.render import (
@@ -43,8 +41,6 @@ _log = get_logger(__name__)
 
 TEMPLATE_V10 = "synthesis/render_patterns.j2"
 PATTERNS_MAX = 12
-#: モデルに提案させるつながりの上限 (採用の上限 ``RELATIONS_MAX`` より多く出させて関門で絞る)
-RELATIONS_PROPOSED_MAX = 6
 _CONF_JA = {"high": "高確度", "moderate": "中確度", "low": "低確度"}
 
 
@@ -60,33 +56,13 @@ class PatternItem(BaseModel):
         return require_all_properties(dict(handler(core_schema)))
 
 
-class RelationItem(BaseModel):
-    """事案どうしのつながりの提案。``shared`` は両事案の claim か根拠の抜粋にある語。"""
-
-    model_config = ConfigDict(extra="ignore")
-    case_ids: list[str] = Field(
-        default_factory=list, json_schema_extra={"minItems": 2, "maxItems": 2}
-    )
-    shared: str = ""
-    text: str = ""
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        return require_all_properties(dict(handler(core_schema)))
-
-
 class WirePatterns(BaseModel):
-    """v10 の LLM 出力 (headline / patterns[{pattern_id, text}] / relations / watch)。"""
+    """v10 の LLM 出力 (headline / patterns[{pattern_id, text}] / watch)。"""
 
     model_config = ConfigDict(extra="ignore")
     headline: str = ""
     patterns: list[PatternItem] = Field(
         default_factory=list, json_schema_extra={"maxItems": PATTERNS_MAX}
-    )
-    relations: list[RelationItem] = Field(
-        default_factory=list, json_schema_extra={"maxItems": RELATIONS_PROPOSED_MAX}
     )
     watch: str = ""
 
@@ -99,7 +75,6 @@ class WirePatterns(BaseModel):
 
 def _case_view(c: PatternCase) -> dict[str, object]:
     return {
-        "case_id": c.case_id,
         "title": c.title,
         "delta_ja": _DELTA_JA.get(c.delta_type, c.delta_type),
         "confidence_ja": _CONF_JA.get(c.confidence, c.confidence),
@@ -133,7 +108,7 @@ def build_prompt(plan: PatternPlan, period_label: str) -> str:
         ],
         rest=[_case_view(c) for c in plan.rest],
         standing=standing,
-        subjects=[{"case_id": c.case_id, "title": c.title} for c in plan.headline_subjects],
+        subjects=[{"title": c.title} for c in plan.headline_subjects],
     )
 
 
@@ -184,24 +159,13 @@ async def generate_gated(
         max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
         think=False,
     )
-    gated, stats = gate_patterns(
+    return gate_patterns(
         headline=raw.headline,
         pattern_items=[(i.pattern_id, i.text) for i in raw.patterns],
         watch=raw.watch,
         plan=plan,
         moved_questions=moved_questions,
     )
-    excerpts = {j.id: tuple(e.excerpt for e in j.evidence) for j in est.judgments}
-    relations, rel = gate_relations(
-        [(r.case_ids, r.shared, r.text) for r in raw.relations], plan, excerpts
-    )
-    stats = replace(
-        stats,
-        relations_proposed=rel.proposed,
-        relations_accepted=rel.accepted,
-        relations_rejected=rel.proposed - rel.accepted,
-    )
-    return replace(gated, relations=relations), stats
 
 
 def _log_stats(event: str, period_label: str, plan: PatternPlan, stats: GateStats | None) -> None:

@@ -67,6 +67,12 @@ class PatternCase:
     names: tuple[str, ...] = ()
     techniques: frozenset[str] = frozenset()
     products: frozenset[str] = frozenset()
+    links: frozenset[str] = frozenset()
+
+    @property
+    def short_name(self) -> str:
+        """一覧・つながりの行で使う短い名前 (題・claim の主語。無ければ題)。"""
+        return self.names[0] if self.names else self.title
 
     @property
     def weight(self) -> int:
@@ -100,6 +106,7 @@ def merged_attrs(
         large_magnitude=any(p.large_magnitude for p in parts),
         techniques=frozenset().union(*(p.techniques for p in parts)),
         products=frozenset().union(*(p.products for p in parts)),
+        links=frozenset().union(*(p.links for p in parts)),
         event_headlines=tuple(h for p in parts for h in p.event_headlines),
     )
 
@@ -142,5 +149,6 @@ def make_case(
         names=case_names(title, rep.claim),
         techniques=merged.techniques,
         products=merged.products,
+        links=merged.links,
     )
     return case, pattern_kind(merged.kinds)

@@ -172,13 +172,6 @@ def test_notable_item_is_gated_like_patterns_with_fallback() -> None:
 GOOD2 = "アルファ証券とガンマ商事で侵害が確認された。"
 
 
-def test_fallback_headline_names_cases_and_notable() -> None:
-    plan = _notable_plan()
-    head = fallback_headline(plan)
-    assert "アルファ証券で顧客情報が漏えいした" in head
-    assert "注目の単独事案: ゼータ取引所で大規模な不正流出が発生し" in head
-
-
 def test_ungrounded_proper_noun_and_number_are_rejected() -> None:
     plan = _plan()
     texts, _, stats = _gate(plan, items=[("P1", "デルタ社でも同様の漏えいが 3 件あった。")])
@@ -232,17 +225,59 @@ def test_quoted_possibility_and_confidence_labels_are_allowed() -> None:
     assert stats.banned == 0
 
 
-def test_headline_must_name_designated_subjects() -> None:
+def test_only_the_heaviest_case_is_designated_and_must_be_named() -> None:
     plan = _notable_plan()
-    top = plan.headline_subjects
-    assert [c.judgment_ids for c in top] == [("s-1",), ("s-3",)]
-    ok = "アルファ証券の漏えいと、ゼータ取引所の不正流出が目立つ。"
-    _, head, stats = _gate(plan, headline=ok)
-    assert head == ok and not stats.subject_replaced
-    missing_notable = "アルファ証券とガンマ商事の漏えいが続く。"
-    _, head, stats = _gate(plan, headline=missing_notable)
+    assert [c.judgment_ids for c in plan.headline_subjects] == [("s-3",)]
+    _, head, stats = _gate(plan, headline="ゼータ取引所の不正流出が目立つ。")
+    assert head.startswith("ゼータ取引所の不正流出が目立つ。") and not stats.subject_replaced
+    _, head, stats = _gate(plan, headline="アルファ証券とガンマ商事の漏えいが続く。")
     assert head == fallback_headline(plan) and stats.subject_replaced
-    assert "ゼータ取引所" in head and "アルファ証券" in head
+
+
+def test_second_heaviest_s3_notable_is_appended_not_a_reason_to_replace() -> None:
+    js = [
+        j("s-1", "アルファ証券で顧客情報が漏えいした。"),
+        j("s-2", "ガンマ商事で侵害が確認された。"),
+        j("s-3", "ゼータ取引所で大規模な不正流出が発生した。"),
+        j("s-4", "イータ運輸で業務停止を伴う攻撃が確認された。"),
+    ]
+    at = {
+        "s-1": attrs(kinds=BREACH),
+        "s-2": attrs(kinds=BREACH),
+        "s-3": attrs(s3=True, large=True),
+        "s-4": attrs(s3=True),
+    }
+    plan = build_patterns(js, at)
+    assert plan.headline_subjects[0].judgment_ids == ("s-3",)
+    assert plan.headline_extra is not None and plan.headline_extra.judgment_ids == ("s-4",)
+    _, head, stats = _gate(plan, headline="ゼータ取引所の不正流出が目立つ。")
+    assert (
+        head == "ゼータ取引所の不正流出が目立つ。注目: イータ運輸で業務停止を伴う攻撃が確認された。"
+    )
+    assert stats.extra_appended and not stats.subject_replaced
+    named = "ゼータ取引所とイータ運輸の事案が目立つ。"
+    _, head, stats = _gate(plan, headline=named)
+    assert head == named and not stats.extra_appended
+
+
+def test_fallback_headline_is_short_without_counts() -> None:
+    plan = _notable_plan()
+    head = fallback_headline(plan)
+    assert head.startswith("注目の単独事案: ゼータ取引所で大規模な不正流出が発生し")
+    assert "注目: アルファ証券で顧客情報が漏えいした" in head
+    assert "件" not in head and "S3" not in head
+    assert len(split_sentences(head)) <= 2
+    p_plan = _plan()
+    assert len(split_sentences(fallback_headline(p_plan))) <= 2
+
+
+def test_notable_c_id_is_accepted_as_alias_of_its_s_id() -> None:
+    plan = _notable_plan()
+    c_id = plan.notable[0].case.case_id
+    assert c_id.startswith("C")
+    ok = "ゼータ取引所で不正流出が発生した。"
+    texts, _, stats = _gate(plan, items=[("P1", GOOD2), (c_id, ok)])
+    assert texts["S1"] == ok and stats.unknown_ids == 0 and stats.missing == 0
 
 
 def _method_plan() -> PatternPlan:

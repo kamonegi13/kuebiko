@@ -164,6 +164,7 @@ def test_loads_event_headline_entities_magnitude_and_last_evidence(
         )
     got = repo.get_judgment_attrs(["s1"], since=SINCE, until=UNTIL)["s1"]
     assert got.large_magnitude
+    assert got.links == frozenset({"cve:CVE-2026-0001", "affected_product:VPN-X"})
     assert (got.techniques, got.products) == (frozenset({"T1566"}), frozenset({"VPN-X"}))
     assert [(h.root, h.articles, h.headline) for h in got.event_headlines] == [
         ("ev-1", 2, "最新の見出し")

@@ -8,8 +8,11 @@
    重い順 (``PatternCase.weight``、同点は salience 順)。
 4. 属性が無い・1 件しかないキーの事案は「そのほかの動き」。ただし重い単独事案
    (``NOTABLE_MIN_WEIGHT`` 以上 = S3 か大規模) は「注目の単独事案」(最大 ``NOTABLE_MAX`` 件) へ。
-5. 見出しの主語 (最も重いパターンの筆頭事案 + 最も重い注目の単独事案) をコードが指名する。
+5. 見出しの主語 (パターンの事案と注目の単独事案のうち最も重い 1 件) をコードが指名する。
+   2 番目に重い S3 の注目の単独事案は、見出しに無ければ決定論で後ろに添える (``headline_extra``)。
 6. 継続中 (動いていない) の判定は全件を 1 行 (題・確度・最後に動いた日) の材料にする。
+7. 事案どうしのつながりは、共通の実体 (被害組織・製品・マルウェア・キャンペーン・アクター・CVE)
+   を持つ組だけを決定論で出す (``RELATIONS_MAX`` 件まで)。事象の根を共有する判定は事案に畳み済み。
 パターンの重さ = 件数 + 事案の重さの合計。日本を先に。**記事の件数・言及量は使わない** (§7)。
 """
 
@@ -19,6 +22,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
+from itertools import combinations
 from zoneinfo import ZoneInfo
 
 from src.assessment.salience import rank_judgments
@@ -50,6 +54,8 @@ COMMON_MARK_MIN_CASES = 2
 COMMON_MARKS_MAX = 3
 #: 継続中の評価のうち、注視点のためにプロンプトへ渡す上位の件数
 STANDING_MAX = 4
+#: 表示する事案どうしのつながりの上限
+RELATIONS_MAX = 3
 NO_CHANGE_TYPES = frozenset({"", "no_change"})
 _JST = ZoneInfo("Asia/Tokyo")
 
@@ -112,6 +118,15 @@ class NotableCase:
 
 
 @dataclass(frozen=True)
+class CaseLink:
+    """共通の実体を持つ 2 事案。``shared`` は実体の値 (種類の接頭辞を除いた表示用)。"""
+
+    a: PatternCase
+    b: PatternCase
+    shared: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class StandingItem:
     judgment_id: str
     title: str
@@ -132,8 +147,12 @@ class PatternPlan:
     top_judgment: KeyJudgment | None = None
     #: 継続中 (動いていない) の判定の全件。1 行 = 題・確度・最後に動いた日
     standing_items: tuple[StandingItem, ...] = ()
-    #: 見出しで必ず触れる事案 (最も重いパターンの筆頭 + 最も重い注目の単独事案)
+    #: 見出しで必ず触れる事案 (最も重い 1 件。無ければ空)
     headline_subjects: tuple[PatternCase, ...] = ()
+    #: 見出しに名前が無ければ決定論で「注目: …」と添える、2 番目に重い S3 の注目の単独事案
+    headline_extra: PatternCase | None = None
+    #: 共通の実体を持つ事案の組 (決定論、``RELATIONS_MAX`` 件まで)
+    links: tuple[CaseLink, ...] = ()
 
     def all_cases(self) -> tuple[PatternCase, ...]:
         """C 番号の順 (パターン → 注目 → そのほか) の全事案。"""
@@ -278,8 +297,9 @@ def build_patterns(
         Pattern(f"P{i}", r, k, tuple(cs), _common_marks(cs, names))
         for i, ((r, k, _), cs) in enumerate(zip(drafts, numbered, strict=True), start=1)
     )
-    subjects = [patterns[0].cases[0]] if patterns else []
-    subjects += [notable[0].case] if notable else []
+    heavy = [*(c for p in patterns for c in p.cases), *(n.case for n in notable)]
+    subject = max(heavy, key=lambda c: (c.weight, -c.rank), default=None)
+    extra = next((n.case for n in notable if n.case.is_s3 and n.case != subject), None)
     return PatternPlan(
         patterns=patterns,
         rest=tuple(rest),
@@ -288,5 +308,22 @@ def build_patterns(
         moved_count=len(moved),
         top_judgment=moved[0] if moved else (ranked[0] if ranked else None),
         standing_items=_standing_items(still, attrs),
-        headline_subjects=tuple(subjects),
+        headline_subjects=(subject,) if subject else (),
+        headline_extra=extra,
+        links=_case_links([*heavy, *rest]),
     )
+
+
+def _link_value(key: str) -> str:
+    return key.split(":", 1)[1]
+
+
+def _case_links(cases: Sequence[PatternCase]) -> tuple[CaseLink, ...]:
+    """共通の実体の数が多い組から ``RELATIONS_MAX`` 件 (同数は salience 順)。"""
+    found = []
+    for a, b in combinations(sorted(cases, key=lambda c: c.rank), 2):
+        shared = sorted(_link_value(k) for k in a.links & b.links)
+        if shared:
+            found.append(CaseLink(a, b, tuple(shared)))
+    found.sort(key=lambda link: -len(link.shared))  # 安定ソート: 同数は salience 順のまま
+    return tuple(found[:RELATIONS_MAX])

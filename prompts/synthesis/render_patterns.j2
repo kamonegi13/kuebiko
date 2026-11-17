@@ -1,6 +1,6 @@
 {# 状況総括の render v10 (横断のパターン、旗 SYNTHESIS_PATTERNS=shadow / 1 のときだけ使う)。
    まとめ (どの事案を束ねるか・見出しで触れる事案・共通の手口) はコードが決める。LLM が書くのは
-   パターン・注目の単独事案ごとの 1〜2 文・見出し・事案どうしのつながり・注視点だけ。
+   パターン・注目の単独事案ごとの 1〜2 文・見出し・注視点だけ。つながりはコードが決める。
    設計: docs/synthesis_pattern_redesign.md §3.4 / §6。関門は src/synthesis/grounded/pattern_gates.py。
 #}
 {% include ["_persona_local.j2", "_persona.j2"] %}
@@ -12,20 +12,19 @@
 {% if notable %}
 - 各「注目の単独事案」(S1, …) について、その事案が何かを 1〜2 文。
 {% endif %}
-- 見出し (headline) は 1〜2 文。最初のパターン (最も重いもの) を軸に、全体で何が起きているかを書く。下の「見出しで必ず触れる事案」は、組織名や事案の名前を見出しに入れる。{% if notable %}注目の単独事案は第 2 の節で触れる。{% endif %}個々の事案 1 件だけを見出しにしない。
-- つながり (relations): 事案 (C1, C2, …) の 2 件の間に、**両方の事案の文に実際に出てくる共通の語** (組織名・製品名・脆弱性 ID・手口など) があるときだけ、{"case_ids": ["C1", "C2"], "shared": "共通の語", "text": "その語を含む 1〜2 文"} を書く。無ければ空の配列。最大 3 件。
+- 見出し (headline) は 1〜2 文。最初のパターン (最も重いもの) を軸に、全体で何が起きているかを書く。下の「見出しで必ず触れる事案」の組織名や事案の名前を見出しに入れる (1 件だけ)。個々の事案 1 件だけを見出しにしない。
 - 注視点 (watch) は 1 文。
 
 厳守:
 - 入力に無い事実・数値・組織名・因果を足さない。確度は入力の確度語を使う。
 - 「委託先」「提供者」「サードパーティ」など経路を示す語は、その事案の文にその語がある場合だけ書く。
 - 「共通の手口」と書いてよいのは、パターンに「共通の手口」の印が付いているときだけで、印にある語を使う。
-- 渡した id (P1, …{% if notable %}, S1, …{% endif %}, C1, …) 以外を作らない。
+- pattern_id は渡した id (P1, …{% if notable %}, S1, …{% endif %}) だけ。
 
 {% if subjects %}
 ## 見出しで必ず触れる事案
 {% for s in subjects %}
-- [{{ s.case_id }}] {{ s.title }}
+- {{ s.title }}
 {% endfor %}
 
 {% endif %}
@@ -35,19 +34,19 @@
 共通の手口 (本文で裏付けられた手がかり): {{ p.marks|join('、') }}
 {% endif %}
 {% for c in p.cases %}
-- [{{ c.case_id }}・{{ c.delta_ja }}・{{ c.confidence_ja }}] {{ c.title }}
+- [{{ c.delta_ja }}・{{ c.confidence_ja }}] {{ c.title }}
 {% endfor %}
 
 {% endfor %}
 {% for n in notable %}
 ## 注目の単独事案 {{ n.id }} (どのパターンにも入らない重い事案)
-- [{{ n.case_id }}・{{ n.delta_ja }}・{{ n.confidence_ja }}] {{ n.claim }}
+- [{{ n.id }}・{{ n.delta_ja }}・{{ n.confidence_ja }}] {{ n.claim }}
 
 {% endfor %}
 {% if rest %}
 ## パターンに入らない動き (参考。パターンの文には混ぜない)
 {% for c in rest %}
-- [{{ c.case_id }}・{{ c.delta_ja }}] {{ c.title }}
+- [{{ c.delta_ja }}] {{ c.title }}
 {% endfor %}
 
 {% endif %}
@@ -58,4 +57,4 @@
 {% endfor %}
 
 {% endif %}
-出力は JSON: {"headline": str, "patterns": [{"pattern_id": str, "text": str}], "relations": [{"case_ids": [str, str], "shared": str, "text": str}], "watch": str}
+出力は JSON: {"headline": str, "patterns": [{"pattern_id": str, "text": str}], "watch": str}

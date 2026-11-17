@@ -29,6 +29,8 @@ _LIVE_ORIGIN = "live"
 LARGE_MAGNITUDE_BASIS = "large_magnitude"
 TECHNIQUE_ENTITY = "ttp"
 PRODUCT_ENTITY = "affected_product"
+#: 事案どうしの「つながり」(共通の実体) に使う実体の種類。手法 (ttp) は共通の手口の印で別に扱う
+LINK_ENTITY_TYPES = ("victim_org", "affected_product", "malware_family", "campaign", "actor", "cve")
 
 _SQL = """
 SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, v.severity, v.severity_basis,
@@ -44,7 +46,8 @@ WHERE se.situation_id IN ({ph})
 """  # noqa: S608
 _ENTITY_SQL = (
     "SELECT article_id, entity_type, value FROM article_entities "  # noqa: S608
-    "WHERE entity_type IN ('ttp', 'affected_product') AND article_id IN ({ph})"
+    "WHERE entity_type IN ('ttp', 'affected_product', 'victim_org', 'malware_family',"
+    " 'campaign', 'actor', 'cve') AND article_id IN ({ph})"
 )
 _HEADLINE_SQL = """
 SELECT v.item_id, v.headline, v.generated_at FROM event_item_versions v
@@ -79,6 +82,8 @@ class JudgmentAttrs:
     large_magnitude: bool = False
     techniques: frozenset[str] = frozenset()
     products: frozenset[str] = frozenset()
+    #: 共通の実体の鍵 ("種類:値"、種類は ``LINK_ENTITY_TYPES``)
+    links: frozenset[str] = frozenset()
     event_headlines: tuple[EventHeadline, ...] = ()
     last_evidence_at: str = ""
 
@@ -150,6 +155,12 @@ def _attrs_of(
 ) -> JudgmentAttrs:
     techniques = {v for art in a.articles for v in entities.get(art, {}).get(TECHNIQUE_ENTITY, ())}
     products = {v for art in a.articles for v in entities.get(art, {}).get(PRODUCT_ENTITY, ())}
+    links = {
+        f"{t}:{v}"
+        for art in a.articles
+        for t in LINK_ENTITY_TYPES
+        for v in entities.get(art, {}).get(t, ())
+    }
     event_headlines = tuple(
         EventHeadline(root, len(arts), headlines[root][1], headlines[root][0])
         for root, arts in sorted(a.root_articles.items())
@@ -160,6 +171,7 @@ def _attrs_of(
         large_magnitude=a.large_magnitude,
         techniques=frozenset(techniques),
         products=frozenset(products),
+        links=frozenset(links),
         event_headlines=event_headlines,
         last_evidence_at=last_evidence,
     )

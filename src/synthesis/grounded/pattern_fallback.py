@@ -9,8 +9,6 @@ from src.synthesis.grounded.patterns import NotableCase, Pattern, PatternPlan
 
 #: 決定論の文に並べる事案の題の上限 (超えたら「ほか N 件」)
 TITLES_MAX = 5
-#: 見出しの決定論の文で名指しする、最も重いパターンの事案の数
-HEADLINE_CASES = 2
 QUIET_HEADLINE = "確度をもって報告できる横断の動きはない。"
 NO_MOVE_HEADLINE = "本期間に確度ある主要判定は得られなかった。"
 
@@ -43,19 +41,35 @@ def _sentence_of(claim: str) -> str:
     return first_full_sentence(claim) + "。"
 
 
+def _pattern_label(plan: PatternPlan, case: PatternCase) -> str:
+    for p in plan.patterns:
+        if case in p.cases:
+            return f"{p.region}の{p.kind_label}: "
+    return "注目の単独事案: "
+
+
+def _second_case(plan: PatternPlan, top: PatternCase) -> PatternCase | None:
+    """見出しの 2 件目 = 2 番目に重い S3 の注目の単独事案、無ければ次に重い事案。"""
+    if plan.headline_extra is not None:
+        return plan.headline_extra
+    others = [
+        c
+        for c in (*(x for p in plan.patterns for x in p.cases), *(n.case for n in plan.notable))
+        if c != top
+    ]
+    return max(others, key=lambda c: (c.weight, -c.rank), default=None)
+
+
 def fallback_headline(plan: PatternPlan, moved_questions: Sequence[str] = ()) -> str:
-    """見出しの決定論の文。パターンがあれば重い順に 2 つまで。無ければ静かな日の文。"""
-    notable = f"注目の単独事案: {_bare(plan.notable[0].case.title)}。" if plan.notable else ""
-    if plan.patterns:
-        top = plan.patterns[0]
-        named = "、".join(_bare(c.title) for c in top.cases[:HEADLINE_CASES])
-        text = f"{top.region}の{top.kind_label}が {pattern_marks(top)} 動いた。主な事案: {named}。"
-        if len(plan.patterns) > 1:
-            nxt = plan.patterns[1]
-            text += f"次いで{nxt.region}の{nxt.kind_label}が {nxt.count} 件。"
-        return text + notable
-    if notable:
-        return QUIET_HEADLINE + notable
+    """見出しの決定論の文。最も重い事案 + 高々もう 1 件、2 文以内、件数は書かない。
+
+    事案が無い日は静かな日の文。
+    """
+    if plan.headline_subjects:
+        top = plan.headline_subjects[0]
+        text = f"{_pattern_label(plan, top)}{_bare(top.title)}。"
+        second = _second_case(plan, top)
+        return text + (f"注目: {_bare(second.title)}。" if second else "")
     if moved_questions:
         return "動いた常設の問い: " + "、".join(moved_questions) + "。"
     head = plan.top_judgment

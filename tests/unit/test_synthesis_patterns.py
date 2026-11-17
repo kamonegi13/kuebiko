@@ -170,16 +170,37 @@ def test_large_magnitude_singleton_becomes_notable_without_s3() -> None:
     assert [n.case.judgment_ids for n in plan.notable] == [("s-3",)]
 
 
-def test_headline_subjects_are_top_case_of_heaviest_pattern_and_top_notable() -> None:
+def test_single_headline_subject_is_heaviest_case_overall() -> None:
     js = [j("s-1", "甲社で侵害。"), j("s-2", "乙社で侵害。"), j("s-3", "丙社の重大な単独事案。")]
     at = {
         "s-1": attrs(kinds=BREACH),
         "s-2": attrs(kinds=BREACH, s3=True),
-        "s-3": attrs(s3=True),
+        "s-3": attrs(s3=True, large=True),
     }
     plan = build_patterns(js, at)
-    assert [c.judgment_ids for c in plan.headline_subjects] == [("s-2",), ("s-3",)]
+    assert [c.judgment_ids for c in plan.headline_subjects] == [("s-3",)]  # 重さ 3 > 2
+    assert plan.headline_extra is None  # S3 の注目は主語自身だけ
     assert [c.case_id for c in plan.all_cases()] == ["C1", "C2", "C3"]
+    at["s-3"] = attrs(s3=True)
+    assert build_patterns(js, at).headline_subjects[0].judgment_ids == (
+        "s-2",
+    )  # 同点は salience 順
+
+
+def test_links_need_shared_entities_sorted_by_count_and_capped() -> None:
+    js = [j(f"s-{n}", f"事案{n}。") for n in range(5)]
+    links = {
+        "s-0": frozenset({"victim_org:甲社", "cve:CVE-2026-1"}),
+        "s-1": frozenset({"victim_org:甲社", "cve:CVE-2026-1"}),
+        "s-2": frozenset({"cve:CVE-2026-1"}),
+        "s-3": frozenset({"cve:CVE-2026-1"}),
+        "s-4": frozenset({"malware_family:X"}),
+    }
+    at = {k: attrs(kinds=BREACH, links=v) for k, v in links.items()}
+    plan = build_patterns(js, at)
+    assert plan.links[0].shared == ("CVE-2026-1", "甲社") and len(plan.links) == 3
+    assert all("X" not in link.shared for link in plan.links)
+    assert build_patterns(js, {k: attrs(kinds=BREACH) for k in links}).links == ()
 
 
 def test_standing_items_are_all_listed_with_title_and_last_moved_jst() -> None:

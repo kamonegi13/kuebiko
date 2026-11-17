@@ -31,9 +31,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.storage.repo_judgment_attrs import JudgmentAttrs  # noqa: E402
 from src.storage.run_history import RunHistoryRepository, StatusSynthesisRecord  # noqa: E402
 from src.synthesis.grounded.estimate import Estimate, estimate_from_dict  # noqa: E402
-from src.synthesis.grounded.pattern_render import generate_gated  # noqa: E402
+from src.synthesis.grounded.pattern_render import (
+    generate_gated,  # noqa: E402
+    make_plan,  # noqa: E402
+)
 from src.synthesis.grounded.pattern_sections import assemble_pattern_sections  # noqa: E402
-from src.synthesis.grounded.pattern_render import make_plan  # noqa: E402
 from src.synthesis.grounded.patterns import PatternPlan  # noqa: E402
 
 DEFAULT_MODEL = "kuebiko-sft:n20rd"
@@ -96,6 +98,11 @@ def count_row(rec: StatusSynthesisRecord, est: Estimate, plan: PatternPlan) -> d
         "headline_subjects": [
             {"case_id": c.case_id, "title": c.title} for c in plan.headline_subjects
         ],
+        "links": [
+            {"a": link.a.short_name, "b": link.b.short_name, "shared": list(link.shared)}
+            for link in plan.links
+        ],
+        "headline_extra": plan.headline_extra.title if plan.headline_extra else None,
         "common_marks": {p.pattern_id: [m.label for m in p.common_marks] for p in plan.patterns},
         "has_pattern": bool(plan.patterns),
     }
@@ -135,16 +142,12 @@ async def render_row(
         **count_row(rec, est, plan),
         "model": getattr(llm, "model", ""),
         "gate_stats": stats.__dict__ if stats else None,
-        "relations": {
-            "proposed": stats.relations_proposed if stats else 0,
-            "accepted": stats.relations_accepted if stats else 0,
-            "rejected": stats.relations_rejected if stats else 0,
-            "accepted_items": [
-                {"case_ids": list(r.case_ids), "shared": r.shared, "text": r.text}
-                for r in gated.relations
-            ],
-        },
+        "links": [
+            {"a": link.a.short_name, "b": link.b.short_name, "shared": list(link.shared)}
+            for link in plan.links
+        ],
         "sections": sections.model_dump(),
+        "headline_extra": plan.headline_extra.title if plan.headline_extra else None,
         "judge_input": judge_input(est),
         "stored": {"headline": rec.headline, "weight_section": rec.weight_section},
     }

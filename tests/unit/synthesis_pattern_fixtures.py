@@ -28,6 +28,7 @@ def attrs(
     large: bool = False,
     techniques: frozenset[str] = frozenset(),
     products: frozenset[str] = frozenset(),
+    links: frozenset[str] = frozenset(),
     headlines: tuple[EventHeadline, ...] = (),
     last: str = "",
 ) -> JudgmentAttrs:
@@ -39,6 +40,7 @@ def attrs(
         large_magnitude=large,
         techniques=techniques,
         products=products,
+        links=links,
         event_headlines=headlines,
         last_evidence_at=last,
     )
