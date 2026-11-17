@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+from src.assessment.assign_strong_anchor import StrongAnchorRun, strong_anchor_blocks
 from src.assessment.assignment import (
     ArticleKeys,
     SituationKeys,
@@ -356,6 +357,7 @@ def _assign_pool(
     already = store.assigned_article_ids()
     assigned = evidence = un_high = un_med = 0
     reopened_seen: set[str] = set()
+    anchor_run = StrongAnchorRun(store)
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -366,6 +368,10 @@ def _assign_pool(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(
+            matched, art, entity_keys=entities_by_id.get(aid, set()), run=anchor_run
+        ):
+            matched = None
         if matched is None:
             # 監査台帳は high のみ行を残す (recall 監査対象、medium はカウントのみ = ログ肥大防止)
             importance = str(a.get("importance", "") or "")

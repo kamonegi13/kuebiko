@@ -71,6 +71,22 @@ def is_sane_japanese_claim(text: str) -> bool:
 
 # ---------- 増分 ACH ----------
 
+#: 日本との接点が無い情勢の含意に日本への影響を書かせない注意 (LEDGER_JP_IMPLICATION=1 のときだけ)。
+#: 本体の指示は DB 合成テンプレート (rubric) 側が SSoT で .j2 を直しても届かないため、
+#: 両経路に届く決定論の事実ブロック (aggregate_signal) の末尾へ足す。旗が 0 / shadow の間は
+#: 呼ばれず、プロンプトは従来とバイト一致。
+NO_JAPAN_NOTICE = (
+    "【日本との接点】この情勢の証拠には日本との接点 "
+    "(日本の組織・日本国内の被害・日本の標的化) が無い。"
+    "implication に「日本を含む」「国内」「日本の組織」等、日本への影響を断定する文を書かない"
+    "(接点が無いなら一般的な防護上の示唆だけを述べる)。"
+)
+
+
+def with_no_japan_notice(aggregate_signal: str) -> str:
+    """``aggregate_signal`` の末尾に日本接点なしの注意を足す (空なら注意だけ)。"""
+    return f"{aggregate_signal}\n\n{NO_JAPAN_NOTICE}" if aggregate_signal else NO_JAPAN_NOTICE
+
 
 class _WireIncEvidence(BaseModel):
     model_config = {"extra": "ignore"}
@@ -140,6 +156,7 @@ async def incremental_ground_and_score(
     hypotheses_override: tuple[Hypothesis, ...] | None = None,
     question: str = "",
     aggregate_signal: str = "",
+    no_japan_link: bool = False,
 ) -> IncrementalAnalysis:
     """前回判定 + 新着ソースで判定を増分更新する (対称再評価・ACH 集計は加算)。
 
@@ -163,7 +180,9 @@ async def incremental_ground_and_score(
         attribution_options=_ATTRIBUTION_OPTIONS,
         hypotheses=hypotheses_override or hypotheses_for_domain(domain),
         question=question,
-        aggregate_signal=aggregate_signal,
+        aggregate_signal=with_no_japan_notice(aggregate_signal)
+        if no_japan_link
+        else aggregate_signal,
     )
     # max_attempts=1: 増分 ACH は 1 呼出が数百秒級で、切断 JSON の同条件リトライは
     # 時間だけ倍加する (2026-07-04 実測: 800s×2 で pipeline timeout)。失敗した Situation は

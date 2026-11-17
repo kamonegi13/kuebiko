@@ -19,6 +19,7 @@ import os
 import re
 from dataclasses import dataclass
 
+from src.eventnews.models import ROUNDUP_KIND
 from src.tools.discord_publisher import Importance
 
 #: 見出しの定期刊行・束ねを示す語。単独で「複数の独立した話題の束」と読める。
@@ -109,6 +110,27 @@ def is_roundup(
 ) -> bool:
     """見出しと LLM の article_type・category からまとめ記事かを判定する。"""
     return roundup_basis(title, llm_article_type=llm_article_type, category=category) is not None
+
+
+#: category がまとめ記事を表す値
+_ROUNDUP_CATEGORY_VALUE = "recap"
+
+
+def is_roundup_article(
+    title: str,
+    *,
+    kind: str | None = None,
+    category: str | None = None,
+) -> bool:
+    """まとめ記事かの**共通の判定 (SSoT)**: 見出しの語 / article_kinds の roundup / category=recap。
+
+    いずれか 1 つで True。LLM の article_type は信用しない (適合率が低い) ので渡さない。
+    """
+    if (kind or "").strip().lower() == ROUNDUP_KIND:
+        return True
+    if (category or "").strip().lower() == _ROUNDUP_CATEGORY_VALUE:
+        return True
+    return roundup_basis(title) == BASIS_TITLE
 
 
 # ---------- 重要度の上限 (まとめ記事は記事全体として high にしない) ----------

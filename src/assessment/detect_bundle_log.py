@@ -16,7 +16,7 @@ from typing import Literal
 
 from src.synthesis.grounded.incremental import DetectResult
 
-Variant = Literal["current", "decompose_shadow", "decompose"]
+Variant = Literal["current", "decompose_shadow", "decompose", "dup_rescue_shadow"]
 #: shadow_open = 分けた形 (shadow) が開設候補にしたもの (本番では開設していない)
 Outcome = Literal["opened", "merged", "skipped", "pending", "shadow_open"]
 #: 記録する claim 文・理由の上限 (台帳の log_detection と同程度)

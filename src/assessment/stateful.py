@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+from src.assessment.assign_strong_anchor import StrongAnchorRun, strong_anchor_blocks
 from src.assessment.assignment import (
     ArticleKeys,
     SituationKeys,
@@ -44,6 +45,7 @@ from src.assessment.claim_guard import (
 from src.assessment.detect_bundle_log import Outcome, make_claim_id, resolve_outcomes
 from src.assessment.detect_scope import relevant_titles_by_embedding
 from src.assessment.detect_step import DetectContext, decide_detect, shadow_records
+from src.assessment.dup_rescue import try_rescue
 from src.assessment.ledger import (
     _judgment_pir_ids,
     _pir_ids_for_articles,
@@ -52,8 +54,16 @@ from src.assessment.ledger import (
     _sweep_lifecycle,
     compute_delta_type,
 )
+from src.assessment.ledger_flags import seed_strict_mode
+from src.assessment.occurrence_floor import apply_occurrence_floor
 from src.assessment.question_store import hypotheses_for_standing
+from src.assessment.revision_grounding import (
+    build_gate_owners,
+    gate_analysis,
+    no_japan_link,
+)
 from src.assessment.situation_store import (
+    AssignedBy,
     DeltaType,
     RevisionRow,
     SituationRow,
@@ -462,6 +472,17 @@ async def _claim_dup_confirmed(claim: str, situation_title: str) -> bool:
 
 #: 関門で落ちた割当をログに出す上限 (1 run あたり。全件の数は集計ログに出す)
 _ASSIGN_GATE_LOG_MAX = 40
+
+
+def _load_seed_kinds(repo: RunHistoryRepository, pool_ids: Sequence[str]) -> dict[str, str] | None:
+    """LEDGER_SEED_STRICT 用の記事の種別。旗 off は引かず、失敗は None (従来) に倒す。"""
+    if seed_strict_mode() == "off":
+        return None
+    try:
+        return repo.get_article_kinds(pool_ids)
+    except Exception as e:  # noqa: BLE001 — 旗の材料の失敗で台帳の run を止めない
+        _log.warning("ledger_seed_strict_shadow_failed", error=type(e).__name__, stage="kinds")
+        return None
 
 
 async def _apply_assign_gate(
@@ -906,6 +927,7 @@ def refresh_ledger_assignments(
     already = store.assigned_article_ids()
     assigned = 0
     reopened_seen: set[str] = set()
+    anchor_run = StrongAnchorRun(store)
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -916,6 +938,10 @@ def refresh_ledger_assignments(
             entity_keys=frozenset(entities_by_id.get(aid, set())),
         )
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(
+            matched, art, entity_keys=entities_by_id.get(aid, set()), run=anchor_run
+        ):
+            matched = None
         if matched is None:
             continue
         sit, by = matched
@@ -1214,6 +1240,11 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     assigned_by_aid: dict[str, str] = {}
     unassigned: list[dict[str, object]] = []
     art_keys_by_id: dict[str, ArticleKeys] = {}
+    anchor_run = StrongAnchorRun(
+        store,
+        {sid: rev.claim for sid, rev in latest_revs.items()}
+        | {r.situation_id: "" for r in situations if r.situation_id not in latest_revs},
+    )
     for a in pool:
         aid = str(a.get("article_id", ""))
         if not aid or aid in already:
@@ -1225,6 +1256,14 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         )
         art_keys_by_id[aid] = art
         matched = match_situation(art, sit_keys)
+        if strong_anchor_blocks(
+            matched,
+            art,
+            entity_keys=entities_by_id.get(aid, set()),
+            run=anchor_run,
+            defer_shadow_log=True,
+        ):
+            matched = None
         if matched is None:
             unassigned.append(a)
         else:
@@ -1243,6 +1282,9 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         sit_keys={k.row.situation_id: k for k in sit_keys},
         store=store,
     )
+    anchor_run.flush_shadow(
+        new_by_sid
+    )  # 関門を通って残る割当だけを shadow log (確率は関門内で閉じる)
 
     # ---- 1a. standing (常設情報要求) の開設 + 専用収穫 (段A: 評価には回さない) ----
     if standing_enabled():
@@ -1539,6 +1581,12 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 hypotheses_override=hyp_override,
                 question=_standing_question(sid, row.title),
                 aggregate_signal=agg_signal,
+                no_japan_link=no_japan_link(
+                    claim=prev.claim,
+                    anchors=row.anchors,
+                    entity_keys={k for a in new_aids for k in entities_by_id.get(a, set())},
+                    evidence_text="\n".join(s["text"][:600] for s in sources),
+                ),
             )
         except Exception as e:  # noqa: BLE001 — 1 Situation の失敗で run を止めない
             _log.warning("stateful_incremental_failed", situation=sid, error=str(e))
@@ -1567,6 +1615,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
 
     opened_count = 0
     bundle_outcomes: dict[str, tuple[Outcome, str | None, str]] = {}
+    # LEDGER_SEED_STRICT: まとめ記事 (article_kinds) の判定に使う種別 (旗が off なら引かない)
+    seed_kinds = _load_seed_kinds(repo, pool_ids)
     for c in detected.open:
         cid = _safe_claim_id(now_iso, bundle_variant, c.article_ids, c.claim)
         # 重複ガード: 既存 Situation に照合したら開設せず割当扱い (NetNut 型重複の根治)
@@ -1592,11 +1642,26 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 rule=dup[1],
             )
             dup = None
-        if dup is not None:
-            sid = dup[0].row.situation_id
+        dup_target: tuple[str, str] | None = (
+            (dup[0].row.situation_id, dup[1]) if dup is not None else None
+        )
+        if dup_target is None:  # LEDGER_DUP_RESCUE: 同じ事案の既存情勢へ (旗 on のときだけ返る)
+            rescued = try_rescue(
+                store=store,
+                sit_keys=sit_keys,
+                entities_by_id=entities_by_id,
+                titles_by_id=title_by_id,
+                article_ids=c.article_ids,
+                claim=c.claim,
+                run_at=now_iso,
+            )
+            dup_target = (rescued.situation_id, "dup_rescue") if rescued else None
+        if dup_target is not None:
+            sid = dup_target[0]
+            dup_by: AssignedBy = "dup_rescue" if dup_target[1] == "dup_rescue" else "token"
             for aid in c.article_ids:
                 store.record_assignment(
-                    situation_id=sid, article_id=aid, added_at=now_iso, assigned_by="token"
+                    situation_id=sid, article_id=aid, added_at=now_iso, assigned_by=dup_by
                 )
             store.touch_situation(sid, last_evidence_at=now_iso, status="active")
             store.log_detection(
@@ -1606,7 +1671,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 reason=f"開設候補が既存に照合: {c.claim[:60]}",
                 situation_id=sid,
             )
-            bundle_outcomes[cid] = ("merged", sid, f"既存に照合 ({dup[1]})")
+            bundle_outcomes[cid] = ("merged", sid, f"既存に照合 ({dup_target[1]})")
             continue
         # フル接地 (裏取りクラスタ拡張 + 過去文脈 — 初回接地にのみ歴史窓を使う)
         expanded = expand_claim_sources(
@@ -1615,6 +1680,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
             pool=pool,
             entities_by_id=entities_by_id,
             max_sources=_MAX_NEW_SOURCES_PER_UPDATE,
+            kind_by_id=seed_kinds,
+            situation_ref=cid,
         )
         anchors_hist = anchor_entities(entities_by_id, tuple(expanded))
         hist_ids = (
@@ -1673,9 +1740,25 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
     # ---- 4. 確度較正 → KeyJudgment 化 → adversarial → 永続化 ----
     judgments: list[KeyJudgment] = []
     meta_by_id: dict[str, dict[str, Any]] = {}
+    gate_owners = build_gate_owners(situations)
+    gate_article_cache: dict[str, dict[str, Any] | None] = {}
     for p in pending:
         analysis = p["analysis"]
         sid = p["sid"]
+        # 含意・指標・欠けている証拠の関門 (LEDGER_IMPL_GROUNDING / LEDGER_JP_IMPLICATION)
+        analysis = gate_analysis(
+            analysis,
+            prev=p.get("prev") or latest_revs.get(sid or ""),
+            repo=repo,
+            store=store,
+            situation_id=sid,
+            row=row_by_sid.get(sid) if sid else None,
+            claim=str(p["claim"]),
+            read_aids=p["read_aids"],
+            entities_by_id=entities_by_id,
+            owners=gate_owners,
+            article_cache=gate_article_cache,
+        )
         prior_aids = store.evidence_ids_by_situation([sid]).get(sid, set()) if sid else set()
         basis_ids = list({*prior_aids, *p["new_aids"]})
         sb = compute_source_basis(repo, basis_ids, kev_set=kev_set)
@@ -1721,6 +1804,8 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
                 implication=analysis.implication,
             )
         )
+        # 発生の確度 (LEDGER_OCCURRENCE_FLOOR、旗 0 は同じ object)
+        judgments[-1] = apply_occurrence_floor(judgments[-1], repo=repo, store=store)
         meta_by_id[jid] = p
 
     if judgments:

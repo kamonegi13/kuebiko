@@ -7,7 +7,7 @@ Estimate は「証拠接地 → ACH → 敵対的検証」を経た期間の情�
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from typing import Any, Literal
@@ -153,6 +153,19 @@ class KeyJudgment:
     # 記事は件数で正直に併記する (「中立の証拠」に化けさせない)。0 = 未評価なし。
     unassessed_count: int = 0
 
+    @property
+    def occurrence_confidence(self) -> str:
+        """発生の確度 (``moderate`` / ``high`` / 空)。列は足さず ``confidence_basis`` の印から導く。
+
+        帰属の確度 (``confidence``) とは別物: 「事案が起きたこと」を被害組織の公表・政府の確認が
+        裏付けるとき、ACH の見立て (誰が・何の目的で) が未確認でも発生は確認済みになる。
+        """
+        return occurrence_from_basis(self.confidence_basis)
+
+    @property
+    def occurrence_confirmed(self) -> bool:
+        return bool(self.occurrence_confidence)
+
 
 @dataclass(frozen=True)
 class Estimate:
@@ -245,6 +258,56 @@ def final_confidence(
         reasons.append(f"帰属根拠不足により {conf}→{attr_cap} に抑制")
         conf = attr_cap
     return conf, "; ".join(reasons)
+
+
+# ---------- 発生の確度 (LEDGER_OCCURRENCE_FLOOR、設計 §5) ----------
+
+#: 発生の一次の根拠 (被害組織の公表・政府の確認)。polarity は問わない — 見立てが反転しても
+#: 「事案があった」ことの裏付けは変わらない。
+OCCURRENCE_BASES: frozenset[str] = frozenset({"victim_disclosed", "govt_confirmed"})
+#: 発生を「確認済」と見なす事案の型 (継続活動・構造は対象外)
+OCCURRENCE_CLAIM_TYPES: frozenset[str] = frozenset({"discrete_event"})
+#: この数以上の別記事が一次の根拠になっていれば high
+OCCURRENCE_HIGH_MIN_SOURCES = 2
+OCCURRENCE_MARK = "発生: 確認済"
+_OCCURRENCE_MULTI = "複数ソース"
+_BASIS_LABEL = {"victim_disclosed": "被害組織の公表", "govt_confirmed": "政府の確認"}
+
+
+def occurrence_floor(
+    claim_type: str,
+    evidence: tuple[EvidenceItem, ...],
+    *,
+    relevant: Collection[str] | None = None,
+) -> tuple[Confidence, str] | None:
+    """発生の確度の下限 (moderate、独立 2 記事以上で high) と ``confidence_basis`` に足す印。
+
+    discrete_event 以外・一次の根拠なしは None。帰属の確度 (final_confidence) には触れない。
+    ``relevant`` を渡すと、その article_id の公表・確認だけを数える (見出しの固有の名前が状況の
+    claim と共通する記事だけ。独立 2 記事の high 判定も同じ集合で数える)。
+    """
+    if claim_type not in OCCURRENCE_CLAIM_TYPES:
+        return None
+    hits = [
+        e
+        for e in evidence
+        if e.attribution_basis in OCCURRENCE_BASES
+        and (relevant is None or e.article_id in relevant)
+    ]
+    if not hits:
+        return None
+    labels = "・".join(dict.fromkeys(_BASIS_LABEL[e.attribution_basis] for e in hits))
+    sources = {e.article_id for e in hits}
+    if len(sources) >= OCCURRENCE_HIGH_MIN_SOURCES:
+        return "high", f"{OCCURRENCE_MARK} ({labels}・{_OCCURRENCE_MULTI})"
+    return "moderate", f"{OCCURRENCE_MARK} ({labels})"
+
+
+def occurrence_from_basis(confidence_basis: str) -> str:
+    """``confidence_basis`` の発生の印から発生の確度を復元する (無ければ空)。"""
+    if OCCURRENCE_MARK not in confidence_basis:
+        return ""
+    return "high" if _OCCURRENCE_MULTI in confidence_basis else "moderate"
 
 
 def _dataclass_kwargs(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:

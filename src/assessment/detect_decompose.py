@@ -634,10 +634,24 @@ async def run_decompose(
 
     def merge_for(cluster: Sequence[str]) -> MergeVerdict | None:
         verdict = pick_merge(cluster, scores, sids)
-        if gate is None or verdict is None or gate.conflict(cluster, verdict.situation_id) is None:
+        if (
+            gate is not None
+            and verdict is not None
+            and gate.conflict(cluster, verdict.situation_id)
+        ):
+            blocked_clusters.append(tuple(cluster))
+            verdict = pick_merge(cluster, scores, gate.allowed(cluster, sids))
+        if verdict is not None:
             return verdict
-        blocked_clusters.append(tuple(cluster))
-        return pick_merge(cluster, scores, gate.allowed(cluster, sids))
+        rescued = _rescue_verdict(inp, cluster)  # LEDGER_DUP_RESCUE (off / shadow は None)
+        if (
+            rescued is not None
+            and gate is not None
+            and gate.conflict(cluster, rescued.situation_id) is not None
+        ):
+            blocked_clusters.append(tuple(cluster))  # 合流の矛盾関門は救済の合流先にも当てる
+            return None
+        return rescued
 
     async def write(cluster: Sequence[str]) -> WrittenClaim | None:
         articles = [by_id[a] for a in cluster if a in by_id]
@@ -670,6 +684,27 @@ async def run_decompose(
     if blocked_clusters:
         _log.info("detect_merge_conflict_blocked", clusters=len(blocked_clusters))
     return replace(result, merge_blocked=len(blocked_clusters))
+
+
+def _candidate_titles(inp: DecomposeInputs) -> dict[str, str]:
+    return {str(a.get("article_id", "")): str(a.get("title", "")) for a in inp.candidates}
+
+
+def _rescue_verdict(inp: DecomposeInputs, cluster: Sequence[str]) -> MergeVerdict | None:
+    """``LEDGER_DUP_RESCUE=1``: 強い手がかりと事象の根が一致する既存の情勢へ合流させる。"""
+    from src.assessment.dup_rescue import try_rescue
+
+    rescued = try_rescue(
+        store=inp.store,
+        sit_keys=inp.situation_keys,
+        entities_by_id=inp.entities_by_id,
+        titles_by_id=_candidate_titles(inp),
+        article_ids=cluster,
+        claim="",
+    )
+    if rescued is None:
+        return None
+    return MergeVerdict(situation_id=rescued.situation_id, pass_fraction=1.0, probability=None)
 
 
 def merged_assignments(result: DecomposeResult) -> dict[str, list[str]]:
