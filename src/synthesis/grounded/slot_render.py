@@ -32,11 +32,22 @@ from src.synthesis.grounded.render import (
     _counter,
     _hyp_label,
     _pir_rollup,
+    _pir_titles,
     _WireSections,
     build_render_plan,
 )
+from src.synthesis.grounded.slot_render_extras import (
+    compact_pir_section,
+    grouped_chain_text,
+    is_near_duplicate,
+)
 from src.tools.llm_client import LLMClient
 from src.tools.llm_schema import require_all_properties
+from src.tools.n20_flags import (
+    slot_chain_grouping_on,
+    slot_pir_compact_on,
+    slot_render_dedup_on,
+)
 
 _log = get_logger(__name__)
 
@@ -188,7 +199,8 @@ def render_judgment(j: KeyJudgment, world: str, implication: str, *, with_delta:
     counter = _counter(j)
     if counter:
         parts.append(f"対立仮説として{counter}も残る。")
-    parts.append(_sentence(implication))
+    if not (slot_render_dedup_on() and is_near_duplicate(world, implication)):
+        parts.append(_sentence(implication))
     return "".join(p for p in parts if p)
 
 
@@ -234,7 +246,19 @@ def _spillover(watch: str, shown: list[KeyJudgment]) -> str:
     return "".join(p for p in parts if p) or "特記なし。"
 
 
+def _chain_section(plan: RenderPlan, shown: list[KeyJudgment]) -> str:
+    if plan.relation_lines:
+        return "\n".join(f"- {r}" for r in plan.relation_lines)
+    if slot_chain_grouping_on():
+        grouped = grouped_chain_text(shown, _pir_titles())
+        if grouped:
+            return grouped
+    return _no_relations_text()
+
+
 def _pir_section(est: Estimate) -> str:
+    if slot_pir_compact_on():
+        return compact_pir_section(est.judgments, _pir_titles(), empty=NO_PIR)
     lines = [
         f"- {p['pir_title']}: "
         + "、".join(f"{e['claim'] or e['id']} ({e['confidence_ja']})" for e in p["entries"])
@@ -272,7 +296,7 @@ def assemble_sections(
     sections = _WireSections(
         headline=headline,
         weight_section=f"{weight}\n{listed}" if listed else weight,
-        chain_section="\n".join(f"- {r}" for r in plan.relation_lines) or _no_relations_text(),
+        chain_section=_chain_section(plan, [*moved, *standing]),
         cog_section="\n".join(rendered[j.id] for j in standing) or NO_STANDING,
         spillover_section=_spillover(watch, [*moved, *standing]),
         pir_section=_pir_section(est),
@@ -294,7 +318,9 @@ def _headline(clause: str, head: KeyJudgment | None, counts: dict[str, int]) -> 
     if not text or has_banned(text):
         counts["banned_replaced"] += bool(text)
         text = head.claim
-    return _sentence(text) + certainty_sentence(head) + _sentence(head.implication)
+    dup = slot_render_dedup_on() and is_near_duplicate(text, head.implication)
+    imp = "" if dup else head.implication
+    return _sentence(text) + certainty_sentence(head) + _sentence(imp)
 
 
 async def generate_clauses(

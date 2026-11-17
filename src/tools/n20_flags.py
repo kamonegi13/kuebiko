@@ -34,6 +34,11 @@ DEEP_DIVE_POINT_GROUNDING_ENV = "DEEP_DIVE_POINT_GROUNDING"
 #: shadow の実測 (log ``spotlight_staged_shadow`` の elapsed_s) を見て決める。
 SPOTLIGHT_STAGED_TIMEOUT_ENV = "SPOTLIGHT_STAGED_TIMEOUT_SECONDS"
 
+#: 状況総括の slot render の読みやすさ補助 (3 本とも slot_render_extras)。コードの既定 0
+SLOT_RENDER_DEDUP_ENV = "SLOT_RENDER_DEDUP"
+SLOT_PIR_COMPACT_ENV = "SLOT_PIR_COMPACT"
+SLOT_CHAIN_GROUPING_ENV = "SLOT_CHAIN_GROUPING"
+
 _ON = frozenset({"1", "on", "true"})
 _SHADOW = frozenset({"shadow"})
 
@@ -53,6 +58,18 @@ def fact_anchor_mode() -> FlagMode:
 
 def slot_render_mode() -> FlagMode:
     return _mode(SLOT_RENDER_ENV)
+
+
+def slot_render_dedup_on() -> bool:
+    return _mode(SLOT_RENDER_DEDUP_ENV) == "on"
+
+
+def slot_pir_compact_on() -> bool:
+    return _mode(SLOT_PIR_COMPACT_ENV) == "on"
+
+
+def slot_chain_grouping_on() -> bool:
+    return _mode(SLOT_CHAIN_GROUPING_ENV) == "on"
 
 
 def spotlight_staged_mode() -> FlagMode:
