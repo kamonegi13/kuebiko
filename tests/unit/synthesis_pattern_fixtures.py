@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from src.storage.repo_judgment_attrs import JudgmentAttrs
+from src.storage.repo_judgment_attrs import EventHeadline, JudgmentAttrs
 from src.synthesis.grounded.estimate import KeyJudgment
 from tests.unit.n20_t5_fixtures import judgment
 
@@ -25,10 +25,20 @@ def attrs(
     kinds: frozenset[str] = frozenset(),
     s3: bool = False,
     roots: tuple[str, ...] = (),
+    large: bool = False,
+    techniques: frozenset[str] = frozenset(),
+    products: frozenset[str] = frozenset(),
+    headlines: tuple[EventHeadline, ...] = (),
+    last: str = "",
 ) -> JudgmentAttrs:
     return JudgmentAttrs(
         countries=countries,
         kinds=kinds,
         severities=frozenset({"S3"}) if s3 else frozenset(),
         event_roots=frozenset(roots),
+        large_magnitude=large,
+        techniques=techniques,
+        products=products,
+        event_headlines=headlines,
+        last_evidence_at=last,
     )

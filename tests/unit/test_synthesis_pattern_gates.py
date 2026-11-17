@@ -230,3 +230,45 @@ def test_quoted_possibility_and_confidence_labels_are_allowed() -> None:
     text = "アルファ証券は漏えいの可能性があると公表し、評価は低確度にとどまる。"
     texts, _, stats = _gate(plan, items=[("P1", text)])
     assert stats.banned == 0
+
+
+def test_headline_must_name_designated_subjects() -> None:
+    plan = _notable_plan()
+    top = plan.headline_subjects
+    assert [c.judgment_ids for c in top] == [("s-1",), ("s-3",)]
+    ok = "アルファ証券の漏えいと、ゼータ取引所の不正流出が目立つ。"
+    _, head, stats = _gate(plan, headline=ok)
+    assert head == ok and not stats.subject_replaced
+    missing_notable = "アルファ証券とガンマ商事の漏えいが続く。"
+    _, head, stats = _gate(plan, headline=missing_notable)
+    assert head == fallback_headline(plan) and stats.subject_replaced
+    assert "ゼータ取引所" in head and "アルファ証券" in head
+
+
+def _method_plan() -> PatternPlan:
+    js = [j("s-1", "甲社で侵害が確認された。"), j("s-2", "乙社で侵害が確認された。")]
+    at = {
+        "s-1": attrs(kinds=BREACH, techniques=frozenset({"T1566"})),
+        "s-2": attrs(kinds=BREACH, techniques=frozenset({"T1566"})),
+    }
+    return build_patterns(js, at, {"T1566": "Phishing"})
+
+
+def test_common_method_claim_needs_matching_mark_words() -> None:
+    plan = _method_plan()
+    bad = "甲社と乙社はいずれも同じ手口で侵害された。"
+    texts, _, stats = _gate(plan, items=[("P1", bad)])
+    assert texts["P1"] == fallback_pattern_text(plan.patterns[0]) and stats.method_replaced == 1
+    ok = "甲社と乙社は共通して T1566 の手口で侵害された。"
+    texts, _, stats = _gate(plan, items=[("P1", ok)])
+    assert texts["P1"] == ok and stats.method_replaced == 0
+    plain = "甲社と乙社で侵害が確認された。"  # 共通の手口は主張していない
+    texts, _, _ = _gate(plan, items=[("P1", plain)])
+    assert texts["P1"] == plain
+
+
+def test_common_method_claim_without_any_mark_is_rejected() -> None:
+    js = [j("s-1", "甲社で侵害。"), j("s-2", "乙社で侵害。")]
+    plan = build_patterns(js, {k: attrs(kinds=BREACH) for k in ("s-1", "s-2")})
+    texts, _, stats = _gate(plan, items=[("P1", "甲社と乙社は共通の手口だった。")])
+    assert stats.method_replaced == 1 and texts["P1"] == fallback_pattern_text(plan.patterns[0])

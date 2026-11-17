@@ -33,7 +33,8 @@ from src.storage.run_history import RunHistoryRepository, StatusSynthesisRecord 
 from src.synthesis.grounded.estimate import Estimate, estimate_from_dict  # noqa: E402
 from src.synthesis.grounded.pattern_render import generate_gated  # noqa: E402
 from src.synthesis.grounded.pattern_sections import assemble_pattern_sections  # noqa: E402
-from src.synthesis.grounded.patterns import PatternPlan, build_patterns  # noqa: E402
+from src.synthesis.grounded.pattern_render import make_plan  # noqa: E402
+from src.synthesis.grounded.patterns import PatternPlan  # noqa: E402
 
 DEFAULT_MODEL = "kuebiko-sft:n20rd"
 DEFAULT_LAST = 30
@@ -88,6 +89,14 @@ def count_row(rec: StatusSynthesisRecord, est: Estimate, plan: PatternPlan) -> d
         "pattern_sizes": [p.count for p in plan.patterns],
         "rest": len(plan.rest),
         "notable": len(plan.notable),
+        "titles": [
+            {"case_id": c.case_id, "title": c.title, "from_event": c.title_from_event}
+            for c in plan.all_cases()
+        ],
+        "headline_subjects": [
+            {"case_id": c.case_id, "title": c.title} for c in plan.headline_subjects
+        ],
+        "common_marks": {p.pattern_id: [m.label for m in p.common_marks] for p in plan.patterns},
         "has_pattern": bool(plan.patterns),
     }
 
@@ -126,6 +135,15 @@ async def render_row(
         **count_row(rec, est, plan),
         "model": getattr(llm, "model", ""),
         "gate_stats": stats.__dict__ if stats else None,
+        "relations": {
+            "proposed": stats.relations_proposed if stats else 0,
+            "accepted": stats.relations_accepted if stats else 0,
+            "rejected": stats.relations_rejected if stats else 0,
+            "accepted_items": [
+                {"case_ids": list(r.case_ids), "shared": r.shared, "text": r.text}
+                for r in gated.relations
+            ],
+        },
         "sections": sections.model_dump(),
         "judge_input": judge_input(est),
         "stored": {"headline": rec.headline, "weight_section": rec.weight_section},
@@ -148,7 +166,7 @@ async def run(args: argparse.Namespace) -> int:
         if est is None:
             print(f"skip id={rec.id}: no grounded_estimate", file=sys.stderr)
             continue
-        plan = build_patterns(est.judgments, load_attrs(repo, est))
+        plan = make_plan(est, load_attrs(repo, est))
         row = count_row(rec, est, plan) if llm is None else await render_row(rec, est, plan, llm)
         rows.append(row)
         print(json.dumps({k: row[k] for k in count_row(rec, est, plan)}, ensure_ascii=False))

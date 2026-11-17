@@ -14,12 +14,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from src.assessment.claim_grounding import GroundingSources, check_grounding
+from src.synthesis.grounded.pattern_case import PatternCase
 from src.synthesis.grounded.pattern_fallback import (
     fallback_headline,
     fallback_notable_text,
     fallback_pattern_text,
 )
-from src.synthesis.grounded.patterns import Pattern, PatternCase, PatternPlan
+from src.synthesis.grounded.patterns import Pattern, PatternPlan
 
 MAX_SENTENCES = 3
 MAX_CHARS = 300
@@ -55,6 +56,11 @@ class GateStats:
     length_trimmed: int = 0
     length_replaced: int = 0
     wording_replaced: int = 0
+    method_replaced: int = 0
+    subject_replaced: bool = False
+    relations_proposed: int = 0
+    relations_accepted: int = 0
+    relations_rejected: int = 0
     grounding_replaced: int = 0
     headline_replaced: bool = False
     watch_dropped: bool = False
@@ -68,10 +74,20 @@ class GateStats:
 
 
 @dataclass(frozen=True)
+class AcceptedRelation:
+    """関門を通した「事案どうしのつながり」。``shared`` は両事案の claim か根拠の抜粋にある語。"""
+
+    case_ids: tuple[str, str]
+    shared: str
+    text: str
+
+
+@dataclass(frozen=True)
 class GatedTexts:
     headline: str
     pattern_texts: dict[str, str] = field(default_factory=dict)
     watch: str = ""
+    relations: tuple[AcceptedRelation, ...] = ()
 
 
 #: パターンの文で禁じる語 = 断定の言い過ぎだけ (2026-11-17)。slot render の ``BANNED_IN_CLAUSE`` は
@@ -97,15 +113,6 @@ def split_sentences(text: str) -> list[str]:
     return [s for s in _SENTENCE_END.split(text.strip()) if s.strip()]
 
 
-def _case_names(case: PatternCase) -> tuple[str, ...]:
-    """文が事案を名指ししているかの照合語: 題の主語 + 題の固有名詞候補。"""
-    from src.assessment.claim_grounding import extract_terms
-
-    m = _SUBJECT.match(case.title)
-    subject = (m.group(1),) if m else ()
-    return (*subject, *extract_terms(case.title))
-
-
 def wording_violation(
     text: str, cases: Sequence[PatternCase], extra_claims: Sequence[str] = ()
 ) -> bool:
@@ -116,7 +123,7 @@ def wording_violation(
     """
     for sentence in split_sentences(text):
         for word in (w for w in ROUTE_WORDS if w in sentence):
-            named = [c for c in cases if any(n and n in sentence for n in _case_names(c))]
+            named = [c for c in cases if any(n in sentence for n in c.names)]
             if named:
                 if not all(_case_says(c, word) for c in named):
                     return True
@@ -133,6 +140,30 @@ def wording_violation(
 
 def _case_says(case: PatternCase, word: str) -> bool:
     return any(word in claim for claim in case.claims)
+
+
+#: 「共通の手口」を主張する文: 手口の語と、共通・全称の語が同じ文にある
+METHOD_CUES: tuple[str, ...] = ("手口", "手法", "経路", "悪用", "侵入")
+COMMON_CUES: tuple[str, ...] = ("共通", "いずれも", "同じ", "同一", "すべて", "全て")
+
+
+def method_violation(text: str, pattern: Pattern | None) -> bool:
+    """共通の手口を主張する文が、そのパターンの「共通の手口」の印の語を含まなければ True。"""
+    if pattern is None:
+        return False
+    lowered = text.casefold()
+    for sentence in split_sentences(lowered):
+        claims_common = any(m in sentence for m in METHOD_CUES) and any(
+            c in sentence for c in COMMON_CUES
+        )
+        if claims_common and not any(w.casefold() in sentence for w in pattern.method_words):
+            return True
+    return False
+
+
+def subjects_missing(text: str, subjects: Sequence[PatternCase]) -> bool:
+    """見出しが、指名した事案のどれかの名前 (``PatternCase.names``) を欠けば True。"""
+    return any(c.names and not any(n in text for n in c.names) for c in subjects)
 
 
 def _numbers(text: str) -> set[str]:
@@ -164,16 +195,17 @@ def _trim(text: str, max_sentences: int) -> tuple[str, bool]:
     return "".join(sentences[:KEEP_SENTENCES]), True
 
 
-_COUNT_KEYS = (
+COUNT_KEYS = (
     "banned",
     "length_trimmed",
     "length_replaced",
     "wording_replaced",
+    "method_replaced",
     "grounding_replaced",
 )
 
 
-def _gate_field(
+def gate_field(
     raw: str,
     *,
     cases: Sequence[PatternCase],
@@ -182,6 +214,7 @@ def _gate_field(
     counts: dict[str, int],
     extra_numbers: Sequence[int] = (),
     extra_claims: Sequence[str] = (),
+    method_pattern: Pattern | None = None,
 ) -> str | None:
     """1 欄を関門に通す。通ればその文、落とすなら None (呼び手が決定論の文に置き換える)。"""
     text = raw.strip()
@@ -198,7 +231,12 @@ def _gate_field(
     if wording_violation(text, cases, extra_claims):
         counts["wording_replaced"] += 1
         return None
-    claims = [c for case in cases for c in case.claims] + list(extra_claims)
+    if method_violation(text, method_pattern):
+        counts["method_replaced"] += 1
+        return None
+    claims = [x for case in cases for x in (*case.claims, case.title)] + list(extra_claims)
+    if method_pattern is not None:
+        claims += list(method_pattern.method_words)  # 印に載せた手口の語は裏付け済み
     if grounding_violation(text, claims, _mark_numbers(patterns, extra_numbers)):
         counts["grounding_replaced"] += 1
         return None
@@ -228,12 +266,13 @@ def _gate_pattern_texts(
     for pid, (cases, patterns, fallback) in items.items():
         gated = None
         if pid in got:
-            gated = _gate_field(
+            gated = gate_field(
                 got[pid],
                 cases=cases,
                 patterns=patterns,
                 max_sentences=MAX_SENTENCES,
                 counts=counts,
+                method_pattern=patterns[0] if patterns else None,
             )
         else:
             missing += 1
@@ -251,7 +290,7 @@ def gate_patterns(
     moved_questions: Sequence[str] = (),
 ) -> tuple[GatedTexts, GateStats]:
     """LLM の出力 (見出し・(pattern_id, text)・注視点) を関門に通して決定論の文で埋める。"""
-    counts = dict.fromkeys(_COUNT_KEYS, 0)
+    counts = dict.fromkeys(COUNT_KEYS, 0)
     texts, unknown, missing, replaced = _gate_pattern_texts(pattern_items, plan, counts)
     universe = [c for p in plan.patterns for c in p.cases]
     universe += [n.case for n in plan.notable] + list(plan.rest)
@@ -261,15 +300,19 @@ def gate_patterns(
         "counts": counts,
         "extra_numbers": [len(plan.patterns), len(plan.rest), plan.moved_count],
     }
-    head = _gate_field(headline, max_sentences=HEADLINE_MAX_SENTENCES, **shared)  # type: ignore[arg-type]
+    head = gate_field(headline, max_sentences=HEADLINE_MAX_SENTENCES, **shared)  # type: ignore[arg-type]
     has_watch = bool(watch.strip())
     # 注視点はプロンプトで継続中の評価も渡しているので、その claim も照合範囲に入れる
-    standing = [j.claim for j in plan.standing]
-    w = _gate_field(watch, max_sentences=MAX_SENTENCES, extra_claims=standing, **shared)  # type: ignore[arg-type]
+    standing = [j.claim for j in plan.standing] + [i.title for i in plan.standing_items]
+    w = gate_field(watch, max_sentences=MAX_SENTENCES, extra_claims=standing, **shared)  # type: ignore[arg-type]
+    subject_missing = head is not None and subjects_missing(head, plan.headline_subjects)
+    if subject_missing:
+        head = None
     stats = GateStats(
         unknown_ids=unknown,
         missing=missing,
         headline_replaced=head is None,
+        subject_replaced=subject_missing,
         watch_dropped=w is None and has_watch,
         fields_total=len(plan.patterns) + len(plan.notable) + 1 + has_watch,
         fields_replaced=replaced + (head is None) + (w is None and has_watch),

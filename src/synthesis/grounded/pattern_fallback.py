@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.synthesis.grounded.patterns import NotableCase, Pattern, PatternCase, PatternPlan
-from src.synthesis.grounded.slot_render_extras import FIRST_SENTENCE_MAX_CHARS, first_sentence
+from src.synthesis.grounded.pattern_case import PatternCase, first_full_sentence
+from src.synthesis.grounded.patterns import NotableCase, Pattern, PatternPlan
 
 #: 決定論の文に並べる事案の題の上限 (超えたら「ほか N 件」)
 TITLES_MAX = 5
@@ -40,7 +40,7 @@ def fallback_notable_text(n: NotableCase) -> str:
 
 
 def _sentence_of(claim: str) -> str:
-    return first_sentence(claim, FIRST_SENTENCE_MAX_CHARS).rstrip("。") + "。"
+    return first_full_sentence(claim) + "。"
 
 
 def fallback_headline(plan: PatternPlan, moved_questions: Sequence[str] = ()) -> str:
@@ -61,4 +61,4 @@ def fallback_headline(plan: PatternPlan, moved_questions: Sequence[str] = ()) ->
     head = plan.top_judgment
     if head is None:
         return NO_MOVE_HEADLINE
-    return f"{QUIET_HEADLINE}最も重い動き: {_bare(first_sentence(head.claim))}。"
+    return f"{QUIET_HEADLINE}最も重い動き: {first_full_sentence(head.claim)}。"

@@ -121,3 +121,64 @@ def test_evidence_added_at_until_itself_is_included(repo: RunHistoryRepository) 
         _evidence(conn, "s1", "at-end", added="2026-11-17T10:30:02.538567+00:00")
     got = repo.get_judgment_attrs(["s1"], since=SINCE, until=until)
     assert got["s1"].countries == frozenset({"JP"})
+
+
+def _version(conn: Any, item: str, version: int, headline: str, at: str) -> None:
+    conn.execute(
+        "INSERT INTO event_item_versions (item_id, version, generated_at, model, prompt_version,"
+        " headline, body_json, new_facts_json) VALUES (?, ?, ?, 'm', 'p', ?, '{}', '[]')",
+        (item, version, at, headline),
+    )
+
+
+def test_loads_event_headline_entities_magnitude_and_last_evidence(
+    repo: RunHistoryRepository,
+) -> None:
+    with repo._connect() as conn:
+        for aid in ("a1", "a2"):
+            _article(conn, aid, "JP", "breach")
+            _evidence(conn, "s1", aid)
+            _event(conn, "ev-1", aid)
+        conn.execute(
+            "INSERT INTO article_importance_v2 (article_id, severity, severity_basis, jp, nations,"
+            " sir_ids, relevant, rule_version, created_at)"
+            " VALUES ('a1', 'S3', 'large_magnitude', 'j', 'n', 's', 1, 'v', ?)",
+            (NEW,),
+        )
+        for aid, etype, value in (
+            ("a1", "ttp", "T1566"),
+            ("a2", "affected_product", "VPN-X"),
+            ("a2", "cve", "CVE-2026-0001"),
+        ):
+            conn.execute(
+                "INSERT INTO article_entities (article_id, entity_type, value, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (aid, etype, value, NEW),
+            )
+        _version(conn, "ev-1", 1, "旧い見出し", OLD)
+        _version(conn, "ev-1", 2, "最新の見出し", NEW)
+        conn.execute(
+            "INSERT INTO situations (situation_id, title, domain, status, anchors, pir_ids,"
+            " opened_at, last_evidence_at) VALUES ('s1', 't', 'd', 'open', '[]', '[]', ?, ?)",
+            (NEW, NEW),
+        )
+    got = repo.get_judgment_attrs(["s1"], since=SINCE, until=UNTIL)["s1"]
+    assert got.large_magnitude
+    assert (got.techniques, got.products) == (frozenset({"T1566"}), frozenset({"VPN-X"}))
+    assert [(h.root, h.articles, h.headline) for h in got.event_headlines] == [
+        ("ev-1", 2, "最新の見出し")
+    ]
+    assert got.last_evidence_at == NEW
+
+
+def test_situation_without_period_evidence_still_returns_last_evidence(
+    repo: RunHistoryRepository,
+) -> None:
+    with repo._connect() as conn:
+        conn.execute(
+            "INSERT INTO situations (situation_id, title, domain, status, anchors, pir_ids,"
+            " opened_at, last_evidence_at) VALUES ('s2', 't', 'd', 'open', '[]', '[]', ?, ?)",
+            (OLD, OLD),
+        )
+    got = repo.get_judgment_attrs(["s2"], since=SINCE, until=UNTIL)
+    assert got["s2"].last_evidence_at == OLD and got["s2"].event_headlines == ()

@@ -7,6 +7,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -82,3 +83,29 @@ def test_judge_input_lists_claims_and_up_to_three_excerpts(script: ModuleType) -
     text = script.judge_input(est)
     assert f"[{first.id}] {first.claim}" in text
     assert "  - 根拠の抜粋: 抜粋2" in text and "抜粋3" not in text
+
+
+def test_count_row_reports_titles_subjects_and_marks(script: ModuleType) -> None:
+    from src.storage.repo_judgment_attrs import EventHeadline
+    from src.synthesis.grounded.pattern_render import make_plan
+    from tests.unit.synthesis_pattern_fixtures import BREACH, attrs, j
+
+    est = estimate()
+    js = (j("s-1", "甲社で侵害。"), j("s-2", "乙社で侵害。"))
+    est = replace_judgments(est, js)
+    head = (EventHeadline("ev-1", 1, "2026-11-17T00:00:00", "甲社の不正アクセス"),)
+    at = {"s-1": attrs(kinds=BREACH, headlines=head), "s-2": attrs(kinds=BREACH)}
+    plan = make_plan(est, at)
+    row = script.count_row(_record(""), est, plan)
+    assert {t["title"]: t["from_event"] for t in row["titles"]} == {
+        "甲社の不正アクセス": True,
+        "乙社で侵害": False,
+    }
+    assert row["headline_subjects"][0]["title"] in {"甲社の不正アクセス", "乙社で侵害"}
+    assert row["common_marks"] == {"P1": []}
+
+
+def replace_judgments(est: Any, js: Any) -> Any:
+    from dataclasses import replace
+
+    return replace(est, judgments=js)

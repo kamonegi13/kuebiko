@@ -1,24 +1,35 @@
 """状況総括の「横断のパターン」まとめ (決定論・純粋関数)。
 
-設計: docs/synthesis_pattern_redesign.md §3.2 / §3.3。
+設計: docs/synthesis_pattern_redesign.md §3.2 / §3.3。事案の部品は ``pattern_case``。
 
 1. 根拠記事の事象の根を共有する判定は同じ事案 (``PatternCase``) に畳む。
 2. 事案を 地域 (日本 / 海外) × 種別 (侵害・漏えい / 悪用・攻撃活動) でまとめ、2 件以上でパターン。
-3. パターンに印 (件数・S3・新規/拡大などの内訳・確度の内訳) を付ける。
-4. 属性が無い・1 件しかないキーの事案は「そのほかの動き」。ただし S3 の単独事案は
-   「注目の単独事案」(最大 ``NOTABLE_MAX`` 件) として前に出す。
-重さは ``2 × S3 件数 + 件数`` で日本を先に。**記事の件数・言及量は使わない** (CLAUDE.md §7)。
+3. パターンに印 (件数・S3・内訳・本文で裏付けられた「共通の手口」) を付ける。事案はパターン内で
+   重い順 (``PatternCase.weight``、同点は salience 順)。
+4. 属性が無い・1 件しかないキーの事案は「そのほかの動き」。ただし重い単独事案
+   (``NOTABLE_MIN_WEIGHT`` 以上 = S3 か大規模) は「注目の単独事案」(最大 ``NOTABLE_MAX`` 件) へ。
+5. 見出しの主語 (最も重いパターンの筆頭事案 + 最も重い注目の単独事案) をコードが指名する。
+6. 継続中 (動いていない) の判定は全件を 1 行 (題・確度・最後に動いた日) の材料にする。
+パターンの重さ = 件数 + 事案の重さの合計。日本を先に。**記事の件数・言及量は使わない** (§7)。
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from src.assessment.salience import rank_judgments
 from src.storage.repo_judgment_attrs import JudgmentAttrs
 from src.synthesis.grounded.estimate import KeyJudgment
+from src.synthesis.grounded.pattern_case import (
+    PatternCase,
+    best_event_headline,
+    first_full_sentence,
+    make_case,
+)
 
 KIND_BREACH = "breach"
 KIND_EXPLOITATION = "exploitation"
@@ -29,49 +40,28 @@ KIND_LABEL: Mapping[str, str] = {
 }
 REGION_JAPAN = "日本"
 REGION_OVERSEAS = "海外"
-JAPAN_ISO = "JP"
-SEVERITY_S3 = "S3"
 #: パターンになる最小の事案数
 MIN_PATTERN_CASES = 2
-#: 重さ = S3_WEIGHT × S3 件数 + 件数
-S3_WEIGHT = 2
-#: 事案の短い題の最大字数
-TITLE_MAX_CHARS = 60
-#: 題は第 1 文のうち、この字数以降の最初の「、」まで (短い節で切れて意味が消えるのを避ける)
-TITLE_MIN_CHARS = 25
-TITLE_ELLIPSIS = "…"
-#: 注目の単独事案の上限
+#: 注目の単独事案の上限と、なれる最小の重さ (S3 = 2、大規模 + 万の位の件数 = 2)
 NOTABLE_MAX = 2
-#: 継続中の評価に載せる件数 (上位)
+NOTABLE_MIN_WEIGHT = 2
+#: 「共通の手口」の印: 2 事案以上で共有される手法・製品だけ。パターンあたりの上限
+COMMON_MARK_MIN_CASES = 2
+COMMON_MARKS_MAX = 3
+#: 継続中の評価のうち、注視点のためにプロンプトへ渡す上位の件数
 STANDING_MAX = 4
 NO_CHANGE_TYPES = frozenset({"", "no_change"})
-
-
-def short_title(claim: str) -> str:
-    """claim の第 1 文を、``TITLE_MIN_CHARS`` 字以降の最初の「、」までにし、上限で「…」。"""
-    cut = claim.find("。")
-    sentence = (claim if cut < 0 else claim[:cut]).strip()
-    comma = sentence.find("、", TITLE_MIN_CHARS)
-    if comma >= 0:
-        sentence = sentence[:comma]
-    if len(sentence) > TITLE_MAX_CHARS:
-        return sentence[: TITLE_MAX_CHARS - len(TITLE_ELLIPSIS)] + TITLE_ELLIPSIS
-    return sentence
+_JST = ZoneInfo("Asia/Tokyo")
 
 
 @dataclass(frozen=True)
-class PatternCase:
-    """同じ事象に属する判定を畳んだ 1 事案。"""
+class CommonMark:
+    """パターン内で 2 事案以上が共有する手口の手がかり。"""
 
-    judgment_ids: tuple[str, ...]
-    title: str
-    claims: tuple[str, ...]
-    delta_type: str
-    confidence: str
-    is_s3: bool
-    is_japan: bool
-    #: salience 順での位置 (小さいほど重い)
-    rank: int = 0
+    kind: str  # "technique" | "product"
+    key: str
+    label: str
+    cases: int
 
 
 @dataclass(frozen=True)
@@ -80,6 +70,7 @@ class Pattern:
     region: str
     kind: str
     cases: tuple[PatternCase, ...]
+    common_marks: tuple[CommonMark, ...] = ()
 
     @property
     def kind_label(self) -> str:
@@ -90,12 +81,18 @@ class Pattern:
         return len(self.cases)
 
     @property
+    def method_words(self) -> tuple[str, ...]:
+        """「共通の手口」の関門が照合する語 (手法の ID・名前・製品名)。"""
+        words = [w for m in self.common_marks for w in (m.key, m.label)]
+        return tuple(dict.fromkeys(w for w in words if w))
+
+    @property
     def s3_count(self) -> int:
         return sum(c.is_s3 for c in self.cases)
 
     @property
     def weight(self) -> int:
-        return S3_WEIGHT * self.s3_count + self.count
+        return self.count + sum(c.weight for c in self.cases)
 
     @property
     def delta_counts(self) -> tuple[tuple[str, int], ...]:
@@ -115,14 +112,36 @@ class NotableCase:
 
 
 @dataclass(frozen=True)
+class StandingItem:
+    judgment_id: str
+    title: str
+    confidence: str
+    #: 最後に根拠が足された日 (JST、YYYY-MM-DD)。台帳に無ければ空
+    last_moved: str = ""
+
+
+@dataclass(frozen=True)
 class PatternPlan:
     patterns: tuple[Pattern, ...]
     rest: tuple[PatternCase, ...]
     notable: tuple[NotableCase, ...]
+    #: 注視点のためにプロンプトへ渡す継続中の評価の上位 (``STANDING_MAX`` 件)
     standing: tuple[KeyJudgment, ...]
     moved_count: int
-    #: パターンが無い日の最後の手段に使う、最も重い動いた判定 (規模の項を足さない salience 順)
+    #: パターンが無い日の最後の手段に使う、最も重い動いた判定 (salience 順)
     top_judgment: KeyJudgment | None = None
+    #: 継続中 (動いていない) の判定の全件。1 行 = 題・確度・最後に動いた日
+    standing_items: tuple[StandingItem, ...] = ()
+    #: 見出しで必ず触れる事案 (最も重いパターンの筆頭 + 最も重い注目の単独事案)
+    headline_subjects: tuple[PatternCase, ...] = ()
+
+    def all_cases(self) -> tuple[PatternCase, ...]:
+        """C 番号の順 (パターン → 注目 → そのほか) の全事案。"""
+        return (
+            *(c for p in self.patterns for c in p.cases),
+            *(n.case for n in self.notable),
+            *self.rest,
+        )
 
 
 def _root_groups(
@@ -150,18 +169,6 @@ def _root_groups(
     return list(groups.values())
 
 
-def _merged_attrs(
-    members: Sequence[KeyJudgment], attrs: Mapping[str, JudgmentAttrs]
-) -> JudgmentAttrs:
-    parts = [attrs.get(j.id, JudgmentAttrs()) for j in members]
-    return JudgmentAttrs(
-        countries=frozenset().union(*(p.countries for p in parts)),
-        kinds=frozenset().union(*(p.kinds for p in parts)),
-        severities=frozenset().union(*(p.severities for p in parts)),
-        event_roots=frozenset().union(*(p.event_roots for p in parts)),
-    )
-
-
 def pattern_kind(kinds: frozenset[str]) -> str | None:
     """事案の種別キー。侵害を優先し、無ければ悪用。どちらも無ければ None (パターンの軸にしない)。"""
     if KIND_BREACH in kinds:
@@ -169,37 +176,89 @@ def pattern_kind(kinds: frozenset[str]) -> str | None:
     return KIND_EXPLOITATION if KIND_EXPLOITATION in kinds else None
 
 
-def _make_case(
-    members: Sequence[KeyJudgment], attrs: Mapping[str, JudgmentAttrs], rank: int
-) -> tuple[PatternCase, str | None]:
-    rep = members[0]  # ranked 順の先頭 = 最も重い判定
-    merged = _merged_attrs(members, attrs)
-    is_japan = JAPAN_ISO in merged.countries or any(j.japan_related for j in members)
-    case = PatternCase(
-        judgment_ids=tuple(j.id for j in members),
-        title=short_title(rep.claim),
-        claims=tuple(j.claim for j in members),
-        delta_type=rep.delta_type,
-        confidence=rep.confidence,
-        is_s3=SEVERITY_S3 in merged.severities,
-        is_japan=is_japan,
-        rank=rank,
+def _heaviest_first(cases: Sequence[PatternCase]) -> list[PatternCase]:
+    return sorted(cases, key=lambda c: (-c.weight, c.rank))
+
+
+def _common_marks(
+    cases: Sequence[PatternCase], technique_names: Mapping[str, str]
+) -> tuple[CommonMark, ...]:
+    """2 事案以上が共有する手法 (本文の裏付けを通した ATT&CK) と製品。共有が多い順に上限まで。"""
+    marks: list[CommonMark] = []
+    for kind, values in (
+        ("technique", [t for c in cases for t in c.techniques]),
+        ("product", [x for c in cases for x in c.products]),
+    ):
+        for key, n in Counter(values).items():
+            if n < COMMON_MARK_MIN_CASES:
+                continue
+            name = technique_names.get(key, "") if kind == "technique" else ""
+            marks.append(CommonMark(kind, key, f"{key} {name}".strip(), n))
+    marks.sort(key=lambda m: (-m.cases, m.kind, m.key))
+    return tuple(marks[:COMMON_MARKS_MAX])
+
+
+def _split_notable(
+    rest: Sequence[PatternCase],
+) -> tuple[list[PatternCase], tuple[NotableCase, ...]]:
+    """そのほかの動きのうち重い事案を、重い順に最大 ``NOTABLE_MAX`` 件「注目」へ移す。"""
+    picked = [c for c in _heaviest_first(rest) if c.weight >= NOTABLE_MIN_WEIGHT][:NOTABLE_MAX]
+    notable = tuple(NotableCase(f"S{n}", c) for n, c in enumerate(picked, start=1))
+    return sorted((c for c in rest if c not in picked), key=lambda c: c.rank), notable
+
+
+def _jst_date(iso: str) -> str:
+    try:
+        return datetime.fromisoformat(iso).astimezone(_JST).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _standing_items(
+    judgments: Sequence[KeyJudgment], attrs: Mapping[str, JudgmentAttrs]
+) -> tuple[StandingItem, ...]:
+    items = []
+    for j in judgments:
+        a = attrs.get(j.id, JudgmentAttrs())
+        title = best_event_headline(a.event_headlines) or first_full_sentence(j.claim)
+        items.append(StandingItem(j.id, title, j.confidence, _jst_date(a.last_evidence_at)))
+    return tuple(items)
+
+
+def _number_cases(
+    drafts: Sequence[tuple[str, str, Sequence[PatternCase]]],
+    notable: tuple[NotableCase, ...],
+    rest: Sequence[PatternCase],
+) -> tuple[list[list[PatternCase]], tuple[NotableCase, ...], list[PatternCase]]:
+    """C1… の id を、パターン → 注目 → そのほかの順に振る。"""
+    n = 0
+
+    def tag(c: PatternCase) -> PatternCase:
+        nonlocal n
+        n += 1
+        return replace(c, case_id=f"C{n}")
+
+    return (
+        [[tag(c) for c in cs] for _, _, cs in drafts],
+        tuple(NotableCase(x.item_id, tag(x.case)) for x in notable),
+        [tag(c) for c in rest],
     )
-    return case, pattern_kind(merged.kinds)
 
 
 def build_patterns(
-    judgments: Sequence[KeyJudgment], attrs: Mapping[str, JudgmentAttrs]
+    judgments: Sequence[KeyJudgment],
+    attrs: Mapping[str, JudgmentAttrs],
+    technique_names: Mapping[str, str] | None = None,
 ) -> PatternPlan:
     """期間の判定と属性から ``PatternPlan`` を組む。判定の順序・属性の欠けに依らず決定論。"""
     ranked = rank_judgments(tuple(judgments))
     moved = [j for j in ranked if j.delta_type not in NO_CHANGE_TYPES]
-    standing = tuple(j for j in ranked if j.delta_type in NO_CHANGE_TYPES)[:STANDING_MAX]
+    still = [j for j in ranked if j.delta_type in NO_CHANGE_TYPES]
     keyed: dict[tuple[str, str], list[PatternCase]] = {}
     rest: list[PatternCase] = []
     order = {j.id: i for i, j in enumerate(moved)}
     for members in _root_groups(moved, attrs):
-        case, kind = _make_case(members, attrs, order[members[0].id])
+        case, kind = make_case(members, attrs, order[members[0].id])
         if kind is None:
             rest.append(case)
             continue
@@ -208,34 +267,26 @@ def build_patterns(
     drafts: list[tuple[str, str, list[PatternCase]]] = []
     for (region, kind), cases in keyed.items():
         if len(cases) >= MIN_PATTERN_CASES:
-            drafts.append((region, kind, cases))
+            drafts.append((region, kind, _heaviest_first(cases)))
         else:
             rest.extend(cases)
     rest, notable = _split_notable(rest)
-    drafts.sort(key=lambda d: (d[0] != REGION_JAPAN, -_weight(d[2])))
+    drafts.sort(key=lambda d: (d[0] != REGION_JAPAN, -(len(d[2]) + sum(c.weight for c in d[2]))))
+    numbered, notable, rest = _number_cases(drafts, notable, rest)
+    names = technique_names or {}
     patterns = tuple(
-        Pattern(pattern_id=f"P{n}", region=r, kind=k, cases=tuple(cs))
-        for n, (r, k, cs) in enumerate(drafts, start=1)
+        Pattern(f"P{i}", r, k, tuple(cs), _common_marks(cs, names))
+        for i, ((r, k, _), cs) in enumerate(zip(drafts, numbered, strict=True), start=1)
     )
+    subjects = [patterns[0].cases[0]] if patterns else []
+    subjects += [notable[0].case] if notable else []
     return PatternPlan(
         patterns=patterns,
         rest=tuple(rest),
         notable=notable,
-        standing=standing,
+        standing=tuple(still[:STANDING_MAX]),
         moved_count=len(moved),
         top_judgment=moved[0] if moved else (ranked[0] if ranked else None),
+        standing_items=_standing_items(still, attrs),
+        headline_subjects=tuple(subjects),
     )
-
-
-def _weight(cases: Sequence[PatternCase]) -> int:
-    return S3_WEIGHT * sum(c.is_s3 for c in cases) + len(cases)
-
-
-def _split_notable(
-    rest: Sequence[PatternCase],
-) -> tuple[list[PatternCase], tuple[NotableCase, ...]]:
-    """そのほかの動きのうち S3 の事案を、重い順に最大 ``NOTABLE_MAX`` 件「注目」へ移す。"""
-    ordered = sorted(rest, key=lambda c: c.rank)
-    picked = [c for c in ordered if c.is_s3][:NOTABLE_MAX]
-    notable = tuple(NotableCase(f"S{n}", c) for n, c in enumerate(picked, start=1))
-    return [c for c in ordered if c not in picked], notable

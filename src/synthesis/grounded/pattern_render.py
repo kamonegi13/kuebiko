@@ -10,20 +10,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
+from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
+from src.cti.attack_techniques import load_technique_catalog
 from src.logging_config import get_logger
 from src.ops.generation_inputs import record_generation_input
 from src.storage.repo_judgment_attrs import JudgmentAttrs
 from src.synthesis.grounded.estimate import Estimate
 from src.synthesis.grounded.passes import _render
+from src.synthesis.grounded.pattern_case import PatternCase, first_full_sentence
 from src.synthesis.grounded.pattern_fallback import fallback_headline
 from src.synthesis.grounded.pattern_gates import GatedTexts, GateStats, gate_patterns
+from src.synthesis.grounded.pattern_relations import gate_relations
 from src.synthesis.grounded.pattern_sections import assemble_pattern_sections
-from src.synthesis.grounded.patterns import PatternCase, PatternPlan, build_patterns
+from src.synthesis.grounded.patterns import STANDING_MAX, PatternPlan, build_patterns
 from src.synthesis.grounded.render import (
     _DELTA_JA,
     _MAX_TOKENS,
@@ -31,7 +36,6 @@ from src.synthesis.grounded.render import (
     _TEMPERATURE,
     _WireSections,
 )
-from src.synthesis.grounded.slot_render_extras import first_sentence
 from src.tools.llm_client import LLMClient
 from src.tools.llm_schema import require_all_properties
 
@@ -39,8 +43,9 @@ _log = get_logger(__name__)
 
 TEMPLATE_V10 = "synthesis/render_patterns.j2"
 PATTERNS_MAX = 12
+#: モデルに提案させるつながりの上限 (採用の上限 ``RELATIONS_MAX`` より多く出させて関門で絞る)
+RELATIONS_PROPOSED_MAX = 6
 _CONF_JA = {"high": "高確度", "moderate": "中確度", "low": "低確度"}
-_STANDING_TITLE_CHARS = 120
 
 
 class PatternItem(BaseModel):
@@ -55,13 +60,33 @@ class PatternItem(BaseModel):
         return require_all_properties(dict(handler(core_schema)))
 
 
+class RelationItem(BaseModel):
+    """事案どうしのつながりの提案。``shared`` は両事案の claim か根拠の抜粋にある語。"""
+
+    model_config = ConfigDict(extra="ignore")
+    case_ids: list[str] = Field(
+        default_factory=list, json_schema_extra={"minItems": 2, "maxItems": 2}
+    )
+    shared: str = ""
+    text: str = ""
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return require_all_properties(dict(handler(core_schema)))
+
+
 class WirePatterns(BaseModel):
-    """v10 の LLM 出力 (headline / patterns[{pattern_id, text}] / watch)。"""
+    """v10 の LLM 出力 (headline / patterns[{pattern_id, text}] / relations / watch)。"""
 
     model_config = ConfigDict(extra="ignore")
     headline: str = ""
     patterns: list[PatternItem] = Field(
         default_factory=list, json_schema_extra={"maxItems": PATTERNS_MAX}
+    )
+    relations: list[RelationItem] = Field(
+        default_factory=list, json_schema_extra={"maxItems": RELATIONS_PROPOSED_MAX}
     )
     watch: str = ""
 
@@ -74,6 +99,7 @@ class WirePatterns(BaseModel):
 
 def _case_view(c: PatternCase) -> dict[str, object]:
     return {
+        "case_id": c.case_id,
         "title": c.title,
         "delta_ja": _DELTA_JA.get(c.delta_type, c.delta_type),
         "confidence_ja": _CONF_JA.get(c.confidence, c.confidence),
@@ -89,27 +115,36 @@ def build_prompt(plan: PatternPlan, period_label: str) -> str:
             "count": p.count,
             "s3": p.s3_count,
             "cases": [_case_view(c) for c in p.cases],
+            "marks": [m.label for m in p.common_marks],
         }
         for p in plan.patterns
     ]
     standing = [
-        {
-            "title": first_sentence(j.claim, _STANDING_TITLE_CHARS),
-            "confidence_ja": _CONF_JA.get(j.confidence, j.confidence),
-        }
-        for j in plan.standing
+        {"title": i.title, "confidence_ja": _CONF_JA.get(i.confidence, i.confidence)}
+        for i in plan.standing_items[:STANDING_MAX]
     ]
     return _render(
         TEMPLATE_V10,
         period_label=period_label,
         patterns=patterns,
         notable=[
-            {**_case_view(n.case), "id": n.item_id, "claim": first_sentence(n.case.claims[0])}
+            {**_case_view(n.case), "id": n.item_id, "claim": first_full_sentence(n.case.claims[0])}
             for n in plan.notable
         ],
         rest=[_case_view(c) for c in plan.rest],
         standing=standing,
+        subjects=[{"case_id": c.case_id, "title": c.title} for c in plan.headline_subjects],
     )
+
+
+@lru_cache(maxsize=1)
+def _technique_names() -> Mapping[str, str]:
+    """ATT&CK の技術 ID → 英語名 (辞書が無ければ空 = ID だけで表示)。日本語名の SSoT は無い。"""
+    return {tid: info.name for tid, info in load_technique_catalog().items()}
+
+
+def make_plan(est: Estimate, attrs: Mapping[str, JudgmentAttrs]) -> PatternPlan:
+    return build_patterns(est.judgments, attrs, _technique_names())
 
 
 def _deterministic(plan: PatternPlan, moved_questions: Sequence[str]) -> GatedTexts:
@@ -149,13 +184,24 @@ async def generate_gated(
         max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
         think=False,
     )
-    return gate_patterns(
+    gated, stats = gate_patterns(
         headline=raw.headline,
         pattern_items=[(i.pattern_id, i.text) for i in raw.patterns],
         watch=raw.watch,
         plan=plan,
         moved_questions=moved_questions,
     )
+    excerpts = {j.id: tuple(e.excerpt for e in j.evidence) for j in est.judgments}
+    relations, rel = gate_relations(
+        [(r.case_ids, r.shared, r.text) for r in raw.relations], plan, excerpts
+    )
+    stats = replace(
+        stats,
+        relations_proposed=rel.proposed,
+        relations_accepted=rel.accepted,
+        relations_rejected=rel.proposed - rel.accepted,
+    )
+    return replace(gated, relations=relations), stats
 
 
 def _log_stats(event: str, period_label: str, plan: PatternPlan, stats: GateStats | None) -> None:
@@ -181,7 +227,7 @@ async def render_pattern_sections(
     moved_questions: Sequence[str] = (),
 ) -> _WireSections:
     """on: パターン版で節を組む。例外は呼び手 (``choose_sections``) が現行へ倒す。"""
-    plan = build_patterns(est.judgments, attrs)
+    plan = make_plan(est, attrs)
     gated, stats = await generate_gated(
         llm=llm, est=est, plan=plan, period_label=period_label, moved_questions=moved_questions
     )
@@ -199,7 +245,7 @@ async def shadow_patterns(
 ) -> None:
     """shadow: 現行で配信した後に別に作り、件数だけ記録する。失敗は配信に影響しない。"""
     try:
-        plan = build_patterns(est.judgments, attrs)
+        plan = make_plan(est, attrs)
         _, stats = await generate_gated(
             llm=llm, est=est, plan=plan, period_label=period_label, moved_questions=moved_questions
         )

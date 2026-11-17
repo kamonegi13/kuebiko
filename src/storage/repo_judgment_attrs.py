@@ -5,15 +5,19 @@
 (属性が混ざる) ため、種別が roundup の記事は属性にも事象の根にも使わない。
 
 使う列 (SSoT): ``articles.victim_country_iso`` / ``article_kinds.kind`` /
-``article_importance_v2.severity`` /
+``article_importance_v2.severity`` (+ ``severity_basis``) /
 ``event_item_members`` → 根 (``COALESCE(event_items.merged_into, item_id)``、live の事象だけ)。
 SQLite (dev / tests) と PostgreSQL の両方で動くよう、DISTINCT ON などは使わず Python 側で畳む。
+
+追加 (2026-11-17): 事象ニュースの見出し (``event_item_versions`` の最新版、事案の題)・手口の手がかり
+(``article_entities`` の ``ttp`` = 本文の裏付けを通した ATT&CK 手法 / ``affected_product``)・
+状況の最後に根拠が足された時刻 (``situations.last_evidence_at``) も引く (追加の問い合わせは 3 本)。
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -22,9 +26,12 @@ _CHUNK = 400
 #: 属性に使わない種別 (まとめ記事は複数の独立した事案の束で、属性が混ざる)
 EXCLUDED_KIND = "roundup"
 _LIVE_ORIGIN = "live"
+LARGE_MAGNITUDE_BASIS = "large_magnitude"
+TECHNIQUE_ENTITY = "ttp"
+PRODUCT_ENTITY = "affected_product"
 
 _SQL = """
-SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, v.severity,
+SELECT se.situation_id, se.article_id, ar.victim_country_iso, k.kind, v.severity, v.severity_basis,
        COALESCE(i.merged_into, m.item_id) AS root, i.origin
 FROM situation_evidence se
 LEFT JOIN articles ar ON ar.article_id = se.article_id
@@ -35,6 +42,30 @@ LEFT JOIN event_items i ON i.id = m.item_id
 WHERE se.situation_id IN ({ph})
   AND se.assessed_at IS NOT NULL AND se.weak_at IS NULL AND se.added_at >= ? AND se.added_at <= ?
 """  # noqa: S608
+_ENTITY_SQL = (
+    "SELECT article_id, entity_type, value FROM article_entities "  # noqa: S608
+    "WHERE entity_type IN ('ttp', 'affected_product') AND article_id IN ({ph})"
+)
+_HEADLINE_SQL = """
+SELECT v.item_id, v.headline, v.generated_at FROM event_item_versions v
+WHERE v.item_id IN ({ph})
+  AND v.version = (SELECT MAX(w.version) FROM event_item_versions w WHERE w.item_id = v.item_id)
+"""  # noqa: S608
+_LAST_EVIDENCE_SQL = (
+    "SELECT situation_id, last_evidence_at FROM situations "  # noqa: S608
+    "WHERE situation_id IN ({ph})"
+)
+
+
+@dataclass(frozen=True)
+class EventHeadline:
+    """判定の根拠記事が属する事象 (根) と、その事象ニュースの最新の見出し。"""
+
+    root: str
+    #: この判定の根拠記事のうち、この事象に属する記事の数 (題の事象を選ぶ。重さには使わない)
+    articles: int
+    generated_at: str
+    headline: str
 
 
 @dataclass(frozen=True)
@@ -45,6 +76,11 @@ class JudgmentAttrs:
     kinds: frozenset[str] = frozenset()
     severities: frozenset[str] = frozenset()
     event_roots: frozenset[str] = frozenset()
+    large_magnitude: bool = False
+    techniques: frozenset[str] = frozenset()
+    products: frozenset[str] = frozenset()
+    event_headlines: tuple[EventHeadline, ...] = ()
+    last_evidence_at: str = ""
 
 
 def since_iso(ts: datetime) -> str:
@@ -56,26 +92,77 @@ def since_iso(ts: datetime) -> str:
     return ts.astimezone(UTC).isoformat(timespec="microseconds")
 
 
-def _fold(rows: Sequence[Any]) -> dict[str, JudgmentAttrs]:
-    acc: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+@dataclass
+class _Acc:
+    sets: dict[str, set[str]]
+    articles: set[str]
+    root_articles: dict[str, set[str]]
+    large_magnitude: bool = False
+
+
+def _fold_main(rows: Sequence[Any]) -> dict[str, _Acc]:
+    acc: dict[str, _Acc] = {}
     for r in rows:
-        sid, _article, country, kind, severity, root, origin = tuple(r)
+        sid, article, country, kind, severity, basis, root, origin = tuple(r)
         if kind == EXCLUDED_KIND:
             continue
-        slots = acc[str(sid)]
-        for name, value in (
-            ("countries", country),
-            ("kinds", kind),
-            ("severities", severity),
-        ):
+        a = acc.setdefault(str(sid), _Acc(defaultdict(set), set(), defaultdict(set)))
+        a.articles.add(str(article))
+        for name, value in (("countries", country), ("kinds", kind), ("severities", severity)):
             if value:
-                slots[name].add(str(value))
+                a.sets[name].add(str(value))
+        a.large_magnitude = a.large_magnitude or basis == LARGE_MAGNITUDE_BASIS
         if root and origin == _LIVE_ORIGIN:
-            slots["event_roots"].add(str(root))
-    return {
-        sid: JudgmentAttrs(**{k: frozenset(v) for k, v in slots.items()})
-        for sid, slots in acc.items()
-    }
+            a.sets["event_roots"].add(str(root))
+            a.root_articles[str(root)].add(str(article))
+    return acc
+
+
+def _chunked(
+    conn: Any, template: str, values: Iterable[str], tail: tuple[Any, ...] = ()
+) -> list[Any]:
+    ids = list(dict.fromkeys(values))
+    rows: list[Any] = []
+    for i in range(0, len(ids), _CHUNK):
+        chunk = ids[i : i + _CHUNK]
+        sql = template.format(ph=",".join("?" * len(chunk)))
+        rows.extend(conn.execute(sql, (*chunk, *tail)).fetchall())
+    return rows
+
+
+def _entities_by_article(rows: Sequence[Any]) -> dict[str, dict[str, set[str]]]:
+    out: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for article, etype, value in (tuple(r) for r in rows):
+        if value:
+            out[str(article)][str(etype)].add(str(value))
+    return out
+
+
+def _headlines(rows: Sequence[Any]) -> dict[str, tuple[str, str]]:
+    return {str(i): (str(h), str(g)) for i, h, g in (tuple(r) for r in rows) if h}
+
+
+def _attrs_of(
+    a: _Acc,
+    entities: Mapping[str, Mapping[str, set[str]]],
+    headlines: Mapping[str, tuple[str, str]],
+    last_evidence: str,
+) -> JudgmentAttrs:
+    techniques = {v for art in a.articles for v in entities.get(art, {}).get(TECHNIQUE_ENTITY, ())}
+    products = {v for art in a.articles for v in entities.get(art, {}).get(PRODUCT_ENTITY, ())}
+    event_headlines = tuple(
+        EventHeadline(root, len(arts), headlines[root][1], headlines[root][0])
+        for root, arts in sorted(a.root_articles.items())
+        if root in headlines
+    )
+    return JudgmentAttrs(
+        **{k: frozenset(v) for k, v in a.sets.items()},
+        large_magnitude=a.large_magnitude,
+        techniques=frozenset(techniques),
+        products=frozenset(products),
+        event_headlines=event_headlines,
+        last_evidence_at=last_evidence,
+    )
 
 
 class JudgmentAttrsMixin:
@@ -86,14 +173,23 @@ class JudgmentAttrsMixin:
     ) -> dict[str, JudgmentAttrs]:
         """状況 id → 属性 (``since`` 以上 ``until`` 以下に足された根拠から)。
 
-        根拠が 1 件も無い状況は返さない (呼び手は空の属性として扱う)。
+        根拠が 1 件も無い状況も、最後に根拠が足された時刻があれば属性を返す (継続中の一覧用)。
         """
         ids = list(dict.fromkeys(situation_ids))
-        lower, upper = since_iso(since), since_iso(until)
-        rows: list[Any] = []
         with self._connect() as conn:
-            for i in range(0, len(ids), _CHUNK):
-                chunk = ids[i : i + _CHUNK]
-                sql = _SQL.format(ph=",".join("?" * len(chunk)))
-                rows.extend(conn.execute(sql, (*chunk, lower, upper)).fetchall())
-        return _fold(rows)
+            acc = _fold_main(_chunked(conn, _SQL, ids, (since_iso(since), since_iso(until))))
+            articles = {x for a in acc.values() for x in a.articles}
+            roots = {r for a in acc.values() for r in a.root_articles}
+            entities = _entities_by_article(_chunked(conn, _ENTITY_SQL, articles))
+            headlines = _headlines(_chunked(conn, _HEADLINE_SQL, roots))
+            last = {
+                str(sid): str(at or "")
+                for sid, at in (tuple(r) for r in _chunked(conn, _LAST_EVIDENCE_SQL, ids))
+            }
+        empty = _Acc(defaultdict(set), set(), defaultdict(set))
+        return {
+            sid: attrs
+            for sid in ids
+            if (attrs := _attrs_of(acc.get(sid, empty), entities, headlines, last.get(sid, "")))
+            != JudgmentAttrs()
+        }

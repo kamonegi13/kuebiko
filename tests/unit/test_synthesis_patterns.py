@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.storage.repo_judgment_attrs import JudgmentAttrs
+from src.storage.repo_judgment_attrs import EventHeadline, JudgmentAttrs
 from src.synthesis.grounded.estimate import KeyJudgment
 from src.synthesis.grounded.patterns import build_patterns
 from tests.unit.synthesis_pattern_fixtures import BREACH, EXPLOIT, JP, attrs, j
@@ -109,14 +109,103 @@ def test_deterministic_regardless_of_input_order() -> None:
     assert build_patterns(js, at) == build_patterns(list(reversed(js)), at)
 
 
-def test_short_title_cuts_at_comma_after_min_chars_and_caps() -> None:
-    from src.synthesis.grounded.patterns import short_title
+def test_title_is_event_headline_with_most_articles_then_newest() -> None:
+    js = [j("s-1", "一つ目の事案。"), j("s-2", "二つ目の事案。")]
+    at = {
+        "s-1": attrs(
+            kinds=BREACH,
+            headlines=(
+                EventHeadline("ev-a", 1, "2026-11-17T01:00:00", "古い事象の見出し"),
+                EventHeadline("ev-b", 3, "2026-11-17T02:00:00", "記事の多い事象の見出し"),
+            ),
+        ),
+        "s-2": attrs(kinds=BREACH),
+    }
+    cases = build_patterns(js, at).patterns[0].cases
+    by_id = {c.judgment_ids[0]: c for c in cases}
+    assert by_id["s-1"].title == "記事の多い事象の見出し" and by_id["s-1"].title_from_event
+    assert by_id["s-2"].title == "二つ目の事案" and not by_id["s-2"].title_from_event
 
-    assert short_title("短い題。続き。") == "短い題"
-    assert short_title("あ" * 20 + "、" + "い" * 10 + "、う。") == "あ" * 20 + "、" + "い" * 10
-    assert short_title("あ" * 24 + "、い、う。") == "あ" * 24 + "、い"  # 25 字以降の最初の「、」
-    assert short_title("あ" * 70 + "。") == "あ" * 59 + "…"
-    assert short_title("あ" * 30 + "、後半。") == "あ" * 30
+
+def test_title_without_event_is_full_first_sentence_never_truncated() -> None:
+    long_claim = "あ" * 200 + "、" + "い" * 50 + "。続き。"
+    js = [j("s-1", long_claim), j("s-2", "短い。")]
+    at = {k: attrs(kinds=BREACH) for k in ("s-1", "s-2")}
+    titles = [c.title for c in build_patterns(js, at).patterns[0].cases]
+    assert "あ" * 200 + "、" + "い" * 50 in titles
+    assert not any("…" in t for t in titles)
+
+
+def test_case_weight_uses_s3_large_magnitude_and_stated_count_not_articles() -> None:
+    from src.synthesis.grounded.pattern_case import magnitude_bucket
+
+    assert [magnitude_bucket(n) for n in (0, 9_999, 10_000, 99_999, 100_000, 10**9)] == [
+        0,
+        0,
+        1,
+        1,
+        2,
+        4,
+    ]
+    js = [
+        j("s-1", "甲社で顧客 30 万人の情報が漏えいした。"),
+        j("s-2", "乙社で侵害が確認された。"),
+        j("s-3", "丙社で侵害が確認された。"),
+    ]
+    at = {
+        "s-1": attrs(kinds=BREACH, large=True),
+        "s-2": attrs(kinds=BREACH, s3=True),
+        "s-3": attrs(kinds=BREACH),
+    }
+    cases = build_patterns(js, at).patterns[0].cases
+    weights = {c.judgment_ids[0]: c.weight for c in cases}
+    assert weights == {"s-1": 1 + 2, "s-2": 2, "s-3": 0}  # 30 万 = 桁 2、大規模 1
+    assert [c.judgment_ids[0] for c in cases] == ["s-1", "s-2", "s-3"]  # 重い順
+
+
+def test_large_magnitude_singleton_becomes_notable_without_s3() -> None:
+    js = [j("s-1", "甲。"), j("s-2", "乙。"), j("s-3", "丙社で 500 万件の情報が流出した。")]
+    at = {"s-1": attrs(kinds=BREACH), "s-2": attrs(kinds=BREACH), "s-3": attrs(large=True)}
+    plan = build_patterns(js, at)
+    assert [n.case.judgment_ids for n in plan.notable] == [("s-3",)]
+
+
+def test_headline_subjects_are_top_case_of_heaviest_pattern_and_top_notable() -> None:
+    js = [j("s-1", "甲社で侵害。"), j("s-2", "乙社で侵害。"), j("s-3", "丙社の重大な単独事案。")]
+    at = {
+        "s-1": attrs(kinds=BREACH),
+        "s-2": attrs(kinds=BREACH, s3=True),
+        "s-3": attrs(s3=True),
+    }
+    plan = build_patterns(js, at)
+    assert [c.judgment_ids for c in plan.headline_subjects] == [("s-2",), ("s-3",)]
+    assert [c.case_id for c in plan.all_cases()] == ["C1", "C2", "C3"]
+
+
+def test_standing_items_are_all_listed_with_title_and_last_moved_jst() -> None:
+    js = [j(f"s-{n}", f"継続{n}の評価。", delta="no_change") for n in range(6)]
+    at = {"s-0": attrs(last="2026-11-15T16:00:00+00:00")}  # JST で翌日
+    plan = build_patterns(js, at)
+    assert len(plan.standing_items) == 6 and len(plan.standing) == 4
+    first = next(i for i in plan.standing_items if i.judgment_id == "s-0")
+    assert (first.title, first.last_moved) == ("継続0の評価", "2026-11-16")
+
+
+def test_common_marks_need_two_cases_and_use_catalog_names() -> None:
+    js = [j("s-1", "甲。"), j("s-2", "乙。"), j("s-3", "丙。")]
+    at = {
+        "s-1": attrs(
+            kinds=BREACH, techniques=frozenset({"T1566", "T1190"}), products=frozenset({"VPN-X"})
+        ),
+        "s-2": attrs(kinds=BREACH, techniques=frozenset({"T1566"}), products=frozenset({"VPN-X"})),
+        "s-3": attrs(kinds=BREACH, techniques=frozenset({"T1059"})),
+    }
+    marks = build_patterns(js, at, {"T1566": "Phishing"}).patterns[0].common_marks
+    assert [(m.kind, m.label, m.cases) for m in marks] == [
+        ("product", "VPN-X", 2),
+        ("technique", "T1566 Phishing", 2),
+    ]
+    assert build_patterns(js, at).patterns[0].common_marks[1].label == "T1566"
 
 
 def test_s3_singleton_becomes_notable_and_leaves_rest() -> None:
