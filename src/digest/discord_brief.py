@@ -76,6 +76,16 @@ def is_enabled() -> bool:
     return os.environ.get(ENV_FLAG, "1").strip() != "0"
 
 
+#: 「📊 状況総括」1 行の表示 (2026-11-17 暫定)。状況総括の見出しは台帳の事案 1 件になりやすく、
+#: 「状況総括: <単独の事案>」と誤読される。横断のパターンへ作り直すまで 0 で出さない
+#: (朝は PIR ブリーフの節が動いた問いを出す)。コードの既定 1 = 従来どおり。
+SYNTHESIS_LINE_FLAG = "BRIEF_SYNTHESIS_LINE"
+
+
+def synthesis_line_enabled() -> bool:
+    return os.environ.get(SYNTHESIS_LINE_FLAG, "1").strip() != "0"
+
+
 def first_sentence(text: str, max_chars: int = SENTENCE_SOFT_MAX) -> str:
     """最初の 1 文を返す。文の途中で切らない (読点切りの「…」は出さない)。
 
@@ -251,6 +261,8 @@ _CONF_JA: dict[str, str] = {"high": "高確度", "moderate": "中確度", "low":
 
 
 def _synthesis_line(syn: dict[str, Any] | None) -> str:
+    if not synthesis_line_enabled():
+        return ""
     headline = str((syn or {}).get("headline") or "")
     sentence = first_sentence(headline, SENTENCE_SOFT_MAX * 2)
     return f"📊 **状況総括** {sentence}" if sentence else ""
@@ -441,9 +453,8 @@ def compose_evening(
     headline = str((syn or {}).get("headline") or "").strip()
     link = _link_line(base_url)
     if ht_total == 0 and headline and headline == prior_headline.strip():
-        return CompactBrief(
-            text=f"🌆 夕の更新: 朝以降の高脅威 0 件、状況総括も朝から変化なし\n{link}", collapsed=()
-        )
+        quiet = "、状況総括も朝から変化なし" if synthesis_line_enabled() else ""
+        return CompactBrief(text=f"🌆 夕の更新: 朝以降の高脅威 0 件{quiet}\n{link}", collapsed=())
     high_full = _high_threat_block(
         ht, limit=HIGH_THREAT_MAX_ITEMS, base_url=base_url, since_morning=True
     )
