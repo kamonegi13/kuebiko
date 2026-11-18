@@ -336,3 +336,95 @@ async def test_run_pir_daily_focus_passes_config_to_collect_sections(
     await_args = collect_mock.await_args
     assert await_args is not None
     assert await_args.kwargs["config"] is config
+
+
+# ---------- shadow (2026-11-18、配線漏れの修正と同時) ----------
+
+
+class TestClaimGateShadow:
+    """shadow は採点してログを出すだけで、要点の文を変えない・作り直さない。"""
+
+    @pytest.mark.parametrize(
+        ("raw", "mode"),
+        [
+            ("shadow", "shadow"),
+            ("SHADOW", "shadow"),
+            ("1", "on"),
+            ("on", "on"),
+            ("0", "off"),
+            ("", "off"),
+        ],
+    )
+    def test_mode_parsing(self, monkeypatch: pytest.MonkeyPatch, raw: str, mode: str) -> None:
+        from src.digest.pir_daily_focus import claim_gate_mode
+
+        monkeypatch.setenv("PIR_FOCUS_CLAIM_GATE", raw)
+        assert claim_gate_mode() == mode
+        assert claim_gate_enabled() is (mode == "on")
+
+    @pytest.mark.asyncio
+    async def test_shadow_scores_but_keeps_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIR_FOCUS_CLAIM_GATE", "shadow")
+        low = {"Yes": PIR_FOCUS_CLAIM_THRESHOLD - 0.01, "No": 1.0}
+        probe = AsyncMock(return_value=low)
+        monkeypatch.setattr("src.digest.pir_daily_focus.probe_choice", probe)
+        llm = AsyncMock()
+        pir = _make_pir(pir_id="pir_a")
+        matches = [_make_match(article_id="a1", importance="high")]
+
+        result = await apply_claim_gate(
+            "裏付けなしの文。", llm=llm, pir=pir, matches=matches, config=_cfg()
+        )
+
+        assert result == "裏付けなしの文。"
+        assert probe.await_count == 1
+        llm.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_shadow_past_deadline_skips_scoring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PIR_FOCUS_CLAIM_GATE", "shadow")
+        probe = AsyncMock()
+        monkeypatch.setattr("src.digest.pir_daily_focus.probe_choice", probe)
+        pir = _make_pir(pir_id="pir_a")
+
+        result = await apply_claim_gate(
+            "文。",
+            llm=AsyncMock(),
+            pir=pir,
+            matches=[_make_match(article_id="a1")],
+            config=_cfg(),
+            shadow_deadline=0.0,
+        )
+
+        assert result == "文。"
+        probe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_shadow_probe_error_keeps_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIR_FOCUS_CLAIM_GATE", "shadow")
+        monkeypatch.setattr(
+            "src.digest.pir_daily_focus.probe_choice", AsyncMock(side_effect=RuntimeError("x"))
+        )
+        result = await apply_claim_gate(
+            "文。",
+            llm=AsyncMock(),
+            pir=_make_pir(pir_id="pir_a"),
+            matches=[_make_match(article_id="a1")],
+            config=_cfg(),
+        )
+        assert result == "文。"
+
+
+def test_morning_brief_passes_config_to_focus_sections() -> None:
+    """runner が collect_pir_focus_sections に config を渡す (渡さないと関門が黙って無効)。"""
+    import inspect
+    import re
+
+    from src.pipeline import runners
+
+    src = inspect.getsource(runners)
+    calls = re.findall(r"collect_pir_focus_sections\(([^)]*)\)", src)
+    assert calls, "runner から呼ばれていない"
+    assert all("config=config" in c for c in calls)

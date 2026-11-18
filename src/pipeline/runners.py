@@ -427,7 +427,7 @@ async def _run_daily_brief_default(
         )
 
         focus_llm = build_llm_for(Step.PIR_DAILY_FOCUS, config)
-        sections = await collect_pir_focus_sections(llm=focus_llm, lookback_hours=24)
+        sections = await collect_pir_focus_sections(llm=focus_llm, lookback_hours=24, config=config)
         # PIR-persist rebuild は夜間独立ジョブ "pir-entity-rebuild" へ移設 (2026-07-06)。
         pir_body = _format_full_digest(sections, period_label) if sections else ""
         pir_compact = format_compact_digest(sections, period_label) if sections else ""
