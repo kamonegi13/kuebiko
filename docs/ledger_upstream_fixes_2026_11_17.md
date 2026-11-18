@@ -97,3 +97,7 @@
 - 確認: 掃除の前後で、(a) 状況ごとの評価済み根拠の数、(b) 状況総括の estimate の判定の数、(c) 次の改訂で claim が変わる状況の数を比べる。台帳の再評価が走るので LLM の負荷が一時的に増える (再評価は毎時の上限の中)。
 - 30 日より前の根拠: 同じ規則で当て直してから判断する (件数を先に出す)。
 - **LEDGER_OCCURRENCE_FLOOR 3 回目** (moderate 上限・攻撃者側の主張を数えない、fix/ledger-revision 2fa5bdca。1・2 回目の標本を除く無作為 40 件、Opus 盲検): 適切 37 / 不適切 2 / 判断不能 1 = **95% (37/39) → 合格**。不適切は別の組織の公表に頼る 1・攻撃者の主張と別事案の記事 1 (いずれも根拠の汚れ = SEED_STRICT・ASSIGN_STRONG_ANCHOR の on で減る見込み)。on は利用者判断 (本番のイメージには 2fa5bdca が未反映 = 次のデプロイで入れる)。
+
+## 12. 実施 (11-18 14:45、利用者「実施して」)
+- `.env` に LEDGER_SEED_STRICT・LEDGER_ASSIGN_STRONG_ANCHOR・LEDGER_OCCURRENCE_FLOOR・LEDGER_IMPL_GROUNDING を 1 (イメージ release-1118b、戻し先 kuebiko:pre-1118b)。
+- 掃除 (§11) を実行: weak_at 1,023 行 (seed_strict 631・assign_strong_anchor 392)、anchors から 27 状況・63 キー (題・最新の判定文に名前が出るキーは残す)。退避表 `_backup_ledger_cleanup_20261118` / `_backup_ledger_anchors_20261118`。
