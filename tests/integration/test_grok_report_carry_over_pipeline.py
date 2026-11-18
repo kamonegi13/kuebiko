@@ -314,3 +314,31 @@ async def test_email_whose_report_was_dropped_before_expansion_stays_unseen(
     assert len(summarized) == _POSTS
     assert len(result.unfinished_article_ids) == 1
     imap.mark_seen.assert_awaited_once_with(["42"])
+
+
+@pytest.mark.asyncio
+async def test_backfill_keeps_posts_for_analysis_without_posting(
+    tmp_path: Path,
+    template: jinja2.Template,
+    clock: _Clock,
+    summarized: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GROK_BACKFILL=1: 投稿は記事として残るが Discord には流さない (analysis_only)。"""
+    monkeypatch.setenv("GROK_BACKFILL", "1")
+    repo = _repo(tmp_path)
+    publisher = _publisher()
+    source, _imap = _source()
+
+    await _run(source, repo, publisher, template, _start(repo), None)
+
+    posted = [
+        c
+        for c in cast(AsyncMock, publisher.post).call_args_list
+        if "tweet_id" in c.args[0].metadata
+    ]
+    assert posted == []
+    rows = repo.list_articles(limit=50)
+    assert len(rows) == _POSTS
+    assert {r.analysis_only for r in rows} == {"grok_backfill"}
+    assert {r.posted_channel for r in rows} == {None}

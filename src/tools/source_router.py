@@ -99,6 +99,7 @@ class GrokEmailSource:
         unseen_only: bool = True,
         url_host_allowlist: list[str] | None = None,
         retry_tracker: GrokRetryTracker | None = None,
+        received_until: datetime | None = None,
     ) -> None:
         self._retry_tracker = retry_tracker
         self._imap = imap_client
@@ -109,6 +110,8 @@ class GrokEmailSource:
         self._lookback_minutes = lookback_minutes
         self._mark_as_read = mark_as_read
         self._unseen_only = unseen_only
+        # 過去分の取り込み (GROK_BACKFILL) の上限。これより後に受信したメールは扱わない
+        self._received_until = received_until
         # メール本文には HTML の DOCTYPE / namespace 宣言など boilerplate URL も
         # 混入するため、Grok レポートのドメインに絞り込む (default: grok.com)
         self._url_host_allowlist = url_host_allowlist or ["grok.com"]
@@ -142,6 +145,9 @@ class GrokEmailSource:
             mark_as_read=False,
             unseen_only=self._unseen_only,
         )
+        if self._received_until is not None:
+            until = self._received_until
+            emails = [m for m in emails if m.received_at is not None and m.received_at <= until]
         if not emails:
             _log.info("grok_email_source_no_messages")
             return []
@@ -554,20 +560,31 @@ def build_source(
                 f"grok_email source は次の依存が必要: {', '.join(missing)}",
             )
         assert imap_client is not None and grok_fetcher is not None and extractor is not None
+        from src.grok.backfill import (
+            grok_backfill_enabled,
+            grok_backfill_lookback_minutes,
+            grok_backfill_until,
+        )
+
+        backfill = grok_backfill_enabled()
+        lookback = (
+            grok_backfill_lookback_minutes() if backfill else source_config.grok_lookback_minutes
+        )
         return GrokEmailSource(
             imap_client=imap_client,
             grok_fetcher=grok_fetcher,
             extractor=extractor,
             sender_filters=source_config.grok_sender_filters,
             subject_filters=source_config.grok_subject_filters,
-            lookback_minutes=source_config.grok_lookback_minutes,
+            lookback_minutes=lookback,
             mark_as_read=source_config.grok_mark_as_read,
-            unseen_only=source_config.grok_unseen_only,
+            unseen_only=False if backfill else source_config.grok_unseen_only,
+            received_until=grok_backfill_until() if backfill else None,
             url_host_allowlist=source_config.grok_url_host_allowlist,
             retry_tracker=GrokRetryTracker(
                 grok_attempts,
                 summary_every=grok_summary_every(),
-                lookback_minutes=source_config.grok_lookback_minutes,
+                lookback_minutes=lookback,
             ),
         )
     if stype == "rss":
