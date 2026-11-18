@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -37,6 +37,8 @@ _POSTS = 5
 #: 要約 1 件で進む時間 (秒)。予算 1000 秒 → 処理に使える 700 秒 → 3 件で止まる
 _SECONDS_PER_POST = 300.0
 _BUDGET = 1000.0
+#: 投稿の時刻は「いま」から相対で置く (固定の日付だと日が経つと鮮度の関門で全件落ちる、2026-11-18)
+_POSTED_AT = datetime.now(UTC) - timedelta(hours=2)
 
 
 def _jsonl(*, with_ids: bool = True) -> str:
@@ -46,7 +48,7 @@ def _jsonl(*, with_ids: bool = True) -> str:
                 "tweet_id": str(1000 + i) if with_ids else "",
                 "url": f"https://x.com/analyst{i}/status/{1000 + i}" if with_ids else "",
                 "author_handle": f"@analyst{i}",
-                "posted_at": "2026-10-28T19:00:00Z",
+                "posted_at": _POSTED_AT.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "text": f"Distinct observation number {i} about campaign {i * 7}",
                 "matched_theme": "B",
                 "account_class": "analyst_known",
@@ -85,7 +87,7 @@ def _source(
             uid=uid,
             subject="Grok report",
             sender="noreply@x.ai",
-            received_at=datetime(2026, 10, 28, 19, tzinfo=UTC),
+            received_at=_POSTED_AT,
             body_text="",
             body_html="",
             extracted_urls=[_REPORT_URL],
@@ -142,7 +144,7 @@ def _repo(tmp_path: Path) -> RunHistoryRepository:
 def _start(repo: RunHistoryRepository) -> int:
     return repo.start_run(
         RunRecord(
-            started_at=datetime(2026, 10, 28, 20, tzinfo=UTC),
+            started_at=_POSTED_AT + timedelta(hours=1),
             pipeline="grok-briefing",
             dry_run=False,
             triggered_by="scheduler",

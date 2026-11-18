@@ -393,3 +393,55 @@ def test_redirect_off_report_page_is_detected() -> None:
     # 正常な転送: /chat/<id> は /c/<id>?rid=... へ飛ぶ (09-27 のデプロイで全件失敗扱いにしていた)
     assert not _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/c/abc?rid=r1")
     assert _redirected_off_report("https://grok.com/chat/abc", "https://grok.com/c/other")
+
+
+class TestUnwrapJsonlAutolinks:
+    """JSONL の行の自動リンクを本文の抽出の前に戻す (2026-11-18、要約 0 件の根治)。"""
+
+    @pytest.mark.asyncio
+    async def test_unwrap_runs_before_inner_text(self) -> None:
+        from src.grok.fetcher import _UNWRAP_JSONL_AUTOLINKS_JS
+
+        calls: list[str] = []
+        locator = MagicMock()
+        locator.count = AsyncMock(return_value=1)
+
+        async def evaluate_all(js: str) -> int:
+            calls.append("unwrap")
+            assert js == _UNWRAP_JSONL_AUTOLINKS_JS
+            return 3
+
+        async def all_inner_texts() -> list[str]:
+            calls.append("read")
+            return ['{"tweet_id":"1","url":"https://x.com/a/status/1"}']
+
+        locator.evaluate_all = evaluate_all
+        locator.all_inner_texts = all_inner_texts
+        page = MagicMock()
+        page.locator = MagicMock(return_value=locator)
+
+        fetcher = GrokFetcher(state_path=Path("/nonexistent/state.json"))
+        body = await fetcher._extract_body_text(page)
+
+        assert calls == ["unwrap", "read"]
+        assert body.startswith('{"tweet_id"')
+
+    @pytest.mark.asyncio
+    async def test_unwrap_failure_keeps_extracting(self) -> None:
+        locator = MagicMock()
+        locator.count = AsyncMock(return_value=1)
+        locator.evaluate_all = AsyncMock(side_effect=RuntimeError("detached"))
+        locator.all_inner_texts = AsyncMock(return_value=["report body"])
+        page = MagicMock()
+        page.locator = MagicMock(return_value=locator)
+
+        fetcher = GrokFetcher(state_path=Path("/nonexistent/state.json"))
+        assert await fetcher._extract_body_text(page) == "report body"
+
+    def test_js_only_touches_jsonl_lines_and_decodes_href(self) -> None:
+        from src.grok.fetcher import _UNWRAP_JSONL_AUTOLINKS_JS as JS
+
+        # 普通の文のリンクを壊さない条件と href のデコード (JS 本体は実ブラウザで確認済み)
+        assert "startsWith('{')" in JS
+        assert "decodeURIComponent(href)" in JS
+        assert "^https?:" in JS

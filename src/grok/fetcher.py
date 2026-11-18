@@ -342,6 +342,7 @@ class GrokFetcher:
                 continue
             if count == 0:
                 continue
+            await _unwrap_jsonl_autolinks(locator)
             try:
                 texts = await locator.all_inner_texts()
             except Exception as e:  # noqa: BLE001
@@ -360,6 +361,42 @@ class GrokFetcher:
 
 
 # ---------- helpers ----------
+
+#: JSONL の行 (`{` で始まる段落) の中の自動リンクを、デコードした href の文字列に戻す JS。
+#: 2026-11-15 から Grok の描画が URL を自動でリンクのチップにし、JSON の続き
+#: (`","author_handle":...`) まで href に飲み込む。inner_text ではチップの前で行が折れ、
+#: 飲み込まれた部分はパーセント符号のまま・`https://` も落ちるため、全行が JSONL として
+#: 読めなくなった (要約 0 件が 4 日続いた)。href はデコードすれば元の文字列そのもの。
+#: 普通の文の中のリンク (表示名つき) は触らない。
+_UNWRAP_JSONL_AUTOLINKS_JS = """els => {
+  let n = 0;
+  for (const el of els) {
+    for (const a of Array.from(el.querySelectorAll('a[href]'))) {
+      const href = a.getAttribute('href') || '';
+      if (!/^https?:/i.test(href)) continue;
+      const block = a.closest('p, li, div');
+      if (!block || !(block.textContent || '').trimStart().startsWith('{')) continue;
+      let text = href;
+      try { text = decodeURIComponent(href); } catch (e) {
+        try { text = decodeURI(href); } catch (e2) {}
+      }
+      a.replaceWith(document.createTextNode(text));
+      n += 1;
+    }
+  }
+  return n;
+}"""
+
+
+async def _unwrap_jsonl_autolinks(locator: object) -> None:
+    """本文を読む前に JSONL の行の自動リンクを元の文字列へ戻す (失敗しても本文の抽出は続ける)。"""
+    try:
+        replaced = await locator.evaluate_all(_UNWRAP_JSONL_AUTOLINKS_JS)  # type: ignore[attr-defined]
+    except Exception as e:  # noqa: BLE001
+        _log.warning("grok_autolink_unwrap_failed", error_type=type(e).__name__)
+        return
+    if replaced:
+        _log.info("grok_autolink_unwrapped", count=replaced)
 
 
 def _redirected_off_report(requested: str, final: str) -> bool:
