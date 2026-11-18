@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.cti.indian_units import indian_units_mode, shadow_check_indian_units
-from src.cti.translate_json_shape import is_json_mapping_broken
+from src.cti.translate_json_shape import JSON_MAPPING_RE, is_json_mapping_broken
 from src.cti.translate_passthrough import (
     PASSTHROUGH_SYSTEM_SUFFIX,
     ProtectedChunk,
@@ -185,6 +185,9 @@ def body_hash_for_translation(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+#: 出力が JSON の対応表になっている形。定義は ``translate_json_shape`` (教師の関門
+#: data/mlx/n20_teacher/tr_gate.py がこの名前で読む)
+_JSON_MAPPING_RE = JSON_MAPPING_RE
 #: 原文がそのまま写っているとみなす長さ (英字の連続した一節)
 _ECHO_MIN_CHARS = 80
 
