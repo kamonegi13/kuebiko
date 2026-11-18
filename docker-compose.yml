@@ -294,6 +294,8 @@ services:
       TRANSLATE_ECHO_EXEMPT_RETAINABLE: ${TRANSLATE_ECHO_EXEMPT_RETAINABLE:-0}
       # 翻訳で URL・コード・識別子の行と散文中の URL を LLM に渡さず原文のまま戻す (2026-11-16): 0 / shadow (件数のログのみ) / 1
       TRANSLATE_RETAIN_PASSTHROUGH: ${TRANSLATE_RETAIN_PASSTHROUGH:-shadow}
+      # 翻訳の写し判定・素通しで、タグ行 (カンマ区切りの小文字の語) とコード行を保持行に足す (2026-11-18): 0 / shadow (ログのみ) / 1
+      TRANSLATE_RETAIN_LINES_V2: ${TRANSLATE_RETAIN_LINES_V2:-shadow}
       # 翻訳のインドの数の単位 (lakh・crore) の換算を照合して記録する (2026-11-16): 0 / shadow (ログのみ、出力は不変)
       TRANSLATE_INDIAN_UNITS_CHECK: ${TRANSLATE_INDIAN_UNITS_CHECK:-shadow}
       # 翻訳キューの先頭詰まり対策 (2026-10-29 P0-24): 失敗が続く記事を 24h・72h・7 日空けるまで選ばない。0 = 従来の選び方

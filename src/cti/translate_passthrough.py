@@ -17,6 +17,8 @@ import os
 import re
 from dataclasses import dataclass
 
+from src.cti.translate_retain_rules import classify_lines, retain_lines_v2_mode
+
 PASSTHROUGH_ENV = "TRANSLATE_RETAIN_PASSTHROUGH"
 
 #: 保持行・URL を除いた散文の文字数がこれ未満なら LLM を呼ばない (URL だけの窓での創作を防ぐ)
@@ -94,6 +96,7 @@ def _fence_end(lines: list[str], start: int) -> int:
 def _group_runs(lines: list[str]) -> list[tuple[bool, list[str]]]:
     """行を (保持か, 行の連なり) に分ける。囲みは 1 つの保持の連なり、空行は連なりを切る。"""
     groups: list[tuple[bool, list[str]]] = []
+    v2 = classify_lines(lines) if retain_lines_v2_mode() == "1" else [None] * len(lines)
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -102,7 +105,7 @@ def _group_runs(lines: list[str]) -> list[tuple[bool, list[str]]]:
             groups.append((True, lines[i:end]))
             i = end
             continue
-        keep = is_retainable_line(line)
+        keep = is_retainable_line(line) or v2[i] is not None
         if groups and groups[-1][0] == keep and keep:
             groups[-1][1].append(line)
         else:

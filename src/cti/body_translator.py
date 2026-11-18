@@ -43,6 +43,7 @@ from src.cti.translate_passthrough import (
     protect_chunk,
     restore_chunk,
 )
+from src.cti.translate_retain_rules import classify_lines, retain_lines_v2_mode
 from src.cti.translation_fidelity import GarbleReport, detect_garbling
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient, LLMError
@@ -250,13 +251,24 @@ def find_echo_match(source: str, output: str) -> EchoMatch | None:
     返すのは長さと英字率だけで、緩めるかの判断材料 (製品名の並び・コード・URL か否か) に使う。
     """
     exempt = _echo_exempt_enabled()
-    paragraphs = (p.strip() for p in source.split("\n") if p.strip())
-    for index, para in enumerate(paragraphs):
+    v2_mode = retain_lines_v2_mode()
+    lines = source.split("\n")
+    v2_kinds = classify_lines(lines) if v2_mode != "0" else [None] * len(lines)
+    index = -1
+    for line, v2_kind in zip(lines, v2_kinds, strict=True):
+        para = line.strip()
+        if not para:
+            continue
+        index += 1
         head = para[:_ECHO_MIN_CHARS]
         letters = sum(c.isascii() and c.isalpha() for c in head)
         if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
             if exempt and retainable_head_kind(head):
                 continue
+            if v2_kind:
+                _log.info("translate_retain_lines_v2", mode=v2_mode, kind=v2_kind, chars=len(para))
+                if v2_mode == "1":
+                    continue
             ascii_letters = sum(c.isascii() and c.isalpha() for c in para)
             return EchoMatch(index, len(para), round(ascii_letters / len(para), 3))
     return None
