@@ -296,6 +296,9 @@ services:
       TRANSLATE_RETAIN_PASSTHROUGH: ${TRANSLATE_RETAIN_PASSTHROUGH:-shadow}
       # 翻訳の写し判定・素通しで、タグ行 (カンマ区切りの小文字の語) とコード行を保持行に足す (2026-11-18): 0 / shadow (ログのみ) / 1
       TRANSLATE_RETAIN_LINES_V2: ${TRANSLATE_RETAIN_LINES_V2:-shadow}
+      # 2026-11-19: 原文の JSON をそのまま残した正しい訳を「JSON の形」の判定から外す
+      # (src/cti/translate_json_shape.py)。shadow = 免除できる判定をログに出すだけ
+      TRANSLATE_JSON_SOURCE_EXEMPT: ${TRANSLATE_JSON_SOURCE_EXEMPT:-shadow}
       # 翻訳のインドの数の単位 (lakh・crore) の換算を照合して記録する (2026-11-16): 0 / shadow (ログのみ、出力は不変)
       TRANSLATE_INDIAN_UNITS_CHECK: ${TRANSLATE_INDIAN_UNITS_CHECK:-shadow}
       # 翻訳キューの先頭詰まり対策 (2026-10-29 P0-24): 失敗が続く記事を 24h・72h・7 日空けるまで選ばない。0 = 従来の選び方

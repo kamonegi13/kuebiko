@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.cti.indian_units import indian_units_mode, shadow_check_indian_units
+from src.cti.translate_json_shape import is_json_mapping_broken
 from src.cti.translate_passthrough import (
     PASSTHROUGH_SYSTEM_SUFFIX,
     ProtectedChunk,
@@ -184,8 +185,6 @@ def body_hash_for_translation(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-#: 出力が JSON の対応表 ({"原文": "訳文"}) になっている (JSON で答える課題を学習したモデルの崩れ)
-_JSON_MAPPING_RE = re.compile(r'\{\s*"[^"\n]{1,400}"\s*:\s*"')
 #: 原文がそのまま写っているとみなす長さ (英字の連続した一節)
 _ECHO_MIN_CHARS = 80
 
@@ -283,8 +282,10 @@ def broken_translation_reason(source: str, output: str) -> str | None:
 
     ``TRANSLATE_ECHO_EXEMPT_RETAINABLE=1`` のとき、原文の写しの判定は URL・ハッシュタグ・コード等の
     「そのまま維持すべき行」を見ない (既定 off。理由は ``ECHO_EXEMPT_ENV``)。
+    ``TRANSLATE_JSON_SOURCE_EXEMPT=1`` のとき、原文にある JSON をそのまま残しただけの訳は
+    JSON の形の判定から外す (``translate_json_shape``)。
     """
-    if _JSON_MAPPING_RE.search(output):
+    if is_json_mapping_broken(source, output):
         return "JSON の形が混ざっている"
     if find_echo_match(source, output) is not None:
         return ECHO_REASON
