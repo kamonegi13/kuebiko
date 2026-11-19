@@ -380,6 +380,10 @@ services:
       SLOT_RENDER: ${SLOT_RENDER:-0}
       # 状況総括を横断のパターンで描く (docs/synthesis_pattern_redesign.md)。0 / shadow / 1
       SYNTHESIS_PATTERNS: ${SYNTHESIS_PATTERNS:-0}
+      # 2 枠 (S・N) の方針の外のモデル割当を保存時に拒否する (0 = 警告ログのみ)。
+      # 割当の保存は full instance が行うので kuebiko にだけ渡す (src/tools/model_end_state.py)
+      MODEL_RESIDENT_ENFORCE: ${MODEL_RESIDENT_ENFORCE:-0}
+      MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}
       # 状況総括 slot render の読みやすさ補助 (SLOT_RENDER=1 のときだけ効く)。0 / 1
