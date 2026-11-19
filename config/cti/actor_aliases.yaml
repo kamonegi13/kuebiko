@@ -4702,6 +4702,7 @@ actors:
   - Karmabelow80
   - BANISHED KITTEN
   - Red Sandstorm
+  - Handala
   mitre_group: G1055
   summary: VOID MANTICOREは、イランのMinistry of Intelligence and Security (MOIS) の代理として活動していると評価されている脅威グループです。少なくとも2022年中盤から活動しており、アルバニア、イスラエル、および米国の政府機関、重要インフラ、民間組織を標的としてきました。VOID
     MANTICOREは、wiper攻撃とhack-and-leakキャンペーンを組み合わせた破壊的なサイバーオペレーションを実行します。同グループは、アルバニアに対する作戦におけるHomeLand
@@ -6576,6 +6577,7 @@ actors:
   canonical: UNC5221
   aliases:
   - VerdantBamboo
+  - Warp Panda
   kind: group
   family: ''
 - id: storm_1516
@@ -7417,7 +7419,8 @@ actors:
   family: ''
 - id: aur0ra
   canonical: Aur0ra
-  aliases: []
+  aliases:
+  - Gold Ogre
   kind: group
   family: ''
 - id: toy_ghouls
@@ -8150,3 +8153,265 @@ actors:
   family: ransom_group
   ambiguous: true
   description: リークサイトで被害を公表する恐喝グループ (2026-)。成句のため ambiguous
+- id: leakeddata
+  canonical: Leakeddata
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: 法律事務所などのデータを恐喝サイトに掲載するランサム・恐喝集団 (2026-)。報道では「LEAKED DATA」とも書かれるが、英語の一般の句と区別できないため別名にしない
+- id: unc7228
+  canonical: UNC7228
+  aliases: []
+  kind: group
+  family: ''
+  description: GTIG が追跡する ARTEX を使うデータ窃取クラスタ。Microsoft の Storm-0940 と活動が重複 (同一とは明記されていない)
+    (Mandiant 命名)
+- id: citrus_ransomware
+  canonical: Citrus Ransomware
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: VLESS トンネル・LLM 生成スクリプトでロシア企業を攻撃する新しいランサム集団 (Kaspersky、2026-)
+- id: unc6783
+  canonical: UNC6783
+  aliases: []
+  kind: group
+  family: ''
+  description: 台湾の政府系研究機関の侵害とデータ流出を主張する恐喝集団 (Mandiant 命名)
+- id: climax_inc
+  canonical: Climax Inc
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトに被害を掲載する新しいランサム集団 (2026-)
+- id: copperdragon
+  canonical: CopperDragon
+  aliases:
+  - Copperdragon
+  kind: group
+  family: ''
+  nation: cn
+  description: 中国系のスパイ集団に Sparrow フレームワークを供給する「デジタル補給係」(Check Point 命名)。FamousSparrow・UAT-9244
+    等とは別
+- id: uat_9244
+  canonical: UAT-9244
+  aliases: []
+  kind: group
+  family: ''
+  nation: cn
+  description: Sparrow フレームワークを使う中国系のアクター (Talos 命名)。CopperDragon とは別
+- id: vortex
+  canonical: Vortex
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトに被害を掲載するランサム集団 (2026-)
+- id: shahid_kaveh
+  canonical: Shahid Kaveh
+  aliases: []
+  kind: group
+  family: ''
+  nation: ir
+  description: IRGC のサイバー部隊。フランスの小売の冷蔵制御機器への妨害に関与 (仏当局の帰属、2026-)
+- id: curious_worm
+  canonical: Curious Worm
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: リークサイトに被害を掲載する新しい恐喝集団 (2026-)
+- id: pixelleaks
+  canonical: PixelLeaks
+  aliases:
+  - Pixelleaks
+  kind: group
+  family: ransom_group
+  description: リークサイトにインドなどの企業の被害を掲載するランサム集団 (2026-)
+- id: obsoft
+  canonical: OBSOFT
+  aliases:
+  - Obsoft
+  kind: group
+  family: ransom_group
+  description: 韓国企業へのデータ恐喝を主張する新しいランサム集団 (2026-)
+- id: libreboot2016
+  canonical: Libreboot2016
+  aliases: []
+  kind: group
+  family: ''
+  description: IT 企業のクラウド資格情報・API キーの販売を主張するアクター (2026-)
+- id: vasygrek
+  canonical: VasyGrek
+  aliases:
+  - Vasygrek
+  - Fluffy Wolf
+  kind: group
+  family: ''
+  nation: ru
+  description: 2016 年からの金銭目的のロシア語圏サイバー犯罪グループ。2026 年にロシア警察が容疑者を逮捕
+- id: bitter
+  canonical: BITTER
+  aliases:
+  - Bitter
+  - APT-C-08
+  - APT-Q-37
+  - Hazy Tiger
+  - Orange Yali
+  - T-APT-17
+  - TA397
+  kind: group
+  family: ''
+  ambiguous: true
+  description: 南アジアの政府・エネルギー組織を標的とするスパイ集団 (PapRAT 等)
+- id: crafty_falcon
+  canonical: Crafty Falcon
+  aliases: []
+  kind: group
+  family: ''
+  description: インドの金融機関を標的とする脅威アクター (CERT-In の警告、2026-)
+- id: tunisian_maskers_cyber_force
+  canonical: Tunisian Maskers Cyber Force
+  aliases:
+  - Tunisian Maskers
+  kind: group
+  family: hacktivist
+  description: トルコ・イタリア等への DDoS を主張するチュニジア系ハクティビスト (2026-)
+- id: storm_3358
+  canonical: Storm-3358
+  aliases: []
+  kind: group
+  family: ''
+  description: 金融機関を標的とする金銭目的のアクター (Microsoft 命名)
+- id: darkblinders
+  canonical: DarkBlinders
+  aliases:
+  - Darkblinders
+  kind: group
+  family: ''
+  nation: ir
+  description: イスラエルとイラク・クルディスタンを標的とするイラン系のスパイ集団 (Dream Security、2024-)
+- id: slippynunchucks
+  canonical: SlippyNunchucks
+  aliases:
+  - Slippynunchucks
+  kind: group
+  family: ''
+  nation: cn
+  description: Sogou 入力ソフトの更新通信を悪用してマルウェアを配る中国系の集団 (ESET 命名)
+- id: destello
+  canonical: Destello
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: ブラジルの保険会社を初の被害として掲載した新しい恐喝サイト (2026-)
+- id: weykofa
+  canonical: Weykofa
+  aliases: []
+  kind: group
+  family: ''
+  description: イタリアの政府機関のデータ販売を主張するアクター (2026-)
+- id: videostrong_technology_co
+  canonical: Videostrong
+  aliases:
+  - Videostrong Technology
+  - Videostrong Technology Co
+  kind: organization
+  family: ''
+  nation: cn
+  description: 出荷時のファームウェアのバックドアで XCPE ボットネットを運用した中国の機器メーカー (GTIG)
+- id: aoqin
+  canonical: Aoqin
+  aliases:
+  - Aoqin Leaks
+  kind: group
+  family: ransom_group
+  description: リークサイトに被害を掲載するランサム集団 (2026-)。中国系の Aoqin Dragon とは別
+- id: unc6993
+  canonical: UNC6993
+  aliases: []
+  kind: group
+  family: ''
+  description: 誤設定のクラウド鍵で侵入し LLM API を乗っ取る金銭目的のクラスタ (LLMjacking、Mandiant 命名)
+- id: gorbag
+  canonical: Gorbag
+  aliases: []
+  kind: group
+  family: ''
+  nation: ru
+  description: ウクライナの行政・防衛・輸送拠点を標的とする親露のスパイ集団 (ESET 命名)
+- id: virtualine
+  canonical: Virtualine
+  aliases: []
+  kind: organization
+  family: ''
+  nation: ru
+  description: ロシア語圏の防弾ホスティング事業者。2026 年に FBI がドメインを差し押さえ
+- id: vapor_panda
+  canonical: Vapor Panda
+  aliases: []
+  kind: group
+  family: panda
+  nation: cn
+  description: ARTEX を使い多数の組織に諜報活動を行う中国系の集団 (CrowdStrike 命名)。Storm-0940 とは別
+- id: sarcoma
+  canonical: Sarcoma
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトに被害を掲載するランサム集団
+- id: divisibly
+  canonical: Divisibly
+  aliases: []
+  kind: group
+  family: ''
+  description: 企業の VPN アクセスを販売する初期アクセスブローカー (2026-)
+- id: crypto24
+  canonical: Crypto24
+  aliases: []
+  kind: group
+  family: ransom_group
+  description: リークサイトに被害を掲載するランサム集団
+- id: cl_unk_1211
+  canonical: CL-UNK-1211
+  aliases: []
+  kind: group
+  family: ''
+  description: 政府の Linux サーバーに SysGoRAT と AI 生成スクリプトを展開したクラスタ (Unit 42 命名)。UNC7228
+    とは別
+- id: ulose
+  canonical: ULose
+  aliases:
+  - Ulose
+  kind: group
+  family: ransom_group
+  description: 韓国企業を掲載する新しいリークサイト (2026-)
+- id: everstake
+  canonical: Everstake
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: 暗号化なしでデータ公開を予告する恐喝集団 (2026-)。同名の正規のステーキング企業とは無関係
+- id: shiba
+  canonical: Shiba
+  aliases: []
+  kind: group
+  family: ransom_group
+  ambiguous: true
+  description: リークサイトに欧米企業の被害を掲載するランサム集団 (2026-)
+- id: department_of_peace
+  canonical: Department of Peace
+  aliases:
+  - Department Of Peace
+  kind: group
+  family: hacktivist
+  ambiguous: true
+  description: 米 DHS 職員の情報流出を主張したハクティビスト集団 (2026-)
+- id: uat_11473
+  canonical: UAT-11473
+  aliases: []
+  kind: group
+  family: ''
+  description: Cisco SD-WAN の脆弱性を悪用して KeyDrift を設置したアクター (Talos 命名)
