@@ -320,6 +320,15 @@ def _build_alias_lookup(
         for alias in body.get("aliases", []) or []:
             if isinstance(alias, str) and alias.strip():
                 lookup[alias.strip().lower()] = canonical_id
+    # 表示名 (display) も解決する (2026-11-19)。Grok・要約が表示名 (専門サービス 等) で
+    # 書くと uncategorized に落ちていた。明示の alias が他の canonical の表示名と同じなら
+    # alias を優先する (setdefault、全 alias を入れた後に足す)。
+    for canonical_id, body in canonical.items():
+        if not isinstance(canonical_id, str) or not isinstance(body, dict):
+            continue
+        display = body.get("display")
+        if isinstance(display, str) and display.strip():
+            lookup.setdefault(display.strip().lower(), canonical_id)
     return lookup, tuple(canonical_ids)
 
 

@@ -329,3 +329,35 @@ class TestNormalizeCountryScope:
         # 単一国は normalize_country の領分 (scope にしない)
         n = load_normalizer(config_dir=tmp_config_dir)
         assert n.normalize_country_scope("Japan") == (None, ())
+
+
+class TestDisplayLabelResolves:
+    """表示名 (display) も alias として解決する (2026-11-19)。
+
+    Grok・要約が業種を表示名 (専門サービス / その他) で書くと uncategorized に落ち、
+    週次の taxonomy 提案が「新カテゴリ」「government の誤字」として毎週起票していた。
+    """
+
+    def test_display_label_of_real_config_resolves_to_its_canonical(self) -> None:
+        n = load_normalizer()
+        assert n.normalize_sector("専門サービス")[0] == "professional_services"
+        assert n.normalize_sector("その他")[0] == "other"
+        assert n.normalize_sector("食品・農業")[0] == "food_agriculture"
+
+    def test_explicit_alias_wins_over_another_canonicals_display(self, tmp_path: Path) -> None:
+        cti = tmp_path / "cti"
+        cti.mkdir()
+        (cti / "victim_sectors.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "canonical": {
+                        "a": {"display": "共通語", "aliases": []},
+                        "b": {"display": "B", "aliases": ["共通語"]},
+                    }
+                },
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        n = load_normalizer(config_dir=tmp_path)
+        assert n.normalize_sector("共通語")[0] == "b"
