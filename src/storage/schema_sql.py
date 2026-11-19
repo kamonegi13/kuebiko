@@ -1199,4 +1199,15 @@ CREATE INDEX IF NOT EXISTS idx_generation_inputs_product
     ON generation_inputs(product_kind, product_id);
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_recorded
     ON generation_inputs(recorded_at);
+-- 実行時の構成変更 (2026-11-20、11-19 監査 P1-5)。起動のたびにコードの指紋と秘密を
+-- 含まない旗の値を集め、前回と違うときだけ 1 行 (src/ops/runtime_changes.py)
+CREATE TABLE IF NOT EXISTS runtime_change_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at TEXT NOT NULL,
+    code_sha    TEXT NOT NULL,
+    flags_sha   TEXT NOT NULL,
+    detail      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runtime_change_events_recorded
+    ON runtime_change_events(recorded_at);
 """

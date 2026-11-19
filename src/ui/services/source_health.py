@@ -87,6 +87,7 @@ def build_heartbeat_text(
     external_tier_line: str | None = None,
     chain_gap_line: str | None = None,
     zero_output_line: str | None = None,
+    extra_lines: tuple[str | None, ...] = (),
 ) -> tuple[str, str, str]:
     """heartbeat の (title, body, importance) を組み立てる (純粋関数)。
 
@@ -97,6 +98,8 @@ def build_heartbeat_text(
     proposals_line = アクター提案の滞留 (人承認キューは pull 専用のため注意誘導が必要)。
     external_tier_line = 外部ティアが黙って fallback し続けていないか (2026-08-30)。
     zero_output_line = 取得ありで要約 0 件が続く収集 (2026-11-18、``zero_output_watch``)。
+    extra_lines = 見張りの行 (2026-11-20 以降の新しい見張りはここへ足す — 引数を増やさない)。
+    ⚠️ を含む行があれば重要度を medium にする。
     """
     ok = run_counts.get("succeeded", 0)
     partial = run_counts.get("partial_failure", 0)
@@ -119,6 +122,7 @@ def build_heartbeat_text(
         parts.append(chain_gap_line)
     if zero_output_line:
         parts.append(zero_output_line)
+    parts.extend(line for line in extra_lines if line)
     if silent:
         names = ", ".join(s.name for s in silent[:_MAX_NAMES_IN_HEARTBEAT])
         if len(silent) > _MAX_NAMES_IN_HEARTBEAT:
@@ -133,6 +137,7 @@ def build_heartbeat_text(
             external_tier_line,
             chain_gap_line,
             zero_output_line,
+            *extra_lines,
         )
     )
     importance = "medium" if (silent or failed or has_line_warn) else "low"
@@ -354,6 +359,7 @@ async def run_daily_heartbeat() -> None:
             {h.source_key: h for h in repo.list_source_fetch_health()},
             now=datetime.now(UTC),
         )
+        from src.ops.runtime_changes import build_runtime_change_line
         from src.ui.services.fill_rate_audit import build_heartbeat_fill_line
         from src.ui.services.zero_output_watch import build_zero_output_line
 
@@ -368,6 +374,7 @@ async def run_daily_heartbeat() -> None:
             external_tier_line=_build_external_tier_line(repo),
             chain_gap_line=_build_chain_gap_line(repo),
             zero_output_line=build_zero_output_line(repo),
+            extra_lines=(build_runtime_change_line(repo),),
         )
         from src.ui.services.ops_notify import post_ops_message
 

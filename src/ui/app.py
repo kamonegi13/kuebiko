@@ -443,6 +443,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         dangling_jobs = repo.fail_dangling_job_runs()
         if dangling_jobs > 0:
             _log.warning("recovered_dangling_job_runs", count=dangling_jobs)
+        # 実行時の構成変更 (旗・コード) を記録 (2026-11-20、11-19 監査 P1-5)
+        from src.ops.runtime_changes import record_at_startup
+
+        record_at_startup(repo, project_root)
     purged = repo.purge_old_logs()
     if purged > 0:
         _log.info("purged_old_logs", count=purged)
