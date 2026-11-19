@@ -86,6 +86,7 @@ def build_heartbeat_text(
     proposals_line: str | None = None,
     external_tier_line: str | None = None,
     chain_gap_line: str | None = None,
+    zero_output_line: str | None = None,
 ) -> tuple[str, str, str]:
     """heartbeat の (title, body, importance) を組み立てる (純粋関数)。
 
@@ -95,6 +96,7 @@ def build_heartbeat_text(
     weekly 9 日間欠落を誰も検知できなかった穴の閉鎖)。
     proposals_line = アクター提案の滞留 (人承認キューは pull 専用のため注意誘導が必要)。
     external_tier_line = 外部ティアが黙って fallback し続けていないか (2026-08-30)。
+    zero_output_line = 取得ありで要約 0 件が続く収集 (2026-11-18、``zero_output_watch``)。
     """
     ok = run_counts.get("succeeded", 0)
     partial = run_counts.get("partial_failure", 0)
@@ -115,6 +117,8 @@ def build_heartbeat_text(
         parts.append(external_tier_line)
     if chain_gap_line:
         parts.append(chain_gap_line)
+    if zero_output_line:
+        parts.append(zero_output_line)
     if silent:
         names = ", ".join(s.name for s in silent[:_MAX_NAMES_IN_HEARTBEAT])
         if len(silent) > _MAX_NAMES_IN_HEARTBEAT:
@@ -122,7 +126,14 @@ def build_heartbeat_text(
         parts.append(f"⚠️ {SILENT_FEED_THRESHOLD_DAYS}日以上無産出: {names}")
     has_line_warn = any(
         line and "⚠️" in line
-        for line in (fill_line, products_line, proposals_line, external_tier_line, chain_gap_line)
+        for line in (
+            fill_line,
+            products_line,
+            proposals_line,
+            external_tier_line,
+            chain_gap_line,
+            zero_output_line,
+        )
     )
     importance = "medium" if (silent or failed or has_line_warn) else "low"
     return ("💓 daily heartbeat", " · ".join(parts), importance)
@@ -344,6 +355,7 @@ async def run_daily_heartbeat() -> None:
             now=datetime.now(UTC),
         )
         from src.ui.services.fill_rate_audit import build_heartbeat_fill_line
+        from src.ui.services.zero_output_watch import build_zero_output_line
 
         title, body, importance = build_heartbeat_text(
             run_counts=run_counts,
@@ -355,6 +367,7 @@ async def run_daily_heartbeat() -> None:
             proposals_line=_build_proposals_line(repo),
             external_tier_line=_build_external_tier_line(repo),
             chain_gap_line=_build_chain_gap_line(repo),
+            zero_output_line=build_zero_output_line(repo),
         )
         from src.ui.services.ops_notify import post_ops_message
 

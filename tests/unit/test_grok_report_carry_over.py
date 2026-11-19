@@ -463,3 +463,106 @@ async def test_run_then_commit_commits_only_after_success() -> None:
     with pytest.raises(asyncio.CancelledError):
         await run_then_commit(source, killed)
     source.commit_seen.assert_not_called()
+
+
+# ---------- 過去分の取り込み (GROK_BACKFILL、2026-11-18) ----------
+
+
+def test_backfill_measures_freshness_from_report_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.grok.jsonl_parser import filter_records
+
+    # 投稿 20:00 → レポート受信 (翌 0:00) 基準なら 4 時間で残り、今基準なら古すぎて落ちる
+    report_time = datetime(2026, 10, 29, tzinfo=UTC)
+    assert filter_records([_record(1)]) == []
+    assert [r.tweet_id for r in filter_records([_record(1)], now=report_time)] == ["1"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_flag_anchors_filter_on_article_published(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import src.grok.jsonl_parser as parser
+
+    _patch_expansion(monkeypatch, [_record(1)])
+    seen_now: list[object] = []
+
+    def fake_filter(recs: list[TweetRecord], **kwargs: Any) -> list[TweetRecord]:
+        seen_now.append(kwargs.get("now"))
+        return list(recs)
+
+    monkeypatch.setattr(parser, "filter_records", fake_filter)
+    monkeypatch.setenv("GROK_BACKFILL", "1")
+    article = _article()
+
+    await grok_convert._grok_jsonl_to_briefings(
+        "{}", article, llm=cast(Any, object()), template=cast(Any, object())
+    )
+
+    assert seen_now == [article.published]
+
+
+def test_backfill_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.grok import backfill
+
+    monkeypatch.delenv("GROK_BACKFILL", raising=False)
+    assert not backfill.grok_backfill_enabled()
+    monkeypatch.setenv("GROK_BACKFILL", "1")
+    assert backfill.grok_backfill_enabled()
+    monkeypatch.setenv("GROK_BACKFILL_LOOKBACK_MINUTES", "abc")
+    assert backfill.grok_backfill_lookback_minutes() == backfill.DEFAULT_BACKFILL_LOOKBACK_MINUTES
+    monkeypatch.setenv("GROK_BACKFILL_LOOKBACK_MINUTES", "5000")
+    assert backfill.grok_backfill_lookback_minutes() == 5000
+
+
+def test_backfill_widens_grok_email_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.config_loader import SourceConfig
+    from src.tools.source_router import build_source
+
+    cfg = SourceConfig(type="grok_email", max_articles=10, grok_lookback_minutes=1440)
+    deps = {"imap_client": MagicMock(), "grok_fetcher": MagicMock(), "extractor": MagicMock()}
+
+    normal = build_source(cfg, **deps)
+    monkeypatch.setenv("GROK_BACKFILL", "1")
+    monkeypatch.setenv("GROK_BACKFILL_LOOKBACK_MINUTES", "6000")
+    with pytest.raises(ValueError, match="GROK_BACKFILL_UNTIL"):
+        build_source(cfg, **deps)  # 上限なしの取り戻しは拒否 (修正後のレポートを奪わない)
+    monkeypatch.setenv("GROK_BACKFILL_UNTIL", "2026-11-18T13:56:00+00:00")
+    wide = build_source(cfg, **deps)
+
+    assert isinstance(normal, GrokEmailSource) and isinstance(wide, GrokEmailSource)
+    assert (normal._lookback_minutes, normal._unseen_only) == (1440, True)
+    assert (wide._lookback_minutes, wide._unseen_only) == (6000, False)
+    assert wide._received_until == datetime(2026, 11, 18, 13, 56, tzinfo=UTC)
+    assert normal._received_until is None
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_emails_received_after_until() -> None:
+    imap = AsyncMock()
+    imap.fetch_unread.return_value = [
+        EmailMessage(
+            uid=uid,
+            subject="Grok report",
+            sender="noreply@x.ai",
+            received_at=at,
+            body_text="",
+            body_html="",
+            extracted_urls=[],
+        )
+        for uid, at in (
+            ("1", datetime(2026, 11, 16, tzinfo=UTC)),
+            ("2", datetime(2026, 11, 19, tzinfo=UTC)),
+        )
+    ]
+    source = GrokEmailSource(
+        imap, AsyncMock(), MagicMock(), received_until=datetime(2026, 11, 18, tzinfo=UTC)
+    )
+    seen: list[str] = []
+
+    async def fake_fetch_email(msg: EmailMessage, articles: list[Article], n: int) -> Any:
+        seen.append(msg.uid)
+        return [], False, 0
+
+    source._fetch_email = fake_fetch_email  # type: ignore[method-assign,assignment]
+    await source.fetch(max_count=5)
+    assert seen == ["1"]

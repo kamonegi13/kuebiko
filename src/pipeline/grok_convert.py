@@ -380,7 +380,15 @@ async def _grok_jsonl_to_briefings(
         )
         return _EMPTY_EXPANSION
 
-    filtered, known = drop_seen_records(filter_records(parse_result.records), seen_filter)
+    from src.grok.backfill import grok_backfill_enabled
+
+    # 過去分の取り込みでは鮮度をレポートの受信時刻で測る (GROK_BACKFILL、src/grok/backfill.py)
+    fresh = (
+        filter_records(parse_result.records, now=article.published)
+        if grok_backfill_enabled()
+        else filter_records(parse_result.records)
+    )
+    filtered, known = drop_seen_records(fresh, seen_filter)
     if known:
         _log.info("grok_records_known_before_summary", article_id=article.id, dropped=known)
 

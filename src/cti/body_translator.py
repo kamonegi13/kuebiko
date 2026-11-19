@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.cti.indian_units import indian_units_mode, shadow_check_indian_units
+from src.cti.translate_json_shape import JSON_MAPPING_RE, is_json_mapping_broken
 from src.cti.translate_passthrough import (
     PASSTHROUGH_SYSTEM_SUFFIX,
     ProtectedChunk,
@@ -43,6 +44,7 @@ from src.cti.translate_passthrough import (
     protect_chunk,
     restore_chunk,
 )
+from src.cti.translate_retain_rules import classify_lines, retain_lines_v2_mode
 from src.cti.translation_fidelity import GarbleReport, detect_garbling
 from src.logging_config import get_logger
 from src.tools.llm_client import LLMClient, LLMError
@@ -183,8 +185,9 @@ def body_hash_for_translation(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-#: 出力が JSON の対応表 ({"原文": "訳文"}) になっている (JSON で答える課題を学習したモデルの崩れ)
-_JSON_MAPPING_RE = re.compile(r'\{\s*"[^"\n]{1,400}"\s*:\s*"')
+#: 出力が JSON の対応表になっている形。定義は ``translate_json_shape`` (教師の関門
+#: data/mlx/n20_teacher/tr_gate.py がこの名前で読む)
+_JSON_MAPPING_RE = JSON_MAPPING_RE
 #: 原文がそのまま写っているとみなす長さ (英字の連続した一節)
 _ECHO_MIN_CHARS = 80
 
@@ -250,13 +253,24 @@ def find_echo_match(source: str, output: str) -> EchoMatch | None:
     返すのは長さと英字率だけで、緩めるかの判断材料 (製品名の並び・コード・URL か否か) に使う。
     """
     exempt = _echo_exempt_enabled()
-    paragraphs = (p.strip() for p in source.split("\n") if p.strip())
-    for index, para in enumerate(paragraphs):
+    v2_mode = retain_lines_v2_mode()
+    lines = source.split("\n")
+    v2_kinds = classify_lines(lines) if v2_mode != "0" else [None] * len(lines)
+    index = -1
+    for line, v2_kind in zip(lines, v2_kinds, strict=True):
+        para = line.strip()
+        if not para:
+            continue
+        index += 1
         head = para[:_ECHO_MIN_CHARS]
         letters = sum(c.isascii() and c.isalpha() for c in head)
         if len(para) >= _ECHO_MIN_CHARS and letters >= _ECHO_MIN_CHARS // 2 and head in output:
             if exempt and retainable_head_kind(head):
                 continue
+            if v2_kind:
+                _log.info("translate_retain_lines_v2", mode=v2_mode, kind=v2_kind, chars=len(para))
+                if v2_mode == "1":
+                    continue
             ascii_letters = sum(c.isascii() and c.isalpha() for c in para)
             return EchoMatch(index, len(para), round(ascii_letters / len(para), 3))
     return None
@@ -271,8 +285,10 @@ def broken_translation_reason(source: str, output: str) -> str | None:
 
     ``TRANSLATE_ECHO_EXEMPT_RETAINABLE=1`` のとき、原文の写しの判定は URL・ハッシュタグ・コード等の
     「そのまま維持すべき行」を見ない (既定 off。理由は ``ECHO_EXEMPT_ENV``)。
+    ``TRANSLATE_JSON_SOURCE_EXEMPT=1`` のとき、原文にある JSON をそのまま残しただけの訳は
+    JSON の形の判定から外す (``translate_json_shape``)。
     """
-    if _JSON_MAPPING_RE.search(output):
+    if is_json_mapping_broken(source, output):
         return "JSON の形が混ざっている"
     if find_echo_match(source, output) is not None:
         return ECHO_REASON

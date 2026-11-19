@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -87,13 +88,27 @@ _CLAIM_GATE_MAX_ATTEMPTS = 2  # 初回生成 + 作り直し 1 回 (識別子関�
 PIR_FOCUS_CLAIM_THRESHOLD = 0.22
 
 
-def claim_gate_enabled() -> bool:
-    """関門の有効判定 (既定 off)。
+#: shadow の採点に使う 1 回の朝刊あたりの時間の上限 (秒)。朝刊は上限 20 分・実測 10〜13 分。
+#: logprob 1 回は中央値 0.2 秒 (s26r、11-18 実測) で、20 PIR × 2 文 × 3 記事でも 1〜2 分。
+CLAIM_GATE_SHADOW_BUDGET_SECONDS = 180.0
 
-    ``PIR_FOCUS_CLAIM_GATE`` に "0"/"false"/空 以外を明示したときだけ有効化する。
+
+def claim_gate_mode() -> str:
+    """関門のモード: ``off`` (既定) / ``shadow`` (採点してログのみ・出力不変) / ``on``。
+
+    ``PIR_FOCUS_CLAIM_GATE``: ``shadow`` → shadow、``1``/``true``/``on`` → on、それ以外 → off。
     """
-    raw = os.environ.get(PIR_FOCUS_CLAIM_GATE_FLAG_ENV, "0").strip()
-    return raw not in ("", "0", "false", "False")
+    raw = os.environ.get(PIR_FOCUS_CLAIM_GATE_FLAG_ENV, "0").strip().lower()
+    if raw == "shadow":
+        return "shadow"
+    if raw in ("1", "true", "on"):
+        return "on"
+    return "off"
+
+
+def claim_gate_enabled() -> bool:
+    """関門が出力を変えるか (``on`` のときだけ真)。"""
+    return claim_gate_mode() == "on"
 
 
 def split_claim_sentences(text: str) -> list[str]:
@@ -178,13 +193,22 @@ async def apply_claim_gate(
     pir: Pir,
     matches: list[PirMatch],
     config: AppConfig | None,
+    shadow_deadline: float | None = None,
 ) -> str:
     """文単位の裏付け判定 (既定 off)。``config`` が無い (呼び出し側が未対応) ときも無効。
 
     ``_CLAIM_GATE_MAX_ATTEMPTS`` (初回 + 作り直し 1 回) の最終試行でもしきい値未満の文が
     残れば、**その文だけ** を落とす (全文落ちたら既存の失敗時の扱いで空文字)。
+    shadow は 1 回だけ採点してログ ``daily_focus_claim_gate_shadow`` を出し、text をそのまま返す
+    (``shadow_deadline`` (time.monotonic) を過ぎていれば採点しない)。
     """
-    if not claim_gate_enabled() or config is None or not text:
+    mode = claim_gate_mode()
+    if mode == "off" or config is None or not text:
+        return text
+    if mode == "shadow":
+        await _shadow_claim_gate(
+            text, pir=pir, matches=matches, config=config, deadline=shadow_deadline
+        )
         return text
 
     candidate = text
@@ -218,6 +242,50 @@ async def apply_claim_gate(
         dropped_count=len(failed),
     )
     return "。".join(passed) + "。"
+
+
+async def _shadow_claim_gate(
+    text: str,
+    *,
+    pir: Pir,
+    matches: list[PirMatch],
+    config: AppConfig,
+    deadline: float | None,
+) -> None:
+    """shadow: 文ごとの最大 P(はい) を採点してログに残すだけ (文の本文は出さない、例外は握る)。"""
+    if deadline is not None and time.monotonic() > deadline:
+        _log.info("daily_focus_claim_gate_shadow_skipped", pir_id=pir.id, reason="budget")
+        return
+    try:
+        threshold = effective_threshold(
+            Step.PIR_FOCUS_CLAIM_JUDGE, fallback=PIR_FOCUS_CLAIM_THRESHOLD
+        )
+        scores: list[float | None] = []
+        for sentence in split_claim_sentences(text):
+            if focus_v6.is_not_applicable(sentence):
+                scores.append(None)
+                continue
+            scores.append(await _claim_max_score(sentence, matches, config=config))
+    except Exception as e:  # noqa: BLE001 — shadow の失敗で要点を止めない
+        _log.warning(
+            "daily_focus_claim_gate_shadow_failed", pir_id=pir.id, error_type=type(e).__name__
+        )
+        return
+    failed = [
+        i
+        for i, sc in enumerate(scores)
+        if threshold is not None and sc is not None and sc < threshold
+    ]
+    _log.info(
+        "daily_focus_claim_gate_shadow",
+        pir_id=pir.id,
+        threshold=threshold,
+        sentence_count=len(scores),
+        failed_count=len(failed),
+        failed_index=failed,
+        scores=[None if sc is None else round(sc, 4) for sc in scores],
+        article_count=len(matches),
+    )
 
 
 @dataclass(frozen=True)
@@ -472,6 +540,7 @@ async def collect_pir_focus_sections(
     """
     cfg = load_current_pir_config()
     sections: list[PirFocusSection] = []
+    shadow_deadline = time.monotonic() + CLAIM_GATE_SHADOW_BUDGET_SECONDS
 
     enabled = [p for p in cfg.priorities if p.enabled]
     _log.info(
@@ -497,7 +566,12 @@ async def collect_pir_focus_sections(
         if len(sections) < max_pirs_with_llm:
             llm_summary = await _generate_llm_summary(llm, pir, top)
             llm_summary = await apply_claim_gate(
-                llm_summary, llm=llm, pir=pir, matches=top, config=config
+                llm_summary,
+                llm=llm,
+                pir=pir,
+                matches=top,
+                config=config,
+                shadow_deadline=shadow_deadline,
             )
 
         sections.append(
@@ -636,6 +710,7 @@ __all__: list[str] = [
     "PirFocusSection",
     "apply_claim_gate",
     "claim_gate_enabled",
+    "claim_gate_mode",
     "collect_pir_focus_sections",
     "fidelity_gate_enabled",
     "run_pir_daily_focus",

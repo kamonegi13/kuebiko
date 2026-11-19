@@ -68,7 +68,7 @@ from src.pipeline.triage_shadow_deferred import (
     remaining_budget_seconds,
     run_deferred_triage_shadow,
 )
-from src.storage.records import ANALYSIS_ONLY_GEO_RESCUE
+from src.storage.records import ANALYSIS_ONLY_GEO_RESCUE, ANALYSIS_ONLY_GROK_BACKFILL
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
 from src.tools.channel_registry import fallback_map, push_map
@@ -1273,15 +1273,22 @@ async def run_pipeline(
         )
         persisted_early.add(art_id)
 
+    from src.grok.backfill import grok_backfill_enabled
+
+    grok_backfill = grok_backfill_enabled()
     for art_id, msg in briefings:
         outcome = outcome_by_msg_id.get(id(msg))
         channel = _resolve_channel(msg, importance_map)
-        if art_id in analysis_only_ids:
-            # 分析専用 (地政学の救済): 配信せず status='posted' / posted_channel=None で残す
-            # outcome が引けなくても配信はしない (fail-open で通常の投稿に落とさない)
+        backfilled = grok_backfill and art_id in grok_subarticles
+        if art_id in analysis_only_ids or backfilled:
+            # 分析専用 (地政学の救済 / Grok の過去分): 配信せず status='posted' /
+            # posted_channel=None で残す。outcome が引けなくても配信はしない
+            # (fail-open で通常の投稿に落とさない)
             if outcome is not None:
                 outcome["status"] = "posted"
-                outcome["analysis_only"] = ANALYSIS_ONLY_GEO_RESCUE
+                outcome["analysis_only"] = (
+                    ANALYSIS_ONLY_GROK_BACKFILL if backfilled else ANALYSIS_ONLY_GEO_RESCUE
+                )
                 if msg.summary:
                     outcome["summary"] = msg.summary
                 _register_seen(art_id)

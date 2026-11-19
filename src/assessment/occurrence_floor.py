@@ -3,7 +3,7 @@
 確度は ACH の見立て (誰が・何の目的で) の確度で、事案が起きたことの確度ではない。見立てが
 「未確認・虚偽」のとき被害組織の公表は neutral になり強帰属の引き上げも効かず、公表を根拠に
 持つ新規の 77% が低確度から始まっていた。帰属の確度 (従来の値) は変えず、事案の型が単発事象で
-被害組織の公表・政府の確認があれば、発生の確度 (moderate 下限、独立 2 記事で high) を
+被害組織の公表・政府の確認があれば、発生の確度 (moderate。high は付けない) を
 ``confidence_basis`` の印として別に記録する。
 
 - コードの既定 0 = 出力は従来と同一 / shadow = ログ ``ledger_occurrence_floor_shadow`` のみ /
@@ -58,6 +58,7 @@ def _disclosures(j: KeyJudgment, store: _Store | None) -> tuple[EvidenceItem, ..
 
 def _relevant_ids(evidence: tuple[EvidenceItem, ...], claim: str, repo: _Repo) -> set[str]:
     """見出し・entity の固有の名前が claim と共通する公表・確認の記事 (name_relevance)。"""
+    from src.assessment.attacker_claim import is_attacker_claim
     from src.assessment.name_relevance import article_names, is_relevant
 
     aids = [e.article_id for e in evidence if e.attribution_basis in OCCURRENCE_BASES]
@@ -66,6 +67,8 @@ def _relevant_ids(evidence: tuple[EvidenceItem, ...], claim: str, repo: _Repo) -
     for aid in aids:
         g = repo.get_article_grounding(aid)
         title = str(g.get("title", "")) if g else ""
+        if is_attacker_claim(title, str(g.get("feed_title", "")) if g else ""):
+            continue  # 攻撃者側の主張は発生の確認に数えない
         if is_relevant(article_names(title, keys.get(aid, set())), claim):
             out.add(aid)
     return out

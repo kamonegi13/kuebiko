@@ -39,11 +39,15 @@ def test_floor_moderate_for_single_disclosure() -> None:
     assert got is not None and got[0] == "moderate" and "被害組織の公表" in got[1]
 
 
-def test_floor_high_for_two_sources() -> None:
+def test_floor_never_high_even_for_two_sources() -> None:
     got = occurrence_floor(
         "discrete_event", (_ev("a", "victim_disclosed"), _ev("b", "govt_confirmed", "contradicts"))
     )
-    assert got is not None and got[0] == "high"
+    assert got is not None and got[0] == "moderate"
+
+
+def test_legacy_multi_source_mark_restores_as_moderate() -> None:
+    assert occurrence_from_basis("発生: 確認済 (被害組織の公表・複数ソース)") == "moderate"
 
 
 def test_floor_none_for_other_types_or_weak_basis() -> None:
@@ -145,3 +149,32 @@ def test_failure_does_not_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
 
     j = _j((_ev("a", "victim_disclosed"),))
     assert apply_occurrence_floor(j, repo=_Boom({})) is j
+
+
+@pytest.mark.parametrize(
+    ("title", "feed"),
+    [
+        ("Orbitech 社の情報がリークサイトに掲載", ""),
+        ("Orbitech 社への攻撃で犯行声明", ""),
+        ("Group claims responsibility for Orbitech breach", ""),
+        ("Orbitech listed on leak site", ""),
+        ("Orbitech", "ransomware.live"),
+    ],
+)
+def test_attacker_claim_is_not_counted(
+    monkeypatch: pytest.MonkeyPatch, title: str, feed: str
+) -> None:
+    monkeypatch.setenv(FLAG_ENV, "1")
+
+    class _Repo(_FakeRepo):
+        def get_article_grounding(self, article_id: str) -> dict[str, object] | None:
+            return {"title": title, "feed_title": feed}
+
+    j = _jc((_ev("a", "victim_disclosed"),), "Orbitech 社が不正アクセスを受けた")
+    assert apply_occurrence_floor(j, repo=_Repo({})) is j
+
+
+def test_victim_statement_title_is_not_attacker_claim() -> None:
+    from src.assessment.attacker_claim import is_attacker_claim
+
+    assert not is_attacker_claim("Orbitech 社が不正アクセスを公表")
