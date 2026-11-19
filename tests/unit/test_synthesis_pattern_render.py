@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -148,8 +149,11 @@ async def test_on_llm_failure_falls_back_to_current(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_shadow_delivers_current_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_shadow_delivers_current_and_logs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("SYNTHESIS_PATTERNS", "shadow")
+    monkeypatch.setenv("SYNTHESIS_PATTERNS_SHADOW_DIR", str(tmp_path))
     seen: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(pattern_render._log, "info", lambda e, **kw: seen.append((e, kw)))
     llm = _LLM()

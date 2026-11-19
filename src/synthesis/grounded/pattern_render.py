@@ -207,13 +207,28 @@ async def shadow_patterns(
     attrs: Mapping[str, JudgmentAttrs],
     moved_questions: Sequence[str] = (),
 ) -> None:
-    """shadow: 現行で配信した後に別に作り、件数だけ記録する。失敗は配信に影響しない。"""
+    """shadow: 現行で配信した後に別に作り、節の全文を JSONL に残す。失敗は配信に影響しない。
+
+    新旧の比較 (5 回目の判定) には文が要るため、件数の log に加えて組んだ節を
+    ``pattern_shadow_store`` がローカルの data/ に追記する (DB・公開面には出さない)。
+    """
+    from src.synthesis.grounded.pattern_shadow_store import append_shadow_row
+
     try:
         plan = make_plan(est, attrs)
-        _, stats = await generate_gated(
+        gated, stats = await generate_gated(
             llm=llm, est=est, plan=plan, period_label=period_label, moved_questions=moved_questions
         )
+        sections = assemble_pattern_sections(est=est, plan=plan, gated=gated)
     except Exception as e:  # noqa: BLE001 — shadow は配信に影響させない
         _log.warning("synthesis_pattern_render_shadow_failed", error=str(e)[:160])
         return
     _log_stats("synthesis_pattern_render_shadow", period_label, plan, stats)
+    append_shadow_row(
+        est=est,
+        period_label=period_label,
+        model=getattr(llm, "model", ""),
+        plan=plan,
+        stats=stats,
+        sections=sections,
+    )
