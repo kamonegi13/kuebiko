@@ -59,3 +59,49 @@ def test_allows(name: str, payload: dict[str, object]) -> None:
 def test_blocks(name: str, payload: dict[str, object]) -> None:
     with pytest.raises(SystemExit):
         _assert_no_credentials(payload, "t")
+
+
+# ---- 運用画面のホスト名 (2026-11-20、11-19 監査 P0-1) ----
+
+import export_mirror  # noqa: E402
+
+_OPS = "ops.kuebiko.example"
+
+
+def test_discord_text_is_stripped_from_mirror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(export_mirror, "_ops_hosts", lambda: (_OPS,))
+    out = tmp_path / "brief.json"
+    export_mirror._write(
+        out, {"brief": {"discord_text": f"… https://{_OPS}/app/daily-brief", "id": 1}}
+    )
+    assert "discord_text" not in out.read_text(encoding="utf-8")
+
+
+def test_ops_host_in_other_field_stops_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(export_mirror, "_ops_hosts", lambda: (_OPS,))
+    with pytest.raises(SystemExit):
+        export_mirror._write(tmp_path / "x.json", {"summary": f"see https://{_OPS}/app"})
+
+
+def test_public_domain_and_relative_links_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(export_mirror, "_ops_hosts", lambda: (_OPS,))
+    export_mirror._write(
+        tmp_path / "ok.json",
+        {"summary": "https://kuebiko.example/app/news と /app/daily-brief"},
+    )
+
+
+def test_final_gate_catches_ops_host_left_on_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(export_mirror, "_ops_hosts", lambda: (_OPS,))
+    (tmp_path / "api").mkdir()
+    (tmp_path / "api" / "left.json").write_text(f'{{"note": "https://{_OPS}/"}}', encoding="utf-8")
+    with pytest.raises(SystemExit):
+        export_mirror._final_gate(tmp_path)

@@ -30,6 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.encoders import jsonable_encoder  # noqa: E402
 
+from src.tools.ops_host_guard import (  # noqa: E402
+    collect_runtime_ops_hosts,
+    find_ops_host_refs,
+)
 from src.ui.api.public_news import (  # noqa: E402
     FEATURED_COUNT,
     PUBLIC_CATEGORIES,
@@ -123,10 +127,23 @@ def _assert_no_publisher_body(payload: Any, where: str) -> None:
             _assert_no_publisher_body(value, f"{where}[{i}]")
 
 
+_OPS_HOSTS_CACHE: list[tuple[str, ...]] = []
+
+
+def _assert_no_ops_host(text: str, where: str) -> None:
+    """運用画面のホスト名を載せない (§12、2026-11-20)。実ホストとの完全一致だけで止める。"""
+    if not _OPS_HOSTS_CACHE:
+        _OPS_HOSTS_CACHE.append(collect_runtime_ops_hosts())
+    hosts = _OPS_HOSTS_CACHE[0]
+    if hosts and find_ops_host_refs(text, hosts):
+        raise SystemExit(f"運用画面のホスト名を書き出そうとした: {where}")
+
+
 def _write(path: Path, payload: Any) -> int:
     """FastAPI と同じエンコーダを通す — 静的ファイルと API の出力を一致させる。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(jsonable_encoder(payload), ensure_ascii=False, separators=(",", ":"))
+    _assert_no_ops_host(text, path.name)
     path.write_text(text, encoding="utf-8")
     return len(text.encode())
 

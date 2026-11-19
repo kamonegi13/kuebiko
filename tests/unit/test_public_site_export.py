@@ -85,3 +85,21 @@ class TestCategoryLabelsAreShipped:
         ).read_text(encoding="utf-8")
 
         assert "staticCategoryLabels" in tsx
+
+
+class TestOpsHostNeverLeaves:
+    """標準面にも運用画面のホスト名を出さない (§12、2026-11-20)。"""
+
+    def test_ops_host_stops_write(self, tmp_path: Path, monkeypatch: Any) -> None:
+        import pytest
+
+        monkeypatch.setattr(export_public_site, "_OPS_HOSTS_CACHE", [("ops.kuebiko.example",)])
+        with pytest.raises(SystemExit):
+            export_public_site._write(
+                tmp_path / "x.json", {"summary": "https://ops.kuebiko.example/app"}
+            )
+
+    def test_public_domain_passes(self, tmp_path: Path, monkeypatch: Any) -> None:
+        monkeypatch.setattr(export_public_site, "_OPS_HOSTS_CACHE", [("ops.kuebiko.example",)])
+        export_public_site._write(tmp_path / "ok.json", {"summary": "https://kuebiko.example/news"})
+        assert (tmp_path / "ok.json").exists()

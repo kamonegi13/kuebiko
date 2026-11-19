@@ -52,6 +52,13 @@ from typing import Any
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.tools.ops_host_guard import (  # noqa: E402
+    collect_runtime_ops_hosts,
+    find_ops_host_refs,
+)
+
 #: 記事の窓。Pages の 1 デプロイ 20,000 ファイル制限に対する余裕を保つ
 #: (30 日で約 8,300 件。90 日にすると 28,000 件で超える)。
 DEFAULT_DAYS = 30
@@ -288,7 +295,17 @@ _EXCLUDED_ENDPOINTS = (
 #: (本文判定は値の形で判定できないため、項目名で守るしかない)。
 #: input_text = 地政学の救済の影の記録 (geo_rescue_shadow) が持つ判定の入力
 #: (この表は書き出さない。万一の経路に対する安全網)
-_FORBIDDEN_BODY_KEYS = ("body", "body_ja", "notes", "input_text", "prompt_text", "input_json")
+#: discord_text = 日次ブリーフの Discord 文面。末尾に運用画面のリンクを持ち、画面は
+#: 使っていない (2026-11-20、11-19 監査 P0-1)
+_FORBIDDEN_BODY_KEYS = (
+    "body",
+    "body_ja",
+    "notes",
+    "input_text",
+    "prompt_text",
+    "input_json",
+    "discord_text",
+)
 
 
 #: 資格情報らしい **フィールド名**。語を含むだけでは弾かない — アクター名に
@@ -382,6 +399,26 @@ def _assert_no_forbidden_keys(payload: Any, where: str) -> None:
             _assert_no_forbidden_keys(value, f"{where}[{i}]")
 
 
+_OPS_HOSTS_CACHE: list[tuple[str, ...]] = []
+
+
+def _ops_hosts() -> tuple[str, ...]:
+    """運用画面のホスト (実行時に集める、1 回だけ)。読めなければ書き出しを止める。"""
+    if not _OPS_HOSTS_CACHE:
+        _OPS_HOSTS_CACHE.append(collect_runtime_ops_hosts())
+    return _OPS_HOSTS_CACHE[0]
+
+
+def _assert_no_ops_hosts(payload: Any, where: str) -> None:
+    """運用画面のホスト名 (実ホストとの完全一致) が値に残っていたら止める (fail-closed)。"""
+    hosts = _ops_hosts()
+    if not hosts:
+        return
+    text = json.dumps(payload, ensure_ascii=False)
+    if find_ops_host_refs(text, hosts):
+        raise SystemExit(f"運用画面のホスト名を書き出そうとした: {where}")
+
+
 def _get(client: httpx.Client, path: str, **params: Any) -> Any:
     r = client.get(path, params=params or None)
     r.raise_for_status()
@@ -392,6 +429,7 @@ def _write(path: Path, payload: Any) -> int:
     payload = _strip_forbidden(payload)
     _assert_no_credentials(payload, path.name)
     _assert_no_forbidden_keys(payload, path.name)
+    _assert_no_ops_hosts(payload, path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     path.write_bytes(body)
@@ -414,6 +452,11 @@ def _final_gate(out: Path) -> None:
         where = str(path.relative_to(out))
         _assert_no_credentials(payload, where)
         _assert_no_forbidden_keys(payload, where)
+    hosts = _ops_hosts()
+    for path in sorted(p for p in out.rglob("*") if p.is_file()):
+        text = path.read_bytes().decode("utf-8", errors="ignore")
+        if hosts and find_ops_host_refs(text, hosts):
+            raise SystemExit(f"運用画面のホスト名が残っていた: {path.relative_to(out)}")
 
 
 def _safe_name(article_id: str) -> str:

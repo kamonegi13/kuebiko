@@ -22,6 +22,8 @@ BASE_URL="${MIRROR_SOURCE:-http://127.0.0.1:8001}"
 if [ "${1:-}" != "--skip-export" ]; then
   # 稼働中の API を叩いて写す。落ちていれば失敗する = 空のアドバンスドを配らない。
   rm -rf "$DIST/data"
+  # 運用画面のホスト名の関門 (export_mirror) がホスト上の tunnel のファイルを読む (2026-11-20)
+  MOBILE_TUNNEL_DATA_DIR="$ROOT/data/mobile_tunnel" \
   uv run --directory "$ROOT" python "$ROOT/scripts/export_mirror.py" \
     --base-url "$BASE_URL" --out "$DIST/data"
 fi
