@@ -14,12 +14,17 @@ alert は既に発火済みのため再通知しない (「警告=Discord / 状�
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 from src.cti.actor_normalizer import ActorAliasRegistry
 from src.logging_config import get_logger
 from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
-from src.pipeline.briefing import _summarize_and_build, body_source_for_extraction
+from src.pipeline.briefing import (
+    _degenerate_body_reason,
+    _summarize_and_build,
+    body_source_for_extraction,
+)
 from src.pipeline.persistence import _persist_article_entities
 from src.pipeline.summary import ungrounded_title_tokens
 from src.storage.records import ArticleRecord
@@ -96,6 +101,15 @@ async def reprocess_article_body(
     body = (extraction.text or "")[:MAX_STORED_BODY_CHARS]
     source = body_source_for_extraction(extraction)
 
+    # 取り直した本文にも取り込みと同じ決定論の関門を当てる (2026-11-20、11-19 監査 D2)。
+    degenerate = _degenerate_body_reason(body, title=row.title or "", article_id=article_id)
+    if degenerate is not None:
+        mode = _flag("REPROCESS_BODY_GATE")
+        _log.info("reprocess_body_gate", article_id=article_id, reason=degenerate, mode=mode)
+        if mode == "1":
+            repo.record_refetch_failure(article_id, reason=f"refetched_degenerate:{degenerate}")
+            return "still_degenerate"
+
     # 保存済みの見出しが **取り直した本文に接地しているか** を先に見る。
     # 接地しないなら、その見出しは本文と別の記事のものなので、プロンプトへ渡さず
     # 「タイトルなし」として本文だけから作り直させる。渡してしまうと LLM は与えられた
@@ -142,10 +156,35 @@ async def reprocess_article_body(
     # 2) body_ja 無効化 (再翻訳キューへ)。
     repo.clear_article_body_ja(article_id)
 
-    reenrich_stored_article(repo, article_id, row, msg)
+    # entity の置換と状態の昇格は 1 トランザクション (途中で落ちたら両方戻り、次回に拾う)
+    with repo.atomic():
+        reenrich_stored_article(repo, article_id, row, msg)
+        if row.status == "extract_failed" and degenerate is None:
+            _promote_late_body(repo, article_id, msg)
 
     _log.info("reprocess_refetched_full", article_id=article_id, body_len=len(body), source=source)
     return "refetched_full"
+
+
+def _flag(name: str) -> str:
+    """``0`` / ``shadow`` / ``1`` (既定 0)。"""
+    value = os.environ.get(name, "0").strip()
+    return value if value in ("0", "shadow", "1") else "0"
+
+
+def _promote_late_body(repo: RunHistoryRepository, article_id: str, msg: object) -> None:
+    """本文が後から取れた extract_failed を分析専用の posted に進める (``LATE_BODY_PROMOTE``)。"""
+    mode = _flag("LATE_BODY_PROMOTE")
+    if mode == "0":
+        return
+    importance = getattr(msg, "importance", None)
+    if mode == "shadow":
+        _log.info("late_body_promote_shadow", article_id=article_id, importance=importance)
+        return
+    promoted = repo.promote_late_body(
+        article_id, importance=importance, category=getattr(msg, "category", None)
+    )
+    _log.info("late_body_promoted", article_id=article_id, promoted=promoted)
 
 
 def reenrich_stored_article(

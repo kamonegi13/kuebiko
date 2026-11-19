@@ -385,6 +385,10 @@ services:
       MODEL_RESIDENT_ENFORCE: ${MODEL_RESIDENT_ENFORCE:-0}
       # 配信しない分析専用の行を重複の根にしない (2026-11-20、0 で従来)
       DEDUP_ROOT_STRICT: ${DEDUP_ROOT_STRICT:-1}
+      # 再取得した本文にも取り込みと同じ関門を当てる / 本文が後から取れた extract_failed を
+      # 分析専用 (late_body) の posted に進める (2026-11-20、0 / shadow / 1)
+      REPROCESS_BODY_GATE: ${REPROCESS_BODY_GATE:-1}
+      LATE_BODY_PROMOTE: ${LATE_BODY_PROMOTE:-1}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}

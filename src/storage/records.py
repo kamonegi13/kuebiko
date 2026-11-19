@@ -57,11 +57,13 @@ TriggerSource = Literal["scheduler", "manual", "cli", "recovery"]
 #: articles.analysis_only に入れる理由の SSoT (配信せず分析にだけ残した行)。
 #: geo_rescue = 地政学の救済 (GEO_RESCUE_MODE=analysis) /
 #: thin_body_recovery = 薄い本文の関門の誤落ちの回収 /
-#: grok_backfill = Grok レポートの過去分の取り込み (src/grok/backfill.py)
-AnalysisOnlyReason = Literal["geo_rescue", "thin_body_recovery", "grok_backfill"]
+#: grok_backfill = Grok レポートの過去分の取り込み (src/grok/backfill.py) /
+#: late_body = 再取得で本文が後から取れた extract_failed の記事 (LATE_BODY_PROMOTE)
+AnalysisOnlyReason = Literal["geo_rescue", "thin_body_recovery", "grok_backfill", "late_body"]
 ANALYSIS_ONLY_GEO_RESCUE: AnalysisOnlyReason = "geo_rescue"
 ANALYSIS_ONLY_THIN_BODY_RECOVERY: AnalysisOnlyReason = "thin_body_recovery"
 ANALYSIS_ONLY_GROK_BACKFILL: AnalysisOnlyReason = "grok_backfill"
+ANALYSIS_ONLY_LATE_BODY: AnalysisOnlyReason = "late_body"
 
 
 class RunRecord(BaseModel):

@@ -14,7 +14,11 @@ from src.storage.importance_level_sql import (
     order_by_level_then_recency,
     severity_relevance_sql,
 )
-from src.storage.records import ANALYSIS_ONLY_THIN_BODY_RECOVERY, ArticleRecord
+from src.storage.records import (
+    ANALYSIS_ONLY_LATE_BODY,
+    ANALYSIS_ONLY_THIN_BODY_RECOVERY,
+    ArticleRecord,
+)
 from src.storage.repo_base import RunHistoryRepositoryBase
 from src.storage.row_mappers import _row_to_article, _to_iso
 
@@ -661,6 +665,47 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                     "WHERE article_id=(SELECT article_id FROM articles WHERE id=?) "
                     "AND id<>? AND status='extract_failed' AND failure_reason = ?",
                     (int(row_id), int(row_id), self.THIN_BODY_FAILURE_REASON),
+                )
+            return promoted
+
+    def promote_late_body(
+        self, article_id: str, *, importance: str | None, category: str | None
+    ) -> int:
+        """再取得で本文が取れた extract_failed の最新行を分析専用の posted へ進める。
+
+        2026-11-20 (11-19 監査 D2 P0-3a): 再取得の経路は要約・entity まで書くのに状態を
+        進めず、status='posted' 前提の分析 (PIR・台帳・総括) から外れていた。配信はしない
+        (posted_channel=NULL・analysis_only='late_body')。created_at は触らない。
+        同じ article_id に posted の行が既にあれば何もしない。WHERE に status を入れるので
+        再実行しても二重に動かない。同じ article_id の他の extract_failed 行は superseded。
+        """
+        with self.atomic(), self._connect() as conn:
+            posted = conn.execute(
+                "SELECT 1 FROM articles WHERE article_id=? AND status='posted' LIMIT 1",
+                (article_id,),
+            ).fetchone()
+            if posted:
+                return 0
+            row = conn.execute(
+                "SELECT id FROM articles WHERE article_id=? AND status='extract_failed'"
+                " AND failure_reason LIKE 'degenerate_body:%' ORDER BY id DESC LIMIT 1",
+                (article_id,),
+            ).fetchone()
+            if not row:
+                return 0
+            row_id = int(row["id"])
+            cur = conn.execute(
+                "UPDATE articles SET status='posted', posted_channel=NULL, importance=?,"
+                " category=?, routing_reason=?, analysis_only=?"
+                " WHERE id=? AND status='extract_failed'",
+                (importance, category, "recovered:late_body", ANALYSIS_ONLY_LATE_BODY, row_id),
+            )
+            promoted = int(cur.rowcount or 0)
+            if promoted:
+                conn.execute(
+                    "UPDATE articles SET failure_reason='superseded: late_body'"
+                    " WHERE article_id=? AND id<>? AND status='extract_failed'",
+                    (article_id, row_id),
                 )
             return promoted
 
