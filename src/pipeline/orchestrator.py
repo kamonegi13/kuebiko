@@ -1203,9 +1203,10 @@ async def run_pipeline(
     # Phase 5L-4: ch 横断 dedup の準備。同 dedup_key で複数 ch にまたがる briefing
     # があれば、最も上位の ch (alert > japan_watch > brief > watch > ops) のみ投稿。
     # 履歴 (直近 48h) に同 key が成功投稿されていたらこの run でも skip。
-    cross_channel_seen_keys: set[str] = set()
+    # 鍵 → 最初に配信した記事 id (同じ run の一致にも根の id を残す、2026-11-20)
+    cross_channel_seen_keys: dict[str, str] = {}
     # Phase 5T-V-2: 正規化 CVE-ID ベースの同 run 内 dedup (LLM dedup_key 不安定対策)。
-    cross_channel_seen_cves: set[str] = set()
+    cross_channel_seen_cves: dict[str, str] = {}
     # C1: webhook 未設定 ch の fallback 定義 (レジストリ SSoT、run 中は固定)
     channel_fallbacks = fallback_map()
     # 通知再設計: web-only disposition は channel レジストリの push 属性で決める (情報フロー編集)。

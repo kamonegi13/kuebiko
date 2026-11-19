@@ -383,6 +383,8 @@ services:
       # 2 枠 (S・N) の方針の外のモデル割当を保存時に拒否する (0 = 警告ログのみ)。
       # 割当の保存は full instance が行うので kuebiko にだけ渡す (src/tools/model_end_state.py)
       MODEL_RESIDENT_ENFORCE: ${MODEL_RESIDENT_ENFORCE:-0}
+      # 配信しない分析専用の行を重複の根にしない (2026-11-20、0 で従来)
+      DEDUP_ROOT_STRICT: ${DEDUP_ROOT_STRICT:-1}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}

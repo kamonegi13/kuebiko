@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime
 
@@ -366,6 +367,24 @@ def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
     return len(inter) / len(union) if union else 0.0
 
 
+def dedup_root_strict_enabled() -> bool:
+    """``DEDUP_ROOT_STRICT`` (既定 1): 配信しない分析専用の行を重複の根にしない (2026-11-20)。
+
+    他の 3 層 (dedup_key・CVE・victim_org) は既に ``analysis_only IS NULL`` で絞っており、
+    content 層だけが分析専用の行 (11-19 の Grok 過去分の取り込み等) を根にして配信を
+    抑止していた (11-19 監査 D3 I-1)。``0`` で従来の候補に戻す。
+    """
+    return os.environ.get("DEDUP_ROOT_STRICT", "1").strip() != "0"
+
+
+def _root_candidates(repo: RunHistoryRepository, *, lookback_hours: int) -> list[ArticleRecord]:
+    return repo.list_recent_posted_articles(
+        lookback_hours=lookback_hours,
+        limit=_IDENTITY_CANDIDATE_LIMIT,
+        exclude_analysis_only=dedup_root_strict_enabled(),
+    )
+
+
 def find_recent_content_duplicate(
     *,
     repo: RunHistoryRepository,
@@ -405,9 +424,7 @@ def find_recent_content_duplicate(
     sig_new_cves = {t for t in sig_new if t.startswith("cve-")}
 
     # 候補は同一性延長窓 (72h) まで取得し、通常信号は 24h 内に限定して適用する
-    candidates = repo.list_recent_posted_articles(
-        lookback_hours=IDENTITY_LOOKBACK_HOURS, limit=_IDENTITY_CANDIDATE_LIMIT
-    )
+    candidates = _root_candidates(repo, lookback_hours=IDENTITY_LOOKBACK_HOURS)
     now = datetime.now(UTC)
     best: ArticleRecord | None = None
     best_score = 0.0

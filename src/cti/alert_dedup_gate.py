@@ -54,7 +54,7 @@ from datetime import datetime
 
 import numpy as np
 
-from src.cti.content_dedup import extract_advisory_ids
+from src.cti.content_dedup import dedup_root_strict_enabled, extract_advisory_ids
 from src.eventnews.pair_features import PairSide, pair_features
 from src.eventnews.pair_model import load_model
 from src.logging_config import get_logger
@@ -155,7 +155,9 @@ def _exact_match_candidates(
     repo: RunHistoryRepository, *, candidate_article_id: str | None
 ) -> list[ArticleRecord]:
     candidates = repo.list_recent_posted_articles(
-        lookback_hours=ALERT_DEDUP_LOOKBACK_HOURS, limit=_EXACT_MATCH_CANDIDATE_LIMIT
+        lookback_hours=ALERT_DEDUP_LOOKBACK_HOURS,
+        limit=_EXACT_MATCH_CANDIDATE_LIMIT,
+        exclude_analysis_only=dedup_root_strict_enabled(),
     )
     return [
         c

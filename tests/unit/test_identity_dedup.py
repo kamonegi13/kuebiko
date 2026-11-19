@@ -495,3 +495,73 @@ class TestCheckPrePostDedupOrdering:
 
         assert result is not None
         assert result.failure_reason.startswith("victim_org dedup")
+
+
+# ---- 根の厳格化 (2026-11-20、11-19 監査 D3 I-1) ----
+
+
+class TestDedupRootStrict:
+    def test_same_run_key_match_records_first_article_as_root(
+        self, repo: RunHistoryRepository
+    ) -> None:
+        seen: dict[str, str] = {}
+        first = check_dedup_key_duplicate(
+            msg=_msg(metadata={"dedup_key": "k1"}),
+            art_id="a1",
+            channel="brief",
+            dedup_repo=repo,
+            cross_channel_seen_keys=seen,
+        )
+        second = check_dedup_key_duplicate(
+            msg=_msg(metadata={"dedup_key": "k1"}),
+            art_id="a2",
+            channel="brief",
+            dedup_repo=repo,
+            cross_channel_seen_keys=seen,
+        )
+        assert first is None
+        assert isinstance(second, DedupGateResult)
+        assert second.prior_article_id == "a1"
+
+    def test_content_root_list_excludes_analysis_only(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("DEDUP_ROOT_STRICT", raising=False)
+        run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="x", dry_run=False))
+        for aid, only in (("normal", None), ("backfill", "grok_backfill")):
+            repo.add_article(
+                ArticleRecord(
+                    run_id=run_id,
+                    article_id=aid,
+                    title="t",
+                    url=f"https://example.com/{aid}",
+                    status="posted",
+                    posted_channel="brief" if only is None else None,
+                    analysis_only=only,
+                    created_at=_now() - timedelta(hours=1),
+                )
+            )
+        from src.cti.content_dedup import _root_candidates
+
+        ids = {a.article_id for a in _root_candidates(repo, lookback_hours=24)}
+        assert ids == {"normal"}
+
+    def test_strict_off_keeps_old_root_list(
+        self, repo: RunHistoryRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DEDUP_ROOT_STRICT", "0")
+        run_id = repo.start_run(RunRecord(started_at=_now(), pipeline="x", dry_run=False))
+        repo.add_article(
+            ArticleRecord(
+                run_id=run_id,
+                article_id="backfill",
+                title="t",
+                url="https://example.com/b",
+                status="posted",
+                analysis_only="grok_backfill",
+                created_at=_now() - timedelta(hours=1),
+            )
+        )
+        from src.cti.content_dedup import _root_candidates
+
+        assert [a.article_id for a in _root_candidates(repo, lookback_hours=24)] == ["backfill"]

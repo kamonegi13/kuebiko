@@ -51,6 +51,24 @@ class DedupGateResult:
     prior_article_id: str | None = None
 
 
+#: 同じ run の中で見た鍵 → 最初に配信した記事 id (2026-11-20、11-19 監査 D3 I-1)。
+#: set でも受ける (後方互換) が、その場合は根の id を記録できない。
+SeenRoots = set[str] | dict[str, str]
+
+
+def _seen_root(seen: SeenRoots, key: str) -> tuple[bool, str | None]:
+    if isinstance(seen, dict):
+        return (key in seen, seen.get(key))
+    return (key in seen, None)
+
+
+def _remember(seen: SeenRoots, key: str, art_id: str) -> None:
+    if isinstance(seen, dict):
+        seen.setdefault(key, art_id)
+    else:
+        seen.add(key)
+
+
 def _root_id(prior: object) -> str | None:
     """一致先レコードから重複元の根の id を取る (一致先が重複なら、その duplicate_of)。"""
     root = getattr(prior, "duplicate_of", None) or getattr(prior, "article_id", None)
@@ -63,7 +81,7 @@ def check_dedup_key_duplicate(
     art_id: str,
     channel: str,
     dedup_repo: RunHistoryRepository | None,
-    cross_channel_seen_keys: set[str],
+    cross_channel_seen_keys: SeenRoots,
 ) -> DedupGateResult | None:
     """Phase 5L-4: dedup_key 完全一致 (in-run + 48h 履歴) の ch 横断 dedup。
 
@@ -74,7 +92,8 @@ def check_dedup_key_duplicate(
     msg_dedup_key = msg.metadata.get("dedup_key")
     if not (isinstance(msg_dedup_key, str) and msg_dedup_key):
         return None
-    if msg_dedup_key in cross_channel_seen_keys:
+    seen_key, root = _seen_root(cross_channel_seen_keys, msg_dedup_key)
+    if seen_key:
         _log.info(
             "cross_channel_dedup_skipped",
             article_id=art_id,
@@ -82,7 +101,9 @@ def check_dedup_key_duplicate(
             dedup_key=msg_dedup_key,
             reason="same_run_higher_priority_already_posted",
         )
-        return DedupGateResult(f"cross-ch dedup: same key in this run ({msg_dedup_key})")
+        return DedupGateResult(
+            f"cross-ch dedup: same key in this run ({msg_dedup_key})", prior_article_id=root
+        )
     if dedup_repo is not None:
         prior = dedup_repo.find_recent_article_by_dedup_key(msg_dedup_key, within_hours=48)
         if prior is not None:
@@ -98,7 +119,7 @@ def check_dedup_key_duplicate(
                 f"cross-ch dedup: prior post 48h ({prior.posted_channel})",
                 prior_article_id=_root_id(prior),
             )
-    cross_channel_seen_keys.add(msg_dedup_key)
+    _remember(cross_channel_seen_keys, msg_dedup_key, art_id)
     return None
 
 
@@ -108,7 +129,7 @@ def check_cve_duplicate(
     art_id: str,
     channel: str,
     dedup_repo: RunHistoryRepository | None,
-    cross_channel_seen_cves: set[str],
+    cross_channel_seen_cves: SeenRoots,
 ) -> DedupGateResult | None:
     """Phase 5T-V-2: 正規化 CVE-ID による 48h 以内の強制 skip。
 
@@ -123,7 +144,8 @@ def check_cve_duplicate(
         dedup_key=msg_dedup_key if isinstance(msg_dedup_key, str) else None,
         title=msg.title,
     )
-    if cve_id and cve_id in cross_channel_seen_cves:
+    seen_cve, cve_root = _seen_root(cross_channel_seen_cves, cve_id) if cve_id else (False, None)
+    if cve_id and seen_cve:
         _log.info(
             "cve_normalized_dedup_skipped",
             article_id=art_id,
@@ -131,7 +153,9 @@ def check_cve_duplicate(
             cve_id=cve_id,
             reason="same_cve_in_this_run",
         )
-        return DedupGateResult(f"cve dedup: same CVE in this run ({cve_id})")
+        return DedupGateResult(
+            f"cve dedup: same CVE in this run ({cve_id})", prior_article_id=cve_root
+        )
     if cve_id:
         prior_cve = dedup_repo.find_recent_post_by_cve(cve_id, within_hours=48)
         if prior_cve is not None:
@@ -149,7 +173,7 @@ def check_cve_duplicate(
                 f"({prior_cve.posted_channel}, key={prior_cve.dedup_key})",
                 prior_article_id=_root_id(prior_cve),
             )
-        cross_channel_seen_cves.add(cve_id)
+        _remember(cross_channel_seen_cves, cve_id, art_id)
     return None
 
 
@@ -269,8 +293,8 @@ def check_pre_post_dedup(
     channel: str,
     dedup_repo: RunHistoryRepository | None,
     article: Article | None,
-    cross_channel_seen_keys: set[str],
-    cross_channel_seen_cves: set[str],
+    cross_channel_seen_keys: SeenRoots,
+    cross_channel_seen_cves: SeenRoots,
 ) -> DedupGateResult | None:
     """投稿直前 dedup 4 層を順に評価する統合ゲート (Step 2)。
 

@@ -1146,21 +1146,24 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         *,
         lookback_hours: int = 24,
         limit: int = 500,
+        exclude_analysis_only: bool = False,
     ) -> list[ArticleRecord]:
         """直近 ``lookback_hours`` 内に status='posted' で記録された article を返す。
 
         Phase B content-dedup: cross-source content similarity 比較で対象 article
-        集合として使う。
+        集合として使う。``exclude_analysis_only`` = 配信しない分析専用の行
+        (geo_rescue・grok_backfill 等) を重複の根の候補から外す (2026-11-20、他の 3 層と揃える)。
         """
+        only_clause = " AND analysis_only IS NULL" if exclude_analysis_only else ""
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT * FROM articles
-                 WHERE status='posted'
+                 WHERE status='posted'{only_clause}
                    AND datetime(created_at) >= datetime('now', ?)
                  ORDER BY datetime(created_at) DESC
                  LIMIT ?
-                """,
+                """,  # noqa: S608 — only_clause は固定の 2 値
                 (f"-{lookback_hours} hours", limit),
             ).fetchall()
         return [_row_to_article(r) for r in rows]
