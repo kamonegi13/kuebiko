@@ -78,12 +78,16 @@ async def _run(
     until: datetime | None,
     min_body_chars: int,
     probe_only: bool = False,
+    target: str = "thin_body",
 ) -> int:
     repo = RunHistoryRepository()
-    rows = repo.list_thin_body_extract_failed(since=since, until=until)
+    if target == "late_body":
+        rows = repo.list_degenerate_extract_failed(since=since, until=until)
+    else:
+        rows = repo.list_thin_body_extract_failed(since=since, until=until)
     candidates = select_candidates(rows, min_body_chars=min_body_chars)
     print(
-        f"extract_failed(thin_body): {len(rows)} 記事 / 今の関門を通る: "
+        f"extract_failed({target}): {len(rows)} 記事 / 今の関門を通る: "
         f"{len(candidates)} / 今回の上限: {limit or '無し'}"
     )
     by_id = {str(r["article_id"]): r for r in rows}
@@ -113,7 +117,12 @@ async def _run(
             continue
         try:
             done = await recover_one(
-                repo, by_id[cand.article_id], llm=llm, template=template, enrichment=enrichment
+                repo,
+                by_id[cand.article_id],
+                llm=llm,
+                template=template,
+                enrichment=enrichment,
+                target=target,
             )
         except Exception as e:  # noqa: BLE001 — 1 件の失敗で全体を止めない (再実行で拾い直す)
             failed += 1
@@ -160,6 +169,13 @@ def main() -> int:
         help="2 段目 (logprob 判定、GPU) だけ走らせて件数を出す。DB は書かない",
     )
     ap.add_argument("--since", default=None, help="この日付 (YYYY-MM-DD) 以降の created_at のみ")
+    ap.add_argument(
+        "--target",
+        choices=("thin_body", "late_body"),
+        default="thin_body",
+        help="late_body = 劣化した本文 (degenerate_body:*) で extract_failed のまま本文が"
+        "後から取れた記事を analysis_only='late_body' で回収 (2026-11-20)",
+    )
     args = ap.parse_args()
     return asyncio.run(
         _run(
@@ -169,6 +185,7 @@ def main() -> int:
             effective_until(_parse_since(args.until), args.min_age_hours),
             0 if args.include_short else MIN_BODY_CHARS,
             args.probe_only,
+            args.target,
         )
     )
 

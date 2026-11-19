@@ -157,3 +157,53 @@ def test_promote_skips_when_a_posted_row_exists(tmp_path: Path) -> None:
         )
     )
     assert repo.promote_late_body("a", importance="low", category="other") == 0
+
+
+# ---- 既存の行の回収 (scripts/recover_thin_body_articles.py --target late_body) ----
+
+
+def _add_failed_with_body(repo: RunHistoryRepository, aid: str, reason: str, body: str) -> None:
+    _add_failed(repo, aid, reason)
+    repo.update_article_body(aid, body, source="full_extract")
+
+
+def test_list_degenerate_candidates_excludes_articles_already_posted(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _add_failed_with_body(repo, "a", "degenerate_body: body_too_short:0", LONG_BODY)
+    _add_failed_with_body(repo, "b", "degenerate_body: block_page", LONG_BODY)
+    _add_failed_with_body(repo, "c", "http_error_403", LONG_BODY)
+    rid = repo.start_run(RunRecord(started_at=datetime.now(UTC), pipeline="t", dry_run=False))
+    repo.add_article(
+        ArticleRecord(
+            run_id=rid, article_id="b", title="t", url="https://ex.com/b", status="posted"
+        )
+    )
+    ids = {str(r["article_id"]) for r in repo.list_degenerate_extract_failed()}
+    assert ids == {"a"}
+
+
+@pytest.mark.asyncio
+async def test_recover_one_late_body_target_promotes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.pipeline import thin_body_recovery
+
+    repo = _repo(tmp_path)
+    _add_failed_with_body(repo, "a", "degenerate_body: body_too_short:0", LONG_BODY)
+    reply = SimpleNamespace(importance="low", category="geopolitical")
+    monkeypatch.setattr(thin_body_recovery, "_summarize_and_build", AsyncMock(return_value=reply))
+    monkeypatch.setattr(thin_body_recovery, "reenrich_stored_article", lambda *a, **k: None)
+    row = repo.list_degenerate_extract_failed()[0]
+    import jinja2
+
+    done = await thin_body_recovery.recover_one(
+        repo,
+        row,
+        llm=AsyncMock(),
+        template=jinja2.Template("x"),
+        enrichment=None,
+        target="late_body",
+    )
+    rec = repo.get_article("a")
+    assert done is True
+    assert rec is not None and rec.analysis_only == "late_body" and rec.status == "posted"

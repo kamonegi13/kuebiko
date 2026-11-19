@@ -631,6 +631,40 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         out = list(latest.values())
         return out[:limit] if limit else out
 
+    def list_degenerate_extract_failed(
+        self,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        """本文の劣化 (degenerate_body:*) で extract_failed のまま、posted の行が無い記事。
+
+        late_body の回収 (2026-11-20) 用。形は ``list_thin_body_extract_failed`` と同じ
+        (article_id ごとに最新行・新しい順)。判定 (今の関門を通るか) は呼び出し側。
+        """
+        sql = (
+            "SELECT id, article_id, url, title, feed_title, feed_url, "
+            "published_at, created_at, body, body_source FROM articles a "
+            "WHERE status='extract_failed' AND failure_reason LIKE 'degenerate_body:%' "
+            "AND body IS NOT NULL AND body <> '' "
+            "AND NOT EXISTS (SELECT 1 FROM articles p WHERE p.article_id = a.article_id "
+            "AND p.status = 'posted') "
+        )
+        params: list[object] = []
+        if since is not None:
+            sql += "AND created_at >= ? "
+            params.append(_to_iso(since))
+        if until is not None:
+            sql += "AND created_at < ? "
+            params.append(_to_iso(until))
+        sql += "ORDER BY id DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        latest: dict[str, dict[str, object]] = {}
+        for r in rows:
+            latest.setdefault(str(r["article_id"]), dict(r))
+        return list(latest.values())
+
     def promote_recovered_thin_body(
         self, row_id: int, *, importance: str | None, category: str | None
     ) -> int:

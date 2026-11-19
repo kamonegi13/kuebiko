@@ -132,8 +132,13 @@ async def recover_one(
     llm: LLMClient,
     template: jinja2.Template,
     enrichment: object | None,
+    target: str = "thin_body",
 ) -> bool:
-    """1 記事を保存済み本文で再要約して回収する。成功 True (失敗は理由を log して False)。"""
+    """1 記事を保存済み本文で再要約して回収する。成功 True (失敗は理由を log して False)。
+
+    ``target``: ``thin_body`` (従来、analysis_only='thin_body_recovery') /
+    ``late_body`` (degenerate_body:* 全般、analysis_only='late_body'、2026-11-20)。
+    """
     article_id = str(row["article_id"])
     body = str(row["body"])
     rec = repo.get_article(article_id)
@@ -161,9 +166,14 @@ async def recover_one(
     )
     reenrich_stored_article(repo, article_id, rec, msg)
     # 状態の更新は最後: 途中で落ちた記事は extract_failed のまま残り、再実行で拾われる
-    promoted = repo.promote_recovered_thin_body(
-        _row_id(row), importance=msg.importance, category=msg.category
-    )
+    if target == "late_body":
+        promoted = repo.promote_late_body(
+            article_id, importance=msg.importance, category=msg.category
+        )
+    else:
+        promoted = repo.promote_recovered_thin_body(
+            _row_id(row), importance=msg.importance, category=msg.category
+        )
     if not promoted:
         _log.warning("thin_body_recover_skipped", article_id=article_id, reason="not_promoted")
         return False
