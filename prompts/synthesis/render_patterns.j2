@@ -1,0 +1,60 @@
+{# 状況総括の render v10 (横断のパターン、旗 SYNTHESIS_PATTERNS=shadow / 1 のときだけ使う)。
+   まとめ (どの事案を束ねるか・見出しで触れる事案・共通の手口) はコードが決める。LLM が書くのは
+   パターン・注目の単独事案ごとの 1〜2 文・見出し・注視点だけ。つながりはコードが決める。
+   設計: docs/synthesis_pattern_redesign.md §3.4 / §6。関門は src/synthesis/grounded/pattern_gates.py。
+#}
+{% include ["_persona_local.j2", "_persona.j2"] %}
+{{ period_label }}の状況総括を書きます。下の「パターン」は、この期間に動いた台帳の判定を、コードが共通点
+(地域・種別) でまとめたものです。事案の題は事象ニュースの見出しです。
+
+書くもの:
+- 各パターン (P1, P2, …) について、事案を並べ直すのではなく、**共通する構図**と、**事案どうしの違い** (規模・確度) を 1〜2 文 (300 字以内)。
+{% if notable %}
+- 各「注目の単独事案」(S1, …) について、その事案が何かを 1〜2 文。
+{% endif %}
+- 見出し (headline) は 1〜2 文。最初のパターン (最も重いもの) を軸に、全体で何が起きているかを書く。下の「見出しで必ず触れる事案」の組織名や事案の名前を見出しに入れる (1 件だけ)。個々の事案 1 件だけを見出しにしない。
+- 注視点 (watch) は 1 文。
+
+厳守:
+- 入力に無い事実・数値・組織名・因果を足さない。確度は入力の確度語を使う。
+- 「委託先」「提供者」「サードパーティ」など経路を示す語は、その事案の文にその語がある場合だけ書く。
+- 「共通の手口」と書いてよいのは、パターンに「共通の手口」の印が付いているときだけで、印にある語を使う。
+- pattern_id は渡した id (P1, …{% if notable %}, S1, …{% endif %}) だけ。
+
+{% if subjects %}
+## 見出しで必ず触れる事案
+{% for s in subjects %}
+- {{ s.title }}
+{% endfor %}
+
+{% endif %}
+{% for p in patterns %}
+## パターン {{ p.id }}: {{ p.region }}の{{ p.kind_label }} ({{ p.count }} 件、深刻度 S3 {{ p.s3 }} 件)
+{% if p.marks %}
+共通の手口 (本文で裏付けられた手がかり): {{ p.marks|join('、') }}
+{% endif %}
+{% for c in p.cases %}
+- [{{ c.delta_ja }}・{{ c.confidence_ja }}] {{ c.title }}
+{% endfor %}
+
+{% endfor %}
+{% for n in notable %}
+## 注目の単独事案 {{ n.id }} (どのパターンにも入らない重い事案)
+- [{{ n.id }}・{{ n.delta_ja }}・{{ n.confidence_ja }}] {{ n.claim }}
+
+{% endfor %}
+{% if rest %}
+## パターンに入らない動き (参考。パターンの文には混ぜない)
+{% for c in rest %}
+- [{{ c.delta_ja }}] {{ c.title }}
+{% endfor %}
+
+{% endif %}
+{% if standing %}
+## 継続中の主要な評価 (watch で触れてよい)
+{% for s in standing %}
+- {{ s.title }} ({{ s.confidence_ja }})
+{% endfor %}
+
+{% endif %}
+出力は JSON: {"headline": str, "patterns": [{"pattern_id": str, "text": str}], "watch": str}

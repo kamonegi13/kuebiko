@@ -378,6 +378,8 @@ services:
       # 0=off / shadow=旧で配信し新しい形を別に生成して件数を log (LLM 呼び出しが増える) / 1=on
       FACT_ANCHOR: ${FACT_ANCHOR:-0}
       SLOT_RENDER: ${SLOT_RENDER:-0}
+      # 状況総括を横断のパターンで描く (docs/synthesis_pattern_redesign.md)。0 / shadow / 1
+      SYNTHESIS_PATTERNS: ${SYNTHESIS_PATTERNS:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}
       # 状況総括 slot render の読みやすさ補助 (SLOT_RENDER=1 のときだけ効く)。0 / 1

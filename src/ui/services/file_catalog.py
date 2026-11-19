@@ -245,6 +245,12 @@ PROMPT_CATALOG: dict[str, FileInfo] = {
         "n20 T5 (U-B)。判定ごとの world/implication の文だけを書かせ、確度語・反証・対立仮説は"
         "コードが描く。旗 SLOT_RENDER=on / shadow のときだけ使う (既定 off、slot_render.py)",
     ),
+    "prompts/synthesis/render_patterns.j2": FileInfo(
+        "状況総括 (synthesis)",
+        "横断パターン v10 (パターンごとの文)",
+        "判定をコードが地域×種別でまとめたパターンごとに 1〜2 文・見出し・注視点だけを書かせる。"
+        "旗 SYNTHESIS_PATTERNS=1 / shadow のときだけ使う (既定 off、pattern_render.py)",
+    ),
     "prompts/spotlight/pir_spotlight_staged_v7.j2": FileInfo(
         "Spotlight",
         "PIR Spotlight 多段 v7",

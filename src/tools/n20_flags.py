@@ -39,6 +39,10 @@ SLOT_RENDER_DEDUP_ENV = "SLOT_RENDER_DEDUP"
 SLOT_PIR_COMPACT_ENV = "SLOT_PIR_COMPACT"
 SLOT_CHAIN_GROUPING_ENV = "SLOT_CHAIN_GROUPING"
 
+#: 状況総括を「横断のパターン」で描く (docs/synthesis_pattern_redesign.md)。off = 現行 /
+#: shadow = 現行で配信しパターン版を別に作って件数だけ log・generation_inputs / on = パターン版
+SYNTHESIS_PATTERNS_ENV = "SYNTHESIS_PATTERNS"
+
 _ON = frozenset({"1", "on", "true"})
 _SHADOW = frozenset({"shadow"})
 
@@ -58,6 +62,10 @@ def fact_anchor_mode() -> FlagMode:
 
 def slot_render_mode() -> FlagMode:
     return _mode(SLOT_RENDER_ENV)
+
+
+def synthesis_patterns_mode() -> FlagMode:
+    return _mode(SYNTHESIS_PATTERNS_ENV)
 
 
 def slot_render_dedup_on() -> bool:

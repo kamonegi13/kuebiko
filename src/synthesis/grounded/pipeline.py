@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from src.synthesis.generator import SynthesisGenerationResult
 
 from src.logging_config import get_logger
+from src.storage.repo_judgment_attrs import JudgmentAttrs
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.adversary import adversarial_review, apply_adversarial
 from src.synthesis.grounded.chronology import article_chronology
@@ -222,6 +223,39 @@ async def build_estimate(
     )
 
 
+#: 静かな日の見出しに添える、動いた常設の問いの上限
+_MOVED_QUESTIONS_MAX = 3
+
+
+def _pattern_inputs(
+    repo: RunHistoryRepository, est: Estimate, *, now: datetime | None
+) -> tuple[dict[str, JudgmentAttrs] | None, tuple[str, ...]]:
+    """横断パターン版 (旗 ``SYNTHESIS_PATTERNS``) の入力: 判定ごとの属性と動いた常設の問い。
+
+    旗 off なら (None, ())。失敗したら属性なし = パターン版を使わない (現行の描き方)。
+    backfill (projection_only) も同じ口を通る (過去の now でも期間の始まり以降の根拠で引く)。
+    """
+    from src.tools.n20_flags import synthesis_patterns_mode
+
+    if synthesis_patterns_mode() == "off":
+        return None, ()
+    try:
+        attrs = repo.get_judgment_attrs(
+            [j.id for j in est.judgments], since=est.period_start, until=est.period_end
+        )
+    except Exception as e:  # noqa: BLE001 — 属性の失敗で総括を止めない
+        _log.warning("pattern_attrs_failed", error=str(e)[:160])
+        return None, ()
+    try:
+        from src.digest.pir_brief import collect_pir_brief
+
+        moved = tuple(s.question for s in collect_pir_brief(now=now).moved)
+    except Exception as e:  # noqa: BLE001 — 常設の問いの失敗は静かな日の見出しの材料が減るだけ
+        _log.warning("pattern_moved_questions_failed", error=str(e)[:160])
+        moved = ()
+    return attrs, moved[:_MOVED_QUESTIONS_MAX]
+
+
 async def generate_grounded_synthesis(
     *,
     llm: LLMClient,
@@ -372,6 +406,7 @@ async def generate_grounded_synthesis(
     # 借用は規約違反でもある (2026-09-08「LLM を呼ぶ処理は自分の Step を持つ」)。
     # rollback: SYNTHESIS_RENDER_NARRATIVE=0 で従来 (ach_llm) に戻る。
     render_llm = llm if _render_uses_narrative() else ach_llm
+    pattern_attrs, moved_questions = _pattern_inputs(repo, est, now=now)
     record = await render_record(
         llm=render_llm,
         est=est,
@@ -379,5 +414,7 @@ async def generate_grounded_synthesis(
         article_count=article_count,
         forecast_ctx=forecast_ctx,
         prev_headline_judgment_id=prev_headline_judgment_id,
+        attrs=pattern_attrs,
+        moved_questions=moved_questions,
     )
     return SynthesisGenerationResult(record=record, raw_response="grounded", error=None)
