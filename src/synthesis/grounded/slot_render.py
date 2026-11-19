@@ -336,7 +336,21 @@ async def generate_clauses(
         max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
         think=False,
     )
-    return raw, plan
+    return _drop_truncated_tail(raw, period_label=period_label), plan
+
+
+def _drop_truncated_tail(raw: WireJudgmentClauses, *, period_label: str) -> WireJudgmentClauses:
+    """出力上限で途中まで書かれた最後の項目を使わない (2026-11-20、11-19 監査 P0-2)。
+
+    出力は headline_clause → items → watch_clause の順。上限に当たった JSON は救済で
+    括弧を閉じられ、最後の項目の文が途中で終わったまま・watch_clause が空のまま検証を
+    通る。部品は句点なしで書く形なので文末では判定できない — **watch_clause が空で
+    items があるとき**を途中切れとみなし、最後の項目を捨てる (その判定は台帳の値で描く)。
+    """
+    if not raw.items or raw.watch_clause.strip():
+        return raw
+    _log.warning("synthesis_slot_truncated_item_dropped", period=period_label)
+    return raw.model_copy(update={"items": raw.items[:-1]})
 
 
 async def render_slot_sections(

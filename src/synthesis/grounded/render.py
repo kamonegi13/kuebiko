@@ -220,8 +220,10 @@ class _WireSectionsCoT(BaseModel):
 _BODY_SALIENCE_RATIO = 0.5
 #: 下限 = これ未満には絞らない (daily は moved 中央 5 件なので実質「全件」になる)。
 _MOVED_SECTION_MIN: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 15}
-#: 上限 = 病的な期間での暴走を防ぐ安全弁 (40 件 × 1-2 文 ≒ 5,600 字で出力上限内)。
-_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 40, "monthly": 40}
+#: 上限 = 病的な期間での暴走を防ぐ安全弁。weekly は 09-15 に 40 へ広げたが、本文 43 件・
+#: 入力 3.2 万トークンで出力上限 (10,000) に 4/4 回当たり、後ろの節が空のまま途中で切れて
+#: 投稿されていた (9 週)。12 (+PIR 保証 6) に戻す (2026-11-20、11-19 監査 P0-2 の暫定)。
+_MOVED_SECTION_MAX: dict[str, int] = {"daily": 12, "weekly": 12, "monthly": 40}
 
 #: 継続中の判定 (standing) も **同じ重要度基準**で選ぶ (2026-09-15)。weekly では軌跡射影の
 #: no_change 判定がそのまま載り 22 件 = 3.2k tok を占めていた。daily は上流
@@ -660,6 +662,7 @@ def _collapse_runaway(sections: _WireSections, *, period_label: str) -> _WireSec
     """各節の反復暴走を畳む (2026-09-25、``text_guard``)。畳んだら記録する — 黙って直すと
     モデルの暴走率が見えなくなる (09-19 の spotlight 126 件と同じ理由)。"""
     from src.synthesis.text_guard import collapse_repetition
+    from src.tools.text_budget import trim_to_boundary
 
     update: dict[str, str] = {}
     for name in _SECTION_FIELDS:
@@ -667,15 +670,17 @@ def _collapse_runaway(sections: _WireSections, *, period_label: str) -> _WireSec
         fixed, runs = collapse_repetition(text)
         cap = _HEADLINE_MAX_CHARS if name == "headline" else _SECTION_MAX_CHARS
         if len(fixed) > cap:
-            # 反復でない暴走 (言語の逸脱など) は畳めない — 配信を守るため上限で切って記録する
+            # 反復でない暴走・出力上限での途中切れは畳めない。文の途中で切らず、行 → 文の
+            # 境界で縮めて省いた件数を明示する (2026-11-20、11-19 監査 P0-2)
+            fixed, omitted = trim_to_boundary(fixed, cap)
             _log.warning(
                 "synthesis_section_truncated",
                 section=name,
-                chars=len(fixed),
+                chars=len(text),
                 cap=cap,
+                omitted=omitted,
                 period=period_label,
             )
-            fixed = fixed[:cap]
             runs = runs or 1
         if runs:
             update[name] = fixed

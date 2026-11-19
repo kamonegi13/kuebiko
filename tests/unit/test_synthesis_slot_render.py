@@ -175,3 +175,41 @@ async def test_shadow_mode_keeps_legacy_output(monkeypatch: pytest.MonkeyPatch) 
     assert llm.schemas == [_WireSections, WireJudgmentClauses]
     assert out.weight_section == "旧"
     assert "synthesis_slot_render_shadow" in seen
+
+
+# ---- 出力上限で途中まで書かれた最後の項目を使わない (2026-11-20、11-19 監査 P0-2) ----
+
+
+class _TruncatedLLM:
+    model = "fake"
+
+    async def generate_structured(self, prompt: str, schema: type, **_kw: Any) -> Any:
+        return WireJudgmentClauses(
+            headline_clause="見出し。",
+            items=[
+                ClauseItem(judgment_id="s-aaa", world_clause="攻撃が拡大した"),
+                ClauseItem(judgment_id="s-bbb", world_clause="被害が広がっ"),
+            ],
+            watch_clause="",
+        )
+
+
+@pytest.mark.asyncio
+async def test_truncated_last_item_is_dropped() -> None:
+    clauses, _ = await slot_render.generate_clauses(
+        llm=_TruncatedLLM(),  # type: ignore[arg-type]
+        est=estimate(),
+        period_label=LABEL,
+    )
+    assert [i.judgment_id for i in clauses.items] == ["s-aaa"]
+
+
+@pytest.mark.asyncio
+async def test_complete_last_item_is_kept() -> None:
+    llm = _LLM()
+    clauses, _ = await slot_render.generate_clauses(
+        llm=llm,  # type: ignore[arg-type]
+        est=estimate(),
+        period_label=LABEL,
+    )
+    assert len(clauses.items) == len(_clauses().items)

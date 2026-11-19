@@ -132,3 +132,25 @@ def test_project_tradecraft_without_ctx_keeps_empty() -> None:
     tc = project_tradecraft(_est())
     assert tc["forecasts"] == []
     assert tc["forecast_alignment"] == ""
+
+
+# ---- 途中で切らずに縮める (2026-11-20、11-19 監査 P0-2) ----
+
+
+def test_runaway_section_is_trimmed_at_line_boundary() -> None:
+    from src.synthesis.grounded.render import _SECTION_MAX_CHARS, _collapse_runaway, _WireSections
+
+    lines = [f"【拡大】判定{i} が動いた。含意は大きい (中確度)。" for i in range(400)]
+    sections = _WireSections(headline="見出し", weight_section="\n".join(lines))
+    out = _collapse_runaway(sections, period_label="w")
+    assert len(out.weight_section) <= _SECTION_MAX_CHARS
+    kept = out.weight_section.split("\n")[:-1]
+    assert all(line in lines for line in kept)
+    assert "省略" in out.weight_section.split("\n")[-1]
+
+
+def test_weekly_body_cap_is_twelve() -> None:
+    from src.synthesis.grounded.render import _MOVED_SECTION_MAX
+
+    # 週次で 40 件書かせると出力上限 (10,000 トークン) に 4/4 回当たっていた
+    assert _MOVED_SECTION_MAX["weekly"] == 12

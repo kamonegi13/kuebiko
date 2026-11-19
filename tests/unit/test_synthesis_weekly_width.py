@@ -66,13 +66,24 @@ class TestImportanceDrivenWidth:
     """A 層は固定 N でなく**重要度基準** — 重要な事象が多い期間は本文も長くなる。"""
 
     def test_body_grows_with_the_number_of_important_judgments(self) -> None:
-        """全件が同格に重要なら、上限まで全部 A 層に入る (下限 12 で止まらない)。"""
+        """全件が同格に重要なら、上限まで全部 A 層に入る (下限で止まらない)。
+
+        2026-11-20: weekly の上限は 12 (= 下限) に下げたので、幅が伸びる性質は monthly
+        (上限 40) で確かめる。weekly は 40 で出力上限に毎回当たっていた (11-19 監査 P0-2)。
+        """
+        est = _estimate(tuple(_judgment(i) for i in range(90)), "monthly")
+
+        plan = build_render_plan(est=est, period_label="L")
+
+        assert plan.body_count == 40  # monthly の上限 (安全弁)
+        assert plan.prompt.count("根拠(要点)") == 40
+
+    def test_weekly_body_is_capped_at_twelve(self) -> None:
         est = _estimate(tuple(_judgment(i) for i in range(90)))
 
         plan = build_render_plan(est=est, period_label="L")
 
-        assert plan.body_count == 40  # 上限 (安全弁)
-        assert plan.prompt.count("根拠(要点)") == 40
+        assert plan.body_count <= 12 + 6  # 上限 12 + PIR 保証
 
     def test_body_shrinks_to_the_floor_when_only_a_few_matter(self) -> None:
         """重要度が突出した 1 件 + 些末な多数 → A 層は下限まで縮む (薄く広げない)。"""
@@ -125,8 +136,10 @@ class TestImportanceDrivenWidth:
 
     def test_weight_section_is_tied_to_the_judgment_count(self) -> None:
         """「各セクション N 文」が「各判定 1-2 文」を握りつぶしていた矛盾の解消 (実測: weekly は
-        判定 92 件に対し weight_section が 9 文しか書かれていなかった)。"""
-        est = _estimate(tuple(_judgment(i) for i in range(30)))
+        判定 92 件に対し weight_section が 9 文しか書かれていなかった)。
+
+        2026-11-20: weekly の本文は上限 12 になったので、30 件が本文に入る monthly で確かめる。"""
+        est = _estimate(tuple(_judgment(i) for i in range(30)), "monthly")
 
         plan = build_render_plan(est=est, period_label="L")
 
