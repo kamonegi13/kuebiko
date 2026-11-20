@@ -291,6 +291,7 @@ def _register_bespoke_jobs(
     from src.ui.services.severity_axes_job import run_severity_axes_hourly
     from src.ui.services.source_health import run_daily_heartbeat
     from src.ui.services.ua_health import run_ua_health_check
+    from src.ui.services.veto_sample_job import run_weekly_veto_sample
 
     async def _job_recovery() -> None:
         from src.scheduler.job_recovery import run_job_recovery
@@ -314,6 +315,7 @@ def _register_bespoke_jobs(
         "nvd-cvss-refresh": run_cvss_refresh,
         "daily-maintenance": run_daily_maintenance,
         "graph-edges-daily": run_graph_edges_daily,
+        "weekly-veto-sample": run_weekly_veto_sample,
         "daily-heartbeat": run_daily_heartbeat,
         "weekly-fill-rate-audit": run_weekly_fill_rate_audit,
         "weekly-prompt-governance": run_weekly_prompt_governance,

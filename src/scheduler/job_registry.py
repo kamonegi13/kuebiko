@@ -645,6 +645,24 @@ def default_jobs() -> list[JobDef]:
             max_runtime_minutes=5,
         ),
         JobDef(
+            id="weekly-veto-sample",
+            kind="bespoke",
+            title="統合の止めた組の週次抜き出し",
+            description=(
+                "焦点の照合・勧告のハブで止めた統合の組から週 10 組を抜き、Opus 裁定の入力を"
+                " data/eval/veto_samples/ に書く (LLM 不使用。裁定は手作業)。"
+            ),
+            disable_impact="止めた組の精度 (区間の下限 80%) の継続測定が止まる。",
+            protection="optional",
+            schedule_type="cron",
+            # 月曜 07:40 JST: 04:30-06:10 の heavy 帯と 06:30 の朝ブリーフの後、
+            # 08:00 のハートビート (未裁定の行) の前。DB の読みだけで数十秒
+            day_of_week="mon",
+            hour=7,
+            minute=40,
+            max_runtime_minutes=10,
+        ),
+        JobDef(
             id="daily-heartbeat",
             kind="bespoke",
             title="死活ハートビート",
