@@ -9,9 +9,8 @@ from src.tools.text_budget import cut_at_sentence
 
 
 def test_all_guards_share_one_pattern() -> None:
-    assert summary_repetition.SENTENCE_PATTERN is SENTENCE_PATTERN
-    assert repetition_guard.SENTENCE_PATTERN is SENTENCE_PATTERN
-    assert summary_meta.SENTENCE_PATTERN is SENTENCE_PATTERN
+    for module in (summary_repetition, repetition_guard, summary_meta):
+        assert getattr(module, "SENTENCE_PATTERN") is SENTENCE_PATTERN  # noqa: B009
 
 
 def test_counting_pattern_splits_on_newline_and_marks() -> None:
