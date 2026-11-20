@@ -24,6 +24,7 @@ from src.tools.llm_client import (
     OllamaClient,
     validate_model_name,
 )
+from src.tools.llm_truncation import watch_truncation
 
 # ---------- ヘルパ ----------
 
@@ -223,6 +224,34 @@ class TestGenerateStructured:
         assert isinstance(result, _Summary)
         assert result.bluf == "新たな APT が発見された"
         assert result.sources == ["https://example.com/a"]
+
+    @pytest.mark.asyncio
+    async def test_cap_and_salvage_are_signalled_to_the_caller(self) -> None:
+        # 上限に当たり途中で終わった JSON を救済したら、見張っている呼び出し側に印が届く
+        cut = '{"bluf": "x", "importance": "high", "sources": ["a"'
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_ok_chat_response(cut, eval_count=50))
+
+        client = _build_ollama_client(handler)
+        with watch_truncation() as probe:
+            result = await client.generate_structured("p", schema=_Summary, max_tokens=50)
+
+        assert result.sources == ["a"]
+        assert probe.hit_cap and probe.salvaged
+
+    @pytest.mark.asyncio
+    async def test_complete_output_under_cap_is_not_signalled(self) -> None:
+        valid = {"bluf": "x", "importance": "high", "sources": []}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_ok_chat_response(json.dumps(valid), eval_count=10))
+
+        client = _build_ollama_client(handler)
+        with watch_truncation() as probe:
+            await client.generate_structured("p", schema=_Summary, max_tokens=50)
+
+        assert probe.observed and not probe.truncated
 
     @pytest.mark.asyncio
     async def test_invalid_json_raises_structured_output_error(self) -> None:

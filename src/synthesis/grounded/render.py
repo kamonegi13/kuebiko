@@ -460,6 +460,7 @@ class RenderPlan:
     listed_ids: tuple[str, ...] = ()
     standing_ids: tuple[str, ...] = ()
     relation_lines: tuple[str, ...] = ()
+    standing_omitted: int = 0
 
 
 def _anchor_relations_enabled() -> bool:
@@ -611,24 +612,19 @@ def build_render_plan(
         if a in claim_by_id and b in claim_by_id and _anchor_relations_enabled()
     ][:8]
     mode = _headline_mode(head)
-    prompt = _render(
+    prompt = _render_prompt(
         template,
+        est=est,
         period_label=period_label,
-        headline_id=head.id if head else "",
-        headline_view=_judgment_view(head) if head else None,
-        headline_mode=mode,
-        moved=[_judgment_view(j) for j in moved],
-        moved_list=[_judgment_line(j) for j in moved_list],
+        head=head,
+        mode=mode,
+        moved=moved,
+        moved_list=moved_list,
         moved_omitted=moved_omitted,
-        section_min_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[0],
-        section_max_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[1],
-        standing=[_judgment_view(j) for j in standing],
+        standing=standing,
         standing_omitted=standing_omitted,
-        pir_rollup=_pir_rollup(
-            est.judgments,
-            shown_ids=frozenset(
-                j.id for j in (*([head] if head else []), *moved, *moved_list, *standing)
-            ),
+        shown_ids=frozenset(
+            j.id for j in (*([head] if head else []), *moved, *moved_list, *standing)
         ),
         relation_lines=relation_lines,
         cot_notes=cot_notes_enabled() if cot_notes is None else cot_notes,
@@ -645,6 +641,84 @@ def build_render_plan(
         listed_ids=tuple(j.id for j in moved_list),
         standing_ids=tuple(j.id for j in standing),
         relation_lines=tuple(relation_lines),
+        standing_omitted=standing_omitted,
+    )
+
+
+def _render_prompt(
+    template: str,
+    *,
+    est: Estimate,
+    period_label: str,
+    head: KeyJudgment | None,
+    mode: str,
+    moved: Sequence[KeyJudgment],
+    moved_list: Sequence[KeyJudgment],
+    moved_omitted: int,
+    standing: Sequence[KeyJudgment],
+    standing_omitted: int,
+    shown_ids: frozenset[str],
+    relation_lines: Sequence[str],
+    cot_notes: bool,
+) -> str:
+    """render のプロンプトを描く。束に分けて書かせる形 (``slot_chunk``) と共有する。"""
+    return _render(
+        template,
+        period_label=period_label,
+        headline_id=head.id if head else "",
+        headline_view=_judgment_view(head) if head else None,
+        headline_mode=mode,
+        moved=[_judgment_view(j) for j in moved],
+        moved_list=[_judgment_line(j) for j in moved_list],
+        moved_omitted=moved_omitted,
+        section_min_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[0],
+        section_max_sentences=_SECTION_SENTENCES.get(est.period_type, (2, 5))[1],
+        standing=[_judgment_view(j) for j in standing],
+        standing_omitted=standing_omitted,
+        pir_rollup=_pir_rollup(est.judgments, shown_ids=shown_ids),
+        relation_lines=list(relation_lines),
+        cot_notes=cot_notes,
+    )
+
+
+def render_chunk_prompt(
+    *,
+    est: Estimate,
+    plan: RenderPlan,
+    period_label: str,
+    moved_ids: Sequence[str],
+    standing_ids: Sequence[str],
+    first: bool,
+    template: str,
+) -> str:
+    """束 1 つ分のプロンプト (その束の判定だけを本文に載せる)。
+
+    見出しの判定・一覧・省略件数の注記は第 1 束だけに載せる。SIR 対応と関係の行は全束で同じ
+    (``shown_ids`` は全体の掲載に揃える)。
+    """
+    by_id = {j.id: j for j in est.judgments}
+    shown = frozenset(
+        [
+            *([plan.head.id] if plan.head else []),
+            *plan.moved_ids,
+            *plan.listed_ids,
+            *plan.standing_ids,
+        ]
+    )
+    return _render_prompt(
+        template,
+        est=est,
+        period_label=period_label,
+        head=plan.head if first else None,
+        mode=plan.mode,
+        moved=[by_id[i] for i in moved_ids if i in by_id],
+        moved_list=[by_id[i] for i in plan.listed_ids if i in by_id] if first else [],
+        moved_omitted=plan.omitted_count if first else 0,
+        standing=[by_id[i] for i in standing_ids if i in by_id],
+        standing_omitted=plan.standing_omitted if first else 0,
+        shown_ids=shown,
+        relation_lines=plan.relation_lines,
+        cot_notes=False,
     )
 
 
@@ -701,19 +775,43 @@ async def _llm_sections(
     schema: type[_WireSections] | type[_WireSectionsCoT] = (
         _WireSectionsCoT if cot else _WireSections
     )
-    raw = await llm.generate_structured(
-        plan.prompt,
-        schema,
-        temperature=_TEMPERATURE,
-        max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
-        think=False,
-    )
+    from src.tools.llm_truncation import watch_truncation
+
+    with watch_truncation() as probe:
+        raw = await llm.generate_structured(
+            plan.prompt,
+            schema,
+            temperature=_TEMPERATURE,
+            max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
+            think=False,
+        )
+    if probe.truncated:
+        degraded = _degraded_if_on(plan, est)
+        if degraded is not None:
+            return degraded
     if isinstance(raw, _WireSectionsCoT):
         # 下流 (射影・保存・表示) は CoT 欄を知らない。長さだけ観測に残す
         # (「欄は作ったが空だった」を後から数えられるようにする)。
         _log.info("synthesis_cot_notes", chars=len(raw.analysis_notes.strip()))
         return _WireSections.model_validate(raw.model_dump())
     return raw
+
+
+def _degraded_if_on(plan: RenderPlan, est: Estimate) -> _WireSections | None:
+    """旧経路の出力が上限に当たったとき、LLM の節を捨てて部品なしの決定論の組み立てに倒す。
+
+    旗 ``SYNTHESIS_LENGTH_GATE=1`` のときだけ (shadow は記録のみ、2026-11-20)。救済された JSON は
+    後ろの節が空のまま検証を通るため、作り直し (LLM の再試行はしない) で 6 節を埋める。
+    """
+    from src.synthesis.grounded.length_gate import length_gate_mode
+    from src.synthesis.grounded.slot_render import WireJudgmentClauses, assemble_sections
+
+    mode = length_gate_mode()
+    _log.warning("synthesis_render_degraded", period_type=est.period_type, mode=mode)
+    if mode != "on":
+        return None
+    sections, _ = assemble_sections(WireJudgmentClauses(), est=est, plan=plan, fit=True)
+    return sections
 
 
 async def _pattern_sections_if_on(

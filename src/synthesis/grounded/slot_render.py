@@ -23,10 +23,17 @@ from pydantic_core import CoreSchema
 from src.assessment.claim_length import display_claim
 from src.logging_config import get_logger
 from src.synthesis.grounded.estimate import Estimate, KeyJudgment
+from src.synthesis.grounded.length_gate import (
+    Mode,
+    fit_judgment_lines,
+    length_gate_mode,
+    should_drop_last_item,
+)
 from src.synthesis.grounded.render import (
     _DELTA_JA,
     _MAX_TOKENS,
     _MAX_TOKENS_BY_PERIOD,
+    _SECTION_MAX_CHARS,
     _TEMPERATURE,
     RenderPlan,
     _anchor_relations_enabled,
@@ -39,11 +46,13 @@ from src.synthesis.grounded.render import (
 )
 from src.synthesis.grounded.slot_render_extras import (
     compact_pir_section,
+    first_sentence,
     grouped_chain_text,
     is_near_duplicate,
 )
 from src.tools.llm_client import LLMClient
 from src.tools.llm_schema import require_all_properties
+from src.tools.llm_truncation import TruncationProbe, watch_truncation
 from src.tools.n20_flags import (
     slot_chain_grouping_on,
     slot_pir_compact_on,
@@ -140,6 +149,9 @@ class SlotStats:
     unknown_ids: int = 0
     banned_replaced: int = 0
     causal_replaced: int = 0
+    #: 長さの関門 (SYNTHESIS_LENGTH_GATE): 簡潔な形に替えた判定 / 行を縮めて省いた数
+    compacted: int = 0
+    overflow_trimmed: int = 0
 
 
 def _sentence(text: str) -> str:
@@ -203,6 +215,19 @@ def render_judgment(j: KeyJudgment, world: str, implication: str, *, with_delta:
     if not (slot_render_dedup_on() and is_near_duplicate(world, implication)):
         parts.append(_sentence(implication))
     return "".join(p for p in parts if p)
+
+
+def render_judgment_compact(j: KeyJudgment, world: str, *, with_delta: bool) -> str:
+    """節が上限を超えたときの簡潔な形: 世界の文の第 1 文 + 確度 + 反証の有無。
+
+    対立仮説と含意を落とす (確度と反証は判定の読み方を変えるので残す)。
+    """
+    delta = _DELTA_JA.get(j.delta_type, j.delta_type) if with_delta else ""
+    parts = [(f"【{delta}】" if delta else "") + _sentence(first_sentence(world))]
+    parts.append(certainty_sentence(j))
+    if j.adversarial_refuted:
+        parts.append("ただし検証では反証が示されている。")
+    return "".join(parts)
 
 
 def _checked_clauses(
@@ -271,10 +296,36 @@ def _pir_section(est: Estimate) -> str:
     return "\n".join(lines) or NO_PIR
 
 
+def _judgment_section(
+    judgments: list[KeyJudgment],
+    worlds: Mapping[str, tuple[str, str]],
+    *,
+    moved_ids: frozenset[str],
+    empty: str,
+    tail: str,
+    fit: bool,
+) -> tuple[str, int, int]:
+    """判定の行を並べた節。``fit`` なら上限に収める (末尾から簡潔に)。返り値は (文, 簡潔, 省略)。"""
+    full = [render_judgment(j, *worlds[j.id], with_delta=j.id in moved_ids) for j in judgments]
+    if not full:
+        return (f"{empty}\n{tail}" if tail else empty), 0, 0
+    if not fit:
+        body = "\n".join(full)
+        return (f"{body}\n{tail}" if tail else body), 0, 0
+    compact = [
+        render_judgment_compact(j, worlds[j.id][0], with_delta=j.id in moved_ids) for j in judgments
+    ]
+    out = fit_judgment_lines(full, compact, cap=_SECTION_MAX_CHARS, tail=tail)
+    return out.text, out.compacted, out.trimmed
+
+
 def assemble_sections(
-    clauses: WireJudgmentClauses, *, est: Estimate, plan: RenderPlan
+    clauses: WireJudgmentClauses, *, est: Estimate, plan: RenderPlan, fit: bool = False
 ) -> tuple[_WireSections, SlotStats]:
-    """LLM の部品と台帳の値から 6 節を組む (純粋関数)。"""
+    """LLM の部品と台帳の値から 6 節を組む (純粋関数)。
+
+    ``fit`` = 長さの関門 (SYNTHESIS_LENGTH_GATE=1): 比重・継続の節を上限に収める。
+    """
     by_id = {j.id: j for j in est.judgments}
     wanted = [*plan.moved_ids, *plan.standing_ids]
     got: dict[str, ClauseItem] = {}
@@ -287,21 +338,22 @@ def assemble_sections(
     counts = {"uncovered": 0, "banned_replaced": 0, "causal_replaced": 0}
     moved = [by_id[i] for i in plan.moved_ids if i in by_id]
     standing = [by_id[i] for i in plan.standing_ids if i in by_id]
-    rendered = {
-        j.id: render_judgment(
-            j, *_checked_clauses(j, got.get(j.id), counts), with_delta=j.id in plan.moved_ids
-        )
-        for j in (*moved, *standing)
-    }
-    weight = "\n".join(rendered[j.id] for j in moved) or NO_MOVED
+    worlds = {j.id: _checked_clauses(j, got.get(j.id), counts) for j in (*moved, *standing)}
+    moved_ids = frozenset(plan.moved_ids)
     listed = _listed_paragraph([by_id[i] for i in plan.listed_ids if i in by_id])
+    weight, w_compact, w_trim = _judgment_section(
+        moved, worlds, moved_ids=moved_ids, empty=NO_MOVED, tail=listed, fit=fit
+    )
+    cog, c_compact, c_trim = _judgment_section(
+        standing, worlds, moved_ids=moved_ids, empty=NO_STANDING, tail="", fit=fit
+    )
     headline = _headline(clauses.headline_clause, plan.head, counts)
     watch = "" if has_banned(clauses.watch_clause) else clauses.watch_clause
     sections = _WireSections(
         headline=headline,
-        weight_section=f"{weight}\n{listed}" if listed else weight,
+        weight_section=weight,
         chain_section=_chain_section(plan, [*moved, *standing]),
-        cog_section="\n".join(rendered[j.id] for j in standing) or NO_STANDING,
+        cog_section=cog,
         spillover_section=_spillover(watch, [*moved, *standing]),
         pir_section=_pir_section(est),
     )
@@ -310,6 +362,8 @@ def assemble_sections(
         unknown_ids=unknown,
         banned_replaced=counts["banned_replaced"],
         causal_replaced=counts["causal_replaced"],
+        compacted=w_compact + c_compact,
+        overflow_trimmed=w_trim + c_trim,
     )
     return sections, stats
 
@@ -330,30 +384,71 @@ def _headline(clause: str, head: KeyJudgment | None, counts: dict[str, int]) -> 
 async def generate_clauses(
     *, llm: LLMClient, est: Estimate, period_label: str
 ) -> tuple[WireJudgmentClauses, RenderPlan]:
+    from src.synthesis.grounded.slot_chunk import chunk_mode, needs_chunks, write_chunked_clauses
+
     plan = build_render_plan(
         est=est, period_label=period_label, cot_notes=False, template=TEMPLATE_V9
     )
-    raw: WireJudgmentClauses = await llm.generate_structured(
-        plan.prompt,
-        WireJudgmentClauses,
-        temperature=_TEMPERATURE,
-        max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
-        think=False,
-    )
-    return _drop_truncated_tail(raw, period_label=period_label), plan
+    if chunk_mode() == "on" and needs_chunks(plan):
+        clauses, _ = await write_chunked_clauses(
+            llm=llm, est=est, plan=plan, period_label=period_label, template=TEMPLATE_V9
+        )
+        return clauses, plan
+    clauses = await write_clauses(llm=llm, prompt=plan.prompt, est=est, period_label=period_label)
+    return clauses, plan
 
 
-def _drop_truncated_tail(raw: WireJudgmentClauses, *, period_label: str) -> WireJudgmentClauses:
+async def write_clauses(
+    *, llm: LLMClient, prompt: str, est: Estimate, period_label: str
+) -> WireJudgmentClauses:
+    """v9 の 1 回の呼び出し。途中切れの最後の項目は捨てる (``_drop_truncated_tail``)。"""
+    with watch_truncation() as probe:
+        raw: WireJudgmentClauses = await llm.generate_structured(
+            prompt,
+            WireJudgmentClauses,
+            temperature=_TEMPERATURE,
+            max_tokens=_MAX_TOKENS_BY_PERIOD.get(est.period_type, _MAX_TOKENS),
+            think=False,
+        )
+    return _drop_truncated_tail(raw, period_label=period_label, probe=probe)
+
+
+def _drop_truncated_tail(
+    raw: WireJudgmentClauses,
+    *,
+    period_label: str,
+    probe: TruncationProbe | None = None,
+    mode: Mode | None = None,
+) -> WireJudgmentClauses:
     """出力上限で途中まで書かれた最後の項目を使わない (2026-11-20、11-19 監査 P0-2)。
 
     出力は headline_clause → items → watch_clause の順。上限に当たった JSON は救済で
-    括弧を閉じられ、最後の項目の文が途中で終わったまま・watch_clause が空のまま検証を
-    通る。部品は句点なしで書く形なので文末では判定できない — **watch_clause が空で
-    items があるとき**を途中切れとみなし、最後の項目を捨てる (その判定は台帳の値で描く)。
+    括弧を閉じられ、最後の項目の文が途中で終わったまま検証を通る。旗
+    ``SYNTHESIS_LENGTH_GATE=1`` ではクライアントの上限到達の信号で判定し、信号の無い
+    クライアントと旗 0 / shadow では従来の推測 (**watch_clause が空で items がある**) を使う。
+    捨てた判定は台帳の値で描く。
     """
-    if not raw.items or raw.watch_clause.strip():
+    probe = probe or TruncationProbe()
+    mode = mode or length_gate_mode()
+    watch_empty = not raw.watch_clause.strip()
+    drop = should_drop_last_item(
+        has_items=bool(raw.items), watch_empty=watch_empty, probe=probe, mode=mode
+    )
+    if mode == "shadow" and probe.observed and bool(raw.items) and watch_empty != probe.truncated:
+        _log.info(
+            "synthesis_length_gate_shadow",
+            kind="truncation",
+            period=period_label,
+            heuristic=watch_empty,
+            signal=probe.truncated,
+        )
+    if not drop:
         return raw
-    _log.warning("synthesis_slot_truncated_item_dropped", period=period_label)
+    _log.warning(
+        "synthesis_slot_truncated_item_dropped",
+        period=period_label,
+        basis="signal" if mode == "on" and probe.observed else "heuristic",
+    )
     return raw.model_copy(update={"items": raw.items[:-1]})
 
 
@@ -361,10 +456,42 @@ async def render_slot_sections(
     *, llm: LLMClient, est: Estimate, period_label: str
 ) -> _WireSections:
     """on: v9 で部品を書かせ、節はコードが組む。"""
+    from src.synthesis.grounded.slot_chunk import chunk_mode, shadow_chunked
+
     clauses, plan = await generate_clauses(llm=llm, est=est, period_label=period_label)
-    sections, stats = assemble_sections(clauses, est=est, plan=plan)
-    _log.info("synthesis_slot_render", period=period_label, **stats.__dict__)
+    sections, stats = assemble_with_gate(clauses, est=est, plan=plan, period_label=period_label)
+    if chunk_mode() == "shadow":
+        await shadow_chunked(
+            llm=llm,
+            est=est,
+            plan=plan,
+            period_label=period_label,
+            template=TEMPLATE_V9,
+            delivered_stats=stats.__dict__,
+        )
     return sections
+
+
+def assemble_with_gate(
+    clauses: WireJudgmentClauses, *, est: Estimate, plan: RenderPlan, period_label: str
+) -> tuple[_WireSections, SlotStats]:
+    """旗 ``SYNTHESIS_LENGTH_GATE`` に従って組む。shadow は収めた場合の件数だけを記録する。"""
+    mode = length_gate_mode()
+    sections, stats = assemble_sections(clauses, est=est, plan=plan, fit=mode == "on")
+    _log.info("synthesis_slot_render", period=period_label, **stats.__dict__)
+    if mode == "shadow":
+        fitted, fstats = assemble_sections(clauses, est=est, plan=plan, fit=True)
+        if fstats.compacted or fstats.overflow_trimmed:
+            _log.info(
+                "synthesis_length_gate_shadow",
+                kind="section_fit",
+                period=period_label,
+                compacted=fstats.compacted,
+                overflow_trimmed=fstats.overflow_trimmed,
+                weight_chars=len(sections.weight_section),
+                weight_chars_fitted=len(fitted.weight_section),
+            )
+    return sections, stats
 
 
 async def choose_sections(

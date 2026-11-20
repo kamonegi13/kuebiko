@@ -25,6 +25,7 @@ import ollama
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.logging_config import get_logger
+from src.tools.llm_truncation import note_hit_cap, note_observed, note_salvaged
 from src.tools.local_usage import LocalUsageRecord, LocalUsageRecorder
 from src.tools.ollama_timing import extract_timing, timing_log_fields
 
@@ -385,6 +386,7 @@ class OllamaClient(LLMClient):
                 if salvaged is not None:
                     try:
                         obj = schema.model_validate(salvaged)
+                        note_salvaged()
                         _log.warning(
                             "llm_structured_salvaged",
                             attempt=attempt,
@@ -543,6 +545,7 @@ class OllamaClient(LLMClient):
         #    11% (対 n17m30 5%) と分かったが、**本番で何 % 起きているかを測る術が無かった**。
         #    max_tokens は呼出ごとに違うので、到達を呼出側の値と突き合わせてここで判定する。
         hit_cap = eval_count >= max_tokens
+        note_observed()
         _log.info(
             "ollama_response",
             model=self._model,
@@ -556,6 +559,7 @@ class OllamaClient(LLMClient):
             **timing_log_fields(timing, input_tokens=prompt_eval, output_tokens=eval_count),
         )
         if hit_cap:
+            note_hit_cap()
             _log.warning(
                 "llm_output_hit_token_cap",
                 model=self._model,

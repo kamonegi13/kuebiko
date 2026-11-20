@@ -406,6 +406,10 @@ services:
       # 台帳 claim の長さの関門 (0 / shadow / 1) と、長い claim を状況総括で第 1 文に描く (0 / 1)
       LEDGER_CLAIM_LENGTH_GATE: ${LEDGER_CLAIM_LENGTH_GATE:-shadow}
       SLOT_CLAIM_DISPLAY_FIRST_SENTENCE: ${SLOT_CLAIM_DISPLAY_FIRST_SENTENCE:-1}
+      # 状況総括の長さの関門 (2026-11-20、docs/synthesis_length_gate.md): 節を末尾から簡潔にして
+      # 上限に収める・上限到達の信号で途中切れを判定する。束に分けて書かせる形は shadow から
+      SYNTHESIS_LENGTH_GATE: ${SYNTHESIS_LENGTH_GATE:-1}
+      SYNTHESIS_CLAUSE_CHUNK: ${SYNTHESIS_CLAUSE_CHUNK:-shadow}
       # 要約・BLUF の重要度の理由づけ (メタ文) を除く (0 / shadow / 1)
       SUMMARY_META_GUARD: ${SUMMARY_META_GUARD:-shadow}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
