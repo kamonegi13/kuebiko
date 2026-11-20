@@ -389,6 +389,8 @@ services:
       # 分析専用 (late_body) の posted に進める (2026-11-20、0 / shadow / 1)
       REPROCESS_BODY_GATE: ${REPROCESS_BODY_GATE:-1}
       LATE_BODY_PROMOTE: ${LATE_BODY_PROMOTE:-1}
+      # 名前解決の一時失敗を恒久の unsafe_url と分けて dns_error に (2026-11-20、0 / shadow / 1)
+      DNS_ERROR_SPLIT: ${DNS_ERROR_SPLIT:-1}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}

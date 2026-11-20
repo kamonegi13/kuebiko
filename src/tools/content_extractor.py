@@ -33,6 +33,7 @@ from src.tools.fetch_policy import BLOCK_ESCALATION_STATUSES, looks_like_js_chal
 from src.tools.pdf_text import extract_pdf_text, looks_like_pdf
 from src.tools.text_sanitizer import dominant_script, title_similarity
 from src.tools.url_guard import (
+    HostResolutionError,
     UnsafeUrlError,
     assert_safe_public_url,
     redirect_guard_hooks_async,
@@ -167,6 +168,20 @@ EXTRACTION_METHOD_TRAFILATURA = "trafilatura"
 EXTRACTION_METHOD_PDF = "pdf"
 
 
+def _dns_reason(url: str, legacy: str) -> str:
+    """``DNS_ERROR_SPLIT`` (0 / shadow / 1、既定 0) に応じた名前解決の失敗の理由コード。
+
+    1 = ``dns_error`` (再取得の試行回数を消費しない一時失敗)。shadow = 従来の理由のまま
+    ログだけ。0 = 従来どおり (恒久の unsafe_url / unsafe_redirect)。
+    """
+    mode = os.environ.get("DNS_ERROR_SPLIT", "0").strip()
+    if mode == "1":
+        return "dns_error"
+    if mode == "shadow":
+        _log.info("url_guard_dns_failure", host=urlparse(url).hostname or "")
+    return legacy
+
+
 class ExtractionResult(BaseModel):
     """本文抽出の結果 (成功・失敗の両方を表現する)。"""
 
@@ -294,6 +309,9 @@ class ContentExtractor:
         #    metadata を指す URL や、そこへ 30x 誘導する応答 (redirect hook) を遮断する (M1)。
         try:
             assert_safe_public_url(url)
+        except HostResolutionError as e:
+            # 名前解決の一時失敗は恒久の unsafe_url と分ける (DNS_ERROR_SPLIT、2026-11-20)
+            return self._fail(url, _dns_reason(url, "unsafe_url"), error=str(e))
         except UnsafeUrlError as e:
             return self._fail(url, "unsafe_url", error=str(e))
 
@@ -305,6 +323,8 @@ class ContentExtractor:
             return self._fail(url, f"hostile_{e.reason}")
         except httpx.TimeoutException as e:
             return self._fail(url, "timeout", error=str(e))
+        except HostResolutionError as e:
+            return self._fail(url, _dns_reason(url, "unsafe_redirect"), error=str(e))
         except UnsafeUrlError as e:
             return self._fail(url, "unsafe_redirect", error=str(e))
         except httpx.RequestError as e:

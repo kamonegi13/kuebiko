@@ -165,10 +165,12 @@ def test_expand_refuses_private_start_url() -> None:
 def test_expand_distinguishes_dns_failure_from_ssrf_refusal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.tools.url_guard import UnsafeUrlError
+    from src.tools.url_guard import HostResolutionError
 
+    # 本番の _resolve_ips は名前解決の失敗を HostResolutionError で投げる (2026-11-20 から
+    # 文言ではなく型で区別する)
     def nxdomain(host: str) -> list[str]:
-        raise UnsafeUrlError(f"ホスト名を解決できません: {host}")
+        raise HostResolutionError(f"ホスト名を解決できません: {host}")
 
     monkeypatch.setattr("src.tools.url_guard._resolve_ips", nxdomain)
 

@@ -19,6 +19,14 @@ class UnsafeUrlError(ValueError):
     """SSRF guard が拒否した URL。"""
 
 
+class HostResolutionError(UnsafeUrlError):
+    """ホスト名を解決できない (名前解決の一時失敗・実在しないドメイン)。
+
+    SSRF の拒否 (private 等への解決) とは別の失敗。子クラスなので既存の
+    ``except UnsafeUrlError`` はそのまま遮断する (2026-11-20、11-19 監査 D2 P0-3b)。
+    """
+
+
 def is_public_ip(ip: str) -> bool:
     """IP 文字列が外部到達可能な public アドレスか判定する。
 
@@ -44,7 +52,7 @@ def _resolve_ips(host: str) -> list[str]:
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror as e:
-        raise UnsafeUrlError(f"ホスト名を解決できません: {host}") from e
+        raise HostResolutionError(f"ホスト名を解決できません: {host}") from e
     return [str(info[4][0]) for info in infos]
 
 
@@ -63,7 +71,7 @@ def assert_safe_public_url(url: str) -> None:
 
     ips = _resolve_ips(host)
     if not ips:
-        raise UnsafeUrlError(f"ホスト名を解決できません: {host}")
+        raise HostResolutionError(f"ホスト名を解決できません: {host}")
     for ip in ips:
         if not is_public_ip(ip):
             raise UnsafeUrlError(

@@ -27,7 +27,7 @@ import httpx
 from src.logging_config import get_logger
 from src.tools.content_extractor import ExtractionResult
 from src.tools.untrusted_text import UNTRUSTED_TEXT_NOTICE
-from src.tools.url_guard import UnsafeUrlError, assert_safe_public_url
+from src.tools.url_guard import HostResolutionError, UnsafeUrlError, assert_safe_public_url
 from src.tools.user_agent import BROWSER_HEADERS, browser_user_agent
 
 _log = get_logger(__name__)
@@ -179,7 +179,7 @@ async def _meta_refresh_target(resp: httpx.Response) -> str | None:
 
 def _unsafe_reason(error: UnsafeUrlError) -> str:
     """名前解決の失敗 (実在しないドメイン) と SSRF 拒否 (private 等) を区別して残す。"""
-    return "dns_error" if str(error).startswith("ホスト名を解決できません") else "unsafe_url"
+    return "dns_error" if isinstance(error, HostResolutionError) else "unsafe_url"
 
 
 async def expand_url(url: str, *, client: httpx.AsyncClient, max_hops: int) -> ExpandResult:

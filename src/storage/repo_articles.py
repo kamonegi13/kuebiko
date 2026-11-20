@@ -32,9 +32,10 @@ _DISPLAY_ROW_ORDER = "CASE WHEN status='skipped_duplicate' THEN 1 ELSE 0 END ASC
 # 本文の劣化で extract_failed になった行の failure_reason (late_body の対象)
 _DEGENERATE_LIKE = "degenerate_body:%"
 
-# 方針による見送り (hostile_fetch)。再取得の試行回数を消費しない失敗理由。
+# 方針による見送り (hostile_fetch) と名前解決の一時失敗 (dns_error、2026-11-20)。
+# 再取得の試行回数を消費しない失敗理由 (backlog の末尾に回り、一定日数で対象外)。
 DEFERRED_REFETCH_REASONS: frozenset[str | None] = frozenset(
-    {"hostile_throttle_deferred", "hostile_paused"}
+    {"hostile_throttle_deferred", "hostile_paused", "dns_error"}
 )
 
 
