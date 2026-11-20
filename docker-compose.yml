@@ -387,6 +387,8 @@ services:
       MODEL_RESIDENT_ENFORCE: ${MODEL_RESIDENT_ENFORCE:-0}
       # 配信しない分析専用の行を重複の根にしない (2026-11-20、0 で従来)
       DEDUP_ROOT_STRICT: ${DEDUP_ROOT_STRICT:-1}
+      # 11-20: 重複の抑止に規則変更 I-2/I-3/I-4 が当たるかの影の記録 (判定は不変)
+      DEDUP_RULE_SHADOW: ${DEDUP_RULE_SHADOW:-1}
       # 再取得した本文にも取り込みと同じ関門を当てる / 本文が後から取れた extract_failed を
       # 分析専用 (late_body) の posted に進める (2026-11-20、0 / shadow / 1)
       REPROCESS_BODY_GATE: ${REPROCESS_BODY_GATE:-1}

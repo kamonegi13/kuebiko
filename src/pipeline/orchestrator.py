@@ -32,6 +32,7 @@ from src.pipeline.briefing import (
     DegenerateBodyError,
     _process_article,
 )
+from src.pipeline.dedup_rule_shadow import record_dedup_rule_shadow
 from src.pipeline.filters import (
     SemanticSkip,
     _filter_by_triage,
@@ -1349,6 +1350,14 @@ async def run_pipeline(
             )
             gate_result = None
         if gate_result is not None:
+            # 規則変更 3 案 (I-2/I-3/I-4) の影の記録 (旗 DEDUP_RULE_SHADOW、判定は不変)
+            record_dedup_rule_shadow(
+                dedup_repo,
+                msg=msg,
+                art_id=art_id,
+                prior_article_id=gate_result.prior_article_id,
+                failure_reason=gate_result.failure_reason,
+            )
             if outcome is not None:
                 _record_duplicate_outcome(outcome, msg, gate_result, keep=keep_duplicates)
             if keep_duplicates and outcome is not None:
