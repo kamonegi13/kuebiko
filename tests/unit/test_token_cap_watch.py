@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
-from structlog.testing import capture_logs
 
+import src.synthesis.grounded.render as render_mod
 from src.storage.run_history import RunHistoryRepository
 from src.synthesis.grounded.render import _log_missing_sections, _WireSections
 from src.ui.services.token_cap_watch import build_token_cap_line
@@ -69,21 +70,24 @@ def test_frequent_hits_warn(repo: RunHistoryRepository) -> None:
     assert line is not None and line.startswith("⚠️")
 
 
-def test_missing_required_sections_are_logged() -> None:
+def test_missing_required_sections_are_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    # structlog の logger は初回使用でキャッシュされるので、捕まえずに差し替える (順序依存を避ける)
+    log = MagicMock()
+    monkeypatch.setattr(render_mod, "_log", log)
     sections = _WireSections(headline="見出し", weight_section="比重の節")
 
-    with capture_logs() as logs:
-        _log_missing_sections(sections, period_label="2026-W47")
+    _log_missing_sections(sections, period_label="2026-W47")
 
-    assert [(x["event"], x["missing"]) for x in logs] == [
-        ("synthesis_sections_missing", ["pir_section"])
-    ]
+    log.warning.assert_called_once_with(
+        "synthesis_sections_missing", period="2026-W47", missing=["pir_section"]
+    )
 
 
-def test_complete_sections_log_nothing() -> None:
+def test_complete_sections_log_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    log = MagicMock()
+    monkeypatch.setattr(render_mod, "_log", log)
     sections = _WireSections(headline="h", weight_section="w", pir_section="p")
 
-    with capture_logs() as logs:
-        _log_missing_sections(sections, period_label="d")
+    _log_missing_sections(sections, period_label="d")
 
-    assert logs == []
+    log.warning.assert_not_called()

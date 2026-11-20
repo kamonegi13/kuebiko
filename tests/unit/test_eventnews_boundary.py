@@ -40,6 +40,12 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 2026-10-24 (F0): 事象の焦点の記録。構成記事の名前・種別から焦点を作って記録するだけで、
         # 生成物 (版の本文) は読まず、群化・統合の判断にも使わない (他層へ渡さない)
         "src/ui/services/eventnews_focus_job.py",
+        # 2026-11-20: 統合で止めた組の週次の抜き出し (記録の読み出しと焦点の写しだけ)。
+        # 生成物 (版の本文) は読まず、他層へ渡さない
+        "src/ui/services/veto_sample_job.py",
+        # 2026-11-20: 重複の抑止の規則変更の影の記録 (DEDUP_RULE_SHADOW)。参照するのは記事種別・
+        # 伏字の判定・定数のみで、ログを出すだけ (判定・生成物には触れない)
+        "src/pipeline/dedup_rule_shadow.py",
         # 2026-08-24: 読み手向けの出口 (分析者向け)。2026-08-25 に匿名からは外し、
         # 公開面は public_news.py が担うようになった (allowlist は default-deny)。
         "src/ui/api/eventnews.py",
