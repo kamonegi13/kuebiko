@@ -14,7 +14,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-import re
 import sys
 from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping
@@ -23,6 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from src.logging_config import get_logger
+from src.tools.sentences import SENTENCE_PATTERN
 
 _log = get_logger(__name__)
 
@@ -38,10 +38,8 @@ RETRY_TEMPERATURE_DELTA = 0.2
 #: 検査する自由文の欄 (SummaryOutput の文字列欄のうち読者に届くもの)
 FREE_TEXT_FIELDS = ("summary", "bluf", "analyst_note", "remediation", "title_ja")
 
-#: 文 = 区切り記号 (。！？.!? ・改行) までの塊。終端の記号は文に含める (改行は含めない)
-_SENTENCE = re.compile(r"[^。！？.!?\n]+(?:[。！？.!?]+|(?=\n)|$)")
-#: 他の生成物 (Spotlight 等) の関門が同じ文区切りを使うための公開名
-SENTENCE_PATTERN = _SENTENCE
+#: 文の区切りの SSoT は src/tools/sentences.py (11-20)。既存の import のため名前を残す
+_SENTENCE = SENTENCE_PATTERN
 
 
 @dataclasses.dataclass(frozen=True)

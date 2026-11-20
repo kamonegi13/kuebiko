@@ -14,11 +14,8 @@ from collections import Counter
 from typing import Literal
 
 from src.logging_config import get_logger
-from src.pipeline.summary_repetition import (
-    SENTENCE_MIN_CHARS,
-    SENTENCE_PATTERN,
-    SENTENCE_REPEAT_MIN,
-)
+from src.pipeline.summary_repetition import SENTENCE_MIN_CHARS, SENTENCE_REPEAT_MIN
+from src.tools.sentences import SENTENCE_PATTERN
 
 _log = get_logger(__name__)
 

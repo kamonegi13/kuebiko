@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from src.pipeline.summary_repetition import SENTENCE_PATTERN
+from src.tools.sentences import SENTENCE_PATTERN
 
 MIN_REMAINING_CHARS = 30
 

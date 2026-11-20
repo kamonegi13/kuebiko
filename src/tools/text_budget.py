@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
+from src.tools.sentences import last_cut_position
+
 OMITTED_NOTE = "(ほか {n} 件は省略)"
-_SENTENCE_ENDS = ("。", "！", "？", "!", "?")
 
 
 def _note(n: int) -> str:
@@ -17,7 +18,7 @@ def _note(n: int) -> str:
 
 def _cut_at_sentence(text: str, limit: int) -> str:
     head = text[:limit]
-    pos = max(head.rfind(end) for end in _SENTENCE_ENDS)
+    pos = last_cut_position(head)
     return head[: pos + 1] if pos >= 0 else head
 
 
