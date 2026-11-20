@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from src.cti.actor_normalizer import ActorAliasRegistry
 from src.logging_config import get_logger
@@ -23,6 +24,7 @@ from src.pipeline.body_limits import MAX_STORED_BODY_CHARS
 from src.pipeline.briefing import (
     _degenerate_body_reason,
     _summarize_and_build,
+    _thin_body_probe_reason,
     body_source_for_extraction,
 )
 from src.pipeline.persistence import _persist_article_entities
@@ -33,6 +35,9 @@ from src.tools.article_model import Article
 from src.tools.content_extractor import ContentExtractor
 from src.tools.discord_publisher import BriefingMessage
 from src.tools.llm_client import LLMClient
+
+if TYPE_CHECKING:
+    from src.config_loader import AppConfig
 
 _log = get_logger(__name__)
 
@@ -74,8 +79,12 @@ async def reprocess_article_body(
     llm: LLMClient,
     template: object,
     enrichment: object | None = None,
+    config: AppConfig | None = None,
 ) -> str:
     """1 記事を全文再取得 → 再エンリッチ。戻り値 = 結果コード。
+
+    ``config`` を渡すと、決定論の関門を通った短い本文に取り込みと同じ logprob の 2 段目
+    (``THIN_BODY_PROBE``) も当てる (11-20、渡さなければ従来どおり決定論の関門だけ)。
 
     'refetched_full' = 全文化して再エンリッチ成功 / 'still_stump' = 再取得も失敗 (切り株のまま) /
     'skipped' = 対象行が無い/本文不十分。**Discord 投稿・routing・dedup は一切触らない。**
@@ -103,6 +112,10 @@ async def reprocess_article_body(
 
     # 取り直した本文にも取り込みと同じ決定論の関門を当てる (2026-11-20、11-19 監査 D2)。
     degenerate = _degenerate_body_reason(body, title=row.title or "", article_id=article_id)
+    if degenerate is None:
+        degenerate = await _thin_body_probe_reason(
+            body, title=row.title or "", article_id=article_id, config=config
+        )
     if degenerate is not None:
         mode = _flag("REPROCESS_BODY_GATE")
         _log.info("reprocess_body_gate", article_id=article_id, reason=degenerate, mode=mode)

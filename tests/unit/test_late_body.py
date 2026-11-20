@@ -249,3 +249,55 @@ def test_sql_has_no_bare_percent_for_pg(tmp_path: Path, monkeypatch: pytest.Monk
     assert sent
     for sql in sent:
         assert not re.search(r"%(?![%sbt])", sql), sql
+
+
+async def _run_with_config(repo: RunHistoryRepository, aid: str, text: str) -> str:
+    import jinja2
+
+    from src.pipeline.reprocess import reprocess_article_body
+
+    return await reprocess_article_body(
+        repo,
+        aid,
+        f"https://ex.com/{aid}",
+        extractor=_extractor(text),
+        llm=AsyncMock(),
+        template=jinja2.Template("x"),
+        config=SimpleNamespace(),  # type: ignore[arg-type]  # probe は差し替えるので中身は不要
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_second_stage_runs_on_refetch_when_config_is_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _stub_llm: AsyncMock
+) -> None:
+    """11-20: 再取得の経路でも取り込みと同じ logprob の 2 段目を当てる (config を通す)。"""
+    from src.pipeline import reprocess
+
+    seen: list[object] = []
+
+    async def _probe(body: str, *, title: str, article_id: str, config: object) -> str | None:
+        seen.append(config)
+        return "thin_body_probe" if config is not None else None
+
+    monkeypatch.setattr(reprocess, "_thin_body_probe_reason", _probe)
+    monkeypatch.setenv("REPROCESS_BODY_GATE", "1")
+    repo = _repo(tmp_path)
+    _add_failed(repo, "a", "degenerate_body: thin_body")
+
+    assert await _run_with_config(repo, "a", LONG_BODY) == "still_degenerate"
+    _stub_llm.assert_not_called()
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_without_config_the_probe_stays_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _stub_llm: AsyncMock
+) -> None:
+    monkeypatch.setenv("REPROCESS_BODY_GATE", "1")
+    monkeypatch.setenv("THIN_BODY_PROBE", "1")
+    monkeypatch.setenv("LATE_BODY_PROMOTE", "0")
+    repo = _repo(tmp_path)
+    _add_failed(repo, "a", "degenerate_body: thin_body")
+
+    assert await _run(repo, "a", LONG_BODY) == "refetched_full"

@@ -70,6 +70,7 @@ async def run_body_refetch_backlog(
                     llm=llm,
                     template=template,
                     enrichment=enrichment,
+                    config=cfg,
                 )
             except Exception as e:  # noqa: BLE001 — 1 件の失敗でジョブを落とさない
                 still_stump += 1
