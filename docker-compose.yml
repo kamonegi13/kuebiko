@@ -395,6 +395,9 @@ services:
       # 辺 1 本の救済をハブ (8 記事以上) に入れない。0 / shadow (ログのみ) / 1
       EVENTNEWS_MERGE_CLOSURE_RECHECK: ${EVENTNEWS_MERGE_CLOSURE_RECHECK:-shadow}
       EVENTNEWS_MERGE_HUB_RESCUE_BLOCK: ${EVENTNEWS_MERGE_HUB_RESCUE_BLOCK:-shadow}
+      # 台帳 claim の長さの関門 (0 / shadow / 1) と、長い claim を状況総括で第 1 文に描く (0 / 1)
+      LEDGER_CLAIM_LENGTH_GATE: ${LEDGER_CLAIM_LENGTH_GATE:-shadow}
+      SLOT_CLAIM_DISPLAY_FIRST_SENTENCE: ${SLOT_CLAIM_DISPLAY_FIRST_SENTENCE:-1}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}

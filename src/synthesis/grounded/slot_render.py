@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import CoreSchema
 
+from src.assessment.claim_length import display_claim
 from src.logging_config import get_logger
 from src.synthesis.grounded.estimate import Estimate, KeyJudgment
 from src.synthesis.grounded.render import (
@@ -208,16 +209,17 @@ def _checked_clauses(
     j: KeyJudgment, item: ClauseItem | None, counts: dict[str, int]
 ) -> tuple[str, str]:
     """LLM の文を関門に通す。だめなら台帳の値 (claim / implication) に置き換える。"""
+    claim = display_claim(j.claim)  # 長い claim は第 1 文で描く (2026-11-20)
     if item is None:
         counts["uncovered"] += 1
-        return j.claim, j.implication
+        return claim, j.implication
     world, implication = item.world_clause.strip(), item.implication_clause.strip()
     if not world or has_banned(world):
         counts["banned_replaced"] += bool(world)
-        world = j.claim
+        world = claim
     elif causal_unsupported(world, j.delta_note):
         counts["causal_replaced"] += 1
-        world = j.claim
+        world = claim
     if not implication or has_banned(implication):
         counts["banned_replaced"] += bool(implication)
         implication = j.implication
@@ -261,7 +263,9 @@ def _pir_section(est: Estimate) -> str:
         return compact_pir_section(est.judgments, _pir_titles(), empty=NO_PIR)
     lines = [
         f"- {p['pir_title']}: "
-        + "、".join(f"{e['claim'] or e['id']} ({e['confidence_ja']})" for e in p["entries"])
+        + "、".join(
+            f"{display_claim(e['claim']) or e['id']} ({e['confidence_ja']})" for e in p["entries"]
+        )
         for p in _pir_rollup(est.judgments)
     ]
     return "\n".join(lines) or NO_PIR

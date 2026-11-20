@@ -45,4 +45,11 @@ def trim_to_boundary(text: str, cap: int) -> tuple[str, int]:
     return body + "\n" + _note(omitted), omitted
 
 
-__all__ = ["OMITTED_NOTE", "trim_to_boundary"]
+def cut_at_sentence(text: str, cap: int) -> str:
+    """``cap`` 字以内の最後の文末で切る (注記は付けない)。文末が無ければ字数で切る。"""
+    if len(text) <= cap:
+        return text
+    return _cut_at_sentence(text, cap)
+
+
+__all__ = ["OMITTED_NOTE", "cut_at_sentence", "trim_to_boundary"]

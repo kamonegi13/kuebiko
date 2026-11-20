@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
+from src.assessment.claim_length import apply_claim_length_gate
 from src.logging_config import get_logger
 from src.synthesis.grounded.estimate import HypothesisScore
 from src.synthesis.grounded.hypotheses import (
@@ -36,6 +37,7 @@ from src.synthesis.grounded.passes import (
     norm_claim_type,
 )
 from src.tools.llm_client import LLMClient
+from src.tools.text_budget import cut_at_sentence
 
 _log = get_logger(__name__)
 
@@ -58,6 +60,9 @@ _DETECT_OPEN_MAX_TOTAL = 12
 # 実質使われないため 1 文字でも含めば棄却。ひらがな不在も日本語文として不自然。
 _CJK_EXT_RE = re.compile(r"[㐀-䶿\U00020000-\U0002a6df]")
 _HIRAGANA_RE = re.compile(r"[ぁ-ん]")
+
+#: 含意の上限 (従来の [:400] と同じ字数。文の境界で切る)
+_IMPLICATION_MAX_CHARS = 400
 
 
 def is_sane_japanese_claim(text: str) -> bool:
@@ -228,7 +233,8 @@ async def incremental_ground_and_score(
         missing_evidence=tuple(s.strip() for s in a.missing_evidence[:3] if s.strip()),
         indicators=tuple(s.strip() for s in a.indicators[:3] if s.strip()),
         claim_type=norm_claim_type(a.claim_type.strip() or prior.claim_type),
-        implication=a.implication.strip()[:400],
+        # 文の途中で切らない (2026-11-20、11-19 監査 D1)
+        implication=cut_at_sentence(a.implication.strip(), _IMPLICATION_MAX_CHARS),
     )
     revised = a.claim.strip()
     if revised and revised != prior.claim and not is_sane_japanese_claim(revised):
@@ -238,6 +244,8 @@ async def incremental_ground_and_score(
             raw=revised[:60],
         )
         revised = ""  # 破損した改訂は棄却して前回 claim を維持
+    # 長さの関門 (LEDGER_CLAIM_LENGTH_GATE): 上限超・追記での肥大は前回を保つ (旗 1)
+    revised = apply_claim_length_gate(prior.claim, revised)
     return IncrementalAnalysis(
         analysis=analysis,
         claim=revised or prior.claim,
