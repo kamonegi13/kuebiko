@@ -234,6 +234,7 @@ async def _summarize_and_build(
     prompt = template.render(article=_prompt_article(article), body=prompt_body)
     summary = await _summarize_without_runaway(llm, prompt, think=think, url=article.url)
     summary = await _guard_repetition(summary, llm, prompt, think=think, article_id=article.id)
+    summary = _guard_meta_sentences(summary, article_id=article.id)
     # b1. 薄い Grok 投稿の要約が本文に無い数字・矛盾を足していないか (GROK_SUMMARY_GROUNDING)
     summary = await _ensure_grounded_summary(
         summary,
@@ -868,6 +869,26 @@ async def _guard_repetition(
         article_id=article_id,
         model=getattr(llm, "model", ""),
     )
+
+
+def _guard_meta_sentences(summary: SummaryOutput, *, article_id: str) -> SummaryOutput:
+    """重要度の理由づけ (メタ文) を要約・BLUF から除く (``SUMMARY_META_GUARD``、既定 0)。
+
+    shadow = ログ ``summary_meta_sentence`` (件数のみ) / 1 = 当たった文だけを決定論で削る。
+    """
+    from src.pipeline.summary_meta import find_meta_sentences, strip_meta_sentences
+
+    mode = os.environ.get("SUMMARY_META_GUARD", "0").strip()
+    if mode not in ("shadow", "1"):
+        return summary
+    found = {k: len(find_meta_sentences(getattr(summary, k) or "")) for k in ("summary", "bluf")}
+    if not any(found.values()):
+        return summary
+    _log.info("summary_meta_sentence", article_id=article_id, mode=mode, **found)
+    if mode != "1":
+        return summary
+    update = {k: strip_meta_sentences(getattr(summary, k)) for k, n in found.items() if n}
+    return summary.model_copy(update=update)
 
 
 class UngroundedSummaryError(Exception):

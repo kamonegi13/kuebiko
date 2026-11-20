@@ -398,6 +398,8 @@ services:
       # 台帳 claim の長さの関門 (0 / shadow / 1) と、長い claim を状況総括で第 1 文に描く (0 / 1)
       LEDGER_CLAIM_LENGTH_GATE: ${LEDGER_CLAIM_LENGTH_GATE:-shadow}
       SLOT_CLAIM_DISPLAY_FIRST_SENTENCE: ${SLOT_CLAIM_DISPLAY_FIRST_SENTENCE:-1}
+      # 要約・BLUF の重要度の理由づけ (メタ文) を除く (0 / shadow / 1)
+      SUMMARY_META_GUARD: ${SUMMARY_META_GUARD:-shadow}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}
