@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 from collections import deque
 from collections.abc import Callable, Sequence
 from collections.abc import Set as AbstractSet
@@ -23,10 +24,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import feedparser  # type: ignore[import-untyped]
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.logging_config import get_logger
 from src.sources import source_store
@@ -80,6 +82,20 @@ class FeedDef(BaseModel):
     # 取得ポリシーの印 (任意)。"hostile" = 敵対的 host として厳しめに取る
     # (src/tools/hostile_fetch.py、HOSTILE_FETCH_POLICY=1 で適用)。既定は host の自動分類に任せる。
     fetch_profile: Literal["default", "hostile"] = "default"
+    # 時間帯の無い pubDate をこの時間帯で読む (任意、IANA 名)。iThome は台湾時間を時間帯なしで
+    # 出し、UTC とみなされて約 8 時間未来になっていた (2026-11-20、11-19 監査 D2 P1-8b)
+    published_tz: str | None = None
+
+    @field_validator("published_tz")
+    @classmethod
+    def _valid_tz(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as e:
+            raise ValueError(f"不明な時間帯: {value}") from e
+        return value
 
 
 class FeedsConfig(BaseModel):
@@ -148,6 +164,28 @@ class FetchResult:
     stage: str = "bot"
 
 
+#: pubDate の末尾の時間帯 (Z・±hh:mm・GMT/UTC/略号)。無ければ時間帯なし
+_TZ_SUFFIX = re.compile(r"(Z|[+-]\d{2}:?\d{2}|\b[A-Z]{2,5})\s*$")
+
+
+def _parse_published(entry: dict[str, Any], tz: str | None) -> datetime:
+    """公開日時: published_parsed > updated_parsed > now。
+
+    feedparser は時間帯の無い日付を UTC とみなす。feed に ``published_tz`` があり、生の
+    文字列に時間帯が無いときだけ、その時間帯の時刻として読み直す。
+    """
+    for parsed_key, raw_key in (("published_parsed", "published"), ("updated_parsed", "updated")):
+        st = entry.get(parsed_key)
+        if not st:
+            continue
+        naive = datetime(*st[:6])
+        raw = str(entry.get(raw_key) or "").strip()
+        if tz and raw and not _TZ_SUFFIX.search(raw):
+            return naive.replace(tzinfo=ZoneInfo(tz)).astimezone(UTC)
+        return naive.replace(tzinfo=UTC)
+    return datetime.now(UTC)
+
+
 def _entry_to_article(entry: dict[str, Any], feed: FeedDef) -> Article | None:
     """feedparser entry を Article に変換。必須 field 欠落なら None。"""
     # link は title-only entry の場合 missing なので skip
@@ -165,18 +203,7 @@ def _entry_to_article(entry: dict[str, Any], feed: FeedDef) -> Article | None:
     elif "description" in entry:
         summary_html = entry["description"] or ""
 
-    # 公開日時: published_parsed > updated_parsed > now
-    published: datetime
-    if entry.get("published_parsed"):
-        from time import struct_time
-
-        st: struct_time = entry["published_parsed"]
-        published = datetime(*st[:6], tzinfo=UTC)
-    elif entry.get("updated_parsed"):
-        st = entry["updated_parsed"]
-        published = datetime(*st[:6], tzinfo=UTC)
-    else:
-        published = datetime.now(UTC)
+    published = _parse_published(entry, feed.published_tz)
 
     # 著者
     author = entry.get("author") or None

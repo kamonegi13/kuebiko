@@ -516,3 +516,57 @@ def test_rotate_reaches_every_feed_when_gcd_is_large() -> None:
         start = (hour * m) % n
         reached.update((start + i) % n for i in range(m))
     assert reached == set(range(n))
+
+
+class TestFeedPublishedTimezone:
+    """時間帯の無い pubDate を feed ごとの時間帯で読む (2026-11-20、11-19 監査 D2 P1-8b)。
+
+    iThome は ``2026-11-19 18:24`` (台湾時間・時間帯なし) を出し、feedparser が UTC と
+    みなして取り込み時刻より約 8 時間未来になっていた (901 件中 739 件)。
+    """
+
+    def _entry(self, raw: str, parsed: tuple[int, ...]) -> dict[str, object]:
+        from time import struct_time
+
+        return {
+            "link": "https://example.com/a",
+            "title": "t",
+            "published": raw,
+            "published_parsed": struct_time((*parsed, 0, 0, 0)),
+        }
+
+    def test_naive_date_is_read_in_feed_timezone(self) -> None:
+        from datetime import UTC, datetime
+
+        feed = FeedDef(name="tw", url="https://x/rss", published_tz="Asia/Taipei")
+        article = _entry_to_article(
+            self._entry("2026-11-19 18:24", (2026, 11, 19, 18, 24, 0)), feed
+        )
+        assert article is not None
+        assert article.published == datetime(2026, 11, 19, 10, 24, tzinfo=UTC)
+
+    def test_date_with_offset_is_unchanged(self) -> None:
+        from datetime import UTC, datetime
+
+        feed = FeedDef(name="tw", url="https://x/rss", published_tz="Asia/Taipei")
+        raw = "Thu, 19 Nov 2026 10:24:00 +0000"
+        article = _entry_to_article(self._entry(raw, (2026, 11, 19, 10, 24, 0)), feed)
+        assert article is not None
+        assert article.published == datetime(2026, 11, 19, 10, 24, tzinfo=UTC)
+
+    def test_no_timezone_setting_keeps_old_behavior(self) -> None:
+        from datetime import UTC, datetime
+
+        feed = FeedDef(name="x", url="https://x/rss")
+        article = _entry_to_article(
+            self._entry("2026-11-19 18:24", (2026, 11, 19, 18, 24, 0)), feed
+        )
+        assert article is not None
+        assert article.published == datetime(2026, 11, 19, 18, 24, tzinfo=UTC)
+
+    def test_invalid_timezone_is_rejected(self) -> None:
+        import pydantic
+        import pytest
+
+        with pytest.raises(pydantic.ValidationError):
+            FeedDef(name="x", url="https://x/rss", published_tz="Not/AZone")
