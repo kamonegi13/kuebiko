@@ -764,6 +764,22 @@ async def _pattern_shadow(
     )
 
 
+#: 判定がある期間に空であってはならない節 (旧経路で出力上限に当たると後ろから空になる)
+_REQUIRED_SECTIONS = ("headline", "weight_section", "pir_section")
+
+
+def _log_missing_sections(sections: _WireSections, *, period_label: str) -> None:
+    """必須の節が空なら記録する (11-20、11-19 監査 D1)。
+
+    出力上限に当たった JSON は救済で括弧を閉じられ、全欄に既定値 "" があるので検証を通る。
+    ``llm_usage.hit_token_cap`` と合わせて、上限到達で節が欠けたことを生成物の側でも残す。
+    出力は変えない (縮める・作り直す関門は SYNTHESIS_LENGTH_GATE の設計で別に入れる)。
+    """
+    missing = [name for name in _REQUIRED_SECTIONS if not getattr(sections, name).strip()]
+    if missing:
+        _log.warning("synthesis_sections_missing", period=period_label, missing=missing)
+
+
 async def render_sections(
     *,
     llm: LLMClient,
@@ -814,6 +830,7 @@ async def render_sections(
         # パターン版の見出しは横断の文。単独判定の見出しの関門 (_guard_headline) は掛けない
         return _collapse_runaway(patterned, period_label=period_label)
     sections = await choose_sections(llm=llm, est=est, period_label=period_label, legacy=legacy)
+    _log_missing_sections(sections, period_label=period_label)
     sections = _collapse_runaway(sections, period_label=period_label)
     sections = _guard_headline(sections, head, mode)
     # 反復抑制 (2026-08-07): daily の quiet 日に前日と同一の standing 判定が headline へ
