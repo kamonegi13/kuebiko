@@ -363,6 +363,7 @@ async def run_daily_heartbeat() -> None:
         from src.ui.services.collection_gap_watch import build_collection_gap_line
         from src.ui.services.fill_rate_audit import build_heartbeat_fill_line
         from src.ui.services.ledger_unread_watch import build_ledger_unread_line
+        from src.ui.services.output_drift_watch import build_output_drift_line
         from src.ui.services.token_cap_watch import build_token_cap_line
         from src.ui.services.veto_sample_job import build_veto_sample_line
         from src.ui.services.zero_output_watch import build_zero_output_line
@@ -384,6 +385,7 @@ async def run_daily_heartbeat() -> None:
                 build_collection_gap_line(repo),
                 build_veto_sample_line(),
                 build_token_cap_line(repo),
+                build_output_drift_line(repo),
             ),
         )
         from src.ui.services.ops_notify import post_ops_message
