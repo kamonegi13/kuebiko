@@ -122,6 +122,40 @@ _log = get_logger(__name__)
 
 # 割当は決定論なのでプールを選定競争 (150) より広く取れる (設計 §3.0、安全上限)。
 _STATEFUL_POOL_LIMIT = 500
+
+
+def considered_article_count(repo: RunHistoryRepository, *, since_iso: str, until_iso: str) -> int:
+    """窓の中の high+medium の配信記事の数 (表示の「考慮 N 記事」の母数)。
+
+    割当のプールは ``_STATEFUL_POOL_LIMIT`` で頭打ちになるので、``len(pool)`` を母数にすると
+    週次は常に 500 と出ていた (2026-11-20、11-19 監査 D1)。射影の経路と同じ数え方。
+    """
+    with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の意図的共有
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT article_id) FROM articles"
+            " WHERE status = 'posted' AND importance IN ('high', 'medium')"
+            " AND created_at >= ? AND created_at <= ?",
+            (since_iso, until_iso),
+        ).fetchone()
+    return int(row[0] or 0)
+
+
+def log_pool_capped(
+    pool: Sequence[Mapping[str, Any]], *, considered: int, period_type: str
+) -> None:
+    """割当のプールが上限で頭打ちになったら、落ちた件数を記録する (黙って落とさない)。"""
+    if len(pool) < _STATEFUL_POOL_LIMIT or considered <= len(pool):
+        return
+    _log.warning(
+        "ledger_pool_capped",
+        period_type=period_type,
+        limit=_STATEFUL_POOL_LIMIT,
+        total=considered,
+        dropped=considered - len(pool),
+        pool_high=sum(1 for a in pool if a.get("importance") == "high"),
+    )
+
+
 # detect-new prompt に載せる残余の上限 (超過は log = no-silent-caps。翌 run に再浮上する)。
 # 2026-07-07: detect は高速 26B (fast_llm) を使うため 150 → 500 に拡大 (プール上限と同値、
 # 通常週の未割当を全件読める)。旧 150 は遅い 31B の 900s timeout を招いていた根治。
@@ -1217,6 +1251,10 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         limit=_STATEFUL_POOL_LIMIT,
         importance_levels=_POOL_IMPORTANCE,
     )
+    considered = considered_article_count(
+        repo, since_iso=(now_dt - timedelta(hours=lookback)).isoformat(), until_iso=now_iso
+    )
+    log_pool_capped(pool, considered=considered, period_type=period_type)
     pool_ids = [str(a.get("article_id", "")) for a in pool if a.get("article_id")]
     entities_by_id = repo.entity_keys_for_articles(pool_ids)
     title_by_id = {str(a.get("article_id", "")): str(a.get("title", "")) for a in pool}
@@ -2156,7 +2194,7 @@ async def build_estimate_stateful(  # noqa: PLR0915 — 更新オペレーショ
         period_end=end,
         judgments=tuple(judgments),
         model=getattr(llm, "model", ""),
-        considered_count=len(pool),
+        considered_count=max(considered, len(pool)),
         relations=relations,
     )
 
@@ -2230,14 +2268,9 @@ async def build_projection_estimate(
         _log.warning("closing_projection_failed", error=str(e))
 
     # considered = 当時のノミネート・プール相当 (期間終端までの lookback 窓、正直な母数表示用)
-    with repo._connect() as conn:  # noqa: SLF001 — 読み取り専用の意図的共有
-        row_c = conn.execute(
-            "SELECT COUNT(DISTINCT article_id) FROM articles"
-            " WHERE status = 'posted' AND importance IN ('high', 'medium')"
-            " AND created_at >= ? AND created_at <= ?",
-            ((now - timedelta(hours=lookback)).isoformat(), now_iso),
-        ).fetchone()
-    considered = int(row_c[0] or 0)
+    considered = considered_article_count(
+        repo, since_iso=(now - timedelta(hours=lookback)).isoformat(), until_iso=now_iso
+    )
 
     judgment_ids = [j.id for j in judgments]
     relations = tuple(
