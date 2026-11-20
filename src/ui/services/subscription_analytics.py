@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.logging_config import get_logger
+from src.pipeline.triage_material import NO_MATERIAL_PREFIX
 
 _log = get_logger(__name__)
 
@@ -59,6 +60,9 @@ class FeedStats:
     # triage の落選件数 (2026-10-02)。落選は articles に行を作らないため、全部落ちた媒体が
     # 「記事なし」(= 壊れている) に見えていた。取得の成立と内容の不採用を区別する観測点。
     triage_rejected: int = 0
+    # うち材料なし (確認・拒否の画面の文だけで題だけの判定、TRIAGE_BLOCKED_MATERIAL=1、11-20)。
+    # 取得の改善 (fetch_escalation_policy) の材料
+    triage_rejected_no_material: int = 0
     # Phase 5T-R: 当ツール articles 表での初回観測時刻 (ISO 8601 string、未観測なら None)
     first_seen_at: str | None = None
 
@@ -308,8 +312,10 @@ def _with_triage_rejections(
     try:
         from src.storage.run_history import RunHistoryRepository
 
-        counts = RunHistoryRepository(db_path=db_path).count_triage_rejections_by_feed(
-            days=lookback_days
+        repo = RunHistoryRepository(db_path=db_path)
+        counts = repo.count_triage_rejections_by_feed(days=lookback_days)
+        no_material = repo.count_triage_rejections_by_feed(
+            days=lookback_days, reason_prefix=NO_MATERIAL_PREFIX
         )
     except Exception as e:  # noqa: BLE001 — 補助の集計。失敗しても一覧は返す
         _log.warning("subscription_triage_rejections_failed", error=str(e))
@@ -327,7 +333,9 @@ def _with_triage_rejections(
             medium_count=0,
             low_count=0,
         )
-        out[key] = replace(base, triage_rejected=n)
+        out[key] = replace(
+            base, triage_rejected=n, triage_rejected_no_material=no_material.get(key, 0)
+        )
     return out
 
 

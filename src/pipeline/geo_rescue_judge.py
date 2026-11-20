@@ -112,7 +112,7 @@ Q_CYBER_GEO = (
 #: 本文として使う最小の字数 (これ未満は「本文なし」。事前登録 §4)
 MIN_BODY_CHARS = 200
 #: 同意 (cookie) の画面の語 (事前登録の追補。冒頭だけ見る。ボット確認の語は本番の
-#: ``briefing._BLOCK_PAGE_RE`` をそのまま使う)
+#: ``tools.block_page.BLOCK_PAGE_RE`` をそのまま使う)
 _CONSENT_PAGE_RE = re.compile(
     r"we value your privacy|accept all cookies|cookie (?:settings|preferences|consent)|"
     r"manage (?:your )?consent|before you continue to|consent to the use of cookies",
@@ -248,13 +248,8 @@ def unusable_body_reason(body: str | None) -> str | None:
     (薄い本文の関門は環境変数で変わるため使わない)。正解の入力と判定の入力で同じ関数を使う。
     """
     # 循環 import を避けて遅延 import (briefing は pipeline の多くを読む)
-    from src.pipeline.briefing import (
-        _BLOCK_PAGE_MAX_LEN,
-        _BLOCK_PAGE_RE,
-        _BLOCK_PAGE_SCAN_CHARS,
-        _DEGENERATE_BODY_MIN_CHARS,
-        _FEED_BOILERPLATE_RE,
-    )
+    from src.pipeline.briefing import _DEGENERATE_BODY_MIN_CHARS, _FEED_BOILERPLATE_RE
+    from src.tools.block_page import BLOCK_PAGE_MAX_LEN, BLOCK_PAGE_RE, BLOCK_PAGE_SCAN_CHARS
 
     text = (body or "").strip()
     if len(text) < MIN_BODY_CHARS:
@@ -262,10 +257,10 @@ def unusable_body_reason(body: str | None) -> str | None:
     match = _FEED_BOILERPLATE_RE.search(text)
     if match and len(text[: match.start()].strip()) < _DEGENERATE_BODY_MIN_CHARS:
         return "feed_boilerplate"
-    if len(text) > _BLOCK_PAGE_MAX_LEN:
+    if len(text) > BLOCK_PAGE_MAX_LEN:
         return None
-    head = text[:_BLOCK_PAGE_SCAN_CHARS]
-    if _BLOCK_PAGE_RE.search(head):
+    head = text[:BLOCK_PAGE_SCAN_CHARS]
+    if BLOCK_PAGE_RE.search(head):
         return "block_page"
     if _CONSENT_PAGE_RE.search(head):
         return "consent_page"

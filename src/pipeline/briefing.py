@@ -27,6 +27,12 @@ from src.pipeline.summary import (
     event_date_precision,
 )
 from src.tools.article_model import Article
+from src.tools.block_page import (
+    BLOCK_PAGE_MAX_LEN,
+    BLOCK_PAGE_RE,
+    BLOCK_PAGE_SCAN_CHARS,
+    is_block_page,
+)
 from src.tools.content_extractor import ContentExtractor, ExtractionResult, check_extracted_identity
 from src.tools.decision_probe import probe_choice
 from src.tools.discord_publisher import BriefingMessage, Source
@@ -476,14 +482,9 @@ async def _summarize_and_build(
 # ブロック画面や極短断片から LLM に要約させると、タイトルだけの幻覚がそのまま
 # 配信・台帳開設・headline まで到達する。ゴミ入力は境界 (要約前) で止める。
 _DEGENERATE_BODY_MIN_CHARS = 80
-_BLOCK_PAGE_RE = re.compile(
-    r"security service to protect (?:itself|against)|enable javascript and cookies|"
-    r"checking your browser|verify you are human|are you a robot|"
-    r"just a moment\.\.\.|attention required!|access to this page has been denied|"
-    r"please complete the security check|cf-browser-verification",
-    re.IGNORECASE,
-)
-_BLOCK_PAGE_SCAN_CHARS = 600
+# 語の一覧と範囲の SSoT は src/tools/block_page.py (11-20、triage の材料と共通にした)
+_BLOCK_PAGE_RE = BLOCK_PAGE_RE
+_BLOCK_PAGE_SCAN_CHARS = BLOCK_PAGE_SCAN_CHARS
 # WordPress の配信が抜粋の代わりに付ける定型文 (2026-10-02)。全文取得に失敗して feed の抜粋に
 # 落ちると、本文がこの 1 文だけになる。題しか無いのに LLM は手口まで書いた (FDD の実例)
 _FEED_BOILERPLATE_RE = re.compile(
@@ -529,7 +530,7 @@ _MEDIA_STUB_KEYWORDS_JA: tuple[str, ...] = (
     "ウェビナー",
 )
 # ブロック画面は短い。長い本文中に語句が出ても記事本文 (例: Cloudflare についての記事) とみなす
-_BLOCK_PAGE_MAX_LEN = 2000
+_BLOCK_PAGE_MAX_LEN = BLOCK_PAGE_MAX_LEN
 
 
 class DegenerateBodyError(Exception):
@@ -602,7 +603,7 @@ def _degenerate_body_reason(body: str, *, title: str = "", article_id: str = "")
         return "feed_boilerplate"
     if len(text) < _DEGENERATE_BODY_MIN_CHARS:
         return f"body_too_short:{len(text)}"
-    if len(text) <= _BLOCK_PAGE_MAX_LEN and _BLOCK_PAGE_RE.search(text[:_BLOCK_PAGE_SCAN_CHARS]):
+    if is_block_page(text):
         return "block_page"
     if (
         _thin_body_gate_enabled()

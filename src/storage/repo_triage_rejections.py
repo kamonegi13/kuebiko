@@ -109,14 +109,25 @@ class TriageRejectionsMixin(RunHistoryRepositoryBase):
             for r in rows
         ]
 
-    def count_triage_rejections_by_feed(self, *, days: int) -> dict[str, int]:
-        """直近 ``days`` 日の落選件数を媒体の結合キーごとに返す。"""
+    def count_triage_rejections_by_feed(
+        self, *, days: int, reason_prefix: str | None = None
+    ) -> dict[str, int]:
+        """直近 ``days`` 日の落選件数を媒体の結合キーごとに返す。
+
+        ``reason_prefix`` を渡すと理由がそれで始まる落選だけ (例: 材料なし)。LIKE の型は
+        パラメータで渡す (SQL に裸の ``%`` を書くと PG の psycopg で落ちる)。
+        """
+        where = "ts >= ?"
+        params: list[object] = [_cutoff(days)]
+        if reason_prefix:
+            where += " AND reason LIKE ?"
+            params.append(reason_prefix + "%")  # 呼び手の定数 (ワイルドカードを含まない)
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT CASE WHEN feed_url <> '' THEN feed_url ELSE feed_title END AS k,"
-                " COUNT(*) AS n FROM triage_rejections WHERE ts >= ?"
+                "SELECT CASE WHEN feed_url <> '' THEN feed_url ELSE feed_title END AS k,"  # noqa: S608
+                f" COUNT(*) AS n FROM triage_rejections WHERE {where}"
                 " GROUP BY CASE WHEN feed_url <> '' THEN feed_url ELSE feed_title END",
-                (_cutoff(days),),
+                tuple(params),
             ).fetchall()
         return {str(r["k"]): int(r["n"]) for r in rows if r["k"]}
 

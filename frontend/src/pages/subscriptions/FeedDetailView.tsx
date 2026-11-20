@@ -188,6 +188,9 @@ export function FeedDetailView({
               <tr><th>投稿数</th><td>{st.posted_count}</td></tr>
               <tr><th>重複 (配信せず)</th><td>{st.dup_skipped}</td></tr>
               <tr><th>triage で不採用</th><td>{st.triage_rejected ?? 0}</td></tr>
+              {(st.triage_rejected_no_material ?? 0) > 0 && (
+                <tr><th>うち材料なし (確認画面のみ)</th><td>{st.triage_rejected_no_material}</td></tr>
+              )}
               {(st.extract_failed_count ?? 0) > 0 && (
                 <tr><th>本文抽出 失敗</th><td className="text-critical font-semibold">{st.extract_failed_count} 件 (feed は取得成功・本文が取れず記事化されない)</td></tr>
               )}

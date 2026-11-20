@@ -24,10 +24,16 @@ from src.pipeline.geo_rescue_v2 import V2Outcome, decide_v2, geo_rescue_v2_mode
 from src.pipeline.geo_rescue_v2 import log_outcome as log_v2_outcome
 from src.pipeline.grok_convert import _is_grok_article
 from src.pipeline.policy_rescue import policy_rescue_mode, rescue_cyber_policy
+from src.pipeline.triage_material import (
+    blocked_material_mode,
+    mark_no_material,
+    material_for_triage,
+)
 from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.repo_triage_shadow import TriageShadowRow
 from src.storage.run_history import RunHistoryRepository
 from src.tools.article_model import Article
+from src.tools.block_page import is_block_page
 from src.tools.content_extractor import ContentExtractor, check_extracted_identity
 from src.tools.embedding_client import EmbeddingClient, EmbeddingError
 from src.tools.llm_client import LLMClient
@@ -238,6 +244,18 @@ async def _filter_by_triage(
     if not triage_targets:
         return articles, 0, [], 0, [], []
 
+    # 確認・拒否の画面の文を材料から外す (TRIAGE_BLOCKED_MATERIAL、11-20)。on では外した写しを
+    # 以降 (救済・取り込み) でも使う — 本文を外した記事は本処理で取り直される
+    material_mode = blocked_material_mode()
+    no_material: set[str] = set()
+    prepared: list[Article] = []
+    for a in triage_targets:
+        stripped, empty = material_for_triage(a, material_mode)
+        prepared.append(stripped)
+        if empty:
+            no_material.add(a.id)
+    triage_targets = prepared
+
     # 並列 triage (既定 5 — Ollama サーバへの負荷バランス)
     sem = asyncio.Semaphore(_triage_concurrency())
 
@@ -317,7 +335,7 @@ async def _filter_by_triage(
                     feed_title=article.feed_title or "",
                     feed_url=article.feed_url or "",
                     importance=importance,
-                    reason=reason,
+                    reason=mark_no_material(reason) if article.id in no_material else reason,
                 )
             )
         elif len(kept) < max_keep:
@@ -517,6 +535,14 @@ async def _prefetch_thin_bodies(
             # 取得成功でも **別記事の本文** が入ることがある (2026-08-18 実測 0.4%)。
             # 現時点では棄却せず記録のみ — 閾値を勘で決めて良い記事を捨てないため。
             check_extracted_identity(extraction, a.title, article_id=a.id)
+            if (
+                extraction.success
+                and blocked_material_mode() == "on"
+                and is_block_page(extraction.text)
+            ):
+                # 確認・拒否の画面の文は材料にしない (本処理で取り直す、11-20)
+                _log.info("thin_prefetch_block_page", article_id=a.id)
+                return
             if extraction.success and extraction.text.strip():
                 enriched[idx] = a.model_copy(update={"body_text": extraction.text})
 

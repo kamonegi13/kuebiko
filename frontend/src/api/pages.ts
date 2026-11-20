@@ -661,6 +661,7 @@ export interface FeedStats {
   // triage で落とした記事数 (2026-10-02)。落選は記事行を作らないため、全部落ちた媒体が
   // 「記事なし」に見えていた — 取得の成立と内容の不採用を分ける
   triage_rejected?: number;
+  triage_rejected_no_material?: number;
 }
 
 export interface TriageRejection {
