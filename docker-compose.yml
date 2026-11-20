@@ -391,6 +391,10 @@ services:
       LATE_BODY_PROMOTE: ${LATE_BODY_PROMOTE:-1}
       # 名前解決の一時失敗を恒久の unsafe_url と分けて dns_error に (2026-11-20、0 / shadow / 1)
       DNS_ERROR_SPLIT: ${DNS_ERROR_SPLIT:-1}
+      # 統合の精度 (11-19 監査 D3 I-5・I-6): 推移で結んだ群の conflict を照合し直す /
+      # 辺 1 本の救済をハブ (8 記事以上) に入れない。0 / shadow (ログのみ) / 1
+      EVENTNEWS_MERGE_CLOSURE_RECHECK: ${EVENTNEWS_MERGE_CLOSURE_RECHECK:-shadow}
+      EVENTNEWS_MERGE_HUB_RESCUE_BLOCK: ${EVENTNEWS_MERGE_HUB_RESCUE_BLOCK:-shadow}
       MODEL_REGISTRY_ENFORCE: ${MODEL_REGISTRY_ENFORCE:-0}
       # Discord ブリーフの「📊 状況総括」1 行 (0 = 出さない、横断のパターンへ作り直すまでの暫定)
       BRIEF_SYNTHESIS_LINE: ${BRIEF_SYNTHESIS_LINE:-0}

@@ -457,3 +457,93 @@ class TestReportPeriodGate:
         periods = {"a1": "2026-07", "a2": "2026-07"}
 
         assert len(self._plan(periods, gate=True)) == 1
+
+
+class TestHubRescueBlockAndClosureRecheck:
+    """統合の精度 (2026-11-20、11-19 監査 D3 I-5・I-6)。
+
+    - 辺 1 本の救済は「単独記事 ⇔ 小さな事象」の設計なのに、勧告のハブ (8 記事以上) へ
+      直接・推移で論説などが入っていた (決定 401 は小さな事象を経由してハブへ)。
+    - 焦点の照合は組ごとなので、A–B・B–C を結ぶと A–C の conflict が見られず、別々の被害者の
+      リーク掲載が 1 つの事象に入っていた (決定 359〜362)。
+    """
+
+    @staticmethod
+    def _ents(keys: list[str]) -> dict[str, frozenset[tuple[str, str]]]:
+        return {k: frozenset({_E, _F}) for k in keys}
+
+    def _hub_plan(self, **kw: object) -> list[MergeGroup]:
+        hub = [f"h{i}" for i in range(8)]
+        item_of = {**dict.fromkeys(hub, "hub"), "c1": "small", "c2": "small", "s": "single"}
+        keys = list(item_of)
+        approved = [("h0", "c1"), ("h1", "c2"), ("c1", "s")]
+        return plan_merges(
+            item_of=item_of,
+            first_seen={"hub": "2026-11-01", "small": "2026-11-02", "single": "2026-11-03"},
+            entities=self._ents(keys),
+            vectors={k: _v(1, 0.001 * i) for i, k in enumerate(keys)},
+            approved=approved,
+            single_edge_ok={("c1", "s")},
+            **kw,  # type: ignore[arg-type]
+        )
+
+    def test_rescue_transitively_into_hub_is_blocked(self) -> None:
+        blocked: list[tuple[str, str]] = []
+        got = self._hub_plan(
+            hub_rescue_block_size=8, hub_rescue_enforce=True, rescue_blocked_out=blocked
+        )
+        assert [(g.target, set(g.absorbed)) for g in got] == [("hub", {"small"})]
+        assert blocked == [("single", "small")]
+
+    def test_rescue_block_shadow_keeps_merge_but_records(self) -> None:
+        blocked: list[tuple[str, str]] = []
+        got = self._hub_plan(
+            hub_rescue_block_size=8, hub_rescue_enforce=False, rescue_blocked_out=blocked
+        )
+        assert [(g.target, set(g.absorbed)) for g in got] == [("hub", {"small", "single"})]
+        assert blocked == [("single", "small")]
+
+    def test_default_is_unchanged(self) -> None:
+        got = self._hub_plan()
+        assert [(g.target, set(g.absorbed)) for g in got] == [("hub", {"small", "single"})]
+
+    def _chain_plan(self, **kw: object) -> list[MergeGroup]:
+        from src.eventnews.merge import LinkVerdict
+
+        item_of = {"a1": "i1", "a2": "i1", "b1": "i2", "b2": "i2", "c1": "i3", "c2": "i3"}
+        keys = list(item_of)
+
+        def veto(x: str, y: str) -> LinkVerdict | None:
+            return LinkVerdict("conflict", "別の被害者") if {x, y} == {"i1", "i3"} else None
+
+        return plan_merges(
+            item_of=item_of,
+            first_seen={"i1": "2026-11-01", "i2": "2026-11-02", "i3": "2026-11-03"},
+            entities=self._ents(keys),
+            vectors={k: _v(1, 0.001 * i) for i, k in enumerate(keys)},
+            approved=[("a1", "b1"), ("a2", "b2"), ("b1", "c1"), ("b2", "c2")],
+            link_veto=veto,
+            **kw,  # type: ignore[arg-type]
+        )
+
+    def test_closure_recheck_splits_conflicting_member(self) -> None:
+        out: list[object] = []
+        got = self._chain_plan(closure_recheck=True, closure_enforce=True, closure_out=out)
+        assert [(g.target, g.absorbed) for g in got] == [("i1", ("i2",))]
+        assert len(out) == 1
+
+    def test_closure_recheck_shadow_records_only(self) -> None:
+        out: list[object] = []
+        got = self._chain_plan(closure_recheck=True, closure_enforce=False, closure_out=out)
+        assert [(g.target, set(g.absorbed)) for g in got] == [("i1", {"i2", "i3"})]
+        assert len(out) == 1
+
+    def test_without_recheck_conflict_passes_through_chain(self) -> None:
+        got = self._chain_plan()
+        assert [(g.target, set(g.absorbed)) for g in got] == [("i1", {"i2", "i3"})]
+
+
+def test_closure_recheck_keeps_links_of_the_remaining_group() -> None:
+    t = TestHubRescueBlockAndClosureRecheck()
+    got = t._chain_plan(closure_recheck=True, closure_enforce=True, closure_out=[])
+    assert got and {(lk.item_a, lk.item_b) for lk in got[0].links} == {("i1", "i2")}

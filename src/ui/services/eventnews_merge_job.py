@@ -53,6 +53,7 @@ from src.eventnews.merge import (
     frequent_entity_pairs,
     plan_merges,
 )
+from src.eventnews.merge_closure import HUB_RESCUE_MIN_ARTICLES
 from src.eventnews.models import ENTITY_FREQ_WINDOW_HOURS, MemberArticle
 from src.eventnews.pair_features import pair_features
 from src.eventnews.pair_model import PairModel
@@ -371,6 +372,24 @@ def hub_split_mode() -> str:
     return HUB_SPLIT_SHADOW
 
 
+def _tri_flag(name: str) -> str:
+    """``0`` / ``shadow`` / ``1`` (未設定・読めない値は 0)。"""
+    raw = os.environ.get(name, "0").strip().lower()
+    if raw in ("1", "on", "true"):
+        return "1"
+    return "shadow" if raw == "shadow" else "0"
+
+
+def closure_recheck_mode() -> str:
+    """``EVENTNEWS_MERGE_CLOSURE_RECHECK`` (I-5、2026-11-20): 推移で結んだ群を照合し直す。"""
+    return _tri_flag("EVENTNEWS_MERGE_CLOSURE_RECHECK")
+
+
+def hub_rescue_block_mode() -> str:
+    """``EVENTNEWS_MERGE_HUB_RESCUE_BLOCK`` (I-6、2026-11-20): ハブへの辺 1 本の救済を止める。"""
+    return _tri_flag("EVENTNEWS_MERGE_HUB_RESCUE_BLOCK")
+
+
 def hub_gate_enabled() -> bool:
     """ハブ事象の主題でない CVE を橋にしない (EVENTNEWS_MERGE_HUB_GATE=1)。"""
     return os.environ.get("EVENTNEWS_MERGE_HUB_GATE", "0") == "1"
@@ -548,6 +567,10 @@ def plan_for(
     gate_mode = focus_gate_mode()
     org_alias = load_org_alias(repo) if gate_mode != GATE_OFF else {}
     vetoed: list[VetoedLink] = []
+    # I-5・I-6 (2026-11-20)。旗 0 なら従来と同一 (何も計算しない)
+    rescue_mode, closure_mode = hub_rescue_block_mode(), closure_recheck_mode()
+    rescue_blocked: list[tuple[str, str]] = []
+    closure_vetoes: list[VetoedLink] = []
     split_mode = hub_split_mode()
     splits: list[VetoedLink] = []
     groups = plan_merges(
@@ -574,7 +597,15 @@ def plan_for(
         ),
         hub_split_enforce=split_mode == HUB_SPLIT_ON,
         hub_split_out=splits,
+        hub_rescue_block_size=HUB_RESCUE_MIN_ARTICLES if rescue_mode != "0" else None,
+        hub_rescue_enforce=rescue_mode == "1",
+        rescue_blocked_out=rescue_blocked,
+        closure_recheck=closure_mode != "0",
+        closure_enforce=closure_mode == "1",
+        closure_out=closure_vetoes,
     )
+    _log_closure_gates(rescue_blocked, closure_vetoes)
+    vetoed.extend(v for v in closure_vetoes if v.enforced)
     return MergePlan(
         groups=tuple(groups),
         inputs=inputs,
@@ -586,6 +617,25 @@ def plan_for(
         org_alias=org_alias,
         hub_splits=tuple(splits),
     )
+
+
+def _log_closure_gates(
+    rescue_blocked: list[tuple[str, str]], closure_vetoes: list[VetoedLink]
+) -> None:
+    if rescue_blocked:
+        _log.info(
+            "eventnews_merge_hub_rescue_block",
+            mode=hub_rescue_block_mode(),
+            pairs=[f"{a}->{b}" for a, b in rescue_blocked[:20]],
+            count=len(rescue_blocked),
+        )
+    if closure_vetoes:
+        _log.info(
+            "eventnews_merge_closure_recheck",
+            mode=closure_recheck_mode(),
+            pairs=[f"{v.item_a}<>{v.item_b}" for v in closure_vetoes[:20]],
+            count=len(closure_vetoes),
+        )
 
 
 def _members_of(inputs: MergeInputs) -> Callable[[str], list[MemberArticle]]:

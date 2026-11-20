@@ -334,6 +334,12 @@ def plan_merges(
     hub_split: HubSplitCheck | None = None,
     hub_split_enforce: bool = False,
     hub_split_out: list[VetoedLink] | None = None,
+    hub_rescue_block_size: int | None = None,
+    hub_rescue_enforce: bool = False,
+    rescue_blocked_out: list[tuple[str, str]] | None = None,
+    closure_recheck: bool = False,
+    closure_enforce: bool = False,
+    closure_out: list[VetoedLink] | None = None,
 ) -> list[MergeGroup]:
     """統合する群を決める (純粋関数)。
 
@@ -437,7 +443,11 @@ def plan_merges(
         ):
             continue
         used.append(MergeLink(ia, ib, tuple(sorted(edge_articles[(ia, ib)])), is_rescued))
-        ra, rb = _root(parent, ia), _root(parent, ib)
+    used = _drop_rescues_into_hub(
+        used, item_of, hub_rescue_block_size, hub_rescue_enforce, rescue_blocked_out
+    )
+    for link in used:
+        ra, rb = _root(parent, link.item_a), _root(parent, link.item_b)
         if ra != rb:
             parent[ra] = rb
     groups: dict[str, list[str]] = {}
@@ -446,12 +456,19 @@ def plan_merges(
     links_of: dict[str, list[MergeLink]] = {}
     for link in used:
         links_of.setdefault(_root(parent, link.item_a), []).append(link)
+    if closure_recheck and link_veto is not None:
+        groups = _recheck_closure(
+            groups, used, first_seen, link_veto, enforce=closure_enforce, out=closure_out
+        )
     out: list[MergeGroup] = []
     for root, ids in groups.items():
         if len(ids) < 2:
             continue
         # ⭐ 統合先は **最初に立った事象** — URL がそこに残る
         ordered = sorted(ids, key=lambda i: str(first_seen.get(i, "")))
+        members = set(ids)
+        # 群の根拠は群の中の組だけ (照合し直しで群の鍵が union の根と変わっても失わない)
+        links_of[root] = [lk for lk in used if lk.item_a in members and lk.item_b in members]
         out.append(
             MergeGroup(
                 target=ordered[0],
@@ -460,6 +477,54 @@ def plan_merges(
             )
         )
     return out
+
+
+def _drop_rescues_into_hub(
+    used: list[MergeLink],
+    item_of: Mapping[str, str],
+    threshold: int | None,
+    enforce: bool,
+    out: list[tuple[str, str]] | None,
+) -> list[MergeLink]:
+    """辺 1 本の救済がハブ (``threshold`` 記事以上の群) に入るなら外す (I-6、2026-11-20)。"""
+    if not threshold:
+        return used
+    from src.eventnews.merge_closure import rescues_into_hub
+
+    sizes: dict[str, int] = {}
+    for item in item_of.values():
+        sizes[item] = sizes.get(item, 0) + 1
+    blocked = rescues_into_hub(used, sizes, threshold)
+    if out is not None:
+        out.extend(blocked)
+    if not enforce or not blocked:
+        return used
+    drop = {tuple(sorted(p)) for p in blocked}
+    return [lk for lk in used if tuple(sorted((lk.item_a, lk.item_b))) not in drop]
+
+
+def _recheck_closure(
+    groups: dict[str, list[str]],
+    used: list[MergeLink],
+    first_seen: Mapping[str, object],
+    link_veto: LinkVeto,
+    *,
+    enforce: bool,
+    out: list[VetoedLink] | None,
+) -> dict[str, list[str]]:
+    """推移で結んだ群の統合先 × 各吸収側を照合し直す (I-5、2026-11-20)。"""
+    from src.eventnews.merge_closure import split_closure_conflicts
+
+    result: dict[str, list[str]] = {}
+    for root, ids in groups.items():
+        if len(ids) < 2:
+            result[root] = ids
+            continue
+        for part in split_closure_conflicts(
+            ids, used, first_seen, link_veto, enforce=enforce, out=out
+        ):
+            result[min(part)] = part
+    return result
 
 
 def _hub_split(
