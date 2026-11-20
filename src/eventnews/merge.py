@@ -42,6 +42,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -155,6 +156,20 @@ def candidate_pairs_by_entity(
     return pairs
 
 
+#: ransomware.live の掲載の記事 id 接頭辞 (``sources/ransomware_live._article_id`` と同じ)
+LEAK_POSTING_ID_PREFIX = "rl_"
+FREQUENT_LEAK_EXCLUDE_ENV = "EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE"
+
+
+def frequent_leak_exclude_enabled() -> bool:
+    """流出サイトの掲載どうしを頻出名の救済で結ばない (既定 on、0 で従来)。"""
+    return os.environ.get(FREQUENT_LEAK_EXCLUDE_ENV, "1").strip() != "0"
+
+
+def _both_leak_postings(a: str, b: str) -> bool:
+    return a.startswith(LEAK_POSTING_ID_PREFIX) and b.startswith(LEAK_POSTING_ID_PREFIX)
+
+
 def frequent_entity_pairs(
     *,
     uncapped: Mapping[str, set[tuple[str, str]] | frozenset[tuple[str, str]]],
@@ -169,7 +184,12 @@ def frequent_entity_pairs(
 
     本文の埋込 cos が ``threshold`` 以上の組だけ (頻出の名前は単独では弱い信号なので、
     本文の近さと組にする)。まとめ記事・被害組織が食い違う組は除く。判定は呼び手が ML に回す。
+
+    流出サイトの掲載どうし (``rl_``) も除く (11-20、11-19 監査 D3): 掲載は同じ定型文なので
+    cos が 1.0 近くになり、同じグループ名 (頻出) を共有するだけの別々の被害者が 1 つの事象に
+    統合されていた (決定 359〜362)。頻出名の救済の辺 139 本のうち 12 本がこの型。
     """
+    skip_leak = frequent_leak_exclude_enabled()
     by_key: dict[tuple[str, str], list[str]] = {}
     for aid, keys in uncapped.items():
         if aid in roundups or aid not in item_of or aid not in vectors:
@@ -187,6 +207,8 @@ def frequent_entity_pairs(
             for j in range(i + 1, len(aids)):
                 a, b = sorted((aids[i], aids[j]))
                 if item_of[a] == item_of[b]:
+                    continue
+                if skip_leak and _both_leak_postings(a, b):
                     continue
                 if float(np.dot(vectors[a], vectors[b])) < threshold:
                     continue

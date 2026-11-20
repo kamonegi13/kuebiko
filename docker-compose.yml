@@ -396,6 +396,8 @@ services:
       # 統合の精度 (11-19 監査 D3 I-5・I-6): 推移で結んだ群の conflict を照合し直す /
       # 辺 1 本の救済をハブ (8 記事以上) に入れない。0 / shadow (ログのみ) / 1
       EVENTNEWS_MERGE_CLOSURE_RECHECK: ${EVENTNEWS_MERGE_CLOSURE_RECHECK:-shadow}
+      # 11-20: 流出サイトの掲載どうしを頻出名の救済で結ばない (0 で従来)
+      EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE: ${EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE:-1}
       EVENTNEWS_MERGE_HUB_RESCUE_BLOCK: ${EVENTNEWS_MERGE_HUB_RESCUE_BLOCK:-shadow}
       # 台帳 claim の長さの関門 (0 / shadow / 1) と、長い claim を状況総括で第 1 文に描く (0 / 1)
       LEDGER_CLAIM_LENGTH_GATE: ${LEDGER_CLAIM_LENGTH_GATE:-shadow}

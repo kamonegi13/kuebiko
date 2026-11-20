@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from src.eventnews.merge import MergeGroup, candidate_pairs_by_entity, plan_merges
 
@@ -547,3 +548,24 @@ def test_closure_recheck_keeps_links_of_the_remaining_group() -> None:
     t = TestHubRescueBlockAndClosureRecheck()
     got = t._chain_plan(closure_recheck=True, closure_enforce=True, closure_out=[])
     assert got and {(lk.item_a, lk.item_b) for lk in got[0].links} == {("i1", "i2")}
+
+
+def test_frequent_pairs_skip_two_leak_site_postings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """11-20: 流出サイトの掲載どうしは定型文で cos が高く、グループ名 (頻出) だけで別々の
+    被害者が統合されていた (決定 359〜362)。掲載と報道の組は従来どおり候補に残す。"""
+    from src.eventnews.merge import frequent_entity_pairs
+
+    group = ("actor", "examplegroup")
+    kwargs = {
+        "uncapped": {"rl_a": {group}, "rl_b": {group}, "news": {group}},
+        "capped": {"rl_a": frozenset(), "rl_b": frozenset(), "news": frozenset()},
+        "item_of": {"rl_a": "i1", "rl_b": "i2", "news": "i3"},
+        "vectors": {"rl_a": _v(1, 0), "rl_b": _v(1, 0), "news": _v(1, 0.05)},
+        "roundups": set(),
+        "threshold": 0.80,
+    }
+    monkeypatch.delenv("EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE", raising=False)
+    assert frequent_entity_pairs(**kwargs) == {("news", "rl_a"), ("news", "rl_b")}  # type: ignore[arg-type]
+
+    monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE", "0")
+    assert ("rl_a", "rl_b") in frequent_entity_pairs(**kwargs)  # type: ignore[arg-type]
