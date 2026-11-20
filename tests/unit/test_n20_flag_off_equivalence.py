@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -45,9 +46,15 @@ def test_flag_modes_are_off(flags_off: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def public_persona_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """運用者の私的な persona の有無に依らず公開版 _persona.j2 で描画する。"""
+def public_persona_only(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """運用者の私的な persona の有無に依らず公開版 _persona.j2 で描画する。
+
+    合成テンプレートは ``prompt_store`` のプロセス内キャッシュに残るので、先に走ったテストが
+    私的な persona 入りで合成した版を使い回さないよう前後で落とす (落とさないと順序で落ちる)。
+    """
     import jinja2
+
+    from src.prompts.prompt_store import invalidate_prompt_cache
 
     original = jinja2.FileSystemLoader.get_source
 
@@ -57,6 +64,9 @@ def public_persona_only(monkeypatch: pytest.MonkeyPatch) -> None:
         return original(self, environment, template)
 
     monkeypatch.setattr(jinja2.FileSystemLoader, "get_source", get_source)
+    invalidate_prompt_cache()
+    yield
+    invalidate_prompt_cache()
 
 
 def test_eventnews_prompt_is_byte_identical(flags_off: str) -> None:
