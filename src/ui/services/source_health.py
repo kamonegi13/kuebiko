@@ -360,6 +360,7 @@ async def run_daily_heartbeat() -> None:
             now=datetime.now(UTC),
         )
         from src.ops.runtime_changes import build_runtime_change_line
+        from src.ui.services.collection_gap_watch import build_collection_gap_line
         from src.ui.services.fill_rate_audit import build_heartbeat_fill_line
         from src.ui.services.ledger_unread_watch import build_ledger_unread_line
         from src.ui.services.zero_output_watch import build_zero_output_line
@@ -375,7 +376,11 @@ async def run_daily_heartbeat() -> None:
             external_tier_line=_build_external_tier_line(repo),
             chain_gap_line=_build_chain_gap_line(repo),
             zero_output_line=build_zero_output_line(repo),
-            extra_lines=(build_runtime_change_line(repo), build_ledger_unread_line(repo)),
+            extra_lines=(
+                build_runtime_change_line(repo),
+                build_ledger_unread_line(repo),
+                build_collection_gap_line(repo),
+            ),
         )
         from src.ui.services.ops_notify import post_ops_message
 
