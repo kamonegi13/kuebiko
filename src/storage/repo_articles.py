@@ -29,6 +29,9 @@ from src.storage.row_mappers import _row_to_article, _to_iso
 _DISPLAY_ROW_ORDER = "CASE WHEN status='skipped_duplicate' THEN 1 ELSE 0 END ASC, created_at DESC"
 
 
+# 本文の劣化で extract_failed になった行の failure_reason (late_body の対象)
+_DEGENERATE_LIKE = "degenerate_body:%"
+
 # 方針による見送り (hostile_fetch)。再取得の試行回数を消費しない失敗理由。
 DEFERRED_REFETCH_REASONS: frozenset[str | None] = frozenset(
     {"hostile_throttle_deferred", "hostile_paused"}
@@ -645,12 +648,13 @@ class ArticlesMixin(RunHistoryRepositoryBase):
         sql = (
             "SELECT id, article_id, url, title, feed_title, feed_url, "
             "published_at, created_at, body, body_source FROM articles a "
-            "WHERE status='extract_failed' AND failure_reason LIKE 'degenerate_body:%' "
+            "WHERE status='extract_failed' AND failure_reason LIKE ? "
             "AND body IS NOT NULL AND body <> '' "
             "AND NOT EXISTS (SELECT 1 FROM articles p WHERE p.article_id = a.article_id "
             "AND p.status = 'posted') "
         )
-        params: list[object] = []
+        # ⚠ LIKE の % は直書きしない (PG の psycopg がプレースホルダーとみなして落ちる)
+        params: list[object] = [_DEGENERATE_LIKE]
         if since is not None:
             sql += "AND created_at >= ? "
             params.append(_to_iso(since))
@@ -722,8 +726,8 @@ class ArticlesMixin(RunHistoryRepositoryBase):
                 return 0
             row = conn.execute(
                 "SELECT id FROM articles WHERE article_id=? AND status='extract_failed'"
-                " AND failure_reason LIKE 'degenerate_body:%' ORDER BY id DESC LIMIT 1",
-                (article_id,),
+                " AND failure_reason LIKE ? ORDER BY id DESC LIMIT 1",
+                (article_id, _DEGENERATE_LIKE),
             ).fetchone()
             if not row:
                 return 0

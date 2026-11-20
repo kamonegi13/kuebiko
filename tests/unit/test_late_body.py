@@ -207,3 +207,45 @@ async def test_recover_one_late_body_target_promotes(
     rec = repo.get_article("a")
     assert done is True
     assert rec is not None and rec.analysis_only == "late_body" and rec.status == "posted"
+
+
+def test_sql_has_no_bare_percent_for_pg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """PG (psycopg) は % をプレースホルダーとみなす — LIKE の % は直書きせず値で渡す。
+
+    2026-11-20: SQLite のテストでは通り、本番 PG で ProgrammingError になった。
+    """
+    import contextlib
+    import re
+    from collections.abc import Iterator
+    from typing import Any
+
+    from src.storage.db_backend import translate_sql
+
+    sent: list[str] = []
+
+    class _Cur:
+        rowcount = 0
+
+        def fetchone(self) -> None:
+            return None
+
+        def fetchall(self) -> list[Any]:
+            return []
+
+    class _Conn:
+        def execute(self, sql: str, params: Any = ()) -> _Cur:
+            sent.append(translate_sql(sql))
+            return _Cur()
+
+    repo = _repo(tmp_path)
+
+    @contextlib.contextmanager
+    def _fake_connect() -> Iterator[_Conn]:
+        yield _Conn()
+
+    monkeypatch.setattr(repo, "_connect", _fake_connect)
+    repo.list_degenerate_extract_failed()
+    repo.promote_late_body("a", importance="low", category="other")
+    assert sent
+    for sql in sent:
+        assert not re.search(r"%(?![%sbt])", sql), sql
