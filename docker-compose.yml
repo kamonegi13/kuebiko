@@ -364,6 +364,8 @@ services:
       GEO_RESCUE_V2: ${GEO_RESCUE_V2:-0}
       # 11-20: triage の材料から確認・拒否の画面の文を外す (0 / shadow / 1、CLAUDE.md §7)
       TRIAGE_BLOCKED_MATERIAL: ${TRIAGE_BLOCKED_MATERIAL:-shadow}
+      # 11-20: 繰り越した記事の triage の判定の使い回し (0 / shadow / 1、CLAUDE.md §7)
+      TRIAGE_DECISION_REUSE: ${TRIAGE_DECISION_REUSE:-shadow}
       # 地政学の救済の判定 v2 の影の記録 (2026-10-31、CLAUDE.md §7 の 10-31 の行)。本番の救済は変えない。
       # 1=triage の時点で候補を写し (LLM なし)、毎時保守チェーンの最後の段で pir・QW/QC/QD を判定して
       # geo_rescue_shadow に記録 / 0=止める (コードの既定 0)。件数・予算は判定の段の 1 回あたり

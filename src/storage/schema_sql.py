@@ -1210,4 +1210,15 @@ CREATE TABLE IF NOT EXISTS runtime_change_events (
 );
 CREATE INDEX IF NOT EXISTS idx_runtime_change_events_recorded
     ON runtime_change_events(recorded_at);
+
+-- triage の判定の記録 (2026-11-20、TRIAGE_DECISION_REUSE)。鍵 = sha256(URL・モデル・プロンプト)。
+-- 本文は持たない (理由は LLM の短い判定理由のみ)。48h より古い行は書き込みのついでに消す
+CREATE TABLE IF NOT EXISTS triage_decision_cache (
+    decision_key TEXT PRIMARY KEY,
+    importance   TEXT NOT NULL,
+    reason       TEXT NOT NULL,
+    decided_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triage_decision_cache_decided
+    ON triage_decision_cache(decided_at);
 """

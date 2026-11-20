@@ -29,6 +29,7 @@ from src.pipeline.triage_material import (
     mark_no_material,
     material_for_triage,
 )
+from src.pipeline.triage_reuse import decision_key, open_cache, reuse_mode
 from src.storage.repo_triage_rejections import TriageRejectionRow
 from src.storage.repo_triage_shadow import TriageShadowRow
 from src.storage.run_history import RunHistoryRepository
@@ -259,9 +260,34 @@ async def _filter_by_triage(
     # 並列 triage (既定 5 — Ollama サーバへの負荷バランス)
     sem = asyncio.Semaphore(_triage_concurrency())
 
+    reuse = reuse_mode()
+    cache = open_cache(reuse)
+    model_name = str(getattr(llm, "model", ""))
+
+    async def _decide(article: Article) -> TriageDecision:
+        # 繰り越した記事の判定の使い回し (TRIAGE_DECISION_REUSE、11-20)
+        if cache is None:
+            return await triage.triage(article)
+        key = decision_key(article.url or article.id, model_name, triage._build_prompt(article))
+        cached = cache.get(key)
+        if cached is not None and reuse == "on":
+            _log.info("triage_reused", article_id=article.id, importance=cached.importance)
+            return cached
+        decision = await triage.triage(article)
+        if cached is not None:
+            _log.info(
+                "triage_reuse_shadow",
+                article_id=article.id,
+                agree=cached.importance == decision.importance,
+                cached=cached.importance,
+                fresh=decision.importance,
+            )
+        cache.put(key, decision)
+        return decision
+
     async def _one(article: Article) -> tuple[Article, str, bool, str]:
         async with sem:
-            decision = await triage.triage(article)
+            decision = await _decide(article)
             _log.info(
                 "triage_decision",
                 article_id=article.id,
