@@ -55,3 +55,11 @@ D4 §P1-5 (a) の「判定ごとの対処」のとおり。戻しは利用者判
 ## 合格の確かめ
 
 このコミットの hash が、`arms/*/summary.jsonl` の最初の行の時刻と Opus の台帳の最初の行より前であること。
+
+## 追記 (2026-11-21、腕の出力・正解を見る前)
+
+- **Opus に渡す指示**: v8r4 の importance 節は category で判定の軸を分けているため、category 節 (逐語) も参照として渡し、
+  「先に category を決め、その軸で importance を決める」と指示する。出力に category を足す。
+- **「集中」の定義**: s26r が負けた記事 (不一致・境界とまとめ記事を除く) の 8 割以上が、Opus の `article_form` の上位 2 つ、
+  または category の上位 2 つに入ること。
+- 符号検定は片側 (s26r が劣る向き)。道具は `data/eval/s26r_shift_s2/tools/label.py` (select / label / score)。
