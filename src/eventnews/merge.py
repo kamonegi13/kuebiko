@@ -181,6 +181,7 @@ def frequent_entity_pairs(
     article_ts: Mapping[str, datetime] | None = None,
     recent_gap: timedelta | None = None,
     titles: Mapping[str, str] | None = None,
+    digests: set[str] | None = None,
 ) -> set[tuple[str, str]]:
     """頻出ガードで外した名前を共有する、別々の事象の記事対 (純粋関数、2026-10-02)。
 
@@ -192,7 +193,8 @@ def frequent_entity_pairs(
     cos が 0.5〜0.78 に留まり、頻出の名前 (例: 何度も報じられる道具名) の新しい事案ほど割れていた。
     頻出の名前 + 時刻の近さを弱い信号の組として候補にし、判定は ML に任せる
     (呼び手が確率の下限を足す)。近さで足す組のうち、グループ名だけを共有し片方が流出サイトの
-    掲載の形の組は足さない (``leak_listing``。束と 1 件の掲載は同じ事象ではない)。
+    掲載の形の組は足さない (``leak_listing``。束と 1 件の掲載は同じ事象ではない)。片方が日報・
+    アラートの形 (``digests``、呼び手が ``digest_form`` で決める) の組も足さない。
 
     流出サイトの掲載どうし (``rl_``) も除く (11-20、11-19 監査 D3): 掲載は同じ定型文なので
     cos が 1.0 近くになり、同じグループ名 (頻出) を共有するだけの別々の被害者が 1 つの事象に
@@ -222,6 +224,7 @@ def frequent_entity_pairs(
                 if float(np.dot(vectors[a], vectors[b])) < threshold and not (
                     _within_recent(article_ts, a, b, recent_gap)
                     and not _leak_listing(a, b, uncapped, capped, titles)
+                    and not (digests and (a in digests or b in digests))
                 ):
                     continue
                 if blocked_by_different_victims(

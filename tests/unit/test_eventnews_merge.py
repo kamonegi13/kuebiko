@@ -638,3 +638,25 @@ def test_frequent_entity_pairs_recent_gap_skips_leak_listing_pairs() -> None:
 
     # a・b は掲載の形 (外す)。b-c も b が掲載の形なので外す。cos 高い組は無い
     assert got == set()
+
+
+def test_frequent_entity_pairs_recent_gap_skips_digest_articles() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from src.eventnews.merge import frequent_entity_pairs
+
+    vic = ("victim_org", "binance")
+    t0 = datetime(2026, 11, 20, 10, tzinfo=UTC)
+    kwargs = {
+        "uncapped": {"a": {vic}, "b": {vic}},
+        "capped": {"a": frozenset(), "b": frozenset()},
+        "item_of": {"a": "i1", "b": "i2"},
+        "vectors": {"a": _v(1, 0), "b": _v(1, 1)},
+        "roundups": set(),
+        "threshold": 0.80,
+        "article_ts": {"a": t0, "b": t0 + timedelta(hours=3)},
+        "recent_gap": timedelta(hours=24),
+    }
+
+    assert frequent_entity_pairs(**kwargs) == {("a", "b")}  # type: ignore[arg-type]
+    assert frequent_entity_pairs(**kwargs, digests={"a"}) == set()  # type: ignore[arg-type]

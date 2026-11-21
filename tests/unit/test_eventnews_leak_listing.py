@@ -21,6 +21,10 @@ _LOCKBIT = [("actor", "lockbit")]
         ("x", "ARTEX: 攻撃者が AI エージェントで攻撃を大規模化する手口", False),
         ("x", "FBI 警告:ハッカーが AI ツールを悪用", False),
         ("x", "LockBit の新しい暗号化手法を解析", False),
+        ("x", "Qilin ransomware グループ、米国の 5 つの組織を新たな被害者として公開", True),
+        ("x", "LockBit5、Example Clinical Lab を被害組織として掲載", True),
+        ("x", "被害 4 件\nThe LockBit ransomware group has added 4 new victims", True),
+        ("x", "#lockbit5 claimed victim-b.example", True),
     ],
 )
 def test_is_leak_form(aid: str, title: str, expected: bool) -> None:

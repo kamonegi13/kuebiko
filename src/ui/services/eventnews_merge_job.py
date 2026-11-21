@@ -547,6 +547,14 @@ def _frequent_entity_edges(
         return []
     recent_mode = frequent_recent_mode()
     uncapped = _join_entities_for(repo, list(inputs.members), {})
+    gate_titles: dict[str, str] | None = None
+    digests: set[str] | None = None
+    if recent_mode != "0":
+        originals = _original_titles(repo, list(inputs.members))
+        gate_titles = {
+            aid: f"{m.title}\n{originals.get(aid, '')}" for aid, m in inputs.members.items()
+        }
+        digests = _digest_articles(inputs, originals)
     pairs = frequent_entity_pairs(
         uncapped=uncapped,
         capped=inputs.entities,
@@ -556,7 +564,8 @@ def _frequent_entity_edges(
         threshold=FREQUENT_ENTITY_MIN_COS,
         article_ts={aid: m.anchor_ts for aid, m in inputs.members.items()},
         recent_gap=None if recent_mode == "0" else frequent_recent_gap(),
-        titles={aid: m.title for aid, m in inputs.members.items()},
+        titles=gate_titles,
+        digests=digests,
     )
     probas = probas_out if probas_out is not None else {}
     approved = approve_pairs(
@@ -571,6 +580,38 @@ def _frequent_entity_edges(
     if pairs:
         _log.info("eventnews_merge_frequent", candidates=len(pairs), approved=len(approved))
     return approved
+
+
+_SQL_ORIGINAL_TITLES = (
+    "SELECT article_id, COALESCE(original_title, '') AS original_title FROM articles"
+    " WHERE article_id IN ({placeholders})"
+)
+
+
+def _original_titles(repo: RunHistoryRepository, ids: Sequence[str]) -> dict[str, str]:
+    """原題 (和訳の題では日報の接頭辞・監視アカウントの定型が落ちるため、関門は原題も見る)。"""
+    out: dict[str, str] = {}
+    for i in range(0, len(ids), 500):
+        chunk = list(ids[i : i + 500])
+        with repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                _SQL_ORIGINAL_TITLES.format(placeholders=",".join("?" for _ in chunk)),  # noqa: S608
+                chunk,
+            ).fetchall()
+        for r in rows:
+            out[str(r["article_id"])] = str(r["original_title"] or "")
+    return out
+
+
+def _digest_articles(inputs: MergeInputs, originals: Mapping[str, str]) -> set[str]:
+    """日報・アラートの形の記事 (近さの候補から外す)。"""
+    from src.eventnews.digest_form import is_digest_article
+
+    return {
+        aid
+        for aid, m in inputs.members.items()
+        if is_digest_article(m.title, originals.get(aid, ""), m.url)
+    }
 
 
 def _apply_recent_floor(

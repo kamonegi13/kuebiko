@@ -19,8 +19,16 @@ from collections.abc import Iterable
 LEAK_POSTING_ID_PREFIX = "rl_"
 #: この型の判定に使う共有の名前の種類
 LEAK_NAME_TYPES: frozenset[str] = frozenset({"actor", "malware_family"})
-#: 掲載先を名指しする語 (束の見出し「… をリークサイトに掲載」など)
-_LISTING = re.compile(r"(リークサイト|ダーク\s*ウェブ|leak\s*site|dark\s*web|data\s*leak)", re.I)
+#: 掲載の見出しの語。掲載先の名指し (「… をリークサイトに掲載」)・被害者の掲載
+#: (「新たな被害者として公開」「被害組織として掲載」)・監視アカウントの定型
+#: (「… ransomware group has added N」「#group claimed …」)
+_LISTING = re.compile(
+    r"(リークサイト|ダーク\s*ウェブ|leak\s*site|dark\s*web|data\s*leak|"
+    r"被害(?:組織|者|企業)として(?:掲載|公開|追加)|新たな被害(?:組織|者|企業)|"
+    r"\d+\s*(?:件|社|組織|つの組織)[^、。]{0,12}(?:掲載|公開|追加)|"
+    r"group\s+has\s+added|\bclaimed\b|new\s+victims?)",
+    re.I,
+)
 #: 「グループ名: 被害者」の見出し (グループ名は英数字)
 _POSTING = re.compile(r"^([A-Za-z0-9][A-Za-z0-9 .$&'_-]{0,40}):\s*\S")
 #: グループ名の照合に使う先頭の文字数 (「Akira ransomware」⇔ akira_ransom、「LockBit5」⇔ lockbit)
