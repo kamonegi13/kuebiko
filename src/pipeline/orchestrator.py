@@ -858,6 +858,10 @@ async def run_pipeline(
 
     # 持ち時間の頭打ちで切った記事の id (繰越として数え、errors には入れない)
     budget_cap_deferred: list[str] = []
+    # 同じ実行の中の別々の Grok レポートが同じ投稿を含むとき、最初のレポートだけが扱う (11-21)
+    from src.pipeline.grok_convert import RunClaims, grok_run_claim_enabled
+
+    grok_claims = RunClaims() if grok_run_claim_enabled() else None
 
     async def _handle_article(article: Article) -> _ArticleWork:
         """記事 1 本を処理し、**共有 list を触らずに**寄与分だけを返す。
@@ -875,6 +879,12 @@ async def run_pipeline(
         is_budget_capped = False
         try:
             if _is_grok_article(article):
+                ledger = (
+                    None if (skip_dedup or dedup_repo is None) else dedup_repo.filter_seen_and_touch
+                )
+                grok_seen = (
+                    ledger if grok_claims is None else grok_claims.filter_for(article.id, ledger)
+                )
                 # Grok レポート (JSONL output) を tweet 単位の briefing に展開する。
                 # 以降は通常記事と同様に enrichment / routing される。
                 expansion = await _grok_article_to_briefings(
@@ -885,11 +895,7 @@ async def run_pipeline(
                     brief_count_24h=brief_count_24h_snapshot,
                     # 1 レポートの投稿数に上限が無いため、投稿ごとに時間切れを見る (2026-10-29)
                     should_stop=should_stop,
-                    seen_filter=(
-                        None
-                        if (skip_dedup or dedup_repo is None)
-                        else dedup_repo.filter_seen_and_touch
-                    ),
+                    seen_filter=grok_seen,
                 )
                 deferred_posts = expansion.deferred
                 expanded = expansion.briefings
@@ -898,12 +904,7 @@ async def run_pipeline(
                 # が別 sub-article 化していた (実測 30 日で余剰 209 記事)。
                 from src.pipeline.grok_convert import filter_expanded_by_seen
 
-                expanded, _dup_dropped = filter_expanded_by_seen(
-                    expanded,
-                    None
-                    if (skip_dedup or dedup_repo is None)
-                    else dedup_repo.filter_seen_and_touch,
-                )
+                expanded, _dup_dropped = filter_expanded_by_seen(expanded, grok_seen)
                 if _dup_dropped:
                     _log.info(
                         "grok_subarticle_cross_run_dedup",

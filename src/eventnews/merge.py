@@ -51,6 +51,7 @@ import numpy as np
 
 from src.eventnews.grouping import blocked_by_different_victims, edge_is_allowed
 from src.eventnews.hub_split import HUB_SPLIT_CLASS, HubSplitCheck
+from src.eventnews.leak_listing import LEAK_POSTING_ID_PREFIX, is_leak_listing_pair
 from src.eventnews.models import FOCAL_CVE_MAX, FREQ_CAP_EXEMPT_TYPES, MemberArticle
 
 #: 事象どうしを結ぶのに要る辺の本数。**1 本では結ばない**。
@@ -156,8 +157,6 @@ def candidate_pairs_by_entity(
     return pairs
 
 
-#: ransomware.live の掲載の記事 id 接頭辞 (``sources/ransomware_live._article_id`` と同じ)
-LEAK_POSTING_ID_PREFIX = "rl_"
 FREQUENT_LEAK_EXCLUDE_ENV = "EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE"
 
 
@@ -179,11 +178,21 @@ def frequent_entity_pairs(
     roundups: set[str],
     threshold: float,
     hub_cap: int = 400,
+    article_ts: Mapping[str, datetime] | None = None,
+    recent_gap: timedelta | None = None,
+    titles: Mapping[str, str] | None = None,
 ) -> set[tuple[str, str]]:
     """頻出ガードで外した名前を共有する、別々の事象の記事対 (純粋関数、2026-10-02)。
 
     本文の埋込 cos が ``threshold`` 以上の組だけ (頻出の名前は単独では弱い信号なので、
     本文の近さと組にする)。まとめ記事・被害組織が食い違う組は除く。判定は呼び手が ML に回す。
+
+    ``recent_gap`` を渡すと、cos が ``threshold`` 未満でも記事の時刻の差が ``recent_gap`` 以内の
+    組を候補に足す (2026-11-21、``EVENTNEWS_MERGE_FREQUENT_RECENT``)。大きな事案の後追い記事は
+    cos が 0.5〜0.78 に留まり、頻出の名前 (例: 何度も報じられる道具名) の新しい事案ほど割れていた。
+    頻出の名前 + 時刻の近さを弱い信号の組として候補にし、判定は ML に任せる
+    (呼び手が確率の下限を足す)。近さで足す組のうち、グループ名だけを共有し片方が流出サイトの
+    掲載の形の組は足さない (``leak_listing``。束と 1 件の掲載は同じ事象ではない)。
 
     流出サイトの掲載どうし (``rl_``) も除く (11-20、11-19 監査 D3): 掲載は同じ定型文なので
     cos が 1.0 近くになり、同じグループ名 (頻出) を共有するだけの別々の被害者が 1 つの事象に
@@ -210,7 +219,10 @@ def frequent_entity_pairs(
                     continue
                 if skip_leak and _both_leak_postings(a, b):
                     continue
-                if float(np.dot(vectors[a], vectors[b])) < threshold:
+                if float(np.dot(vectors[a], vectors[b])) < threshold and not (
+                    _within_recent(article_ts, a, b, recent_gap)
+                    and not _leak_listing(a, b, uncapped, capped, titles)
+                ):
                     continue
                 if blocked_by_different_victims(
                     capped.get(a, frozenset()), capped.get(b, frozenset())
@@ -218,6 +230,39 @@ def frequent_entity_pairs(
                     continue
                 pairs.add((a, b))
     return pairs
+
+
+def _leak_listing(
+    a: str,
+    b: str,
+    uncapped: Mapping[str, set[tuple[str, str]] | frozenset[tuple[str, str]]],
+    capped: Mapping[str, frozenset[tuple[str, str]]],
+    titles: Mapping[str, str] | None,
+) -> bool:
+    """近さで足す組が、グループ名だけを共有する流出サイトの掲載の型か。"""
+    kept = capped.get(a, frozenset()) | capped.get(b, frozenset())
+    shared = {
+        k
+        for k in set(uncapped.get(a, ())) & set(uncapped.get(b, ()))
+        if k not in kept and k[0] not in FREQ_CAP_EXEMPT_TYPES
+    }
+    t = titles or {}
+    return is_leak_listing_pair(shared, (a, t.get(a, "")), (b, t.get(b, "")))
+
+
+def _within_recent(
+    article_ts: Mapping[str, datetime] | None,
+    a: str,
+    b: str,
+    recent_gap: timedelta | None,
+) -> bool:
+    """2 記事の時刻の差が ``recent_gap`` 以内か (どちらかの時刻が無ければ False)。"""
+    if recent_gap is None or article_ts is None:
+        return False
+    ta, tb = article_ts.get(a), article_ts.get(b)
+    if ta is None or tb is None:
+        return False
+    return abs(ta - tb) <= recent_gap
 
 
 def focal_cves_by_item(

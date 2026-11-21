@@ -244,3 +244,47 @@ def test_frequent_entity_edges_can_be_switched_off(monkeypatch: Any) -> None:
     monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT", "0")
 
     assert job._frequent_entity_edges(cast(Any, None), cast(Any, None), cast(Any, None)) == []
+
+
+class TestFrequentRecentFloor:
+    """頻出の名前 + 時刻の近さの候補に確率の下限を掛ける (2026-11-21)。"""
+
+    def _setup(self) -> tuple[job.MergeInputs, list[tuple[str, str]], dict[tuple[str, str], float]]:
+        base = _inputs()
+        # a1-b1 は cos 高い (従来の救済)、a2-b1 は cos 低い (近さで候補にした組)
+        vectors = {"a1": _v(1, 0), "a2": _v(0, 1), "b1": _v(1, 0.05)}
+        inputs = job.MergeInputs(
+            item_of=base.item_of,
+            first_seen=base.first_seen,
+            members=base.members,
+            entities=base.entities,
+            vectors=vectors,
+            summary_vectors={},
+            records=base.records,
+        )
+        approved = [("a1", "b1"), ("a2", "b1")]
+        return inputs, approved, {("a1", "b1"): 0.7, ("a2", "b1"): 0.9}
+
+    def test_off_keeps_all(self) -> None:
+        inputs, approved, probas = self._setup()
+        assert job._apply_recent_floor(inputs, approved, probas, "0") == approved
+
+    def test_shadow_drops_low_cos_pairs(self) -> None:
+        inputs, approved, probas = self._setup()
+        assert job._apply_recent_floor(inputs, approved, probas, "shadow") == [("a1", "b1")]
+
+    def test_on_keeps_low_cos_pair_above_floor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        inputs, approved, probas = self._setup()
+        monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_RECENT_MIN_P", "0.85")
+        assert job._apply_recent_floor(inputs, approved, probas, "1") == approved
+
+    def test_on_drops_low_cos_pair_below_floor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        inputs, approved, probas = self._setup()
+        monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_RECENT_MIN_P", "0.95")
+        assert job._apply_recent_floor(inputs, approved, probas, "1") == [("a1", "b1")]
+
+    def test_params_fall_back_on_bad_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_RECENT_MIN_P", "abc")
+        monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_RECENT_GAP_HOURS", "-3")
+        assert job.frequent_recent_min_proba() == job.FREQUENT_RECENT_DEFAULT_MIN_PROBA
+        assert job.frequent_recent_gap().total_seconds() == 24 * 3600

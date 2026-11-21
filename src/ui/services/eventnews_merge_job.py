@@ -412,6 +412,37 @@ def frequent_merge_enabled() -> bool:
     return os.environ.get("EVENTNEWS_MERGE_FREQUENT", "1") != "0"
 
 
+#: 頻出の名前 + 時刻の近さの候補 (2026-11-21、docs/replay_prereg/merge_frequent_recent.md)。
+#: 既定は事前登録の最も狭い範囲 (P 0.85・24h)。採った範囲は .env で渡す
+FREQUENT_RECENT_ENV = "EVENTNEWS_MERGE_FREQUENT_RECENT"
+FREQUENT_RECENT_DEFAULT_GAP_HOURS = 24.0
+FREQUENT_RECENT_DEFAULT_MIN_PROBA = 0.85
+
+
+def frequent_recent_mode() -> str:
+    """``0`` (既定 = 従来) / ``shadow`` (記録だけ) / ``1`` (統合に使う)。"""
+    return _tri_flag(FREQUENT_RECENT_ENV)
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        _log.warning("eventnews_merge_bad_float_env", name=name)
+        return default
+    return value if value > 0 else default
+
+
+def frequent_recent_gap() -> timedelta:
+    hours = _float_env(f"{FREQUENT_RECENT_ENV}_GAP_HOURS", FREQUENT_RECENT_DEFAULT_GAP_HOURS)
+    return timedelta(hours=hours)
+
+
+def frequent_recent_min_proba() -> float:
+    return _float_env(f"{FREQUENT_RECENT_ENV}_MIN_P", FREQUENT_RECENT_DEFAULT_MIN_PROBA)
+
+
 def real_kind_enabled() -> bool:
     """統合の ML 特徴に種別を実値で渡し、要約埋込の欠けを埋める (EVENTNEWS_MERGE_REAL_KIND=1)。
 
@@ -455,6 +486,7 @@ def merge_flag_snapshot() -> dict[str, object]:
         "min_edges": MIN_EDGES_BETWEEN_ITEMS,
         "focus_gate": focus_gate_mode(),
         "hub_split": hub_split_mode(),
+        "frequent_recent": frequent_recent_mode(),
     }
 
 
@@ -513,6 +545,7 @@ def _frequent_entity_edges(
     """
     if not frequent_merge_enabled():
         return []
+    recent_mode = frequent_recent_mode()
     uncapped = _join_entities_for(repo, list(inputs.members), {})
     pairs = frequent_entity_pairs(
         uncapped=uncapped,
@@ -521,18 +554,56 @@ def _frequent_entity_edges(
         vectors=inputs.vectors,
         roundups={aid for aid, m in inputs.members.items() if m.is_roundup},
         threshold=FREQUENT_ENTITY_MIN_COS,
+        article_ts={aid: m.anchor_ts for aid, m in inputs.members.items()},
+        recent_gap=None if recent_mode == "0" else frequent_recent_gap(),
+        titles={aid: m.title for aid, m in inputs.members.items()},
     )
+    probas = probas_out if probas_out is not None else {}
     approved = approve_pairs(
         inputs,
         model,
         on_pair=on_pair,
         pairs=sorted(pairs),
         real_kind=real_kind,
-        probas_out=probas_out,
+        probas_out=probas,
     )
+    approved = _apply_recent_floor(inputs, approved, probas, recent_mode)
     if pairs:
         _log.info("eventnews_merge_frequent", candidates=len(pairs), approved=len(approved))
     return approved
+
+
+def _apply_recent_floor(
+    inputs: MergeInputs,
+    approved: list[tuple[str, str]],
+    probas: Mapping[tuple[str, str], float],
+    mode: str,
+) -> list[tuple[str, str]]:
+    """時刻の近さで候補にした組 (cos < 0.80) に確率の下限を掛ける。shadow は記録だけで外す。"""
+    if mode == "0":
+        return approved
+    floor = frequent_recent_min_proba()
+    kept: list[tuple[str, str]] = []
+    recent: list[tuple[str, str, float]] = []
+    for a, b in approved:
+        if float(np.dot(inputs.vectors[a], inputs.vectors[b])) >= FREQUENT_ENTITY_MIN_COS:
+            kept.append((a, b))
+            continue
+        p = probas.get((a, b) if a <= b else (b, a), 0.0)
+        if p < floor:
+            continue
+        recent.append((inputs.item_of[a], inputs.item_of[b], round(p, 3)))
+        if mode == "1":
+            kept.append((a, b))
+    if recent:
+        _log.info(
+            "eventnews_merge_frequent_recent",
+            mode=mode,
+            edges=len(recent),
+            item_pairs=len({tuple(sorted(r[:2])) for r in recent}),
+            sample=recent[:20],
+        )
+    return kept
 
 
 def plan_for(

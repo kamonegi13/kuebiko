@@ -250,6 +250,48 @@ def test_frequent_entity_pairs_requires_cos_cross_item_and_no_roundup() -> None:
     assert got == {("a", "b"), ("b", "d")}
 
 
+def test_frequent_entity_pairs_recent_gap_adds_low_cos_pairs_within_gap() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from src.eventnews.merge import frequent_entity_pairs
+
+    tool = ("tool", "cairn")
+    t0 = datetime(2026, 11, 20, 10, tzinfo=UTC)
+    kwargs = {
+        "uncapped": {"a": {tool}, "b": {tool}, "c": {tool}},
+        "capped": {"a": frozenset(), "b": frozenset(), "c": frozenset()},
+        "item_of": {"a": "i1", "b": "i2", "c": "i3"},
+        # どの組も cos < 0.80
+        "vectors": {"a": _v(1, 0), "b": _v(1, 1), "c": _v(0, 1)},
+        "roundups": set(),
+        "threshold": 0.80,
+        "article_ts": {"a": t0, "b": t0 + timedelta(hours=5), "c": t0 + timedelta(hours=60)},
+    }
+
+    assert frequent_entity_pairs(**kwargs) == set()  # type: ignore[arg-type]
+    got = frequent_entity_pairs(**kwargs, recent_gap=timedelta(hours=24))  # type: ignore[arg-type]
+    assert got == {("a", "b")}  # c は 55h 以上離れる
+
+
+def test_frequent_entity_pairs_recent_gap_needs_timestamps() -> None:
+    from datetime import timedelta
+
+    from src.eventnews.merge import frequent_entity_pairs
+
+    tool = ("tool", "cairn")
+    got = frequent_entity_pairs(
+        uncapped={"a": {tool}, "b": {tool}},
+        capped={"a": frozenset(), "b": frozenset()},
+        item_of={"a": "i1", "b": "i2"},
+        vectors={"a": _v(1, 0), "b": _v(1, 1)},
+        roundups=set(),
+        threshold=0.80,
+        recent_gap=timedelta(hours=24),
+    )
+
+    assert got == set()
+
+
 class TestCveDisjointGate:
     """別の CVE を主題にする同ベンダ勧告どうしを統合しない (2026-10-12)。"""
 
@@ -569,3 +611,30 @@ def test_frequent_pairs_skip_two_leak_site_postings(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setenv("EVENTNEWS_MERGE_FREQUENT_LEAK_EXCLUDE", "0")
     assert ("rl_a", "rl_b") in frequent_entity_pairs(**kwargs)  # type: ignore[arg-type]
+
+
+def test_frequent_entity_pairs_recent_gap_skips_leak_listing_pairs() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from src.eventnews.merge import frequent_entity_pairs
+
+    grp = ("actor", "lockbit")
+    t0 = datetime(2026, 11, 20, 10, tzinfo=UTC)
+    got = frequent_entity_pairs(
+        uncapped={"a": {grp}, "b": {grp}, "c": {grp}},
+        capped={"a": frozenset(), "b": frozenset(), "c": frozenset()},
+        item_of={"a": "i1", "b": "i2", "c": "i3"},
+        vectors={"a": _v(1, 0), "b": _v(1, 1), "c": _v(0, 1)},
+        roundups=set(),
+        threshold=0.80,
+        article_ts={"a": t0, "b": t0 + timedelta(hours=3), "c": t0 + timedelta(hours=4)},
+        recent_gap=timedelta(hours=24),
+        titles={
+            "a": "LockBit 5.0、被害組織 6 件をリークサイトに掲載",
+            "b": "LockBit: victim-a.example (US)",
+            "c": "LockBit 幹部を米司法省が起訴",
+        },
+    )
+
+    # a・b は掲載の形 (外す)。b-c も b が掲載の形なので外す。cos 高い組は無い
+    assert got == set()

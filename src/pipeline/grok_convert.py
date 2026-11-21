@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -31,6 +32,44 @@ _log = get_logger(__name__)
 
 #: run 横断の既知判定 (dedup_repo.filter_seen_and_touch と同じ形: hash 群 → 既知の hash 集合)
 SeenFilter = Callable[[Sequence[str]], set[str]]
+
+
+#: 1 回の実行の中で同じ投稿を複数のレポートが含むとき、最初のレポートだけが扱う (2026-11-21)
+GROK_RUN_CLAIM_ENV = "GROK_RUN_CLAIM"
+
+
+def grok_run_claim_enabled() -> bool:
+    """既定 on。``GROK_RUN_CLAIM=0`` で従来 (既読台帳の照会だけ) に戻す。"""
+    return os.environ.get(GROK_RUN_CLAIM_ENV, "1").strip() != "0"
+
+
+class RunClaims:
+    """1 回の実行の中で、投稿の鍵 (URL の hash) を最初に見たレポートに予約する。
+
+    既読台帳 (``filter_seen_and_touch``) は投稿の処理が終わってから登録されるため、同じ実行で
+    並列に処理される別々のレポートが同じ投稿を含むと、どちらも「未見」と判定されて
+    2 本の記事になり、事象ニュースに同じ投稿が 2 回並んでいた (30 日で約 60 投稿、9 割が同じ実行)。
+    実行の最後の URL の重複除去 (``_dedup_briefings_by_source_url``) は投稿を 1 本にするだけで、
+    保存済みの記事は残る。予約は要約の前 (``drop_seen_records``) で行い、LLM も使わない。
+
+    asyncio の 1 スレッドで同期的に呼ばれる前提 (照会と予約の間に await を挟まない)。
+    """
+
+    def __init__(self) -> None:
+        self._owner: dict[str, str] = {}
+
+    def filter_for(self, owner: str, ledger: SeenFilter | None) -> SeenFilter:
+        """``owner`` (レポートの記事 id) 用の既知判定 = 台帳で既知 ∪ 別のレポートが予約済み。"""
+
+        def _filter(keys: Sequence[str]) -> set[str]:
+            known = set(ledger(keys)) if ledger is not None else set()
+            taken = {k for k in keys if self._owner.get(k, owner) != owner}
+            for k in keys:
+                if k not in known and k not in taken:
+                    self._owner.setdefault(k, owner)
+            return known | taken
+
+        return _filter
 
 
 @dataclass(frozen=True)
