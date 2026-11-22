@@ -57,10 +57,23 @@ def write_weekly_sample(
 async def run_weekly_veto_sample(repo: RunHistoryRepository | None = None) -> dict[str, Any]:
     """週次ジョブ本体。戻り値は件数だけ (見出しは書き出したファイルにだけ)。"""
     repo = repo or RunHistoryRepository()
-    result = await asyncio.to_thread(
-        write_weekly_sample, repo, now=datetime.now(UTC), out_dir=sample_dir()
-    )
+    now = datetime.now(UTC)
+    result = await asyncio.to_thread(write_weekly_sample, repo, now=now, out_dir=sample_dir())
     _log.info("weekly_veto_sample", **result)
+    # 近さの経路で統合した組の抜き出し (11-21)。失敗しても止めた組の抜き出しは残す
+    from src.ui.services import recent_merge_sample
+
+    try:
+        recent = await asyncio.to_thread(
+            recent_merge_sample.write_weekly_recent_sample,
+            repo,
+            now=now,
+            out_dir=recent_merge_sample.sample_dir(),
+        )
+        _log.info("weekly_recent_merge_sample", **recent)
+        result = {**result, "recent_merge": recent}
+    except Exception as e:  # noqa: BLE001 — 片方の失敗で週次ジョブ全体を落とさない
+        _log.warning("weekly_recent_merge_sample_failed", error_type=type(e).__name__)
     return result
 
 

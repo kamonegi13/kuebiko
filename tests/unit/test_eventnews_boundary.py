@@ -43,6 +43,8 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # 2026-11-20: 統合で止めた組の週次の抜き出し (記録の読み出しと焦点の写しだけ)。
         # 生成物 (版の本文) は読まず、他層へ渡さない
         "src/ui/services/veto_sample_job.py",
+        # 11-21: 近さの経路で統合した組の週次の抜き出し (週の札だけ使う)
+        "src/ui/services/recent_merge_sample.py",
         # 2026-11-20: 重複の抑止の規則変更の影の記録 (DEDUP_RULE_SHADOW)。参照するのは記事種別・
         # 伏字の判定・定数のみで、ログを出すだけ (判定・生成物には触れない)
         "src/pipeline/dedup_rule_shadow.py",

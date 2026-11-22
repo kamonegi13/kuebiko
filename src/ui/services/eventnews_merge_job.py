@@ -550,6 +550,8 @@ def _frequent_entity_edges(
     gate_titles: dict[str, str] | None = None
     digests: set[str] | None = None
     if recent_mode != "0":
+        from src.ui.services.eventnews_hourly_job import _original_titles
+
         originals = _original_titles(repo, list(inputs.members))
         gate_titles = {
             aid: f"{m.title}\n{originals.get(aid, '')}" for aid, m in inputs.members.items()
@@ -582,27 +584,6 @@ def _frequent_entity_edges(
     return approved
 
 
-_SQL_ORIGINAL_TITLES = (
-    "SELECT article_id, COALESCE(original_title, '') AS original_title FROM articles"
-    " WHERE article_id IN ({placeholders})"
-)
-
-
-def _original_titles(repo: RunHistoryRepository, ids: Sequence[str]) -> dict[str, str]:
-    """原題 (和訳の題では日報の接頭辞・監視アカウントの定型が落ちるため、関門は原題も見る)。"""
-    out: dict[str, str] = {}
-    for i in range(0, len(ids), 500):
-        chunk = list(ids[i : i + 500])
-        with repo._connect() as conn:  # noqa: SLF001
-            rows = conn.execute(
-                _SQL_ORIGINAL_TITLES.format(placeholders=",".join("?" for _ in chunk)),  # noqa: S608
-                chunk,
-            ).fetchall()
-        for r in rows:
-            out[str(r["article_id"])] = str(r["original_title"] or "")
-    return out
-
-
 def _digest_articles(inputs: MergeInputs, originals: Mapping[str, str]) -> set[str]:
     """日報・アラートの形の記事 (近さの候補から外す)。"""
     from src.eventnews.digest_form import is_digest_article
@@ -610,7 +591,7 @@ def _digest_articles(inputs: MergeInputs, originals: Mapping[str, str]) -> set[s
     return {
         aid
         for aid, m in inputs.members.items()
-        if is_digest_article(m.title, originals.get(aid, ""), m.url)
+        if is_digest_article(m.title, originals.get(aid, ""), m.url, m.body)
     }
 
 

@@ -208,6 +208,61 @@ def _record_subject_kind_hits(repo: RunHistoryRepository, kinds: dict[str, str])
         _log.warning("subject_kind_gate_failed", error=str(e))
 
 
+#: 日報・ニュースレターの形の記事の種別を roundup に上書きする (2026-11-22)。分類は見出しと
+#: 要約の先頭 400 字だけを読むので、題が筆頭の話題の日報 (Foreign Policy の World Brief 等) を
+#: breach と付け、まとめ記事として群化・統合から外れず、筆頭の事案の事象に誤って統合されていた
+DIGEST_OVERRIDE_ENV = "EVENT_KIND_DIGEST_OVERRIDE"
+DIGEST_OVERRIDE_MODEL = "digest_override"
+
+
+def digest_override_mode() -> str:
+    """``0`` (既定 = 従来) / ``shadow`` (ログのみ) / ``1`` (roundup に上書き)。"""
+    raw = os.environ.get(DIGEST_OVERRIDE_ENV, "0").strip().lower()
+    if raw in ("1", "on", "true"):
+        return "1"
+    return "shadow" if raw == "shadow" else "0"
+
+
+def _digest_override(
+    article: MemberArticle, kind: str, model: str, mode: str, original_title: str = ""
+) -> tuple[str, str]:
+    """日報の形なら (roundup, 印) に替える。shadow はログだけ。戻り値は (種別, モデル名の欄)。"""
+    from src.eventnews.digest_form import is_newsletter_article
+    from src.eventnews.models import ROUNDUP_KIND
+
+    if mode == "0" or kind == ROUNDUP_KIND:
+        return kind, model
+    if not is_newsletter_article(article.title, original_title, article.url, article.body):
+        return kind, model
+    _log.info("event_kind_digest_override", article_id=article.article_id, kind=kind, mode=mode)
+    if mode != "1":
+        return kind, model
+    return ROUNDUP_KIND, DIGEST_OVERRIDE_MODEL
+
+
+_SQL_ORIGINAL_TITLES = (
+    "SELECT article_id, COALESCE(original_title, '') AS original_title FROM articles"
+    " WHERE article_id IN ({placeholders})"
+)
+
+
+def _original_titles(repo: RunHistoryRepository, ids: Sequence[str]) -> dict[str, str]:
+    """原題 (和訳の題では【資安日報】などの印が落ちるため、日報の判定は原題も見る)。"""
+    out: dict[str, str] = {}
+    for i in range(0, len(ids), 500):
+        chunk = list(ids[i : i + 500])
+        if not chunk:
+            continue
+        with repo._connect() as conn:  # noqa: SLF001
+            rows = conn.execute(
+                _SQL_ORIGINAL_TITLES.format(placeholders=",".join("?" for _ in chunk)),  # noqa: S608
+                chunk,
+            ).fetchall()
+        for r in rows:
+            out[str(r["article_id"])] = str(r["original_title"] or "")
+    return out
+
+
 async def _resolve_kinds(
     repo: RunHistoryRepository,
     config: AppConfig,
@@ -231,10 +286,15 @@ async def _resolve_kinds(
     if missing:
         # Step.TRIAGE 借用は triage の S 族上書きを継承してしまう (2026-09-08 分離)
         llm = build_llm_for(Step.EVENT_KIND, config)
+        mode = digest_override_mode()
+        originals = _original_titles(repo, [a.article_id for a in missing]) if mode != "0" else {}
         for a in missing:
             kind = await event_kind.classify(llm, a.title, a.summary)
+            kind, model = _digest_override(
+                a, kind, str(getattr(llm, "model", "")), mode, originals.get(a.article_id, "")
+            )
             kinds[a.article_id] = kind
-            repo.set_article_kind(a.article_id, kind, getattr(llm, "model", ""))
+            repo.set_article_kind(a.article_id, kind, model)
         _log.info("event_kind_classified", articles=len(missing))
         _record_subject_kind_hits(repo, {a.article_id: kinds[a.article_id] for a in missing})
     return kinds
